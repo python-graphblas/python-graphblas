@@ -1,0 +1,43 @@
+{% set name = "grblas" %}
+{% set version = "1.2.0" %}
+
+package:
+  name: "{{ name|lower }}"
+  version: "{{ version }}"
+
+source:
+  url: https://github.com/jim22k/{{ name }}/archive/v{{ version }}.tar.gz
+  sha256: 05cd1218fcc3c336dcdcb8494e46063d08da269ea70b7b8c01a04460eb875019
+
+build:
+  number: 0
+
+requirements:
+  build:
+    - python >=3.5
+    - cffi
+    - graphblas ==3.1.1
+  
+  host:
+    - python >=3.5
+    - cffi
+    - graphblas ==3.1.1
+
+  run:
+    - python >=3.5
+    - cffi
+    - graphblas ==3.1.1
+
+about:
+  home: https://github.com/jim22k/grblas
+  license: Apache 2.0
+  license_family: Apache
+  license_file: LICENSE
+  summary: 'Python wrapper around GraphBLAS'
+  description: |
+    Python wrapper around GraphBLAS.
+  dev_url: https://github.com/jim22k/grblas
+
+extra:
+  recipe-maintainers:
+    - jim22k
