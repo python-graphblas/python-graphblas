@@ -102,9 +102,8 @@ class Vector(GbContainer):
         n = len(indices)
         if n <= 0:
             return
+        dup_orig = dup_op
         if dup_op is NULL:
-            if len(set(indices)) < n:
-                raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
             dup_op = BinaryOp.PLUS
         if isinstance(dup_op, BinaryOp):
             dup_op = dup_op[self.dtype]
@@ -118,6 +117,9 @@ class Vector(GbContainer):
             values,
             n,
             dup_op))
+        # Check for duplicates when dup_op was not provided
+        if dup_orig is NULL and self.nvals < len(values):
+            raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp') 
 
     @classmethod
     def new_from_type(cls, dtype, size=0):

@@ -21,11 +21,12 @@ class Scalar(GbContainer):
         return f'<Scalar {self.value}:{self.dtype}>'
 
     def __eq__(self, other):
-        if type(other) != Scalar:
-            return False
-        if self.dtype != other.dtype:
-            return False
-        return self.value == other.value
+        if type(other) == Scalar:
+            if self.dtype != other.dtype:
+                return False
+            return self.value == other.value
+        else:
+            return self.value == other
 
     def __bool__(self):
         return bool(self.value)
@@ -57,6 +58,8 @@ class Scalar(GbContainer):
     def new_from_existing(cls, scalar):
         """Create a new Scalar by duplicating an existing one
         """
+        if not isinstance(scalar, GbContainer):
+            raise TypeError(f'Must pass in a Scalar object, not {type(scalar)}')
         new_scalar = cls.new_from_type(scalar.dtype)
         new_scalar.value = scalar.value
         return new_scalar
@@ -65,7 +68,7 @@ class Scalar(GbContainer):
     def new_from_value(cls, value):
         """Create a new Scalar from a Python value
         """
-        dtype = types.lookup(type(values[0]))
+        dtype = dtypes.lookup(type(value))
         new_scalar = cls.new_from_type(dtype)
         new_scalar.value = value
         return new_scalar

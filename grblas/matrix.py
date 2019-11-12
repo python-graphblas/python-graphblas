@@ -126,8 +126,8 @@ class Matrix(GbContainer):
                              f'{len(rows)}, {len(columns)}, {len(values)}')
         if n <= 0:
             return
+        dup_orig = dup_op
         if dup_op is NULL:
-            # TODO: Find efficient way to check for duplicate row/col indices
             dup_op = BinaryOp.PLUS
         if isinstance(dup_op, BinaryOp):
             dup_op = dup_op[self.dtype]
@@ -143,6 +143,9 @@ class Matrix(GbContainer):
             values,
             n,
             dup_op))
+        # Check for duplicates when dup_op was not provided
+        if dup_orig is NULL and self.nvals < len(values):
+            raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp') 
 
     @classmethod
     def new_from_type(cls, dtype, nrows=0, ncols=0):
@@ -600,13 +603,13 @@ class TransposedMatrix(Matrix):
         return True
 
     def clear(self):
-        raise Exception('Modificatin of a transposed Matrix is not allowed')
+        raise Exception('Modification of a transposed Matrix is not allowed')
 
     def resize(self, nrows, ncols):
-        raise Exception('Modificatin of a transposed Matrix is not allowed')
+        raise Exception('Modification of a transposed Matrix is not allowed')
 
     def rebuild_from_values(self, rows, columns, values, *, dup_op=NULL):
-        raise Exception('Modificatin of a transposed Matrix is not allowed')
+        raise Exception('Modification of a transposed Matrix is not allowed')
 
     def __setitem__(self, key, val):
         raise Exception('Assignment to a transposed Matrix is not allowed')

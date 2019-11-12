@@ -58,19 +58,22 @@ class Panic(GrblasException):
 
 
 _error_code_lookup = {
-    1:  NoValue,
-    2:  UninitializedObject,
-    3:  InvalidObject,
-    4:  NullPointer,
-    5:  InvalidValue,
-    6:  InvalidIndex,
-    7:  DomainMismatch,
-    8:  DimensionMismatch,
-    9:  OutputNotEmpty,
-    10: OutOfMemory,
-    11: InsufficientSpace,
-    12: IndexOutOfBound,
-    13: Panic,
+    # Warning
+    lib.GrB_NO_VALUE: NoValue,
+    # API Errors
+    lib.GrB_UNINITIALIZED_OBJECT: UninitializedObject,
+    lib.GrB_INVALID_OBJECT: InvalidObject,
+    lib.GrB_NULL_POINTER: NullPointer,
+    lib.GrB_INVALID_VALUE: InvalidValue,
+    lib.GrB_INVALID_INDEX: InvalidIndex,
+    lib.GrB_DOMAIN_MISMATCH: DomainMismatch,
+    lib.GrB_DIMENSION_MISMATCH: DimensionMismatch,
+    lib.GrB_OUTPUT_NOT_EMPTY: OutputNotEmpty,
+    # Execution Errors
+    lib.GrB_OUT_OF_MEMORY: OutOfMemory,
+    lib.GrB_INSUFFICIENT_SPACE: InsufficientSpace,
+    lib.GrB_INDEX_OUT_OF_BOUNDS: IndexOutOfBound,
+    lib.GrB_PANIC: Panic,
 }
 
 
@@ -83,4 +86,4 @@ def is_error(response_code, error_class):
 
 def check_status(response_code):
     if response_code != lib.GrB_SUCCESS:
-        raise _error_codes[res](ffi.string(lib.GrB_error()))
+        raise _error_code_lookup[response_code](ffi.string(lib.GrB_error()))
