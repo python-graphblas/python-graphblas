@@ -22,10 +22,18 @@ class GbContainer:
         return ComplementedMask(self)
 
     def __setitem__(self, keys, delayed):
-        # TODO: We should allow C[:] = A (simple assignment) or C[:] = A.T (transpose)
         # TODO: check expected output type (need to include in GbDelayed object)
         if not isinstance(delayed, GbDelayed):
-            raise TypeError('assignment value must be GbDelayed object')
+            from .ops import UnaryOp
+            from .matrix import Matrix, TransposedMatrix
+            if type(delayed) == self.__class__:
+                # Simple assignment (w[:] = v)
+                delayed = delayed.apply(UnaryOp.IDENTITY)
+            elif type(delayed) == TransposedMatrix and type(self) == Matrix:
+                # Transpose (C[:] = A.T)
+                delayed = GbDelayed(lib.GrB_transpose, [delayed.gb_obj[0]])
+            else:
+                raise TypeError(f'assignment value must be GbDelayed object, not {type(delayed)}')
         if type(keys) != tuple:
             keys = (keys,)
         mask, accum, complement, replace = self._parse_keys(keys)

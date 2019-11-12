@@ -3,6 +3,7 @@ from _grblas import lib, ffi
 from grblas import Matrix, Vector, Scalar
 from grblas import UnaryOp, BinaryOp, Monoid, Semiring
 from grblas import dtypes, descriptor
+from grblas import REPLACE
 from grblas.exceptions import IndexOutOfBound
 
 @pytest.fixture
@@ -99,51 +100,121 @@ def test_remove_element(v):
     pytest.xfail('Not implemented in GraphBLAS 1.2')
 
 def test_vxm(v, A):
-    pytest.skip()
+    v[:] = v.vxm(A, Semiring.PLUS_TIMES)
+    result = Vector.new_from_values([0,2,3,4,5,6], [3,3,0,8,14,4])
+    assert v == result
 
 def test_vxm_transpose(v, A):
-    pytest.skip()
+    v[:] = v.vxm(A.T, Semiring.PLUS_TIMES)
+    result = Vector.new_from_values([0,1,6], [5,16,13])
+    assert v == result
 
-def test_vxm_nonsquare(v, A):
-    pytest.skip()
+def test_vxm_nonsquare(v):
+    A = Matrix.new_from_values([0, 3], [0, 1], [10, 20], nrows=7, ncols=2)
+    u = Vector.new_from_type(v.dtype, size=2)
+    u[:] = v.vxm(A, Semiring.MIN_PLUS)
+    result = Vector.new_from_values([1], [21])
+    assert u == result
 
 def test_vxm_mask(v, A):
-    pytest.skip()
+    mask = Vector.new_from_values([0, 3, 4], [True, True, True], size=7)
+    u = Vector.new_from_existing(v)
+    u[mask] = v.vxm(A, Semiring.PLUS_TIMES)
+    result = Vector.new_from_values([0,1,3,4,6], [3,1,0,8,0], size=7)
+    assert u == result
+    u = Vector.new_from_existing(v)
+    u[~mask] = v.vxm(A, Semiring.PLUS_TIMES)
+    result2 = Vector.new_from_values([2,3,4,5,6], [3,1,2,14,4], size=7)
+    assert u == result2
+    u = Vector.new_from_existing(v)
+    u[mask, REPLACE] = v.vxm(A, Semiring.PLUS_TIMES)
+    result3 = Vector.new_from_values([0,3,4], [3,0,8], size=7)
+    assert u == result3
 
 def test_vxm_accum(v, A):
-    pytest.skip()
+    v[BinaryOp.PLUS] = v.vxm(A, Semiring.PLUS_TIMES)
+    result = Vector.new_from_values([0,1,2,3,4,5,6], [3,1,3,1,10,14,4], size=7)
+    assert v == result
 
 def test_ewise_mult(v):
     # Binary, Monoid, and Semiring
-    pytest.skip()
+    v2 = Vector.new_from_values([0,3,5,6], [2,3,2,1])
+    result = Vector.new_from_values([3,6], [3,0])
+    u = Vector.new_from_existing(v)
+    u[:] = v.ewise_mult(v2, BinaryOp.TIMES)
+    assert u == result
+    u[:] = v.ewise_mult(v2, Monoid.TIMES)
+    assert u == result
+    u[:] = v.ewise_mult(v2, Semiring.PLUS_TIMES)
+    assert u == result
 
 def test_ewise_add(v):
     # Binary, Monoid, and Semiring
-    pytest.skip()
+    v2 = Vector.new_from_values([0,3,5,6], [2,3,2,1])
+    result = Vector.new_from_values([0,1,3,4,5,6], [2,1,3,2,2,1])
+    u = Vector.new_from_existing(v)
+    u[:] = v.ewise_add(v2, BinaryOp.MAX)
+    assert u == result
+    u[:] = v.ewise_add(v2, Monoid.MAX)
+    assert u == result
+    u[:] = v.ewise_add(v2, Semiring.MAX_TIMES)
+    assert u == result
 
 def test_extract(v):
-    pytest.skip()
+    w = Vector.new_from_type(v.dtype, 3)
+    result = Vector.new_from_values([0,1], [1,1], size=3)
+    w[:] = v.extract[[1,3,5]]
+    assert w == result
+    w[:] = v.extract[1::2]
+    assert w == result
 
 def test_assign(v):
-    pytest.skip()
+    u = Vector.new_from_values([0,2], [9, 8])
+    result = Vector.new_from_values([0,1,3,4,6], [9,1,1,8,0])
+    w = Vector.new_from_existing(v)
+    w.assign[[0,2,4]] = u
+    assert w == result
+    w = Vector.new_from_existing(v)
+    w.assign[:5:2] = u
+    assert w == result
 
 def test_assign_scalar(v):
-    # Test block, row, column
-    pytest.skip()
+    result = Vector.new_from_values([1,3,4,5,6], [9,9,2,9,0])
+    w = Vector.new_from_existing(v)
+    w.assign[[1,3,5]] = 9
+    assert w == result
+    w = Vector.new_from_existing(v)
+    w.assign[1::2] = 9
+    assert w == result
 
 def test_apply(v):
-    pytest.skip()
+    result = Vector.new_from_values([1,3,4,6], [-1,-1,-2,0])
+    v[:] = v.apply(UnaryOp.AINV)
+    assert v == result
 
 def test_apply_binary(v):
     # Test bind-first and bind-second
     pytest.xfail('Not implemented in GraphBLAS 1.2')
 
 def test_reduce(v):
-    pytest.skip()
+    s = Scalar.new_from_type(v.dtype)
+    s[:] = v.reduce(Monoid.PLUS)
+    assert s == 4
+    # Test accum
+    s[BinaryOp.TIMES] = v.reduce(Monoid.PLUS)
+    assert s == 16
 
 def test_simple_assignment(v):
     # w[:] = v
-    pytest.skip()
+    w = Vector.new_from_type(v.dtype, v.size)
+    w[:] = v
+    assert w == v
 
 def test_equal(v):
-    pytest.skip()
+    assert v == v
+    u = Vector.new_from_values([1], [1])
+    assert u != v
+    u2 = Vector.new_from_values([1], [1], size=7)
+    assert u2 != v
+    u3 = Vector.new_from_values([1,3,4,6], [1.,1.,2.,0.])
+    assert u3 != v, 'different datatypes are not equal'
