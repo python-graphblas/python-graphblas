@@ -6,7 +6,8 @@ setup(
     description='Python interface to GraphBLAS',
     author='Jim Kitchen',
     packages=['grblas'],
-    setup_requires=["cffi>=1.0.0"],
+    setup_requires=["cffi>=1.0.0", "pytest-runner"],
     cffi_modules=["build.py:ffibuilder"],
     install_requires=["cffi>=1.0.0"],
+    tests_require=["pytest"],
 )

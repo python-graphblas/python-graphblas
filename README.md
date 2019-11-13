@@ -10,20 +10,23 @@ The approach taken with the wrapper is to follow the C-API specification as clos
 At the highest level, the approach is to separate output, mask, and accumulator on the left side of the assignment operator (=) and put the computation on the right side.
 
 This is an example of how the mapping works:<br>
-C call: `GrB_Matrix_mxm(M, mask, accum_op, A, B, semiring_op, desc=NULL)`<br>
-Python call: `M[mask, accum] = A.mxm(B, semiring_op)`
+C call: `GrB_Matrix_mxm(M, mask, accum, A, B, semiring, desc=NULL)`<br>
+Python call: `M[mask, accum] = A.mxm(B, semiring)`<br>
+_where_
+ - accum is `GrB_PLUS_INT64` (in C) and `BinaryOp.PLUS` (in Python)
+ - semiring is `GrB_MIN_PLUS_INT64` (in C) and `Semiring.MIN_PLUS` (in Python)
 
 The expression on the right `A.mxm(B)` creates a delayed object which does no computation. Once it is received as the value of a `__setitem__` call on `M`, the whole thing is translated into the equivalent GraphBLAS call.
 
 Descriptor flags are set on the appropriate elements to keep logic close to what it affects. Here is the same call with descriptor bits set. `ttcr` indicates transpose the first and second matrices, complement the mask, and do a replacement on the output.
 
-C call: `GrB_Matrix_mxm(M, mask, accum_op, A, B, semiring_op, desc.ttcr)`<br>
-Python call: `M[~mask, accum, REPLACE] = A.T.mxm(B.T, semiring_op)`
+C call: `GrB_Matrix_mxm(M, mask, accum, A, B, semiring, desc.ttcr)`<br>
+Python call: `M[~mask, accum, REPLACE] = A.T.mxm(B.T, semiring)`
 
 The objects receiving the flag operations (A.T, ~mask, etc) are also delayed objects. They hold on to the state but do no computation, allowing the correct descriptor bits to be set in a single GraphBLAS call.
 
 If no mask or accumulator is used, the call looks like this:
-`M[:] = A.mxm(B, semiring_op)`
+`M[:] = A.mxm(B, semiring)`
 
 Python doesn't allow `__setitem__` on an empty key, so we use the empty slice to indicate "applies to all elements", i.e. there is no mask.
 
