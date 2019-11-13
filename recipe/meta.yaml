@@ -7,7 +7,7 @@ package:
 
 source:
   url: https://github.com/jim22k/{{ name }}/archive/v{{ version }}.tar.gz
-  sha256: --- FILL THIS IN ---
+  sha256: 02659f8fd5239bd4558d15d189227b1e1388c4659f104c876304f37c8de0be9a
 
 build:
   number: 0
@@ -17,11 +17,13 @@ requirements:
     - python >=3.5
     - cffi
     - ss_graphblas ==3.1.1
+    - pytest-runner
   
   host:
     - python >=3.5
     - cffi
     - ss_graphblas ==3.1.1
+    - pytest-runner
 
   run:
     - python >=3.5
