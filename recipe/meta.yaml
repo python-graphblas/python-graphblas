@@ -17,11 +17,13 @@ requirements:
     - python >=3.5
     - cffi
     - ss_graphblas ==3.1.1
+    - pytest-runner
   
   host:
     - python >=3.5
     - cffi
     - ss_graphblas ==3.1.1
+    - pytest-runner
 
   run:
     - python >=3.5
