@@ -16,17 +16,17 @@ requirements:
   build:
     - python >=3.5
     - cffi
-    - graphblas ==3.1.1
+    - ss_graphblas ==3.1.1
   
   host:
     - python >=3.5
     - cffi
-    - graphblas ==3.1.1
+    - ss_graphblas ==3.1.1
 
   run:
     - python >=3.5
     - cffi
-    - graphblas ==3.1.1
+    - ss_graphblas ==3.1.1
 
 about:
   home: https://github.com/jim22k/grblas
