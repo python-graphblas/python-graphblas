@@ -4,7 +4,7 @@ from .base import lib, ffi, NULL, GbContainer, GbDelayed
 from .vector import Vector
 from .scalar import Scalar
 from .ops import (OpBase, UnaryOp, BinaryOp, Monoid, Semiring,
-                  find_opclass, build_udf, free_udf, find_return_type)
+                  find_opclass, find_return_type)
 from . import dtypes
 from .exceptions import check_status, is_error, NoValue
 
@@ -24,7 +24,6 @@ class Matrix(GbContainer):
 
     def __del__(self):
         check_status(lib.GrB_Matrix_free(self.gb_obj))
-        free_udf(self)
     
     def __repr__(self):
         return f'<Matrix {self.nvals}/({self.nrows}x{self.ncols}):{self.dtype.name}>'

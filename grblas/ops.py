@@ -1,10 +1,16 @@
 import re
+import numba
+from types import FunctionType
 from _grblas import lib, ffi
-from .dtypes import DataType
-from .exceptions import check_status
+from . import dtypes
+from .exceptions import check_status, GrblasException
 
 
 UNKNOWN_OPCLASS = 'UnknownOpClass'
+
+
+class UdfParseError(GrblasException):
+    pass
 
 
 class OpBase:
@@ -34,7 +40,7 @@ class OpBase:
         return type_ in self._specific_types
     
     def _normalize_type(self, type_):
-        return type_.name if isinstance(type_, DataType) else type_
+        return type_.name if isinstance(type_, dtypes.DataType) else type_
     
     @property
     def types(self):
@@ -87,6 +93,50 @@ class UnaryOp(OpBase):
         ],
     }
 
+    @classmethod
+    def register_new(cls, name, func):
+        if type(func) != FunctionType:
+            raise TypeError(f'udf must be a function, not {type(func)}')
+        if hasattr(cls, name):
+            raise AttributeError(f'UnaryOp.{name} is already defined')
+        success = False
+        new_type_obj = cls(name)
+        for type_, sample_val in dtypes._sample_values.items():
+            # Check if func can handle this data type
+            try:
+                ret = func(sample_val)
+                if type(ret) == bool:
+                    ret_type = dtypes.BOOL
+                elif type_ == 'BOOL':
+                    # type_ == bool, but return type != bool; invalid
+                    continue
+                else:
+                    ret_type = type_
+
+                nt = numba.types
+                # JIT the func so it can be used from a cfunc
+                unary_udf = numba.njit(func)
+                # Build wrapper because GraphBLAS wants pointers and void return
+                wrapper_sig = nt.void(nt.CPointer(ret_type.numba_type),
+                                        nt.CPointer(type_.numba_type))
+                @numba.cfunc(wrapper_sig, nopython=True)
+                def unary_wrapper(z, x):
+                    result = unary_udf(x[0])
+                    z[0] = result
+
+                new_unary = ffi.new('GrB_UnaryOp*')
+                lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi, 
+                                    ret_type.gb_type, type_.gb_type)
+                new_type_obj[type_.name] = new_unary[0]
+                _return_type[new_unary[0]] = ret_type.name
+                success = True
+            except Exception:
+                continue
+        if success:
+            setattr(cls, name, new_type_obj)
+        else:
+            raise UdfParseError('Unable to parse function using Numba')
+
 
 class BinaryOp(OpBase):
     _parse_config = {
@@ -102,6 +152,11 @@ class BinaryOp(OpBase):
         ],
     }
 
+    def register_new(self, name, func, types):
+        if type(func) != FunctionType:
+            raise TypeError(f'udf must be a function, not {type(func)}')
+        raise NotImplementedError()
+
 
 class Monoid(OpBase):
     _parse_config = {
@@ -113,6 +168,11 @@ class Monoid(OpBase):
             re.compile('^GxB_(EQ|LAND|LOR|LXOR)_BOOL_MONOID$'),
         ],
     }
+
+    def register_new(self, name, binaryop, zero):
+        if type(binaryop) != BinaryOp:
+            raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
+        raise NotImplementedError()
 
 
 class Semiring(OpBase):
@@ -127,6 +187,13 @@ class Semiring(OpBase):
             re.compile('^GxB_(LOR|LAND|LXOR|EQ)_(EQ|NE|GT|LT|GE|LE)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
         ],
     }
+
+    def register_new(self, name, monoid, binaryop):
+        if type(monoid) != Monoid:
+            raise TypeError(f'monoid must be a Monoid, not {type(monoid)}')
+        if type(binaryop) != BinaryOp:
+            raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
+        raise NotImplementedError()
 
 
 def find_opclass(gb_op):
@@ -145,29 +212,6 @@ _return_type = {}
 def find_return_type(gb_op, dtype):
     if isinstance(gb_op, OpBase):
         gb_op = gb_op[dtype]
+    if gb_op not in _return_type:
+        raise KeyError('Unknown operator. You must register function prior to use.')
     return _return_type[gb_op]
-
-
-_udf_holder = {}
-
-def build_udf(func, container):
-    # TODO: Involve numba here somehow
-    dtype = container.dtype
-    udf = ffi.new('GrB_UnaryOp*')
-    def op_func(z, x):
-        c_type = dtype.c_type
-        z = ffi.cast(f'{c_type}*', z)
-        x = ffi.cast(f'{c_type}*', x)
-        z[0] = func(x[0])
-    new_func = ffi.callback('void(void*, const void*)', op_func)
-    check_status(lib.GrB_UnaryOp_new(
-        udf,
-        new_func,
-        dtype.gb_type,
-        dtype.gb_type))
-    _udf_holder[id(container)] = (func, udf, new_func)
-    return udf[0]
-
-def free_udf(container):
-    # Remove any functions associated with container
-    _udf_holder.pop(id(container), None)

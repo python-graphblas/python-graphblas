@@ -29,6 +29,7 @@ requirements:
     - python >=3.5
     - cffi
     - ss_graphblas ==3.1.1
+    - numba
 
 about:
   home: https://github.com/jim22k/grblas

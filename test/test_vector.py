@@ -225,3 +225,11 @@ def test_equal(v):
     assert u2 != v
     u3 = Vector.new_from_values([1,3,4,6], [1.,1.,2.,0.])
     assert u3 != v, 'different datatypes are not equal'
+
+def test_binary_op(v):
+    v2 = Vector.new_from_existing(v)
+    v2.element[1] = 0
+    w = v.ewise_mult(v2, BinaryOp.GT).new()
+    result = Vector.new_from_values([1,3,4,6], [True, False, False, False])
+    assert w.dtype == 'BOOL'
+    assert w == result
