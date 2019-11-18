@@ -1,7 +1,9 @@
 import types
+from functools import partial
 from .base import lib, ffi, NULL, GbContainer, GbDelayed
 from .scalar import Scalar
-from .ops import OpBase, UnaryOp, BinaryOp, Monoid, Semiring, find_opclass, build_udf, free_udf
+from .ops import (OpBase, UnaryOp, BinaryOp, Monoid, Semiring,
+                  find_opclass, build_udf, free_udf, find_return_type)
 from . import dtypes
 from .exceptions import check_status, is_error, NoValue
 
@@ -143,7 +145,7 @@ class Vector(GbContainer):
         return cls(new_vec, vector.dtype)
 
     @classmethod
-    def new_from_values(cls, indices, values, *, size=None, dup_op=NULL):
+    def new_from_values(cls, indices, values, *, size=None, dup_op=NULL, dtype=None):
         """Create a new Vector from the given lists of indices and values.  If
         size is not provided, it is computed from the max index found.
         """
@@ -153,8 +155,10 @@ class Vector(GbContainer):
             values = tuple(values)
         if len(values) <= 0:
             raise ValueError('No values provided. Unable to determine type.')
-        # Find dtype from any of the values (assumption is they are the same type)
-        dtype = dtypes.lookup(type(values[0]))
+        if dtype is None:
+            # Find dtype from any of the values (assumption is they are the same type)
+            dtype = type(values[0])
+        dtype = dtypes.lookup(dtype)
         # Compute size if not provided
         if size is None:
             if not indices:
@@ -186,11 +190,13 @@ class Vector(GbContainer):
         opclass = find_opclass(op)
         if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
-        if isinstance(op, OpBase):
-            op = op[self.dtype]
         func = getattr(lib, f'GrB_eWiseAdd_Vector_{opclass}')
+        output_constructor = partial(Vector.new_from_type,
+                                     find_return_type(op, self.dtype),
+                                     self.size)
         return GbDelayed(func,
-                         [op, self.gb_obj[0], other.gb_obj[0]])
+                         [op, self.gb_obj[0], other.gb_obj[0]],
+                         output_constructor=output_constructor)
 
     def ewise_mult(self, other, op=NULL):
         """
@@ -205,11 +211,13 @@ class Vector(GbContainer):
         opclass = find_opclass(op)
         if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
-        if isinstance(op, OpBase):
-            op = op[self.dtype]
         func = getattr(lib, f'GrB_eWiseMult_Vector_{opclass}')
+        output_constructor = partial(Vector.new_from_type,
+                                     find_return_type(op, self.dtype),
+                                     self.size)
         return GbDelayed(func,
-                         [op, self.gb_obj[0], other.gb_obj[0]])
+                         [op, self.gb_obj[0], other.gb_obj[0]],
+                         output_constructor=output_constructor)
 
     def vxm(self, other, op=NULL):
         """
@@ -224,11 +232,13 @@ class Vector(GbContainer):
         opclass = find_opclass(op)
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
-        if isinstance(op, OpBase):
-            op = op[self.dtype]
+        output_constructor = partial(Vector.new_from_type,
+                                     find_return_type(op, self.dtype),
+                                     other.ncols)
         return GbDelayed(lib.GrB_vxm,
                          [op, self.gb_obj[0], other.gb_obj[0]],
-                         bt=other.is_transposed)
+                         bt=other.is_transposed,
+                         output_constructor=output_constructor)
 
     def apply(self, op, left=None, right=None):
         """
@@ -252,11 +262,13 @@ class Vector(GbContainer):
                 raise TypeError('Cannot provide both `left` and `right`')
         else:
             raise TypeError('apply only accepts UnaryOp or BinaryOp')
-        if isinstance(op, OpBase):
-            op = op[self.dtype]
+        output_constructor = partial(Vector.new_from_type,
+                                     find_return_type(op, self.dtype),
+                                     self.size)
         if opclass == 'UnaryOp':
             return GbDelayed(lib.GrB_Vector_apply,
-                             [op, self.gb_obj[0]])
+                             [op, self.gb_obj[0]],
+                             output_constructor=output_constructor)
         else:
             raise NotImplementedError('apply with BinaryOp not available in GraphBLAS 1.2')
             # TODO: fill this in once function is available
@@ -271,11 +283,12 @@ class Vector(GbContainer):
                 op = Monoid.LOR
             else:
                 op = Monoid.PLUS
-        if isinstance(op, Monoid):
-            op = op[self.dtype]
         func = getattr(lib, f'GrB_Vector_reduce_{self.dtype.name}')
+        output_constructor = partial(Scalar.new_from_type,
+                                     find_return_type(op, self.dtype))
         return GbDelayed(func,
-                        [op, self.gb_obj[0]])
+                        [op, self.gb_obj[0]],
+                        output_constructor=output_constructor)
 
     class ElementManipulator:
         def __init__(self, vector):
@@ -334,7 +347,10 @@ class Vector(GbContainer):
                     return lib.GrB_ALL, self._vector.size
                 index = tuple(range(self._vector.size)[index])
             elif typ != list:
-                index = tuple(index)
+                try:
+                    index = tuple(index)
+                except Exception:
+                    raise TypeError()
             return ffi.new('GrB_Index[]', index), len(index)
 
     class Extractor(_Indexer):
@@ -348,8 +364,12 @@ class Vector(GbContainer):
             index, isize = self._parse_index(index)
             if isize is None:
                 raise TypeError('Use v.element[i] to get a single element')
+            output_constructor = partial(Vector.new_from_type,
+                                         self._vector.dtype,
+                                         isize)
             return GbDelayed(lib.GrB_Vector_extract,
-                            [self._vector.gb_obj[0], index, isize])
+                            [self._vector.gb_obj[0], index, isize],
+                            output_constructor=output_constructor)
     
     class Assigner(_Indexer):
         def __init__(self, vector):
@@ -383,15 +403,20 @@ class Vector(GbContainer):
                     if type(key) in (list, slice):
                         raise TypeError('Assignment indexes must come first')
             
+            output_constructor = partial(Vector.new_from_type,
+                                         self._vector.dtype,
+                                         isize)
             if isinstance(other, (int, float, bool)):
                 dtype = self._vector.dtype
                 func = getattr(lib, f'GrB_Vector_assign_{dtype.name}')
                 scalar = ffi.cast(dtype.c_type, other)
                 dval = GbDelayed(func,
-                                 [scalar, index, isize])
+                                 [scalar, index, isize],
+                                 output_constructor=output_constructor)
             elif isinstance(other, Vector):
                 dval = GbDelayed(lib.GrB_Vector_assign,
-                                 [other.gb_obj[0], index, isize])
+                                 [other.gb_obj[0], index, isize],
+                                 output_constructor=output_constructor)
             else:
                 raise TypeError(f'Unexpected type for assignment value: {type(other)}')
             # Forward the __setitem__ call so it is resolved with mask and accum
