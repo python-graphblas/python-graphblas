@@ -403,20 +403,15 @@ class Vector(GbContainer):
                     if type(key) in (list, slice):
                         raise TypeError('Assignment indexes must come first')
             
-            output_constructor = partial(Vector.new_from_type,
-                                         self._vector.dtype,
-                                         isize)
             if isinstance(other, (int, float, bool)):
                 dtype = self._vector.dtype
                 func = getattr(lib, f'GrB_Vector_assign_{dtype.name}')
                 scalar = ffi.cast(dtype.c_type, other)
                 dval = GbDelayed(func,
-                                 [scalar, index, isize],
-                                 output_constructor=output_constructor)
+                                 [scalar, index, isize])
             elif isinstance(other, Vector):
                 dval = GbDelayed(lib.GrB_Vector_assign,
-                                 [other.gb_obj[0], index, isize],
-                                 output_constructor=output_constructor)
+                                 [other.gb_obj[0], index, isize])
             else:
                 raise TypeError(f'Unexpected type for assignment value: {type(other)}')
             # Forward the __setitem__ call so it is resolved with mask and accum

@@ -573,12 +573,8 @@ class Matrix(GbContainer):
                 dtype = self._matrix.dtype
                 scalar = ffi.cast(dtype.c_type, other)
                 func = getattr(lib, f'GrB_Matrix_assign_{dtype.name}')
-                output_constructor = partial(Matrix.new_from_type,
-                                             self._matrix.dtype,
-                                             rowsize, colsize)
                 dval = GbDelayed(func,
-                                 [scalar, rows, rowsize, cols, colsize],
-                                 output_constructor=output_constructor)
+                                 [scalar, rows, rowsize, cols, colsize])
             else:
                 if rowsize is None and colsize is None:
                     raise TypeError(f'Expected scalar for assignment value; found {type(other)}')
@@ -587,33 +583,21 @@ class Matrix(GbContainer):
                         raise TypeError(f'Expected Vector for assignment value; found {type(other)}')
                     # Row-only selection
                     row_index = rows
-                    output_constructor = partial(Vector.new_from_type,
-                                                 self._matrix.dtype,
-                                                 colsize)
                     dval = GbDelayed(lib.GrB_Row_assign,
-                                    [other.gb_obj[0], row_index, cols, colsize],
-                                    output_constructor=output_constructor)
+                                    [other.gb_obj[0], row_index, cols, colsize])
                 elif colsize is None:
                     if not isinstance(other, Vector):
                         raise TypeError(f'Expected Vector for assignment value; found {type(other)}')
                     # Column-only selection
                     col_index = cols
-                    output_constructor = partial(Vector.new_from_type,
-                                                 self._matrix.dtype,
-                                                 rowsize)
                     dval = GbDelayed(lib.GrB_Col_assign,
-                                    [other.gb_obj[0], rows, rowsize, col_index],
-                                    output_constructor=output_constructor)
+                                    [other.gb_obj[0], rows, rowsize, col_index])
                 else:
                     if not isinstance(other, Matrix):
                         raise TypeError(f'Expected Matrix for assignment value; found {type(other)}')
-                    output_constructor = partial(Matrix.new_from_type,
-                                                 self._matrix.dtype,
-                                                 rowsize, colsize)
                     dval = GbDelayed(lib.GrB_Matrix_assign,
                                         [other.gb_obj[0], rows, rowsize, cols, colsize],
-                                        at=other.is_transposed,
-                                        output_constructor=output_constructor)
+                                        at=other.is_transposed)
             # Forward the __setitem__ call so it is resolved with mask and accum
             self._matrix[keys] = dval
 
@@ -632,6 +616,15 @@ class TransposedMatrix(Matrix):
 
     def __repr__(self):
         return f'<Matrix.T {self.nvals}/({self.nrows}x{self.ncols}):{self.dtype.name}>'
+
+    def new(self, mask=None):
+        if mask is None:
+            mask = slice(None)  # [:] indicates no mask
+        elif type(mask) != Matrix:
+            raise TypeError('Mask must be a Matrix')
+        output = Matrix.new_from_type(self.dtype, self.nrows, self.ncols)
+        output[mask] = self
+        return output
 
     @property
     def nrows(self):

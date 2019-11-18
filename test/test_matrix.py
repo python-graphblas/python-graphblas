@@ -113,12 +113,12 @@ def test_remove_element(A):
     pytest.xfail('Not implemented in GraphBLAS 1.2')
 
 def test_mxm(A):
-    A[:] = A.mxm(A, Semiring.PLUS_TIMES)
+    C = A.mxm(A, Semiring.PLUS_TIMES).new()
     result = Matrix.new_from_values(
         [0, 0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 3, 4, 5, 6, 6, 6],
         [0, 2, 4, 6, 2, 3, 4, 5, 2, 1, 3, 5, 2, 5, 0, 2, 5],
         [9, 9, 16, 8, 20, 28, 12, 56, 1, 6, 9, 3, 7, 1, 21, 21, 26])
-    assert A == result
+    assert C == result
 
 def test_mxm_transpose(A):
     C = Matrix.new_from_existing(A)
@@ -141,6 +141,11 @@ def test_mxm_nonsquare():
     C = Matrix.new_from_type(A.dtype, nrows=1, ncols=1)
     C[:] = A.mxm(B, Semiring.MAX_PLUS)
     assert C.element[0, 0] == 33
+    C1 = A.mxm(B, Semiring.MAX_PLUS).new()
+    assert C1 == C
+    C2 = A.T.mxm(B.T, Semiring.MAX_PLUS).new()
+    assert C2.nrows == 5
+    assert C2.ncols == 5
 
 def test_mxm_mask(A):
     mask = Matrix.new_from_values([0, 3, 4], [2, 3, 2], [True, True, True], nrows=7, ncols=7)
@@ -165,6 +170,8 @@ def test_mxm_mask(A):
         [2,3,2],
         [9,9,7], nrows=7, ncols=7)
     assert C == result3
+    C2 = A.mxm(A, Semiring.PLUS_TIMES).new(mask)
+    assert C2 == result3
 
 def test_mxm_accum(A):
     A[BinaryOp.PLUS] = A.mxm(A, Semiring.PLUS_TIMES)
@@ -175,16 +182,15 @@ def test_mxm_accum(A):
     assert A == result
 
 def test_mxv(A, v):
-    v[:] = A.mxv(v, Semiring.PLUS_TIMES)
+    w = A.mxv(v, Semiring.PLUS_TIMES).new()
     result = Vector.new_from_values([0,1,6], [5,16,13])
-    assert v == result
+    assert w == result
 
 def test_ewise_mult(A):
     # Binary, Monoid, and Semiring
     B = Matrix.new_from_values([0,0,5], [1,2,2], [5,4,8], nrows=7, ncols=7)
     result = Matrix.new_from_values([0,5], [1,2], [10,8], nrows=7, ncols=7)
-    C = Matrix.new_from_type(A.dtype, A.nrows, A.ncols)
-    C[:] = A.ewise_mult(B, BinaryOp.TIMES)
+    C = A.ewise_mult(B, BinaryOp.TIMES).new()
     assert C == result
     C[:] = A.ewise_mult(B, Monoid.TIMES)
     assert C == result
@@ -199,8 +205,7 @@ def test_ewise_add(A):
         [2,0,1,2,2,2,3,3,4,4,5,5,6],
         [4,3,5,3,8,5,3,7,8,3,1,7,4]
     )
-    C = Matrix.new_from_type(A.dtype, A.nrows, A.ncols)
-    C[:] = A.ewise_add(B, BinaryOp.SECOND)  # possibly surprising, but SECOND(x, empty) == x
+    C = A.ewise_add(B, BinaryOp.SECOND).new()  # possibly surprising, but SECOND(x, empty) == x
     assert C == result
     C[:] = A.ewise_add(B, Monoid.MAX)
     assert C == result
@@ -216,6 +221,8 @@ def test_extract(A):
     assert C == result
     C[:] = A.extract[[0,3,6], 1:5:1]
     assert C == result
+    C2 = A.extract[[0,3,6], [1,2,3,4]].new()
+    assert C2 == result
 
 def test_extract_row(A):
     w = Vector.new_from_type(A.dtype, 3)
@@ -226,6 +233,8 @@ def test_extract_row(A):
     assert w == result
     w[:] = A.T.extract[[0,2,4], 6]
     assert w == result
+    w2 = A.extract[6, [0,2,4]].new()
+    assert w2 == result
 
 def test_extract_column(A):
     w = Vector.new_from_type(A.dtype, 3)
@@ -236,6 +245,8 @@ def test_extract_column(A):
     assert w == result
     w[:] = A.T.extract[2, [1,3,5]]
     assert w == result
+    w2 = A.extract[1:6:2, 2].new()
+    assert w2 == result
 
 def test_assign(A):
     B = Matrix.new_from_values([0,0,1], [0,1,0], [9,8,7])
@@ -313,8 +324,8 @@ def test_apply(A):
         [3,0,3,5,6,0,6,1,6,2,4,1],
         [0,1,2,2,2,3,3,4,4,5,5,6],
         [-3,-2,-3,-1,-5,-3,-7,-8,-3,-1,-7,-4])
-    A[:] = A.apply(UnaryOp.AINV)
-    assert A == result
+    C = A.apply(UnaryOp.AINV).new()
+    assert C == result
 
 def test_apply_binary(A):
     # Test bind-first and bind-second
@@ -322,19 +333,16 @@ def test_apply_binary(A):
 
 def test_reduce_row(A):
     result = Vector.new_from_values([0,1,2,3,4,5,6], [5,12,1,6,7,1,15])
-    w = Vector.new_from_type(A.dtype, 7)
-    w[:] = A.reduce_rows(Monoid.PLUS)
+    w = A.reduce_rows(Monoid.PLUS).new()
     assert w == result
 
 def test_reduce_column(A):
     result = Vector.new_from_values([0,1,2,3,4,5,6], [3,2,9,10,11,8,4])
-    w = Vector.new_from_type(A.dtype, 7)
-    w[:] = A.reduce_columns(Monoid.PLUS)
+    w = A.reduce_columns(Monoid.PLUS).new()
     assert w == result
 
 def test_reduce_scalar(A):
-    s = Scalar.new_from_type(A.dtype)
-    s[:] = A.reduce_scalar(Monoid.PLUS)
+    s = A.reduce_scalar(Monoid.PLUS).new()
     assert s == 47
 
 def test_transpose(A):
@@ -344,6 +352,8 @@ def test_transpose(A):
     C = Matrix.new_from_type(A.dtype, A.ncols, A.nrows)
     C[:] = A.T
     assert C == result
+    C2 = A.T.new()
+    assert C2 == result
 
 def test_kronecker(A):
     pytest.xfail('Not implemented in GraphBLAS 1.2')

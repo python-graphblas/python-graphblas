@@ -100,14 +100,14 @@ def test_remove_element(v):
     pytest.xfail('Not implemented in GraphBLAS 1.2')
 
 def test_vxm(v, A):
-    v[:] = v.vxm(A, Semiring.PLUS_TIMES)
+    w = v.vxm(A, Semiring.PLUS_TIMES).new()
     result = Vector.new_from_values([0,2,3,4,5,6], [3,3,0,8,14,4])
-    assert v == result
+    assert w == result
 
 def test_vxm_transpose(v, A):
-    v[:] = v.vxm(A.T, Semiring.PLUS_TIMES)
+    w = v.vxm(A.T, Semiring.PLUS_TIMES).new()
     result = Vector.new_from_values([0,1,6], [5,16,13])
-    assert v == result
+    assert w == result
 
 def test_vxm_nonsquare(v):
     A = Matrix.new_from_values([0, 3], [0, 1], [10, 20], nrows=7, ncols=2)
@@ -115,6 +115,12 @@ def test_vxm_nonsquare(v):
     u[:] = v.vxm(A, Semiring.MIN_PLUS)
     result = Vector.new_from_values([1], [21])
     assert u == result
+    w1 = v.vxm(A, Semiring.MIN_PLUS).new()
+    assert w1 == u
+    # Test the transpose case
+    v2 = Vector.new_from_values([0,1], [1,2])
+    w2 = v2.vxm(A.T, Semiring.MIN_PLUS).new()
+    assert w2.size == 7
 
 def test_vxm_mask(v, A):
     mask = Vector.new_from_values([0, 3, 4], [True, True, True], size=7)
@@ -130,6 +136,8 @@ def test_vxm_mask(v, A):
     u[mask, REPLACE] = v.vxm(A, Semiring.PLUS_TIMES)
     result3 = Vector.new_from_values([0,3,4], [3,0,8], size=7)
     assert u == result3
+    w = v.vxm(A, Semiring.PLUS_TIMES).new(mask)
+    assert w == result3
 
 def test_vxm_accum(v, A):
     v[BinaryOp.PLUS] = v.vxm(A, Semiring.PLUS_TIMES)
@@ -140,25 +148,23 @@ def test_ewise_mult(v):
     # Binary, Monoid, and Semiring
     v2 = Vector.new_from_values([0,3,5,6], [2,3,2,1])
     result = Vector.new_from_values([3,6], [3,0])
-    u = Vector.new_from_existing(v)
-    u[:] = v.ewise_mult(v2, BinaryOp.TIMES)
-    assert u == result
-    u[:] = v.ewise_mult(v2, Monoid.TIMES)
-    assert u == result
-    u[:] = v.ewise_mult(v2, Semiring.PLUS_TIMES)
-    assert u == result
+    w = v.ewise_mult(v2, BinaryOp.TIMES).new()
+    assert w == result
+    w[:] = v.ewise_mult(v2, Monoid.TIMES)
+    assert w == result
+    w[:] = v.ewise_mult(v2, Semiring.PLUS_TIMES)
+    assert w == result
 
 def test_ewise_add(v):
     # Binary, Monoid, and Semiring
     v2 = Vector.new_from_values([0,3,5,6], [2,3,2,1])
     result = Vector.new_from_values([0,1,3,4,5,6], [2,1,3,2,2,1])
-    u = Vector.new_from_existing(v)
-    u[:] = v.ewise_add(v2, BinaryOp.MAX)
-    assert u == result
-    u[:] = v.ewise_add(v2, Monoid.MAX)
-    assert u == result
-    u[:] = v.ewise_add(v2, Semiring.MAX_TIMES)
-    assert u == result
+    w = v.ewise_add(v2, BinaryOp.MAX).new()
+    assert w == result
+    w[:] = v.ewise_add(v2, Monoid.MAX)
+    assert w == result
+    w[:] = v.ewise_add(v2, Semiring.MAX_TIMES)
+    assert w == result
 
 def test_extract(v):
     w = Vector.new_from_type(v.dtype, 3)
@@ -167,6 +173,8 @@ def test_extract(v):
     assert w == result
     w[:] = v.extract[1::2]
     assert w == result
+    w2 = v.extract[1::2].new()
+    assert w2 == w
 
 def test_assign(v):
     u = Vector.new_from_values([0,2], [9, 8])
@@ -189,16 +197,15 @@ def test_assign_scalar(v):
 
 def test_apply(v):
     result = Vector.new_from_values([1,3,4,6], [-1,-1,-2,0])
-    v[:] = v.apply(UnaryOp.AINV)
-    assert v == result
+    w = v.apply(UnaryOp.AINV).new()
+    assert w == result
 
 def test_apply_binary(v):
     # Test bind-first and bind-second
     pytest.xfail('Not implemented in GraphBLAS 1.2')
 
 def test_reduce(v):
-    s = Scalar.new_from_type(v.dtype)
-    s[:] = v.reduce(Monoid.PLUS)
+    s = v.reduce(Monoid.PLUS).new()
     assert s == 4
     # Test accum
     s[BinaryOp.TIMES] = v.reduce(Monoid.PLUS)
