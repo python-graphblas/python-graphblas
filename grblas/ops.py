@@ -118,7 +118,7 @@ class UnaryOp(OpBase):
                 unary_udf = numba.njit(func)
                 # Build wrapper because GraphBLAS wants pointers and void return
                 wrapper_sig = nt.void(nt.CPointer(ret_type.numba_type),
-                                        nt.CPointer(type_.numba_type))
+                                      nt.CPointer(type_.numba_type))
                 @numba.cfunc(wrapper_sig, nopython=True)
                 def unary_wrapper(z, x):
                     result = unary_udf(x[0])
@@ -152,10 +152,50 @@ class BinaryOp(OpBase):
         ],
     }
 
-    def register_new(self, name, func, types):
+    @classmethod
+    def register_new(cls, name, func):
         if type(func) != FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
-        raise NotImplementedError()
+        if hasattr(cls, name):
+            raise AttributeError(f'UnaryOp.{name} is already defined')
+        success = False
+        new_type_obj = cls(name)
+        for type_, sample_val in dtypes._sample_values.items():
+            # Check if func can handle this data type
+            try:
+                ret = func(sample_val, sample_val)
+                if type(ret) == bool:
+                    ret_type = dtypes.BOOL
+                elif type_ == 'BOOL':
+                    # type_ == bool, but return type != bool; invalid
+                    continue
+                else:
+                    ret_type = type_
+
+                nt = numba.types
+                # JIT the func so it can be used from a cfunc
+                binary_udf = numba.njit(func)
+                # Build wrapper because GraphBLAS wants pointers and void return
+                wrapper_sig = nt.void(nt.CPointer(ret_type.numba_type),
+                                      nt.CPointer(type_.numba_type),
+                                      nt.CPointer(type_.numba_type))
+                @numba.cfunc(wrapper_sig, nopython=True)
+                def binary_wrapper(z, x, y):
+                    result = binary_udf(x[0], y[0])
+                    z[0] = result
+
+                new_binary = ffi.new('GrB_BinaryOp*')
+                lib.GrB_BinaryOp_new(new_binary, binary_wrapper.cffi, 
+                                     ret_type.gb_type, type_.gb_type, type_.gb_type)
+                new_type_obj[type_.name] = new_binary[0]
+                _return_type[new_binary[0]] = ret_type.name
+                success = True
+            except Exception:
+                continue
+        if success:
+            setattr(cls, name, new_type_obj)
+        else:
+            raise UdfParseError('Unable to parse function using Numba')
 
 
 class Monoid(OpBase):
@@ -169,10 +209,21 @@ class Monoid(OpBase):
         ],
     }
 
-    def register_new(self, name, binaryop, zero):
+    @classmethod
+    def register_new(cls, name, binaryop, zero):
         if type(binaryop) != BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
-        raise NotImplementedError()
+        new_type_obj = cls(name)
+        for type_ in binaryop.types:
+            type_ = dtypes.lookup(type_)
+            new_monoid = ffi.new('GrB_Monoid*')
+            func = getattr(lib, f'GrB_Monoid_new_{type_.name}')
+            zcast = ffi.cast(type_.c_type, zero)
+            func(new_monoid, binaryop[type_], zcast)
+            new_type_obj[type_.name] = new_monoid[0]
+            ret_type = find_return_type(binaryop[type_], type_)
+            _return_type[new_monoid[0]] = ret_type
+        setattr(cls, name, new_type_obj)
 
 
 class Semiring(OpBase):
@@ -188,12 +239,21 @@ class Semiring(OpBase):
         ],
     }
 
-    def register_new(self, name, monoid, binaryop):
+    @classmethod
+    def register_new(cls, name, monoid, binaryop):
         if type(monoid) != Monoid:
             raise TypeError(f'monoid must be a Monoid, not {type(monoid)}')
         if type(binaryop) != BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
-        raise NotImplementedError()
+        new_type_obj = cls(name)
+        for type_ in binaryop.types & monoid.types:
+            type_ = dtypes.lookup(type_)
+            new_semiring = ffi.new('GrB_Semiring*')
+            lib.GrB_Semiring_new(new_semiring, monoid[type_], binaryop[type_])
+            new_type_obj[type_.name] = new_semiring[0]
+            ret_type = find_return_type(monoid[type_], type_)
+            _return_type[new_semiring[0]] = ret_type
+        setattr(cls, name, new_type_obj)
 
 
 def find_opclass(gb_op):
