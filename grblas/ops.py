@@ -1,10 +1,16 @@
 import re
+import numba
+from types import FunctionType
 from _grblas import lib, ffi
-from .dtypes import DataType
-from .exceptions import check_status
+from . import dtypes
+from .exceptions import check_status, GrblasException
 
 
 UNKNOWN_OPCLASS = 'UnknownOpClass'
+
+
+class UdfParseError(GrblasException):
+    pass
 
 
 class OpBase:
@@ -34,7 +40,7 @@ class OpBase:
         return type_ in self._specific_types
     
     def _normalize_type(self, type_):
-        return type_.name if isinstance(type_, DataType) else type_
+        return type_.name if isinstance(type_, dtypes.DataType) else type_
     
     @property
     def types(self):
@@ -51,22 +57,29 @@ class OpBase:
             trim_from_back = -trim_from_back
         num_underscores = cls._parse_config['num_underscores']
 
-        for r in cls._parse_config['re_exprs']:
-            for varname in dir(lib):
-                m = r.match(varname)
-                if m:
-                    # Parse function into name and datatype
-                    splitname = m.string[trim_from_front:trim_from_back].split('_')
-                    if len(splitname) == num_underscores + 1:
-                        *splitname, type_ = splitname
-                    else:
-                        type_ = 'BOOL'
-                    name = '_'.join(splitname)
-                    # Create object for name unless it already exists
-                    if not hasattr(cls, name):
-                        setattr(cls, name, cls(name))
-                    obj = getattr(cls, name)
-                    obj[type_] = getattr(lib, varname)
+        for re_str, returns_bool in (('re_exprs', False),
+                                     ('re_exprs_return_bool', True)):
+            if re_str not in cls._parse_config:
+                continue
+            for r in cls._parse_config[re_str]:
+                for varname in dir(lib):
+                    m = r.match(varname)
+                    if m:
+                        # Parse function into name and datatype
+                        splitname = m.string[trim_from_front:trim_from_back].split('_')
+                        if len(splitname) == num_underscores + 1:
+                            *splitname, type_ = splitname
+                        else:
+                            type_ = 'BOOL'
+                        name = '_'.join(splitname)
+                        # Create object for name unless it already exists
+                        if not hasattr(cls, name):
+                            setattr(cls, name, cls(name))
+                        obj = getattr(cls, name)
+                        gb_obj = getattr(lib, varname)
+                        obj[type_] = gb_obj
+                        # Add to map of return types
+                        _return_type[gb_obj] = 'BOOL' if returns_bool else type_
         cls._initialized = True
 
 
@@ -75,10 +88,54 @@ class UnaryOp(OpBase):
         'trim_from_front': 4, 
         'num_underscores': 1,
         're_exprs': [
-            re.compile('^GrB_(IDENTITY|AINV|MINV|LNOT|ONE|ABS)_(BOOL|UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FP32|FP64)$'),
+            re.compile('^GrB_(IDENTITY|AINV|MINV)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
             re.compile('^GrB_LNOT$'),
-        ]
+        ],
     }
+
+    @classmethod
+    def register_new(cls, name, func):
+        if type(func) != FunctionType:
+            raise TypeError(f'udf must be a function, not {type(func)}')
+        if hasattr(cls, name):
+            raise AttributeError(f'UnaryOp.{name} is already defined')
+        success = False
+        new_type_obj = cls(name)
+        for type_, sample_val in dtypes._sample_values.items():
+            # Check if func can handle this data type
+            try:
+                ret = func(sample_val)
+                if type(ret) == bool:
+                    ret_type = dtypes.BOOL
+                elif type_ == 'BOOL':
+                    # type_ == bool, but return type != bool; invalid
+                    continue
+                else:
+                    ret_type = type_
+
+                nt = numba.types
+                # JIT the func so it can be used from a cfunc
+                unary_udf = numba.njit(func)
+                # Build wrapper because GraphBLAS wants pointers and void return
+                wrapper_sig = nt.void(nt.CPointer(ret_type.numba_type),
+                                      nt.CPointer(type_.numba_type))
+                @numba.cfunc(wrapper_sig, nopython=True)
+                def unary_wrapper(z, x):
+                    result = unary_udf(x[0])
+                    z[0] = result
+
+                new_unary = ffi.new('GrB_UnaryOp*')
+                lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi, 
+                                    ret_type.gb_type, type_.gb_type)
+                new_type_obj[type_.name] = new_unary[0]
+                _return_type[new_unary[0]] = ret_type.name
+                success = True
+            except Exception:
+                continue
+        if success:
+            setattr(cls, name, new_type_obj)
+        else:
+            raise UdfParseError('Unable to parse function using Numba')
 
 
 class BinaryOp(OpBase):
@@ -86,11 +143,59 @@ class BinaryOp(OpBase):
         'trim_from_front': 4, 
         'num_underscores': 1,
         're_exprs': [
-            re.compile('^GrB_(FIRST|SECOND|MIN|MAX|PLUS|MINUS|RMINUS|TIMES|DIV|RDIV|EQ|NE|GT|LT|GE|LE|LOR|LAND|LXOR)_(BOOL|UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FP32|FP64)$'),
-            re.compile('^GxB_(RMINUS|RDIV|ISEQ|ISNE|ISGT|ISLT|ISLE|ISGE)_(BOOL|UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FP32|FP64)$'),
+            re.compile('^GrB_(FIRST|SECOND|MIN|MAX|PLUS|MINUS|TIMES|DIV)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
             re.compile('^GrB_(LOR|LAND|LXOR)$'),
-        ]
+            re.compile('^GxB_(RMINUS|RDIV|ISEQ|ISNE|ISGT|ISLT|ISLE|ISGE)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+        ],
+        're_exprs_return_bool': [
+            re.compile('^GrB_(EQ|NE|GT|LT|GE|LE)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+        ],
     }
+
+    @classmethod
+    def register_new(cls, name, func):
+        if type(func) != FunctionType:
+            raise TypeError(f'udf must be a function, not {type(func)}')
+        if hasattr(cls, name):
+            raise AttributeError(f'UnaryOp.{name} is already defined')
+        success = False
+        new_type_obj = cls(name)
+        for type_, sample_val in dtypes._sample_values.items():
+            # Check if func can handle this data type
+            try:
+                ret = func(sample_val, sample_val)
+                if type(ret) == bool:
+                    ret_type = dtypes.BOOL
+                elif type_ == 'BOOL':
+                    # type_ == bool, but return type != bool; invalid
+                    continue
+                else:
+                    ret_type = type_
+
+                nt = numba.types
+                # JIT the func so it can be used from a cfunc
+                binary_udf = numba.njit(func)
+                # Build wrapper because GraphBLAS wants pointers and void return
+                wrapper_sig = nt.void(nt.CPointer(ret_type.numba_type),
+                                      nt.CPointer(type_.numba_type),
+                                      nt.CPointer(type_.numba_type))
+                @numba.cfunc(wrapper_sig, nopython=True)
+                def binary_wrapper(z, x, y):
+                    result = binary_udf(x[0], y[0])
+                    z[0] = result
+
+                new_binary = ffi.new('GrB_BinaryOp*')
+                lib.GrB_BinaryOp_new(new_binary, binary_wrapper.cffi, 
+                                     ret_type.gb_type, type_.gb_type, type_.gb_type)
+                new_type_obj[type_.name] = new_binary[0]
+                _return_type[new_binary[0]] = ret_type.name
+                success = True
+            except Exception:
+                continue
+        if success:
+            setattr(cls, name, new_type_obj)
+        else:
+            raise UdfParseError('Unable to parse function using Numba')
 
 
 class Monoid(OpBase):
@@ -99,9 +204,26 @@ class Monoid(OpBase):
         'trim_from_back': 7, 
         'num_underscores': 1,
         're_exprs': [
-            re.compile('^GxB_(EQ|LAND|LOR|LXOR|MAX|MIN|PLUS|TIMES)_(BOOL|UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FP32|FP64)_MONOID$'),
-        ]
+            re.compile('^GxB_(MAX|MIN|PLUS|TIMES)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)_MONOID$'),
+            re.compile('^GxB_(EQ|LAND|LOR|LXOR)_BOOL_MONOID$'),
+        ],
     }
+
+    @classmethod
+    def register_new(cls, name, binaryop, zero):
+        if type(binaryop) != BinaryOp:
+            raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
+        new_type_obj = cls(name)
+        for type_ in binaryop.types:
+            type_ = dtypes.lookup(type_)
+            new_monoid = ffi.new('GrB_Monoid*')
+            func = getattr(lib, f'GrB_Monoid_new_{type_.name}')
+            zcast = ffi.cast(type_.c_type, zero)
+            func(new_monoid, binaryop[type_], zcast)
+            new_type_obj[type_.name] = new_monoid[0]
+            ret_type = find_return_type(binaryop[type_], type_)
+            _return_type[new_monoid[0]] = ret_type
+        setattr(cls, name, new_type_obj)
 
 
 class Semiring(OpBase):
@@ -109,11 +231,29 @@ class Semiring(OpBase):
         'trim_from_front': 4, 
         'num_underscores': 2,
         're_exprs': [
-            re.compile('^GxB_(MIN|MAX|PLUS|TIMES)_(FIRST|SECOND|MIN|MAX|PLUS|MINUS|RMINUS|TIMES|DIV|RDIV|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR)_(UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FP32|FP64)$'),
-            re.compile('^GxB_(LOR|LAND|LXOR|EQ)_(EQ|NE|GT|LT|GE|LE)_(UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FP32|FP64)$'),
+            re.compile('^GxB_(MIN|MAX|PLUS|TIMES)_(FIRST|SECOND|MIN|MAX|PLUS|MINUS|RMINUS|TIMES|DIV|RDIV|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
             re.compile('^GxB_(LOR|LAND|LXOR|EQ)_(FIRST|SECOND|LOR|LAND|LXOR|EQ|GT|LT|GE|LE)_BOOL$'),
-        ]
+        ],
+        're_exprs_return_bool': [
+            re.compile('^GxB_(LOR|LAND|LXOR|EQ)_(EQ|NE|GT|LT|GE|LE)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+        ],
     }
+
+    @classmethod
+    def register_new(cls, name, monoid, binaryop):
+        if type(monoid) != Monoid:
+            raise TypeError(f'monoid must be a Monoid, not {type(monoid)}')
+        if type(binaryop) != BinaryOp:
+            raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
+        new_type_obj = cls(name)
+        for type_ in binaryop.types & monoid.types:
+            type_ = dtypes.lookup(type_)
+            new_semiring = ffi.new('GrB_Semiring*')
+            lib.GrB_Semiring_new(new_semiring, monoid[type_], binaryop[type_])
+            new_type_obj[type_.name] = new_semiring[0]
+            ret_type = find_return_type(monoid[type_], type_)
+            _return_type[new_semiring[0]] = ret_type
+        setattr(cls, name, new_type_obj)
 
 
 def find_opclass(gb_op):
@@ -127,26 +267,11 @@ def find_opclass(gb_op):
     return UNKNOWN_OPCLASS
 
 
-_udf_holder = {}
+_return_type = {}
 
-def build_udf(func, container):
-    # TODO: Involve numba here somehow
-    dtype = container.dtype
-    udf = ffi.new('GrB_UnaryOp*')
-    def op_func(z, x):
-        c_type = dtype.c_type
-        z = ffi.cast(f'{c_type}*', z)
-        x = ffi.cast(f'{c_type}*', x)
-        z[0] = func(x[0])
-    new_func = ffi.callback('void(void*, const void*)', op_func)
-    check_status(lib.GrB_UnaryOp_new(
-        udf,
-        new_func,
-        dtype.gb_type,
-        dtype.gb_type))
-    _udf_holder[id(container)] = (func, udf, new_func)
-    return udf[0]
-
-def free_udf(container):
-    # Remove any functions associated with container
-    _udf_holder.pop(id(container), None)
+def find_return_type(gb_op, dtype):
+    if isinstance(gb_op, OpBase):
+        gb_op = gb_op[dtype]
+    if gb_op not in _return_type:
+        raise KeyError('Unknown operator. You must register function prior to use.')
+    return _return_type[gb_op]
