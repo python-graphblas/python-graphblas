@@ -1,7 +1,7 @@
 # grblas
 Python wrapper around GraphBLAS
 
-To install, `conda install grblas`. This will also pull in the SuiteSparse `graphblas` compiled C library.
+To install, `conda install grblas -c jim22k`. This will also pull in the SuiteSparse `ss_graphblas` compiled C library.
 
 Currently works with SuiteSparse:GraphBLAS, but the goal is to make it work with all implementations of the GraphBLAS spec.
 
@@ -25,7 +25,7 @@ Python call: `M[~mask, accum, REPLACE] = A.T.mxm(B.T, semiring)`
 
 The objects receiving the flag operations (A.T, ~mask, etc) are also delayed objects. They hold on to the state but do no computation, allowing the correct descriptor bits to be set in a single GraphBLAS call.
 
-If no mask or accumulator is used, the call looks like this:
+**If no mask or accumulator is used, the call looks like this**:<br>
 `M[:] = A.mxm(B, semiring)`
 
 Python doesn't allow `__setitem__` on an empty key, so we use the empty slice to indicate "applies to all elements", i.e. there is no mask.
@@ -42,7 +42,7 @@ Python doesn't allow `__setitem__` on an empty key, so we use the empty slice to
    + `w[mask, accum] = A.extract[rows, col_index]`  # extract column
    + `w[mask, accum] = A.extract[row_index, cols]`  # extract row
  - assign:
-   + `M.assign[rows, cols, mask, accum] = A`  # rows and cols are a list of a slice
+   + `M.assign[rows, cols, mask, accum] = A`  # rows and cols are a list or a slice
    + `M.assign[rows, col_index, mask, accum] = v`  # assign column
    + `M.assign[row_index, cols, mask, accum] = v`  # assign row
    + `M.assign[rows, cols, mask, accum] = s`  # assign scalar
@@ -64,6 +64,9 @@ Python doesn't allow `__setitem__` on an empty key, so we use the empty slice to
  - new_type: `A = Matrix.new_from_type(dtype, num_rows, num_cols)`
  - dup: `B = Matrix.new_from_existing(A)`
  - build: `A = Matrix.new_from_values([row_indices], [col_indices], [values])`
+ - new from delayed:
+   - Delayed objects can be used to create a new object using `.new()` method
+   - `C = A.mxm(B, semiring).new()`
 
 # Properties
  - size: `size = v.size`
@@ -71,3 +74,22 @@ Python doesn't allow `__setitem__` on an empty key, so we use the empty slice to
  - ncols: `ncols = M.ncols`
  - nvals: `nvals = M.nvals`
  - extractTuples: `rindices, cindices, vals = M.to_values()`
+
+# User Defined Functions
+`grblas` requires `numba` which enables compiling user-defined Python functions to native C for use in GraphBLAS.
+
+Example for UnaryOp:
+```
+def force_odd(x):
+    if x % 2 == 0:
+        return x + 1
+    return x
+
+UnaryOp.register_new('force_odd', force_odd)
+
+v = Vector.new_from_values([0,1,3], [1,2,3])
+w = v.apply(UnaryOp.force_odd).new()
+w  # indexes=[0,1,3], values=[1,3,3]
+```
+
+Similar methods exist for BinaryOp, Monoid, and Semiring.
