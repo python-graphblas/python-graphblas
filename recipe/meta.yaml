@@ -14,19 +14,19 @@ build:
 
 requirements:
   build:
-    - python >=3.5
+    - python >=3.5,<3.8
     - cffi
     - ss_graphblas ==3.1.1
     - pytest-runner
   
   host:
-    - python >=3.5
+    - python >=3.5,<3.8
     - cffi
     - ss_graphblas ==3.1.1
     - pytest-runner
 
   run:
-    - python >=3.5
+    - python >=3.5,<3.8
     - cffi
     - ss_graphblas ==3.1.1
     - numba
