@@ -1,5 +1,5 @@
 {% set name = "grblas" %}
-{% set version = "1.2.0" %}
+{% set version = "1.2.1" %}
 
 package:
   name: "{{ name|lower }}"
@@ -7,7 +7,7 @@ package:
 
 source:
   url: https://github.com/jim22k/{{ name }}/archive/v{{ version }}.tar.gz
-  sha256: 02659f8fd5239bd4558d15d189227b1e1388c4659f104c876304f37c8de0be9a
+  sha256: c7fdcc3cfc5f887de851774e107f86b228a6993e77f81f782f0bcb0dcf30c30a
 
 build:
   number: 0
