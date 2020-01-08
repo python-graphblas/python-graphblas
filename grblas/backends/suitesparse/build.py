@@ -1,14 +1,18 @@
+import os
 from cffi import FFI
 ffibuilder = FFI()
 
 ffibuilder.set_source(
-    "_grblas",
+    "_suitesparse_grblas",
     r"""#include "GraphBLAS.h" """,
     libraries=['graphblas'])
 
-gb_cdef = open('cdef/suitesparse_graphblas_3.1.1.h')
+thisdir = os.path.dirname(__file__)
+
+gb_cdef = open(os.path.join(thisdir, 'suitesparse_graphblas_3.1.1.h'))
 
 ffibuilder.cdef(gb_cdef.read())
 
 if __name__ == '__main__':
     ffibuilder.compile(verbose=True)
+

@@ -1,4 +1,4 @@
-from _grblas import lib, ffi
+from . import lib, ffi
 from .exceptions import check_status
 
 _desc_map = {}

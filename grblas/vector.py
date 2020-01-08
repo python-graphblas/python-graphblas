@@ -246,11 +246,7 @@ class Vector(GbContainer):
         A BinaryOp can also be applied if a scalar is passed in as `left` or `right`,
             effectively converting a BinaryOp into a UnaryOp
         """
-        if isinstance(op, types.FunctionType):
-            op = build_udf(op, self)
-            opclass = 'UnaryOp'
-        else:
-            opclass = find_opclass(op)
+        opclass = find_opclass(op)
         if opclass == 'UnaryOp':
             if left is not None or right is not None:
                 raise TypeError('Cannot provide `left` or `right` for a UnaryOp')

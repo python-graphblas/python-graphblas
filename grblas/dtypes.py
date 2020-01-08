@@ -1,4 +1,4 @@
-from _grblas import lib
+from . import lib
 import numba
 
 

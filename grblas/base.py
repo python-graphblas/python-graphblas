@@ -1,4 +1,4 @@
-from _grblas import lib, ffi
+from . import lib, ffi
 from . import dtypes, ops, descriptor
 from .exceptions import check_status
 from .ops import OpBase
@@ -18,8 +18,6 @@ class GbContainer:
         
         self.gb_obj = gb_obj
         self.dtype = dtype
-        # Flag to indicate that `other[:] = self` should fail because `self` was created using `new`
-        self._is_assignable = True
 
     def __invert__(self):
         return ComplementedMask(self)

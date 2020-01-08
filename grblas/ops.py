@@ -1,7 +1,7 @@
 import re
 import numba
 from types import FunctionType
-from _grblas import lib, ffi
+from . import lib, ffi
 from . import dtypes
 from .exceptions import check_status, GrblasException
 
