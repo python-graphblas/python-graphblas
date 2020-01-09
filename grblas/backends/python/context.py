@@ -1,6 +1,10 @@
 from functools import wraps
-from .exceptions import return_error, GraphBlasException
-from .constants import GrB_Mode, GrB_Info
+from .exceptions import return_error, GraphBlasException, GrB_Info
+
+
+class GrB_Mode:
+    GrB_BLOCKING = object()
+    GrB_NONBLOCKING = object()
 
 
 # Decorator to automatically catch exceptions and return GrB_PANIC

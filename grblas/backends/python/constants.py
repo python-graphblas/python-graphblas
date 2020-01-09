@@ -1,51 +1,13 @@
-import numpy as np
-from . import vector, matrix
+from . import base, vector, matrix, operators, types, context, exceptions
 
-
-GrB_ALL = object()
-GrB_NULL = object()
-
-
-class GrB_Type:
-    GrB_BOOL = np.bool
-    GrB_INT8 = np.int8
-    GrB_UINT8 = np.uint8
-    GrB_INT16 = np.int16
-    GrB_UINT16 = np.uint16
-    GrB_INT32 = np.int32
-    GrB_UINT32 = np.uint32
-    GrB_INT64 = np.int64
-    GrB_UINT64 = np.uint64
-    GrB_FP32 = np.float32
-    GrB_FP64 = np.float64
-    GrB_Index = np.uint64
-
-
-class GrB_Info:
-    GrB_SUCCESS = object()
-    # API Errors
-    GrB_UNINITIALIZED_OBJECT = object()
-    GrB_NULL_POINTER = object()
-    GrB_INVALID_VALUE = object()
-    GrB_INVALID_INDEX = object()
-    GrB_DOMAIN_MISMATCH = object()
-    GrB_DIMENSION_MISMATCH = object()
-    GrB_OUTPUT_NOT_EMPTY = object()
-    GrB_NO_VALUE = object()
-    # Execution Errors
-    GrB_OUT_OF_MEMORY = object()
-    GrB_INSUFFICIENT_SPACE = object()
-    GrB_INVALID_OBJECT = object()
-    GrB_INDEX_OUT_OF_BOUNDS = object()
-    GrB_PANIC = object()
-
-
-class GrB_Mode:
-    GrB_BLOCKING = object()
-    GrB_NONBLOCKING = object()
-
-
-# Aliases
+# Standalone constants
+GrB_ALL = base.GrB_ALL
+GrB_NULL = base.GrB_NULL
+# Enums
+GrB_Mode = context.GrB_Mode
+GrB_Info = exceptions.GrB_Info
+# Opaque Objects
+GrB_Type = types.GrB_Type
 GrB_Vector = vector.Vector
 GrB_Matrix = matrix.Matrix
 # Algebra Methods
@@ -58,4 +20,7 @@ GrB_Matrix_new = matrix.Matrix_new
 GrB_Matrix_dup = matrix.Matrix_dup
 GrB_Matrix_resize = matrix.Matrix_resize
 # Descriptor Methods
+
 # Operations
+GrB_UnaryOp = operators.GrB_UnaryOp
+GrB_BinaryOp = operators.GrB_BinaryOp

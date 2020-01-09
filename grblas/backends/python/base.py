@@ -2,6 +2,10 @@ import numpy as np
 from .exceptions import GraphBlasException
 
 
+GrB_ALL = object()
+GrB_NULL = object()
+
+
 class GraphBlasContainer:
     @classmethod
     def get_pointer(cls):

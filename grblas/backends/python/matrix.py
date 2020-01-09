@@ -1,7 +1,7 @@
 from scipy.sparse import csr_matrix
 from .base import BasePointer, GraphBlasContainer
 from .context import handle_panic, return_error
-from .constants import GrB_Info
+from .exceptions import GrB_Info
 
 
 class MatrixPtr(BasePointer):
