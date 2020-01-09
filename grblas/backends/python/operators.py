@@ -217,3 +217,15 @@ def times(x, y):
 def div(x, y):
     """Division"""
     return x / y
+
+
+class Monoid:
+    def __init__(self, binaryop, identity):
+        self.op = binaryop
+        self.identity = identity
+
+
+class Semiring:
+    def __init__(self, plus_monoid, times_operator):
+        self.plus = plus_monoid
+        self.times = times_operator
