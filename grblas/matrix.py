@@ -562,6 +562,9 @@ class Matrix(GbContainer):
                     if type(key) in (list, slice):
                         raise TypeError('Assignment indexes for rows and columns must come first')
 
+            if isinstance(other, Scalar):
+                other = other.value
+
             if isinstance(other, (int, float, bool)):
                 if rowsize is None:
                     rows = [rows]

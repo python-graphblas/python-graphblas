@@ -194,6 +194,10 @@ def test_assign_scalar(v):
     w = Vector.new_from_existing(v)
     w.assign[1::2] = 9
     assert w == result
+    w = Vector.new_from_values([0,1,2], [1,1,1])
+    s = Scalar.new_from_value(9)
+    w.assign[:] = s
+    assert w == Vector.new_from_values([0,1,2], [9,9,9])
 
 def test_apply(v):
     result = Vector.new_from_values([1,3,4,6], [-1,-1,-2,0])

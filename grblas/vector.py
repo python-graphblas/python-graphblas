@@ -397,7 +397,10 @@ class Vector(GbContainer):
                 for key in keys:
                     if type(key) in (list, slice):
                         raise TypeError('Assignment indexes must come first')
-            
+
+            if isinstance(other, Scalar):
+                other = other.value
+
             if isinstance(other, (int, float, bool)):
                 dtype = self._vector.dtype
                 func = getattr(lib, f'GrB_Vector_assign_{dtype.name}')
