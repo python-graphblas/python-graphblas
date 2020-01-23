@@ -1,6 +1,5 @@
 import pytest
-from _grblas import lib
-from grblas import dtypes
+from grblas import dtypes, lib
 
 all_dtypes = (
     dtypes.BOOL,
@@ -71,3 +70,15 @@ def test_lookup_by_dtype():
     assert dtypes.lookup(bool) == dtypes.BOOL
     assert dtypes.lookup(int) == dtypes.INT64
     assert dtypes.lookup(float) == dtypes.FP64
+
+def test_unify_dtypes():
+    assert dtypes.unify(dtypes.BOOL, dtypes.BOOL) == dtypes.BOOL
+    assert dtypes.unify(dtypes.BOOL, dtypes.INT16) == dtypes.INT16
+    assert dtypes.unify(dtypes.INT16, dtypes.INT8) == dtypes.INT16
+    assert dtypes.unify(dtypes.UINT32, dtypes.UINT8) == dtypes.UINT32
+    assert dtypes.unify(dtypes.UINT32, dtypes.FP32) == dtypes.FP32
+    assert dtypes.unify(dtypes.INT32, dtypes.FP32) == dtypes.FP32
+    assert dtypes.unify(dtypes.FP64, dtypes.UINT8) == dtypes.FP64
+    assert dtypes.unify(dtypes.FP64, dtypes.FP32) == dtypes.FP64
+    assert dtypes.unify(dtypes.INT16, dtypes.UINT16) == dtypes.INT32
+    assert dtypes.unify(dtypes.UINT64, dtypes.INT8) == dtypes.FP64

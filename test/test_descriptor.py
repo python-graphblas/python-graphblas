@@ -1,6 +1,5 @@
 import pytest
-from _grblas import ffi
-from grblas import descriptor
+from grblas import descriptor, ffi
 
 def test_caching():
     """

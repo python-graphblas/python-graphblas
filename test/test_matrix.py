@@ -1,5 +1,5 @@
 import pytest
-from _grblas import lib, ffi
+from grblas import lib, ffi
 from grblas import Matrix, Vector, Scalar
 from grblas import UnaryOp, BinaryOp, Monoid, Semiring
 from grblas import dtypes, descriptor
@@ -170,7 +170,7 @@ def test_mxm_mask(A):
         [2,3,2],
         [9,9,7], nrows=7, ncols=7)
     assert C == result3
-    C2 = A.mxm(A, Semiring.PLUS_TIMES).new(mask)
+    C2 = A.mxm(A, Semiring.PLUS_TIMES).new(mask=mask)
     assert C2 == result3
 
 def test_mxm_accum(A):
