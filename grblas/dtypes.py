@@ -1,3 +1,4 @@
+import re
 from . import lib
 import numba
 import numpy as np
@@ -93,3 +94,45 @@ def lookup(key):
             return _registry[key.name]
         else:
             raise
+
+
+_bits_pattern = re.compile(r'\D+(\d+)$')
+
+
+def unify(type1, type2):
+    """
+    Returns a type that can hold both type1 and type2
+
+    For example:
+    unify(INT32, INT64) -> INT64
+    unify(INT8, UINT16) -> INT32
+    unify(BOOL, UINT16) -> UINT16
+    unify(FP32, INT32) -> FP32
+    """
+    if type1 == type2:
+        return type1
+    # Bools fit anywhere
+    if type1 == BOOL:
+        return type2
+    if type2 == BOOL:
+        return type1
+    # Compute bit numbers for comparison
+    num1 = int(_bits_pattern.match(type1.name).group(1))
+    num2 = int(_bits_pattern.match(type2.name).group(1))
+    # Floats anywhere requires floats
+    if type1.name[0] == 'F' or type2.name[0] == 'F':
+        return lookup(f'FP{max(num1, num2)}')
+    # Both ints or both uints is easy
+    if type1.name[0] == type2.name[0]:
+        return type2 if num2 > num1 else type1
+    # Mixed int/uint is a little harder
+    # Need to double the uint bit number to safely store as int
+    # Beyond 64, we have to move to float
+    if type1.name[0] == 'U':
+        num1 *= 2
+    else:  # type2 is unsigned
+        num2 *= 2
+    maxnum = max(num1, num2)
+    if maxnum > 64:
+        return FP64
+    return lookup(f'INT{maxnum}')

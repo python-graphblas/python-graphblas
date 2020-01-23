@@ -269,7 +269,9 @@ def find_opclass(gb_op):
 
 _return_type = {}
 
-def find_return_type(gb_op, dtype):
+def find_return_type(gb_op, dtype, dtype2=None):
+    if dtype2 is not None:
+        dtype = dtypes.unify(dtype, dtype2)
     if isinstance(gb_op, OpBase):
         gb_op = gb_op[dtype]
     if gb_op not in _return_type:

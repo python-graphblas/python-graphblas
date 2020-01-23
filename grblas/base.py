@@ -111,10 +111,19 @@ class GbDelayed:
     def __repr__(self):
         return f'GbDelayed<{self.func.__name__}>'
 
-    def new(self, mask=None):
+    def new(self, *, dtype=None, mask=None):
+        """
+        Force computation of the GbDelayed object.
+        dtype and mask are the only controllable parameters.
+        """
         if self.output_constructor is None:
             raise Exception('output_constructor was not defined. Unable to use `new` method.')
-        output = self.output_constructor()
+        if dtype is not None:
+            if 'dtype' not in self.output_constructor.keywords:
+                raise Exception('output_constructor does not use `dtype`; invalid to specify for this usage')
+            output = self.output_constructor(dtype=dtype)
+        else:
+            output = self.output_constructor()
         if mask is None:
             mask = slice(None)  # [:] indicates no mask
         elif not isinstance(mask, output.__class__):

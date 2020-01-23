@@ -1,5 +1,5 @@
 import pytest
-from _grblas import lib, ffi
+from grblas import lib, ffi
 from grblas import Scalar
 from grblas import UnaryOp, BinaryOp, Monoid, Semiring
 from grblas import dtypes, descriptor

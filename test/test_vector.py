@@ -1,5 +1,5 @@
 import pytest
-from _grblas import lib, ffi
+from grblas import lib, ffi
 from grblas import Matrix, Vector, Scalar
 from grblas import UnaryOp, BinaryOp, Monoid, Semiring
 from grblas import dtypes, descriptor
@@ -136,7 +136,7 @@ def test_vxm_mask(v, A):
     u[mask, REPLACE] = v.vxm(A, Semiring.PLUS_TIMES)
     result3 = Vector.new_from_values([0,3,4], [3,0,8], size=7)
     assert u == result3
-    w = v.vxm(A, Semiring.PLUS_TIMES).new(mask)
+    w = v.vxm(A, Semiring.PLUS_TIMES).new(mask=mask)
     assert w == result3
 
 def test_vxm_accum(v, A):
@@ -153,6 +153,15 @@ def test_ewise_mult(v):
     w[:] = v.ewise_mult(v2, Monoid.TIMES)
     assert w == result
     w[:] = v.ewise_mult(v2, Semiring.PLUS_TIMES)
+    assert w == result
+
+def test_ewise_mult_change_dtype(v):
+    # We want to divide by 2, converting ints to floats
+    v2 = Vector.new_from_values([1,3,4,6], [2,2,2,2])
+    assert v.dtype == dtypes.INT64
+    assert v2.dtype == dtypes.INT64
+    result = Vector.new_from_values([1,3,4,6], [0.5,0.5,1.0,0], dtype=dtypes.FP64)
+    w = v.ewise_mult(v2, BinaryOp.DIV).new(dtype=dtypes.FP64)
     assert w == result
 
 def test_ewise_add(v):
