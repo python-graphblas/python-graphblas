@@ -9,7 +9,7 @@ Vector = None
 Scalar = None
 UnaryOp, BinaryOp, Monoid, Semiring = None, None, None, None
 
-def init(backend, blocking=True):
+def init(backend='suitesparse', blocking=True):
     global lib, ffi, REPLACE, Matrix, Vector, Scalar, UnaryOp, BinaryOp, Monoid, Semiring
 
     ffi_backend = importlib.import_module(f'.backends.{backend}', __name__)
