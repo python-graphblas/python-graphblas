@@ -1,5 +1,5 @@
 import pytest
-from _grblas import lib
+from grblas import lib
 from grblas import UnaryOp, BinaryOp, Monoid, Semiring
 from grblas import dtypes, ops
 from grblas import Vector, Matrix

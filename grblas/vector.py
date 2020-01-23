@@ -191,8 +191,8 @@ class Vector(GbContainer):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_eWiseAdd_Vector_{opclass}')
         output_constructor = partial(Vector.new_from_type,
-                                     find_return_type(op, self.dtype),
-                                     self.size)
+                                     dtype=find_return_type(op, self.dtype, other.dtype),
+                                     size=self.size)
         return GbDelayed(func,
                          [op, self.gb_obj[0], other.gb_obj[0]],
                          output_constructor=output_constructor)
@@ -212,8 +212,8 @@ class Vector(GbContainer):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_eWiseMult_Vector_{opclass}')
         output_constructor = partial(Vector.new_from_type,
-                                     find_return_type(op, self.dtype),
-                                     self.size)
+                                     dtype=find_return_type(op, self.dtype, other.dtype),
+                                     size=self.size)
         return GbDelayed(func,
                          [op, self.gb_obj[0], other.gb_obj[0]],
                          output_constructor=output_constructor)
@@ -232,8 +232,8 @@ class Vector(GbContainer):
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
         output_constructor = partial(Vector.new_from_type,
-                                     find_return_type(op, self.dtype),
-                                     other.ncols)
+                                     dtype=find_return_type(op, self.dtype, other.dtype),
+                                     size=other.ncols)
         return GbDelayed(lib.GrB_vxm,
                          [op, self.gb_obj[0], other.gb_obj[0]],
                          bt=other.is_transposed,
@@ -246,11 +246,7 @@ class Vector(GbContainer):
         A BinaryOp can also be applied if a scalar is passed in as `left` or `right`,
             effectively converting a BinaryOp into a UnaryOp
         """
-        if isinstance(op, types.FunctionType):
-            op = build_udf(op, self)
-            opclass = 'UnaryOp'
-        else:
-            opclass = find_opclass(op)
+        opclass = find_opclass(op)
         if opclass == 'UnaryOp':
             if left is not None or right is not None:
                 raise TypeError('Cannot provide `left` or `right` for a UnaryOp')
@@ -262,8 +258,8 @@ class Vector(GbContainer):
         else:
             raise TypeError('apply only accepts UnaryOp or BinaryOp')
         output_constructor = partial(Vector.new_from_type,
-                                     find_return_type(op, self.dtype),
-                                     self.size)
+                                     dtype=find_return_type(op, self.dtype),
+                                     size=self.size)
         if opclass == 'UnaryOp':
             return GbDelayed(lib.GrB_Vector_apply,
                              [op, self.gb_obj[0]],
@@ -284,7 +280,7 @@ class Vector(GbContainer):
                 op = Monoid.PLUS
         func = getattr(lib, f'GrB_Vector_reduce_{self.dtype.name}')
         output_constructor = partial(Scalar.new_from_type,
-                                     find_return_type(op, self.dtype))
+                                     dtype=find_return_type(op, self.dtype))
         return GbDelayed(func,
                         [op, self.gb_obj[0]],
                         output_constructor=output_constructor)
@@ -364,8 +360,8 @@ class Vector(GbContainer):
             if isize is None:
                 raise TypeError('Use v.element[i] to get a single element')
             output_constructor = partial(Vector.new_from_type,
-                                         self._vector.dtype,
-                                         isize)
+                                         dtype=self._vector.dtype,
+                                         size=isize)
             return GbDelayed(lib.GrB_Vector_extract,
                             [self._vector.gb_obj[0], index, isize],
                             output_constructor=output_constructor)
@@ -401,7 +397,10 @@ class Vector(GbContainer):
                 for key in keys:
                     if type(key) in (list, slice):
                         raise TypeError('Assignment indexes must come first')
-            
+
+            if isinstance(other, Scalar):
+                other = other.value
+
             if isinstance(other, (int, float, bool)):
                 dtype = self._vector.dtype
                 func = getattr(lib, f'GrB_Vector_assign_{dtype.name}')
