@@ -87,6 +87,10 @@ class GbContainer:
 
         return mask, accum, complement, replace
 
+    def show(self):
+        from . import io
+        return io.show(self)
+
 
 class GbDelayed:
     def __init__(self, func, tail_args, at=False, bt=False, output_constructor=None):

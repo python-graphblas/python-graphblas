@@ -1,5 +1,6 @@
 from . import lib
 import numba
+import numpy as np
 
 
 class DataType:
@@ -72,6 +73,8 @@ for x in _sample_values:
     _registry[x.name] = x
     _registry[x.gb_type] = x
     _registry[x.c_type] = x
+    _registry[x.numba_type] = x
+    _registry[x.numba_type.name] = x
 del x
 # Add some common Python types as lookup keys
 _registry[int] = DataType.from_pytype(int)
@@ -83,4 +86,10 @@ def lookup(key):
     # Check for silly lookup where key is already a DataType
     if isinstance(key, DataType):
         return key
-    return _registry[key]
+    try:
+        return _registry[key]
+    except KeyError:
+        if hasattr(key, 'name'):
+            return _registry[key.name]
+        else:
+            raise
