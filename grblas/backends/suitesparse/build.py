@@ -3,7 +3,7 @@ from cffi import FFI
 ffibuilder = FFI()
 
 ffibuilder.set_source(
-    "_suitesparse_grblas",
+    "grblas.backends.suitesparse._suitesparse_grblas",
     r"""#include "GraphBLAS.h" """,
     libraries=['graphblas'])
 
