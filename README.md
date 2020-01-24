@@ -15,7 +15,7 @@ At the highest level, the approach is to separate output, mask, and accumulator 
 operator (=) and put the computation on the right side.
 
 This is an example of how the mapping works:<br>
-C call: `GrB_Matrix_mxm(M, mask, accum, A, B, semiring, desc=NULL)`<br>
+C call: `GrB_Matrix_mxm(M, mask, accum, semiring, A, B, desc=NULL)`<br>
 Python call: `M[mask, accum] = A.mxm(B, semiring)`<br>
 _where_
  - accum is `GrB_PLUS_INT64` (in C) and `BinaryOp.PLUS` (in Python)
