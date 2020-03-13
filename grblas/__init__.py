@@ -45,8 +45,8 @@ def _init(backend, blocking, automatic=False):
 
     ffi_backend = importlib.import_module(f'.backends.{backend}', __name__)
 
-    globals()["lib"] = ffi_backend.lib
-    globals()["ffi"] = ffi_backend.ffi
+    lib = ffi_backend.lib
+    ffi = ffi_backend.ffi
 
     # This must be called before anything else happens
     if blocking:
@@ -63,11 +63,3 @@ def _init(backend, blocking, automatic=False):
     BinaryOp._initialize()
     Monoid._initialize()
     Semiring._initialize()
-
-    globals()["Matrix"] = Matrix
-    globals()["Vector"] = Vector
-    globals()["Scalar"] = Scalar
-    globals()["UnaryOp"] = UnaryOp
-    globals()["BinaryOp"] = BinaryOp
-    globals()["Monoid"] = Monoid
-    globals()["Semiring"] = Semiring

@@ -15,7 +15,10 @@ class Updater:
         # Occurs when user calls C(params)[index]; need something prepared to receive `<<` or `.update()`
         if self.parent.is_scalar:
             raise TypeError('Indexing not supported for Scalars')
-        resolved_indexes = IndexerResolver(self.parent, keys)
+        if type(keys) == IndexerResolver:
+            resolved_indexes = keys
+        else:
+            resolved_indexes = IndexerResolver(self.parent, keys)
         return AmbiguousAssignOrExtract(self, resolved_indexes)
 
     def __setitem__(self, keys, obj):
@@ -243,11 +246,11 @@ class AmbiguousAssignOrExtract:
         self.parent = parent
         self.resolved_indexes = resolved_indexes
 
-    def __call__(self, **kwargs):
+    def __call__(self, *args, **kwargs):
         # Occurs when user calls C[index](params)
-        # Upgrade self.parent to an Updater, then return self in preparation for `<<` or `.update()` call
-        self.parent = Updater(self.parent, **kwargs)
-        return self
+        # Reverse the call order so we can parse the call args and kwargs
+        updater = self.parent(*args, **kwargs)
+        return updater[self.resolved_indexes]
 
     def __lshift__(self, obj):
         # Occurs when user calls C(params)[index] << obj or C[index] << obj
