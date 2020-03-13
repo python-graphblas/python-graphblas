@@ -21,8 +21,8 @@ def show(m):
         for i, val in zip(*m.to_values()):
             df.iloc[i] = val
         df = df.where(pd.notnull(df), '').T
-    elif isinstance(m, Scalar):
-        df = m.value
+    # elif isinstance(m, Scalar):
+    #     df = m.value
     else:
         return
 

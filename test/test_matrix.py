@@ -3,7 +3,6 @@ from grblas import lib, ffi
 from grblas import Matrix, Vector, Scalar
 from grblas import UnaryOp, BinaryOp, Monoid, Semiring
 from grblas import dtypes, descriptor
-from grblas import REPLACE
 from grblas.exceptions import IndexOutOfBound, DimensionMismatch
 
 @pytest.fixture
@@ -32,15 +31,15 @@ def test_new_from_type():
     assert C.ncols == 12
 
 def test_new_from_existing(A):
-    C = Matrix.new_from_existing(A)
+    C = A.dup()
     assert C is not A
     assert C.dtype == A.dtype
     assert C.nvals == A.nvals
     assert C.nrows == A.nrows
     assert C.ncols == A.ncols
     # Ensure they are not the same backend object
-    A.element[0, 0] = 1000
-    assert C.element[0, 0] != 1000
+    A[0, 0] = 1000
+    assert C[0, 0].value != 1000
 
 def test_new_from_values():
     C = Matrix.new_from_values([0, 1, 3], [1, 1, 2], [True, False, True])
@@ -58,7 +57,7 @@ def test_new_from_values():
     assert C3.ncols == 3
     assert C3.nvals == 2  # duplicates were combined
     assert C3.dtype == int
-    assert C3.element[1, 1] == 6  # 2*3
+    assert C3[1, 1].value == 6  # 2*3
     with pytest.raises(ValueError):
         # Duplicate indices requires a dup_op
         Matrix.new_from_values([0, 1, 1], [2, 1, 1], [True, True, True])
@@ -93,21 +92,21 @@ def test_rebuild(A):
 
 def test_extract_values(A):
     rows, cols, vals = A.to_values()
-    assert tuple(rows) == (0,0,1,1,2,3,3,4,5,6,6,6)
-    assert tuple(cols) == (1,3,4,6,5,0,2,5,2,2,3,4)
-    assert tuple(vals) == (2,3,8,4,1,3,3,7,1,5,7,3)
+    assert rows == (0,0,1,1,2,3,3,4,5,6,6,6)
+    assert cols == (1,3,4,6,5,0,2,5,2,2,3,4)
+    assert vals == (2,3,8,4,1,3,3,7,1,5,7,3)
 
 def test_extract_element(A):
-    assert A.element[3, 0] == 3
-    assert A.element[1, 6] == 4
+    assert A[3, 0].new() == 3
+    assert A[1, 6].value == 4
 
 def test_set_element(A):
-    assert A.element[1, 1] is None
-    assert A.element[3, 0] == 3
-    A.element[1, 1] = 21
-    A.element[3, 0] = -5
-    assert A.element[1, 1] == 21
-    assert A.element[3, 0] == -5
+    assert A[1, 1].value is None
+    assert A[3, 0].value == 3
+    A[1, 1].update(21)
+    A[3, 0] << -5
+    assert A[1, 1].value == 21
+    assert A[3, 0].new() == -5
 
 def test_remove_element(A):
     pytest.xfail('Not implemented in GraphBLAS 1.2')
@@ -122,13 +121,13 @@ def test_mxm(A):
 
 def test_mxm_transpose(A):
     C = Matrix.new_from_existing(A)
-    C[:] = A.mxm(A.T, Semiring.PLUS_TIMES)
+    C << A.mxm(A.T, Semiring.PLUS_TIMES)
     result = Matrix.new_from_values(
         [0, 0, 1, 1, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6, 6, 6, 6, 6],
         [0, 6, 1, 6, 2, 4, 3, 5, 6, 2, 4, 3, 5, 6, 0, 1, 3, 5, 6],
         [13, 21, 80, 24, 1, 7, 18, 3, 15, 7, 49, 3, 1, 5, 21, 24, 15, 5, 83])
     assert C == result
-    C[:] = A.T.mxm(A, Semiring.PLUS_TIMES)
+    C << A.T.mxm(A, Semiring.PLUS_TIMES)
     result2 = Matrix.new_from_values(
         [0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 6, 6],
         [0, 2, 1, 3, 0, 2, 3, 4, 1, 2, 3, 4, 2, 3, 4, 6, 5, 4, 6],
@@ -139,8 +138,8 @@ def test_mxm_nonsquare():
     A = Matrix.new_from_values([0, 0, 0], [0, 2, 4], [1, 2, 3], nrows=1, ncols=5)
     B = Matrix.new_from_values([0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1)
     C = Matrix.new_from_type(A.dtype, nrows=1, ncols=1)
-    C[:] = A.mxm(B, Semiring.MAX_PLUS)
-    assert C.element[0, 0] == 33
+    C << A.mxm(B, Semiring.MAX_PLUS)
+    assert C[0, 0].value == 33
     C1 = A.mxm(B, Semiring.MAX_PLUS).new()
     assert C1 == C
     C2 = A.T.mxm(B.T, Semiring.MAX_PLUS).new()
@@ -150,21 +149,21 @@ def test_mxm_nonsquare():
 def test_mxm_mask(A):
     mask = Matrix.new_from_values([0, 3, 4], [2, 3, 2], [True, True, True], nrows=7, ncols=7)
     C = Matrix.new_from_existing(A)
-    C[mask] = A.mxm(A, Semiring.PLUS_TIMES)
+    C(mask) << A.mxm(A, Semiring.PLUS_TIMES)
     result = Matrix.new_from_values(
         [0, 0, 0, 1, 1, 2, 3, 3, 3, 4, 4, 5, 6, 6, 6],
         [1, 2, 3, 4, 6, 5, 0, 2, 3, 2, 5, 2, 2, 3, 4],
         [2, 9, 3, 8, 4, 1, 3, 3, 9, 7, 7, 1, 5, 7, 3])
     assert C == result
     C = Matrix.new_from_existing(A)
-    C[~mask] = A.mxm(A, Semiring.PLUS_TIMES)
+    C(~mask) << A.mxm(A, Semiring.PLUS_TIMES)
     result2 = Matrix.new_from_values(
         [0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 5, 6, 6, 6], 
         [0, 4, 6, 2, 3, 4, 5, 2, 1, 5, 5, 0, 2, 5],
         [9, 16, 8, 20, 28, 12, 56, 1, 6, 3, 1, 21, 21, 26])
     assert C == result2
     C = Matrix.new_from_existing(A)
-    C[mask, REPLACE] = A.mxm(A, Semiring.PLUS_TIMES)
+    C(mask, replace=True).update(A.mxm(A, Semiring.PLUS_TIMES))
     result3 = Matrix.new_from_values(
         [0,3,4],
         [2,3,2],
@@ -174,7 +173,7 @@ def test_mxm_mask(A):
     assert C2 == result3
 
 def test_mxm_accum(A):
-    A[BinaryOp.PLUS] = A.mxm(A, Semiring.PLUS_TIMES)
+    A(BinaryOp.PLUS) << A.mxm(A, Semiring.PLUS_TIMES)
     result = Matrix.new_from_values(
         [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 3, 3, 3, 3, 3, 4, 4, 5, 5, 6, 6, 6, 6, 6],
         [0, 1, 2, 3, 4, 6, 2, 3, 4, 5, 6, 2, 5, 0, 1, 2, 3, 5, 2, 5, 2, 5, 0, 2, 3, 4, 5],
@@ -192,9 +191,9 @@ def test_ewise_mult(A):
     result = Matrix.new_from_values([0,5], [1,2], [10,8], nrows=7, ncols=7)
     C = A.ewise_mult(B, BinaryOp.TIMES).new()
     assert C == result
-    C[:] = A.ewise_mult(B, Monoid.TIMES)
+    C() << A.ewise_mult(B, Monoid.TIMES)
     assert C == result
-    C[:] = A.ewise_mult(B, Semiring.PLUS_TIMES)
+    C << A.ewise_mult(B, Semiring.PLUS_TIMES)
     assert C == result
 
 def test_ewise_add(A):
@@ -207,45 +206,45 @@ def test_ewise_add(A):
     )
     C = A.ewise_add(B, BinaryOp.SECOND).new()  # possibly surprising, but SECOND(x, empty) == x
     assert C == result
-    C[:] = A.ewise_add(B, Monoid.MAX)
+    C << A.ewise_add(B, Monoid.MAX)
     assert C == result
-    C[:] = A.ewise_add(B, Semiring.MAX_MINUS)
+    C << A.ewise_add(B, Semiring.MAX_MINUS)
     assert C == result
 
 def test_extract(A):
     C = Matrix.new_from_type(A.dtype, 3, 4)
     result = Matrix.new_from_values([0,0,1,2,2,2], [0,2,1,1,2,3], [2,3,3,5,7,3], nrows=3, ncols=4)
-    C[:] = A.extract[[0,3,6], [1,2,3,4]]
+    C << A[[0,3,6], [1,2,3,4]]
     assert C == result
-    C[:] = A.extract[0::3, 1:5]
+    C << A[0::3, 1:5]
     assert C == result
-    C[:] = A.extract[[0,3,6], 1:5:1]
+    C << A[[0,3,6], 1:5:1]
     assert C == result
-    C2 = A.extract[[0,3,6], [1,2,3,4]].new()
+    C2 = A[[0,3,6], [1,2,3,4]].new()
     assert C2 == result
 
 def test_extract_row(A):
     w = Vector.new_from_type(A.dtype, 3)
     result = Vector.new_from_values([1,2], [5,3], size=3)
-    w[:] = A.extract[6, [0,2,4]]
+    w << A[6, [0,2,4]]
     assert w == result
-    w[:] = A.extract[6, :5:2]
+    w << A[6, :5:2]
     assert w == result
-    w[:] = A.T.extract[[0,2,4], 6]
+    w << A.T[[0,2,4], 6]
     assert w == result
-    w2 = A.extract[6, [0,2,4]].new()
+    w2 = A[6, [0,2,4]].new()
     assert w2 == result
 
 def test_extract_column(A):
     w = Vector.new_from_type(A.dtype, 3)
     result = Vector.new_from_values([1,2], [3,1], size=3)
-    w[:] = A.extract[[1,3,5], 2]
+    w << A[[1,3,5], 2]
     assert w == result
-    w[:] = A.extract[1:6:2, 2]
+    w << A[1:6:2, 2]
     assert w == result
-    w[:] = A.T.extract[2, [1,3,5]]
+    w << A.T[2, [1,3,5]]
     assert w == result
-    w2 = A.extract[1:6:2, 2].new()
+    w2 = A[1:6:2, 2].new()
     assert w2 == result
 
 def test_assign(A):
@@ -255,16 +254,16 @@ def test_assign(A):
         [0,5,0,0,1,2,2,2,3,3,4,4,5,6],
         [9,8,7,3,2,3,1,5,3,7,8,3,7,4])
     C = Matrix.new_from_existing(A)
-    C.assign[[0,2], [0,5]] = B
+    C()[[0,2], [0,5]] = B
     assert C == result
     C = Matrix.new_from_existing(A)
-    C.assign[:3:2, :6:5] = B
+    C[:3:2, :6:5]() << B
     assert C == result
 
 def test_assign_wrong_dims(A):
     B = Matrix.new_from_values([0,0,1], [0,1,0], [9,8,7])
     with pytest.raises(DimensionMismatch):
-        A.assign[[0,2,4], [0,5]] = B
+        A[[0,2,4], [0,5]] = B
 
 def test_assign_row(A, v):
     result = Matrix.new_from_values(
@@ -272,7 +271,7 @@ def test_assign_row(A, v):
         [0,2,2,2,3,4,4,5,5,6,1,3,4,6],
         [3,3,1,5,7,8,3,1,7,4,1,1,2,0])
     C = Matrix.new_from_existing(A)
-    C.assign[0, :] = v
+    C[0, :] = v
     assert C == result
 
 def test_assign_column(A, v):
@@ -281,7 +280,7 @@ def test_assign_column(A, v):
         [0,2,2,2,3,3,4,4,5,5,6,1,1,1,1],
         [3,3,1,5,3,7,8,3,1,7,4,1,1,2,0])
     C = Matrix.new_from_existing(A)
-    C.assign[:, 1] = v
+    C[:, 1] = v
     assert C == result
 
 def test_assign_scalar(A):
@@ -291,10 +290,10 @@ def test_assign_scalar(A):
         [0,1,2,3,3,4,5,5,6,2,2,2,4,4,4],
         [3,2,5,3,7,3,1,7,4,0,0,0,0,0,0])
     C = Matrix.new_from_existing(A)
-    C.assign[[1,3,5], [2,4]] = 0
+    C[[1,3,5], [2,4]] = 0
     assert C == result_block
     C = Matrix.new_from_existing(A)
-    C.assign[1::2, 2:5:2] = 0
+    C[1::2, 2:5:2] = 0
     assert C == result_block
     # Test row
     result_row = Matrix.new_from_values(
@@ -302,10 +301,10 @@ def test_assign_scalar(A):
         [0,1,2,3,3,4,5,5,6,2,2,2,4],
         [3,2,5,3,7,3,1,7,4,3,1,0,0])
     C = Matrix.new_from_existing(A)
-    C.assign[1, [2,4]] = 0
+    C[1, [2,4]] = 0
     assert C == result_row
     C = Matrix.new_from_existing(A)
-    C.assign[1, 2:5:2] = 0
+    C[1, 2:5:2] = 0
     assert C == result_row
     # Test column
     result_column = Matrix.new_from_values(
@@ -313,10 +312,10 @@ def test_assign_scalar(A):
         [0,1,2,3,3,4,5,5,6,4,2,2,2],
         [3,2,5,3,7,3,1,7,4,8,0,0,0])
     C = Matrix.new_from_existing(A)
-    C.assign[[1,3,5], 2] = 0
+    C[[1,3,5], 2] = 0
     assert C == result_column
     C = Matrix.new_from_existing(A)
-    C.assign[1::2, 2] = 0
+    C[1::2, 2] = 0
     assert C == result_column
 
 def test_apply(A):
@@ -346,11 +345,11 @@ def test_reduce_scalar(A):
     assert s == 47
 
 def test_transpose(A):
-    # C[:] = A.T
+    # C << A.T
     rows, cols, vals = A.to_values()
     result = Matrix.new_from_values(cols, rows, vals)
     C = Matrix.new_from_type(A.dtype, A.ncols, A.nrows)
-    C[:] = A.T
+    C << A.T
     assert C == result
     C2 = A.T.new()
     assert C2 == result
@@ -359,9 +358,9 @@ def test_kronecker(A):
     pytest.xfail('Not implemented in GraphBLAS 1.2')
 
 def test_simple_assignment(A):
-    # C[:] = A
+    # C << A
     C = Matrix.new_from_type(A.dtype, A.nrows, A.ncols)
-    C[:] = A
+    C << A
     assert C == A
 
 def test_equal(A, v):

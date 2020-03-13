@@ -3,11 +3,10 @@ from grblas import lib, ffi
 from grblas import Matrix, Vector, Scalar
 from grblas import UnaryOp, BinaryOp, Monoid, Semiring
 from grblas import dtypes, descriptor
-from grblas import REPLACE
+from grblas.base import Updater
 from grblas.exceptions import IndexOutOfBound, DimensionMismatch
 
 def test_new_from_values_dtype_resolving():
-    data = [[0,1,2], [1,2,3]]
     u = Vector.new_from_values([0,1,2], [1,2,3], dtype=dtypes.INT32)
     assert u.dtype == 'INT32'
     u = Vector.new_from_values([0,1,2], [1,2,3], dtype='INT32')
@@ -26,27 +25,49 @@ def test_resolve_ops_using_output_dtype():
     u = Vector.new_from_values([0, 1, 3], [1, 2, 3], dtype=dtypes.INT64)
     v = Vector.new_from_values([0, 1, 3], [0.1, 0.1, 0.1], dtype='FP64')
     w = Vector.new_from_type('FP32', u.size)
-    w[:] = u.ewise_mult(v, BinaryOp.PLUS)
+    w << u.ewise_mult(v, BinaryOp.PLUS)
     # Element[0] should be 1.1; check approximate equality
-    assert abs(w.element[0] - 1.1) < 1e-6
+    assert abs(w[0].value - 1.1) < 1e-6
 
-def test_order_of_resolve_params_does_not_matter():
-    # C[mask, accum, REPLACE] = ...
-    # C[accum, REPLACE, mask] = ...
-    # C[REPLACE, accum, mask] = ...
-    # etc.
-    from itertools import permutations
+def test_order_of_updater_params_does_not_matter():
     u = Vector.new_from_values([0, 1, 3], [1, 2, 3])
     mask = Vector.new_from_values([0, 3], [True, True])
+    accum = BinaryOp.PLUS
     result = Vector.new_from_values([0, 3], [5, 10])
-    for params in permutations([REPLACE, mask, BinaryOp.PLUS], 3):
-        v = Vector.new_from_values([0,1,2,3], [4,3,2,1])
-        v[params] = u.ewise_mult(u, BinaryOp.TIMES)
-        assert v == result
+    # mask, accum, replace=
+    v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v(mask, accum, replace=True) << u.ewise_mult(u, BinaryOp.TIMES)
+    assert v == result
+    # accum, mask, replace=
+    v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v(accum, mask, replace=True) << u.ewise_mult(u, BinaryOp.TIMES)
+    assert v == result
+    # accum, mask=, replace=
+    v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v(accum, mask=mask, replace=True) << u.ewise_mult(u, BinaryOp.TIMES)
+    assert v == result
+    # mask, accum=, replace=
+    v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v(mask, accum=accum, replace=True) << u.ewise_mult(u, BinaryOp.TIMES)
+    assert v == result
+    # replace=, mask=, accum=
+    v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v(replace=True, mask=mask, accum=accum) << u.ewise_mult(u, BinaryOp.TIMES)
+    assert v == result
 
-def test_already_resolved_ops_allowed_in_resolve():
+def test_already_resolved_ops_allowed_in_updater():
     # C[BinaryOp.PLUS['FP64']] = ...
     u = Vector.new_from_values([0, 1, 3], [1, 2, 3])
-    u[BinaryOp.PLUS['INT64']] = u.ewise_mult(u, BinaryOp.TIMES['INT64'])
+    u(BinaryOp.PLUS['INT64']) << u.ewise_mult(u, BinaryOp.TIMES['INT64'])
     result = Vector.new_from_values([0, 1, 3], [2, 6, 12])
     assert u == result
+
+def test_updater_returns_updater():
+    u = Vector.new_from_values([0, 1, 3], [1, 2, 3])
+    y = u(accum=BinaryOp.TIMES)
+    assert isinstance(y, Updater)
+    z = y << u.apply(UnaryOp.AINV)
+    assert z is None
+    assert isinstance(y, Updater)
+    final_result = Vector.new_from_values([0, 1, 3], [-1, -4, -9])
+    assert u == final_result

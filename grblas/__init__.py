@@ -27,7 +27,7 @@ def init(backend="suitesparse", blocking=True):
 
 
 def _init(backend, blocking, automatic=False):
-    global lib, ffi, REPLACE, Matrix, Vector, Scalar, UnaryOp, BinaryOp, Monoid, Semiring, _init_params
+    global lib, ffi, Matrix, Vector, Scalar, UnaryOp, BinaryOp, Monoid, Semiring, _init_params
 
     passed_params = dict(backend=backend, blocking=blocking, automatic=automatic)
     if _init_params is None:
@@ -54,7 +54,6 @@ def _init(backend, blocking, automatic=False):
     else:
         ffi_backend.lib.GrB_init(ffi_backend.lib.GrB_NONBLOCKING)
 
-    from .base import REPLACE
     from .matrix import Matrix
     from .vector import Vector
     from .scalar import Scalar
@@ -72,4 +71,3 @@ def _init(backend, blocking, automatic=False):
     globals()["BinaryOp"] = BinaryOp
     globals()["Monoid"] = Monoid
     globals()["Semiring"] = Semiring
-    globals()["REPLACE"] = REPLACE

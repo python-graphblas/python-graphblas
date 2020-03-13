@@ -12,15 +12,22 @@ def s():
 def test_new_from_type():
     s = Scalar.new_from_type(dtypes.INT8)
     assert s.dtype == 'INT8'
+    assert s.value is None
+    s.empty = False
     assert s.value == 0  # must hold a value; initialized to 0
     s2 = Scalar.new_from_type(bool)
     assert s2.dtype == 'BOOL'
+    assert s2.value is None
+    s2.empty = False
     assert s2.value == False  # must hold a value; initialized to False
 
 def test_new_from_existing(s):
     s2 = Scalar.new_from_existing(s)
     assert s2.dtype == s.dtype
     assert s2.value == s.value
+    s3 = s.dup()
+    assert s3.dtype == s.dtype
+    assert s3.value == s.value
 
 def test_new_from_value():
     s = Scalar.new_from_value(False)
@@ -32,12 +39,16 @@ def test_new_from_value():
 
 def test_clear(s):
     assert s.value == 5
+    assert not s.empty
     s.clear()
-    assert s.value == 0  # must hold a value; reset to 0
+    assert s.value is None
+    assert s.empty
     s2 = Scalar.new_from_value(True)
     assert s2.value == True
+    assert not s2.empty
     s2.clear()
-    assert s2.value == False  # must hold a value; reset to False
+    assert s2.value is None
+    assert s2.empty
 
 def test_equal(s):
     assert s.value == 5

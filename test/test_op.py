@@ -49,7 +49,7 @@ def test_unaryop_udf():
                                       'UINT8', 'UINT16', 'UINT32', 'UINT64',
                                       'FP32', 'FP64'}
     v = Vector.new_from_values([0,1,3], [1,2,-4], dtype=dtypes.INT32)
-    v[:] = v.apply(UnaryOp.plus_one)
+    v << v.apply(UnaryOp.plus_one)
     result = Vector.new_from_values([0,1,3], [2,3,-3], dtype=dtypes.INT32)
     assert v == result
 
