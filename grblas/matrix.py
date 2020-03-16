@@ -1,10 +1,8 @@
-import types
 from functools import partial
 from .base import lib, ffi, NULL, GbContainer, GbDelayed
 from .vector import Vector
 from .scalar import Scalar
-from .ops import (OpBase, UnaryOp, BinaryOp, Monoid, Semiring,
-                  find_opclass, find_return_type)
+from .ops import BinaryOp, Monoid, Semiring, find_opclass, find_return_type
 from . import dtypes
 from .exceptions import check_status, is_error, NoValue
 
@@ -14,23 +12,18 @@ class Matrix(GbContainer):
     GraphBLAS Sparse Matrix
     High-level wrapper around GrB_Matrix type
     """
-    can_mask = True
-
     def __init__(self, gb_obj, dtype):
         super().__init__(gb_obj, dtype)
-        self.element = Matrix.ElementManipulator(self)
-        self.extract = Matrix.Extractor(self)
-        self.assign = Matrix.Assigner(self)
 
     def __del__(self):
         check_status(lib.GrB_Matrix_free(self.gb_obj))
-    
+
     def __repr__(self):
         return f'<Matrix {self.nvals}/({self.nrows}x{self.ncols}):{self.dtype.name}>'
 
     def __eq__(self, other):
         # Borrowed this recipe from LAGraph
-        if type(other) != self.__class__:
+        if type(other) is not self.__class__:
             return False
         if self.dtype != other.dtype:
             return False
@@ -42,12 +35,12 @@ class Matrix(GbContainer):
             return False
         # Use ewise_mult to compare equality via intersection
         matches = Matrix.new_from_type(bool, self.nrows, self.ncols)
-        matches[:] = self.ewise_mult(other, BinaryOp.EQ)
+        matches << self.ewise_mult(other, BinaryOp.EQ)
         if matches.nvals != self.nvals:
             return False
         # Check if all results are True
         result = Scalar.new_from_type(bool)
-        result[:] = matches.reduce_scalar(Monoid.LAND)
+        result << matches.reduce_scalar(Monoid.LAND)
         return result.value
 
     def __len__(self):
@@ -110,7 +103,7 @@ class Matrix(GbContainer):
             values,
             n,
             self.gb_obj[0]))
-        return iter(rows), iter(columns), iter(values)
+        return tuple(rows), tuple(columns), tuple(values)
 
     def rebuild_from_values(self, rows, columns, values, *, dup_op=NULL):
         # TODO: add `size` option once .resize is available
@@ -146,7 +139,7 @@ class Matrix(GbContainer):
             dup_op))
         # Check for duplicates when dup_op was not provided
         if dup_orig is NULL and self.nvals < len(values):
-            raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp') 
+            raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
     @classmethod
     def new_from_type(cls, dtype, nrows=0, ncols=0):
@@ -204,7 +197,7 @@ class Matrix(GbContainer):
 
     #########################################################
     # Delayed methods
-    # 
+    #
     # These return a GbDelayed object which must be passed
     # to __setitem__ to trigger a call to GraphBLAS
     #########################################################
@@ -326,11 +319,7 @@ class Matrix(GbContainer):
         A BinaryOp can also be applied if a scalar is passed in as `left` or `right`,
             effectively converting a BinaryOp into a UnaryOp
         """
-        if isinstance(op, types.FunctionType):
-            op = build_udf(op, self)
-            opclass = 'UnaryOp'
-        else:
-            opclass = find_opclass(op)
+        opclass = find_opclass(op)
 
         if opclass == 'UnaryOp':
             if left is not None or right is not None:
@@ -375,14 +364,14 @@ class Matrix(GbContainer):
                          [op, self.gb_obj[0]],
                          at=self.is_transposed,
                          output_constructor=output_constructor)
-    
+
     def reduce_columns(self, op=NULL):
         """
         GrB_Matrix_reduce
         Reduce all values in each column, converting the matrix to a vector
         """
         return self.T.reduce_rows(op)
-    
+
     def reduce_scalar(self, op=NULL):
         """
         GrB_Matrix_reduce
@@ -397,221 +386,122 @@ class Matrix(GbContainer):
         output_constructor = partial(Scalar.new_from_type,
                                      dtype=find_return_type(op, self.dtype))
         return GbDelayed(func,
-                        [op, self.gb_obj[0]],
-                        output_constructor=output_constructor)
+                         [op, self.gb_obj[0]],
+                         output_constructor=output_constructor)
 
+    ##################################
+    # Extract and Assign index methods
+    ##################################
+    def _extract_element(self, resolved_indexes):
+        row, _ = resolved_indexes.indices[0]
+        col, _ = resolved_indexes.indices[1]
+        func = getattr(lib, f'GrB_Matrix_extractElement_{self.dtype}')
+        result = ffi.new(f'{self.dtype.c_type}*')
 
-    class ElementManipulator:
-        def __init__(self, matrix):
-            self._matrix = matrix
-        
-        def __repr__(self):
-            return 'MatrixElementManipulator'
-        
-        def _parse_index(self, index):
-            if (
-                not isinstance(index, tuple)
-                or len(index) != 2
-                or not isinstance(index[0], int)
-                or not isinstance(index[1], int)
-            ):
-                raise TypeError('Index must be a 2-tuple of ints')
-            row, col = index
-            shape = self._matrix.shape
-            if row >= shape[0]:
-                raise IndexError(f'row_index={row}, nrows={shape[0]}')
-            if col >= shape[1]:
-                raise IndexError(f'col_index={col}, ncols={shape[1]}')
-            return row, col
+        err_code = func(result,
+                        self.gb_obj[0],
+                        row,
+                        col)
+        # Don't raise error for no value, simply return `None`
+        if is_error(err_code, NoValue):
+            return None, self.dtype
+        check_status(err_code)
+        return result[0], self.dtype
 
-        def __getitem__(self, index):
-            row, col = self._parse_index(index)
-            mat = self._matrix
-            func = getattr(lib, f'GrB_Matrix_extractElement_{mat.dtype}')
-            result = ffi.new(f'{mat.dtype.c_type}*')
-            err_code = func(result,
-                            mat.gb_obj[0],
-                            row,
-                            col)
-            # If no value, return Python `None`
-            if is_error(err_code, NoValue):
-                return None
-            check_status(err_code)
-            return result[0]
-        
-        def __setitem__(self, index, value):
-            row, col = self._parse_index(index)
-            mat = self._matrix
-            func = getattr(lib, f'GrB_Matrix_setElement_{mat.dtype}')
-            check_status(func(
-                mat.gb_obj[0],
-                ffi.cast(mat.dtype.c_type, value),
-                row,
-                col))
+    def _prep_for_extract(self, resolved_indexes):
+        rows, rowsize = resolved_indexes.indices[0]
+        cols, colsize = resolved_indexes.indices[1]
+        if rowsize is None:
+            # Row-only selection; GraphBLAS doesn't have this method, so we hack it using transpose
+            row_index = rows
+            output_constructor = partial(Vector.new_from_type,
+                                         dtype=self.dtype,
+                                         size=colsize)
+            return GbDelayed(lib.GrB_Col_extract,
+                             [self.gb_obj[0], cols, colsize, row_index],
+                             at=(not self.is_transposed),
+                             output_constructor=output_constructor)
+        elif colsize is None:
+            # Column-only selection
+            col_index = cols
+            output_constructor = partial(Vector.new_from_type,
+                                         dtype=self.dtype,
+                                         size=rowsize)
+            return GbDelayed(lib.GrB_Col_extract,
+                             [self.gb_obj[0], rows, rowsize, col_index],
+                             at=self.is_transposed,
+                             output_constructor=output_constructor)
+        else:
+            output_constructor = partial(Matrix.new_from_type,
+                                         dtype=self.dtype,
+                                         nrows=rowsize, ncols=colsize)
+            return GbDelayed(lib.GrB_Matrix_extract,
+                             [self.gb_obj[0], rows, rowsize, cols, colsize],
+                             at=self.is_transposed,
+                             output_constructor=output_constructor)
 
-        def __delitem__(self, index):
-            row, col = self._parse_index(index)
-            raise NotImplementedError('Not available in GraphBLAS 1.2')
+    def _assign_element(self, resolved_indexes, value):
+        row, _ = resolved_indexes.indices[0]
+        col, _ = resolved_indexes.indices[1]
+        func = getattr(lib, f'GrB_Matrix_setElement_{self.dtype}')
+        check_status(func(
+                     self.gb_obj[0],
+                     ffi.cast(self.dtype.c_type, value),
+                     row,
+                     col))
 
-    class _Indexer:
-        def _parse_indices(self, indices):
-            """
-            Returns rows, rowsize, cols, colsize
-            For row-only, rowsize=None and type(rows)==int
-            For col-only, colsize=None and type(cols)==int
-            """
-            if type(indices) != tuple or len(indices) != 2:
-                raise TypeError('Index must be a 2-tuple')
-            rows, cols = indices
-            rtyp, ctyp = type(rows), type(cols)
-            
-            if rtyp == int and ctyp == int:
-                # Single index
-                return rows, None, cols, None
-            if rtyp == tuple or ctyp == tuple:
-                raise TypeError(f'{self} cannot accept a tuple as index; use slice or list')
+    def _prep_for_assign(self, resolved_indexes, obj):
+        rows, rowsize = resolved_indexes.indices[0]
+        cols, colsize = resolved_indexes.indices[1]
 
-            rows, rowsize = self._parse_index(rows, rtyp, self._matrix.nrows)
-            cols, colsize = self._parse_index(cols, ctyp, self._matrix.ncols)
-            return rows, rowsize, cols, colsize
+        if isinstance(obj, Scalar):
+            obj = obj.value
 
-        def _parse_index(self, index, typ, size):
-            if typ == int:
-                return index, None
-            if typ == slice:
-                if index == slice(None):
-                    # [:] means all indices; use special GrB_ALL indicator
-                    return lib.GrB_ALL, size
-                index = tuple(range(size)[index])
-            elif typ != list:
-                try:
-                    index = tuple(index)
-                except Exception:
-                    raise TypeError()
-            return ffi.new('GrB_Index[]', index), len(index)
-
-    class Extractor(_Indexer):
-        def __init__(self, matrix):
-            self._matrix = matrix
-        
-        def __repr__(self):
-            return 'MatrixExtractor'
-        
-        def __getitem__(self, indices):
-            rows, rowsize, cols, colsize = self._parse_indices(indices)
-            if rowsize is None and colsize is None:
-                raise TypeError('Use A.element[i, j] to get a single element')
+        if isinstance(obj, (int, float, bool)):
             if rowsize is None:
-                # Row-only selection; GraphBLAS doesn't have this method, so we hack it using transpose
+                rows = [rows]
+                rowsize = 1
+            if colsize is None:
+                cols = [cols]
+                colsize = 1
+            dtype = self.dtype
+            scalar = ffi.cast(dtype.c_type, obj)
+            func = getattr(lib, f'GrB_Matrix_assign_{dtype.name}')
+            delayed = GbDelayed(func,
+                                [scalar, rows, rowsize, cols, colsize])
+        else:
+            if rowsize is None and colsize is None:
+                raise TypeError(f'Expected scalar for assignment value; found {type(obj)}')
+            elif rowsize is None:
+                if not isinstance(obj, Vector):
+                    raise TypeError(f'Expected Vector for assignment value; found {type(obj)}')
+                # Row-only selection
                 row_index = rows
-                output_constructor = partial(Vector.new_from_type,
-                                             dtype=self._matrix.dtype,
-                                             size=colsize)
-                return GbDelayed(lib.GrB_Col_extract,
-                                 [self._matrix.gb_obj[0], cols, colsize, row_index],
-                                 at=(not self._matrix.is_transposed),
-                                 output_constructor=output_constructor)
+                delayed = GbDelayed(lib.GrB_Row_assign,
+                                    [obj.gb_obj[0], row_index, cols, colsize])
             elif colsize is None:
+                if not isinstance(obj, Vector):
+                    raise TypeError(f'Expected Vector for assignment value; found {type(obj)}')
                 # Column-only selection
                 col_index = cols
-                output_constructor = partial(Vector.new_from_type,
-                                             dtype=self._matrix.dtype,
-                                             size=rowsize)
-                return GbDelayed(lib.GrB_Col_extract,
-                                 [self._matrix.gb_obj[0], rows, rowsize, col_index],
-                                 at=self._matrix.is_transposed,
-                                 output_constructor=output_constructor)
+                delayed = GbDelayed(lib.GrB_Col_assign,
+                                    [obj.gb_obj[0], rows, rowsize, col_index])
             else:
-                output_constructor = partial(Matrix.new_from_type,
-                                             dtype=self._matrix.dtype,
-                                             nrows=rowsize, ncols=colsize)
-                return GbDelayed(lib.GrB_Matrix_extract,
-                                 [self._matrix.gb_obj[0], rows, rowsize, cols, colsize],
-                                 at=self._matrix.is_transposed,
-                                 output_constructor=output_constructor)
-    
-    class Assigner(_Indexer):
-        def __init__(self, matrix):
-            self._matrix = matrix
-        
-        def __repr__(self):
-            return 'MatrixAssigner'
-        
-        def __setitem__(self, keys, other):
-            # Note: keys contains assignment rows, cols, mask, accum, and REPLACE
-            #       rows, cols must always come first (if given, otherwise assumes all indexes)
-            #       C.assign[:] will be interpreted as all indexes with no mask
-            if type(keys) != tuple:
-                keys = (keys,)
-            if len(keys) >= 2:
-                try:
-                    # Try to parse the first two items as the row/col indexes
-                    rows, rowsize, cols, colsize = self._parse_indices(keys[:2])
-                    keys = keys[2:]
-                except TypeError:
-                    # No index given; use the default
-                    rows, rowsize, cols, colsize = self._parse_indices((slice(None), slice(None)))
-            else:
-                # No index given; use the default
-                rows, rowsize, cols, colsize = self._parse_indices((slice(None), slice(None)))
-            if not keys or (len(keys) == 1 and keys[0] == slice(None)):
-                # No keys given; use the default
-                keys = slice(None)
-            else:
-                for key in keys:
-                    if type(key) in (list, slice):
-                        raise TypeError('Assignment indexes for rows and columns must come first')
+                if not isinstance(obj, Matrix):
+                    raise TypeError(f'Expected Matrix for assignment value; found {type(obj)}')
+                delayed = GbDelayed(lib.GrB_Matrix_assign,
+                                    [obj.gb_obj[0], rows, rowsize, cols, colsize],
+                                    at=obj.is_transposed)
 
-            if isinstance(other, Scalar):
-                other = other.value
+        return delayed
 
-            if isinstance(other, (int, float, bool)):
-                if rowsize is None:
-                    rows = [rows]
-                    rowsize = 1
-                if colsize is None:
-                    cols = [cols]
-                    colsize = 1
-                dtype = self._matrix.dtype
-                scalar = ffi.cast(dtype.c_type, other)
-                func = getattr(lib, f'GrB_Matrix_assign_{dtype.name}')
-                dval = GbDelayed(func,
-                                 [scalar, rows, rowsize, cols, colsize])
-            else:
-                if rowsize is None and colsize is None:
-                    raise TypeError(f'Expected scalar for assignment value; found {type(other)}')
-                elif rowsize is None:
-                    if not isinstance(other, Vector):
-                        raise TypeError(f'Expected Vector for assignment value; found {type(other)}')
-                    # Row-only selection
-                    row_index = rows
-                    dval = GbDelayed(lib.GrB_Row_assign,
-                                    [other.gb_obj[0], row_index, cols, colsize])
-                elif colsize is None:
-                    if not isinstance(other, Vector):
-                        raise TypeError(f'Expected Vector for assignment value; found {type(other)}')
-                    # Column-only selection
-                    col_index = cols
-                    dval = GbDelayed(lib.GrB_Col_assign,
-                                    [other.gb_obj[0], rows, rowsize, col_index])
-                else:
-                    if not isinstance(other, Matrix):
-                        raise TypeError(f'Expected Matrix for assignment value; found {type(other)}')
-                    dval = GbDelayed(lib.GrB_Matrix_assign,
-                                        [other.gb_obj[0], rows, rowsize, cols, colsize],
-                                        at=other.is_transposed)
-            # Forward the __setitem__ call so it is resolved with mask and accum
-            self._matrix[keys] = dval
 
 class TransposedMatrix(Matrix):
     def __init__(self, matrix):
         super().__init__(matrix.gb_obj, matrix.dtype)
         self._matrix = matrix
-        # Remove items that aren't allowed to be accessed post-transpose
-        del self.element
-        del self.assign
-    
-    # Override the default behavior. Don't free gb_obj 
+
+    # Override the default behavior. Don't free gb_obj
     # because it's shared with the untransposed matrix
     def __del__(self):
         pass
@@ -620,12 +510,13 @@ class TransposedMatrix(Matrix):
         return f'<Matrix.T {self.nvals}/({self.nrows}x{self.ncols}):{self.dtype.name}>'
 
     def new(self, mask=None):
-        if mask is None:
-            mask = slice(None)  # [:] indicates no mask
-        elif type(mask) != Matrix:
-            raise TypeError('Mask must be a Matrix')
         output = Matrix.new_from_type(self.dtype, self.nrows, self.ncols)
-        output[mask] = self
+        if mask is None:
+            output.update(self)
+        else:
+            if type(mask) is not Matrix:
+                raise TypeError('Mask must be a Matrix')
+            output(mask).update(self)
         return output
 
     @property
@@ -639,7 +530,7 @@ class TransposedMatrix(Matrix):
     @property
     def T(self):
         return self._matrix
-    
+
     @property
     def is_transposed(self):
         return True

@@ -1,9 +1,7 @@
-import types
 from functools import partial
 from .base import lib, ffi, NULL, GbContainer, GbDelayed
 from .scalar import Scalar
-from .ops import (OpBase, UnaryOp, BinaryOp, Monoid, Semiring,
-                  find_opclass, find_return_type)
+from .ops import BinaryOp, Monoid, Semiring, find_opclass, find_return_type
 from . import dtypes
 from .exceptions import check_status, is_error, NoValue
 
@@ -13,23 +11,18 @@ class Vector(GbContainer):
     GraphBLAS Sparse Vector
     High-level wrapper around GrB_Vector type
     """
-    can_mask = True
-
     def __init__(self, gb_obj, dtype):
         super().__init__(gb_obj, dtype)
-        self.element = Vector.ElementManipulator(self)
-        self.extract = Vector.Extractor(self)
-        self.assign = Vector.Assigner(self)
 
     def __del__(self):
         check_status(lib.GrB_Vector_free(self.gb_obj))
-    
+
     def __repr__(self):
         return f'<Vector {self.nvals}/{self.size}:{self.dtype.name}>'
 
     def __eq__(self, other):
         # Borrowed this recipe from LAGraph
-        if type(other) != self.__class__:
+        if type(other) is not self.__class__:
             return False
         if self.dtype != other.dtype:
             return False
@@ -39,12 +32,12 @@ class Vector(GbContainer):
             return False
         # Use ewise_mult to compare equality via intersection
         matches = Vector.new_from_type(bool, self.size)
-        matches[:] = self.ewise_mult(other, BinaryOp.EQ)
+        matches << self.ewise_mult(other, BinaryOp.EQ)
         if matches.nvals != self.nvals:
             return False
         # Check if all results are True
         result = Scalar.new_from_type(bool)
-        result[:] = matches.reduce(Monoid.LAND)
+        result << matches.reduce(Monoid.LAND)
         return result.value
 
     def __len__(self):
@@ -68,7 +61,7 @@ class Vector(GbContainer):
 
     def clear(self):
         check_status(lib.GrB_Vector_clear(self.gb_obj[0]))
-    
+
     def resize(self, size):
         raise NotImplementedError('Not implemented in GraphBLAS 1.2')
         check_status(lib.GrB_Vector_resize(self.gb_obj[0], size))
@@ -88,7 +81,7 @@ class Vector(GbContainer):
             values,
             n,
             self.gb_obj[0]))
-        return (iter(indices), iter(values))
+        return tuple(indices), tuple(values)
 
     def rebuild_from_values(self, indices, values, *, dup_op=NULL):
         # TODO: add `size` option once .resize is available
@@ -120,7 +113,7 @@ class Vector(GbContainer):
             dup_op))
         # Check for duplicates when dup_op was not provided
         if dup_orig is NULL and self.nvals < len(values):
-            raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp') 
+            raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
     @classmethod
     def new_from_type(cls, dtype, size=0):
@@ -171,9 +164,9 @@ class Vector(GbContainer):
 
     #########################################################
     # Delayed methods
-    # 
+    #
     # These return a GbDelayed object which must be passed
-    # to __setitem__ to trigger a call to GraphBLAS
+    # to update to trigger a call to GraphBLAS
     #########################################################
 
     def ewise_add(self, other, op=NULL):
@@ -282,135 +275,59 @@ class Vector(GbContainer):
         output_constructor = partial(Scalar.new_from_type,
                                      dtype=find_return_type(op, self.dtype))
         return GbDelayed(func,
-                        [op, self.gb_obj[0]],
-                        output_constructor=output_constructor)
+                         [op, self.gb_obj[0]],
+                         output_constructor=output_constructor)
 
-    class ElementManipulator:
-        def __init__(self, vector):
-            self._vector = vector
-        
-        def __repr__(self):
-            return 'VectorElementManipulator'
-        
-        def _parse_index(self, index):
-            if not isinstance(index, int):
-                raise TypeError('Index must be an int')
-            size = self._vector.size
-            if index >= size:
-                raise IndexError(f'index={index}, size={size}')
-            return index
+    ##################################
+    # Extract and Assign index methods
+    ##################################
+    def _extract_element(self, resolved_indexes):
+        index, _ = resolved_indexes.indices[0]
+        func = getattr(lib, f'GrB_Vector_extractElement_{self.dtype}')
+        result = ffi.new(f'{self.dtype.c_type}*')
 
-        def __getitem__(self, index):
-            index = self._parse_index(index)
-            vec = self._vector
-            func = getattr(lib, f'GrB_Vector_extractElement_{vec.dtype}')
-            result = ffi.new(f'{vec.dtype.c_type}*')
+        err_code = func(result,
+                        self.gb_obj[0],
+                        index)
+        # Don't raise error for no value, simply return `None`
+        if is_error(err_code, NoValue):
+            return None, self.dtype
+        check_status(err_code)
+        return result[0], self.dtype
 
-            err_code = func(result,
-                            vec.gb_obj[0],
-                            index)
-            # Don't raise error for no value, simply return `None`
-            if is_error(err_code, NoValue):
-                return None
-            check_status(err_code)
-            return result[0]
-        
-        def __setitem__(self, index, value):
-            index = self._parse_index(index)
-            vec = self._vector
-            func = getattr(lib, f'GrB_Vector_setElement_{vec.dtype}')
-            check_status(func(
-                vec.gb_obj[0],
-                ffi.cast(vec.dtype.c_type, value),
-                index))
+    def _prep_for_extract(self, resolved_indexes):
+        index, isize = resolved_indexes.indices[0]
+        output_constructor = partial(Vector.new_from_type,
+                                     dtype=self.dtype,
+                                     size=isize)
+        return GbDelayed(lib.GrB_Vector_extract,
+                         [self.gb_obj[0], index, isize],
+                         output_constructor=output_constructor)
 
-        def __delitem__(self, index):
-            index = self._parse_index(index)
-            raise NotImplementedError('Not available in GraphBLAS 1.2')
+    def _assign_element(self, resolved_indexes, value):
+        index, _ = resolved_indexes.indices[0]
+        func = getattr(lib, f'GrB_Vector_setElement_{self.dtype}')
+        check_status(func(
+                     self.gb_obj[0],
+                     ffi.cast(self.dtype.c_type, value),
+                     index))
 
-    class _Indexer:
-        def _parse_index(self, index):
-            typ = type(index)
-            if typ == int:
-                # Single index
-                return index, None
-            if typ == tuple:
-                raise TypeError(f'{self} cannot accept a tuple as index; use slice or list')
-            if typ == slice:
-                if index == slice(None):
-                    # [:] means all indices; use special GrB_ALL indicator
-                    return lib.GrB_ALL, self._vector.size
-                index = tuple(range(self._vector.size)[index])
-            elif typ != list:
-                try:
-                    index = tuple(index)
-                except Exception:
-                    raise TypeError()
-            return ffi.new('GrB_Index[]', index), len(index)
+    def _prep_for_assign(self, resolved_indexes, obj):
+        index, isize = resolved_indexes.indices[0]
 
-    class Extractor(_Indexer):
-        def __init__(self, vector):
-            self._vector = vector
-        
-        def __repr__(self):
-            return 'VectorExtractor'
-        
-        def __getitem__(self, index):
-            index, isize = self._parse_index(index)
-            if isize is None:
-                raise TypeError('Use v.element[i] to get a single element')
-            output_constructor = partial(Vector.new_from_type,
-                                         dtype=self._vector.dtype,
-                                         size=isize)
-            return GbDelayed(lib.GrB_Vector_extract,
-                            [self._vector.gb_obj[0], index, isize],
-                            output_constructor=output_constructor)
-    
-    class Assigner(_Indexer):
-        def __init__(self, vector):
-            self._vector = vector
-        
-        def __repr__(self):
-            return 'VectorAssigner'
-        
-        def __setitem__(self, keys, other):
-            # Note: keys contains assignment index, mask, accum, and REPLACE
-            #       index must always come first (if given, otherwise assumes all indexes)
-            #       v.assign[:] will be interpreted as all indexes with no mask
-            if type(keys) != tuple:
-                keys = (keys,)
-            try:
-                # Try to parse the first item as an index
-                index, isize = self._parse_index(keys[0])
-                keys = keys[1:]
-                if isize is None:
-                    # We have a single index; convert to a len=1 list
-                    index = [index]
-                    isize = 1
-            except TypeError:
-                # No index given; use the default
-                index, isize = self._parse_index(slice(None))
-            if not keys:
-                # No keys given; use the default
-                keys = slice(None)
-            else:
-                for key in keys:
-                    if type(key) in (list, slice):
-                        raise TypeError('Assignment indexes must come first')
+        if isinstance(obj, Scalar):
+            obj = obj.value
 
-            if isinstance(other, Scalar):
-                other = other.value
+        if isinstance(obj, (int, float, bool)):
+            dtype = self.dtype
+            func = getattr(lib, f'GrB_Vector_assign_{dtype.name}')
+            scalar = ffi.cast(dtype.c_type, obj)
+            delayed = GbDelayed(func,
+                                [scalar, index, isize])
+        elif isinstance(obj, Vector):
+            delayed = GbDelayed(lib.GrB_Vector_assign,
+                                [obj.gb_obj[0], index, isize])
+        else:
+            raise TypeError(f'Unexpected type for assignment value: {type(obj)}')
 
-            if isinstance(other, (int, float, bool)):
-                dtype = self._vector.dtype
-                func = getattr(lib, f'GrB_Vector_assign_{dtype.name}')
-                scalar = ffi.cast(dtype.c_type, other)
-                dval = GbDelayed(func,
-                                 [scalar, index, isize])
-            elif isinstance(other, Vector):
-                dval = GbDelayed(lib.GrB_Vector_assign,
-                                 [other.gb_obj[0], index, isize])
-            else:
-                raise TypeError(f'Unexpected type for assignment value: {type(other)}')
-            # Forward the __setitem__ call so it is resolved with mask and accum
-            self._vector[keys] = dval
+        return delayed

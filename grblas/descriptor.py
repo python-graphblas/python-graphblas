@@ -5,7 +5,7 @@ _desc_map = {}
 
 
 # TODO: this will need to update for GraphBLAS 1.3 mask options
-def build(*, output_replace=False, mask_complement=False, 
+def build(*, output_replace=False, mask_complement=False,
           transpose_first=False, transpose_second=False):
     key = (mask_complement, output_replace, transpose_first, transpose_second)
     if key not in _desc_map:

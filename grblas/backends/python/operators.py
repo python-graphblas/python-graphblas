@@ -73,30 +73,36 @@ _binary_all_to_bool = _binary_bool + _binary_int_to_bool + _binary_float_to_bool
 # Unary Operators
 #################
 
+
 @GrB_UnaryOp._compile(_unary_all)
 def identity(x):
     """Identity"""
     return x
+
 
 @GrB_UnaryOp._compile(_unary_int + _unary_float)
 def abs(x):
     """Absolute value"""
     return abs(x)
 
+
 @GrB_UnaryOp._compile(_unary_int + _unary_float)
 def ainv(x):
     """Additive inverse"""
     return -x
+
 
 @GrB_UnaryOp._compile(_unary_float)
 def minv(x):
     """Multiplicative inverse"""
     return 1/x
 
+
 @GrB_UnaryOp._compile(_unary_bool, nosuffix=True)
 def lnot(x):
     """Logical inverse"""
     return not x
+
 
 @GrB_UnaryOp._compile(_unary_int)
 def bnot(x):
@@ -113,105 +119,126 @@ def lor(x, y):
     """Logical OR"""
     return x | y
 
+
 @GrB_BinaryOp._compile(_binary_bool, nosuffix=True)
 def land(x, y):
     """Logical AND"""
     return x & y
+
 
 @GrB_BinaryOp._compile(_binary_bool, nosuffix=True)
 def lxor(x, y):
     """Logical XOR"""
     return x ^ y
 
+
 @GrB_BinaryOp._compile(_binary_bool, nosuffix=True)
 def lxnor(x, y):
     """Logical XNOR"""
     return not (x ^ y)
+
 
 @GrB_BinaryOp._compile(_binary_int)
 def bor(x, y):
     """Bitwise OR"""
     return x | y
 
+
 @GrB_BinaryOp._compile(_binary_int)
 def band(x, y):
     """Bitwise AND"""
     return x & y
+
 
 @GrB_BinaryOp._compile(_binary_int)
 def bxor(x, y):
     """Bitwise XOR"""
     return x ^ y
 
+
 @GrB_BinaryOp._compile(_binary_int)
 def bxnor(x, y):
     """Bitwise XNOR"""
     return ~(x ^ y)
+
 
 @GrB_BinaryOp._compile(_binary_all_to_bool)
 def eq(x, y):
     """Equal"""
     return x == y
 
+
 @GrB_BinaryOp._compile(_binary_all_to_bool)
 def ne(x, y):
     """Not equal"""
     return x != y
+
 
 @GrB_BinaryOp._compile(_binary_all_to_bool)
 def gt(x, y):
     """Greater than"""
     return x > y
 
+
 @GrB_BinaryOp._compile(_binary_all_to_bool)
 def lt(x, y):
     """Less than"""
     return x < y
+
 
 @GrB_BinaryOp._compile(_binary_all_to_bool)
 def ge(x, y):
     """Greater than or equal"""
     return x >= y
 
+
 @GrB_BinaryOp._compile(_binary_all_to_bool)
 def le(x, y):
     """Less than or equal"""
     return x <= y
+
 
 @GrB_BinaryOp._compile(_binary_all)
 def first(x, y):
     """First argument"""
     return x
 
+
 @GrB_BinaryOp._compile(_binary_all)
 def second(x, y):
     """Second argument"""
     return y
+
 
 @GrB_BinaryOp._compile(_binary_int + _binary_float)
 def min(x, y):
     """Minimum"""
     return min(x, y)
 
+
 @GrB_BinaryOp._compile(_binary_int + _binary_float)
 def max(x, y):
     """Maximum"""
     return max(x, y)
+
 
 @GrB_BinaryOp._compile(_binary_int + _binary_float)
 def plus(x, y):
     """Addition"""
     return x + y
 
+
 @GrB_BinaryOp._compile(_binary_int + _binary_float)
 def minus(x, y):
     """Subtraction"""
     return x - y
 
+
 @GrB_BinaryOp._compile(_binary_int + _binary_float)
 def times(x, y):
     """Multiplication"""
     return x * y
+
 
 @GrB_BinaryOp._compile(_binary_int + _binary_float)
 def div(x, y):

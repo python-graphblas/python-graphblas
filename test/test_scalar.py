@@ -1,8 +1,7 @@
 import pytest
-from grblas import lib, ffi
 from grblas import Scalar
-from grblas import UnaryOp, BinaryOp, Monoid, Semiring
-from grblas import dtypes, descriptor
+from grblas import dtypes
+
 
 @pytest.fixture
 def s():
@@ -12,37 +11,53 @@ def s():
 def test_new_from_type():
     s = Scalar.new_from_type(dtypes.INT8)
     assert s.dtype == 'INT8'
+    assert s.value is None
+    s.is_empty = False
     assert s.value == 0  # must hold a value; initialized to 0
     s2 = Scalar.new_from_type(bool)
     assert s2.dtype == 'BOOL'
-    assert s2.value == False  # must hold a value; initialized to False
+    assert s2.value is None
+    s2.is_empty = False
+    assert s2.value is False  # must hold a value; initialized to False
+
 
 def test_new_from_existing(s):
     s2 = Scalar.new_from_existing(s)
     assert s2.dtype == s.dtype
     assert s2.value == s.value
+    s3 = s.dup()
+    assert s3.dtype == s.dtype
+    assert s3.value == s.value
+
 
 def test_new_from_value():
     s = Scalar.new_from_value(False)
     assert s.dtype == bool
-    assert s.value == False
+    assert s.value is False
     s2 = Scalar.new_from_value(-1.1)
     assert s2.dtype == 'FP64'
     assert s2.value == -1.1
 
+
 def test_clear(s):
     assert s.value == 5
+    assert not s.is_empty
     s.clear()
-    assert s.value == 0  # must hold a value; reset to 0
+    assert s.value is None
+    assert s.is_empty
     s2 = Scalar.new_from_value(True)
-    assert s2.value == True
+    assert s2.value is True
+    assert not s2.is_empty
     s2.clear()
-    assert s2.value == False  # must hold a value; reset to False
+    assert s2.value is None
+    assert s2.is_empty
+
 
 def test_equal(s):
     assert s.value == 5
     assert s == 5
     assert s != 27
+
 
 def test_truthy(s):
     assert s, 's did not register as truthy'
@@ -53,8 +68,10 @@ def test_truthy(s):
     with pytest.raises(AssertionError):
         assert not s2
 
+
 def test_get_value(s):
     assert s.value == 5
+
 
 def test_set_value(s):
     assert s.value == 5

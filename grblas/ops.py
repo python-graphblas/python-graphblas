@@ -3,7 +3,7 @@ import numba
 from types import FunctionType
 from . import lib, ffi
 from . import dtypes
-from .exceptions import check_status, GrblasException
+from .exceptions import GrblasException
 
 
 UNKNOWN_OPCLASS = 'UnknownOpClass'
@@ -26,11 +26,11 @@ class OpBase:
         if type_ not in self._specific_types:
             raise KeyError(f'{self.name} does not work with {type_}')
         return self._specific_types[type_]
-    
+
     def __setitem__(self, type_, obj):
         type_ = self._normalize_type(type_)
         self._specific_types[type_] = obj
-    
+
     def __delitem__(self, type_):
         type_ = self._normalize_type(type_)
         del self._specific_types[type_]
@@ -38,14 +38,14 @@ class OpBase:
     def __contains__(self, type_):
         type_ = self._normalize_type(type_)
         return type_ in self._specific_types
-    
+
     def _normalize_type(self, type_):
         return type_.name if isinstance(type_, dtypes.DataType) else type_
-    
+
     @property
     def types(self):
         return set(self._specific_types)
-    
+
     @classmethod
     def _initialize(cls):
         if cls._initialized:
@@ -85,7 +85,7 @@ class OpBase:
 
 class UnaryOp(OpBase):
     _parse_config = {
-        'trim_from_front': 4, 
+        'trim_from_front': 4,
         'num_underscores': 1,
         're_exprs': [
             re.compile('^GrB_(IDENTITY|AINV|MINV)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
@@ -95,7 +95,7 @@ class UnaryOp(OpBase):
 
     @classmethod
     def register_new(cls, name, func):
-        if type(func) != FunctionType:
+        if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
         if hasattr(cls, name):
             raise AttributeError(f'UnaryOp.{name} is already defined')
@@ -105,7 +105,7 @@ class UnaryOp(OpBase):
             # Check if func can handle this data type
             try:
                 ret = func(sample_val)
-                if type(ret) == bool:
+                if type(ret) is bool:
                     ret_type = dtypes.BOOL
                 elif type_ == 'BOOL':
                     # type_ == bool, but return type != bool; invalid
@@ -119,13 +119,14 @@ class UnaryOp(OpBase):
                 # Build wrapper because GraphBLAS wants pointers and void return
                 wrapper_sig = nt.void(nt.CPointer(ret_type.numba_type),
                                       nt.CPointer(type_.numba_type))
+
                 @numba.cfunc(wrapper_sig, nopython=True)
                 def unary_wrapper(z, x):
                     result = unary_udf(x[0])
                     z[0] = result
 
                 new_unary = ffi.new('GrB_UnaryOp*')
-                lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi, 
+                lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi,
                                     ret_type.gb_type, type_.gb_type)
                 new_type_obj[type_.name] = new_unary[0]
                 _return_type[new_unary[0]] = ret_type.name
@@ -140,7 +141,7 @@ class UnaryOp(OpBase):
 
 class BinaryOp(OpBase):
     _parse_config = {
-        'trim_from_front': 4, 
+        'trim_from_front': 4,
         'num_underscores': 1,
         're_exprs': [
             re.compile('^GrB_(FIRST|SECOND|MIN|MAX|PLUS|MINUS|TIMES|DIV)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
@@ -154,7 +155,7 @@ class BinaryOp(OpBase):
 
     @classmethod
     def register_new(cls, name, func):
-        if type(func) != FunctionType:
+        if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
         if hasattr(cls, name):
             raise AttributeError(f'UnaryOp.{name} is already defined')
@@ -164,7 +165,7 @@ class BinaryOp(OpBase):
             # Check if func can handle this data type
             try:
                 ret = func(sample_val, sample_val)
-                if type(ret) == bool:
+                if type(ret) is bool:
                     ret_type = dtypes.BOOL
                 elif type_ == 'BOOL':
                     # type_ == bool, but return type != bool; invalid
@@ -179,13 +180,14 @@ class BinaryOp(OpBase):
                 wrapper_sig = nt.void(nt.CPointer(ret_type.numba_type),
                                       nt.CPointer(type_.numba_type),
                                       nt.CPointer(type_.numba_type))
+
                 @numba.cfunc(wrapper_sig, nopython=True)
                 def binary_wrapper(z, x, y):
                     result = binary_udf(x[0], y[0])
                     z[0] = result
 
                 new_binary = ffi.new('GrB_BinaryOp*')
-                lib.GrB_BinaryOp_new(new_binary, binary_wrapper.cffi, 
+                lib.GrB_BinaryOp_new(new_binary, binary_wrapper.cffi,
                                      ret_type.gb_type, type_.gb_type, type_.gb_type)
                 new_type_obj[type_.name] = new_binary[0]
                 _return_type[new_binary[0]] = ret_type.name
@@ -201,7 +203,7 @@ class BinaryOp(OpBase):
 class Monoid(OpBase):
     _parse_config = {
         'trim_from_front': 4,
-        'trim_from_back': 7, 
+        'trim_from_back': 7,
         'num_underscores': 1,
         're_exprs': [
             re.compile('^GxB_(MAX|MIN|PLUS|TIMES)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)_MONOID$'),
@@ -211,7 +213,7 @@ class Monoid(OpBase):
 
     @classmethod
     def register_new(cls, name, binaryop, zero):
-        if type(binaryop) != BinaryOp:
+        if type(binaryop) is not BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
         new_type_obj = cls(name)
         for type_ in binaryop.types:
@@ -228,7 +230,7 @@ class Monoid(OpBase):
 
 class Semiring(OpBase):
     _parse_config = {
-        'trim_from_front': 4, 
+        'trim_from_front': 4,
         'num_underscores': 2,
         're_exprs': [
             re.compile('^GxB_(MIN|MAX|PLUS|TIMES)_(FIRST|SECOND|MIN|MAX|PLUS|MINUS|RMINUS|TIMES|DIV|RDIV|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
@@ -241,7 +243,7 @@ class Semiring(OpBase):
 
     @classmethod
     def register_new(cls, name, monoid, binaryop):
-        if type(monoid) != Monoid:
+        if type(monoid) is not Monoid:
             raise TypeError(f'monoid must be a Monoid, not {type(monoid)}')
         if type(binaryop) != BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
@@ -268,6 +270,7 @@ def find_opclass(gb_op):
 
 
 _return_type = {}
+
 
 def find_return_type(gb_op, dtype, dtype2=None):
     if dtype2 is not None:

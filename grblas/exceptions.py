@@ -4,6 +4,7 @@ from . import lib, ffi
 class GrblasException(Exception):
     pass
 
+
 if lib is None or ffi is None:
     raise GrblasException('grblas must be initialized with the backend prior to use; call `grblas.init(backend)`')
 

@@ -1,7 +1,6 @@
 import re
 from . import lib
 import numba
-import numpy as np
 
 
 class DataType:
@@ -12,13 +11,13 @@ class DataType:
         self.gb_type = gb_type
         self.c_type = c_type
         self.numba_type = numba_type
-    
+
     def __repr__(self):
         return self.name
-    
+
     def __hash__(self):
         return hash((self.name, self.c_type))
-    
+
     def __eq__(self, other):
         if isinstance(other, DataType):
             return self.gb_type == other.gb_type
@@ -29,7 +28,7 @@ class DataType:
                 return self == other
             except KeyError:
                 return False
-    
+
     @classmethod
     def from_pytype(cls, pytype):
         if pytype is int:

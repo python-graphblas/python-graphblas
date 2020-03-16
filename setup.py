@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='grblas',
-    version='1.2.3',
+    version='1.2.4',
     description='Python interface to GraphBLAS',
     author='Jim Kitchen',
     packages=['grblas', 'grblas/backends', 'grblas/backends/suitesparse'],
