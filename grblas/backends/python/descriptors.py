@@ -2,6 +2,7 @@ from .exceptions import GrB_Info, return_error
 from .context import handle_panic
 from .base import BasePointer
 
+
 class GrB_Desc_Field:
     GrB_OUTP = object()
     GrB_INP0 = object()

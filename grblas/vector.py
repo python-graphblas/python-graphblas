@@ -1,9 +1,7 @@
-import types
 from functools import partial
 from .base import lib, ffi, NULL, GbContainer, GbDelayed
 from .scalar import Scalar
-from .ops import (OpBase, UnaryOp, BinaryOp, Monoid, Semiring,
-                  find_opclass, find_return_type)
+from .ops import BinaryOp, Monoid, Semiring, find_opclass, find_return_type
 from . import dtypes
 from .exceptions import check_status, is_error, NoValue
 
@@ -18,7 +16,7 @@ class Vector(GbContainer):
 
     def __del__(self):
         check_status(lib.GrB_Vector_free(self.gb_obj))
-    
+
     def __repr__(self):
         return f'<Vector {self.nvals}/{self.size}:{self.dtype.name}>'
 
@@ -63,7 +61,7 @@ class Vector(GbContainer):
 
     def clear(self):
         check_status(lib.GrB_Vector_clear(self.gb_obj[0]))
-    
+
     def resize(self, size):
         raise NotImplementedError('Not implemented in GraphBLAS 1.2')
         check_status(lib.GrB_Vector_resize(self.gb_obj[0], size))
@@ -115,7 +113,7 @@ class Vector(GbContainer):
             dup_op))
         # Check for duplicates when dup_op was not provided
         if dup_orig is NULL and self.nvals < len(values):
-            raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp') 
+            raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
     @classmethod
     def new_from_type(cls, dtype, size=0):
@@ -166,7 +164,7 @@ class Vector(GbContainer):
 
     #########################################################
     # Delayed methods
-    # 
+    #
     # These return a GbDelayed object which must be passed
     # to update to trigger a call to GraphBLAS
     #########################################################
@@ -277,8 +275,8 @@ class Vector(GbContainer):
         output_constructor = partial(Scalar.new_from_type,
                                      dtype=find_return_type(op, self.dtype))
         return GbDelayed(func,
-                        [op, self.gb_obj[0]],
-                        output_constructor=output_constructor)
+                         [op, self.gb_obj[0]],
+                         output_constructor=output_constructor)
 
     ##################################
     # Extract and Assign index methods

@@ -1,7 +1,7 @@
 from . import lib, ffi
 from . import dtypes, ops, descriptor
 from .exceptions import check_status
-from .ops import OpBase
+from .ops import OpBase, UnaryOp
 
 NULL = ffi.NULL
 
@@ -30,7 +30,7 @@ class Updater:
         else:
             resolved_indexes = IndexerResolver(self.parent, keys)
 
-        if resolved_indexes.is_single_element() and not self.kwargs:
+        if resolved_indexes.is_single_element and not self.kwargs:
             # Fast path using assignElement
             self.parent._assign_element(resolved_indexes, obj)
         else:
@@ -55,7 +55,7 @@ class GbContainer:
             raise TypeError('Object passed to __init__ must be CData type')
         if not isinstance(dtype, dtypes.DataType):
             dtype = dtypes.lookup(dtype)
-        
+
         self.gb_obj = gb_obj
         self.dtype = dtype
 
@@ -117,7 +117,6 @@ class GbContainer:
     def _update(self, delayed, mask=NULL, accum=NULL, replace=False):
         # TODO: check expected output type (need to include in GbDelayed object)
         if not isinstance(delayed, GbDelayed):
-            from .ops import UnaryOp
             from .matrix import Matrix, TransposedMatrix
             if type(delayed) is AmbiguousAssignOrExtract:
                 # Extract (C << A[rows, cols])
@@ -169,7 +168,7 @@ class GbContainer:
                 raise TypeError('Mask not allowed for Scalars')
             call_args = [self.gb_obj, accum] + tail_args + [desc]
             # Ensure the scalar isn't flagged as empty after the update
-            self.empty = False
+            self.is_empty = False
         else:
             call_args = [self.gb_obj[0], mask, accum] + tail_args + [desc]
 
@@ -266,7 +265,7 @@ class AmbiguousAssignOrExtract:
     def value(self):
         if isinstance(self.parent, Updater):
             raise TypeError('Cannot extract from an Updater')
-        if not self.resolved_indexes.is_single_element():
+        if not self.resolved_indexes.is_single_element:
             raise AttributeError("Only Scalars have `.value` attribute")
         val, _ = self.parent._extract_element(self.resolved_indexes)
         return val
@@ -278,7 +277,7 @@ class AmbiguousAssignOrExtract:
         """
         if isinstance(self.parent, Updater):
             raise TypeError('Cannot extract from an Updater')
-        if self.resolved_indexes.is_single_element():
+        if self.resolved_indexes.is_single_element:
             if mask is not None:
                 raise TypeError('mask is not allowed for single element extraction')
             val, cur_dtype = self.parent._extract_element(self.resolved_indexes)
@@ -294,7 +293,7 @@ class AmbiguousAssignOrExtract:
         """Return a GbDelayed object, treating this as an extract call"""
         if isinstance(self.parent, Updater):
             raise TypeError('Cannot extract from an Updater')
-        if self.resolved_indexes.is_single_element():
+        if self.resolved_indexes.is_single_element:
             raise TypeError('extract and update is not allowed for single element')
         return self.parent._prep_for_extract(self.resolved_indexes)
 
@@ -306,6 +305,7 @@ class IndexerResolver:
         self.obj = obj
         self.indices = self.parse_indices(indices, obj.shape)
 
+    @property
     def is_single_element(self):
         for idx, size in self.indices:
             if size is not None:
@@ -321,18 +321,18 @@ class IndexerResolver:
         Within each tuple, if the index is of type int, the size will be None
         """
         if len(shape) == 1:
-            if type(indices) == tuple:
+            if type(indices) is tuple:
                 raise TypeError(f'Index for {self.obj.__class__.__name__} cannot be a tuple')
             # Convert to tuple for consistent processing
             indices = (indices,)
         elif len(shape) == 2:
-            if type(indices) != tuple or len(indices) != 2:
+            if type(indices) is not tuple or len(indices) != 2:
                 raise TypeError(f'Index for {self.obj.__class__.__name__} must be a 2-tuple')
 
         out = []
         for i, idx in enumerate(indices):
             typ = type(idx)
-            if type == tuple:
+            if typ is tuple:
                 raise TypeError(f'Index in position {i} cannot be a tuple; must use slice or list or int')
             out.append(self.parse_index(idx, typ, shape[i]))
         return out

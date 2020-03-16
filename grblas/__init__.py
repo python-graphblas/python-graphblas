@@ -1,5 +1,5 @@
 import importlib
-from . import backends
+from . import backends  # noqa
 
 _init_params = None
 _SPECIAL_ATTRS = ["lib", "ffi", "Matrix", "Vector", "Scalar", "UnaryOp", "BinaryOp", "Monoid", "Semiring"]

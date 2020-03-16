@@ -20,6 +20,7 @@ class GrB_Info:
 class GraphBlasException(Exception):
     pass
 
+
 last_error_message = None
 
 

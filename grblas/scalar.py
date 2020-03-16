@@ -1,9 +1,4 @@
-from .base import (
-    lib,
-    ffi,
-    NULL,
-    GbContainer,
-)
+from .base import ffi, GbContainer
 from . import dtypes
 
 
@@ -16,7 +11,7 @@ class Scalar(GbContainer):
 
     def __init__(self, gb_obj, dtype, empty=False):
         super().__init__(gb_obj, dtype)
-        self.empty = empty
+        self.is_empty = empty
 
     def __repr__(self):
         return f'<Scalar {self.value}:{self.dtype}>'
@@ -30,7 +25,7 @@ class Scalar(GbContainer):
             return self.value == other
 
     def __bool__(self):
-        if self.empty:
+        if self.is_empty:
             return False
         return bool(self.value)
 
@@ -39,11 +34,11 @@ class Scalar(GbContainer):
             self.value = False
         else:
             self.value = 0
-        self.empty = True
+        self.is_empty = True
 
     @property
     def value(self):
-        if self.empty:
+        if self.is_empty:
             return None
         return self.gb_obj[0]
 
@@ -53,7 +48,7 @@ class Scalar(GbContainer):
             self.clear()
         else:
             self.gb_obj[0] = val
-            self.empty = False
+            self.is_empty = False
 
     @classmethod
     def new_from_type(cls, dtype):

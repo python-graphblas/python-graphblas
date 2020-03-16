@@ -15,4 +15,3 @@ ffibuilder.cdef(gb_cdef.read())
 
 if __name__ == '__main__':
     ffibuilder.compile(verbose=True)
-

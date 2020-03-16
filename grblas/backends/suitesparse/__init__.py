@@ -1,1 +1,1 @@
-from ._suitesparse_grblas import ffi, lib
+from ._suitesparse_grblas import ffi, lib  # noqa

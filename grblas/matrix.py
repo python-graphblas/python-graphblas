@@ -1,10 +1,8 @@
-import types
 from functools import partial
 from .base import lib, ffi, NULL, GbContainer, GbDelayed
 from .vector import Vector
 from .scalar import Scalar
-from .ops import (OpBase, UnaryOp, BinaryOp, Monoid, Semiring,
-                  find_opclass, find_return_type)
+from .ops import BinaryOp, Monoid, Semiring, find_opclass, find_return_type
 from . import dtypes
 from .exceptions import check_status, is_error, NoValue
 
@@ -19,7 +17,7 @@ class Matrix(GbContainer):
 
     def __del__(self):
         check_status(lib.GrB_Matrix_free(self.gb_obj))
-    
+
     def __repr__(self):
         return f'<Matrix {self.nvals}/({self.nrows}x{self.ncols}):{self.dtype.name}>'
 
@@ -141,7 +139,7 @@ class Matrix(GbContainer):
             dup_op))
         # Check for duplicates when dup_op was not provided
         if dup_orig is NULL and self.nvals < len(values):
-            raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp') 
+            raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
     @classmethod
     def new_from_type(cls, dtype, nrows=0, ncols=0):
@@ -199,7 +197,7 @@ class Matrix(GbContainer):
 
     #########################################################
     # Delayed methods
-    # 
+    #
     # These return a GbDelayed object which must be passed
     # to __setitem__ to trigger a call to GraphBLAS
     #########################################################
@@ -366,14 +364,14 @@ class Matrix(GbContainer):
                          [op, self.gb_obj[0]],
                          at=self.is_transposed,
                          output_constructor=output_constructor)
-    
+
     def reduce_columns(self, op=NULL):
         """
         GrB_Matrix_reduce
         Reduce all values in each column, converting the matrix to a vector
         """
         return self.T.reduce_rows(op)
-    
+
     def reduce_scalar(self, op=NULL):
         """
         GrB_Matrix_reduce
@@ -388,8 +386,8 @@ class Matrix(GbContainer):
         output_constructor = partial(Scalar.new_from_type,
                                      dtype=find_return_type(op, self.dtype))
         return GbDelayed(func,
-                        [op, self.gb_obj[0]],
-                        output_constructor=output_constructor)
+                         [op, self.gb_obj[0]],
+                         output_constructor=output_constructor)
 
     ##################################
     # Extract and Assign index methods
@@ -503,7 +501,7 @@ class TransposedMatrix(Matrix):
         super().__init__(matrix.gb_obj, matrix.dtype)
         self._matrix = matrix
 
-    # Override the default behavior. Don't free gb_obj 
+    # Override the default behavior. Don't free gb_obj
     # because it's shared with the untransposed matrix
     def __del__(self):
         pass
@@ -532,7 +530,7 @@ class TransposedMatrix(Matrix):
     @property
     def T(self):
         return self._matrix
-    
+
     @property
     def is_transposed(self):
         return True
