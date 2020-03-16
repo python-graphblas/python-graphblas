@@ -1,6 +1,6 @@
 import pytest
 from grblas import Matrix, Vector, Scalar
-from grblas import UnaryOp, BinaryOp, Monoid, Semiring
+from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
 from grblas.exceptions import IndexOutOfBound
 
@@ -51,7 +51,7 @@ def test_new_from_values():
     assert u2.size == 17
     assert u2.nvals == 3
     assert u2.dtype == float
-    u3 = Vector.new_from_values([0, 1, 1], [1, 2, 3], size=10, dup_op=BinaryOp.TIMES)
+    u3 = Vector.new_from_values([0, 1, 1], [1, 2, 3], size=10, dup_op=binary.times)
     assert u3.size == 10
     assert u3.nvals == 2  # duplicates were combined
     assert u3.dtype == int
@@ -112,13 +112,13 @@ def test_remove_element(v):
 
 
 def test_vxm(v, A):
-    w = v.vxm(A, Semiring.PLUS_TIMES).new()
+    w = v.vxm(A, semiring.plus_times).new()
     result = Vector.new_from_values([0, 2, 3, 4, 5, 6], [3, 3, 0, 8, 14, 4])
     assert w == result
 
 
 def test_vxm_transpose(v, A):
-    w = v.vxm(A.T, Semiring.PLUS_TIMES).new()
+    w = v.vxm(A.T, semiring.plus_times).new()
     result = Vector.new_from_values([0, 1, 6], [5, 16, 13])
     assert w == result
 
@@ -126,37 +126,37 @@ def test_vxm_transpose(v, A):
 def test_vxm_nonsquare(v):
     A = Matrix.new_from_values([0, 3], [0, 1], [10, 20], nrows=7, ncols=2)
     u = Vector.new_from_type(v.dtype, size=2)
-    u().update(v.vxm(A, Semiring.MIN_PLUS))
+    u().update(v.vxm(A, semiring.min_plus))
     result = Vector.new_from_values([1], [21])
     assert u == result
-    w1 = v.vxm(A, Semiring.MIN_PLUS).new()
+    w1 = v.vxm(A, semiring.min_plus).new()
     assert w1 == u
     # Test the transpose case
     v2 = Vector.new_from_values([0, 1], [1, 2])
-    w2 = v2.vxm(A.T, Semiring.MIN_PLUS).new()
+    w2 = v2.vxm(A.T, semiring.min_plus).new()
     assert w2.size == 7
 
 
 def test_vxm_mask(v, A):
     mask = Vector.new_from_values([0, 3, 4], [True, True, True], size=7)
     u = Vector.new_from_existing(v)
-    u(mask) << v.vxm(A, Semiring.PLUS_TIMES)
+    u(mask) << v.vxm(A, semiring.plus_times)
     result = Vector.new_from_values([0, 1, 3, 4, 6], [3, 1, 0, 8, 0], size=7)
     assert u == result
     u = Vector.new_from_existing(v)
-    u(~mask) << v.vxm(A, Semiring.PLUS_TIMES)
+    u(~mask) << v.vxm(A, semiring.plus_times)
     result2 = Vector.new_from_values([2, 3, 4, 5, 6], [3, 1, 2, 14, 4], size=7)
     assert u == result2
     u = Vector.new_from_existing(v)
-    u(replace=True, mask=mask) << v.vxm(A, Semiring.PLUS_TIMES)
+    u(replace=True, mask=mask) << v.vxm(A, semiring.plus_times)
     result3 = Vector.new_from_values([0, 3, 4], [3, 0, 8], size=7)
     assert u == result3
-    w = v.vxm(A, Semiring.PLUS_TIMES).new(mask=mask)
+    w = v.vxm(A, semiring.plus_times).new(mask=mask)
     assert w == result3
 
 
 def test_vxm_accum(v, A):
-    v(BinaryOp.PLUS) << v.vxm(A, Semiring.PLUS_TIMES)
+    v(binary.plus) << v.vxm(A, semiring.plus_times)
     result = Vector.new_from_values([0, 1, 2, 3, 4, 5, 6], [3, 1, 3, 1, 10, 14, 4], size=7)
     assert v == result
 
@@ -165,11 +165,11 @@ def test_ewise_mult(v):
     # Binary, Monoid, and Semiring
     v2 = Vector.new_from_values([0, 3, 5, 6], [2, 3, 2, 1])
     result = Vector.new_from_values([3, 6], [3, 0])
-    w = v.ewise_mult(v2, BinaryOp.TIMES).new()
+    w = v.ewise_mult(v2, binary.times).new()
     assert w == result
-    w << v.ewise_mult(v2, Monoid.TIMES)
+    w << v.ewise_mult(v2, monoid.times)
     assert w == result
-    w.update(v.ewise_mult(v2, Semiring.PLUS_TIMES))
+    w.update(v.ewise_mult(v2, semiring.plus_times))
     assert w == result
 
 
@@ -179,7 +179,7 @@ def test_ewise_mult_change_dtype(v):
     assert v.dtype == dtypes.INT64
     assert v2.dtype == dtypes.INT64
     result = Vector.new_from_values([1, 3, 4, 6], [0.5, 0.5, 1.0, 0], dtype=dtypes.FP64)
-    w = v.ewise_mult(v2, BinaryOp.DIV).new(dtype=dtypes.FP64)
+    w = v.ewise_mult(v2, binary.div).new(dtype=dtypes.FP64)
     assert w == result
 
 
@@ -187,11 +187,11 @@ def test_ewise_add(v):
     # Binary, Monoid, and Semiring
     v2 = Vector.new_from_values([0, 3, 5, 6], [2, 3, 2, 1])
     result = Vector.new_from_values([0, 1, 3, 4, 5, 6], [2, 1, 3, 2, 2, 1])
-    w = v.ewise_add(v2, BinaryOp.MAX).new()
+    w = v.ewise_add(v2, binary.max).new()
     assert w == result
-    w.update(v.ewise_add(v2, Monoid.MAX))
+    w.update(v.ewise_add(v2, monoid.max))
     assert w == result
-    w << v.ewise_add(v2, Semiring.MAX_TIMES)
+    w << v.ewise_add(v2, semiring.max_times)
     assert w == result
 
 
@@ -233,7 +233,7 @@ def test_assign_scalar(v):
 
 def test_apply(v):
     result = Vector.new_from_values([1, 3, 4, 6], [-1, -1, -2, 0])
-    w = v.apply(UnaryOp.AINV).new()
+    w = v.apply(unary.ainv).new()
     assert w == result
 
 
@@ -243,10 +243,10 @@ def test_apply_binary(v):
 
 
 def test_reduce(v):
-    s = v.reduce(Monoid.PLUS).new()
+    s = v.reduce(monoid.plus).new()
     assert s == 4
     # Test accum
-    s(accum=BinaryOp.TIMES) << v.reduce(Monoid.PLUS)
+    s(accum=binary.times) << v.reduce(monoid.plus)
     assert s == 16
 
 
@@ -270,7 +270,7 @@ def test_equal(v):
 def test_binary_op(v):
     v2 = Vector.new_from_existing(v)
     v2[1] = 0
-    w = v.ewise_mult(v2, BinaryOp.GT).new()
+    w = v.ewise_mult(v2, binary.gt).new()
     result = Vector.new_from_values([1, 3, 4, 6], [True, False, False, False])
     assert w.dtype == 'BOOL'
     assert w == result

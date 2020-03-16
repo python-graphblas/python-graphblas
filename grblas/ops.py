@@ -1,8 +1,7 @@
 import re
 import numba
 from types import FunctionType
-from . import lib, ffi
-from . import dtypes
+from . import lib, ffi, dtypes, unary, binary, monoid, semiring
 from .exceptions import GrblasException
 
 
@@ -16,6 +15,7 @@ class UdfParseError(GrblasException):
 class OpBase:
     _parse_config = None
     _initialized = False
+    _module = None
 
     def __init__(self, name):
         self.name = name
@@ -71,11 +71,11 @@ class OpBase:
                             *splitname, type_ = splitname
                         else:
                             type_ = 'BOOL'
-                        name = '_'.join(splitname)
+                        name = '_'.join(splitname).lower()
                         # Create object for name unless it already exists
-                        if not hasattr(cls, name):
-                            setattr(cls, name, cls(name))
-                        obj = getattr(cls, name)
+                        if not hasattr(cls._module, name):
+                            setattr(cls._module, name, cls(name))
+                        obj = getattr(cls._module, name)
                         gb_obj = getattr(lib, varname)
                         obj[type_] = gb_obj
                         # Add to map of return types
@@ -84,6 +84,7 @@ class OpBase:
 
 
 class UnaryOp(OpBase):
+    _module = unary
     _parse_config = {
         'trim_from_front': 4,
         'num_underscores': 1,
@@ -98,7 +99,7 @@ class UnaryOp(OpBase):
         if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
         if hasattr(cls, name):
-            raise AttributeError(f'UnaryOp.{name} is already defined')
+            raise AttributeError(f'unary.{name} is already defined')
         success = False
         new_type_obj = cls(name)
         for type_, sample_val in dtypes._sample_values.items():
@@ -134,12 +135,13 @@ class UnaryOp(OpBase):
             except Exception:
                 continue
         if success:
-            setattr(cls, name, new_type_obj)
+            setattr(cls._module, name, new_type_obj)
         else:
             raise UdfParseError('Unable to parse function using Numba')
 
 
 class BinaryOp(OpBase):
+    _module = binary
     _parse_config = {
         'trim_from_front': 4,
         'num_underscores': 1,
@@ -158,7 +160,7 @@ class BinaryOp(OpBase):
         if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
         if hasattr(cls, name):
-            raise AttributeError(f'UnaryOp.{name} is already defined')
+            raise AttributeError(f'unary.{name} is already defined')
         success = False
         new_type_obj = cls(name)
         for type_, sample_val in dtypes._sample_values.items():
@@ -195,12 +197,13 @@ class BinaryOp(OpBase):
             except Exception:
                 continue
         if success:
-            setattr(cls, name, new_type_obj)
+            setattr(cls._module, name, new_type_obj)
         else:
             raise UdfParseError('Unable to parse function using Numba')
 
 
 class Monoid(OpBase):
+    _module = monoid
     _parse_config = {
         'trim_from_front': 4,
         'trim_from_back': 7,
@@ -225,10 +228,11 @@ class Monoid(OpBase):
             new_type_obj[type_.name] = new_monoid[0]
             ret_type = find_return_type(binaryop[type_], type_)
             _return_type[new_monoid[0]] = ret_type
-        setattr(cls, name, new_type_obj)
+        setattr(cls._module, name, new_type_obj)
 
 
 class Semiring(OpBase):
+    _module = semiring
     _parse_config = {
         'trim_from_front': 4,
         'num_underscores': 2,
@@ -255,7 +259,7 @@ class Semiring(OpBase):
             new_type_obj[type_.name] = new_semiring[0]
             ret_type = find_return_type(monoid[type_], type_)
             _return_type[new_semiring[0]] = ret_type
-        setattr(cls, name, new_type_obj)
+        setattr(cls._module, name, new_type_obj)
 
 
 def find_opclass(gb_op):

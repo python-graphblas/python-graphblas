@@ -1,8 +1,8 @@
 from functools import partial
 from .base import lib, ffi, NULL, GbContainer, GbDelayed
 from .scalar import Scalar
-from .ops import BinaryOp, Monoid, Semiring, find_opclass, find_return_type
-from . import dtypes
+from .ops import BinaryOp, find_opclass, find_return_type
+from . import dtypes, binary, monoid, semiring
 from .exceptions import check_status, is_error, NoValue
 
 
@@ -32,12 +32,12 @@ class Vector(GbContainer):
             return False
         # Use ewise_mult to compare equality via intersection
         matches = Vector.new_from_type(bool, self.size)
-        matches << self.ewise_mult(other, BinaryOp.EQ)
+        matches << self.ewise_mult(other, binary.eq)
         if matches.nvals != self.nvals:
             return False
         # Check if all results are True
         result = Scalar.new_from_type(bool)
-        result << matches.reduce(Monoid.LAND)
+        result << matches.reduce(monoid.land)
         return result.value
 
     def __len__(self):
@@ -98,7 +98,7 @@ class Vector(GbContainer):
             return
         dup_orig = dup_op
         if dup_op is NULL:
-            dup_op = BinaryOp.PLUS
+            dup_op = binary.plus
         if isinstance(dup_op, BinaryOp):
             dup_op = dup_op[self.dtype]
         indices = ffi.new('GrB_Index[]', indices)
@@ -178,7 +178,7 @@ class Vector(GbContainer):
         if not isinstance(other, Vector):
             raise TypeError(f'Expected Vector, found {type(other)}')
         if op is NULL:
-            op = BinaryOp.PLUS
+            op = binary.plus
         opclass = find_opclass(op)
         if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
@@ -199,7 +199,7 @@ class Vector(GbContainer):
         if not isinstance(other, Vector):
             raise TypeError(f'Expected Vector, found {type(other)}')
         if op is NULL:
-            op = BinaryOp.TIMES
+            op = binary.times
         opclass = find_opclass(op)
         if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
@@ -220,7 +220,7 @@ class Vector(GbContainer):
         if not isinstance(other, Matrix):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is NULL:
-            op = Semiring.PLUS_TIMES
+            op = semiring.plus_times
         opclass = find_opclass(op)
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
@@ -268,9 +268,9 @@ class Vector(GbContainer):
         """
         if op is NULL:
             if self.dtype == bool:
-                op = Monoid.LOR
+                op = monoid.lor
             else:
-                op = Monoid.PLUS
+                op = monoid.plus
         func = getattr(lib, f'GrB_Vector_reduce_{self.dtype.name}')
         output_constructor = partial(Scalar.new_from_type,
                                      dtype=find_return_type(op, self.dtype))

@@ -1,6 +1,6 @@
 import pytest
 from grblas import Matrix, Vector
-from grblas import UnaryOp, BinaryOp, Monoid, Semiring
+from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
 from grblas.exceptions import IndexOutOfBound, DimensionMismatch
 
@@ -55,7 +55,7 @@ def test_new_from_values():
     assert C2.ncols == 3
     assert C2.nvals == 3
     assert C2.dtype == float
-    C3 = Matrix.new_from_values([0, 1, 1], [2, 1, 1], [1, 2, 3], nrows=10, dup_op=BinaryOp.TIMES)
+    C3 = Matrix.new_from_values([0, 1, 1], [2, 1, 1], [1, 2, 3], nrows=10, dup_op=binary.times)
     assert C3.nrows == 10
     assert C3.ncols == 3
     assert C3.nvals == 2  # duplicates were combined
@@ -126,7 +126,7 @@ def test_remove_element(A):
 
 
 def test_mxm(A):
-    C = A.mxm(A, Semiring.PLUS_TIMES).new()
+    C = A.mxm(A, semiring.plus_times).new()
     result = Matrix.new_from_values(
         [0, 0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 3, 4, 5, 6, 6, 6],
         [0, 2, 4, 6, 2, 3, 4, 5, 2, 1, 3, 5, 2, 5, 0, 2, 5],
@@ -136,13 +136,13 @@ def test_mxm(A):
 
 def test_mxm_transpose(A):
     C = Matrix.new_from_existing(A)
-    C << A.mxm(A.T, Semiring.PLUS_TIMES)
+    C << A.mxm(A.T, semiring.plus_times)
     result = Matrix.new_from_values(
         [0, 0, 1, 1, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6, 6, 6, 6, 6],
         [0, 6, 1, 6, 2, 4, 3, 5, 6, 2, 4, 3, 5, 6, 0, 1, 3, 5, 6],
         [13, 21, 80, 24, 1, 7, 18, 3, 15, 7, 49, 3, 1, 5, 21, 24, 15, 5, 83])
     assert C == result
-    C << A.T.mxm(A, Semiring.PLUS_TIMES)
+    C << A.T.mxm(A, semiring.plus_times)
     result2 = Matrix.new_from_values(
         [0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 6, 6],
         [0, 2, 1, 3, 0, 2, 3, 4, 1, 2, 3, 4, 2, 3, 4, 6, 5, 4, 6],
@@ -154,11 +154,11 @@ def test_mxm_nonsquare():
     A = Matrix.new_from_values([0, 0, 0], [0, 2, 4], [1, 2, 3], nrows=1, ncols=5)
     B = Matrix.new_from_values([0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1)
     C = Matrix.new_from_type(A.dtype, nrows=1, ncols=1)
-    C << A.mxm(B, Semiring.MAX_PLUS)
+    C << A.mxm(B, semiring.max_plus)
     assert C[0, 0].value == 33
-    C1 = A.mxm(B, Semiring.MAX_PLUS).new()
+    C1 = A.mxm(B, semiring.max_plus).new()
     assert C1 == C
-    C2 = A.T.mxm(B.T, Semiring.MAX_PLUS).new()
+    C2 = A.T.mxm(B.T, semiring.max_plus).new()
     assert C2.nrows == 5
     assert C2.ncols == 5
 
@@ -166,32 +166,32 @@ def test_mxm_nonsquare():
 def test_mxm_mask(A):
     mask = Matrix.new_from_values([0, 3, 4], [2, 3, 2], [True, True, True], nrows=7, ncols=7)
     C = Matrix.new_from_existing(A)
-    C(mask) << A.mxm(A, Semiring.PLUS_TIMES)
+    C(mask) << A.mxm(A, semiring.plus_times)
     result = Matrix.new_from_values(
         [0, 0, 0, 1, 1, 2, 3, 3, 3, 4, 4, 5, 6, 6, 6],
         [1, 2, 3, 4, 6, 5, 0, 2, 3, 2, 5, 2, 2, 3, 4],
         [2, 9, 3, 8, 4, 1, 3, 3, 9, 7, 7, 1, 5, 7, 3])
     assert C == result
     C = Matrix.new_from_existing(A)
-    C(~mask) << A.mxm(A, Semiring.PLUS_TIMES)
+    C(~mask) << A.mxm(A, semiring.plus_times)
     result2 = Matrix.new_from_values(
         [0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 5, 6, 6, 6],
         [0, 4, 6, 2, 3, 4, 5, 2, 1, 5, 5, 0, 2, 5],
         [9, 16, 8, 20, 28, 12, 56, 1, 6, 3, 1, 21, 21, 26])
     assert C == result2
     C = Matrix.new_from_existing(A)
-    C(mask, replace=True).update(A.mxm(A, Semiring.PLUS_TIMES))
+    C(mask, replace=True).update(A.mxm(A, semiring.plus_times))
     result3 = Matrix.new_from_values(
         [0, 3, 4],
         [2, 3, 2],
         [9, 9, 7], nrows=7, ncols=7)
     assert C == result3
-    C2 = A.mxm(A, Semiring.PLUS_TIMES).new(mask=mask)
+    C2 = A.mxm(A, semiring.plus_times).new(mask=mask)
     assert C2 == result3
 
 
 def test_mxm_accum(A):
-    A(BinaryOp.PLUS) << A.mxm(A, Semiring.PLUS_TIMES)
+    A(binary.plus) << A.mxm(A, semiring.plus_times)
     result = Matrix.new_from_values(
         [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 3, 3, 3, 3, 3, 4, 4, 5, 5, 6, 6, 6, 6, 6],
         [0, 1, 2, 3, 4, 6, 2, 3, 4, 5, 6, 2, 5, 0, 1, 2, 3, 5, 2, 5, 2, 5, 0, 2, 3, 4, 5],
@@ -200,7 +200,7 @@ def test_mxm_accum(A):
 
 
 def test_mxv(A, v):
-    w = A.mxv(v, Semiring.PLUS_TIMES).new()
+    w = A.mxv(v, semiring.plus_times).new()
     result = Vector.new_from_values([0, 1, 6], [5, 16, 13])
     assert w == result
 
@@ -209,11 +209,11 @@ def test_ewise_mult(A):
     # Binary, Monoid, and Semiring
     B = Matrix.new_from_values([0, 0, 5], [1, 2, 2], [5, 4, 8], nrows=7, ncols=7)
     result = Matrix.new_from_values([0, 5], [1, 2], [10, 8], nrows=7, ncols=7)
-    C = A.ewise_mult(B, BinaryOp.TIMES).new()
+    C = A.ewise_mult(B, binary.times).new()
     assert C == result
-    C() << A.ewise_mult(B, Monoid.TIMES)
+    C() << A.ewise_mult(B, monoid.times)
     assert C == result
-    C << A.ewise_mult(B, Semiring.PLUS_TIMES)
+    C << A.ewise_mult(B, semiring.plus_times)
     assert C == result
 
 
@@ -225,11 +225,11 @@ def test_ewise_add(A):
         [2, 0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [4, 3, 5, 3, 8, 5, 3, 7, 8, 3, 1, 7, 4]
     )
-    C = A.ewise_add(B, BinaryOp.SECOND).new()  # possibly surprising, but SECOND(x, empty) == x
+    C = A.ewise_add(B, binary.second).new()  # possibly surprising, but SECOND(x, empty) == x
     assert C == result
-    C << A.ewise_add(B, Monoid.MAX)
+    C << A.ewise_add(B, monoid.max)
     assert C == result
-    C << A.ewise_add(B, Semiring.MAX_MINUS)
+    C << A.ewise_add(B, semiring.max_minus)
     assert C == result
 
 
@@ -353,7 +353,7 @@ def test_apply(A):
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [-3, -2, -3, -1, -5, -3, -7, -8, -3, -1, -7, -4])
-    C = A.apply(UnaryOp.AINV).new()
+    C = A.apply(unary.ainv).new()
     assert C == result
 
 
@@ -364,18 +364,18 @@ def test_apply_binary(A):
 
 def test_reduce_row(A):
     result = Vector.new_from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
-    w = A.reduce_rows(Monoid.PLUS).new()
+    w = A.reduce_rows(monoid.plus).new()
     assert w == result
 
 
 def test_reduce_column(A):
     result = Vector.new_from_values([0, 1, 2, 3, 4, 5, 6],  [3, 2, 9, 10, 11, 8, 4])
-    w = A.reduce_columns(Monoid.PLUS).new()
+    w = A.reduce_columns(monoid.plus).new()
     assert w == result
 
 
 def test_reduce_scalar(A):
-    s = A.reduce_scalar(Monoid.PLUS).new()
+    s = A.reduce_scalar(monoid.plus).new()
     assert s == 47
 
 
