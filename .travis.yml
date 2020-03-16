@@ -18,7 +18,7 @@ install:
     # create and activaste environment
     - conda create -n grblas -c jim22k -c conda-forge python=3.7 pandas scipy networkx numba cffi ss_graphblas pytest-runner
     - conda activate grblas
-    - python setup.py build_ext
+    - python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
     - pip install -e .
 
 script:
