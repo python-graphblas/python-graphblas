@@ -22,7 +22,7 @@ class Scalar(GbContainer):
         return f'<Scalar {self.value}:{self.dtype}>'
 
     def __eq__(self, other):
-        if type(other) == Scalar:
+        if type(other) is Scalar:
             if self.dtype != other.dtype:
                 return False
             return self.value == other.value

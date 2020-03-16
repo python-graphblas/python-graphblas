@@ -24,7 +24,7 @@ class Vector(GbContainer):
 
     def __eq__(self, other):
         # Borrowed this recipe from LAGraph
-        if type(other) != self.__class__:
+        if type(other) is not self.__class__:
             return False
         if self.dtype != other.dtype:
             return False

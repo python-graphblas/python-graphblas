@@ -25,7 +25,7 @@ class Matrix(GbContainer):
 
     def __eq__(self, other):
         # Borrowed this recipe from LAGraph
-        if type(other) != self.__class__:
+        if type(other) is not self.__class__:
             return False
         if self.dtype != other.dtype:
             return False
@@ -516,7 +516,7 @@ class TransposedMatrix(Matrix):
         if mask is None:
             output.update(self)
         else:
-            if type(mask) != Matrix:
+            if type(mask) is not Matrix:
                 raise TypeError('Mask must be a Matrix')
             output(mask).update(self)
         return output

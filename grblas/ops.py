@@ -95,7 +95,7 @@ class UnaryOp(OpBase):
 
     @classmethod
     def register_new(cls, name, func):
-        if type(func) != FunctionType:
+        if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
         if hasattr(cls, name):
             raise AttributeError(f'UnaryOp.{name} is already defined')
@@ -105,7 +105,7 @@ class UnaryOp(OpBase):
             # Check if func can handle this data type
             try:
                 ret = func(sample_val)
-                if type(ret) == bool:
+                if type(ret) is bool:
                     ret_type = dtypes.BOOL
                 elif type_ == 'BOOL':
                     # type_ == bool, but return type != bool; invalid
@@ -154,7 +154,7 @@ class BinaryOp(OpBase):
 
     @classmethod
     def register_new(cls, name, func):
-        if type(func) != FunctionType:
+        if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
         if hasattr(cls, name):
             raise AttributeError(f'UnaryOp.{name} is already defined')
@@ -164,7 +164,7 @@ class BinaryOp(OpBase):
             # Check if func can handle this data type
             try:
                 ret = func(sample_val, sample_val)
-                if type(ret) == bool:
+                if type(ret) is bool:
                     ret_type = dtypes.BOOL
                 elif type_ == 'BOOL':
                     # type_ == bool, but return type != bool; invalid
@@ -211,7 +211,7 @@ class Monoid(OpBase):
 
     @classmethod
     def register_new(cls, name, binaryop, zero):
-        if type(binaryop) != BinaryOp:
+        if type(binaryop) is not BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
         new_type_obj = cls(name)
         for type_ in binaryop.types:
@@ -241,7 +241,7 @@ class Semiring(OpBase):
 
     @classmethod
     def register_new(cls, name, monoid, binaryop):
-        if type(monoid) != Monoid:
+        if type(monoid) is not Monoid:
             raise TypeError(f'monoid must be a Monoid, not {type(monoid)}')
         if type(binaryop) != BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')

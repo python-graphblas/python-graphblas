@@ -15,7 +15,7 @@ class Updater:
         # Occurs when user calls C(params)[index]; need something prepared to receive `<<` or `.update()`
         if self.parent.is_scalar:
             raise TypeError('Indexing not supported for Scalars')
-        if type(keys) == IndexerResolver:
+        if type(keys) is IndexerResolver:
             resolved_indexes = keys
         else:
             resolved_indexes = IndexerResolver(self.parent, keys)
@@ -25,7 +25,7 @@ class Updater:
         # Occurs when user calls C(params)[index] = delayed
         if self.parent.is_scalar:
             raise TypeError('Indexing not supported for Scalars')
-        if type(keys) == IndexerResolver:
+        if type(keys) is IndexerResolver:
             resolved_indexes = keys
         else:
             resolved_indexes = IndexerResolver(self.parent, keys)
@@ -82,11 +82,11 @@ class GbContainer:
         for key in optional_mask_and_accum:
             if isinstance(key, GbContainer):
                 mask_arg = key
-            elif type(key) == ComplementedMask:
+            elif type(key) is ComplementedMask:
                 mask_arg = key
             elif isinstance(key, ops.BinaryOp):
                 accum_arg = key
-            elif type(key) == ffi.CData and ops.find_opclass(key) != ops.UNKNOWN_OPCLASS:
+            elif type(key) is ffi.CData and ops.find_opclass(key) != ops.UNKNOWN_OPCLASS:
                 accum_arg = key
             else:
                 raise TypeError(f'Invalid item found in output params: {type(key)}')
@@ -119,13 +119,13 @@ class GbContainer:
         if not isinstance(delayed, GbDelayed):
             from .ops import UnaryOp
             from .matrix import Matrix, TransposedMatrix
-            if type(delayed) == AmbiguousAssignOrExtract:
+            if type(delayed) is AmbiguousAssignOrExtract:
                 # Extract (C << A[rows, cols])
                 delayed = delayed._extract_delayed()
-            elif type(delayed) == self.__class__:
+            elif type(delayed) is self.__class__:
                 # Simple assignment (w << v)
                 delayed = delayed.apply(UnaryOp.IDENTITY)
-            elif type(delayed) == TransposedMatrix and type(self) == Matrix:
+            elif type(delayed) is TransposedMatrix and type(self) is Matrix:
                 # Transpose (C << A.T)
                 delayed = GbDelayed(lib.GrB_transpose, [delayed.gb_obj[0]])
             else:
@@ -137,7 +137,7 @@ class GbContainer:
             pass
         elif isinstance(mask, GbContainer):
             mask = mask.gb_obj[0]
-        elif type(mask) == ComplementedMask:
+        elif type(mask) is ComplementedMask:
             mask = mask.mask.gb_obj[0]
             complement = True
         else:
@@ -148,7 +148,7 @@ class GbContainer:
             pass
         elif isinstance(accum, ops.BinaryOp):
             accum = accum[self.dtype]
-        elif type(accum) == ffi.CData and ops.find_opclass(accum) != ops.UNKNOWN_OPCLASS:
+        elif type(accum) is ffi.CData and ops.find_opclass(accum) != ops.UNKNOWN_OPCLASS:
             pass
         else:
             raise TypeError(f"Invalid accum: {type(accum)}")
@@ -338,16 +338,16 @@ class IndexerResolver:
         return out
 
     def parse_index(self, index, typ, size):
-        if typ == int:
+        if typ is int:
             if index >= size:
                 raise IndexError(f'index={index}, size={size}')
             return index, None
-        if typ == slice:
+        if typ is slice:
             if index == slice(None):
                 # [:] means all indices; use special GrB_ALL indicator
                 return lib.GrB_ALL, size
             index = tuple(range(size)[index])
-        elif typ != list:
+        elif typ is not list:
             try:
                 index = tuple(index)
             except Exception:
