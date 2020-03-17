@@ -2,8 +2,9 @@ import importlib
 from . import backends  # noqa
 
 _init_params = None
-_SPECIAL_ATTRS = ["lib", "ffi", "Matrix", "Vector", "Scalar", "UnaryOp", "BinaryOp", "Monoid", "Semiring",
-                  "base", "exceptions", "matrix", "ops", "scalar", "vector"]
+_SPECIAL_ATTRS = ["lib", "ffi", "Matrix", "Vector", "Scalar",
+                  "base", "exceptions", "matrix", "ops", "scalar", "vector"
+                  "unary", "binary", "monoid", "semiring"]
 
 
 def __getattr__(name):
@@ -28,8 +29,9 @@ def init(backend="suitesparse", blocking=True):
 
 
 def _init(backend, blocking, automatic=False):
-    global lib, ffi, Matrix, Vector, Scalar, UnaryOp, BinaryOp, Monoid, Semiring, _init_params
+    global _init_params, lib, ffi, Matrix, Vector, Scalar
     global base, exceptions, matrix, ops, scalar, vector
+    global unary, binary, monoid, semiring
 
     passed_params = dict(backend=backend, blocking=blocking, automatic=automatic)
     if _init_params is None:
@@ -56,8 +58,12 @@ def _init(backend, blocking, automatic=False):
     else:
         ffi_backend.lib.GrB_init(ffi_backend.lib.GrB_NONBLOCKING)
 
-    ops = importlib.import_module(f".ops", __name__)
     exceptions = importlib.import_module(f".exceptions", __name__)
+    unary = importlib.import_module(f".unary", __name__)
+    binary = importlib.import_module(f".binary", __name__)
+    monoid = importlib.import_module(f".monoid", __name__)
+    semiring = importlib.import_module(f".semiring", __name__)
+    ops = importlib.import_module(f".ops", __name__)
     base = importlib.import_module(f".base", __name__)
     matrix = importlib.import_module(f".matrix", __name__)
     vector = importlib.import_module(f".vector", __name__)
@@ -65,9 +71,8 @@ def _init(backend, blocking, automatic=False):
     from .matrix import Matrix
     from .vector import Vector
     from .scalar import Scalar
-    from .ops import UnaryOp, BinaryOp, Monoid, Semiring
 
-    UnaryOp._initialize()
-    BinaryOp._initialize()
-    Monoid._initialize()
-    Semiring._initialize()
+    ops.UnaryOp._initialize()
+    ops.BinaryOp._initialize()
+    ops.Monoid._initialize()
+    ops.Semiring._initialize()

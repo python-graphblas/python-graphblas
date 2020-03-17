@@ -1,7 +1,7 @@
 from . import lib, ffi
-from . import dtypes, ops, descriptor
+from . import dtypes, ops, descriptor, unary
 from .exceptions import check_status
-from .ops import OpBase, UnaryOp
+from .ops import OpBase
 
 NULL = ffi.NULL
 
@@ -123,7 +123,7 @@ class GbContainer:
                 delayed = delayed._extract_delayed()
             elif type(delayed) is self.__class__:
                 # Simple assignment (w << v)
-                delayed = delayed.apply(UnaryOp.IDENTITY)
+                delayed = delayed.apply(unary.identity)
             elif type(delayed) is TransposedMatrix and type(self) is Matrix:
                 # Transpose (C << A.T)
                 delayed = GbDelayed(lib.GrB_transpose, [delayed.gb_obj[0]])
