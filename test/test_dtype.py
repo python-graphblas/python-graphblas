@@ -1,4 +1,3 @@
-import pytest
 from grblas import dtypes, lib
 
 all_dtypes = (
@@ -15,6 +14,7 @@ all_dtypes = (
     dtypes.FP64,
 )
 
+
 def test_names():
     assert dtypes.BOOL.name == 'BOOL'
     assert dtypes.INT8.name == 'INT8'
@@ -27,6 +27,7 @@ def test_names():
     assert dtypes.UINT64.name == 'UINT64'
     assert dtypes.FP32.name == 'FP32'
     assert dtypes.FP64.name == 'FP64'
+
 
 def test_ctype():
     assert dtypes.BOOL.c_type == '_Bool'
@@ -41,6 +42,7 @@ def test_ctype():
     assert dtypes.FP32.c_type == 'float'
     assert dtypes.FP64.c_type == 'double'
 
+
 def test_gbtype():
     assert dtypes.BOOL.gb_type == lib.GrB_BOOL
     assert dtypes.INT8.gb_type == lib.GrB_INT8
@@ -54,22 +56,27 @@ def test_gbtype():
     assert dtypes.FP32.gb_type == lib.GrB_FP32
     assert dtypes.FP64.gb_type == lib.GrB_FP64
 
+
 def test_lookup_by_name():
     for dt in all_dtypes:
         assert dtypes.lookup(dt.name) is dt
+
 
 def test_lookup_by_ctype():
     for dt in all_dtypes:
         assert dtypes.lookup(dt.c_type) is dt
 
+
 def test_lookup_by_gbtype():
     for dt in all_dtypes:
         assert dtypes.lookup(dt.gb_type) is dt
+
 
 def test_lookup_by_dtype():
     assert dtypes.lookup(bool) == dtypes.BOOL
     assert dtypes.lookup(int) == dtypes.INT64
     assert dtypes.lookup(float) == dtypes.FP64
+
 
 def test_unify_dtypes():
     assert dtypes.unify(dtypes.BOOL, dtypes.BOOL) == dtypes.BOOL

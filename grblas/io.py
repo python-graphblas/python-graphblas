@@ -1,5 +1,4 @@
-import numpy as np
-from . import Matrix, Vector, Scalar, dtypes
+from . import Matrix, Vector, dtypes
 from .exceptions import GrblasException
 
 
@@ -21,8 +20,8 @@ def show(m):
         for i, val in zip(*m.to_values()):
             df.iloc[i] = val
         df = df.where(pd.notnull(df), '').T
-    elif isinstance(m, Scalar):
-        df = m.value
+    # elif isinstance(m, Scalar):
+    #     df = m.value
     else:
         return
 
@@ -116,7 +115,7 @@ def to_networkx(m):
 
 def to_numpy(m, format='array'):
     try:
-        from scipy.sparse import coo_matrix
+        import scipy  # noqa
     except ImportError:
         raise ImportError('scipy is required to export to numpy')
 

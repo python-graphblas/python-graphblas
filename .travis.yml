@@ -1,0 +1,28 @@
+# This TravisCI script is very minimal and not very flexible.
+# It only tests one environment on Linux with Python 3.7.
+# We will eventually want to expand our test environments.
+language: python
+os: linux
+dist: xenial
+python:
+    - "3.7"
+install:
+    # https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/use-conda-with-travis-ci.html
+    - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+    - bash miniconda.sh -b -p $HOME/miniconda
+    - source "$HOME/miniconda/etc/profile.d/conda.sh"
+    - hash -r
+    - conda config --set always_yes yes --set changeps1 no
+    - conda update -q conda
+    - conda info -a
+    # create and activaste environment
+    - conda create -n grblas -c jim22k -c conda-forge python=3.7 pandas scipy networkx numba cffi ss_graphblas pytest-runner
+    - conda activate grblas
+    - python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
+    - pip install -e .
+
+script:
+    - pytest
+
+notifications:
+    email: false

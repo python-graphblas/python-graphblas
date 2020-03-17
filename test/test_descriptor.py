@@ -1,16 +1,17 @@
-import pytest
 from grblas import descriptor, ffi
+
 
 def test_caching():
     """
     Test that building a descriptor is actually caching rather than building
     a new object for each call.
     """
-    tocr = descriptor.build(output_replace=True, mask_complement=True, 
+    tocr = descriptor.build(output_replace=True, mask_complement=True,
                             transpose_first=True, transpose_second=False)
-    tocr2 = descriptor.build(output_replace=True, mask_complement=True, 
+    tocr2 = descriptor.build(output_replace=True, mask_complement=True,
                              transpose_first=True, transpose_second=False)
     assert tocr is tocr2
+
 
 def test_null_desc():
     """
