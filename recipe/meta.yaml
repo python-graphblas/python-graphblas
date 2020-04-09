@@ -1,5 +1,5 @@
 {% set name = "grblas" %}
-{% set version = "1.2.4" %}
+{% set version = "1.2.5" %}
 
 package:
   name: "{{ name|lower }}"
@@ -14,26 +14,26 @@ build:
 
 requirements:
   build:
-    - python >=3.6
+    - python
     - cffi
-    - graphblas ==3.1.1
+    - graphblas ==3.2.2
     - pytest-runner
   
   host:
-    - python >=3.6
+    - python
     - cffi
-    - graphblas ==3.1.1
+    - graphblas ==3.2.2
     - pytest-runner
 
   run:
-    - python >=3.6
+    - python
     - cffi
-    - graphblas ==3.1.1
+    - graphblas ==3.2.2
     - numba
 
 about:
   home: https://github.com/jim22k/grblas
-  license: Apache 2.0
+  license: Apache-2.0
   license_family: Apache
   license_file: LICENSE
   summary: 'Python wrapper around GraphBLAS'
