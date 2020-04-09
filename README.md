@@ -1,7 +1,7 @@
 # grblas
 Python wrapper around GraphBLAS
 
-To install, `conda install jim22k::grblas`. This will also pull in the SuiteSparse `graphblas` compiled C library.
+To install, `conda install -c conda-forge jim22k::grblas`. This will also pull in the SuiteSparse `graphblas` compiled C library from the conda-forge channel.
 
 Currently works with SuiteSparse:GraphBLAS, but the goal is to make it work with all implementations of the GraphBLAS spec.
 

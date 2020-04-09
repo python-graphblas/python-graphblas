@@ -218,6 +218,14 @@ class GbDelayed:
     def __repr__(self):
         return f'GbDelayed<{self.func.__name__}>'
 
+    @property
+    def value(self):
+        from .scalar import Scalar
+        output = self.new()
+        if type(output) is not Scalar:
+            raise ValueError(f"`.value` is only valid for Scalars, not {type(output)}")
+        return output.value
+
     def new(self, *, dtype=None, mask=None):
         """
         Force computation of the GbDelayed object.
