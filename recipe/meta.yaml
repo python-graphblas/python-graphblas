@@ -7,7 +7,7 @@ package:
 
 source:
   url: https://github.com/jim22k/{{ name }}/archive/v{{ version }}.tar.gz
-  sha256: 6ef5747a473d600a9daa60db9ef3e3226cc37b52c98afd364364b0c630ddfe6f
+  sha256: 91b05d38d8b245359ab2d8b89c066f40600ce82b5d7d2c680bf52e24e45d07d0
 
 build:
   number: 0
