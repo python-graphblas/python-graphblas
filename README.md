@@ -1,7 +1,7 @@
 # grblas
 Python wrapper around GraphBLAS
 
-To install, `conda install -c conda-forge jim22k::grblas`. This will also pull in the SuiteSparse `graphblas` compiled C library from the conda-forge channel.
+To install, `conda install -c conda-forge grblas`. This will also install the SuiteSparse `graphblas` compiled C library.
 
 Currently works with SuiteSparse:GraphBLAS, but the goal is to make it work with all implementations of the GraphBLAS spec.
 
@@ -23,7 +23,7 @@ The expression on the right `A.mxm(B)` creates a delayed object which does no co
 `<<` expression with `M`, the whole thing is translated into the equivalent GraphBLAS call.
 
 Delayed objects also have a `.new()` method which can be used to force computation and return a new 
-object. This is convenient for quickly writing code, but may create many unnecessary objects if used in a loop. It
+object. This is convenient and often appropriate, but will create many unnecessary objects if used in a loop. It
 also loses the ability to perform accumulation with existing results. For best performance, following the standard 
 GraphBLAS approach of (1) creating the object outside the loop and (2) using the object repeatedly within each loop 
 is a much better approach, even if it doesn't feel very Pythonic. 
@@ -43,7 +43,7 @@ do no computation, allowing the correct descriptor bits to be set in a single Gr
 
 The use of `<<` to indicate updating is actually just syntactic sugar for a real `.update()` method. The above
 expression could be written as:<br>
-`M.update(A.mxm(B, semiring.min_plus)`
+`M.update(A.mxm(B, semiring.min_plus))`
 
 # Operations
  - mxm: `M(mask, accum) << A.mxm(B, semiring)`
