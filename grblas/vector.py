@@ -1,8 +1,8 @@
 from functools import partial
 from .base import lib, ffi, NULL, GbContainer, GbDelayed
 from .scalar import Scalar
-from .ops import BinaryOp, find_opclass, find_return_type
-from . import dtypes, binary, monoid, semiring
+from .ops import BinaryOp, find_opclass, find_return_type, reify_op
+from . import dtypes, unary, binary, monoid, semiring
 from .exceptions import check_status, is_error, NoValue
 
 
@@ -21,18 +21,41 @@ class Vector(GbContainer):
         return f'<Vector {self.nvals}/{self.size}:{self.dtype.name}>'
 
     def __eq__(self, other):
-        # Borrowed this recipe from LAGraph
+        return self.isequal(other)
+
+    def isequal(self, other, rel_tol=1e-7, abs_tol=0.0, strict_dtype=False):
+        """
+        Check for equality (including same size, empty values, dtype)
+        Individual numbers allow a tolerance allowance for floating point roundoff error if dtype is FP32 or FP64
+        Floating point check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
+        """
         if type(other) is not self.__class__:
             return False
-        if self.dtype != other.dtype:
+        if strict_dtype and self.dtype != other.dtype:
             return False
         if self.size != other.size:
             return False
         if self.nvals != other.nvals:
             return False
-        # Use ewise_mult to compare equality via intersection
+        if strict_dtype:
+            common_dtype = self.dtype
+        else:
+            common_dtype = dtypes.unify(self.dtype, other.dtype)
+
         matches = Vector.new_from_type(bool, self.size)
-        matches << self.ewise_mult(other, binary.eq)
+        # Special handling for floating point comparisons
+        if common_dtype in (dtypes.FP32, dtypes.FP64):
+            tmp1 = self.apply(unary.abs).new(dtype=common_dtype)
+            tmp2 = other.apply(unary.abs).new(dtype=common_dtype)
+            tmp1 << tmp1.ewise_mult(tmp2, monoid.max)
+            tmp1[:](mask=tmp1, accum=binary.times) << rel_tol
+            tmp1[:](mask=tmp1, accum=binary.max) << abs_tol
+            tmp2 << self.ewise_mult(other, binary.minus)
+            tmp2 << tmp2.apply(unary.abs)
+            matches << tmp2.ewise_mult(tmp1, binary.le[common_dtype])
+        else:
+            matches << self.ewise_mult(other, binary.eq[common_dtype])
+        # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches.nvals != self.nvals:
             return False
         # Check if all results are True
@@ -183,8 +206,9 @@ class Vector(GbContainer):
         if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_eWiseAdd_Vector_{opclass}')
+        op = reify_op(op, self.dtype, other.dtype)
         output_constructor = partial(Vector.new_from_type,
-                                     dtype=find_return_type(op, self.dtype, other.dtype),
+                                     dtype=find_return_type(op),
                                      size=self.size)
         return GbDelayed(func,
                          [op, self.gb_obj[0], other.gb_obj[0]],
@@ -204,8 +228,9 @@ class Vector(GbContainer):
         if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_eWiseMult_Vector_{opclass}')
+        op = reify_op(op, self.dtype, other.dtype)
         output_constructor = partial(Vector.new_from_type,
-                                     dtype=find_return_type(op, self.dtype, other.dtype),
+                                     dtype=find_return_type(op),
                                      size=self.size)
         return GbDelayed(func,
                          [op, self.gb_obj[0], other.gb_obj[0]],
@@ -224,8 +249,9 @@ class Vector(GbContainer):
         opclass = find_opclass(op)
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
+        op = reify_op(op, self.dtype, other.dtype)
         output_constructor = partial(Vector.new_from_type,
-                                     dtype=find_return_type(op, self.dtype, other.dtype),
+                                     dtype=find_return_type(op),
                                      size=other.ncols)
         return GbDelayed(lib.GrB_vxm,
                          [op, self.gb_obj[0], other.gb_obj[0]],
@@ -250,8 +276,9 @@ class Vector(GbContainer):
                 raise TypeError('Cannot provide both `left` and `right`')
         else:
             raise TypeError('apply only accepts UnaryOp or BinaryOp')
+        op = reify_op(op, self.dtype)
         output_constructor = partial(Vector.new_from_type,
-                                     dtype=find_return_type(op, self.dtype),
+                                     dtype=find_return_type(op),
                                      size=self.size)
         if opclass == 'UnaryOp':
             return GbDelayed(lib.GrB_Vector_apply,
@@ -272,8 +299,9 @@ class Vector(GbContainer):
             else:
                 op = monoid.plus
         func = getattr(lib, f'GrB_Vector_reduce_{self.dtype.name}')
+        op = reify_op(op, self.dtype)
         output_constructor = partial(Scalar.new_from_type,
-                                     dtype=find_return_type(op, self.dtype))
+                                     dtype=find_return_type(op))
         return GbDelayed(func,
                          [op, self.gb_obj[0]],
                          output_constructor=output_constructor)

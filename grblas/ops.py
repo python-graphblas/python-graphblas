@@ -90,6 +90,7 @@ class UnaryOp(OpBase):
         'num_underscores': 1,
         're_exprs': [
             re.compile('^GrB_(IDENTITY|AINV|MINV)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+            re.compile('^GxB_(ABS|LNOT|ONE)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
             re.compile('^GrB_LNOT$'),
         ],
     }
@@ -148,10 +149,11 @@ class BinaryOp(OpBase):
         're_exprs': [
             re.compile('^GrB_(FIRST|SECOND|MIN|MAX|PLUS|MINUS|TIMES|DIV)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
             re.compile('^GrB_(LOR|LAND|LXOR)$'),
-            re.compile('^GxB_(RMINUS|RDIV|ISEQ|ISNE|ISGT|ISLT|ISLE|ISGE)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+            re.compile('^GxB_(RMINUS|RDIV|PAIR|ANY|ISEQ|ISNE|ISGT|ISLT|ISLE|ISGE)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
         ],
         're_exprs_return_bool': [
             re.compile('^GrB_(EQ|NE|GT|LT|GE|LE)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+            re.compile('^GxB_(LOR|LAND|LXOR)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
         ],
     }
 
@@ -209,8 +211,8 @@ class Monoid(OpBase):
         'trim_from_back': 7,
         'num_underscores': 1,
         're_exprs': [
-            re.compile('^GxB_(MAX|MIN|PLUS|TIMES)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)_MONOID$'),
-            re.compile('^GxB_(EQ|LAND|LOR|LXOR)_BOOL_MONOID$'),
+            re.compile('^GxB_(MAX|MIN|PLUS|TIMES|ANY)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)_MONOID$'),
+            re.compile('^GxB_(EQ|LAND|LOR|LXOR|ANY)_BOOL_MONOID$'),
         ],
     }
 
@@ -226,7 +228,7 @@ class Monoid(OpBase):
             zcast = ffi.cast(type_.c_type, zero)
             func(new_monoid, binaryop[type_], zcast)
             new_type_obj[type_.name] = new_monoid[0]
-            ret_type = find_return_type(binaryop[type_], type_)
+            ret_type = find_return_type(binaryop[type_])
             _return_type[new_monoid[0]] = ret_type
         setattr(cls._module, name, new_type_obj)
 
@@ -237,11 +239,11 @@ class Semiring(OpBase):
         'trim_from_front': 4,
         'num_underscores': 2,
         're_exprs': [
-            re.compile('^GxB_(MIN|MAX|PLUS|TIMES)_(FIRST|SECOND|MIN|MAX|PLUS|MINUS|RMINUS|TIMES|DIV|RDIV|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
-            re.compile('^GxB_(LOR|LAND|LXOR|EQ)_(FIRST|SECOND|LOR|LAND|LXOR|EQ|GT|LT|GE|LE)_BOOL$'),
+            re.compile('^GxB_(MIN|MAX|PLUS|TIMES|ANY)_(FIRST|SECOND|PAIR|MIN|MAX|PLUS|MINUS|RMINUS|TIMES|DIV|RDIV|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+            re.compile('^GxB_(LOR|LAND|LXOR|EQ|ANY)_(FIRST|SECOND|PAIR|LOR|LAND|LXOR|EQ|GT|LT|GE|LE)_BOOL$'),
         ],
         're_exprs_return_bool': [
-            re.compile('^GxB_(LOR|LAND|LXOR|EQ)_(EQ|NE|GT|LT|GE|LE)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+            re.compile('^GxB_(LOR|LAND|LXOR|EQ|ANY)_(EQ|NE|GT|LT|GE|LE)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
         ],
     }
 
@@ -257,7 +259,7 @@ class Semiring(OpBase):
             new_semiring = ffi.new('GrB_Semiring*')
             lib.GrB_Semiring_new(new_semiring, monoid[type_], binaryop[type_])
             new_type_obj[type_.name] = new_semiring[0]
-            ret_type = find_return_type(monoid[type_], type_)
+            ret_type = find_return_type(monoid[type_])
             _return_type[new_semiring[0]] = ret_type
         setattr(cls._module, name, new_type_obj)
 
@@ -273,14 +275,20 @@ def find_opclass(gb_op):
     return UNKNOWN_OPCLASS
 
 
-_return_type = {}
-
-
-def find_return_type(gb_op, dtype, dtype2=None):
+def reify_op(gb_op, dtype, dtype2=None):
     if dtype2 is not None:
         dtype = dtypes.unify(dtype, dtype2)
     if isinstance(gb_op, OpBase):
         gb_op = gb_op[dtype]
+    return gb_op
+
+
+_return_type = {}
+
+
+def find_return_type(gb_op):
+    if isinstance(gb_op, OpBase):
+        raise ValueError('Requires concrete operator. Call `reify_op` first.')
     if gb_op not in _return_type:
         raise KeyError('Unknown operator. You must register function prior to use.')
     return _return_type[gb_op]

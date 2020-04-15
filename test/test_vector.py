@@ -179,8 +179,13 @@ def test_ewise_mult_change_dtype(v):
     assert v.dtype == dtypes.INT64
     assert v2.dtype == dtypes.INT64
     result = Vector.new_from_values([1, 3, 4, 6], [0.5, 0.5, 1.0, 0], dtype=dtypes.FP64)
-    w = v.ewise_mult(v2, binary.div).new(dtype=dtypes.FP64)
+    w = v.ewise_mult(v2, binary.div[dtypes.FP64]).new()
     assert w == result
+    # Here is the potentially surprising way to do things
+    # Division is still done with ints, but results are then stored as floats
+    result2 = Vector.new_from_values([1, 3, 4, 6], [0.0, 0.0, 1.0, 0.0], dtype=dtypes.FP64)
+    w2 = v.ewise_mult(v2, binary.div).new(dtype=dtypes.FP64)
+    assert w2 == result2
 
 
 def test_ewise_add(v):
@@ -264,7 +269,11 @@ def test_equal(v):
     u2 = Vector.new_from_values([1], [1], size=7)
     assert u2 != v
     u3 = Vector.new_from_values([1, 3, 4, 6], [1., 1., 2., 0.])
-    assert u3 != v, 'different datatypes are not equal'
+    assert not u3.isequal(v, strict_dtype=True), 'different datatypes are not equal'
+    u4 = Vector.new_from_values([1,3,4,6], [1., 1+1e-9, 1.999999999999, 0.])
+    assert u4 == v
+    u5 = Vector.new_from_values([1,3,4,6], [1., 1+1e-4, 1.99999, 0.])
+    assert u5.isequal(v, rel_tol=1e-3)
 
 
 def test_binary_op(v):

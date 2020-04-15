@@ -412,4 +412,14 @@ def test_equal(A, v):
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3., 2., 3., 1., 5., 3., 7., 8., 3., 1., 7., 4.])
-    assert C3 != A, 'different datatypes are not equal'
+    assert not C3.isequal(A, strict_dtype=True), 'different datatypes are not equal'
+    C4 = Matrix.new_from_values(
+        [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [3., 2., 3., 1., 5., 3.000000000000000001, 7., 8., 3., 1-1e-11, 7., 4.])
+    assert C4 == A
+    C5 = Matrix.new_from_values(
+        [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [3., 2.000001, 3., 1., 5., 3., 7., 7.9999999, 3., 1., 7., 4.])
+    assert C5.isequal(A, rel_tol=1e-3)
