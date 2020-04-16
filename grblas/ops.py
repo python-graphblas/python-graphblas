@@ -83,6 +83,8 @@ class OpBase:
                         obj[type_] = gb_obj
                         # Add to map of return types
                         _return_type[gb_obj] = 'BOOL' if returns_bool else type_
+                        # Add to set of all known instances (for checking function type by object)
+                        cls.all_known_instances.add(gb_obj)
         cls._initialized = True
 
 
@@ -97,6 +99,7 @@ class UnaryOp(OpBase):
             re.compile('^GrB_LNOT$'),
         ],
     }
+    all_known_instances = set()
 
     @classmethod
     def register_new(cls, name, func):
@@ -135,6 +138,7 @@ class UnaryOp(OpBase):
                                     ret_type.gb_type, type_.gb_type)
                 new_type_obj[type_.name] = new_unary[0]
                 _return_type[new_unary[0]] = ret_type.name
+                cls.all_known_instances.add(new_unary[0])
                 success = True
             except Exception:
                 continue
@@ -159,13 +163,14 @@ class BinaryOp(OpBase):
             re.compile('^GxB_(LOR|LAND|LXOR)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
         ],
     }
+    all_known_instances = set()
 
     @classmethod
     def register_new(cls, name, func):
         if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
         if hasattr(cls, name):
-            raise AttributeError(f'unary.{name} is already defined')
+            raise AttributeError(f'binary.{name} is already defined')
         success = False
         new_type_obj = cls(name)
         for type_, sample_val in dtypes._sample_values.items():
@@ -198,6 +203,7 @@ class BinaryOp(OpBase):
                                      ret_type.gb_type, type_.gb_type, type_.gb_type)
                 new_type_obj[type_.name] = new_binary[0]
                 _return_type[new_binary[0]] = ret_type.name
+                cls.all_known_instances.add(new_binary[0])
                 success = True
             except Exception:
                 continue
@@ -237,6 +243,7 @@ class Monoid(OpBase):
             re.compile('^GxB_(EQ|LAND|LOR|LXOR|ANY)_BOOL_MONOID$'),
         ],
     }
+    all_known_instances = set()
 
     @classmethod
     def register_new(cls, name, binaryop, zero):
@@ -252,6 +259,7 @@ class Monoid(OpBase):
             new_type_obj[type_.name] = new_monoid[0]
             ret_type = find_return_type(binaryop[type_])
             _return_type[new_monoid[0]] = ret_type
+            cls.all_known_instances.add(new_monoid[0])
         setattr(cls._module, name, new_type_obj)
 
 
@@ -268,6 +276,7 @@ class Semiring(OpBase):
             re.compile('^GxB_(LOR|LAND|LXOR|EQ|ANY)_(EQ|NE|GT|LT|GE|LE)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
         ],
     }
+    all_known_instances = set()
 
     @classmethod
     def register_new(cls, name, monoid, binaryop):
@@ -283,17 +292,17 @@ class Semiring(OpBase):
             new_type_obj[type_.name] = new_semiring[0]
             ret_type = find_return_type(monoid[type_])
             _return_type[new_semiring[0]] = ret_type
+            cls.all_known_instances.add(new_semiring[0])
         setattr(cls._module, name, new_type_obj)
 
 
 def find_opclass(gb_op):
     if isinstance(gb_op, OpBase):
         return gb_op.__class__.__name__
-    elif isinstance(gb_op, ffi.CData):
-        cname = ffi.typeof(gb_op).cname
-        for tc in ('UnaryOp', 'BinaryOp', 'Monoid', 'Semiring'):
-            if tc in cname:
-                return tc
+    else:
+        for opclass in (UnaryOp, BinaryOp, Monoid, Semiring):
+            if gb_op in opclass.all_known_instances:
+                return opclass.__name__
     return UNKNOWN_OPCLASS
 
 

@@ -196,7 +196,9 @@ def test_ewise_add(v):
     # Binary, Monoid, and Semiring
     v2 = Vector.new_from_values([0, 3, 5, 6], [2, 3, 2, 1])
     result = Vector.new_from_values([0, 1, 3, 4, 5, 6], [2, 1, 3, 2, 2, 1])
-    w = v.ewise_add(v2, binary.max).new()
+    with pytest.raises(TypeError, match="require_monoid"):
+        v.ewise_add(v2, binary.max)
+    w = v.ewise_add(v2, binary.max, require_monoid=False).new()
     assert w.isequal(result)
     w.update(v.ewise_add(v2, monoid.max))
     assert w.isequal(result)

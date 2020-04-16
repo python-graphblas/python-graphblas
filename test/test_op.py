@@ -90,7 +90,7 @@ def test_binaryop_udf():
                                           'FP32', 'FP64'}
     v1 = Vector.new_from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.new_from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
-    w = v1.ewise_add(v2, binary.bin_test_func).new()
+    w = v1.ewise_add(v2, binary.bin_test_func, require_monoid=False).new()
     result = Vector.new_from_values([0, 1, 2, 3], [-1, 2, 3, -31], dtype=dtypes.INT32)
     assert w.isequal(result)
 

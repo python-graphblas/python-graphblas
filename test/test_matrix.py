@@ -225,7 +225,10 @@ def test_ewise_add(A):
         [2, 0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [4, 3, 5, 3, 8, 5, 3, 7, 8, 3, 1, 7, 4]
     )
-    C = A.ewise_add(B, binary.second).new()  # possibly surprising, but SECOND(x, empty) == x
+    with pytest.raises(TypeError, match="require_monoid"):
+        A.ewise_add(B, binary.second)
+    # surprising that SECOND(x, empty) == x, which is why user must opt-in to using binary ops in ewise_add
+    C = A.ewise_add(B, binary.second, require_monoid=False).new()
     assert C.isequal(result)
     C << A.ewise_add(B, monoid.max)
     assert C.isequal(result)

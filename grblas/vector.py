@@ -218,20 +218,31 @@ class Vector(GbContainer):
     # to update to trigger a call to GraphBLAS
     #########################################################
 
-    def ewise_add(self, other, op=None):
+    def ewise_add(self, other, op=None, *, require_monoid=True):
         """
         GrB_eWiseAdd_Vector
 
         Result will contain the union of indices from both Vectors
-        Default op is binary.plus
+        Default op is monoid.plus
+        Unless explicitly disabled, this method requires a monoid (directly or from a semiring).
+            The reason for this is that binary operators can create very confusing behavior when only
+            one of the two elements is present.
+            Examples: binary.minus where left=Missing and right=4 yields 4 rather than -4 as might be expected
+                      binary.gt where left=Missing and right=4 yields True
+                      binary.gt where left=Missing and right=0 yields False
+            The behavior is caused by grabbing the non-empty value and using it directly without performing
+            any operation. In the case of `gt`, the non-empty value is cast to a boolean.
+            For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
         if not isinstance(other, Vector):
             raise TypeError(f'Expected Vector, found {type(other)}')
         if op is None:
-            op = binary.plus
+            op = monoid.plus
         opclass = find_opclass(op)
-        if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
+        if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
+        if require_monoid and opclass not in {'Monoid', 'Semiring'}:
+            raise TypeError(f'op must be Monoid or Semiring unless require_monoid is False')
         func = getattr(lib, f'GrB_eWiseAdd_Vector_{opclass}')
         op = reify_op(op, self.dtype, other.dtype)
         output_constructor = partial(Vector.new_from_type,
