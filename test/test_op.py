@@ -123,3 +123,17 @@ def test_semiring_udf():
     w = v.vxm(A, semiring.extra_twos).new()
     result = Vector.new_from_values([0, 1, 2, 3], [9, 11, 13, 15], dtype=dtypes.INT32)
     assert w.isequal(result)
+
+
+def test_binary_updates():
+    assert not hasattr(binary, 'div')
+    assert binary.cdiv['INT64'] == lib.GrB_DIV_INT64
+    vec1 = Vector.new_from_values([0], [1], dtype=dtypes.INT64)
+    vec2 = Vector.new_from_values([0], [2], dtype=dtypes.INT64)
+    result = vec1.ewise_mult(vec2, binary.truediv).new()
+    assert result.isclose(Vector.new_from_values([0], [0.5], dtype=dtypes.FP64), check_dtype=True)
+    vec4 = Vector.new_from_values([0], [-3], dtype=dtypes.INT64)
+    result2 = vec4.ewise_mult(vec2, binary.cdiv).new()
+    assert result2.isequal(Vector.new_from_values([0], [-1], dtype=dtypes.INT64), check_dtype=True)
+    result3 = vec4.ewise_mult(vec2, binary.floordiv).new()
+    assert result3.isequal(Vector.new_from_values([0], [-2], dtype=dtypes.INT64), check_dtype=True)

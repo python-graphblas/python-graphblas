@@ -179,12 +179,12 @@ def test_ewise_mult_change_dtype(v):
     assert v.dtype == dtypes.INT64
     assert v2.dtype == dtypes.INT64
     result = Vector.new_from_values([1, 3, 4, 6], [0.5, 0.5, 1.0, 0], dtype=dtypes.FP64)
-    w = v.ewise_mult(v2, binary.div[dtypes.FP64]).new()
+    w = v.ewise_mult(v2, binary.cdiv[dtypes.FP64]).new()
     assert w.isequal(result), print(w.show())
     # Here is the potentially surprising way to do things
     # Division is still done with ints, but results are then stored as floats
     result2 = Vector.new_from_values([1, 3, 4, 6], [0.0, 0.0, 1.0, 0.0], dtype=dtypes.FP64)
-    w2 = v.ewise_mult(v2, binary.div).new(dtype=dtypes.FP64)
+    w2 = v.ewise_mult(v2, binary.cdiv).new(dtype=dtypes.FP64)
     assert w2.isequal(result2), print(w2.show())
     # Try with boolean dtype via auto-conversion
     result3 = Vector.new_from_values([1, 3, 4, 6], [True, True, False, True])

@@ -1,5 +1,5 @@
 from functools import partial
-from .base import lib, ffi, NULL, GbContainer, GbDelayed
+from .base import lib, ffi, GbContainer, GbDelayed
 from .vector import Vector
 from .scalar import Scalar
 from .ops import BinaryOp, find_opclass, find_return_type, reify_op
@@ -154,7 +154,7 @@ class Matrix(GbContainer):
             self.gb_obj[0]))
         return tuple(rows), tuple(columns), tuple(values)
 
-    def rebuild_from_values(self, rows, columns, values, *, dup_op=NULL):
+    def rebuild_from_values(self, rows, columns, values, *, dup_op=None):
         # TODO: add `size` option once .resize is available
         self.clear()
         if not isinstance(rows, (tuple, list)):
@@ -170,7 +170,7 @@ class Matrix(GbContainer):
         if n <= 0:
             return
         dup_orig = dup_op
-        if dup_op is NULL:
+        if dup_op is None:
             dup_op = binary.plus
         if isinstance(dup_op, BinaryOp):
             dup_op = dup_op[self.dtype]
@@ -187,7 +187,7 @@ class Matrix(GbContainer):
             n,
             dup_op))
         # Check for duplicates when dup_op was not provided
-        if dup_orig is NULL and self.nvals < len(values):
+        if dup_orig is None and self.nvals < len(values):
             raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
     @classmethod
@@ -212,7 +212,7 @@ class Matrix(GbContainer):
         return cls(new_mat, matrix.dtype)
 
     @classmethod
-    def new_from_values(cls, rows, columns, values, *, nrows=None, ncols=None, dup_op=NULL, dtype=None):
+    def new_from_values(cls, rows, columns, values, *, nrows=None, ncols=None, dup_op=None, dtype=None):
         """Create a new Matrix from the given lists of row indices, column
         indices, and values.  If nrows or ncols are not provided, they
         are computed from the max row and coumn index found.
@@ -251,15 +251,16 @@ class Matrix(GbContainer):
     # to __setitem__ to trigger a call to GraphBLAS
     #########################################################
 
-    def ewise_add(self, other, op=NULL):
+    def ewise_add(self, other, op=None):
         """
         GrB_eWiseAdd_Matrix
 
         Result will contain the union of indices from both Matrices
+        Default op is binary.plus
         """
         if not isinstance(other, Matrix):
             raise TypeError(f'Expected Matrix, found {type(other)}')
-        if op is NULL:
+        if op is None:
             op = binary.plus
         opclass = find_opclass(op)
         if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
@@ -275,15 +276,16 @@ class Matrix(GbContainer):
                          bt=other.is_transposed,
                          output_constructor=output_constructor)
 
-    def ewise_mult(self, other, op=NULL):
+    def ewise_mult(self, other, op=None):
         """
         GrB_eWiseMult_Matrix
 
         Result will contain the intersection of indices from both Matrices
+        Default op is binary.times
         """
         if not isinstance(other, Matrix):
             raise TypeError(f'Expected Matrix, found {type(other)}')
-        if op is NULL:
+        if op is None:
             op = binary.times
         opclass = find_opclass(op)
         if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
@@ -299,14 +301,15 @@ class Matrix(GbContainer):
                          bt=other.is_transposed,
                          output_constructor=output_constructor)
 
-    def mxv(self, other, op=NULL):
+    def mxv(self, other, op=None):
         """
         GrB_mxv
         Matrix-Vector multiplication. Result is a Vector.
+        Default op is semiring.plus_times
         """
         if not isinstance(other, Vector):
             raise TypeError(f'Expected Vector, found {type(other)}')
-        if op is NULL:
+        if op is None:
             op = semiring.plus_times
         opclass = find_opclass(op)
         if opclass != 'Semiring':
@@ -320,14 +323,15 @@ class Matrix(GbContainer):
                          at=self.is_transposed,
                          output_constructor=output_constructor)
 
-    def mxm(self, other, op=NULL):
+    def mxm(self, other, op=None):
         """
         GrB_mxm
         Matrix-Matrix multiplication. Result is a Matrix.
+        Default op is semiring.plus_times
         """
         if not isinstance(other, Matrix):
             raise TypeError(f'Expected Matrix or Vector, found {type(other)}')
-        if op is NULL:
+        if op is None:
             op = semiring.plus_times
         opclass = find_opclass(op)
         if opclass != 'Semiring':
@@ -342,15 +346,16 @@ class Matrix(GbContainer):
                          bt=other.is_transposed,
                          output_constructor=output_constructor)
 
-    def kronecker(self, other, op=NULL):
+    def kronecker(self, other, op=None):
         """
         GrB_kronecker
         Kronecker product or sum (depending on op used)
+        Default op is binary.times
         """
         raise NotImplementedError('Not available in GraphBLAS 1.2')
         if not isinstance(other, Matrix):
             raise TypeError(f'Expected Matrix, found {type(other)}')
-        if op is NULL:
+        if op is None:
             op = binary.times
         opclass = find_opclass(op)
         if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
@@ -396,12 +401,13 @@ class Matrix(GbContainer):
             raise NotImplementedError('apply with BinaryOp not available in GraphBLAS 1.2')
             # TODO: fill this in once function is available
 
-    def reduce_rows(self, op=NULL):
+    def reduce_rows(self, op=None):
         """
         GrB_Matrix_reduce
         Reduce all values in each row, converting the matrix to a vector
+        Default op is monoid.lor for boolean and monoid.plus otherwise
         """
-        if op is NULL:
+        if op is None:
             if self.dtype == bool:
                 op = monoid.lor
             else:
@@ -419,19 +425,21 @@ class Matrix(GbContainer):
                          at=self.is_transposed,
                          output_constructor=output_constructor)
 
-    def reduce_columns(self, op=NULL):
+    def reduce_columns(self, op=None):
         """
         GrB_Matrix_reduce
         Reduce all values in each column, converting the matrix to a vector
+        Default op is monoid.lor for boolean and monoid.plus otherwise
         """
         return self.T.reduce_rows(op)
 
-    def reduce_scalar(self, op=NULL):
+    def reduce_scalar(self, op=None):
         """
         GrB_Matrix_reduce
         Reduce all values into a scalar
+        Default op is monoid.lor for boolean and monoid.plus otherwise
         """
-        if op is NULL:
+        if op is None:
             if self.dtype == bool:
                 op = monoid.lor
             else:
@@ -596,7 +604,7 @@ class TransposedMatrix(Matrix):
     def resize(self, nrows, ncols):
         raise Exception('Modification of a transposed Matrix is not allowed')
 
-    def rebuild_from_values(self, rows, columns, values, *, dup_op=NULL):
+    def rebuild_from_values(self, rows, columns, values, *, dup_op=None):
         raise Exception('Modification of a transposed Matrix is not allowed')
 
     def __setitem__(self, key, val):

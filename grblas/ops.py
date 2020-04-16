@@ -21,6 +21,9 @@ class OpBase:
         self.name = name
         self._specific_types = {}
 
+    def __repr__(self):
+        return f'{type(self).__name__}.{self.name}'
+
     def __getitem__(self, type_):
         type_ = self._normalize_type(type_)
         if type_ not in self._specific_types:
@@ -202,6 +205,25 @@ class BinaryOp(OpBase):
             setattr(cls._module, name, new_type_obj)
         else:
             raise UdfParseError('Unable to parse function using Numba')
+
+    @classmethod
+    def _initialize(cls):
+        super()._initialize()
+        # Rename div to cdiv
+        binary.cdiv = BinaryOp('cdiv')
+        for dtype in binary.div.types:
+            binary.cdiv[dtype] = binary.div[dtype]
+        del binary.div
+        # Add truediv which always points to floating point cdiv
+        # We are effectively hacking cdiv to always return floating point values
+        # If the inputs are FP32, we use DIV_FP32; use DIV_FP64 for all other input dtypes
+        binary.truediv = BinaryOp('truediv')
+        for dtype in binary.cdiv.types:
+            float_type = 'FP32' if dtype == 'FP32' else 'FP64'
+            binary.truediv[dtype] = binary.cdiv[float_type]
+        # Add floordiv
+        # cdiv truncates towards 0, while floordiv truncates towards -inf
+        BinaryOp.register_new('floordiv', lambda x, y: x // y)
 
 
 class Monoid(OpBase):

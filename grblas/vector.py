@@ -1,5 +1,5 @@
 from functools import partial
-from .base import lib, ffi, NULL, GbContainer, GbDelayed
+from .base import lib, ffi, GbContainer, GbDelayed
 from .scalar import Scalar
 from .ops import BinaryOp, find_opclass, find_return_type, reify_op
 from . import dtypes, unary, binary, monoid, semiring
@@ -132,7 +132,7 @@ class Vector(GbContainer):
             self.gb_obj[0]))
         return tuple(indices), tuple(values)
 
-    def rebuild_from_values(self, indices, values, *, dup_op=NULL):
+    def rebuild_from_values(self, indices, values, *, dup_op=None):
         # TODO: add `size` option once .resize is available
         self.clear()
         if not isinstance(indices, (tuple, list)):
@@ -146,7 +146,7 @@ class Vector(GbContainer):
         if n <= 0:
             return
         dup_orig = dup_op
-        if dup_op is NULL:
+        if dup_op is None:
             dup_op = binary.plus
         if isinstance(dup_op, BinaryOp):
             dup_op = dup_op[self.dtype]
@@ -161,7 +161,7 @@ class Vector(GbContainer):
             n,
             dup_op))
         # Check for duplicates when dup_op was not provided
-        if dup_orig is NULL and self.nvals < len(values):
+        if dup_orig is None and self.nvals < len(values):
             raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
     @classmethod
@@ -186,7 +186,7 @@ class Vector(GbContainer):
         return cls(new_vec, vector.dtype)
 
     @classmethod
-    def new_from_values(cls, indices, values, *, size=None, dup_op=NULL, dtype=None):
+    def new_from_values(cls, indices, values, *, size=None, dup_op=None, dtype=None):
         """Create a new Vector from the given lists of indices and values.  If
         size is not provided, it is computed from the max index found.
         """
@@ -218,15 +218,16 @@ class Vector(GbContainer):
     # to update to trigger a call to GraphBLAS
     #########################################################
 
-    def ewise_add(self, other, op=NULL):
+    def ewise_add(self, other, op=None):
         """
         GrB_eWiseAdd_Vector
 
         Result will contain the union of indices from both Vectors
+        Default op is binary.plus
         """
         if not isinstance(other, Vector):
             raise TypeError(f'Expected Vector, found {type(other)}')
-        if op is NULL:
+        if op is None:
             op = binary.plus
         opclass = find_opclass(op)
         if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
@@ -240,15 +241,16 @@ class Vector(GbContainer):
                          [op, self.gb_obj[0], other.gb_obj[0]],
                          output_constructor=output_constructor)
 
-    def ewise_mult(self, other, op=NULL):
+    def ewise_mult(self, other, op=None):
         """
         GrB_eWiseMult_Vector
 
         Result will contain the intersection of indices from both Vectors
+        Default op is binary.times
         """
         if not isinstance(other, Vector):
             raise TypeError(f'Expected Vector, found {type(other)}')
-        if op is NULL:
+        if op is None:
             op = binary.times
         opclass = find_opclass(op)
         if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
@@ -262,15 +264,16 @@ class Vector(GbContainer):
                          [op, self.gb_obj[0], other.gb_obj[0]],
                          output_constructor=output_constructor)
 
-    def vxm(self, other, op=NULL):
+    def vxm(self, other, op=None):
         """
         GrB_vxm
         Vector-Matrix multiplication. Result is a Vector.
+        Default op is semiring.plus_times
         """
         from .matrix import Matrix
         if not isinstance(other, Matrix):
             raise TypeError(f'Expected Matrix, found {type(other)}')
-        if op is NULL:
+        if op is None:
             op = semiring.plus_times
         opclass = find_opclass(op)
         if opclass != 'Semiring':
@@ -314,12 +317,13 @@ class Vector(GbContainer):
             raise NotImplementedError('apply with BinaryOp not available in GraphBLAS 1.2')
             # TODO: fill this in once function is available
 
-    def reduce(self, op=NULL):
+    def reduce(self, op=None):
         """
         GrB_Vector_reduce
         Reduce all values into a scalar
+        Default op is monoid.lor for boolean and monoid.plus otherwise
         """
-        if op is NULL:
+        if op is None:
             if self.dtype == bool:
                 op = monoid.lor
             else:
