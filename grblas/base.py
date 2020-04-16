@@ -62,6 +62,10 @@ class GbContainer:
     def __invert__(self):
         return ComplementedMask(self)
 
+    @property
+    def S(self):
+        return StructuralMask(self)
+
     def __delitem__(self, keys):
         if self.is_scalar:
             raise TypeError('Indexing not supported for Scalars')
@@ -82,7 +86,7 @@ class GbContainer:
         for key in optional_mask_and_accum:
             if isinstance(key, GbContainer):
                 mask_arg = key
-            elif type(key) is ComplementedMask:
+            elif type(key) in (ComplementedMask, StructuralMask, ComplementedStructuralMask):
                 mask_arg = key
             elif isinstance(key, ops.BinaryOp):
                 accum_arg = key
@@ -130,8 +134,9 @@ class GbContainer:
             else:
                 raise TypeError(f'assignment value must be GbDelayed object, not {type(delayed)}')
 
-        # Normalize mask and separate out complement flag
+        # Normalize mask and separate out complement and structural flags
         complement = False
+        structure = False
         if mask is NULL:
             pass
         elif isinstance(mask, GbContainer):
@@ -139,6 +144,13 @@ class GbContainer:
         elif type(mask) is ComplementedMask:
             mask = mask.mask.gb_obj[0]
             complement = True
+        elif type(mask) is StructuralMask:
+            mask = mask.mask.gb_obj[0]
+            structure = True
+        elif type(mask) is ComplementedStructuralMask:
+            mask = mask.mask.gb_obj[0]
+            complement = True
+            structure = True
         else:
             raise TypeError(f"Invalid mask: {type(mask)}")
 
@@ -152,11 +164,12 @@ class GbContainer:
         else:
             raise TypeError(f"Invalid accum: {type(accum)}")
 
-        # Build descriptor based on flags
-        desc = descriptor.build(transpose_first=delayed.at,
-                                transpose_second=delayed.bt,
-                                mask_complement=complement,
-                                output_replace=replace)
+        # Get descriptor based on flags
+        desc = descriptor.lookup(transpose_first=delayed.at,
+                                 transpose_second=delayed.bt,
+                                 mask_complement=complement,
+                                 mask_structure=structure,
+                                 output_replace=replace)
 
         # Resolve any ops in tail_args
         tail_args = [x[self.dtype] if isinstance(x, OpBase) else x
@@ -370,5 +383,31 @@ class ComplementedMask:
     def __invert__(self):
         return self.mask
 
+    @property
+    def S(self):
+        return ComplementedStructuralMask(self.mask)
+
     def __repr__(self):
-        return f'MaskComplement of {self.mask}'
+        return f'ComplementedMask of {self.mask}'
+
+
+class StructuralMask:
+    def __init__(self, mask):
+        self.mask = mask
+
+    def __invert__(self):
+        return ComplementedStructuralMask(self.mask)
+
+    def __repr__(self):
+        return f'StructuralMask of {self.mask}'
+
+
+class ComplementedStructuralMask:
+    def __init__(self, mask):
+        self.mask = mask
+
+    def __invert__(self):
+        return StructuralMask(self.mask)
+
+    def __repr__(self):
+        return f'ComplementedStructuralMask of {self.mask}'

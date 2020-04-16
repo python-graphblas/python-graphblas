@@ -236,6 +236,26 @@ def test_assign_scalar(v):
     assert w == Vector.new_from_values([0, 1, 2], [9, 9, 9])
 
 
+def test_assign_scalar_mask(v):
+    mask = Vector.new_from_values([1, 2, 5, 6], [0, 0, 1, 0])
+    result = Vector.new_from_values([1, 3, 4, 5, 6], [1, 1, 2, 5, 0])
+    w = v.dup()
+    w[:](mask) << 5
+    assert w == result
+    result2 = Vector.new_from_values([0, 1, 2, 3, 4, 6], [5, 5, 5, 5, 5, 5])
+    w = v.dup()
+    w[:](~mask) << 5
+    assert w == result2
+    result3 = Vector.new_from_values([1, 2, 3, 4, 5, 6], [5, 5, 1, 2, 5, 5])
+    w = v.dup()
+    w[:](mask.S) << 5
+    assert w == result3
+    result4 = Vector.new_from_values([0, 1, 3, 4, 6], [5, 1, 5, 5, 0])
+    w = v.dup()
+    w[:](~mask.S) << 5
+    assert w == result4
+
+
 def test_apply(v):
     result = Vector.new_from_values([1, 3, 4, 6], [-1, -1, -2, 0])
     w = v.apply(unary.ainv).new()
@@ -270,9 +290,9 @@ def test_equal(v):
     assert u2 != v
     u3 = Vector.new_from_values([1, 3, 4, 6], [1., 1., 2., 0.])
     assert not u3.isequal(v, strict_dtype=True), 'different datatypes are not equal'
-    u4 = Vector.new_from_values([1,3,4,6], [1., 1+1e-9, 1.999999999999, 0.])
+    u4 = Vector.new_from_values([1, 3, 4, 6], [1., 1+1e-9, 1.999999999999, 0.])
     assert u4 == v
-    u5 = Vector.new_from_values([1,3,4,6], [1., 1+1e-4, 1.99999, 0.])
+    u5 = Vector.new_from_values([1, 3, 4, 6], [1., 1+1e-4, 1.99999, 0.])
     assert u5.isequal(v, rel_tol=1e-3)
 
 
