@@ -29,11 +29,11 @@ GraphBLAS approach of (1) creating the object outside the loop and (2) using the
 is a much better approach, even if it doesn't feel very Pythonic. 
 
 Descriptor flags are set on the appropriate elements to keep logic close to what it affects. Here is the same call 
-with descriptor bits set. `ttcr` indicates transpose the first and second matrices, complement the mask, and do a 
-replacement on the output.
+with descriptor bits set. `ttcsr` indicates transpose the first and second matrices, complement the structure of the mask,
+and do a replacement on the output.
 
-C call: `GrB_Matrix_mxm(M, mask, GrB_PLUS_INT64, GrB_MIN_PLUS_INT64, A, B, desc.ttcr)`<br>
-Python call: `M(~mask, accum=binary.plus, replace=True) << A.T.mxm(B.T, semiring.min_plus)`
+C call: `GrB_Matrix_mxm(M, mask, GrB_PLUS_INT64, GrB_MIN_PLUS_INT64, A, B, desc.ttcsr)`<br>
+Python call: `M(~mask.S, accum=binary.plus, replace=True) << A.T.mxm(B.T, semiring.min_plus)`
 
 The objects receiving the flag operations (A.T, ~mask, etc) are also delayed objects. They hold on to the state but 
 do no computation, allowing the correct descriptor bits to be set in a single GraphBLAS call.
