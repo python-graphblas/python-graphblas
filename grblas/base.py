@@ -86,7 +86,7 @@ class GbContainer:
         for key in optional_mask_and_accum:
             if isinstance(key, GbContainer):
                 mask_arg = key
-            elif type(key) in (ComplementedMask, StructuralMask, ComplementedStructuralMask):
+            elif type(key) in {ComplementedMask, StructuralMask, ComplementedStructuralMask}:
                 mask_arg = key
             elif isinstance(key, ops.BinaryOp):
                 accum_arg = key

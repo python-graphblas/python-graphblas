@@ -21,18 +21,15 @@ class Matrix(GbContainer):
     def __repr__(self):
         return f'<Matrix {self.nvals}/({self.nrows}x{self.ncols}):{self.dtype.name}>'
 
-    def __eq__(self, other):
-        return self.isequal(other)
-
-    def isequal(self, other, rel_tol=1e-7, abs_tol=0.0, strict_dtype=False):
+    def isequal(self, other, *, check_dtype=False):
         """
-        Check for equality (including same size, empty values, dtype)
-        Individual numbers allow a tolerance allowance for floating point roundoff error if dtype is FP32 or FP64
-        Floating point check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
+        Check for exact equality (same size, same empty values)
+        If `check_dtype` is True, also checks that dtypes match
+        For equality of floating point Vectors, consider using `isclose`
         """
         if type(other) is not self.__class__:
             return False
-        if strict_dtype and self.dtype != other.dtype:
+        if check_dtype and self.dtype != other.dtype:
             return False
         if self.nrows != other.nrows:
             return False
@@ -40,27 +37,56 @@ class Matrix(GbContainer):
             return False
         if self.nvals != other.nvals:
             return False
-        if strict_dtype:
+        if check_dtype:
             common_dtype = self.dtype
         else:
             common_dtype = dtypes.unify(self.dtype, other.dtype)
 
         matches = Matrix.new_from_type(bool, self.nrows, self.ncols)
-        # Special handling for floating point comparisons
-        if common_dtype in (dtypes.FP32, dtypes.FP64):
-            tmp1 = self.apply(unary.abs).new(dtype=common_dtype)
-            tmp2 = other.apply(unary.abs).new(dtype=common_dtype)
-            tmp1 << tmp1.ewise_mult(tmp2, monoid.max)
-            tmp1[:, :](mask=tmp1, accum=binary.times) << rel_tol
-            tmp1[:, :](mask=tmp1, accum=binary.max) << abs_tol
-            tmp2 << self.ewise_mult(other, binary.minus)
-            tmp2 << tmp2.apply(unary.abs)
-            matches << tmp2.ewise_mult(tmp1, binary.le[common_dtype])
-        else:
-            matches << self.ewise_mult(other, binary.eq[common_dtype])
+        matches << self.ewise_mult(other, binary.eq[common_dtype])
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches.nvals != self.nvals:
             return False
+
+        # Check if all results are True
+        result = Scalar.new_from_type(bool)
+        result << matches.reduce_scalar(monoid.land)
+        return result.value
+
+    def isclose(self, other, rtol=1e-7, atol=0.0, *, check_dtype=False):
+        """
+        Check for approximate equality (including same size and empty values)
+        If `check_dtype` is True, also checks that dtypes match
+        Closeness check is equivalent to `abs(a-b) <= max(rtol * max(abs(a), abs(b)), atol)`
+        """
+        if type(other) is not self.__class__:
+            return False
+        if check_dtype and self.dtype != other.dtype:
+            return False
+        if self.nrows != other.nrows:
+            return False
+        if self.ncols != other.ncols:
+            return False
+        if self.nvals != other.nvals:
+            return False
+        if check_dtype:
+            common_dtype = self.dtype
+        else:
+            common_dtype = dtypes.unify(self.dtype, other.dtype)
+
+        matches = Matrix.new_from_type(bool, self.nrows, self.ncols)
+        tmp1 = self.apply(unary.abs).new(dtype=common_dtype)
+        tmp2 = other.apply(unary.abs).new(dtype=common_dtype)
+        tmp1 << tmp1.ewise_mult(tmp2, monoid.max)
+        # ewise_mult performs intersection, so nvals will indicate mismatched empty values
+        if tmp1.nvals != self.nvals:
+            return False
+        tmp1[:, :](mask=tmp1, accum=binary.times) << rtol
+        tmp1[:, :](mask=tmp1, accum=binary.max) << atol
+        tmp2 << self.ewise_mult(other, binary.minus)
+        tmp2 << tmp2.apply(unary.abs)
+        matches << tmp2.ewise_mult(tmp1, binary.le[common_dtype])
+
         # Check if all results are True
         result = Scalar.new_from_type(bool)
         result << matches.reduce_scalar(monoid.land)

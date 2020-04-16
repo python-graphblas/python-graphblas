@@ -62,7 +62,7 @@ def test_unaryop_udf():
     v = Vector.new_from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.plus_one)
     result = Vector.new_from_values([0, 1, 3], [2, 3, -3], dtype=dtypes.INT32)
-    assert v == result
+    assert v.isequal(result)
 
 
 def test_unaryop_udf_bool_result():
@@ -92,7 +92,7 @@ def test_binaryop_udf():
     v2 = Vector.new_from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
     w = v1.ewise_add(v2, binary.bin_test_func).new()
     result = Vector.new_from_values([0, 1, 2, 3], [-1, 2, 3, -31], dtype=dtypes.INT32)
-    assert w == result
+    assert w.isequal(result)
 
 
 def test_monoid_udf():
@@ -108,7 +108,7 @@ def test_monoid_udf():
     v2 = Vector.new_from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
     w = v1.ewise_add(v2, monoid.plus_plus_one).new()
     result = Vector.new_from_values([0, 1, 2, 3], [4, 2, 3, 4], dtype=dtypes.INT32)
-    assert w == result
+    assert w.isequal(result)
 
 
 def test_semiring_udf():
@@ -122,4 +122,4 @@ def test_semiring_udf():
                                [2, 3, 4, 5, 6, 7, 8, 9], dtype=dtypes.INT32)
     w = v.vxm(A, semiring.extra_twos).new()
     result = Vector.new_from_values([0, 1, 2, 3], [9, 11, 13, 15], dtype=dtypes.INT32)
-    assert w == result
+    assert w.isequal(result)
