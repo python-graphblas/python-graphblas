@@ -303,16 +303,18 @@ def test_isequal(v):
 
 def test_isclose(v):
     assert v.isclose(v)
-    u = Vector.new_from_values([1], [1])
+    u = Vector.new_from_values([1], [1])  # wrong size
     assert not u.isclose(v)
-    u2 = Vector.new_from_values([1], [1], size=7)
+    u2 = Vector.new_from_values([1], [1], size=7)  # missing values
     assert not u2.isclose(v)
-    u3 = Vector.new_from_values([1, 3, 4, 6], [1., 1., 2., 0.])
-    assert not u3.isclose(v, check_dtype=True), 'different datatypes are not equal'
-    u4 = Vector.new_from_values([1, 3, 4, 6], [1., 1 + 1e-9, 1.999999999999, 0.])
-    assert u4.isclose(v)
-    u5 = Vector.new_from_values([1, 3, 4, 6], [1., 1 + 1e-4, 1.99999, 0.])
-    assert u5.isclose(v, rtol=1e-3)
+    u3 = Vector.new_from_values([1, 2, 3, 4, 6], [1, 1, 1, 2, 0], size=7)  # extra values
+    assert not u3.isclose(v)
+    u4 = Vector.new_from_values([1, 3, 4, 6], [1., 1., 2., 0.])
+    assert not u4.isclose(v, check_dtype=True), 'different datatypes are not equal'
+    u5 = Vector.new_from_values([1, 3, 4, 6], [1., 1 + 1e-9, 1.999999999999, 0.])
+    assert u5.isclose(v)
+    u6 = Vector.new_from_values([1, 3, 4, 6], [1., 1 + 1e-4, 1.99999, 0.])
+    assert u6.isclose(v, rtol=1e-3)
 
 
 def test_binary_op(v):
