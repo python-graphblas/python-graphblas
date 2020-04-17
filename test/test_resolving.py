@@ -21,14 +21,14 @@ def test_new_from_values_invalid_dtype():
         Matrix.new_from_values([0, 1, 2], [2, 0, 1], [0, 2, 3], dtype=dtypes.BOOL)
 
 
-def test_resolve_ops_using_output_dtype():
-    # C << A.ewise_mult(B, binary.plus) <-- PLUS should use same dtype as C, not A or B
+def test_resolve_ops_using_common_dtype():
+    # C << A.ewise_mult(B, binary.plus) <-- PLUS should use FP64 because unify(INT64, FP64) -> FP64
     u = Vector.new_from_values([0, 1, 3], [1, 2, 3], dtype=dtypes.INT64)
     v = Vector.new_from_values([0, 1, 3], [0.1, 0.1, 0.1], dtype='FP64')
     w = Vector.new_from_type('FP32', u.size)
     w << u.ewise_mult(v, binary.plus)
-    # Element[0] should be 1.1; check approximate equality
-    assert abs(w[0].value - 1.1) < 1e-6
+    result = Vector.new_from_values([0, 1, 3], [1.1, 2.1, 3.1], dtype='FP32')
+    assert w.isclose(result, check_dtype=True)
 
 
 def test_order_of_updater_params_does_not_matter():
@@ -38,24 +38,24 @@ def test_order_of_updater_params_does_not_matter():
     result = Vector.new_from_values([0, 3], [5, 10])
     # mask, accum, replace=
     v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
-    v(mask, accum, replace=True) << u.ewise_mult(u, binary.times)
-    assert v == result
+    v(mask.V, accum, replace=True) << u.ewise_mult(u, binary.times)
+    assert v.isequal(result)
     # accum, mask, replace=
     v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
-    v(accum, mask, replace=True) << u.ewise_mult(u, binary.times)
-    assert v == result
+    v(accum, mask.V, replace=True) << u.ewise_mult(u, binary.times)
+    assert v.isequal(result)
     # accum, mask=, replace=
     v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
-    v(accum, mask=mask, replace=True) << u.ewise_mult(u, binary.times)
-    assert v == result
+    v(accum, mask=mask.V, replace=True) << u.ewise_mult(u, binary.times)
+    assert v.isequal(result)
     # mask, accum=, replace=
     v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
-    v(mask, accum=accum, replace=True) << u.ewise_mult(u, binary.times)
-    assert v == result
+    v(mask.V, accum=accum, replace=True) << u.ewise_mult(u, binary.times)
+    assert v.isequal(result)
     # replace=, mask=, accum=
     v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
-    v(replace=True, mask=mask, accum=accum) << u.ewise_mult(u, binary.times)
-    assert v == result
+    v(replace=True, mask=mask.V, accum=accum) << u.ewise_mult(u, binary.times)
+    assert v.isequal(result)
 
 
 def test_already_resolved_ops_allowed_in_updater():
@@ -63,7 +63,7 @@ def test_already_resolved_ops_allowed_in_updater():
     u = Vector.new_from_values([0, 1, 3], [1, 2, 3])
     u(binary.plus['INT64']) << u.ewise_mult(u, binary.times['INT64'])
     result = Vector.new_from_values([0, 1, 3], [2, 6, 12])
-    assert u == result
+    assert u.isequal(result)
 
 
 def test_updater_returns_updater():
@@ -74,4 +74,4 @@ def test_updater_returns_updater():
     assert z is None
     assert isinstance(y, Updater)
     final_result = Vector.new_from_values([0, 1, 3], [-1, -4, -9])
-    assert u == final_result
+    assert u.isequal(final_result)

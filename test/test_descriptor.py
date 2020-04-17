@@ -1,4 +1,4 @@
-from grblas import descriptor, ffi
+from grblas import descriptor, ffi, lib
 
 
 def test_caching():
@@ -6,16 +6,14 @@ def test_caching():
     Test that building a descriptor is actually caching rather than building
     a new object for each call.
     """
-    tocr = descriptor.build(output_replace=True, mask_complement=True,
-                            transpose_first=True, transpose_second=False)
-    tocr2 = descriptor.build(output_replace=True, mask_complement=True,
+    tocr = descriptor.lookup(output_replace=True, mask_complement=True, mask_structure=True,
                              transpose_first=True, transpose_second=False)
-    assert tocr is tocr2
+    assert tocr == lib.GrB_DESC_RSCT0
 
 
 def test_null_desc():
     """
     The default descriptor is not actually defined, but should be NULL
     """
-    default = descriptor.build()
+    default = descriptor.lookup()
     assert default == ffi.NULL

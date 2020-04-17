@@ -62,7 +62,7 @@ def test_unaryop_udf():
     v = Vector.new_from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.plus_one)
     result = Vector.new_from_values([0, 1, 3], [2, 3, -3], dtype=dtypes.INT32)
-    assert v == result
+    assert v.isequal(result)
 
 
 def test_unaryop_udf_bool_result():
@@ -90,9 +90,9 @@ def test_binaryop_udf():
                                           'FP32', 'FP64'}
     v1 = Vector.new_from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.new_from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
-    w = v1.ewise_add(v2, binary.bin_test_func).new()
+    w = v1.ewise_add(v2, binary.bin_test_func, require_monoid=False).new()
     result = Vector.new_from_values([0, 1, 2, 3], [-1, 2, 3, -31], dtype=dtypes.INT32)
-    assert w == result
+    assert w.isequal(result)
 
 
 def test_monoid_udf():
@@ -108,7 +108,7 @@ def test_monoid_udf():
     v2 = Vector.new_from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
     w = v1.ewise_add(v2, monoid.plus_plus_one).new()
     result = Vector.new_from_values([0, 1, 2, 3], [4, 2, 3, 4], dtype=dtypes.INT32)
-    assert w == result
+    assert w.isequal(result)
 
 
 def test_semiring_udf():
@@ -122,4 +122,50 @@ def test_semiring_udf():
                                [2, 3, 4, 5, 6, 7, 8, 9], dtype=dtypes.INT32)
     w = v.vxm(A, semiring.extra_twos).new()
     result = Vector.new_from_values([0, 1, 2, 3], [9, 11, 13, 15], dtype=dtypes.INT32)
-    assert w == result
+    assert w.isequal(result)
+
+
+def test_binary_updates():
+    assert not hasattr(binary, 'div')
+    assert binary.cdiv['INT64'] == lib.GrB_DIV_INT64
+    vec1 = Vector.new_from_values([0], [1], dtype=dtypes.INT64)
+    vec2 = Vector.new_from_values([0], [2], dtype=dtypes.INT64)
+    result = vec1.ewise_mult(vec2, binary.truediv).new()
+    assert result.isclose(Vector.new_from_values([0], [0.5], dtype=dtypes.FP64), check_dtype=True)
+    vec4 = Vector.new_from_values([0], [-3], dtype=dtypes.INT64)
+    result2 = vec4.ewise_mult(vec2, binary.cdiv).new()
+    assert result2.isequal(Vector.new_from_values([0], [-1], dtype=dtypes.INT64), check_dtype=True)
+    result3 = vec4.ewise_mult(vec2, binary.floordiv).new()
+    assert result3.isequal(Vector.new_from_values([0], [-2], dtype=dtypes.INT64), check_dtype=True)
+
+
+def test_nested_names():
+    def plus_three(x):
+        return x + 3
+
+    UnaryOp.register_new('incrementers.plus_three', plus_three)
+    assert hasattr(unary, 'incrementers')
+    assert type(unary.incrementers) is ops.OpPath
+    assert hasattr(unary.incrementers, 'plus_three')
+    assert unary.incrementers.plus_three.types == {'INT8', 'INT16', 'INT32', 'INT64',
+                                                   'UINT8', 'UINT16', 'UINT32', 'UINT64',
+                                                   'FP32', 'FP64'}
+    v = Vector.new_from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v << v.apply(unary.incrementers.plus_three)
+    result = Vector.new_from_values([0, 1, 3], [4, 5, -1], dtype=dtypes.INT32)
+    assert v.isequal(result), print(v.show())
+
+    def plus_four(x):
+        return x + 4
+
+    UnaryOp.register_new('incrementers.plus_four', plus_four)
+    assert hasattr(unary.incrementers, 'plus_four')
+    v << v.apply(unary.incrementers.plus_four)  # this is in addition to the plus_three earlier
+    result2 = Vector.new_from_values([0, 1, 3], [8, 9, 3], dtype=dtypes.INT32)
+    assert v.isequal(result2), print(v.show())
+
+    def bad_will_overwrite_path(x):
+        return x + 7
+
+    with pytest.raises(AttributeError):
+        UnaryOp.register_new('incrementers', bad_will_overwrite_path)

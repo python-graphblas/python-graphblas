@@ -1,8 +1,8 @@
 from functools import partial
-from .base import lib, ffi, NULL, GbContainer, GbDelayed
+from .base import lib, ffi, GbContainer, GbDelayed
 from .scalar import Scalar
-from .ops import BinaryOp, find_opclass, find_return_type
-from . import dtypes, binary, monoid, semiring
+from .ops import BinaryOp, find_opclass, find_return_type, reify_op
+from . import dtypes, unary, binary, monoid, semiring
 from .exceptions import check_status, is_error, NoValue
 
 
@@ -20,21 +20,70 @@ class Vector(GbContainer):
     def __repr__(self):
         return f'<Vector {self.nvals}/{self.size}:{self.dtype.name}>'
 
-    def __eq__(self, other):
-        # Borrowed this recipe from LAGraph
+    def isequal(self, other, *, check_dtype=False):
+        """
+        Check for exact equality (same size, same empty values)
+        If `check_dtype` is True, also checks that dtypes match
+        For equality of floating point Vectors, consider using `isclose`
+        """
         if type(other) is not self.__class__:
             return False
-        if self.dtype != other.dtype:
+        if check_dtype and self.dtype != other.dtype:
             return False
         if self.size != other.size:
             return False
         if self.nvals != other.nvals:
             return False
-        # Use ewise_mult to compare equality via intersection
+        if check_dtype:
+            # dtypes are equivalent, so not need to unify
+            common_dtype = self.dtype
+        else:
+            common_dtype = dtypes.unify(self.dtype, other.dtype)
+
         matches = Vector.new_from_type(bool, self.size)
-        matches << self.ewise_mult(other, binary.eq)
+        matches << self.ewise_mult(other, binary.eq[common_dtype])
+        # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches.nvals != self.nvals:
             return False
+
+        # Check if all results are True
+        result = Scalar.new_from_type(bool)
+        result << matches.reduce(monoid.land)
+        return result.value
+
+    def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
+        """
+        Check for approximate equality (including same size and empty values)
+        If `check_dtype` is True, also checks that dtypes match
+        Closeness check is equivalent to `abs(a-b) <= max(rtol * max(abs(a), abs(b)), atol)`
+        """
+        if type(other) is not self.__class__:
+            return False
+        if check_dtype and self.dtype != other.dtype:
+            return False
+        if self.size != other.size:
+            return False
+        if self.nvals != other.nvals:
+            return False
+        if check_dtype:
+            # dtypes are equivalent, so not need to unify
+            common_dtype = self.dtype
+        else:
+            common_dtype = dtypes.unify(self.dtype, other.dtype)
+
+        matches = Vector.new_from_type(bool, self.size)
+        tmp1 = self.apply(unary.abs).new(dtype=common_dtype)
+        tmp2 = other.apply(unary.abs).new(dtype=common_dtype)
+        tmp1 << tmp1.ewise_mult(tmp2, monoid.max)
+        # ewise_mult performs intersection, so nvals will indicate mismatched empty values
+        if tmp1.nvals != self.nvals:
+            return False
+        tmp1[:](mask=tmp1.S, accum=binary.times) << rel_tol
+        tmp1[:](mask=tmp1.S, accum=binary.max) << abs_tol
+        tmp2 << self.ewise_mult(other, binary.minus)
+        tmp2 << tmp2.apply(unary.abs)
+        matches << tmp2.ewise_mult(tmp1, binary.le[common_dtype])
+
         # Check if all results are True
         result = Scalar.new_from_type(bool)
         result << matches.reduce(monoid.land)
@@ -83,7 +132,7 @@ class Vector(GbContainer):
             self.gb_obj[0]))
         return tuple(indices), tuple(values)
 
-    def rebuild_from_values(self, indices, values, *, dup_op=NULL):
+    def rebuild_from_values(self, indices, values, *, dup_op=None):
         # TODO: add `size` option once .resize is available
         self.clear()
         if not isinstance(indices, (tuple, list)):
@@ -97,7 +146,7 @@ class Vector(GbContainer):
         if n <= 0:
             return
         dup_orig = dup_op
-        if dup_op is NULL:
+        if dup_op is None:
             dup_op = binary.plus
         if isinstance(dup_op, BinaryOp):
             dup_op = dup_op[self.dtype]
@@ -112,7 +161,7 @@ class Vector(GbContainer):
             n,
             dup_op))
         # Check for duplicates when dup_op was not provided
-        if dup_orig is NULL and self.nvals < len(values):
+        if dup_orig is None and self.nvals < len(values):
             raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
     @classmethod
@@ -137,7 +186,7 @@ class Vector(GbContainer):
         return cls(new_vec, vector.dtype)
 
     @classmethod
-    def new_from_values(cls, indices, values, *, size=None, dup_op=NULL, dtype=None):
+    def new_from_values(cls, indices, values, *, size=None, dup_op=None, dtype=None):
         """Create a new Vector from the given lists of indices and values.  If
         size is not provided, it is computed from the max index found.
         """
@@ -169,63 +218,80 @@ class Vector(GbContainer):
     # to update to trigger a call to GraphBLAS
     #########################################################
 
-    def ewise_add(self, other, op=NULL):
+    def ewise_add(self, other, op=None, *, require_monoid=True):
         """
         GrB_eWiseAdd_Vector
 
         Result will contain the union of indices from both Vectors
+        Default op is monoid.plus
+        Unless explicitly disabled, this method requires a monoid (directly or from a semiring).
+            The reason for this is that binary operators can create very confusing behavior when only
+            one of the two elements is present.
+            Examples: binary.minus where left=Missing and right=4 yields 4 rather than -4 as might be expected
+                      binary.gt where left=Missing and right=4 yields True
+                      binary.gt where left=Missing and right=0 yields False
+            The behavior is caused by grabbing the non-empty value and using it directly without performing
+            any operation. In the case of `gt`, the non-empty value is cast to a boolean.
+            For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
         if not isinstance(other, Vector):
             raise TypeError(f'Expected Vector, found {type(other)}')
-        if op is NULL:
-            op = binary.plus
+        if op is None:
+            op = monoid.plus
         opclass = find_opclass(op)
-        if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
+        if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
+        if require_monoid and opclass not in {'Monoid', 'Semiring'}:
+            raise TypeError(f'op must be Monoid or Semiring unless require_monoid is False')
         func = getattr(lib, f'GrB_eWiseAdd_Vector_{opclass}')
+        op = reify_op(op, self.dtype, other.dtype)
         output_constructor = partial(Vector.new_from_type,
-                                     dtype=find_return_type(op, self.dtype, other.dtype),
+                                     dtype=find_return_type(op),
                                      size=self.size)
         return GbDelayed(func,
                          [op, self.gb_obj[0], other.gb_obj[0]],
                          output_constructor=output_constructor)
 
-    def ewise_mult(self, other, op=NULL):
+    def ewise_mult(self, other, op=None):
         """
         GrB_eWiseMult_Vector
 
         Result will contain the intersection of indices from both Vectors
+        Default op is binary.times
         """
         if not isinstance(other, Vector):
             raise TypeError(f'Expected Vector, found {type(other)}')
-        if op is NULL:
+        if op is None:
             op = binary.times
         opclass = find_opclass(op)
         if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_eWiseMult_Vector_{opclass}')
+        op = reify_op(op, self.dtype, other.dtype)
         output_constructor = partial(Vector.new_from_type,
-                                     dtype=find_return_type(op, self.dtype, other.dtype),
+                                     dtype=find_return_type(op),
                                      size=self.size)
         return GbDelayed(func,
                          [op, self.gb_obj[0], other.gb_obj[0]],
                          output_constructor=output_constructor)
 
-    def vxm(self, other, op=NULL):
+    def vxm(self, other, op=None):
         """
         GrB_vxm
         Vector-Matrix multiplication. Result is a Vector.
+        Default op is semiring.plus_times
         """
         from .matrix import Matrix
         if not isinstance(other, Matrix):
             raise TypeError(f'Expected Matrix, found {type(other)}')
-        if op is NULL:
+        if op is None:
             op = semiring.plus_times
         opclass = find_opclass(op)
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
+        op = reify_op(op, self.dtype, other.dtype)
         output_constructor = partial(Vector.new_from_type,
-                                     dtype=find_return_type(op, self.dtype, other.dtype),
+                                     dtype=find_return_type(op),
                                      size=other.ncols)
         return GbDelayed(lib.GrB_vxm,
                          [op, self.gb_obj[0], other.gb_obj[0]],
@@ -250,8 +316,9 @@ class Vector(GbContainer):
                 raise TypeError('Cannot provide both `left` and `right`')
         else:
             raise TypeError('apply only accepts UnaryOp or BinaryOp')
+        op = reify_op(op, self.dtype)
         output_constructor = partial(Vector.new_from_type,
-                                     dtype=find_return_type(op, self.dtype),
+                                     dtype=find_return_type(op),
                                      size=self.size)
         if opclass == 'UnaryOp':
             return GbDelayed(lib.GrB_Vector_apply,
@@ -261,19 +328,21 @@ class Vector(GbContainer):
             raise NotImplementedError('apply with BinaryOp not available in GraphBLAS 1.2')
             # TODO: fill this in once function is available
 
-    def reduce(self, op=NULL):
+    def reduce(self, op=None):
         """
         GrB_Vector_reduce
         Reduce all values into a scalar
+        Default op is monoid.lor for boolean and monoid.plus otherwise
         """
-        if op is NULL:
+        if op is None:
             if self.dtype == bool:
                 op = monoid.lor
             else:
                 op = monoid.plus
         func = getattr(lib, f'GrB_Vector_reduce_{self.dtype.name}')
+        op = reify_op(op, self.dtype)
         output_constructor = partial(Scalar.new_from_type,
-                                     dtype=find_return_type(op, self.dtype))
+                                     dtype=find_return_type(op))
         return GbDelayed(func,
                          [op, self.gb_obj[0]],
                          output_constructor=output_constructor)

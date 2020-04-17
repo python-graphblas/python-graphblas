@@ -4,7 +4,7 @@ import re
 
 
 def rename_defined_constants(text):
-    #define GB_PUBLIC extern
+    # #define GB_PUBLIC extern
     text = text.replace('GB_PUBLIC', 'extern')
 
     return text
