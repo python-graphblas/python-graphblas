@@ -12,6 +12,12 @@ class UdfParseError(GrblasException):
     pass
 
 
+class OpPath:
+    def __init__(self, parent, name):
+        self._parent = parent
+        self._name = name
+
+
 class OpBase:
     _parse_config = None
     _initialized = False
@@ -44,6 +50,24 @@ class OpBase:
 
     def _normalize_type(self, type_):
         return type_.name if isinstance(type_, dtypes.DataType) else type_
+
+    @classmethod
+    def _remove_nesting(cls, funcname):
+        module = cls._module
+        modname = cls._modname
+        if '.' not in funcname:
+            if hasattr(module, funcname):
+                raise AttributeError(f'{modname}.{funcname} is already defined')
+        else:
+            path, funcname = funcname.rsplit('.', 1)
+            for folder in path.split('.'):
+                if not hasattr(module, folder):
+                    setattr(module, folder, OpPath(module, folder))
+                module = getattr(module, folder)
+                modname = f'{modname}.{folder}'
+                if type(module) is not OpPath:
+                    raise AttributeError(f'{modname} is already defined. Cannot use as a nested path.')
+        return module, funcname
 
     @property
     def types(self):
@@ -90,6 +114,7 @@ class OpBase:
 
 class UnaryOp(OpBase):
     _module = unary
+    _modname = 'unary'
     _parse_config = {
         'trim_from_front': 4,
         'num_underscores': 1,
@@ -105,8 +130,7 @@ class UnaryOp(OpBase):
     def register_new(cls, name, func):
         if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
-        if hasattr(cls, name):
-            raise AttributeError(f'unary.{name} is already defined')
+        module, funcname = cls._remove_nesting(name)
         success = False
         new_type_obj = cls(name)
         for type_, sample_val in dtypes._sample_values.items():
@@ -143,13 +167,14 @@ class UnaryOp(OpBase):
             except Exception:
                 continue
         if success:
-            setattr(cls._module, name, new_type_obj)
+            setattr(module, funcname, new_type_obj)
         else:
             raise UdfParseError('Unable to parse function using Numba')
 
 
 class BinaryOp(OpBase):
     _module = binary
+    _modname = 'binary'
     _parse_config = {
         'trim_from_front': 4,
         'num_underscores': 1,
@@ -169,8 +194,7 @@ class BinaryOp(OpBase):
     def register_new(cls, name, func):
         if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
-        if hasattr(cls, name):
-            raise AttributeError(f'binary.{name} is already defined')
+        module, funcname = cls._remove_nesting(name)
         success = False
         new_type_obj = cls(name)
         for type_, sample_val in dtypes._sample_values.items():
@@ -208,7 +232,7 @@ class BinaryOp(OpBase):
             except Exception:
                 continue
         if success:
-            setattr(cls._module, name, new_type_obj)
+            setattr(module, funcname, new_type_obj)
         else:
             raise UdfParseError('Unable to parse function using Numba')
 
@@ -234,6 +258,7 @@ class BinaryOp(OpBase):
 
 class Monoid(OpBase):
     _module = monoid
+    _modname = 'monoid'
     _parse_config = {
         'trim_from_front': 4,
         'trim_from_back': 7,
@@ -249,6 +274,7 @@ class Monoid(OpBase):
     def register_new(cls, name, binaryop, zero):
         if type(binaryop) is not BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
+        module, funcname = cls._remove_nesting(name)
         new_type_obj = cls(name)
         for type_ in binaryop.types:
             type_ = dtypes.lookup(type_)
@@ -260,11 +286,12 @@ class Monoid(OpBase):
             ret_type = find_return_type(binaryop[type_])
             _return_type[new_monoid[0]] = ret_type
             cls.all_known_instances.add(new_monoid[0])
-        setattr(cls._module, name, new_type_obj)
+        setattr(module, funcname, new_type_obj)
 
 
 class Semiring(OpBase):
     _module = semiring
+    _modname = 'semiring'
     _parse_config = {
         'trim_from_front': 4,
         'num_underscores': 2,
@@ -284,6 +311,7 @@ class Semiring(OpBase):
             raise TypeError(f'monoid must be a Monoid, not {type(monoid)}')
         if type(binaryop) != BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
+        module, funcname = cls._remove_nesting(name)
         new_type_obj = cls(name)
         for type_ in binaryop.types & monoid.types:
             type_ = dtypes.lookup(type_)
@@ -293,7 +321,7 @@ class Semiring(OpBase):
             ret_type = find_return_type(monoid[type_])
             _return_type[new_semiring[0]] = ret_type
             cls.all_known_instances.add(new_semiring[0])
-        setattr(cls._module, name, new_type_obj)
+        setattr(module, funcname, new_type_obj)
 
 
 def find_opclass(gb_op):

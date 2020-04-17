@@ -137,3 +137,35 @@ def test_binary_updates():
     assert result2.isequal(Vector.new_from_values([0], [-1], dtype=dtypes.INT64), check_dtype=True)
     result3 = vec4.ewise_mult(vec2, binary.floordiv).new()
     assert result3.isequal(Vector.new_from_values([0], [-2], dtype=dtypes.INT64), check_dtype=True)
+
+
+def test_nested_names():
+    def plus_three(x):
+        return x + 3
+
+    UnaryOp.register_new('incrementers.plus_three', plus_three)
+    assert hasattr(unary, 'incrementers')
+    assert type(unary.incrementers) is ops.OpPath
+    assert hasattr(unary.incrementers, 'plus_three')
+    assert unary.incrementers.plus_three.types == {'INT8', 'INT16', 'INT32', 'INT64',
+                                                   'UINT8', 'UINT16', 'UINT32', 'UINT64',
+                                                   'FP32', 'FP64'}
+    v = Vector.new_from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v << v.apply(unary.incrementers.plus_three)
+    result = Vector.new_from_values([0, 1, 3], [4, 5, -1], dtype=dtypes.INT32)
+    assert v.isequal(result), print(v.show())
+
+    def plus_four(x):
+        return x + 4
+
+    UnaryOp.register_new('incrementers.plus_four', plus_four)
+    assert hasattr(unary.incrementers, 'plus_four')
+    v << v.apply(unary.incrementers.plus_four)  # this is in addition to the plus_three earlier
+    result2 = Vector.new_from_values([0, 1, 3], [8, 9, 3], dtype=dtypes.INT32)
+    assert v.isequal(result2), print(v.show())
+
+    def bad_will_overwrite_path(x):
+        return x + 7
+
+    with pytest.raises(AttributeError):
+        UnaryOp.register_new('incrementers', bad_will_overwrite_path)
