@@ -314,7 +314,7 @@ def test_isclose(v):
     u5 = Vector.new_from_values([1, 3, 4, 6], [1., 1 + 1e-9, 1.999999999999, 0.])
     assert u5.isclose(v)
     u6 = Vector.new_from_values([1, 3, 4, 6], [1., 1 + 1e-4, 1.99999, 0.])
-    assert u6.isclose(v, rtol=1e-3)
+    assert u6.isclose(v, rel_tol=1e-3)
 
 
 def test_binary_op(v):

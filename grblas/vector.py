@@ -51,7 +51,7 @@ class Vector(GbContainer):
         result << matches.reduce(monoid.land)
         return result.value
 
-    def isclose(self, other, rtol=1e-7, atol=0.0, *, check_dtype=False):
+    def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """
         Check for approximate equality (including same size and empty values)
         If `check_dtype` is True, also checks that dtypes match
@@ -78,8 +78,8 @@ class Vector(GbContainer):
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if tmp1.nvals != self.nvals:
             return False
-        tmp1[:](mask=tmp1.S, accum=binary.times) << rtol
-        tmp1[:](mask=tmp1.S, accum=binary.max) << atol
+        tmp1[:](mask=tmp1.S, accum=binary.times) << rel_tol
+        tmp1[:](mask=tmp1.S, accum=binary.max) << abs_tol
         tmp2 << self.ewise_mult(other, binary.minus)
         tmp2 << tmp2.apply(unary.abs)
         matches << tmp2.ewise_mult(tmp1, binary.le[common_dtype])
