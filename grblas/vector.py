@@ -194,9 +194,9 @@ class Vector(GbContainer):
             indices = tuple(indices)
         if not isinstance(values, (tuple, list)):
             values = tuple(values)
-        if len(values) <= 0:
-            raise ValueError('No values provided. Unable to determine type.')
         if dtype is None:
+            if len(values) <= 0:
+                raise ValueError('No values provided. Unable to determine type.')
             # Find dtype from any of the values (assumption is they are the same type)
             dtype = type(values[0])
         dtype = dtypes.lookup(dtype)

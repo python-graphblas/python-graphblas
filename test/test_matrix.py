@@ -61,12 +61,21 @@ def test_new_from_values():
     assert C3.nvals == 2  # duplicates were combined
     assert C3.dtype == int
     assert C3[1, 1].value == 6  # 2*3
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='Duplicate indices found'):
         # Duplicate indices requires a dup_op
         Matrix.new_from_values([0, 1, 1], [2, 1, 1], [True, True, True])
     with pytest.raises(IndexOutOfBound):
         # Specified ncols can't hold provided indexes
         Matrix.new_from_values([0, 1, 3], [1, 1, 2], [12.3, 12.4, 12.5], nrows=17, ncols=2)
+    with pytest.raises(ValueError, match='No values provided. Unable to determine type'):
+        Matrix.new_from_values([], [], [])
+    with pytest.raises(ValueError, match='No values provided. Unable to determine type'):
+        Matrix.new_from_values([], [], [], nrows=3, ncols=4)
+    with pytest.raises(ValueError, match='Unable to infer'):
+        Matrix.new_from_values([], [], [], dtype=dtypes.INT64)
+    C4 = Matrix.new_from_values([], [], [],  nrows=3, ncols=4, dtype=dtypes.INT64)
+    C5 = Matrix.new_from_type(dtypes.INT64, nrows=3, ncols=4)
+    assert C4.isequal(C5, check_dtype=True)
 
 
 def test_clear(A):

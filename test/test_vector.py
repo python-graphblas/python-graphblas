@@ -56,9 +56,18 @@ def test_new_from_values():
     assert u3.nvals == 2  # duplicates were combined
     assert u3.dtype == int
     assert u3[1].value == 6  # 2*3
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='Duplicate indices found'):
         # Duplicate indices requires a dup_op
         Vector.new_from_values([0, 1, 1], [True, True, True])
+    with pytest.raises(ValueError, match='No values provided. Unable to determine type'):
+        Vector.new_from_values([], [])
+    with pytest.raises(ValueError, match='No values provided. Unable to determine type'):
+        Vector.new_from_values([], [], size=10)
+    with pytest.raises(ValueError, match='No indices provided. Unable to infer size'):
+        Vector.new_from_values([], [], dtype=dtypes.INT64)
+    u4 = Vector.new_from_values([], [], size=10, dtype=dtypes.INT64)
+    u5 = Vector.new_from_type(dtypes.INT64, size=10)
+    assert u4.isequal(u5, check_dtype=True)
 
 
 def test_clear(v):
