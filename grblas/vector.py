@@ -78,8 +78,8 @@ class Vector(GbContainer):
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if tmp1.nvals != self.nvals:
             return False
-        tmp1[:](mask=tmp1, accum=binary.times) << rtol
-        tmp1[:](mask=tmp1, accum=binary.max) << atol
+        tmp1[:](mask=tmp1.S, accum=binary.times) << rtol
+        tmp1[:](mask=tmp1.S, accum=binary.max) << atol
         tmp2 << self.ewise_mult(other, binary.minus)
         tmp2 << tmp2.apply(unary.abs)
         matches << tmp2.ewise_mult(tmp1, binary.le[common_dtype])

@@ -81,8 +81,8 @@ class Matrix(GbContainer):
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if tmp1.nvals != self.nvals:
             return False
-        tmp1[:, :](mask=tmp1, accum=binary.times) << rtol
-        tmp1[:, :](mask=tmp1, accum=binary.max) << atol
+        tmp1[:, :](mask=tmp1.S, accum=binary.times) << rtol
+        tmp1[:, :](mask=tmp1.S, accum=binary.max) << atol
         tmp2 << self.ewise_mult(other, binary.minus)
         tmp2 << tmp2.apply(unary.abs)
         matches << tmp2.ewise_mult(tmp1, binary.le[common_dtype])
@@ -256,7 +256,7 @@ class Matrix(GbContainer):
         GrB_eWiseAdd_Matrix
 
         Result will contain the union of indices from both Matrices
-        Default op is binary.plus
+        Default op is monoid.plus
         Unless explicitly disabled, this method requires a monoid (directly or from a semiring).
             The reason for this is that binary operators can create very confusing behavior when only
             one of the two elements is present.
@@ -270,7 +270,7 @@ class Matrix(GbContainer):
         if not isinstance(other, Matrix):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
-            op = binary.plus
+            op = monoid.plus
         opclass = find_opclass(op)
         if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')

@@ -164,30 +164,33 @@ def test_mxm_nonsquare():
 
 
 def test_mxm_mask(A):
-    mask = Matrix.new_from_values([0, 3, 4], [2, 3, 2], [True, True, True], nrows=7, ncols=7)
+    val_mask = Matrix.new_from_values([0, 3, 4], [2, 3, 2], [True, True, True], nrows=7, ncols=7)
+    struct_mask = Matrix.new_from_values([0, 3, 4], [2, 3, 2], [1, 0, 0], nrows=7, ncols=7)
     C = Matrix.new_from_existing(A)
-    C(mask) << A.mxm(A, semiring.plus_times)
+    C(val_mask.V) << A.mxm(A, semiring.plus_times)
     result = Matrix.new_from_values(
         [0, 0, 0, 1, 1, 2, 3, 3, 3, 4, 4, 5, 6, 6, 6],
         [1, 2, 3, 4, 6, 5, 0, 2, 3, 2, 5, 2, 2, 3, 4],
         [2, 9, 3, 8, 4, 1, 3, 3, 9, 7, 7, 1, 5, 7, 3])
     assert C.isequal(result)
     C = Matrix.new_from_existing(A)
-    C(~mask) << A.mxm(A, semiring.plus_times)
+    C(~val_mask.V) << A.mxm(A, semiring.plus_times)
     result2 = Matrix.new_from_values(
         [0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 5, 6, 6, 6],
         [0, 4, 6, 2, 3, 4, 5, 2, 1, 5, 5, 0, 2, 5],
         [9, 16, 8, 20, 28, 12, 56, 1, 6, 3, 1, 21, 21, 26])
     assert C.isequal(result2)
     C = Matrix.new_from_existing(A)
-    C(mask, replace=True).update(A.mxm(A, semiring.plus_times))
+    C(struct_mask.S, replace=True).update(A.mxm(A, semiring.plus_times))
     result3 = Matrix.new_from_values(
         [0, 3, 4],
         [2, 3, 2],
         [9, 9, 7], nrows=7, ncols=7)
     assert C.isequal(result3)
-    C2 = A.mxm(A, semiring.plus_times).new(mask=mask)
+    C2 = A.mxm(A, semiring.plus_times).new(mask=struct_mask.S)
     assert C2.isequal(result3)
+    with pytest.raises(TypeError, match="Mask must indicate"):
+        A.mxm(A).new(mask=struct_mask)
 
 
 def test_mxm_accum(A):

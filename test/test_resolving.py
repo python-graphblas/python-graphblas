@@ -38,23 +38,23 @@ def test_order_of_updater_params_does_not_matter():
     result = Vector.new_from_values([0, 3], [5, 10])
     # mask, accum, replace=
     v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
-    v(mask, accum, replace=True) << u.ewise_mult(u, binary.times)
+    v(mask.V, accum, replace=True) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
     # accum, mask, replace=
     v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
-    v(accum, mask, replace=True) << u.ewise_mult(u, binary.times)
+    v(accum, mask.V, replace=True) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
     # accum, mask=, replace=
     v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
-    v(accum, mask=mask, replace=True) << u.ewise_mult(u, binary.times)
+    v(accum, mask=mask.V, replace=True) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
     # mask, accum=, replace=
     v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
-    v(mask, accum=accum, replace=True) << u.ewise_mult(u, binary.times)
+    v(mask.V, accum=accum, replace=True) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
     # replace=, mask=, accum=
     v = Vector.new_from_values([0, 1, 2, 3], [4, 3, 2, 1])
-    v(replace=True, mask=mask, accum=accum) << u.ewise_mult(u, binary.times)
+    v(replace=True, mask=mask.V, accum=accum) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
 
 

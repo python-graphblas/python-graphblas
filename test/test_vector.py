@@ -138,20 +138,21 @@ def test_vxm_nonsquare(v):
 
 
 def test_vxm_mask(v, A):
-    mask = Vector.new_from_values([0, 3, 4], [True, True, True], size=7)
+    val_mask = Vector.new_from_values([0, 1, 2, 3, 4], [True, False, False, True, True], size=7)
+    struct_mask = Vector.new_from_values([0, 3, 4], [False, False, False], size=7)
     u = Vector.new_from_existing(v)
-    u(mask) << v.vxm(A, semiring.plus_times)
+    u(struct_mask.S) << v.vxm(A, semiring.plus_times)
     result = Vector.new_from_values([0, 1, 3, 4, 6], [3, 1, 0, 8, 0], size=7)
     assert u.isequal(result)
     u = Vector.new_from_existing(v)
-    u(~mask) << v.vxm(A, semiring.plus_times)
+    u(~struct_mask.S) << v.vxm(A, semiring.plus_times)
     result2 = Vector.new_from_values([2, 3, 4, 5, 6], [3, 1, 2, 14, 4], size=7)
     assert u.isequal(result2)
     u = Vector.new_from_existing(v)
-    u(replace=True, mask=mask) << v.vxm(A, semiring.plus_times)
+    u(replace=True, mask=val_mask.V) << v.vxm(A, semiring.plus_times)
     result3 = Vector.new_from_values([0, 3, 4], [3, 0, 8], size=7)
     assert u.isequal(result3)
-    w = v.vxm(A, semiring.plus_times).new(mask=mask)
+    w = v.vxm(A, semiring.plus_times).new(mask=val_mask.V)
     assert w.isequal(result3)
 
 
@@ -246,11 +247,11 @@ def test_assign_scalar_mask(v):
     mask = Vector.new_from_values([1, 2, 5, 6], [0, 0, 1, 0])
     result = Vector.new_from_values([1, 3, 4, 5, 6], [1, 1, 2, 5, 0])
     w = v.dup()
-    w[:](mask) << 5
+    w[:](mask.V) << 5
     assert w.isequal(result)
     result2 = Vector.new_from_values([0, 1, 2, 3, 4, 6], [5, 5, 5, 5, 5, 5])
     w = v.dup()
-    w[:](~mask) << 5
+    w[:](~mask.V) << 5
     assert w.isequal(result2)
     result3 = Vector.new_from_values([1, 2, 3, 4, 5, 6], [5, 5, 1, 2, 5, 5])
     w = v.dup()
@@ -321,3 +322,13 @@ def test_binary_op(v):
     result = Vector.new_from_values([1, 3, 4, 6], [True, False, False, False])
     assert w.dtype == 'BOOL'
     assert w.isequal(result)
+
+
+def test_accum_must_be_binaryop(v):
+    with pytest.raises(TypeError):
+        v(accum=monoid.plus) << v.ewise_mult(v)
+
+
+def test_mask_must_be_value_or_structure(v):
+    with pytest.raises(TypeError):
+        v(mask=v) << v.ewise_mult(v)
