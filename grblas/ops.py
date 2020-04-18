@@ -127,10 +127,9 @@ class UnaryOp(OpBase):
     all_known_instances = set()
 
     @classmethod
-    def register_new(cls, name, func):
+    def _build(cls, func, name=None):
         if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
-        module, funcname = cls._remove_nesting(name)
         success = False
         new_type_obj = cls(name)
         for type_, sample_val in dtypes._sample_values.items():
@@ -167,9 +166,19 @@ class UnaryOp(OpBase):
             except Exception:
                 continue
         if success:
-            setattr(module, funcname, new_type_obj)
+            return new_type_obj
         else:
             raise UdfParseError('Unable to parse function using Numba')
+
+    @classmethod
+    def register_anonymous(cls, func):
+        return cls._build(func)
+
+    @classmethod
+    def register_new(cls, name, func):
+        module, funcname = cls._remove_nesting(name)
+        unary_op = cls._build(func)
+        setattr(module, funcname, unary_op)
 
 
 class BinaryOp(OpBase):
@@ -191,7 +200,7 @@ class BinaryOp(OpBase):
     all_known_instances = set()
 
     @classmethod
-    def _build_udf(cls, func, name=None):
+    def _build(cls, func, name=None):
         if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
         success = False
@@ -237,13 +246,13 @@ class BinaryOp(OpBase):
 
     @classmethod
     def register_anonymous(cls, func):
-        return cls._build_udf(func)
+        return cls._build(func)
 
     @classmethod
     def register_new(cls, name, func):
         module, funcname = cls._remove_nesting(name)
-        udf = cls._build_udf(func)
-        setattr(module, funcname, udf)
+        binary_op = cls._build(func)
+        setattr(module, funcname, binary_op)
 
     @classmethod
     def _initialize(cls):
@@ -280,7 +289,7 @@ class Monoid(OpBase):
     all_known_instances = set()
 
     @classmethod
-    def register_new(cls, name, binaryop, zero):
+    def _build(cls, binaryop, zero, name=None):
         if type(binaryop) is not BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
         module, funcname = cls._remove_nesting(name)
@@ -295,7 +304,17 @@ class Monoid(OpBase):
             ret_type = find_return_type(binaryop[type_])
             _return_type[new_monoid[0]] = ret_type
             cls.all_known_instances.add(new_monoid[0])
-        setattr(module, funcname, new_type_obj)
+        return new_type_obj
+
+    @classmethod
+    def register_anonymous(cls, binaryop, zero):
+        return cls._build(binaryop, zero)
+
+    @classmethod
+    def register_new(cls, name, binaryop, zero):
+        module, funcname = cls._remove_nesting(name)
+        monoid = cls._build(binaryop, zero, name)
+        setattr(module, funcname, monoid)
 
 
 class Semiring(OpBase):
@@ -315,7 +334,7 @@ class Semiring(OpBase):
     all_known_instances = set()
 
     @classmethod
-    def register_new(cls, name, monoid, binaryop):
+    def _build(cls, monoid, binaryop, name=None):
         if type(monoid) is not Monoid:
             raise TypeError(f'monoid must be a Monoid, not {type(monoid)}')
         if type(binaryop) != BinaryOp:
@@ -330,7 +349,17 @@ class Semiring(OpBase):
             ret_type = find_return_type(monoid[type_])
             _return_type[new_semiring[0]] = ret_type
             cls.all_known_instances.add(new_semiring[0])
-        setattr(module, funcname, new_type_obj)
+        return new_type_obj
+
+    @classmethod
+    def register_anonymous(cls, monoid, binaryop):
+        return cls._build(monoid, binaryop)
+
+    @classmethod
+    def register_new(cls, name, monoid, binaryop):
+        module, funcname = cls._remove_nesting(name)
+        semiring = cls._build(monoid, binaryop, name)
+        setattr(module, funcname, semiring)
 
 
 def find_opclass(gb_op):
