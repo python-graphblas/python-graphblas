@@ -191,10 +191,9 @@ class BinaryOp(OpBase):
     all_known_instances = set()
 
     @classmethod
-    def register_new(cls, name, func):
+    def _build_udf(cls, func, name=None):
         if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
-        module, funcname = cls._remove_nesting(name)
         success = False
         new_type_obj = cls(name)
         for type_, sample_val in dtypes._sample_values.items():
@@ -232,9 +231,19 @@ class BinaryOp(OpBase):
             except Exception:
                 continue
         if success:
-            setattr(module, funcname, new_type_obj)
+            return new_type_obj
         else:
             raise UdfParseError('Unable to parse function using Numba')
+
+    @classmethod
+    def register_anonymous(cls, func):
+        return cls._build_udf(func)
+
+    @classmethod
+    def register_new(cls, name, func):
+        module, funcname = cls._remove_nesting(name)
+        udf = cls._build_udf(func)
+        setattr(module, funcname, udf)
 
     @classmethod
     def _initialize(cls):

@@ -1,9 +1,9 @@
 from functools import partial
 from .base import lib, ffi, GbContainer, GbDelayed
-from .vector import Vector
+from .vector import Vector, _generate_isclose
 from .scalar import Scalar
 from .ops import BinaryOp, find_opclass, find_return_type, reify_op
-from . import dtypes, unary, binary, monoid, semiring
+from . import dtypes, binary, monoid, semiring
 from .exceptions import check_status, is_error, NoValue
 
 
@@ -57,7 +57,7 @@ class Matrix(GbContainer):
         """
         Check for approximate equality (including same size and empty values)
         If `check_dtype` is True, also checks that dtypes match
-        Closeness check is equivalent to `abs(a-b) <= max(rtol * max(abs(a), abs(b)), atol)`
+        Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
         if type(other) is not self.__class__:
             return False
@@ -69,28 +69,15 @@ class Matrix(GbContainer):
             return False
         if self.nvals != other.nvals:
             return False
-        if check_dtype:
-            common_dtype = self.dtype
-        else:
-            common_dtype = dtypes.unify(self.dtype, other.dtype)
 
-        matches = Matrix.new_from_type(bool, self.nrows, self.ncols)
-        tmp1 = self.apply(unary.abs).new(dtype=common_dtype)
-        tmp2 = other.apply(unary.abs).new(dtype=common_dtype)
-        tmp1 << tmp1.ewise_mult(tmp2, monoid.max)
+        isclose = _generate_isclose(rel_tol, abs_tol)
+        matches = self.ewise_mult(other, isclose).new(dtype=bool)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
-        if tmp1.nvals != self.nvals:
+        if matches.nvals != self.nvals:
             return False
-        tmp1[:, :](mask=tmp1.S, accum=binary.times) << rel_tol
-        tmp1[:, :](mask=tmp1.S, accum=binary.max) << abs_tol
-        tmp2 << self.ewise_mult(other, binary.minus)
-        tmp2 << tmp2.apply(unary.abs)
-        matches << tmp2.ewise_mult(tmp1, binary.le[common_dtype])
 
         # Check if all results are True
-        result = Scalar.new_from_type(bool)
-        result << matches.reduce_scalar(monoid.land)
-        return result.value
+        return matches.reduce_scalar(monoid.land).value
 
     def __len__(self):
         return self.nvals

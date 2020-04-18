@@ -1,9 +1,19 @@
-from functools import partial
+from functools import lru_cache, partial
 from .base import lib, ffi, GbContainer, GbDelayed
 from .scalar import Scalar
 from .ops import BinaryOp, find_opclass, find_return_type, reify_op
-from . import dtypes, unary, binary, monoid, semiring
+from . import dtypes, binary, monoid, semiring
 from .exceptions import check_status, is_error, NoValue
+
+
+@lru_cache(maxsize=1024)
+def _generate_isclose(rel_tol, abs_tol):
+    # numba will inline the current values of `rel_tol` and `abs_tol` below
+    def isclose(x, y):
+        # Return 1 or 0 instead of bool because of this numba issue
+        # https://github.com/numba/numba/issues/5395
+        return 1 if abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol) else 0
+    return BinaryOp.register_anonymous(isclose)
 
 
 class Vector(GbContainer):
@@ -55,7 +65,7 @@ class Vector(GbContainer):
         """
         Check for approximate equality (including same size and empty values)
         If `check_dtype` is True, also checks that dtypes match
-        Closeness check is equivalent to `abs(a-b) <= max(rtol * max(abs(a), abs(b)), atol)`
+        Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
         if type(other) is not self.__class__:
             return False
@@ -65,29 +75,15 @@ class Vector(GbContainer):
             return False
         if self.nvals != other.nvals:
             return False
-        if check_dtype:
-            # dtypes are equivalent, so not need to unify
-            common_dtype = self.dtype
-        else:
-            common_dtype = dtypes.unify(self.dtype, other.dtype)
 
-        matches = Vector.new_from_type(bool, self.size)
-        tmp1 = self.apply(unary.abs).new(dtype=common_dtype)
-        tmp2 = other.apply(unary.abs).new(dtype=common_dtype)
-        tmp1 << tmp1.ewise_mult(tmp2, monoid.max)
+        isclose = _generate_isclose(rel_tol, abs_tol)
+        matches = self.ewise_mult(other, isclose).new(dtype=bool)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
-        if tmp1.nvals != self.nvals:
+        if matches.nvals != self.nvals:
             return False
-        tmp1[:](mask=tmp1.S, accum=binary.times) << rel_tol
-        tmp1[:](mask=tmp1.S, accum=binary.max) << abs_tol
-        tmp2 << self.ewise_mult(other, binary.minus)
-        tmp2 << tmp2.apply(unary.abs)
-        matches << tmp2.ewise_mult(tmp1, binary.le[common_dtype])
 
         # Check if all results are True
-        result = Scalar.new_from_type(bool)
-        result << matches.reduce(monoid.land)
-        return result.value
+        return matches.reduce(monoid.land).value
 
     def __len__(self):
         return self.nvals
