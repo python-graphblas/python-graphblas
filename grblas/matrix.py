@@ -27,7 +27,7 @@ class Matrix(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         For equality of floating point Vectors, consider using `isclose`
         """
-        if type(other) is not self.__class__:
+        if not isinstance(other, Matrix):
             return False
         if check_dtype and self.dtype != other.dtype:
             return False
@@ -59,7 +59,7 @@ class Matrix(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         Closeness check is equivalent to `abs(a-b) <= max(rtol * max(abs(a), abs(b)), atol)`
         """
-        if type(other) is not self.__class__:
+        if not isinstance(other, Matrix):
             return False
         if check_dtype and self.dtype != other.dtype:
             return False
@@ -407,6 +407,7 @@ class Matrix(GbContainer):
         if opclass == 'UnaryOp':
             return GbDelayed(lib.GrB_Matrix_apply,
                              [op, self.gb_obj[0]],
+                             at=self.is_transposed,
                              output_constructor=output_constructor)
         else:
             raise NotImplementedError('apply with BinaryOp not available in GraphBLAS 1.2')
@@ -471,6 +472,8 @@ class Matrix(GbContainer):
         col, _ = resolved_indexes.indices[1]
         func = getattr(lib, f'GrB_Matrix_extractElement_{self.dtype}')
         result = ffi.new(f'{self.dtype.c_type}*')
+        if self.is_transposed:
+            row, col = col, row
 
         err_code = func(result,
                         self.gb_obj[0],

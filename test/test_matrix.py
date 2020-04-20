@@ -7,6 +7,14 @@ from grblas.exceptions import IndexOutOfBound, DimensionMismatch
 
 @pytest.fixture
 def A():
+    #    0 1 2 3 4 5 6
+    # 0 [- 2 - 3 - - -]
+    # 1 [- - - - 8 - 4]
+    # 2 [- - - - - 1 -]
+    # 3 [3 - 3 - - - -]
+    # 4 [- - - - - 7 -]
+    # 5 [- - 1 - - - -]
+    # 6 [- - 5 7 3 - -]
     data = [
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
@@ -110,6 +118,7 @@ def test_extract_values(A):
 def test_extract_element(A):
     assert A[3, 0].new() == 3
     assert A[1, 6].value == 4
+    assert A.T[6, 1].value == 4
 
 
 def test_set_element(A):
@@ -453,3 +462,21 @@ def test_isclose(A, v):
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3., 2.000001, 3., 1., 5., 3., 7., 7.9999999, 3., 1., 7., 4.])
     assert C6.isclose(A, rel_tol=1e-3)
+
+
+def test_transpose_equals(A):
+    data = [
+        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+        [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]
+    ]
+    B = Matrix.new_from_values(*data)
+    assert A.isequal(B.T)
+    assert B.isequal(A.T)
+    assert A.T.isequal(B)
+    assert A.T.isequal(A.T)
+    assert A.isclose(A)
+    assert A.isclose(B.T)
+    assert B.isclose(A.T)
+    assert A.T.isclose(B)
+    assert A.T.isclose(A.T)
