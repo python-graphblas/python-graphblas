@@ -132,6 +132,8 @@ class UnaryOp(OpBase):
     def _build(cls, name, func):
         if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
+        if name is None:
+            name = getattr(func, '__name__', '<anonymous_unary>')
         success = False
         new_type_obj = cls(name)
         return_types = {}
@@ -187,8 +189,6 @@ class UnaryOp(OpBase):
 
     @classmethod
     def register_anonymous(cls, func, name=None):
-        if name is None:
-            name = getattr(func, '__name__', '<anonymous_unary>')
         return cls._build(name, func)
 
     @classmethod
@@ -226,6 +226,8 @@ class BinaryOp(OpBase):
     def _build(cls, name, func):
         if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
+        if name is None:
+            name = getattr(func, '__name__', '<anonymous_binary>')
         success = False
         new_type_obj = cls(name)
         return_types = {}
@@ -282,8 +284,6 @@ class BinaryOp(OpBase):
 
     @classmethod
     def register_anonymous(cls, func, name=None):
-        if name is None:
-            name = getattr(func, '__name__', '<anonymous_binary>')
         return cls._build(name, func)
 
     @classmethod
@@ -333,6 +333,8 @@ class Monoid(OpBase):
     def _build(cls, name, binaryop, identity):
         if type(binaryop) is not BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
+        if name is None:
+            name = binaryop.name
         new_type_obj = cls(name)
         if not isinstance(identity, Mapping):
             identities = dict.fromkeys(binaryop.types, identity)
@@ -352,10 +354,6 @@ class Monoid(OpBase):
 
     @classmethod
     def register_anonymous(cls, binaryop, identity, name=None):
-        if name is None:
-            name = getattr(binaryop, 'name', name)
-            if name is None:
-                name = getattr(binaryop, '__name__', '<anonymous_monoid>')
         return cls._build(name, binaryop, identity)
 
     @classmethod
@@ -395,27 +393,24 @@ class Semiring(OpBase):
             raise TypeError(f'monoid must be a Monoid, not {type(monoid)}')
         if type(binaryop) != BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
+        if name is None:
+            name = f'{monoid.name}_{binaryop.name}'
         new_type_obj = cls(name)
-        for type_ in binaryop.types & monoid.types:
-            type_ = dtypes.lookup(type_)
+        for binary_in, binary_func in binaryop._specific_types.items():
+            binary_out = find_return_type(binary_func)
+            if binary_out not in monoid.types:
+                continue
+            binary_out = dtypes.lookup(binary_out)
             new_semiring = ffi.new('GrB_Semiring*')
-            lib.GrB_Semiring_new(new_semiring, monoid[type_], binaryop[type_])
-            new_type_obj[type_.name] = new_semiring[0]
-            ret_type = find_return_type(monoid[type_])
+            lib.GrB_Semiring_new(new_semiring, monoid[binary_out], binary_func)
+            new_type_obj[binary_in] = new_semiring[0]
+            ret_type = find_return_type(monoid[binary_out])
             _return_type[new_semiring[0]] = ret_type
             cls.all_known_instances.add(new_semiring[0])
         return new_type_obj
 
     @classmethod
     def register_anonymous(cls, monoid, binaryop, name=None):
-        if name is None:
-            name1 = getattr(monoid, 'name', name)
-            if name1 is None:
-                name1 = getattr(monoid, '__name__', '<anonymous_monoid>')
-            name2 = getattr(binaryop, 'name', name)
-            if name2 is None:
-                name2 = getattr(binaryop, '__name__', '<anonymous_binary>')
-            name = f'{name1}_{name2}'
         return cls._build(name, monoid, binaryop)
 
     @classmethod

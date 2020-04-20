@@ -5,14 +5,13 @@ from . import lib
 
 
 class DataType:
-    __slots__ = ['name', 'gb_type', 'c_type', 'numba_type', 'numpy_type']
+    __slots__ = ['name', 'gb_type', 'c_type', 'numba_type']
 
     def __init__(self, name, gb_type, c_type, numba_type):
         self.name = name
         self.gb_type = gb_type
         self.c_type = c_type
         self.numba_type = numba_type
-        self.numpy_type = getattr(np, numba_type.name)
 
     def __repr__(self):
         return self.name
@@ -77,12 +76,10 @@ for dtype, val in _sample_values.items():
     _registry[dtype.c_type] = dtype
     _registry[dtype.numba_type] = dtype
     _registry[dtype.numba_type.name] = dtype
-    _registry[dtype.numpy_type] = dtype
     _registry[val.dtype] = dtype
     _registry[val.dtype.name] = dtype
 del dtype
 # Upcast numpy float16 to float32
-_registry[np.float16] = FP32
 _registry[np.dtype(np.float16)] = FP32
 _registry['float16'] = FP32
 
