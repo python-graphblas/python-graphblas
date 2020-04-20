@@ -10,10 +10,8 @@ from .exceptions import check_status, is_error, NoValue
 def _generate_isclose(rel_tol, abs_tol):
     # numba will inline the current values of `rel_tol` and `abs_tol` below
     def isclose(x, y):
-        # Return 1 or 0 instead of bool because of this numba issue
-        # https://github.com/numba/numba/issues/5395
-        return 1 if abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol) else 0
-    return BinaryOp.register_anonymous(isclose)
+        return abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+    return BinaryOp.register_anonymous(isclose, f'isclose(rel_tol={rel_tol}, abs_tol={abs_tol})')
 
 
 class Vector(GbContainer):

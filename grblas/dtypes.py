@@ -1,16 +1,18 @@
 import re
-from . import lib
+import numpy as np
 import numba
+from . import lib
 
 
 class DataType:
-    __slots__ = ['name', 'gb_type', 'c_type', 'numba_type']
+    __slots__ = ['name', 'gb_type', 'c_type', 'numba_type', 'numpy_type']
 
     def __init__(self, name, gb_type, c_type, numba_type):
         self.name = name
         self.gb_type = gb_type
         self.c_type = c_type
         self.numba_type = numba_type
+        self.numpy_type = getattr(np, numba_type.name)
 
     def __repr__(self):
         return self.name
@@ -54,28 +56,36 @@ FP64 = DataType('FP64', lib.GrB_FP64, 'double', numba.types.float64)
 
 # Used for testing user-defined functions
 _sample_values = {
-    BOOL: True,
-    INT8: -3,
-    UINT8: 3,
-    INT16: -3,
-    UINT16: 3,
-    INT32: -3,
-    UINT32: 3,
-    INT64: -3,
-    UINT64: 3,
-    FP32: 3.14,
-    FP64: 3.14
+    INT8: np.int8(1),
+    UINT8: np.uint8(1),
+    INT16: np.int16(1),
+    UINT16: np.uint16(1),
+    INT32: np.int32(1),
+    UINT32: np.uint32(1),
+    INT64: np.int64(1),
+    UINT64: np.uint64(1),
+    FP32: np.float32(0.5),
+    FP64: np.float64(0.5),
+    BOOL: np.bool_(True),
 }
 
 # Create register to easily lookup types by name, gb_type, or c_type
 _registry = {}
-for x in _sample_values:
-    _registry[x.name] = x
-    _registry[x.gb_type] = x
-    _registry[x.c_type] = x
-    _registry[x.numba_type] = x
-    _registry[x.numba_type.name] = x
-del x
+for dtype, val in _sample_values.items():
+    _registry[dtype.name] = dtype
+    _registry[dtype.gb_type] = dtype
+    _registry[dtype.c_type] = dtype
+    _registry[dtype.numba_type] = dtype
+    _registry[dtype.numba_type.name] = dtype
+    _registry[dtype.numpy_type] = dtype
+    _registry[val.dtype] = dtype
+    _registry[val.dtype.name] = dtype
+del dtype
+# Upcast numpy float16 to float32
+_registry[np.float16] = FP32
+_registry[np.dtype(np.float16)] = FP32
+_registry['float16'] = FP32
+
 # Add some common Python types as lookup keys
 _registry[int] = DataType.from_pytype(int)
 _registry[float] = DataType.from_pytype(float)
@@ -92,6 +102,10 @@ def lookup(key):
         if hasattr(key, 'name'):
             return _registry[key.name]
         else:
+            try:
+                return lookup(np.dtype(key))
+            except Exception:
+                pass
             raise
 
 

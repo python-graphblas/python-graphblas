@@ -16,14 +16,14 @@ build:
 requirements:
   build:
     - {{ compiler('c') }}
-  
+
   host:
     - python
-      - pip
-      - setuptools
-      - cffi
-      - graphblas
-      - pytest-runner
+    - pip
+    - setuptools
+    - cffi
+    - graphblas
+    - pytest-runner
 
   run:
     - python

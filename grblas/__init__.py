@@ -4,7 +4,7 @@ from . import backends  # noqa
 _init_params = None
 _SPECIAL_ATTRS = ["lib", "ffi", "Matrix", "Vector", "Scalar",
                   "base", "exceptions", "matrix", "ops", "scalar", "vector"
-                  "unary", "binary", "monoid", "semiring"]
+                  "unary", "binary", "monoid", "semiring", "numpyops"]
 
 
 def __getattr__(name):
@@ -31,7 +31,7 @@ def init(backend="suitesparse", blocking=True):
 def _init(backend, blocking, automatic=False):
     global _init_params, lib, ffi, Matrix, Vector, Scalar
     global base, exceptions, matrix, ops, scalar, vector
-    global unary, binary, monoid, semiring
+    global unary, binary, monoid, semiring, numpyops
 
     passed_params = dict(backend=backend, blocking=blocking, automatic=automatic)
     if _init_params is None:
@@ -68,6 +68,7 @@ def _init(backend, blocking, automatic=False):
     matrix = importlib.import_module(f".matrix", __name__)
     vector = importlib.import_module(f".vector", __name__)
     scalar = importlib.import_module(f".scalar", __name__)
+    numpyops = importlib.import_module(f".numpyops", __name__)
     from .matrix import Matrix
     from .vector import Vector
     from .scalar import Scalar
