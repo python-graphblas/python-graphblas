@@ -2,6 +2,7 @@ from . import lib, ffi
 from . import dtypes, ops, descriptor, unary
 from .exceptions import check_status
 from .ops import OpBase
+from .mask import Mask, ComplementedMask, StructuralMask, ValueMask
 
 NULL = ffi.NULL
 
@@ -66,6 +67,10 @@ class GbContainer:
     def S(self):
         return StructuralMask(self)
 
+    @property
+    def V(self):
+        return ValueMask(self)
+
     def __delitem__(self, keys):
         if self.is_scalar:
             raise TypeError('Indexing not supported for Scalars')
@@ -86,7 +91,7 @@ class GbContainer:
         for key in optional_mask_and_accum:
             if isinstance(key, GbContainer):
                 mask_arg = key
-            elif type(key) in {ComplementedMask, StructuralMask, ComplementedStructuralMask}:
+            elif isinstance(key, Mask):
                 mask_arg = key
             elif isinstance(key, ops.BinaryOp):
                 accum_arg = key
@@ -140,17 +145,13 @@ class GbContainer:
         if mask is NULL:
             pass
         elif isinstance(mask, GbContainer):
-            mask = mask.gb_obj[0]
-        elif type(mask) is ComplementedMask:
+            raise TypeError('Mask must indicate values (M.V) or structure (M.S)')
+        elif isinstance(mask, Mask):
+            if not mask.value and not mask.structure:
+                raise TypeError('Mask must indicate values (M.V) or structure (M.S)')
+            complement = mask.complement
+            structure = mask.structure
             mask = mask.mask.gb_obj[0]
-            complement = True
-        elif type(mask) is StructuralMask:
-            mask = mask.mask.gb_obj[0]
-            structure = True
-        elif type(mask) is ComplementedStructuralMask:
-            mask = mask.mask.gb_obj[0]
-            complement = True
-            structure = True
         else:
             raise TypeError(f"Invalid mask: {type(mask)}")
 
@@ -160,7 +161,9 @@ class GbContainer:
         elif isinstance(accum, ops.BinaryOp):
             accum = accum[self.dtype]
         elif type(accum) is ffi.CData and ops.find_opclass(accum) != ops.UNKNOWN_OPCLASS:
-            pass
+            opclass = ops.find_opclass(accum)
+            if opclass != ops.BinaryOp.__name__:
+                raise TypeError(f'accum must be a BinaryOp, not {opclass}')
         else:
             raise TypeError(f"Invalid accum: {type(accum)}")
 
@@ -199,13 +202,6 @@ class GbContainer:
 
     def _prep_for_assign(self, resolved_indexes, obj):
         raise TypeError(f'Cannot assign to {self.__class__.__name__}')
-
-    @classmethod
-    def new_from_existing(cls, obj):
-        raise NotImplementedError()
-
-    def dup(self):
-        return type(self).new_from_existing(self)
 
     def show(self):
         from . import io
@@ -255,8 +251,9 @@ class GbDelayed:
         if mask is None:
             output.update(self)
         else:
-            if not isinstance(mask, output.__class__):
-                raise TypeError(f'Mask must be type {output.__class__}')
+            if isinstance(mask, Mask):
+                if not isinstance(mask.mask, output.__class__):
+                    raise TypeError(f'Mask object must be type {output.__class__}')
             output(mask).update(self)
         return output
 
@@ -305,7 +302,7 @@ class AmbiguousAssignOrExtract:
             if dtype is None:
                 dtype = cur_dtype
             from .scalar import Scalar
-            return Scalar.new_from_value(val, dtype=dtype)
+            return Scalar.from_value(val, dtype=dtype)
         else:
             delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
             return delayed_extractor.new(dtype=dtype, mask=mask)
@@ -374,40 +371,3 @@ class IndexerResolver:
             except Exception:
                 raise TypeError('Unable to convert to tuple')
         return ffi.new('GrB_Index[]', index), len(index)
-
-
-class ComplementedMask:
-    def __init__(self, mask):
-        self.mask = mask
-
-    def __invert__(self):
-        return self.mask
-
-    @property
-    def S(self):
-        return ComplementedStructuralMask(self.mask)
-
-    def __repr__(self):
-        return f'ComplementedMask of {self.mask}'
-
-
-class StructuralMask:
-    def __init__(self, mask):
-        self.mask = mask
-
-    def __invert__(self):
-        return ComplementedStructuralMask(self.mask)
-
-    def __repr__(self):
-        return f'StructuralMask of {self.mask}'
-
-
-class ComplementedStructuralMask:
-    def __init__(self, mask):
-        self.mask = mask
-
-    def __invert__(self):
-        return StructuralMask(self.mask)
-
-    def __repr__(self):
-        return f'ComplementedStructuralMask of {self.mask}'

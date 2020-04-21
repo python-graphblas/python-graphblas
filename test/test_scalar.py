@@ -5,24 +5,24 @@ from grblas import dtypes
 
 @pytest.fixture
 def s():
-    return Scalar.new_from_value(5)
+    return Scalar.from_value(5)
 
 
-def test_new_from_type():
-    s = Scalar.new_from_type(dtypes.INT8)
+def test_new():
+    s = Scalar.new(dtypes.INT8)
     assert s.dtype == 'INT8'
     assert s.value is None
     s.is_empty = False
     assert s.value == 0  # must hold a value; initialized to 0
-    s2 = Scalar.new_from_type(bool)
+    s2 = Scalar.new(bool)
     assert s2.dtype == 'BOOL'
     assert s2.value is None
     s2.is_empty = False
     assert s2.value is False  # must hold a value; initialized to False
 
 
-def test_new_from_existing(s):
-    s2 = Scalar.new_from_existing(s)
+def test_dup(s):
+    s2 = s.dup()
     assert s2.dtype == s.dtype
     assert s2.value == s.value
     s3 = s.dup()
@@ -30,11 +30,11 @@ def test_new_from_existing(s):
     assert s3.value == s.value
 
 
-def test_new_from_value():
-    s = Scalar.new_from_value(False)
+def test_from_value():
+    s = Scalar.from_value(False)
     assert s.dtype == bool
     assert s.value is False
-    s2 = Scalar.new_from_value(-1.1)
+    s2 = Scalar.from_value(-1.1)
     assert s2.dtype == 'FP64'
     assert s2.value == -1.1
 
@@ -45,7 +45,7 @@ def test_clear(s):
     s.clear()
     assert s.value is None
     assert s.is_empty
-    s2 = Scalar.new_from_value(True)
+    s2 = Scalar.from_value(True)
     assert s2.value is True
     assert not s2.is_empty
     s2.clear()
@@ -63,7 +63,7 @@ def test_truthy(s):
     assert s, 's did not register as truthy'
     with pytest.raises(AssertionError):
         assert not s
-    s2 = Scalar.new_from_value(True)
+    s2 = Scalar.from_value(True)
     assert s2
     with pytest.raises(AssertionError):
         assert not s2

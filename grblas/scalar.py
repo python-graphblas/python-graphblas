@@ -50,8 +50,15 @@ class Scalar(GbContainer):
             self.gb_obj[0] = val
             self.is_empty = False
 
+    def dup(self):
+        """Create a new Scalar by duplicating this one
+        """
+        new_scalar = self.__class__.new(self.dtype)
+        new_scalar.value = self.value
+        return new_scalar
+
     @classmethod
-    def new_from_type(cls, dtype):
+    def new(cls, dtype):
         """
         Create a new empty Scalar from the given type
         """
@@ -60,21 +67,11 @@ class Scalar(GbContainer):
         return cls(new_scalar_pointer, dtype, empty=True)
 
     @classmethod
-    def new_from_existing(cls, scalar):
-        """Create a new Scalar by duplicating an existing one
-        """
-        if not isinstance(scalar, GbContainer):
-            raise TypeError(f'Must pass in a Scalar object, not {type(scalar)}')
-        new_scalar = cls.new_from_type(scalar.dtype)
-        new_scalar.value = scalar.value
-        return new_scalar
-
-    @classmethod
-    def new_from_value(cls, value, dtype=None):
+    def from_value(cls, value, dtype=None):
         """Create a new Scalar from a Python value
         """
         if dtype is None:
             dtype = dtypes.lookup(type(value))
-        new_scalar = cls.new_from_type(dtype)
+        new_scalar = cls.new(dtype)
         new_scalar.value = value
         return new_scalar

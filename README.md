@@ -17,7 +17,7 @@ assignment. This opens up all kinds of nice possibilities.
 
 This is an example of how the mapping works:<br>
 C call: `GrB_Matrix_mxm(M, mask, GrB_PLUS_INT64, GrB_MIN_PLUS_INT64, A, B, NULL)`<br>
-Python call: `M(mask, accum=binary.plus) << A.mxm(B, semiring.min_plus)`<br>
+Python call: `M(mask.V, accum=binary.plus) << A.mxm(B, semiring.min_plus)`<br>
 
 The expression on the right `A.mxm(B)` creates a delayed object which does no computation. Once it is used in the 
 `<<` expression with `M`, the whole thing is translated into the equivalent GraphBLAS call.
