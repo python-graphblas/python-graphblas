@@ -75,9 +75,9 @@ expression could be written as:<br>
  - kronecker: `M(mask, accum) << A.kronecker(B, binaryop)`
 
 # Creating new Vectors / Matrices
- - new_type: `A = Matrix.new_from_type(dtype, num_rows, num_cols)`
- - dup: `B = A.dup()` or `B = Matrix.new_from_existing(A)`
- - build: `A = Matrix.new_from_values([row_indices], [col_indices], [values])`
+ - new_type: `A = Matrix.new(dtype, num_rows, num_cols)`
+ - dup: `B = A.dup()`
+ - build: `A = Matrix.from_values([row_indices], [col_indices], [values])`
  - new from delayed:
    - Delayed objects can be used to create a new object using `.new()` method
    - `C = A.mxm(B, semiring).new()`
@@ -119,7 +119,7 @@ def force_odd_func(x):
 
 UnaryOp.register_new('force_odd', force_odd_func)
 
-v = Vector.new_from_values([0, 1, 3], [1, 2, 3])
+v = Vector.from_values([0, 1, 3], [1, 2, 3])
 w = v.apply(unary.force_odd).new()
 w  # indexes=[0, 1, 3], values=[1, 3, 3]
 ```
