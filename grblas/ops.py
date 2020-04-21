@@ -1,4 +1,5 @@
 import re
+import types
 import numpy as np
 import numba
 from collections.abc import Mapping
@@ -67,7 +68,7 @@ class OpBase:
                     setattr(module, folder, OpPath(module, folder))
                 module = getattr(module, folder)
                 modname = f'{modname}.{folder}'
-                if type(module) is not OpPath:
+                if not isinstance(module, (OpPath, types.ModuleType)):
                     raise AttributeError(f'{modname} is already defined. Cannot use as a nested path.')
         return module, funcname
 

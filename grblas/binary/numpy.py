@@ -59,6 +59,5 @@ def __getattr__(name):
     if name not in _binary_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     numpy_func = getattr(np, name)
-    func = ops.BinaryOp.register_anonymous(lambda x, y: numpy_func(x, y), name)
-    globals()[name] = func
-    return func
+    ops.BinaryOp.register_new(f'numpy.{name}', lambda x, y: numpy_func(x, y))
+    return globals()[name]

@@ -66,18 +66,18 @@ def test_unaryop_udf():
 
 
 def test_unaryop_udf_bool_result():
-    pytest.xfail('not sure why numba has trouble compiling this')
-    # def is_positive(x):
-    #     return x > 0
-    # unary.register_new('is_positive', is_positive)
-    # assert hasattr(UnaryOp, 'is_positive')
-    # assert unary.is_positive.types == {'INT8', 'INT16', 'INT32', 'INT64',
-    #                                    'UINT8', 'UINT16', 'UINT32', 'UINT64',
-    #                                    'FP32', 'FP64'}
-    # v = Vector.new_from_values([0,1,3], [1,2,-4], dtype=dtypes.INT32)
-    # w = v.apply(unary.is_positive).new()
-    # result = Vector.new_from_values([0,1,3], [True,True,False], dtype=dtypes.BOOL)
-    # assert v == result
+    # numba has trouble compiling this, but we have a work-around
+    def is_positive(x):
+        return x > 0
+    UnaryOp.register_new('is_positive', is_positive)
+    assert hasattr(unary, 'is_positive')
+    assert unary.is_positive.types == {'INT8', 'INT16', 'INT32', 'INT64',
+                                       'UINT8', 'UINT16', 'UINT32', 'UINT64',
+                                       'FP32', 'FP64', 'BOOL'}
+    v = Vector.new_from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    w = v.apply(unary.is_positive).new()
+    result = Vector.new_from_values([0, 1, 3], [True, True, False], dtype=dtypes.BOOL)
+    assert w.isequal(result)
 
 
 def test_binaryop_udf():

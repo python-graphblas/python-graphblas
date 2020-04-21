@@ -1,7 +1,9 @@
 import pytest
 import itertools
 import grblas
-from grblas.numpyops import binary as npbinary, monoid as npmonoid, semiring as npsemiring
+import grblas.binary.numpy as npbinary
+import grblas.monoid.numpy as npmonoid
+import grblas.semiring.numpy as npsemiring
 
 
 @pytest.mark.slow
@@ -13,7 +15,8 @@ def test_npsemiring():
     ):
         monoid = getattr(npmonoid, monoid_name)
         binary = getattr(npbinary, binary_name)
-        semiring = grblas.ops.Semiring.register_anonymous(monoid, binary)
+        name = monoid.name.split(".")[-1] + "_" + binary.name.split(".")[-1]
+        semiring = grblas.ops.Semiring.register_anonymous(monoid, binary, name)
         if len(semiring.types) == 0:
             assert not hasattr(npsemiring, semiring.name)
         else:

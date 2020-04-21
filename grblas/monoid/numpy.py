@@ -1,6 +1,5 @@
 import numpy as np
-from .. import ops
-from . import binary
+from .. import ops, binary
 
 _float_dtypes = {'FP32', 'FP64'}
 _int_dtypes = {'INT8', 'UINT8', 'INT16', 'UINT16', 'INT32', 'UINT32', 'INT64', 'UINT64'}
@@ -89,7 +88,6 @@ def __dir__():
 def __getattr__(name):
     if name not in _monoid_identities:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    func = getattr(binary, name)
-    monoid = ops.Monoid.register_anonymous(func, _monoid_identities[name], name)
-    globals()[name] = monoid
-    return monoid
+    func = getattr(binary.numpy, name)
+    ops.Monoid.register_new(f'numpy.{name}', func, _monoid_identities[name])
+    return globals()[name]

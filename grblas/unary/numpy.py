@@ -67,6 +67,5 @@ def __getattr__(name):
     if name not in _unary_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     numpy_func = getattr(np, name)
-    func = ops.UnaryOp.register_anonymous(lambda x: numpy_func(x))
-    globals()[name] = func
-    return func
+    ops.UnaryOp.register_new(f'numpy.{name}', lambda x: numpy_func(x))
+    return globals()[name]

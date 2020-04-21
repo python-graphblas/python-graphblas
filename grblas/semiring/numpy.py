@@ -1,8 +1,7 @@
 import itertools
-from .. import ops
-from . import binary, monoid
-from .binary import _binary_names
-from .monoid import _monoid_identities
+from .. import ops, binary, monoid
+from ..binary.numpy import _binary_names
+from ..monoid.numpy import _monoid_identities
 
 _semiring_names = {
     f'{monoid_name}_{binary_name}'
@@ -63,15 +62,14 @@ def __getattr__(name):
     words = name.split('_')
     for i in range(1, len(words)):
         monoid_name = '_'.join(words[:i])
-        if not hasattr(monoid, monoid_name):
+        if not hasattr(monoid.numpy, monoid_name):
             continue
         binary_name = '_'.join(words[i:])
-        if hasattr(binary, binary_name):
+        if hasattr(binary.numpy, binary_name):
             break
-    semiring = ops.Semiring.register_anonymous(
-        getattr(monoid, monoid_name),
-        getattr(binary, binary_name),
-        name
+    ops.Semiring.register_new(
+        f'numpy.{name}',
+        getattr(monoid.numpy, monoid_name),
+        getattr(binary.numpy, binary_name),
     )
-    globals()[name] = semiring
-    return semiring
+    return globals()[name]
