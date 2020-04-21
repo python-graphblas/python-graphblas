@@ -96,6 +96,9 @@ def test_build(v):
     with pytest.raises(OutputNotEmpty):
         v.build([1, 5], [3, 4])
     assert v.nvals == 2  # should be unchanged
+    # We can clear though
+    v.build([1, 2, 5], [2, 3, 4], clear=True)
+    assert v.nvals == 3
     v.clear()
     with pytest.raises(IndexOutOfBound):
         v.build([0, 11], [1, 1])

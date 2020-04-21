@@ -154,7 +154,7 @@ class Matrix(GbContainer):
             self.gb_obj[0]))
         return tuple(rows), tuple(columns), tuple(values)
 
-    def build(self, rows, columns, values, *, dup_op=None):
+    def build(self, rows, columns, values, *, dup_op=None, clear=False):
         # TODO: add `size` option once .resize is available
         if not isinstance(rows, (tuple, list)):
             rows = tuple(rows)
@@ -166,6 +166,8 @@ class Matrix(GbContainer):
         if len(rows) != n or len(columns) != n:
             raise ValueError(f'`rows` and `columns` and `values` lengths must match: '
                              f'{len(rows)}, {len(columns)}, {len(values)}')
+        if clear:
+            self.clear()
         if n <= 0:
             return
         dup_orig = dup_op

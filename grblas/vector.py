@@ -132,7 +132,7 @@ class Vector(GbContainer):
             self.gb_obj[0]))
         return tuple(indices), tuple(values)
 
-    def build(self, indices, values, *, dup_op=None):
+    def build(self, indices, values, *, dup_op=None, clear=False):
         # TODO: add `size` option once .resize is available
         if not isinstance(indices, (tuple, list)):
             indices = tuple(indices)
@@ -141,6 +141,8 @@ class Vector(GbContainer):
         if len(indices) != len(values):
             raise ValueError(f'`indices` and `values` have different lengths '
                              f'{len(indices)} != {len(values)}')
+        if clear:
+            self.clear()
         n = len(indices)
         if n <= 0:
             return
