@@ -132,9 +132,8 @@ class Vector(GbContainer):
             self.gb_obj[0]))
         return tuple(indices), tuple(values)
 
-    def rebuild_from_values(self, indices, values, *, dup_op=None):
+    def build(self, indices, values, *, dup_op=None):
         # TODO: add `size` option once .resize is available
-        self.clear()
         if not isinstance(indices, (tuple, list)):
             indices = tuple(indices)
         if not isinstance(values, (tuple, list)):
@@ -207,7 +206,7 @@ class Vector(GbContainer):
         # Create the new vector
         w = cls.new(dtype, size)
         # Add the data
-        w.rebuild_from_values(indices, values, dup_op=dup_op)
+        w.build(indices, values, dup_op=dup_op)
         return w
 
     #########################################################

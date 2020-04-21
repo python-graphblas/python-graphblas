@@ -2,7 +2,7 @@ import pytest
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
-from grblas.exceptions import IndexOutOfBound
+from grblas.exceptions import IndexOutOfBound, OutputNotEmpty
 
 
 @pytest.fixture
@@ -88,12 +88,17 @@ def test_nvals(v):
     assert v.nvals == 4
 
 
-def test_rebuild(v):
+def test_build(v):
     assert v.nvals == 4
-    v.rebuild_from_values([0, 6], [1, 2])
+    v.clear()
+    v.build([0, 6], [1, 2])
     assert v.nvals == 2
+    with pytest.raises(OutputNotEmpty):
+        v.build([1, 5], [3, 4])
+    assert v.nvals == 2  # should be unchanged
+    v.clear()
     with pytest.raises(IndexOutOfBound):
-        v.rebuild_from_values([0, 11], [1, 1])
+        v.build([0, 11], [1, 1])
 
 
 def test_extract_values(v):

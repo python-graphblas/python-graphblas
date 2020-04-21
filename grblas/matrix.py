@@ -154,9 +154,8 @@ class Matrix(GbContainer):
             self.gb_obj[0]))
         return tuple(rows), tuple(columns), tuple(values)
 
-    def rebuild_from_values(self, rows, columns, values, *, dup_op=None):
+    def build(self, rows, columns, values, *, dup_op=None):
         # TODO: add `size` option once .resize is available
-        self.clear()
         if not isinstance(rows, (tuple, list)):
             rows = tuple(rows)
         if not isinstance(columns, (tuple, list)):
@@ -240,7 +239,7 @@ class Matrix(GbContainer):
         # Create the new matrix
         C = cls.new(dtype, nrows, ncols)
         # Add the data
-        C.rebuild_from_values(rows, columns, values, dup_op=dup_op)
+        C.build(rows, columns, values, dup_op=dup_op)
         return C
 
     #########################################################
@@ -617,7 +616,7 @@ class TransposedMatrix(Matrix):
     def resize(self, nrows, ncols):
         raise Exception('Modification of a transposed Matrix is not allowed')
 
-    def rebuild_from_values(self, rows, columns, values, *, dup_op=None):
+    def build(self, rows, columns, values, *, dup_op=None):
         raise Exception('Modification of a transposed Matrix is not allowed')
 
     def __setitem__(self, key, val):
