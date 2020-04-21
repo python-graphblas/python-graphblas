@@ -16,9 +16,6 @@ class DataType:
     def __repr__(self):
         return self.name
 
-    def __hash__(self):
-        return hash((self.name, self.c_type))
-
     def __eq__(self, other):
         if isinstance(other, DataType):
             return self.gb_type == other.gb_type
@@ -55,30 +52,30 @@ FP64 = DataType('FP64', lib.GrB_FP64, 'double', numba.types.float64)
 
 # Used for testing user-defined functions
 _sample_values = {
-    INT8: np.int8(1),
-    UINT8: np.uint8(1),
-    INT16: np.int16(1),
-    UINT16: np.uint16(1),
-    INT32: np.int32(1),
-    UINT32: np.uint32(1),
-    INT64: np.int64(1),
-    UINT64: np.uint64(1),
-    FP32: np.float32(0.5),
-    FP64: np.float64(0.5),
-    BOOL: np.bool_(True),
+    INT8.name: np.int8(1),
+    UINT8.name: np.uint8(1),
+    INT16.name: np.int16(1),
+    UINT16.name: np.uint16(1),
+    INT32.name: np.int32(1),
+    UINT32.name: np.uint32(1),
+    INT64.name: np.int64(1),
+    UINT64.name: np.uint64(1),
+    FP32.name: np.float32(0.5),
+    FP64.name: np.float64(0.5),
+    BOOL.name: np.bool_(True),
 }
 
 # Create register to easily lookup types by name, gb_type, or c_type
 _registry = {}
-for dtype, val in _sample_values.items():
+for dtype in [BOOL, INT8, UINT8, INT16, UINT16, INT32, UINT32, INT64, UINT64, FP32, FP64]:
     _registry[dtype.name] = dtype
     _registry[dtype.gb_type] = dtype
     _registry[dtype.c_type] = dtype
     _registry[dtype.numba_type] = dtype
     _registry[dtype.numba_type.name] = dtype
+    val = _sample_values[dtype.name]
     _registry[val.dtype] = dtype
     _registry[val.dtype.name] = dtype
-del dtype
 # Upcast numpy float16 to float32
 _registry[np.dtype(np.float16)] = FP32
 _registry['float16'] = FP32

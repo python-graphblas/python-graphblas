@@ -1,13 +1,10 @@
 import numpy as np
-from .. import dtypes, ops
+from .. import ops
 from . import binary
 
-_float_dtypes = {dtypes.FP32, dtypes.FP64}
-_int_dtypes = {
-    dtypes.INT8, dtypes.UINT8, dtypes.INT16, dtypes.UINT16,
-    dtypes.INT32, dtypes.UINT32, dtypes.INT64, dtypes.UINT64,
-}
-_bool_int_dtypes = _int_dtypes | {dtypes.BOOL}
+_float_dtypes = {'FP32', 'FP64'}
+_int_dtypes = {'INT8', 'UINT8', 'INT16', 'UINT16', 'INT32', 'UINT32', 'INT64', 'UINT64'}
+_bool_int_dtypes = _int_dtypes | {'BOOL'}
 
 _monoid_identities = {
     # Math operations
@@ -21,66 +18,66 @@ _monoid_identities = {
     'hypot': dict.fromkeys(_float_dtypes, 0.),
 
     # Bit-twiddling functions
-    'bitwise_and': {dtype: True if dtype is dtypes.BOOL else -1 for dtype in _bool_int_dtypes},
+    'bitwise_and': {dtype: True if dtype == 'BOOL' else -1 for dtype in _bool_int_dtypes},
     'bitwise_or': dict.fromkeys(_bool_int_dtypes, 0),
     'bitwise_xor': dict.fromkeys(_bool_int_dtypes, 0),
 
     # Comparison functions
-    'equal': {dtypes.BOOL: True},
-    'logical_and': {dtypes.BOOL: True},
-    'logical_or': {dtypes.BOOL: True},
-    'logical_xor': {dtypes.BOOL: False},
+    'equal': {'BOOL': True},
+    'logical_and': {'BOOL': True},
+    'logical_or': {'BOOL': True},
+    'logical_xor': {'BOOL': False},
     'maximum': {
-        dtypes.BOOL: False,
-        dtypes.INT8: np.iinfo(np.int8).min,
-        dtypes.UINT8: 0,
-        dtypes.INT16: np.iinfo(np.int16).min,
-        dtypes.UINT16: 0,
-        dtypes.INT32: np.iinfo(np.int32).min,
-        dtypes.UINT32: 0,
-        dtypes.INT64: np.iinfo(np.int64).min,
-        dtypes.UINT64: 0,
-        dtypes.FP32: -np.inf,
-        dtypes.FP64: -np.inf,
+        'BOOL': False,
+        'INT8': np.iinfo(np.int8).min,
+        'UINT8': 0,
+        'INT16': np.iinfo(np.int16).min,
+        'UINT16': 0,
+        'INT32': np.iinfo(np.int32).min,
+        'UINT32': 0,
+        'INT64': np.iinfo(np.int64).min,
+        'UINT64': 0,
+        'FP32': -np.inf,
+        'FP64': -np.inf,
     },
     'minimum': {
-        dtypes.BOOL: True,
-        dtypes.INT8: np.iinfo(np.int8).max,
-        dtypes.UINT8: np.iinfo(np.uint8).max,
-        dtypes.INT16: np.iinfo(np.int16).max,
-        dtypes.UINT16: np.iinfo(np.uint16).max,
-        dtypes.INT32: np.iinfo(np.int32).max,
-        dtypes.UINT32: np.iinfo(np.uint32).max,
-        dtypes.INT64: np.iinfo(np.int64).max,
-        dtypes.UINT64: np.iinfo(np.uint64).max,
-        dtypes.FP32: np.inf,
-        dtypes.FP64: np.inf,
+        'BOOL': True,
+        'INT8': np.iinfo(np.int8).max,
+        'UINT8': np.iinfo(np.uint8).max,
+        'INT16': np.iinfo(np.int16).max,
+        'UINT16': np.iinfo(np.uint16).max,
+        'INT32': np.iinfo(np.int32).max,
+        'UINT32': np.iinfo(np.uint32).max,
+        'INT64': np.iinfo(np.int64).max,
+        'UINT64': np.iinfo(np.uint64).max,
+        'FP32': np.inf,
+        'FP64': np.inf,
     },
     'fmax': {
-        dtypes.BOOL: False,
-        dtypes.INT8: np.iinfo(np.int8).min,
-        dtypes.UINT8: 0,
-        dtypes.INT16: np.iinfo(np.int8).min,
-        dtypes.UINT16: 0,
-        dtypes.INT32: np.iinfo(np.int8).min,
-        dtypes.UINT32: 0,
-        dtypes.INT64: np.iinfo(np.int8).min,
-        dtypes.UINT64: 0,
-        dtypes.FP32: -np.inf,  # or np.nan?
-        dtypes.FP64: -np.inf,  # or np.nan?
+        'BOOL': False,
+        'INT8': np.iinfo(np.int8).min,
+        'UINT8': 0,
+        'INT16': np.iinfo(np.int8).min,
+        'UINT16': 0,
+        'INT32': np.iinfo(np.int8).min,
+        'UINT32': 0,
+        'INT64': np.iinfo(np.int8).min,
+        'UINT64': 0,
+        'FP32': -np.inf,  # or np.nan?
+        'FP64': -np.inf,  # or np.nan?
     },
     'fmin': {
-        dtypes.BOOL: True,
-        dtypes.INT8: np.iinfo(np.int8).max,
-        dtypes.UINT8: np.iinfo(np.uint8).max,
-        dtypes.INT16: np.iinfo(np.int16).max,
-        dtypes.UINT16: np.iinfo(np.uint16).max,
-        dtypes.INT32: np.iinfo(np.int32).max,
-        dtypes.UINT32: np.iinfo(np.uint32).max,
-        dtypes.INT64: np.iinfo(np.int64).max,
-        dtypes.UINT64: np.iinfo(np.uint64).max,
-        dtypes.FP32: np.inf,  # or np.nan?
-        dtypes.FP64: np.inf,  # or np.nan?
+        'BOOL': True,
+        'INT8': np.iinfo(np.int8).max,
+        'UINT8': np.iinfo(np.uint8).max,
+        'INT16': np.iinfo(np.int16).max,
+        'UINT16': np.iinfo(np.uint16).max,
+        'INT32': np.iinfo(np.int32).max,
+        'UINT32': np.iinfo(np.uint32).max,
+        'INT64': np.iinfo(np.int64).max,
+        'UINT64': np.iinfo(np.uint64).max,
+        'FP32': np.inf,  # or np.nan?
+        'FP64': np.inf,  # or np.nan?
     },
 }
 

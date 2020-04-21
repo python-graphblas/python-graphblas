@@ -139,6 +139,7 @@ class UnaryOp(OpBase):
         return_types = {}
         nt = numba.types
         for type_, sample_val in dtypes._sample_values.items():
+            type_ = dtypes.lookup(type_)
             # Check if func can handle this data type
             try:
                 with np.errstate(divide='ignore', over='ignore', under='ignore', invalid='ignore'):
@@ -233,6 +234,7 @@ class BinaryOp(OpBase):
         return_types = {}
         nt = numba.types
         for type_, sample_val in dtypes._sample_values.items():
+            type_ = dtypes.lookup(type_)
             # Check if func can handle this data type
             try:
                 with np.errstate(divide='ignore', over='ignore', under='ignore', invalid='ignore'):
