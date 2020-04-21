@@ -203,13 +203,6 @@ class GbContainer:
     def _prep_for_assign(self, resolved_indexes, obj):
         raise TypeError(f'Cannot assign to {self.__class__.__name__}')
 
-    @classmethod
-    def new_from_existing(cls, obj):
-        raise NotImplementedError()
-
-    def dup(self):
-        return type(self).new_from_existing(self)
-
     def show(self):
         from . import io
         return io.show(self)
@@ -309,7 +302,7 @@ class AmbiguousAssignOrExtract:
             if dtype is None:
                 dtype = cur_dtype
             from .scalar import Scalar
-            return Scalar.new_from_value(val, dtype=dtype)
+            return Scalar.from_value(val, dtype=dtype)
         else:
             delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
             return delayed_extractor.new(dtype=dtype, mask=mask)
