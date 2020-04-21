@@ -48,14 +48,14 @@ class Vector(GbContainer):
         else:
             common_dtype = dtypes.unify(self.dtype, other.dtype)
 
-        matches = Vector.new_from_type(bool, self.size)
+        matches = Vector.new(bool, self.size)
         matches << self.ewise_mult(other, binary.eq[common_dtype])
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches.nvals != self.nvals:
             return False
 
         # Check if all results are True
-        result = Scalar.new_from_type(bool)
+        result = Scalar.new(bool)
         result << matches.reduce(monoid.land)
         return result.value
 
@@ -126,9 +126,8 @@ class Vector(GbContainer):
             self.gb_obj[0]))
         return tuple(indices), tuple(values)
 
-    def rebuild_from_values(self, indices, values, *, dup_op=None):
+    def build(self, indices, values, *, dup_op=None, clear=False):
         # TODO: add `size` option once .resize is available
-        self.clear()
         if not isinstance(indices, (tuple, list)):
             indices = tuple(indices)
         if not isinstance(values, (tuple, list)):
@@ -136,6 +135,8 @@ class Vector(GbContainer):
         if len(indices) != len(values):
             raise ValueError(f'`indices` and `values` have different lengths '
                              f'{len(indices)} != {len(values)}')
+        if clear:
+            self.clear()
         n = len(indices)
         if n <= 0:
             return
@@ -158,8 +159,17 @@ class Vector(GbContainer):
         if dup_orig is None and self.nvals < len(values):
             raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
+    def dup(self):
+        """
+        GrB_Vector_dup
+        Create a new Vector by duplicating this one
+        """
+        new_vec = ffi.new('GrB_Vector*')
+        check_status(lib.GrB_Vector_dup(new_vec, self.gb_obj[0]))
+        return self.__class__(new_vec, self.dtype)
+
     @classmethod
-    def new_from_type(cls, dtype, size=0):
+    def new(cls, dtype, size=0):
         """
         GrB_Vector_new
         Create a new empty Vector from the given type and size
@@ -170,17 +180,7 @@ class Vector(GbContainer):
         return cls(new_vector, dtype)
 
     @classmethod
-    def new_from_existing(cls, vector):
-        """
-        GrB_Vector_dup
-        Create a new Vector by duplicating an existing one
-        """
-        new_vec = ffi.new('GrB_Vector*')
-        check_status(lib.GrB_Vector_dup(new_vec, vector.gb_obj[0]))
-        return cls(new_vec, vector.dtype)
-
-    @classmethod
-    def new_from_values(cls, indices, values, *, size=None, dup_op=None, dtype=None):
+    def from_values(cls, indices, values, *, size=None, dup_op=None, dtype=None):
         """Create a new Vector from the given lists of indices and values.  If
         size is not provided, it is computed from the max index found.
         """
@@ -188,9 +188,9 @@ class Vector(GbContainer):
             indices = tuple(indices)
         if not isinstance(values, (tuple, list)):
             values = tuple(values)
-        if len(values) <= 0:
-            raise ValueError('No values provided. Unable to determine type.')
         if dtype is None:
+            if len(values) <= 0:
+                raise ValueError('No values provided. Unable to determine type.')
             # Find dtype from any of the values (assumption is they are the same type)
             dtype = type(values[0])
         dtype = dtypes.lookup(dtype)
@@ -200,9 +200,9 @@ class Vector(GbContainer):
                 raise ValueError('No indices provided. Unable to infer size.')
             size = max(indices) + 1
         # Create the new vector
-        w = cls.new_from_type(dtype, size)
+        w = cls.new(dtype, size)
         # Add the data
-        w.rebuild_from_values(indices, values, dup_op=dup_op)
+        w.build(indices, values, dup_op=dup_op)
         return w
 
     #########################################################
@@ -239,7 +239,7 @@ class Vector(GbContainer):
             raise TypeError(f'op must be Monoid or Semiring unless require_monoid is False')
         func = getattr(lib, f'GrB_eWiseAdd_Vector_{opclass}')
         op = reify_op(op, self.dtype, other.dtype)
-        output_constructor = partial(Vector.new_from_type,
+        output_constructor = partial(Vector.new,
                                      dtype=find_return_type(op),
                                      size=self.size)
         return GbDelayed(func,
@@ -262,7 +262,7 @@ class Vector(GbContainer):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_eWiseMult_Vector_{opclass}')
         op = reify_op(op, self.dtype, other.dtype)
-        output_constructor = partial(Vector.new_from_type,
+        output_constructor = partial(Vector.new,
                                      dtype=find_return_type(op),
                                      size=self.size)
         return GbDelayed(func,
@@ -284,7 +284,7 @@ class Vector(GbContainer):
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
         op = reify_op(op, self.dtype, other.dtype)
-        output_constructor = partial(Vector.new_from_type,
+        output_constructor = partial(Vector.new,
                                      dtype=find_return_type(op),
                                      size=other.ncols)
         return GbDelayed(lib.GrB_vxm,
@@ -311,7 +311,7 @@ class Vector(GbContainer):
         else:
             raise TypeError('apply only accepts UnaryOp or BinaryOp')
         op = reify_op(op, self.dtype)
-        output_constructor = partial(Vector.new_from_type,
+        output_constructor = partial(Vector.new,
                                      dtype=find_return_type(op),
                                      size=self.size)
         if opclass == 'UnaryOp':
@@ -335,7 +335,7 @@ class Vector(GbContainer):
                 op = monoid.plus
         func = getattr(lib, f'GrB_Vector_reduce_{self.dtype.name}')
         op = reify_op(op, self.dtype)
-        output_constructor = partial(Scalar.new_from_type,
+        output_constructor = partial(Scalar.new,
                                      dtype=find_return_type(op))
         return GbDelayed(func,
                          [op, self.gb_obj[0]],
@@ -360,7 +360,7 @@ class Vector(GbContainer):
 
     def _prep_for_extract(self, resolved_indexes):
         index, isize = resolved_indexes.indices[0]
-        output_constructor = partial(Vector.new_from_type,
+        output_constructor = partial(Vector.new,
                                      dtype=self.dtype,
                                      size=isize)
         return GbDelayed(lib.GrB_Vector_extract,

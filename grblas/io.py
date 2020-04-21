@@ -61,7 +61,7 @@ def from_networkx(g, dtype=dtypes.FP64):
     ss = nx.convert_matrix.to_scipy_sparse_matrix(g)
     nrows, ncols = ss.shape
     rows, cols = ss.nonzero()
-    m = Matrix.new_from_values(rows, cols, ss.data, nrows=nrows, ncols=ncols, dtype=dtype)
+    m = Matrix.from_values(rows, cols, ss.data, nrows=nrows, ncols=ncols, dtype=dtype)
     return m
 
 
@@ -85,7 +85,7 @@ def from_numpy(m):
         ss = csr_matrix([m])
         _, size = ss.shape
         dtype = dtypes.lookup(m.dtype)
-        g = Vector.new_from_values(ss.indices, ss.data, size=size, dtype=dtype)
+        g = Vector.from_values(ss.indices, ss.data, size=size, dtype=dtype)
         return g
     else:
         ss = csr_matrix(m)
@@ -100,7 +100,7 @@ def from_scipy_sparse_matrix(m):
     nrows, ncols = ss.shape
     rows, cols = ss.nonzero()
     dtype = dtypes.lookup(m.dtype)
-    g = Matrix.new_from_values(rows, cols, ss.data, nrows=nrows, ncols=ncols, dtype=dtype)
+    g = Matrix.from_values(rows, cols, ss.data, nrows=nrows, ncols=ncols, dtype=dtype)
     return g
 
 

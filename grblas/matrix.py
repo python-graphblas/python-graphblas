@@ -27,7 +27,7 @@ class Matrix(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         For equality of floating point Vectors, consider using `isclose`
         """
-        if type(other) is not self.__class__:
+        if not isinstance(other, Matrix):
             return False
         if check_dtype and self.dtype != other.dtype:
             return False
@@ -42,14 +42,14 @@ class Matrix(GbContainer):
         else:
             common_dtype = dtypes.unify(self.dtype, other.dtype)
 
-        matches = Matrix.new_from_type(bool, self.nrows, self.ncols)
+        matches = Matrix.new(bool, self.nrows, self.ncols)
         matches << self.ewise_mult(other, binary.eq[common_dtype])
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches.nvals != self.nvals:
             return False
 
         # Check if all results are True
-        result = Scalar.new_from_type(bool)
+        result = Scalar.new(bool)
         result << matches.reduce_scalar(monoid.land)
         return result.value
 
@@ -59,7 +59,7 @@ class Matrix(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
-        if type(other) is not self.__class__:
+        if not isinstance(other, Matrix):
             return False
         if check_dtype and self.dtype != other.dtype:
             return False
@@ -141,9 +141,8 @@ class Matrix(GbContainer):
             self.gb_obj[0]))
         return tuple(rows), tuple(columns), tuple(values)
 
-    def rebuild_from_values(self, rows, columns, values, *, dup_op=None):
+    def build(self, rows, columns, values, *, dup_op=None, clear=False):
         # TODO: add `size` option once .resize is available
-        self.clear()
         if not isinstance(rows, (tuple, list)):
             rows = tuple(rows)
         if not isinstance(columns, (tuple, list)):
@@ -154,6 +153,8 @@ class Matrix(GbContainer):
         if len(rows) != n or len(columns) != n:
             raise ValueError(f'`rows` and `columns` and `values` lengths must match: '
                              f'{len(rows)}, {len(columns)}, {len(values)}')
+        if clear:
+            self.clear()
         if n <= 0:
             return
         dup_orig = dup_op
@@ -177,8 +178,17 @@ class Matrix(GbContainer):
         if dup_orig is None and self.nvals < len(values):
             raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
+    def dup(self):
+        """
+        GrB_Matrix_dup
+        Create a new Matrix by duplicating this one
+        """
+        new_mat = ffi.new('GrB_Matrix*')
+        check_status(lib.GrB_Matrix_dup(new_mat, self.gb_obj[0]))
+        return self.__class__(new_mat, self.dtype)
+
     @classmethod
-    def new_from_type(cls, dtype, nrows=0, ncols=0):
+    def new(cls, dtype, nrows=0, ncols=0):
         """
         GrB_Matrix_new
         Create a new empty Matrix from the given type, number of rows, and number of columns
@@ -189,17 +199,7 @@ class Matrix(GbContainer):
         return cls(new_matrix, dtype)
 
     @classmethod
-    def new_from_existing(cls, matrix):
-        """
-        GrB_Matrix_dup
-        Create a new Matrix by duplicating an existing one
-        """
-        new_mat = ffi.new('GrB_Matrix*')
-        check_status(lib.GrB_Matrix_dup(new_mat, matrix.gb_obj[0]))
-        return cls(new_mat, matrix.dtype)
-
-    @classmethod
-    def new_from_values(cls, rows, columns, values, *, nrows=None, ncols=None, dup_op=None, dtype=None):
+    def from_values(cls, rows, columns, values, *, nrows=None, ncols=None, dup_op=None, dtype=None):
         """Create a new Matrix from the given lists of row indices, column
         indices, and values.  If nrows or ncols are not provided, they
         are computed from the max row and coumn index found.
@@ -210,9 +210,9 @@ class Matrix(GbContainer):
             columns = tuple(columns)
         if not isinstance(values, (tuple, list)):
             values = tuple(values)
-        if len(values) <= 0:
-            raise ValueError('No values provided. Unable to determine type.')
         if dtype is None:
+            if len(values) <= 0:
+                raise ValueError('No values provided. Unable to determine type.')
             # Find dtype from any of the values (assumption is they are the same type)
             dtype = type(values[0])
         dtype = dtypes.lookup(dtype)
@@ -226,9 +226,9 @@ class Matrix(GbContainer):
                 raise ValueError('No column indices provided. Unable to infer ncols.')
             ncols = max(columns) + 1
         # Create the new matrix
-        C = cls.new_from_type(dtype, nrows, ncols)
+        C = cls.new(dtype, nrows, ncols)
         # Add the data
-        C.rebuild_from_values(rows, columns, values, dup_op=dup_op)
+        C.build(rows, columns, values, dup_op=dup_op)
         return C
 
     #########################################################
@@ -265,7 +265,7 @@ class Matrix(GbContainer):
             raise TypeError(f'op must be Monoid or Semiring unless require_monoid is False')
         func = getattr(lib, f'GrB_eWiseAdd_Matrix_{opclass}')
         op = reify_op(op, self.dtype, other.dtype)
-        output_constructor = partial(Matrix.new_from_type,
+        output_constructor = partial(Matrix.new,
                                      dtype=find_return_type(op),
                                      nrows=self.nrows, ncols=self.ncols)
         return GbDelayed(func,
@@ -290,7 +290,7 @@ class Matrix(GbContainer):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_eWiseMult_Matrix_{opclass}')
         op = reify_op(op, self.dtype, other.dtype)
-        output_constructor = partial(Matrix.new_from_type,
+        output_constructor = partial(Matrix.new,
                                      dtype=find_return_type(op),
                                      nrows=self.nrows, ncols=self.ncols)
         return GbDelayed(func,
@@ -313,7 +313,7 @@ class Matrix(GbContainer):
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
         op = reify_op(op, self.dtype, other.dtype)
-        output_constructor = partial(Vector.new_from_type,
+        output_constructor = partial(Vector.new,
                                      dtype=find_return_type(op),
                                      size=self.nrows)
         return GbDelayed(lib.GrB_mxv,
@@ -335,7 +335,7 @@ class Matrix(GbContainer):
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
         op = reify_op(op, self.dtype, other.dtype)
-        output_constructor = partial(Matrix.new_from_type,
+        output_constructor = partial(Matrix.new,
                                      dtype=find_return_type(op),
                                      nrows=self.nrows, ncols=other.ncols)
         return GbDelayed(lib.GrB_mxm,
@@ -360,7 +360,7 @@ class Matrix(GbContainer):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_kronecker_{opclass}')
         op = reify_op(op, self.dtype, other.dtype)
-        output_constructor = partial(Matrix.new_from_type,
+        output_constructor = partial(Matrix.new,
                                      dtype=find_return_type(op),
                                      nrows=self.nrows*other.nrows, ncols=self.ncols*other.ncols)
         return GbDelayed(func,
@@ -388,12 +388,13 @@ class Matrix(GbContainer):
         else:
             raise TypeError('apply only accepts UnaryOp or BinaryOp')
         op = reify_op(op, self.dtype)
-        output_constructor = partial(Matrix.new_from_type,
+        output_constructor = partial(Matrix.new,
                                      dtype=find_return_type(op),
                                      nrows=self.nrows, ncols=self.ncols)
         if opclass == 'UnaryOp':
             return GbDelayed(lib.GrB_Matrix_apply,
                              [op, self.gb_obj[0]],
+                             at=self.is_transposed,
                              output_constructor=output_constructor)
         else:
             raise NotImplementedError('apply with BinaryOp not available in GraphBLAS 1.2')
@@ -415,7 +416,7 @@ class Matrix(GbContainer):
             raise TypeError(f'op must be BinaryOp or Monoid')
         func = getattr(lib, f'GrB_Matrix_reduce_{opclass}')
         op = reify_op(op, self.dtype)
-        output_constructor = partial(Vector.new_from_type,
+        output_constructor = partial(Vector.new,
                                      dtype=find_return_type(op),
                                      size=self.nrows)
         return GbDelayed(func,
@@ -444,7 +445,7 @@ class Matrix(GbContainer):
                 op = monoid.plus
         func = getattr(lib, f'GrB_Matrix_reduce_{self.dtype.name}')
         op = reify_op(op, self.dtype)
-        output_constructor = partial(Scalar.new_from_type,
+        output_constructor = partial(Scalar.new,
                                      dtype=find_return_type(op))
         return GbDelayed(func,
                          [op, self.gb_obj[0]],
@@ -458,6 +459,8 @@ class Matrix(GbContainer):
         col, _ = resolved_indexes.indices[1]
         func = getattr(lib, f'GrB_Matrix_extractElement_{self.dtype}')
         result = ffi.new(f'{self.dtype.c_type}*')
+        if self.is_transposed:
+            row, col = col, row
 
         err_code = func(result,
                         self.gb_obj[0],
@@ -475,7 +478,7 @@ class Matrix(GbContainer):
         if rowsize is None:
             # Row-only selection; GraphBLAS doesn't have this method, so we hack it using transpose
             row_index = rows
-            output_constructor = partial(Vector.new_from_type,
+            output_constructor = partial(Vector.new,
                                          dtype=self.dtype,
                                          size=colsize)
             return GbDelayed(lib.GrB_Col_extract,
@@ -485,7 +488,7 @@ class Matrix(GbContainer):
         elif colsize is None:
             # Column-only selection
             col_index = cols
-            output_constructor = partial(Vector.new_from_type,
+            output_constructor = partial(Vector.new,
                                          dtype=self.dtype,
                                          size=rowsize)
             return GbDelayed(lib.GrB_Col_extract,
@@ -493,7 +496,7 @@ class Matrix(GbContainer):
                              at=self.is_transposed,
                              output_constructor=output_constructor)
         else:
-            output_constructor = partial(Matrix.new_from_type,
+            output_constructor = partial(Matrix.new,
                                          dtype=self.dtype,
                                          nrows=rowsize, ncols=colsize)
             return GbDelayed(lib.GrB_Matrix_extract,
@@ -571,7 +574,7 @@ class TransposedMatrix(Matrix):
         return f'<Matrix.T {self.nvals}/({self.nrows}x{self.ncols}):{self.dtype.name}>'
 
     def new(self, mask=None):
-        output = Matrix.new_from_type(self.dtype, self.nrows, self.ncols)
+        output = Matrix.new(self.dtype, self.nrows, self.ncols)
         if mask is None:
             output.update(self)
         else:
@@ -602,7 +605,7 @@ class TransposedMatrix(Matrix):
     def resize(self, nrows, ncols):
         raise Exception('Modification of a transposed Matrix is not allowed')
 
-    def rebuild_from_values(self, rows, columns, values, *, dup_op=None):
+    def build(self, rows, columns, values, *, dup_op=None):
         raise Exception('Modification of a transposed Matrix is not allowed')
 
     def __setitem__(self, key, val):
