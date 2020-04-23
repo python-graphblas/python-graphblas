@@ -10,7 +10,7 @@ from .exceptions import check_status, is_error, NoValue
 def _generate_isclose(rel_tol, abs_tol):
     # numba will inline the current values of `rel_tol` and `abs_tol` below
     def isclose(x, y):
-        return abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+        return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
     return BinaryOp.register_anonymous(isclose, f'isclose(rel_tol={rel_tol:g}, abs_tol={abs_tol:g})')
 
 

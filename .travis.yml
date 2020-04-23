@@ -22,7 +22,7 @@ install:
     - pip install -e .
 
 script:
-    - pytest
+    - pytest --runslow
 
 notifications:
     email: false

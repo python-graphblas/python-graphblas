@@ -344,6 +344,8 @@ class Monoid(OpBase):
         else:
             identities = identity
         for type_, identity in identities.items():
+            if type_ == 'BOOL':  # Not yet supported
+                continue
             type_ = dtypes.lookup(type_)
             new_monoid = ffi.new('GrB_Monoid*')
             func = getattr(lib, f'GrB_Monoid_new_{type_.name}')
@@ -401,7 +403,9 @@ class Semiring(OpBase):
         new_type_obj = cls(name)
         for binary_in, binary_func in binaryop._specific_types.items():
             binary_out = find_return_type(binary_func)
-            if binary_out not in monoid.types:
+            # Unfortunately, we can't have user-defined monoids over bools yet
+            # because numba can't compile correctly.
+            if binary_out not in monoid.types or binary_out == 'BOOL':
                 continue
             binary_out = dtypes.lookup(binary_out)
             new_semiring = ffi.new('GrB_Semiring*')

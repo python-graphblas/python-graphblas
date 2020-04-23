@@ -29,10 +29,10 @@ _monoid_identities = {
     'bitwise_xor': dict.fromkeys(_bool_int_dtypes, 0),
 
     # Comparison functions
-    'equal': {'BOOL': True},
-    'logical_and': {'BOOL': True},
-    'logical_or': {'BOOL': True},
-    'logical_xor': {'BOOL': False},
+    # 'equal': {'BOOL': True},  # Not yet supported
+    # 'logical_and': {'BOOL': True},  # Not yet supported
+    # 'logical_or': {'BOOL': True},  # Not yet supported
+    # 'logical_xor': {'BOOL': False},  # Not yet supported
     'maximum': {
         'BOOL': False,
         'INT8': np.iinfo(np.int8).min,

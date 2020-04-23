@@ -6,7 +6,7 @@ https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operat
 
 """
 import numpy as np
-from .. import ops
+from .. import ops, unary
 
 _unary_names = {
     # Math operations
@@ -75,4 +75,8 @@ def __getattr__(name):
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     numpy_func = getattr(np, name)
     ops.UnaryOp.register_new(f'numpy.{name}', lambda x: numpy_func(x))
-    return globals()[name]
+    rv = globals()[name]
+    if name in {'invert', 'bitwise_not'}:
+        # numba has difficulty compiling with bool dtypes, so fix our hack
+        rv._specific_types['BOOL'] = unary.numpy.logical_not._specific_types['BOOL']
+    return rv
