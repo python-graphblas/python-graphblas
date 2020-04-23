@@ -3,7 +3,7 @@ from . import backends  # noqa
 
 _init_params = None
 _SPECIAL_ATTRS = ["lib", "ffi", "Matrix", "Vector", "Scalar",
-                  "base", "exceptions", "matrix", "ops", "scalar", "vector"
+                  "base", "exceptions", "matrix", "ops", "scalar", "vector",
                   "unary", "binary", "monoid", "semiring"]
 
 
@@ -76,3 +76,8 @@ def _init(backend, blocking, automatic=False):
     ops.BinaryOp._initialize()
     ops.Monoid._initialize()
     ops.Semiring._initialize()
+
+    from .unary import numpy  # noqa
+    from .binary import numpy  # noqa
+    from .monoid import numpy  # noqa
+    from .semiring import numpy  # noqa

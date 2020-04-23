@@ -1,4 +1,5 @@
 import pytest
+import numpy as np
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
@@ -332,6 +333,9 @@ def test_isclose(v):
     assert u5.isclose(v)
     u6 = Vector.from_values([1, 3, 4, 6], [1., 1 + 1e-4, 1.99999, 0.])
     assert u6.isclose(v, rel_tol=1e-3)
+    # isclose should consider `inf == inf`
+    u7 = Vector.from_values([1, 3], [-np.inf, np.inf])
+    assert u7.isclose(u7, rel_tol=1e-8)
 
 
 def test_binary_op(v):

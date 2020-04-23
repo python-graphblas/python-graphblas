@@ -1,6 +1,7 @@
 import re
-from . import lib
+import numpy as np
 import numba
+from . import lib
 
 
 class DataType:
@@ -14,9 +15,6 @@ class DataType:
 
     def __repr__(self):
         return self.name
-
-    def __hash__(self):
-        return hash((self.name, self.c_type))
 
     def __eq__(self, other):
         if isinstance(other, DataType):
@@ -54,28 +52,34 @@ FP64 = DataType('FP64', lib.GrB_FP64, 'double', numba.types.float64)
 
 # Used for testing user-defined functions
 _sample_values = {
-    BOOL: True,
-    INT8: -3,
-    UINT8: 3,
-    INT16: -3,
-    UINT16: 3,
-    INT32: -3,
-    UINT32: 3,
-    INT64: -3,
-    UINT64: 3,
-    FP32: 3.14,
-    FP64: 3.14
+    INT8.name: np.int8(1),
+    UINT8.name: np.uint8(1),
+    INT16.name: np.int16(1),
+    UINT16.name: np.uint16(1),
+    INT32.name: np.int32(1),
+    UINT32.name: np.uint32(1),
+    INT64.name: np.int64(1),
+    UINT64.name: np.uint64(1),
+    FP32.name: np.float32(0.5),
+    FP64.name: np.float64(0.5),
+    BOOL.name: np.bool_(True),
 }
 
 # Create register to easily lookup types by name, gb_type, or c_type
 _registry = {}
-for x in _sample_values:
-    _registry[x.name] = x
-    _registry[x.gb_type] = x
-    _registry[x.c_type] = x
-    _registry[x.numba_type] = x
-    _registry[x.numba_type.name] = x
-del x
+for dtype in [BOOL, INT8, UINT8, INT16, UINT16, INT32, UINT32, INT64, UINT64, FP32, FP64]:
+    _registry[dtype.name] = dtype
+    _registry[dtype.gb_type] = dtype
+    _registry[dtype.c_type] = dtype
+    _registry[dtype.numba_type] = dtype
+    _registry[dtype.numba_type.name] = dtype
+    val = _sample_values[dtype.name]
+    _registry[val.dtype] = dtype
+    _registry[val.dtype.name] = dtype
+# Upcast numpy float16 to float32
+_registry[np.dtype(np.float16)] = FP32
+_registry['float16'] = FP32
+
 # Add some common Python types as lookup keys
 _registry[int] = DataType.from_pytype(int)
 _registry[float] = DataType.from_pytype(float)
@@ -92,6 +96,10 @@ def lookup(key):
         if hasattr(key, 'name'):
             return _registry[key.name]
         else:
+            try:
+                return lookup(np.dtype(key))
+            except Exception:
+                pass
             raise
 
 

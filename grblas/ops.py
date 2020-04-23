@@ -1,5 +1,8 @@
 import re
+import types
+import numpy as np
 import numba
+from collections.abc import Mapping
 from types import FunctionType
 from . import lib, ffi, dtypes, unary, binary, monoid, semiring
 from .exceptions import GrblasException
@@ -65,7 +68,7 @@ class OpBase:
                     setattr(module, folder, OpPath(module, folder))
                 module = getattr(module, folder)
                 modname = f'{modname}.{folder}'
-                if type(module) is not OpPath:
+                if not isinstance(module, (OpPath, types.ModuleType)):
                     raise AttributeError(f'{modname} is already defined. Cannot use as a nested path.')
         return module, funcname
 
@@ -127,30 +130,44 @@ class UnaryOp(OpBase):
     all_known_instances = set()
 
     @classmethod
-    def register_new(cls, name, func):
+    def _build(cls, name, func):
         if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
-        module, funcname = cls._remove_nesting(name)
+        if name is None:
+            name = getattr(func, '__name__', '<anonymous_unary>')
         success = False
         new_type_obj = cls(name)
+        return_types = {}
+        nt = numba.types
         for type_, sample_val in dtypes._sample_values.items():
+            type_ = dtypes.lookup(type_)
             # Check if func can handle this data type
             try:
-                ret = func(sample_val)
-                if type(ret) is bool:
-                    ret_type = dtypes.BOOL
-                elif type_ == 'BOOL':
-                    # type_ == bool, but return type != bool; invalid
-                    continue
-                else:
+                with np.errstate(divide='ignore', over='ignore', under='ignore', invalid='ignore'):
+                    ret = func(sample_val)
+                ret_type = dtypes.lookup(type(ret))
+                if ret_type != type_ and (
+                    'INT' in ret_type.name and 'INT' in type_.name
+                    or 'FP' in ret_type.name and 'FP' in type_.name
+                    or type_ == 'UINT64' and ret_type == 'FP64' and return_types.get('INT64') == 'INT64'
+                ):
+                    # Downcast `ret_type` to `type_`.  This is probably what users want most of the time,
+                    # but we can't make a perfect rule.  There should be a way for users to be explicit.
                     ret_type = type_
+                elif type_ == 'BOOL' and ret_type == 'INT64' and return_types.get('INT8') == 'INT8':
+                    ret_type = dtypes.INT8
 
-                nt = numba.types
+                # Numba has a bug and is unable to handle BOOL correctly right now
+                # See: https://github.com/numba/numba/issues/5395
+                # We're relying on coercion behaving correctly here
+                input_type = dtypes.INT8 if type_ == 'BOOL' else type_
+                return_type = dtypes.INT8 if ret_type == 'BOOL' else ret_type
+
                 # JIT the func so it can be used from a cfunc
                 unary_udf = numba.njit(func)
                 # Build wrapper because GraphBLAS wants pointers and void return
-                wrapper_sig = nt.void(nt.CPointer(ret_type.numba_type),
-                                      nt.CPointer(type_.numba_type))
+                wrapper_sig = nt.void(nt.CPointer(return_type.numba_type),
+                                      nt.CPointer(input_type.numba_type))
 
                 @numba.cfunc(wrapper_sig, nopython=True)
                 def unary_wrapper(z, x):
@@ -159,17 +176,28 @@ class UnaryOp(OpBase):
 
                 new_unary = ffi.new('GrB_UnaryOp*')
                 lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi,
-                                    ret_type.gb_type, type_.gb_type)
+                                    return_type.gb_type, input_type.gb_type)
                 new_type_obj[type_.name] = new_unary[0]
                 _return_type[new_unary[0]] = ret_type.name
                 cls.all_known_instances.add(new_unary[0])
                 success = True
+                return_types[type_.name] = ret_type.name
             except Exception:
                 continue
         if success:
-            setattr(module, funcname, new_type_obj)
+            return new_type_obj
         else:
             raise UdfParseError('Unable to parse function using Numba')
+
+    @classmethod
+    def register_anonymous(cls, func, name=None):
+        return cls._build(name, func)
+
+    @classmethod
+    def register_new(cls, name, func):
+        module, funcname = cls._remove_nesting(name)
+        unary_op = cls._build(name, func)
+        setattr(module, funcname, unary_op)
 
 
 class BinaryOp(OpBase):
@@ -179,9 +207,15 @@ class BinaryOp(OpBase):
         'trim_from_front': 4,
         'num_underscores': 1,
         're_exprs': [
-            re.compile('^GrB_(FIRST|SECOND|MIN|MAX|PLUS|MINUS|TIMES|DIV)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+            re.compile(
+                '^GrB_(FIRST|SECOND|MIN|MAX|PLUS|MINUS|TIMES|DIV)'
+                '_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'
+            ),
             re.compile('^GrB_(LOR|LAND|LXOR)$'),
-            re.compile('^GxB_(RMINUS|RDIV|PAIR|ANY|ISEQ|ISNE|ISGT|ISLT|ISLE|ISGE)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+            re.compile(
+                '^GxB_(RMINUS|RDIV|PAIR|ANY|ISEQ|ISNE|ISGT|ISLT|ISLE|ISGE)'
+                '_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'
+            ),
         ],
         're_exprs_return_bool': [
             re.compile('^GrB_(EQ|NE|GT|LT|GE|LE)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
@@ -191,31 +225,45 @@ class BinaryOp(OpBase):
     all_known_instances = set()
 
     @classmethod
-    def register_new(cls, name, func):
+    def _build(cls, name, func):
         if type(func) is not FunctionType:
             raise TypeError(f'udf must be a function, not {type(func)}')
-        module, funcname = cls._remove_nesting(name)
+        if name is None:
+            name = getattr(func, '__name__', '<anonymous_binary>')
         success = False
         new_type_obj = cls(name)
+        return_types = {}
+        nt = numba.types
         for type_, sample_val in dtypes._sample_values.items():
+            type_ = dtypes.lookup(type_)
             # Check if func can handle this data type
             try:
-                ret = func(sample_val, sample_val)
-                if type(ret) is bool:
-                    ret_type = dtypes.BOOL
-                elif type_ == 'BOOL':
-                    # type_ == bool, but return type != bool; invalid
-                    continue
-                else:
+                with np.errstate(divide='ignore', over='ignore', under='ignore', invalid='ignore'):
+                    ret = func(sample_val, sample_val)
+                ret_type = dtypes.lookup(type(ret))
+                if ret_type != type_ and (
+                    'INT' in ret_type.name and 'INT' in type_.name
+                    or 'FP' in ret_type.name and 'FP' in type_.name
+                    or type_ == 'UINT64' and ret_type == 'FP64' and return_types.get('INT64') == 'INT64'
+                ):
+                    # Downcast `ret_type` to `type_`.  This is probably what users want most of the time,
+                    # but we can't make a perfect rule.  There should be a way for users to be explicit.
                     ret_type = type_
+                elif type_ == 'BOOL' and ret_type == 'INT64' and return_types.get('INT8') == 'INT8':
+                    ret_type = dtypes.INT8
 
-                nt = numba.types
+                # Numba has a bug and is unable to handle BOOL correctly right now
+                # See: https://github.com/numba/numba/issues/5395
+                # We're relying on coercion behaving correctly here
+                input_type = dtypes.INT8 if type_ == 'BOOL' else type_
+                return_type = dtypes.INT8 if ret_type == 'BOOL' else ret_type
+
                 # JIT the func so it can be used from a cfunc
                 binary_udf = numba.njit(func)
                 # Build wrapper because GraphBLAS wants pointers and void return
-                wrapper_sig = nt.void(nt.CPointer(ret_type.numba_type),
-                                      nt.CPointer(type_.numba_type),
-                                      nt.CPointer(type_.numba_type))
+                wrapper_sig = nt.void(nt.CPointer(return_type.numba_type),
+                                      nt.CPointer(input_type.numba_type),
+                                      nt.CPointer(input_type.numba_type))
 
                 @numba.cfunc(wrapper_sig, nopython=True)
                 def binary_wrapper(z, x, y):
@@ -224,17 +272,28 @@ class BinaryOp(OpBase):
 
                 new_binary = ffi.new('GrB_BinaryOp*')
                 lib.GrB_BinaryOp_new(new_binary, binary_wrapper.cffi,
-                                     ret_type.gb_type, type_.gb_type, type_.gb_type)
+                                     return_type.gb_type, input_type.gb_type, input_type.gb_type)
                 new_type_obj[type_.name] = new_binary[0]
                 _return_type[new_binary[0]] = ret_type.name
                 cls.all_known_instances.add(new_binary[0])
                 success = True
+                return_types[type_.name] = ret_type.name
             except Exception:
                 continue
         if success:
-            setattr(module, funcname, new_type_obj)
+            return new_type_obj
         else:
             raise UdfParseError('Unable to parse function using Numba')
+
+    @classmethod
+    def register_anonymous(cls, func, name=None):
+        return cls._build(name, func)
+
+    @classmethod
+    def register_new(cls, name, func):
+        module, funcname = cls._remove_nesting(name)
+        binary_op = cls._build(name, func)
+        setattr(module, funcname, binary_op)
 
     @classmethod
     def _initialize(cls):
@@ -264,29 +323,49 @@ class Monoid(OpBase):
         'trim_from_back': 7,
         'num_underscores': 1,
         're_exprs': [
-            re.compile('^GxB_(MAX|MIN|PLUS|TIMES|ANY)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)_MONOID$'),
+            re.compile(
+                '^GxB_(MAX|MIN|PLUS|TIMES|ANY)'
+                '_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)_MONOID$'
+            ),
             re.compile('^GxB_(EQ|LAND|LOR|LXOR|ANY)_BOOL_MONOID$'),
         ],
     }
     all_known_instances = set()
 
     @classmethod
-    def register_new(cls, name, binaryop, zero):
+    def _build(cls, name, binaryop, identity):
         if type(binaryop) is not BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
-        module, funcname = cls._remove_nesting(name)
+        if name is None:
+            name = binaryop.name
         new_type_obj = cls(name)
-        for type_ in binaryop.types:
+        if not isinstance(identity, Mapping):
+            identities = dict.fromkeys(binaryop.types, identity)
+        else:
+            identities = identity
+        for type_, identity in identities.items():
+            if type_ == 'BOOL':  # Not yet supported
+                continue
             type_ = dtypes.lookup(type_)
             new_monoid = ffi.new('GrB_Monoid*')
             func = getattr(lib, f'GrB_Monoid_new_{type_.name}')
-            zcast = ffi.cast(type_.c_type, zero)
+            zcast = ffi.cast(type_.c_type, identity)
             func(new_monoid, binaryop[type_], zcast)
             new_type_obj[type_.name] = new_monoid[0]
             ret_type = find_return_type(binaryop[type_])
             _return_type[new_monoid[0]] = ret_type
             cls.all_known_instances.add(new_monoid[0])
-        setattr(module, funcname, new_type_obj)
+        return new_type_obj
+
+    @classmethod
+    def register_anonymous(cls, binaryop, identity, name=None):
+        return cls._build(name, binaryop, identity)
+
+    @classmethod
+    def register_new(cls, name, binaryop, identity):
+        module, funcname = cls._remove_nesting(name)
+        monoid = cls._build(name, binaryop, identity)
+        setattr(module, funcname, monoid)
 
 
 class Semiring(OpBase):
@@ -296,32 +375,56 @@ class Semiring(OpBase):
         'trim_from_front': 4,
         'num_underscores': 2,
         're_exprs': [
-            re.compile('^GxB_(MIN|MAX|PLUS|TIMES|ANY)_(FIRST|SECOND|PAIR|MIN|MAX|PLUS|MINUS|RMINUS|TIMES|DIV|RDIV|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+            re.compile(
+                '^GxB_(MIN|MAX|PLUS|TIMES|ANY)'
+                '_(FIRST|SECOND|PAIR|MIN|MAX|PLUS|MINUS|RMINUS|TIMES'
+                '|DIV|RDIV|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR)'
+                '_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'
+            ),
             re.compile('^GxB_(LOR|LAND|LXOR|EQ|ANY)_(FIRST|SECOND|PAIR|LOR|LAND|LXOR|EQ|GT|LT|GE|LE)_BOOL$'),
         ],
         're_exprs_return_bool': [
-            re.compile('^GxB_(LOR|LAND|LXOR|EQ|ANY)_(EQ|NE|GT|LT|GE|LE)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+            re.compile(
+                '^GxB_(LOR|LAND|LXOR|EQ|ANY)_(EQ|NE|GT|LT|GE|LE)'
+                '_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'
+            ),
         ],
     }
     all_known_instances = set()
 
     @classmethod
-    def register_new(cls, name, monoid, binaryop):
+    def _build(cls, name, monoid, binaryop):
         if type(monoid) is not Monoid:
             raise TypeError(f'monoid must be a Monoid, not {type(monoid)}')
         if type(binaryop) != BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
-        module, funcname = cls._remove_nesting(name)
+        if name is None:
+            name = f'{monoid.name}_{binaryop.name}'
         new_type_obj = cls(name)
-        for type_ in binaryop.types & monoid.types:
-            type_ = dtypes.lookup(type_)
+        for binary_in, binary_func in binaryop._specific_types.items():
+            binary_out = find_return_type(binary_func)
+            # Unfortunately, we can't have user-defined monoids over bools yet
+            # because numba can't compile correctly.
+            if binary_out not in monoid.types or binary_out == 'BOOL':
+                continue
+            binary_out = dtypes.lookup(binary_out)
             new_semiring = ffi.new('GrB_Semiring*')
-            lib.GrB_Semiring_new(new_semiring, monoid[type_], binaryop[type_])
-            new_type_obj[type_.name] = new_semiring[0]
-            ret_type = find_return_type(monoid[type_])
+            lib.GrB_Semiring_new(new_semiring, monoid[binary_out], binary_func)
+            new_type_obj[binary_in] = new_semiring[0]
+            ret_type = find_return_type(monoid[binary_out])
             _return_type[new_semiring[0]] = ret_type
             cls.all_known_instances.add(new_semiring[0])
-        setattr(module, funcname, new_type_obj)
+        return new_type_obj
+
+    @classmethod
+    def register_anonymous(cls, monoid, binaryop, name=None):
+        return cls._build(name, monoid, binaryop)
+
+    @classmethod
+    def register_new(cls, name, monoid, binaryop):
+        module, funcname = cls._remove_nesting(name)
+        semiring = cls._build(name, monoid, binaryop)
+        setattr(module, funcname, semiring)
 
 
 def find_opclass(gb_op):

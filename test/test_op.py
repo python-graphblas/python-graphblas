@@ -58,7 +58,7 @@ def test_unaryop_udf():
     assert hasattr(unary, 'plus_one')
     assert unary.plus_one.types == {'INT8', 'INT16', 'INT32', 'INT64',
                                     'UINT8', 'UINT16', 'UINT32', 'UINT64',
-                                    'FP32', 'FP64'}
+                                    'FP32', 'FP64', 'BOOL'}
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.plus_one)
     result = Vector.from_values([0, 1, 3], [2, 3, -3], dtype=dtypes.INT32)
@@ -66,18 +66,18 @@ def test_unaryop_udf():
 
 
 def test_unaryop_udf_bool_result():
-    pytest.xfail('not sure why numba has trouble compiling this')
-    # def is_positive(x):
-    #     return x > 0
-    # unary.register_new('is_positive', is_positive)
-    # assert hasattr(UnaryOp, 'is_positive')
-    # assert unary.is_positive.types == {'INT8', 'INT16', 'INT32', 'INT64',
-    #                                    'UINT8', 'UINT16', 'UINT32', 'UINT64',
-    #                                    'FP32', 'FP64'}
-    # v = Vector.from_values([0,1,3], [1,2,-4], dtype=dtypes.INT32)
-    # w = v.apply(unary.is_positive).new()
-    # result = Vector.from_values([0,1,3], [True,True,False], dtype=dtypes.BOOL)
-    # assert v == result
+    # numba has trouble compiling this, but we have a work-around
+    def is_positive(x):
+        return x > 0
+    UnaryOp.register_new('is_positive', is_positive)
+    assert hasattr(unary, 'is_positive')
+    assert unary.is_positive.types == {'INT8', 'INT16', 'INT32', 'INT64',
+                                       'UINT8', 'UINT16', 'UINT32', 'UINT64',
+                                       'FP32', 'FP64', 'BOOL'}
+    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    w = v.apply(unary.is_positive).new()
+    result = Vector.from_values([0, 1, 3], [True, True, False], dtype=dtypes.BOOL)
+    assert w.isequal(result)
 
 
 def test_binaryop_udf():
@@ -101,6 +101,7 @@ def test_monoid_udf():
     BinaryOp.register_new('plus_plus_one', plus_plus_one)
     Monoid.register_new('plus_plus_one', binary.plus_plus_one, -1)
     assert hasattr(monoid, 'plus_plus_one')
+    # No boolean for monoids yet
     assert monoid.plus_plus_one.types == {'INT8', 'INT16', 'INT32', 'INT64',
                                           'UINT8', 'UINT16', 'UINT32', 'UINT64',
                                           'FP32', 'FP64'}
@@ -149,7 +150,7 @@ def test_nested_names():
     assert hasattr(unary.incrementers, 'plus_three')
     assert unary.incrementers.plus_three.types == {'INT8', 'INT16', 'INT32', 'INT64',
                                                    'UINT8', 'UINT16', 'UINT32', 'UINT64',
-                                                   'FP32', 'FP64'}
+                                                   'FP32', 'FP64', 'BOOL'}
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.incrementers.plus_three)
     result = Vector.from_values([0, 1, 3], [4, 5, -1], dtype=dtypes.INT32)
