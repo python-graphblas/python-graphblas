@@ -57,26 +57,6 @@ _semiring_names -= {
          'logical_and', 'logical_or', 'logical_xor', 'not_equal'}
     )
 }
-# XXX: we can't handle any semirings with bool at the moment
-# <bool>_<bool>
-_semiring_names -= {
-    f'{monoid_name}_{binary_name}'
-    for monoid_name, binary_name in itertools.product(
-        {'add', 'bitwise_and', 'bitwise_or', 'bitwise_xor', 'fmax', 'fmin', 'maximum', 'minimum', 'multiply'},
-        {'equal', 'greater', 'greater_equal', 'less', 'less_equal',
-         'logical_and', 'logical_or', 'logical_xor', 'not_equal'}
-    )
-}
-# <bool>_<non-bool>
-_semiring_names -= {
-    f'{monoid_name}_{binary_name}'
-    for monoid_name, binary_name in itertools.product(
-        {'equal', 'logical_and', 'logical_or', 'logical_xor'},
-        {'add', 'bitwise_and', 'bitwise_or', 'bitwise_xor', 'equal', 'fmax', 'fmin',
-         'greater', 'greater_equal', 'less', 'less_equal', 'logical_and', 'logical_or',
-         'logical_xor', 'maximum', 'minimum', 'multiply', 'not_equal'}
-    )
-}
 
 
 def __dir__():
