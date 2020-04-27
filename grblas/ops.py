@@ -169,17 +169,21 @@ class UnaryOp(OpBase):
                 wrapper_sig = nt.void(nt.CPointer(return_type.numba_type),
                                       nt.CPointer(input_type.numba_type))
 
-                if ret_type == 'BOOL':
-                    @numba.cfunc(wrapper_sig, nopython=True)
+                if type_ == 'BOOL':
+                    if ret_type == 'BOOL':
+                        def unary_wrapper(z, x):
+                            z[0] = bool(unary_udf(bool(x[0])))
+                    else:
+                        def unary_wrapper(z, x):
+                            z[0] = unary_udf(bool(x[0]))
+                elif ret_type == 'BOOL':
                     def unary_wrapper(z, x):
-                        result = unary_udf(x[0])
-                        z[0] = bool(result)
+                        z[0] = bool(unary_udf(x[0]))
                 else:
-                    @numba.cfunc(wrapper_sig, nopython=True)
                     def unary_wrapper(z, x):
-                        result = unary_udf(x[0])
-                        z[0] = result
+                        z[0] = unary_udf(x[0])
 
+                unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
                 new_unary = ffi.new('GrB_UnaryOp*')
                 check_status(lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi,
                                                  ret_type.gb_type, type_.gb_type))
@@ -272,17 +276,21 @@ class BinaryOp(OpBase):
                                       nt.CPointer(input_type.numba_type),
                                       nt.CPointer(input_type.numba_type))
 
-                if ret_type == 'BOOL':
-                    @numba.cfunc(wrapper_sig, nopython=True)
+                if type_ == 'BOOL':
+                    if ret_type == 'BOOL':
+                        def binary_wrapper(z, x, y):
+                            z[0] = bool(binary_udf(bool(x[0]), bool(y[0])))
+                    else:
+                        def binary_wrapper(z, x, y):
+                            z[0] = binary_udf(bool(x[0]), bool(y[0]))
+                elif ret_type == 'BOOL':
                     def binary_wrapper(z, x, y):
-                        result = binary_udf(x[0], y[0])
-                        z[0] = bool(result)
+                        z[0] = bool(binary_udf(x[0], y[0]))
                 else:
-                    @numba.cfunc(wrapper_sig, nopython=True)
                     def binary_wrapper(z, x, y):
-                        result = binary_udf(x[0], y[0])
-                        z[0] = result
+                        z[0] = binary_udf(x[0], y[0])
 
+                binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
                 new_binary = ffi.new('GrB_BinaryOp*')
                 check_status(
                     lib.GrB_BinaryOp_new(new_binary, binary_wrapper.cffi,
@@ -365,8 +373,8 @@ class Monoid(OpBase):
             input_type = dtypes.INT8 if type_ == 'BOOL' else type_
             new_monoid = ffi.new('GrB_Monoid*')
             func = getattr(lib, f'GrB_Monoid_new_{type_.name}')
-            zcast = ffi.cast(input_type.c_type, identity)
             try:
+                zcast = ffi.cast(input_type.c_type, identity)
                 check_status(func(new_monoid, binaryop[type_], zcast))
             except OverflowError:
                 if explicit_identities:

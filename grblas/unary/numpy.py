@@ -76,7 +76,7 @@ def __getattr__(name):
     numpy_func = getattr(np, name)
     ops.UnaryOp.register_new(f'numpy.{name}', lambda x: numpy_func(x))
     rv = globals()[name]
-    if name in {'invert', 'bitwise_not'}:
-        # numba has difficulty compiling with bool dtypes, so fix our hack
-        rv._specific_types['BOOL'] = unary.numpy.logical_not._specific_types['BOOL']
+    if name in {'reciprocal'}:
+        # numba doesn't match numpy here
+        rv._specific_types['BOOL'] = unary.numpy.abs._specific_types['BOOL']
     return rv
