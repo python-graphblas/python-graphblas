@@ -1,17 +1,9 @@
-from functools import lru_cache, partial
+from functools import partial
 from .base import lib, ffi, GbContainer, GbDelayed
 from .scalar import Scalar
 from .ops import BinaryOp, find_opclass, find_return_type, reify_op
 from . import dtypes, binary, monoid, semiring
 from .exceptions import check_status, is_error, NoValue
-
-
-@lru_cache(maxsize=1024)
-def _generate_isclose(rel_tol, abs_tol):
-    # numba will inline the current values of `rel_tol` and `abs_tol` below
-    def isclose(x, y):
-        return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
-    return BinaryOp.register_anonymous(isclose, f'isclose(rel_tol={rel_tol:g}, abs_tol={abs_tol:g})')
 
 
 class Vector(GbContainer):
@@ -74,8 +66,7 @@ class Vector(GbContainer):
         if self.nvals != other.nvals:
             return False
 
-        isclose = _generate_isclose(rel_tol, abs_tol)
-        matches = self.ewise_mult(other, isclose).new(dtype=bool)
+        matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(dtype=bool)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches.nvals != self.nvals:
             return False
@@ -143,6 +134,14 @@ class Vector(GbContainer):
         dup_orig = dup_op
         if dup_op is None:
             dup_op = binary.plus
+        else:
+            opclass = find_opclass(dup_op)
+            if opclass.startswith('Parameterized'):
+                dup_op = dup_op()  # rely on default parameters
+                opclass = find_opclass(dup_op)
+            if opclass != 'BinaryOp':
+                raise TypeError(f'dup_op must be BinaryOp')
+
         if isinstance(dup_op, BinaryOp):
             dup_op = dup_op[self.dtype]
         indices = ffi.new('GrB_Index[]', indices)
@@ -233,6 +232,9 @@ class Vector(GbContainer):
         if op is None:
             op = monoid.plus
         opclass = find_opclass(op)
+        if opclass.startswith('Parameterized'):
+            op = op()  # rely on default parameters
+            opclass = find_opclass(op)
         if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         if require_monoid and opclass not in {'Monoid', 'Semiring'}:
@@ -258,7 +260,10 @@ class Vector(GbContainer):
         if op is None:
             op = binary.times
         opclass = find_opclass(op)
-        if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
+        if opclass.startswith('Parameterized'):
+            op = op()  # rely on default parameters
+            opclass = find_opclass(op)
+        if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_eWiseMult_Vector_{opclass}')
         op = reify_op(op, self.dtype, other.dtype)
@@ -281,6 +286,9 @@ class Vector(GbContainer):
         if op is None:
             op = semiring.plus_times
         opclass = find_opclass(op)
+        if opclass.startswith('Parameterized'):
+            op = op()  # rely on default parameters
+            opclass = find_opclass(op)
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
         op = reify_op(op, self.dtype, other.dtype)
@@ -300,6 +308,9 @@ class Vector(GbContainer):
             effectively converting a BinaryOp into a UnaryOp
         """
         opclass = find_opclass(op)
+        if opclass.startswith('Parameterized'):
+            op = op()  # rely on default parameters
+            opclass = find_opclass(op)
         if opclass == 'UnaryOp':
             if left is not None or right is not None:
                 raise TypeError('Cannot provide `left` or `right` for a UnaryOp')
@@ -333,6 +344,14 @@ class Vector(GbContainer):
                 op = monoid.lor
             else:
                 op = monoid.plus
+        else:
+            opclass = find_opclass(op)
+            if opclass.startswith('Parameterized'):
+                op = op()  # rely on default parameters
+                opclass = find_opclass(op)
+            if opclass != 'Monoid':
+                raise TypeError(f'op must be Monoid')
+
         func = getattr(lib, f'GrB_Vector_reduce_{self.dtype.name}')
         op = reify_op(op, self.dtype)
         output_constructor = partial(Scalar.new,

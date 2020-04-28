@@ -1,7 +1,8 @@
 import pytest
+import numpy as np
 from grblas import lib
 from grblas import unary, binary, monoid, semiring
-from grblas import dtypes, ops
+from grblas import dtypes, ops, exceptions
 from grblas import Vector, Matrix
 from grblas.ops import UnaryOp, BinaryOp, Monoid, Semiring
 
@@ -65,6 +66,203 @@ def test_unaryop_udf():
     assert v.isequal(result)
 
 
+def test_unaryop_parameterized():
+    def plus_x(x=0):
+        def inner(val):
+            return val + x
+        return inner
+
+    op = UnaryOp.register_anonymous(plus_x, parameterized=True)
+    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v0 = v.apply(op).new()
+    assert v.isequal(v0, check_dtype=True)
+    v0 = v.apply(op(0)).new()
+    assert v.isequal(v0, check_dtype=True)
+    v10 = v.apply(op(x=10)).new()
+    r10 = Vector.from_values([0, 1, 3], [11, 12, 6], dtype=dtypes.INT32)
+    assert r10.isequal(v10, check_dtype=True)
+
+
+def test_binaryop_parameterized():
+    def plus_plus_x(x=0):
+        def inner(left, right):
+            return left + right + x
+        return inner
+
+    op = BinaryOp.register_anonymous(plus_plus_x, parameterized=True)
+    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v0 = v.ewise_mult(v, op).new()
+    r0 = Vector.from_values([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
+    assert v0.isequal(r0, check_dtype=True)
+    v1 = v.ewise_add(v, op(1), require_monoid=False).new()
+    r1 = Vector.from_values([0, 1, 3], [3, 5, -7], dtype=dtypes.INT32)
+    assert v1.isequal(r1, check_dtype=True)
+
+    w = Vector.from_values([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=op)
+    assert v.isequal(w, check_dtype=True)
+    with pytest.raises(TypeError, match='Monoid'):
+        assert v.reduce(op).value == -1
+
+    # TODO: when GraphBLAS 1.3 is supported
+    # v11 = v.apply(op(1), left=10)
+    # r11 = Vector.from_values([0, 1, 3], [12, 13, 7], dtype=dtypes.INT32)
+    # assert v11.isequal(r11, check_dtype=True)
+
+
+def test_monoid_parameterized():
+    def plus_plus_x(x=0):
+        def inner(left, right):
+            return left + right + x
+        return inner
+
+    bin_op = BinaryOp.register_anonymous(plus_plus_x, parameterized=True)
+
+    # signatures must match
+    with pytest.raises(ValueError, match='Signatures'):
+        Monoid.register_anonymous(bin_op, lambda x: -x)
+    with pytest.raises(ValueError, match='Signatures'):
+        Monoid.register_anonymous(bin_op, lambda y=0: -y)
+
+    def plus_plus_x_identity(x=0):
+        return -x
+
+    monoid = Monoid.register_anonymous(bin_op, plus_plus_x_identity)
+    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v0 = v.ewise_add(v, monoid).new()
+    r0 = Vector.from_values([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
+    assert v0.isequal(r0, check_dtype=True)
+    v1 = v.ewise_mult(v, monoid(1)).new()
+    r1 = Vector.from_values([0, 1, 3], [3, 5, -7], dtype=dtypes.INT32)
+    assert v1.isequal(r1, check_dtype=True)
+
+    assert v.reduce(monoid).value == -1
+    assert v.reduce(monoid(1)).value == 1
+    with pytest.raises(TypeError, match='BinaryOp'):
+        Vector.from_values([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=monoid)
+
+    # identity may be a value
+    def logaddexp(base):
+        def inner(x, y):
+            return np.log(base**x + base**y) / np.log(base)
+        return inner
+
+    fv = v.apply(unary.identity).new(dtype=dtypes.FP64)
+    bin_op = BinaryOp.register_anonymous(logaddexp, parameterized=True)
+    monoid = Monoid.register_anonymous(bin_op, -np.inf)
+    fv2 = fv.ewise_mult(fv, monoid(2)).new()
+    plus1 = UnaryOp.register_anonymous(lambda x: x + 1)
+    expected = fv.apply(plus1).new()
+    assert fv2.isclose(expected, check_dtype=True)
+
+
+def test_semiring_parameterized():
+    def plus_plus_x(x=0):
+        def inner(left, right):
+            return left + right + x
+        return inner
+
+    def plus_plus_x_identity(x=0):
+        return -x
+
+    bin_op = BinaryOp.register_anonymous(plus_plus_x, parameterized=True)
+    mymonoid = Monoid.register_anonymous(bin_op, plus_plus_x_identity)
+    # monoid and binaryop are both parameterized
+    mysemiring = Semiring.register_anonymous(mymonoid, bin_op)
+
+    A = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
+    x = Vector.from_values([0, 1], [10, 20])
+
+    y = A.mxv(x, mysemiring).new()
+    assert y.isequal(A.mxv(x, semiring.plus_plus).new())
+    assert y.isequal(x.vxm(A.T, semiring.plus_plus).new())
+    assert y.isequal(Vector.from_values([0, 1], [33, 37]))
+
+    y = A.mxv(x, mysemiring(1)).new()
+    assert y.isequal(Vector.from_values([0, 1], [36, 40]))  # three extra pluses
+
+    y = x.vxm(A.T, mysemiring(1)).new()  # same as previous
+    assert y.isequal(Vector.from_values([0, 1], [36, 40]))
+
+    y = x.vxm(A.T, mysemiring).new()
+    assert y.isequal(Vector.from_values([0, 1], [33, 37]))
+
+    B = A.mxm(A, mysemiring).new()
+    assert B.isequal(A.mxm(A, semiring.plus_plus).new())
+    assert B.isequal(Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [7, 9, 11, 13]))
+
+    B = A.mxm(A, mysemiring(1)).new()  # three extra pluses
+    assert B.isequal(Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [10, 12, 14, 16]))
+
+    B = A.ewise_add(A, mysemiring).new()
+    assert B.isequal(A.ewise_add(A, semiring.plus_plus).new())
+    assert B.isequal(A.ewise_mult(A, mysemiring).new())
+
+    # mismatched signatures.
+    def other_binary(y=0):
+        def inner(left, right):
+            return left + right - y
+        return inner
+
+    def other_identity(y=0):
+        return x
+
+    other_op = BinaryOp.register_anonymous(other_binary, parameterized=True)
+    other_monoid = Monoid.register_anonymous(other_op, other_identity)
+    with pytest.raises(ValueError, match='Signatures'):
+        Monoid.register_anonymous(other_op, plus_plus_x_identity)
+    with pytest.raises(ValueError, match='Signatures'):
+        Monoid.register_anonymous(bin_op, other_identity)
+    with pytest.raises(ValueError, match='Signatures'):
+        Semiring.register_anonymous(other_monoid, bin_op)
+    with pytest.raises(ValueError, match='Signatures'):
+        Semiring.register_anonymous(mymonoid, other_op)
+
+    # only monoid is parameterized
+    mysemiring = Semiring.register_anonymous(mymonoid, binary.plus)
+    B0 = A.mxm(A, semiring.plus_plus).new()
+    B1 = A.mxm(A, mysemiring).new()
+    B2 = A.mxm(A, mysemiring(0)).new()
+    assert B0.isequal(B1)
+    assert B0.isequal(B2)
+
+    # only binaryop is parameterized
+    mysemiring = Semiring.register_anonymous(monoid.plus, bin_op)
+    B0 = A.mxm(A, semiring.plus_plus).new()
+    B1 = A.mxm(A, mysemiring).new()
+    B2 = A.mxm(A, mysemiring(0)).new()
+    assert B0.isequal(B1)
+    assert B0.isequal(B2)
+
+    # While we're here, let's check misc Matrix operations
+    Adup = Matrix.from_values([0, 0, 0, 1, 1], [0, 0, 1, 0, 1], [100, 1, 2, 3, 4], dup_op=bin_op)
+    Adup2 = Matrix.from_values([0, 0, 0, 1, 1], [0, 0, 1, 0, 1], [100, 1, 2, 3, 4], dup_op=binary.plus)
+    assert Adup.isequal(Adup2)
+
+    def plus_x(x=0):
+        def inner(y):
+            return x + y
+        return inner
+
+    unaryop = UnaryOp.register_anonymous(plus_x, parameterized=True)
+    B = A.apply(unaryop).new()
+    assert B.isequal(A)
+
+    x = A.reduce_rows(bin_op).new()
+    assert x.isequal(A.reduce_rows(binary.plus).new())
+
+    x = A.reduce_columns(bin_op).new()
+    assert x.isequal(A.reduce_columns(binary.plus).new())
+
+    s = A.reduce_scalar(mymonoid).new()
+    assert s.value == A.reduce_scalar(monoid.plus).value
+
+    with pytest.raises(TypeError, match='Monoid'):
+        A.reduce_scalar(bin_op).new()
+    # TODO: uncomment once GraphBLAS 1.3 is supported
+    # B = A.kronecker(A, bin_op).new()
+    # assert B.isequal(A.kronecker(A, binary.plus).new())
+
+
 def test_unaryop_udf_bool_result():
     # numba has trouble compiling this, but we have a work-around
     def is_positive(x):
@@ -110,8 +308,9 @@ def test_monoid_udf():
     result = Vector.from_values([0, 1, 2, 3], [4, 2, 3, 4], dtype=dtypes.INT32)
     assert w.isequal(result)
 
-    # -1 doesn't fit in a bool.  Raise if identity explicitly given.
-    with pytest.raises(OverflowError):
+    with pytest.raises(exceptions.DomainMismatch):
+        Monoid.register_anonymous(binary.plus_plus_one, {'BOOL': True})
+    with pytest.raises(exceptions.DomainMismatch):
         Monoid.register_anonymous(binary.plus_plus_one, {'BOOL': -1})
 
 
