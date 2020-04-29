@@ -41,6 +41,14 @@ def test_dup(v):
     # Ensure they are not the same backend object
     v[0] = 1000
     assert u[0].value != 1000
+    # extended functionality
+    w = Vector.from_values([0, 1], [0, 2.5], dtype=dtypes.FP64)
+    x = w.dup(dtype=dtypes.INT64)
+    assert x.isequal(Vector.from_values([0, 1], [0, 2], dtype=dtypes.INT64), check_dtype=True)
+    x = w.dup(mask=w.V)
+    assert x.isequal(Vector.from_values([1], [2.5], dtype=dtypes.FP64), check_dtype=True)
+    x = w.dup(dtype=dtypes.INT64, mask=w.V)
+    assert x.isequal(Vector.from_values([1], [2], dtype=dtypes.INT64), check_dtype=True)
 
 
 def test_from_values():

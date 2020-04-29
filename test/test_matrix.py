@@ -50,6 +50,14 @@ def test_dup(A):
     # Ensure they are not the same backend object
     A[0, 0] = 1000
     assert C[0, 0].value != 1000
+    # extended functionality
+    D = Matrix.from_values([0, 1], [0, 1], [0, 2.5], dtype=dtypes.FP64)
+    E = D.dup(dtype=dtypes.INT64)
+    assert E.isequal(Matrix.from_values([0, 1], [0, 1], [0, 2], dtype=dtypes.INT64), check_dtype=True)
+    E = D.dup(mask=D.V)
+    assert E.isequal(Matrix.from_values([1], [1], [2.5], dtype=dtypes.FP64), check_dtype=True)
+    E = D.dup(dtype=dtypes.INT64, mask=D.V)
+    assert E.isequal(Matrix.from_values([1], [1], [2], dtype=dtypes.INT64), check_dtype=True)
 
 
 def test_from_values():

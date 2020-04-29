@@ -178,11 +178,17 @@ class Matrix(GbContainer):
         if dup_orig is None and self.nvals < len(values):
             raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
-    def dup(self):
+    def dup(self, *, dtype=None, mask=None):
         """
         GrB_Matrix_dup
         Create a new Matrix by duplicating this one
         """
+        if dtype is not None or mask is not None:
+            if dtype is None:
+                dtype = self.dtype
+            new_mat = self.__class__.new(dtype, nrows=self.nrows, ncols=self.ncols)
+            new_mat(mask=mask)[:, :] << self
+            return new_mat
         new_mat = ffi.new('GrB_Matrix*')
         check_status(lib.GrB_Matrix_dup(new_mat, self.gb_obj[0]))
         return self.__class__(new_mat, self.dtype)

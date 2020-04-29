@@ -50,11 +50,15 @@ class Scalar(GbContainer):
             self.gb_obj[0] = val
             self.is_empty = False
 
-    def dup(self):
+    def dup(self, *, dtype=None):
         """Create a new Scalar by duplicating this one
         """
-        new_scalar = self.__class__.new(self.dtype)
-        new_scalar.value = self.value
+        if dtype is None:
+            new_scalar = self.__class__.new(self.dtype)
+            new_scalar.value = self.value
+        else:
+            new_scalar = self.__class__.new(dtype)
+            new_scalar.value = new_scalar.dtype.numba_type(self.value)
         return new_scalar
 
     @classmethod
