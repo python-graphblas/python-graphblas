@@ -26,8 +26,8 @@ class Vector(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         For equality of floating point Vectors, consider using `isclose`
         """
-        if type(other) is not self.__class__:
-            return False
+        if not isinstance(other, Vector):
+            raise TypeError('Argument of isequal must be of type Vector')
         if check_dtype and self.dtype != other.dtype:
             return False
         if self.size != other.size:
@@ -57,8 +57,8 @@ class Vector(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
-        if type(other) is not self.__class__:
-            return False
+        if not isinstance(other, Vector):
+            raise TypeError('Argument of isclose must be of type Vector')
         if check_dtype and self.dtype != other.dtype:
             return False
         if self.size != other.size:
