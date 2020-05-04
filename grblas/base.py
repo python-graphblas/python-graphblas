@@ -2,7 +2,7 @@ from . import lib, ffi
 from . import dtypes, ops, descriptor, unary
 from .exceptions import check_status
 from .ops import OpBase
-from .mask import Mask, ComplementedMask, StructuralMask, ValueMask
+from .mask import Mask, StructuralMask, ValueMask
 
 NULL = ffi.NULL
 
@@ -14,7 +14,7 @@ class Updater:
 
     def __getitem__(self, keys):
         # Occurs when user calls C(params)[index]; need something prepared to receive `<<` or `.update()`
-        if self.parent.is_scalar:
+        if self.parent._is_scalar:
             raise TypeError('Indexing not supported for Scalars')
         if type(keys) is IndexerResolver:
             resolved_indexes = keys
@@ -24,7 +24,7 @@ class Updater:
 
     def __setitem__(self, keys, obj):
         # Occurs when user calls C(params)[index] = delayed
-        if self.parent.is_scalar:
+        if self.parent._is_scalar:
             raise TypeError('Indexing not supported for Scalars')
         if type(keys) is IndexerResolver:
             resolved_indexes = keys
@@ -49,19 +49,15 @@ class Updater:
 
 class GbContainer:
     # Flag for operations which depend on scalar vs vector/matrix
-    is_scalar = False
+    _is_scalar = False
 
     def __init__(self, gb_obj, dtype):
         if not isinstance(gb_obj, ffi.CData):
             raise TypeError('Object passed to __init__ must be CData type')
         if not isinstance(dtype, dtypes.DataType):
             dtype = dtypes.lookup(dtype)
-
         self.gb_obj = gb_obj
         self.dtype = dtype
-
-    def __invert__(self):
-        return ComplementedMask(self)
 
     @property
     def S(self):
@@ -72,12 +68,12 @@ class GbContainer:
         return ValueMask(self)
 
     def __delitem__(self, keys):
-        if self.is_scalar:
+        if self._is_scalar:
             raise TypeError('Indexing not supported for Scalars')
         raise NotImplementedError('Not available until GraphBLAS v1.3')
 
     def __getitem__(self, keys):
-        if self.is_scalar:
+        if self._is_scalar:
             raise TypeError('Indexing not supported for Scalars')
         resolved_indexes = IndexerResolver(self, keys)
         return AmbiguousAssignOrExtract(self, resolved_indexes)
@@ -179,7 +175,7 @@ class GbContainer:
                      for x in delayed.tail_args]
 
         # Build args and call GraphBLAS function
-        if self.is_scalar:
+        if self._is_scalar:
             if mask is not NULL:
                 raise TypeError('Mask not allowed for Scalars')
             call_args = [self.gb_obj, accum] + tail_args + [desc]
@@ -318,7 +314,7 @@ class AmbiguousAssignOrExtract:
 
 class IndexerResolver:
     def __init__(self, obj, indices):
-        if obj.is_scalar:
+        if obj._is_scalar:
             raise TypeError("Cannot index into Scalars")
         self.obj = obj
         self.indices = self.parse_indices(indices, obj.shape)

@@ -7,7 +7,7 @@ class Scalar(GbContainer):
     GraphBLAS Scalar
     Pseudo-object for GraphBLAS functions which accumlate into a scalar type
     """
-    is_scalar = True
+    _is_scalar = True
 
     def __init__(self, gb_obj, dtype, empty=False):
         super().__init__(gb_obj, dtype)
