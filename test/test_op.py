@@ -101,7 +101,6 @@ def test_monoid_udf():
     BinaryOp.register_new('plus_plus_one', plus_plus_one)
     Monoid.register_new('plus_plus_one', binary.plus_plus_one, -1)
     assert hasattr(monoid, 'plus_plus_one')
-    # No boolean for monoids yet
     assert monoid.plus_plus_one.types == {'INT8', 'INT16', 'INT32', 'INT64',
                                           'UINT8', 'UINT16', 'UINT32', 'UINT64',
                                           'FP32', 'FP64'}
@@ -110,6 +109,10 @@ def test_monoid_udf():
     w = v1.ewise_add(v2, monoid.plus_plus_one).new()
     result = Vector.from_values([0, 1, 2, 3], [4, 2, 3, 4], dtype=dtypes.INT32)
     assert w.isequal(result)
+
+    # -1 doesn't fit in a bool.  Raise if identity explicitly given.
+    with pytest.raises(OverflowError):
+        Monoid.register_anonymous(binary.plus_plus_one, {'BOOL': -1})
 
 
 def test_semiring_udf():

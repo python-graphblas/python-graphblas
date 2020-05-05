@@ -5,7 +5,7 @@ import numba
 from collections.abc import Mapping
 from types import FunctionType
 from . import lib, ffi, dtypes, unary, binary, monoid, semiring
-from .exceptions import GrblasException
+from .exceptions import GrblasException, check_status
 
 
 UNKNOWN_OPCLASS = 'UnknownOpClass'
@@ -157,7 +157,7 @@ class UnaryOp(OpBase):
                 elif type_ == 'BOOL' and ret_type == 'INT64' and return_types.get('INT8') == 'INT8':
                     ret_type = dtypes.INT8
 
-                # Numba has a bug and is unable to handle BOOL correctly right now
+                # Numba is unable to handle BOOL correctly right now, but we have a workaround
                 # See: https://github.com/numba/numba/issues/5395
                 # We're relying on coercion behaving correctly here
                 input_type = dtypes.INT8 if type_ == 'BOOL' else type_
@@ -169,14 +169,24 @@ class UnaryOp(OpBase):
                 wrapper_sig = nt.void(nt.CPointer(return_type.numba_type),
                                       nt.CPointer(input_type.numba_type))
 
-                @numba.cfunc(wrapper_sig, nopython=True)
-                def unary_wrapper(z, x):
-                    result = unary_udf(x[0])
-                    z[0] = result
+                if type_ == 'BOOL':
+                    if ret_type == 'BOOL':
+                        def unary_wrapper(z, x):
+                            z[0] = bool(unary_udf(bool(x[0])))
+                    else:
+                        def unary_wrapper(z, x):
+                            z[0] = unary_udf(bool(x[0]))
+                elif ret_type == 'BOOL':
+                    def unary_wrapper(z, x):
+                        z[0] = bool(unary_udf(x[0]))
+                else:
+                    def unary_wrapper(z, x):
+                        z[0] = unary_udf(x[0])
 
+                unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
                 new_unary = ffi.new('GrB_UnaryOp*')
-                lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi,
-                                    return_type.gb_type, input_type.gb_type)
+                check_status(lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi,
+                                                 ret_type.gb_type, type_.gb_type))
                 new_type_obj[type_.name] = new_unary[0]
                 _return_type[new_unary[0]] = ret_type.name
                 cls.all_known_instances.add(new_unary[0])
@@ -252,7 +262,7 @@ class BinaryOp(OpBase):
                 elif type_ == 'BOOL' and ret_type == 'INT64' and return_types.get('INT8') == 'INT8':
                     ret_type = dtypes.INT8
 
-                # Numba has a bug and is unable to handle BOOL correctly right now
+                # Numba is unable to handle BOOL correctly right now, but we have a workaround
                 # See: https://github.com/numba/numba/issues/5395
                 # We're relying on coercion behaving correctly here
                 input_type = dtypes.INT8 if type_ == 'BOOL' else type_
@@ -260,19 +270,32 @@ class BinaryOp(OpBase):
 
                 # JIT the func so it can be used from a cfunc
                 binary_udf = numba.njit(func)
+
                 # Build wrapper because GraphBLAS wants pointers and void return
                 wrapper_sig = nt.void(nt.CPointer(return_type.numba_type),
                                       nt.CPointer(input_type.numba_type),
                                       nt.CPointer(input_type.numba_type))
 
-                @numba.cfunc(wrapper_sig, nopython=True)
-                def binary_wrapper(z, x, y):
-                    result = binary_udf(x[0], y[0])
-                    z[0] = result
+                if type_ == 'BOOL':
+                    if ret_type == 'BOOL':
+                        def binary_wrapper(z, x, y):
+                            z[0] = bool(binary_udf(bool(x[0]), bool(y[0])))
+                    else:
+                        def binary_wrapper(z, x, y):
+                            z[0] = binary_udf(bool(x[0]), bool(y[0]))
+                elif ret_type == 'BOOL':
+                    def binary_wrapper(z, x, y):
+                        z[0] = bool(binary_udf(x[0], y[0]))
+                else:
+                    def binary_wrapper(z, x, y):
+                        z[0] = binary_udf(x[0], y[0])
 
+                binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
                 new_binary = ffi.new('GrB_BinaryOp*')
-                lib.GrB_BinaryOp_new(new_binary, binary_wrapper.cffi,
-                                     return_type.gb_type, input_type.gb_type, input_type.gb_type)
+                check_status(
+                    lib.GrB_BinaryOp_new(new_binary, binary_wrapper.cffi,
+                                         ret_type.gb_type, type_.gb_type, type_.gb_type)
+                )
                 new_type_obj[type_.name] = new_binary[0]
                 _return_type[new_binary[0]] = ret_type.name
                 cls.all_known_instances.add(new_binary[0])
@@ -341,16 +364,22 @@ class Monoid(OpBase):
         new_type_obj = cls(name)
         if not isinstance(identity, Mapping):
             identities = dict.fromkeys(binaryop.types, identity)
+            explicit_identities = False
         else:
             identities = identity
+            explicit_identities = True
         for type_, identity in identities.items():
-            if type_ == 'BOOL':  # Not yet supported
-                continue
             type_ = dtypes.lookup(type_)
+            input_type = dtypes.INT8 if type_ == 'BOOL' else type_
             new_monoid = ffi.new('GrB_Monoid*')
             func = getattr(lib, f'GrB_Monoid_new_{type_.name}')
-            zcast = ffi.cast(type_.c_type, identity)
-            func(new_monoid, binaryop[type_], zcast)
+            try:
+                zcast = ffi.cast(input_type.c_type, identity)
+                check_status(func(new_monoid, binaryop[type_], zcast))
+            except OverflowError:
+                if explicit_identities:
+                    raise
+                continue
             new_type_obj[type_.name] = new_monoid[0]
             ret_type = find_return_type(binaryop[type_])
             _return_type[new_monoid[0]] = ret_type
@@ -405,11 +434,11 @@ class Semiring(OpBase):
             binary_out = find_return_type(binary_func)
             # Unfortunately, we can't have user-defined monoids over bools yet
             # because numba can't compile correctly.
-            if binary_out not in monoid.types or binary_out == 'BOOL':
+            if binary_out not in monoid.types:
                 continue
             binary_out = dtypes.lookup(binary_out)
             new_semiring = ffi.new('GrB_Semiring*')
-            lib.GrB_Semiring_new(new_semiring, monoid[binary_out], binary_func)
+            check_status(lib.GrB_Semiring_new(new_semiring, monoid[binary_out], binary_func))
             new_type_obj[binary_in] = new_semiring[0]
             ret_type = find_return_type(monoid[binary_out])
             _return_type[new_semiring[0]] = ret_type

@@ -90,4 +90,7 @@ def is_error(response_code, error_class):
 
 def check_status(response_code):
     if response_code != lib.GrB_SUCCESS:
-        raise _error_code_lookup[response_code](ffi.string(lib.GrB_error()))
+        text = ffi.string(lib.GrB_error())
+        if isinstance(text, bytes):
+            text = text.decode()
+        raise _error_code_lookup[response_code](text)
