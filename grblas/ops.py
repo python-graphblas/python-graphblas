@@ -592,12 +592,18 @@ class Semiring(OpBase):
 
 def find_opclass(gb_op):
     if isinstance(gb_op, (OpBase, ParameterizedUdf)):
-        return gb_op.__class__.__name__
+        opclass = gb_op.__class__.__name__
     else:
         for opclass in (UnaryOp, BinaryOp, Monoid, Semiring):
             if gb_op in opclass.all_known_instances:
-                return opclass.__name__
-    return UNKNOWN_OPCLASS
+                opclass = opclass.__name__
+                break
+        else:
+            opclass = UNKNOWN_OPCLASS
+    if opclass.startswith('Parameterized'):
+        gb_op = gb_op()  # Use default parameters of parameterized UDFs
+        return find_opclass(gb_op)
+    return gb_op, opclass
 
 
 def reify_op(gb_op, dtype, dtype2=None):

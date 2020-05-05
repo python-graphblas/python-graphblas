@@ -9,6 +9,7 @@ import grblas.monoid.numpy as npmonoid
 import grblas.semiring.numpy as npsemiring
 
 
+@pytest.mark.slow
 def test_bool_doesnt_get_too_large():
     a = grblas.Vector.from_values([0, 1, 2, 3], [True, False, True, False])
     b = grblas.Vector.from_values([0, 1, 2, 3], [True, True, False, False])

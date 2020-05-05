@@ -160,10 +160,7 @@ class Matrix(GbContainer):
         if dup_op is None:
             dup_op = binary.plus
         else:
-            opclass = find_opclass(dup_op)
-            if opclass.startswith('Parameterized'):
-                dup_op = dup_op()  # rely on default parameters
-                opclass = find_opclass(dup_op)
+            dup_op, opclass = find_opclass(dup_op)
             if opclass != 'BinaryOp':
                 raise TypeError(f'dup_op must be BinaryOp')
 
@@ -265,10 +262,7 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = monoid.plus
-        opclass = find_opclass(op)
-        if opclass.startswith('Parameterized'):
-            op = op()  # rely on default parameters
-            opclass = find_opclass(op)
+        op, opclass = find_opclass(op)
         if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         if require_monoid and opclass not in {'Monoid', 'Semiring'}:
@@ -295,10 +289,7 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = binary.times
-        opclass = find_opclass(op)
-        if opclass.startswith('Parameterized'):
-            op = op()  # rely on default parameters
-            opclass = find_opclass(op)
+        op, opclass = find_opclass(op)
         if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_eWiseMult_Matrix_{opclass}')
@@ -322,10 +313,7 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Vector, found {type(other)}')
         if op is None:
             op = semiring.plus_times
-        opclass = find_opclass(op)
-        if opclass.startswith('Parameterized'):
-            op = op()  # rely on default parameters
-            opclass = find_opclass(op)
+        op, opclass = find_opclass(op)
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
         op = reify_op(op, self.dtype, other.dtype)
@@ -347,10 +335,7 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix or Vector, found {type(other)}')
         if op is None:
             op = semiring.plus_times
-        opclass = find_opclass(op)
-        if opclass.startswith('Parameterized'):
-            op = op()  # rely on default parameters
-            opclass = find_opclass(op)
+        op, opclass = find_opclass(op)
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
         op = reify_op(op, self.dtype, other.dtype)
@@ -374,10 +359,7 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = binary.times
-        opclass = find_opclass(op)
-        if opclass.startswith('Parameterized'):
-            op = op()  # rely on default parameters
-            opclass = find_opclass(op)
+        op, opclass = find_opclass(op)
         if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_kronecker_{opclass}')
@@ -398,10 +380,7 @@ class Matrix(GbContainer):
         A BinaryOp can also be applied if a scalar is passed in as `left` or `right`,
             effectively converting a BinaryOp into a UnaryOp
         """
-        opclass = find_opclass(op)
-        if opclass.startswith('Parameterized'):
-            op = op()  # rely on default parameters
-            opclass = find_opclass(op)
+        op, opclass = find_opclass(op)
         if opclass == 'UnaryOp':
             if left is not None or right is not None:
                 raise TypeError('Cannot provide `left` or `right` for a UnaryOp')
@@ -436,10 +415,7 @@ class Matrix(GbContainer):
                 op = monoid.lor
             else:
                 op = monoid.plus
-        opclass = find_opclass(op)
-        if opclass.startswith('Parameterized'):
-            op = op()  # rely on default parameters
-            opclass = find_opclass(op)
+        op, opclass = find_opclass(op)
         if opclass not in {'BinaryOp', 'Monoid'}:
             raise TypeError(f'op must be BinaryOp or Monoid')
         func = getattr(lib, f'GrB_Matrix_reduce_{opclass}')
@@ -472,10 +448,7 @@ class Matrix(GbContainer):
             else:
                 op = monoid.plus
         else:
-            opclass = find_opclass(op)
-            if opclass.startswith('Parameterized'):
-                op = op()  # rely on default parameters
-                opclass = find_opclass(op)
+            op, opclass = find_opclass(op)
             if opclass != 'Monoid':
                 raise TypeError(f'op must be Monoid')
 

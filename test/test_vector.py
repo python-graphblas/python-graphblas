@@ -319,6 +319,7 @@ def test_isequal(v):
     assert not u4.isequal(v)
 
 
+@pytest.mark.slow
 def test_isclose(v):
     assert v.isclose(v)
     u = Vector.from_values([1], [1])  # wrong size

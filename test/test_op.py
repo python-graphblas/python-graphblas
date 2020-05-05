@@ -28,28 +28,28 @@ def test_semiring():
 
 
 def test_find_opclass_unaryop():
-    assert ops.find_opclass(unary.minv) == 'UnaryOp'
-    assert ops.find_opclass(lib.GrB_MINV_INT64) == 'UnaryOp'
+    assert ops.find_opclass(unary.minv)[1] == 'UnaryOp'
+    assert ops.find_opclass(lib.GrB_MINV_INT64)[1] == 'UnaryOp'
 
 
 def test_find_opclass_binaryop():
-    assert ops.find_opclass(binary.times) == 'BinaryOp'
-    assert ops.find_opclass(lib.GrB_TIMES_INT64) == 'BinaryOp'
+    assert ops.find_opclass(binary.times)[1] == 'BinaryOp'
+    assert ops.find_opclass(lib.GrB_TIMES_INT64)[1] == 'BinaryOp'
 
 
 def test_find_opclass_monoid():
-    assert ops.find_opclass(monoid.max) == 'Monoid'
-    assert ops.find_opclass(lib.GxB_MAX_INT64_MONOID) == 'Monoid'
+    assert ops.find_opclass(monoid.max)[1] == 'Monoid'
+    assert ops.find_opclass(lib.GxB_MAX_INT64_MONOID)[1] == 'Monoid'
 
 
 def test_find_opclass_semiring():
-    assert ops.find_opclass(semiring.plus_plus) == 'Semiring'
-    assert ops.find_opclass(lib.GxB_PLUS_PLUS_INT64) == 'Semiring'
+    assert ops.find_opclass(semiring.plus_plus)[1] == 'Semiring'
+    assert ops.find_opclass(lib.GxB_PLUS_PLUS_INT64)[1] == 'Semiring'
 
 
 def test_find_opclass_invalid():
-    assert ops.find_opclass('foobar') == ops.UNKNOWN_OPCLASS
-    assert ops.find_opclass(lib.GrB_INP0) == ops.UNKNOWN_OPCLASS
+    assert ops.find_opclass('foobar')[1] == ops.UNKNOWN_OPCLASS
+    assert ops.find_opclass(lib.GrB_INP0)[1] == ops.UNKNOWN_OPCLASS
 
 
 def test_unaryop_udf():
@@ -66,6 +66,7 @@ def test_unaryop_udf():
     assert v.isequal(result)
 
 
+@pytest.mark.slow
 def test_unaryop_parameterized():
     def plus_x(x=0):
         def inner(val):
@@ -83,6 +84,7 @@ def test_unaryop_parameterized():
     assert r10.isequal(v10, check_dtype=True)
 
 
+@pytest.mark.slow
 def test_binaryop_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
@@ -103,12 +105,25 @@ def test_binaryop_parameterized():
     with pytest.raises(TypeError, match='Monoid'):
         assert v.reduce(op).value == -1
 
+    v(op) << v
+    assert v.isequal(r0)
+    v(accum=op) << v
+    x = r0.ewise_mult(r0, op).new()
+    assert v.isequal(x)
+    v(op(1)) << v
+    x = x.ewise_mult(x, op(1)).new()
+    assert v.isequal(x)
+    v(accum=op(1)) << v
+    x = x.ewise_mult(x, op(1)).new()
+    assert v.isequal(x)
+
     # TODO: when GraphBLAS 1.3 is supported
     # v11 = v.apply(op(1), left=10)
     # r11 = Vector.from_values([0, 1, 3], [12, 13, 7], dtype=dtypes.INT32)
     # assert v11.isequal(r11, check_dtype=True)
 
 
+@pytest.mark.slow
 def test_monoid_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
@@ -155,6 +170,7 @@ def test_monoid_parameterized():
     assert fv2.isclose(expected, check_dtype=True)
 
 
+@pytest.mark.slow
 def test_semiring_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
