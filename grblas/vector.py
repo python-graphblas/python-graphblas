@@ -159,11 +159,17 @@ class Vector(GbContainer):
         if dup_orig is None and self.nvals < len(values):
             raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
-    def dup(self):
+    def dup(self, *, dtype=None, mask=None):
         """
         GrB_Vector_dup
         Create a new Vector by duplicating this one
         """
+        if dtype is not None or mask is not None:
+            if dtype is None:
+                dtype = self.dtype
+            new_vec = self.__class__.new(dtype, size=self.size)
+            new_vec(mask=mask)[:] << self
+            return new_vec
         new_vec = ffi.new('GrB_Vector*')
         check_status(lib.GrB_Vector_dup(new_vec, self.gb_obj[0]))
         return self.__class__(new_vec, self.dtype)

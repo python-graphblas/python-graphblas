@@ -28,6 +28,12 @@ def test_dup(s):
     s3 = s.dup()
     assert s3.dtype == s.dtype
     assert s3.value == s.value
+    # extended functionality
+    s4 = Scalar.from_value(-2.5, dtype=dtypes.FP64)
+    for dtype, val in [('INT8', -2), ('INT16', -2), ('INT32', -2), ('UINT8', 2**8 - 2), ('UINT16', 2**16 - 2),
+                       ('UINT32', 2**32 - 2), ('UINT64', 2**64 - 2), ('BOOL', True), ('FP32', -2.5)]:
+        s5 = s4.dup(dtype=dtype)
+        assert s5.dtype == dtype and s5.value == val
 
 
 def test_from_value():
