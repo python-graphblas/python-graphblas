@@ -483,3 +483,10 @@ def find_return_type(gb_op):
     if gb_op not in _return_type:
         raise KeyError('Unknown operator. You must register function prior to use.')
     return _return_type[gb_op]
+
+
+# Now initialize all the things!
+UnaryOp._initialize()
+BinaryOp._initialize()
+Monoid._initialize()
+Semiring._initialize()
