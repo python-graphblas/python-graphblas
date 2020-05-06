@@ -28,7 +28,7 @@ class Matrix(GbContainer):
         For equality of floating point Vectors, consider using `isclose`
         """
         if not isinstance(other, Matrix):
-            return False
+            raise TypeError(f'Argument of isequal must be of type Matrix, not {type(other)}')
         if check_dtype and self.dtype != other.dtype:
             return False
         if self.nrows != other.nrows:
@@ -49,9 +49,7 @@ class Matrix(GbContainer):
             return False
 
         # Check if all results are True
-        result = Scalar.new(bool)
-        result << matches.reduce_scalar(monoid.land)
-        return result.value
+        return matches.reduce_scalar(monoid.land).value
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """
@@ -60,7 +58,7 @@ class Matrix(GbContainer):
         Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
         if not isinstance(other, Matrix):
-            return False
+            raise TypeError(f'Argument of isclose must be of type Matrix, not {type(other)}')
         if check_dtype and self.dtype != other.dtype:
             return False
         if self.nrows != other.nrows:
