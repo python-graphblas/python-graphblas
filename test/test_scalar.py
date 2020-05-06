@@ -85,3 +85,32 @@ def test_set_value(s):
     assert s.value == 12
     with pytest.raises(TypeError):
         s.value = 12.5
+
+
+def test_isequal(s):
+    assert s.isequal(5)
+    assert s.isequal(5.0)
+    assert s.isequal(5.0, check_dtype=True)  # No explicit dtype given; should we check?
+    assert not s.isequal(None)
+    with pytest.raises(TypeError):
+        s.isequal(object())
+    assert not s.isequal(Scalar.from_value(None, dtype=s.dtype))
+    t = Scalar.from_value(5, dtype='INT8')
+    assert s.isequal(t)
+    assert not s.isequal(t, check_dtype=True)
+    assert Scalar.from_value(None, dtype='INT8').isequal(Scalar.from_value(None, dtype='INT16'))
+
+
+def test_isclose():
+    s = Scalar.from_value(5.0)
+    assert s.isclose(5)
+    assert s.isclose(5, check_dtype=True)  # No explicit dtype given; should we check?
+    assert not s.isclose(6)
+    assert s.isclose(5.000000001)
+    assert not s.isclose(5.000000001, rel_tol=1e-10)
+    assert not s.isclose(None)
+    with pytest.raises(TypeError):
+        s.isclose(object())
+    assert not s.isclose(Scalar.from_value(5), check_dtype=True)
+    assert not s.isclose(Scalar.from_value(None, dtype=s.dtype))
+    assert Scalar.from_value(None, dtype='FP64').isequal(Scalar.from_value(None, dtype='FP32'))

@@ -1,6 +1,6 @@
 from functools import partial
 from .base import lib, ffi, GbContainer, GbDelayed
-from .vector import Vector, _generate_isclose
+from .vector import Vector
 from .scalar import Scalar
 from .ops import BinaryOp, find_opclass, find_return_type, reify_op
 from . import dtypes, binary, monoid, semiring
@@ -30,7 +30,7 @@ class Matrix(GbContainer):
         For equality of floating point Vectors, consider using `isclose`
         """
         if not isinstance(other, (Matrix, TransposedMatrix)):
-            return False
+            raise TypeError(f'Argument of isequal must be of type Matrix, not {type(other)}')
         if check_dtype and self.dtype != other.dtype:
             return False
         if self.nrows != other.nrows:
@@ -51,9 +51,7 @@ class Matrix(GbContainer):
             return False
 
         # Check if all results are True
-        result = Scalar.new(bool)
-        result << matches.reduce_scalar(monoid.land)
-        return result.value
+        return matches.reduce_scalar(monoid.land).value
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """
@@ -62,7 +60,7 @@ class Matrix(GbContainer):
         Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
         if not isinstance(other, (Matrix, TransposedMatrix)):
-            return False
+            raise TypeError(f'Argument of isclose must be of type Matrix, not {type(other)}')
         if check_dtype and self.dtype != other.dtype:
             return False
         if self.nrows != other.nrows:
@@ -72,8 +70,7 @@ class Matrix(GbContainer):
         if self.nvals != other.nvals:
             return False
 
-        isclose = _generate_isclose(rel_tol, abs_tol)
-        matches = self.ewise_mult(other, isclose).new(dtype=bool)
+        matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(dtype=bool)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches.nvals != self.nvals:
             return False
@@ -155,6 +152,11 @@ class Matrix(GbContainer):
         dup_orig = dup_op
         if dup_op is None:
             dup_op = binary.plus
+        else:
+            dup_op, opclass = find_opclass(dup_op)
+            if opclass != 'BinaryOp':
+                raise TypeError(f'dup_op must be BinaryOp')
+
         if isinstance(dup_op, BinaryOp):
             dup_op = dup_op[self.dtype]
         rows = ffi.new('GrB_Index[]', rows)
@@ -259,8 +261,8 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = monoid.plus
-        opclass = find_opclass(op)
-        if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
+        op, opclass = find_opclass(op)
+        if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         if require_monoid and opclass not in {'Monoid', 'Semiring'}:
             raise TypeError(f'op must be Monoid or Semiring unless require_monoid is False')
@@ -286,8 +288,8 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = binary.times
-        opclass = find_opclass(op)
-        if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
+        op, opclass = find_opclass(op)
+        if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_eWiseMult_Matrix_{opclass}')
         op = reify_op(op, self.dtype, other.dtype)
@@ -310,7 +312,7 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Vector, found {type(other)}')
         if op is None:
             op = semiring.plus_times
-        opclass = find_opclass(op)
+        op, opclass = find_opclass(op)
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
         op = reify_op(op, self.dtype, other.dtype)
@@ -332,7 +334,7 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix or Vector, found {type(other)}')
         if op is None:
             op = semiring.plus_times
-        opclass = find_opclass(op)
+        op, opclass = find_opclass(op)
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
         op = reify_op(op, self.dtype, other.dtype)
@@ -356,8 +358,8 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = binary.times
-        opclass = find_opclass(op)
-        if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
+        op, opclass = find_opclass(op)
+        if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_kronecker_{opclass}')
         op = reify_op(op, self.dtype, other.dtype)
@@ -377,7 +379,7 @@ class Matrix(GbContainer):
         A BinaryOp can also be applied if a scalar is passed in as `left` or `right`,
             effectively converting a BinaryOp into a UnaryOp
         """
-        opclass = find_opclass(op)
+        op, opclass = find_opclass(op)
         if opclass == 'UnaryOp':
             if left is not None or right is not None:
                 raise TypeError('Cannot provide `left` or `right` for a UnaryOp')
@@ -412,8 +414,8 @@ class Matrix(GbContainer):
                 op = monoid.lor
             else:
                 op = monoid.plus
-        opclass = find_opclass(op)
-        if opclass not in ('BinaryOp', 'Monoid'):
+        op, opclass = find_opclass(op)
+        if opclass not in {'BinaryOp', 'Monoid'}:
             raise TypeError(f'op must be BinaryOp or Monoid')
         func = getattr(lib, f'GrB_Matrix_reduce_{opclass}')
         op = reify_op(op, self.dtype)
@@ -444,6 +446,11 @@ class Matrix(GbContainer):
                 op = monoid.lor
             else:
                 op = monoid.plus
+        else:
+            op, opclass = find_opclass(op)
+            if opclass != 'Monoid':
+                raise TypeError(f'op must be Monoid')
+
         func = getattr(lib, f'GrB_Matrix_reduce_{self.dtype.name}')
         op = reify_op(op, self.dtype)
         output_constructor = partial(Scalar.new,

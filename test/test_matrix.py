@@ -460,7 +460,8 @@ def test_assign_transpose(A):
 
 def test_isequal(A, v):
     assert A.isequal(A)
-    assert not A.isequal(v)
+    with pytest.raises(TypeError, match='Matrix'):
+        A.isequal(v)  # equality is not type-checking
     C = Matrix.from_values([1], [1], [1])
     assert not C.isequal(A)
     C2 = Matrix.from_values([1], [1], [1], nrows=7, ncols=7)
@@ -477,9 +478,11 @@ def test_isequal(A, v):
     assert not C4.isequal(A)
 
 
+@pytest.mark.slow
 def test_isclose(A, v):
     assert A.isclose(A)
-    assert not A.isclose(v)
+    with pytest.raises(TypeError, match='Matrix'):
+        A.isclose(v)  # equality is not type-checking
     C = Matrix.from_values([1], [1], [1])  # wrong size
     assert not C.isclose(A)
     C2 = Matrix.from_values([1], [1], [1], nrows=7, ncols=7)  # missing values
@@ -506,6 +509,7 @@ def test_isclose(A, v):
     assert C6.isclose(A, rel_tol=1e-3)
 
 
+@pytest.mark.slow
 def test_transpose_equals(A):
     data = [
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],

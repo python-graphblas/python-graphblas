@@ -10,6 +10,22 @@ import grblas.semiring.numpy as npsemiring
 
 
 @pytest.mark.slow
+def test_bool_doesnt_get_too_large():
+    a = grblas.Vector.from_values([0, 1, 2, 3], [True, False, True, False])
+    b = grblas.Vector.from_values([0, 1, 2, 3], [True, True, False, False])
+    z = a.ewise_mult(b, grblas.monoid.numpy.add).new()
+    z.show()
+    x, y = z.to_values()
+    assert y == (True, True, True, False)
+
+    op = grblas.ops.UnaryOp.register_anonymous(lambda x: np.add(x, x))
+    z = a.apply(op).new()
+    z.show()
+    x, y = z.to_values()
+    assert y == (True, False, True, False)
+
+
+@pytest.mark.slow
 def test_npunary():
     L = list(range(5))
     data = [
@@ -18,7 +34,7 @@ def test_npunary():
         [grblas.Vector.from_values(L, L, dtype='float64'), np.array(L, dtype=np.float64)],
     ]
     blacklist = {}
-    isclose = grblas.vector._generate_isclose(1e-7, 0)
+    isclose = grblas.binary.isclose(1e-7, 0)
     for gb_input, np_input in data:
         for unary_name in sorted(npunary._unary_names):
             op = getattr(npunary, unary_name)
@@ -86,7 +102,7 @@ def test_npbinary():
             'floor_divide',  # numba/numpy difference for 1.0 / 0.0
         },
     }
-    isclose = grblas.vector._generate_isclose(1e-7, 0)
+    isclose = grblas.binary.isclose(1e-7, 0)
     for (gb_left, gb_right), (np_left, np_right) in data:
         for binary_name in sorted(npbinary._binary_names):
             op = getattr(npbinary, binary_name)
@@ -150,6 +166,9 @@ def test_npmonoid():
         ],
     ]
     blacklist = {}
+    reduction_blacklist = {
+        'BOOL': {'add'},
+    }
     for (gb_left, gb_right), (np_left, np_right) in data:
         for binary_name in sorted(npmonoid._monoid_identities):
             op = getattr(npmonoid, binary_name)
@@ -169,6 +188,10 @@ def test_npmonoid():
                 print(gb_result.show())
                 print(np_result.show())
             assert compare
+
+            # numpy reductions don't have dtype-dependent identities, so results sometimes differ
+            if binary_name in reduction_blacklist.get(gb_left.dtype.name, ()):
+                continue
 
             gb_result = gb_left.reduce(op).new()
             np_result = getattr(np, binary_name).reduce(np_left)

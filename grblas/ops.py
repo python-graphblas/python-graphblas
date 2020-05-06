@@ -1,11 +1,13 @@
+import inspect
 import re
 import types
 import numpy as np
 import numba
 from collections.abc import Mapping
+from functools import lru_cache
 from types import FunctionType
 from . import lib, ffi, dtypes, unary, binary, monoid, semiring
-from .exceptions import GrblasException
+from .exceptions import GrblasException, check_status
 
 
 UNKNOWN_OPCLASS = 'UnknownOpClass'
@@ -19,6 +21,113 @@ class OpPath:
     def __init__(self, parent, name):
         self._parent = parent
         self._name = name
+
+
+class ParameterizedUdf:
+    def __init__(self, name):
+        self.name = name
+        # lru_cache per instance
+        method = self.__call__.__get__(self, self.__class__)
+        self.__call__ = lru_cache(maxsize=1024)(method)
+
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError()
+
+
+class ParameterizedUnaryOp(ParameterizedUdf):
+    def __init__(self, name, func):
+        if not callable(func):
+            return TypeError('func must be callable')
+        self.func = func
+        self.__signature__ = inspect.signature(func)
+        if name is None:
+            name = getattr(func, '__name__', name)
+        super().__init__(name)
+
+    def __call__(self, *args, **kwargs):
+        unary = self.func(*args, **kwargs)
+        return UnaryOp.register_anonymous(unary, self.name)
+
+
+class ParameterizedBinaryOp(ParameterizedUdf):
+    def __init__(self, name, func):
+        if not callable(func):
+            return TypeError('func must be callable')
+        self.func = func
+        self.__signature__ = inspect.signature(func)
+        if name is None:
+            name = getattr(func, '__name__', name)
+        super().__init__(name)
+
+    def __call__(self, *args, **kwargs):
+        binary = self.func(*args, **kwargs)
+        return BinaryOp.register_anonymous(binary, self.name)
+
+
+class ParameterizedMonoid(ParameterizedUdf):
+    def __init__(self, name, binaryop, identity):
+        if not isinstance(binaryop, ParameterizedBinaryOp):
+            raise TypeError('binaropy must be parameterized')
+        self.binaryop = binaryop
+        self.__signature__ = binaryop.__signature__
+        if callable(identity):
+            # assume it must be parameterized as well, so signature must match
+            sig = inspect.signature(identity)
+            if sig != self.__signature__:
+                raise ValueError(
+                    f'Signatures of binarop and identity passed to {type(self).__name__} must be the same.  Got:\n'
+                    f'    binaryop{self.__signature__}\n'
+                    f'    !=\n'
+                    f'    identity{sig}'
+                )
+        self.identity = identity
+        if name is None:
+            name = binaryop.name
+        super().__init__(name)
+
+    def __call__(self, *args, **kwargs):
+        binary = self.binaryop
+        binary = binary(*args, **kwargs)
+        identity = self.identity
+        if callable(identity):
+            identity = identity(*args, **kwargs)
+        return Monoid.register_anonymous(binary, identity, self.name)
+
+
+class ParameterizedSemiring(ParameterizedUdf):
+    def __init__(self, name, monoid, binaryop):
+        if not isinstance(monoid, (ParameterizedMonoid, Monoid)):
+            raise TypeError('monoid must be of type Monoid or ParameterizedMonoid')
+        if isinstance(binaryop, ParameterizedBinaryOp):
+            self.__signature__ = binaryop.__signature__
+            if isinstance(monoid, ParameterizedMonoid) and monoid.__signature__ != self.__signature__:
+                raise ValueError(
+                    f'Signatures of monoid and binarop passed to {type(self).__name__} must be the same.  Got:\n'
+                    f'    monoid{monoid.__signature__}\n'
+                    f'    !=\n'
+                    f'    binaryop{self.__signature__}\n'
+                    '\nPerhaps call monoid or binaryop with parameters before creating the semiring.'
+                )
+        elif isinstance(binaryop, BinaryOp):
+            if isinstance(monoid, Monoid):
+                raise TypeError('At least one of monoid or binaryop must be parameterized')
+            self.__signature__ = monoid.__signature__
+        else:
+            raise TypeError('binaryop must be of type BinaryOp or ParameterizedBinaryOp')
+        self.monoid = monoid
+        self.binaryop = binaryop
+        if name is None:
+            name = f'{monoid.name}_{binaryop.name}'
+        super().__init__(name)
+
+    def __call__(self, *args, **kwargs):
+        monoid = self.monoid
+        if isinstance(monoid, ParameterizedMonoid):
+            monoid = monoid(*args, **kwargs)
+        binary = self.binaryop
+        if isinstance(binary, ParameterizedBinaryOp):
+            binary = binary(*args, **kwargs)
+        return Semiring.register_anonymous(monoid, binary, self.name)
 
 
 class OpBase:
@@ -157,7 +266,7 @@ class UnaryOp(OpBase):
                 elif type_ == 'BOOL' and ret_type == 'INT64' and return_types.get('INT8') == 'INT8':
                     ret_type = dtypes.INT8
 
-                # Numba has a bug and is unable to handle BOOL correctly right now
+                # Numba is unable to handle BOOL correctly right now, but we have a workaround
                 # See: https://github.com/numba/numba/issues/5395
                 # We're relying on coercion behaving correctly here
                 input_type = dtypes.INT8 if type_ == 'BOOL' else type_
@@ -169,14 +278,24 @@ class UnaryOp(OpBase):
                 wrapper_sig = nt.void(nt.CPointer(return_type.numba_type),
                                       nt.CPointer(input_type.numba_type))
 
-                @numba.cfunc(wrapper_sig, nopython=True)
-                def unary_wrapper(z, x):
-                    result = unary_udf(x[0])
-                    z[0] = result
+                if type_ == 'BOOL':
+                    if ret_type == 'BOOL':
+                        def unary_wrapper(z, x):
+                            z[0] = bool(unary_udf(bool(x[0])))
+                    else:
+                        def unary_wrapper(z, x):
+                            z[0] = unary_udf(bool(x[0]))
+                elif ret_type == 'BOOL':
+                    def unary_wrapper(z, x):
+                        z[0] = bool(unary_udf(x[0]))
+                else:
+                    def unary_wrapper(z, x):
+                        z[0] = unary_udf(x[0])
 
+                unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
                 new_unary = ffi.new('GrB_UnaryOp*')
-                lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi,
-                                    return_type.gb_type, input_type.gb_type)
+                check_status(lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi,
+                                                 ret_type.gb_type, type_.gb_type))
                 new_type_obj[type_.name] = new_unary[0]
                 _return_type[new_unary[0]] = ret_type.name
                 cls.all_known_instances.add(new_unary[0])
@@ -190,13 +309,18 @@ class UnaryOp(OpBase):
             raise UdfParseError('Unable to parse function using Numba')
 
     @classmethod
-    def register_anonymous(cls, func, name=None):
+    def register_anonymous(cls, func, name=None, *, parameterized=False):
+        if parameterized:
+            return ParameterizedUnaryOp(name, func)
         return cls._build(name, func)
 
     @classmethod
-    def register_new(cls, name, func):
+    def register_new(cls, name, func, *, parameterized=False):
         module, funcname = cls._remove_nesting(name)
-        unary_op = cls._build(name, func)
+        if parameterized:
+            unary_op = ParameterizedUnaryOp(name, func)
+        else:
+            unary_op = cls._build(name, func)
         setattr(module, funcname, unary_op)
 
 
@@ -252,7 +376,7 @@ class BinaryOp(OpBase):
                 elif type_ == 'BOOL' and ret_type == 'INT64' and return_types.get('INT8') == 'INT8':
                     ret_type = dtypes.INT8
 
-                # Numba has a bug and is unable to handle BOOL correctly right now
+                # Numba is unable to handle BOOL correctly right now, but we have a workaround
                 # See: https://github.com/numba/numba/issues/5395
                 # We're relying on coercion behaving correctly here
                 input_type = dtypes.INT8 if type_ == 'BOOL' else type_
@@ -260,19 +384,32 @@ class BinaryOp(OpBase):
 
                 # JIT the func so it can be used from a cfunc
                 binary_udf = numba.njit(func)
+
                 # Build wrapper because GraphBLAS wants pointers and void return
                 wrapper_sig = nt.void(nt.CPointer(return_type.numba_type),
                                       nt.CPointer(input_type.numba_type),
                                       nt.CPointer(input_type.numba_type))
 
-                @numba.cfunc(wrapper_sig, nopython=True)
-                def binary_wrapper(z, x, y):
-                    result = binary_udf(x[0], y[0])
-                    z[0] = result
+                if type_ == 'BOOL':
+                    if ret_type == 'BOOL':
+                        def binary_wrapper(z, x, y):
+                            z[0] = bool(binary_udf(bool(x[0]), bool(y[0])))
+                    else:
+                        def binary_wrapper(z, x, y):
+                            z[0] = binary_udf(bool(x[0]), bool(y[0]))
+                elif ret_type == 'BOOL':
+                    def binary_wrapper(z, x, y):
+                        z[0] = bool(binary_udf(x[0], y[0]))
+                else:
+                    def binary_wrapper(z, x, y):
+                        z[0] = binary_udf(x[0], y[0])
 
+                binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
                 new_binary = ffi.new('GrB_BinaryOp*')
-                lib.GrB_BinaryOp_new(new_binary, binary_wrapper.cffi,
-                                     return_type.gb_type, input_type.gb_type, input_type.gb_type)
+                check_status(
+                    lib.GrB_BinaryOp_new(new_binary, binary_wrapper.cffi,
+                                         ret_type.gb_type, type_.gb_type, type_.gb_type)
+                )
                 new_type_obj[type_.name] = new_binary[0]
                 _return_type[new_binary[0]] = ret_type.name
                 cls.all_known_instances.add(new_binary[0])
@@ -286,13 +423,18 @@ class BinaryOp(OpBase):
             raise UdfParseError('Unable to parse function using Numba')
 
     @classmethod
-    def register_anonymous(cls, func, name=None):
+    def register_anonymous(cls, func, name=None, *, parameterized=False):
+        if parameterized:
+            return ParameterizedBinaryOp(name, func)
         return cls._build(name, func)
 
     @classmethod
-    def register_new(cls, name, func):
+    def register_new(cls, name, func, *, parameterized=False):
         module, funcname = cls._remove_nesting(name)
-        binary_op = cls._build(name, func)
+        if parameterized:
+            binary_op = ParameterizedBinaryOp(name, func)
+        else:
+            binary_op = cls._build(name, func)
         setattr(module, funcname, binary_op)
 
     @classmethod
@@ -313,6 +455,13 @@ class BinaryOp(OpBase):
         # Add floordiv
         # cdiv truncates towards 0, while floordiv truncates towards -inf
         BinaryOp.register_new('floordiv', lambda x, y: x // y)
+
+        def isclose(rel_tol=1e-7, abs_tol=0.0):
+            def inner(x, y):
+                return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+            return inner
+
+        BinaryOp.register_new('isclose', isclose, parameterized=True)
 
 
 class Monoid(OpBase):
@@ -341,30 +490,39 @@ class Monoid(OpBase):
         new_type_obj = cls(name)
         if not isinstance(identity, Mapping):
             identities = dict.fromkeys(binaryop.types, identity)
+            explicit_identities = False
         else:
             identities = identity
+            explicit_identities = True
         for type_, identity in identities.items():
-            if type_ == 'BOOL':  # Not yet supported
-                continue
             type_ = dtypes.lookup(type_)
+            ret_type = find_return_type(binaryop[type_])
+            # If there is a domain mismatch, then DomainMismatch will be raised
+            # below if identities were explicitly given.
+            if type_ != ret_type and not explicit_identities:
+                continue
             new_monoid = ffi.new('GrB_Monoid*')
             func = getattr(lib, f'GrB_Monoid_new_{type_.name}')
             zcast = ffi.cast(type_.c_type, identity)
-            func(new_monoid, binaryop[type_], zcast)
+            check_status(func(new_monoid, binaryop[type_], zcast))
             new_type_obj[type_.name] = new_monoid[0]
-            ret_type = find_return_type(binaryop[type_])
             _return_type[new_monoid[0]] = ret_type
             cls.all_known_instances.add(new_monoid[0])
         return new_type_obj
 
     @classmethod
     def register_anonymous(cls, binaryop, identity, name=None):
+        if isinstance(binaryop, ParameterizedBinaryOp):
+            return ParameterizedMonoid(name, binaryop, identity)
         return cls._build(name, binaryop, identity)
 
     @classmethod
     def register_new(cls, name, binaryop, identity):
         module, funcname = cls._remove_nesting(name)
-        monoid = cls._build(name, binaryop, identity)
+        if isinstance(binaryop, ParameterizedBinaryOp):
+            monoid = ParameterizedMonoid(name, binaryop, identity)
+        else:
+            monoid = cls._build(name, binaryop, identity)
         setattr(module, funcname, monoid)
 
 
@@ -405,11 +563,11 @@ class Semiring(OpBase):
             binary_out = find_return_type(binary_func)
             # Unfortunately, we can't have user-defined monoids over bools yet
             # because numba can't compile correctly.
-            if binary_out not in monoid.types or binary_out == 'BOOL':
+            if binary_out not in monoid.types:
                 continue
             binary_out = dtypes.lookup(binary_out)
             new_semiring = ffi.new('GrB_Semiring*')
-            lib.GrB_Semiring_new(new_semiring, monoid[binary_out], binary_func)
+            check_status(lib.GrB_Semiring_new(new_semiring, monoid[binary_out], binary_func))
             new_type_obj[binary_in] = new_semiring[0]
             ret_type = find_return_type(monoid[binary_out])
             _return_type[new_semiring[0]] = ret_type
@@ -418,23 +576,34 @@ class Semiring(OpBase):
 
     @classmethod
     def register_anonymous(cls, monoid, binaryop, name=None):
+        if isinstance(monoid, ParameterizedMonoid) or isinstance(binaryop, ParameterizedBinaryOp):
+            return ParameterizedSemiring(name, monoid, binaryop)
         return cls._build(name, monoid, binaryop)
 
     @classmethod
     def register_new(cls, name, monoid, binaryop):
         module, funcname = cls._remove_nesting(name)
-        semiring = cls._build(name, monoid, binaryop)
+        if isinstance(monoid, ParameterizedMonoid) or isinstance(binaryop, ParameterizedBinaryOp):
+            semiring = ParameterizedSemiring(name, monoid, binaryop)
+        else:
+            semiring = cls._build(name, monoid, binaryop)
         setattr(module, funcname, semiring)
 
 
 def find_opclass(gb_op):
-    if isinstance(gb_op, OpBase):
-        return gb_op.__class__.__name__
+    if isinstance(gb_op, (OpBase, ParameterizedUdf)):
+        opclass = gb_op.__class__.__name__
     else:
         for opclass in (UnaryOp, BinaryOp, Monoid, Semiring):
             if gb_op in opclass.all_known_instances:
-                return opclass.__name__
-    return UNKNOWN_OPCLASS
+                opclass = opclass.__name__
+                break
+        else:
+            opclass = UNKNOWN_OPCLASS
+    if opclass.startswith('Parameterized'):
+        gb_op = gb_op()  # Use default parameters of parameterized UDFs
+        return find_opclass(gb_op)
+    return gb_op, opclass
 
 
 def reify_op(gb_op, dtype, dtype2=None):
@@ -454,3 +623,10 @@ def find_return_type(gb_op):
     if gb_op not in _return_type:
         raise KeyError('Unknown operator. You must register function prior to use.')
     return _return_type[gb_op]
+
+
+# Now initialize all the things!
+UnaryOp._initialize()
+BinaryOp._initialize()
+Monoid._initialize()
+Semiring._initialize()

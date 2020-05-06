@@ -1,17 +1,9 @@
-from functools import lru_cache, partial
+from functools import partial
 from .base import lib, ffi, GbContainer, GbDelayed
 from .scalar import Scalar
 from .ops import BinaryOp, find_opclass, find_return_type, reify_op
 from . import dtypes, binary, monoid, semiring
 from .exceptions import check_status, is_error, NoValue
-
-
-@lru_cache(maxsize=1024)
-def _generate_isclose(rel_tol, abs_tol):
-    # numba will inline the current values of `rel_tol` and `abs_tol` below
-    def isclose(x, y):
-        return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
-    return BinaryOp.register_anonymous(isclose, f'isclose(rel_tol={rel_tol:g}, abs_tol={abs_tol:g})')
 
 
 class Vector(GbContainer):
@@ -34,8 +26,8 @@ class Vector(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         For equality of floating point Vectors, consider using `isclose`
         """
-        if type(other) is not self.__class__:
-            return False
+        if not isinstance(other, Vector):
+            raise TypeError('Argument of isequal must be of type Vector')
         if check_dtype and self.dtype != other.dtype:
             return False
         if self.size != other.size:
@@ -65,8 +57,8 @@ class Vector(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
-        if type(other) is not self.__class__:
-            return False
+        if not isinstance(other, Vector):
+            raise TypeError('Argument of isclose must be of type Vector')
         if check_dtype and self.dtype != other.dtype:
             return False
         if self.size != other.size:
@@ -74,8 +66,7 @@ class Vector(GbContainer):
         if self.nvals != other.nvals:
             return False
 
-        isclose = _generate_isclose(rel_tol, abs_tol)
-        matches = self.ewise_mult(other, isclose).new(dtype=bool)
+        matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(dtype=bool)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches.nvals != self.nvals:
             return False
@@ -143,6 +134,11 @@ class Vector(GbContainer):
         dup_orig = dup_op
         if dup_op is None:
             dup_op = binary.plus
+        else:
+            dup_op, opclass = find_opclass(dup_op)
+            if opclass != 'BinaryOp':
+                raise TypeError(f'dup_op must be BinaryOp')
+
         if isinstance(dup_op, BinaryOp):
             dup_op = dup_op[self.dtype]
         indices = ffi.new('GrB_Index[]', indices)
@@ -238,7 +234,7 @@ class Vector(GbContainer):
             raise TypeError(f'Expected Vector, found {type(other)}')
         if op is None:
             op = monoid.plus
-        opclass = find_opclass(op)
+        op, opclass = find_opclass(op)
         if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         if require_monoid and opclass not in {'Monoid', 'Semiring'}:
@@ -263,8 +259,8 @@ class Vector(GbContainer):
             raise TypeError(f'Expected Vector, found {type(other)}')
         if op is None:
             op = binary.times
-        opclass = find_opclass(op)
-        if opclass not in ('BinaryOp', 'Monoid', 'Semiring'):
+        op, opclass = find_opclass(op)
+        if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         func = getattr(lib, f'GrB_eWiseMult_Vector_{opclass}')
         op = reify_op(op, self.dtype, other.dtype)
@@ -286,7 +282,7 @@ class Vector(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = semiring.plus_times
-        opclass = find_opclass(op)
+        op, opclass = find_opclass(op)
         if opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
         op = reify_op(op, self.dtype, other.dtype)
@@ -305,7 +301,7 @@ class Vector(GbContainer):
         A BinaryOp can also be applied if a scalar is passed in as `left` or `right`,
             effectively converting a BinaryOp into a UnaryOp
         """
-        opclass = find_opclass(op)
+        op, opclass = find_opclass(op)
         if opclass == 'UnaryOp':
             if left is not None or right is not None:
                 raise TypeError('Cannot provide `left` or `right` for a UnaryOp')
@@ -339,6 +335,11 @@ class Vector(GbContainer):
                 op = monoid.lor
             else:
                 op = monoid.plus
+        else:
+            op, opclass = find_opclass(op)
+            if opclass != 'Monoid':
+                raise TypeError(f'op must be Monoid')
+
         func = getattr(lib, f'GrB_Vector_reduce_{self.dtype.name}')
         op = reify_op(op, self.dtype)
         output_constructor = partial(Scalar.new,

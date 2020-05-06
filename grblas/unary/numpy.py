@@ -6,7 +6,7 @@ https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operat
 
 """
 import numpy as np
-from .. import ops, unary
+from .. import ops
 
 _unary_names = {
     # Math operations
@@ -76,7 +76,8 @@ def __getattr__(name):
     numpy_func = getattr(np, name)
     ops.UnaryOp.register_new(f'numpy.{name}', lambda x: numpy_func(x))
     rv = globals()[name]
-    if name in {'invert', 'bitwise_not'}:
-        # numba has difficulty compiling with bool dtypes, so fix our hack
-        rv._specific_types['BOOL'] = unary.numpy.logical_not._specific_types['BOOL']
+    if name == 'reciprocal':
+        # numba doesn't match numpy here
+        op = ops.UnaryOp.register_anonymous(lambda x: 1 if x else 0)
+        rv['BOOL'] = op['BOOL']
     return rv
