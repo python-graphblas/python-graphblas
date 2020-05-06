@@ -1,4 +1,5 @@
 from . import Matrix, Vector, dtypes
+from .matrix import TransposedMatrix
 from .exceptions import GrblasException
 
 
@@ -10,7 +11,7 @@ def show(m):
         return
 
     print(m)
-    if isinstance(m, Matrix):
+    if isinstance(m, (Matrix, TransposedMatrix)):
         df = pd.DataFrame(columns=range(m.ncols), index=range(m.nrows))
         for i, j, val in zip(*m.to_values()):
             df.iloc[i, j] = val
@@ -41,7 +42,7 @@ def draw(m):
         print('`draw` requires matplotlib to be installed')
         return
 
-    if not isinstance(m, Matrix):
+    if not isinstance(m, (Matrix, TransposedMatrix)):
         print(f'Can only draw a Matrix, not {type(m)}')
         return
 

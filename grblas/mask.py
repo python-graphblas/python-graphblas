@@ -10,23 +10,6 @@ class Mask:
         return f'{self.__class__.__name__} of {self.mask}'
 
 
-class ComplementedMask(Mask):
-    complement = True
-    structure = False
-    value = False
-
-    def __invert__(self):
-        return self.mask
-
-    @property
-    def S(self):
-        return ComplementedStructuralMask(self.mask)
-
-    @property
-    def V(self):
-        return ComplementedValueMask(self.mask)
-
-
 class StructuralMask(Mask):
     complement = False
     structure = True

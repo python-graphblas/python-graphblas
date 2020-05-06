@@ -12,6 +12,8 @@ class Matrix(GbContainer):
     GraphBLAS Sparse Matrix
     High-level wrapper around GrB_Matrix type
     """
+    _is_transposed = False
+
     def __init__(self, gb_obj, dtype):
         super().__init__(gb_obj, dtype)
 
@@ -27,7 +29,7 @@ class Matrix(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         For equality of floating point Vectors, consider using `isclose`
         """
-        if not isinstance(other, Matrix):
+        if not isinstance(other, (Matrix, TransposedMatrix)):
             raise TypeError(f'Argument of isequal must be of type Matrix, not {type(other)}')
         if check_dtype and self.dtype != other.dtype:
             return False
@@ -57,7 +59,7 @@ class Matrix(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
-        if not isinstance(other, Matrix):
+        if not isinstance(other, (Matrix, TransposedMatrix)):
             raise TypeError(f'Argument of isclose must be of type Matrix, not {type(other)}')
         if check_dtype and self.dtype != other.dtype:
             return False
@@ -75,9 +77,6 @@ class Matrix(GbContainer):
 
         # Check if all results are True
         return matches.reduce_scalar(monoid.land).value
-
-    def __len__(self):
-        return self.nvals
 
     @property
     def nrows(self):
@@ -104,10 +103,6 @@ class Matrix(GbContainer):
     @property
     def T(self):
         return TransposedMatrix(self)
-
-    @property
-    def is_transposed(self):
-        return False
 
     def clear(self):
         check_status(lib.GrB_Matrix_clear(self.gb_obj[0]))
@@ -262,7 +257,7 @@ class Matrix(GbContainer):
             any operation. In the case of `gt`, the non-empty value is cast to a boolean.
             For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
-        if not isinstance(other, Matrix):
+        if not isinstance(other, (Matrix, TransposedMatrix)):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = monoid.plus
@@ -278,8 +273,8 @@ class Matrix(GbContainer):
                                      nrows=self.nrows, ncols=self.ncols)
         return GbDelayed(func,
                          [op, self.gb_obj[0], other.gb_obj[0]],
-                         at=self.is_transposed,
-                         bt=other.is_transposed,
+                         at=self._is_transposed,
+                         bt=other._is_transposed,
                          output_constructor=output_constructor)
 
     def ewise_mult(self, other, op=None):
@@ -289,7 +284,7 @@ class Matrix(GbContainer):
         Result will contain the intersection of indices from both Matrices
         Default op is binary.times
         """
-        if not isinstance(other, Matrix):
+        if not isinstance(other, (Matrix, TransposedMatrix)):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = binary.times
@@ -303,8 +298,8 @@ class Matrix(GbContainer):
                                      nrows=self.nrows, ncols=self.ncols)
         return GbDelayed(func,
                          [op, self.gb_obj[0], other.gb_obj[0]],
-                         at=self.is_transposed,
-                         bt=other.is_transposed,
+                         at=self._is_transposed,
+                         bt=other._is_transposed,
                          output_constructor=output_constructor)
 
     def mxv(self, other, op=None):
@@ -326,7 +321,7 @@ class Matrix(GbContainer):
                                      size=self.nrows)
         return GbDelayed(lib.GrB_mxv,
                          [op, self.gb_obj[0], other.gb_obj[0]],
-                         at=self.is_transposed,
+                         at=self._is_transposed,
                          output_constructor=output_constructor)
 
     def mxm(self, other, op=None):
@@ -335,7 +330,7 @@ class Matrix(GbContainer):
         Matrix-Matrix multiplication. Result is a Matrix.
         Default op is semiring.plus_times
         """
-        if not isinstance(other, Matrix):
+        if not isinstance(other, (Matrix, TransposedMatrix)):
             raise TypeError(f'Expected Matrix or Vector, found {type(other)}')
         if op is None:
             op = semiring.plus_times
@@ -348,8 +343,8 @@ class Matrix(GbContainer):
                                      nrows=self.nrows, ncols=other.ncols)
         return GbDelayed(lib.GrB_mxm,
                          [op, self.gb_obj[0], other.gb_obj[0]],
-                         at=self.is_transposed,
-                         bt=other.is_transposed,
+                         at=self._is_transposed,
+                         bt=other._is_transposed,
                          output_constructor=output_constructor)
 
     def kronecker(self, other, op=None):
@@ -359,7 +354,7 @@ class Matrix(GbContainer):
         Default op is binary.times
         """
         raise NotImplementedError('Not available in GraphBLAS 1.2')
-        if not isinstance(other, Matrix):
+        if not isinstance(other, (Matrix, TransposedMatrix)):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = binary.times
@@ -373,8 +368,8 @@ class Matrix(GbContainer):
                                      nrows=self.nrows*other.nrows, ncols=self.ncols*other.ncols)
         return GbDelayed(func,
                          [op, self.gb_obj[0], other.gb_obj[0]],
-                         at=self.is_transposed,
-                         bt=other.is_transposed,
+                         at=self._is_transposed,
+                         bt=other._is_transposed,
                          output_constructor=output_constructor)
 
     def apply(self, op, left=None, right=None):
@@ -402,7 +397,7 @@ class Matrix(GbContainer):
         if opclass == 'UnaryOp':
             return GbDelayed(lib.GrB_Matrix_apply,
                              [op, self.gb_obj[0]],
-                             at=self.is_transposed,
+                             at=self._is_transposed,
                              output_constructor=output_constructor)
         else:
             raise NotImplementedError('apply with BinaryOp not available in GraphBLAS 1.2')
@@ -429,7 +424,7 @@ class Matrix(GbContainer):
                                      size=self.nrows)
         return GbDelayed(func,
                          [op, self.gb_obj[0]],
-                         at=self.is_transposed,
+                         at=self._is_transposed,
                          output_constructor=output_constructor)
 
     def reduce_columns(self, op=None):
@@ -472,7 +467,7 @@ class Matrix(GbContainer):
         col, _ = resolved_indexes.indices[1]
         func = getattr(lib, f'GrB_Matrix_extractElement_{self.dtype}')
         result = ffi.new(f'{self.dtype.c_type}*')
-        if self.is_transposed:
+        if self._is_transposed:
             row, col = col, row
 
         err_code = func(result,
@@ -496,7 +491,7 @@ class Matrix(GbContainer):
                                          size=colsize)
             return GbDelayed(lib.GrB_Col_extract,
                              [self.gb_obj[0], cols, colsize, row_index],
-                             at=(not self.is_transposed),
+                             at=(not self._is_transposed),
                              output_constructor=output_constructor)
         elif colsize is None:
             # Column-only selection
@@ -506,7 +501,7 @@ class Matrix(GbContainer):
                                          size=rowsize)
             return GbDelayed(lib.GrB_Col_extract,
                              [self.gb_obj[0], rows, rowsize, col_index],
-                             at=self.is_transposed,
+                             at=self._is_transposed,
                              output_constructor=output_constructor)
         else:
             output_constructor = partial(Matrix.new,
@@ -514,7 +509,7 @@ class Matrix(GbContainer):
                                          nrows=rowsize, ncols=colsize)
             return GbDelayed(lib.GrB_Matrix_extract,
                              [self.gb_obj[0], rows, rowsize, cols, colsize],
-                             at=self.is_transposed,
+                             at=self._is_transposed,
                              output_constructor=output_constructor)
 
     def _assign_element(self, resolved_indexes, value):
@@ -564,66 +559,71 @@ class Matrix(GbContainer):
                 delayed = GbDelayed(lib.GrB_Col_assign,
                                     [obj.gb_obj[0], rows, rowsize, col_index])
             else:
-                if not isinstance(obj, Matrix):
+                if not isinstance(obj, (Matrix, TransposedMatrix)):
                     raise TypeError(f'Expected Matrix for assignment value; found {type(obj)}')
                 delayed = GbDelayed(lib.GrB_Matrix_assign,
                                     [obj.gb_obj[0], rows, rowsize, cols, colsize],
-                                    at=obj.is_transposed)
-
+                                    at=obj._is_transposed)
         return delayed
 
 
-class TransposedMatrix(Matrix):
-    def __init__(self, matrix):
-        super().__init__(matrix.gb_obj, matrix.dtype)
-        self._matrix = matrix
+class TransposedMatrix:
+    _is_scalar = False
+    _is_transposed = True
 
-    # Override the default behavior. Don't free gb_obj
-    # because it's shared with the untransposed matrix
-    def __del__(self):
-        pass
+    def __init__(self, matrix):
+        self._matrix = matrix
 
     def __repr__(self):
         return f'<Matrix.T {self.nvals}/({self.nrows}x{self.ncols}):{self.dtype.name}>'
 
-    def new(self, mask=None):
-        output = Matrix.new(self.dtype, self.nrows, self.ncols)
+    def new(self, *, dtype=None, mask=None):
+        if dtype is None:
+            dtype = self.dtype
+        output = Matrix.new(dtype, self.nrows, self.ncols)
         if mask is None:
             output.update(self)
         else:
-            if type(mask) is not Matrix:
-                raise TypeError('Mask must be a Matrix')
             output(mask).update(self)
         return output
-
-    @property
-    def nrows(self):
-        return super().ncols
-
-    @property
-    def ncols(self):
-        return super().nrows
 
     @property
     def T(self):
         return self._matrix
 
     @property
-    def is_transposed(self):
-        return True
+    def gb_obj(self):
+        return self._matrix.gb_obj
 
-    def clear(self):
-        raise Exception('Modification of a transposed Matrix is not allowed')
-
-    def resize(self, nrows, ncols):
-        raise Exception('Modification of a transposed Matrix is not allowed')
-
-    def build(self, rows, columns, values, *, dup_op=None):
-        raise Exception('Modification of a transposed Matrix is not allowed')
-
-    def __setitem__(self, key, val):
-        raise Exception('Assignment to a transposed Matrix is not allowed')
+    @property
+    def dtype(self):
+        return self._matrix.dtype
 
     def to_values(self):
-        rows, cols, vals = super().to_values()
+        rows, cols, vals = self._matrix.to_values()
         return cols, rows, vals
+
+    # Properties
+    nrows = Matrix.ncols
+    ncols = Matrix.nrows
+    shape = Matrix.shape
+    nvals = Matrix.nvals
+
+    # Delayed methods
+    ewise_add = Matrix.ewise_add
+    ewise_mult = Matrix.ewise_mult
+    mxv = Matrix.mxv
+    mxm = Matrix.mxm
+    kronecker = Matrix.kronecker
+    apply = Matrix.apply
+    reduce_rows = Matrix.reduce_rows
+    reduce_columns = Matrix.reduce_columns
+    reduce_scalar = Matrix.reduce_scalar
+
+    # Misc.
+    isequal = Matrix.isequal
+    isclose = Matrix.isclose
+    show = Matrix.show
+    _extract_element = Matrix._extract_element
+    _prep_for_extract = Matrix._prep_for_extract
+    __getitem__ = Matrix.__getitem__

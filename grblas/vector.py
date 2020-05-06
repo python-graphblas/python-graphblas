@@ -277,8 +277,8 @@ class Vector(GbContainer):
         Vector-Matrix multiplication. Result is a Vector.
         Default op is semiring.plus_times
         """
-        from .matrix import Matrix
-        if not isinstance(other, Matrix):
+        from .matrix import Matrix, TransposedMatrix
+        if not isinstance(other, (Matrix, TransposedMatrix)):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = semiring.plus_times
@@ -291,7 +291,7 @@ class Vector(GbContainer):
                                      size=other.ncols)
         return GbDelayed(lib.GrB_vxm,
                          [op, self.gb_obj[0], other.gb_obj[0]],
-                         bt=other.is_transposed,
+                         bt=other._is_transposed,
                          output_constructor=output_constructor)
 
     def apply(self, op, left=None, right=None):

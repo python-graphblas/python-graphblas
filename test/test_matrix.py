@@ -441,6 +441,23 @@ def test_simple_assignment(A):
     assert C.isequal(A)
 
 
+def test_assign_transpose(A):
+    C = Matrix.new(A.dtype, A.ncols, A.nrows)
+    C << A.T
+    assert C.isequal(A.T.new())
+
+    with pytest.raises(TypeError):
+        C.T << A
+    with pytest.raises(TypeError, match='does not support item assignment'):
+        C.T[:, :] << A
+    with pytest.raises(AttributeError):
+        C[:, :].T << A
+
+    C = Matrix.new(A.dtype, A.ncols + 1, A.nrows + 1)
+    C[:A.ncols, :A.nrows] << A.T
+    assert C[:A.ncols, :A.nrows].new().isequal(A.T.new())
+
+
 def test_isequal(A, v):
     assert A.isequal(A)
     with pytest.raises(TypeError, match='Matrix'):
@@ -509,3 +526,29 @@ def test_transpose_equals(A):
     assert B.isclose(A.T)
     assert A.T.isclose(B)
     assert A.T.isclose(A.T)
+
+
+def test_transpose_exceptional():
+    A = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [True, True, False, True])
+    B = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
+
+    with pytest.raises(TypeError, match='not callable'):
+        B.T(mask=A.V) << B.ewise_mult(B, op=binary.plus)
+    with pytest.raises(AttributeError):
+        B(mask=A.T.V) << B.ewise_mult(B, op=binary.plus)
+    with pytest.raises(AttributeError):
+        B.T(mask=A.T.V) << B.ewise_mult(B, op=binary.plus)
+    with pytest.raises(TypeError, match='does not support item assignment'):
+        B.T[1, 0] << 10
+    with pytest.raises(TypeError, match='not callable'):
+        B.T[1, 0]() << 10
+    with pytest.raises(TypeError, match='not callable'):
+        B.T()[1, 0] << 10
+    with pytest.raises(AttributeError):
+        B.T.dup()  # should use new instead
+    # Not exceptional, but while we're here...
+    C = B.T.new(mask=A.V)
+    D = B.T.new()
+    D = D.dup(mask=A.V)
+    assert C.isequal(D)
+    assert C.isequal(Matrix.from_values([0, 0, 1], [0, 1, 1], [1, 3, 4]))
