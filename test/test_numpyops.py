@@ -9,6 +9,7 @@ import grblas.monoid.numpy as npmonoid
 import grblas.semiring.numpy as npsemiring
 
 
+@pytest.mark.slow
 def test_bool_doesnt_get_too_large():
     a = grblas.Vector.from_values([0, 1, 2, 3], [True, False, True, False])
     b = grblas.Vector.from_values([0, 1, 2, 3], [True, True, False, False])
@@ -33,7 +34,7 @@ def test_npunary():
         [grblas.Vector.from_values(L, L, dtype='float64'), np.array(L, dtype=np.float64)],
     ]
     blacklist = {}
-    isclose = grblas.vector._generate_isclose(1e-7, 0)
+    isclose = grblas.binary.isclose(1e-7, 0)
     for gb_input, np_input in data:
         for unary_name in sorted(npunary._unary_names):
             op = getattr(npunary, unary_name)
@@ -101,7 +102,7 @@ def test_npbinary():
             'floor_divide',  # numba/numpy difference for 1.0 / 0.0
         },
     }
-    isclose = grblas.vector._generate_isclose(1e-7, 0)
+    isclose = grblas.binary.isclose(1e-7, 0)
     for (gb_left, gb_right), (np_left, np_right) in data:
         for binary_name in sorted(npbinary._binary_names):
             op = getattr(npbinary, binary_name)

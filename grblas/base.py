@@ -88,17 +88,17 @@ class GbContainer:
     def __call__(self, *optional_mask_and_accum, mask=None, accum=None, replace=False):
         # Pick out mask and accum from positional arguments
         mask_arg, accum_arg = None, None
-        for key in optional_mask_and_accum:
-            if isinstance(key, GbContainer):
-                mask_arg = key
-            elif isinstance(key, Mask):
-                mask_arg = key
-            elif isinstance(key, ops.BinaryOp):
-                accum_arg = key
-            elif type(key) is ffi.CData and ops.find_opclass(key) != ops.UNKNOWN_OPCLASS:
-                accum_arg = key
+        for arg in optional_mask_and_accum:
+            if isinstance(arg, GbContainer):
+                raise TypeError('Mask must indicate values (M.V) or structure (M.S)')
+            elif isinstance(arg, Mask):
+                mask_arg = arg
             else:
-                raise TypeError(f'Invalid item found in output params: {type(key)}')
+                accum_arg, opclass = ops.find_opclass(arg)
+                if opclass == ops.UNKNOWN_OPCLASS:
+                    raise TypeError(f'Invalid item found in output params: {type(arg)}')
+                if opclass != 'BinaryOp':
+                    raise TypeError(f'accum must be a BinaryOp, not {opclass}')
         # Merge positional and keyword arguments
         if mask_arg is not None and mask is not None:
             raise TypeError("got multiple values for argument 'mask'")
@@ -156,16 +156,12 @@ class GbContainer:
             raise TypeError(f"Invalid mask: {type(mask)}")
 
         # Normalize accumulator
-        if accum is NULL:
-            pass
-        elif isinstance(accum, ops.BinaryOp):
-            accum = accum[self.dtype]
-        elif type(accum) is ffi.CData and ops.find_opclass(accum) != ops.UNKNOWN_OPCLASS:
-            opclass = ops.find_opclass(accum)
-            if opclass != ops.BinaryOp.__name__:
+        if accum is not NULL:
+            accum, opclass = ops.find_opclass(accum)
+            if opclass != 'BinaryOp':
                 raise TypeError(f'accum must be a BinaryOp, not {opclass}')
-        else:
-            raise TypeError(f"Invalid accum: {type(accum)}")
+            if isinstance(accum, ops.BinaryOp):
+                accum = accum[self.dtype]
 
         # Get descriptor based on flags
         desc = descriptor.lookup(transpose_first=delayed.at,

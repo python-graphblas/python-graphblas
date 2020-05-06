@@ -1,8 +1,10 @@
+import inspect
 import re
 import types
 import numpy as np
 import numba
 from collections.abc import Mapping
+from functools import lru_cache
 from types import FunctionType
 from . import lib, ffi, dtypes, unary, binary, monoid, semiring
 from .exceptions import GrblasException, check_status
@@ -19,6 +21,113 @@ class OpPath:
     def __init__(self, parent, name):
         self._parent = parent
         self._name = name
+
+
+class ParameterizedUdf:
+    def __init__(self, name):
+        self.name = name
+        # lru_cache per instance
+        method = self.__call__.__get__(self, self.__class__)
+        self.__call__ = lru_cache(maxsize=1024)(method)
+
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError()
+
+
+class ParameterizedUnaryOp(ParameterizedUdf):
+    def __init__(self, name, func):
+        if not callable(func):
+            return TypeError('func must be callable')
+        self.func = func
+        self.__signature__ = inspect.signature(func)
+        if name is None:
+            name = getattr(func, '__name__', name)
+        super().__init__(name)
+
+    def __call__(self, *args, **kwargs):
+        unary = self.func(*args, **kwargs)
+        return UnaryOp.register_anonymous(unary, self.name)
+
+
+class ParameterizedBinaryOp(ParameterizedUdf):
+    def __init__(self, name, func):
+        if not callable(func):
+            return TypeError('func must be callable')
+        self.func = func
+        self.__signature__ = inspect.signature(func)
+        if name is None:
+            name = getattr(func, '__name__', name)
+        super().__init__(name)
+
+    def __call__(self, *args, **kwargs):
+        binary = self.func(*args, **kwargs)
+        return BinaryOp.register_anonymous(binary, self.name)
+
+
+class ParameterizedMonoid(ParameterizedUdf):
+    def __init__(self, name, binaryop, identity):
+        if not isinstance(binaryop, ParameterizedBinaryOp):
+            raise TypeError('binaropy must be parameterized')
+        self.binaryop = binaryop
+        self.__signature__ = binaryop.__signature__
+        if callable(identity):
+            # assume it must be parameterized as well, so signature must match
+            sig = inspect.signature(identity)
+            if sig != self.__signature__:
+                raise ValueError(
+                    f'Signatures of binarop and identity passed to {type(self).__name__} must be the same.  Got:\n'
+                    f'    binaryop{self.__signature__}\n'
+                    f'    !=\n'
+                    f'    identity{sig}'
+                )
+        self.identity = identity
+        if name is None:
+            name = binaryop.name
+        super().__init__(name)
+
+    def __call__(self, *args, **kwargs):
+        binary = self.binaryop
+        binary = binary(*args, **kwargs)
+        identity = self.identity
+        if callable(identity):
+            identity = identity(*args, **kwargs)
+        return Monoid.register_anonymous(binary, identity, self.name)
+
+
+class ParameterizedSemiring(ParameterizedUdf):
+    def __init__(self, name, monoid, binaryop):
+        if not isinstance(monoid, (ParameterizedMonoid, Monoid)):
+            raise TypeError('monoid must be of type Monoid or ParameterizedMonoid')
+        if isinstance(binaryop, ParameterizedBinaryOp):
+            self.__signature__ = binaryop.__signature__
+            if isinstance(monoid, ParameterizedMonoid) and monoid.__signature__ != self.__signature__:
+                raise ValueError(
+                    f'Signatures of monoid and binarop passed to {type(self).__name__} must be the same.  Got:\n'
+                    f'    monoid{monoid.__signature__}\n'
+                    f'    !=\n'
+                    f'    binaryop{self.__signature__}\n'
+                    '\nPerhaps call monoid or binaryop with parameters before creating the semiring.'
+                )
+        elif isinstance(binaryop, BinaryOp):
+            if isinstance(monoid, Monoid):
+                raise TypeError('At least one of monoid or binaryop must be parameterized')
+            self.__signature__ = monoid.__signature__
+        else:
+            raise TypeError('binaryop must be of type BinaryOp or ParameterizedBinaryOp')
+        self.monoid = monoid
+        self.binaryop = binaryop
+        if name is None:
+            name = f'{monoid.name}_{binaryop.name}'
+        super().__init__(name)
+
+    def __call__(self, *args, **kwargs):
+        monoid = self.monoid
+        if isinstance(monoid, ParameterizedMonoid):
+            monoid = monoid(*args, **kwargs)
+        binary = self.binaryop
+        if isinstance(binary, ParameterizedBinaryOp):
+            binary = binary(*args, **kwargs)
+        return Semiring.register_anonymous(monoid, binary, self.name)
 
 
 class OpBase:
@@ -200,13 +309,18 @@ class UnaryOp(OpBase):
             raise UdfParseError('Unable to parse function using Numba')
 
     @classmethod
-    def register_anonymous(cls, func, name=None):
+    def register_anonymous(cls, func, name=None, *, parameterized=False):
+        if parameterized:
+            return ParameterizedUnaryOp(name, func)
         return cls._build(name, func)
 
     @classmethod
-    def register_new(cls, name, func):
+    def register_new(cls, name, func, *, parameterized=False):
         module, funcname = cls._remove_nesting(name)
-        unary_op = cls._build(name, func)
+        if parameterized:
+            unary_op = ParameterizedUnaryOp(name, func)
+        else:
+            unary_op = cls._build(name, func)
         setattr(module, funcname, unary_op)
 
 
@@ -309,13 +423,18 @@ class BinaryOp(OpBase):
             raise UdfParseError('Unable to parse function using Numba')
 
     @classmethod
-    def register_anonymous(cls, func, name=None):
+    def register_anonymous(cls, func, name=None, *, parameterized=False):
+        if parameterized:
+            return ParameterizedBinaryOp(name, func)
         return cls._build(name, func)
 
     @classmethod
-    def register_new(cls, name, func):
+    def register_new(cls, name, func, *, parameterized=False):
         module, funcname = cls._remove_nesting(name)
-        binary_op = cls._build(name, func)
+        if parameterized:
+            binary_op = ParameterizedBinaryOp(name, func)
+        else:
+            binary_op = cls._build(name, func)
         setattr(module, funcname, binary_op)
 
     @classmethod
@@ -336,6 +455,13 @@ class BinaryOp(OpBase):
         # Add floordiv
         # cdiv truncates towards 0, while floordiv truncates towards -inf
         BinaryOp.register_new('floordiv', lambda x, y: x // y)
+
+        def isclose(rel_tol=1e-7, abs_tol=0.0):
+            def inner(x, y):
+                return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+            return inner
+
+        BinaryOp.register_new('isclose', isclose, parameterized=True)
 
 
 class Monoid(OpBase):
@@ -370,30 +496,33 @@ class Monoid(OpBase):
             explicit_identities = True
         for type_, identity in identities.items():
             type_ = dtypes.lookup(type_)
-            input_type = dtypes.INT8 if type_ == 'BOOL' else type_
+            ret_type = find_return_type(binaryop[type_])
+            # If there is a domain mismatch, then DomainMismatch will be raised
+            # below if identities were explicitly given.
+            if type_ != ret_type and not explicit_identities:
+                continue
             new_monoid = ffi.new('GrB_Monoid*')
             func = getattr(lib, f'GrB_Monoid_new_{type_.name}')
-            try:
-                zcast = ffi.cast(input_type.c_type, identity)
-                check_status(func(new_monoid, binaryop[type_], zcast))
-            except OverflowError:
-                if explicit_identities:
-                    raise
-                continue
+            zcast = ffi.cast(type_.c_type, identity)
+            check_status(func(new_monoid, binaryop[type_], zcast))
             new_type_obj[type_.name] = new_monoid[0]
-            ret_type = find_return_type(binaryop[type_])
             _return_type[new_monoid[0]] = ret_type
             cls.all_known_instances.add(new_monoid[0])
         return new_type_obj
 
     @classmethod
     def register_anonymous(cls, binaryop, identity, name=None):
+        if isinstance(binaryop, ParameterizedBinaryOp):
+            return ParameterizedMonoid(name, binaryop, identity)
         return cls._build(name, binaryop, identity)
 
     @classmethod
     def register_new(cls, name, binaryop, identity):
         module, funcname = cls._remove_nesting(name)
-        monoid = cls._build(name, binaryop, identity)
+        if isinstance(binaryop, ParameterizedBinaryOp):
+            monoid = ParameterizedMonoid(name, binaryop, identity)
+        else:
+            monoid = cls._build(name, binaryop, identity)
         setattr(module, funcname, monoid)
 
 
@@ -447,23 +576,34 @@ class Semiring(OpBase):
 
     @classmethod
     def register_anonymous(cls, monoid, binaryop, name=None):
+        if isinstance(monoid, ParameterizedMonoid) or isinstance(binaryop, ParameterizedBinaryOp):
+            return ParameterizedSemiring(name, monoid, binaryop)
         return cls._build(name, monoid, binaryop)
 
     @classmethod
     def register_new(cls, name, monoid, binaryop):
         module, funcname = cls._remove_nesting(name)
-        semiring = cls._build(name, monoid, binaryop)
+        if isinstance(monoid, ParameterizedMonoid) or isinstance(binaryop, ParameterizedBinaryOp):
+            semiring = ParameterizedSemiring(name, monoid, binaryop)
+        else:
+            semiring = cls._build(name, monoid, binaryop)
         setattr(module, funcname, semiring)
 
 
 def find_opclass(gb_op):
-    if isinstance(gb_op, OpBase):
-        return gb_op.__class__.__name__
+    if isinstance(gb_op, (OpBase, ParameterizedUdf)):
+        opclass = gb_op.__class__.__name__
     else:
         for opclass in (UnaryOp, BinaryOp, Monoid, Semiring):
             if gb_op in opclass.all_known_instances:
-                return opclass.__name__
-    return UNKNOWN_OPCLASS
+                opclass = opclass.__name__
+                break
+        else:
+            opclass = UNKNOWN_OPCLASS
+    if opclass.startswith('Parameterized'):
+        gb_op = gb_op()  # Use default parameters of parameterized UDFs
+        return find_opclass(gb_op)
+    return gb_op, opclass
 
 
 def reify_op(gb_op, dtype, dtype2=None):

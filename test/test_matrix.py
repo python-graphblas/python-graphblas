@@ -460,6 +460,7 @@ def test_isequal(A, v):
     assert not C4.isequal(A)
 
 
+@pytest.mark.slow
 def test_isclose(A, v):
     assert A.isclose(A)
     assert not A.isclose(v)
@@ -489,6 +490,7 @@ def test_isclose(A, v):
     assert C6.isclose(A, rel_tol=1e-3)
 
 
+@pytest.mark.slow
 def test_transpose_equals(A):
     data = [
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
