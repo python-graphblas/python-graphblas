@@ -552,7 +552,7 @@ class Matrix(GbContainer):
                 delayed = GbDelayed(lib.GrB_Col_assign,
                                     [obj.gb_obj[0], rows, rowsize, col_index])
             else:
-                if not isinstance(obj, Matrix):
+                if not isinstance(obj, (Matrix, TransposedMatrix)):
                     raise TypeError(f'Expected Matrix for assignment value; found {type(obj)}')
                 delayed = GbDelayed(lib.GrB_Matrix_assign,
                                     [obj.gb_obj[0], rows, rowsize, cols, colsize],

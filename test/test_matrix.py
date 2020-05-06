@@ -441,6 +441,23 @@ def test_simple_assignment(A):
     assert C.isequal(A)
 
 
+def test_assign_transpose(A):
+    C = Matrix.new(A.dtype, A.ncols, A.nrows)
+    C << A.T
+    assert C.isequal(A.T.new())
+
+    with pytest.raises(TypeError):
+        C.T << A
+    with pytest.raises(TypeError, match='does not support item assignment'):
+        C.T[:, :] << A
+    with pytest.raises(AttributeError):
+        C[:, :].T << A
+
+    C = Matrix.new(A.dtype, A.ncols + 1, A.nrows + 1)
+    C[:A.ncols, :A.nrows] << A.T
+    assert C[:A.ncols, :A.nrows].new().isequal(A.T.new())
+
+
 def test_isequal(A, v):
     assert A.isequal(A)
     assert not A.isequal(v)
