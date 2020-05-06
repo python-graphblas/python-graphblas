@@ -13,6 +13,10 @@ from .exceptions import GrblasException, check_status
 UNKNOWN_OPCLASS = 'UnknownOpClass'
 
 
+def _normalize_type(type_):
+    return type_.name if isinstance(type_, dtypes.DataType) else type_
+
+
 class UdfParseError(GrblasException):
     pass
 
@@ -21,6 +25,65 @@ class OpPath:
     def __init__(self, parent, name):
         self._parent = parent
         self._name = name
+
+
+class TypedOpBase:
+    def __init__(self, type_, return_type, gb_obj):
+        self.type = _normalize_type(type_)
+        self.return_type = _normalize_type(return_type)
+        self.gb_obj = gb_obj
+
+
+class TypedBuiltinUnaryOp(TypedOpBase):
+    opclass = 'UnaryOp'
+
+
+class TypedBuiltinBinaryOp(TypedOpBase):
+    opclass = 'BinaryOp'
+
+
+class TypedBuiltinMonoid(TypedOpBase):
+    opclass = 'Monoid'
+
+
+class TypedBuiltinSemiring(TypedOpBase):
+    opclass = 'Semiring'
+
+
+class TypedUserUnaryOp(TypedOpBase):
+    opclass = 'UnaryOp'
+
+    def __init__(self, type_, return_type, gb_obj, orig_func, numba_func):
+        super().__init__(type_, return_type, gb_obj)
+        self.orig_func = orig_func
+        self.numba_func = numba_func
+
+
+class TypedUserBinaryOp(TypedOpBase):
+    opclass = 'BinaryOp'
+
+    def __init__(self, type_, return_type, gb_obj, orig_func, numba_func):
+        super().__init__(type_, return_type, gb_obj)
+        self.orig_func = orig_func
+        self.numba_func = numba_func
+
+
+class TypedUserMonoid(TypedOpBase):
+    opclass = 'Monoid'
+
+    def __init__(self, type_, return_type, gb_obj, binaryop, identity):
+        super().__init__(type_, return_type, gb_obj)
+        self.binaryop = binaryop
+        self.identity = identity
+
+
+class TypedUserSemiring(TypedOpBase):
+    opclass = 'Semiring'
+
+    def __init__(self, type_, return_type, gb_obj, monoid, binaryop):
+        super().__init__(type_, return_type, gb_obj)
+        self.monoid = monoid
+        self.binaryop = binaryop
 
 
 class ParameterizedUdf:
@@ -137,31 +200,29 @@ class OpBase:
 
     def __init__(self, name):
         self.name = name
-        self._specific_types = {}
+        self._typed_ops = {}
+        self.types = {}
 
     def __repr__(self):
         return f'{type(self).__name__}.{self.name}'
 
     def __getitem__(self, type_):
-        type_ = self._normalize_type(type_)
-        if type_ not in self._specific_types:
+        type_ = _normalize_type(type_)
+        if type_ not in self._typed_ops:
             raise KeyError(f'{self.name} does not work with {type_}')
-        return self._specific_types[type_]
+        return self._typed_ops[type_]
 
-    def __setitem__(self, type_, obj):
-        type_ = self._normalize_type(type_)
-        self._specific_types[type_] = obj
+    def _add(self, op):
+        self._typed_ops[op.type] = op
+        self.types[op.type] = op.return_type
 
     def __delitem__(self, type_):
-        type_ = self._normalize_type(type_)
-        del self._specific_types[type_]
+        type_ = _normalize_type(type_)
+        del self._typed_ops[type_]
 
     def __contains__(self, type_):
-        type_ = self._normalize_type(type_)
-        return type_ in self._specific_types
-
-    def _normalize_type(self, type_):
-        return type_.name if isinstance(type_, dtypes.DataType) else type_
+        type_ = _normalize_type(type_)
+        return type_ in self._typed_ops
 
     @classmethod
     def _remove_nesting(cls, funcname):
@@ -180,10 +241,6 @@ class OpBase:
                 if not isinstance(module, (OpPath, types.ModuleType)):
                     raise AttributeError(f'{modname} is already defined. Cannot use as a nested path.')
         return module, funcname
-
-    @property
-    def types(self):
-        return set(self._specific_types)
 
     @classmethod
     def _initialize(cls):
@@ -216,17 +273,15 @@ class OpBase:
                             setattr(cls._module, name, cls(name))
                         obj = getattr(cls._module, name)
                         gb_obj = getattr(lib, varname)
-                        obj[type_] = gb_obj
-                        # Add to map of return types
-                        _return_type[gb_obj] = 'BOOL' if returns_bool else type_
-                        # Add to set of all known instances (for checking function type by object)
-                        cls.all_known_instances.add(gb_obj)
+                        op = cls._typed_class(type_, 'BOOL' if returns_bool else type_, gb_obj)
+                        obj._add(op)
         cls._initialized = True
 
 
 class UnaryOp(OpBase):
     _module = unary
     _modname = 'unary'
+    _typed_class = TypedBuiltinUnaryOp
     _parse_config = {
         'trim_from_front': 4,
         'num_underscores': 1,
@@ -236,7 +291,6 @@ class UnaryOp(OpBase):
             re.compile('^GrB_LNOT$'),
         ],
     }
-    all_known_instances = set()
 
     @classmethod
     def _build(cls, name, func):
@@ -296,9 +350,8 @@ class UnaryOp(OpBase):
                 new_unary = ffi.new('GrB_UnaryOp*')
                 check_status(lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi,
                                                  ret_type.gb_type, type_.gb_type))
-                new_type_obj[type_.name] = new_unary[0]
-                _return_type[new_unary[0]] = ret_type.name
-                cls.all_known_instances.add(new_unary[0])
+                op = TypedUserUnaryOp(type_.name, ret_type.name, new_unary[0], func, unary_udf)
+                new_type_obj._add(op)
                 success = True
                 return_types[type_.name] = ret_type.name
             except Exception:
@@ -327,6 +380,7 @@ class UnaryOp(OpBase):
 class BinaryOp(OpBase):
     _module = binary
     _modname = 'binary'
+    _typed_class = TypedBuiltinBinaryOp
     _parse_config = {
         'trim_from_front': 4,
         'num_underscores': 1,
@@ -346,7 +400,6 @@ class BinaryOp(OpBase):
             re.compile('^GxB_(LOR|LAND|LXOR)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
         ],
     }
-    all_known_instances = set()
 
     @classmethod
     def _build(cls, name, func):
@@ -410,9 +463,8 @@ class BinaryOp(OpBase):
                     lib.GrB_BinaryOp_new(new_binary, binary_wrapper.cffi,
                                          ret_type.gb_type, type_.gb_type, type_.gb_type)
                 )
-                new_type_obj[type_.name] = new_binary[0]
-                _return_type[new_binary[0]] = ret_type.name
-                cls.all_known_instances.add(new_binary[0])
+                op = TypedUserBinaryOp(type_.name, ret_type.name, new_binary[0], func, binary_udf)
+                new_type_obj._add(op)
                 success = True
                 return_types[type_.name] = ret_type.name
             except Exception:
@@ -442,8 +494,9 @@ class BinaryOp(OpBase):
         super()._initialize()
         # Rename div to cdiv
         binary.cdiv = BinaryOp('cdiv')
-        for dtype in binary.div.types:
-            binary.cdiv[dtype] = binary.div[dtype]
+        for dtype, ret_type in binary.div.types.items():
+            op = TypedBuiltinBinaryOp(dtype, ret_type, binary.div[dtype].gb_obj)
+            binary.cdiv._add(op)
         del binary.div
         # Add truediv which always points to floating point cdiv
         # We are effectively hacking cdiv to always return floating point values
@@ -451,7 +504,8 @@ class BinaryOp(OpBase):
         binary.truediv = BinaryOp('truediv')
         for dtype in binary.cdiv.types:
             float_type = 'FP32' if dtype == 'FP32' else 'FP64'
-            binary.truediv[dtype] = binary.cdiv[float_type]
+            op = TypedBuiltinBinaryOp(dtype, binary.cdiv.types[float_type], binary.cdiv[float_type].gb_obj)
+            binary.truediv._add(op)
         # Add floordiv
         # cdiv truncates towards 0, while floordiv truncates towards -inf
         BinaryOp.register_new('floordiv', lambda x, y: x // y)
@@ -467,6 +521,7 @@ class BinaryOp(OpBase):
 class Monoid(OpBase):
     _module = monoid
     _modname = 'monoid'
+    _typed_class = TypedBuiltinMonoid
     _parse_config = {
         'trim_from_front': 4,
         'trim_from_back': 7,
@@ -479,7 +534,6 @@ class Monoid(OpBase):
             re.compile('^GxB_(EQ|LAND|LOR|LXOR|ANY)_BOOL_MONOID$'),
         ],
     }
-    all_known_instances = set()
 
     @classmethod
     def _build(cls, name, binaryop, identity):
@@ -496,7 +550,7 @@ class Monoid(OpBase):
             explicit_identities = True
         for type_, identity in identities.items():
             type_ = dtypes.lookup(type_)
-            ret_type = find_return_type(binaryop[type_])
+            ret_type = binaryop[type_].return_type
             # If there is a domain mismatch, then DomainMismatch will be raised
             # below if identities were explicitly given.
             if type_ != ret_type and not explicit_identities:
@@ -504,10 +558,9 @@ class Monoid(OpBase):
             new_monoid = ffi.new('GrB_Monoid*')
             func = getattr(lib, f'GrB_Monoid_new_{type_.name}')
             zcast = ffi.cast(type_.c_type, identity)
-            check_status(func(new_monoid, binaryop[type_], zcast))
-            new_type_obj[type_.name] = new_monoid[0]
-            _return_type[new_monoid[0]] = ret_type
-            cls.all_known_instances.add(new_monoid[0])
+            check_status(func(new_monoid, binaryop[type_].gb_obj, zcast))
+            op = TypedUserMonoid(type_.name, ret_type, new_monoid[0], binaryop[type_], identity)
+            new_type_obj._add(op)
         return new_type_obj
 
     @classmethod
@@ -529,6 +582,7 @@ class Monoid(OpBase):
 class Semiring(OpBase):
     _module = semiring
     _modname = 'semiring'
+    _typed_class = TypedBuiltinSemiring
     _parse_config = {
         'trim_from_front': 4,
         'num_underscores': 2,
@@ -548,7 +602,6 @@ class Semiring(OpBase):
             ),
         ],
     }
-    all_known_instances = set()
 
     @classmethod
     def _build(cls, name, monoid, binaryop):
@@ -559,19 +612,18 @@ class Semiring(OpBase):
         if name is None:
             name = f'{monoid.name}_{binaryop.name}'
         new_type_obj = cls(name)
-        for binary_in, binary_func in binaryop._specific_types.items():
-            binary_out = find_return_type(binary_func)
+        for binary_in, binary_func in binaryop._typed_ops.items():
+            binary_out = binary_func.return_type
             # Unfortunately, we can't have user-defined monoids over bools yet
             # because numba can't compile correctly.
             if binary_out not in monoid.types:
                 continue
             binary_out = dtypes.lookup(binary_out)
             new_semiring = ffi.new('GrB_Semiring*')
-            check_status(lib.GrB_Semiring_new(new_semiring, monoid[binary_out], binary_func))
-            new_type_obj[binary_in] = new_semiring[0]
-            ret_type = find_return_type(monoid[binary_out])
-            _return_type[new_semiring[0]] = ret_type
-            cls.all_known_instances.add(new_semiring[0])
+            check_status(lib.GrB_Semiring_new(new_semiring, monoid[binary_out].gb_obj, binary_func.gb_obj))
+            ret_type = monoid[binary_out].return_type
+            op = TypedUserSemiring(binary_in, ret_type, new_semiring[0], monoid[binary_out], binary_func)
+            new_type_obj._add(op)
         return new_type_obj
 
     @classmethod
@@ -590,39 +642,31 @@ class Semiring(OpBase):
         setattr(module, funcname, semiring)
 
 
-def find_opclass(gb_op):
-    if isinstance(gb_op, (OpBase, ParameterizedUdf)):
-        opclass = gb_op.__class__.__name__
+def get_typed_op(op, dtype, dtype2=None):
+    if isinstance(op, OpBase):
+        if dtype2 is not None:
+            dtype = dtypes.unify(dtype, dtype2)
+        return op[dtype]
+    elif isinstance(op, ParameterizedUdf):
+        op = op()  # Use default parameters of parameterized UDFs
+        return get_typed_op(op, dtype, dtype2)
+    elif isinstance(op, TypedOpBase):
+        return op
     else:
-        for opclass in (UnaryOp, BinaryOp, Monoid, Semiring):
-            if gb_op in opclass.all_known_instances:
-                opclass = opclass.__name__
-                break
-        else:
-            opclass = UNKNOWN_OPCLASS
-    if opclass.startswith('Parameterized'):
+        raise TypeError(f'Unable to get typed operator from object with type {type(op)}')
+
+
+def find_opclass(gb_op):
+    if isinstance(gb_op, OpBase):
+        opclass = gb_op.__class__.__name__
+    elif isinstance(gb_op, TypedOpBase):
+        opclass = gb_op.opclass
+    elif isinstance(gb_op, ParameterizedUdf):
         gb_op = gb_op()  # Use default parameters of parameterized UDFs
-        return find_opclass(gb_op)
+        gb_op, opclass = find_opclass(gb_op)
+    else:
+        opclass = UNKNOWN_OPCLASS
     return gb_op, opclass
-
-
-def reify_op(gb_op, dtype, dtype2=None):
-    if dtype2 is not None:
-        dtype = dtypes.unify(dtype, dtype2)
-    if isinstance(gb_op, OpBase):
-        gb_op = gb_op[dtype]
-    return gb_op
-
-
-_return_type = {}
-
-
-def find_return_type(gb_op):
-    if isinstance(gb_op, OpBase):
-        raise ValueError('Requires concrete operator. Call `reify_op` first.')
-    if gb_op not in _return_type:
-        raise KeyError('Unknown operator. You must register function prior to use.')
-    return _return_type[gb_op]
 
 
 # Now initialize all the things!

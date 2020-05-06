@@ -2,7 +2,7 @@ from functools import partial
 from .base import lib, ffi, GbContainer, GbDelayed
 from .vector import Vector
 from .scalar import Scalar
-from .ops import BinaryOp, find_opclass, find_return_type, reify_op
+from .ops import get_typed_op
 from . import dtypes, binary, monoid, semiring
 from .exceptions import check_status, is_error, NoValue
 
@@ -149,16 +149,13 @@ class Matrix(GbContainer):
             self.clear()
         if n <= 0:
             return
-        dup_orig = dup_op
-        if dup_op is None:
-            dup_op = binary.plus
-        else:
-            dup_op, opclass = find_opclass(dup_op)
-            if opclass != 'BinaryOp':
-                raise TypeError(f'dup_op must be BinaryOp')
 
-        if isinstance(dup_op, BinaryOp):
-            dup_op = dup_op[self.dtype]
+        dup_op_given = dup_op is not None
+        if not dup_op_given:
+            dup_op = binary.plus
+        dup_op = get_typed_op(dup_op, self.dtype)
+        if dup_op.opclass != 'BinaryOp':
+            raise TypeError(f'dup_op must be BinaryOp')
         rows = ffi.new('GrB_Index[]', rows)
         columns = ffi.new('GrB_Index[]', columns)
         values = ffi.new(f'{self.dtype.c_type}[]', values)
@@ -170,9 +167,9 @@ class Matrix(GbContainer):
             columns,
             values,
             n,
-            dup_op))
+            dup_op.gb_obj))
         # Check for duplicates when dup_op was not provided
-        if dup_orig is None and self.nvals < len(values):
+        if not dup_op_given and self.nvals < len(values):
             raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
     def dup(self, *, dtype=None, mask=None):
@@ -261,18 +258,17 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = monoid.plus
-        op, opclass = find_opclass(op)
-        if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
+        op = get_typed_op(op, self.dtype, other.dtype)
+        if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
-        if require_monoid and opclass not in {'Monoid', 'Semiring'}:
+        if require_monoid and op.opclass not in {'Monoid', 'Semiring'}:
             raise TypeError(f'op must be Monoid or Semiring unless require_monoid is False')
-        func = getattr(lib, f'GrB_eWiseAdd_Matrix_{opclass}')
-        op = reify_op(op, self.dtype, other.dtype)
+        func = getattr(lib, f'GrB_eWiseAdd_Matrix_{op.opclass}')
         output_constructor = partial(Matrix.new,
-                                     dtype=find_return_type(op),
+                                     dtype=op.return_type,
                                      nrows=self.nrows, ncols=self.ncols)
         return GbDelayed(func,
-                         [op, self.gb_obj[0], other.gb_obj[0]],
+                         [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
                          at=self._is_transposed,
                          bt=other._is_transposed,
                          output_constructor=output_constructor)
@@ -288,16 +284,15 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = binary.times
-        op, opclass = find_opclass(op)
-        if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
+        op = get_typed_op(op, self.dtype, other.dtype)
+        if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
-        func = getattr(lib, f'GrB_eWiseMult_Matrix_{opclass}')
-        op = reify_op(op, self.dtype, other.dtype)
+        func = getattr(lib, f'GrB_eWiseMult_Matrix_{op.opclass}')
         output_constructor = partial(Matrix.new,
-                                     dtype=find_return_type(op),
+                                     dtype=op.return_type,
                                      nrows=self.nrows, ncols=self.ncols)
         return GbDelayed(func,
-                         [op, self.gb_obj[0], other.gb_obj[0]],
+                         [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
                          at=self._is_transposed,
                          bt=other._is_transposed,
                          output_constructor=output_constructor)
@@ -312,15 +307,14 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Vector, found {type(other)}')
         if op is None:
             op = semiring.plus_times
-        op, opclass = find_opclass(op)
-        if opclass != 'Semiring':
+        op = get_typed_op(op, self.dtype, other.dtype)
+        if op.opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
-        op = reify_op(op, self.dtype, other.dtype)
         output_constructor = partial(Vector.new,
-                                     dtype=find_return_type(op),
+                                     dtype=op.return_type,
                                      size=self.nrows)
         return GbDelayed(lib.GrB_mxv,
-                         [op, self.gb_obj[0], other.gb_obj[0]],
+                         [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
                          at=self._is_transposed,
                          output_constructor=output_constructor)
 
@@ -334,15 +328,14 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix or Vector, found {type(other)}')
         if op is None:
             op = semiring.plus_times
-        op, opclass = find_opclass(op)
-        if opclass != 'Semiring':
+        op = get_typed_op(op, self.dtype, other.dtype)
+        if op.opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
-        op = reify_op(op, self.dtype, other.dtype)
         output_constructor = partial(Matrix.new,
-                                     dtype=find_return_type(op),
+                                     dtype=op.return_type,
                                      nrows=self.nrows, ncols=other.ncols)
         return GbDelayed(lib.GrB_mxm,
-                         [op, self.gb_obj[0], other.gb_obj[0]],
+                         [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
                          at=self._is_transposed,
                          bt=other._is_transposed,
                          output_constructor=output_constructor)
@@ -358,16 +351,15 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         if op is None:
             op = binary.times
-        op, opclass = find_opclass(op)
-        if opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
+        op = get_typed_op(op, self.dtype, other.dtype)
+        if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
-        func = getattr(lib, f'GrB_kronecker_{opclass}')
-        op = reify_op(op, self.dtype, other.dtype)
+        func = getattr(lib, f'GrB_kronecker_{op.opclass}')
         output_constructor = partial(Matrix.new,
-                                     dtype=find_return_type(op),
+                                     dtype=op.return_type,
                                      nrows=self.nrows*other.nrows, ncols=self.ncols*other.ncols)
         return GbDelayed(func,
-                         [op, self.gb_obj[0], other.gb_obj[0]],
+                         [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
                          at=self._is_transposed,
                          bt=other._is_transposed,
                          output_constructor=output_constructor)
@@ -379,24 +371,24 @@ class Matrix(GbContainer):
         A BinaryOp can also be applied if a scalar is passed in as `left` or `right`,
             effectively converting a BinaryOp into a UnaryOp
         """
-        op, opclass = find_opclass(op)
-        if opclass == 'UnaryOp':
+        # This doesn't yet take into account the dtype of left or right (if provided)
+        op = get_typed_op(op, self.dtype)
+        if op.opclass == 'UnaryOp':
             if left is not None or right is not None:
                 raise TypeError('Cannot provide `left` or `right` for a UnaryOp')
-        elif opclass == 'BinaryOp':
+        elif op.opclass == 'BinaryOp':
             if left is None and right is None:
                 raise TypeError('Must provide either `left` or `right` for a BinaryOp')
             elif left is not None and right is not None:
                 raise TypeError('Cannot provide both `left` and `right`')
         else:
             raise TypeError('apply only accepts UnaryOp or BinaryOp')
-        op = reify_op(op, self.dtype)
         output_constructor = partial(Matrix.new,
-                                     dtype=find_return_type(op),
+                                     dtype=op.return_type,
                                      nrows=self.nrows, ncols=self.ncols)
-        if opclass == 'UnaryOp':
+        if op.opclass == 'UnaryOp':
             return GbDelayed(lib.GrB_Matrix_apply,
-                             [op, self.gb_obj[0]],
+                             [op.gb_obj, self.gb_obj[0]],
                              at=self._is_transposed,
                              output_constructor=output_constructor)
         else:
@@ -414,16 +406,15 @@ class Matrix(GbContainer):
                 op = monoid.lor
             else:
                 op = monoid.plus
-        op, opclass = find_opclass(op)
-        if opclass not in {'BinaryOp', 'Monoid'}:
+        op = get_typed_op(op, self.dtype)
+        if op.opclass not in {'BinaryOp', 'Monoid'}:
             raise TypeError(f'op must be BinaryOp or Monoid')
-        func = getattr(lib, f'GrB_Matrix_reduce_{opclass}')
-        op = reify_op(op, self.dtype)
+        func = getattr(lib, f'GrB_Matrix_reduce_{op.opclass}')
         output_constructor = partial(Vector.new,
-                                     dtype=find_return_type(op),
+                                     dtype=op.return_type,
                                      size=self.nrows)
         return GbDelayed(func,
-                         [op, self.gb_obj[0]],
+                         [op.gb_obj, self.gb_obj[0]],
                          at=self._is_transposed,
                          output_constructor=output_constructor)
 
@@ -446,17 +437,14 @@ class Matrix(GbContainer):
                 op = monoid.lor
             else:
                 op = monoid.plus
-        else:
-            op, opclass = find_opclass(op)
-            if opclass != 'Monoid':
-                raise TypeError(f'op must be Monoid')
-
+        op = get_typed_op(op, self.dtype)
+        if op.opclass != 'Monoid':
+            raise TypeError(f'op must be Monoid')
         func = getattr(lib, f'GrB_Matrix_reduce_{self.dtype.name}')
-        op = reify_op(op, self.dtype)
         output_constructor = partial(Scalar.new,
-                                     dtype=find_return_type(op))
+                                     dtype=op.return_type)
         return GbDelayed(func,
-                         [op, self.gb_obj[0]],
+                         [op.gb_obj, self.gb_obj[0]],
                          output_constructor=output_constructor)
 
     ##################################

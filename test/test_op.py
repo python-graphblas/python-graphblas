@@ -8,48 +8,48 @@ from grblas.ops import UnaryOp, BinaryOp, Monoid, Semiring
 
 
 def test_unaryop():
-    assert unary.ainv['INT32'] == lib.GrB_AINV_INT32
-    assert unary.ainv[dtypes.UINT16] == lib.GrB_AINV_UINT16
+    assert unary.ainv['INT32'].gb_obj == lib.GrB_AINV_INT32
+    assert unary.ainv[dtypes.UINT16].gb_obj == lib.GrB_AINV_UINT16
 
 
 def test_binaryop():
-    assert binary.plus['INT32'] == lib.GrB_PLUS_INT32
-    assert binary.plus[dtypes.UINT16] == lib.GrB_PLUS_UINT16
+    assert binary.plus['INT32'].gb_obj == lib.GrB_PLUS_INT32
+    assert binary.plus[dtypes.UINT16].gb_obj == lib.GrB_PLUS_UINT16
 
 
 def test_monoid():
-    assert monoid.max['INT32'] == lib.GxB_MAX_INT32_MONOID
-    assert monoid.max[dtypes.UINT16] == lib.GxB_MAX_UINT16_MONOID
+    assert monoid.max['INT32'].gb_obj == lib.GxB_MAX_INT32_MONOID
+    assert monoid.max[dtypes.UINT16].gb_obj == lib.GxB_MAX_UINT16_MONOID
 
 
 def test_semiring():
-    assert semiring.min_plus['INT32'] == lib.GxB_MIN_PLUS_INT32
-    assert semiring.min_plus[dtypes.UINT16] == lib.GxB_MIN_PLUS_UINT16
+    assert semiring.min_plus['INT32'].gb_obj == lib.GxB_MIN_PLUS_INT32
+    assert semiring.min_plus[dtypes.UINT16].gb_obj == lib.GxB_MIN_PLUS_UINT16
 
 
 def test_find_opclass_unaryop():
     assert ops.find_opclass(unary.minv)[1] == 'UnaryOp'
-    assert ops.find_opclass(lib.GrB_MINV_INT64)[1] == 'UnaryOp'
+    # assert ops.find_opclass(lib.GrB_MINV_INT64)[1] == 'UnaryOp'
 
 
 def test_find_opclass_binaryop():
     assert ops.find_opclass(binary.times)[1] == 'BinaryOp'
-    assert ops.find_opclass(lib.GrB_TIMES_INT64)[1] == 'BinaryOp'
+    # assert ops.find_opclass(lib.GrB_TIMES_INT64)[1] == 'BinaryOp'
 
 
 def test_find_opclass_monoid():
     assert ops.find_opclass(monoid.max)[1] == 'Monoid'
-    assert ops.find_opclass(lib.GxB_MAX_INT64_MONOID)[1] == 'Monoid'
+    # assert ops.find_opclass(lib.GxB_MAX_INT64_MONOID)[1] == 'Monoid'
 
 
 def test_find_opclass_semiring():
     assert ops.find_opclass(semiring.plus_plus)[1] == 'Semiring'
-    assert ops.find_opclass(lib.GxB_PLUS_PLUS_INT64)[1] == 'Semiring'
+    # assert ops.find_opclass(lib.GxB_PLUS_PLUS_INT64)[1] == 'Semiring'
 
 
 def test_find_opclass_invalid():
     assert ops.find_opclass('foobar')[1] == ops.UNKNOWN_OPCLASS
-    assert ops.find_opclass(lib.GrB_INP0)[1] == ops.UNKNOWN_OPCLASS
+    # assert ops.find_opclass(lib.GrB_INP0)[1] == ops.UNKNOWN_OPCLASS
 
 
 def test_unaryop_udf():
@@ -57,9 +57,9 @@ def test_unaryop_udf():
         return x + 1
     UnaryOp.register_new('plus_one', plus_one)
     assert hasattr(unary, 'plus_one')
-    assert unary.plus_one.types == {'INT8', 'INT16', 'INT32', 'INT64',
-                                    'UINT8', 'UINT16', 'UINT32', 'UINT64',
-                                    'FP32', 'FP64', 'BOOL'}
+    assert set(unary.plus_one.types) == {'INT8', 'INT16', 'INT32', 'INT64',
+                                         'UINT8', 'UINT16', 'UINT32', 'UINT64',
+                                         'FP32', 'FP64', 'BOOL'}
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.plus_one)
     result = Vector.from_values([0, 1, 3], [2, 3, -3], dtype=dtypes.INT32)
@@ -285,9 +285,9 @@ def test_unaryop_udf_bool_result():
         return x > 0
     UnaryOp.register_new('is_positive', is_positive)
     assert hasattr(unary, 'is_positive')
-    assert unary.is_positive.types == {'INT8', 'INT16', 'INT32', 'INT64',
-                                       'UINT8', 'UINT16', 'UINT32', 'UINT64',
-                                       'FP32', 'FP64', 'BOOL'}
+    assert set(unary.is_positive.types) == {'INT8', 'INT16', 'INT32', 'INT64',
+                                            'UINT8', 'UINT16', 'UINT32', 'UINT64',
+                                            'FP32', 'FP64', 'BOOL'}
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     w = v.apply(unary.is_positive).new()
     result = Vector.from_values([0, 1, 3], [True, True, False], dtype=dtypes.BOOL)
@@ -299,9 +299,9 @@ def test_binaryop_udf():
         return x * y - (x + y)
     BinaryOp.register_new('bin_test_func', times_minus_sum)
     assert hasattr(binary, 'bin_test_func')
-    assert binary.bin_test_func.types == {'INT8', 'INT16', 'INT32', 'INT64',
-                                          'UINT8', 'UINT16', 'UINT32', 'UINT64',
-                                          'FP32', 'FP64'}
+    assert set(binary.bin_test_func.types) == {'INT8', 'INT16', 'INT32', 'INT64',
+                                               'UINT8', 'UINT16', 'UINT32', 'UINT64',
+                                               'FP32', 'FP64'}
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
     w = v1.ewise_add(v2, binary.bin_test_func, require_monoid=False).new()
@@ -315,9 +315,9 @@ def test_monoid_udf():
     BinaryOp.register_new('plus_plus_one', plus_plus_one)
     Monoid.register_new('plus_plus_one', binary.plus_plus_one, -1)
     assert hasattr(monoid, 'plus_plus_one')
-    assert monoid.plus_plus_one.types == {'INT8', 'INT16', 'INT32', 'INT64',
-                                          'UINT8', 'UINT16', 'UINT32', 'UINT64',
-                                          'FP32', 'FP64'}
+    assert set(monoid.plus_plus_one.types) == {'INT8', 'INT16', 'INT32', 'INT64',
+                                               'UINT8', 'UINT16', 'UINT32', 'UINT64',
+                                               'FP32', 'FP64'}
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
     w = v1.ewise_add(v2, monoid.plus_plus_one).new()
@@ -346,7 +346,7 @@ def test_semiring_udf():
 
 def test_binary_updates():
     assert not hasattr(binary, 'div')
-    assert binary.cdiv['INT64'] == lib.GrB_DIV_INT64
+    assert binary.cdiv['INT64'].gb_obj == lib.GrB_DIV_INT64
     vec1 = Vector.from_values([0], [1], dtype=dtypes.INT64)
     vec2 = Vector.from_values([0], [2], dtype=dtypes.INT64)
     result = vec1.ewise_mult(vec2, binary.truediv).new()
@@ -366,9 +366,9 @@ def test_nested_names():
     assert hasattr(unary, 'incrementers')
     assert type(unary.incrementers) is ops.OpPath
     assert hasattr(unary.incrementers, 'plus_three')
-    assert unary.incrementers.plus_three.types == {'INT8', 'INT16', 'INT32', 'INT64',
-                                                   'UINT8', 'UINT16', 'UINT32', 'UINT64',
-                                                   'FP32', 'FP64', 'BOOL'}
+    assert set(unary.incrementers.plus_three.types) == {'INT8', 'INT16', 'INT32', 'INT64',
+                                                        'UINT8', 'UINT16', 'UINT32', 'UINT64',
+                                                        'FP32', 'FP64', 'BOOL'}
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.incrementers.plus_three)
     result = Vector.from_values([0, 1, 3], [4, 5, -1], dtype=dtypes.INT32)
