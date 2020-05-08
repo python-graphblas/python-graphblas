@@ -64,6 +64,11 @@ def test_unaryop_udf():
     v << v.apply(unary.plus_one)
     result = Vector.from_values([0, 1, 3], [2, 3, -3], dtype=dtypes.INT32)
     assert v.isequal(result)
+    assert 'INT8' in unary.plus_one
+    assert 'INT8' in unary.plus_one.types
+    del unary.plus_one['INT8']
+    assert 'INT8' not in unary.plus_one
+    assert 'INT8' not in unary.plus_one.types
 
 
 @pytest.mark.slow
@@ -82,6 +87,8 @@ def test_unaryop_parameterized():
     v10 = v.apply(op(x=10)).new()
     r10 = Vector.from_values([0, 1, 3], [11, 12, 6], dtype=dtypes.INT32)
     assert r10.isequal(v10, check_dtype=True)
+    v11 = v.apply(op(x=10)['INT32']).new()
+    assert r10.isequal(v11, check_dtype=True)
 
 
 @pytest.mark.slow

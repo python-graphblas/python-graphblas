@@ -17,6 +17,7 @@ def test_new():
     s2 = Scalar.new(bool)
     assert s2.dtype == 'BOOL'
     assert s2.value is None
+    assert bool(s2) is False
     s2.is_empty = False
     assert s2.value is False  # must hold a value; initialized to False
 

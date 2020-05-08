@@ -100,7 +100,7 @@ class ParameterizedUdf:
 class ParameterizedUnaryOp(ParameterizedUdf):
     def __init__(self, name, func):
         if not callable(func):
-            return TypeError('func must be callable')
+            raise TypeError('func must be callable')
         self.func = func
         self.__signature__ = inspect.signature(func)
         if name is None:
@@ -115,7 +115,7 @@ class ParameterizedUnaryOp(ParameterizedUdf):
 class ParameterizedBinaryOp(ParameterizedUdf):
     def __init__(self, name, func):
         if not callable(func):
-            return TypeError('func must be callable')
+            raise TypeError('func must be callable')
         self.func = func
         self.__signature__ = inspect.signature(func)
         if name is None:
@@ -219,6 +219,7 @@ class OpBase:
     def __delitem__(self, type_):
         type_ = _normalize_type(type_)
         del self._typed_ops[type_]
+        del self.types[type_]
 
     def __contains__(self, type_):
         type_ = _normalize_type(type_)
@@ -335,16 +336,16 @@ class UnaryOp(OpBase):
                 if type_ == 'BOOL':
                     if ret_type == 'BOOL':
                         def unary_wrapper(z, x):
-                            z[0] = bool(unary_udf(bool(x[0])))
+                            z[0] = bool(unary_udf(bool(x[0])))  # pragma: no cover
                     else:
                         def unary_wrapper(z, x):
-                            z[0] = unary_udf(bool(x[0]))
+                            z[0] = unary_udf(bool(x[0]))  # pragma: no cover
                 elif ret_type == 'BOOL':
                     def unary_wrapper(z, x):
-                        z[0] = bool(unary_udf(x[0]))
+                        z[0] = bool(unary_udf(x[0]))  # pragma: no cover
                 else:
                     def unary_wrapper(z, x):
-                        z[0] = unary_udf(x[0])
+                        z[0] = unary_udf(x[0])  # pragma: no cover
 
                 unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
                 new_unary = ffi.new('GrB_UnaryOp*')
@@ -446,16 +447,16 @@ class BinaryOp(OpBase):
                 if type_ == 'BOOL':
                     if ret_type == 'BOOL':
                         def binary_wrapper(z, x, y):
-                            z[0] = bool(binary_udf(bool(x[0]), bool(y[0])))
+                            z[0] = bool(binary_udf(bool(x[0]), bool(y[0])))  # pragma: no cover
                     else:
                         def binary_wrapper(z, x, y):
-                            z[0] = binary_udf(bool(x[0]), bool(y[0]))
+                            z[0] = binary_udf(bool(x[0]), bool(y[0]))  # pragma: no cover
                 elif ret_type == 'BOOL':
                     def binary_wrapper(z, x, y):
-                        z[0] = bool(binary_udf(x[0], y[0]))
+                        z[0] = bool(binary_udf(x[0], y[0]))  # pragma: no cover
                 else:
                     def binary_wrapper(z, x, y):
-                        z[0] = binary_udf(x[0], y[0])
+                        z[0] = binary_udf(x[0], y[0])  # pragma: no cover
 
                 binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
                 new_binary = ffi.new('GrB_BinaryOp*')

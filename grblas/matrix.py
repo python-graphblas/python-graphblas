@@ -238,7 +238,7 @@ class Matrix(GbContainer):
     # to __setitem__ to trigger a call to GraphBLAS
     #########################################################
 
-    def ewise_add(self, other, op=None, *, require_monoid=True):
+    def ewise_add(self, other, op=monoid.plus, *, require_monoid=True):
         """
         GrB_eWiseAdd_Matrix
 
@@ -256,8 +256,6 @@ class Matrix(GbContainer):
         """
         if not isinstance(other, (Matrix, TransposedMatrix)):
             raise TypeError(f'Expected Matrix, found {type(other)}')
-        if op is None:
-            op = monoid.plus
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
@@ -273,7 +271,7 @@ class Matrix(GbContainer):
                          bt=other._is_transposed,
                          output_constructor=output_constructor)
 
-    def ewise_mult(self, other, op=None):
+    def ewise_mult(self, other, op=binary.times):
         """
         GrB_eWiseMult_Matrix
 
@@ -282,8 +280,6 @@ class Matrix(GbContainer):
         """
         if not isinstance(other, (Matrix, TransposedMatrix)):
             raise TypeError(f'Expected Matrix, found {type(other)}')
-        if op is None:
-            op = binary.times
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
@@ -297,7 +293,7 @@ class Matrix(GbContainer):
                          bt=other._is_transposed,
                          output_constructor=output_constructor)
 
-    def mxv(self, other, op=None):
+    def mxv(self, other, op=semiring.plus_times):
         """
         GrB_mxv
         Matrix-Vector multiplication. Result is a Vector.
@@ -305,8 +301,6 @@ class Matrix(GbContainer):
         """
         if not isinstance(other, Vector):
             raise TypeError(f'Expected Vector, found {type(other)}')
-        if op is None:
-            op = semiring.plus_times
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
@@ -318,7 +312,7 @@ class Matrix(GbContainer):
                          at=self._is_transposed,
                          output_constructor=output_constructor)
 
-    def mxm(self, other, op=None):
+    def mxm(self, other, op=semiring.plus_times):
         """
         GrB_mxm
         Matrix-Matrix multiplication. Result is a Matrix.
@@ -340,7 +334,7 @@ class Matrix(GbContainer):
                          bt=other._is_transposed,
                          output_constructor=output_constructor)
 
-    def kronecker(self, other, op=None):
+    def kronecker(self, other, op=binary.times):
         """
         GrB_kronecker
         Kronecker product or sum (depending on op used)
@@ -349,8 +343,6 @@ class Matrix(GbContainer):
         raise NotImplementedError('Not available in GraphBLAS 1.2')
         if not isinstance(other, (Matrix, TransposedMatrix)):
             raise TypeError(f'Expected Matrix, found {type(other)}')
-        if op is None:
-            op = binary.times
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
@@ -395,17 +387,12 @@ class Matrix(GbContainer):
             raise NotImplementedError('apply with BinaryOp not available in GraphBLAS 1.2')
             # TODO: fill this in once function is available
 
-    def reduce_rows(self, op=None):
+    def reduce_rows(self, op=monoid.plus):
         """
         GrB_Matrix_reduce
         Reduce all values in each row, converting the matrix to a vector
         Default op is monoid.lor for boolean and monoid.plus otherwise
         """
-        if op is None:
-            if self.dtype == bool:
-                op = monoid.lor
-            else:
-                op = monoid.plus
         op = get_typed_op(op, self.dtype)
         if op.opclass not in {'BinaryOp', 'Monoid'}:
             raise TypeError(f'op must be BinaryOp or Monoid')
@@ -418,7 +405,7 @@ class Matrix(GbContainer):
                          at=self._is_transposed,
                          output_constructor=output_constructor)
 
-    def reduce_columns(self, op=None):
+    def reduce_columns(self, op=monoid.plus):
         """
         GrB_Matrix_reduce
         Reduce all values in each column, converting the matrix to a vector
@@ -426,17 +413,12 @@ class Matrix(GbContainer):
         """
         return self.T.reduce_rows(op)
 
-    def reduce_scalar(self, op=None):
+    def reduce_scalar(self, op=monoid.plus):
         """
         GrB_Matrix_reduce
         Reduce all values into a scalar
         Default op is monoid.lor for boolean and monoid.plus otherwise
         """
-        if op is None:
-            if self.dtype == bool:
-                op = monoid.lor
-            else:
-                op = monoid.plus
         op = get_typed_op(op, self.dtype)
         if op.opclass != 'Monoid':
             raise TypeError(f'op must be Monoid')

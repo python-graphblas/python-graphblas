@@ -74,9 +74,6 @@ class Vector(GbContainer):
         # Check if all results are True
         return matches.reduce(monoid.land).value
 
-    def __len__(self):
-        return self.nvals
-
     @property
     def size(self):
         n = ffi.new('GrB_Index*')
@@ -212,7 +209,7 @@ class Vector(GbContainer):
     # to update to trigger a call to GraphBLAS
     #########################################################
 
-    def ewise_add(self, other, op=None, *, require_monoid=True):
+    def ewise_add(self, other, op=monoid.plus, *, require_monoid=True):
         """
         GrB_eWiseAdd_Vector
 
@@ -230,8 +227,6 @@ class Vector(GbContainer):
         """
         if not isinstance(other, Vector):
             raise TypeError(f'Expected Vector, found {type(other)}')
-        if op is None:
-            op = monoid.plus
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
@@ -245,7 +240,7 @@ class Vector(GbContainer):
                          [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
                          output_constructor=output_constructor)
 
-    def ewise_mult(self, other, op=None):
+    def ewise_mult(self, other, op=binary.times):
         """
         GrB_eWiseMult_Vector
 
@@ -254,8 +249,6 @@ class Vector(GbContainer):
         """
         if not isinstance(other, Vector):
             raise TypeError(f'Expected Vector, found {type(other)}')
-        if op is None:
-            op = binary.times
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
@@ -267,7 +260,7 @@ class Vector(GbContainer):
                          [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
                          output_constructor=output_constructor)
 
-    def vxm(self, other, op=None):
+    def vxm(self, other, op=semiring.plus_times):
         """
         GrB_vxm
         Vector-Matrix multiplication. Result is a Vector.
@@ -276,8 +269,6 @@ class Vector(GbContainer):
         from .matrix import Matrix, TransposedMatrix
         if not isinstance(other, (Matrix, TransposedMatrix)):
             raise TypeError(f'Expected Matrix, found {type(other)}')
-        if op is None:
-            op = semiring.plus_times
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass != 'Semiring':
             raise TypeError(f'op must be Semiring')
@@ -319,17 +310,12 @@ class Vector(GbContainer):
             raise NotImplementedError('apply with BinaryOp not available in GraphBLAS 1.2')
             # TODO: fill this in once function is available
 
-    def reduce(self, op=None):
+    def reduce(self, op=monoid.plus):
         """
         GrB_Vector_reduce
         Reduce all values into a scalar
         Default op is monoid.lor for boolean and monoid.plus otherwise
         """
-        if op is None:
-            if self.dtype == bool:
-                op = monoid.lor
-            else:
-                op = monoid.plus
         op = get_typed_op(op, self.dtype)
         if op.opclass != 'Monoid':
             raise TypeError(f'op must be Monoid')
@@ -376,10 +362,8 @@ class Vector(GbContainer):
 
     def _prep_for_assign(self, resolved_indexes, obj):
         index, isize = resolved_indexes.indices[0]
-
         if isinstance(obj, Scalar):
             obj = obj.value
-
         if isinstance(obj, (int, float, bool)):
             dtype = self.dtype
             func = getattr(lib, f'GrB_Vector_assign_{dtype.name}')
@@ -391,5 +375,4 @@ class Vector(GbContainer):
                                 [obj.gb_obj[0], index, isize])
         else:
             raise TypeError(f'Unexpected type for assignment value: {type(obj)}')
-
         return delayed

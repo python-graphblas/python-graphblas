@@ -5,8 +5,6 @@ from . import lib
 
 
 class DataType:
-    __slots__ = ['name', 'gb_type', 'c_type', 'numba_type']
-
     def __init__(self, name, gb_type, c_type, numba_type):
         self.name = name
         self.gb_type = gb_type
@@ -25,17 +23,7 @@ class DataType:
                 other = lookup(other)
                 return self == other
             except KeyError:
-                return False
-
-    @classmethod
-    def from_pytype(cls, pytype):
-        if pytype is int:
-            return INT64
-        if pytype is float:
-            return FP64
-        if pytype is bool:
-            return BOOL
-        raise TypeError(f'Invalid pytype: {pytype}')
+                raise TypeError(f'Invalid or unknown datatype: {other}')
 
 
 BOOL = DataType('BOOL', lib.GrB_BOOL, '_Bool', numba.types.bool_)
@@ -81,9 +69,9 @@ _registry[np.dtype(np.float16)] = FP32
 _registry['float16'] = FP32
 
 # Add some common Python types as lookup keys
-_registry[int] = DataType.from_pytype(int)
-_registry[float] = DataType.from_pytype(float)
-_registry[bool] = DataType.from_pytype(bool)
+_registry[int] = INT64
+_registry[float] = FP64
+_registry[bool] = BOOL
 
 
 def lookup(key):
