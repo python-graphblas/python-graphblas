@@ -101,6 +101,12 @@ class Scalar(GbContainer):
             self.gb_obj[0] = val
             self.is_empty = False
 
+    @property
+    def nvals(self):
+        if self.is_empty:
+            return 0
+        return 1
+
     def dup(self, *, dtype=None):
         """Create a new Scalar by duplicating this one
         """

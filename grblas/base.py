@@ -120,17 +120,43 @@ class GbContainer:
 
     def _update(self, delayed, mask=NULL, accum=NULL, replace=False):
         # TODO: check expected output type (need to include in GbDelayed object)
+        if self._is_scalar and mask is not NULL:
+            raise TypeError('Mask not allowed for Scalars')
         if not isinstance(delayed, GbDelayed):
             from .matrix import Matrix, TransposedMatrix
             if type(delayed) is AmbiguousAssignOrExtract:
+                if delayed.resolved_indexes.is_single_element and self._is_scalar:
+                    # Extract element (s << v[1])
+                    if accum is not NULL:
+                        raise TypeError(
+                            'Scalar accumulation with extract element'
+                            '--such as `s(accum=accum) << v[0]`--is not supported'
+                        )
+                    self.value = delayed.new(dtype=self.dtype).value
+                    return
+
                 # Extract (C << A[rows, cols])
                 delayed = delayed._extract_delayed()
             elif type(delayed) is self.__class__:
                 # Simple assignment (w << v)
+                if self._is_scalar:
+                    if accum is not NULL:
+                        raise TypeError(
+                            'Scalar update with accumulation--such as `s(accum=accum) << t`--is not supported'
+                        )
+                    self.value = delayed.value
+                    return
+
                 delayed = delayed.apply(unary.identity)
             elif type(delayed) is TransposedMatrix and type(self) is Matrix:
                 # Transpose (C << A.T)
                 delayed = GbDelayed(lib.GrB_transpose, [delayed.gb_obj[0]])
+            elif self._is_scalar:
+                if accum is not NULL:
+                    raise TypeError('Scalar update with accumulation--such as `s(accum=accum) << t`--is not supported')
+                self.value = delayed
+                return
+
             else:
                 raise TypeError(f'assignment value must be GbDelayed object, not {type(delayed)}')
 
@@ -166,8 +192,18 @@ class GbContainer:
 
         # Build args and call GraphBLAS function
         if self._is_scalar:
-            if mask is not NULL:
-                raise TypeError('Mask not allowed for Scalars')
+            delayed_dtype = dtypes.lookup(delayed.func.__name__.rsplit('_', 1)[1])
+            if self.dtype != delayed_dtype:
+                if accum is not NULL:
+                    raise TypeError(
+                        'Scalar reduction with accumulation is unable to coerce datatype.  '
+                        f'Use a scalar with dtype {delayed_dtype}'
+                    )
+                temp_result = delayed.output_constructor()
+                temp_result.update(delayed)
+                self.value = temp_result.value
+                return
+
             call_args = [self.gb_obj, accum] + delayed.tail_args + [desc]
             # Ensure the scalar isn't flagged as empty after the update
             self.is_empty = False
@@ -237,9 +273,8 @@ class GbDelayed:
         if mask is None:
             output.update(self)
         else:
-            if isinstance(mask, Mask):
-                if not isinstance(mask.mask, output.__class__):
-                    raise TypeError(f'Mask object must be type {output.__class__}')
+            if isinstance(mask, Mask) and not isinstance(mask.mask, output.__class__):
+                raise TypeError(f'Mask object must be type {output.__class__}')
             output(mask).update(self)
         return output
 
@@ -297,8 +332,6 @@ class AmbiguousAssignOrExtract:
         """Return a GbDelayed object, treating this as an extract call"""
         if isinstance(self.parent, Updater):
             raise TypeError('Cannot extract from an Updater')
-        if self.resolved_indexes.is_single_element:
-            raise TypeError('extract and update is not allowed for single element')
         return self.parent._prep_for_extract(self.resolved_indexes)
 
 

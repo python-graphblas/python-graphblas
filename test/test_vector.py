@@ -259,6 +259,37 @@ def test_extract(v):
     assert w2.isequal(w)
 
 
+def test_extract_fancy_scalars(v):
+    assert v.dtype == dtypes.INT64
+    s = v[1].new()
+    assert s == 1
+    assert s.dtype == dtypes.INT64
+
+    assert v.dtype == dtypes.INT64
+    s = v[1].new(dtype=float)
+    assert s == 1.0
+    assert s.dtype == dtypes.FP64
+
+    t = Scalar.new(float)
+    with pytest.raises(TypeError, match='is not supported'):
+        t(accum=binary.plus) << s
+    with pytest.raises(TypeError, match='is not supported'):
+        t(accum=binary.plus) << 1
+    with pytest.raises(TypeError, match='Mask not allowed for Scalars'):
+        t(mask=t) << s
+
+    s << v[1]
+    assert s.value == 1
+    t = Scalar.new(float)
+    t << v[1]
+    assert t.value == 1.0
+    t = Scalar.new(float)
+    t() << v[1]
+    assert t.value == 1.0
+    with pytest.raises(TypeError, match='Scalar accumulation with extract element'):
+        t(accum=binary.plus) << v[0]
+
+
 def test_assign(v):
     u = Vector.from_values([0, 2], [9, 8])
     result = Vector.from_values([0, 1, 3, 4, 6], [9, 1, 1, 8, 0])
@@ -318,6 +349,7 @@ def test_apply_binary(v):
 def test_reduce(v):
     s = v.reduce(monoid.plus).new()
     assert s == 4
+    assert s.dtype == dtypes.INT64
     # Test accum
     s(accum=binary.times) << v.reduce(monoid.plus)
     assert s == 16
@@ -328,6 +360,21 @@ def test_reduce(v):
     with pytest.raises(KeyError, match='plus does not work'):
         # KeyError here is kind of weird
         b1.reduce()
+
+
+def test_reduce_coerce_dtype(v):
+    assert v.dtype == dtypes.INT64
+    s = v.reduce().new(dtype=float)
+    assert s == 4.0
+    assert s.dtype == dtypes.FP64
+    t = Scalar.new(float)
+    t << v.reduce(monoid.plus)
+    assert t == 4.0
+    t = Scalar.new(float)
+    t() << v.reduce(monoid.plus)
+    assert t == 4.0
+    with pytest.raises(TypeError, match='unable to coerce datatype'):
+        t(accum=binary.times) << v.reduce(monoid.plus)
 
 
 def test_simple_assignment(v):
