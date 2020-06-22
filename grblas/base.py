@@ -60,10 +60,14 @@ class GbContainer:
 
     @property
     def S(self):
+        if self._is_scalar:
+            raise AttributeError('Masks not supported for Scalars')
         return StructuralMask(self)
 
     @property
     def V(self):
+        if self._is_scalar:
+            raise AttributeError('Masks not supported for Scalars')
         return ValueMask(self)
 
     def __delitem__(self, keys):
@@ -118,7 +122,11 @@ class GbContainer:
         """
         return self._update(delayed)
 
-    def _update(self, delayed, mask=NULL, accum=NULL, replace=False):
+    def _update(self, delayed, mask=None, accum=None, replace=False):
+        if mask is None:
+            mask = NULL
+        if accum is None:
+            accum = NULL
         # TODO: check expected output type (need to include in GbDelayed object)
         if self._is_scalar and mask is not NULL:
             raise TypeError('Mask not allowed for Scalars')

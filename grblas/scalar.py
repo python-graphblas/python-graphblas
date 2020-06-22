@@ -115,7 +115,8 @@ class Scalar(GbContainer):
             new_scalar.value = self.value
         else:
             new_scalar = self.__class__.new(dtype)
-            new_scalar.value = new_scalar.dtype.numba_type(self.value)
+            if not self.is_empty:
+                new_scalar.value = new_scalar.dtype.numba_type(self.value)
         return new_scalar
 
     @classmethod
