@@ -87,6 +87,12 @@ def test_updater_only_once():
         u(accum=binary.plus)[0]()
     with pytest.raises(TypeError, match="not callable"):
         u()()
+    with pytest.raises(ValueError, match="already called.*no keywords"):
+        u[[0, 1]]()()
     # While we're at it...
     with pytest.raises(TypeError, match="is not subscriptable"):
         u[[0, 1]]()[0]
+    with pytest.raises(TypeError, match="is not subscriptable"):
+        u()[[0, 1]][0]
+    with pytest.raises(TypeError, match="is not subscriptable"):
+        u[[0, 1]][0]
