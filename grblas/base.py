@@ -293,6 +293,19 @@ class AmbiguousAssignOrExtract:
         self.resolved_indexes = resolved_indexes
 
     def __call__(self, *args, **kwargs):
+        if type(self.parent) is Updater:
+            parent_kwargs = []
+            if self.parent.kwargs['accum'] is not NULL:
+                parent_kwargs.append(f"accum={self.parent.kwargs['accum']}")
+            if self.parent.kwargs['mask'] is not NULL:
+                # It would sure be nice if we knew the mask type.
+                # Passing around C objects directly is sometimes inconvenient.
+                parent_kwargs.append("mask=<Mask>")
+                parent_kwargs.append(f"replace={self.parent.kwargs['replace']}")
+            if not parent_kwargs:
+                raise ValueError(f'GraphBLAS object already called (with no keywords)')
+            parent_kwargs = ', '.join(parent_kwargs)
+            raise ValueError(f'GraphBLAS object already called with keywords: {parent_kwargs}')
         # Occurs when user calls C[index](params)
         # Reverse the call order so we can parse the call args and kwargs
         updater = self.parent(*args, **kwargs)
