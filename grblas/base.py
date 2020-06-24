@@ -188,7 +188,7 @@ class GbContainer:
 
             call_args = [self.gb_obj, accum] + delayed.tail_args + [desc]
             # Ensure the scalar isn't flagged as empty after the update
-            self.is_empty = False
+            self._is_empty = False
         else:
             call_args = [self.gb_obj[0], mask, accum] + delayed.tail_args + [desc]
 
