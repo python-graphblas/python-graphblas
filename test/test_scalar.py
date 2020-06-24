@@ -130,3 +130,18 @@ def test_nvals(s):
     assert s.nvals == 1
     s.clear()
     assert s.nvals == 0
+
+
+def test_unsupported_ops(s):
+    with pytest.raises(AttributeError):
+        s.S
+    with pytest.raises(AttributeError):
+        s.V
+    with pytest.raises(AttributeError):
+        s.T
+    with pytest.raises(TypeError, match='is not subscriptable'):
+        s[0]
+    with pytest.raises(TypeError, match='does not support'):
+        s[0] = 0
+    with pytest.raises(TypeError, match="doesn't support"):
+        del s[0]

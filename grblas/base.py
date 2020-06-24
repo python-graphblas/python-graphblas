@@ -1,7 +1,7 @@
 from . import lib, ffi
 from . import dtypes, ops, descriptor, unary
 from .exceptions import check_status
-from .mask import Mask, StructuralMask, ValueMask
+from .mask import Mask
 
 NULL = ffi.NULL
 
@@ -57,32 +57,6 @@ class GbContainer:
             dtype = dtypes.lookup(dtype)
         self.gb_obj = gb_obj
         self.dtype = dtype
-
-    @property
-    def S(self):
-        if self._is_scalar:
-            raise AttributeError('Masks not supported for Scalars')
-        return StructuralMask(self)
-
-    @property
-    def V(self):
-        if self._is_scalar:
-            raise AttributeError('Masks not supported for Scalars')
-        return ValueMask(self)
-
-    def __delitem__(self, keys):
-        if self._is_scalar:
-            raise TypeError('Indexing not supported for Scalars')
-        raise NotImplementedError('Not available until GraphBLAS v1.3')
-
-    def __getitem__(self, keys):
-        if self._is_scalar:
-            raise TypeError('Indexing not supported for Scalars')
-        resolved_indexes = IndexerResolver(self, keys)
-        return AmbiguousAssignOrExtract(self, resolved_indexes)
-
-    def __setitem__(self, keys, delayed):
-        Updater(self)[keys] = delayed
 
     def __call__(self, *optional_mask_and_accum, mask=None, accum=None, replace=False):
         # Pick out mask and accum from positional arguments
