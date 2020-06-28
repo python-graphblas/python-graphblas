@@ -1,5 +1,5 @@
 import pytest
-from grblas import Matrix, Vector
+from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
 from grblas.exceptions import IndexOutOfBound, DimensionMismatch, OutputNotEmpty
@@ -421,6 +421,20 @@ def test_reduce_column(A):
 def test_reduce_scalar(A):
     s = A.reduce_scalar(monoid.plus).new()
     assert s == 47
+    # test dtype coercion
+    assert A.dtype == dtypes.INT64
+    s = A.reduce_scalar().new(dtype=float)
+    assert s == 47.0
+    assert s.dtype == dtypes.FP64
+    t = Scalar.new(float)
+    t << A.reduce_scalar(monoid.plus)
+    assert t == 47.0
+    t = Scalar.new(float)
+    t() << A.reduce_scalar(monoid.plus)
+    assert t == 47.0
+    t(accum=binary.times) << A.reduce_scalar(monoid.plus)
+    assert t == 47 * 47
+    assert A.reduce_scalar(monoid.plus[dtypes.UINT64]).value == 47
 
 
 def test_transpose(A):

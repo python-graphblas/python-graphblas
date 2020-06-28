@@ -160,6 +160,7 @@ class GbContainer:
 
         # Normalize accumulator
         if accum is not NULL:
+            orig_accum = accum
             accum = ops.get_typed_op(accum, self.dtype)
             if accum.opclass != 'BinaryOp':
                 raise TypeError(f'accum must be a BinaryOp, not {accum.opclass}')
@@ -174,15 +175,13 @@ class GbContainer:
 
         # Build args and call GraphBLAS function
         if self._is_scalar:
-            delayed_dtype = dtypes.lookup(delayed.func.__name__.rsplit('_', 1)[1])
-            if self.dtype != delayed_dtype:
+            temp_result = delayed.output_constructor()
+            if self.dtype != temp_result.dtype:
                 if accum is not NULL:
-                    raise TypeError(
-                        'Scalar reduction with accumulation is unable to coerce datatype.  '
-                        f'Use a scalar with dtype {delayed_dtype}'
-                    )
-                temp_result = delayed.output_constructor()
-                temp_result.update(delayed)
+                    temp_result = self.dup(dtype=temp_result.dtype)
+                    temp_result(accum=orig_accum).update(delayed)
+                else:
+                    temp_result.update(delayed)
                 self.value = temp_result.value
                 return
 

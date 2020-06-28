@@ -373,8 +373,9 @@ def test_reduce_coerce_dtype(v):
     t = Scalar.new(float)
     t() << v.reduce(monoid.plus)
     assert t == 4.0
-    with pytest.raises(TypeError, match='unable to coerce datatype'):
-        t(accum=binary.times) << v.reduce(monoid.plus)
+    t(accum=binary.times) << v.reduce(monoid.plus)
+    assert t == 16.0
+    assert v.reduce(monoid.plus[dtypes.UINT64]).value == 4
 
 
 def test_simple_assignment(v):

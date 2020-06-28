@@ -338,7 +338,7 @@ class Vector(GbContainer):
         op = get_typed_op(op, self.dtype)
         if op.opclass != 'Monoid':
             raise TypeError(f'op must be Monoid')
-        func = getattr(lib, f'GrB_Vector_reduce_{self.dtype.name}')
+        func = getattr(lib, f'GrB_Vector_reduce_{op.return_type}')
         output_constructor = partial(Scalar.new,
                                      dtype=op.return_type)
         return GbDelayed(func,
