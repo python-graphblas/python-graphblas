@@ -75,3 +75,24 @@ def test_updater_returns_updater():
     assert isinstance(y, Updater)
     final_result = Vector.from_values([0, 1, 3], [-1, -4, -9])
     assert u.isequal(final_result)
+
+
+def test_updater_only_once():
+    u = Vector.from_values([0, 1, 3], [1, 2, 3])
+    with pytest.raises(ValueError, match="already called.*no keywords"):
+        u()[0]()
+    with pytest.raises(ValueError, match="already called.*mask="):
+        u(mask=u.S)[0]()
+    with pytest.raises(ValueError, match="already called.*accum="):
+        u(accum=binary.plus)[0]()
+    with pytest.raises(TypeError, match="not callable"):
+        u()()
+    with pytest.raises(ValueError, match="already called.*no keywords"):
+        u[[0, 1]]()()
+    # While we're at it...
+    with pytest.raises(TypeError, match="is not subscriptable"):
+        u[[0, 1]]()[0]
+    with pytest.raises(TypeError, match="is not subscriptable"):
+        u()[[0, 1]][0]
+    with pytest.raises(TypeError, match="is not subscriptable"):
+        u[[0, 1]][0]

@@ -1,8 +1,9 @@
 from functools import partial
-from .base import lib, ffi, GbContainer, GbDelayed
+from .base import lib, ffi, GbContainer, GbDelayed, IndexerResolver, AmbiguousAssignOrExtract, Updater
 from .scalar import Scalar
 from .ops import get_typed_op
 from . import dtypes, binary, monoid, semiring
+from .mask import StructuralMask, ValueMask
 from .exceptions import check_status, is_error, NoValue
 
 
@@ -19,6 +20,24 @@ class Vector(GbContainer):
 
     def __repr__(self):
         return f'<Vector {self.nvals}/{self.size}:{self.dtype.name}>'
+
+    @property
+    def S(self):
+        return StructuralMask(self)
+
+    @property
+    def V(self):
+        return ValueMask(self)
+
+    def __delitem__(self, keys):
+        raise NotImplementedError('Not available until GraphBLAS v1.3')
+
+    def __getitem__(self, keys):
+        resolved_indexes = IndexerResolver(self, keys)
+        return AmbiguousAssignOrExtract(self, resolved_indexes)
+
+    def __setitem__(self, keys, delayed):
+        Updater(self)[keys] = delayed
 
     def isequal(self, other, *, check_dtype=False):
         """
@@ -319,7 +338,7 @@ class Vector(GbContainer):
         op = get_typed_op(op, self.dtype)
         if op.opclass != 'Monoid':
             raise TypeError(f'op must be Monoid')
-        func = getattr(lib, f'GrB_Vector_reduce_{self.dtype.name}')
+        func = getattr(lib, f'GrB_Vector_reduce_{op.return_type}')
         output_constructor = partial(Scalar.new,
                                      dtype=op.return_type)
         return GbDelayed(func,

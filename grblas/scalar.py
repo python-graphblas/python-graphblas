@@ -13,7 +13,7 @@ class Scalar(GbContainer):
 
     def __init__(self, gb_obj, dtype, empty=False):
         super().__init__(gb_obj, dtype)
-        self.is_empty = empty
+        self._is_empty = empty
 
     def __repr__(self):
         return f'<Scalar {self.value}:{self.dtype}>'
@@ -85,7 +85,11 @@ class Scalar(GbContainer):
             self.value = False
         else:
             self.value = 0
-        self.is_empty = True
+        self._is_empty = True
+
+    @property
+    def is_empty(self):
+        return self._is_empty
 
     @property
     def value(self):
@@ -99,7 +103,13 @@ class Scalar(GbContainer):
             self.clear()
         else:
             self.gb_obj[0] = val
-            self.is_empty = False
+            self._is_empty = False
+
+    @property
+    def nvals(self):
+        if self.is_empty:
+            return 0
+        return 1
 
     def dup(self, *, dtype=None):
         """Create a new Scalar by duplicating this one
@@ -109,7 +119,8 @@ class Scalar(GbContainer):
             new_scalar.value = self.value
         else:
             new_scalar = self.__class__.new(dtype)
-            new_scalar.value = new_scalar.dtype.numba_type(self.value)
+            if not self.is_empty:
+                new_scalar.value = new_scalar.dtype.numba_type(self.value)
         return new_scalar
 
     @classmethod

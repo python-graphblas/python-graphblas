@@ -12,14 +12,14 @@ def test_new():
     s = Scalar.new(dtypes.INT8)
     assert s.dtype == 'INT8'
     assert s.value is None
-    s.is_empty = False
-    assert s.value == 0  # must hold a value; initialized to 0
+    s.value = 0
+    assert s.is_empty is False
     s2 = Scalar.new(bool)
     assert s2.dtype == 'BOOL'
     assert s2.value is None
     assert bool(s2) is False
-    s2.is_empty = False
-    assert s2.value is False  # must hold a value; initialized to False
+    s2.value = False
+    assert s2.is_empty is False
 
 
 def test_dup(s):
@@ -31,10 +31,18 @@ def test_dup(s):
     assert s3.value == s.value
     # extended functionality
     s4 = Scalar.from_value(-2.5, dtype=dtypes.FP64)
+    s_empty = Scalar.new(dtypes.FP64)
+    s_unempty = Scalar.from_value(0.0)
     for dtype, val in [('INT8', -2), ('INT16', -2), ('INT32', -2), ('UINT8', 2**8 - 2), ('UINT16', 2**16 - 2),
                        ('UINT32', 2**32 - 2), ('UINT64', 2**64 - 2), ('BOOL', True), ('FP32', -2.5)]:
         s5 = s4.dup(dtype=dtype)
         assert s5.dtype == dtype and s5.value == val
+        s6 = s_empty.dup(dtype=dtype)
+        assert s6.is_empty
+        assert s6.value is None
+        s7 = s_unempty.dup(dtype=dtype)
+        assert not s7.is_empty
+        assert s7.value is not None
 
 
 def test_from_value():
@@ -115,3 +123,29 @@ def test_isclose():
     assert not s.isclose(Scalar.from_value(5), check_dtype=True)
     assert not s.isclose(Scalar.from_value(None, dtype=s.dtype))
     assert Scalar.from_value(None, dtype='FP64').isequal(Scalar.from_value(None, dtype='FP32'))
+
+
+def test_nvals(s):
+    assert s.nvals == 1
+    s.clear()
+    assert s.nvals == 0
+
+
+def test_unsupported_ops(s):
+    with pytest.raises(AttributeError):
+        s.S
+    with pytest.raises(AttributeError):
+        s.V
+    with pytest.raises(AttributeError):
+        s.T
+    with pytest.raises(TypeError, match='is not subscriptable'):
+        s[0]
+    with pytest.raises(TypeError, match='does not support'):
+        s[0] = 0
+    with pytest.raises(TypeError, match="doesn't support"):
+        del s[0]
+
+
+def test_is_empty(s):
+    with pytest.raises(AttributeError, match="can't set attribute"):
+        s.is_empty = True

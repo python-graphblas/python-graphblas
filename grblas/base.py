@@ -1,7 +1,7 @@
 from . import lib, ffi
 from . import dtypes, ops, descriptor, unary
 from .exceptions import check_status
-from .mask import Mask, StructuralMask, ValueMask
+from .mask import Mask
 
 NULL = ffi.NULL
 
@@ -58,28 +58,6 @@ class GbContainer:
         self.gb_obj = gb_obj
         self.dtype = dtype
 
-    @property
-    def S(self):
-        return StructuralMask(self)
-
-    @property
-    def V(self):
-        return ValueMask(self)
-
-    def __delitem__(self, keys):
-        if self._is_scalar:
-            raise TypeError('Indexing not supported for Scalars')
-        raise NotImplementedError('Not available until GraphBLAS v1.3')
-
-    def __getitem__(self, keys):
-        if self._is_scalar:
-            raise TypeError('Indexing not supported for Scalars')
-        resolved_indexes = IndexerResolver(self, keys)
-        return AmbiguousAssignOrExtract(self, resolved_indexes)
-
-    def __setitem__(self, keys, delayed):
-        Updater(self)[keys] = delayed
-
     def __call__(self, *optional_mask_and_accum, mask=None, accum=None, replace=False):
         # Pick out mask and accum from positional arguments
         mask_arg, accum_arg = None, None
@@ -118,19 +96,49 @@ class GbContainer:
         """
         return self._update(delayed)
 
-    def _update(self, delayed, mask=NULL, accum=NULL, replace=False):
+    def _update(self, delayed, mask=None, accum=None, replace=False):
+        if mask is None:
+            mask = NULL
+        if accum is None:
+            accum = NULL
         # TODO: check expected output type (need to include in GbDelayed object)
+        if self._is_scalar and mask is not NULL:
+            raise TypeError('Mask not allowed for Scalars')
         if not isinstance(delayed, GbDelayed):
             from .matrix import Matrix, TransposedMatrix
             if type(delayed) is AmbiguousAssignOrExtract:
+                if delayed.resolved_indexes.is_single_element and self._is_scalar:
+                    # Extract element (s << v[1])
+                    if accum is not NULL:
+                        raise TypeError(
+                            'Scalar accumulation with extract element'
+                            '--such as `s(accum=accum) << v[0]`--is not supported'
+                        )
+                    self.value = delayed.new(dtype=self.dtype).value
+                    return
+
                 # Extract (C << A[rows, cols])
                 delayed = delayed._extract_delayed()
             elif type(delayed) is self.__class__:
                 # Simple assignment (w << v)
+                if self._is_scalar:
+                    if accum is not NULL:
+                        raise TypeError(
+                            'Scalar update with accumulation--such as `s(accum=accum) << t`--is not supported'
+                        )
+                    self.value = delayed.value
+                    return
+
                 delayed = delayed.apply(unary.identity)
             elif type(delayed) is TransposedMatrix and type(self) is Matrix:
                 # Transpose (C << A.T)
                 delayed = GbDelayed(lib.GrB_transpose, [delayed.gb_obj[0]])
+            elif self._is_scalar:
+                if accum is not NULL:
+                    raise TypeError('Scalar update with accumulation--such as `s(accum=accum) << t`--is not supported')
+                self.value = delayed
+                return
+
             else:
                 raise TypeError(f'assignment value must be GbDelayed object, not {type(delayed)}')
 
@@ -152,6 +160,7 @@ class GbContainer:
 
         # Normalize accumulator
         if accum is not NULL:
+            orig_accum = accum
             accum = ops.get_typed_op(accum, self.dtype)
             if accum.opclass != 'BinaryOp':
                 raise TypeError(f'accum must be a BinaryOp, not {accum.opclass}')
@@ -166,11 +175,19 @@ class GbContainer:
 
         # Build args and call GraphBLAS function
         if self._is_scalar:
-            if mask is not NULL:
-                raise TypeError('Mask not allowed for Scalars')
+            temp_result = delayed.output_constructor()
+            if self.dtype != temp_result.dtype:
+                if accum is not NULL:
+                    temp_result = self.dup(dtype=temp_result.dtype)
+                    temp_result(accum=orig_accum).update(delayed)
+                else:
+                    temp_result.update(delayed)
+                self.value = temp_result.value
+                return
+
             call_args = [self.gb_obj, accum] + delayed.tail_args + [desc]
             # Ensure the scalar isn't flagged as empty after the update
-            self.is_empty = False
+            self._is_empty = False
         else:
             call_args = [self.gb_obj[0], mask, accum] + delayed.tail_args + [desc]
 
@@ -237,9 +254,8 @@ class GbDelayed:
         if mask is None:
             output.update(self)
         else:
-            if isinstance(mask, Mask):
-                if not isinstance(mask.mask, output.__class__):
-                    raise TypeError(f'Mask object must be type {output.__class__}')
+            if isinstance(mask, Mask) and not isinstance(mask.mask, output.__class__):
+                raise TypeError(f'Mask object must be type {output.__class__}')
             output(mask).update(self)
         return output
 
@@ -250,6 +266,19 @@ class AmbiguousAssignOrExtract:
         self.resolved_indexes = resolved_indexes
 
     def __call__(self, *args, **kwargs):
+        if type(self.parent) is Updater:
+            parent_kwargs = []
+            if self.parent.kwargs['accum'] is not NULL:
+                parent_kwargs.append(f"accum={self.parent.kwargs['accum']}")
+            if self.parent.kwargs['mask'] is not NULL:
+                # It would sure be nice if we knew the mask type.
+                # Passing around C objects directly is sometimes inconvenient.
+                parent_kwargs.append("mask=<Mask>")
+                parent_kwargs.append(f"replace={self.parent.kwargs['replace']}")
+            if not parent_kwargs:
+                raise ValueError(f'GraphBLAS object already called (with no keywords)')
+            parent_kwargs = ', '.join(parent_kwargs)
+            raise ValueError(f'GraphBLAS object already called with keywords: {parent_kwargs}')
         # Occurs when user calls C[index](params)
         # Reverse the call order so we can parse the call args and kwargs
         updater = self.parent(*args, **kwargs)
@@ -297,8 +326,6 @@ class AmbiguousAssignOrExtract:
         """Return a GbDelayed object, treating this as an extract call"""
         if isinstance(self.parent, Updater):
             raise TypeError('Cannot extract from an Updater')
-        if self.resolved_indexes.is_single_element:
-            raise TypeError('extract and update is not allowed for single element')
         return self.parent._prep_for_extract(self.resolved_indexes)
 
 
