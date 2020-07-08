@@ -1,5 +1,6 @@
 import grblas
 from .base import ffi, GbContainer
+from .ops import get_typed_op
 from . import dtypes
 
 
@@ -74,11 +75,10 @@ class Scalar(GbContainer):
             return False
         if self.is_empty or other.is_empty:
             return self.is_empty is other.is_empty
-        # We can't yet call a UDF on a scalar, so lets convert to 1-d vector
-        left = grblas.vector.Vector.from_values([0], [self.value], size=1, dtype=self.dtype)
-        right = grblas.vector.Vector.from_values([0], [other.value], size=1, dtype=other.dtype)
-        matches = left.ewise_mult(right, grblas.binary.isclose(rel_tol, abs_tol)).new(dtype=bool)
-        return matches.reduce(grblas.monoid.land).value
+        # We can't yet call a UDF on a scalar as part of the spec, so let's do it ourselves
+        isclose = grblas.binary.isclose(rel_tol, abs_tol)
+        isclose = get_typed_op(isclose, self.dtype, other.dtype)
+        return isclose.numba_func(self.value, other.value)
 
     def clear(self):
         if self.dtype == bool:

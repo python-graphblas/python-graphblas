@@ -1,7 +1,6 @@
 from . import lib, ffi
 from . import dtypes, ops, descriptor, unary
 from .exceptions import check_status
-from .ops import OpBase
 from .mask import Mask, StructuralMask, ValueMask
 
 NULL = ffi.NULL
@@ -153,11 +152,10 @@ class GbContainer:
 
         # Normalize accumulator
         if accum is not NULL:
-            accum, opclass = ops.find_opclass(accum)
-            if opclass != 'BinaryOp':
-                raise TypeError(f'accum must be a BinaryOp, not {opclass}')
-            if isinstance(accum, ops.BinaryOp):
-                accum = accum[self.dtype]
+            accum = ops.get_typed_op(accum, self.dtype)
+            if accum.opclass != 'BinaryOp':
+                raise TypeError(f'accum must be a BinaryOp, not {accum.opclass}')
+            accum = accum.gb_obj
 
         # Get descriptor based on flags
         desc = descriptor.lookup(transpose_first=delayed.at,
@@ -166,19 +164,15 @@ class GbContainer:
                                  mask_structure=structure,
                                  output_replace=replace)
 
-        # Resolve any ops in tail_args
-        tail_args = [x[self.dtype] if isinstance(x, OpBase) else x
-                     for x in delayed.tail_args]
-
         # Build args and call GraphBLAS function
         if self._is_scalar:
             if mask is not NULL:
                 raise TypeError('Mask not allowed for Scalars')
-            call_args = [self.gb_obj, accum] + tail_args + [desc]
+            call_args = [self.gb_obj, accum] + delayed.tail_args + [desc]
             # Ensure the scalar isn't flagged as empty after the update
             self.is_empty = False
         else:
-            call_args = [self.gb_obj[0], mask, accum] + tail_args + [desc]
+            call_args = [self.gb_obj[0], mask, accum] + delayed.tail_args + [desc]
 
         # Make the GraphBLAS call
         check_status(delayed.func(*call_args))

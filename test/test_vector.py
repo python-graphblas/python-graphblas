@@ -171,12 +171,18 @@ def test_vxm_mask(v, A):
     result = Vector.from_values([0, 1, 3, 4, 6], [3, 1, 0, 8, 0], size=7)
     assert u.isequal(result)
     u = v.dup()
+    u(~~struct_mask.S) << v.vxm(A, semiring.plus_times)
+    assert u.isequal(result)
+    u = v.dup()
     u(~struct_mask.S) << v.vxm(A, semiring.plus_times)
     result2 = Vector.from_values([2, 3, 4, 5, 6], [3, 1, 2, 14, 4], size=7)
     assert u.isequal(result2)
     u = v.dup()
     u(replace=True, mask=val_mask.V) << v.vxm(A, semiring.plus_times)
     result3 = Vector.from_values([0, 3, 4], [3, 0, 8], size=7)
+    assert u.isequal(result3)
+    u = v.dup()
+    u(replace=True, mask=~~val_mask.V) << v.vxm(A, semiring.plus_times)
     assert u.isequal(result3)
     w = v.vxm(A, semiring.plus_times).new(mask=val_mask.V)
     assert w.isequal(result3)
@@ -231,6 +237,15 @@ def test_ewise_add(v):
     assert w.isequal(result)
     w << v.ewise_add(v2, semiring.max_times)
     assert w.isequal(result)
+    # default is plus
+    w = v.ewise_add(v2).new()
+    result = v.ewise_add(v2, monoid.plus).new()
+    assert w.isequal(result)
+    # what about default for bool?
+    b1 = Vector.from_values([0, 1, 2, 3], [True, False, True, False])
+    b2 = Vector.from_values([0, 1, 2, 3], [True, True, False, False])
+    with pytest.raises(KeyError, match='plus does not work'):
+        b1.ewise_add(b2).new()
 
 
 def test_extract(v):
@@ -306,6 +321,13 @@ def test_reduce(v):
     # Test accum
     s(accum=binary.times) << v.reduce(monoid.plus)
     assert s == 16
+    # Test default for non-bool
+    assert v.reduce().value == 4
+    # Test default for bool
+    b1 = Vector.from_values([0, 1], [True, False])
+    with pytest.raises(KeyError, match='plus does not work'):
+        # KeyError here is kind of weird
+        b1.reduce()
 
 
 def test_simple_assignment(v):
@@ -325,6 +347,8 @@ def test_isequal(v):
     assert not u3.isequal(v, check_dtype=True), 'different datatypes are not equal'
     u4 = Vector.from_values([1, 3, 4, 6], [1., 1+1e-9, 1.999999999999, 0.])
     assert not u4.isequal(v)
+    u5 = Vector.from_values([1, 3, 4, 5], [1., 1., 2., 3], size=u4.size)
+    assert not u4.isequal(u5)
 
 
 @pytest.mark.slow
@@ -345,6 +369,8 @@ def test_isclose(v):
     # isclose should consider `inf == inf`
     u7 = Vector.from_values([1, 3], [-np.inf, np.inf])
     assert u7.isclose(u7, rel_tol=1e-8)
+    u4b = Vector.from_values([1, 3, 4, 5], [1., 1., 2., 0.], size=u4.size)
+    assert not u4.isclose(u4b)
 
 
 def test_binary_op(v):

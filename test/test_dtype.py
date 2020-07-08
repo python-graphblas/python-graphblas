@@ -1,3 +1,4 @@
+import pytest
 from grblas import dtypes, lib
 
 all_dtypes = (
@@ -81,6 +82,7 @@ def test_lookup_by_dtype():
 def test_unify_dtypes():
     assert dtypes.unify(dtypes.BOOL, dtypes.BOOL) == dtypes.BOOL
     assert dtypes.unify(dtypes.BOOL, dtypes.INT16) == dtypes.INT16
+    assert dtypes.unify(dtypes.INT16, dtypes.BOOL) == dtypes.INT16
     assert dtypes.unify(dtypes.INT16, dtypes.INT8) == dtypes.INT16
     assert dtypes.unify(dtypes.UINT32, dtypes.UINT8) == dtypes.UINT32
     assert dtypes.unify(dtypes.UINT32, dtypes.FP32) == dtypes.FP32
@@ -89,3 +91,10 @@ def test_unify_dtypes():
     assert dtypes.unify(dtypes.FP64, dtypes.FP32) == dtypes.FP64
     assert dtypes.unify(dtypes.INT16, dtypes.UINT16) == dtypes.INT32
     assert dtypes.unify(dtypes.UINT64, dtypes.INT8) == dtypes.FP64
+
+
+def test_dtype_bad_comparison():
+    with pytest.raises(TypeError):
+        dtypes.BOOL == object()
+    with pytest.raises(TypeError):
+        object() != dtypes.BOOL

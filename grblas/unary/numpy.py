@@ -79,5 +79,5 @@ def __getattr__(name):
     if name == 'reciprocal':
         # numba doesn't match numpy here
         op = ops.UnaryOp.register_anonymous(lambda x: 1 if x else 0)
-        rv['BOOL'] = op['BOOL']
+        rv._add(op['BOOL'])
     return rv

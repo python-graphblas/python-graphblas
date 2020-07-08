@@ -5,7 +5,7 @@ class GrblasException(Exception):
     pass
 
 
-if lib is None or ffi is None:
+if lib is None or ffi is None:  # pragma: no cover
     raise GrblasException('grblas must be initialized with the backend prior to use; call `grblas.init(backend)`')
 
 

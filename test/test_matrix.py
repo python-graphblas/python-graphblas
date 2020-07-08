@@ -138,6 +138,10 @@ def test_extract_values(A):
     assert rows == (0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6)
     assert cols == (1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4)
     assert vals == (2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3)
+    Trows, Tcols, Tvals = A.T.to_values()
+    assert rows == Tcols
+    assert cols == Trows
+    assert vals == Tvals
 
 
 def test_extract_element(A):
@@ -428,6 +432,7 @@ def test_transpose(A):
     assert C.isequal(result)
     C2 = A.T.new()
     assert C2.isequal(result)
+    assert A.T.T is A
 
 
 def test_kronecker(A):
@@ -464,6 +469,10 @@ def test_isequal(A, v):
         A.isequal(v)  # equality is not type-checking
     C = Matrix.from_values([1], [1], [1])
     assert not C.isequal(A)
+    D = Matrix.from_values([1], [2], [1])
+    assert not C.isequal(D)
+    D2 = Matrix.from_values([0], [2], [1], nrows=D.nrows, ncols=D.ncols)
+    assert not D2.isequal(D)
     C2 = Matrix.from_values([1], [1], [1], nrows=7, ncols=7)
     assert not C2.isequal(A)
     C3 = Matrix.from_values(
@@ -485,6 +494,10 @@ def test_isclose(A, v):
         A.isclose(v)  # equality is not type-checking
     C = Matrix.from_values([1], [1], [1])  # wrong size
     assert not C.isclose(A)
+    D = Matrix.from_values([1], [2], [1])
+    assert not C.isclose(D)
+    D2 = Matrix.from_values([0], [2], [1], nrows=D.nrows, ncols=D.ncols)
+    assert not D2.isclose(D)
     C2 = Matrix.from_values([1], [1], [1], nrows=7, ncols=7)  # missing values
     assert not C2.isclose(A)
     C3 = Matrix.from_values(
