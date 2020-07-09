@@ -59,7 +59,7 @@ def test_unaryop_udf():
     assert hasattr(unary, 'plus_one')
     assert set(unary.plus_one.types) == {'INT8', 'INT16', 'INT32', 'INT64',
                                          'UINT8', 'UINT16', 'UINT32', 'UINT64',
-                                         'FP32', 'FP64', 'BOOL'}
+                                         'FP32', 'FP64', 'BOOL', 'FC32', 'FC64'}
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.plus_one)
     result = Vector.from_values([0, 1, 3], [2, 3, -3], dtype=dtypes.INT32)
@@ -308,7 +308,7 @@ def test_binaryop_udf():
     assert hasattr(binary, 'bin_test_func')
     assert set(binary.bin_test_func.types) == {'INT8', 'INT16', 'INT32', 'INT64',
                                                'UINT8', 'UINT16', 'UINT32', 'UINT64',
-                                               'FP32', 'FP64'}
+                                               'FP32', 'FP64', 'FC32', 'FC64'}
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
     w = v1.ewise_add(v2, binary.bin_test_func, require_monoid=False).new()
@@ -375,7 +375,8 @@ def test_nested_names():
     assert hasattr(unary.incrementers, 'plus_three')
     assert set(unary.incrementers.plus_three.types) == {'INT8', 'INT16', 'INT32', 'INT64',
                                                         'UINT8', 'UINT16', 'UINT32', 'UINT64',
-                                                        'FP32', 'FP64', 'BOOL'}
+                                                        'FP32', 'FP64', 'BOOL', 'FC32', 'FC64'}
+
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.incrementers.plus_three)
     result = Vector.from_values([0, 1, 3], [4, 5, -1], dtype=dtypes.INT32)

@@ -102,7 +102,18 @@ def test_clear(A):
 
 
 def test_resize(A):
-    pytest.xfail('Not implemented in GraphBLAS 1.2')
+    assert A.nrows == 7
+    assert A.ncols == 7
+    assert A.nvals == 12
+    A.resize(10, 11)
+    assert A.nrows == 10
+    assert A.ncols == 11
+    assert A.nvals == 12
+    assert A[9, 9].value is None
+    A.resize(4, 1)
+    assert A.nrows == 4
+    assert A.ncols == 1
+    assert A.nvals == 1
 
 
 def test_nrows(A):
@@ -160,7 +171,12 @@ def test_set_element(A):
 
 
 def test_remove_element(A):
-    pytest.xfail('Not implemented in GraphBLAS 1.2')
+    assert A[3, 0].value == 3
+    del A[3, 0]
+    assert A[3, 0].value is None
+    assert A[6, 3].value == 7
+    with pytest.raises(TypeError, match="Remove Element only supports"):
+        del A[3:5, 3]
 
 
 def test_mxm(A):
@@ -402,8 +418,20 @@ def test_apply(A):
 
 
 def test_apply_binary(A):
-    # Test bind-first and bind-second
-    pytest.xfail('Not implemented in GraphBLAS 1.2')
+    result_right = Matrix.from_values([3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+                                      [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+                                      [1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1], dtype=bool)
+    w_right = A.apply(binary.gt, right=1).new()
+    w_right2 = A.apply(binary.gt, right=Scalar.from_value(1)).new()
+    assert w_right.isequal(result_right)
+    assert w_right2.isequal(result_right)
+    result_left = Matrix.from_values([3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+                                     [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+                                     [5, 6, 5, 7, 3, 5, 1, 0, 5, 7, 1, 4])
+    w_left = A.apply(binary.minus, left=8).new()
+    w_left2 = A.apply(binary.minus, left=Scalar.from_value(8)).new()
+    assert w_left.isequal(result_left)
+    assert w_left2.isequal(result_left)
 
 
 def test_reduce_row(A):
@@ -449,8 +477,23 @@ def test_transpose(A):
     assert A.T.T is A
 
 
-def test_kronecker(A):
-    pytest.xfail('Not implemented in GraphBLAS 1.2')
+def test_kronecker():
+    # A  0 1     B  0 1 2
+    # 0 [1 -]    0 [- 2 3]
+    # 1 [2 3]    1 [8 - 4]
+    #
+    # C  0  1  2  3  4  5
+    # 0 [-  2  3  -  -  - ]
+    # 1 [8  -  4  -  -  - ]
+    # 2 [-  4  6  -  6  9 ]
+    # 3 [16 -  8  24 -  12]
+    A = Matrix.from_values([0, 1, 1], [0, 0, 1], [1, 2, 3])
+    B = Matrix.from_values([0, 0, 1, 1], [1, 2, 0, 2], [2, 3, 8, 4])
+    result = Matrix.from_values([0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+                                [1, 2, 0, 2, 1, 2, 4, 5, 0, 2, 3, 5],
+                                [2, 3, 8, 4, 4, 6, 6, 9, 16, 8, 24, 12])
+    C = A.kronecker(B, binary.times).new()
+    assert C.isequal(result)
 
 
 def test_simple_assignment(A):
