@@ -351,6 +351,7 @@ class UnaryOp(OpBase):
                 if ret_type != type_ and (
                     'INT' in ret_type.name and 'INT' in type_.name
                     or 'FP' in ret_type.name and 'FP' in type_.name
+                    or 'FC' in ret_type.name and 'FC' in type_.name
                     or type_ == 'UINT64' and ret_type == 'FP64' and return_types.get('INT64') == 'INT64'
                 ):
                     # Downcast `ret_type` to `type_`.  This is probably what users want most of the time,
@@ -474,6 +475,7 @@ class BinaryOp(OpBase):
                 if ret_type != type_ and (
                     'INT' in ret_type.name and 'INT' in type_.name
                     or 'FP' in ret_type.name and 'FP' in type_.name
+                    or 'FC' in ret_type.name and 'FC' in type_.name
                     or type_ == 'UINT64' and ret_type == 'FP64' and return_types.get('INT64') == 'INT64'
                 ):
                     # Downcast `ret_type` to `type_`.  This is probably what users want most of the time,
@@ -611,7 +613,7 @@ class Monoid(OpBase):
             ret_type = binaryop[type_].return_type
             # If there is a domain mismatch, then DomainMismatch will be raised
             # below if identities were explicitly given.
-            if type_ != ret_type and not explicit_identities:
+            if type_ != ret_type and not explicit_identities or 'FC' in type_.name:
                 continue
             new_monoid = ffi.new('GrB_Monoid*')
             func = libget(f'GrB_Monoid_new_{type_.name}')

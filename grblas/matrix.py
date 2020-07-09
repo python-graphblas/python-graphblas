@@ -521,11 +521,9 @@ class Matrix(GbContainer):
     def _prep_for_assign(self, resolved_indexes, obj):
         rows, rowsize = resolved_indexes.indices[0]
         cols, colsize = resolved_indexes.indices[1]
-
         if isinstance(obj, Scalar):
             obj = obj.value
-
-        if isinstance(obj, (int, float, bool)):
+        if isinstance(obj, (int, float, bool, complex)):
             if rowsize is None:
                 rows = [rows]
                 rowsize = 1

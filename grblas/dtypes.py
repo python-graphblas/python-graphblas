@@ -37,8 +37,8 @@ INT64 = DataType('INT64', lib.GrB_INT64, 'int64_t', numba.types.int64)
 UINT64 = DataType('UINT64', lib.GrB_UINT64, 'uint64_t', numba.types.uint64)
 FP32 = DataType('FP32', lib.GrB_FP32, 'float', numba.types.float32)
 FP64 = DataType('FP64', lib.GrB_FP64, 'double', numba.types.float64)
-# FC32 = DataType('FC32', lib.GxB_FC32, 'float _Complex', numba.types.complex64)
-# FC64 = DataType('FC64', lib.GxB_FC64, 'double _Complex', numba.types.complex128)
+FC32 = DataType('FC32', lib.GxB_FC32, 'float _Complex', numba.types.complex64)
+FC64 = DataType('FC64', lib.GxB_FC64, 'double _Complex', numba.types.complex128)
 
 # Used for testing user-defined functions
 _sample_values = {
@@ -52,14 +52,14 @@ _sample_values = {
     UINT64.name: np.uint64(1),
     FP32.name: np.float32(0.5),
     FP64.name: np.float64(0.5),
-    # FC32.name: np.complex64(complex(0, 0.5)),
-    # FC64.name: np.complex128(complex(0, 0.5)),
+    FC32.name: np.complex64(complex(0, 0.5)),
+    FC64.name: np.complex128(complex(0, 0.5)),
     BOOL.name: np.bool_(True),
 }
 
 # Create register to easily lookup types by name, gb_type, or c_type
 _registry = {}
-for dtype in [BOOL, INT8, UINT8, INT16, UINT16, INT32, UINT32, INT64, UINT64, FP32, FP64]:  #, FC32, FC64]:
+for dtype in [BOOL, INT8, UINT8, INT16, UINT16, INT32, UINT32, INT64, UINT64, FP32, FP64, FC32, FC64]:
     _registry[dtype.name] = dtype
     _registry[dtype.gb_type] = dtype
     _registry[dtype.c_type] = dtype
@@ -76,7 +76,7 @@ _registry['float16'] = FP32
 _registry[int] = INT64
 _registry[float] = FP64
 _registry[bool] = BOOL
-# _registry[complex] = FC64
+_registry[complex] = FC64
 
 
 def lookup(key):

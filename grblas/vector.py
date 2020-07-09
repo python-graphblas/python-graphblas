@@ -391,7 +391,7 @@ class Vector(GbContainer):
         index, isize = resolved_indexes.indices[0]
         if isinstance(obj, Scalar):
             obj = obj.value
-        if isinstance(obj, (int, float, bool)):
+        if isinstance(obj, (int, float, bool, complex)):
             dtype = self.dtype
             func = libget(f'GrB_Vector_assign_{dtype.name}')
             scalar = ffi.cast(dtype.c_type, obj)
