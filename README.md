@@ -62,6 +62,7 @@ expression could be written as:<br>
    + `M[row_index, cols](mask, accum) << v`  # assign row
    + `M[rows, cols](mask, accum) << s`  # assign scalar to many elements
    + `M[row_index, col_index] << s`  # assign scalar to single element (mask and accum not allowed)
+   + `del M[row_index, col_index]`  # remove single element
  - apply:
    + `M(mask, accum) << A.apply(unaryop)`
    + `M(mask, accum) << A.apply(binaryop, left=s)`  # bind-first
