@@ -86,7 +86,15 @@ def test_clear(v):
 
 
 def test_resize(v):
-    pytest.xfail('Not implemented in GraphBLAS 1.2')
+    assert v.size == 7
+    assert v.nvals == 4
+    v.resize(20)
+    assert v.size == 20
+    assert v.nvals == 4
+    assert v[19].value is None
+    v.resize(4)
+    assert v.size == 4
+    assert v.nvals == 2
 
 
 def test_size(v):
@@ -134,7 +142,12 @@ def test_set_element(v):
 
 
 def test_remove_element(v):
-    pytest.xfail('Not implemented in GraphBLAS 1.2')
+    assert v[1].value == 1
+    del v[1]
+    assert v[1].value is None
+    assert v[4].value == 2
+    with pytest.raises(TypeError, match="Remove Element only supports"):
+        del v[1:3]
 
 
 def test_vxm(v, A):
@@ -342,8 +355,16 @@ def test_apply(v):
 
 
 def test_apply_binary(v):
-    # Test bind-first and bind-second
-    pytest.xfail('Not implemented in GraphBLAS 1.2')
+    result_right = Vector.from_values([1, 3, 4, 6], [False, False, True, False])
+    w_right = v.apply(binary.gt, right=1).new()
+    w_right2 = v.apply(binary.gt, right=Scalar.from_value(1)).new()
+    assert w_right.isequal(result_right)
+    assert w_right2.isequal(result_right)
+    result_left = Vector.from_values([1, 3, 4, 6], [1, 1, 0, 2])
+    w_left = v.apply(binary.minus, left=2).new()
+    w_left2 = v.apply(binary.minus, left=Scalar.from_value(2)).new()
+    assert w_left.isequal(result_left)
+    assert w_left2.isequal(result_left)
 
 
 def test_reduce(v):

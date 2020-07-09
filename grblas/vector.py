@@ -1,5 +1,5 @@
 from functools import partial
-from .base import lib, ffi, GbContainer, GbDelayed, IndexerResolver, AmbiguousAssignOrExtract, Updater
+from .base import lib, ffi, GbContainer, GbDelayed, IndexerResolver, AmbiguousAssignOrExtract, Updater, libget
 from .scalar import Scalar
 from .ops import get_typed_op
 from . import dtypes, binary, monoid, semiring
@@ -30,7 +30,7 @@ class Vector(GbContainer):
         return ValueMask(self)
 
     def __delitem__(self, keys):
-        raise NotImplementedError('Not available until GraphBLAS v1.3')
+        del Updater(self)[keys]
 
     def __getitem__(self, keys):
         resolved_indexes = IndexerResolver(self, keys)
@@ -113,7 +113,6 @@ class Vector(GbContainer):
         check_status(lib.GrB_Vector_clear(self.gb_obj[0]))
 
     def resize(self, size):
-        raise NotImplementedError('Not implemented in GraphBLAS 1.2')
         check_status(lib.GrB_Vector_resize(self.gb_obj[0], size))
 
     def to_values(self):
@@ -125,7 +124,7 @@ class Vector(GbContainer):
         values = ffi.new(f'{self.dtype.c_type}[]', self.nvals)
         n = ffi.new('GrB_Index*')
         n[0] = self.nvals
-        func = getattr(lib, f'GrB_Vector_extractTuples_{self.dtype.name}')
+        func = libget(f'GrB_Vector_extractTuples_{self.dtype.name}')
         check_status(func(
             indices,
             values,
@@ -158,7 +157,7 @@ class Vector(GbContainer):
         indices = ffi.new('GrB_Index[]', indices)
         values = ffi.new(f'{self.dtype.c_type}[]', values)
         # Push values into w
-        func = getattr(lib, f'GrB_Vector_build_{self.dtype.name}')
+        func = libget(f'GrB_Vector_build_{self.dtype.name}')
         check_status(func(
             self.gb_obj[0],
             indices,
@@ -251,7 +250,7 @@ class Vector(GbContainer):
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
         if require_monoid and op.opclass not in {'Monoid', 'Semiring'}:
             raise TypeError(f'op must be Monoid or Semiring unless require_monoid is False')
-        func = getattr(lib, f'GrB_eWiseAdd_Vector_{op.opclass}')
+        func = libget(f'GrB_eWiseAdd_Vector_{op.opclass}')
         output_constructor = partial(Vector.new,
                                      dtype=op.return_type,
                                      size=self.size)
@@ -271,7 +270,7 @@ class Vector(GbContainer):
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
             raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
-        func = getattr(lib, f'GrB_eWiseMult_Vector_{op.opclass}')
+        func = libget(f'GrB_eWiseMult_Vector_{op.opclass}')
         output_constructor = partial(Vector.new,
                                      dtype=op.return_type,
                                      size=self.size)
@@ -322,12 +321,21 @@ class Vector(GbContainer):
                                      dtype=op.return_type,
                                      size=self.size)
         if op.opclass == 'UnaryOp':
-            return GbDelayed(lib.GrB_Vector_apply,
-                             [op.gb_obj, self.gb_obj[0]],
-                             output_constructor=output_constructor)
+            func = lib.GrB_Vector_apply
+            call_args = [op.gb_obj, self.gb_obj[0]]
         else:
-            raise NotImplementedError('apply with BinaryOp not available in GraphBLAS 1.2')
-            # TODO: fill this in once function is available
+            if left is not None:
+                if isinstance(left, Scalar):
+                    left = left.value
+                func = libget(f'GrB_Vector_apply_BinaryOp1st_{self.dtype}')
+                call_args = [op.gb_obj, ffi.cast(self.dtype.c_type, left), self.gb_obj[0]]
+            elif right is not None:
+                if isinstance(right, Scalar):
+                    right = right.value
+                func = libget(f'GrB_Vector_apply_BinaryOp2nd_{self.dtype}')
+                call_args = [op.gb_obj, self.gb_obj[0], ffi.cast(self.dtype.c_type, right)]
+
+        return GbDelayed(func, call_args, output_constructor=output_constructor)
 
     def reduce(self, op=monoid.plus):
         """
@@ -338,7 +346,7 @@ class Vector(GbContainer):
         op = get_typed_op(op, self.dtype)
         if op.opclass != 'Monoid':
             raise TypeError(f'op must be Monoid')
-        func = getattr(lib, f'GrB_Vector_reduce_{op.return_type}')
+        func = libget(f'GrB_Vector_reduce_{op.return_type}')
         output_constructor = partial(Scalar.new,
                                      dtype=op.return_type)
         return GbDelayed(func,
@@ -350,7 +358,7 @@ class Vector(GbContainer):
     ##################################
     def _extract_element(self, resolved_indexes):
         index, _ = resolved_indexes.indices[0]
-        func = getattr(lib, f'GrB_Vector_extractElement_{self.dtype}')
+        func = libget(f'GrB_Vector_extractElement_{self.dtype}')
         result = ffi.new(f'{self.dtype.c_type}*')
 
         err_code = func(result,
@@ -373,7 +381,7 @@ class Vector(GbContainer):
 
     def _assign_element(self, resolved_indexes, value):
         index, _ = resolved_indexes.indices[0]
-        func = getattr(lib, f'GrB_Vector_setElement_{self.dtype}')
+        func = libget(f'GrB_Vector_setElement_{self.dtype}')
         check_status(func(
                      self.gb_obj[0],
                      ffi.cast(self.dtype.c_type, value),
@@ -385,7 +393,7 @@ class Vector(GbContainer):
             obj = obj.value
         if isinstance(obj, (int, float, bool)):
             dtype = self.dtype
-            func = getattr(lib, f'GrB_Vector_assign_{dtype.name}')
+            func = libget(f'GrB_Vector_assign_{dtype.name}')
             scalar = ffi.cast(dtype.c_type, obj)
             delayed = GbDelayed(func,
                                 [scalar, index, isize])
@@ -395,3 +403,9 @@ class Vector(GbContainer):
         else:
             raise TypeError(f'Unexpected type for assignment value: {type(obj)}')
         return delayed
+
+    def _delete_element(self, resolved_indexes):
+        index, _ = resolved_indexes.indices[0]
+        check_status(lib.GrB_Vector_removeElement(
+                     self.gb_obj[0],
+                     index))

@@ -25,7 +25,7 @@ def remove_directives(text):
             if line[-1] != '\\':
                 multiline = False
             out.append(f'/* {line} */')
-        elif line[0] == '#':
+        elif line.lstrip()[0] == '#':
             if line[-1] == '\\':
                 multiline = True
             if not multiline and safe_define.match(line):

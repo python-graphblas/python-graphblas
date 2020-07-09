@@ -249,32 +249,51 @@ class OpBase:
             return
         # Read in the parse configs
         trim_from_front = cls._parse_config.get('trim_from_front', 0)
-        trim_from_back = cls._parse_config.get('trim_from_back', None)
-        if trim_from_back is not None:
-            trim_from_back = -trim_from_back
+        delete_exact = cls._parse_config.get('delete_exact', None)
         num_underscores = cls._parse_config['num_underscores']
 
-        for re_str, returns_bool in (('re_exprs', False),
-                                     ('re_exprs_return_bool', True)):
+        varnames = tuple(x for x in dir(lib) if x[0] != '_')
+        for re_str, return_prefix in (('re_exprs', None),
+                                      ('re_exprs_return_bool', 'BOOL'),
+                                      ('re_exprs_return_float', 'FP'),
+                                      ('re_exprs_return_complex', 'FC')):
             if re_str not in cls._parse_config:
                 continue
             for r in cls._parse_config[re_str]:
-                for varname in dir(lib):
+                for varname in varnames:
                     m = r.match(varname)
                     if m:
                         # Parse function into name and datatype
-                        splitname = m.string[trim_from_front:trim_from_back].split('_')
+                        splitname = m.string[trim_from_front:].split('_')
+                        if delete_exact and delete_exact in splitname:
+                            splitname.remove(delete_exact)
                         if len(splitname) == num_underscores + 1:
                             *splitname, type_ = splitname
                         else:
-                            type_ = 'BOOL'
+                            type_ = None
                         name = '_'.join(splitname).lower()
                         # Create object for name unless it already exists
                         if not hasattr(cls._module, name):
                             setattr(cls._module, name, cls(name))
                         obj = getattr(cls._module, name)
                         gb_obj = getattr(lib, varname)
-                        op = cls._typed_class(type_, 'BOOL' if returns_bool else type_, gb_obj)
+                        # Determine return type
+                        if return_prefix == 'BOOL':
+                            return_type = 'BOOL'
+                            if type_ is None:
+                                type_ = 'BOOL'
+                        else:
+                            if type_ is None:
+                                raise TypeError(f'Unable to determine return type for {varname}')
+                            if return_prefix is None:
+                                return_type = type_
+                            else:
+                                # Grab the number of bits from type_
+                                num_bits = type_[-2:]
+                                if num_bits not in {'32', '64'}:
+                                    raise TypeError(f'Unexpected number of bits: {num_bits}')
+                                return_type = f'{return_prefix}{num_bits}'
+                        op = cls._typed_class(type_, return_type, gb_obj)
                         obj._add(op)
         cls._initialized = True
 
@@ -287,9 +306,28 @@ class UnaryOp(OpBase):
         'trim_from_front': 4,
         'num_underscores': 1,
         're_exprs': [
-            re.compile('^GrB_(IDENTITY|AINV|MINV)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
-            re.compile('^GxB_(ABS|LNOT|ONE)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+            re.compile(
+                '^GrB_(IDENTITY|AINV|MINV|ABS|BNOT)'
+                '_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64|FC32|FC64)$'
+            ),
+            re.compile(
+                '^GxB_(LNOT|ONE)'
+                '_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'
+            ),
+            re.compile(
+                '^GxB_(SQRT|LOG|EXP|LOG2|SIN|COS|TAN|ACOS|ASIN|ATAN|SINH|COSH|TANH|ACOSH|ASINH|ATANH'
+                '|SIGNUM|CEIL|FLOOR|ROUND|TRUNC|EXP2|EXPM1|LOG10|LOG1P)'
+                '_(FP32|FP64|FC32|FC64)$'
+            ),
+            re.compile('^GxB_(LGAMMA|TGAMMA|ERF|ERFC|FREXPX|FREXPE)_(FP32|FP64)$'),
+            re.compile('^GxB_(IDENTITY|AINV|MINV|ONE|CONJ)_(FC32|FC64)$'),
+        ],
+        're_exprs_return_bool': [
             re.compile('^GrB_LNOT$'),
+            re.compile('^GxB_(ISINF|ISNAN|ISFINITE)_(FP32|FP64|FC32|FC64)$'),
+        ],
+        're_exprs_return_float': [
+            re.compile('^GxB_(CREAL|CIMAG|CARG|ABS)_(FC32|FC64)$'),
         ],
     }
 
@@ -387,18 +425,32 @@ class BinaryOp(OpBase):
         'num_underscores': 1,
         're_exprs': [
             re.compile(
-                '^GrB_(FIRST|SECOND|MIN|MAX|PLUS|MINUS|TIMES|DIV)'
-                '_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'
+                '^GrB_(FIRST|SECOND|PLUS|MINUS|TIMES|DIV|MIN|MAX)'
+                '_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64|FC32|FC64)$'
             ),
-            re.compile('^GrB_(LOR|LAND|LXOR)$'),
             re.compile(
-                '^GxB_(RMINUS|RDIV|PAIR|ANY|ISEQ|ISNE|ISGT|ISLT|ISLE|ISGE)'
-                '_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'
+                '^GxB_(POW|RMINUS|RDIV|PAIR|ANY|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR)'
+                '_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64|FC32|FC64)$'
+            ),
+            re.compile('^GxB_(FIRST|SECOND|PLUS|MINUS|TIMES|DIV)_(FC32|FC64)$'),
+            re.compile('^GxB_(ATAN2|HYPOT|FMOD|REMAINDER|LDEXP|COPYSIGN)_(FP32|FP64)$'),
+            re.compile(
+                'GrB_(BOR|BAND|BXOR|BXNOR)'
+                '_(INT8|INT16|INT32|INT64|UINT8|UINT16|UINT32|UINT64)$'
+            ),
+            re.compile(
+                'GxB_(BGET|BSET|BCLR|BSHIFT)'
+                '_(INT8|INT16|INT32|INT64|UINT8|UINT16|UINT32|UINT64)$'
             ),
         ],
         're_exprs_return_bool': [
+            re.compile('^GrB_(LOR|LAND|LXOR|LXNOR)$'),
             re.compile('^GrB_(EQ|NE|GT|LT|GE|LE)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
             re.compile('^GxB_(LOR|LAND|LXOR)_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+            re.compile('^GxB_(EQ|NE)_(FC32|FC64)$'),
+        ],
+        're_exprs_return_complex': [
+            re.compile('^GxB_(CMPLX)_(FP32|FP64)$'),
         ],
     }
 
@@ -525,19 +577,24 @@ class Monoid(OpBase):
     _typed_class = TypedBuiltinMonoid
     _parse_config = {
         'trim_from_front': 4,
-        'trim_from_back': 7,
+        'delete_exact': 'MONOID',
         'num_underscores': 1,
         're_exprs': [
             re.compile(
-                '^GxB_(MAX|MIN|PLUS|TIMES|ANY)'
-                '_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)_MONOID$'
-            ),
-            re.compile('^GxB_(EQ|LAND|LOR|LXOR|ANY)_BOOL_MONOID$'),
+                '^GrB_(MIN|MAX|PLUS|TIMES|LOR|LAND|LXOR|LXNOR)_MONOID'
+                '_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
+            re.compile('^GxB_(ANY)_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)_MONOID$'),
+            re.compile('^GxB_(PLUS|TIMES|ANY)_(FC32|FC64)_MONOID$'),
+            re.compile('^GxB_(EQ|ANY)_BOOL_MONOID$'),
+            re.compile('^GxB_(BOR|BAND|BXOR|BXNOR)_(UINT8|UINT16|UINT32|UINT64)_MONOID$'),
         ],
     }
 
     @classmethod
     def _build(cls, name, binaryop, identity):
+        # Import here to avoid circular dependency
+        from .base import libget
+
         if type(binaryop) is not BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
         if name is None:
@@ -557,7 +614,7 @@ class Monoid(OpBase):
             if type_ != ret_type and not explicit_identities:
                 continue
             new_monoid = ffi.new('GrB_Monoid*')
-            func = getattr(lib, f'GrB_Monoid_new_{type_.name}')
+            func = libget(f'GrB_Monoid_new_{type_.name}')
             zcast = ffi.cast(type_.c_type, identity)
             check_status(func(new_monoid, binaryop[type_].gb_obj, zcast))
             op = TypedUserMonoid(type_.name, ret_type, new_monoid[0], binaryop[type_], identity)
@@ -586,21 +643,31 @@ class Semiring(OpBase):
     _typed_class = TypedBuiltinSemiring
     _parse_config = {
         'trim_from_front': 4,
+        'delete_exact': 'SEMIRING',
         'num_underscores': 2,
         're_exprs': [
+            re.compile(
+                '^GrB_(PLUS|MIN|MAX)_(PLUS|TIMES|FIRST|SECOND|MIN|MAX)_SEMIRING'
+                '_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'),
             re.compile(
                 '^GxB_(MIN|MAX|PLUS|TIMES|ANY)'
                 '_(FIRST|SECOND|PAIR|MIN|MAX|PLUS|MINUS|RMINUS|TIMES'
                 '|DIV|RDIV|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR)'
                 '_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'
             ),
-            re.compile('^GxB_(LOR|LAND|LXOR|EQ|ANY)_(FIRST|SECOND|PAIR|LOR|LAND|LXOR|EQ|GT|LT|GE|LE)_BOOL$'),
+            re.compile(
+                '^GxB_(PLUS|TIMES|ANY)_(FIRST|SECOND|PAIR|PLUS|MINUS|TIMES|DIV|RDIV|RMINUS)'
+                '_(FC32|FC64)$'
+            ),
+            re.compile('^GxB_(BOR|BAND|BXOR|BXNOR)_(BOR|BAND|BXOR|BXNOR)_(UINT8|UINT16|UINT32|UINT64)$'),
         ],
         're_exprs_return_bool': [
+            re.compile('^GrB_(LOR|LAND|LXOR|LXNOR)_(LOR|LAND)_SEMIRING_BOOL$'),
             re.compile(
                 '^GxB_(LOR|LAND|LXOR|EQ|ANY)_(EQ|NE|GT|LT|GE|LE)'
                 '_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$'
             ),
+            re.compile('^GxB_(LOR|LAND|LXOR|EQ|ANY)_(FIRST|SECOND|PAIR|LOR|LAND|LXOR|EQ|GT|LT|GE|LE)_BOOL$'),
         ],
     }
 

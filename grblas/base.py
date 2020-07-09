@@ -6,6 +6,18 @@ from .mask import Mask
 NULL = ffi.NULL
 
 
+def libget(name):
+    """Helper to get items from GraphBLAS which might be GrB or GxB"""
+    try:
+        return getattr(lib, name)
+    except AttributeError as e:
+        ext_name = f"GxB_{name[4:]}"
+        try:
+            return getattr(lib, ext_name)
+        except AttributeError:
+            raise e
+
+
 class Updater:
     def __init__(self, parent, **kwargs):
         self.parent = parent
@@ -36,6 +48,20 @@ class Updater:
         else:
             delayed = self.parent._prep_for_assign(resolved_indexes, obj)
             self.update(delayed)
+
+    def __delitem__(self, keys):
+        # Occurs when user calls `del C(params)[index]`
+        if self.parent._is_scalar:
+            raise TypeError('Indexing not supported for Scalars')
+        if type(keys) is IndexerResolver:
+            resolved_indexes = keys
+        else:
+            resolved_indexes = IndexerResolver(self.parent, keys)
+
+        if resolved_indexes.is_single_element:
+            self.parent._delete_element(resolved_indexes)
+        else:
+            raise TypeError('Remove Element only supports a single index')
 
     def __lshift__(self, delayed):
         # Occurs when user calls C(params) << delayed
