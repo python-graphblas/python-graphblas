@@ -399,6 +399,13 @@ def test_reduce_coerce_dtype(v):
     assert v.reduce(monoid.plus[dtypes.UINT64]).value == 4
 
 
+def test_reduce_coerce_dtype_bad(v):
+    pytest.xfail('https://github.com/jim22k/grblas/issues/28')
+    s = Scalar.from_value(1.23)
+    s(accum=binary.plus) << v.reduce()
+    assert s == 5.23
+
+
 def test_simple_assignment(v):
     # w[:] = v
     w = Vector.new(v.dtype, v.size)
