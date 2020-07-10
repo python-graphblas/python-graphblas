@@ -21,13 +21,13 @@ def test_bool_doesnt_get_too_large():
     a = grblas.Vector.from_values([0, 1, 2, 3], [True, False, True, False])
     b = grblas.Vector.from_values([0, 1, 2, 3], [True, True, False, False])
     z = a.ewise_mult(b, grblas.monoid.numpy.add).new()
-    z.show()
+    # z.show()
     x, y = z.to_values()
     assert y == (True, True, True, False)
 
     op = grblas.ops.UnaryOp.register_anonymous(lambda x: np.add(x, x))
     z = a.apply(op).new()
-    z.show()
+    # z.show()
     x, y = z.to_values()
     assert y == (True, False, True, False)
 
@@ -39,6 +39,7 @@ def test_npunary():
         [grblas.Vector.from_values([0, 1], [True, False]), np.array([True, False])],
         [grblas.Vector.from_values(L, L), np.array(L, dtype=int)],
         [grblas.Vector.from_values(L, L, dtype='float64'), np.array(L, dtype=np.float64)],
+        [grblas.Vector.from_values(L, L, dtype='FC64'), np.array(L, dtype=np.complex128)],
     ]
     blacklist = {}
     isclose = grblas.binary.isclose(1e-7, 0)
@@ -47,6 +48,12 @@ def test_npunary():
             op = getattr(npunary, unary_name)
             if gb_input.dtype.name not in op.types or unary_name in blacklist.get(gb_input.dtype.name, ()):
                 continue
+            if gb_input.dtype.name.startswith('FC'):
+                # There are some nasty branch cuts as 1
+                gb_input = gb_input.dup()
+                gb_input[1] = 1.1 + 1.2j
+                np_input = np_input.copy()
+                np_input[1] = 1.1 + 1.2j
             with np.errstate(divide='ignore', over='ignore', under='ignore', invalid='ignore'):
                 gb_result = gb_input.apply(op).new()
                 if gb_input.dtype == 'BOOL' and gb_result.dtype == 'FP32':
@@ -54,7 +61,10 @@ def test_npunary():
                     compare_op = isclose
                 else:
                     np_result = getattr(np, unary_name)(np_input)
-                    compare_op = npbinary.equal
+                    if gb_result.dtype.name.startswith('FC'):
+                        compare_op = isclose
+                    else:
+                        compare_op = npbinary.equal
             np_result = grblas.Vector.from_values(list(range(np_input.size)), list(np_result), dtype=gb_result.dtype)
             assert gb_result.nvals == np_result.size
             match = gb_result.ewise_mult(np_result, compare_op).new()
@@ -101,6 +111,16 @@ def test_npbinary():
             [
                 np.array([True, False, True, False]),
                 np.array([True, True, False, False]),
+            ],
+        ],
+        [
+            [
+                grblas.Vector.from_values(index, values1, dtype='FC64'),
+                grblas.Vector.from_values(index, values2, dtype='FC64'),
+            ],
+            [
+                np.array(values1, dtype=np.complex128),
+                np.array(values2, dtype=np.complex128),
             ],
         ],
     ]
@@ -171,6 +191,17 @@ def test_npmonoid():
                 np.array([True, True, False, False]),
             ],
         ],
+        # Complex monoids not working yet
+        # [
+        #     [
+        #         grblas.Vector.from_values(index, values1, dtype='FC64'),
+        #         grblas.Vector.from_values(index, values2, dtype='FC64'),
+        #     ],
+        #     [
+        #         np.array(values1, dtype=np.complex128),
+        #         np.array(values2, dtype=np.complex128),
+        #     ],
+        # ],
     ]
     blacklist = {}
     reduction_blacklist = {

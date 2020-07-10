@@ -6,6 +6,7 @@ os: linux
 dist: xenial
 python:
     - "3.7"
+    - "3.8"
 install:
     # https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/use-conda-with-travis-ci.html
     - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
@@ -16,7 +17,7 @@ install:
     - conda update -q conda
     - conda info -a
     # create and activaste environment
-    - conda create -n grblas -c conda-forge python=3.7 pandas scipy networkx numba cffi graphblas pytest-runner
+    - conda create -n grblas -c conda-forge python=$TRAVIS_PYTHON_VERSION pandas scipy networkx numba cffi graphblas pytest-runner
     - conda activate grblas
     - python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
     - pip install -e .

@@ -1,4 +1,7 @@
 # grblas
+
+[![Build Status](https://travis-ci.org/jim22k/grblas.svg?branch=master)](https://travis-ci.org/jim22k/grblas)
+
 Python wrapper around GraphBLAS
 
 To install, `conda install -c conda-forge grblas`. This will also install the SuiteSparse `graphblas` compiled C library.
