@@ -1,4 +1,5 @@
 import pytest
+import grblas
 from grblas import Matrix, Vector
 from grblas import unary, binary
 from grblas import dtypes
@@ -96,3 +97,12 @@ def test_updater_only_once():
         u()[[0, 1]][0]
     with pytest.raises(TypeError, match="is not subscriptable"):
         u[[0, 1]][0]
+
+
+def test_import_special_attrs():
+    not_hidden = {x for x in dir(grblas) if not x.startswith('_')}
+    # Is everything imported?
+    assert len(not_hidden & grblas._SPECIAL_ATTRS) == len(grblas._SPECIAL_ATTRS)
+    # Is everything special that needs to be?
+    not_special = {x for x in dir(grblas) if not x.startswith('_')} - grblas._SPECIAL_ATTRS
+    assert not_special == {'backends', 'init', 'mask'}
