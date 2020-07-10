@@ -106,3 +106,6 @@ def test_import_special_attrs():
     # Is everything special that needs to be?
     not_special = {x for x in dir(grblas) if not x.startswith('_')} - grblas._SPECIAL_ATTRS
     assert not_special == {'backends', 'init', 'mask'}
+    # Make sure these "not special" objects don't have objects that look special within them
+    for attr in not_special:
+        assert not set(dir(getattr(grblas, attr))) & grblas._SPECIAL_ATTRS
