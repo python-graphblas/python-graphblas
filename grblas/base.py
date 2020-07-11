@@ -1,3 +1,4 @@
+from functools import partial
 from . import lib, ffi
 from . import dtypes, ops, descriptor, unary
 from .exceptions import check_status
@@ -204,11 +205,21 @@ class GbContainer:
             temp_result = delayed.output_constructor()
             if self.dtype != temp_result.dtype:
                 if accum is not NULL:
-                    temp_result = self.dup(dtype=temp_result.dtype)
-                    temp_result(accum=orig_accum).update(delayed)
+                    assert 'reduce' in delayed.func.__name__
+                    assert isinstance(delayed.output_constructor, partial)
+                    assert 'dtype' in delayed.output_constructor.keywords
+                    basename = delayed.func.__name__.rsplit('_', 1)[0]
+                    new_func = getattr(lib, f'{basename}_{self.dtype.name}')
+                    oc = delayed.output_constructor
+                    kwargs = dict(oc.keywords)
+                    kwargs['dtype'] = self.dtype
+                    new_output_constructor = partial(oc.func, *oc.args, **kwargs)
+                    new_delayed = GbDelayed(new_func, delayed.tail_args, delayed.at,
+                                            delayed.bt, new_output_constructor)
+                    self(accum=orig_accum).update(new_delayed)
                 else:
                     temp_result.update(delayed)
-                self.value = temp_result.value
+                    self.value = temp_result.value
                 return
 
             call_args = [self.gb_obj, accum] + delayed.tail_args + [desc]

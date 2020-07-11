@@ -397,13 +397,10 @@ def test_reduce_coerce_dtype(v):
     t(accum=binary.times) << v.reduce(monoid.plus)
     assert t == 16.0
     assert v.reduce(monoid.plus[dtypes.UINT64]).value == 4
-
-
-def test_reduce_coerce_dtype_bad(v):
-    pytest.xfail('https://github.com/jim22k/grblas/issues/28')
-    s = Scalar.from_value(1.23)
-    s(accum=binary.plus) << v.reduce()
-    assert s == 5.23
+    # Make sure we accumulate as a float, not int
+    t.value = 1.23
+    t(accum=binary.plus) << v.reduce()
+    assert t == 5.23
 
 
 def test_simple_assignment(v):
