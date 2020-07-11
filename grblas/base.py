@@ -158,7 +158,7 @@ class GbContainer:
                 delayed = delayed.apply(unary.identity)
             elif type(delayed) is TransposedMatrix and type(self) is Matrix:
                 # Transpose (C << A.T)
-                delayed = GbDelayed(lib.GrB_transpose, [delayed.gb_obj[0]])
+                delayed = GbDelayed(lib.GrB_transpose, [delayed.gb_obj[0]], objects=delayed)
             elif self._is_scalar:
                 if accum is not NULL:
                     raise TypeError('Scalar update with accumulation--such as `s(accum=accum) << t`--is not supported')
@@ -238,7 +238,7 @@ class GbContainer:
 
 
 class GbDelayed:
-    def __init__(self, func, tail_args, at=False, bt=False, output_constructor=None):
+    def __init__(self, func, tail_args, *, at=False, bt=False, output_constructor=None, objects):
         """
         func: the GraphBLAS function to call
         tail_args: arguments specific to func other than the standard INOUT, mask, accum, and desc
@@ -246,12 +246,14 @@ class GbDelayed:
         bt: (bool) whether second input argument (B) is transposed
         output_constructor: functools.partial, must be callable with no additional arguments to
                             create an output object from GbDelayed; used when delayed.new() is called
+        objects: used to prevent objects from being garbage-collected!
         """
         self.func = func
         self.tail_args = tail_args
         self.at = at
         self.bt = bt
         self.output_constructor = output_constructor
+        self.objects = objects
 
     def __repr__(self):
         return f'GbDelayed<{self.func.__name__}>'
