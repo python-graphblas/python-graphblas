@@ -7,7 +7,10 @@ class Mask:
         self.mask = mask
 
     def __repr__(self):
-        return f'{self.__class__.__name__} of {self.mask}'
+        return self.mask.__repr__(_mask=self)
+
+    def _repr_html_(self):
+        return self.mask._repr_html_(_mask=self)
 
 
 class StructuralMask(Mask):

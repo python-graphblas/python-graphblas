@@ -380,7 +380,7 @@ def test_nested_names():
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.incrementers.plus_three)
     result = Vector.from_values([0, 1, 3], [4, 5, -1], dtype=dtypes.INT32)
-    assert v.isequal(result), print(v.show())
+    assert v.isequal(result), v
 
     def plus_four(x):
         return x + 4
@@ -389,7 +389,7 @@ def test_nested_names():
     assert hasattr(unary.incrementers, 'plus_four')
     v << v.apply(unary.incrementers.plus_four)  # this is in addition to the plus_three earlier
     result2 = Vector.from_values([0, 1, 3], [8, 9, 3], dtype=dtypes.INT32)
-    assert v.isequal(result2), print(v.show())
+    assert v.isequal(result2), v
 
     def bad_will_overwrite_path(x):
         return x + 7

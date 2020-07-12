@@ -5,6 +5,7 @@ from .ops import get_typed_op
 from . import dtypes, binary, monoid, semiring
 from .mask import StructuralMask, ValueMask
 from .exceptions import check_status, is_error, NoValue
+from .formatting import format_vector, format_vector_html
 
 
 class Vector(GbContainer):
@@ -18,8 +19,11 @@ class Vector(GbContainer):
     def __del__(self):
         check_status(lib.GrB_Vector_free(self.gb_obj))
 
-    def __repr__(self):
-        return f'<Vector {self.nvals}/{self.size}:{self.dtype.name}>'
+    def __repr__(self, _mask=None):
+        return format_vector(self, _mask=_mask)
+
+    def _repr_html_(self, _mask=None):
+        return format_vector_html(self, _mask=_mask)
 
     @property
     def S(self):
@@ -152,7 +156,7 @@ class Vector(GbContainer):
             dup_op = binary.plus
         dup_op = get_typed_op(dup_op, self.dtype)
         if dup_op.opclass != 'BinaryOp':
-            raise TypeError(f'dup_op must be BinaryOp')
+            raise TypeError('dup_op must be BinaryOp')
 
         indices = ffi.new('GrB_Index[]', indices)
         values = ffi.new(f'{self.dtype.c_type}[]', values)
@@ -247,9 +251,9 @@ class Vector(GbContainer):
             raise TypeError(f'Expected Vector, found {type(other)}')
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
-            raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
+            raise TypeError('op must be BinaryOp, Monoid, or Semiring')
         if require_monoid and op.opclass not in {'Monoid', 'Semiring'}:
-            raise TypeError(f'op must be Monoid or Semiring unless require_monoid is False')
+            raise TypeError('op must be Monoid or Semiring unless require_monoid is False')
         func = libget(f'GrB_eWiseAdd_Vector_{op.opclass}')
         output_constructor = partial(Vector.new,
                                      dtype=op.return_type,
@@ -269,7 +273,7 @@ class Vector(GbContainer):
             raise TypeError(f'Expected Vector, found {type(other)}')
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
-            raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
+            raise TypeError('op must be BinaryOp, Monoid, or Semiring')
         func = libget(f'GrB_eWiseMult_Vector_{op.opclass}')
         output_constructor = partial(Vector.new,
                                      dtype=op.return_type,
@@ -289,7 +293,7 @@ class Vector(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass != 'Semiring':
-            raise TypeError(f'op must be Semiring')
+            raise TypeError('op must be Semiring')
         output_constructor = partial(Vector.new,
                                      dtype=op.return_type,
                                      size=other.ncols)
@@ -345,7 +349,7 @@ class Vector(GbContainer):
         """
         op = get_typed_op(op, self.dtype)
         if op.opclass != 'Monoid':
-            raise TypeError(f'op must be Monoid')
+            raise TypeError('op must be Monoid')
         func = libget(f'GrB_Vector_reduce_{op.return_type}')
         output_constructor = partial(Scalar.new,
                                      dtype=op.return_type)
