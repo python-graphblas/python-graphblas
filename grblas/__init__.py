@@ -1,10 +1,11 @@
-import importlib
-from . import backends  # noqa
+import importlib as _importlib
+from . import backends, mask  # noqa
 
 _init_params = None
 _SPECIAL_ATTRS = {"lib", "ffi", "Matrix", "Vector", "Scalar",
                   "exceptions", "matrix", "ops", "scalar", "vector",
-                  "unary", "binary", "monoid", "semiring"}
+                  "unary", "binary", "monoid", "semiring",
+                  "base", "descriptor", "dtypes", "io"}
 
 
 def __getattr__(name):
@@ -43,7 +44,7 @@ def _init(backend, blocking, automatic=False):
         # Already initialized with these parameters; nothing more to do
         return
 
-    ffi_backend = importlib.import_module(f'.backends.{backend}', __name__)
+    ffi_backend = _importlib.import_module(f'.backends.{backend}', __name__)
     lib = ffi_backend.lib
     ffi = ffi_backend.ffi
     # This must be called before anything else happens
@@ -63,7 +64,7 @@ def _load(name):
         globals()[name] = val
     elif name in _SPECIAL_ATTRS:
         # Everything else is a module
-        module = importlib.import_module(f".{name}", __name__)
+        module = _importlib.import_module(f".{name}", __name__)
         globals()[name] = module
     else:
         raise ValueError(name)
