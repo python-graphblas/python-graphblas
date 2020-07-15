@@ -14,7 +14,7 @@ UNKNOWN_OPCLASS = 'UnknownOpClass'
 
 
 def _normalize_type(type_):
-    return type_.name if isinstance(type_, dtypes.DataType) else type_
+    return dtypes.lookup(type_).name
 
 
 class UdfParseError(GrblasException):
@@ -28,10 +28,17 @@ class OpPath:
 
 
 class TypedOpBase:
-    def __init__(self, type_, return_type, gb_obj):
+    def __init__(self, name, type_, return_type, gb_obj):
+        self.name = name
         self.type = _normalize_type(type_)
         self.return_type = _normalize_type(return_type)
         self.gb_obj = gb_obj
+
+    def __repr__(self):
+        classname = self.opclass.lower()
+        if classname.endswith('op'):
+            classname = classname[:-2]
+        return f'{classname}.{self.name}[{self.type}]'
 
 
 class TypedBuiltinUnaryOp(TypedOpBase):
@@ -53,8 +60,8 @@ class TypedBuiltinSemiring(TypedOpBase):
 class TypedUserUnaryOp(TypedOpBase):
     opclass = 'UnaryOp'
 
-    def __init__(self, type_, return_type, gb_obj, orig_func, numba_func):
-        super().__init__(type_, return_type, gb_obj)
+    def __init__(self, name, type_, return_type, gb_obj, orig_func, numba_func):
+        super().__init__(name, type_, return_type, gb_obj)
         self.orig_func = orig_func
         self.numba_func = numba_func
 
@@ -62,8 +69,8 @@ class TypedUserUnaryOp(TypedOpBase):
 class TypedUserBinaryOp(TypedOpBase):
     opclass = 'BinaryOp'
 
-    def __init__(self, type_, return_type, gb_obj, orig_func, numba_func):
-        super().__init__(type_, return_type, gb_obj)
+    def __init__(self, name, type_, return_type, gb_obj, orig_func, numba_func):
+        super().__init__(name, type_, return_type, gb_obj)
         self.orig_func = orig_func
         self.numba_func = numba_func
 
@@ -71,8 +78,8 @@ class TypedUserBinaryOp(TypedOpBase):
 class TypedUserMonoid(TypedOpBase):
     opclass = 'Monoid'
 
-    def __init__(self, type_, return_type, gb_obj, binaryop, identity):
-        super().__init__(type_, return_type, gb_obj)
+    def __init__(self, name, type_, return_type, gb_obj, binaryop, identity):
+        super().__init__(name, type_, return_type, gb_obj)
         self.binaryop = binaryop
         self.identity = identity
 
@@ -80,8 +87,8 @@ class TypedUserMonoid(TypedOpBase):
 class TypedUserSemiring(TypedOpBase):
     opclass = 'Semiring'
 
-    def __init__(self, type_, return_type, gb_obj, monoid, binaryop):
-        super().__init__(type_, return_type, gb_obj)
+    def __init__(self, name, type_, return_type, gb_obj, monoid, binaryop):
+        super().__init__(name, type_, return_type, gb_obj)
         self.monoid = monoid
         self.binaryop = binaryop
 
@@ -204,7 +211,7 @@ class OpBase:
         self.types = {}
 
     def __repr__(self):
-        return f'{type(self).__name__}.{self.name}'
+        return f'{self._modname}.{self.name}'
 
     def __getitem__(self, type_):
         type_ = _normalize_type(type_)
@@ -293,7 +300,7 @@ class OpBase:
                                 if num_bits not in {'32', '64'}:
                                     raise TypeError(f'Unexpected number of bits: {num_bits}')
                                 return_type = f'{return_prefix}{num_bits}'
-                        op = cls._typed_class(type_, return_type, gb_obj)
+                        op = cls._typed_class(name, type_, return_type, gb_obj)
                         obj._add(op)
         cls._initialized = True
 
@@ -390,7 +397,7 @@ class UnaryOp(OpBase):
                 new_unary = ffi.new('GrB_UnaryOp*')
                 check_status(lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi,
                                                  ret_type.gb_type, type_.gb_type))
-                op = TypedUserUnaryOp(type_.name, ret_type.name, new_unary[0], func, unary_udf)
+                op = TypedUserUnaryOp(name, type_.name, ret_type.name, new_unary[0], func, unary_udf)
                 new_type_obj._add(op)
                 success = True
                 return_types[type_.name] = ret_type.name
@@ -518,7 +525,7 @@ class BinaryOp(OpBase):
                     lib.GrB_BinaryOp_new(new_binary, binary_wrapper.cffi,
                                          ret_type.gb_type, type_.gb_type, type_.gb_type)
                 )
-                op = TypedUserBinaryOp(type_.name, ret_type.name, new_binary[0], func, binary_udf)
+                op = TypedUserBinaryOp(name, type_.name, ret_type.name, new_binary[0], func, binary_udf)
                 new_type_obj._add(op)
                 success = True
                 return_types[type_.name] = ret_type.name
@@ -550,7 +557,7 @@ class BinaryOp(OpBase):
         # Rename div to cdiv
         binary.cdiv = BinaryOp('cdiv')
         for dtype, ret_type in binary.div.types.items():
-            op = TypedBuiltinBinaryOp(dtype, ret_type, binary.div[dtype].gb_obj)
+            op = TypedBuiltinBinaryOp('cdiv', dtype, ret_type, binary.div[dtype].gb_obj)
             binary.cdiv._add(op)
         del binary.div
         # Add truediv which always points to floating point cdiv
@@ -559,7 +566,7 @@ class BinaryOp(OpBase):
         binary.truediv = BinaryOp('truediv')
         for dtype in binary.cdiv.types:
             float_type = 'FP32' if dtype == 'FP32' else 'FP64'
-            op = TypedBuiltinBinaryOp(dtype, binary.cdiv.types[float_type], binary.cdiv[float_type].gb_obj)
+            op = TypedBuiltinBinaryOp('truediv', dtype, binary.cdiv.types[float_type], binary.cdiv[float_type].gb_obj)
             binary.truediv._add(op)
         # Add floordiv
         # cdiv truncates towards 0, while floordiv truncates towards -inf
@@ -619,7 +626,7 @@ class Monoid(OpBase):
             func = libget(f'GrB_Monoid_new_{type_.name}')
             zcast = ffi.cast(type_.c_type, identity)
             check_status(func(new_monoid, binaryop[type_].gb_obj, zcast))
-            op = TypedUserMonoid(type_.name, ret_type, new_monoid[0], binaryop[type_], identity)
+            op = TypedUserMonoid(name, type_.name, ret_type, new_monoid[0], binaryop[type_], identity)
             new_type_obj._add(op)
         return new_type_obj
 
@@ -692,7 +699,7 @@ class Semiring(OpBase):
             new_semiring = ffi.new('GrB_Semiring*')
             check_status(lib.GrB_Semiring_new(new_semiring, monoid[binary_out].gb_obj, binary_func.gb_obj))
             ret_type = monoid[binary_out].return_type
-            op = TypedUserSemiring(binary_in, ret_type, new_semiring[0], monoid[binary_out], binary_func)
+            op = TypedUserSemiring(name, binary_in, ret_type, new_semiring[0], monoid[binary_out], binary_func)
             new_type_obj._add(op)
         return new_type_obj
 

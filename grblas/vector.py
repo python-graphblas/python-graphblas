@@ -19,11 +19,11 @@ class Vector(GbContainer):
     def __del__(self):
         check_status(lib.GrB_Vector_free(self.gb_obj))
 
-    def __repr__(self, _mask=None):
-        return format_vector(self, _mask=_mask)
+    def __repr__(self, mask=None):
+        return format_vector(self, mask=mask)
 
-    def _repr_html_(self, _mask=None):
-        return format_vector_html(self, _mask=_mask)
+    def _repr_html_(self, mask=None):
+        return format_vector_html(self, mask=mask)
 
     @property
     def S(self):
