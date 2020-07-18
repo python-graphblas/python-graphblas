@@ -214,8 +214,14 @@ class GbContainer:
                     kwargs = dict(oc.keywords)
                     kwargs['dtype'] = self.dtype
                     new_output_constructor = partial(oc.func, *oc.args, **kwargs)
-                    new_delayed = GbDelayed(new_func, delayed.tail_args, delayed.at,
-                                            delayed.bt, new_output_constructor)
+                    new_delayed = GbDelayed(
+                        new_func,
+                        delayed.tail_args,
+                        at=delayed.at,
+                        bt=delayed.bt,
+                        output_constructor=new_output_constructor,
+                        objects=delayed,
+                    )
                     self(accum=orig_accum).update(new_delayed)
                 else:
                     temp_result.update(delayed)

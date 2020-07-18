@@ -329,14 +329,20 @@ class Vector(GbContainer):
         else:
             if left is not None:
                 if isinstance(left, Scalar):
+                    dtype = left.dtype
                     left = left.value
-                func = libget(f'GrB_Vector_apply_BinaryOp1st_{self.dtype}')
-                call_args = [op.gb_obj, ffi.cast(self.dtype.c_type, left), self.gb_obj[0]]
+                else:
+                    dtype = dtypes.lookup(type(left))
+                func = libget(f'GrB_Vector_apply_BinaryOp1st_{dtype}')
+                call_args = [op.gb_obj, ffi.cast(dtype.c_type, left), self.gb_obj[0]]
             elif right is not None:
                 if isinstance(right, Scalar):
+                    dtype = right.dtype
                     right = right.value
-                func = libget(f'GrB_Vector_apply_BinaryOp2nd_{self.dtype}')
-                call_args = [op.gb_obj, self.gb_obj[0], ffi.cast(self.dtype.c_type, right)]
+                else:
+                    dtype = dtypes.lookup(type(right))
+                func = libget(f'GrB_Vector_apply_BinaryOp2nd_{dtype}')
+                call_args = [op.gb_obj, self.gb_obj[0], ffi.cast(dtype.c_type, right)]
 
         return GbDelayed(func, call_args, output_constructor=output_constructor, objects=(self, op))
 
