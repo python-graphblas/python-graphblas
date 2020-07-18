@@ -622,3 +622,20 @@ def test_transpose_exceptional():
     D = D.dup(mask=A.V)
     assert C.isequal(D)
     assert C.isequal(Matrix.from_values([0, 0, 1], [0, 1, 1], [1, 3, 4]))
+
+
+def test_nested_matrix_operations():
+    """ Make sure temporaries aren't garbage-collected too soon"""
+    A = Matrix.new(int, 8, 8)
+
+    A.ewise_mult(
+        A.mxm(A.T).new()
+    ).new().reduce_scalar().new()
+
+    A.ewise_mult(
+        A.ewise_mult(
+            A.ewise_mult(
+                A.ewise_mult(A).new()
+            ).new(),
+        ).new(),
+    )
