@@ -1,6 +1,9 @@
 # grblas
 
 [![Build Status](https://travis-ci.org/jim22k/grblas.svg?branch=master)](https://travis-ci.org/jim22k/grblas)
+[![Coverage Status](https://coveralls.io/repos/jim22k/grblas/badge.svg?branch=master)](https://coveralls.io/r/jim22k/grblas)
+[![Conda Version](https://img.shields.io/conda/vn/conda-forge/grblas.svg)](https://anaconda.org/conda-forge/grblas)
+[![Conda Platforms](https://img.shields.io/conda/pn/conda-forge/grblas.svg)](https://anaconda.org/conda-forge/grblas)
 
 Python wrapper around GraphBLAS
 
