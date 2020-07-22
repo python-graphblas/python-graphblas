@@ -463,6 +463,10 @@ def test_reduce_scalar(A):
     t(accum=binary.times) << A.reduce_scalar(monoid.plus)
     assert t == 47 * 47
     assert A.reduce_scalar(monoid.plus[dtypes.UINT64]).value == 47
+    # Make sure we accumulate as a float, not int
+    t.value = 1.23
+    t(accum=binary.plus) << A.reduce_scalar()
+    assert t == 48.23
 
 
 def test_transpose(A):
