@@ -21,6 +21,7 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
             submatrix(submatrix.S) << parent
             if row_offset > 0 or column_offset > 0:
                 submatrix = submatrix[column_offset:, row_offset:].new()
+            submatrix = submatrix.T
         else:
             if mask is None:
                 submatrix = gb.Matrix.new(matrix.dtype, matrix.nrows, matrix.ncols)
@@ -35,10 +36,7 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
                     submatrix(matrix.V)[rows, columns] = 0 if mask.complement else 1
             if row_offset > 0 or column_offset > 0:
                 submatrix = submatrix[row_offset:, column_offset:].new()
-    if isinstance(matrix, gb.matrix.TransposedMatrix):
-        cols, rows, vals = submatrix.to_values()
-    else:
-        rows, cols, vals = submatrix.to_values()
+    rows, cols, vals = submatrix.to_values()
     df.values[rows, cols] = vals
 
 
