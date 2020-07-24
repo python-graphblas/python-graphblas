@@ -1,5 +1,5 @@
 # This TravisCI script is very minimal and not very flexible.
-# It only tests one environment on Linux with Python 3.7.
+# It only tests one environment on Linux with Python 3.7 and 3.8.
 # We will eventually want to expand our test environments.
 language: python
 os: linux
@@ -16,14 +16,19 @@ install:
     - conda config --set always_yes yes --set changeps1 no
     - conda update -q conda
     - conda info -a
-    # create and activaste environment
-    - conda create -n grblas -c conda-forge python=$TRAVIS_PYTHON_VERSION pandas scipy networkx numba cffi graphblas pytest-runner
+    # create and activate environment
+    - conda create -n grblas -c conda-forge python=$TRAVIS_PYTHON_VERSION pandas scipy networkx numba cffi graphblas pytest-runner coverage
     - conda activate grblas
     - python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
     - pip install -e .
 
 script:
-    - pytest --runslow
+    - coverage run `which py.test` --runslow
+
+after_success:
+    - coverage report --show-missing
+    - conda install -c conda-forge coveralls
+    - coveralls
 
 notifications:
     email: false

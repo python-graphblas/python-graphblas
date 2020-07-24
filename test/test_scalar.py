@@ -1,6 +1,6 @@
 import pytest
 from grblas import Scalar
-from grblas import dtypes
+from grblas import dtypes, binary
 
 
 @pytest.fixture
@@ -149,3 +149,18 @@ def test_unsupported_ops(s):
 def test_is_empty(s):
     with pytest.raises(AttributeError, match="can't set attribute"):
         s.is_empty = True
+
+
+def test_update(s):
+    s << 1
+    assert s == 1
+    s << Scalar.from_value(2)
+    assert s == 2
+    s << Scalar.from_value(3)
+    assert s == 3
+    with pytest.raises(TypeError, match='an integer is required'):
+        s << Scalar.from_value(4.4)
+    s() << 5
+    assert s == 5
+    with pytest.raises(TypeError, match='is not supported'):
+        s(accum=binary.plus) << 6

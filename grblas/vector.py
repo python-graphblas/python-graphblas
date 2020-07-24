@@ -260,7 +260,8 @@ class Vector(GbContainer):
                                      size=self.size)
         return GbDelayed(func,
                          [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
-                         output_constructor=output_constructor)
+                         output_constructor=output_constructor,
+                         objects=(self, other, op))
 
     def ewise_mult(self, other, op=binary.times):
         """
@@ -280,7 +281,8 @@ class Vector(GbContainer):
                                      size=self.size)
         return GbDelayed(func,
                          [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
-                         output_constructor=output_constructor)
+                         output_constructor=output_constructor,
+                         objects=(self, other, op))
 
     def vxm(self, other, op=semiring.plus_times):
         """
@@ -300,7 +302,8 @@ class Vector(GbContainer):
         return GbDelayed(lib.GrB_vxm,
                          [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
                          bt=other._is_transposed,
-                         output_constructor=output_constructor)
+                         output_constructor=output_constructor,
+                         objects=(self, other, op))
 
     def apply(self, op, left=None, right=None):
         """
@@ -330,16 +333,22 @@ class Vector(GbContainer):
         else:
             if left is not None:
                 if isinstance(left, Scalar):
+                    dtype = left.dtype
                     left = left.value
-                func = libget(f'GrB_Vector_apply_BinaryOp1st_{self.dtype}')
-                call_args = [op.gb_obj, ffi.cast(self.dtype.c_type, left), self.gb_obj[0]]
+                else:
+                    dtype = dtypes.lookup(type(left))
+                func = libget(f'GrB_Vector_apply_BinaryOp1st_{dtype}')
+                call_args = [op.gb_obj, ffi.cast(dtype.c_type, left), self.gb_obj[0]]
             elif right is not None:
                 if isinstance(right, Scalar):
+                    dtype = right.dtype
                     right = right.value
-                func = libget(f'GrB_Vector_apply_BinaryOp2nd_{self.dtype}')
-                call_args = [op.gb_obj, self.gb_obj[0], ffi.cast(self.dtype.c_type, right)]
+                else:
+                    dtype = dtypes.lookup(type(right))
+                func = libget(f'GrB_Vector_apply_BinaryOp2nd_{dtype}')
+                call_args = [op.gb_obj, self.gb_obj[0], ffi.cast(dtype.c_type, right)]
 
-        return GbDelayed(func, call_args, output_constructor=output_constructor)
+        return GbDelayed(func, call_args, output_constructor=output_constructor, objects=(self, op))
 
     def reduce(self, op=monoid.plus):
         """
@@ -355,7 +364,8 @@ class Vector(GbContainer):
                                      dtype=op.return_type)
         return GbDelayed(func,
                          [op.gb_obj, self.gb_obj[0]],
-                         output_constructor=output_constructor)
+                         output_constructor=output_constructor,
+                         objects=(self, op))
 
     ##################################
     # Extract and Assign index methods
@@ -381,7 +391,8 @@ class Vector(GbContainer):
                                      size=isize)
         return GbDelayed(lib.GrB_Vector_extract,
                          [self.gb_obj[0], index, isize],
-                         output_constructor=output_constructor)
+                         output_constructor=output_constructor,
+                         objects=self)
 
     def _assign_element(self, resolved_indexes, value):
         index, _ = resolved_indexes.indices[0]
@@ -400,10 +411,12 @@ class Vector(GbContainer):
             func = libget(f'GrB_Vector_assign_{dtype.name}')
             scalar = ffi.cast(dtype.c_type, obj)
             delayed = GbDelayed(func,
-                                [scalar, index, isize])
+                                [scalar, index, isize],
+                                objects=self)
         elif isinstance(obj, Vector):
             delayed = GbDelayed(lib.GrB_Vector_assign,
-                                [obj.gb_obj[0], index, isize])
+                                [obj.gb_obj[0], index, isize],
+                                objects=(self, obj))
         else:
             raise TypeError(f'Unexpected type for assignment value: {type(obj)}')
         return delayed

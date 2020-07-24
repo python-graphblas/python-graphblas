@@ -292,7 +292,8 @@ class Matrix(GbContainer):
                          [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
                          at=self._is_transposed,
                          bt=other._is_transposed,
-                         output_constructor=output_constructor)
+                         output_constructor=output_constructor,
+                         objects=(self, other, op))
 
     def ewise_mult(self, other, op=binary.times):
         """
@@ -314,7 +315,8 @@ class Matrix(GbContainer):
                          [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
                          at=self._is_transposed,
                          bt=other._is_transposed,
-                         output_constructor=output_constructor)
+                         output_constructor=output_constructor,
+                         objects=(self, other, op))
 
     def mxv(self, other, op=semiring.plus_times):
         """
@@ -333,7 +335,8 @@ class Matrix(GbContainer):
         return GbDelayed(lib.GrB_mxv,
                          [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
                          at=self._is_transposed,
-                         output_constructor=output_constructor)
+                         output_constructor=output_constructor,
+                         objects=(self, other, op))
 
     def mxm(self, other, op=semiring.plus_times):
         """
@@ -355,7 +358,8 @@ class Matrix(GbContainer):
                          [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
                          at=self._is_transposed,
                          bt=other._is_transposed,
-                         output_constructor=output_constructor)
+                         output_constructor=output_constructor,
+                         objects=(self, other, op))
 
     def kronecker(self, other, op=binary.times):
         """
@@ -376,7 +380,8 @@ class Matrix(GbContainer):
                          [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
                          at=self._is_transposed,
                          bt=other._is_transposed,
-                         output_constructor=output_constructor)
+                         output_constructor=output_constructor,
+                         objects=(self, other, op))
 
     def apply(self, op, left=None, right=None):
         """
@@ -406,16 +411,26 @@ class Matrix(GbContainer):
         else:
             if left is not None:
                 if isinstance(left, Scalar):
+                    dtype = left.dtype
                     left = left.value
-                func = libget(f'GrB_Matrix_apply_BinaryOp1st_{self.dtype}')
-                call_args = [op.gb_obj, ffi.cast(self.dtype.c_type, left), self.gb_obj[0]]
+                else:
+                    dtype = dtypes.lookup(type(left))
+                func = libget(f'GrB_Matrix_apply_BinaryOp1st_{dtype}')
+                call_args = [op.gb_obj, ffi.cast(dtype.c_type, left), self.gb_obj[0]]
             elif right is not None:
                 if isinstance(right, Scalar):
+                    dtype = right.dtype
                     right = right.value
-                func = libget(f'GrB_Matrix_apply_BinaryOp2nd_{self.dtype}')
-                call_args = [op.gb_obj, self.gb_obj[0], ffi.cast(self.dtype.c_type, right)]
+                else:
+                    dtype = dtypes.lookup(type(right))
+                func = libget(f'GrB_Matrix_apply_BinaryOp2nd_{dtype}')
+                call_args = [op.gb_obj, self.gb_obj[0], ffi.cast(dtype.c_type, right)]
 
-        return GbDelayed(func, call_args, at=self._is_transposed, output_constructor=output_constructor)
+        return GbDelayed(func,
+                         call_args,
+                         at=self._is_transposed,
+                         output_constructor=output_constructor,
+                         objects=(self, op))
 
     def reduce_rows(self, op=monoid.plus):
         """
@@ -433,7 +448,8 @@ class Matrix(GbContainer):
         return GbDelayed(func,
                          [op.gb_obj, self.gb_obj[0]],
                          at=self._is_transposed,
-                         output_constructor=output_constructor)
+                         output_constructor=output_constructor,
+                         objects=(self, op))
 
     def reduce_columns(self, op=monoid.plus):
         """
@@ -457,7 +473,8 @@ class Matrix(GbContainer):
                                      dtype=op.return_type)
         return GbDelayed(func,
                          [op.gb_obj, self.gb_obj[0]],
-                         output_constructor=output_constructor)
+                         output_constructor=output_constructor,
+                         objects=(self, op))
 
     ##################################
     # Extract and Assign index methods
@@ -492,7 +509,8 @@ class Matrix(GbContainer):
             return GbDelayed(lib.GrB_Col_extract,
                              [self.gb_obj[0], cols, colsize, row_index],
                              at=(not self._is_transposed),
-                             output_constructor=output_constructor)
+                             output_constructor=output_constructor,
+                             objects=self)
         elif colsize is None:
             # Column-only selection
             col_index = cols
@@ -502,7 +520,8 @@ class Matrix(GbContainer):
             return GbDelayed(lib.GrB_Col_extract,
                              [self.gb_obj[0], rows, rowsize, col_index],
                              at=self._is_transposed,
-                             output_constructor=output_constructor)
+                             output_constructor=output_constructor,
+                             objects=self)
         else:
             output_constructor = partial(Matrix.new,
                                          dtype=self.dtype,
@@ -510,7 +529,8 @@ class Matrix(GbContainer):
             return GbDelayed(lib.GrB_Matrix_extract,
                              [self.gb_obj[0], rows, rowsize, cols, colsize],
                              at=self._is_transposed,
-                             output_constructor=output_constructor)
+                             output_constructor=output_constructor,
+                             objects=self)
 
     def _assign_element(self, resolved_indexes, value):
         row, _ = resolved_indexes.indices[0]
@@ -538,7 +558,8 @@ class Matrix(GbContainer):
             scalar = ffi.cast(dtype.c_type, obj)
             func = libget(f'GrB_Matrix_assign_{dtype.name}')
             delayed = GbDelayed(func,
-                                [scalar, rows, rowsize, cols, colsize])
+                                [scalar, rows, rowsize, cols, colsize],
+                                objects=self)
         else:
             if rowsize is None and colsize is None:
                 raise TypeError(f'Expected scalar for assignment value; found {type(obj)}')
@@ -548,20 +569,23 @@ class Matrix(GbContainer):
                 # Row-only selection
                 row_index = rows
                 delayed = GbDelayed(lib.GrB_Row_assign,
-                                    [obj.gb_obj[0], row_index, cols, colsize])
+                                    [obj.gb_obj[0], row_index, cols, colsize],
+                                    objects=(self, obj))
             elif colsize is None:
                 if not isinstance(obj, Vector):
                     raise TypeError(f'Expected Vector for assignment value; found {type(obj)}')
                 # Column-only selection
                 col_index = cols
                 delayed = GbDelayed(lib.GrB_Col_assign,
-                                    [obj.gb_obj[0], rows, rowsize, col_index])
+                                    [obj.gb_obj[0], rows, rowsize, col_index],
+                                    objects=(self, obj))
             else:
                 if not isinstance(obj, (Matrix, TransposedMatrix)):
                     raise TypeError(f'Expected Matrix for assignment value; found {type(obj)}')
                 delayed = GbDelayed(lib.GrB_Matrix_assign,
                                     [obj.gb_obj[0], rows, rowsize, cols, colsize],
-                                    at=obj._is_transposed)
+                                    at=obj._is_transposed,
+                                    objects=(self, obj))
         return delayed
 
     def _delete_element(self, resolved_indexes):
