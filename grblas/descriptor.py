@@ -1,9 +1,10 @@
-from . import lib, ffi
+from . import ffi, lib
 from .exceptions import check_status
 
+NULL = ffi.NULL
 _desc_map = {
     # OUTP, MSK_COMP, MSK_STRUCT, TRANS0, TRANS1
-    (False, False, False, False, False): ffi.NULL,
+    (False, False, False, False, False): NULL,
     (False, False, False, False, True): lib.GrB_DESC_T1,
     (False, False, False, True, False): lib.GrB_DESC_T0,
     (False, False, False, True, True): lib.GrB_DESC_T0T1,
@@ -46,7 +47,7 @@ def lookup(*, output_replace=False,
         desc = ffi.new('GrB_Descriptor*')
         if not any(key):
             # Default descriptor stays a NULL pointer
-            desc[0] = ffi.NULL
+            desc[0] = NULL
         else:
             check_status(lib.GrB_Descriptor_new(desc))
             for cond, field, val in [(output_replace, lib.GrB_OUTP, lib.GrB_REPLACE),

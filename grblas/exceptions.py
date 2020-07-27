@@ -1,4 +1,4 @@
-from . import lib, ffi
+from . import ffi, lib
 
 
 class GrblasException(Exception):
@@ -88,9 +88,10 @@ def is_error(response_code, error_class):
     return False
 
 
+GrB_SUCCESS = lib.GrB_SUCCESS
+
+
 def check_status(response_code):
-    if response_code != lib.GrB_SUCCESS:
-        text = ffi.string(lib.GrB_error())
-        if isinstance(text, bytes):
-            text = text.decode()
+    if response_code != GrB_SUCCESS:
+        text = ffi.string(lib.GrB_error()).decode()
         raise _error_code_lookup[response_code](text)

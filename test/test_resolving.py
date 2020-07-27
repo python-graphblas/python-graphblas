@@ -3,7 +3,7 @@ import grblas
 from grblas import Matrix, Vector
 from grblas import unary, binary
 from grblas import dtypes
-from grblas.base import Updater
+from grblas.expr import Updater
 
 
 def test_from_values_dtype_resolving():

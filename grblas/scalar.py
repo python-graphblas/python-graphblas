@@ -1,15 +1,42 @@
-import grblas
-from .base import ffi, GbContainer
+import itertools
+from . import ffi
+from .base import BaseExpression, BaseType
+from .binary import isclose
+from .dtypes import lookup_dtype
 from .ops import get_typed_op
-from . import dtypes
+
+ffi_new = ffi.new
 
 
-class Scalar(GbContainer):
+class _CScalar:
+    def __init__(self, scalar):
+        if type(scalar) is not Scalar:
+            scalar = Scalar.from_value(scalar)
+        self.scalar = scalar
+        self.dtype = scalar.dtype
+
+    def __repr__(self):
+        return repr(self.scalar.value)
+
+    @property
+    def _carg(self):
+        return self.scalar.value
+
+    def __eq__(self, other):
+        if type(other) is _CScalar:
+            return self.scalar == other.scalar
+        return self.scalar == other
+
+    __hash__ = None
+
+
+class Scalar(BaseType):
     """
     GraphBLAS Scalar
     Pseudo-object for GraphBLAS functions which accumlate into a scalar type
     """
     _is_scalar = True
+    _name_counter = itertools.count()
 
     def __init__(self, gb_obj, dtype, empty=False):
         super().__init__(gb_obj, dtype)
@@ -20,6 +47,8 @@ class Scalar(GbContainer):
 
     def __eq__(self, other):
         return self.isequal(other)
+
+    __hash__ = None
 
     def __bool__(self):
         if self.is_empty:
@@ -33,12 +62,12 @@ class Scalar(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         For equality of floating point Vectors, consider using `isclose`
         """
-        if not isinstance(other, Scalar):
+        if type(other) is not Scalar:
             if other is None:
                 return self.is_empty
             try:
                 # Check if other is a literal scalar, which we should handle
-                dtype = dtypes.lookup(type(other))
+                dtype = lookup_dtype(type(other))
             except KeyError:
                 raise TypeError(f'Argument of isequal must be a known scalar type, not {type(other)}')
             other = Scalar.from_value(other, dtype=dtype)
@@ -60,12 +89,12 @@ class Scalar(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
-        if not isinstance(other, Scalar):
+        if type(other) is not Scalar:
             if other is None:
                 return self.is_empty
             try:
                 # Check if other is a literal scalar, which we should handle
-                dtype = dtypes.lookup(type(other))
+                dtype = lookup_dtype(type(other))
             except KeyError:
                 raise TypeError(f'Argument of isclose must be a known scalar type, not {type(other)}')
             other = Scalar.from_value(other, dtype=dtype)
@@ -76,9 +105,9 @@ class Scalar(GbContainer):
         if self.is_empty or other.is_empty:
             return self.is_empty is other.is_empty
         # We can't yet call a UDF on a scalar as part of the spec, so let's do it ourselves
-        isclose = grblas.binary.isclose(rel_tol, abs_tol)
-        isclose = get_typed_op(isclose, self.dtype, other.dtype)
-        return isclose.numba_func(self.value, other.value)
+        isclose_func = isclose(rel_tol, abs_tol)
+        isclose_func = get_typed_op(isclose_func, self.dtype, other.dtype)
+        return isclose_func.numba_func(self.value, other.value)
 
     def clear(self):
         if self.dtype == bool:
@@ -111,14 +140,18 @@ class Scalar(GbContainer):
             return 0
         return 1
 
+    @property
+    def _carg(self):
+        return self.gb_obj
+
     def dup(self, *, dtype=None):
         """Create a new Scalar by duplicating this one
         """
         if dtype is None:
-            new_scalar = self.__class__.new(self.dtype)
+            new_scalar = type(self).new(self.dtype)
             new_scalar.value = self.value
         else:
-            new_scalar = self.__class__.new(dtype)
+            new_scalar = type(self).new(dtype)
             if not self.is_empty:
                 new_scalar.value = new_scalar.dtype.numba_type(self.value)
         return new_scalar
@@ -128,8 +161,8 @@ class Scalar(GbContainer):
         """
         Create a new empty Scalar from the given type
         """
-        dtype = dtypes.lookup(dtype)
-        new_scalar_pointer = ffi.new(f'{dtype.c_type}*')
+        dtype = lookup_dtype(dtype)
+        new_scalar_pointer = ffi_new(f'{dtype.c_type}*')
         return cls(new_scalar_pointer, dtype, empty=True)
 
     @classmethod
@@ -137,7 +170,23 @@ class Scalar(GbContainer):
         """Create a new Scalar from a Python value
         """
         if dtype is None:
-            dtype = dtypes.lookup(type(value))
+            dtype = lookup_dtype(type(value))
         new_scalar = cls.new(dtype)
         new_scalar.value = value
         return new_scalar
+
+
+class ScalarExpression(BaseExpression):
+    output_type = Scalar
+
+    @property
+    def value(self):
+        return self.new().value
+
+    def construct_output(self, dtype=None):
+        if dtype is None:
+            dtype = self.dtype
+        return Scalar.new(dtype)
+
+    def new(self, *, dtype=None):
+        return super().new(dtype=dtype)

@@ -1,20 +1,20 @@
 import inspect
 import re
-import types
 import numpy as np
 import numba
 from collections.abc import Mapping
 from functools import lru_cache
-from types import FunctionType
-from . import lib, ffi, dtypes, unary, binary, monoid, semiring
+from types import FunctionType, ModuleType
+from . import ffi, lib, unary, binary, monoid, semiring
+from .dtypes import libget, lookup_dtype, unify, INT8, _sample_values
 from .exceptions import GrblasException, check_status
 
-
+ffi_new = ffi.new
 UNKNOWN_OPCLASS = 'UnknownOpClass'
 
 
 def _normalize_type(type_):
-    return dtypes.lookup(type_).name
+    return lookup_dtype(type_).name
 
 
 class UdfParseError(GrblasException):
@@ -39,6 +39,10 @@ class TypedOpBase:
         if classname.endswith('op'):
             classname = classname[:-2]
         return f'{classname}.{self.name}[{self.type}]'
+
+    @property
+    def _carg(self):
+        return self.gb_obj
 
 
 class TypedBuiltinUnaryOp(TypedOpBase):
@@ -97,7 +101,7 @@ class ParameterizedUdf:
     def __init__(self, name):
         self.name = name
         # lru_cache per instance
-        method = self.__call__.__get__(self, self.__class__)
+        method = self.__call__.__get__(self, type(self))
         self.__call__ = lru_cache(maxsize=1024)(method)
 
     def __call__(self, *args, **kwargs):
@@ -136,7 +140,7 @@ class ParameterizedBinaryOp(ParameterizedUdf):
 
 class ParameterizedMonoid(ParameterizedUdf):
     def __init__(self, name, binaryop, identity):
-        if not isinstance(binaryop, ParameterizedBinaryOp):
+        if not type(binaryop) is ParameterizedBinaryOp:
             raise TypeError('binaropy must be parameterized')
         self.binaryop = binaryop
         self.__signature__ = binaryop.__signature__
@@ -166,11 +170,11 @@ class ParameterizedMonoid(ParameterizedUdf):
 
 class ParameterizedSemiring(ParameterizedUdf):
     def __init__(self, name, monoid, binaryop):
-        if not isinstance(monoid, (ParameterizedMonoid, Monoid)):
+        if type(monoid) not in {ParameterizedMonoid, Monoid}:
             raise TypeError('monoid must be of type Monoid or ParameterizedMonoid')
-        if isinstance(binaryop, ParameterizedBinaryOp):
+        if type(binaryop) is ParameterizedBinaryOp:
             self.__signature__ = binaryop.__signature__
-            if isinstance(monoid, ParameterizedMonoid) and monoid.__signature__ != self.__signature__:
+            if type(monoid) is ParameterizedMonoid and monoid.__signature__ != self.__signature__:
                 raise ValueError(
                     f'Signatures of monoid and binarop passed to {type(self).__name__} must be the same.  Got:\n'
                     f'    monoid{monoid.__signature__}\n'
@@ -178,8 +182,8 @@ class ParameterizedSemiring(ParameterizedUdf):
                     f'    binaryop{self.__signature__}\n'
                     '\nPerhaps call monoid or binaryop with parameters before creating the semiring.'
                 )
-        elif isinstance(binaryop, BinaryOp):
-            if isinstance(monoid, Monoid):
+        elif type(binaryop) is BinaryOp:
+            if type(monoid) is Monoid:
                 raise TypeError('At least one of monoid or binaryop must be parameterized')
             self.__signature__ = monoid.__signature__
         else:
@@ -192,10 +196,10 @@ class ParameterizedSemiring(ParameterizedUdf):
 
     def __call__(self, *args, **kwargs):
         monoid = self.monoid
-        if isinstance(monoid, ParameterizedMonoid):
+        if type(monoid) is ParameterizedMonoid:
             monoid = monoid(*args, **kwargs)
         binary = self.binaryop
-        if isinstance(binary, ParameterizedBinaryOp):
+        if type(binary) is ParameterizedBinaryOp:
             binary = binary(*args, **kwargs)
         return Semiring.register_anonymous(monoid, binary, self.name)
 
@@ -246,7 +250,7 @@ class OpBase:
                     setattr(module, folder, OpPath(module, folder))
                 module = getattr(module, folder)
                 modname = f'{modname}.{folder}'
-                if not isinstance(module, (OpPath, types.ModuleType)):
+                if not isinstance(module, (OpPath, ModuleType)):
                     raise AttributeError(f'{modname} is already defined. Cannot use as a nested path.')
         return module, funcname
 
@@ -348,13 +352,13 @@ class UnaryOp(OpBase):
         new_type_obj = cls(name)
         return_types = {}
         nt = numba.types
-        for type_, sample_val in dtypes._sample_values.items():
-            type_ = dtypes.lookup(type_)
+        for type_, sample_val in _sample_values.items():
+            type_ = lookup_dtype(type_)
             # Check if func can handle this data type
             try:
                 with np.errstate(divide='ignore', over='ignore', under='ignore', invalid='ignore'):
                     ret = func(sample_val)
-                ret_type = dtypes.lookup(type(ret))
+                ret_type = lookup_dtype(type(ret))
                 if ret_type != type_ and (
                     'INT' in ret_type.name and 'INT' in type_.name
                     or 'FP' in ret_type.name and 'FP' in type_.name
@@ -365,13 +369,13 @@ class UnaryOp(OpBase):
                     # but we can't make a perfect rule.  There should be a way for users to be explicit.
                     ret_type = type_
                 elif type_ == 'BOOL' and ret_type == 'INT64' and return_types.get('INT8') == 'INT8':
-                    ret_type = dtypes.INT8
+                    ret_type = INT8
 
                 # Numba is unable to handle BOOL correctly right now, but we have a workaround
                 # See: https://github.com/numba/numba/issues/5395
                 # We're relying on coercion behaving correctly here
-                input_type = dtypes.INT8 if type_ == 'BOOL' else type_
-                return_type = dtypes.INT8 if ret_type == 'BOOL' else ret_type
+                input_type = INT8 if type_ == 'BOOL' else type_
+                return_type = INT8 if ret_type == 'BOOL' else ret_type
 
                 # JIT the func so it can be used from a cfunc
                 unary_udf = numba.njit(func)
@@ -394,7 +398,7 @@ class UnaryOp(OpBase):
                         z[0] = unary_udf(x[0])  # pragma: no cover
 
                 unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
-                new_unary = ffi.new('GrB_UnaryOp*')
+                new_unary = ffi_new('GrB_UnaryOp*')
                 check_status(lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi,
                                                  ret_type.gb_type, type_.gb_type))
                 op = TypedUserUnaryOp(name, type_.name, ret_type.name, new_unary[0], func, unary_udf)
@@ -464,7 +468,7 @@ class BinaryOp(OpBase):
 
     @classmethod
     def _build(cls, name, func):
-        if type(func) is not FunctionType:
+        if not isinstance(func, FunctionType):
             raise TypeError(f'udf must be a function, not {type(func)}')
         if name is None:
             name = getattr(func, '__name__', '<anonymous_binary>')
@@ -472,13 +476,13 @@ class BinaryOp(OpBase):
         new_type_obj = cls(name)
         return_types = {}
         nt = numba.types
-        for type_, sample_val in dtypes._sample_values.items():
-            type_ = dtypes.lookup(type_)
+        for type_, sample_val in _sample_values.items():
+            type_ = lookup_dtype(type_)
             # Check if func can handle this data type
             try:
                 with np.errstate(divide='ignore', over='ignore', under='ignore', invalid='ignore'):
                     ret = func(sample_val, sample_val)
-                ret_type = dtypes.lookup(type(ret))
+                ret_type = lookup_dtype(type(ret))
                 if ret_type != type_ and (
                     'INT' in ret_type.name and 'INT' in type_.name
                     or 'FP' in ret_type.name and 'FP' in type_.name
@@ -489,13 +493,13 @@ class BinaryOp(OpBase):
                     # but we can't make a perfect rule.  There should be a way for users to be explicit.
                     ret_type = type_
                 elif type_ == 'BOOL' and ret_type == 'INT64' and return_types.get('INT8') == 'INT8':
-                    ret_type = dtypes.INT8
+                    ret_type = INT8
 
                 # Numba is unable to handle BOOL correctly right now, but we have a workaround
                 # See: https://github.com/numba/numba/issues/5395
                 # We're relying on coercion behaving correctly here
-                input_type = dtypes.INT8 if type_ == 'BOOL' else type_
-                return_type = dtypes.INT8 if ret_type == 'BOOL' else ret_type
+                input_type = INT8 if type_ == 'BOOL' else type_
+                return_type = INT8 if ret_type == 'BOOL' else ret_type
 
                 # JIT the func so it can be used from a cfunc
                 binary_udf = numba.njit(func)
@@ -520,7 +524,7 @@ class BinaryOp(OpBase):
                         z[0] = binary_udf(x[0], y[0])  # pragma: no cover
 
                 binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
-                new_binary = ffi.new('GrB_BinaryOp*')
+                new_binary = ffi_new('GrB_BinaryOp*')
                 check_status(
                     lib.GrB_BinaryOp_new(new_binary, binary_wrapper.cffi,
                                          ret_type.gb_type, type_.gb_type, type_.gb_type)
@@ -601,9 +605,6 @@ class Monoid(OpBase):
 
     @classmethod
     def _build(cls, name, binaryop, identity):
-        # Import here to avoid circular dependency
-        from .base import libget
-
         if type(binaryop) is not BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
         if name is None:
@@ -616,13 +617,13 @@ class Monoid(OpBase):
             identities = identity
             explicit_identities = True
         for type_, identity in identities.items():
-            type_ = dtypes.lookup(type_)
+            type_ = lookup_dtype(type_)
             ret_type = binaryop[type_].return_type
             # If there is a domain mismatch, then DomainMismatch will be raised
             # below if identities were explicitly given.
             if type_ != ret_type and not explicit_identities or 'FC' in type_.name:
                 continue
-            new_monoid = ffi.new('GrB_Monoid*')
+            new_monoid = ffi_new('GrB_Monoid*')
             func = libget(f'GrB_Monoid_new_{type_.name}')
             zcast = ffi.cast(type_.c_type, identity)
             check_status(func(new_monoid, binaryop[type_].gb_obj, zcast))
@@ -632,14 +633,14 @@ class Monoid(OpBase):
 
     @classmethod
     def register_anonymous(cls, binaryop, identity, name=None):
-        if isinstance(binaryop, ParameterizedBinaryOp):
+        if type(binaryop) is ParameterizedBinaryOp:
             return ParameterizedMonoid(name, binaryop, identity)
         return cls._build(name, binaryop, identity)
 
     @classmethod
     def register_new(cls, name, binaryop, identity):
         module, funcname = cls._remove_nesting(name)
-        if isinstance(binaryop, ParameterizedBinaryOp):
+        if type(binaryop) is ParameterizedBinaryOp:
             monoid = ParameterizedMonoid(name, binaryop, identity)
         else:
             monoid = cls._build(name, binaryop, identity)
@@ -695,8 +696,8 @@ class Semiring(OpBase):
             # because numba can't compile correctly.
             if binary_out not in monoid.types:
                 continue
-            binary_out = dtypes.lookup(binary_out)
-            new_semiring = ffi.new('GrB_Semiring*')
+            binary_out = lookup_dtype(binary_out)
+            new_semiring = ffi_new('GrB_Semiring*')
             check_status(lib.GrB_Semiring_new(new_semiring, monoid[binary_out].gb_obj, binary_func.gb_obj))
             ret_type = monoid[binary_out].return_type
             op = TypedUserSemiring(name, binary_in, ret_type, new_semiring[0], monoid[binary_out], binary_func)
@@ -705,14 +706,14 @@ class Semiring(OpBase):
 
     @classmethod
     def register_anonymous(cls, monoid, binaryop, name=None):
-        if isinstance(monoid, ParameterizedMonoid) or isinstance(binaryop, ParameterizedBinaryOp):
+        if type(monoid) is ParameterizedMonoid or type(binaryop) is ParameterizedBinaryOp:
             return ParameterizedSemiring(name, monoid, binaryop)
         return cls._build(name, monoid, binaryop)
 
     @classmethod
     def register_new(cls, name, monoid, binaryop):
         module, funcname = cls._remove_nesting(name)
-        if isinstance(monoid, ParameterizedMonoid) or isinstance(binaryop, ParameterizedBinaryOp):
+        if type(monoid) is ParameterizedMonoid or type(binaryop) is ParameterizedBinaryOp:
             semiring = ParameterizedSemiring(name, monoid, binaryop)
         else:
             semiring = cls._build(name, monoid, binaryop)
@@ -722,7 +723,7 @@ class Semiring(OpBase):
 def get_typed_op(op, dtype, dtype2=None):
     if isinstance(op, OpBase):
         if dtype2 is not None:
-            dtype = dtypes.unify(dtype, dtype2)
+            dtype = unify(dtype, dtype2)
         return op[dtype]
     elif isinstance(op, ParameterizedUdf):
         op = op()  # Use default parameters of parameterized UDFs
@@ -735,7 +736,7 @@ def get_typed_op(op, dtype, dtype2=None):
 
 def find_opclass(gb_op):
     if isinstance(gb_op, OpBase):
-        opclass = gb_op.__class__.__name__
+        opclass = type(gb_op).__name__
     elif isinstance(gb_op, TypedOpBase):
         opclass = gb_op.opclass
     elif isinstance(gb_op, ParameterizedUdf):

@@ -1,5 +1,6 @@
 import pytest
 from grblas import dtypes, lib
+from grblas.dtypes import lookup_dtype
 
 all_dtypes = (
     dtypes.BOOL,
@@ -60,23 +61,23 @@ def test_gbtype():
 
 def test_lookup_by_name():
     for dt in all_dtypes:
-        assert dtypes.lookup(dt.name) is dt
+        assert lookup_dtype(dt.name) is dt
 
 
 def test_lookup_by_ctype():
     for dt in all_dtypes:
-        assert dtypes.lookup(dt.c_type) is dt
+        assert lookup_dtype(dt.c_type) is dt
 
 
 def test_lookup_by_gbtype():
     for dt in all_dtypes:
-        assert dtypes.lookup(dt.gb_type) is dt
+        assert lookup_dtype(dt.gb_type) is dt
 
 
 def test_lookup_by_dtype():
-    assert dtypes.lookup(bool) == dtypes.BOOL
-    assert dtypes.lookup(int) == dtypes.INT64
-    assert dtypes.lookup(float) == dtypes.FP64
+    assert lookup_dtype(bool) == dtypes.BOOL
+    assert lookup_dtype(int) == dtypes.INT64
+    assert lookup_dtype(float) == dtypes.FP64
 
 
 def test_unify_dtypes():

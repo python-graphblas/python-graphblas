@@ -1,4 +1,6 @@
-import grblas as gb
+from .matrix import Matrix, TransposedMatrix
+from .vector import Vector
+
 try:
     import pandas as pd
     has_pandas = True
@@ -14,9 +16,9 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
             rows = slice(None)
         if columns is None:
             columns = slice(None)
-        if isinstance(matrix, gb.matrix.TransposedMatrix):
+        if type(matrix) is TransposedMatrix:
             parent = matrix._matrix
-            submatrix = gb.Matrix.new(parent.dtype, parent.nrows, parent.ncols)
+            submatrix = Matrix.new(parent.dtype, parent.nrows, parent.ncols)
             submatrix(parent.S)[columns, rows] = 0
             submatrix(submatrix.S) << parent
             if row_offset > 0 or column_offset > 0:
@@ -24,11 +26,11 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
             submatrix = submatrix.T
         else:
             if mask is None:
-                submatrix = gb.Matrix.new(matrix.dtype, matrix.nrows, matrix.ncols)
+                submatrix = Matrix.new(matrix.dtype, matrix.nrows, matrix.ncols)
                 submatrix(matrix.S)[rows, columns] = 0
                 submatrix(submatrix.S) << matrix
             else:
-                submatrix = gb.Matrix.new('UINT8', matrix.nrows, matrix.ncols)
+                submatrix = Matrix.new('UINT8', matrix.nrows, matrix.ncols)
                 if mask.structure:
                     submatrix(matrix.S)[rows, columns] = 0 if mask.complement else 1
                 else:
@@ -45,11 +47,11 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
         subvector = vector
     else:
         if mask is None:
-            subvector = gb.Vector.new(vector.dtype, vector.size)
+            subvector = Vector.new(vector.dtype, vector.size)
             subvector(vector.S)[columns] = 0
             subvector(subvector.S) << vector
         else:
-            subvector = gb.Vector.new('UINT8', vector.size)
+            subvector = Vector.new('UINT8', vector.size)
             if mask.structure:
                 subvector(vector.S)[columns] = 0 if mask.complement else 1
             else:

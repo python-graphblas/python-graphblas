@@ -1,18 +1,23 @@
-from functools import partial
-from .base import lib, ffi, GbContainer, GbDelayed, IndexerResolver, AmbiguousAssignOrExtract, Updater, libget
-from .scalar import Scalar
-from .ops import get_typed_op
-from . import dtypes, binary, monoid, semiring
-from .mask import StructuralMask, ValueMask
+import itertools
+from . import ffi, lib, binary, monoid, semiring
+from .base import BaseExpression, BaseType
+from .dtypes import libget, lookup_dtype, unify
 from .exceptions import check_status, is_error, NoValue
-from .formatting import format_vector, format_vector_html
+from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
+from .mask import StructuralMask, ValueMask
+from .ops import get_typed_op
+from .scalar import Scalar, ScalarExpression, _CScalar
+
+ffi_new = ffi.new
 
 
-class Vector(GbContainer):
+class Vector(BaseType):
     """
     GraphBLAS Sparse Vector
     High-level wrapper around GrB_Vector type
     """
+    _name_counter = itertools.count()
+
     def __init__(self, gb_obj, dtype):
         super().__init__(gb_obj, dtype)
 
@@ -20,9 +25,11 @@ class Vector(GbContainer):
         check_status(lib.GrB_Vector_free(self.gb_obj))
 
     def __repr__(self, mask=None):
+        from .formatting import format_vector
         return format_vector(self, mask=mask)
 
     def _repr_html_(self, mask=None):
+        from .formatting import format_vector_html
         return format_vector_html(self, mask=mask)
 
     @property
@@ -49,8 +56,7 @@ class Vector(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         For equality of floating point Vectors, consider using `isclose`
         """
-        if not isinstance(other, Vector):
-            raise TypeError('Argument of isequal must be of type Vector')
+        self._expect_type(other, Vector, within='isequal', argname='other')
         if check_dtype and self.dtype != other.dtype:
             return False
         if self.size != other.size:
@@ -61,7 +67,7 @@ class Vector(GbContainer):
             # dtypes are equivalent, so not need to unify
             common_dtype = self.dtype
         else:
-            common_dtype = dtypes.unify(self.dtype, other.dtype)
+            common_dtype = unify(self.dtype, other.dtype)
 
         matches = Vector.new(bool, self.size)
         matches << self.ewise_mult(other, binary.eq[common_dtype])
@@ -80,8 +86,7 @@ class Vector(GbContainer):
         If `check_dtype` is True, also checks that dtypes match
         Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
-        if not isinstance(other, Vector):
-            raise TypeError('Argument of isclose must be of type Vector')
+        self._expect_type(other, Vector, within='isclose', argname='other')
         if check_dtype and self.dtype != other.dtype:
             return False
         if self.size != other.size:
@@ -99,7 +104,7 @@ class Vector(GbContainer):
 
     @property
     def size(self):
-        n = ffi.new('GrB_Index*')
+        n = ffi_new('GrB_Index*')
         check_status(lib.GrB_Vector_size(n, self.gb_obj[0]))
         return n[0]
 
@@ -109,7 +114,7 @@ class Vector(GbContainer):
 
     @property
     def nvals(self):
-        n = ffi.new('GrB_Index*')
+        n = ffi_new('GrB_Index*')
         check_status(lib.GrB_Vector_nvals(n, self.gb_obj[0]))
         return n[0]
 
@@ -124,9 +129,9 @@ class Vector(GbContainer):
         GrB_Vector_extractTuples
         Extract the indices and values as 2 generators
         """
-        indices = ffi.new('GrB_Index[]', self.nvals)
-        values = ffi.new(f'{self.dtype.c_type}[]', self.nvals)
-        n = ffi.new('GrB_Index*')
+        indices = ffi_new('GrB_Index[]', self.nvals)
+        values = ffi_new(f'{self.dtype.c_type}[]', self.nvals)
+        n = ffi_new('GrB_Index*')
         n[0] = self.nvals
         func = libget(f'GrB_Vector_extractTuples_{self.dtype.name}')
         check_status(func(
@@ -155,11 +160,10 @@ class Vector(GbContainer):
         if not dup_op_given:
             dup_op = binary.plus
         dup_op = get_typed_op(dup_op, self.dtype)
-        if dup_op.opclass != 'BinaryOp':
-            raise TypeError('dup_op must be BinaryOp')
+        self._expect_op(dup_op, 'BinaryOp', within='build', argname='dup_op')
 
-        indices = ffi.new('GrB_Index[]', indices)
-        values = ffi.new(f'{self.dtype.c_type}[]', values)
+        indices = ffi_new('GrB_Index[]', indices)
+        values = ffi_new(f'{self.dtype.c_type}[]', values)
         # Push values into w
         func = libget(f'GrB_Vector_build_{self.dtype.name}')
         check_status(func(
@@ -180,12 +184,12 @@ class Vector(GbContainer):
         if dtype is not None or mask is not None:
             if dtype is None:
                 dtype = self.dtype
-            new_vec = self.__class__.new(dtype, size=self.size)
+            new_vec = type(self).new(dtype, size=self.size)
             new_vec(mask=mask)[:] << self
             return new_vec
-        new_vec = ffi.new('GrB_Vector*')
+        new_vec = ffi_new('GrB_Vector*')
         check_status(lib.GrB_Vector_dup(new_vec, self.gb_obj[0]))
-        return self.__class__(new_vec, self.dtype)
+        return type(self)(new_vec, self.dtype)
 
     @classmethod
     def new(cls, dtype, size=0):
@@ -193,8 +197,8 @@ class Vector(GbContainer):
         GrB_Vector_new
         Create a new empty Vector from the given type and size
         """
-        new_vector = ffi.new('GrB_Vector*')
-        dtype = dtypes.lookup(dtype)
+        new_vector = ffi_new('GrB_Vector*')
+        dtype = lookup_dtype(dtype)
         check_status(lib.GrB_Vector_new(new_vector, dtype.gb_type, size))
         return cls(new_vector, dtype)
 
@@ -212,7 +216,7 @@ class Vector(GbContainer):
                 raise ValueError('No values provided. Unable to determine type.')
             # Find dtype from any of the values (assumption is they are the same type)
             dtype = type(values[0])
-        dtype = dtypes.lookup(dtype)
+        dtype = lookup_dtype(dtype)
         # Compute size if not provided
         if size is None:
             if not indices:
@@ -224,10 +228,14 @@ class Vector(GbContainer):
         w.build(indices, values, dup_op=dup_op)
         return w
 
+    @property
+    def _carg(self):
+        return self.gb_obj[0]
+
     #########################################################
     # Delayed methods
     #
-    # These return a GbDelayed object which must be passed
+    # These return a delayed expression object which must be passed
     # to update to trigger a call to GraphBLAS
     #########################################################
 
@@ -247,21 +255,21 @@ class Vector(GbContainer):
             any operation. In the case of `gt`, the non-empty value is cast to a boolean.
             For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
-        if not isinstance(other, Vector):
-            raise TypeError(f'Expected Vector, found {type(other)}')
+        method_name = 'ewise_add'
+        self._expect_type(other, Vector, within=method_name, argname='other')
         op = get_typed_op(op, self.dtype, other.dtype)
-        if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
-            raise TypeError('op must be BinaryOp, Monoid, or Semiring')
-        if require_monoid and op.opclass not in {'Monoid', 'Semiring'}:
-            raise TypeError('op must be Monoid or Semiring unless require_monoid is False')
-        func = libget(f'GrB_eWiseAdd_Vector_{op.opclass}')
-        output_constructor = partial(Vector.new,
-                                     dtype=op.return_type,
-                                     size=self.size)
-        return GbDelayed(func,
-                         [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
-                         output_constructor=output_constructor,
-                         objects=(self, other, op))
+        # TODO: add extra message to error raised by _expect_op
+        if require_monoid:
+            self._expect_op(op, ('Monoid', 'Semiring'), within=method_name, argname='op',
+                            extra_message='require_monoid')
+        else:
+            self._expect_op(op, ('BinaryOp', 'Monoid', 'Semiring'), within=method_name, argname='op')
+        return VectorExpression(
+            method_name,
+            f'GrB_eWiseAdd_Vector_{op.opclass}',
+            [self, other],
+            op=op,
+        )
 
     def ewise_mult(self, other, op=binary.times):
         """
@@ -270,19 +278,16 @@ class Vector(GbContainer):
         Result will contain the intersection of indices from both Vectors
         Default op is binary.times
         """
-        if not isinstance(other, Vector):
-            raise TypeError(f'Expected Vector, found {type(other)}')
+        method_name = 'ewise_add'
+        self._expect_type(other, Vector, within=method_name, argname='other')
         op = get_typed_op(op, self.dtype, other.dtype)
-        if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
-            raise TypeError('op must be BinaryOp, Monoid, or Semiring')
-        func = libget(f'GrB_eWiseMult_Vector_{op.opclass}')
-        output_constructor = partial(Vector.new,
-                                     dtype=op.return_type,
-                                     size=self.size)
-        return GbDelayed(func,
-                         [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
-                         output_constructor=output_constructor,
-                         objects=(self, other, op))
+        self._expect_op(op, ('BinaryOp', 'Monoid', 'Semiring'), within=method_name, argname='op')
+        return VectorExpression(
+            method_name,
+            f'GrB_eWiseMult_Vector_{op.opclass}',
+            [self, other],
+            op=op,
+        )
 
     def vxm(self, other, op=semiring.plus_times):
         """
@@ -291,64 +296,67 @@ class Vector(GbContainer):
         Default op is semiring.plus_times
         """
         from .matrix import Matrix, TransposedMatrix
-        if not isinstance(other, (Matrix, TransposedMatrix)):
-            raise TypeError(f'Expected Matrix, found {type(other)}')
+        method_name = 'vxm'
+        self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname='other')
         op = get_typed_op(op, self.dtype, other.dtype)
-        if op.opclass != 'Semiring':
-            raise TypeError('op must be Semiring')
-        output_constructor = partial(Vector.new,
-                                     dtype=op.return_type,
-                                     size=other.ncols)
-        return GbDelayed(lib.GrB_vxm,
-                         [op.gb_obj, self.gb_obj[0], other.gb_obj[0]],
-                         bt=other._is_transposed,
-                         output_constructor=output_constructor,
-                         objects=(self, other, op))
+        self._expect_op(op, 'Semiring', within=method_name, argname='op')
+        return VectorExpression(
+            method_name,
+            'GrB_vxm',
+            [self, other],
+            op=op,
+            size=other.ncols,
+            # XXX
+            bt=other._is_transposed,
+        )
 
-    def apply(self, op, left=None, right=None):
+    def apply(self, op, *, left=None, right=None):
         """
         GrB_Vector_apply
         Apply UnaryOp to each element of the calling Vector
         A BinaryOp can also be applied if a scalar is passed in as `left` or `right`,
             effectively converting a BinaryOp into a UnaryOp
         """
-        # This doesn't yet take into account the dtype of left or right (if provided)
-        op = get_typed_op(op, self.dtype)
-        if op.opclass == 'UnaryOp':
-            if left is not None or right is not None:
-                raise TypeError('Cannot provide `left` or `right` for a UnaryOp')
-        elif op.opclass == 'BinaryOp':
-            if left is None and right is None:
-                raise TypeError('Must provide either `left` or `right` for a BinaryOp')
-            elif left is not None and right is not None:
-                raise TypeError('Cannot provide both `left` and `right`')
+        method_name = 'apply'
+        # TODO: give additional info in exception raised by _expect_op below
+        if left is None and right is None:
+            op = get_typed_op(op, self.dtype)
+            self._expect_op(op, 'UnaryOp', within=method_name, argname='op')
+            cfunc_name = 'GrB_Vector_apply'
+            args = [self]
+            expr_repr = None
+        elif right is None:
+            if type(left) is not Scalar:
+                try:
+                    left = Scalar.from_value(left)
+                except TypeError:
+                    self._expect_type(left, Scalar, within=method_name, keyword_name='left')
+            op = get_typed_op(op, self.dtype, left.dtype)
+            self._expect_op(op, 'BinaryOp', within=method_name, argname='op')
+            cfunc_name = f'GrB_Vector_apply_BinaryOp1st_{left.dtype}'
+            args = [_CScalar(left), self]
+            expr_repr = '{1.name}.apply({op}, left={0})'
+        elif left is None:
+            if type(right) is not Scalar:
+                try:
+                    right = Scalar.from_value(right)
+                except TypeError:
+                    self._expect_type(right, Scalar, within=method_name, keyword_name='right')
+            op = get_typed_op(op, self.dtype, right.dtype)
+            self._expect_op(op, 'BinaryOp', within=method_name, argname='op')
+            cfunc_name = f'GrB_Vector_apply_BinaryOp2nd_{right.dtype}'
+            args = [self, _CScalar(right)]
+            expr_repr = '{0.name}.apply({op}, right={1})'
         else:
-            raise TypeError('apply only accepts UnaryOp or BinaryOp')
-        output_constructor = partial(Vector.new,
-                                     dtype=op.return_type,
-                                     size=self.size)
-        if op.opclass == 'UnaryOp':
-            func = lib.GrB_Vector_apply
-            call_args = [op.gb_obj, self.gb_obj[0]]
-        else:
-            if left is not None:
-                if isinstance(left, Scalar):
-                    dtype = left.dtype
-                    left = left.value
-                else:
-                    dtype = dtypes.lookup(type(left))
-                func = libget(f'GrB_Vector_apply_BinaryOp1st_{dtype}')
-                call_args = [op.gb_obj, ffi.cast(dtype.c_type, left), self.gb_obj[0]]
-            elif right is not None:
-                if isinstance(right, Scalar):
-                    dtype = right.dtype
-                    right = right.value
-                else:
-                    dtype = dtypes.lookup(type(right))
-                func = libget(f'GrB_Vector_apply_BinaryOp2nd_{dtype}')
-                call_args = [op.gb_obj, self.gb_obj[0], ffi.cast(dtype.c_type, right)]
-
-        return GbDelayed(func, call_args, output_constructor=output_constructor, objects=(self, op))
+            raise TypeError('Cannot provide both `left` and `right`')
+        return VectorExpression(
+            method_name,
+            cfunc_name,
+            args,
+            op=op,
+            expr_repr=expr_repr,
+            size=self.size,
+        )
 
     def reduce(self, op=monoid.plus):
         """
@@ -356,16 +364,15 @@ class Vector(GbContainer):
         Reduce all values into a scalar
         Default op is monoid.lor for boolean and monoid.plus otherwise
         """
+        method_name = 'reduce_scalar'
         op = get_typed_op(op, self.dtype)
-        if op.opclass != 'Monoid':
-            raise TypeError('op must be Monoid')
-        func = libget(f'GrB_Vector_reduce_{op.return_type}')
-        output_constructor = partial(Scalar.new,
-                                     dtype=op.return_type)
-        return GbDelayed(func,
-                         [op.gb_obj, self.gb_obj[0]],
-                         output_constructor=output_constructor,
-                         objects=(self, op))
+        self._expect_op(op, 'Monoid', within=method_name, argname='op')
+        return ScalarExpression(
+            method_name,
+            'GrB_Vector_reduce_{output_dtype}',  # to be determined later
+            [self],
+            op=op,
+        )
 
     ##################################
     # Extract and Assign index methods
@@ -373,7 +380,7 @@ class Vector(GbContainer):
     def _extract_element(self, resolved_indexes):
         index, _ = resolved_indexes.indices[0]
         func = libget(f'GrB_Vector_extractElement_{self.dtype}')
-        result = ffi.new(f'{self.dtype.c_type}*')
+        result = ffi_new(f'{self.dtype.c_type}*')
 
         err_code = func(result,
                         self.gb_obj[0],
@@ -385,44 +392,66 @@ class Vector(GbContainer):
         return result[0], self.dtype
 
     def _prep_for_extract(self, resolved_indexes):
+        # """
         index, isize = resolved_indexes.indices[0]
-        output_constructor = partial(Vector.new,
-                                     dtype=self.dtype,
-                                     size=isize)
-        return GbDelayed(lib.GrB_Vector_extract,
-                         [self.gb_obj[0], index, isize],
-                         output_constructor=output_constructor,
-                         objects=self)
+        return VectorExpression(
+            '__getitem__',
+            'GrB_Vector_extract',
+            [self, index, isize],
+            expr_repr='{0.name}[{1}]',  # TODO
+            size=isize,
+            dtype=self.dtype,
+        )
 
     def _assign_element(self, resolved_indexes, value):
         index, _ = resolved_indexes.indices[0]
         func = libget(f'GrB_Vector_setElement_{self.dtype}')
         check_status(func(
                      self.gb_obj[0],
-                     ffi.cast(self.dtype.c_type, value),
+                     value,  # should we cast?
                      index))
 
-    def _prep_for_assign(self, resolved_indexes, obj):
+    def _prep_for_assign(self, resolved_indexes, value):
+        # """
+        method_name = '__setitem__'
         index, isize = resolved_indexes.indices[0]
-        if isinstance(obj, Scalar):
-            obj = obj.value
-        if isinstance(obj, (int, float, bool, complex)):
-            dtype = self.dtype
-            func = libget(f'GrB_Vector_assign_{dtype.name}')
-            scalar = ffi.cast(dtype.c_type, obj)
-            delayed = GbDelayed(func,
-                                [scalar, index, isize],
-                                objects=self)
-        elif isinstance(obj, Vector):
-            delayed = GbDelayed(lib.GrB_Vector_assign,
-                                [obj.gb_obj[0], index, isize],
-                                objects=(self, obj))
+        if type(value) is Vector:
+            cfunc_name = 'GrB_Vector_assign'
         else:
-            raise TypeError(f'Unexpected type for assignment value: {type(obj)}')
-        return delayed
+            if type(value) is not Scalar:
+                try:
+                    value = Scalar.from_value(value)
+                except TypeError:
+                    self._expect_type(value, (Scalar, Vector), within=method_name, argname='value')
+            cfunc_name = f'GrB_Vector_assign_{value.dtype}'
+            value = _CScalar(value)
+        return VectorExpression(
+            method_name,
+            cfunc_name,
+            [value, index, isize],
+            expr_repr='',  # TODO
+            size=self.size,
+            dtype=self.dtype,
+        )
 
     def _delete_element(self, resolved_indexes):
         index, _ = resolved_indexes.indices[0]
         check_status(lib.GrB_Vector_removeElement(
                      self.gb_obj[0],
                      index))
+
+
+class VectorExpression(BaseExpression):
+    output_type = Vector
+
+    def __init__(self, method_name, cfunc_name, args, *, at=False, bt=False,
+                 op=None, dtype=None, expr_repr=None, size=None):
+        super().__init__(method_name, cfunc_name, args, at=at, bt=bt, op=op, dtype=dtype, expr_repr=expr_repr)
+        if size is None:
+            size = args[0].size
+        self.size = size
+
+    def construct_output(self, dtype=None):
+        if dtype is None:
+            dtype = self.dtype
+        return Vector.new(dtype, self.size)

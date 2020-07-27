@@ -1,6 +1,7 @@
-from . import Matrix, Vector, dtypes
-from .matrix import TransposedMatrix
+from . import Matrix, Vector
+from .dtypes import lookup_dtype, FP64
 from .exceptions import GrblasException
+from .matrix import TransposedMatrix
 
 
 def draw(m):
@@ -27,7 +28,7 @@ def draw(m):
     plt.show()
 
 
-def from_networkx(g, dtype=dtypes.FP64):
+def from_networkx(g, dtype=FP64):
     """
     Returns a Matrix
     """
@@ -58,7 +59,7 @@ def from_numpy(m):
     if m.ndim == 1:
         ss = csr_matrix([m])
         _, size = ss.shape
-        dtype = dtypes.lookup(m.dtype)
+        dtype = lookup_dtype(m.dtype)
         g = Vector.from_values(ss.indices, ss.data, size=size, dtype=dtype)
         return g
     else:
@@ -73,7 +74,7 @@ def from_scipy_sparse_matrix(m):
     ss = m.tocsr()
     nrows, ncols = ss.shape
     rows, cols = ss.nonzero()
-    dtype = dtypes.lookup(m.dtype)
+    dtype = lookup_dtype(m.dtype)
     g = Matrix.from_values(rows, cols, ss.data, nrows=nrows, ncols=ncols, dtype=dtype)
     return g
 

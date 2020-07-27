@@ -1,101 +1,74 @@
-from functools import partial
-from . import lib, ffi
-from . import dtypes, ops, descriptor, unary
+from . import ffi
+from .descriptor import lookup as descriptor_lookup
+from .dtypes import libget, lookup_dtype
 from .exceptions import check_status
+from .expr import AmbiguousAssignOrExtract, Updater
 from .mask import Mask
+from .ops import UNKNOWN_OPCLASS, find_opclass, get_typed_op
+from .unary import identity
 
 NULL = ffi.NULL
+CData = ffi.CData
 
 
-def libget(name):
-    """Helper to get items from GraphBLAS which might be GrB or GxB"""
-    try:
-        return getattr(lib, name)
-    except AttributeError as e:
-        ext_name = f"GxB_{name[4:]}"
-        try:
-            return getattr(lib, ext_name)
-        except AttributeError:
-            raise e
+def _expect_type(self, x, types, *, within, argname=None, keyword_name=None, extra_message=None):
+    if type(types) is tuple:
+        if type(x) in types:
+            return
+    elif type(x) is types:
+        return
+    raise TypeError(f'{type(x)} != {types} {extra_message}')
 
 
-class Updater:
-    def __init__(self, parent, **kwargs):
-        self.parent = parent
-        self.kwargs = kwargs
-
-    def __getitem__(self, keys):
-        # Occurs when user calls C(params)[index]; need something prepared to receive `<<` or `.update()`
-        if self.parent._is_scalar:
-            raise TypeError('Indexing not supported for Scalars')
-        if type(keys) is IndexerResolver:
-            resolved_indexes = keys
-        else:
-            resolved_indexes = IndexerResolver(self.parent, keys)
-        return AmbiguousAssignOrExtract(self, resolved_indexes)
-
-    def __setitem__(self, keys, obj):
-        # Occurs when user calls C(params)[index] = delayed
-        if self.parent._is_scalar:
-            raise TypeError('Indexing not supported for Scalars')
-        if type(keys) is IndexerResolver:
-            resolved_indexes = keys
-        else:
-            resolved_indexes = IndexerResolver(self.parent, keys)
-
-        if resolved_indexes.is_single_element and not self.kwargs:
-            # Fast path using assignElement
-            self.parent._assign_element(resolved_indexes, obj)
-        else:
-            delayed = self.parent._prep_for_assign(resolved_indexes, obj)
-            self.update(delayed)
-
-    def __delitem__(self, keys):
-        # Occurs when user calls `del C(params)[index]`
-        if self.parent._is_scalar:
-            raise TypeError('Indexing not supported for Scalars')
-        if type(keys) is IndexerResolver:
-            resolved_indexes = keys
-        else:
-            resolved_indexes = IndexerResolver(self.parent, keys)
-
-        if resolved_indexes.is_single_element:
-            self.parent._delete_element(resolved_indexes)
-        else:
-            raise TypeError('Remove Element only supports a single index')
-
-    def __lshift__(self, delayed):
-        # Occurs when user calls C(params) << delayed
-        self.parent._update(delayed, **self.kwargs)
-
-    def update(self, delayed):
-        # Occurs when user calls C(params).update(delayed)
-        self.parent._update(delayed, **self.kwargs)
+def _expect_op(self, op, values, *, within, argname=None, keyword_name=None, extra_message=None):
+    if type(values) is tuple:
+        if op.opclass in values:
+            return
+    elif op.opclass == values:
+        return
+    raise TypeError(f'{op.opclass} != {values} {extra_message}')
 
 
-class GbContainer:
+def _check_mask(mask, output=None):
+    # XXX: perhaps check for Vector and Matrix, then Scalar
+    if isinstance(mask, BaseType) or type(mask) is Mask:
+        raise TypeError('Mask must indicate values (M.V) or structure (M.S)')
+    if not isinstance(mask, Mask):
+        raise TypeError(f"Invalid mask: {type(mask)}")
+    if output is not None and type(mask.mask) is not type(output):
+        raise TypeError(f'Mask object must be type {type(output)}; got {type(mask)}')
+
+
+class BaseType:
     # Flag for operations which depend on scalar vs vector/matrix
     _is_scalar = False
 
-    def __init__(self, gb_obj, dtype):
-        if not isinstance(gb_obj, ffi.CData):
+    def __init__(self, gb_obj, dtype, *, name=None):
+        if not isinstance(gb_obj, CData):
             raise TypeError('Object passed to __init__ must be CData type')
-        if not isinstance(dtype, dtypes.DataType):
-            dtype = dtypes.lookup(dtype)
+        dtype = lookup_dtype(dtype)
         self.gb_obj = gb_obj
         self.dtype = dtype
+        if name is None:
+            # TODO: use name counter instead
+            name = f'{type(self).__name__.lower()}_{hex(hash(hex(id(self))))[-4:]}'
+        self.name = name
 
     def __call__(self, *optional_mask_and_accum, mask=None, accum=None, replace=False):
         # Pick out mask and accum from positional arguments
-        mask_arg, accum_arg = None, None
+        mask_arg = None
+        accum_arg = None
         for arg in optional_mask_and_accum:
-            if isinstance(arg, GbContainer):
-                raise TypeError('Mask must indicate values (M.V) or structure (M.S)')
-            elif isinstance(arg, Mask):
+            if isinstance(arg, (BaseType, Mask)):
+                _check_mask(arg)
+                if mask_arg is not None:
+                    1/0
                 mask_arg = arg
             else:
-                accum_arg, opclass = ops.find_opclass(arg)
-                if opclass == ops.UNKNOWN_OPCLASS:
+                if accum_arg is not None:
+                    1/0
+                accum_arg, opclass = find_opclass(arg)
+                if opclass == UNKNOWN_OPCLASS:
                     raise TypeError(f'Invalid item found in output params: {type(arg)}')
                 if opclass != 'BinaryOp':
                     raise TypeError(f'accum must be a BinaryOp, not {opclass}')
@@ -114,6 +87,9 @@ class GbContainer:
             accum = NULL
         return Updater(self, mask=mask, accum=accum, replace=replace)
 
+    def __eq__(self, other):
+        raise TypeError('__eq__ not defined for objects of type {type(self)}.  Use `.isequal` method instead.')
+
     def __lshift__(self, delayed):
         return self._update(delayed)
 
@@ -131,8 +107,7 @@ class GbContainer:
         # TODO: check expected output type (need to include in GbDelayed object)
         if self._is_scalar and mask is not NULL:
             raise TypeError('Mask not allowed for Scalars')
-        if not isinstance(delayed, GbDelayed):
-            from .matrix import Matrix, TransposedMatrix
+        if not isinstance(delayed, BaseExpression):
             if type(delayed) is AmbiguousAssignOrExtract:
                 if delayed.resolved_indexes.is_single_element and self._is_scalar:
                     # Extract element (s << v[1])
@@ -146,7 +121,7 @@ class GbContainer:
 
                 # Extract (C << A[rows, cols])
                 delayed = delayed._extract_delayed()
-            elif type(delayed) is self.__class__:
+            elif type(delayed) is type(self):
                 # Simple assignment (w << v)
                 if self._is_scalar:
                     if accum is not NULL:
@@ -156,10 +131,7 @@ class GbContainer:
                     self.value = delayed.value
                     return
 
-                delayed = delayed.apply(unary.identity)
-            elif type(delayed) is TransposedMatrix and type(self) is Matrix:
-                # Transpose (C << A.T)
-                delayed = GbDelayed(lib.GrB_transpose, [delayed.gb_obj[0]], objects=delayed)
+                delayed = delayed.apply(identity)
             elif self._is_scalar:
                 if accum is not NULL:
                     raise TypeError('Scalar update with accumulation--such as `s(accum=accum) << t`--is not supported')
@@ -167,261 +139,116 @@ class GbContainer:
                 return
 
             else:
-                raise TypeError(f'assignment value must be GbDelayed object, not {type(delayed)}')
+                from .matrix import Matrix, TransposedMatrix, MatrixExpression
+                if type(delayed) is TransposedMatrix and type(self) is Matrix:
+                    # Transpose (C << A.T)
+                    delayed = MatrixExpression(
+                        'transpose',
+                        'GrB_transpose',
+                        [delayed],
+                        expr_repr='{0}',
+                        dtype=delayed.dtype,
+                        nrows=delayed.nrows,
+                        ncols=delayed.ncols,
+                    )
+                else:
+                    raise TypeError(f'assignment value must be GbDelayed object, not {type(delayed)}')
 
         # Normalize mask and separate out complement and structural flags
-        complement = False
-        structure = False
         if mask is NULL:
-            pass
-        elif isinstance(mask, GbContainer):
-            raise TypeError('Mask must indicate values (M.V) or structure (M.S)')
-        elif isinstance(mask, Mask):
-            if not mask.value and not mask.structure:
-                raise TypeError('Mask must indicate values (M.V) or structure (M.S)')
+            complement = False
+            structure = False
+        else:
+            _check_mask(mask, self)
             complement = mask.complement
             structure = mask.structure
             mask = mask.mask.gb_obj[0]
-        else:
-            raise TypeError(f"Invalid mask: {type(mask)}")
 
         # Normalize accumulator
         if accum is not NULL:
-            orig_accum = accum
-            accum = ops.get_typed_op(accum, self.dtype)
-            if accum.opclass != 'BinaryOp':
-                raise TypeError(f'accum must be a BinaryOp, not {accum.opclass}')
+            accum = get_typed_op(accum, self.dtype)
+            self._expect_op(accum, 'BinaryOp', within='FIXME', keyword_name='accum')
             accum = accum.gb_obj
 
         # Get descriptor based on flags
-        desc = descriptor.lookup(transpose_first=delayed.at,
+        desc = descriptor_lookup(transpose_first=delayed.at,
                                  transpose_second=delayed.bt,
                                  mask_complement=complement,
                                  mask_structure=structure,
                                  output_replace=replace)
-
-        # Build args and call GraphBLAS function
         if self._is_scalar:
-            temp_result = delayed.output_constructor()
-            if self.dtype != temp_result.dtype:
-                if accum is not NULL:
-                    assert 'reduce' in delayed.func.__name__
-                    assert isinstance(delayed.output_constructor, partial)
-                    assert 'dtype' in delayed.output_constructor.keywords
-                    basename = delayed.func.__name__.rsplit('_', 1)[0]
-                    new_func = getattr(lib, f'{basename}_{self.dtype.name}')
-                    oc = delayed.output_constructor
-                    kwargs = dict(oc.keywords)
-                    kwargs['dtype'] = self.dtype
-                    new_output_constructor = partial(oc.func, *oc.args, **kwargs)
-                    new_delayed = GbDelayed(
-                        new_func,
-                        delayed.tail_args,
-                        at=delayed.at,
-                        bt=delayed.bt,
-                        output_constructor=new_output_constructor,
-                        objects=delayed,
-                    )
-                    self(accum=orig_accum).update(new_delayed)
-                else:
-                    temp_result.update(delayed)
-                    self.value = temp_result.value
-                return
+            call_args = [self._carg, accum]
+            if delayed.op is not None:
+                call_args.append(delayed.op._carg)
+            call_args.extend(x._carg for x in delayed.args)
+            call_args.append(desc)
 
-            call_args = [self.gb_obj, accum] + delayed.tail_args + [desc]
+            cfunc = libget(delayed.cfunc_name.format(output_dtype=self.dtype))
+            # Make the GraphBLAS call
+            check_status(cfunc(*call_args))
             # Ensure the scalar isn't flagged as empty after the update
             self._is_empty = False
         else:
-            call_args = [self.gb_obj[0], mask, accum] + delayed.tail_args + [desc]
-
-        # Make the GraphBLAS call
-        check_status(delayed.func(*call_args))
+            call_args = [self._carg, mask, accum]
+            if delayed.op is not None:
+                call_args.append(delayed.op._carg)
+            call_args.extend(getattr(x, '_carg', x) for x in delayed.args)
+            call_args.append(desc)
+            cfunc = libget(delayed.cfunc_name)
+            # Make the GraphBLAS call
+            check_status(cfunc(*call_args))
 
     def _extract_element(self, resolved_indexes):
-        raise TypeError(f'Cannot extract from {self.__class__.__name__}')
+        raise TypeError(f'Cannot extract from {type(self).__name__}')
 
     def _prep_for_extract(self, resolved_indexes):
-        raise TypeError(f'Cannot extract from {self.__class__.__name__}')
+        raise TypeError(f'Cannot extract from {type(self).__name__}')
 
     def _assign_element(self, resolved_indexes, value):
-        raise TypeError(f'Cannot assign to {self.__class__.__name__}')
+        raise TypeError(f'Cannot assign to {type(self).__name__}')
 
     def _prep_for_assign(self, resolved_indexes, obj):
-        raise TypeError(f'Cannot assign to {self.__class__.__name__}')
+        raise TypeError(f'Cannot assign to {type(self).__name__}')
+
+    _expect_type = _expect_type
+    _expect_op = _expect_op
 
 
-class GbDelayed:
-    def __init__(self, func, tail_args, *, at=False, bt=False, output_constructor=None, objects):
-        """
-        func: the GraphBLAS function to call
-        tail_args: arguments specific to func other than the standard INOUT, mask, accum, and desc
-        at: (bool) whether first input argument (A) is transposed
-        bt: (bool) whether second input argument (B) is transposed
-        output_constructor: functools.partial, must be callable with no additional arguments to
-                            create an output object from GbDelayed; used when delayed.new() is called
-        objects: used to prevent objects from being garbage-collected!
-        """
-        self.func = func
-        self.tail_args = tail_args
+class BaseExpression:
+    output_type = None
+
+    def __init__(self, method_name, cfunc_name, args, *, at=False, bt=False, op=None, dtype=None, expr_repr=None):
+        self.method_name = method_name
+        self.cfunc_name = cfunc_name
+        self.args = args
         self.at = at
         self.bt = bt
-        self.output_constructor = output_constructor
-        self.objects = objects
-
-    def __repr__(self):
-        return f'GbDelayed<{self.func.__name__}>'
-
-    @property
-    def value(self):
-        from .scalar import Scalar
-        output = self.new()
-        if type(output) is not Scalar:
-            raise ValueError(f"`.value` is only valid for Scalars, not {type(output)}")
-        return output.value
+        self.op = op
+        if expr_repr is None:
+            if len(args) == 1:
+                expr_repr = '{0.name}.{method_name}({op})'
+            elif len(args) == 2:
+                expr_repr = '{0.name}.{method_name}({1.name}, op={op})'
+            else:  # pragma: no cover
+                raise ValueError(f'No default expr_repr for len(args) == {len(args)}')
+        self.expr_repr = expr_repr
+        if dtype is None:
+            self.dtype = op.return_type
+        else:
+            self.dtype = dtype
 
     def new(self, *, dtype=None, mask=None):
-        """
-        Force computation of the GbDelayed object.
-        dtype and mask are the only controllable parameters.
-        """
-        if self.output_constructor is None:
-            raise Exception('output_constructor was not defined. Unable to use `new` method.')
-        if dtype is not None:
-            if 'dtype' not in self.output_constructor.keywords:
-                raise Exception('output_constructor does not use `dtype`; invalid to specify for this usage')
-            output = self.output_constructor(dtype=dtype)
-        else:
-            output = self.output_constructor()
+        output = self.construct_output(dtype=dtype)
         if mask is None:
             output.update(self)
         else:
-            if isinstance(mask, Mask) and not isinstance(mask.mask, output.__class__):
-                raise TypeError(f'Mask object must be type {output.__class__}')
-            output(mask).update(self)
+            _check_mask(mask, output)
+            output(mask=mask).update(self)
         return output
 
+    def _format_expr(self):
+        return self.expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
 
-class AmbiguousAssignOrExtract:
-    def __init__(self, parent, resolved_indexes):
-        self.parent = parent
-        self.resolved_indexes = resolved_indexes
-
-    def __call__(self, *args, **kwargs):
-        if type(self.parent) is Updater:
-            parent_kwargs = []
-            if self.parent.kwargs['accum'] is not NULL:
-                parent_kwargs.append(f"accum={self.parent.kwargs['accum']}")
-            if self.parent.kwargs['mask'] is not NULL:
-                # It would sure be nice if we knew the mask type.
-                # Passing around C objects directly is sometimes inconvenient.
-                parent_kwargs.append("mask=<Mask>")
-                parent_kwargs.append(f"replace={self.parent.kwargs['replace']}")
-            if not parent_kwargs:
-                raise ValueError('GraphBLAS object already called (with no keywords)')
-            parent_kwargs = ', '.join(parent_kwargs)
-            raise ValueError(f'GraphBLAS object already called with keywords: {parent_kwargs}')
-        # Occurs when user calls C[index](params)
-        # Reverse the call order so we can parse the call args and kwargs
-        updater = self.parent(*args, **kwargs)
-        return updater[self.resolved_indexes]
-
-    def __lshift__(self, obj):
-        # Occurs when user calls C(params)[index] << obj or C[index] << obj
-        # Delegate back to parent's __setitem__ method
-        self.parent[self.resolved_indexes] = obj
-
-    def update(self, obj):
-        # Occurs when user calls C(params)[index].update(obj) or C[index].update(obj)
-        # Delegate back to parent's __setitem__ method
-        self.parent[self.resolved_indexes] = obj
-
-    @property
-    def value(self):
-        if isinstance(self.parent, Updater):
-            raise TypeError('Cannot extract from an Updater')
-        if not self.resolved_indexes.is_single_element:
-            raise AttributeError("Only Scalars have `.value` attribute")
-        val, _ = self.parent._extract_element(self.resolved_indexes)
-        return val
-
-    def new(self, *, dtype=None, mask=None):
-        """
-        Force extraction of the indexes into a new object
-        dtype and mask are the only controllable parameters.
-        """
-        if isinstance(self.parent, Updater):
-            raise TypeError('Cannot extract from an Updater')
-        if self.resolved_indexes.is_single_element:
-            if mask is not None:
-                raise TypeError('mask is not allowed for single element extraction')
-            val, cur_dtype = self.parent._extract_element(self.resolved_indexes)
-            if dtype is None:
-                dtype = cur_dtype
-            from .scalar import Scalar
-            return Scalar.from_value(val, dtype=dtype)
-        else:
-            delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
-            return delayed_extractor.new(dtype=dtype, mask=mask)
-
-    def _extract_delayed(self):
-        """Return a GbDelayed object, treating this as an extract call"""
-        if isinstance(self.parent, Updater):
-            raise TypeError('Cannot extract from an Updater')
-        return self.parent._prep_for_extract(self.resolved_indexes)
-
-
-class IndexerResolver:
-    def __init__(self, obj, indices):
-        if obj._is_scalar:
-            raise TypeError("Cannot index into Scalars")
-        self.obj = obj
-        self.indices = self.parse_indices(indices, obj.shape)
-
-    @property
-    def is_single_element(self):
-        for idx, size in self.indices:
-            if size is not None:
-                return False
-        return True
-
-    def parse_indices(self, indices, shape):
-        """
-        Returns
-            [(rows, rowsize), (cols, colsize)] for Matrix
-            [(idx, idx_size)] for Vector
-
-        Within each tuple, if the index is of type int, the size will be None
-        """
-        if len(shape) == 1:
-            if type(indices) is tuple:
-                raise TypeError(f'Index for {self.obj.__class__.__name__} cannot be a tuple')
-            # Convert to tuple for consistent processing
-            indices = (indices,)
-        elif len(shape) == 2:
-            if type(indices) is not tuple or len(indices) != 2:
-                raise TypeError(f'Index for {self.obj.__class__.__name__} must be a 2-tuple')
-
-        out = []
-        for i, idx in enumerate(indices):
-            typ = type(idx)
-            if typ is tuple:
-                raise TypeError(f'Index in position {i} cannot be a tuple; must use slice or list or int')
-            out.append(self.parse_index(idx, typ, shape[i]))
-        return out
-
-    def parse_index(self, index, typ, size):
-        if typ is int:
-            if index >= size:
-                raise IndexError(f'index={index}, size={size}')
-            return index, None
-        if typ is slice:
-            if index == slice(None):
-                # [:] means all indices; use special GrB_ALL indicator
-                return lib.GrB_ALL, size
-            index = tuple(range(size)[index])
-        elif typ is not list:
-            try:
-                index = tuple(index)
-            except Exception:
-                raise TypeError('Unable to convert to tuple')
-        return ffi.new('GrB_Index[]', index), len(index)
+    def _format_expr_html(self):
+        expr_repr = self.expr_repr.replace('.name', '._name_html')
+        return expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
