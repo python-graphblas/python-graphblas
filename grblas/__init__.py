@@ -5,7 +5,7 @@ _init_params = None
 _SPECIAL_ATTRS = {"lib", "ffi", "Matrix", "Vector", "Scalar",
                   "exceptions", "matrix", "ops", "scalar", "vector",
                   "unary", "binary", "monoid", "semiring",
-                  "base", "descriptor", "dtypes", "io"}
+                  "base", "descriptor", "dtypes", "io", "formatting"}
 
 
 def __getattr__(name):

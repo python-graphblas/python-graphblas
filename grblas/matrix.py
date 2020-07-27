@@ -6,6 +6,7 @@ from .ops import get_typed_op
 from . import dtypes, binary, monoid, semiring
 from .mask import StructuralMask, ValueMask
 from .exceptions import check_status, is_error, NoValue
+from .formatting import format_matrix, format_matrix_html
 
 
 class Matrix(GbContainer):
@@ -21,8 +22,11 @@ class Matrix(GbContainer):
     def __del__(self):
         check_status(lib.GrB_Matrix_free(self.gb_obj))
 
-    def __repr__(self):
-        return f'<Matrix {self.nvals}/({self.nrows}x{self.ncols}):{self.dtype.name}>'
+    def __repr__(self, mask=None):
+        return format_matrix(self, mask=mask)
+
+    def _repr_html_(self, mask=None):
+        return format_matrix_html(self, mask=mask)
 
     @property
     def S(self):
@@ -174,7 +178,7 @@ class Matrix(GbContainer):
             dup_op = binary.plus
         dup_op = get_typed_op(dup_op, self.dtype)
         if dup_op.opclass != 'BinaryOp':
-            raise TypeError(f'dup_op must be BinaryOp')
+            raise TypeError('dup_op must be BinaryOp')
         rows = ffi.new('GrB_Index[]', rows)
         columns = ffi.new('GrB_Index[]', columns)
         values = ffi.new(f'{self.dtype.c_type}[]', values)
@@ -277,9 +281,9 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
-            raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
+            raise TypeError('op must be BinaryOp, Monoid, or Semiring')
         if require_monoid and op.opclass not in {'Monoid', 'Semiring'}:
-            raise TypeError(f'op must be Monoid or Semiring unless require_monoid is False')
+            raise TypeError('op must be Monoid or Semiring unless require_monoid is False')
         func = libget(f'GrB_eWiseAdd_Matrix_{op.opclass}')
         output_constructor = partial(Matrix.new,
                                      dtype=op.return_type,
@@ -302,7 +306,7 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
-            raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
+            raise TypeError('op must be BinaryOp, Monoid, or Semiring')
         func = libget(f'GrB_eWiseMult_Matrix_{op.opclass}')
         output_constructor = partial(Matrix.new,
                                      dtype=op.return_type,
@@ -324,7 +328,7 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Vector, found {type(other)}')
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass != 'Semiring':
-            raise TypeError(f'op must be Semiring')
+            raise TypeError('op must be Semiring')
         output_constructor = partial(Vector.new,
                                      dtype=op.return_type,
                                      size=self.nrows)
@@ -346,7 +350,7 @@ class Matrix(GbContainer):
             op = semiring.plus_times
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass != 'Semiring':
-            raise TypeError(f'op must be Semiring')
+            raise TypeError('op must be Semiring')
         output_constructor = partial(Matrix.new,
                                      dtype=op.return_type,
                                      nrows=self.nrows, ncols=other.ncols)
@@ -367,7 +371,7 @@ class Matrix(GbContainer):
             raise TypeError(f'Expected Matrix, found {type(other)}')
         op = get_typed_op(op, self.dtype, other.dtype)
         if op.opclass not in {'BinaryOp', 'Monoid', 'Semiring'}:
-            raise TypeError(f'op must be BinaryOp, Monoid, or Semiring')
+            raise TypeError('op must be BinaryOp, Monoid, or Semiring')
         func = libget(f'GrB_Matrix_kronecker_{op.opclass}')
         output_constructor = partial(Matrix.new,
                                      dtype=op.return_type,
@@ -436,7 +440,7 @@ class Matrix(GbContainer):
         """
         op = get_typed_op(op, self.dtype)
         if op.opclass not in {'BinaryOp', 'Monoid'}:
-            raise TypeError(f'op must be BinaryOp or Monoid')
+            raise TypeError('op must be BinaryOp or Monoid')
         func = libget(f'GrB_Matrix_reduce_{op.opclass}')
         output_constructor = partial(Vector.new,
                                      dtype=op.return_type,
@@ -463,7 +467,7 @@ class Matrix(GbContainer):
         """
         op = get_typed_op(op, self.dtype)
         if op.opclass != 'Monoid':
-            raise TypeError(f'op must be Monoid')
+            raise TypeError('op must be Monoid')
         func = libget(f'GrB_Matrix_reduce_{op.return_type}')
         output_constructor = partial(Scalar.new,
                                      dtype=op.return_type)
@@ -601,7 +605,10 @@ class TransposedMatrix:
         self._matrix = matrix
 
     def __repr__(self):
-        return f'<Matrix.T {self.nvals}/({self.nrows}x{self.ncols}):{self.dtype.name}>'
+        return format_matrix(self)
+
+    def _repr_html_(self):
+        return format_matrix_html(self)
 
     def new(self, *, dtype=None, mask=None):
         if dtype is None:
@@ -649,7 +656,6 @@ class TransposedMatrix:
     # Misc.
     isequal = Matrix.isequal
     isclose = Matrix.isclose
-    show = Matrix.show
     _extract_element = Matrix._extract_element
     _prep_for_extract = Matrix._prep_for_extract
     __getitem__ = Matrix.__getitem__

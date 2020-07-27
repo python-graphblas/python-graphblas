@@ -249,10 +249,6 @@ class GbContainer:
     def _prep_for_assign(self, resolved_indexes, obj):
         raise TypeError(f'Cannot assign to {self.__class__.__name__}')
 
-    def show(self):
-        from . import io
-        return io.show(self)
-
 
 class GbDelayed:
     def __init__(self, func, tail_args, *, at=False, bt=False, output_constructor=None, objects):
@@ -321,7 +317,7 @@ class AmbiguousAssignOrExtract:
                 parent_kwargs.append("mask=<Mask>")
                 parent_kwargs.append(f"replace={self.parent.kwargs['replace']}")
             if not parent_kwargs:
-                raise ValueError(f'GraphBLAS object already called (with no keywords)')
+                raise ValueError('GraphBLAS object already called (with no keywords)')
             parent_kwargs = ', '.join(parent_kwargs)
             raise ValueError(f'GraphBLAS object already called with keywords: {parent_kwargs}')
         # Occurs when user calls C[index](params)

@@ -21,13 +21,11 @@ def test_bool_doesnt_get_too_large():
     a = grblas.Vector.from_values([0, 1, 2, 3], [True, False, True, False])
     b = grblas.Vector.from_values([0, 1, 2, 3], [True, True, False, False])
     z = a.ewise_mult(b, grblas.monoid.numpy.add).new()
-    # z.show()
     x, y = z.to_values()
     assert y == (True, True, True, False)
 
     op = grblas.ops.UnaryOp.register_anonymous(lambda x: np.add(x, x))
     z = a.apply(op).new()
-    # z.show()
     x, y = z.to_values()
     assert y == (True, False, True, False)
 
@@ -72,8 +70,8 @@ def test_npunary():
             compare = match.reduce(grblas.monoid.land).value
             if not compare:
                 print(unary_name, gb_input.dtype)
-                print(gb_result.show())
-                print(np_result.show())
+                print(gb_result)
+                print(np_result)
             assert compare
 
 
@@ -150,8 +148,8 @@ def test_npbinary():
             compare = match.reduce(grblas.monoid.land).value
             if not compare:
                 print(binary_name, gb_left.dtype)
-                print(gb_result.show())
-                print(np_result.show())
+                print(gb_result)
+                print(np_result)
             assert compare
 
 
@@ -223,8 +221,8 @@ def test_npmonoid():
             compare = match.reduce(grblas.monoid.land).value
             if not compare:
                 print(binary_name, gb_left.dtype)
-                print(gb_result.show())
-                print(np_result.show())
+                print(gb_result)
+                print(np_result)
             assert compare
 
             # numpy reductions don't have dtype-dependent identities, so results sometimes differ

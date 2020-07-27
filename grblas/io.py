@@ -3,33 +3,6 @@ from .matrix import TransposedMatrix
 from .exceptions import GrblasException
 
 
-def show(m):
-    try:
-        import pandas as pd
-    except ImportError:
-        print('`show` requires pandas to be installed')
-        return
-
-    print(m)
-    if isinstance(m, (Matrix, TransposedMatrix)):
-        df = pd.DataFrame(columns=range(m.ncols), index=range(m.nrows))
-        for i, j, val in zip(*m.to_values()):
-            df.iloc[i, j] = val
-        df = df.where(pd.notnull(df), '')
-    elif isinstance(m, Vector):
-        df = pd.DataFrame(index=range(m.size), columns=[''])
-        for i, val in zip(*m.to_values()):
-            df.iloc[i] = val
-        df = df.where(pd.notnull(df), '').T
-    # elif isinstance(m, Scalar):
-    #     df = m.value
-    else:
-        return
-
-    # Return df so it shows up nicely in the notebook
-    return df
-
-
 def draw(m):
     try:
         import networkx as nx
