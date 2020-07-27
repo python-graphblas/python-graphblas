@@ -43,15 +43,12 @@ class BaseType:
     # Flag for operations which depend on scalar vs vector/matrix
     _is_scalar = False
 
-    def __init__(self, gb_obj, dtype, *, name=None):
+    def __init__(self, gb_obj, dtype, name):
         if not isinstance(gb_obj, CData):
             raise TypeError('Object passed to __init__ must be CData type')
         dtype = lookup_dtype(dtype)
         self.gb_obj = gb_obj
         self.dtype = dtype
-        if name is None:
-            # TODO: use name counter instead
-            name = f'{type(self).__name__.lower()}_{hex(hash(hex(id(self))))[-4:]}'
         self.name = name
 
     def __call__(self, *optional_mask_and_accum, mask=None, accum=None, replace=False):
@@ -210,6 +207,14 @@ class BaseType:
     def _prep_for_assign(self, resolved_indexes, obj):
         raise TypeError(f'Cannot assign to {type(self).__name__}')
 
+    @property
+    def _name_html(self):
+        """Treat characters after _ as subscript"""
+        split = self.name.split('_', 1)
+        if len(split) == 1:
+            return self.name
+        return f'{split[0]}<sub>{split[1]}</sub>'
+
     _expect_type = _expect_type
     _expect_op = _expect_op
 
@@ -237,8 +242,8 @@ class BaseExpression:
         else:
             self.dtype = dtype
 
-    def new(self, *, dtype=None, mask=None):
-        output = self.construct_output(dtype=dtype)
+    def new(self, *, dtype=None, mask=None, name=None):
+        output = self.construct_output(dtype=dtype, name=name)
         if mask is None:
             output.update(self)
         else:

@@ -21,6 +21,14 @@ class StructuralMask(Mask):
     def __invert__(self):
         return ComplementedStructuralMask(self.mask)
 
+    @property
+    def name(self):
+        return f'{self.mask.name}.S'
+
+    @property
+    def _name_html(self):
+        return f'{self.mask._name_html}.S'
+
 
 class ValueMask(Mask):
     complement = False
@@ -29,6 +37,14 @@ class ValueMask(Mask):
 
     def __invert__(self):
         return ComplementedValueMask(self.mask)
+
+    @property
+    def name(self):
+        return f'{self.mask.name}.V'
+
+    @property
+    def _name_html(self):
+        return f'{self.mask._name_html}.V'
 
 
 class ComplementedStructuralMask(Mask):
@@ -39,6 +55,14 @@ class ComplementedStructuralMask(Mask):
     def __invert__(self):
         return StructuralMask(self.mask)
 
+    @property
+    def name(self):
+        return f'~{self.mask.name}.S'
+
+    @property
+    def _name_html(self):
+        return f'~{self.mask._name_html}.S'
+
 
 class ComplementedValueMask(Mask):
     complement = True
@@ -47,3 +71,11 @@ class ComplementedValueMask(Mask):
 
     def __invert__(self):
         return ValueMask(self.mask)
+
+    @property
+    def name(self):
+        return f'~{self.mask.name}.V'
+
+    @property
+    def _name_html(self):
+        return f'~{self.mask._name_html}.V'

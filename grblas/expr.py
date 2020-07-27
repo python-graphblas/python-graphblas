@@ -105,7 +105,7 @@ class AmbiguousAssignOrExtract:
         val, _ = self.parent._extract_element(self.resolved_indexes)
         return val
 
-    def new(self, *, dtype=None, mask=None):
+    def new(self, *, dtype=None, mask=None, name=None):
         """
         Force extraction of the indexes into a new object
         dtype and mask are the only controllable parameters.
@@ -119,10 +119,10 @@ class AmbiguousAssignOrExtract:
             if dtype is None:
                 dtype = cur_dtype
             from .scalar import Scalar
-            return Scalar.from_value(val, dtype=dtype)
+            return Scalar.from_value(val, dtype=dtype, name=name)
         else:
             delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
-            return delayed_extractor.new(dtype=dtype, mask=mask)
+            return delayed_extractor.new(dtype=dtype, mask=mask, name=name)
 
     def _extract_delayed(self):
         """Return a GbDelayed object, treating this as an extract call"""

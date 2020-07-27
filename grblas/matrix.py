@@ -20,8 +20,10 @@ class Matrix(BaseType):
     _is_transposed = False
     _name_counter = itertools.count()
 
-    def __init__(self, gb_obj, dtype):
-        super().__init__(gb_obj, dtype)
+    def __init__(self, gb_obj, dtype, *, name=None):
+        if name is None:
+            name = f'M_{next(Matrix._name_counter)}'
+        super().__init__(gb_obj, dtype, name)
 
     def __del__(self):
         check_status(lib.GrB_Matrix_free(self.gb_obj))
@@ -198,7 +200,7 @@ class Matrix(BaseType):
         if not dup_op_given and self.nvals < len(values):
             raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
-    def dup(self, *, dtype=None, mask=None):
+    def dup(self, *, dtype=None, mask=None, name=None):
         """
         GrB_Matrix_dup
         Create a new Matrix by duplicating this one
@@ -206,15 +208,15 @@ class Matrix(BaseType):
         if dtype is not None or mask is not None:
             if dtype is None:
                 dtype = self.dtype
-            new_mat = type(self).new(dtype, nrows=self.nrows, ncols=self.ncols)
+            new_mat = type(self).new(dtype, nrows=self.nrows, ncols=self.ncols, name=name)
             new_mat(mask=mask)[:, :] << self
             return new_mat
         new_mat = ffi_new('GrB_Matrix*')
         check_status(lib.GrB_Matrix_dup(new_mat, self.gb_obj[0]))
-        return type(self)(new_mat, self.dtype)
+        return type(self)(new_mat, self.dtype, name=name)
 
     @classmethod
-    def new(cls, dtype, nrows=0, ncols=0):
+    def new(cls, dtype, nrows=0, ncols=0, *, name=None):
         """
         GrB_Matrix_new
         Create a new empty Matrix from the given type, number of rows, and number of columns
@@ -222,10 +224,10 @@ class Matrix(BaseType):
         new_matrix = ffi_new('GrB_Matrix*')
         dtype = lookup_dtype(dtype)
         check_status(lib.GrB_Matrix_new(new_matrix, dtype.gb_type, nrows, ncols))
-        return cls(new_matrix, dtype)
+        return cls(new_matrix, dtype, name=name)
 
     @classmethod
-    def from_values(cls, rows, columns, values, *, nrows=None, ncols=None, dup_op=None, dtype=None):
+    def from_values(cls, rows, columns, values, *, nrows=None, ncols=None, dup_op=None, dtype=None, name=None):
         """Create a new Matrix from the given lists of row indices, column
         indices, and values.  If nrows or ncols are not provided, they
         are computed from the max row and coumn index found.
@@ -252,7 +254,7 @@ class Matrix(BaseType):
                 raise ValueError('No column indices provided. Unable to infer ncols.')
             ncols = max(columns) + 1
         # Create the new matrix
-        C = cls.new(dtype, nrows, ncols)
+        C = cls.new(dtype, nrows, ncols, name=name)
         # Add the data
         C.build(rows, columns, values, dup_op=dup_op)
         return C
@@ -643,10 +645,14 @@ class MatrixExpression(BaseExpression):
         self.ncols = ncols
         self.nrows = nrows
 
-    def construct_output(self, dtype=None):
+    def construct_output(self, dtype=None, *, name=None):
         if dtype is None:
             dtype = self.dtype
-        return Matrix.new(dtype, self.nrows, self.ncols)
+        return Matrix.new(dtype, self.nrows, self.ncols, name=name)
+
+    def _repr_html_(self):
+        from .formatting import format_matrix_expression_html
+        return format_matrix_expression_html(self)
 
 
 class TransposedMatrix:
@@ -655,7 +661,6 @@ class TransposedMatrix:
 
     def __init__(self, matrix):
         self._matrix = matrix
-        self.name = f'{matrix.name}.T'
 
     def __repr__(self):
         from .formatting import format_matrix
@@ -665,10 +670,10 @@ class TransposedMatrix:
         from .formatting import format_matrix_html
         return format_matrix_html(self)
 
-    def new(self, *, dtype=None, mask=None):
+    def new(self, *, dtype=None, mask=None, name=None):
         if dtype is None:
             dtype = self.dtype
-        output = Matrix.new(dtype, self.nrows, self.ncols)
+        output = Matrix.new(dtype, self.nrows, self.ncols, name=name)
         if mask is None:
             output.update(self)
         else:
@@ -694,6 +699,14 @@ class TransposedMatrix:
     @property
     def _carg(self):
         return self._matrix.gb_obj[0]
+
+    @property
+    def name(self):
+        return f'{self._matrix.name}.T'
+
+    @property
+    def _name_html(self):
+        return f'{self._matrix._name_html}.T'
 
     # Properties
     nrows = Matrix.ncols

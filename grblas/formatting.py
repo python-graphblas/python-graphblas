@@ -165,34 +165,91 @@ def vector_header_html(vector, *, mask=None):
     return create_header_html(name, keys, vals)
 
 
-def _format_html(header, df=None):
+def _format_html(name, header, df):
     if has_pandas:
-        state = 'open'
         with pd.option_context('display.show_dimensions', False, 'display.large_repr', 'truncate'):
             details = df._repr_html_()
     else:
-        state = ''
         details = '<em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em>'
     return (
-        f'<details {state}>'
-        '<summary style="list-style-type:none">'
-        f'{header}'
+        '<div>'
+        '<details>'
+        '<summary>'
+        f'<tt>{name}</tt>{header}'
         '</summary>'
         f'{details}'
         '</details>'
+        '</div>'
     )
 
 
 def format_matrix_html(matrix, *, max_rows=None, min_rows=None, max_columns=None, mask=None):
     header = matrix_header_html(matrix, mask=mask)
     df = _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, mask=mask)
-    return _format_html(header, df)
+    if mask is None:
+        name = matrix._name_html
+    else:
+        name = mask._name_html
+    return _format_html(name, header, df)
 
 
 def format_vector_html(vector, *, max_columns=None, mask=None):
     header = vector_header_html(vector, mask=mask)
     df = _get_vector_dataframe(vector, max_columns, mask=mask)
-    return _format_html(header, df)
+    if mask is None:
+        name = vector._name_html
+    else:
+        name = mask._name_html
+    return _format_html(name, header, df)
+
+
+def format_scalar_html(scalar):
+    header = create_header_html('grblas.Scalar', ['value', 'dtype'], [scalar.value, scalar.dtype])
+    return f'<div><tt>{scalar._name_html}</tt>{header}</div>'
+
+
+def _format_expression(expr, header):
+    pos_to_arg = {}
+    for i, arg in enumerate(expr.args):
+        pos = expr.expr_repr.find('{%s' % i)
+        if pos >= 0:
+            pos_to_arg[pos] = arg
+    args = [pos_to_arg[pos] for pos in sorted(pos_to_arg)]
+    arg_string = ''.join(x._repr_html_() for x in args if hasattr(x, '_repr_html_'))
+    return (
+        '<div style="padding:4px;">'
+        '<details>'
+        '<summary>'
+        f'<b><tt>grblas.{type(expr).__name__}:</tt></b>'
+        f'{header}'
+        '</summary>'
+        '<blockquote>'
+        f'{arg_string}'
+        '</blockquote>'
+        '</details>'
+        '<em>'
+        'Do <code>expr.new()</code> or <code>other << expr</code> to calculate the expression.'
+        '</em>'
+        '</div>'
+    )
+
+
+def format_matrix_expression_html(expr):
+    expr_html = expr._format_expr_html()
+    header = create_header_html(expr_html, ['nrows', 'ncols', 'dtype'], [expr.nrows, expr.ncols, expr.dtype])
+    return _format_expression(expr, header)
+
+
+def format_vector_expression_html(expr):
+    expr_html = expr._format_expr_html()
+    header = create_header_html(expr_html, ['size', 'dtype'], [expr.size, expr.dtype])
+    return _format_expression(expr, header)
+
+
+def format_scalar_expression_html(expr):
+    expr_html = expr._format_expr_html()
+    header = create_header_html(expr_html, ['dtype'], [expr.dtype])
+    return _format_expression(expr, header)
 
 
 def create_header(name, keys, vals, *, lower_border=False):

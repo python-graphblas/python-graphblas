@@ -18,8 +18,10 @@ class Vector(BaseType):
     """
     _name_counter = itertools.count()
 
-    def __init__(self, gb_obj, dtype):
-        super().__init__(gb_obj, dtype)
+    def __init__(self, gb_obj, dtype, *, name=None):
+        if name is None:
+            name = f'v_{next(Vector._name_counter)}'
+        super().__init__(gb_obj, dtype, name)
 
     def __del__(self):
         check_status(lib.GrB_Vector_free(self.gb_obj))
@@ -176,7 +178,7 @@ class Vector(BaseType):
         if not dup_op_given and self.nvals < len(values):
             raise ValueError('Duplicate indices found, must provide `dup_op` BinaryOp')
 
-    def dup(self, *, dtype=None, mask=None):
+    def dup(self, *, dtype=None, mask=None, name=None):
         """
         GrB_Vector_dup
         Create a new Vector by duplicating this one
@@ -184,15 +186,15 @@ class Vector(BaseType):
         if dtype is not None or mask is not None:
             if dtype is None:
                 dtype = self.dtype
-            new_vec = type(self).new(dtype, size=self.size)
+            new_vec = type(self).new(dtype, size=self.size, name=name)
             new_vec(mask=mask)[:] << self
             return new_vec
         new_vec = ffi_new('GrB_Vector*')
         check_status(lib.GrB_Vector_dup(new_vec, self.gb_obj[0]))
-        return type(self)(new_vec, self.dtype)
+        return type(self)(new_vec, self.dtype, name=name)
 
     @classmethod
-    def new(cls, dtype, size=0):
+    def new(cls, dtype, size=0, *, name=None):
         """
         GrB_Vector_new
         Create a new empty Vector from the given type and size
@@ -200,10 +202,10 @@ class Vector(BaseType):
         new_vector = ffi_new('GrB_Vector*')
         dtype = lookup_dtype(dtype)
         check_status(lib.GrB_Vector_new(new_vector, dtype.gb_type, size))
-        return cls(new_vector, dtype)
+        return cls(new_vector, dtype, name=name)
 
     @classmethod
-    def from_values(cls, indices, values, *, size=None, dup_op=None, dtype=None):
+    def from_values(cls, indices, values, *, size=None, dup_op=None, dtype=None, name=None):
         """Create a new Vector from the given lists of indices and values.  If
         size is not provided, it is computed from the max index found.
         """
@@ -223,7 +225,7 @@ class Vector(BaseType):
                 raise ValueError('No indices provided. Unable to infer size.')
             size = max(indices) + 1
         # Create the new vector
-        w = cls.new(dtype, size)
+        w = cls.new(dtype, size, name=name)
         # Add the data
         w.build(indices, values, dup_op=dup_op)
         return w
@@ -451,7 +453,11 @@ class VectorExpression(BaseExpression):
             size = args[0].size
         self.size = size
 
-    def construct_output(self, dtype=None):
+    def construct_output(self, dtype=None, *, name=None):
         if dtype is None:
             dtype = self.dtype
-        return Vector.new(dtype, self.size)
+        return Vector.new(dtype, self.size, name=name)
+
+    def _repr_html_(self):
+        from .formatting import format_vector_expression_html
+        return format_vector_expression_html(self)

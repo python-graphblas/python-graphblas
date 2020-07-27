@@ -18,6 +18,9 @@ class _CScalar:
     def __repr__(self):
         return repr(self.scalar.value)
 
+    def _repr_html_(self):
+        return self.scalar._repr_html_()
+
     @property
     def _carg(self):
         return self.scalar.value
@@ -38,12 +41,18 @@ class Scalar(BaseType):
     _is_scalar = True
     _name_counter = itertools.count()
 
-    def __init__(self, gb_obj, dtype, empty=False):
-        super().__init__(gb_obj, dtype)
+    def __init__(self, gb_obj, dtype, *, empty=False, name=None):
+        if name is None:
+            name = f's_{next(Scalar._name_counter)}'
+        super().__init__(gb_obj, dtype, name)
         self._is_empty = empty
 
     def __repr__(self):
         return f'<Scalar {self.value}:{self.dtype}>'
+
+    def _repr_html_(self):
+        from .formatting import format_scalar_html
+        return format_scalar_html(self)
 
     def __eq__(self, other):
         return self.isequal(other)
@@ -144,34 +153,34 @@ class Scalar(BaseType):
     def _carg(self):
         return self.gb_obj
 
-    def dup(self, *, dtype=None):
+    def dup(self, *, dtype=None, name=None):
         """Create a new Scalar by duplicating this one
         """
         if dtype is None:
-            new_scalar = type(self).new(self.dtype)
+            new_scalar = type(self).new(self.dtype, name=name)
             new_scalar.value = self.value
         else:
-            new_scalar = type(self).new(dtype)
+            new_scalar = type(self).new(dtype, name=name)
             if not self.is_empty:
                 new_scalar.value = new_scalar.dtype.numba_type(self.value)
         return new_scalar
 
     @classmethod
-    def new(cls, dtype):
+    def new(cls, dtype, *, name=None):
         """
         Create a new empty Scalar from the given type
         """
         dtype = lookup_dtype(dtype)
         new_scalar_pointer = ffi_new(f'{dtype.c_type}*')
-        return cls(new_scalar_pointer, dtype, empty=True)
+        return cls(new_scalar_pointer, dtype, name=name, empty=True)
 
     @classmethod
-    def from_value(cls, value, dtype=None):
+    def from_value(cls, value, dtype=None, *, name=None):
         """Create a new Scalar from a Python value
         """
         if dtype is None:
             dtype = lookup_dtype(type(value))
-        new_scalar = cls.new(dtype)
+        new_scalar = cls.new(dtype, name=name)
         new_scalar.value = value
         return new_scalar
 
@@ -183,10 +192,14 @@ class ScalarExpression(BaseExpression):
     def value(self):
         return self.new().value
 
-    def construct_output(self, dtype=None):
+    def construct_output(self, dtype=None, *, name=None):
         if dtype is None:
             dtype = self.dtype
-        return Scalar.new(dtype)
+        return Scalar.new(dtype, name=name)
 
-    def new(self, *, dtype=None):
-        return super().new(dtype=dtype)
+    def new(self, *, dtype=None, name=None):
+        return super().new(dtype=dtype, name=name)
+
+    def _repr_html_(self):
+        from .formatting import format_scalar_expression_html
+        return format_scalar_expression_html(self)
