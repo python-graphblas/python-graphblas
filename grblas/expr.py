@@ -125,7 +125,7 @@ class AmbiguousAssignOrExtract:
             return delayed_extractor.new(dtype=dtype, mask=mask, name=name)
 
     def _extract_delayed(self):
-        """Return a GbDelayed object, treating this as an extract call"""
+        """Return an Expression object, treating this as an extract call"""
         if type(self.parent) is Updater:
             raise TypeError('Cannot extract from an Updater')
         return self.parent._prep_for_extract(self.resolved_indexes)

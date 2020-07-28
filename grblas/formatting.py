@@ -10,7 +10,15 @@ except ImportError:
 
 def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offset, *, mask=None):
     if rows is None and columns is None:
-        submatrix = matrix
+        if mask is None:
+            submatrix = matrix
+        else:
+            submatrix = Matrix.new('UINT8', matrix.nrows, matrix.ncols)
+            if mask.structure:
+                submatrix(matrix.S)[:, :] = 0 if mask.complement else 1
+            else:
+                submatrix(matrix.S)[:, :] = 1 if mask.complement else 0
+                submatrix(matrix.V)[:, :] = 0 if mask.complement else 1
     else:
         if rows is None:
             rows = slice(None)

@@ -68,5 +68,5 @@ def _load(name):
         # Everything else is a module
         module = _importlib.import_module(f".{name}", __name__)
         globals()[name] = module
-    else:
-        raise ValueError(name)
+    else:  # pragma: no cover
+        raise RuntimeError(name)  # shouldn't happen

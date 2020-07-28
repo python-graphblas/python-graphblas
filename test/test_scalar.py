@@ -164,3 +164,10 @@ def test_update(s):
     assert s == 5
     with pytest.raises(TypeError, match='is not supported'):
         s(accum=binary.plus) << 6
+
+
+def test_not_hashable(s):
+    with pytest.raises(TypeError, match='unhashable type'):
+        {s}
+    with pytest.raises(TypeError, match='unhashable type'):
+        hash(s)

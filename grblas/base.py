@@ -57,13 +57,14 @@ class BaseType:
         accum_arg = None
         for arg in optional_mask_and_accum:
             if isinstance(arg, (BaseType, Mask)):
-                _check_mask(arg)
+                if self._is_scalar:
+                    raise TypeError('Mask not allowed for Scalars')
                 if mask_arg is not None:
-                    1/0
+                    raise TypeError("Got multiple values for argument 'mask'")
                 mask_arg = arg
             else:
                 if accum_arg is not None:
-                    1/0
+                    raise TypeError("Got multiple values for argument 'accum'")
                 accum_arg, opclass = find_opclass(arg)
                 if opclass == UNKNOWN_OPCLASS:
                     raise TypeError(f'Invalid item found in output params: {type(arg)}')
@@ -71,13 +72,17 @@ class BaseType:
                     raise TypeError(f'accum must be a BinaryOp, not {opclass}')
         # Merge positional and keyword arguments
         if mask_arg is not None and mask is not None:
-            raise TypeError("got multiple values for argument 'mask'")
+            raise TypeError("Got multiple values for argument 'mask'")
         if mask_arg is not None:
             mask = mask_arg
         if mask is None:
             mask = NULL
+        elif self._is_scalar:
+            raise TypeError('Mask not allowed for Scalars')
+        else:
+            _check_mask(mask)
         if accum_arg is not None and accum is not None:
-            raise TypeError("got multiple values for argument 'accum")
+            raise TypeError("Got multiple values for argument 'accum'")
         if accum_arg is not None:
             accum = accum_arg
         if accum is None:
@@ -85,7 +90,7 @@ class BaseType:
         return Updater(self, mask=mask, accum=accum, replace=replace)
 
     def __eq__(self, other):
-        raise TypeError('__eq__ not defined for objects of type {type(self)}.  Use `.isequal` method instead.')
+        raise TypeError(f'__eq__ not defined for objects of type {type(self)}.  Use `.isequal` method instead.')
 
     def __lshift__(self, delayed):
         return self._update(delayed)
@@ -101,7 +106,7 @@ class BaseType:
             mask = NULL
         if accum is None:
             accum = NULL
-        # TODO: check expected output type (need to include in GbDelayed object)
+        # TODO: check expected output type (now included in Expression object)
         if self._is_scalar and mask is not NULL:
             raise TypeError('Mask not allowed for Scalars')
         if not isinstance(delayed, BaseExpression):
@@ -149,7 +154,7 @@ class BaseType:
                         ncols=delayed.ncols,
                     )
                 else:
-                    raise TypeError(f'assignment value must be GbDelayed object, not {type(delayed)}')
+                    raise TypeError(f'assignment value must be Expression object, not {type(delayed)}')
 
         # Normalize mask and separate out complement and structural flags
         if mask is NULL:
@@ -194,18 +199,6 @@ class BaseType:
             cfunc = libget(delayed.cfunc_name)
             # Make the GraphBLAS call
             check_status(cfunc(*call_args))
-
-    def _extract_element(self, resolved_indexes):
-        raise TypeError(f'Cannot extract from {type(self).__name__}')
-
-    def _prep_for_extract(self, resolved_indexes):
-        raise TypeError(f'Cannot extract from {type(self).__name__}')
-
-    def _assign_element(self, resolved_indexes, value):
-        raise TypeError(f'Cannot assign to {type(self).__name__}')
-
-    def _prep_for_assign(self, resolved_indexes, obj):
-        raise TypeError(f'Cannot assign to {type(self).__name__}')
 
     @property
     def _name_html(self):

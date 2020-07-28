@@ -59,6 +59,35 @@ def test_order_of_updater_params_does_not_matter():
     assert v.isequal(result)
 
 
+def test_updater_repeat_argument_types():
+    mask = Vector.from_values([0, 3], [True, True])
+    accum = binary.plus
+    v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    with pytest.raises(TypeError, match='multiple'):
+        v(mask.S, mask.S)
+    with pytest.raises(TypeError, match='multiple'):
+        v(mask.S, mask=mask.S)
+    with pytest.raises(TypeError, match='multiple'):
+        v(accum, accum)
+    with pytest.raises(TypeError, match='multiple'):
+        v(accum, accum=accum)
+
+
+def test_updater_bad_types():
+    v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    M = Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, 3], dtype=dtypes.UINT8)
+    with pytest.raises(TypeError, match='Invalid mask'):
+        v(mask=object())
+    with pytest.raises(TypeError, match='Invalid mask'):
+        v[[1, 2]].new(mask=object())
+    with pytest.raises(TypeError, match='Mask object must be type'):
+        v.ewise_mult(v).new(mask=M.S)
+    with pytest.raises(TypeError, match='Invalid'):
+        v(object())
+    with pytest.raises(TypeError, match='accum must be a BinaryOp, not UnaryO'):
+        v(unary.one)
+
+
 def test_already_resolved_ops_allowed_in_updater():
     # C(binary.plus['FP64']) << ...
     u = Vector.from_values([0, 1, 3], [1, 2, 3])
@@ -99,6 +128,23 @@ def test_updater_only_once():
         u[[0, 1]][0]
 
 
+def test_bad_extract_with_updater():
+    u = Vector.from_values([0, 1, 3], [1, 2, 3])
+    assert u[0].value == 1
+    with pytest.raises(TypeError, match='Cannot extract from an Updater'):
+        u(mask=u.S)[0].value
+    with pytest.raises(AttributeError, match='Only Scalars'):
+        u[[0, 1]].value
+    with pytest.raises(TypeError, match='Cannot extract from an Updater'):
+        u(mask=u.S)[0].new()
+    with pytest.raises(TypeError, match='mask is not allowed for single element extraction'):
+        u[0].new(mask=u.S)
+    s = grblas.Scalar.from_value(10)
+    with pytest.raises(TypeError, match='Indexing not supported for Scalars'):
+        del s()[0]
+
+
+# These tests probably belong elsewhere
 def test_import_special_attrs():
     not_hidden = {x for x in dir(grblas) if not x.startswith('_')}
     # Is everything imported?
@@ -109,3 +155,19 @@ def test_import_special_attrs():
     # Make sure these "not special" objects don't have objects that look special within them
     for attr in not_special:
         assert not set(dir(getattr(grblas, attr))) & grblas._SPECIAL_ATTRS
+
+
+def test_bad_init():
+    # same params is okay
+    params = dict(grblas._init_params)
+    del params['automatic']
+    grblas.init(**params)
+    # different params is bad
+    params['blocking'] = not params['blocking']
+    with pytest.raises(grblas.exceptions.GrblasException, match='different init parameters'):
+        grblas.init(**params)
+
+
+def test_bad_libget():
+    with pytest.raises(AttributeError, match='GrB_bad_name'):
+        grblas.base.libget('GrB_bad_name')

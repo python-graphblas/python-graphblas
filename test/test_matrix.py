@@ -643,3 +643,18 @@ def test_nested_matrix_operations():
             ).new(),
         ).new(),
     )
+
+
+def test_bad_init():
+    with pytest.raises(TypeError, match='CData'):
+        Matrix(None, float, name='bad_matrix')
+
+
+def test_no_equals(A):
+    with pytest.raises(TypeError, match='not defined for objects of type'):
+        A == A
+
+
+def test_bad_update(A):
+    with pytest.raises(TypeError, match='assignment value must be Expression'):
+        A << None
