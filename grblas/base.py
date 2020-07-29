@@ -115,7 +115,7 @@ class BaseType:
                             'Scalar accumulation with extract element'
                             '--such as `s(accum=accum) << v[0]`--is not supported'
                         )
-                    self.value = delayed.new(dtype=self.dtype).value
+                    self.value = delayed.new(dtype=self.dtype, name='s_extract').value
                     return
 
                 # Extract (C << A[rows, cols])

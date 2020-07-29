@@ -10,8 +10,6 @@ ffi_new = ffi.new
 
 class _CScalar:
     def __init__(self, scalar):
-        if type(scalar) is not Scalar:
-            scalar = Scalar.from_value(scalar)
         self.scalar = scalar
         self.dtype = scalar.dtype
 
@@ -80,7 +78,7 @@ class Scalar(BaseType):
                 dtype = lookup_dtype(type(other))
             except ValueError:
                 raise TypeError(f'Argument of isequal must be a known scalar type, not {type(other)}')
-            other = Scalar.from_value(other, dtype=dtype)
+            other = Scalar.from_value(other, dtype=dtype, name='s_isequal')
             # Don't check dtype if we had to infer dtype of `other`
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:
@@ -107,7 +105,7 @@ class Scalar(BaseType):
                 dtype = lookup_dtype(type(other))
             except ValueError:
                 raise TypeError(f'Argument of isclose must be a known scalar type, not {type(other)}')
-            other = Scalar.from_value(other, dtype=dtype)
+            other = Scalar.from_value(other, dtype=dtype, name='s_isclose')
             # Don't check dtype if we had to infer dtype of `other`
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:
@@ -183,7 +181,7 @@ class Scalar(BaseType):
             try:
                 dtype = lookup_dtype(type(value))
             except ValueError:
-                raise TypeError(f'Argument of isclose must be a known scalar type, not {type(value)}')
+                raise TypeError(f'Argument of from_value must be a known scalar type, not {type(value)}')
         new_scalar = cls.new(dtype, name=name)
         new_scalar.value = value
         return new_scalar
@@ -194,7 +192,7 @@ class ScalarExpression(BaseExpression):
 
     @property
     def value(self):
-        return self.new().value
+        return self.new(name='s_value').value
 
     def construct_output(self, dtype=None, *, name=None):
         if dtype is None:

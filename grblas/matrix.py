@@ -74,7 +74,7 @@ class Matrix(BaseType):
         else:
             common_dtype = unify(self.dtype, other.dtype)
 
-        matches = Matrix.new(bool, self.nrows, self.ncols)
+        matches = Matrix.new(bool, self.nrows, self.ncols, name='M_isequal')
         matches << self.ewise_mult(other, binary.eq[common_dtype])
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches.nvals != self.nvals:
@@ -99,7 +99,7 @@ class Matrix(BaseType):
         if self.nvals != other.nvals:
             return False
 
-        matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(dtype=bool)
+        matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(dtype=bool, name='M_isclose')
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches.nvals != self.nvals:
             return False
@@ -403,7 +403,7 @@ class Matrix(BaseType):
         elif right is None:
             if type(left) is not Scalar:
                 try:
-                    left = Scalar.from_value(left)
+                    left = Scalar.from_value(left, name='s_left')
                 except TypeError:
                     self._expect_type(left, Scalar, within=method_name, keyword_name='left')
             op = get_typed_op(op, self.dtype, left.dtype)
@@ -415,7 +415,7 @@ class Matrix(BaseType):
         elif left is None:
             if type(right) is not Scalar:
                 try:
-                    right = Scalar.from_value(right)
+                    right = Scalar.from_value(right, name='s_right')
                 except TypeError:
                     self._expect_type(right, Scalar, within=method_name, keyword_name='right')
             op = get_typed_op(op, self.dtype, right.dtype)
@@ -563,7 +563,7 @@ class Matrix(BaseType):
         rows, rowsize = resolved_indexes.indices[0]
         cols, colsize = resolved_indexes.indices[1]
         if isinstance(obj, (int, float, bool, complex)):
-            obj = Scalar.from_value(obj)
+            obj = Scalar.from_value(obj, name='s_assign')
         if type(obj) is Scalar:
             if rowsize is None:
                 rows = [rows]

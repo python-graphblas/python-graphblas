@@ -71,16 +71,14 @@ class Vector(BaseType):
         else:
             common_dtype = unify(self.dtype, other.dtype)
 
-        matches = Vector.new(bool, self.size)
+        matches = Vector.new(bool, self.size, name='v_isequal')
         matches << self.ewise_mult(other, binary.eq[common_dtype])
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches.nvals != self.nvals:
             return False
 
         # Check if all results are True
-        result = Scalar.new(bool)
-        result << matches.reduce(monoid.land)
-        return result.value
+        return matches.reduce(monoid.land).value
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """
@@ -96,7 +94,7 @@ class Vector(BaseType):
         if self.nvals != other.nvals:
             return False
 
-        matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(dtype=bool)
+        matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(dtype=bool, name='M_isclose')
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches.nvals != self.nvals:
             return False
@@ -330,7 +328,7 @@ class Vector(BaseType):
         elif right is None:
             if type(left) is not Scalar:
                 try:
-                    left = Scalar.from_value(left)
+                    left = Scalar.from_value(left, name='s_left')
                 except TypeError:
                     self._expect_type(left, Scalar, within=method_name, keyword_name='left')
             op = get_typed_op(op, self.dtype, left.dtype)
@@ -341,7 +339,7 @@ class Vector(BaseType):
         elif left is None:
             if type(right) is not Scalar:
                 try:
-                    right = Scalar.from_value(right)
+                    right = Scalar.from_value(right, name='s_right')
                 except TypeError:
                     self._expect_type(right, Scalar, within=method_name, keyword_name='right')
             op = get_typed_op(op, self.dtype, right.dtype)
@@ -414,7 +412,6 @@ class Vector(BaseType):
                      index))
 
     def _prep_for_assign(self, resolved_indexes, value):
-        # """
         method_name = '__setitem__'
         index, isize = resolved_indexes.indices[0]
         if type(value) is Vector:
@@ -422,7 +419,7 @@ class Vector(BaseType):
         else:
             if type(value) is not Scalar:
                 try:
-                    value = Scalar.from_value(value)
+                    value = Scalar.from_value(value, name='s_assign')
                 except TypeError:
                     self._expect_type(value, (Scalar, Vector), within=method_name, argname='value')
             cfunc_name = f'GrB_Vector_assign_{value.dtype}'

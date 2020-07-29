@@ -1,6 +1,7 @@
 import pytest
 from grblas import Scalar
 from grblas import dtypes, binary
+from grblas.scalar import _CScalar
 
 
 @pytest.fixture
@@ -173,3 +174,13 @@ def test_not_hashable(s):
         {s}
     with pytest.raises(TypeError, match='unhashable type'):
         hash(s)
+
+
+def test_cscalar():
+    c1 = _CScalar(Scalar.from_value(5))
+    assert c1 == _CScalar(Scalar.from_value(5))
+    assert c1 == 5
+    assert c1 != _CScalar(Scalar.from_value(6))
+    assert c1 != 6
+    assert repr(c1) == '5'
+    assert c1._repr_html_() == c1.scalar._repr_html_()
