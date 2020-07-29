@@ -87,28 +87,28 @@ def test_no_pandas_repr(A, C, v, w):
     try:
         repr_printer(A, 'A', indent=8)
         assert repr(A) == (
-            '               nvals  nrows  ncols  dtype\n'
+            '"A_1"          nvals  nrows  ncols  dtype\n'
             'grblas.Matrix      3      1      5  INT64'
         )
         repr_printer(A.T, 'A.T', indent=8)
         assert repr(A.T) == (
-            '                         nvals  nrows  ncols  dtype\n'
+            '"A_1.T"                  nvals  nrows  ncols  dtype\n'
             'grblas.TransposedMatrix      3      5      1  INT64'
         )
         repr_printer(C.S, 'C.S', indent=8)
         assert repr(C.S) == (
-            '                  nvals  nrows  ncols  dtype\n'
+            '"C.S"             nvals  nrows  ncols  dtype\n'
             'StructuralMask  \n'
             'of grblas.Matrix      8     70     77  INT64'
         )
         repr_printer(v, 'v', indent=8)
         assert repr(v) == (
-            '               nvals  size  dtype\n'
+            '"v"            nvals  size  dtype\n'
             'grblas.Vector      3     5   FP64'
         )
         repr_printer(~w.V, '~w.V', indent=8)
         assert repr(~w.V) == (
-            '                       nvals  size  dtype\n'
+            '"~w.V"                 nvals  size  dtype\n'
             'ComplementedValueMask\n'
             'of grblas.Vector           4    77  INT64'
         )
@@ -119,7 +119,7 @@ def test_no_pandas_repr(A, C, v, w):
 def test_matrix_repr_small(A, B):
     repr_printer(A, 'A')
     assert repr(A) == (
-        '               nvals  nrows  ncols  dtype\n'
+        '"A_1"          nvals  nrows  ncols  dtype\n'
         'grblas.Matrix      3      1      5  INT64\n'
         '-----------------------------------------\n'
         '   0 1  2 3  4\n'
@@ -127,7 +127,7 @@ def test_matrix_repr_small(A, B):
     )
     repr_printer(B, 'B')
     assert repr(B) == (
-        '               nvals  nrows  ncols  dtype\n'
+        '"B_1"          nvals  nrows  ncols  dtype\n'
         'grblas.Matrix      3      5      1  INT64\n'
         '-----------------------------------------\n'
         '    0\n'
@@ -139,7 +139,7 @@ def test_matrix_repr_small(A, B):
     )
     repr_printer(B.T, 'B.T')
     assert repr(B.T) == (
-        '                         nvals  nrows  ncols  dtype\n'
+        '"B_1.T"                  nvals  nrows  ncols  dtype\n'
         'grblas.TransposedMatrix      3      1      5  INT64\n'
         '---------------------------------------------------\n'
         '    0 1   2 3   4\n'
@@ -150,7 +150,7 @@ def test_matrix_repr_small(A, B):
 def test_matrix_mask_repr_small(A):
     repr_printer(A.S, 'A.S')
     assert repr(A.S) == (
-        '                  nvals  nrows  ncols  dtype\n'
+        '"A_1.S"           nvals  nrows  ncols  dtype\n'
         'StructuralMask  \n'
         'of grblas.Matrix      3      1      5  INT64\n'
         '--------------------------------------------\n'
@@ -159,7 +159,7 @@ def test_matrix_mask_repr_small(A):
     )
     repr_printer(A.V, 'A.V')
     assert repr(A.V) == (
-        '                  nvals  nrows  ncols  dtype\n'
+        '"A_1.V"           nvals  nrows  ncols  dtype\n'
         'ValueMask       \n'
         'of grblas.Matrix      3      1      5  INT64\n'
         '--------------------------------------------\n'
@@ -168,7 +168,7 @@ def test_matrix_mask_repr_small(A):
     )
     repr_printer(~A.S, '~A.S')
     assert repr(~A.S) == (
-        '                            nvals  nrows  ncols  dtype\n'
+        '"~A_1.S"                    nvals  nrows  ncols  dtype\n'
         'ComplementedStructuralMask\n'
         'of grblas.Matrix                3      1      5  INT64\n'
         '------------------------------------------------------\n'
@@ -177,7 +177,7 @@ def test_matrix_mask_repr_small(A):
     )
     repr_printer(~A.V, '~A.V')
     assert repr(~A.V) == (
-        '                       nvals  nrows  ncols  dtype\n'
+        '"~A_1.V"               nvals  nrows  ncols  dtype\n'
         'ComplementedValueMask\n'
         'of grblas.Matrix           3      1      5  INT64\n'
         '-------------------------------------------------\n'
@@ -190,7 +190,7 @@ def test_matrix_repr_large(C, D):
     with pd.option_context('display.max_columns', 24, 'display.width', 100):
         repr_printer(C, 'C', indent=8)
         assert repr(C) == (
-            '               nvals  nrows  ncols  dtype\n'
+            '"C"            nvals  nrows  ncols  dtype\n'
             'grblas.Matrix      8     70     77  INT64\n'
             '-----------------------------------------\n'
             '   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n'
@@ -208,7 +208,7 @@ def test_matrix_repr_large(C, D):
         )
         repr_printer(C.T, 'C.T', indent=8)
         assert repr(C.T) == (
-            '                         nvals  nrows  ncols  dtype\n'
+            '"C.T"                    nvals  nrows  ncols  dtype\n'
             'grblas.TransposedMatrix      8     77     70  INT64\n'
             '---------------------------------------------------\n'
             '   0  1  2  3  4  5  6  7  8  9  10 11  ... 58 59 60 61 62 63 64 65 66 67 68 69\n'
@@ -226,9 +226,9 @@ def test_matrix_repr_large(C, D):
         )
         repr_printer(D, 'D', indent=8)
         assert repr(D) == (
-            '               nvals  nrows  ncols  dtype\n'
+            '"D_skinny_in_one_dim"  nvals  nrows  ncols  dtype\n'
             'grblas.Matrix      4     70      5   BOOL\n'
-            '-----------------------------------------\n'
+            '-------------------------------------------------\n'
             '   0  1  2  3       4\n'
             '0                True\n'
             '1                    \n'
@@ -244,7 +244,7 @@ def test_matrix_repr_large(C, D):
         )
         repr_printer(D.T, 'D.T', indent=8)
         assert repr(D.T) == (
-            '                         nvals  nrows  ncols  dtype\n'
+            '"D_skinny_in_one_dim.T"  nvals  nrows  ncols  dtype\n'
             'grblas.TransposedMatrix      4      5     70   BOOL\n'
             '---------------------------------------------------\n'
             '     0  1  2  3  4  5  6  7  8      9  10 11  ... 58 59    60 61 62 63 64 65 66 67 68     69\n'
@@ -260,7 +260,7 @@ def test_matrix_mask_repr_large(C):
     with pd.option_context('display.max_columns', 24, 'display.width', 100):
         repr_printer(C.S, 'C.S', indent=8)
         assert repr(C.S) == (
-            '                  nvals  nrows  ncols  dtype\n'
+            '"C.S"             nvals  nrows  ncols  dtype\n'
             'StructuralMask  \n'
             'of grblas.Matrix      8     70     77  INT64\n'
             '--------------------------------------------\n'
@@ -279,7 +279,7 @@ def test_matrix_mask_repr_large(C):
         )
         repr_printer(C.V, 'C.V', indent=8)
         assert repr(C.V) == (
-            '                  nvals  nrows  ncols  dtype\n'
+            '"C.V"             nvals  nrows  ncols  dtype\n'
             'ValueMask       \n'
             'of grblas.Matrix      8     70     77  INT64\n'
             '--------------------------------------------\n'
@@ -298,7 +298,7 @@ def test_matrix_mask_repr_large(C):
         )
         repr_printer(~C.S, '~C.S', indent=8)
         assert repr(~C.S) == (
-            '                            nvals  nrows  ncols  dtype\n'
+            '"~C.S"                      nvals  nrows  ncols  dtype\n'
             'ComplementedStructuralMask\n'
             'of grblas.Matrix                8     70     77  INT64\n'
             '------------------------------------------------------\n'
@@ -317,7 +317,7 @@ def test_matrix_mask_repr_large(C):
         )
         repr_printer(~C.V, '~C.V', indent=8)
         assert repr(~C.V) == (
-            '                       nvals  nrows  ncols  dtype\n'
+            '"~C.V"                 nvals  nrows  ncols  dtype\n'
             'ComplementedValueMask\n'
             'of grblas.Matrix           8     70     77  INT64\n'
             '-------------------------------------------------\n'
@@ -339,7 +339,7 @@ def test_matrix_mask_repr_large(C):
 def test_vector_repr_small(v):
     repr_printer(v, 'v')
     assert repr(v) == (
-        '               nvals  size  dtype\n'
+        '"v"            nvals  size  dtype\n'
         'grblas.Vector      3     5   FP64\n'
         '---------------------------------\n'
         '  0 1    2 3    4\n'
@@ -351,7 +351,7 @@ def test_vector_repr_large(w):
     with pd.option_context('display.max_columns', 26, 'display.width', 100):
         repr_printer(w, 'w', indent=8)
         assert repr(w) == (
-            '               nvals  size  dtype\n'
+            '"w"            nvals  size  dtype\n'
             'grblas.Vector      4    77  INT64\n'
             '---------------------------------\n'
             ' 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n'
@@ -362,7 +362,7 @@ def test_vector_repr_large(w):
 def test_vector_mask_repr_small(v):
     repr_printer(v.S, 'v.S')
     assert repr(v.S) == (
-        '                  nvals  size  dtype\n'
+        '"v.S"             nvals  size  dtype\n'
         'StructuralMask  \n'
         'of grblas.Vector      3     5   FP64\n'
         '------------------------------------\n'
@@ -371,7 +371,7 @@ def test_vector_mask_repr_small(v):
     )
     repr_printer(v.V, 'v.V')
     assert repr(v.V) == (
-        '                  nvals  size  dtype\n'
+        '"v.V"             nvals  size  dtype\n'
         'ValueMask       \n'
         'of grblas.Vector      3     5   FP64\n'
         '------------------------------------\n'
@@ -380,7 +380,7 @@ def test_vector_mask_repr_small(v):
     )
     repr_printer(~v.S, '~v.S')
     assert repr(~v.S) == (
-        '                            nvals  size  dtype\n'
+        '"~v.S"                      nvals  size  dtype\n'
         'ComplementedStructuralMask\n'
         'of grblas.Vector                3     5   FP64\n'
         '----------------------------------------------\n'
@@ -389,7 +389,7 @@ def test_vector_mask_repr_small(v):
     )
     repr_printer(~v.V, '~v.V')
     assert repr(~v.V) == (
-        '                       nvals  size  dtype\n'
+        '"~v.V"                 nvals  size  dtype\n'
         'ComplementedValueMask\n'
         'of grblas.Vector           3     5   FP64\n'
         '-----------------------------------------\n'
@@ -402,7 +402,7 @@ def test_vector_mask_repr_large(w):
     with pd.option_context('display.max_columns', 26, 'display.width', 100):
         repr_printer(w.S, 'w.S', indent=8)
         assert repr(w.S) == (
-            '                  nvals  size  dtype\n'
+            '"w.S"             nvals  size  dtype\n'
             'StructuralMask  \n'
             'of grblas.Vector      4    77  INT64\n'
             '------------------------------------\n'
@@ -411,7 +411,7 @@ def test_vector_mask_repr_large(w):
         )
         repr_printer(w.V, 'w.V', indent=8)
         assert repr(w.V) == (
-            '                  nvals  size  dtype\n'
+            '"w.V"             nvals  size  dtype\n'
             'ValueMask       \n'
             'of grblas.Vector      4    77  INT64\n'
             '------------------------------------\n'
@@ -420,7 +420,7 @@ def test_vector_mask_repr_large(w):
         )
         repr_printer(~w.S, '~w.S', indent=8)
         assert repr(~w.S) == (
-            '                            nvals  size  dtype\n'
+            '"~w.S"                      nvals  size  dtype\n'
             'ComplementedStructuralMask\n'
             'of grblas.Vector                4    77  INT64\n'
             '----------------------------------------------\n'
@@ -429,7 +429,7 @@ def test_vector_mask_repr_large(w):
         )
         repr_printer(~w.V, '~w.V', indent=8)
         assert repr(~w.V) == (
-            '                       nvals  size  dtype\n'
+            '"~w.V"                 nvals  size  dtype\n'
             'ComplementedValueMask\n'
             'of grblas.Vector           4    77  INT64\n'
             '-----------------------------------------\n'
@@ -439,16 +439,14 @@ def test_vector_mask_repr_large(w):
 
 
 def test_scalar_repr(s, t):
-    # This is still the old-style.  Should we switch to new-style?
-    #   '               value  dtype\n'
-    #   'grblas.Scalar     42  INT64'
     repr_printer(s, 's')
     assert repr(s) == (
-        '<Scalar 42:INT64>'
+        '"s_1"          value  dtype\n'
+        'grblas.Scalar     42  INT64'
     )
-    repr_printer(t, 't')
     assert repr(t) == (
-        '<Scalar None:INT64>'
+        '"t"            value  dtype\n'
+        'grblas.Scalar   None  INT64'
     )
 
 

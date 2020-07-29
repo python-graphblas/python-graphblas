@@ -43,7 +43,10 @@ def lookup(*, output_replace=False,
            mask_complement=False, mask_structure=False,
            transpose_first=False, transpose_second=False):
     key = (output_replace, mask_complement, mask_structure, transpose_first, transpose_second)
-    if key not in _desc_map:
+    if key not in _desc_map:  # pragma: no cover
+        # We currently don't need this block of code!
+        # All 32 possible descriptors are currently already added to _desc_map.
+        # Nevertheless, this code may be useful some day.
         desc = ffi.new('GrB_Descriptor*')
         if not any(key):
             # Default descriptor stays a NULL pointer

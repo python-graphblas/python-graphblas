@@ -4,7 +4,7 @@ from .vector import Vector
 try:
     import pandas as pd
     has_pandas = True
-except ImportError:
+except ImportError:  # pragma: no cover
     has_pandas = False
 
 
@@ -224,6 +224,10 @@ def format_scalar_html(scalar):
     return f'<div><tt>{scalar._name_html}</tt>{header}</div>'
 
 
+def format_scalar(scalar):
+    return create_header('grblas.Scalar', ['value', 'dtype'], [scalar.value, scalar.dtype], name=scalar.name)
+
+
 def _format_expression(expr, header):
     pos_to_arg = {}
     for i, arg in enumerate(expr.args):
@@ -268,23 +272,27 @@ def format_scalar_expression_html(expr):
     return _format_expression(expr, header)
 
 
-def create_header(name, keys, vals, *, lower_border=False):
+def create_header(type_name, keys, vals, *, lower_border=False, name=''):
     vals = [str(x) for x in vals]
+    if name:
+        name = f'"{name}"'
     key_text = []
     val_text = []
     for key, val in zip(keys, vals):
         width = max(len(key), len(val)) + 2
         key_text.append(key.rjust(width))
         val_text.append(val.rjust(width))
-    if isinstance(name, str):
+    if isinstance(type_name, str):
+        name_width = max(len(type_name), len(name))
         lines = [
-            f"{' '*len(name)}{''.join(key_text)}",
-            f"{name}{''.join(val_text)}",
+            f"{name.ljust(name_width)}{''.join(key_text)}",
+            f"{type_name}{''.join(val_text)}",
         ]
     else:
-        name_width = max(map(len, name))
-        lines = [f"{' '*name_width}{''.join(key_text)}"]
-        lines.extend(line.ljust(name_width) for line in name)
+        name_width = max(map(len, type_name))
+        name_width = max(name_width, len(name))
+        lines = [f"{name.ljust(name_width)}{''.join(key_text)}"]
+        lines.extend(line.ljust(name_width) for line in type_name)
         lines[-1] += ''.join(val_text)
     if lower_border:
         lines.append('-'*len(lines[0]))
@@ -293,7 +301,7 @@ def create_header(name, keys, vals, *, lower_border=False):
 
 def format_matrix(matrix, *, max_rows=None, min_rows=None, max_columns=None, mask=None):
     name, keys, vals = matrix_info(matrix, mask=mask, for_html=False)
-    header = create_header(name, keys, vals, lower_border=has_pandas)
+    header = create_header(name, keys, vals, lower_border=has_pandas, name=matrix.name if mask is None else mask.name)
     if has_pandas:
         df = _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, mask=mask)
         with pd.option_context('display.show_dimensions', False, 'display.large_repr', 'truncate'):
@@ -304,7 +312,7 @@ def format_matrix(matrix, *, max_rows=None, min_rows=None, max_columns=None, mas
 
 def format_vector(vector, *, max_columns=None, mask=None):
     name, keys, vals = vector_info(vector, mask=mask, for_html=False)
-    header = create_header(name, keys, vals, lower_border=has_pandas)
+    header = create_header(name, keys, vals, lower_border=has_pandas, name=vector.name if mask is None else mask.name)
     if has_pandas:
         df = _get_vector_dataframe(vector, max_columns, mask=mask)
         with pd.option_context('display.show_dimensions', False, 'display.large_repr', 'truncate'):

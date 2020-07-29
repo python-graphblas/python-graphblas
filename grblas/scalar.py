@@ -48,7 +48,8 @@ class Scalar(BaseType):
         self._is_empty = empty
 
     def __repr__(self):
-        return f'<Scalar {self.value}:{self.dtype}>'
+        from .formatting import format_scalar
+        return format_scalar(self)
 
     def _repr_html_(self):
         from .formatting import format_scalar_html
