@@ -8,8 +8,8 @@ python:
     - "3.7"
     - "3.8"
 env:
-    BLOCKING="--blocking"
-    BLOCKING="--non-blocking"
+    - BLOCKING="--blocking"
+    - BLOCKING="--non-blocking"
 
 install:
     # https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/use-conda-with-travis-ci.html
