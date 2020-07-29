@@ -87,6 +87,8 @@ def test_unaryop_parameterized():
     v10 = v.apply(op(x=10)).new()
     r10 = Vector.from_values([0, 1, 3], [11, 12, 6], dtype=dtypes.INT32)
     assert r10.isequal(v10, check_dtype=True)
+    UnaryOp.register_new('plus_x_parameterized', plus_x, parameterized=True)
+    op = unary.plus_x_parameterized
     v11 = v.apply(op(x=10)['INT32']).new()
     assert r10.isequal(v11, check_dtype=True)
 

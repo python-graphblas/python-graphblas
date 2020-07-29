@@ -1,7 +1,7 @@
 import pytest
 import pandas as pd
 import grblas
-from grblas import Scalar, Vector, Matrix
+from grblas import Scalar, Vector, Matrix, formatting, unary
 
 
 def repr_html(x):
@@ -57,6 +57,11 @@ def C():
 
 
 @pytest.fixture
+def D():
+    return Matrix.from_values([0, 9, 60, 69], [4, 4, 4, 4], [True, False, True, False], nrows=70, name='D_skinny_in_one_dim')
+
+
+@pytest.fixture
 def v():
     return Vector.from_values([0, 2, 4], [0.0, 1.1, 2.2], name='v')
 
@@ -74,6 +79,41 @@ def s():
 @pytest.fixture
 def t():
     return Scalar.new(int, name='t')
+
+
+def test_no_pandas_repr(A, C, v, w):
+    # This is a bit of a hack...
+    formatting.has_pandas = False
+    try:
+        repr_printer(A, 'A', indent=8)
+        assert repr(A) == (
+            '               nvals  nrows  ncols  dtype\n'
+            'grblas.Matrix      3      1      5  INT64'
+        )
+        repr_printer(A.T, 'A.T', indent=8)
+        assert repr(A.T) == (
+            '                         nvals  nrows  ncols  dtype\n'
+            'grblas.TransposedMatrix      3      5      1  INT64'
+        )
+        repr_printer(C.S, 'C.S', indent=8)
+        assert repr(C.S) == (
+            '                  nvals  nrows  ncols  dtype\n'
+            'StructuralMask  \n'
+            'of grblas.Matrix      8     70     77  INT64'
+        )
+        repr_printer(v, 'v', indent=8)
+        assert repr(v) == (
+            '               nvals  size  dtype\n'
+            'grblas.Vector      3     5   FP64'
+        )
+        repr_printer(~w.V, '~w.V', indent=8)
+        assert repr(~w.V) == (
+            '                       nvals  size  dtype\n'
+            'ComplementedValueMask\n'
+            'of grblas.Vector           4    77  INT64'
+        )
+    finally:
+        formatting.has_pandas = True
 
 
 def test_matrix_repr_small(A, B):
@@ -146,122 +186,154 @@ def test_matrix_mask_repr_small(A):
     )
 
 
-def test_matrix_repr_large(C):
-    repr_printer(C, 'C')
-    assert repr(C) == (
-        '               nvals  nrows  ncols  dtype\n'
-        'grblas.Matrix      8     70     77  INT64\n'
-        '-----------------------------------------\n'
-        '   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n'
-        '0               0                       ...                       5            \n'
-        '1                                       ...                                    \n'
-        '2                                       ...                                    \n'
-        '3                                       ...                                    \n'
-        '4                                       ...                                    \n'
-        '.. .. .. .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. .. .. ..\n'
-        '65                                      ...                                    \n'
-        '66                                      ...                                    \n'
-        '67                                      ...                                    \n'
-        '68                                      ...                                    \n'
-        '69              4                       ...                       8            '
-    )
-    repr_printer(C.T, 'C.T')
-    assert repr(C.T) == (
-        '                         nvals  nrows  ncols  dtype\n'
-        'grblas.TransposedMatrix      8     77     70  INT64\n'
-        '---------------------------------------------------\n'
-        '   0  1  2  3  4  5  6  7  8  9  10 11  ... 58 59 60 61 62 63 64 65 66 67 68 69\n'
-        '0                                       ...                                    \n'
-        '1                                       ...                                    \n'
-        '2                                       ...                                    \n'
-        '3                                       ...                                    \n'
-        '4   0                          2        ...        3                          4\n'
-        '.. .. .. .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. .. .. ..\n'
-        '72  5                          6        ...        7                          8\n'
-        '73                                      ...                                    \n'
-        '74                                      ...                                    \n'
-        '75                                      ...                                    \n'
-        '76                                      ...                                    '
-    )
+def test_matrix_repr_large(C, D):
+    with pd.option_context('display.max_columns', 24, 'display.width', 100):
+        repr_printer(C, 'C', indent=8)
+        assert repr(C) == (
+            '               nvals  nrows  ncols  dtype\n'
+            'grblas.Matrix      8     70     77  INT64\n'
+            '-----------------------------------------\n'
+            '   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n'
+            '0               0                       ...                       5            \n'
+            '1                                       ...                                    \n'
+            '2                                       ...                                    \n'
+            '3                                       ...                                    \n'
+            '4                                       ...                                    \n'
+            '.. .. .. .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. .. .. ..\n'
+            '65                                      ...                                    \n'
+            '66                                      ...                                    \n'
+            '67                                      ...                                    \n'
+            '68                                      ...                                    \n'
+            '69              4                       ...                       8            '
+        )
+        repr_printer(C.T, 'C.T', indent=8)
+        assert repr(C.T) == (
+            '                         nvals  nrows  ncols  dtype\n'
+            'grblas.TransposedMatrix      8     77     70  INT64\n'
+            '---------------------------------------------------\n'
+            '   0  1  2  3  4  5  6  7  8  9  10 11  ... 58 59 60 61 62 63 64 65 66 67 68 69\n'
+            '0                                       ...                                    \n'
+            '1                                       ...                                    \n'
+            '2                                       ...                                    \n'
+            '3                                       ...                                    \n'
+            '4   0                          2        ...        3                          4\n'
+            '.. .. .. .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. .. .. ..\n'
+            '72  5                          6        ...        7                          8\n'
+            '73                                      ...                                    \n'
+            '74                                      ...                                    \n'
+            '75                                      ...                                    \n'
+            '76                                      ...                                    '
+        )
+        repr_printer(D, 'D', indent=8)
+        assert repr(D) == (
+            '               nvals  nrows  ncols  dtype\n'
+            'grblas.Matrix      4     70      5   BOOL\n'
+            '-----------------------------------------\n'
+            '   0  1  2  3       4\n'
+            '0                True\n'
+            '1                    \n'
+            '2                    \n'
+            '3                    \n'
+            '4                    \n'
+            '.. .. .. .. ..    ...\n'
+            '65                   \n'
+            '66                   \n'
+            '67                   \n'
+            '68                   \n'
+            '69              False'
+        )
+        repr_printer(D.T, 'D.T', indent=8)
+        assert repr(D.T) == (
+            '                         nvals  nrows  ncols  dtype\n'
+            'grblas.TransposedMatrix      4      5     70   BOOL\n'
+            '---------------------------------------------------\n'
+            '     0  1  2  3  4  5  6  7  8      9  10 11  ... 58 59    60 61 62 63 64 65 66 67 68     69\n'
+            '0                                             ...                                           \n'
+            '1                                             ...                                           \n'
+            '2                                             ...                                           \n'
+            '3                                             ...                                           \n'
+            '4  True                          False        ...        True                          False'
+        )
 
 
 def test_matrix_mask_repr_large(C):
-    repr_printer(C.S, 'C.S')
-    assert repr(C.S) == (
-        '                  nvals  nrows  ncols  dtype\n'
-        'StructuralMask  \n'
-        'of grblas.Matrix      8     70     77  INT64\n'
-        '--------------------------------------------\n'
-        '   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n'
-        '0               1                       ...                       1            \n'
-        '1                                       ...                                    \n'
-        '2                                       ...                                    \n'
-        '3                                       ...                                    \n'
-        '4                                       ...                                    \n'
-        '.. .. .. .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. .. .. ..\n'
-        '65                                      ...                                    \n'
-        '66                                      ...                                    \n'
-        '67                                      ...                                    \n'
-        '68                                      ...                                    \n'
-        '69              1                       ...                       1            '
-    )
-    repr_printer(C.V, 'C.V')
-    assert repr(C.V) == (
-        '                  nvals  nrows  ncols  dtype\n'
-        'ValueMask       \n'
-        'of grblas.Matrix      8     70     77  INT64\n'
-        '--------------------------------------------\n'
-        '   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n'
-        '0               0                       ...                       1            \n'
-        '1                                       ...                                    \n'
-        '2                                       ...                                    \n'
-        '3                                       ...                                    \n'
-        '4                                       ...                                    \n'
-        '.. .. .. .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. .. .. ..\n'
-        '65                                      ...                                    \n'
-        '66                                      ...                                    \n'
-        '67                                      ...                                    \n'
-        '68                                      ...                                    \n'
-        '69              1                       ...                       1            '
-    )
-    repr_printer(~C.S, '~C.S')
-    assert repr(~C.S) == (
-        '                            nvals  nrows  ncols  dtype\n'
-        'ComplementedStructuralMask\n'
-        'of grblas.Matrix                8     70     77  INT64\n'
-        '------------------------------------------------------\n'
-        '   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n'
-        '0               0                       ...                       0            \n'
-        '1                                       ...                                    \n'
-        '2                                       ...                                    \n'
-        '3                                       ...                                    \n'
-        '4                                       ...                                    \n'
-        '.. .. .. .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. .. .. ..\n'
-        '65                                      ...                                    \n'
-        '66                                      ...                                    \n'
-        '67                                      ...                                    \n'
-        '68                                      ...                                    \n'
-        '69              0                       ...                       0            '
-    )
-    repr_printer(~C.V, '~C.V')
-    assert repr(~C.V) == (
-        '                       nvals  nrows  ncols  dtype\n'
-        'ComplementedValueMask\n'
-        'of grblas.Matrix           8     70     77  INT64\n'
-        '-------------------------------------------------\n'
-        '   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n'
-        '0               1                       ...                       0            \n'
-        '1                                       ...                                    \n'
-        '2                                       ...                                    \n'
-        '3                                       ...                                    \n'
-        '4                                       ...                                    \n'
-        '.. .. .. .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. .. .. ..\n'
-        '65                                      ...                                    \n'
-        '66                                      ...                                    \n'
-        '67                                      ...                                    \n'
-        '68                                      ...                                    \n'
-        '69              0                       ...                       0            '
-    )
+    with pd.option_context('display.max_columns', 24, 'display.width', 100):
+        repr_printer(C.S, 'C.S', indent=8)
+        assert repr(C.S) == (
+            '                  nvals  nrows  ncols  dtype\n'
+            'StructuralMask  \n'
+            'of grblas.Matrix      8     70     77  INT64\n'
+            '--------------------------------------------\n'
+            '   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n'
+            '0               1                       ...                       1            \n'
+            '1                                       ...                                    \n'
+            '2                                       ...                                    \n'
+            '3                                       ...                                    \n'
+            '4                                       ...                                    \n'
+            '.. .. .. .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. .. .. ..\n'
+            '65                                      ...                                    \n'
+            '66                                      ...                                    \n'
+            '67                                      ...                                    \n'
+            '68                                      ...                                    \n'
+            '69              1                       ...                       1            '
+        )
+        repr_printer(C.V, 'C.V', indent=8)
+        assert repr(C.V) == (
+            '                  nvals  nrows  ncols  dtype\n'
+            'ValueMask       \n'
+            'of grblas.Matrix      8     70     77  INT64\n'
+            '--------------------------------------------\n'
+            '   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n'
+            '0               0                       ...                       1            \n'
+            '1                                       ...                                    \n'
+            '2                                       ...                                    \n'
+            '3                                       ...                                    \n'
+            '4                                       ...                                    \n'
+            '.. .. .. .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. .. .. ..\n'
+            '65                                      ...                                    \n'
+            '66                                      ...                                    \n'
+            '67                                      ...                                    \n'
+            '68                                      ...                                    \n'
+            '69              1                       ...                       1            '
+        )
+        repr_printer(~C.S, '~C.S', indent=8)
+        assert repr(~C.S) == (
+            '                            nvals  nrows  ncols  dtype\n'
+            'ComplementedStructuralMask\n'
+            'of grblas.Matrix                8     70     77  INT64\n'
+            '------------------------------------------------------\n'
+            '   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n'
+            '0               0                       ...                       0            \n'
+            '1                                       ...                                    \n'
+            '2                                       ...                                    \n'
+            '3                                       ...                                    \n'
+            '4                                       ...                                    \n'
+            '.. .. .. .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. .. .. ..\n'
+            '65                                      ...                                    \n'
+            '66                                      ...                                    \n'
+            '67                                      ...                                    \n'
+            '68                                      ...                                    \n'
+            '69              0                       ...                       0            '
+        )
+        repr_printer(~C.V, '~C.V', indent=8)
+        assert repr(~C.V) == (
+            '                       nvals  nrows  ncols  dtype\n'
+            'ComplementedValueMask\n'
+            'of grblas.Matrix           8     70     77  INT64\n'
+            '-------------------------------------------------\n'
+            '   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n'
+            '0               1                       ...                       0            \n'
+            '1                                       ...                                    \n'
+            '2                                       ...                                    \n'
+            '3                                       ...                                    \n'
+            '4                                       ...                                    \n'
+            '.. .. .. .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. .. .. ..\n'
+            '65                                      ...                                    \n'
+            '66                                      ...                                    \n'
+            '67                                      ...                                    \n'
+            '68                                      ...                                    \n'
+            '69              0                       ...                       0            '
+        )
 
 
 def test_vector_repr_small(v):
@@ -276,14 +348,15 @@ def test_vector_repr_small(v):
 
 
 def test_vector_repr_large(w):
-    repr_printer(w, 'w')
-    assert repr(w) == (
-        '               nvals  size  dtype\n'
-        'grblas.Vector      4    77  INT64\n'
-        '---------------------------------\n'
-        ' 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n'
-        '  1              2                       ...  3              4                     '
-    )
+    with pd.option_context('display.max_columns', 26, 'display.width', 100):
+        repr_printer(w, 'w', indent=8)
+        assert repr(w) == (
+            '               nvals  size  dtype\n'
+            'grblas.Vector      4    77  INT64\n'
+            '---------------------------------\n'
+            ' 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n'
+            '  1              2                       ...  3              4                     '
+        )
 
 
 def test_vector_mask_repr_small(v):
@@ -326,42 +399,43 @@ def test_vector_mask_repr_small(v):
 
 
 def test_vector_mask_repr_large(w):
-    repr_printer(w.S, 'w.S')
-    assert repr(w.S) == (
-        '                  nvals  size  dtype\n'
-        'StructuralMask  \n'
-        'of grblas.Vector      4    77  INT64\n'
-        '------------------------------------\n'
-        ' 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n'
-        '  1              1                       ...  1              1                     '
-    )
-    repr_printer(w.V, 'w.V')
-    assert repr(w.V) == (
-        '                  nvals  size  dtype\n'
-        'ValueMask       \n'
-        'of grblas.Vector      4    77  INT64\n'
-        '------------------------------------\n'
-        ' 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n'
-        '  1              1                       ...  1              1                     '
-    )
-    repr_printer(~w.S, '~w.S')
-    assert repr(~w.S) == (
-        '                            nvals  size  dtype\n'
-        'ComplementedStructuralMask\n'
-        'of grblas.Vector                4    77  INT64\n'
-        '----------------------------------------------\n'
-        ' 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n'
-        '  0              0                       ...  0              0                     '
-    )
-    repr_printer(~w.V, '~w.V')
-    assert repr(~w.V) == (
-        '                       nvals  size  dtype\n'
-        'ComplementedValueMask\n'
-        'of grblas.Vector           4    77  INT64\n'
-        '-----------------------------------------\n'
-        ' 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n'
-        '  0              0                       ...  0              0                     '
-    )
+    with pd.option_context('display.max_columns', 26, 'display.width', 100):
+        repr_printer(w.S, 'w.S', indent=8)
+        assert repr(w.S) == (
+            '                  nvals  size  dtype\n'
+            'StructuralMask  \n'
+            'of grblas.Vector      4    77  INT64\n'
+            '------------------------------------\n'
+            ' 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n'
+            '  1              1                       ...  1              1                     '
+        )
+        repr_printer(w.V, 'w.V', indent=8)
+        assert repr(w.V) == (
+            '                  nvals  size  dtype\n'
+            'ValueMask       \n'
+            'of grblas.Vector      4    77  INT64\n'
+            '------------------------------------\n'
+            ' 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n'
+            '  1              1                       ...  1              1                     '
+        )
+        repr_printer(~w.S, '~w.S', indent=8)
+        assert repr(~w.S) == (
+            '                            nvals  size  dtype\n'
+            'ComplementedStructuralMask\n'
+            'of grblas.Vector                4    77  INT64\n'
+            '----------------------------------------------\n'
+            ' 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n'
+            '  0              0                       ...  0              0                     '
+        )
+        repr_printer(~w.V, '~w.V', indent=8)
+        assert repr(~w.V) == (
+            '                       nvals  size  dtype\n'
+            'ComplementedValueMask\n'
+            'of grblas.Vector           4    77  INT64\n'
+            '-----------------------------------------\n'
+            ' 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n'
+            '  0              0                       ...  0              0                     '
+        )
 
 
 def test_scalar_repr(s, t):
@@ -376,6 +450,120 @@ def test_scalar_repr(s, t):
     assert repr(t) == (
         '<Scalar None:INT64>'
     )
+
+
+def test_no_pandas_repr_html(A, C, v, w):
+    # This is a bit of a hack...
+    formatting.has_pandas = False
+    try:
+        html_printer(A, 'A', indent=8)
+        assert repr_html(A) == (
+            '<div><details><summary><tt>A<sub>1</sub></tt><div>\n'
+            '<table style="border:1px solid black">\n'
+            '  <tr>\n'
+            '    <td rowspan=2><pre>grblas.Matrix</pre></td>\n'
+            '    <td><pre>nvals</pre></td>\n'
+            '    <td><pre>nrows</pre></td>\n'
+            '    <td><pre>ncols</pre></td>\n'
+            '    <td><pre>dtype</pre></td>\n'
+            '  </tr>\n'
+            '  <tr>\n'
+            '    <td>3</td>\n'
+            '    <td>1</td>\n'
+            '    <td>5</td>\n'
+            '    <td>INT64</td>\n'
+            '  </tr>\n'
+            '</table>\n'
+            '</div>\n'
+            '</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>'
+        )
+        html_printer(A.T, 'A.T', indent=8)
+        assert repr_html(A.T) == (
+            '<div><details><summary><tt>A<sub>1</sub>.T</tt><div>\n'
+            '<table style="border:1px solid black">\n'
+            '  <tr>\n'
+            '    <td rowspan=2><pre>grblas.TransposedMatrix</pre></td>\n'
+            '    <td><pre>nvals</pre></td>\n'
+            '    <td><pre>nrows</pre></td>\n'
+            '    <td><pre>ncols</pre></td>\n'
+            '    <td><pre>dtype</pre></td>\n'
+            '  </tr>\n'
+            '  <tr>\n'
+            '    <td>3</td>\n'
+            '    <td>5</td>\n'
+            '    <td>1</td>\n'
+            '    <td>INT64</td>\n'
+            '  </tr>\n'
+            '</table>\n'
+            '</div>\n'
+            '</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>'
+        )
+        html_printer(C.S, 'C.S', indent=8)
+        assert repr_html(C.S) == (
+            '<div><details><summary><tt>C.S</tt><div>\n'
+            '<table style="border:1px solid black">\n'
+            '  <tr>\n'
+            '    <td rowspan=2><pre>StructuralMask\n'
+            'of\n'
+            'grblas.Matrix</pre></td>\n'
+            '    <td><pre>nvals</pre></td>\n'
+            '    <td><pre>nrows</pre></td>\n'
+            '    <td><pre>ncols</pre></td>\n'
+            '    <td><pre>dtype</pre></td>\n'
+            '  </tr>\n'
+            '  <tr>\n'
+            '    <td>8</td>\n'
+            '    <td>70</td>\n'
+            '    <td>77</td>\n'
+            '    <td>INT64</td>\n'
+            '  </tr>\n'
+            '</table>\n'
+            '</div>\n'
+            '</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>'
+        )
+        html_printer(v, 'v', indent=8)
+        assert repr_html(v) == (
+            '<div><details><summary><tt>v</tt><div>\n'
+            '<table style="border:1px solid black">\n'
+            '  <tr>\n'
+            '    <td rowspan=2><pre>grblas.Vector</pre></td>\n'
+            '    <td><pre>nvals</pre></td>\n'
+            '    <td><pre>size</pre></td>\n'
+            '    <td><pre>dtype</pre></td>\n'
+            '  </tr>\n'
+            '  <tr>\n'
+            '    <td>3</td>\n'
+            '    <td>5</td>\n'
+            '    <td>FP64</td>\n'
+            '  </tr>\n'
+            '</table>\n'
+            '</div>\n'
+            '</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>'
+        )
+        html_printer(~w.V, '~w.V', indent=8)
+        assert repr_html(~w.V) == (
+            '<div><details><summary><tt>~w.V</tt><div>\n'
+            '<table style="border:1px solid black">\n'
+            '  <tr>\n'
+            '    <td rowspan=2><pre>ComplementedValueMask\n'
+            'of\n'
+            'grblas.Vector</pre></td>\n'
+            '    <td><pre>nvals</pre></td>\n'
+            '    <td><pre>size</pre></td>\n'
+            '    <td><pre>dtype</pre></td>\n'
+            '  </tr>\n'
+            '  <tr>\n'
+            '    <td>4</td>\n'
+            '    <td>77</td>\n'
+            '    <td>INT64</td>\n'
+            '  </tr>\n'
+            '</table>\n'
+            '</div>\n'
+            '</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>'
+        )
+    finally:
+        formatting.has_pandas = True
+
 
 
 def test_matrix_repr_html_small(A, B):
@@ -799,18 +987,1036 @@ def test_matrix_mask_repr_html_small(A):
     )
 
 
-def test_matrix_repr_html_large(C):
+def test_matrix_repr_html_large(C, D):
     with pd.option_context('display.max_columns', 20):
         html_printer(C, 'C', indent=8)
+        assert repr_html(C) == (
+            '<div><details><summary><tt>C</tt><div>\n'
+            '<table style="border:1px solid black">\n'
+            '  <tr>\n'
+            '    <td rowspan=2><pre>grblas.Matrix</pre></td>\n'
+            '    <td><pre>nvals</pre></td>\n'
+            '    <td><pre>nrows</pre></td>\n'
+            '    <td><pre>ncols</pre></td>\n'
+            '    <td><pre>dtype</pre></td>\n'
+            '  </tr>\n'
+            '  <tr>\n'
+            '    <td>8</td>\n'
+            '    <td>70</td>\n'
+            '    <td>77</td>\n'
+            '    <td>INT64</td>\n'
+            '  </tr>\n'
+            '</table>\n'
+            '</div>\n'
+            '</summary><div>\n'
+            '<style scoped>\n'
+            '    .dataframe tbody tr th:only-of-type {\n'
+            '        vertical-align: middle;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe tbody tr th {\n'
+            '        vertical-align: top;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe thead th {\n'
+            '        text-align: right;\n'
+            '    }\n'
+            '</style>\n'
+            '<table border="1" class="dataframe">\n'
+            '  <thead>\n'
+            '    <tr style="text-align: right;">\n'
+            '      <th></th>\n'
+            '      <th>0</th>\n'
+            '      <th>1</th>\n'
+            '      <th>2</th>\n'
+            '      <th>3</th>\n'
+            '      <th>4</th>\n'
+            '      <th>5</th>\n'
+            '      <th>6</th>\n'
+            '      <th>7</th>\n'
+            '      <th>8</th>\n'
+            '      <th>9</th>\n'
+            '      <th>...</th>\n'
+            '      <th>67</th>\n'
+            '      <th>68</th>\n'
+            '      <th>69</th>\n'
+            '      <th>70</th>\n'
+            '      <th>71</th>\n'
+            '      <th>72</th>\n'
+            '      <th>73</th>\n'
+            '      <th>74</th>\n'
+            '      <th>75</th>\n'
+            '      <th>76</th>\n'
+            '    </tr>\n'
+            '  </thead>\n'
+            '  <tbody>\n'
+            '    <tr>\n'
+            '      <th>0</th>\n'
+          + '      <td></td>\n' * 4 +
+            '      <td>0</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>5</td>\n'
+          + '      <td></td>\n' * 4 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>1</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>2</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>3</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>4</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>...</th>\n'
+          + '      <td>...</td>\n' * 21 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>65</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>66</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>67</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>68</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>69</th>\n'
+          + '      <td></td>\n' * 4 +
+            '      <td>4</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>8</td>\n'
+          + '      <td></td>\n' * 4 +
+            '    </tr>\n'
+            '  </tbody>\n'
+            '</table>\n'
+            '</div></details></div>'
+        )
         html_printer(C.T, 'C.T', indent=8)
+        assert repr_html(C.T) == (
+            '<div><details><summary><tt>C.T</tt><div>\n'
+            '<table style="border:1px solid black">\n'
+            '  <tr>\n'
+            '    <td rowspan=2><pre>grblas.TransposedMatrix</pre></td>\n'
+            '    <td><pre>nvals</pre></td>\n'
+            '    <td><pre>nrows</pre></td>\n'
+            '    <td><pre>ncols</pre></td>\n'
+            '    <td><pre>dtype</pre></td>\n'
+            '  </tr>\n'
+            '  <tr>\n'
+            '    <td>8</td>\n'
+            '    <td>77</td>\n'
+            '    <td>70</td>\n'
+            '    <td>INT64</td>\n'
+            '  </tr>\n'
+            '</table>\n'
+            '</div>\n'
+            '</summary><div>\n'
+            '<style scoped>\n'
+            '    .dataframe tbody tr th:only-of-type {\n'
+            '        vertical-align: middle;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe tbody tr th {\n'
+            '        vertical-align: top;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe thead th {\n'
+            '        text-align: right;\n'
+            '    }\n'
+            '</style>\n'
+            '<table border="1" class="dataframe">\n'
+            '  <thead>\n'
+            '    <tr style="text-align: right;">\n'
+            '      <th></th>\n'
+            '      <th>0</th>\n'
+            '      <th>1</th>\n'
+            '      <th>2</th>\n'
+            '      <th>3</th>\n'
+            '      <th>4</th>\n'
+            '      <th>5</th>\n'
+            '      <th>6</th>\n'
+            '      <th>7</th>\n'
+            '      <th>8</th>\n'
+            '      <th>9</th>\n'
+            '      <th>...</th>\n'
+            '      <th>60</th>\n'
+            '      <th>61</th>\n'
+            '      <th>62</th>\n'
+            '      <th>63</th>\n'
+            '      <th>64</th>\n'
+            '      <th>65</th>\n'
+            '      <th>66</th>\n'
+            '      <th>67</th>\n'
+            '      <th>68</th>\n'
+            '      <th>69</th>\n'
+            '    </tr>\n'
+            '  </thead>\n'
+            '  <tbody>\n'
+            '    <tr>\n'
+            '      <th>0</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>1</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>2</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>3</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>4</th>\n'
+            '      <td>0</td>\n'
+          + '      <td></td>\n' * 8 +
+            '      <td>2</td>\n'
+            '      <td>...</td>\n'
+            '      <td>3</td>\n'
+          + '      <td></td>\n' * 8 +
+            '      <td>4</td>\n'
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>...</th>\n'
+          + '      <td>...</td>\n' * 21 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>72</th>\n'
+            '      <td>5</td>\n'
+          + '      <td></td>\n' * 8 +
+            '      <td>6</td>\n'
+            '      <td>...</td>\n'
+            '      <td>7</td>\n'
+          + '      <td></td>\n' * 8 +
+            '      <td>8</td>\n'
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>73</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>74</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>75</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>76</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '  </tbody>\n'
+            '</table>\n'
+            '</div></details></div>'
+        )
+        html_printer(D, 'D', indent=8)
+        assert repr_html(D) == (
+            '<div><details><summary><tt>D<sub>skinny_in_one_dim</sub></tt><div>\n'
+            '<table style="border:1px solid black">\n'
+            '  <tr>\n'
+            '    <td rowspan=2><pre>grblas.Matrix</pre></td>\n'
+            '    <td><pre>nvals</pre></td>\n'
+            '    <td><pre>nrows</pre></td>\n'
+            '    <td><pre>ncols</pre></td>\n'
+            '    <td><pre>dtype</pre></td>\n'
+            '  </tr>\n'
+            '  <tr>\n'
+            '    <td>4</td>\n'
+            '    <td>70</td>\n'
+            '    <td>5</td>\n'
+            '    <td>BOOL</td>\n'
+            '  </tr>\n'
+            '</table>\n'
+            '</div>\n'
+            '</summary><div>\n'
+            '<style scoped>\n'
+            '    .dataframe tbody tr th:only-of-type {\n'
+            '        vertical-align: middle;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe tbody tr th {\n'
+            '        vertical-align: top;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe thead th {\n'
+            '        text-align: right;\n'
+            '    }\n'
+            '</style>\n'
+            '<table border="1" class="dataframe">\n'
+            '  <thead>\n'
+            '    <tr style="text-align: right;">\n'
+            '      <th></th>\n'
+            '      <th>0</th>\n'
+            '      <th>1</th>\n'
+            '      <th>2</th>\n'
+            '      <th>3</th>\n'
+            '      <th>4</th>\n'
+            '    </tr>\n'
+            '  </thead>\n'
+            '  <tbody>\n'
+            '    <tr>\n'
+            '      <th>0</th>\n'
+          + '      <td></td>\n' * 4 +
+            '      <td>True</td>\n'
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>1</th>\n'
+          + '      <td></td>\n' * 5 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>2</th>\n'
+          + '      <td></td>\n' * 5 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>3</th>\n'
+          + '      <td></td>\n' * 5 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>4</th>\n'
+          + '      <td></td>\n' * 5 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>...</th>\n'
+          + '      <td>...</td>\n' * 5 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>65</th>\n'
+          + '      <td></td>\n' * 5 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>66</th>\n'
+          + '      <td></td>\n' * 5 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>67</th>\n'
+          + '      <td></td>\n' * 5 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>68</th>\n'
+          + '      <td></td>\n' * 5 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>69</th>\n'
+          + '      <td></td>\n' * 4 +
+            '      <td>False</td>\n'
+            '    </tr>\n'
+            '  </tbody>\n'
+            '</table>\n'
+            '</div></details></div>'
+        )
+        html_printer(D.T, 'D.T', indent=8)
+        assert repr_html(D.T) == (
+            '<div><details><summary><tt>D<sub>skinny_in_one_dim</sub>.T</tt><div>\n'
+            '<table style="border:1px solid black">\n'
+            '  <tr>\n'
+            '    <td rowspan=2><pre>grblas.TransposedMatrix</pre></td>\n'
+            '    <td><pre>nvals</pre></td>\n'
+            '    <td><pre>nrows</pre></td>\n'
+            '    <td><pre>ncols</pre></td>\n'
+            '    <td><pre>dtype</pre></td>\n'
+            '  </tr>\n'
+            '  <tr>\n'
+            '    <td>4</td>\n'
+            '    <td>5</td>\n'
+            '    <td>70</td>\n'
+            '    <td>BOOL</td>\n'
+            '  </tr>\n'
+            '</table>\n'
+            '</div>\n'
+            '</summary><div>\n'
+            '<style scoped>\n'
+            '    .dataframe tbody tr th:only-of-type {\n'
+            '        vertical-align: middle;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe tbody tr th {\n'
+            '        vertical-align: top;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe thead th {\n'
+            '        text-align: right;\n'
+            '    }\n'
+            '</style>\n'
+            '<table border="1" class="dataframe">\n'
+            '  <thead>\n'
+            '    <tr style="text-align: right;">\n'
+            '      <th></th>\n'
+            '      <th>0</th>\n'
+            '      <th>1</th>\n'
+            '      <th>2</th>\n'
+            '      <th>3</th>\n'
+            '      <th>4</th>\n'
+            '      <th>5</th>\n'
+            '      <th>6</th>\n'
+            '      <th>7</th>\n'
+            '      <th>8</th>\n'
+            '      <th>9</th>\n'
+            '      <th>...</th>\n'
+            '      <th>60</th>\n'
+            '      <th>61</th>\n'
+            '      <th>62</th>\n'
+            '      <th>63</th>\n'
+            '      <th>64</th>\n'
+            '      <th>65</th>\n'
+            '      <th>66</th>\n'
+            '      <th>67</th>\n'
+            '      <th>68</th>\n'
+            '      <th>69</th>\n'
+            '    </tr>\n'
+            '  </thead>\n'
+            '  <tbody>\n'
+            '    <tr>\n'
+            '      <th>0</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>1</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>2</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>3</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>4</th>\n'
+            '      <td>True</td>\n'
+          + '      <td></td>\n' * 8 +
+            '      <td>False</td>\n'
+            '      <td>...</td>\n'
+            '      <td>True</td>\n'
+          + '      <td></td>\n' * 8 +
+            '      <td>False</td>\n'
+            '    </tr>\n'
+            '  </tbody>\n'
+            '</table>\n'
+            '</div></details></div>'
+        )
 
 
 def test_matrix_mask_repr_html_large(C):
     with pd.option_context('display.max_columns', 20):
         html_printer(C.S, 'C.S', indent=8)
+        assert repr_html(C.S) == (
+            '<div><details><summary><tt>C.S</tt><div>\n'
+            '<table style="border:1px solid black">\n'
+            '  <tr>\n'
+            '    <td rowspan=2><pre>StructuralMask\n'
+            'of\n'
+            'grblas.Matrix</pre></td>\n'
+            '    <td><pre>nvals</pre></td>\n'
+            '    <td><pre>nrows</pre></td>\n'
+            '    <td><pre>ncols</pre></td>\n'
+            '    <td><pre>dtype</pre></td>\n'
+            '  </tr>\n'
+            '  <tr>\n'
+            '    <td>8</td>\n'
+            '    <td>70</td>\n'
+            '    <td>77</td>\n'
+            '    <td>INT64</td>\n'
+            '  </tr>\n'
+            '</table>\n'
+            '</div>\n'
+            '</summary><div>\n'
+            '<style scoped>\n'
+            '    .dataframe tbody tr th:only-of-type {\n'
+            '        vertical-align: middle;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe tbody tr th {\n'
+            '        vertical-align: top;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe thead th {\n'
+            '        text-align: right;\n'
+            '    }\n'
+            '</style>\n'
+            '<table border="1" class="dataframe">\n'
+            '  <thead>\n'
+            '    <tr style="text-align: right;">\n'
+            '      <th></th>\n'
+            '      <th>0</th>\n'
+            '      <th>1</th>\n'
+            '      <th>2</th>\n'
+            '      <th>3</th>\n'
+            '      <th>4</th>\n'
+            '      <th>5</th>\n'
+            '      <th>6</th>\n'
+            '      <th>7</th>\n'
+            '      <th>8</th>\n'
+            '      <th>9</th>\n'
+            '      <th>...</th>\n'
+            '      <th>67</th>\n'
+            '      <th>68</th>\n'
+            '      <th>69</th>\n'
+            '      <th>70</th>\n'
+            '      <th>71</th>\n'
+            '      <th>72</th>\n'
+            '      <th>73</th>\n'
+            '      <th>74</th>\n'
+            '      <th>75</th>\n'
+            '      <th>76</th>\n'
+            '    </tr>\n'
+            '  </thead>\n'
+            '  <tbody>\n'
+            '    <tr>\n'
+            '      <th>0</th>\n'
+          + '      <td></td>\n' * 4 +
+            '      <td>1</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>1</td>\n'
+          + '      <td></td>\n' * 4 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>1</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>2</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>3</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>4</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>...</th>\n'
+          + '      <td>...</td>\n' * 21 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>65</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>66</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>67</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>68</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>69</th>\n'
+          + '      <td></td>\n' * 4 +
+            '      <td>1</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>1</td>\n'
+          + '      <td></td>\n' * 4 +
+            '    </tr>\n'
+            '  </tbody>\n'
+            '</table>\n'
+            '</div></details></div>'
+        )
         html_printer(C.V, 'C.V', indent=8)
+        assert repr_html(C.V) == (
+            '<div><details><summary><tt>C.V</tt><div>\n'
+            '<table style="border:1px solid black">\n'
+            '  <tr>\n'
+            '    <td rowspan=2><pre>ValueMask\n'
+            'of\n'
+            'grblas.Matrix</pre></td>\n'
+            '    <td><pre>nvals</pre></td>\n'
+            '    <td><pre>nrows</pre></td>\n'
+            '    <td><pre>ncols</pre></td>\n'
+            '    <td><pre>dtype</pre></td>\n'
+            '  </tr>\n'
+            '  <tr>\n'
+            '    <td>8</td>\n'
+            '    <td>70</td>\n'
+            '    <td>77</td>\n'
+            '    <td>INT64</td>\n'
+            '  </tr>\n'
+            '</table>\n'
+            '</div>\n'
+            '</summary><div>\n'
+            '<style scoped>\n'
+            '    .dataframe tbody tr th:only-of-type {\n'
+            '        vertical-align: middle;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe tbody tr th {\n'
+            '        vertical-align: top;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe thead th {\n'
+            '        text-align: right;\n'
+            '    }\n'
+            '</style>\n'
+            '<table border="1" class="dataframe">\n'
+            '  <thead>\n'
+            '    <tr style="text-align: right;">\n'
+            '      <th></th>\n'
+            '      <th>0</th>\n'
+            '      <th>1</th>\n'
+            '      <th>2</th>\n'
+            '      <th>3</th>\n'
+            '      <th>4</th>\n'
+            '      <th>5</th>\n'
+            '      <th>6</th>\n'
+            '      <th>7</th>\n'
+            '      <th>8</th>\n'
+            '      <th>9</th>\n'
+            '      <th>...</th>\n'
+            '      <th>67</th>\n'
+            '      <th>68</th>\n'
+            '      <th>69</th>\n'
+            '      <th>70</th>\n'
+            '      <th>71</th>\n'
+            '      <th>72</th>\n'
+            '      <th>73</th>\n'
+            '      <th>74</th>\n'
+            '      <th>75</th>\n'
+            '      <th>76</th>\n'
+            '    </tr>\n'
+            '  </thead>\n'
+            '  <tbody>\n'
+            '    <tr>\n'
+            '      <th>0</th>\n'
+          + '      <td></td>\n' * 4 +
+            '      <td>0</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>1</td>\n'
+          + '      <td></td>\n' * 4 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>1</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>2</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>3</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>4</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>...</th>\n'
+          + '      <td>...</td>\n' * 21 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>65</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>66</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>67</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>68</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>69</th>\n'
+          + '      <td></td>\n' * 4 +
+            '      <td>1</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>1</td>\n'
+          + '      <td></td>\n' * 4 +
+            '    </tr>\n'
+            '  </tbody>\n'
+            '</table>\n'
+            '</div></details></div>'
+        )
         html_printer(~C.S, '~C.S', indent=8)
+        assert repr_html(~C.S) == (
+            '<div><details><summary><tt>~C.S</tt><div>\n'
+            '<table style="border:1px solid black">\n'
+            '  <tr>\n'
+            '    <td rowspan=2><pre>ComplementedStructuralMask\n'
+            'of\n'
+            'grblas.Matrix</pre></td>\n'
+            '    <td><pre>nvals</pre></td>\n'
+            '    <td><pre>nrows</pre></td>\n'
+            '    <td><pre>ncols</pre></td>\n'
+            '    <td><pre>dtype</pre></td>\n'
+            '  </tr>\n'
+            '  <tr>\n'
+            '    <td>8</td>\n'
+            '    <td>70</td>\n'
+            '    <td>77</td>\n'
+            '    <td>INT64</td>\n'
+            '  </tr>\n'
+            '</table>\n'
+            '</div>\n'
+            '</summary><div>\n'
+            '<style scoped>\n'
+            '    .dataframe tbody tr th:only-of-type {\n'
+            '        vertical-align: middle;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe tbody tr th {\n'
+            '        vertical-align: top;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe thead th {\n'
+            '        text-align: right;\n'
+            '    }\n'
+            '</style>\n'
+            '<table border="1" class="dataframe">\n'
+            '  <thead>\n'
+            '    <tr style="text-align: right;">\n'
+            '      <th></th>\n'
+            '      <th>0</th>\n'
+            '      <th>1</th>\n'
+            '      <th>2</th>\n'
+            '      <th>3</th>\n'
+            '      <th>4</th>\n'
+            '      <th>5</th>\n'
+            '      <th>6</th>\n'
+            '      <th>7</th>\n'
+            '      <th>8</th>\n'
+            '      <th>9</th>\n'
+            '      <th>...</th>\n'
+            '      <th>67</th>\n'
+            '      <th>68</th>\n'
+            '      <th>69</th>\n'
+            '      <th>70</th>\n'
+            '      <th>71</th>\n'
+            '      <th>72</th>\n'
+            '      <th>73</th>\n'
+            '      <th>74</th>\n'
+            '      <th>75</th>\n'
+            '      <th>76</th>\n'
+            '    </tr>\n'
+            '  </thead>\n'
+            '  <tbody>\n'
+            '    <tr>\n'
+            '      <th>0</th>\n'
+          + '      <td></td>\n' * 4 +
+            '      <td>0</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>0</td>\n'
+          + '      <td></td>\n' * 4 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>1</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>2</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>3</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>4</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>...</th>\n'
+          + '      <td>...</td>\n' * 21 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>65</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>66</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>67</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>68</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>69</th>\n'
+          + '      <td></td>\n' * 4 +
+            '      <td>0</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>0</td>\n'
+          + '      <td></td>\n' * 4 +
+            '    </tr>\n'
+            '  </tbody>\n'
+            '</table>\n'
+            '</div></details></div>'
+        )
         html_printer(~C.V, '~C.V', indent=8)
+        assert repr_html(~C.V) == (
+            '<div><details><summary><tt>~C.V</tt><div>\n'
+            '<table style="border:1px solid black">\n'
+            '  <tr>\n'
+            '    <td rowspan=2><pre>ComplementedValueMask\n'
+            'of\n'
+            'grblas.Matrix</pre></td>\n'
+            '    <td><pre>nvals</pre></td>\n'
+            '    <td><pre>nrows</pre></td>\n'
+            '    <td><pre>ncols</pre></td>\n'
+            '    <td><pre>dtype</pre></td>\n'
+            '  </tr>\n'
+            '  <tr>\n'
+            '    <td>8</td>\n'
+            '    <td>70</td>\n'
+            '    <td>77</td>\n'
+            '    <td>INT64</td>\n'
+            '  </tr>\n'
+            '</table>\n'
+            '</div>\n'
+            '</summary><div>\n'
+            '<style scoped>\n'
+            '    .dataframe tbody tr th:only-of-type {\n'
+            '        vertical-align: middle;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe tbody tr th {\n'
+            '        vertical-align: top;\n'
+            '    }\n'
+            '\n'
+            '    .dataframe thead th {\n'
+            '        text-align: right;\n'
+            '    }\n'
+            '</style>\n'
+            '<table border="1" class="dataframe">\n'
+            '  <thead>\n'
+            '    <tr style="text-align: right;">\n'
+            '      <th></th>\n'
+            '      <th>0</th>\n'
+            '      <th>1</th>\n'
+            '      <th>2</th>\n'
+            '      <th>3</th>\n'
+            '      <th>4</th>\n'
+            '      <th>5</th>\n'
+            '      <th>6</th>\n'
+            '      <th>7</th>\n'
+            '      <th>8</th>\n'
+            '      <th>9</th>\n'
+            '      <th>...</th>\n'
+            '      <th>67</th>\n'
+            '      <th>68</th>\n'
+            '      <th>69</th>\n'
+            '      <th>70</th>\n'
+            '      <th>71</th>\n'
+            '      <th>72</th>\n'
+            '      <th>73</th>\n'
+            '      <th>74</th>\n'
+            '      <th>75</th>\n'
+            '      <th>76</th>\n'
+            '    </tr>\n'
+            '  </thead>\n'
+            '  <tbody>\n'
+            '    <tr>\n'
+            '      <th>0</th>\n'
+          + '      <td></td>\n' * 4 +
+            '      <td>1</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>0</td>\n'
+          + '      <td></td>\n' * 4 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>1</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>2</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>3</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>4</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>...</th>\n'
+          + '      <td>...</td>\n' * 21 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>65</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>66</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>67</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>68</th>\n'
+          + '      <td></td>\n' * 10 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 10 +
+            '    </tr>\n'
+            '    <tr>\n'
+            '      <th>69</th>\n'
+          + '      <td></td>\n' * 4 +
+            '      <td>0</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>...</td>\n'
+          + '      <td></td>\n' * 5 +
+            '      <td>0</td>\n'
+          + '      <td></td>\n' * 4 +
+            '    </tr>\n'
+            '  </tbody>\n'
+            '</table>\n'
+            '</div></details></div>'
+        )
 
 
 def test_vector_repr_html_small(v):
@@ -1522,6 +2728,85 @@ def test_scalar_repr_html(s, t):
         '</table>\n'
         '</div>\n'
         '</div>'
+    )
+
+
+def test_apply_repr(v):
+    # TODO: update repr of expressions
+    repr_printer(v.apply(unary.one), 'v.apply(unary.one)')
+    assert repr(v.apply(unary.one)).startswith(
+        '<grblas.vector.VectorExpression object at 0x'
+    )
+
+
+def test_apply_repr_html(v):
+    html_printer(v.apply(unary.one), 'v.apply(unary.one)')
+    assert repr_html(v.apply(unary.one)) == (
+        '<div style="padding:4px;"><details><summary><b><tt>grblas.VectorExpression:</tt></b><div>\n'
+        '<table style="border:1px solid black">\n'
+        '  <tr>\n'
+        '    <td rowspan=2><pre>v.apply(unary.one[FP64])</pre></td>\n'
+        '    <td><pre>size</pre></td>\n'
+        '    <td><pre>dtype</pre></td>\n'
+        '  </tr>\n'
+        '  <tr>\n'
+        '    <td>5</td>\n'
+        '    <td>FP64</td>\n'
+        '  </tr>\n'
+        '</table>\n'
+        '</div>\n'
+        '</summary><blockquote><div><details><summary><tt>v</tt><div>\n'
+        '<table style="border:1px solid black">\n'
+        '  <tr>\n'
+        '    <td rowspan=2><pre>grblas.Vector</pre></td>\n'
+        '    <td><pre>nvals</pre></td>\n'
+        '    <td><pre>size</pre></td>\n'
+        '    <td><pre>dtype</pre></td>\n'
+        '  </tr>\n'
+        '  <tr>\n'
+        '    <td>3</td>\n'
+        '    <td>5</td>\n'
+        '    <td>FP64</td>\n'
+        '  </tr>\n'
+        '</table>\n'
+        '</div>\n'
+        '</summary><div>\n'
+        '<style scoped>\n'
+        '    .dataframe tbody tr th:only-of-type {\n'
+        '        vertical-align: middle;\n'
+        '    }\n'
+        '\n'
+        '    .dataframe tbody tr th {\n'
+        '        vertical-align: top;\n'
+        '    }\n'
+        '\n'
+        '    .dataframe thead th {\n'
+        '        text-align: right;\n'
+        '    }\n'
+        '</style>\n'
+        '<table border="1" class="dataframe">\n'
+        '  <thead>\n'
+        '    <tr style="text-align: right;">\n'
+        '      <th></th>\n'
+        '      <th>0</th>\n'
+        '      <th>1</th>\n'
+        '      <th>2</th>\n'
+        '      <th>3</th>\n'
+        '      <th>4</th>\n'
+        '    </tr>\n'
+        '  </thead>\n'
+        '  <tbody>\n'
+        '    <tr>\n'
+        '      <th></th>\n'
+        '      <td>0</td>\n'
+        '      <td></td>\n'
+        '      <td>1.1</td>\n'
+        '      <td></td>\n'
+        '      <td>2.2</td>\n'
+        '    </tr>\n'
+        '  </tbody>\n'
+        '</table>\n'
+        '</div></details></div></blockquote></details><em>Do <code>expr.new()</code> or <code>other << expr</code> to calculate the expression.</em></div>'
     )
 
 

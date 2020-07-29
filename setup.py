@@ -10,5 +10,5 @@ setup(
     setup_requires=["cffi>=1.0.0", "pytest-runner"],
     cffi_modules=["grblas/backends/suitesparse/build.py:ffibuilder"],
     install_requires=["cffi>=1.0.0"],
-    tests_require=["pytest"],
+    tests_require=["pytest", "pandas"],
 )
