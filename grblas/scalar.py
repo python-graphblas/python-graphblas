@@ -202,6 +202,10 @@ class ScalarExpression(BaseExpression):
     def new(self, *, dtype=None, name=None):
         return super().new(dtype=dtype, name=name)
 
+    def __repr__(self):
+        from .formatting import format_scalar_expression
+        return format_scalar_expression(self)
+
     def _repr_html_(self):
         from .formatting import format_scalar_expression_html
         return format_scalar_expression_html(self)

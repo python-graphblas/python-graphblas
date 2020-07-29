@@ -403,7 +403,7 @@ class Matrix(BaseType):
         elif right is None:
             if type(left) is not Scalar:
                 try:
-                    left = Scalar.from_value(left, name='s_left')
+                    left = Scalar.from_value(left, name='left')
                 except TypeError:
                     self._expect_type(left, Scalar, within=method_name, keyword_name='left')
             op = get_typed_op(op, self.dtype, left.dtype)
@@ -415,7 +415,7 @@ class Matrix(BaseType):
         elif left is None:
             if type(right) is not Scalar:
                 try:
-                    right = Scalar.from_value(right, name='s_right')
+                    right = Scalar.from_value(right, name='right')
                 except TypeError:
                     self._expect_type(right, Scalar, within=method_name, keyword_name='right')
             op = get_typed_op(op, self.dtype, right.dtype)
@@ -466,7 +466,7 @@ class Matrix(BaseType):
         return VectorExpression(
             method_name,
             f'GrB_Matrix_reduce_{op.opclass}',
-            [self.T],
+            [self],
             op=op,
             size=self.ncols,
             at=not self._is_transposed,
@@ -649,6 +649,10 @@ class MatrixExpression(BaseExpression):
         if dtype is None:
             dtype = self.dtype
         return Matrix.new(dtype, self.nrows, self.ncols, name=name)
+
+    def __repr__(self):
+        from .formatting import format_matrix_expression
+        return format_matrix_expression(self)
 
     def _repr_html_(self):
         from .formatting import format_matrix_expression_html

@@ -260,10 +260,30 @@ def format_matrix_expression_html(expr):
     return _format_expression(expr, header)
 
 
+def format_matrix_expression(expr):
+    expr_repr = expr._format_expr()
+    name = f'grblas.{type(expr).__name__}'
+    header = create_header(
+        expr_repr,
+        ['nrows', 'ncols', 'dtype'],
+        [expr.nrows, expr.ncols, expr.dtype],
+        name=name,
+        quote=False,
+    )
+    return f'{header}\n\nDo expr.new() or other << expr to calculate the expression.'
+
+
 def format_vector_expression_html(expr):
     expr_html = expr._format_expr_html()
     header = create_header_html(expr_html, ['size', 'dtype'], [expr.size, expr.dtype])
     return _format_expression(expr, header)
+
+
+def format_vector_expression(expr):
+    expr_repr = expr._format_expr()
+    name = f'grblas.{type(expr).__name__}'
+    header = create_header(expr_repr, ['size', 'dtype'], [expr.size, expr.dtype], name=name, quote=False)
+    return f'{header}\n\nDo expr.new() or other << expr to calculate the expression.'
 
 
 def format_scalar_expression_html(expr):
@@ -272,9 +292,16 @@ def format_scalar_expression_html(expr):
     return _format_expression(expr, header)
 
 
-def create_header(type_name, keys, vals, *, lower_border=False, name=''):
+def format_scalar_expression(expr):
+    expr_repr = expr._format_expr()
+    name = f'grblas.{type(expr).__name__}'
+    header = create_header(expr_repr, ['dtype'], [expr.dtype], name=name, quote=False)
+    return f'{header}\n\nDo expr.new() or other << expr to calculate the expression.'
+
+
+def create_header(type_name, keys, vals, *, lower_border=False, name='', quote=True):
     vals = [str(x) for x in vals]
-    if name:
+    if name and quote:
         name = f'"{name}"'
     key_text = []
     val_text = []

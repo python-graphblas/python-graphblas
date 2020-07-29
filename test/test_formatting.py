@@ -2730,10 +2730,12 @@ def test_scalar_repr_html(s, t):
 
 
 def test_apply_repr(v):
-    # TODO: update repr of expressions
     repr_printer(v.apply(unary.one), 'v.apply(unary.one)')
-    assert repr(v.apply(unary.one)).startswith(
-        '<grblas.vector.VectorExpression object at 0x'
+    assert repr(v.apply(unary.one)) == (
+        'grblas.VectorExpression   size  dtype\n'
+        'v.apply(unary.one[FP64])     5   FP64\n'
+        '\n'
+        'Do expr.new() or other << expr to calculate the expression.'
     )
 
 
@@ -2809,10 +2811,12 @@ def test_apply_repr_html(v):
 
 
 def test_mxm_repr(A, B):
-    # TODO: update repr of expressions
     repr_printer(A.mxm(B), 'A.mxm(B)')
-    assert repr(A.mxm(B)).startswith(
-        '<grblas.matrix.MatrixExpression object at 0x'
+    assert repr(A.mxm(B)) == (
+        'grblas.MatrixExpression                      nrows  ncols  dtype\n'
+        'A_1.mxm(B_1, op=semiring.plus_times[INT64])      1      1  INT64\n'
+        '\n'
+        'Do expr.new() or other << expr to calculate the expression.'
     )
 
 
@@ -2952,10 +2956,12 @@ def test_mxm_repr_html(A, B):
 
 
 def test_mxv_repr(A, v):
-    # TODO: update repr of expressions
     repr_printer(A.mxv(v), 'A.mxv(v)')
-    assert repr(A.mxv(v)).startswith(
-        '<grblas.vector.VectorExpression object at 0x'
+    assert repr(A.mxv(v)) == (
+        'grblas.VectorExpression                   size  dtype\n'
+        'A_1.mxv(v, op=semiring.plus_times[FP64])     1   FP64\n'
+        '\n'
+        'Do expr.new() or other << expr to calculate the expression.'
     )
 
 
@@ -3083,11 +3089,87 @@ def test_mxv_repr_html(A, v):
     )
 
 
+def test_matrix_reduce_columns_repr_html(A):
+    # This is implmeneted using the transpose of A, so make sure we're oriented correctly!
+    html_printer(A.reduce_columns(), 'A.reduce_columns()')
+    assert repr_html(A.reduce_columns()) == (
+        '<div style="padding:4px;"><details><summary><b><tt>grblas.VectorExpression:</tt></b><div>\n'
+        '<table style="border:1px solid black">\n'
+        '  <tr>\n'
+        '    <td rowspan=2><pre>A<sub>1</sub>.reduce_columns(monoid.plus[INT64])</pre></td>\n'
+        '    <td><pre>size</pre></td>\n'
+        '    <td><pre>dtype</pre></td>\n'
+        '  </tr>\n'
+        '  <tr>\n'
+        '    <td>5</td>\n'
+        '    <td>INT64</td>\n'
+        '  </tr>\n'
+        '</table>\n'
+        '</div>\n'
+        '</summary><blockquote><div><details><summary><tt>A<sub>1</sub></tt><div>\n'
+        '<table style="border:1px solid black">\n'
+        '  <tr>\n'
+        '    <td rowspan=2><pre>grblas.Matrix</pre></td>\n'
+        '    <td><pre>nvals</pre></td>\n'
+        '    <td><pre>nrows</pre></td>\n'
+        '    <td><pre>ncols</pre></td>\n'
+        '    <td><pre>dtype</pre></td>\n'
+        '  </tr>\n'
+        '  <tr>\n'
+        '    <td>3</td>\n'
+        '    <td>1</td>\n'
+        '    <td>5</td>\n'
+        '    <td>INT64</td>\n'
+        '  </tr>\n'
+        '</table>\n'
+        '</div>\n'
+        '</summary><div>\n'
+        '<style scoped>\n'
+        '    .dataframe tbody tr th:only-of-type {\n'
+        '        vertical-align: middle;\n'
+        '    }\n'
+        '\n'
+        '    .dataframe tbody tr th {\n'
+        '        vertical-align: top;\n'
+        '    }\n'
+        '\n'
+        '    .dataframe thead th {\n'
+        '        text-align: right;\n'
+        '    }\n'
+        '</style>\n'
+        '<table border="1" class="dataframe">\n'
+        '  <thead>\n'
+        '    <tr style="text-align: right;">\n'
+        '      <th></th>\n'
+        '      <th>0</th>\n'
+        '      <th>1</th>\n'
+        '      <th>2</th>\n'
+        '      <th>3</th>\n'
+        '      <th>4</th>\n'
+        '    </tr>\n'
+        '  </thead>\n'
+        '  <tbody>\n'
+        '    <tr>\n'
+        '      <th>0</th>\n'
+        '      <td>0</td>\n'
+        '      <td></td>\n'
+        '      <td>1</td>\n'
+        '      <td></td>\n'
+        '      <td>2</td>\n'
+        '    </tr>\n'
+        '  </tbody>\n'
+        '</table>\n'
+        '</div></details></div></blockquote></details><em>Do <code>expr.new()</code> or <code>other << expr</code> to calculate the expression.</em></div>'
+    )
+
+
 def test_matrix_reduce_repr(C, v):
-    # TODO: update repr of expressions
     repr_printer(C.reduce_scalar(), 'C.reduce_scalar()')
-    assert repr(C.reduce_scalar()).startswith(
-        '<grblas.scalar.ScalarExpression object at 0x'
+    assert repr(C.reduce_scalar()) == (
+        'grblas.ScalarExpression              dtype\n'
+        'C.reduce_scalar(monoid.plus[INT64])  INT64\n'
+        '\n'
+        'Do expr.new() or other << expr to calculate the expression.'
     )
 
 

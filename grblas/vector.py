@@ -328,7 +328,7 @@ class Vector(BaseType):
         elif right is None:
             if type(left) is not Scalar:
                 try:
-                    left = Scalar.from_value(left, name='s_left')
+                    left = Scalar.from_value(left, name='left')
                 except TypeError:
                     self._expect_type(left, Scalar, within=method_name, keyword_name='left')
             op = get_typed_op(op, self.dtype, left.dtype)
@@ -339,7 +339,7 @@ class Vector(BaseType):
         elif left is None:
             if type(right) is not Scalar:
                 try:
-                    right = Scalar.from_value(right, name='s_right')
+                    right = Scalar.from_value(right, name='right')
                 except TypeError:
                     self._expect_type(right, Scalar, within=method_name, keyword_name='right')
             op = get_typed_op(op, self.dtype, right.dtype)
@@ -454,6 +454,10 @@ class VectorExpression(BaseExpression):
         if dtype is None:
             dtype = self.dtype
         return Vector.new(dtype, self.size, name=name)
+
+    def __repr__(self):
+        from .formatting import format_vector_expression
+        return format_vector_expression(self)
 
     def _repr_html_(self):
         from .formatting import format_vector_expression_html
