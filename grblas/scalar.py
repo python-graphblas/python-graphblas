@@ -77,7 +77,7 @@ class Scalar(BaseType):
             try:
                 # Check if other is a literal scalar, which we should handle
                 dtype = lookup_dtype(type(other))
-            except KeyError:
+            except ValueError:
                 raise TypeError(f'Argument of isequal must be a known scalar type, not {type(other)}')
             other = Scalar.from_value(other, dtype=dtype)
             # Don't check dtype if we had to infer dtype of `other`
@@ -104,7 +104,7 @@ class Scalar(BaseType):
             try:
                 # Check if other is a literal scalar, which we should handle
                 dtype = lookup_dtype(type(other))
-            except KeyError:
+            except ValueError:
                 raise TypeError(f'Argument of isclose must be a known scalar type, not {type(other)}')
             other = Scalar.from_value(other, dtype=dtype)
             # Don't check dtype if we had to infer dtype of `other`
@@ -179,7 +179,10 @@ class Scalar(BaseType):
         """Create a new Scalar from a Python value
         """
         if dtype is None:
-            dtype = lookup_dtype(type(value))
+            try:
+                dtype = lookup_dtype(type(value))
+            except ValueError:
+                raise TypeError(f'Argument of isclose must be a known scalar type, not {type(value)}')
         new_scalar = cls.new(dtype, name=name)
         new_scalar.value = value
         return new_scalar

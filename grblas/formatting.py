@@ -52,7 +52,15 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
 
 def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
     if columns is None:
-        subvector = vector
+        if mask is None:
+            subvector = vector
+        else:
+            subvector = Vector.new('UINT8', vector.size)
+            if mask.structure:
+                subvector(vector.S)[:] = 0 if mask.complement else 1
+            else:
+                subvector(vector.S)[:] = 1 if mask.complement else 0
+                subvector(vector.V)[:] = 0 if mask.complement else 1
     else:
         if mask is None:
             subvector = Vector.new(vector.dtype, vector.size)
@@ -142,7 +150,7 @@ def vector_info(vector, *, mask=None, for_html=True):
         if for_html:
             name = f'{type(mask).__name__}\nof\ngrblas.{type(vector).__name__}'
         else:
-            name = [f'{type(mask).__name__}', 'of grblas.{type(vector).__name__}']
+            name = [f'{type(mask).__name__}', f'of grblas.{type(vector).__name__}']
     else:
         name = f'grblas.{type(vector).__name__}'
     keys = ['nvals', 'size', 'dtype']

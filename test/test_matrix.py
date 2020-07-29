@@ -89,6 +89,9 @@ def test_from_values():
         Matrix.from_values([], [], [], nrows=3, ncols=4)
     with pytest.raises(ValueError, match='Unable to infer'):
         Matrix.from_values([], [], [], dtype=dtypes.INT64)
+    with pytest.raises(ValueError, match='Unable to infer'):
+        # could also raise b/c rows and columns are different sizes
+        Matrix.from_values([0], [], [0], dtype=dtypes.INT64)
     C4 = Matrix.from_values([], [], [],  nrows=3, ncols=4, dtype=dtypes.INT64)
     C5 = Matrix.new(dtypes.INT64, nrows=3, ncols=4)
     assert C4.isequal(C5, check_dtype=True)
@@ -432,6 +435,12 @@ def test_apply_binary(A):
     w_left2 = A.apply(binary.minus, left=Scalar.from_value(8)).new()
     assert w_left.isequal(result_left)
     assert w_left2.isequal(result_left)
+    with pytest.raises(TypeError):
+        A.apply(binary.plus, left=A)
+    with pytest.raises(TypeError):
+        A.apply(binary.plus, right=A)
+    with pytest.raises(TypeError, match='Cannot provide both'):
+        A.apply(binary.plus, left=1, right=1)
 
 
 def test_reduce_row(A):

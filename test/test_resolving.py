@@ -137,11 +137,17 @@ def test_bad_extract_with_updater():
         u[[0, 1]].value
     with pytest.raises(TypeError, match='Cannot extract from an Updater'):
         u(mask=u.S)[0].new()
+    with pytest.raises(TypeError, match='Cannot extract from an Updater'):
+        u << u(mask=u.S)[[1, 2]]
+    with pytest.raises(TypeError, match='Cannot extract from an Updater'):
+        u << u()[[1, 2]]
     with pytest.raises(TypeError, match='mask is not allowed for single element extraction'):
         u[0].new(mask=u.S)
     s = grblas.Scalar.from_value(10)
     with pytest.raises(TypeError, match='Indexing not supported for Scalars'):
         del s()[0]
+    with pytest.raises(TypeError, match='Indexing not supported for Scalars'):
+        s()[0] = 1
 
 
 # These tests probably belong elsewhere

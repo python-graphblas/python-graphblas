@@ -46,9 +46,8 @@ class BaseType:
     def __init__(self, gb_obj, dtype, name):
         if not isinstance(gb_obj, CData):
             raise TypeError('Object passed to __init__ must be CData type')
-        dtype = lookup_dtype(dtype)
         self.gb_obj = gb_obj
-        self.dtype = dtype
+        self.dtype = lookup_dtype(dtype)
         self.name = name
 
     def __call__(self, *optional_mask_and_accum, mask=None, accum=None, replace=False):
@@ -107,8 +106,6 @@ class BaseType:
         if accum is None:
             accum = NULL
         # TODO: check expected output type (now included in Expression object)
-        if self._is_scalar and mask is not NULL:
-            raise TypeError('Mask not allowed for Scalars')
         if not isinstance(delayed, BaseExpression):
             if type(delayed) is AmbiguousAssignOrExtract:
                 if delayed.resolved_indexes.is_single_element and self._is_scalar:

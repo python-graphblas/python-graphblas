@@ -35,7 +35,7 @@ class DataType:
             try:
                 other = lookup_dtype(other)
                 return self == other
-            except KeyError:
+            except ValueError:
                 raise TypeError(f'Invalid or unknown datatype: {other}')
 
 
@@ -106,7 +106,7 @@ def lookup_dtype(key):
                 return lookup_dtype(np.dtype(key))
             except Exception:
                 pass
-            raise
+            raise ValueError(f'Unknown dtype: {key}')
 
 
 _bits_pattern = re.compile(r'\D+(\d+)$')
