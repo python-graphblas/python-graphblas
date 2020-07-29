@@ -7,6 +7,10 @@ dist: xenial
 python:
     - "3.7"
     - "3.8"
+env:
+    BLOCKING="--blocking"
+    BLOCKING="--non-blocking"
+
 install:
     # https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/use-conda-with-travis-ci.html
     - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
@@ -23,7 +27,7 @@ install:
     - pip install -e .
 
 script:
-    - coverage run `which py.test` --runslow
+    - coverage run `which py.test` --runslow $BLOCKING
 
 after_success:
     - coverage report --show-missing
