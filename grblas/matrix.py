@@ -405,10 +405,10 @@ class Matrix(BaseType):
                 try:
                     left = Scalar.from_value(left, name='left')
                 except TypeError:
-                    self._expect_type(left, Scalar, within=method_name, keyword_name='left')
+                    self._expect_type(left, Scalar, within=method_name, keyword_name='left',
+                                      extra_message='Literal scalars also accepted.')
             op = get_typed_op(op, self.dtype, left.dtype)
             self._expect_op(op, 'BinaryOp', within=method_name, argname='op')
-            # cfunc_name = f'GrB_Matrix_apply_BinaryOp1st_{op.type}'
             cfunc_name = f'GrB_Matrix_apply_BinaryOp1st_{left.dtype}'
             args = [_CScalar(left), self]
             expr_repr = '{1.name}.apply({op}, left={0})'
@@ -417,14 +417,15 @@ class Matrix(BaseType):
                 try:
                     right = Scalar.from_value(right, name='right')
                 except TypeError:
-                    self._expect_type(right, Scalar, within=method_name, keyword_name='right')
+                    self._expect_type(right, Scalar, within=method_name, keyword_name='right',
+                                      extra_message='Literal scalars also accepted.')
             op = get_typed_op(op, self.dtype, right.dtype)
             self._expect_op(op, 'BinaryOp', within=method_name, argname='op')
             cfunc_name = f'GrB_Matrix_apply_BinaryOp2nd_{right.dtype}'
             args = [self, _CScalar(right)]
             expr_repr = '{0.name}.apply({op}, right={1})'
         else:
-            raise TypeError('Cannot provide both `left` and `right`')
+            raise TypeError('Cannot provide both `left` and `right` to apply')
         return MatrixExpression(
             method_name,
             cfunc_name,
@@ -498,7 +499,6 @@ class Matrix(BaseType):
         result = ffi_new(f'{self.dtype.c_type}*')
         if self._is_transposed:
             row, col = col, row
-
         err_code = func(result,
                         self.gb_obj[0],
                         row,
@@ -510,16 +510,17 @@ class Matrix(BaseType):
         return result[0], self.dtype
 
     def _prep_for_extract(self, resolved_indexes):
+        method_name = '__getitem__'
         rows, rowsize = resolved_indexes.indices[0]
         cols, colsize = resolved_indexes.indices[1]
         if rowsize is None:
             # Row-only selection; GraphBLAS doesn't have this method, so we hack it using transpose
             row_index = rows
             return VectorExpression(
-                '__getitem__',
+                method_name,
                 'GrB_Col_extract',
                 [self, cols, colsize, row_index],
-                expr_repr='',  # TODO
+                expr_repr='{0.name}[{3}, [{2} cols]]',
                 size=colsize,
                 dtype=self.dtype,
                 at=not self._is_transposed,
@@ -528,20 +529,20 @@ class Matrix(BaseType):
             # Column-only selection
             col_index = cols
             return VectorExpression(
-                '__getitem__',
+                method_name,
                 'GrB_Col_extract',
                 [self, rows, rowsize, col_index],
-                expr_repr='',  # TODO
+                expr_repr='{0.name}[[{2} rows], {3}]',
                 size=rowsize,
                 dtype=self.dtype,
                 at=self._is_transposed,
             )
         else:
             return MatrixExpression(
-                '__getitem__',
+                method_name,
                 'GrB_Matrix_extract',
                 [self, rows, rowsize, cols, colsize],
-                expr_repr='',  # TODO
+                expr_repr='{0.name}[[{2} rows], [{4} cols]]',
                 nrows=rowsize,
                 ncols=colsize,
                 dtype=self.dtype,
@@ -551,20 +552,75 @@ class Matrix(BaseType):
     def _assign_element(self, resolved_indexes, value):
         row, _ = resolved_indexes.indices[0]
         col, _ = resolved_indexes.indices[1]
-        func = libget(f'GrB_Matrix_setElement_{self.dtype}')
+        if type(value) is not Scalar:
+            try:
+                value = Scalar.from_value(value, name='s_assign')
+            except TypeError:
+                self._expect_type(value, Scalar, within='__setitem__', argname='value',
+                                  extra_message='Literal scalars also accepted.')
+        func = libget(f'GrB_Matrix_setElement_{value.dtype}')
         check_status(func(
                      self.gb_obj[0],
-                     value,
-                     # ffi.cast(self.dtype.c_type, value),
+                     value.value,  # should we cast?
                      row,
                      col))
 
-    def _prep_for_assign(self, resolved_indexes, obj):
+    def _prep_for_assign(self, resolved_indexes, value):
+        method_name = '__setitem__'
         rows, rowsize = resolved_indexes.indices[0]
         cols, colsize = resolved_indexes.indices[1]
-        if isinstance(obj, (int, float, bool, complex)):
-            obj = Scalar.from_value(obj, name='s_assign')
-        if type(obj) is Scalar:
+        extra_message = 'Literal scalars also accepted.'
+        if type(value) is Vector:
+            if rowsize is None and colsize is not None:
+                # Row-only selection
+                row_index = rows
+                delayed = MatrixExpression(
+                    method_name,
+                    'GrB_Row_assign',
+                    [value, row_index, cols, colsize],
+                    expr_repr='[{1}, [{3} cols]] = {0.name}',
+                    nrows=self.nrows,
+                    ncols=self.ncols,
+                    dtype=self.dtype,
+                )
+            elif colsize is None and rowsize is not None:
+                # Column-only selection
+                col_index = cols
+                delayed = MatrixExpression(
+                    method_name,
+                    'GrB_Col_assign',
+                    [value, rows, rowsize, col_index],
+                    expr_repr='[[{2} rows], {3}] = {0.name}',
+                    nrows=self.nrows,
+                    ncols=self.ncols,
+                    dtype=self.dtype,
+                )
+            else:
+                self._expect_type(value, (Scalar, Matrix, TransposedMatrix), within=method_name,
+                                  extra_message=extra_message)
+        elif type(value) in {Matrix, TransposedMatrix}:
+            if rowsize is None or colsize is None:
+                self._expect_type(value, (Scalar, Vector), within=method_name, extra_message=extra_message)
+            delayed = MatrixExpression(
+                method_name,
+                'GrB_Matrix_assign',
+                [value, rows, rowsize, cols, colsize],
+                expr_repr='[[{2} rows], [{4} cols]] = {0.name}',
+                nrows=self.nrows,
+                ncols=self.ncols,
+                dtype=self.dtype,
+                at=value._is_transposed,
+            )
+        else:
+            if type(value) is not Scalar:
+                try:
+                    value = Scalar.from_value(value, name='s_assign')
+                except TypeError:
+                    if rowsize is None or colsize is None:
+                        types = (Scalar, Vector)
+                    else:
+                        types = (Scalar, Matrix, TransposedMatrix)
+                    self._expect_type(value, types, within=method_name, argname='value', extra_message=extra_message)
             if rowsize is None:
                 rows = [rows]
                 rowsize = 1
@@ -572,55 +628,14 @@ class Matrix(BaseType):
                 cols = [cols]
                 colsize = 1
             delayed = MatrixExpression(
-                '__setitem__',
-                f'GrB_Matrix_assign_{obj.dtype}',
-                [_CScalar(obj), rows, rowsize, cols, colsize],
-                expr_repr='',  # TODO
+                method_name,
+                f'GrB_Matrix_assign_{value.dtype}',
+                [_CScalar(value), rows, rowsize, cols, colsize],
+                expr_repr='[[{2} rows], [{4} cols]] = {0}',
                 nrows=self.nrows,
                 ncols=self.ncols,
                 dtype=self.dtype,
             )
-        else:
-            if rowsize is None and colsize is None:
-                raise TypeError(f'Expected scalar for assignment value; found {type(obj)}')
-            elif rowsize is None:
-                # Row-only selection
-                self._expect_type(obj, Vector, within='__setitem__')
-                row_index = rows
-                delayed = MatrixExpression(
-                    '__setitem__',
-                    'GrB_Row_assign',
-                    [obj, row_index, cols, colsize],
-                    expr_repr='',  # TODO
-                    nrows=self.nrows,
-                    ncols=self.ncols,
-                    dtype=self.dtype,
-                )
-            elif colsize is None:
-                # Column-only selection
-                self._expect_type(obj, Vector, within='__setitem__')
-                col_index = cols
-                delayed = MatrixExpression(
-                    '__setitem__',
-                    'GrB_Col_assign',
-                    [obj, rows, rowsize, col_index],
-                    expr_repr='',  # TODO
-                    nrows=self.nrows,
-                    ncols=self.ncols,
-                    dtype=self.dtype,
-                )
-            else:
-                self._expect_type(obj, (Matrix, TransposedMatrix), within='__setitem__')
-                delayed = MatrixExpression(
-                    '__setitem__',
-                    'GrB_Matrix_assign',
-                    [obj, rows, rowsize, cols, colsize],
-                    expr_repr='',  # TODO
-                    nrows=self.nrows,
-                    ncols=self.ncols,
-                    dtype=self.dtype,
-                    at=obj._is_transposed,
-                )
         return delayed
 
     def _delete_element(self, resolved_indexes):

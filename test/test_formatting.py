@@ -227,7 +227,7 @@ def test_matrix_repr_large(C, D):
         repr_printer(D, 'D', indent=8)
         assert repr(D) == (
             '"D_skinny_in_one_dim"  nvals  nrows  ncols  dtype\n'
-            'grblas.Matrix      4     70      5   BOOL\n'
+            'grblas.Matrix              4     70      5   BOOL\n'
             '-------------------------------------------------\n'
             '   0  1  2  3       4\n'
             '0                True\n'

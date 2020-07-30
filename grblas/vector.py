@@ -306,7 +306,6 @@ class Vector(BaseType):
             [self, other],
             op=op,
             size=other.ncols,
-            # XXX
             bt=other._is_transposed,
         )
 
@@ -330,7 +329,8 @@ class Vector(BaseType):
                 try:
                     left = Scalar.from_value(left, name='left')
                 except TypeError:
-                    self._expect_type(left, Scalar, within=method_name, keyword_name='left')
+                    self._expect_type(left, Scalar, within=method_name, keyword_name='left',
+                                      extra_message='Literal scalars also accepted.')
             op = get_typed_op(op, self.dtype, left.dtype)
             self._expect_op(op, 'BinaryOp', within=method_name, argname='op')
             cfunc_name = f'GrB_Vector_apply_BinaryOp1st_{left.dtype}'
@@ -341,14 +341,15 @@ class Vector(BaseType):
                 try:
                     right = Scalar.from_value(right, name='right')
                 except TypeError:
-                    self._expect_type(right, Scalar, within=method_name, keyword_name='right')
+                    self._expect_type(right, Scalar, within=method_name, keyword_name='right',
+                                      extra_message='Literal scalars also accepted.')
             op = get_typed_op(op, self.dtype, right.dtype)
             self._expect_op(op, 'BinaryOp', within=method_name, argname='op')
             cfunc_name = f'GrB_Vector_apply_BinaryOp2nd_{right.dtype}'
             args = [self, _CScalar(right)]
             expr_repr = '{0.name}.apply({op}, right={1})'
         else:
-            raise TypeError('Cannot provide both `left` and `right`')
+            raise TypeError('Cannot provide both `left` and `right` to apply')
         return VectorExpression(
             method_name,
             cfunc_name,
@@ -381,7 +382,6 @@ class Vector(BaseType):
         index, _ = resolved_indexes.indices[0]
         func = libget(f'GrB_Vector_extractElement_{self.dtype}')
         result = ffi_new(f'{self.dtype.c_type}*')
-
         err_code = func(result,
                         self.gb_obj[0],
                         index)
@@ -392,23 +392,28 @@ class Vector(BaseType):
         return result[0], self.dtype
 
     def _prep_for_extract(self, resolved_indexes):
-        # """
         index, isize = resolved_indexes.indices[0]
         return VectorExpression(
             '__getitem__',
             'GrB_Vector_extract',
             [self, index, isize],
-            expr_repr='{0.name}[{1}]',  # TODO
+            expr_repr='{0.name}[[{2} elements]]',
             size=isize,
             dtype=self.dtype,
         )
 
     def _assign_element(self, resolved_indexes, value):
         index, _ = resolved_indexes.indices[0]
-        func = libget(f'GrB_Vector_setElement_{self.dtype}')
+        if type(value) is not Scalar:
+            try:
+                value = Scalar.from_value(value, name='s_assign')
+            except TypeError:
+                self._expect_type(value, Scalar, within='__setitem__', argname='value',
+                                  extra_message='Literal scalars also accepted.')
+        func = libget(f'GrB_Vector_setElement_{value.dtype}')
         check_status(func(
                      self.gb_obj[0],
-                     value,  # should we cast?
+                     value.value,  # should we cast?
                      index))
 
     def _prep_for_assign(self, resolved_indexes, value):
@@ -416,19 +421,22 @@ class Vector(BaseType):
         index, isize = resolved_indexes.indices[0]
         if type(value) is Vector:
             cfunc_name = 'GrB_Vector_assign'
+            expr_repr = '[[{2} elements]] = {0.name}'
         else:
             if type(value) is not Scalar:
                 try:
                     value = Scalar.from_value(value, name='s_assign')
                 except TypeError:
-                    self._expect_type(value, (Scalar, Vector), within=method_name, argname='value')
+                    self._expect_type(value, (Scalar, Vector), within=method_name, argname='value',
+                                      extra_message='Literal scalars also accepted.')
             cfunc_name = f'GrB_Vector_assign_{value.dtype}'
             value = _CScalar(value)
+            expr_repr = '[[{2} elements]] = {0}'
         return VectorExpression(
             method_name,
             cfunc_name,
             [value, index, isize],
-            expr_repr='',  # TODO
+            expr_repr=expr_repr,
             size=self.size,
             dtype=self.dtype,
         )

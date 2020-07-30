@@ -328,6 +328,10 @@ def test_assign_scalar(v):
     s = Scalar.from_value(9)
     w[:] = s
     assert w.isequal(Vector.from_values([0, 1, 2], [9, 9, 9]))
+    with pytest.raises(TypeError, match='Bad type for arg'):
+        w[:] = object()
+    with pytest.raises(TypeError, match='Bad type for arg'):
+        w[1] = object()
 
 
 def test_assign_scalar_mask(v):

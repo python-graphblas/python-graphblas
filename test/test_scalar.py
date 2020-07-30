@@ -111,6 +111,7 @@ def test_isequal(s):
     assert Scalar.from_value(None, dtype='INT8').isequal(Scalar.from_value(None, dtype='INT16'))
 
 
+@pytest.mark.slow
 def test_isclose():
     s = Scalar.from_value(5.0)
     assert s.isclose(5)

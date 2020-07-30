@@ -86,10 +86,14 @@ _registry[np.dtype(np.float16)] = FP32
 _registry['float16'] = FP32
 
 # Add some common Python types as lookup keys
+_registry[bool] = BOOL
 _registry[int] = INT64
 _registry[float] = FP64
-_registry[bool] = BOOL
 _registry[complex] = FC64
+_registry['bool'] = BOOL
+_registry['int'] = INT64
+_registry['float'] = FP64  # Choose 'float' to match numpy/Python; c_type 'float' would be FP32
+_registry['complex'] = FC64
 
 
 def lookup_dtype(key):

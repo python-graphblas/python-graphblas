@@ -11,13 +11,36 @@ NULL = ffi.NULL
 CData = ffi.CData
 
 
-def _expect_type(self, x, types, *, within, argname=None, keyword_name=None, extra_message=None):
+def _expect_type_message(self, x, types, *, within, argname=None, keyword_name=None, extra_message=''):
     if type(types) is tuple:
         if type(x) in types:
             return
     elif type(x) is types:
         return
-    raise TypeError(f'{type(x)} != {types} {extra_message}')
+    if argname:
+        argmsg = f'for argument `{argname}` '
+    elif keyword_name:
+        argmsg = f'for keyword argument `{keyword_name}=` '
+    else:
+        argmsg = ''
+    if type(types) is tuple:
+        expected = ', '.join(typ.__name__ for typ in types)
+    else:
+        expected = types.__name__
+    if extra_message:
+        extra_message = f'\n{extra_message}'
+    return (
+        f'Bad type {argmsg}in {type(self).__name__}.{within}(...).\n'
+        f'    - Expected type: {expected}.\n'
+        f'    - Got: {type(x)}.'
+        f'{extra_message}'
+    )
+
+
+def _expect_type(self, x, types, **kwargs):
+    message = _expect_type_message(self, x, types, **kwargs)
+    if message is not None:
+        raise TypeError(message) from None
 
 
 def _expect_op(self, op, values, *, within, argname=None, keyword_name=None, extra_message=None):
@@ -26,7 +49,7 @@ def _expect_op(self, op, values, *, within, argname=None, keyword_name=None, ext
             return
     elif op.opclass == values:
         return
-    raise TypeError(f'{op.opclass} != {values} {extra_message}')
+    raise TypeError(f'{op.opclass} != {values} {extra_message}') from None
 
 
 def _check_mask(mask, output=None):

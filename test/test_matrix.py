@@ -411,6 +411,28 @@ def test_assign_scalar(A):
     assert C.isequal(result_column)
 
 
+def test_assign_bad(A):
+    with pytest.raises(TypeError, match='Bad type'):
+        A[0, 0] = object()
+    with pytest.raises(TypeError, match='Bad type'):
+        A[:, 0] = object()
+    with pytest.raises(TypeError, match='Bad type'):
+        A[0, :] = object()
+    with pytest.raises(TypeError, match='Bad type'):
+        A[:, :] = object()
+    with pytest.raises(TypeError, match='Bad type'):
+        A[0, 0] = A
+    with pytest.raises(TypeError, match='Bad type'):
+        A[:, 0] = A
+    with pytest.raises(TypeError, match='Bad type'):
+        A[0, :] = A
+    v = A[0, :].new()
+    with pytest.raises(TypeError, match='Bad type'):
+        A[0, 0] = v
+    with pytest.raises(TypeError, match='Bad type'):
+        A[:, :] = v
+
+
 def test_apply(A):
     result = Matrix.from_values(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],

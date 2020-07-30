@@ -313,7 +313,7 @@ def create_header(type_name, keys, vals, *, lower_border=False, name='', quote=T
         name_width = max(len(type_name), len(name))
         lines = [
             f"{name.ljust(name_width)}{''.join(key_text)}",
-            f"{type_name}{''.join(val_text)}",
+            f"{type_name.ljust(name_width)}{''.join(val_text)}",
         ]
     else:
         name_width = max(map(len, type_name))
