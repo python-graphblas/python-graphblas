@@ -261,13 +261,13 @@ def test_semiring_parameterized():
     assert B.isequal(A.ewise_mult(A, mysemiring).new())
 
     # mismatched signatures.
-    def other_binary(y=0):
+    def other_binary(y=0):  # pragma: no cover
         def inner(left, right):
             return left + right - y
         return inner
 
     def other_identity(y=0):
-        return x
+        return x  # pragma: no cover
 
     other_op = BinaryOp.register_anonymous(other_binary, parameterized=True)
     other_monoid = Monoid.register_anonymous(other_op, other_identity)
@@ -444,7 +444,7 @@ def test_nested_names():
     assert v.isequal(result2), v
 
     def bad_will_overwrite_path(x):
-        return x + 7
+        return x + 7  # pragma: no cover
 
     with pytest.raises(AttributeError):
         UnaryOp.register_new('incrementers', bad_will_overwrite_path)
