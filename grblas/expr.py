@@ -29,25 +29,27 @@ class IndexerResolver:
         """
         if len(shape) == 1:
             if type(indices) is tuple:
-                raise TypeError(f'Index for {type(self.obj).__name__} cannot be a tuple')
+                raise TypeError(f"Index for {type(self.obj).__name__} cannot be a tuple")
             # Convert to tuple for consistent processing
             indices = (indices,)
         elif len(shape) == 2:
             if type(indices) is not tuple or len(indices) != 2:
-                raise TypeError(f'Index for {type(self.obj).__name__} must be a 2-tuple')
+                raise TypeError(f"Index for {type(self.obj).__name__} must be a 2-tuple")
 
         out = []
         for i, idx in enumerate(indices):
             typ = type(idx)
             if typ is tuple:
-                raise TypeError(f'Index in position {i} cannot be a tuple; must use slice or list or int')
+                raise TypeError(
+                    f"Index in position {i} cannot be a tuple; must use slice or list or int"
+                )
             out.append(self.parse_index(idx, typ, shape[i]))
         return out
 
     def parse_index(self, index, typ, size):
         if typ is int:
             if index >= size:
-                raise IndexError(f'index={index}, size={size}')
+                raise IndexError(f"index={index}, size={size}")
             return index, None
         if typ is slice:
             if index == slice(None):
@@ -58,8 +60,8 @@ class IndexerResolver:
             try:
                 index = tuple(index)
             except Exception:
-                raise TypeError('Unable to convert to tuple')
-        return ffi_new('GrB_Index[]', index), len(index)
+                raise TypeError("Unable to convert to tuple")
+        return ffi_new("GrB_Index[]", index), len(index)
 
 
 class AmbiguousAssignOrExtract:
@@ -70,17 +72,17 @@ class AmbiguousAssignOrExtract:
     def __call__(self, *args, **kwargs):
         if type(self.parent) is Updater:
             parent_kwargs = []
-            if self.parent.kwargs['accum'] is not NULL:
+            if self.parent.kwargs["accum"] is not NULL:
                 parent_kwargs.append(f"accum={self.parent.kwargs['accum']}")
-            if self.parent.kwargs['mask'] is not NULL:
+            if self.parent.kwargs["mask"] is not NULL:
                 # It would sure be nice if we knew the mask type.
                 # Passing around C objects directly is sometimes inconvenient.
                 parent_kwargs.append("mask=<Mask>")
                 parent_kwargs.append(f"replace={self.parent.kwargs['replace']}")
             if not parent_kwargs:
-                raise ValueError('GraphBLAS object already called (with no keywords)')
-            parent_kwargs = ', '.join(parent_kwargs)
-            raise ValueError(f'GraphBLAS object already called with keywords: {parent_kwargs}')
+                raise ValueError("GraphBLAS object already called (with no keywords)")
+            parent_kwargs = ", ".join(parent_kwargs)
+            raise ValueError(f"GraphBLAS object already called with keywords: {parent_kwargs}")
         # Occurs when user calls C[index](params)
         # Reverse the call order so we can parse the call args and kwargs
         updater = self.parent(*args, **kwargs)
@@ -99,7 +101,7 @@ class AmbiguousAssignOrExtract:
     @property
     def value(self):
         if type(self.parent) is Updater:
-            raise TypeError('Cannot extract from an Updater')
+            raise TypeError("Cannot extract from an Updater")
         if not self.resolved_indexes.is_single_element:
             raise AttributeError("Only Scalars have `.value` attribute")
         val, _ = self.parent._extract_element(self.resolved_indexes)
@@ -111,14 +113,15 @@ class AmbiguousAssignOrExtract:
         dtype and mask are the only controllable parameters.
         """
         if type(self.parent) is Updater:
-            raise TypeError('Cannot extract from an Updater')
+            raise TypeError("Cannot extract from an Updater")
         if self.resolved_indexes.is_single_element:
             if mask is not None:
-                raise TypeError('mask is not allowed for single element extraction')
+                raise TypeError("mask is not allowed for single element extraction")
             val, cur_dtype = self.parent._extract_element(self.resolved_indexes)
             if dtype is None:
                 dtype = cur_dtype
             from .scalar import Scalar
+
             return Scalar.from_value(val, dtype=dtype, name=name)
         else:
             delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
@@ -127,7 +130,7 @@ class AmbiguousAssignOrExtract:
     def _extract_delayed(self):
         """Return an Expression object, treating this as an extract call"""
         if type(self.parent) is Updater:
-            raise TypeError('Cannot extract from an Updater')
+            raise TypeError("Cannot extract from an Updater")
         return self.parent._prep_for_extract(self.resolved_indexes)
 
 
@@ -137,9 +140,10 @@ class Updater:
         self.kwargs = kwargs
 
     def __getitem__(self, keys):
-        # Occurs when user calls C(params)[index]; need something prepared to receive `<<` or `.update()`
+        # Occurs when user calls C(params)[index]
+        # Need something prepared to receive `<<` or `.update()`
         if self.parent._is_scalar:
-            raise TypeError('Indexing not supported for Scalars')
+            raise TypeError("Indexing not supported for Scalars")
         if type(keys) is IndexerResolver:
             resolved_indexes = keys
         else:
@@ -149,7 +153,7 @@ class Updater:
     def __setitem__(self, keys, obj):
         # Occurs when user calls C(params)[index] = delayed
         if self.parent._is_scalar:
-            raise TypeError('Indexing not supported for Scalars')
+            raise TypeError("Indexing not supported for Scalars")
         if type(keys) is IndexerResolver:
             resolved_indexes = keys
         else:
@@ -165,7 +169,7 @@ class Updater:
     def __delitem__(self, keys):
         # Occurs when user calls `del C(params)[index]`
         if self.parent._is_scalar:
-            raise TypeError('Indexing not supported for Scalars')
+            raise TypeError("Indexing not supported for Scalars")
         if type(keys) is IndexerResolver:
             resolved_indexes = keys
         else:
@@ -174,7 +178,7 @@ class Updater:
         if resolved_indexes.is_single_element:
             self.parent._delete_element(resolved_indexes)
         else:
-            raise TypeError('Remove Element only supports a single index')
+            raise TypeError("Remove Element only supports a single index")
 
     def __lshift__(self, delayed):
         # Occurs when user calls C(params) << delayed

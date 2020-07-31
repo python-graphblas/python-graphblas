@@ -19,7 +19,7 @@ class BasePointer:
 
     def __getitem__(self, key):
         if key != 0:
-            raise KeyError('Only [0] is available for pointers')
+            raise KeyError("Only [0] is available for pointers")
         return self.instance
 
     @property
@@ -35,5 +35,5 @@ def new_pointer(dtype):
 
 def new_array(dtype, length):
     if np.dtype(dtype) == object:
-        raise GraphBlasException(f'Cannot create an array of type {dtype}')
+        raise GraphBlasException(f"Cannot create an array of type {dtype}")
     return np.empty((length,), dtype)

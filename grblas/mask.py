@@ -23,11 +23,11 @@ class StructuralMask(Mask):
 
     @property
     def name(self):
-        return f'{self.mask.name}.S'
+        return f"{self.mask.name}.S"
 
     @property
     def _name_html(self):
-        return f'{self.mask._name_html}.S'
+        return f"{self.mask._name_html}.S"
 
 
 class ValueMask(Mask):
@@ -40,11 +40,11 @@ class ValueMask(Mask):
 
     @property
     def name(self):
-        return f'{self.mask.name}.V'
+        return f"{self.mask.name}.V"
 
     @property
     def _name_html(self):
-        return f'{self.mask._name_html}.V'
+        return f"{self.mask._name_html}.V"
 
 
 class ComplementedStructuralMask(Mask):
@@ -57,11 +57,11 @@ class ComplementedStructuralMask(Mask):
 
     @property
     def name(self):
-        return f'~{self.mask.name}.S'
+        return f"~{self.mask.name}.S"
 
     @property
     def _name_html(self):
-        return f'~{self.mask._name_html}.S'
+        return f"~{self.mask._name_html}.S"
 
 
 class ComplementedValueMask(Mask):
@@ -74,8 +74,8 @@ class ComplementedValueMask(Mask):
 
     @property
     def name(self):
-        return f'~{self.mask.name}.V'
+        return f"~{self.mask.name}.V"
 
     @property
     def _name_html(self):
-        return f'~{self.mask._name_html}.V'
+        return f"~{self.mask._name_html}.V"

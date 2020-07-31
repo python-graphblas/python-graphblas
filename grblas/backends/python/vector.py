@@ -32,7 +32,7 @@ class Vector(GraphBlasContainer):
 @handle_panic
 def Vector_new(A: VectorPtr, dtype: type, nsize: int):
     if nsize <= 0:
-        return_error(GrB_Info.GrB_INVALID_VALUE, 'nsize must be > 0')
+        return_error(GrB_Info.GrB_INVALID_VALUE, "nsize must be > 0")
     vector = Vector.new_from_dtype(dtype, nsize)
     A.set_vector(vector)
     return GrB_Info.GrB_SUCCESS
@@ -48,6 +48,6 @@ def Vector_dup(C: VectorPtr, A: Vector):
 @handle_panic
 def Vector_resize(C: Vector, nsize: int):
     if nsize <= 0:
-        return_error(GrB_Info.GrB_INVALID_VALUE, 'nsize must be > 0')
+        return_error(GrB_Info.GrB_INVALID_VALUE, "nsize must be > 0")
     C.vector.resize((1, nsize))
     return GrB_Info.GrB_SUCCESS

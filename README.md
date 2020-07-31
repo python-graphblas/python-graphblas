@@ -4,6 +4,8 @@
 [![Coverage Status](https://coveralls.io/repos/metagraph-dev/grblas/badge.svg?branch=master)](https://coveralls.io/r/metagraph-dev/grblas)
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/grblas.svg)](https://anaconda.org/conda-forge/grblas)
 [![Conda Platforms](https://img.shields.io/conda/pn/conda-forge/grblas.svg)](https://anaconda.org/conda-forge/grblas)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Code style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 Python wrapper around GraphBLAS
 

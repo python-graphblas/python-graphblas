@@ -6,16 +6,17 @@ from .types import GrB_Type
 class OpContainer:
     def _compile(self, signatures, nosuffix=False):
         def ncompiler(func):
-            funcname = f'GrB_{func.__name__.upper()}'
+            funcname = f"GrB_{func.__name__.upper()}"
             for sig in signatures:
                 if nosuffix:
                     typed_name = funcname
                 else:
                     primary_dtype = sig.args[0]
                     suffix = GrB_Type.lookup_name(primary_dtype)
-                    typed_name = f'{funcname}_{suffix}'
+                    typed_name = f"{funcname}_{suffix}"
                 jitted_func = njit(sig)(func)
                 setattr(self, typed_name, jitted_func)
+
         return ncompiler
 
 
@@ -27,41 +28,47 @@ GrB_BinaryOp = OpContainer()
 # Useful collections of signatures
 ##################################
 _unary_bool = [nt.boolean(nt.boolean)]
-_unary_int = [nt.uint8(nt.uint8),
-              nt.int8(nt.int8),
-              nt.uint16(nt.uint16),
-              nt.int16(nt.int16),
-              nt.uint32(nt.uint32),
-              nt.int32(nt.int32),
-              nt.uint64(nt.uint64),
-              nt.int64(nt.int64)]
-_unary_float = [nt.float32(nt.float32),
-                nt.float64(nt.float64)]
+_unary_int = [
+    nt.uint8(nt.uint8),
+    nt.int8(nt.int8),
+    nt.uint16(nt.uint16),
+    nt.int16(nt.int16),
+    nt.uint32(nt.uint32),
+    nt.int32(nt.int32),
+    nt.uint64(nt.uint64),
+    nt.int64(nt.int64),
+]
+_unary_float = [nt.float32(nt.float32), nt.float64(nt.float64)]
 _unary_all = _unary_bool + _unary_int + _unary_float
 
 _binary_bool = [nt.boolean(nt.boolean, nt.boolean)]
-_binary_int = [nt.uint8(nt.uint8, nt.uint8),
-               nt.int8(nt.int8, nt.int8),
-               nt.uint16(nt.uint16, nt.uint16),
-               nt.int16(nt.int16, nt.int16),
-               nt.uint32(nt.uint32, nt.uint32),
-               nt.int32(nt.int32, nt.int32),
-               nt.uint64(nt.uint64, nt.uint64),
-               nt.int64(nt.int64, nt.int64)]
-_binary_float = [nt.float32(nt.float32, nt.float32),
-                 nt.float64(nt.float64, nt.float64)]
+_binary_int = [
+    nt.uint8(nt.uint8, nt.uint8),
+    nt.int8(nt.int8, nt.int8),
+    nt.uint16(nt.uint16, nt.uint16),
+    nt.int16(nt.int16, nt.int16),
+    nt.uint32(nt.uint32, nt.uint32),
+    nt.int32(nt.int32, nt.int32),
+    nt.uint64(nt.uint64, nt.uint64),
+    nt.int64(nt.int64, nt.int64),
+]
+_binary_float = [nt.float32(nt.float32, nt.float32), nt.float64(nt.float64, nt.float64)]
 _binary_all = _binary_bool + _binary_int + _binary_float
 
-_binary_int_to_bool = [nt.boolean(nt.uint8, nt.uint8),
-                       nt.boolean(nt.int8, nt.int8),
-                       nt.boolean(nt.uint16, nt.uint16),
-                       nt.boolean(nt.int16, nt.int16),
-                       nt.boolean(nt.uint32, nt.uint32),
-                       nt.boolean(nt.int32, nt.int32),
-                       nt.boolean(nt.uint64, nt.uint64),
-                       nt.boolean(nt.int64, nt.int64)]
-_binary_float_to_bool = [nt.boolean(nt.float32, nt.float32),
-                         nt.boolean(nt.float64, nt.float64)]
+_binary_int_to_bool = [
+    nt.boolean(nt.uint8, nt.uint8),
+    nt.boolean(nt.int8, nt.int8),
+    nt.boolean(nt.uint16, nt.uint16),
+    nt.boolean(nt.int16, nt.int16),
+    nt.boolean(nt.uint32, nt.uint32),
+    nt.boolean(nt.int32, nt.int32),
+    nt.boolean(nt.uint64, nt.uint64),
+    nt.boolean(nt.int64, nt.int64),
+]
+_binary_float_to_bool = [
+    nt.boolean(nt.float32, nt.float32),
+    nt.boolean(nt.float64, nt.float64),
+]
 _binary_all_to_bool = _binary_bool + _binary_int_to_bool + _binary_float_to_bool
 
 # NOTE:
@@ -95,7 +102,7 @@ def ainv(x):
 @GrB_UnaryOp._compile(_unary_float)
 def minv(x):
     """Multiplicative inverse"""
-    return 1/x
+    return 1 / x
 
 
 @GrB_UnaryOp._compile(_unary_bool, nosuffix=True)
@@ -113,6 +120,7 @@ def bnot(x):
 ##################
 # Binary Operators
 ##################
+
 
 @GrB_BinaryOp._compile(_binary_bool, nosuffix=True)
 def lor(x, y):

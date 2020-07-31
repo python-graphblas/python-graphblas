@@ -34,9 +34,9 @@ class Matrix(GraphBlasContainer):
 @handle_panic
 def Matrix_new(A: MatrixPtr, dtype: type, nrows: int, ncols: int):
     if nrows <= 0:
-        return_error(GrB_Info.GrB_INVALID_VALUE, 'nrows must be > 0')
+        return_error(GrB_Info.GrB_INVALID_VALUE, "nrows must be > 0")
     if ncols <= 0:
-        return_error(GrB_Info.GrB_INVALID_VALUE, 'ncols must be > 0')
+        return_error(GrB_Info.GrB_INVALID_VALUE, "ncols must be > 0")
     matrix = Matrix.new_from_dtype(dtype, nrows, ncols)
     A.set_matrix(matrix)
     return GrB_Info.GrB_SUCCESS
@@ -52,9 +52,9 @@ def Matrix_dup(C: MatrixPtr, A: Matrix):
 @handle_panic
 def Matrix_resize(C: Matrix, nrows: int, ncols: int):
     if nrows <= 0:
-        return_error(GrB_Info.GrB_INVALID_VALUE, 'nrows must be > 0')
+        return_error(GrB_Info.GrB_INVALID_VALUE, "nrows must be > 0")
     if ncols <= 0:
-        return_error(GrB_Info.GrB_INVALID_VALUE, 'ncols must be > 0')
+        return_error(GrB_Info.GrB_INVALID_VALUE, "ncols must be > 0")
     C.matrix.resize((nrows, ncols))
     return GrB_Info.GrB_SUCCESS
 
@@ -66,14 +66,24 @@ def mxm(C, A, B, semiring):
     ar, ac = A.shape
     br, bc = B.shape
     if cr != ar:
-        return_error(GrB_Info.GrB_DIMENSION_MISMATCH, 'C.nrows != A.nrows')
+        return_error(GrB_Info.GrB_DIMENSION_MISMATCH, "C.nrows != A.nrows")
     if cc != bc:
-        return_error(GrB_Info.GrB_DIMENSION_MISMATCH, 'C.ncols != B.ncols')
+        return_error(GrB_Info.GrB_DIMENSION_MISMATCH, "C.ncols != B.ncols")
     if ac != br:
-        return_error(GrB_Info.GrB_DIMENSION_MISMATCH, 'A.nrows != B.ncols')
+        return_error(GrB_Info.GrB_DIMENSION_MISMATCH, "A.nrows != B.ncols")
     b = B.tocsc()
-    d, i, ip = _sparse_matmul(A.data, A.indices, A.indptr, b.data, b.indices, b.indptr,
-                              semiring.plus.op, semiring.times, semiring.plus.identity, C.dtype)
+    d, i, ip = _sparse_matmul(
+        A.data,
+        A.indices,
+        A.indptr,
+        b.data,
+        b.indices,
+        b.indptr,
+        semiring.plus.op,
+        semiring.times,
+        semiring.plus.identity,
+        C.dtype,
+    )
     C.data = d
     C.indices = i
     C.indptr = ip
@@ -81,7 +91,9 @@ def mxm(C, A, B, semiring):
 
 
 @numba.njit
-def _sparse_matmul(a_data, a_indices, a_indptr, b_data, b_indices, b_indptr, plus, times, identity, dtype):
+def _sparse_matmul(
+    a_data, a_indices, a_indptr, b_data, b_indices, b_indptr, plus, times, identity, dtype,
+):
     # Final array size is unknown, so we give ourselves room and then adjust on the fly
     tmp_output_size = a_data.size * 2
     data = np.empty((tmp_output_size,), dtype=dtype)

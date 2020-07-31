@@ -43,23 +43,23 @@ def Descriptor_set(desc: Descriptor, field, value):
         if value is GrB_Desc_Value.GrB_REPLACE:
             desc.clear_output = True
         else:
-            return_error(GrB_Info.GrB_INVALID_VALUE, 'Invalid value for GrB_OUTP')
+            return_error(GrB_Info.GrB_INVALID_VALUE, "Invalid value for GrB_OUTP")
     elif field is GrB_Desc_Field.GrB_INP0:
         if value is GrB_Desc_Value.GrB_TRAN:
             desc.trans0 = True
         else:
-            return_error(GrB_Info.GrB_INVALID_VALUE, 'Invalid value for GrB_INP0')
+            return_error(GrB_Info.GrB_INVALID_VALUE, "Invalid value for GrB_INP0")
     elif field is GrB_Desc_Field.GrB_INP1:
         if value is GrB_Desc_Value.GrB_TRAN:
             desc.trans1 = True
         else:
-            return_error(GrB_Info.GrB_INVALID_VALUE, 'Invalid value for GrB_INP1')
+            return_error(GrB_Info.GrB_INVALID_VALUE, "Invalid value for GrB_INP1")
     elif field is GrB_Desc_Field.GrB_MASK:
         if value is GrB_Desc_Value.GrB_COMP:
             desc.mask_comp = True
         elif value is GrB_Desc_Value.GrB_STRUCTURE:
             desc.mask_struct = True
         else:
-            return_error(GrB_Info.GrB_INVALID_VALUE, 'Invalid value for GrB_MASK')
+            return_error(GrB_Info.GrB_INVALID_VALUE, "Invalid value for GrB_MASK")
     else:
-        return_error(GrB_Info.GrB_INVALID_VALUE, 'Invalid field')
+        return_error(GrB_Info.GrB_INVALID_VALUE, "Invalid field")
