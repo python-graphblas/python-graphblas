@@ -15,7 +15,8 @@ def __getattr__(name):
     if name in _SPECIAL_ATTRS:
         if _init_params is None:
             _init("suitesparse", True, automatic=True)
-        _load(name)
+        if name not in globals():
+            _load(name)
         return globals()[name]
     else:
         raise AttributeError(f"module {__name__!r} has not attribute {name!r}")
