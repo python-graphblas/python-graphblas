@@ -200,7 +200,7 @@ class BaseType:
                                  output_replace=replace)
         if self._is_scalar:
             call_args = [self._carg, accum]
-            if delayed.op is not None:
+            if delayed.op is not None:  # pragma: no branch
                 call_args.append(delayed.op._carg)
             call_args.extend(x._carg for x in delayed.args)
             call_args.append(desc)

@@ -74,11 +74,10 @@ class Scalar(BaseType):
             if other is None:
                 return self.is_empty
             try:
-                # Check if other is a literal scalar, which we should handle
-                dtype = lookup_dtype(type(other))
-            except ValueError:
-                raise TypeError(f'Argument of isequal must be a known scalar type, not {type(other)}')
-            other = Scalar.from_value(other, dtype=dtype, name='s_isequal')
+                other = Scalar.from_value(other, name='s_isequal')
+            except TypeError:
+                self._expect_type(other, Scalar, within='isequal', argname='other',
+                                  extra_message='Literal scalars also accepted.')
             # Don't check dtype if we had to infer dtype of `other`
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:
@@ -101,11 +100,10 @@ class Scalar(BaseType):
             if other is None:
                 return self.is_empty
             try:
-                # Check if other is a literal scalar, which we should handle
-                dtype = lookup_dtype(type(other))
-            except ValueError:
-                raise TypeError(f'Argument of isclose must be a known scalar type, not {type(other)}')
-            other = Scalar.from_value(other, dtype=dtype, name='s_isclose')
+                other = Scalar.from_value(other, name='s_isclose')
+            except TypeError:
+                self._expect_type(other, Scalar, within='isclose', argname='other',
+                                  extra_message='Literal scalars also accepted.')
             # Don't check dtype if we had to infer dtype of `other`
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:

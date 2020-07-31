@@ -148,6 +148,8 @@ def test_bad_extract_with_updater():
         del s()[0]
     with pytest.raises(TypeError, match='Indexing not supported for Scalars'):
         s()[0] = 1
+    with pytest.raises(TypeError, match='Indexing not supported for Scalars'):
+        s()[0]
 
 
 # These tests probably belong elsewhere

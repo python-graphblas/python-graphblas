@@ -385,7 +385,13 @@ def test_assign_scalar(A):
     C[[1, 3, 5], [2, 4]] = 0
     assert C.isequal(result_block)
     C = A.dup()
+    C[[1, 3, 5], [2, 4]] = Scalar.from_value(0)
+    assert C.isequal(result_block)
+    C = A.dup()
     C[1::2, 2:5:2] = 0
+    assert C.isequal(result_block)
+    C = A.dup()
+    C[1::2, 2:5:2] = Scalar.from_value(0)
     assert C.isequal(result_block)
     # Test row
     result_row = Matrix.from_values(
@@ -510,6 +516,8 @@ def test_transpose(A):
     C2 = A.T.new()
     assert C2.isequal(result)
     assert A.T.T is A
+    C3 = A.T.new(dtype=float)
+    assert C3.isequal(result)
 
 
 def test_kronecker():

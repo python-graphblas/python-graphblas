@@ -61,6 +61,11 @@ class Panic(GrblasException):
     pass
 
 
+# Our errors
+class UdfParseError(GrblasException):
+    pass
+
+
 _error_code_lookup = {
     # Warning
     lib.GrB_NO_VALUE: NoValue,
@@ -83,7 +88,7 @@ _error_code_lookup = {
 
 def is_error(response_code, error_class):
     if response_code in _error_code_lookup:
-        if _error_code_lookup[response_code] == error_class:
+        if _error_code_lookup[response_code] == error_class:  # pragma: no branch
             return True
     return False
 

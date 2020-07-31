@@ -105,11 +105,11 @@ def _get_chunk(length, min_length, max_length):
 def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None):
     if not has_pandas:
         return
-    if max_rows is None:
+    if max_rows is None:  # pragma: no branch
         max_rows = pd.options.display.max_rows
-    if min_rows is None:
+    if min_rows is None:  # pragma: no branch
         min_rows = pd.options.display.min_rows
-    if max_columns is None:
+    if max_columns is None:  # pragma: no branch
         max_columns = _get_max_columns()
     rows, row_groups = _get_chunk(matrix.nrows, min_rows, max_rows)
     columns, column_groups = _get_chunk(matrix.ncols, max_columns, max_columns)
@@ -123,7 +123,7 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
 def _get_vector_dataframe(vector, max_columns, *, mask=None):
     if not has_pandas:
         return
-    if max_columns is None:
+    if max_columns is None:  # pragma: no branch
         max_columns = _get_max_columns()
     columns, column_groups = _get_chunk(vector.size, max_columns, max_columns)
     df = pd.DataFrame(columns=columns, index=[''])
@@ -231,8 +231,8 @@ def format_scalar(scalar):
 def _format_expression(expr, header):
     pos_to_arg = {}
     for i, arg in enumerate(expr.args):
-        pos = expr.expr_repr.find('{%s' % i)
-        if pos >= 0:
+        pos = expr.expr_repr.find('{%s' % i)  # -1 if not found
+        if pos >= 0:  # pragma: no branch
             pos_to_arg[pos] = arg
     args = [pos_to_arg[pos] for pos in sorted(pos_to_arg)]
     arg_string = ''.join(x._repr_html_() for x in args if hasattr(x, '_repr_html_'))

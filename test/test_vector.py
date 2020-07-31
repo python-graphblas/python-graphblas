@@ -326,6 +326,8 @@ def test_assign_scalar(v):
     assert w.isequal(result)
     w = Vector.from_values([0, 1, 2], [1, 1, 1])
     s = Scalar.from_value(9)
+    w[0] = s
+    assert w.isequal(Vector.from_values([0, 1, 2], [9, 1, 1]))
     w[:] = s
     assert w.isequal(Vector.from_values([0, 1, 2], [9, 9, 9]))
     with pytest.raises(TypeError, match='Bad type for arg'):

@@ -7,7 +7,7 @@ from functools import lru_cache
 from types import FunctionType, ModuleType
 from . import ffi, lib, unary, binary, monoid, semiring
 from .dtypes import libget, lookup_dtype, unify, INT8, _sample_values
-from .exceptions import GrblasException, check_status
+from .exceptions import UdfParseError, check_status
 
 ffi_new = ffi.new
 UNKNOWN_OPCLASS = 'UnknownOpClass'
@@ -15,10 +15,6 @@ UNKNOWN_OPCLASS = 'UnknownOpClass'
 
 def _normalize_type(type_):
     return lookup_dtype(type_).name
-
-
-class UdfParseError(GrblasException):
-    pass
 
 
 class OpPath:
@@ -110,8 +106,6 @@ class ParameterizedUdf:
 
 class ParameterizedUnaryOp(ParameterizedUdf):
     def __init__(self, name, func):
-        if not callable(func):
-            raise TypeError('func must be callable')
         self.func = func
         self.__signature__ = inspect.signature(func)
         if name is None:
@@ -125,8 +119,6 @@ class ParameterizedUnaryOp(ParameterizedUdf):
 
 class ParameterizedBinaryOp(ParameterizedUdf):
     def __init__(self, name, func):
-        if not callable(func):
-            raise TypeError('func must be callable')
         self.func = func
         self.__signature__ = inspect.signature(func)
         if name is None:
@@ -141,7 +133,7 @@ class ParameterizedBinaryOp(ParameterizedUdf):
 class ParameterizedMonoid(ParameterizedUdf):
     def __init__(self, name, binaryop, identity):
         if not type(binaryop) is ParameterizedBinaryOp:
-            raise TypeError('binaropy must be parameterized')
+            raise TypeError('binaryop must be parameterized')
         self.binaryop = binaryop
         self.__signature__ = binaryop.__signature__
         if callable(identity):
@@ -294,14 +286,14 @@ class OpBase:
                             if type_ is None:
                                 type_ = 'BOOL'
                         else:
-                            if type_ is None:
+                            if type_ is None:  # pragma: no cover
                                 raise TypeError(f'Unable to determine return type for {varname}')
                             if return_prefix is None:
                                 return_type = type_
                             else:
                                 # Grab the number of bits from type_
                                 num_bits = type_[-2:]
-                                if num_bits not in {'32', '64'}:
+                                if num_bits not in {'32', '64'}:  # pragma: no cover
                                     raise TypeError(f'Unexpected number of bits: {num_bits}')
                                 return_type = f'{return_prefix}{num_bits}'
                         op = cls._typed_class(name, type_, return_type, gb_obj)
@@ -345,7 +337,7 @@ class UnaryOp(OpBase):
     @classmethod
     def _build(cls, name, func):
         if type(func) is not FunctionType:
-            raise TypeError(f'udf must be a function, not {type(func)}')
+            raise TypeError(f'UDF argument must be a function, not {type(func)}')
         if name is None:
             name = getattr(func, '__name__', '<anonymous_unary>')
         success = False
@@ -469,7 +461,7 @@ class BinaryOp(OpBase):
     @classmethod
     def _build(cls, name, func):
         if not isinstance(func, FunctionType):
-            raise TypeError(f'udf must be a function, not {type(func)}')
+            raise TypeError(f'UDF argument must be a function, not {type(func)}')
         if name is None:
             name = getattr(func, '__name__', '<anonymous_binary>')
         success = False
@@ -685,7 +677,7 @@ class Semiring(OpBase):
     def _build(cls, name, monoid, binaryop):
         if type(monoid) is not Monoid:
             raise TypeError(f'monoid must be a Monoid, not {type(monoid)}')
-        if type(binaryop) != BinaryOp:
+        if type(binaryop) is not BinaryOp:
             raise TypeError(f'binaryop must be a BinaryOp, not {type(binaryop)}')
         if name is None:
             name = f'{monoid.name}_{binaryop.name}'

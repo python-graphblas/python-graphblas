@@ -15,8 +15,7 @@ def __getattr__(name):
     if name in _SPECIAL_ATTRS:
         if _init_params is None:
             _init("suitesparse", True, automatic=True)
-        if name not in globals():
-            _load(name)
+        _load(name)
         return globals()[name]
     else:
         raise AttributeError(f"module {__name__!r} has not attribute {name!r}")
@@ -64,9 +63,7 @@ def _load(name):
         module = globals()[module_name]
         val = getattr(module, name)
         globals()[name] = val
-    elif name in _SPECIAL_ATTRS:
+    else:
         # Everything else is a module
         module = _importlib.import_module(f".{name}", __name__)
         globals()[name] = module
-    else:  # pragma: no cover
-        raise RuntimeError(name)  # shouldn't happen
