@@ -17,9 +17,13 @@ setup(
     packages=find_packages(exclude=['grblas.backends.python']),
     setup_requires=["cffi>=1.0.0", "pytest-runner"],
     cffi_modules=["grblas/backends/suitesparse/build.py:ffibuilder"],
+    python_requires=">=3.7",
     install_requires=["cffi>=1.0.0"],
     tests_require=["pytest", "pandas"],
+    license='Apache License 2.0',
+    keywords=["graphblas", "graph", "sparse", "matrix", "lagraph", "suitesparse"],
     classifiers=[
+        "Development Status :: 4 - Beta",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: MacOS :: MacOS X",
         "Operating System :: POSIX :: Linux",
@@ -33,4 +37,5 @@ setup(
         "Topic :: Scientific/Engineering",
         "Topic :: Scientific/Engineering :: Mathematics",
     ],
+    include_package_data=True,
 )

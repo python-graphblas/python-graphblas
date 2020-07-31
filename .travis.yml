@@ -26,7 +26,7 @@ install:
 script:
     - coverage run --branch -m pytest --runslow $BLOCKING
     # Test (and cover) automatic initialization
-    - coverage run -a --branch grblas/tests/auto_init.py
+    - coverage run -a --branch grblas/tests/test_auto_init.py
     # Make sure all top-level imports work
     - ( for attr in Matrix Scalar Vector backends base binary descriptor dtypes exceptions expr ffi formatting init io lib mask matrix monoid ops scalar semiring tests unary vector ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
     # Make sure notebooks execute
