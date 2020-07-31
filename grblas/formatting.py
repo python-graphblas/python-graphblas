@@ -183,13 +183,15 @@ def vector_header_html(vector, *, mask=None):
 
 def _format_html(name, header, df):
     if has_pandas:
+        state = ' open'
         with pd.option_context('display.show_dimensions', False, 'display.large_repr', 'truncate'):
             details = df._repr_html_()
     else:
+        state = ''
         details = '<em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em>'
     return (
         '<div>'
-        '<details>'
+        f'<details{state}>'
         '<summary>'
         f'<tt>{name}</tt>{header}'
         '</summary>'
