@@ -8,29 +8,6 @@ from .ops import get_typed_op
 ffi_new = ffi.new
 
 
-class _CScalar:
-    def __init__(self, scalar):
-        self.scalar = scalar
-        self.dtype = scalar.dtype
-
-    def __repr__(self):
-        return repr(self.scalar.value)
-
-    def _repr_html_(self):
-        return self.scalar._repr_html_()
-
-    @property
-    def _carg(self):
-        return self.scalar.value
-
-    def __eq__(self, other):
-        if type(other) is _CScalar:
-            return self.scalar == other.scalar
-        return self.scalar == other
-
-    __hash__ = None
-
-
 class Scalar(BaseType):
     """
     GraphBLAS Scalar
@@ -207,3 +184,26 @@ class ScalarExpression(BaseExpression):
     def _repr_html_(self):
         from .formatting import format_scalar_expression_html
         return format_scalar_expression_html(self)
+
+
+class _CScalar:
+    def __init__(self, scalar):
+        self.scalar = scalar
+        self.dtype = scalar.dtype
+
+    def __repr__(self):
+        return repr(self.scalar.value)
+
+    def _repr_html_(self):
+        return self.scalar._repr_html_()
+
+    @property
+    def _carg(self):
+        return self.scalar.value
+
+    def __eq__(self, other):
+        if type(other) is _CScalar:
+            return self.scalar == other.scalar
+        return self.scalar == other
+
+    __hash__ = None

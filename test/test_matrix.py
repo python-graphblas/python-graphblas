@@ -402,6 +402,10 @@ def test_assign_scalar(A):
     C[1, [2, 4]] = 0
     assert C.isequal(result_row)
     C = A.dup()
+    C[1, 2] = Scalar.from_value(0)
+    C[1, 4] = Scalar.from_value(0)
+    assert C.isequal(result_row)
+    C = A.dup()
     C[1, 2:5:2] = 0
     assert C.isequal(result_row)
     # Test column

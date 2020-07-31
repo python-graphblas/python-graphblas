@@ -289,10 +289,9 @@ class Matrix(BaseType):
         method_name = 'ewise_add'
         self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname='other')
         op = get_typed_op(op, self.dtype, other.dtype)
-        # TODO: add a note to the exception raised from _expect_op
         if require_monoid:
             self._expect_op(op, ('Monoid', 'Semiring'), within=method_name, argname='op',
-                            extra_message='require_monoid')
+                            extra_message='A BinaryOp may be given if require_monoid keyword is False')
         else:
             self._expect_op(op, ('BinaryOp', 'Monoid', 'Semiring'), within=method_name, argname='op')
         return MatrixExpression(
@@ -393,10 +392,10 @@ class Matrix(BaseType):
             effectively converting a BinaryOp into a UnaryOp
         """
         method_name = 'apply'
-        # TODO: give additional info in exception raised by _expect_op below
+        extra_message = 'apply only accepts UnaryOp with no scalars or BinaryOp with `left` or `right` scalar.'
         if left is None and right is None:
             op = get_typed_op(op, self.dtype)
-            self._expect_op(op, 'UnaryOp', within=method_name, argname='op')
+            self._expect_op(op, 'UnaryOp', within=method_name, argname='op', extra_message=extra_message)
             cfunc_name = 'GrB_Matrix_apply'
             args = [self]
             expr_repr = None
@@ -408,7 +407,7 @@ class Matrix(BaseType):
                     self._expect_type(left, Scalar, within=method_name, keyword_name='left',
                                       extra_message='Literal scalars also accepted.')
             op = get_typed_op(op, self.dtype, left.dtype)
-            self._expect_op(op, 'BinaryOp', within=method_name, argname='op')
+            self._expect_op(op, 'BinaryOp', within=method_name, argname='op', extra_message=extra_message)
             cfunc_name = f'GrB_Matrix_apply_BinaryOp1st_{left.dtype}'
             args = [_CScalar(left), self]
             expr_repr = '{1.name}.apply({op}, left={0})'
@@ -420,7 +419,7 @@ class Matrix(BaseType):
                     self._expect_type(right, Scalar, within=method_name, keyword_name='right',
                                       extra_message='Literal scalars also accepted.')
             op = get_typed_op(op, self.dtype, right.dtype)
-            self._expect_op(op, 'BinaryOp', within=method_name, argname='op')
+            self._expect_op(op, 'BinaryOp', within=method_name, argname='op', extra_message=extra_message)
             cfunc_name = f'GrB_Matrix_apply_BinaryOp2nd_{right.dtype}'
             args = [self, _CScalar(right)]
             expr_repr = '{0.name}.apply({op}, right={1})'

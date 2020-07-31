@@ -43,17 +43,39 @@ def _expect_type(self, x, types, **kwargs):
         raise TypeError(message) from None
 
 
-def _expect_op(self, op, values, *, within, argname=None, keyword_name=None, extra_message=None):
+def _expect_op_message(self, op, values, *, within, argname=None, keyword_name=None, extra_message=''):
     if type(values) is tuple:
         if op.opclass in values:
             return
     elif op.opclass == values:
         return
-    raise TypeError(f'{op.opclass} != {values} {extra_message}') from None
+    if argname:
+        argmsg = f'for argument `{argname}` '
+    elif keyword_name:
+        argmsg = f'for keyword argument `{keyword_name}=` '
+    else:  # pragma: no cover
+        argmsg = ''
+    if type(values) is tuple:
+        expected = ', '.join(values)
+    else:
+        expected = values
+    if extra_message:
+        extra_message = f'\n{extra_message}'
+    return (
+        f'Bad type {argmsg}in {type(self).__name__}.{within}(...).\n'
+        f'    - Expected type: {expected}.\n'
+        f'    - Got: {op.opclass}.'
+        f'{extra_message}'
+    )
+
+
+def _expect_op(self, op, values, **kwargs):
+    message = _expect_op_message(self, op, values, **kwargs)
+    if message is not None:
+        raise TypeError(message) from None
 
 
 def _check_mask(mask, output=None):
-    # XXX: perhaps check for Vector and Matrix, then Scalar
     if isinstance(mask, BaseType) or type(mask) is Mask:
         raise TypeError('Mask must indicate values (M.V) or structure (M.S)')
     if not isinstance(mask, Mask):
