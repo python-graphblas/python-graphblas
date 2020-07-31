@@ -6,7 +6,7 @@ _SPECIAL_ATTRS = {
     "ffi", "lib", "Matrix", "Vector", "Scalar",
     "base", "descriptor", "dtypes", "exceptions", "expr", "formatting", "io",
     "ops", "unary", "binary", "monoid", "semiring",
-    "matrix", "vector", "scalar",
+    "matrix", "vector", "scalar", "tests",
 }
 
 

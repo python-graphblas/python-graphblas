@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='grblas',
@@ -6,8 +6,7 @@ setup(
     description='Python interface to GraphBLAS',
     author='Jim Kitchen and Erik Welch',
     url='https://github.com/metagraph-dev/grblas',
-    packages=['grblas', 'grblas/backends', 'grblas/backends/suitesparse',
-              'grblas/binary', 'grblas/monoid', 'grblas/semiring', 'grblas/unary'],
+    packages=find_packages(exclude=['grblas.backends.python']),
     setup_requires=["cffi>=1.0.0", "pytest-runner"],
     cffi_modules=["grblas/backends/suitesparse/build.py:ffibuilder"],
     install_requires=["cffi>=1.0.0"],
