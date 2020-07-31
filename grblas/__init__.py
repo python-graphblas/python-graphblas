@@ -69,6 +69,7 @@ def _load(name):
         module = _importlib.import_module(f".{name}", __name__)
         globals()[name] = module
 
-from ._version import get_versions
+
+from ._version import get_versions  # noqa
 __version__ = get_versions()['version']
 del get_versions
