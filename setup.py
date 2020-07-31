@@ -1,8 +1,11 @@
 from setuptools import setup, find_packages
+import versioneer
+
 
 setup(
     name='grblas',
-    version='1.3.0',
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     description='Python interface to GraphBLAS',
     author='Jim Kitchen and Erik Welch',
     url='https://github.com/metagraph-dev/grblas',
