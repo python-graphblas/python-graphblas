@@ -1,6 +1,7 @@
 import pytest
 from grblas import Scalar
 from grblas import dtypes, binary
+from grblas.scalar import _CScalar
 
 
 @pytest.fixture
@@ -110,6 +111,7 @@ def test_isequal(s):
     assert Scalar.from_value(None, dtype='INT8').isequal(Scalar.from_value(None, dtype='INT16'))
 
 
+@pytest.mark.slow
 def test_isclose():
     s = Scalar.from_value(5.0)
     assert s.isclose(5)
@@ -164,3 +166,22 @@ def test_update(s):
     assert s == 5
     with pytest.raises(TypeError, match='is not supported'):
         s(accum=binary.plus) << 6
+    with pytest.raises(TypeError, match='Mask not allowed for Scalars'):
+        s(s)
+
+
+def test_not_hashable(s):
+    with pytest.raises(TypeError, match='unhashable type'):
+        {s}
+    with pytest.raises(TypeError, match='unhashable type'):
+        hash(s)
+
+
+def test_cscalar():
+    c1 = _CScalar(Scalar.from_value(5))
+    assert c1 == _CScalar(Scalar.from_value(5))
+    assert c1 == 5
+    assert c1 != _CScalar(Scalar.from_value(6))
+    assert c1 != 6
+    assert repr(c1) == '5'
+    assert c1._repr_html_() == c1.scalar._repr_html_()

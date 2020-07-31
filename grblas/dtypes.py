@@ -4,6 +4,19 @@ import numba
 from . import lib
 
 
+def libget(name):
+    """Helper to get items from GraphBLAS which might be GrB or GxB"""
+    try:
+        return getattr(lib, name)
+    except AttributeError:
+        ext_name = f"GxB_{name[4:]}"
+        try:
+            return getattr(lib, ext_name)
+        except AttributeError:
+            pass
+        raise
+
+
 class DataType:
     def __init__(self, name, gb_type, c_type, numba_type):
         self.name = name
@@ -15,14 +28,14 @@ class DataType:
         return self.name
 
     def __eq__(self, other):
-        if isinstance(other, DataType):
+        if type(other) is DataType:
             return self.gb_type == other.gb_type
         else:
             # Attempt to use `other` as a lookup key
             try:
-                other = lookup(other)
+                other = lookup_dtype(other)
                 return self == other
-            except KeyError:
+            except ValueError:
                 raise TypeError(f'Invalid or unknown datatype: {other}')
 
 
@@ -37,8 +50,8 @@ INT64 = DataType('INT64', lib.GrB_INT64, 'int64_t', numba.types.int64)
 UINT64 = DataType('UINT64', lib.GrB_UINT64, 'uint64_t', numba.types.uint64)
 FP32 = DataType('FP32', lib.GrB_FP32, 'float', numba.types.float32)
 FP64 = DataType('FP64', lib.GrB_FP64, 'double', numba.types.float64)
-FC32 = DataType('FC32', lib.GxB_FC32, 'float _Complex', numba.types.complex64)
-FC64 = DataType('FC64', lib.GxB_FC64, 'double _Complex', numba.types.complex128)
+FC32 = DataType('FC32', libget('GrB_FC32'), 'float _Complex', numba.types.complex64)
+FC64 = DataType('FC64', libget('GrB_FC64'), 'double _Complex', numba.types.complex128)
 
 # Used for testing user-defined functions
 _sample_values = {
@@ -73,15 +86,19 @@ _registry[np.dtype(np.float16)] = FP32
 _registry['float16'] = FP32
 
 # Add some common Python types as lookup keys
+_registry[bool] = BOOL
 _registry[int] = INT64
 _registry[float] = FP64
-_registry[bool] = BOOL
 _registry[complex] = FC64
+_registry['bool'] = BOOL
+_registry['int'] = INT64
+_registry['float'] = FP64  # Choose 'float' to match numpy/Python; c_type 'float' would be FP32
+_registry['complex'] = FC64
 
 
-def lookup(key):
+def lookup_dtype(key):
     # Check for silly lookup where key is already a DataType
-    if isinstance(key, DataType):
+    if type(key) is DataType:
         return key
     try:
         return _registry[key]
@@ -90,10 +107,10 @@ def lookup(key):
             return _registry[key.name]
         else:
             try:
-                return lookup(np.dtype(key))
+                return lookup_dtype(np.dtype(key))
             except Exception:
                 pass
-            raise
+            raise ValueError(f'Unknown dtype: {key}')
 
 
 _bits_pattern = re.compile(r'\D+(\d+)$')
@@ -121,7 +138,7 @@ def unify(type1, type2):
     num2 = int(_bits_pattern.match(type2.name).group(1))
     # Floats anywhere requires floats
     if type1.name[0] == 'F' or type2.name[0] == 'F':
-        return lookup(f'FP{max(num1, num2)}')
+        return lookup_dtype(f'FP{max(num1, num2)}')
     # Both ints or both uints is easy
     if type1.name[0] == type2.name[0]:
         return type2 if num2 > num1 else type1
@@ -135,4 +152,4 @@ def unify(type1, type2):
     maxnum = max(num1, num2)
     if maxnum > 64:
         return FP64
-    return lookup(f'INT{maxnum}')
+    return lookup_dtype(f'INT{maxnum}')

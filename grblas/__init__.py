@@ -2,10 +2,12 @@ import importlib as _importlib
 from . import backends, mask  # noqa
 
 _init_params = None
-_SPECIAL_ATTRS = {"lib", "ffi", "Matrix", "Vector", "Scalar",
-                  "exceptions", "matrix", "ops", "scalar", "vector",
-                  "unary", "binary", "monoid", "semiring",
-                  "base", "descriptor", "dtypes", "io", "formatting"}
+_SPECIAL_ATTRS = {
+    "ffi", "lib", "Matrix", "Vector", "Scalar",
+    "base", "descriptor", "dtypes", "exceptions", "expr", "formatting", "io",
+    "ops", "unary", "binary", "monoid", "semiring",
+    "matrix", "vector", "scalar",
+}
 
 
 def __getattr__(name):
@@ -62,9 +64,7 @@ def _load(name):
         module = globals()[module_name]
         val = getattr(module, name)
         globals()[name] = val
-    elif name in _SPECIAL_ATTRS:
+    else:
         # Everything else is a module
         module = _importlib.import_module(f".{name}", __name__)
         globals()[name] = module
-    else:
-        raise ValueError(name)

@@ -1,12 +1,8 @@
-from . import lib, ffi
+from . import ffi, lib
 
 
 class GrblasException(Exception):
     pass
-
-
-if lib is None or ffi is None:  # pragma: no cover
-    raise GrblasException('grblas must be initialized with the backend prior to use; call `grblas.init(backend)`')
 
 
 class NoValue(GrblasException):
@@ -61,6 +57,11 @@ class Panic(GrblasException):
     pass
 
 
+# Our errors
+class UdfParseError(GrblasException):
+    pass
+
+
 _error_code_lookup = {
     # Warning
     lib.GrB_NO_VALUE: NoValue,
@@ -83,14 +84,15 @@ _error_code_lookup = {
 
 def is_error(response_code, error_class):
     if response_code in _error_code_lookup:
-        if _error_code_lookup[response_code] == error_class:
+        if _error_code_lookup[response_code] == error_class:  # pragma: no branch
             return True
     return False
 
 
+GrB_SUCCESS = lib.GrB_SUCCESS
+
+
 def check_status(response_code):
-    if response_code != lib.GrB_SUCCESS:
-        text = ffi.string(lib.GrB_error())
-        if isinstance(text, bytes):
-            text = text.decode()
+    if response_code != GrB_SUCCESS:
+        text = ffi.string(lib.GrB_error()).decode()
         raise _error_code_lookup[response_code](text)

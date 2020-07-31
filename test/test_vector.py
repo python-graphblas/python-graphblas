@@ -312,6 +312,8 @@ def test_assign(v):
     w = v.dup()
     w[:5:2] << u
     assert w.isequal(result)
+    with pytest.raises(TypeError):
+        w[:] << u()
 
 
 def test_assign_scalar(v):
@@ -324,8 +326,14 @@ def test_assign_scalar(v):
     assert w.isequal(result)
     w = Vector.from_values([0, 1, 2], [1, 1, 1])
     s = Scalar.from_value(9)
+    w[0] = s
+    assert w.isequal(Vector.from_values([0, 1, 2], [9, 1, 1]))
     w[:] = s
     assert w.isequal(Vector.from_values([0, 1, 2], [9, 9, 9]))
+    with pytest.raises(TypeError, match='Bad type for arg'):
+        w[:] = object()
+    with pytest.raises(TypeError, match='Bad type for arg'):
+        w[1] = object()
 
 
 def test_assign_scalar_mask(v):
@@ -365,6 +373,12 @@ def test_apply_binary(v):
     w_left2 = v.apply(binary.minus, left=Scalar.from_value(2)).new()
     assert w_left.isequal(result_left)
     assert w_left2.isequal(result_left)
+    with pytest.raises(TypeError):
+        v.apply(binary.plus, left=v)
+    with pytest.raises(TypeError):
+        v.apply(binary.plus, right=v)
+    with pytest.raises(TypeError, match='Cannot provide both'):
+        v.apply(binary.plus, left=1, right=1)
 
 
 def test_reduce(v):

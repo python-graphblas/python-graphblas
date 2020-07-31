@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+import grblas
 from grblas import lib
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes, ops, exceptions
@@ -52,6 +53,14 @@ def test_find_opclass_invalid():
     # assert ops.find_opclass(lib.GrB_INP0)[1] == ops.UNKNOWN_OPCLASS
 
 
+def test_get_typed_op():
+    assert ops.get_typed_op(binary.bor, dtypes.INT64) is binary.bor[dtypes.INT64]
+    with pytest.raises(KeyError, match='bor does not work with FP64'):
+        ops.get_typed_op(binary.bor, dtypes.FP64)
+    with pytest.raises(TypeError, match='Unable to get typed operator'):
+        ops.get_typed_op(object(), dtypes.INT64)
+
+
 def test_unaryop_udf():
     def plus_one(x):
         return x + 1
@@ -69,6 +78,11 @@ def test_unaryop_udf():
     del unary.plus_one['INT8']
     assert 'INT8' not in unary.plus_one
     assert 'INT8' not in unary.plus_one.types
+    with pytest.raises(TypeError, match='UDF argument must be a function'):
+        UnaryOp.register_new('bad', object())
+    assert not hasattr(unary, 'bad')
+    with pytest.raises(exceptions.UdfParseError, match='Unable to parse function using Numba'):
+        UnaryOp.register_new('bad', lambda x: v)
 
 
 @pytest.mark.slow
@@ -87,6 +101,9 @@ def test_unaryop_parameterized():
     v10 = v.apply(op(x=10)).new()
     r10 = Vector.from_values([0, 1, 3], [11, 12, 6], dtype=dtypes.INT32)
     assert r10.isequal(v10, check_dtype=True)
+    UnaryOp._initialize()  # no-op
+    UnaryOp.register_new('plus_x_parameterized', plus_x, parameterized=True)
+    op = unary.plus_x_parameterized
     v11 = v.apply(op(x=10)['INT32']).new()
     assert r10.isequal(v11, check_dtype=True)
 
@@ -124,10 +141,24 @@ def test_binaryop_parameterized():
     x = x.ewise_mult(x, op(1)).new()
     assert v.isequal(x)
 
-    # TODO: when GraphBLAS 1.3 is supported
-    # v11 = v.apply(op(1), left=10)
-    # r11 = Vector.from_values([0, 1, 3], [12, 13, 7], dtype=dtypes.INT32)
-    # assert v11.isequal(r11, check_dtype=True)
+    assert v.isequal(Vector.from_values([0, 1, 3], [19, 35, -61], dtype=dtypes.INT32))
+    v11 = v.apply(op(1), left=10).new()
+    r11 = Vector.from_values([0, 1, 3], [30, 46, -50], dtype=dtypes.INT32)
+    # Should we check for dtype here?
+    # Is it okay if the literal scalar is an INT64, which causes the output to default to INT64?
+    assert v11.isequal(r11, check_dtype=False)
+
+    with pytest.raises(TypeError, match='UDF argument must be a function'):
+        BinaryOp.register_new('bad', object())
+    assert not hasattr(binary, 'bad')
+    with pytest.raises(exceptions.UdfParseError, match='Unable to parse function using Numba'):
+        BinaryOp.register_new('bad', lambda x, y: v)
+
+    def my_add(x, y):
+        return x + y
+
+    op = BinaryOp.register_anonymous(my_add)
+    assert op.name == 'my_add'
 
 
 @pytest.mark.slow
@@ -144,11 +175,14 @@ def test_monoid_parameterized():
         Monoid.register_anonymous(bin_op, lambda x: -x)
     with pytest.raises(ValueError, match='Signatures'):
         Monoid.register_anonymous(bin_op, lambda y=0: -y)
+    with pytest.raises(TypeError, match='binaryop must be parameterized'):
+        ops.ParameterizedMonoid('bad_monoid', binary.plus, 0)
 
     def plus_plus_x_identity(x=0):
         return -x
 
-    monoid = Monoid.register_anonymous(bin_op, plus_plus_x_identity)
+    monoid = Monoid.register_anonymous(bin_op, plus_plus_x_identity, name='my_monoid')
+    assert monoid.name == 'my_monoid'
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v0 = v.ewise_add(v, monoid).new()
     r0 = Vector.from_values([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
@@ -170,11 +204,14 @@ def test_monoid_parameterized():
 
     fv = v.apply(unary.identity).new(dtype=dtypes.FP64)
     bin_op = BinaryOp.register_anonymous(logaddexp, parameterized=True)
-    monoid = Monoid.register_anonymous(bin_op, -np.inf)
+    Monoid.register_new('user_defined_monoid', bin_op, -np.inf)
+    monoid = grblas.monoid.user_defined_monoid
     fv2 = fv.ewise_mult(fv, monoid(2)).new()
     plus1 = UnaryOp.register_anonymous(lambda x: x + 1)
     expected = fv.apply(plus1).new()
     assert fv2.isclose(expected, check_dtype=True)
+    with pytest.raises(TypeError, match='must be a BinaryOp'):
+        Monoid.register_anonymous(monoid, 0)
 
 
 @pytest.mark.slow
@@ -187,10 +224,13 @@ def test_semiring_parameterized():
     def plus_plus_x_identity(x=0):
         return -x
 
+    assert Semiring.register_anonymous(monoid.min, binary.plus).name == 'min_plus'
+
     bin_op = BinaryOp.register_anonymous(plus_plus_x, parameterized=True)
     mymonoid = Monoid.register_anonymous(bin_op, plus_plus_x_identity)
     # monoid and binaryop are both parameterized
-    mysemiring = Semiring.register_anonymous(mymonoid, bin_op)
+    mysemiring = Semiring.register_anonymous(mymonoid, bin_op, name='my_semiring')
+    assert mysemiring.name == 'my_semiring'
 
     A = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
     x = Vector.from_values([0, 1], [10, 20])
@@ -241,7 +281,8 @@ def test_semiring_parameterized():
         Semiring.register_anonymous(mymonoid, other_op)
 
     # only monoid is parameterized
-    mysemiring = Semiring.register_anonymous(mymonoid, binary.plus)
+    Semiring.register_new('my_special_semiring', mymonoid, binary.plus)
+    mysemiring = semiring.my_special_semiring
     B0 = A.mxm(A, semiring.plus_plus).new()
     B1 = A.mxm(A, mysemiring).new()
     B2 = A.mxm(A, mysemiring(0)).new()
@@ -255,6 +296,17 @@ def test_semiring_parameterized():
     B2 = A.mxm(A, mysemiring(0)).new()
     assert B0.isequal(B1)
     assert B0.isequal(B2)
+
+    with pytest.raises(TypeError, match='must be a Monoid'):
+        Semiring.register_anonymous(binary.plus, binary.plus)
+    with pytest.raises(TypeError, match='must be a BinaryOp'):
+        Semiring.register_anonymous(monoid.plus, monoid.plus)
+    with pytest.raises(TypeError, match='At least one of'):
+        ops.ParameterizedSemiring('bad_semiring', monoid.plus, binary.plus)
+    with pytest.raises(TypeError, match='monoid must be of type'):
+        ops.ParameterizedSemiring('bad_semiring', binary.plus, binary.plus)
+    with pytest.raises(TypeError, match='binaryop must be of'):
+        ops.ParameterizedSemiring('bad_semiring', monoid.plus, monoid.plus)
 
     # While we're here, let's check misc Matrix operations
     Adup = Matrix.from_values([0, 0, 0, 1, 1], [0, 0, 1, 0, 1], [100, 1, 2, 3, 4], dup_op=bin_op)
@@ -281,9 +333,8 @@ def test_semiring_parameterized():
 
     with pytest.raises(TypeError, match='Monoid'):
         A.reduce_scalar(bin_op).new()
-    # TODO: uncomment once GraphBLAS 1.3 is supported
-    # B = A.kronecker(A, bin_op).new()
-    # assert B.isequal(A.kronecker(A, binary.plus).new())
+    B = A.kronecker(A, bin_op).new()
+    assert B.isequal(A.kronecker(A, binary.plus).new())
 
 
 def test_unaryop_udf_bool_result():
@@ -365,6 +416,7 @@ def test_binary_updates():
     assert result3.isequal(Vector.from_values([0], [-2], dtype=dtypes.INT64), check_dtype=True)
 
 
+@pytest.mark.slow
 def test_nested_names():
     def plus_three(x):
         return x + 3
@@ -396,3 +448,5 @@ def test_nested_names():
 
     with pytest.raises(AttributeError):
         UnaryOp.register_new('incrementers', bad_will_overwrite_path)
+    with pytest.raises(AttributeError, match='already defined'):
+        UnaryOp.register_new('identity.newfunc', bad_will_overwrite_path)

@@ -89,6 +89,9 @@ def test_from_values():
         Matrix.from_values([], [], [], nrows=3, ncols=4)
     with pytest.raises(ValueError, match='Unable to infer'):
         Matrix.from_values([], [], [], dtype=dtypes.INT64)
+    with pytest.raises(ValueError, match='Unable to infer'):
+        # could also raise b/c rows and columns are different sizes
+        Matrix.from_values([0], [], [0], dtype=dtypes.INT64)
     C4 = Matrix.from_values([], [], [],  nrows=3, ncols=4, dtype=dtypes.INT64)
     C5 = Matrix.new(dtypes.INT64, nrows=3, ncols=4)
     assert C4.isequal(C5, check_dtype=True)
@@ -382,7 +385,13 @@ def test_assign_scalar(A):
     C[[1, 3, 5], [2, 4]] = 0
     assert C.isequal(result_block)
     C = A.dup()
+    C[[1, 3, 5], [2, 4]] = Scalar.from_value(0)
+    assert C.isequal(result_block)
+    C = A.dup()
     C[1::2, 2:5:2] = 0
+    assert C.isequal(result_block)
+    C = A.dup()
+    C[1::2, 2:5:2] = Scalar.from_value(0)
     assert C.isequal(result_block)
     # Test row
     result_row = Matrix.from_values(
@@ -391,6 +400,10 @@ def test_assign_scalar(A):
         [3, 2, 5, 3, 7, 3, 1, 7, 4, 3, 1, 0, 0])
     C = A.dup()
     C[1, [2, 4]] = 0
+    assert C.isequal(result_row)
+    C = A.dup()
+    C[1, 2] = Scalar.from_value(0)
+    C[1, 4] = Scalar.from_value(0)
     assert C.isequal(result_row)
     C = A.dup()
     C[1, 2:5:2] = 0
@@ -406,6 +419,28 @@ def test_assign_scalar(A):
     C = A.dup()
     C[1::2, 2] = 0
     assert C.isequal(result_column)
+
+
+def test_assign_bad(A):
+    with pytest.raises(TypeError, match='Bad type'):
+        A[0, 0] = object()
+    with pytest.raises(TypeError, match='Bad type'):
+        A[:, 0] = object()
+    with pytest.raises(TypeError, match='Bad type'):
+        A[0, :] = object()
+    with pytest.raises(TypeError, match='Bad type'):
+        A[:, :] = object()
+    with pytest.raises(TypeError, match='Bad type'):
+        A[0, 0] = A
+    with pytest.raises(TypeError, match='Bad type'):
+        A[:, 0] = A
+    with pytest.raises(TypeError, match='Bad type'):
+        A[0, :] = A
+    v = A[0, :].new()
+    with pytest.raises(TypeError, match='Bad type'):
+        A[0, 0] = v
+    with pytest.raises(TypeError, match='Bad type'):
+        A[:, :] = v
 
 
 def test_apply(A):
@@ -432,6 +467,12 @@ def test_apply_binary(A):
     w_left2 = A.apply(binary.minus, left=Scalar.from_value(8)).new()
     assert w_left.isequal(result_left)
     assert w_left2.isequal(result_left)
+    with pytest.raises(TypeError):
+        A.apply(binary.plus, left=A)
+    with pytest.raises(TypeError):
+        A.apply(binary.plus, right=A)
+    with pytest.raises(TypeError, match='Cannot provide both'):
+        A.apply(binary.plus, left=1, right=1)
 
 
 def test_reduce_row(A):
@@ -479,6 +520,8 @@ def test_transpose(A):
     C2 = A.T.new()
     assert C2.isequal(result)
     assert A.T.T is A
+    C3 = A.T.new(dtype=float)
+    assert C3.isequal(result)
 
 
 def test_kronecker():
@@ -643,3 +686,18 @@ def test_nested_matrix_operations():
             ).new(),
         ).new(),
     )
+
+
+def test_bad_init():
+    with pytest.raises(TypeError, match='CData'):
+        Matrix(None, float, name='bad_matrix')
+
+
+def test_no_equals(A):
+    with pytest.raises(TypeError, match='not defined for objects of type'):
+        A == A
+
+
+def test_bad_update(A):
+    with pytest.raises(TypeError, match='assignment value must be Expression'):
+        A << None

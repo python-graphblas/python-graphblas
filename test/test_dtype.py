@@ -1,5 +1,7 @@
 import pytest
+import numpy as np
 from grblas import dtypes, lib
+from grblas.dtypes import lookup_dtype
 
 all_dtypes = (
     dtypes.BOOL,
@@ -60,23 +62,27 @@ def test_gbtype():
 
 def test_lookup_by_name():
     for dt in all_dtypes:
-        assert dtypes.lookup(dt.name) is dt
+        assert lookup_dtype(dt.name) is dt
 
 
 def test_lookup_by_ctype():
     for dt in all_dtypes:
-        assert dtypes.lookup(dt.c_type) is dt
+        if dt.c_type == 'float':
+            # Choose 'float' to match numpy/Python, not C (where 'float' means FP32)
+            assert lookup_dtype(dt.c_type) is dtypes.FP64
+        else:
+            assert lookup_dtype(dt.c_type) is dt
 
 
 def test_lookup_by_gbtype():
     for dt in all_dtypes:
-        assert dtypes.lookup(dt.gb_type) is dt
+        assert lookup_dtype(dt.gb_type) is dt
 
 
 def test_lookup_by_dtype():
-    assert dtypes.lookup(bool) == dtypes.BOOL
-    assert dtypes.lookup(int) == dtypes.INT64
-    assert dtypes.lookup(float) == dtypes.FP64
+    assert lookup_dtype(bool) == dtypes.BOOL
+    assert lookup_dtype(int) == dtypes.INT64
+    assert lookup_dtype(float) == dtypes.FP64
 
 
 def test_unify_dtypes():
@@ -98,3 +104,12 @@ def test_dtype_bad_comparison():
         dtypes.BOOL == object()
     with pytest.raises(TypeError):
         object() != dtypes.BOOL
+
+
+def test_dtypes_match_numpy():
+    for key, val in dtypes._registry.items():
+        try:
+            npval = np.dtype(key)
+        except Exception:
+            continue
+        assert dtypes.lookup_dtype(npval) == val

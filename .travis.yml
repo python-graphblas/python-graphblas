@@ -1,12 +1,13 @@
-# This TravisCI script is very minimal and not very flexible.
-# It only tests one environment on Linux with Python 3.7 and 3.8.
-# We will eventually want to expand our test environments.
 language: python
 os: linux
 dist: xenial
 python:
     - "3.7"
     - "3.8"
+env:
+    - BLOCKING="--blocking"
+    - BLOCKING="--non-blocking"
+
 install:
     # https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/use-conda-with-travis-ci.html
     - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
@@ -17,13 +18,20 @@ install:
     - conda update -q conda
     - conda info -a
     # create and activate environment
-    - conda create -n grblas -c conda-forge python=$TRAVIS_PYTHON_VERSION pandas scipy networkx numba cffi graphblas pytest-runner coverage
+    - conda create -n grblas -c conda-forge python=$TRAVIS_PYTHON_VERSION pandas numba cffi graphblas pytest-runner coverage
     - conda activate grblas
     - python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
     - pip install -e .
 
 script:
-    - coverage run `which py.test` --runslow
+    - coverage run --branch -m pytest --runslow $BLOCKING
+    # Test (and cover) automatic initialization
+    - coverage run -a --branch test/auto_init.py
+    # Make sure all top-level imports work
+    - ( for attr in Matrix Scalar Vector backends base binary descriptor dtypes exceptions expr ffi formatting init io lib mask matrix monoid ops scalar semiring unary vector ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
+    # Make sure notebooks execute
+    - conda install -c conda-forge scipy networkx matplotlib nbconvert jupyter
+    - jupyter nbconvert --to notebook --execute notebooks/*ipynb
 
 after_success:
     - coverage report --show-missing
