@@ -465,7 +465,7 @@ def test_no_pandas_repr_html(A, C, v, w):
             '<div><details><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub></tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>grblas.Matrix</pre></td>\n'
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
@@ -486,7 +486,7 @@ def test_no_pandas_repr_html(A, C, v, w):
             '<div><details><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub>.T</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>grblas.TransposedMatrix</pre></td>\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>grblas.TransposedMatrix</pre></td>\n'
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
@@ -507,7 +507,7 @@ def test_no_pandas_repr_html(A, C, v, w):
             '<div><details><summary style="display:list-item; outline:none;"><tt>C.S</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>StructuralMask\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>StructuralMask\n'
             "of\n"
             "grblas.Matrix</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -530,7 +530,7 @@ def test_no_pandas_repr_html(A, C, v, w):
             '<div><details><summary style="display:list-item; outline:none;"><tt>v</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>grblas.Vector</pre></td>\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>grblas.Vector</pre></td>\n'
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>size</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
@@ -549,7 +549,7 @@ def test_no_pandas_repr_html(A, C, v, w):
             '<div><details><summary style="display:list-item; outline:none;"><tt>~w.V</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>ComplementedValueMask\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>ComplementedValueMask\n'
             "of\n"
             "grblas.Vector</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -575,7 +575,7 @@ def test_matrix_repr_html_small(A, B):
         '<div><details open><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub></tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>grblas.Matrix</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
@@ -632,7 +632,7 @@ def test_matrix_repr_html_small(A, B):
         '<div><details open><summary style="display:list-item; outline:none;"><tt>B<sub>1</sub></tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>grblas.Matrix</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
@@ -697,7 +697,7 @@ def test_matrix_repr_html_small(A, B):
         '<div><details open><summary style="display:list-item; outline:none;"><tt>B<sub>1</sub>.T</tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>grblas.TransposedMatrix</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>grblas.TransposedMatrix</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
@@ -757,7 +757,7 @@ def test_matrix_mask_repr_html_small(A):
         '<div><details open><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub>.S</tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>StructuralMask\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>StructuralMask\n'
         "of\n"
         "grblas.Matrix</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -816,7 +816,7 @@ def test_matrix_mask_repr_html_small(A):
         '<div><details open><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub>.V</tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>ValueMask\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>ValueMask\n'
         "of\n"
         "grblas.Matrix</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -875,7 +875,7 @@ def test_matrix_mask_repr_html_small(A):
         '<div><details open><summary style="display:list-item; outline:none;"><tt>~A<sub>1</sub>.S</tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>ComplementedStructuralMask\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>ComplementedStructuralMask\n'
         "of\n"
         "grblas.Matrix</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -934,7 +934,7 @@ def test_matrix_mask_repr_html_small(A):
         '<div><details open><summary style="display:list-item; outline:none;"><tt>~A<sub>1</sub>.V</tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>ComplementedValueMask\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>ComplementedValueMask\n'
         "of\n"
         "grblas.Matrix</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -997,7 +997,7 @@ def test_matrix_repr_html_large(C, D):
             '<div><details open><summary style="display:list-item; outline:none;"><tt>C</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>grblas.Matrix</pre></td>\n'
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
@@ -1132,7 +1132,7 @@ def test_matrix_repr_html_large(C, D):
             '<div><details open><summary style="display:list-item; outline:none;"><tt>C.T</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>grblas.TransposedMatrix</pre></td>\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>grblas.TransposedMatrix</pre></td>\n'
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
@@ -1259,7 +1259,7 @@ def test_matrix_repr_html_large(C, D):
             '<div><details open><summary style="display:list-item; outline:none;"><tt>D<sub>skinny_in_one_dim</sub></tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>grblas.Matrix</pre></td>\n'
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
@@ -1332,7 +1332,7 @@ def test_matrix_repr_html_large(C, D):
             '<div><details open><summary style="display:list-item; outline:none;"><tt>D<sub>skinny_in_one_dim</sub>.T</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>grblas.TransposedMatrix</pre></td>\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>grblas.TransposedMatrix</pre></td>\n'
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
@@ -1431,7 +1431,7 @@ def test_matrix_mask_repr_html_large(C):
             '<div><details open><summary style="display:list-item; outline:none;"><tt>C.S</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>StructuralMask\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>StructuralMask\n'
             "of\n"
             "grblas.Matrix</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -1568,7 +1568,7 @@ def test_matrix_mask_repr_html_large(C):
             '<div><details open><summary style="display:list-item; outline:none;"><tt>C.V</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>ValueMask\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>ValueMask\n'
             "of\n"
             "grblas.Matrix</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -1705,7 +1705,7 @@ def test_matrix_mask_repr_html_large(C):
             '<div><details open><summary style="display:list-item; outline:none;"><tt>~C.S</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>ComplementedStructuralMask\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>ComplementedStructuralMask\n'
             "of\n"
             "grblas.Matrix</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -1842,7 +1842,7 @@ def test_matrix_mask_repr_html_large(C):
             '<div><details open><summary style="display:list-item; outline:none;"><tt>~C.V</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>ComplementedValueMask\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>ComplementedValueMask\n'
             "of\n"
             "grblas.Matrix</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -1982,7 +1982,7 @@ def test_vector_repr_html_small(v):
         '<div><details open><summary style="display:list-item; outline:none;"><tt>v</tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>grblas.Vector</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
@@ -2041,7 +2041,7 @@ def test_vector_repr_html_large(w):
             '<div><details open><summary style="display:list-item; outline:none;"><tt>w</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>grblas.Vector</pre></td>\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>grblas.Vector</pre></td>\n'
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>size</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
@@ -2118,7 +2118,7 @@ def test_vector_mask_repr_html_small(v):
         '<div><details open><summary style="display:list-item; outline:none;"><tt>v.S</tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>StructuralMask\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>StructuralMask\n'
         "of\n"
         "grblas.Vector</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -2175,7 +2175,7 @@ def test_vector_mask_repr_html_small(v):
         '<div><details open><summary style="display:list-item; outline:none;"><tt>v.V</tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>ValueMask\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>ValueMask\n'
         "of\n"
         "grblas.Vector</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -2232,7 +2232,7 @@ def test_vector_mask_repr_html_small(v):
         '<div><details open><summary style="display:list-item; outline:none;"><tt>~v.S</tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>ComplementedStructuralMask\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>ComplementedStructuralMask\n'
         "of\n"
         "grblas.Vector</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -2289,7 +2289,7 @@ def test_vector_mask_repr_html_small(v):
         '<div><details open><summary style="display:list-item; outline:none;"><tt>~v.V</tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>ComplementedValueMask\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>ComplementedValueMask\n'
         "of\n"
         "grblas.Vector</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -2350,7 +2350,7 @@ def test_vector_mask_repr_html_large(w):
             '<div><details open><summary style="display:list-item; outline:none;"><tt>w.S</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>StructuralMask\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>StructuralMask\n'
             "of\n"
             "grblas.Vector</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -2426,7 +2426,7 @@ def test_vector_mask_repr_html_large(w):
             '<div><details open><summary style="display:list-item; outline:none;"><tt>w.V</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>ValueMask\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>ValueMask\n'
             "of\n"
             "grblas.Vector</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -2502,7 +2502,7 @@ def test_vector_mask_repr_html_large(w):
             '<div><details open><summary style="display:list-item; outline:none;"><tt>~w.S</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>ComplementedStructuralMask\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>ComplementedStructuralMask\n'
             "of\n"
             "grblas.Vector</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -2578,7 +2578,7 @@ def test_vector_mask_repr_html_large(w):
             '<div><details open><summary style="display:list-item; outline:none;"><tt>~w.V</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>ComplementedValueMask\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>ComplementedValueMask\n'
             "of\n"
             "grblas.Vector</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -2657,7 +2657,7 @@ def test_scalar_repr_html(s, t):
         "<div><tt>s<sub>1</sub></tt><div>\n"
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>grblas.Scalar</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>grblas.Scalar</pre></td>\n'
         "    <td><pre>value</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
         "  </tr>\n"
@@ -2674,7 +2674,7 @@ def test_scalar_repr_html(s, t):
         "<div><tt>t</tt><div>\n"
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>grblas.Scalar</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>grblas.Scalar</pre></td>\n'
         "    <td><pre>value</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
         "  </tr>\n"
@@ -2704,7 +2704,7 @@ def test_apply_repr_html(v):
         '<div style="padding:4px;"><details><summary style="display:list-item; outline:none;"><b><tt>grblas.VectorExpression:</tt></b><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>v.apply(unary.one[FP64])</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>v.apply(unary.one[FP64])</pre></td>\n'
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
         "  </tr>\n"
@@ -2717,7 +2717,7 @@ def test_apply_repr_html(v):
         '</summary><blockquote><div><details open><summary style="display:list-item; outline:none;"><tt>v</tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>grblas.Vector</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
@@ -2785,7 +2785,7 @@ def test_mxm_repr_html(A, B):
         '<div style="padding:4px;"><details><summary style="display:list-item; outline:none;"><b><tt>grblas.MatrixExpression:</tt></b><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>A<sub>1</sub>.mxm(B<sub>1</sub>, op=semiring.plus_times[INT64])</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>A<sub>1</sub>.mxm(B<sub>1</sub>, op=semiring.plus_times[INT64])</pre></td>\n'
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
@@ -2797,7 +2797,7 @@ def test_mxm_repr_html(A, B):
         '</summary><blockquote><div><details open><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub></tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>grblas.Matrix</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
@@ -2850,7 +2850,7 @@ def test_mxm_repr_html(A, B):
         '</div></details></div><div><details open><summary style="display:list-item; outline:none;"><tt>B<sub>1</sub></tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>grblas.Matrix</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
@@ -2928,7 +2928,7 @@ def test_mxv_repr_html(A, v):
         '<div style="padding:4px;"><details><summary style="display:list-item; outline:none;"><b><tt>grblas.VectorExpression:</tt></b><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>A<sub>1</sub>.mxv(v, op=semiring.plus_times[FP64])</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>A<sub>1</sub>.mxv(v, op=semiring.plus_times[FP64])</pre></td>\n'
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
         "  </tr>\n"
@@ -2941,7 +2941,7 @@ def test_mxv_repr_html(A, v):
         '</summary><blockquote><div><details open><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub></tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>grblas.Matrix</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
@@ -2994,7 +2994,7 @@ def test_mxv_repr_html(A, v):
         '</div></details></div><div><details open><summary style="display:list-item; outline:none;"><tt>v</tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>grblas.Vector</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
@@ -3053,7 +3053,7 @@ def test_matrix_reduce_columns_repr_html(A):
         '<div style="padding:4px;"><details><summary style="display:list-item; outline:none;"><b><tt>grblas.VectorExpression:</tt></b><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>A<sub>1</sub>.reduce_columns(monoid.plus[INT64])</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>A<sub>1</sub>.reduce_columns(monoid.plus[INT64])</pre></td>\n'
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
         "  </tr>\n"
@@ -3066,7 +3066,7 @@ def test_matrix_reduce_columns_repr_html(A):
         '</summary><blockquote><div><details open><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub></tt><div>\n'
         '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
+        '    <td rowspan="2" style="line-height:100%"><pre>grblas.Matrix</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
@@ -3137,7 +3137,7 @@ def test_matrix_reduce_repr_html(C, v):
             '<div style="padding:4px;"><details><summary style="display:list-item; outline:none;"><b><tt>grblas.ScalarExpression:</tt></b><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>C.reduce_scalar(monoid.plus[INT64])</pre></td>\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>C.reduce_scalar(monoid.plus[INT64])</pre></td>\n'
             "    <td><pre>dtype</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
@@ -3148,7 +3148,7 @@ def test_matrix_reduce_repr_html(C, v):
             '</summary><blockquote><div><details open><summary style="display:list-item; outline:none;"><tt>C</tt><div>\n'
             '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
-            "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
+            '    <td rowspan="2" style="line-height:100%"><pre>grblas.Matrix</pre></td>\n'
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"

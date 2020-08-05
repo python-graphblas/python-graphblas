@@ -165,7 +165,7 @@ def create_header_html(name, keys, vals):
     text = [
         '<div>\n<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
-        f"    <td rowspan=2><pre>{name}</pre></td>\n"
+        f'    <td rowspan="2" style="line-height:100%"><pre>{name}</pre></td>\n'
     ]
     text.extend(f"    <td><pre>{key}</pre></td>\n" for key in keys)
     text.append("  </tr>\n  <tr>\n")
