@@ -163,7 +163,7 @@ def vector_info(vector, *, mask=None, for_html=True):
 
 def create_header_html(name, keys, vals):
     text = [
-        '<div>\n<table style="border:1px solid black">\n'
+        '<div>\n<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         f"    <td rowspan=2><pre>{name}</pre></td>\n"
     ]
@@ -195,7 +195,7 @@ def _format_html(name, header, df):
     return (
         "<div>"
         f"<details{state}>"
-        "<summary>"
+        '<summary style="display:list-item; outline:none;">'
         f"<tt>{name}</tt>{header}"
         "</summary>"
         f"{details}"
@@ -246,7 +246,7 @@ def _format_expression(expr, header):
     return (
         '<div style="padding:4px;">'
         "<details>"
-        "<summary>"
+        '<summary style="display:list-item; outline:none;">'
         f"<b><tt>grblas.{type(expr).__name__}:</tt></b>"
         f"{header}"
         "</summary>"

@@ -462,8 +462,8 @@ def test_no_pandas_repr_html(A, C, v, w):
     try:
         html_printer(A, "A", indent=8)
         assert repr_html(A) == (
-            "<div><details><summary><tt>A<sub>1</sub></tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub></tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -483,8 +483,8 @@ def test_no_pandas_repr_html(A, C, v, w):
         )
         html_printer(A.T, "A.T", indent=8)
         assert repr_html(A.T) == (
-            "<div><details><summary><tt>A<sub>1</sub>.T</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub>.T</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>grblas.TransposedMatrix</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -504,8 +504,8 @@ def test_no_pandas_repr_html(A, C, v, w):
         )
         html_printer(C.S, "C.S", indent=8)
         assert repr_html(C.S) == (
-            "<div><details><summary><tt>C.S</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details><summary style="display:list-item; outline:none;"><tt>C.S</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>StructuralMask\n"
             "of\n"
@@ -527,8 +527,8 @@ def test_no_pandas_repr_html(A, C, v, w):
         )
         html_printer(v, "v", indent=8)
         assert repr_html(v) == (
-            "<div><details><summary><tt>v</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details><summary style="display:list-item; outline:none;"><tt>v</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>grblas.Vector</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -546,8 +546,8 @@ def test_no_pandas_repr_html(A, C, v, w):
         )
         html_printer(~w.V, "~w.V", indent=8)
         assert repr_html(~w.V) == (
-            "<div><details><summary><tt>~w.V</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details><summary style="display:list-item; outline:none;"><tt>~w.V</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>ComplementedValueMask\n"
             "of\n"
@@ -572,8 +572,8 @@ def test_no_pandas_repr_html(A, C, v, w):
 def test_matrix_repr_html_small(A, B):
     html_printer(A, "A")
     assert repr_html(A) == (
-        "<div><details open><summary><tt>A<sub>1</sub></tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<div><details open><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub></tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -629,8 +629,8 @@ def test_matrix_repr_html_small(A, B):
     )
     html_printer(B, "B")
     assert repr_html(B) == (
-        "<div><details open><summary><tt>B<sub>1</sub></tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<div><details open><summary style="display:list-item; outline:none;"><tt>B<sub>1</sub></tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -694,8 +694,8 @@ def test_matrix_repr_html_small(A, B):
     )
     html_printer(B.T, "B.T")
     assert repr_html(B.T) == (
-        "<div><details open><summary><tt>B<sub>1</sub>.T</tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<div><details open><summary style="display:list-item; outline:none;"><tt>B<sub>1</sub>.T</tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>grblas.TransposedMatrix</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -754,8 +754,8 @@ def test_matrix_repr_html_small(A, B):
 def test_matrix_mask_repr_html_small(A):
     html_printer(A.S, "A.S")
     assert repr_html(A.S) == (
-        "<div><details open><summary><tt>A<sub>1</sub>.S</tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<div><details open><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub>.S</tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>StructuralMask\n"
         "of\n"
@@ -813,8 +813,8 @@ def test_matrix_mask_repr_html_small(A):
     )
     html_printer(A.V, "A.V")
     assert repr_html(A.V) == (
-        "<div><details open><summary><tt>A<sub>1</sub>.V</tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<div><details open><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub>.V</tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>ValueMask\n"
         "of\n"
@@ -872,8 +872,8 @@ def test_matrix_mask_repr_html_small(A):
     )
     html_printer(~A.S, "~A.S")
     assert repr_html(~A.S) == (
-        "<div><details open><summary><tt>~A<sub>1</sub>.S</tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<div><details open><summary style="display:list-item; outline:none;"><tt>~A<sub>1</sub>.S</tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>ComplementedStructuralMask\n"
         "of\n"
@@ -931,8 +931,8 @@ def test_matrix_mask_repr_html_small(A):
     )
     html_printer(~A.V, "~A.V")
     assert repr_html(~A.V) == (
-        "<div><details open><summary><tt>~A<sub>1</sub>.V</tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<div><details open><summary style="display:list-item; outline:none;"><tt>~A<sub>1</sub>.V</tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>ComplementedValueMask\n"
         "of\n"
@@ -994,8 +994,8 @@ def test_matrix_repr_html_large(C, D):
     with pd.option_context("display.max_columns", 20):
         html_printer(C, "C", indent=8)
         assert repr_html(C) == (
-            "<div><details open><summary><tt>C</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details open><summary style="display:list-item; outline:none;"><tt>C</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -1129,8 +1129,8 @@ def test_matrix_repr_html_large(C, D):
         )
         html_printer(C.T, "C.T", indent=8)
         assert repr_html(C.T) == (
-            "<div><details open><summary><tt>C.T</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details open><summary style="display:list-item; outline:none;"><tt>C.T</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>grblas.TransposedMatrix</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -1256,8 +1256,8 @@ def test_matrix_repr_html_large(C, D):
         )
         html_printer(D, "D", indent=8)
         assert repr_html(D) == (
-            "<div><details open><summary><tt>D<sub>skinny_in_one_dim</sub></tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details open><summary style="display:list-item; outline:none;"><tt>D<sub>skinny_in_one_dim</sub></tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -1329,8 +1329,8 @@ def test_matrix_repr_html_large(C, D):
         )
         html_printer(D.T, "D.T", indent=8)
         assert repr_html(D.T) == (
-            "<div><details open><summary><tt>D<sub>skinny_in_one_dim</sub>.T</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details open><summary style="display:list-item; outline:none;"><tt>D<sub>skinny_in_one_dim</sub>.T</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>grblas.TransposedMatrix</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -1428,8 +1428,8 @@ def test_matrix_mask_repr_html_large(C):
     with pd.option_context("display.max_columns", 20):
         html_printer(C.S, "C.S", indent=8)
         assert repr_html(C.S) == (
-            "<div><details open><summary><tt>C.S</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details open><summary style="display:list-item; outline:none;"><tt>C.S</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>StructuralMask\n"
             "of\n"
@@ -1565,8 +1565,8 @@ def test_matrix_mask_repr_html_large(C):
         )
         html_printer(C.V, "C.V", indent=8)
         assert repr_html(C.V) == (
-            "<div><details open><summary><tt>C.V</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details open><summary style="display:list-item; outline:none;"><tt>C.V</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>ValueMask\n"
             "of\n"
@@ -1702,8 +1702,8 @@ def test_matrix_mask_repr_html_large(C):
         )
         html_printer(~C.S, "~C.S", indent=8)
         assert repr_html(~C.S) == (
-            "<div><details open><summary><tt>~C.S</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details open><summary style="display:list-item; outline:none;"><tt>~C.S</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>ComplementedStructuralMask\n"
             "of\n"
@@ -1839,8 +1839,8 @@ def test_matrix_mask_repr_html_large(C):
         )
         html_printer(~C.V, "~C.V", indent=8)
         assert repr_html(~C.V) == (
-            "<div><details open><summary><tt>~C.V</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details open><summary style="display:list-item; outline:none;"><tt>~C.V</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>ComplementedValueMask\n"
             "of\n"
@@ -1979,8 +1979,8 @@ def test_matrix_mask_repr_html_large(C):
 def test_vector_repr_html_small(v):
     html_printer(v, "v")
     assert repr_html(v) == (
-        "<div><details open><summary><tt>v</tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<div><details open><summary style="display:list-item; outline:none;"><tt>v</tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>grblas.Vector</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -2038,8 +2038,8 @@ def test_vector_repr_html_large(w):
     with pd.option_context("display.max_columns", 20):
         html_printer(w, "w", indent=8)
         assert repr_html(w) == (
-            "<div><details open><summary><tt>w</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details open><summary style="display:list-item; outline:none;"><tt>w</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>grblas.Vector</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
@@ -2115,8 +2115,8 @@ def test_vector_repr_html_large(w):
 def test_vector_mask_repr_html_small(v):
     html_printer(v.S, "v.S")
     assert repr_html(v.S) == (
-        "<div><details open><summary><tt>v.S</tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<div><details open><summary style="display:list-item; outline:none;"><tt>v.S</tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>StructuralMask\n"
         "of\n"
@@ -2172,8 +2172,8 @@ def test_vector_mask_repr_html_small(v):
     )
     html_printer(v.V, "v.V")
     assert repr_html(v.V) == (
-        "<div><details open><summary><tt>v.V</tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<div><details open><summary style="display:list-item; outline:none;"><tt>v.V</tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>ValueMask\n"
         "of\n"
@@ -2229,8 +2229,8 @@ def test_vector_mask_repr_html_small(v):
     )
     html_printer(~v.S, "~v.S")
     assert repr_html(~v.S) == (
-        "<div><details open><summary><tt>~v.S</tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<div><details open><summary style="display:list-item; outline:none;"><tt>~v.S</tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>ComplementedStructuralMask\n"
         "of\n"
@@ -2286,8 +2286,8 @@ def test_vector_mask_repr_html_small(v):
     )
     html_printer(~v.V, "~v.V")
     assert repr_html(~v.V) == (
-        "<div><details open><summary><tt>~v.V</tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<div><details open><summary style="display:list-item; outline:none;"><tt>~v.V</tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>ComplementedValueMask\n"
         "of\n"
@@ -2347,8 +2347,8 @@ def test_vector_mask_repr_html_large(w):
     with pd.option_context("display.max_columns", 20):
         html_printer(w.S, "w.S", indent=8)
         assert repr_html(w.S) == (
-            "<div><details open><summary><tt>w.S</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details open><summary style="display:list-item; outline:none;"><tt>w.S</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>StructuralMask\n"
             "of\n"
@@ -2423,8 +2423,8 @@ def test_vector_mask_repr_html_large(w):
         )
         html_printer(w.V, "w.V", indent=8)
         assert repr_html(w.V) == (
-            "<div><details open><summary><tt>w.V</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details open><summary style="display:list-item; outline:none;"><tt>w.V</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>ValueMask\n"
             "of\n"
@@ -2499,8 +2499,8 @@ def test_vector_mask_repr_html_large(w):
         )
         html_printer(~w.S, "~w.S", indent=8)
         assert repr_html(~w.S) == (
-            "<div><details open><summary><tt>~w.S</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details open><summary style="display:list-item; outline:none;"><tt>~w.S</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>ComplementedStructuralMask\n"
             "of\n"
@@ -2575,8 +2575,8 @@ def test_vector_mask_repr_html_large(w):
         )
         html_printer(~w.V, "~w.V", indent=8)
         assert repr_html(~w.V) == (
-            "<div><details open><summary><tt>~w.V</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '<div><details open><summary style="display:list-item; outline:none;"><tt>~w.V</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>ComplementedValueMask\n"
             "of\n"
@@ -2655,7 +2655,7 @@ def test_scalar_repr_html(s, t):
     html_printer(s, "s")
     assert repr_html(s) == (
         "<div><tt>s<sub>1</sub></tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>grblas.Scalar</pre></td>\n"
         "    <td><pre>value</pre></td>\n"
@@ -2672,7 +2672,7 @@ def test_scalar_repr_html(s, t):
     html_printer(t, "t")
     assert repr_html(t) == (
         "<div><tt>t</tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>grblas.Scalar</pre></td>\n"
         "    <td><pre>value</pre></td>\n"
@@ -2701,8 +2701,8 @@ def test_apply_repr(v):
 def test_apply_repr_html(v):
     html_printer(v.apply(unary.one), "v.apply(unary.one)")
     assert repr_html(v.apply(unary.one)) == (
-        '<div style="padding:4px;"><details><summary><b><tt>grblas.VectorExpression:</tt></b><div>\n'
-        '<table style="border:1px solid black">\n'
+        '<div style="padding:4px;"><details><summary style="display:list-item; outline:none;"><b><tt>grblas.VectorExpression:</tt></b><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>v.apply(unary.one[FP64])</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
@@ -2714,8 +2714,8 @@ def test_apply_repr_html(v):
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
-        "</summary><blockquote><div><details open><summary><tt>v</tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '</summary><blockquote><div><details open><summary style="display:list-item; outline:none;"><tt>v</tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>grblas.Vector</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -2782,8 +2782,8 @@ def test_mxm_repr(A, B):
 def test_mxm_repr_html(A, B):
     html_printer(A.mxm(B), "A.mxm(B)")
     assert repr_html(A.mxm(B)) == (
-        '<div style="padding:4px;"><details><summary><b><tt>grblas.MatrixExpression:</tt></b><div>\n'
-        '<table style="border:1px solid black">\n'
+        '<div style="padding:4px;"><details><summary style="display:list-item; outline:none;"><b><tt>grblas.MatrixExpression:</tt></b><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>A<sub>1</sub>.mxm(B<sub>1</sub>, op=semiring.plus_times[INT64])</pre></td>\n"
         "    <td><pre>nrows</pre></td>\n"
@@ -2794,8 +2794,8 @@ def test_mxm_repr_html(A, B):
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
-        "</summary><blockquote><div><details open><summary><tt>A<sub>1</sub></tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '</summary><blockquote><div><details open><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub></tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -2847,8 +2847,8 @@ def test_mxm_repr_html(A, B):
         "    </tr>\n"
         "  </tbody>\n"
         "</table>\n"
-        "</div></details></div><div><details open><summary><tt>B<sub>1</sub></tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '</div></details></div><div><details open><summary style="display:list-item; outline:none;"><tt>B<sub>1</sub></tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -2925,8 +2925,8 @@ def test_mxv_repr(A, v):
 def test_mxv_repr_html(A, v):
     html_printer(A.mxv(v), "A.mxv(v)")
     assert repr_html(A.mxv(v)) == (
-        '<div style="padding:4px;"><details><summary><b><tt>grblas.VectorExpression:</tt></b><div>\n'
-        '<table style="border:1px solid black">\n'
+        '<div style="padding:4px;"><details><summary style="display:list-item; outline:none;"><b><tt>grblas.VectorExpression:</tt></b><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>A<sub>1</sub>.mxv(v, op=semiring.plus_times[FP64])</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
@@ -2938,8 +2938,8 @@ def test_mxv_repr_html(A, v):
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
-        "</summary><blockquote><div><details open><summary><tt>A<sub>1</sub></tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '</summary><blockquote><div><details open><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub></tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -2991,8 +2991,8 @@ def test_mxv_repr_html(A, v):
         "    </tr>\n"
         "  </tbody>\n"
         "</table>\n"
-        "</div></details></div><div><details open><summary><tt>v</tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '</div></details></div><div><details open><summary style="display:list-item; outline:none;"><tt>v</tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>grblas.Vector</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -3050,8 +3050,8 @@ def test_matrix_reduce_columns_repr_html(A):
     # This is implmeneted using the transpose of A, so make sure we're oriented correctly!
     html_printer(A.reduce_columns(), "A.reduce_columns()")
     assert repr_html(A.reduce_columns()) == (
-        '<div style="padding:4px;"><details><summary><b><tt>grblas.VectorExpression:</tt></b><div>\n'
-        '<table style="border:1px solid black">\n'
+        '<div style="padding:4px;"><details><summary style="display:list-item; outline:none;"><b><tt>grblas.VectorExpression:</tt></b><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>A<sub>1</sub>.reduce_columns(monoid.plus[INT64])</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
@@ -3063,8 +3063,8 @@ def test_matrix_reduce_columns_repr_html(A):
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
-        "</summary><blockquote><div><details open><summary><tt>A<sub>1</sub></tt><div>\n"
-        '<table style="border:1px solid black">\n'
+        '</summary><blockquote><div><details open><summary style="display:list-item; outline:none;"><tt>A<sub>1</sub></tt><div>\n'
+        '<table style="border:1px solid black; max-width:100%;">\n'
         "  <tr>\n"
         "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
         "    <td><pre>nvals</pre></td>\n"
@@ -3134,8 +3134,8 @@ def test_matrix_reduce_repr_html(C, v):
     with pd.option_context("display.max_columns", 20):
         html_printer(C.reduce_scalar(), "C.reduce_scalar()", indent=8)
         assert repr_html(C.reduce_scalar()) == (
-            '<div style="padding:4px;"><details><summary><b><tt>grblas.ScalarExpression:</tt></b><div>\n'
-            '<table style="border:1px solid black">\n'
+            '<div style="padding:4px;"><details><summary style="display:list-item; outline:none;"><b><tt>grblas.ScalarExpression:</tt></b><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>C.reduce_scalar(monoid.plus[INT64])</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
@@ -3145,8 +3145,8 @@ def test_matrix_reduce_repr_html(C, v):
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
-            "</summary><blockquote><div><details open><summary><tt>C</tt><div>\n"
-            '<table style="border:1px solid black">\n'
+            '</summary><blockquote><div><details open><summary style="display:list-item; outline:none;"><tt>C</tt><div>\n'
+            '<table style="border:1px solid black; max-width:100%;">\n'
             "  <tr>\n"
             "    <td rowspan=2><pre>grblas.Matrix</pre></td>\n"
             "    <td><pre>nvals</pre></td>\n"
