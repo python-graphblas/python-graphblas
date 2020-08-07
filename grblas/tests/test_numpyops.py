@@ -45,7 +45,7 @@ def test_npunary():
         for unary_name in sorted(npunary._unary_names):
             op = getattr(npunary, unary_name)
             if gb_input.dtype.name not in op.types or unary_name in blacklist.get(gb_input.dtype.name, ()):
-                continue
+                continue  # pragma: no cover
             if gb_input.dtype.name.startswith('FC'):
                 # There are some nasty branch cuts as 1
                 gb_input = gb_input.dup()
@@ -68,7 +68,7 @@ def test_npunary():
             match = gb_result.ewise_mult(np_result, compare_op).new()
             match(accum=grblas.binary.lor) << gb_result.apply(npunary.isnan)
             compare = match.reduce(grblas.monoid.land).value
-            if not compare:
+            if not compare:  # pragma: no cover
                 print(unary_name, gb_input.dtype)
                 print(gb_result)
                 print(np_result)
@@ -146,7 +146,7 @@ def test_npbinary():
             match = gb_result.ewise_mult(np_result, compare_op).new()
             match(accum=grblas.binary.lor) << gb_result.apply(npunary.isnan)
             compare = match.reduce(grblas.monoid.land).value
-            if not compare:
+            if not compare:  # pragma: no cover
                 print(binary_name, gb_left.dtype)
                 print(gb_result)
                 print(np_result)
@@ -210,7 +210,7 @@ def test_npmonoid():
             op = getattr(npmonoid, binary_name)
             assert len(op.types) > 0, op.name
             if gb_left.dtype.name not in op.types or binary_name in blacklist.get(gb_left.dtype.name, ()):
-                continue
+                continue  # pragma: no cover
             with np.errstate(divide='ignore', over='ignore', under='ignore', invalid='ignore'):
                 gb_result = gb_left.ewise_mult(gb_right, op).new()
                 np_result = getattr(np, binary_name)(np_left, np_right)
@@ -219,7 +219,7 @@ def test_npmonoid():
             match = gb_result.ewise_mult(np_result, npbinary.equal).new()
             match(accum=grblas.binary.lor) << gb_result.apply(npunary.isnan)
             compare = match.reduce(grblas.monoid.land).value
-            if not compare:
+            if not compare:  # pragma: no cover
                 print(binary_name, gb_left.dtype)
                 print(gb_result)
                 print(np_result)

@@ -27,7 +27,7 @@ def _printer(text, name, repr_name, indent):
             prev_line = line
     if count == 1:
         print(f'{indent}    {prev_line!r}')
-    elif count > 1:
+    elif count > 1:  # pragma: no cover
         print(f'{indent}    {prev_line!r} * {count}')
     print(f'{indent}    {lines[-1]!r}')
     print(f'{indent})')
