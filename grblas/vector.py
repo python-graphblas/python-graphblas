@@ -1,5 +1,5 @@
 import itertools
-from . import ffi, lib, binary, monoid, semiring
+from . import ffi, lib, backend, binary, monoid, semiring
 from .base import BaseExpression, BaseType
 from .dtypes import libget, lookup_dtype, unify
 from .exceptions import check_status, is_error, NoValue
@@ -460,6 +460,36 @@ class Vector(BaseType):
     def _delete_element(self, resolved_indexes):
         index, _ = resolved_indexes.indices[0]
         check_status(lib.GrB_Vector_removeElement(self.gb_obj[0], index))
+
+    if backend == "pygraphblas":
+
+        def to_pygraphblas(self):
+            """ Convert to a new `pygraphblas.Vector`
+
+            This does not copy data.
+
+            This gives control of the underlying GraphBLAS object to `pygraphblas`.
+            This means operations on the current `grblas` object will fail!
+            """
+            import pygraphblas
+
+            vector = pygraphblas.Vector(self.gb_obj, self.dtype.gb_type)
+            self.gb_obj = ffi.NULL
+            return vector
+
+        @classmethod
+        def from_pygraphblas(cls, vector):
+            """ Convert a `pygraphblas.Vector` to a new `grblas.Vector`
+
+            This does not copy data.
+
+            This gives control of the underlying GraphBLAS object to `grblas`.
+            This means operations on the original `pygraphblas` object will fail!
+            """
+            dtype = lookup_dtype(vector.type)
+            rv = cls(vector.vector, dtype)
+            vector.vector = ffi.NULL
+            return rv
 
 
 class VectorExpression(BaseExpression):

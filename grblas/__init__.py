@@ -1,6 +1,7 @@
 import importlib as _importlib
 from . import backends, mask  # noqa
 
+backend = None
 _init_params = None
 _SPECIAL_ATTRS = {
     "ffi",
@@ -44,13 +45,29 @@ def __dir__():
 
 
 def init(backend="suitesparse", blocking=True):
+    """Initialize the chosen backend.
+
+    Parameters
+    ----------
+    backend : str, {"suitesparse", "pygraphblas"}
+    blocking : bool
+        Whether to call GrB_init with GrB_BLOCKING or GrB_NONBLOCKING
+
+    The "pygraphblas" backend uses the pygraphblas Python package.
+    If this backend is chosen, then GrB_init is not called (we defer to pygraphblas)
+    and the `blocking` parameter is ignored.
+
+    Choosing "pygraphblas" allows objects to be converted between the two libraries.
+    Specifically, `Scalar`, `Vector`, and `Matrix` objects from `grblas` will now
+    have `to_pygraphblas` and `from_pygraphblas` methods.
+    """
     _init(backend, blocking)
 
 
-def _init(backend, blocking, automatic=False):
-    global _init_params, lib, ffi
+def _init(backend_arg, blocking, automatic=False):
+    global _init_params, backend, lib, ffi
 
-    passed_params = dict(backend=backend, blocking=blocking, automatic=automatic)
+    passed_params = dict(backend=backend_arg, blocking=blocking, automatic=automatic)
     if _init_params is None:
         _init_params = passed_params
     else:
@@ -66,14 +83,23 @@ def _init(backend, blocking, automatic=False):
         # Already initialized with these parameters; nothing more to do
         return
 
-    ffi_backend = _importlib.import_module(f".backends.{backend}", __name__)
-    lib = ffi_backend.lib
-    ffi = ffi_backend.ffi
-    # This must be called before anything else happens
-    if blocking:
-        ffi_backend.lib.GrB_init(ffi_backend.lib.GrB_BLOCKING)
+    backend = backend_arg
+    if backend == "pygraphblas":  # pragma: no cover
+        import _pygraphblas
+
+        lib = _pygraphblas.lib
+        ffi = _pygraphblas.ffi
+        # I think pygraphblas is only non-blocking.
+        # Don't call GrB_init; defer to pygraphblas.
     else:
-        ffi_backend.lib.GrB_init(ffi_backend.lib.GrB_NONBLOCKING)
+        ffi_backend = _importlib.import_module(f".backends.{backend}", __name__)
+        lib = ffi_backend.lib
+        ffi = ffi_backend.ffi
+        # This must be called before anything else happens
+        if blocking:
+            ffi_backend.lib.GrB_init(ffi_backend.lib.GrB_BLOCKING)
+        else:
+            ffi_backend.lib.GrB_init(ffi_backend.lib.GrB_NONBLOCKING)
 
 
 def _load(name):

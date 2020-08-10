@@ -1,5 +1,5 @@
 import itertools
-from . import ffi
+from . import ffi, backend
 from .base import BaseExpression, BaseType
 from .binary import isclose
 from .dtypes import lookup_dtype
@@ -175,6 +175,26 @@ class Scalar(BaseType):
         new_scalar = cls.new(dtype, name=name)
         new_scalar.value = value
         return new_scalar
+
+    if backend == "pygraphblas":  # pragma: no cover
+
+        def to_pygraphblas(self):
+            """ Convert to a new `pygraphblas.Scalar`
+
+            This copies data.
+            """
+            import pygraphblas
+
+            return pygraphblas.Scalar.from_value(self.value)
+
+        @classmethod
+        def from_pygraphblas(cls, scalar):
+            """ Convert a `pygraphblas.Scalar` to a new `grblas.Scalar`
+
+            This copies data.
+            """
+            dtype = lookup_dtype(scalar.type)
+            return cls.from_value(scalar[0], dtype)
 
 
 class ScalarExpression(BaseExpression):

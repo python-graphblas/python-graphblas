@@ -1,5 +1,5 @@
 import itertools
-from . import ffi, lib, binary, monoid, semiring
+from . import ffi, lib, backend, binary, monoid, semiring
 from .base import BaseExpression, BaseType
 from .dtypes import libget, lookup_dtype, unify
 from .exceptions import check_status, is_error, NoValue
@@ -670,6 +670,36 @@ class Matrix(BaseType):
         row, _ = resolved_indexes.indices[0]
         col, _ = resolved_indexes.indices[1]
         check_status(lib.GrB_Matrix_removeElement(self.gb_obj[0], row, col))
+
+    if backend == "pygraphblas":  # pragma: no cover
+
+        def to_pygraphblas(self):
+            """ Convert to a new `pygraphblas.Matrix`
+
+            This does not copy data.
+
+            This gives control of the underlying GraphBLAS object to `pygraphblas`.
+            This means operations on the current `grblas` object will fail!
+            """
+            import pygraphblas
+
+            matrix = pygraphblas.Matrix(self.gb_obj, self.dtype.gb_type)
+            self.gb_obj = ffi.NULL
+            return matrix
+
+        @classmethod
+        def from_pygraphblas(cls, matrix):
+            """ Convert a `pygraphblas.Matrix` to a new `grblas.Matrix`
+
+            This does not copy data.
+
+            This gives control of the underlying GraphBLAS object to `grblas`.
+            This means operations on the original `pygraphblas` object will fail!
+            """
+            dtype = lookup_dtype(matrix.type)
+            rv = cls(matrix.matrix, dtype)
+            matrix.matrix = ffi.NULL
+            return rv
 
 
 class MatrixExpression(BaseExpression):
