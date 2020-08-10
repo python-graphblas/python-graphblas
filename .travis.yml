@@ -1,3 +1,4 @@
+sudo: false
 language: python
 os: linux
 dist: xenial
@@ -34,7 +35,7 @@ script:
     - jupyter nbconvert --to notebook --execute notebooks/*ipynb
     # Style checks
     - flake8 grblas
-    - black grblas --check
+    - black grblas --check --diff
 
 after_success:
     - coverage report --show-missing
