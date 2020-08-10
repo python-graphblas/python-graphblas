@@ -19,31 +19,31 @@ all_dtypes = (
 
 
 def test_names():
-    assert dtypes.BOOL.name == 'BOOL'
-    assert dtypes.INT8.name == 'INT8'
-    assert dtypes.INT16.name == 'INT16'
-    assert dtypes.INT32.name == 'INT32'
-    assert dtypes.INT64.name == 'INT64'
-    assert dtypes.UINT8.name == 'UINT8'
-    assert dtypes.UINT16.name == 'UINT16'
-    assert dtypes.UINT32.name == 'UINT32'
-    assert dtypes.UINT64.name == 'UINT64'
-    assert dtypes.FP32.name == 'FP32'
-    assert dtypes.FP64.name == 'FP64'
+    assert dtypes.BOOL.name == "BOOL"
+    assert dtypes.INT8.name == "INT8"
+    assert dtypes.INT16.name == "INT16"
+    assert dtypes.INT32.name == "INT32"
+    assert dtypes.INT64.name == "INT64"
+    assert dtypes.UINT8.name == "UINT8"
+    assert dtypes.UINT16.name == "UINT16"
+    assert dtypes.UINT32.name == "UINT32"
+    assert dtypes.UINT64.name == "UINT64"
+    assert dtypes.FP32.name == "FP32"
+    assert dtypes.FP64.name == "FP64"
 
 
 def test_ctype():
-    assert dtypes.BOOL.c_type == '_Bool'
-    assert dtypes.INT8.c_type == 'int8_t'
-    assert dtypes.INT16.c_type == 'int16_t'
-    assert dtypes.INT32.c_type == 'int32_t'
-    assert dtypes.INT64.c_type == 'int64_t'
-    assert dtypes.UINT8.c_type == 'uint8_t'
-    assert dtypes.UINT16.c_type == 'uint16_t'
-    assert dtypes.UINT32.c_type == 'uint32_t'
-    assert dtypes.UINT64.c_type == 'uint64_t'
-    assert dtypes.FP32.c_type == 'float'
-    assert dtypes.FP64.c_type == 'double'
+    assert dtypes.BOOL.c_type == "_Bool"
+    assert dtypes.INT8.c_type == "int8_t"
+    assert dtypes.INT16.c_type == "int16_t"
+    assert dtypes.INT32.c_type == "int32_t"
+    assert dtypes.INT64.c_type == "int64_t"
+    assert dtypes.UINT8.c_type == "uint8_t"
+    assert dtypes.UINT16.c_type == "uint16_t"
+    assert dtypes.UINT32.c_type == "uint32_t"
+    assert dtypes.UINT64.c_type == "uint64_t"
+    assert dtypes.FP32.c_type == "float"
+    assert dtypes.FP64.c_type == "double"
 
 
 def test_gbtype():
@@ -67,7 +67,7 @@ def test_lookup_by_name():
 
 def test_lookup_by_ctype():
     for dt in all_dtypes:
-        if dt.c_type == 'float':
+        if dt.c_type == "float":
             # Choose 'float' to match numpy/Python, not C (where 'float' means FP32)
             assert lookup_dtype(dt.c_type) is dtypes.FP64
         else:

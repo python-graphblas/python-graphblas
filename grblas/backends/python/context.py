@@ -14,10 +14,11 @@ def handle_panic(func):
     def new_func(*args, **kwargs):
         try:
             if global_context is None:
-                raise GraphBlasException('Context has not be initialized')
+                raise GraphBlasException("Context has not be initialized")
             return func(*args, **kwargs)
         except Exception as e:
             return_error(GrB_Info.GrB_PANIC, str(e))
+
     return new_func
 
 
@@ -39,9 +40,11 @@ def GrB_init(mode):
         if mode is not GrB_Mode.GrB_BLOCKING and mode is not GrB_Mode.GrB_NONBLOCKING:
             return_error(GrB_Info.GrB_INVALID_VALUE)
         if global_context is not None:
-            return_error(GrB_Info.GrB_INVALID_VALUE, 'Context has already been initialized')
+            return_error(GrB_Info.GrB_INVALID_VALUE, "Context has already been initialized")
         elif global_context.mode is None:
-            return_error(GrB_Info.GrB_INVALID_VALUE, 'Context has been finalized and cannot be reused')
+            return_error(
+                GrB_Info.GrB_INVALID_VALUE, "Context has been finalized and cannot be reused",
+            )
         global_context = Context(mode)
         return GrB_Info.GrB_SUCCESS
     except Exception as e:
@@ -52,7 +55,7 @@ def GrB_finalize():
     try:
         global global_context
         if global_context is None:
-            raise GraphBlasException('Context is not initialized')
+            raise GraphBlasException("Context is not initialized")
         global_context._mode = None
         return GrB_Info.GrB_SUCCESS
     except Exception as e:

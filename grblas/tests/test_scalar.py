@@ -11,12 +11,12 @@ def s():
 
 def test_new():
     s = Scalar.new(dtypes.INT8)
-    assert s.dtype == 'INT8'
+    assert s.dtype == "INT8"
     assert s.value is None
     s.value = 0
     assert s.is_empty is False
     s2 = Scalar.new(bool)
-    assert s2.dtype == 'BOOL'
+    assert s2.dtype == "BOOL"
     assert s2.value is None
     assert bool(s2) is False
     s2.value = False
@@ -34,8 +34,17 @@ def test_dup(s):
     s4 = Scalar.from_value(-2.5, dtype=dtypes.FP64)
     s_empty = Scalar.new(dtypes.FP64)
     s_unempty = Scalar.from_value(0.0)
-    for dtype, val in [('INT8', -2), ('INT16', -2), ('INT32', -2), ('UINT8', 2**8 - 2), ('UINT16', 2**16 - 2),
-                       ('UINT32', 2**32 - 2), ('UINT64', 2**64 - 2), ('BOOL', True), ('FP32', -2.5)]:
+    for dtype, val in [
+        ("INT8", -2),
+        ("INT16", -2),
+        ("INT32", -2),
+        ("UINT8", 2 ** 8 - 2),
+        ("UINT16", 2 ** 16 - 2),
+        ("UINT32", 2 ** 32 - 2),
+        ("UINT64", 2 ** 64 - 2),
+        ("BOOL", True),
+        ("FP32", -2.5),
+    ]:
         s5 = s4.dup(dtype=dtype)
         assert s5.dtype == dtype and s5.value == val
         s6 = s_empty.dup(dtype=dtype)
@@ -51,7 +60,7 @@ def test_from_value():
     assert s.dtype == bool
     assert s.value is False
     s2 = Scalar.from_value(-1.1)
-    assert s2.dtype == 'FP64'
+    assert s2.dtype == "FP64"
     assert s2.value == -1.1
 
 
@@ -76,7 +85,7 @@ def test_equal(s):
 
 
 def test_truthy(s):
-    assert s, 's did not register as truthy'
+    assert s, "s did not register as truthy"
     with pytest.raises(AssertionError):
         assert not s
     s2 = Scalar.from_value(True)
@@ -105,10 +114,10 @@ def test_isequal(s):
     with pytest.raises(TypeError):
         s.isequal(object())
     assert not s.isequal(Scalar.from_value(None, dtype=s.dtype))
-    t = Scalar.from_value(5, dtype='INT8')
+    t = Scalar.from_value(5, dtype="INT8")
     assert s.isequal(t)
     assert not s.isequal(t, check_dtype=True)
-    assert Scalar.from_value(None, dtype='INT8').isequal(Scalar.from_value(None, dtype='INT16'))
+    assert Scalar.from_value(None, dtype="INT8").isequal(Scalar.from_value(None, dtype="INT16"))
 
 
 @pytest.mark.slow
@@ -124,7 +133,7 @@ def test_isclose():
         s.isclose(object())
     assert not s.isclose(Scalar.from_value(5), check_dtype=True)
     assert not s.isclose(Scalar.from_value(None, dtype=s.dtype))
-    assert Scalar.from_value(None, dtype='FP64').isequal(Scalar.from_value(None, dtype='FP32'))
+    assert Scalar.from_value(None, dtype="FP64").isequal(Scalar.from_value(None, dtype="FP32"))
 
 
 def test_nvals(s):
@@ -140,9 +149,9 @@ def test_unsupported_ops(s):
         s.V
     with pytest.raises(AttributeError):
         s.T
-    with pytest.raises(TypeError, match='is not subscriptable'):
+    with pytest.raises(TypeError, match="is not subscriptable"):
         s[0]
-    with pytest.raises(TypeError, match='does not support'):
+    with pytest.raises(TypeError, match="does not support"):
         s[0] = 0
     with pytest.raises(TypeError, match="doesn't support"):
         del s[0]
@@ -160,20 +169,20 @@ def test_update(s):
     assert s == 2
     s << Scalar.from_value(3)
     assert s == 3
-    with pytest.raises(TypeError, match='an integer is required'):
+    with pytest.raises(TypeError, match="an integer is required"):
         s << Scalar.from_value(4.4)
     s() << 5
     assert s == 5
-    with pytest.raises(TypeError, match='is not supported'):
+    with pytest.raises(TypeError, match="is not supported"):
         s(accum=binary.plus) << 6
-    with pytest.raises(TypeError, match='Mask not allowed for Scalars'):
+    with pytest.raises(TypeError, match="Mask not allowed for Scalars"):
         s(s)
 
 
 def test_not_hashable(s):
-    with pytest.raises(TypeError, match='unhashable type'):
+    with pytest.raises(TypeError, match="unhashable type"):
         {s}
-    with pytest.raises(TypeError, match='unhashable type'):
+    with pytest.raises(TypeError, match="unhashable type"):
         hash(s)
 
 
@@ -183,5 +192,5 @@ def test_cscalar():
     assert c1 == 5
     assert c1 != _CScalar(Scalar.from_value(6))
     assert c1 != 6
-    assert repr(c1) == '5'
+    assert repr(c1) == "5"
     assert c1._repr_html_() == c1.scalar._repr_html_()

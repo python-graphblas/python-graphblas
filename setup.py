@@ -6,21 +6,21 @@ with open("README.md") as f:
     long_description = f.read()
 
 setup(
-    name='grblas',
+    name="grblas",
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
-    description='Python interface to GraphBLAS',
+    description="Python interface to GraphBLAS",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    author='Jim Kitchen and Erik Welch',
-    url='https://github.com/metagraph-dev/grblas',
-    packages=find_packages(exclude=['grblas.backends.python']),
+    author="Jim Kitchen and Erik Welch",
+    url="https://github.com/metagraph-dev/grblas",
+    packages=find_packages(exclude=["grblas.backends.python"]),
     setup_requires=["cffi>=1.0.0", "pytest-runner"],
     cffi_modules=["grblas/backends/suitesparse/build.py:ffibuilder"],
     python_requires=">=3.7",
     install_requires=["cffi>=1.0.0"],
     tests_require=["pytest", "pandas"],
-    license='Apache License 2.0',
+    license="Apache License 2.0",
     keywords=["graphblas", "graph", "sparse", "matrix", "lagraph", "suitesparse"],
     classifiers=[
         "Development Status :: 4 - Beta",

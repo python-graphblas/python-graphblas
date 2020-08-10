@@ -11,23 +11,20 @@ def A():
     data = [
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
-        [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]
+        [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4],
     ]
     return Matrix.from_values(*data)
 
 
 @pytest.fixture
 def v():
-    data = [
-        [1, 3, 4, 6],
-        [1, 1, 2, 0]
-    ]
+    data = [[1, 3, 4, 6], [1, 1, 2, 0]]
     return Vector.from_values(*data)
 
 
 def test_new():
     u = Vector.new(dtypes.INT8, 17)
-    assert u.dtype == 'INT8'
+    assert u.dtype == "INT8"
     assert u.nvals == 0
     assert u.size == 17
 
@@ -65,14 +62,14 @@ def test_from_values():
     assert u3.nvals == 2  # duplicates were combined
     assert u3.dtype == int
     assert u3[1].value == 6  # 2*3
-    with pytest.raises(ValueError, match='Duplicate indices found'):
+    with pytest.raises(ValueError, match="Duplicate indices found"):
         # Duplicate indices requires a dup_op
         Vector.from_values([0, 1, 1], [True, True, True])
-    with pytest.raises(ValueError, match='No values provided. Unable to determine type'):
+    with pytest.raises(ValueError, match="No values provided. Unable to determine type"):
         Vector.from_values([], [])
-    with pytest.raises(ValueError, match='No values provided. Unable to determine type'):
+    with pytest.raises(ValueError, match="No values provided. Unable to determine type"):
         Vector.from_values([], [], size=10)
-    with pytest.raises(ValueError, match='No indices provided. Unable to infer size'):
+    with pytest.raises(ValueError, match="No indices provided. Unable to infer size"):
         Vector.from_values([], [], dtype=dtypes.INT64)
     u4 = Vector.from_values([], [], size=10, dtype=dtypes.INT64)
     u5 = Vector.new(dtypes.INT64, size=10)
@@ -257,7 +254,7 @@ def test_ewise_add(v):
     # what about default for bool?
     b1 = Vector.from_values([0, 1, 2, 3], [True, False, True, False])
     b2 = Vector.from_values([0, 1, 2, 3], [True, True, False, False])
-    with pytest.raises(KeyError, match='plus does not work'):
+    with pytest.raises(KeyError, match="plus does not work"):
         b1.ewise_add(b2).new()
 
 
@@ -284,11 +281,11 @@ def test_extract_fancy_scalars(v):
     assert s.dtype == dtypes.FP64
 
     t = Scalar.new(float)
-    with pytest.raises(TypeError, match='is not supported'):
+    with pytest.raises(TypeError, match="is not supported"):
         t(accum=binary.plus) << s
-    with pytest.raises(TypeError, match='is not supported'):
+    with pytest.raises(TypeError, match="is not supported"):
         t(accum=binary.plus) << 1
-    with pytest.raises(TypeError, match='Mask not allowed for Scalars'):
+    with pytest.raises(TypeError, match="Mask not allowed for Scalars"):
         t(mask=t) << s
 
     s << v[1]
@@ -299,7 +296,7 @@ def test_extract_fancy_scalars(v):
     t = Scalar.new(float)
     t() << v[1]
     assert t.value == 1.0
-    with pytest.raises(TypeError, match='Scalar accumulation with extract element'):
+    with pytest.raises(TypeError, match="Scalar accumulation with extract element"):
         t(accum=binary.plus) << v[0]
 
 
@@ -330,9 +327,9 @@ def test_assign_scalar(v):
     assert w.isequal(Vector.from_values([0, 1, 2], [9, 1, 1]))
     w[:] = s
     assert w.isequal(Vector.from_values([0, 1, 2], [9, 9, 9]))
-    with pytest.raises(TypeError, match='Bad type for arg'):
+    with pytest.raises(TypeError, match="Bad type for arg"):
         w[:] = object()
-    with pytest.raises(TypeError, match='Bad type for arg'):
+    with pytest.raises(TypeError, match="Bad type for arg"):
         w[1] = object()
 
 
@@ -377,7 +374,7 @@ def test_apply_binary(v):
         v.apply(binary.plus, left=v)
     with pytest.raises(TypeError):
         v.apply(binary.plus, right=v)
-    with pytest.raises(TypeError, match='Cannot provide both'):
+    with pytest.raises(TypeError, match="Cannot provide both"):
         v.apply(binary.plus, left=1, right=1)
 
 
@@ -392,7 +389,7 @@ def test_reduce(v):
     assert v.reduce().value == 4
     # Test default for bool
     b1 = Vector.from_values([0, 1], [True, False])
-    with pytest.raises(KeyError, match='plus does not work'):
+    with pytest.raises(KeyError, match="plus does not work"):
         # KeyError here is kind of weird
         b1.reduce()
 
@@ -430,11 +427,11 @@ def test_isequal(v):
     assert not u.isequal(v)
     u2 = Vector.from_values([1], [1], size=7)
     assert not u2.isequal(v)
-    u3 = Vector.from_values([1, 3, 4, 6], [1., 1., 2., 0.])
-    assert not u3.isequal(v, check_dtype=True), 'different datatypes are not equal'
-    u4 = Vector.from_values([1, 3, 4, 6], [1., 1+1e-9, 1.999999999999, 0.])
+    u3 = Vector.from_values([1, 3, 4, 6], [1.0, 1.0, 2.0, 0.0])
+    assert not u3.isequal(v, check_dtype=True), "different datatypes are not equal"
+    u4 = Vector.from_values([1, 3, 4, 6], [1.0, 1 + 1e-9, 1.999999999999, 0.0])
     assert not u4.isequal(v)
-    u5 = Vector.from_values([1, 3, 4, 5], [1., 1., 2., 3], size=u4.size)
+    u5 = Vector.from_values([1, 3, 4, 5], [1.0, 1.0, 2.0, 3], size=u4.size)
     assert not u4.isequal(u5)
 
 
@@ -447,16 +444,16 @@ def test_isclose(v):
     assert not u2.isclose(v)
     u3 = Vector.from_values([1, 2, 3, 4, 6], [1, 1, 1, 2, 0], size=7)  # extra values
     assert not u3.isclose(v)
-    u4 = Vector.from_values([1, 3, 4, 6], [1., 1., 2., 0.])
-    assert not u4.isclose(v, check_dtype=True), 'different datatypes are not equal'
-    u5 = Vector.from_values([1, 3, 4, 6], [1., 1 + 1e-9, 1.999999999999, 0.])
+    u4 = Vector.from_values([1, 3, 4, 6], [1.0, 1.0, 2.0, 0.0])
+    assert not u4.isclose(v, check_dtype=True), "different datatypes are not equal"
+    u5 = Vector.from_values([1, 3, 4, 6], [1.0, 1 + 1e-9, 1.999999999999, 0.0])
     assert u5.isclose(v)
-    u6 = Vector.from_values([1, 3, 4, 6], [1., 1 + 1e-4, 1.99999, 0.])
+    u6 = Vector.from_values([1, 3, 4, 6], [1.0, 1 + 1e-4, 1.99999, 0.0])
     assert u6.isclose(v, rel_tol=1e-3)
     # isclose should consider `inf == inf`
     u7 = Vector.from_values([1, 3], [-np.inf, np.inf])
     assert u7.isclose(u7, rel_tol=1e-8)
-    u4b = Vector.from_values([1, 3, 4, 5], [1., 1., 2., 0.], size=u4.size)
+    u4b = Vector.from_values([1, 3, 4, 5], [1.0, 1.0, 2.0, 0.0], size=u4.size)
     assert not u4.isclose(u4b)
 
 
@@ -465,7 +462,7 @@ def test_binary_op(v):
     v2[1] = 0
     w = v.ewise_mult(v2, binary.gt).new()
     result = Vector.from_values([1, 3, 4, 6], [True, False, False, False])
-    assert w.dtype == 'BOOL'
+    assert w.dtype == "BOOL"
     assert w.isequal(result)
 
 

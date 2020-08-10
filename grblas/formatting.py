@@ -3,6 +3,7 @@ from .vector import Vector
 
 try:
     import pandas as pd
+
     has_pandas = True
 except ImportError:  # pragma: no cover
     has_pandas = False
@@ -13,7 +14,7 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
         if mask is None:
             submatrix = matrix
         else:
-            submatrix = Matrix.new('UINT8', matrix.nrows, matrix.ncols, name='')
+            submatrix = Matrix.new("UINT8", matrix.nrows, matrix.ncols, name="")
             if mask.structure:
                 submatrix(matrix.S)[:, :] = 0 if mask.complement else 1
             else:
@@ -26,26 +27,26 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
             columns = slice(None)
         if type(matrix) is TransposedMatrix:
             parent = matrix._matrix
-            submatrix = Matrix.new(parent.dtype, parent.nrows, parent.ncols, name='')
+            submatrix = Matrix.new(parent.dtype, parent.nrows, parent.ncols, name="")
             submatrix(parent.S)[columns, rows] = 0
             submatrix(submatrix.S) << parent
             if row_offset > 0 or column_offset > 0:
-                submatrix = submatrix[column_offset:, row_offset:].new(name='')
+                submatrix = submatrix[column_offset:, row_offset:].new(name="")
             submatrix = submatrix.T
         else:
             if mask is None:
-                submatrix = Matrix.new(matrix.dtype, matrix.nrows, matrix.ncols, name='')
+                submatrix = Matrix.new(matrix.dtype, matrix.nrows, matrix.ncols, name="")
                 submatrix(matrix.S)[rows, columns] = 0
                 submatrix(submatrix.S) << matrix
             else:
-                submatrix = Matrix.new('UINT8', matrix.nrows, matrix.ncols, name='')
+                submatrix = Matrix.new("UINT8", matrix.nrows, matrix.ncols, name="")
                 if mask.structure:
                     submatrix(matrix.S)[rows, columns] = 0 if mask.complement else 1
                 else:
                     submatrix(matrix.S)[rows, columns] = 1 if mask.complement else 0
                     submatrix(matrix.V)[rows, columns] = 0 if mask.complement else 1
             if row_offset > 0 or column_offset > 0:
-                submatrix = submatrix[row_offset:, column_offset:].new(name='')
+                submatrix = submatrix[row_offset:, column_offset:].new(name="")
     rows, cols, vals = submatrix.to_values()
     df.values[rows, cols] = vals
 
@@ -55,7 +56,7 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
         if mask is None:
             subvector = vector
         else:
-            subvector = Vector.new('UINT8', vector.size, name='')
+            subvector = Vector.new("UINT8", vector.size, name="")
             if mask.structure:
                 subvector(vector.S)[:] = 0 if mask.complement else 1
             else:
@@ -63,18 +64,18 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
                 subvector(vector.V)[:] = 0 if mask.complement else 1
     else:
         if mask is None:
-            subvector = Vector.new(vector.dtype, vector.size, name='')
+            subvector = Vector.new(vector.dtype, vector.size, name="")
             subvector(vector.S)[columns] = 0
             subvector(subvector.S) << vector
         else:
-            subvector = Vector.new('UINT8', vector.size, name='')
+            subvector = Vector.new("UINT8", vector.size, name="")
             if mask.structure:
                 subvector(vector.S)[columns] = 0 if mask.complement else 1
             else:
                 subvector(vector.S)[columns] = 1 if mask.complement else 0
                 subvector(vector.V)[columns] = 0 if mask.complement else 1
         if column_offset > 0:
-            subvector = subvector[column_offset:].new(name='')
+            subvector = subvector[column_offset:].new(name="")
     cols, vals = subvector.to_values()
     df.values[0, cols] = vals
 
@@ -116,8 +117,10 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
     df = pd.DataFrame(columns=columns, index=rows)
     for row_group, row_offset in row_groups:
         for column_group, column_offset in column_groups:
-            _update_matrix_dataframe(df, matrix, row_group, row_offset, column_group, column_offset, mask=mask)
-    return df.where(pd.notnull(df), '')
+            _update_matrix_dataframe(
+                df, matrix, row_group, row_offset, column_group, column_offset, mask=mask,
+            )
+    return df.where(pd.notnull(df), "")
 
 
 def _get_vector_dataframe(vector, max_columns, *, mask=None):
@@ -126,21 +129,21 @@ def _get_vector_dataframe(vector, max_columns, *, mask=None):
     if max_columns is None:  # pragma: no branch
         max_columns = _get_max_columns()
     columns, column_groups = _get_chunk(vector.size, max_columns, max_columns)
-    df = pd.DataFrame(columns=columns, index=[''])
+    df = pd.DataFrame(columns=columns, index=[""])
     for column_group, column_offset in column_groups:
         _update_vector_dataframe(df, vector, column_group, column_offset, mask=mask)
-    return df.where(pd.notnull(df), '')
+    return df.where(pd.notnull(df), "")
 
 
 def matrix_info(matrix, *, mask=None, for_html=True):
     if mask is not None:
         if for_html:
-            name = f'{type(mask).__name__}\nof\ngrblas.{type(matrix).__name__}'
+            name = f"{type(mask).__name__}\nof\ngrblas.{type(matrix).__name__}"
         else:
-            name = [f'{type(mask).__name__}', f'of grblas.{type(matrix).__name__}']
+            name = [f"{type(mask).__name__}", f"of grblas.{type(matrix).__name__}"]
     else:
-        name = f'grblas.{type(matrix).__name__}'
-    keys = ['nvals', 'nrows', 'ncols', 'dtype']
+        name = f"grblas.{type(matrix).__name__}"
+    keys = ["nvals", "nrows", "ncols", "dtype"]
     vals = [matrix.nvals, matrix.nrows, matrix.ncols, matrix.dtype.name]
     return name, keys, vals
 
@@ -148,27 +151,27 @@ def matrix_info(matrix, *, mask=None, for_html=True):
 def vector_info(vector, *, mask=None, for_html=True):
     if mask is not None:
         if for_html:
-            name = f'{type(mask).__name__}\nof\ngrblas.{type(vector).__name__}'
+            name = f"{type(mask).__name__}\nof\ngrblas.{type(vector).__name__}"
         else:
-            name = [f'{type(mask).__name__}', f'of grblas.{type(vector).__name__}']
+            name = [f"{type(mask).__name__}", f"of grblas.{type(vector).__name__}"]
     else:
-        name = f'grblas.{type(vector).__name__}'
-    keys = ['nvals', 'size', 'dtype']
+        name = f"grblas.{type(vector).__name__}"
+    keys = ["nvals", "size", "dtype"]
     vals = [vector.nvals, vector.size, vector.dtype.name]
     return name, keys, vals
 
 
 def create_header_html(name, keys, vals):
     text = [
-        '<div>\n<table style="border:1px solid black">\n'
-        '  <tr>\n'
-        f'    <td rowspan=2><pre>{name}</pre></td>\n'
+        '<div>\n<table style="border:1px solid black; max-width:100%;">\n'
+        "  <tr>\n"
+        f'    <td rowspan="2" style="line-height:100%"><pre>{name}</pre></td>\n'
     ]
-    text.extend(f'    <td><pre>{key}</pre></td>\n' for key in keys)
-    text.append('  </tr>\n  <tr>\n')
-    text.extend(f'    <td>{val}</td>\n' for val in vals)
-    text.append('  </tr>\n</table>\n</div>\n')
-    return ''.join(text)
+    text.extend(f"    <td><pre>{key}</pre></td>\n" for key in keys)
+    text.append("  </tr>\n  <tr>\n")
+    text.extend(f"    <td>{val}</td>\n" for val in vals)
+    text.append("  </tr>\n</table>\n</div>\n")
+    return "".join(text)
 
 
 def matrix_header_html(matrix, *, mask=None):
@@ -183,21 +186,21 @@ def vector_header_html(vector, *, mask=None):
 
 def _format_html(name, header, df):
     if has_pandas:
-        state = ' open'
-        with pd.option_context('display.show_dimensions', False, 'display.large_repr', 'truncate'):
+        state = " open"
+        with pd.option_context("display.show_dimensions", False, "display.large_repr", "truncate"):
             details = df._repr_html_()
     else:
-        state = ''
-        details = '<em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em>'
+        state = ""
+        details = "<em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em>"
     return (
-        '<div>'
-        f'<details{state}>'
-        '<summary>'
-        f'<tt>{name}</tt>{header}'
-        '</summary>'
-        f'{details}'
-        '</details>'
-        '</div>'
+        "<div>"
+        f"<details{state}>"
+        '<summary style="display:list-item; outline:none;">'
+        f"<tt>{name}</tt>{header}"
+        "</summary>"
+        f"{details}"
+        "</details>"
+        "</div>"
     )
 
 
@@ -222,86 +225,92 @@ def format_vector_html(vector, *, max_columns=None, mask=None):
 
 
 def format_scalar_html(scalar):
-    header = create_header_html('grblas.Scalar', ['value', 'dtype'], [scalar.value, scalar.dtype])
-    return f'<div><tt>{scalar._name_html}</tt>{header}</div>'
+    header = create_header_html("grblas.Scalar", ["value", "dtype"], [scalar.value, scalar.dtype])
+    return f"<div><tt>{scalar._name_html}</tt>{header}</div>"
 
 
 def format_scalar(scalar):
-    return create_header('grblas.Scalar', ['value', 'dtype'], [scalar.value, scalar.dtype], name=scalar.name)
+    return create_header(
+        "grblas.Scalar", ["value", "dtype"], [scalar.value, scalar.dtype], name=scalar.name,
+    )
 
 
 def _format_expression(expr, header):
     pos_to_arg = {}
     for i, arg in enumerate(expr.args):
-        pos = expr.expr_repr.find('{%s' % i)  # -1 if not found
+        pos = expr.expr_repr.find("{%s" % i)  # -1 if not found
         if pos >= 0:  # pragma: no branch
             pos_to_arg[pos] = arg
     args = [pos_to_arg[pos] for pos in sorted(pos_to_arg)]
-    arg_string = ''.join(x._repr_html_() for x in args if hasattr(x, '_repr_html_'))
+    arg_string = "".join(x._repr_html_() for x in args if hasattr(x, "_repr_html_"))
     return (
         '<div style="padding:4px;">'
-        '<details>'
-        '<summary>'
-        f'<b><tt>grblas.{type(expr).__name__}:</tt></b>'
-        f'{header}'
-        '</summary>'
-        '<blockquote>'
-        f'{arg_string}'
-        '</blockquote>'
-        '</details>'
-        '<em>'
-        'Do <code>expr.new()</code> or <code>other << expr</code> to calculate the expression.'
-        '</em>'
-        '</div>'
+        "<details>"
+        '<summary style="display:list-item; outline:none;">'
+        f"<b><tt>grblas.{type(expr).__name__}:</tt></b>"
+        f"{header}"
+        "</summary>"
+        "<blockquote>"
+        f"{arg_string}"
+        "</blockquote>"
+        "</details>"
+        "<em>"
+        "Do <code>expr.new()</code> or <code>other << expr</code> to calculate the expression."
+        "</em>"
+        "</div>"
     )
 
 
 def format_matrix_expression_html(expr):
     expr_html = expr._format_expr_html()
-    header = create_header_html(expr_html, ['nrows', 'ncols', 'dtype'], [expr.nrows, expr.ncols, expr.dtype])
+    header = create_header_html(
+        expr_html, ["nrows", "ncols", "dtype"], [expr.nrows, expr.ncols, expr.dtype]
+    )
     return _format_expression(expr, header)
 
 
 def format_matrix_expression(expr):
     expr_repr = expr._format_expr()
-    name = f'grblas.{type(expr).__name__}'
+    name = f"grblas.{type(expr).__name__}"
     header = create_header(
         expr_repr,
-        ['nrows', 'ncols', 'dtype'],
+        ["nrows", "ncols", "dtype"],
         [expr.nrows, expr.ncols, expr.dtype],
         name=name,
         quote=False,
     )
-    return f'{header}\n\nDo expr.new() or other << expr to calculate the expression.'
+    return f"{header}\n\nDo expr.new() or other << expr to calculate the expression."
 
 
 def format_vector_expression_html(expr):
     expr_html = expr._format_expr_html()
-    header = create_header_html(expr_html, ['size', 'dtype'], [expr.size, expr.dtype])
+    header = create_header_html(expr_html, ["size", "dtype"], [expr.size, expr.dtype])
     return _format_expression(expr, header)
 
 
 def format_vector_expression(expr):
     expr_repr = expr._format_expr()
-    name = f'grblas.{type(expr).__name__}'
-    header = create_header(expr_repr, ['size', 'dtype'], [expr.size, expr.dtype], name=name, quote=False)
-    return f'{header}\n\nDo expr.new() or other << expr to calculate the expression.'
+    name = f"grblas.{type(expr).__name__}"
+    header = create_header(
+        expr_repr, ["size", "dtype"], [expr.size, expr.dtype], name=name, quote=False
+    )
+    return f"{header}\n\nDo expr.new() or other << expr to calculate the expression."
 
 
 def format_scalar_expression_html(expr):
     expr_html = expr._format_expr_html()
-    header = create_header_html(expr_html, ['dtype'], [expr.dtype])
+    header = create_header_html(expr_html, ["dtype"], [expr.dtype])
     return _format_expression(expr, header)
 
 
 def format_scalar_expression(expr):
     expr_repr = expr._format_expr()
-    name = f'grblas.{type(expr).__name__}'
-    header = create_header(expr_repr, ['dtype'], [expr.dtype], name=name, quote=False)
-    return f'{header}\n\nDo expr.new() or other << expr to calculate the expression.'
+    name = f"grblas.{type(expr).__name__}"
+    header = create_header(expr_repr, ["dtype"], [expr.dtype], name=name, quote=False)
+    return f"{header}\n\nDo expr.new() or other << expr to calculate the expression."
 
 
-def create_header(type_name, keys, vals, *, lower_border=False, name='', quote=True):
+def create_header(type_name, keys, vals, *, lower_border=False, name="", quote=True):
     vals = [str(x) for x in vals]
     if name and quote:
         name = f'"{name}"'
@@ -322,29 +331,33 @@ def create_header(type_name, keys, vals, *, lower_border=False, name='', quote=T
         name_width = max(name_width, len(name))
         lines = [f"{name.ljust(name_width)}{''.join(key_text)}"]
         lines.extend(line.ljust(name_width) for line in type_name)
-        lines[-1] += ''.join(val_text)
+        lines[-1] += "".join(val_text)
     if lower_border:
-        lines.append('-'*len(lines[0]))
-    return '\n'.join(lines)
+        lines.append("-" * len(lines[0]))
+    return "\n".join(lines)
 
 
 def format_matrix(matrix, *, max_rows=None, min_rows=None, max_columns=None, mask=None):
     name, keys, vals = matrix_info(matrix, mask=mask, for_html=False)
-    header = create_header(name, keys, vals, lower_border=has_pandas, name=matrix.name if mask is None else mask.name)
+    header = create_header(
+        name, keys, vals, lower_border=has_pandas, name=matrix.name if mask is None else mask.name,
+    )
     if has_pandas:
         df = _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, mask=mask)
-        with pd.option_context('display.show_dimensions', False, 'display.large_repr', 'truncate'):
+        with pd.option_context("display.show_dimensions", False, "display.large_repr", "truncate"):
             df_repr = df.__repr__()
-        return f'{header}\n{df_repr}'
+        return f"{header}\n{df_repr}"
     return header
 
 
 def format_vector(vector, *, max_columns=None, mask=None):
     name, keys, vals = vector_info(vector, mask=mask, for_html=False)
-    header = create_header(name, keys, vals, lower_border=has_pandas, name=vector.name if mask is None else mask.name)
+    header = create_header(
+        name, keys, vals, lower_border=has_pandas, name=vector.name if mask is None else mask.name,
+    )
     if has_pandas:
         df = _get_vector_dataframe(vector, max_columns, mask=mask)
-        with pd.option_context('display.show_dimensions', False, 'display.large_repr', 'truncate'):
+        with pd.option_context("display.show_dimensions", False, "display.large_repr", "truncate"):
             df_repr = df.__repr__()
-        return f'{header}\n{df_repr}'
+        return f"{header}\n{df_repr}"
     return header

@@ -13,21 +13,24 @@ class Scalar(BaseType):
     GraphBLAS Scalar
     Pseudo-object for GraphBLAS functions which accumlate into a scalar type
     """
+
     _is_scalar = True
     _name_counter = itertools.count()
 
     def __init__(self, gb_obj, dtype, *, empty=False, name=None):
         if name is None:
-            name = f's_{next(Scalar._name_counter)}'
+            name = f"s_{next(Scalar._name_counter)}"
         super().__init__(gb_obj, dtype, name)
         self._is_empty = empty
 
     def __repr__(self):
         from .formatting import format_scalar
+
         return format_scalar(self)
 
     def _repr_html_(self):
         from .formatting import format_scalar_html
+
         return format_scalar_html(self)
 
     def __eq__(self, other):
@@ -51,10 +54,15 @@ class Scalar(BaseType):
             if other is None:
                 return self.is_empty
             try:
-                other = Scalar.from_value(other, name='s_isequal')
+                other = Scalar.from_value(other, name="s_isequal")
             except TypeError:
-                self._expect_type(other, Scalar, within='isequal', argname='other',
-                                  extra_message='Literal scalars also accepted.')
+                self._expect_type(
+                    other,
+                    Scalar,
+                    within="isequal",
+                    argname="other",
+                    extra_message="Literal scalars also accepted.",
+                )
             # Don't check dtype if we had to infer dtype of `other`
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:
@@ -77,10 +85,15 @@ class Scalar(BaseType):
             if other is None:
                 return self.is_empty
             try:
-                other = Scalar.from_value(other, name='s_isclose')
+                other = Scalar.from_value(other, name="s_isclose")
             except TypeError:
-                self._expect_type(other, Scalar, within='isclose', argname='other',
-                                  extra_message='Literal scalars also accepted.')
+                self._expect_type(
+                    other,
+                    Scalar,
+                    within="isclose",
+                    argname="other",
+                    extra_message="Literal scalars also accepted.",
+                )
             # Don't check dtype if we had to infer dtype of `other`
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:
@@ -145,7 +158,7 @@ class Scalar(BaseType):
         Create a new empty Scalar from the given type
         """
         dtype = lookup_dtype(dtype)
-        new_scalar_pointer = ffi_new(f'{dtype.c_type}*')
+        new_scalar_pointer = ffi_new(f"{dtype.c_type}*")
         return cls(new_scalar_pointer, dtype, name=name, empty=True)
 
     @classmethod
@@ -156,7 +169,9 @@ class Scalar(BaseType):
             try:
                 dtype = lookup_dtype(type(value))
             except ValueError:
-                raise TypeError(f'Argument of from_value must be a known scalar type, not {type(value)}')
+                raise TypeError(
+                    f"Argument of from_value must be a known scalar type, not {type(value)}"
+                )
         new_scalar = cls.new(dtype, name=name)
         new_scalar.value = value
         return new_scalar
@@ -167,7 +182,7 @@ class ScalarExpression(BaseExpression):
 
     @property
     def value(self):
-        return self.new(name='s_value').value
+        return self.new(name="s_value").value
 
     def construct_output(self, dtype=None, *, name=None):
         if dtype is None:
@@ -179,10 +194,12 @@ class ScalarExpression(BaseExpression):
 
     def __repr__(self):
         from .formatting import format_scalar_expression
+
         return format_scalar_expression(self)
 
     def _repr_html_(self):
         from .formatting import format_scalar_expression_html
+
         return format_scalar_expression_html(self)
 
 

@@ -11,29 +11,31 @@ NULL = ffi.NULL
 CData = ffi.CData
 
 
-def _expect_type_message(self, x, types, *, within, argname=None, keyword_name=None, extra_message=''):
+def _expect_type_message(
+    self, x, types, *, within, argname=None, keyword_name=None, extra_message=""
+):
     if type(types) is tuple:
         if type(x) in types:
             return
     elif type(x) is types:
         return
     if argname:
-        argmsg = f'for argument `{argname}` '
+        argmsg = f"for argument `{argname}` "
     elif keyword_name:
-        argmsg = f'for keyword argument `{keyword_name}=` '
+        argmsg = f"for keyword argument `{keyword_name}=` "
     else:
-        argmsg = ''
+        argmsg = ""
     if type(types) is tuple:
-        expected = ', '.join(typ.__name__ for typ in types)
+        expected = ", ".join(typ.__name__ for typ in types)
     else:
         expected = types.__name__
     if extra_message:
-        extra_message = f'\n{extra_message}'
+        extra_message = f"\n{extra_message}"
     return (
-        f'Bad type {argmsg}in {type(self).__name__}.{within}(...).\n'
-        f'    - Expected type: {expected}.\n'
-        f'    - Got: {type(x)}.'
-        f'{extra_message}'
+        f"Bad type {argmsg}in {type(self).__name__}.{within}(...).\n"
+        f"    - Expected type: {expected}.\n"
+        f"    - Got: {type(x)}."
+        f"{extra_message}"
     )
 
 
@@ -43,29 +45,31 @@ def _expect_type(self, x, types, **kwargs):
         raise TypeError(message) from None
 
 
-def _expect_op_message(self, op, values, *, within, argname=None, keyword_name=None, extra_message=''):
+def _expect_op_message(
+    self, op, values, *, within, argname=None, keyword_name=None, extra_message=""
+):
     if type(values) is tuple:
         if op.opclass in values:
             return
     elif op.opclass == values:
         return
     if argname:
-        argmsg = f'for argument `{argname}` '
+        argmsg = f"for argument `{argname}` "
     elif keyword_name:
-        argmsg = f'for keyword argument `{keyword_name}=` '
+        argmsg = f"for keyword argument `{keyword_name}=` "
     else:  # pragma: no cover
-        argmsg = ''
+        argmsg = ""
     if type(values) is tuple:
-        expected = ', '.join(values)
+        expected = ", ".join(values)
     else:
         expected = values
     if extra_message:
-        extra_message = f'\n{extra_message}'
+        extra_message = f"\n{extra_message}"
     return (
-        f'Bad type {argmsg}in {type(self).__name__}.{within}(...).\n'
-        f'    - Expected type: {expected}.\n'
-        f'    - Got: {op.opclass}.'
-        f'{extra_message}'
+        f"Bad type {argmsg}in {type(self).__name__}.{within}(...).\n"
+        f"    - Expected type: {expected}.\n"
+        f"    - Got: {op.opclass}."
+        f"{extra_message}"
     )
 
 
@@ -77,11 +81,11 @@ def _expect_op(self, op, values, **kwargs):
 
 def _check_mask(mask, output=None):
     if isinstance(mask, BaseType) or type(mask) is Mask:
-        raise TypeError('Mask must indicate values (M.V) or structure (M.S)')
+        raise TypeError("Mask must indicate values (M.V) or structure (M.S)")
     if not isinstance(mask, Mask):
         raise TypeError(f"Invalid mask: {type(mask)}")
     if output is not None and type(mask.mask) is not type(output):
-        raise TypeError(f'Mask object must be type {type(output)}; got {type(mask)}')
+        raise TypeError(f"Mask object must be type {type(output)}; got {type(mask)}")
 
 
 class BaseType:
@@ -90,7 +94,7 @@ class BaseType:
 
     def __init__(self, gb_obj, dtype, name):
         if not isinstance(gb_obj, CData):
-            raise TypeError('Object passed to __init__ must be CData type')
+            raise TypeError("Object passed to __init__ must be CData type")
         self.gb_obj = gb_obj
         self.dtype = lookup_dtype(dtype)
         self.name = name
@@ -102,7 +106,7 @@ class BaseType:
         for arg in optional_mask_and_accum:
             if isinstance(arg, (BaseType, Mask)):
                 if self._is_scalar:
-                    raise TypeError('Mask not allowed for Scalars')
+                    raise TypeError("Mask not allowed for Scalars")
                 if mask_arg is not None:
                     raise TypeError("Got multiple values for argument 'mask'")
                 mask_arg = arg
@@ -111,9 +115,9 @@ class BaseType:
                     raise TypeError("Got multiple values for argument 'accum'")
                 accum_arg, opclass = find_opclass(arg)
                 if opclass == UNKNOWN_OPCLASS:
-                    raise TypeError(f'Invalid item found in output params: {type(arg)}')
-                if opclass != 'BinaryOp':
-                    raise TypeError(f'accum must be a BinaryOp, not {opclass}')
+                    raise TypeError(f"Invalid item found in output params: {type(arg)}")
+                if opclass != "BinaryOp":
+                    raise TypeError(f"accum must be a BinaryOp, not {opclass}")
         # Merge positional and keyword arguments
         if mask_arg is not None and mask is not None:
             raise TypeError("Got multiple values for argument 'mask'")
@@ -122,7 +126,7 @@ class BaseType:
         if mask is None:
             mask = NULL
         elif self._is_scalar:
-            raise TypeError('Mask not allowed for Scalars')
+            raise TypeError("Mask not allowed for Scalars")
         else:
             _check_mask(mask)
         if accum_arg is not None and accum is not None:
@@ -134,7 +138,9 @@ class BaseType:
         return Updater(self, mask=mask, accum=accum, replace=replace)
 
     def __eq__(self, other):
-        raise TypeError(f'__eq__ not defined for objects of type {type(self)}.  Use `.isequal` method instead.')
+        raise TypeError(
+            f"__eq__ not defined for objects of type {type(self)}.  Use `.isequal` method instead."
+        )
 
     def __lshift__(self, delayed):
         return self._update(delayed)
@@ -157,10 +163,10 @@ class BaseType:
                     # Extract element (s << v[1])
                     if accum is not NULL:
                         raise TypeError(
-                            'Scalar accumulation with extract element'
-                            '--such as `s(accum=accum) << v[0]`--is not supported'
+                            "Scalar accumulation with extract element"
+                            "--such as `s(accum=accum) << v[0]`--is not supported"
                         )
-                    self.value = delayed.new(dtype=self.dtype, name='s_extract').value
+                    self.value = delayed.new(dtype=self.dtype, name="s_extract").value
                     return
 
                 # Extract (C << A[rows, cols])
@@ -170,7 +176,8 @@ class BaseType:
                 if self._is_scalar:
                     if accum is not NULL:
                         raise TypeError(
-                            'Scalar update with accumulation--such as `s(accum=accum) << t`--is not supported'
+                            "Scalar update with accumulation--such as `s(accum=accum) << t`"
+                            "--is not supported"
                         )
                     self.value = delayed.value
                     return
@@ -178,25 +185,31 @@ class BaseType:
                 delayed = delayed.apply(identity)
             elif self._is_scalar:
                 if accum is not NULL:
-                    raise TypeError('Scalar update with accumulation--such as `s(accum=accum) << t`--is not supported')
+                    raise TypeError(
+                        "Scalar update with accumulation--such as `s(accum=accum) << t`"
+                        "--is not supported"
+                    )
                 self.value = delayed
                 return
 
             else:
                 from .matrix import Matrix, TransposedMatrix, MatrixExpression
+
                 if type(delayed) is TransposedMatrix and type(self) is Matrix:
                     # Transpose (C << A.T)
                     delayed = MatrixExpression(
-                        'transpose',
-                        'GrB_transpose',
+                        "transpose",
+                        "GrB_transpose",
                         [delayed],
-                        expr_repr='{0}',
+                        expr_repr="{0}",
                         dtype=delayed.dtype,
                         nrows=delayed.nrows,
                         ncols=delayed.ncols,
                     )
                 else:
-                    raise TypeError(f'assignment value must be Expression object, not {type(delayed)}')
+                    raise TypeError(
+                        f"assignment value must be Expression object, not {type(delayed)}"
+                    )
 
         # Normalize mask and separate out complement and structural flags
         if mask is NULL:
@@ -211,15 +224,17 @@ class BaseType:
         # Normalize accumulator
         if accum is not NULL:
             accum = get_typed_op(accum, self.dtype)
-            self._expect_op(accum, 'BinaryOp', within='FIXME', keyword_name='accum')
+            self._expect_op(accum, "BinaryOp", within="FIXME", keyword_name="accum")
             accum = accum.gb_obj
 
         # Get descriptor based on flags
-        desc = descriptor_lookup(transpose_first=delayed.at,
-                                 transpose_second=delayed.bt,
-                                 mask_complement=complement,
-                                 mask_structure=structure,
-                                 output_replace=replace)
+        desc = descriptor_lookup(
+            transpose_first=delayed.at,
+            transpose_second=delayed.bt,
+            mask_complement=complement,
+            mask_structure=structure,
+            output_replace=replace,
+        )
         if self._is_scalar:
             call_args = [self._carg, accum]
             if delayed.op is not None:  # pragma: no branch
@@ -236,7 +251,7 @@ class BaseType:
             call_args = [self._carg, mask, accum]
             if delayed.op is not None:
                 call_args.append(delayed.op._carg)
-            call_args.extend(getattr(x, '_carg', x) for x in delayed.args)
+            call_args.extend(getattr(x, "_carg", x) for x in delayed.args)
             call_args.append(desc)
             cfunc = libget(delayed.cfunc_name)
             # Make the GraphBLAS call
@@ -245,10 +260,10 @@ class BaseType:
     @property
     def _name_html(self):
         """Treat characters after _ as subscript"""
-        split = self.name.split('_', 1)
+        split = self.name.split("_", 1)
         if len(split) == 1:
             return self.name
-        return f'{split[0]}<sub>{split[1]}</sub>'
+        return f"{split[0]}<sub>{split[1]}</sub>"
 
     _expect_type = _expect_type
     _expect_op = _expect_op
@@ -257,7 +272,18 @@ class BaseType:
 class BaseExpression:
     output_type = None
 
-    def __init__(self, method_name, cfunc_name, args, *, at=False, bt=False, op=None, dtype=None, expr_repr=None):
+    def __init__(
+        self,
+        method_name,
+        cfunc_name,
+        args,
+        *,
+        at=False,
+        bt=False,
+        op=None,
+        dtype=None,
+        expr_repr=None,
+    ):
         self.method_name = method_name
         self.cfunc_name = cfunc_name
         self.args = args
@@ -266,11 +292,11 @@ class BaseExpression:
         self.op = op
         if expr_repr is None:
             if len(args) == 1:
-                expr_repr = '{0.name}.{method_name}({op})'
+                expr_repr = "{0.name}.{method_name}({op})"
             elif len(args) == 2:
-                expr_repr = '{0.name}.{method_name}({1.name}, op={op})'
+                expr_repr = "{0.name}.{method_name}({1.name}, op={op})"
             else:  # pragma: no cover
-                raise ValueError(f'No default expr_repr for len(args) == {len(args)}')
+                raise ValueError(f"No default expr_repr for len(args) == {len(args)}")
         self.expr_repr = expr_repr
         if dtype is None:
             self.dtype = op.return_type
@@ -290,5 +316,5 @@ class BaseExpression:
         return self.expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
 
     def _format_expr_html(self):
-        expr_repr = self.expr_repr.replace('.name', '._name_html')
+        expr_repr = self.expr_repr.replace(".name", "._name_html")
         return expr_repr.format(*self.args, method_name=self.method_name, op=self.op)

@@ -3,10 +3,27 @@ from . import backends, mask  # noqa
 
 _init_params = None
 _SPECIAL_ATTRS = {
-    "ffi", "lib", "Matrix", "Vector", "Scalar",
-    "base", "descriptor", "dtypes", "exceptions", "expr", "formatting", "io",
-    "ops", "unary", "binary", "monoid", "semiring",
-    "matrix", "vector", "scalar", "tests",
+    "ffi",
+    "lib",
+    "Matrix",
+    "Vector",
+    "Scalar",
+    "base",
+    "descriptor",
+    "dtypes",
+    "exceptions",
+    "expr",
+    "formatting",
+    "io",
+    "ops",
+    "unary",
+    "binary",
+    "monoid",
+    "semiring",
+    "matrix",
+    "vector",
+    "scalar",
+    "tests",
 }
 
 
@@ -39,14 +56,17 @@ def _init(backend, blocking, automatic=False):
     else:
         if _init_params != passed_params:
             from .exceptions import GrblasException
+
             if _init_params.get("automatic"):
                 raise GrblasException("grblas objects accessed prior to manual initialization")
             else:
-                raise GrblasException("grblas initialized multiple times with different init parameters")
+                raise GrblasException(
+                    "grblas initialized multiple times with different init parameters"
+                )
         # Already initialized with these parameters; nothing more to do
         return
 
-    ffi_backend = _importlib.import_module(f'.backends.{backend}', __name__)
+    ffi_backend = _importlib.import_module(f".backends.{backend}", __name__)
     lib = ffi_backend.lib
     ffi = ffi_backend.ffi
     # This must be called before anything else happens
@@ -57,7 +77,7 @@ def _init(backend, blocking, automatic=False):
 
 
 def _load(name):
-    if name in {'Matrix', 'Vector', 'Scalar'}:
+    if name in {"Matrix", "Vector", "Scalar"}:
         module_name = name.lower()
         if module_name not in globals():
             _load(module_name)
@@ -71,5 +91,6 @@ def _load(name):
 
 
 from ._version import get_versions  # noqa
-__version__ = get_versions()['version']
+
+__version__ = get_versions()["version"]
 del get_versions
