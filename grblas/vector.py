@@ -486,7 +486,7 @@ class Vector(BaseType):
             This gives control of the underlying GraphBLAS object to `grblas`.
             This means operations on the original `pygraphblas` object will fail!
             """
-            dtype = lookup_dtype(vector.type)
+            dtype = lookup_dtype(vector.gb_type)
             rv = cls(vector.vector, dtype)
             vector.vector = ffi.NULL
             return rv

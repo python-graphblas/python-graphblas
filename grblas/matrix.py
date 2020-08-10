@@ -696,7 +696,7 @@ class Matrix(BaseType):
             This gives control of the underlying GraphBLAS object to `grblas`.
             This means operations on the original `pygraphblas` object will fail!
             """
-            dtype = lookup_dtype(matrix.type)
+            dtype = lookup_dtype(matrix.gb_type)
             rv = cls(matrix.matrix, dtype)
             matrix.matrix = ffi.NULL
             return rv

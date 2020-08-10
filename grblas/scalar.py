@@ -193,7 +193,7 @@ class Scalar(BaseType):
 
             This copies data.
             """
-            dtype = lookup_dtype(scalar.type)
+            dtype = lookup_dtype(scalar.gb_type)
             return cls.from_value(scalar[0], dtype)
 
 
