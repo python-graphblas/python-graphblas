@@ -85,7 +85,7 @@ def _init(backend_arg, blocking, automatic=False):
 
     backend = backend_arg
     if backend == "pygraphblas":  # pragma: no cover
-        import _pygraphblas
+        import _pygraphblas, pygraphblas  # noqa
 
         lib = _pygraphblas.lib
         ffi = _pygraphblas.ffi
