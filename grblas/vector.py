@@ -461,7 +461,7 @@ class Vector(BaseType):
         index, _ = resolved_indexes.indices[0]
         check_status(lib.GrB_Vector_removeElement(self.gb_obj[0], index))
 
-    if backend == "pygraphblas":
+    if backend == "pygraphblas":  # pragma: no cover
 
         def to_pygraphblas(self):
             """ Convert to a new `pygraphblas.Vector`
