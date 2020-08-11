@@ -356,15 +356,14 @@ class UnaryOp(OpBase):
                     ret = func(sample_val)
                 ret_type = lookup_dtype(type(ret))
                 if ret_type != type_ and (
-                    "INT" in ret_type.name
-                    and "INT" in type_.name
-                    or "FP" in ret_type.name
-                    and "FP" in type_.name
-                    or "FC" in ret_type.name
-                    and "FC" in type_.name
-                    or type_ == "UINT64"
-                    and ret_type == "FP64"
-                    and return_types.get("INT64") == "INT64"
+                    ("INT" in ret_type.name and "INT" in type_.name)
+                    or ("FP" in ret_type.name and "FP" in type_.name)
+                    or ("FC" in ret_type.name and "FC" in type_.name)
+                    or (
+                        type_ == "UINT64"
+                        and ret_type == "FP64"
+                        and return_types.get("INT64") == "INT64"
+                    )
                 ):
                     # Downcast `ret_type` to `type_`.
                     # This is what users want most of the time, but we can't make a perfect rule.
@@ -502,15 +501,14 @@ class BinaryOp(OpBase):
                     ret = func(sample_val, sample_val)
                 ret_type = lookup_dtype(type(ret))
                 if ret_type != type_ and (
-                    "INT" in ret_type.name
-                    and "INT" in type_.name
-                    or "FP" in ret_type.name
-                    and "FP" in type_.name
-                    or "FC" in ret_type.name
-                    and "FC" in type_.name
-                    or type_ == "UINT64"
-                    and ret_type == "FP64"
-                    and return_types.get("INT64") == "INT64"
+                    ("INT" in ret_type.name and "INT" in type_.name)
+                    or ("FP" in ret_type.name and "FP" in type_.name)
+                    or ("FC" in ret_type.name and "FC" in type_.name)
+                    or (
+                        type_ == "UINT64"
+                        and ret_type == "FP64"
+                        and return_types.get("INT64") == "INT64"
+                    )
                 ):
                     # Downcast `ret_type` to `type_`.
                     # This is what users want most of the time, but we can't make a perfect rule.
