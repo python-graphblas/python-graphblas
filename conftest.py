@@ -24,17 +24,3 @@ def pytest_addoption(parser):
         action="store_false",
         help="run in non-blocking mode",
     )
-
-
-def pytest_configure(config):
-    backend = config.getoption("--backend")
-    blocking = config.getoption("--blocking")
-    import grblas
-
-    grblas.init(backend, blocking=blocking)
-    print(f'Running tests with "{backend}" backend, blocking={blocking}')
-
-
-def pytest_runtest_setup(item):
-    if "slow" in item.keywords and not item.config.getoption("--runslow"):
-        pytest.skip("need --runslow option to run")
