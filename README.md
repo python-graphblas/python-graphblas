@@ -125,7 +125,7 @@ ncols = M.ncols                             # ncols
 nvals = M.nvals                             # nvals
 rindices, cindices, vals = M.to_values()    # extractTuples
 ```
-# Initialization
+## Initialization
 There is a mechanism to initialize `grblas` with a context prior to use. This allows for setting the backend to
 use as well as the blocking/non-blocking mode. If the context is not initialized, a default initialization will
 be performed automatically.
