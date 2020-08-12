@@ -90,32 +90,38 @@ def to_networkx(m):
     return g
 
 
-def to_numpy(m, format="array"):
+def to_numpy(m):
     try:
         import scipy  # noqa
     except ImportError:
         raise ImportError("scipy is required to export to numpy")
-
-    ss = to_scipy_sparse_matrix(m, "coo")
-    format = format.lower()
-    if format == "matrix":
-        return ss.todense()
-    elif format == "array":
-        return ss.toarray()
+    if type(m) is Vector:
+        return to_scipy_sparse_matrix(m).toarray()[0]
     else:
-        raise GrblasException(f"Invalid format: {format}")
+        sparse = to_scipy_sparse_matrix(m, "coo")
+        return sparse.toarray()
 
 
 def to_scipy_sparse_matrix(m, format="csr"):
     """
     format: str in {'bsr', 'csr', 'csc', 'coo', 'lil', 'dia', 'dok'}
     """
-    from scipy.sparse import coo_matrix
+    import scipy.sparse as ss
 
-    nrows, ncols = m.nrows, m.ncols
-    rows, cols, data = m.to_values()
-    ss = coo_matrix((list(data), (list(rows), list(cols))), shape=(nrows, ncols))
     format = format.lower()
+    if type(m) is Vector:
+        indices, data = m.to_values()
+        if format == "csc":
+            return ss.csc_matrix((data, indices, [0, len(data)]))
+        else:
+            rv = ss.csr_matrix((data, indices, [0, len(data)]))
+            if format == "csr":
+                return rv
+    else:
+        rows, cols, data = m.to_values()
+        rv = ss.coo_matrix((data, (rows, cols)), shape=m.shape)
+        if format == "coo":
+            return rv
     if format not in {"bsr", "csr", "csc", "coo", "lil", "dia", "dok"}:
         raise GrblasException(f"Invalid format: {format}")
-    return ss.asformat(format)
+    return rv.asformat(format)
