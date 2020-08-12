@@ -1,0 +1,10 @@
+name: grblas-dev
+channels:
+    - conda-forge
+dependencies:
+    - python=3.7
+    - grblas
+    - matplotlib
+    - networkx
+    - pandas
+    - scipy
