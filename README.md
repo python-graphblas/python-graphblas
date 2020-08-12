@@ -131,9 +131,9 @@ There is a mechanism to initialize `grblas` with a context prior to use. This al
 use as well as the blocking/non-blocking mode. If the context is not initialized, a default initialization will
 be performed automatically.
 ```python
-import grblas
+import grblas as gb
 # Context initialization must happen before any other imports
-grblas.init('suitesparse', blocking=True)
+gb.init('suitesparse', blocking=True)
 
 # Now we can import other items from grblas
 from grblas import binary, semiring
@@ -162,15 +162,22 @@ Similar methods exist for BinaryOp, Monoid, and Semiring.
 
 ## Import/Export connectors to the Python ecosystem
 `grblas.io` contains functions for converting to and from:
-- numpy arrays and matrices
-  - `from_numpy(m)`  (_1-D array becomes Vector, 2-D array or matrix becomes Matrix_)
-  - `to_numpy(g, format='array')`
-- scipy.sparse matrices
-  - `from_scipy_sparse_matrix(m)`
-  - `to_scipy_sparse_matrix(m, format='csr')`
-- networkx graphs
-  - `from_networkx(g)`
-  - `to_networkx(g)`
+```python
+import grblas as gb
+
+# numpy arrays
+# 1-D array becomes Vector, 2-D array becomes Matrix
+A = gb.io.from_numpy(m)
+m = gb.io.to_numpy(A)
+
+# scipy.sparse matrices
+A = gb.io.from_scipy_sparse_matrix(m)
+m = gb.io.to_scipy_sparse_matrix(m, format='csr')
+
+# networkx graphs
+A = gb.io.from_networkx(g)
+g = gb.io.to_networkx(A)
+```
 
 ## Attribution
 This library borrows some great ideas from [pygraphblas](https://github.com/michelp/pygraphblas),
