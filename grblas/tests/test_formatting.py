@@ -1,7 +1,11 @@
 import pytest
-import pandas as pd
 import grblas
 from grblas import Scalar, Vector, Matrix, formatting, unary
+
+try:
+    import pandas as pd
+except ImportError:  # pragma: no cover
+    pd = None
 
 
 def repr_html(x):
@@ -128,6 +132,7 @@ def test_no_pandas_repr(A, C, v, w):
         formatting.has_pandas = True
 
 
+@pytest.mark.skipif("not pd")
 def test_matrix_repr_small(A, B):
     repr_printer(A, "A")
     assert repr(A) == (
@@ -159,6 +164,7 @@ def test_matrix_repr_small(A, B):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_matrix_mask_repr_small(A):
     repr_printer(A.S, "A.S")
     assert repr(A.S) == (
@@ -198,6 +204,7 @@ def test_matrix_mask_repr_small(A):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_matrix_repr_large(C, D):
     with pd.option_context("display.max_columns", 24, "display.width", 100):
         repr_printer(C, "C", indent=8)
@@ -268,6 +275,7 @@ def test_matrix_repr_large(C, D):
         )
 
 
+@pytest.mark.skipif("not pd")
 def test_matrix_mask_repr_large(C):
     with pd.option_context("display.max_columns", 24, "display.width", 100):
         repr_printer(C.S, "C.S", indent=8)
@@ -348,6 +356,7 @@ def test_matrix_mask_repr_large(C):
         )
 
 
+@pytest.mark.skipif("not pd")
 def test_vector_repr_small(v):
     repr_printer(v, "v")
     assert repr(v) == (
@@ -359,6 +368,7 @@ def test_vector_repr_small(v):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_vector_repr_large(w):
     with pd.option_context("display.max_columns", 26, "display.width", 100):
         repr_printer(w, "w", indent=8)
@@ -371,6 +381,7 @@ def test_vector_repr_large(w):
         )
 
 
+@pytest.mark.skipif("not pd")
 def test_vector_mask_repr_small(v):
     repr_printer(v.S, "v.S")
     assert repr(v.S) == (
@@ -410,6 +421,7 @@ def test_vector_mask_repr_small(v):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_vector_mask_repr_large(w):
     with pd.option_context("display.max_columns", 26, "display.width", 100):
         repr_printer(w.S, "w.S", indent=8)
@@ -569,6 +581,7 @@ def test_no_pandas_repr_html(A, C, v, w):
         formatting.has_pandas = True
 
 
+@pytest.mark.skipif("not pd")
 def test_matrix_repr_html_small(A, B):
     html_printer(A, "A")
     assert repr_html(A) == (
@@ -751,6 +764,7 @@ def test_matrix_repr_html_small(A, B):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_matrix_mask_repr_html_small(A):
     html_printer(A.S, "A.S")
     assert repr_html(A.S) == (
@@ -990,6 +1004,7 @@ def test_matrix_mask_repr_html_small(A):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_matrix_repr_html_large(C, D):
     with pd.option_context("display.max_columns", 20):
         html_printer(C, "C", indent=8)
@@ -1424,6 +1439,7 @@ def test_matrix_repr_html_large(C, D):
         )
 
 
+@pytest.mark.skipif("not pd")
 def test_matrix_mask_repr_html_large(C):
     with pd.option_context("display.max_columns", 20):
         html_printer(C.S, "C.S", indent=8)
@@ -1976,6 +1992,7 @@ def test_matrix_mask_repr_html_large(C):
         )
 
 
+@pytest.mark.skipif("not pd")
 def test_vector_repr_html_small(v):
     html_printer(v, "v")
     assert repr_html(v) == (
@@ -2034,6 +2051,7 @@ def test_vector_repr_html_small(v):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_vector_repr_html_large(w):
     with pd.option_context("display.max_columns", 20):
         html_printer(w, "w", indent=8)
@@ -2112,6 +2130,7 @@ def test_vector_repr_html_large(w):
         )
 
 
+@pytest.mark.skipif("not pd")
 def test_vector_mask_repr_html_small(v):
     html_printer(v.S, "v.S")
     assert repr_html(v.S) == (
@@ -2343,6 +2362,7 @@ def test_vector_mask_repr_html_small(v):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_vector_mask_repr_html_large(w):
     with pd.option_context("display.max_columns", 20):
         html_printer(w.S, "w.S", indent=8)
@@ -2698,6 +2718,7 @@ def test_apply_repr(v):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_apply_repr_html(v):
     html_printer(v.apply(unary.one), "v.apply(unary.one)")
     assert repr_html(v.apply(unary.one)) == (
@@ -2779,6 +2800,7 @@ def test_mxm_repr(A, B):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_mxm_repr_html(A, B):
     html_printer(A.mxm(B), "A.mxm(B)")
     assert repr_html(A.mxm(B)) == (
@@ -2922,6 +2944,7 @@ def test_mxv_repr(A, v):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_mxv_repr_html(A, v):
     html_printer(A.mxv(v), "A.mxv(v)")
     assert repr_html(A.mxv(v)) == (
@@ -3046,6 +3069,7 @@ def test_mxv_repr_html(A, v):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_matrix_reduce_columns_repr_html(A):
     # This is implmeneted using the transpose of A, so make sure we're oriented correctly!
     html_printer(A.reduce_columns(), "A.reduce_columns()")
@@ -3130,6 +3154,7 @@ def test_matrix_reduce_repr(C, v):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_matrix_reduce_repr_html(C, v):
     with pd.option_context("display.max_columns", 20):
         html_printer(C.reduce_scalar(), "C.reduce_scalar()", indent=8)
