@@ -11,7 +11,7 @@ Python wrapper around GraphBLAS
 
 To install, `conda install -c conda-forge grblas`. This will also install the SuiteSparse `graphblas` compiled C library.
 
-Currently works with SuiteSparse:GraphBLAS, but the goal is to make it work with all implementations of the GraphBLAS spec.
+Currently works with [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS), but the goal is to make it work with all implementations of the GraphBLAS spec.
 
 The approach taken with this library is to follow the C-API specification as closely as possible while making improvements
 allowed with the Python syntax. Because the spec always passes in the output object to be written to, we follow the same,
@@ -86,11 +86,12 @@ s = A[row_index, col_index].value           # extract single element
 ```
 ## Assign
 ```python
-M[rows, cols](mask, accum) << A             # rows and cols are a list or a slice
-M[rows, col_index](mask, accum) << v        # assign column
-M[row_index, cols](mask, accum) << v        # assign row
-M[rows, cols](mask, accum) << s             # assign scalar to many elements
-M[row_index, col_index] << s                # assign scalar to single element (mask and accum not allowed)
+M(mask, accum)[rows, cols] << A             # rows and cols are a list or a slice
+M(mask, accum)[rows, col_index] << v        # assign column
+M(mask, accum)[row_index, cols] << v        # assign row
+M(mask, accum)[rows, cols] << s             # assign scalar to many elements
+M[row_index, col_index] << s                # assign scalar to single element
+                                            # (mask and accum not allowed)
 del M[row_index, col_index]                 # remove single element
 ```
 ## Apply
@@ -113,7 +114,7 @@ B = A.dup()                                 # dup
 A = Matrix.from_values([row_indices], [col_indices], [values])  # build
 ```
 ## New from delayed
-Delayed objects can be used to create a new object using `.new()` method instead of `<<` into an existing object
+Delayed objects can be used to create a new object using `.new()` method
 ```python
 C = A.mxm(B, semiring).new()
 ```
@@ -130,9 +131,9 @@ There is a mechanism to initialize `grblas` with a context prior to use. This al
 use as well as the blocking/non-blocking mode. If the context is not initialized, a default initialization will
 be performed automatically.
 ```python
-import grblas
+import grblas as gb
 # Context initialization must happen before any other imports
-grblas.init('suitesparse', blocking=True)
+gb.init('suitesparse', blocking=True)
 
 # Now we can import other items from grblas
 from grblas import binary, semiring
@@ -161,15 +162,22 @@ Similar methods exist for BinaryOp, Monoid, and Semiring.
 
 ## Import/Export connectors to the Python ecosystem
 `grblas.io` contains functions for converting to and from:
-- numpy arrays and matrices
-  - `from_numpy(m)`  (_1-D array becomes Vector, 2-D array or matrix becomes Matrix_)
-  - `to_numpy(g, format='array')`
-- scipy.sparse matrices
-  - `from_scipy_sparse_matrix(m)`
-  - `to_scipy_sparse_matrix(m, format='csr')`
-- networkx graphs
-  - `from_networkx(g)`
-  - `to_networkx(g)`
+```python
+import grblas as gb
+
+# numpy arrays
+# 1-D array becomes Vector, 2-D array becomes Matrix
+A = gb.io.from_numpy(m)
+m = gb.io.to_numpy(A)
+
+# scipy.sparse matrices
+A = gb.io.from_scipy_sparse_matrix(m)
+m = gb.io.to_scipy_sparse_matrix(m, format='csr')
+
+# networkx graphs
+A = gb.io.from_networkx(g)
+g = gb.io.to_networkx(A)
+```
 
 ## Attribution
 This library borrows some great ideas from [pygraphblas](https://github.com/michelp/pygraphblas),
