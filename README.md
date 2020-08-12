@@ -11,7 +11,7 @@ Python wrapper around GraphBLAS
 
 To install, `conda install -c conda-forge grblas`. This will also install the SuiteSparse `graphblas` compiled C library.
 
-Currently works with SuiteSparse:GraphBLAS, but the goal is to make it work with all implementations of the GraphBLAS spec.
+Currently works with [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS), but the goal is to make it work with all implementations of the GraphBLAS spec.
 
 The approach taken with this library is to follow the C-API specification as closely as possible while making improvements
 allowed with the Python syntax. Because the spec always passes in the output object to be written to, we follow the same,
@@ -86,11 +86,12 @@ s = A[row_index, col_index].value           # extract single element
 ```
 ## Assign
 ```python
-M[rows, cols](mask, accum) << A             # rows and cols are a list or a slice
-M[rows, col_index](mask, accum) << v        # assign column
-M[row_index, cols](mask, accum) << v        # assign row
-M[rows, cols](mask, accum) << s             # assign scalar to many elements
-M[row_index, col_index] << s                # assign scalar to single element (mask and accum not allowed)
+M(mask, accum)[rows, cols] << A             # rows and cols are a list or a slice
+M(mask, accum)[rows, col_index] << v        # assign column
+M(mask, accum)[row_index, cols] << v        # assign row
+M(mask, accum)[rows, cols] << s             # assign scalar to many elements
+M[row_index, col_index] << s                # assign scalar to single element
+                                            # (mask and accum not allowed)
 del M[row_index, col_index]                 # remove single element
 ```
 ## Apply
@@ -113,7 +114,7 @@ B = A.dup()                                 # dup
 A = Matrix.from_values([row_indices], [col_indices], [values])  # build
 ```
 ## New from delayed
-Delayed objects can be used to create a new object using `.new()` method instead of `<<` into an existing object
+Delayed objects can be used to create a new object using `.new()` method
 ```python
 C = A.mxm(B, semiring).new()
 ```
