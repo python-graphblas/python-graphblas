@@ -11,5 +11,5 @@ def pytest_configure(config):
 
 
 def pytest_runtest_setup(item):
-    if "slow" in item.keywords and not item.config.getoption("--runslow", True):
+    if "slow" in item.keywords and not item.config.getoption("--runslow", True):  # pragma: no cover
         pytest.skip("need --runslow option to run")

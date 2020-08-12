@@ -7,12 +7,12 @@ from .matrix import TransposedMatrix
 def draw(m):
     try:
         import networkx as nx
-    except ImportError:
+    except ImportError:  # pragma: no cover
         print("`draw` requires networkx to be installed")
         return
     try:
         import matplotlib.pyplot as plt
-    except ImportError:
+    except ImportError:  # pragma: no cover
         print("`draw` requires matplotlib to be installed")
         return
 
@@ -54,7 +54,7 @@ def from_numpy(m):
 
     try:
         from scipy.sparse import csr_matrix
-    except ImportError:
+    except ImportError:  # pragma: no cover
         raise ImportError("scipy is required to import from numpy")
 
     if m.ndim == 1:
@@ -93,7 +93,7 @@ def to_networkx(m):
 def to_numpy(m):
     try:
         import scipy  # noqa
-    except ImportError:
+    except ImportError:  # pragma: no cover
         raise ImportError("scipy is required to export to numpy")
     if type(m) is Vector:
         return to_scipy_sparse_matrix(m).toarray()[0]

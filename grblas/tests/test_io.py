@@ -4,11 +4,11 @@ import numpy as np
 
 try:
     import networkx as nx
-except ImportError:
+except ImportError:  # pragma: no cover
     nx = None
 try:
     import scipy.sparse as ss
-except ImportError:
+except ImportError:  # pragma: no cover
     ss = None
 
 

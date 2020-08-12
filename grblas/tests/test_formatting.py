@@ -4,7 +4,7 @@ from grblas import Scalar, Vector, Matrix, formatting, unary
 
 try:
     import pandas as pd
-except ImportError:
+except ImportError:  # pragma: no cover
     pd = None
 
 
