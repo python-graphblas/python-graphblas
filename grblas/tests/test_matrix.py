@@ -2,7 +2,7 @@ import pytest
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
-from grblas.exceptions import IndexOutOfBound, DimensionMismatch, OutputNotEmpty, DimensionMismatch
+from grblas.exceptions import IndexOutOfBound, DimensionMismatch, OutputNotEmpty
 
 
 @pytest.fixture
@@ -699,10 +699,8 @@ def test_transpose_exceptional():
 def test_nested_matrix_operations():
     """ Make sure temporaries aren't garbage-collected too soon"""
     A = Matrix.new(int, 8, 8)
-
     A.ewise_mult(A.mxm(A.T).new()).new().reduce_scalar().new()
-
-    A.ewise_mult(A.ewise_mult(A.ewise_mult(A.ewise_mult(A).new()).new(),).new(),)
+    A.ewise_mult(A.ewise_mult(A.ewise_mult(A.ewise_mult(A).new()).new()).new())
 
 
 def test_bad_init():
