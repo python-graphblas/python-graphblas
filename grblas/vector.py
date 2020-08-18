@@ -276,7 +276,7 @@ class Vector(BaseType):
             method_name, f"GrB_eWiseAdd_Vector_{op.opclass}", [self, other], op=op,
         )
         if self.size != other.size:
-            expr.new(name='')  # incompatible shape; raise now
+            expr.new(name="")  # incompatible shape; raise now
         return expr
 
     def ewise_mult(self, other, op=binary.times):
@@ -294,7 +294,7 @@ class Vector(BaseType):
             method_name, f"GrB_eWiseMult_Vector_{op.opclass}", [self, other], op=op,
         )
         if self.size != other.size:
-            expr.new(name='')  # incompatible shape; raise now
+            expr.new(name="")  # incompatible shape; raise now
         return expr
 
     def vxm(self, other, op=semiring.plus_times):
@@ -313,7 +313,7 @@ class Vector(BaseType):
             method_name, "GrB_vxm", [self, other], op=op, size=other.ncols, bt=other._is_transposed,
         )
         if self.size != other.nrows:
-            expr.new(name='')  # incompatible shape; raise now
+            expr.new(name="")  # incompatible shape; raise now
         return expr
 
     def apply(self, op, *, left=None, right=None):

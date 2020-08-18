@@ -309,7 +309,7 @@ class Matrix(BaseType):
             bt=other._is_transposed,
         )
         if self.shape != other.shape:
-            expr.new(name='')  # incompatible shape; raise now
+            expr.new(name="")  # incompatible shape; raise now
         return expr
 
     def ewise_mult(self, other, op=binary.times):
@@ -332,7 +332,7 @@ class Matrix(BaseType):
             bt=other._is_transposed,
         )
         if self.shape != other.shape:
-            expr.new(name='')  # incompatible shape; raise now
+            expr.new(name="")  # incompatible shape; raise now
         return expr
 
     def mxv(self, other, op=semiring.plus_times):
@@ -349,7 +349,7 @@ class Matrix(BaseType):
             method_name, "GrB_mxv", [self, other], op=op, size=self.nrows, at=self._is_transposed,
         )
         if self.ncols != other.size:
-            expr.new(name='')  # incompatible shape; raise now
+            expr.new(name="")  # incompatible shape; raise now
         return expr
 
     def mxm(self, other, op=semiring.plus_times):
@@ -373,7 +373,7 @@ class Matrix(BaseType):
             bt=other._is_transposed,
         )
         if self.ncols != other.nrows:
-            expr.new(name='')  # incompatible shape; raise now
+            expr.new(name="")  # incompatible shape; raise now
         return expr
 
     def kronecker(self, other, op=binary.times):
