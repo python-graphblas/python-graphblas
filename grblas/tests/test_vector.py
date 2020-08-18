@@ -3,7 +3,7 @@ import numpy as np
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
-from grblas.exceptions import IndexOutOfBound, OutputNotEmpty
+from grblas.exceptions import IndexOutOfBound, OutputNotEmpty, DimensionMismatch
 
 
 @pytest.fixture
@@ -474,3 +474,15 @@ def test_accum_must_be_binaryop(v):
 def test_mask_must_be_value_or_structure(v):
     with pytest.raises(TypeError):
         v(mask=v) << v.ewise_mult(v)
+
+
+def test_incompatible_shapes(A, v):
+    u = v[:-1].new()
+    with pytest.raises(DimensionMismatch):
+        A.mxv(u)
+    with pytest.raises(DimensionMismatch):
+        u.vxm(A)
+    with pytest.raises(DimensionMismatch):
+        u.ewise_add(v)
+    with pytest.raises(DimensionMismatch):
+        u.ewise_mult(v)
