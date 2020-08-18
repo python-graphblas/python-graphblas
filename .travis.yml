@@ -22,7 +22,7 @@ install:
     - conda create -n grblas -c conda-forge python=$TRAVIS_PYTHON_VERSION pandas numba cffi graphblas pytest-runner coverage scipy networkx
     - conda activate grblas
     - python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
-    - pip install -e .
+    - python setup.py develop
 
 script:
     - coverage run --branch -m pytest --runslow $BLOCKING
