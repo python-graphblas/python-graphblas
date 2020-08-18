@@ -272,9 +272,12 @@ class Vector(BaseType):
             self._expect_op(
                 op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op"
             )
-        return VectorExpression(
+        expr = VectorExpression(
             method_name, f"GrB_eWiseAdd_Vector_{op.opclass}", [self, other], op=op,
         )
+        if self.size != other.size:
+            expr.new(name='')  # incompatible shape; raise now
+        return expr
 
     def ewise_mult(self, other, op=binary.times):
         """
@@ -287,9 +290,12 @@ class Vector(BaseType):
         self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op")
-        return VectorExpression(
+        expr = VectorExpression(
             method_name, f"GrB_eWiseMult_Vector_{op.opclass}", [self, other], op=op,
         )
+        if self.size != other.size:
+            expr.new(name='')  # incompatible shape; raise now
+        return expr
 
     def vxm(self, other, op=semiring.plus_times):
         """
@@ -303,9 +309,12 @@ class Vector(BaseType):
         self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, "Semiring", within=method_name, argname="op")
-        return VectorExpression(
+        expr = VectorExpression(
             method_name, "GrB_vxm", [self, other], op=op, size=other.ncols, bt=other._is_transposed,
         )
+        if self.size != other.nrows:
+            expr.new(name='')  # incompatible shape; raise now
+        return expr
 
     def apply(self, op, *, left=None, right=None):
         """

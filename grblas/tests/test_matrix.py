@@ -2,7 +2,7 @@ import pytest
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
-from grblas.exceptions import IndexOutOfBound, DimensionMismatch, OutputNotEmpty
+from grblas.exceptions import IndexOutOfBound, DimensionMismatch, OutputNotEmpty, DimensionMismatch
 
 
 @pytest.fixture
@@ -718,3 +718,13 @@ def test_no_equals(A):
 def test_bad_update(A):
     with pytest.raises(TypeError, match="assignment value must be Expression"):
         A << None
+
+
+def test_incompatible_shapes(A):
+    B = A[:-1, :-1].new()
+    with pytest.raises(DimensionMismatch):
+        A.mxm(B)
+    with pytest.raises(DimensionMismatch):
+        A.ewise_add(B)
+    with pytest.raises(DimensionMismatch):
+        A.ewise_mult(B)

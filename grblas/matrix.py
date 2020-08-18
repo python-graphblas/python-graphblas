@@ -300,7 +300,7 @@ class Matrix(BaseType):
             self._expect_op(
                 op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op"
             )
-        return MatrixExpression(
+        expr = MatrixExpression(
             method_name,
             f"GrB_eWiseAdd_Matrix_{op.opclass}",
             [self, other],
@@ -308,6 +308,9 @@ class Matrix(BaseType):
             at=self._is_transposed,
             bt=other._is_transposed,
         )
+        if self.shape != other.shape:
+            expr.new(name='')  # incompatible shape; raise now
+        return expr
 
     def ewise_mult(self, other, op=binary.times):
         """
@@ -320,7 +323,7 @@ class Matrix(BaseType):
         self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op")
-        return MatrixExpression(
+        expr = MatrixExpression(
             method_name,
             f"GrB_eWiseMult_Matrix_{op.opclass}",
             [self, other],
@@ -328,6 +331,9 @@ class Matrix(BaseType):
             at=self._is_transposed,
             bt=other._is_transposed,
         )
+        if self.shape != other.shape:
+            expr.new(name='')  # incompatible shape; raise now
+        return expr
 
     def mxv(self, other, op=semiring.plus_times):
         """
@@ -339,9 +345,12 @@ class Matrix(BaseType):
         self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, "Semiring", within=method_name, argname="op")
-        return VectorExpression(
+        expr = VectorExpression(
             method_name, "GrB_mxv", [self, other], op=op, size=self.nrows, at=self._is_transposed,
         )
+        if self.ncols != other.size:
+            expr.new(name='')  # incompatible shape; raise now
+        return expr
 
     def mxm(self, other, op=semiring.plus_times):
         """
@@ -353,7 +362,7 @@ class Matrix(BaseType):
         self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, "Semiring", within=method_name, argname="op")
-        return MatrixExpression(
+        expr = MatrixExpression(
             method_name,
             "GrB_mxm",
             [self, other],
@@ -363,6 +372,9 @@ class Matrix(BaseType):
             at=self._is_transposed,
             bt=other._is_transposed,
         )
+        if self.ncols != other.nrows:
+            expr.new(name='')  # incompatible shape; raise now
+        return expr
 
     def kronecker(self, other, op=binary.times):
         """
