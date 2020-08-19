@@ -8,6 +8,82 @@ try:
 except ImportError:  # pragma: no cover
     has_pandas = False
 
+# This was written by a complete novice at CSS.
+# If you can help make it better, please do!
+CSS_STYLE = """
+<style>
+table.gb-info-table {
+    border: 1px solid black;
+    max-width: 100%;
+    margin-top: 0px;
+    margin-bottom: 0px;
+    padding-top: 0px;
+    padding-bottom: 0px;
+}
+
+td.gb-info-name-cell {
+    line-height: 100%;
+}
+
+details.gb-arg-details {
+    margin-top: 0px;
+    margin-bottom: 0px;
+    padding-top: 0px;
+    padding-bottom: 5px;
+    margin-left: 10px;
+}
+
+summary.gb-arg-summary {
+    display: list-item;
+    outline: none;
+    margin-top: 0px;
+    margin-bottom: 0px;
+    padding-top: 0px;
+    padding-bottom: 0px;
+    margin-left: -10px;
+}
+
+details.gb-expr-details {
+    margin-top: 0px;
+    margin-bottom: 0px;
+    padding-top: 0px;
+    padding-bottom: 5px;
+}
+
+summary.gb-expr-summary {
+    display: list-item;
+    outline: none;
+    margin-top: 0px;
+    margin-bottom: 0px;
+    padding-top: 0px;
+    padding-bottom: 0px;
+}
+
+blockquote.gb-expr-blockquote {
+    margin-top: 5px;
+    margin-bottom: 0px;
+    padding-top: 0px;
+    padding-bottom: 0px;
+    margin-left: 15px;
+}
+
+.gb-scalar {
+    margin-top: 0px;
+    margin-bottom: 0px;
+    padding-top: 0px;
+    padding-bottom: 5px;
+}
+
+/* modify pandas dataframe */
+table.dataframe {
+    margin-top: 0px;
+    margin-bottom: 0px;
+    padding-top: 0px;
+    padding-bottom: 0px;
+}
+</style>
+"""
+
 
 def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offset, *, mask=None):
     if rows is None and columns is None:
@@ -163,9 +239,9 @@ def vector_info(vector, *, mask=None, for_html=True):
 
 def create_header_html(name, keys, vals):
     text = [
-        '<div>\n<table style="border:1px solid black; max-width:100%;">\n'
+        '<div>\n<table class="gb-info-table">\n'
         "  <tr>\n"
-        f'    <td rowspan="2" style="line-height:100%"><pre>{name}</pre></td>\n'
+        f'    <td rowspan="2" class="gb-info-name-cell"><pre>{name}</pre></td>\n'
     ]
     text.extend(f"    <td><pre>{key}</pre></td>\n" for key in keys)
     text.append("  </tr>\n  <tr>\n")
@@ -194,8 +270,9 @@ def _format_html(name, header, df):
         details = "<em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em>"
     return (
         "<div>"
-        f"<details{state}>"
-        '<summary style="display:list-item; outline:none;">'
+        f"{CSS_STYLE}"
+        f'<details{state} class="gb-arg-details">'
+        '<summary class="gb-arg-summary">'
         f"<tt>{name}</tt>{header}"
         "</summary>"
         f"{details}"
@@ -226,7 +303,7 @@ def format_vector_html(vector, *, max_columns=None, mask=None):
 
 def format_scalar_html(scalar):
     header = create_header_html("grblas.Scalar", ["value", "dtype"], [scalar.value, scalar.dtype])
-    return f"<div><tt>{scalar._name_html}</tt>{header}</div>"
+    return f'<div class="gb-scalar"><tt>{scalar._name_html}</tt>{header}</div>'
 
 
 def format_scalar(scalar):
@@ -244,13 +321,13 @@ def _format_expression(expr, header):
     args = [pos_to_arg[pos] for pos in sorted(pos_to_arg)]
     arg_string = "".join(x._repr_html_() for x in args if hasattr(x, "_repr_html_"))
     return (
-        '<div style="padding:4px;">'
-        "<details>"
-        '<summary style="display:list-item; outline:none;">'
+        "<div>"
+        '<details class="gb-expr-details">'
+        '<summary class="gb-expr-summary">'
         f"<b><tt>grblas.{type(expr).__name__}:</tt></b>"
         f"{header}"
         "</summary>"
-        "<blockquote>"
+        '<blockquote class="gb-expr-blockquote">'
         f"{arg_string}"
         "</blockquote>"
         "</details>"
