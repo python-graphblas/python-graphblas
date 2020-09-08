@@ -27,7 +27,9 @@ class Matrix(BaseType):
         super().__init__(gb_obj, dtype, name)
 
     def __del__(self):
-        check_status(lib.GrB_Matrix_free(self.gb_obj))
+        gb_obj = getattr(self, "gb_obj", None)
+        if gb_obj is not None:
+            check_status(lib.GrB_Matrix_free(gb_obj))
 
     def __repr__(self, mask=None):
         from .formatting import format_matrix

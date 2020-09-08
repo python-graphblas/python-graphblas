@@ -1,4 +1,5 @@
 import pytest
+import grblas
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
@@ -726,3 +727,25 @@ def test_incompatible_shapes(A):
         A.ewise_add(B)
     with pytest.raises(DimensionMismatch):
         A.ewise_mult(B)
+
+
+def test_del(capsys):
+    # Exceptions in __del__ are printed to stderr
+    import gc
+
+    # shell_A does not have `gb_obj` attribute
+    shell_A = Matrix.__new__(Matrix)
+    del shell_A
+    # A has `gb_obj` of NULL
+    A = Matrix.from_values([0, 1], [0, 1], [0, 1])
+    gb_obj = A.gb_obj
+    A.gb_obj = grblas.ffi.NULL
+    del A
+    # let's clean up so we don't have a memory leak
+    A2 = Matrix.__new__(Matrix)
+    A2.gb_obj = gb_obj
+    del A2
+    gc.collect()
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert not captured.err
