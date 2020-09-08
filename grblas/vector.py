@@ -25,7 +25,9 @@ class Vector(BaseType):
         super().__init__(gb_obj, dtype, name)
 
     def __del__(self):
-        check_status(lib.GrB_Vector_free(self.gb_obj))
+        gb_obj = getattr(self, "gb_obj", None)
+        if gb_obj is not None:
+            check_status(lib.GrB_Vector_free(gb_obj))
 
     def __repr__(self, mask=None):
         from .formatting import format_vector
@@ -273,7 +275,10 @@ class Vector(BaseType):
                 op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op"
             )
         expr = VectorExpression(
-            method_name, f"GrB_eWiseAdd_Vector_{op.opclass}", [self, other], op=op,
+            method_name,
+            f"GrB_eWiseAdd_Vector_{op.opclass}",
+            [self, other],
+            op=op,
         )
         if self.size != other.size:
             expr.new(name="")  # incompatible shape; raise now
@@ -291,7 +296,10 @@ class Vector(BaseType):
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op")
         expr = VectorExpression(
-            method_name, f"GrB_eWiseMult_Vector_{op.opclass}", [self, other], op=op,
+            method_name,
+            f"GrB_eWiseMult_Vector_{op.opclass}",
+            [self, other],
+            op=op,
         )
         if self.size != other.size:
             expr.new(name="")  # incompatible shape; raise now
@@ -310,7 +318,12 @@ class Vector(BaseType):
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = VectorExpression(
-            method_name, "GrB_vxm", [self, other], op=op, size=other.ncols, bt=other._is_transposed,
+            method_name,
+            "GrB_vxm",
+            [self, other],
+            op=op,
+            size=other.ncols,
+            bt=other._is_transposed,
         )
         if self.size != other.nrows:
             expr.new(name="")  # incompatible shape; raise now
@@ -330,7 +343,11 @@ class Vector(BaseType):
         if left is None and right is None:
             op = get_typed_op(op, self.dtype)
             self._expect_op(
-                op, "UnaryOp", within=method_name, argname="op", extra_message=extra_message,
+                op,
+                "UnaryOp",
+                within=method_name,
+                argname="op",
+                extra_message=extra_message,
             )
             cfunc_name = "GrB_Vector_apply"
             args = [self]
@@ -349,7 +366,11 @@ class Vector(BaseType):
                     )
             op = get_typed_op(op, self.dtype, left.dtype)
             self._expect_op(
-                op, "BinaryOp", within=method_name, argname="op", extra_message=extra_message,
+                op,
+                "BinaryOp",
+                within=method_name,
+                argname="op",
+                extra_message=extra_message,
             )
             cfunc_name = f"GrB_Vector_apply_BinaryOp1st_{left.dtype}"
             args = [_CScalar(left), self]
@@ -368,7 +389,11 @@ class Vector(BaseType):
                     )
             op = get_typed_op(op, self.dtype, right.dtype)
             self._expect_op(
-                op, "BinaryOp", within=method_name, argname="op", extra_message=extra_message,
+                op,
+                "BinaryOp",
+                within=method_name,
+                argname="op",
+                extra_message=extra_message,
             )
             cfunc_name = f"GrB_Vector_apply_BinaryOp2nd_{right.dtype}"
             args = [self, _CScalar(right)]
@@ -376,7 +401,12 @@ class Vector(BaseType):
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
         return VectorExpression(
-            method_name, cfunc_name, args, op=op, expr_repr=expr_repr, size=self.size,
+            method_name,
+            cfunc_name,
+            args,
+            op=op,
+            expr_repr=expr_repr,
+            size=self.size,
         )
 
     def reduce(self, op=monoid.plus):
@@ -473,7 +503,7 @@ class Vector(BaseType):
     if backend == "pygraphblas":  # pragma: no cover
 
         def to_pygraphblas(self):
-            """ Convert to a new `pygraphblas.Vector`
+            """Convert to a new `pygraphblas.Vector`
 
             This does not copy data.
 
@@ -488,7 +518,7 @@ class Vector(BaseType):
 
         @classmethod
         def from_pygraphblas(cls, vector):
-            """ Convert a `pygraphblas.Vector` to a new `grblas.Vector`
+            """Convert a `pygraphblas.Vector` to a new `grblas.Vector`
 
             This does not copy data.
 
@@ -518,7 +548,14 @@ class VectorExpression(BaseExpression):
         size=None,
     ):
         super().__init__(
-            method_name, cfunc_name, args, at=at, bt=bt, op=op, dtype=dtype, expr_repr=expr_repr,
+            method_name,
+            cfunc_name,
+            args,
+            at=at,
+            bt=bt,
+            op=op,
+            dtype=dtype,
+            expr_repr=expr_repr,
         )
         if size is None:
             size = args[0].size
