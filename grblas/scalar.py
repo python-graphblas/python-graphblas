@@ -141,8 +141,7 @@ class Scalar(BaseType):
         return self.gb_obj
 
     def dup(self, *, dtype=None, name=None):
-        """Create a new Scalar by duplicating this one
-        """
+        """Create a new Scalar by duplicating this one"""
         if dtype is None:
             new_scalar = type(self).new(self.dtype, name=name)
             new_scalar.value = self.value
@@ -163,8 +162,7 @@ class Scalar(BaseType):
 
     @classmethod
     def from_value(cls, value, dtype=None, *, name=None):
-        """Create a new Scalar from a Python value
-        """
+        """Create a new Scalar from a Python value"""
         if dtype is None:
             try:
                 dtype = lookup_dtype(type(value))
@@ -179,7 +177,7 @@ class Scalar(BaseType):
     if backend == "pygraphblas":  # pragma: no cover
 
         def to_pygraphblas(self):
-            """ Convert to a new `pygraphblas.Scalar`
+            """Convert to a new `pygraphblas.Scalar`
 
             This copies data.
             """
@@ -189,7 +187,7 @@ class Scalar(BaseType):
 
         @classmethod
         def from_pygraphblas(cls, scalar):
-            """ Convert a `pygraphblas.Scalar` to a new `grblas.Scalar`
+            """Convert a `pygraphblas.Scalar` to a new `grblas.Scalar`
 
             This copies data.
             """

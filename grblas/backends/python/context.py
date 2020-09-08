@@ -43,7 +43,8 @@ def GrB_init(mode):
             return_error(GrB_Info.GrB_INVALID_VALUE, "Context has already been initialized")
         elif global_context.mode is None:
             return_error(
-                GrB_Info.GrB_INVALID_VALUE, "Context has been finalized and cannot be reused",
+                GrB_Info.GrB_INVALID_VALUE,
+                "Context has been finalized and cannot be reused",
             )
         global_context = Context(mode)
         return GrB_Info.GrB_SUCCESS
