@@ -222,16 +222,7 @@ class Matrix(BaseType):
 
     @classmethod
     def from_values(
-        cls,
-        rows,
-        columns,
-        values,
-        *,
-        nrows=None,
-        ncols=None,
-        dup_op=None,
-        dtype=None,
-        name=None,
+        cls, rows, columns, values, *, nrows=None, ncols=None, dup_op=None, dtype=None, name=None,
     ):
         """Create a new Matrix from the given lists of row indices, column
         indices, and values.  If nrows or ncols are not provided, they
@@ -357,12 +348,7 @@ class Matrix(BaseType):
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = VectorExpression(
-            method_name,
-            "GrB_mxv",
-            [self, other],
-            op=op,
-            size=self.nrows,
-            at=self._is_transposed,
+            method_name, "GrB_mxv", [self, other], op=op, size=self.nrows, at=self._is_transposed,
         )
         if self.ncols != other.size:
             expr.new(name="")  # incompatible shape; raise now
@@ -427,11 +413,7 @@ class Matrix(BaseType):
         if left is None and right is None:
             op = get_typed_op(op, self.dtype)
             self._expect_op(
-                op,
-                "UnaryOp",
-                within=method_name,
-                argname="op",
-                extra_message=extra_message,
+                op, "UnaryOp", within=method_name, argname="op", extra_message=extra_message,
             )
             cfunc_name = "GrB_Matrix_apply"
             args = [self]
@@ -450,11 +432,7 @@ class Matrix(BaseType):
                     )
             op = get_typed_op(op, self.dtype, left.dtype)
             self._expect_op(
-                op,
-                "BinaryOp",
-                within=method_name,
-                argname="op",
-                extra_message=extra_message,
+                op, "BinaryOp", within=method_name, argname="op", extra_message=extra_message,
             )
             cfunc_name = f"GrB_Matrix_apply_BinaryOp1st_{left.dtype}"
             args = [_CScalar(left), self]
@@ -473,11 +451,7 @@ class Matrix(BaseType):
                     )
             op = get_typed_op(op, self.dtype, right.dtype)
             self._expect_op(
-                op,
-                "BinaryOp",
-                within=method_name,
-                argname="op",
-                extra_message=extra_message,
+                op, "BinaryOp", within=method_name, argname="op", extra_message=extra_message,
             )
             cfunc_name = f"GrB_Matrix_apply_BinaryOp2nd_{right.dtype}"
             args = [self, _CScalar(right)]
@@ -661,10 +635,7 @@ class Matrix(BaseType):
         elif type(value) in {Matrix, TransposedMatrix}:
             if rowsize is None or colsize is None:
                 self._expect_type(
-                    value,
-                    (Scalar, Vector),
-                    within=method_name,
-                    extra_message=extra_message,
+                    value, (Scalar, Vector), within=method_name, extra_message=extra_message,
                 )
             delayed = MatrixExpression(
                 method_name,
@@ -724,9 +695,9 @@ class Matrix(BaseType):
             This gives control of the underlying GraphBLAS object to `pygraphblas`.
             This means operations on the current `grblas` object will fail!
             """
-            import pygraphblas
+            import pygraphblas as pg
 
-            matrix = pygraphblas.Matrix(self.gb_obj, self.dtype.gb_type)
+            matrix = pg.Matrix(self.gb_obj, pg.types.gb_type_to_type(self.dtype.gb_type))
             self.gb_obj = ffi.NULL
             return matrix
 
@@ -763,14 +734,7 @@ class MatrixExpression(BaseExpression):
         nrows=None,
     ):
         super().__init__(
-            method_name,
-            cfunc_name,
-            args,
-            at=at,
-            bt=bt,
-            op=op,
-            dtype=dtype,
-            expr_repr=expr_repr,
+            method_name, cfunc_name, args, at=at, bt=bt, op=op, dtype=dtype, expr_repr=expr_repr,
         )
         if ncols is None:
             ncols = args[0].ncols

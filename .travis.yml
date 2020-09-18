@@ -35,8 +35,8 @@ script:
     # annoyingly, executing our notebooks seems to fail, and I can't reproduce it locally
     - jupyter nbconvert --to notebook --execute notebooks/*ipynb || true
     # Style checks
-    - flake8 grblas
-    - black grblas --check --diff
+    - flake8 grblas *.py
+    - black grblas *.py --check --diff
 
 after_success:
     - coverage report --show-missing

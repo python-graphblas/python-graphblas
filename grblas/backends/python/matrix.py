@@ -92,16 +92,7 @@ def mxm(C, A, B, semiring):
 
 @numba.njit
 def _sparse_matmul(
-    a_data,
-    a_indices,
-    a_indptr,
-    b_data,
-    b_indices,
-    b_indptr,
-    plus,
-    times,
-    identity,
-    dtype,
+    a_data, a_indices, a_indptr, b_data, b_indices, b_indptr, plus, times, identity, dtype,
 ):
     # Final array size is unknown, so we give ourselves room and then adjust on the fly
     tmp_output_size = a_data.size * 2

@@ -37,14 +37,8 @@ def test_npunary():
     data = [
         [grblas.Vector.from_values([0, 1], [True, False]), np.array([True, False])],
         [grblas.Vector.from_values(L, L), np.array(L, dtype=int)],
-        [
-            grblas.Vector.from_values(L, L, dtype="float64"),
-            np.array(L, dtype=np.float64),
-        ],
-        [
-            grblas.Vector.from_values(L, L, dtype="FC64"),
-            np.array(L, dtype=np.complex128),
-        ],
+        [grblas.Vector.from_values(L, L, dtype="float64"), np.array(L, dtype=np.float64)],
+        [grblas.Vector.from_values(L, L, dtype="FC64"), np.array(L, dtype=np.complex128)],
     ]
     blacklist = {}
     isclose = grblas.binary.isclose(1e-7, 0)
@@ -93,50 +87,33 @@ def test_npbinary():
     index = list(range(len(values1)))
     data = [
         [
-            [
-                grblas.Vector.from_values(index, values1),
-                grblas.Vector.from_values(index, values2),
-            ],
-            [
-                np.array(values1, dtype=int),
-                np.array(values2, dtype=int),
-            ],
+            [grblas.Vector.from_values(index, values1), grblas.Vector.from_values(index, values2)],
+            [np.array(values1, dtype=int), np.array(values2, dtype=int)],
         ],
         [
             [
                 grblas.Vector.from_values(index, values1, dtype="float64"),
                 grblas.Vector.from_values(index, values2, dtype="float64"),
             ],
-            [
-                np.array(values1, dtype=np.float64),
-                np.array(values2, dtype=np.float64),
-            ],
+            [np.array(values1, dtype=np.float64), np.array(values2, dtype=np.float64)],
         ],
         [
             [
                 grblas.Vector.from_values([0, 1, 2, 3], [True, False, True, False]),
                 grblas.Vector.from_values([0, 1, 2, 3], [True, True, False, False]),
             ],
-            [
-                np.array([True, False, True, False]),
-                np.array([True, True, False, False]),
-            ],
+            [np.array([True, False, True, False]), np.array([True, True, False, False])],
         ],
         [
             [
                 grblas.Vector.from_values(index, values1, dtype="FC64"),
                 grblas.Vector.from_values(index, values2, dtype="FC64"),
             ],
-            [
-                np.array(values1, dtype=np.complex128),
-                np.array(values2, dtype=np.complex128),
-            ],
+            [np.array(values1, dtype=np.complex128), np.array(values2, dtype=np.complex128)],
         ],
     ]
     blacklist = {
-        "FP64": {
-            "floor_divide",
-        },  # numba/numpy difference for 1.0 / 0.0
+        "FP64": {"floor_divide"},  # numba/numpy difference for 1.0 / 0.0
     }
     isclose = grblas.binary.isclose(1e-7, 0)
     for (gb_left, gb_right), (np_left, np_right) in data:
@@ -175,34 +152,22 @@ def test_npmonoid():
     index = list(range(len(values1)))
     data = [
         [
-            [
-                grblas.Vector.from_values(index, values1),
-                grblas.Vector.from_values(index, values2),
-            ],
-            [
-                np.array(values1, dtype=int),
-                np.array(values2, dtype=int),
-            ],
+            [grblas.Vector.from_values(index, values1), grblas.Vector.from_values(index, values2)],
+            [np.array(values1, dtype=int), np.array(values2, dtype=int)],
         ],
         [
             [
                 grblas.Vector.from_values(index, values1, dtype="float64"),
                 grblas.Vector.from_values(index, values2, dtype="float64"),
             ],
-            [
-                np.array(values1, dtype=np.float64),
-                np.array(values2, dtype=np.float64),
-            ],
+            [np.array(values1, dtype=np.float64), np.array(values2, dtype=np.float64)],
         ],
         [
             [
                 grblas.Vector.from_values([0, 1, 2, 3], [True, False, True, False]),
                 grblas.Vector.from_values([0, 1, 2, 3], [True, True, False, False]),
             ],
-            [
-                np.array([True, False, True, False]),
-                np.array([True, True, False, False]),
-            ],
+            [np.array([True, False, True, False]), np.array([True, True, False, False])],
         ],
         # Complex monoids not working yet
         # [

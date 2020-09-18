@@ -44,7 +44,7 @@ def __dir__():
     return list(globals().keys() | _SPECIAL_ATTRS)
 
 
-def init(backend="suitesparse", blocking=True):
+def init(backend="suitesparse", blocking=False):
     """Initialize the chosen backend.
 
     Parameters

@@ -20,15 +20,7 @@ _semiring_names = {
 _semiring_names -= {
     f"{monoid_name}_{binary_name}"
     for monoid_name, binary_name in itertools.product(
-        {
-            "equal",
-            "hypot",
-            "logaddexp",
-            "logaddexp2",
-            "logical_and",
-            "logical_or",
-            "logical_xor",
-        },
+        {"equal", "hypot", "logaddexp", "logaddexp2", "logical_and", "logical_or", "logical_xor"},
         {"gcd", "lcm", "left_shift", "right_shift"},
     )
 }
@@ -63,8 +55,7 @@ _semiring_names -= {
 _semiring_names -= {
     f"{monoid_name}_{binary_name}"
     for monoid_name, binary_name in itertools.product(
-        {"hypot", "logaddexp", "logaddexp2"},
-        {"bitwise_and", "bitwise_or", "bitwise_xor"},
+        {"hypot", "logaddexp", "logaddexp2"}, {"bitwise_and", "bitwise_or", "bitwise_xor"},
     )
 }
 # <bool>_<non-bool>
@@ -111,8 +102,6 @@ def __getattr__(name):
         if hasattr(binary.numpy, binary_name):
             break
     ops.Semiring.register_new(
-        f"numpy.{name}",
-        getattr(monoid.numpy, monoid_name),
-        getattr(binary.numpy, binary_name),
+        f"numpy.{name}", getattr(monoid.numpy, monoid_name), getattr(binary.numpy, binary_name),
     )
     return globals()[name]
