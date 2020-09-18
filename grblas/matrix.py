@@ -714,7 +714,7 @@ class Matrix(BaseType):
         col, _ = resolved_indexes.indices[1]
         check_status(lib.GrB_Matrix_removeElement(self.gb_obj[0], row, col))
 
-    if backend == "pygraphblas":  # pragma: no cover
+    if backend == "pygraphblas":
 
         def to_pygraphblas(self):
             """Convert to a new `pygraphblas.Matrix`

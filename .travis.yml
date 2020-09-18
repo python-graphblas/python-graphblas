@@ -6,8 +6,9 @@ python:
     - "3.7"
     - "3.8"
 env:
-    - BLOCKING="--blocking"
-    - BLOCKING="--non-blocking"
+    - TESTOPTIONS="--blocking"
+    - TESTOPTIONS="--non-blocking"
+    - TESTOPTIONS="--backend=pygraphblas"
 
 install:
     # https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/use-conda-with-travis-ci.html
@@ -23,9 +24,10 @@ install:
     - conda activate grblas
     - python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
     - python setup.py develop
+    - if [[ $TESTOPTIONS == *pygraphblas* ]] ; then conda install -c conda-forge pygraphblas ; fi
 
 script:
-    - coverage run --branch -m pytest --runslow $BLOCKING
+    - coverage run --branch -m pytest --runslow $TESTOPTIONS
     # Test (and cover) automatic initialization
     - coverage run -a --branch grblas/tests/test_auto_init.py
     # Make sure all top-level imports work

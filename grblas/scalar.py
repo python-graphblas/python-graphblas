@@ -174,16 +174,16 @@ class Scalar(BaseType):
         new_scalar.value = value
         return new_scalar
 
-    if backend == "pygraphblas":  # pragma: no cover
+    if backend == "pygraphblas":
 
         def to_pygraphblas(self):
             """Convert to a new `pygraphblas.Scalar`
 
             This copies data.
             """
-            import pygraphblas
+            import pygraphblas as pg
 
-            return pygraphblas.Scalar.from_value(self.value)
+            return pg.Scalar.from_value(self.value)
 
         @classmethod
         def from_pygraphblas(cls, scalar):
