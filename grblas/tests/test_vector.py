@@ -332,6 +332,8 @@ def test_assign_scalar(v):
         w[:] = object()
     with pytest.raises(TypeError, match="Bad type for arg"):
         w[1] = object()
+    w << 2
+    assert w.isequal(Vector.from_values([0, 1, 2], [2, 2, 2]))
 
 
 def test_assign_scalar_mask(v):
@@ -340,17 +342,41 @@ def test_assign_scalar_mask(v):
     w = v.dup()
     w[:](mask.V) << 5
     assert w.isequal(result)
+    w = v.dup()
+    w(mask.V) << 5
+    assert w.isequal(result)
+    w = v.dup()
+    w(mask.V)[:] << 5
+    assert w.isequal(result)
     result2 = Vector.from_values([0, 1, 2, 3, 4, 6], [5, 5, 5, 5, 5, 5])
     w = v.dup()
     w[:](~mask.V) << 5
+    assert w.isequal(result2)
+    w = v.dup()
+    w(~mask.V) << 5
+    assert w.isequal(result2)
+    w = v.dup()
+    w(~mask.V)[:] << 5
     assert w.isequal(result2)
     result3 = Vector.from_values([1, 2, 3, 4, 5, 6], [5, 5, 1, 2, 5, 5])
     w = v.dup()
     w[:](mask.S) << 5
     assert w.isequal(result3)
+    w = v.dup()
+    w(mask.S) << 5
+    assert w.isequal(result3)
+    w = v.dup()
+    w(mask.S)[:] << 5
+    assert w.isequal(result3)
     result4 = Vector.from_values([0, 1, 3, 4, 6], [5, 1, 5, 5, 0])
     w = v.dup()
     w[:](~mask.S) << 5
+    assert w.isequal(result4)
+    w = v.dup()
+    w(~mask.S) << Scalar.from_value(5)
+    assert w.isequal(result4)
+    w = v.dup()
+    w(~mask.S)[:] << 5
     assert w.isequal(result4)
 
 

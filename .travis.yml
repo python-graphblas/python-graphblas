@@ -6,8 +6,9 @@ python:
     - "3.7"
     - "3.8"
 env:
-    - BLOCKING="--blocking"
-    - BLOCKING="--non-blocking"
+    - TESTOPTIONS="--blocking"
+    - TESTOPTIONS="--non-blocking"
+    - TESTOPTIONS="--backend=pygraphblas"
 
 install:
     # https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/use-conda-with-travis-ci.html
@@ -23,20 +24,20 @@ install:
     - conda activate grblas
     - python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
     - python setup.py develop
+    - if [[ $TESTOPTIONS == *pygraphblas* ]] ; then conda install -c conda-forge pygraphblas ; fi
 
 script:
-    - coverage run --branch -m pytest --runslow $BLOCKING
+    - coverage run --branch -m pytest --runslow $TESTOPTIONS
     # Test (and cover) automatic initialization
     - coverage run -a --branch grblas/tests/test_auto_init.py
     # Make sure all top-level imports work
     - ( for attr in Matrix Scalar Vector backends base binary descriptor dtypes exceptions expr ffi formatting init io lib mask matrix monoid ops scalar semiring tests unary vector ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
     # Make sure notebooks execute
     - conda install -c conda-forge matplotlib nbconvert jupyter flake8 black
-    # annoyingly, executing our notebooks seems to fail, and I can't reproduce it locally
-    - jupyter nbconvert --to notebook --execute notebooks/*ipynb || true
+    - jupyter nbconvert --to notebook --execute notebooks/*ipynb
     # Style checks
-    - flake8 grblas
-    - black grblas --check --diff
+    - flake8 grblas *.py
+    - black grblas *.py --check --diff
 
 after_success:
     - coverage report --show-missing

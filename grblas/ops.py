@@ -335,9 +335,7 @@ class UnaryOp(OpBase):
             re.compile("^GrB_LNOT$"),
             re.compile("^GxB_(ISINF|ISNAN|ISFINITE)_(FP32|FP64|FC32|FC64)$"),
         ],
-        "re_exprs_return_float": [
-            re.compile("^GxB_(CREAL|CIMAG|CARG|ABS)_(FC32|FC64)$"),
-        ],
+        "re_exprs_return_float": [re.compile("^GxB_(CREAL|CIMAG|CARG|ABS)_(FC32|FC64)$")],
     }
 
     @classmethod
@@ -483,9 +481,7 @@ class BinaryOp(OpBase):
             ),
             re.compile("^GxB_(EQ|NE)_(FC32|FC64)$"),
         ],
-        "re_exprs_return_complex": [
-            re.compile("^GxB_(CMPLX)_(FP32|FP64)$"),
-        ],
+        "re_exprs_return_complex": [re.compile("^GxB_(CMPLX)_(FP32|FP64)$")],
     }
 
     @classmethod

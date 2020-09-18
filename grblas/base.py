@@ -207,9 +207,36 @@ class BaseType:
                         ncols=delayed.ncols,
                     )
                 else:
-                    raise TypeError(
-                        f"assignment value must be Expression object, not {type(delayed)}"
+                    from .scalar import Scalar
+
+                    if type(delayed) is Scalar:
+                        scalar = delayed
+                    else:
+                        try:
+                            scalar = Scalar.from_value(delayed, name="")
+                        except TypeError:
+                            raise TypeError(
+                                f"assignment value must be Expression object, not {type(delayed)}"
+                            )
+                    updater = self(
+                        mask=None if mask is NULL else mask,
+                        accum=None if accum is NULL else accum,
+                        replace=replace,
                     )
+                    if type(self) is Matrix:
+                        if mask is NULL:
+                            raise TypeError(
+                                "Warning: updating a Matrix with a scalar without a mask will "
+                                "make the Matrix dense.  This may use a lot of memory and probably "
+                                "isn't what you want.  Perhaps you meant:"
+                                "\n\n    M(M.S) << s\n\n"
+                                "If you do wish to make a dense matrix, then please be explicit:"
+                                "\n\n    M[:, :] = s"
+                            )
+                        updater[:, :] = scalar
+                    else:  # Vector
+                        updater[:] = scalar
+                    return
 
         # Normalize mask and separate out complement and structural flags
         if mask is NULL:

@@ -500,7 +500,7 @@ class Vector(BaseType):
         index, _ = resolved_indexes.indices[0]
         check_status(lib.GrB_Vector_removeElement(self.gb_obj[0], index))
 
-    if backend == "pygraphblas":  # pragma: no cover
+    if backend == "pygraphblas":
 
         def to_pygraphblas(self):
             """Convert to a new `pygraphblas.Vector`
@@ -510,9 +510,9 @@ class Vector(BaseType):
             This gives control of the underlying GraphBLAS object to `pygraphblas`.
             This means operations on the current `grblas` object will fail!
             """
-            import pygraphblas
+            import pygraphblas as pg
 
-            vector = pygraphblas.Vector(self.gb_obj, self.dtype.gb_type)
+            vector = pg.Vector(self.gb_obj, pg.types.gb_type_to_type(self.dtype.gb_type))
             self.gb_obj = ffi.NULL
             return vector
 

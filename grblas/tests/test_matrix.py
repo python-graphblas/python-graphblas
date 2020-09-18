@@ -356,6 +356,12 @@ def test_assign(A):
     C = A.dup()
     C[:3:2, :6:5]() << B
     assert C.isequal(result)
+    with pytest.raises(TypeError, match="will make the Matrix dense"):
+        C << 1
+    nvals = C.nvals
+    C(C.S) << 1
+    assert C.nvals == nvals
+    assert C.reduce_scalar().value == nvals
 
 
 def test_assign_wrong_dims(A):
@@ -610,20 +616,7 @@ def test_isequal(A, v):
     C4 = Matrix.from_values(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
-        [
-            3.0,
-            2.0,
-            3.0,
-            1.0,
-            5.0,
-            3.000000000000000001,
-            7.0,
-            8.0,
-            3.0,
-            1 - 1e-11,
-            7.0,
-            4.0,
-        ],
+        [3.0, 2.0, 3.0, 1.0, 5.0, 3.000000000000000001, 7.0, 8.0, 3.0, 1 - 1e-11, 7.0, 4.0],
     )
     assert not C4.isequal(A)
 

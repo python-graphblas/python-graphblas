@@ -44,7 +44,7 @@ def __dir__():
     return list(globals().keys() | _SPECIAL_ATTRS)
 
 
-def init(backend="suitesparse", blocking=True):
+def init(backend="suitesparse", blocking=False):
     """Initialize the chosen backend.
 
     Parameters
@@ -84,7 +84,7 @@ def _init(backend_arg, blocking, automatic=False):
         return
 
     backend = backend_arg
-    if backend == "pygraphblas":  # pragma: no cover
+    if backend == "pygraphblas":
         import _pygraphblas, pygraphblas  # noqa
 
         lib = _pygraphblas.lib

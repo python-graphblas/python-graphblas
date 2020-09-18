@@ -20,15 +20,7 @@ _semiring_names = {
 _semiring_names -= {
     f"{monoid_name}_{binary_name}"
     for monoid_name, binary_name in itertools.product(
-        {
-            "equal",
-            "hypot",
-            "logaddexp",
-            "logaddexp2",
-            "logical_and",
-            "logical_or",
-            "logical_xor",
-        },
+        {"equal", "hypot", "logaddexp", "logaddexp2", "logical_and", "logical_or", "logical_xor"},
         {"gcd", "lcm", "left_shift", "right_shift"},
     )
 }
