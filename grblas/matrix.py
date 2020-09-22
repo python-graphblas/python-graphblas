@@ -1,9 +1,9 @@
 import itertools
 from . import ffi, lib, backend, binary, monoid, semiring
-from .base import BaseExpression, BaseType
+from .base import BaseExpression, BaseType, call
 from .dtypes import libget, lookup_dtype, unify
 from .exceptions import check_status, is_error, NoValue
-from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
+from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater, _Indices, _Index
 from .mask import StructuralMask, ValueMask
 from .ops import get_typed_op
 from .vector import Vector, VectorExpression
@@ -141,7 +141,7 @@ class Matrix(BaseType):
         return TransposedMatrix(self)
 
     def clear(self):
-        check_status(lib.GrB_Matrix_clear(self.gb_obj[0]))
+        call("GrB_Matrix_clear", [self])
 
     def resize(self, nrows, ncols):
         check_status(lib.GrB_Matrix_resize(self.gb_obj[0], nrows, ncols))
@@ -217,7 +217,7 @@ class Matrix(BaseType):
         """
         new_matrix = ffi_new("GrB_Matrix*")
         dtype = lookup_dtype(dtype)
-        check_status(lib.GrB_Matrix_new(new_matrix, dtype.gb_type, nrows, ncols))
+        check_status(lib.GrB_Matrix_new(new_matrix, dtype.gb_obj, nrows, ncols))
         return cls(new_matrix, dtype, name=name)
 
     @classmethod
@@ -618,8 +618,9 @@ class Matrix(BaseType):
                     argname="value",
                     extra_message="Literal scalars also accepted.",
                 )
-        func = libget(f"GrB_Matrix_setElement_{value.dtype}")
-        check_status(func(self.gb_obj[0], value.value, row, col))  # should we cast?
+        call(
+            f"GrB_Matrix_setElement_{value.dtype}", (self, _CScalar(value), row, col)
+        )  # should we cast?
 
     def _prep_for_assign(self, resolved_indexes, value):
         method_name = "__setitem__"
@@ -693,11 +694,11 @@ class Matrix(BaseType):
                         extra_message=extra_message,
                     )
             if rowsize is None:
-                rows = [rows]
-                rowsize = 1
+                rows = _Indices([rows])
+                rowsize = _Index(1)
             if colsize is None:
-                cols = [cols]
-                colsize = 1
+                cols = _Indices([cols])
+                colsize = _Index(1)
             delayed = MatrixExpression(
                 method_name,
                 f"GrB_Matrix_assign_{value.dtype}",
@@ -712,7 +713,7 @@ class Matrix(BaseType):
     def _delete_element(self, resolved_indexes):
         row, _ = resolved_indexes.indices[0]
         col, _ = resolved_indexes.indices[1]
-        check_status(lib.GrB_Matrix_removeElement(self.gb_obj[0], row, col))
+        call("GrB_Matrix_removeElement", (self, row, col))
 
     if backend == "pygraphblas":
 
@@ -726,7 +727,7 @@ class Matrix(BaseType):
             """
             import pygraphblas as pg
 
-            matrix = pg.Matrix(self.gb_obj, pg.types.gb_type_to_type(self.dtype.gb_type))
+            matrix = pg.Matrix(self.gb_obj, pg.types.gb_type_to_type(self.dtype.gb_obj))
             self.gb_obj = ffi.NULL
             return matrix
 

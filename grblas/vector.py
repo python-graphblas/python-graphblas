@@ -1,6 +1,6 @@
 import itertools
 from . import ffi, lib, backend, binary, monoid, semiring
-from .base import BaseExpression, BaseType
+from .base import BaseExpression, BaseType, call
 from .dtypes import libget, lookup_dtype, unify
 from .exceptions import check_status, is_error, NoValue
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
@@ -126,7 +126,7 @@ class Vector(BaseType):
         return n[0]
 
     def clear(self):
-        check_status(lib.GrB_Vector_clear(self.gb_obj[0]))
+        call("GrB_Vector_clear", [self])
 
     def resize(self, size):
         check_status(lib.GrB_Vector_resize(self.gb_obj[0], size))
@@ -198,7 +198,7 @@ class Vector(BaseType):
         """
         new_vector = ffi_new("GrB_Vector*")
         dtype = lookup_dtype(dtype)
-        check_status(lib.GrB_Vector_new(new_vector, dtype.gb_type, size))
+        check_status(lib.GrB_Vector_new(new_vector, dtype.gb_obj, size))
         return cls(new_vector, dtype, name=name)
 
     @classmethod
@@ -463,8 +463,9 @@ class Vector(BaseType):
                     argname="value",
                     extra_message="Literal scalars also accepted.",
                 )
-        func = libget(f"GrB_Vector_setElement_{value.dtype}")
-        check_status(func(self.gb_obj[0], value.value, index))  # should we cast?
+        call(
+            f"GrB_Vector_setElement_{value.dtype}", (self, _CScalar(value), index)
+        )  # should we cast?
 
     def _prep_for_assign(self, resolved_indexes, value):
         method_name = "__setitem__"
@@ -498,7 +499,7 @@ class Vector(BaseType):
 
     def _delete_element(self, resolved_indexes):
         index, _ = resolved_indexes.indices[0]
-        check_status(lib.GrB_Vector_removeElement(self.gb_obj[0], index))
+        call("GrB_Vector_removeElement", (self, index))
 
     if backend == "pygraphblas":
 
@@ -512,7 +513,7 @@ class Vector(BaseType):
             """
             import pygraphblas as pg
 
-            vector = pg.Vector(self.gb_obj, pg.types.gb_type_to_type(self.dtype.gb_type))
+            vector = pg.Vector(self.gb_obj, pg.types.gb_type_to_type(self.dtype.gb_obj))
             self.gb_obj = ffi.NULL
             return vector
 

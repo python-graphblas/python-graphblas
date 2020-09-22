@@ -18,9 +18,9 @@ def libget(name):
 
 
 class DataType:
-    def __init__(self, name, gb_type, c_type, numba_type):
+    def __init__(self, name, gb_obj, c_type, numba_type):
         self.name = name
-        self.gb_type = gb_type
+        self.gb_obj = gb_obj
         self.c_type = c_type
         self.numba_type = numba_type
 
@@ -29,7 +29,7 @@ class DataType:
 
     def __eq__(self, other):
         if type(other) is DataType:
-            return self.gb_type == other.gb_type
+            return self.gb_obj == other.gb_obj
         else:
             # Attempt to use `other` as a lookup key
             try:
@@ -37,6 +37,10 @@ class DataType:
                 return self == other
             except ValueError:
                 raise TypeError(f"Invalid or unknown datatype: {other}")
+
+    @property
+    def _carg(self):
+        return self.gb_obj
 
 
 BOOL = DataType("BOOL", lib.GrB_BOOL, "_Bool", numba.types.bool_)
@@ -70,7 +74,7 @@ _sample_values = {
     BOOL.name: np.bool_(True),
 }
 
-# Create register to easily lookup types by name, gb_type, or c_type
+# Create register to easily lookup types by name, gb_obj, or c_type
 _registry = {}
 for dtype in [
     BOOL,
@@ -88,7 +92,7 @@ for dtype in [
     FC64,
 ]:
     _registry[dtype.name] = dtype
-    _registry[dtype.gb_type] = dtype
+    _registry[dtype.gb_obj] = dtype
     _registry[dtype.c_type] = dtype
     _registry[dtype.numba_type] = dtype
     _registry[dtype.numba_type.name] = dtype

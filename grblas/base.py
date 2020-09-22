@@ -11,6 +11,14 @@ NULL = ffi.NULL
 CData = ffi.CData
 
 
+def call(cfunc_name, args):
+    call_args = [getattr(x, "_carg", x) if x is not None else NULL for x in args]
+    cfunc = libget(cfunc_name)
+    err_code = cfunc(*call_args)
+    check_status(err_code)
+    return err_code
+
+
 def _expect_type_message(
     self, x, types, *, within, argname=None, keyword_name=None, extra_message=""
 ):
@@ -124,7 +132,7 @@ class BaseType:
         if mask_arg is not None:
             mask = mask_arg
         if mask is None:
-            mask = NULL
+            pass
         elif self._is_scalar:
             raise TypeError("Mask not allowed for Scalars")
         else:
@@ -133,8 +141,6 @@ class BaseType:
             raise TypeError("Got multiple values for argument 'accum'")
         if accum_arg is not None:
             accum = accum_arg
-        if accum is None:
-            accum = NULL
         return Updater(self, mask=mask, accum=accum, replace=replace)
 
     def __eq__(self, other):
@@ -152,16 +158,12 @@ class BaseType:
         return self._update(delayed)
 
     def _update(self, delayed, mask=None, accum=None, replace=False):
-        if mask is None:
-            mask = NULL
-        if accum is None:
-            accum = NULL
         # TODO: check expected output type (now included in Expression object)
         if not isinstance(delayed, BaseExpression):
             if type(delayed) is AmbiguousAssignOrExtract:
                 if delayed.resolved_indexes.is_single_element and self._is_scalar:
                     # Extract element (s << v[1])
-                    if accum is not NULL:
+                    if accum is not None:
                         raise TypeError(
                             "Scalar accumulation with extract element"
                             "--such as `s(accum=accum) << v[0]`--is not supported"
@@ -174,7 +176,7 @@ class BaseType:
             elif type(delayed) is type(self):
                 # Simple assignment (w << v)
                 if self._is_scalar:
-                    if accum is not NULL:
+                    if accum is not None:
                         raise TypeError(
                             "Scalar update with accumulation--such as `s(accum=accum) << t`"
                             "--is not supported"
@@ -184,7 +186,7 @@ class BaseType:
 
                 delayed = delayed.apply(identity)
             elif self._is_scalar:
-                if accum is not NULL:
+                if accum is not None:
                     raise TypeError(
                         "Scalar update with accumulation--such as `s(accum=accum) << t`"
                         "--is not supported"
@@ -219,12 +221,12 @@ class BaseType:
                                 f"assignment value must be Expression object, not {type(delayed)}"
                             )
                     updater = self(
-                        mask=None if mask is NULL else mask,
-                        accum=None if accum is NULL else accum,
+                        mask=mask,
+                        accum=accum,
                         replace=replace,
                     )
                     if type(self) is Matrix:
-                        if mask is NULL:
+                        if mask is None:
                             raise TypeError(
                                 "Warning: updating a Matrix with a scalar without a mask will "
                                 "make the Matrix dense.  This may use a lot of memory and probably "
@@ -239,20 +241,18 @@ class BaseType:
                     return
 
         # Normalize mask and separate out complement and structural flags
-        if mask is NULL:
+        if mask is None:
             complement = False
             structure = False
         else:
             _check_mask(mask, self)
             complement = mask.complement
             structure = mask.structure
-            mask = mask.mask.gb_obj[0]
 
         # Normalize accumulator
-        if accum is not NULL:
+        if accum is not None:
             accum = get_typed_op(accum, self.dtype)
             self._expect_op(accum, "BinaryOp", within="FIXME", keyword_name="accum")
-            accum = accum.gb_obj
 
         # Get descriptor based on flags
         desc = descriptor_lookup(
@@ -263,26 +263,19 @@ class BaseType:
             output_replace=replace,
         )
         if self._is_scalar:
-            call_args = [self._carg, accum]
-            if delayed.op is not None:  # pragma: no branch
-                call_args.append(delayed.op._carg)
-            call_args.extend(x._carg for x in delayed.args)
-            call_args.append(desc)
-
-            cfunc = libget(delayed.cfunc_name.format(output_dtype=self.dtype))
-            # Make the GraphBLAS call
-            check_status(cfunc(*call_args))
-            # Ensure the scalar isn't flagged as empty after the update
-            self._is_empty = False
+            args = [self, accum]
+            cfunc_name = delayed.cfunc_name.format(output_dtype=self.dtype)
         else:
-            call_args = [self._carg, mask, accum]
-            if delayed.op is not None:
-                call_args.append(delayed.op._carg)
-            call_args.extend(getattr(x, "_carg", x) for x in delayed.args)
-            call_args.append(desc)
-            cfunc = libget(delayed.cfunc_name)
-            # Make the GraphBLAS call
-            check_status(cfunc(*call_args))
+            args = [self, mask, accum]
+            cfunc_name = delayed.cfunc_name
+        if delayed.op is not None:
+            args.append(delayed.op)
+        args.extend(delayed.args)
+        args.append(desc)
+        # Make the GraphBLAS call
+        call(cfunc_name, args)
+        if self._is_scalar:
+            self._is_empty = False
 
     @property
     def _name_html(self):

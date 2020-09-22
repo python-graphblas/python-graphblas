@@ -1,4 +1,4 @@
-from grblas import descriptor, ffi, lib
+from grblas import descriptor, lib
 
 
 def test_caching():
@@ -13,7 +13,7 @@ def test_caching():
         transpose_first=True,
         transpose_second=False,
     )
-    assert tocr == lib.GrB_DESC_RSCT0
+    assert tocr.gb_obj == lib.GrB_DESC_RSCT0
 
 
 def test_null_desc():
@@ -21,4 +21,4 @@ def test_null_desc():
     The default descriptor is not actually defined, but should be NULL
     """
     default = descriptor.lookup()
-    assert default == ffi.NULL
+    assert default is None

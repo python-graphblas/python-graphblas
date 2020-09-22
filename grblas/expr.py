@@ -2,7 +2,52 @@ from . import ffi, lib
 
 ffi_new = ffi.new
 NULL = ffi.NULL
-GrB_ALL = lib.GrB_ALL
+
+
+class _Index:
+    def __init__(self, scalar):
+        self._carg = scalar
+
+    def __repr__(self):
+        return repr(self._carg)
+
+    @property
+    def name(self):
+        return repr(self._carg)
+
+    def __int__(self):
+        return self._carg
+
+    __hash__ = None
+
+
+class _Indices:
+    def __init__(self, index):
+        self.index = index
+        self._carg = ffi_new("GrB_Index[]", index)
+
+    @property
+    def name(self):
+        if len(self.index) < 20:
+            values = ", ".join(map(str, self.index))
+        else:
+            values = (
+                f"{', '.join(map(str, self.index[:5]))}, "
+                "..., "
+                f"{', '.join(map(str, self.index[-5:]))}"
+            )
+        return "(GrB_Index[]){%s}" % values
+
+    __hash__ = None
+
+
+class _AllIndices:
+    def __init__(self):
+        self._carg = lib.GrB_ALL
+        self.name = "GrB_ALL"
+
+
+_ALL_INDICES = _AllIndices()
 
 
 class IndexerResolver:
@@ -50,18 +95,18 @@ class IndexerResolver:
         if typ is int:
             if index >= size:
                 raise IndexError(f"index={index}, size={size}")
-            return index, None
+            return _Index(index), None
         if typ is slice:
             if index == slice(None):
                 # [:] means all indices; use special GrB_ALL indicator
-                return GrB_ALL, size
+                return _ALL_INDICES, _Index(size)
             index = tuple(range(size)[index])
         elif typ is not list:
             try:
                 index = tuple(index)
             except Exception:
                 raise TypeError("Unable to convert to tuple")
-        return ffi_new("GrB_Index[]", index), len(index)
+        return _Indices(index), _Index(len(index))
 
 
 class AmbiguousAssignOrExtract:
@@ -72,9 +117,9 @@ class AmbiguousAssignOrExtract:
     def __call__(self, *args, **kwargs):
         if type(self.parent) is Updater:
             parent_kwargs = []
-            if self.parent.kwargs["accum"] is not NULL:
+            if self.parent.kwargs["accum"] is not None:
                 parent_kwargs.append(f"accum={self.parent.kwargs['accum']}")
-            if self.parent.kwargs["mask"] is not NULL:
+            if self.parent.kwargs["mask"] is not None:
                 # It would sure be nice if we knew the mask type.
                 # Passing around C objects directly is sometimes inconvenient.
                 parent_kwargs.append("mask=<Mask>")
