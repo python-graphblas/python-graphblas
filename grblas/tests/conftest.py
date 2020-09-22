@@ -15,7 +15,7 @@ def pytest_configure(config):
         rec.start()
 
         def save_records():
-            with open("record.txt", "w") as f:
+            with open("record.txt", "w") as f:  # pragma: no cover
                 f.write("\n".join(rec.data))
 
         # I'm sure there's a `pytest` way to do this...
