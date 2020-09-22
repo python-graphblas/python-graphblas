@@ -463,9 +463,8 @@ class Vector(BaseType):
                     argname="value",
                     extra_message="Literal scalars also accepted.",
                 )
-        call(
-            f"GrB_Vector_setElement_{value.dtype}", (self, _CScalar(value), index)
-        )  # should we cast?
+        # should we cast?
+        call(f"GrB_Vector_setElement_{value.dtype}", (self, _CScalar(value), index))
 
     def _prep_for_assign(self, resolved_indexes, value):
         method_name = "__setitem__"

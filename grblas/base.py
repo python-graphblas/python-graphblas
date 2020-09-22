@@ -1,3 +1,4 @@
+from contextvars import ContextVar
 from . import ffi
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import libget, lookup_dtype
@@ -9,6 +10,7 @@ from .unary import identity
 
 NULL = ffi.NULL
 CData = ffi.CData
+recorder = ContextVar("recorder", default=None)
 
 
 def call(cfunc_name, args):
@@ -16,6 +18,9 @@ def call(cfunc_name, args):
     cfunc = libget(cfunc_name)
     err_code = cfunc(*call_args)
     check_status(err_code)
+    rec = recorder.get()
+    if rec is not None:
+        rec.record(cfunc_name, args)
     return err_code
 
 

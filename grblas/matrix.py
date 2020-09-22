@@ -618,9 +618,8 @@ class Matrix(BaseType):
                     argname="value",
                     extra_message="Literal scalars also accepted.",
                 )
-        call(
-            f"GrB_Matrix_setElement_{value.dtype}", (self, _CScalar(value), row, col)
-        )  # should we cast?
+        # should we cast?
+        call(f"GrB_Matrix_setElement_{value.dtype}", (self, _CScalar(value), row, col))
 
     def _prep_for_assign(self, resolved_indexes, value):
         method_name = "__setitem__"

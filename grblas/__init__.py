@@ -9,6 +9,7 @@ _SPECIAL_ATTRS = {
     "Matrix",
     "Vector",
     "Scalar",
+    "Recorder",
     "base",
     "descriptor",
     "dtypes",
@@ -22,6 +23,7 @@ _SPECIAL_ATTRS = {
     "monoid",
     "semiring",
     "matrix",
+    "recorder",
     "vector",
     "scalar",
     "tests",
@@ -103,7 +105,7 @@ def _init(backend_arg, blocking, automatic=False):
 
 
 def _load(name):
-    if name in {"Matrix", "Vector", "Scalar"}:
+    if name in {"Matrix", "Vector", "Scalar", "Recorder"}:
         module_name = name.lower()
         if module_name not in globals():
             _load(module_name)
