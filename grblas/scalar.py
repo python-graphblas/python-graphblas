@@ -223,6 +223,8 @@ class ScalarExpression(BaseExpression):
 
 class _CScalar:
     def __init__(self, scalar):
+        if type(scalar) is not Scalar:
+            scalar = Scalar.from_value(scalar, name=repr(scalar))
         self.scalar = scalar
         self.dtype = scalar.dtype
 

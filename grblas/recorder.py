@@ -1,5 +1,6 @@
 from . import lib
 from .base import recorder
+from .dtypes import DataType
 from .mask import Mask
 from .matrix import TransposedMatrix
 from .ops import TypedOpBase
@@ -15,6 +16,8 @@ def gbstr(arg):
         name = arg.mask.name
     elif type(arg) is TransposedMatrix:
         name = arg._matrix.name
+    elif type(arg) is DataType:
+        name = arg.gb_name
     else:
         name = arg.name
     if not name:

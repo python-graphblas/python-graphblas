@@ -1,9 +1,9 @@
 import itertools
 from . import ffi, lib, backend, binary, monoid, semiring
-from .base import BaseExpression, BaseType, call
+from .base import BaseExpression, BaseType, call, _Pointer
 from .dtypes import libget, lookup_dtype, unify
 from .exceptions import check_status, is_error, NoValue
-from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
+from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater, _Index, _Indices
 from .mask import StructuralMask, ValueMask
 from .ops import get_typed_op
 from .scalar import Scalar, ScalarExpression, _CScalar
@@ -27,6 +27,7 @@ class Vector(BaseType):
     def __del__(self):
         gb_obj = getattr(self, "gb_obj", None)
         if gb_obj is not None:
+            # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Vector_free(gb_obj))
 
     def __repr__(self, mask=None):
@@ -129,7 +130,7 @@ class Vector(BaseType):
         call("GrB_Vector_clear", [self])
 
     def resize(self, size):
-        check_status(lib.GrB_Vector_resize(self.gb_obj[0], size))
+        call("GrB_Vector_resize", (self, _CScalar(size)))
 
     def to_values(self):
         """
@@ -166,13 +167,12 @@ class Vector(BaseType):
         dup_op = get_typed_op(dup_op, self.dtype)
         self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
 
-        indices = ffi_new("GrB_Index[]", indices)
-        values = ffi_new(f"{self.dtype.c_type}[]", values)
-        # Push values into w
-        func = libget(f"GrB_Vector_build_{self.dtype.name}")
-        check_status(func(self.gb_obj[0], indices, values, n, dup_op.gb_obj))
+        indices = _Indices(indices)
+        values = _Indices(values, ctype=self.dtype.c_type)
+        call(f"GrB_Vector_build_{self.dtype.name}", (self, indices, values, _Index(n), dup_op))
+
         # Check for duplicates when dup_op was not provided
-        if not dup_op_given and self.nvals < len(values):
+        if not dup_op_given and self.nvals < n:
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
 
     def dup(self, *, dtype=None, mask=None, name=None):
@@ -187,8 +187,9 @@ class Vector(BaseType):
             new_vec(mask=mask)[:] << self
             return new_vec
         new_vec = ffi_new("GrB_Vector*")
-        check_status(lib.GrB_Vector_dup(new_vec, self.gb_obj[0]))
-        return type(self)(new_vec, self.dtype, name=name)
+        rv = type(self)(new_vec, self.dtype, name=name)
+        call("GrB_Vector_dup", (_Pointer(rv), self))
+        return rv
 
     @classmethod
     def new(cls, dtype, size=0, *, name=None):
@@ -198,8 +199,9 @@ class Vector(BaseType):
         """
         new_vector = ffi_new("GrB_Vector*")
         dtype = lookup_dtype(dtype)
-        check_status(lib.GrB_Vector_new(new_vector, dtype.gb_obj, size))
-        return cls(new_vector, dtype, name=name)
+        rv = cls(new_vector, dtype, name=name)
+        call("GrB_Vector_new", (_Pointer(rv), dtype, _Index(size)))
+        return rv
 
     @classmethod
     def from_values(cls, indices, values, *, size=None, dup_op=None, dtype=None, name=None):

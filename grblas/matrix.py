@@ -1,6 +1,6 @@
 import itertools
 from . import ffi, lib, backend, binary, monoid, semiring
-from .base import BaseExpression, BaseType, call
+from .base import BaseExpression, BaseType, call, _Pointer
 from .dtypes import libget, lookup_dtype, unify
 from .exceptions import check_status, is_error, NoValue
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater, _Indices, _Index
@@ -29,6 +29,7 @@ class Matrix(BaseType):
     def __del__(self):
         gb_obj = getattr(self, "gb_obj", None)
         if gb_obj is not None:
+            # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Matrix_free(gb_obj))
 
     def __repr__(self, mask=None):
@@ -144,7 +145,7 @@ class Matrix(BaseType):
         call("GrB_Matrix_clear", [self])
 
     def resize(self, nrows, ncols):
-        check_status(lib.GrB_Matrix_resize(self.gb_obj[0], nrows, ncols))
+        call("GrB_Matrix_resize", (self, _CScalar(nrows), _CScalar(ncols)))
 
     def to_values(self):
         """
@@ -184,14 +185,15 @@ class Matrix(BaseType):
             dup_op = binary.plus
         dup_op = get_typed_op(dup_op, self.dtype)
         self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
-        rows = ffi_new("GrB_Index[]", rows)
-        columns = ffi_new("GrB_Index[]", columns)
-        values = ffi_new(f"{self.dtype.c_type}[]", values)
-        # Push values into w
-        func = libget(f"GrB_Matrix_build_{self.dtype.name}")
-        check_status(func(self.gb_obj[0], rows, columns, values, n, dup_op.gb_obj))
+
+        rows = _Indices(rows)
+        columns = _Indices(columns)
+        values = _Indices(values, ctype=self.dtype.c_type)
+        call(
+            f"GrB_Matrix_build_{self.dtype.name}", (self, rows, columns, values, _Index(n), dup_op)
+        )
         # Check for duplicates when dup_op was not provided
-        if not dup_op_given and self.nvals < len(values):
+        if not dup_op_given and self.nvals < n:
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
 
     def dup(self, *, dtype=None, mask=None, name=None):
@@ -206,8 +208,9 @@ class Matrix(BaseType):
             new_mat(mask=mask)[:, :] << self
             return new_mat
         new_mat = ffi_new("GrB_Matrix*")
-        check_status(lib.GrB_Matrix_dup(new_mat, self.gb_obj[0]))
-        return type(self)(new_mat, self.dtype, name=name)
+        rv = type(self)(new_mat, self.dtype, name=name)
+        call("GrB_Matrix_dup", (_Pointer(rv), self))
+        return rv
 
     @classmethod
     def new(cls, dtype, nrows=0, ncols=0, *, name=None):
@@ -217,8 +220,9 @@ class Matrix(BaseType):
         """
         new_matrix = ffi_new("GrB_Matrix*")
         dtype = lookup_dtype(dtype)
-        check_status(lib.GrB_Matrix_new(new_matrix, dtype.gb_obj, nrows, ncols))
-        return cls(new_matrix, dtype, name=name)
+        rv = cls(new_matrix, dtype, name=name)
+        call("GrB_Matrix_new", (_Pointer(rv), dtype, _Index(nrows), _Index(ncols)))
+        return rv
 
     @classmethod
     def from_values(

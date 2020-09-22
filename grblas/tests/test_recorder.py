@@ -12,9 +12,12 @@ def test_recorder():
         C(D.S) << A.T.ewise_mult(B)
     A.mxm(B).new(name="E")  # not recorded
     rec.stop()  # no-op
-    assert len(rec.data) == 3
+
+    assert len(rec.data) == 5
     assert rec.data == [
+        "GrB_Matrix_new(&C, GrB_INT64, 2, 2)",
         "GrB_mxm(C, NULL, NULL, GxB_PLUS_TIMES_INT64, A, B, NULL)",
+        "GrB_Matrix_new(&D, GrB_INT64, 2, 2)",
         "GrB_mxm(D, NULL, NULL, GxB_MIN_PLUS_INT64, A, B, GrB_DESC_T1)",
         "GrB_eWiseMult_Matrix_BinaryOp(C, D, NULL, GrB_TIMES_INT64, A, B, GrB_DESC_ST0)",
     ]

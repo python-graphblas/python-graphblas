@@ -22,9 +22,10 @@ class _Index:
 
 
 class _Indices:
-    def __init__(self, index):
+    def __init__(self, index, ctype="GrB_Index"):
         self.index = index
-        self._carg = ffi_new("GrB_Index[]", index)
+        self._carg = ffi_new(f"{ctype}[]", index)
+        self.ctype = ctype
 
     @property
     def name(self):
@@ -36,7 +37,7 @@ class _Indices:
                 "..., "
                 f"{', '.join(map(str, self.index[-5:]))}"
             )
-        return "(GrB_Index[]){%s}" % values
+        return "(%s[]){%s}" % (self.ctype, values)
 
     __hash__ = None
 

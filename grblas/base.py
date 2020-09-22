@@ -343,3 +343,19 @@ class BaseExpression:
     def _format_expr_html(self):
         expr_repr = self.expr_repr.replace(".name", "._name_html")
         return expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
+
+
+class _Pointer:
+    def __init__(self, val):
+        self.val = val
+
+    @property
+    def _carg(self):
+        return self.val.gb_obj
+
+    @property
+    def name(self):
+        name = self.val.name
+        if not name:
+            name = f"temp_{type(self.val).__name__.lower()}"
+        return f"&{name}"
