@@ -90,7 +90,7 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
         if mask is None:
             submatrix = matrix
         else:
-            submatrix = Matrix.new("UINT8", matrix.nrows, matrix.ncols, name="")
+            submatrix = Matrix.new("UINT8", matrix._nrows, matrix._ncols, name="")
             if mask.structure:
                 submatrix(matrix.S)[:, :] = 0 if mask.complement else 1
             else:
@@ -103,7 +103,7 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
             columns = slice(None)
         if type(matrix) is TransposedMatrix:
             parent = matrix._matrix
-            submatrix = Matrix.new(parent.dtype, parent.nrows, parent.ncols, name="")
+            submatrix = Matrix.new(parent.dtype, parent._nrows, parent._ncols, name="")
             submatrix(parent.S)[columns, rows] = 0
             submatrix(submatrix.S) << parent
             if row_offset > 0 or column_offset > 0:
@@ -111,11 +111,11 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
             submatrix = submatrix.T
         else:
             if mask is None:
-                submatrix = Matrix.new(matrix.dtype, matrix.nrows, matrix.ncols, name="")
+                submatrix = Matrix.new(matrix.dtype, matrix._nrows, matrix._ncols, name="")
                 submatrix(matrix.S)[rows, columns] = 0
                 submatrix(submatrix.S) << matrix
             else:
-                submatrix = Matrix.new("UINT8", matrix.nrows, matrix.ncols, name="")
+                submatrix = Matrix.new("UINT8", matrix._nrows, matrix._ncols, name="")
                 if mask.structure:
                     submatrix(matrix.S)[rows, columns] = 0 if mask.complement else 1
                 else:
@@ -132,7 +132,7 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
         if mask is None:
             subvector = vector
         else:
-            subvector = Vector.new("UINT8", vector.size, name="")
+            subvector = Vector.new("UINT8", vector._size, name="")
             if mask.structure:
                 subvector(vector.S)[:] = 0 if mask.complement else 1
             else:
@@ -140,11 +140,11 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
                 subvector(vector.V)[:] = 0 if mask.complement else 1
     else:
         if mask is None:
-            subvector = Vector.new(vector.dtype, vector.size, name="")
+            subvector = Vector.new(vector.dtype, vector._size, name="")
             subvector(vector.S)[columns] = 0
             subvector(subvector.S) << vector
         else:
-            subvector = Vector.new("UINT8", vector.size, name="")
+            subvector = Vector.new("UINT8", vector._size, name="")
             if mask.structure:
                 subvector(vector.S)[columns] = 0 if mask.complement else 1
             else:
@@ -188,8 +188,8 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
         min_rows = pd.options.display.min_rows
     if max_columns is None:  # pragma: no branch
         max_columns = _get_max_columns()
-    rows, row_groups = _get_chunk(matrix.nrows, min_rows, max_rows)
-    columns, column_groups = _get_chunk(matrix.ncols, max_columns, max_columns)
+    rows, row_groups = _get_chunk(matrix._nrows, min_rows, max_rows)
+    columns, column_groups = _get_chunk(matrix._ncols, max_columns, max_columns)
     df = pd.DataFrame(columns=columns, index=rows)
     for row_group, row_offset in row_groups:
         for column_group, column_offset in column_groups:
@@ -210,7 +210,7 @@ def _get_vector_dataframe(vector, max_columns, *, mask=None):
         return
     if max_columns is None:  # pragma: no branch
         max_columns = _get_max_columns()
-    columns, column_groups = _get_chunk(vector.size, max_columns, max_columns)
+    columns, column_groups = _get_chunk(vector._size, max_columns, max_columns)
     df = pd.DataFrame(columns=columns, index=[""])
     for column_group, column_offset in column_groups:
         _update_vector_dataframe(df, vector, column_group, column_offset, mask=mask)
@@ -226,7 +226,7 @@ def matrix_info(matrix, *, mask=None, for_html=True):
     else:
         name = f"grblas.{type(matrix).__name__}"
     keys = ["nvals", "nrows", "ncols", "dtype"]
-    vals = [matrix.nvals, matrix.nrows, matrix.ncols, matrix.dtype.name]
+    vals = [matrix._nvals, matrix._nrows, matrix._ncols, matrix.dtype.name]
     return name, keys, vals
 
 
@@ -239,7 +239,7 @@ def vector_info(vector, *, mask=None, for_html=True):
     else:
         name = f"grblas.{type(vector).__name__}"
     keys = ["nvals", "size", "dtype"]
-    vals = [vector.nvals, vector.size, vector.dtype.name]
+    vals = [vector._nvals, vector._size, vector.dtype.name]
     return name, keys, vals
 
 
@@ -350,7 +350,7 @@ def _format_expression(expr, header):
 def format_matrix_expression_html(expr):
     expr_html = expr._format_expr_html()
     header = create_header_html(
-        expr_html, ["nrows", "ncols", "dtype"], [expr.nrows, expr.ncols, expr.dtype]
+        expr_html, ["nrows", "ncols", "dtype"], [expr._nrows, expr._ncols, expr.dtype]
     )
     return _format_expression(expr, header)
 
@@ -361,7 +361,7 @@ def format_matrix_expression(expr):
     header = create_header(
         expr_repr,
         ["nrows", "ncols", "dtype"],
-        [expr.nrows, expr.ncols, expr.dtype],
+        [expr._nrows, expr._ncols, expr.dtype],
         name=name,
         quote=False,
     )
@@ -370,7 +370,7 @@ def format_matrix_expression(expr):
 
 def format_vector_expression_html(expr):
     expr_html = expr._format_expr_html()
-    header = create_header_html(expr_html, ["size", "dtype"], [expr.size, expr.dtype])
+    header = create_header_html(expr_html, ["size", "dtype"], [expr._size, expr.dtype])
     return _format_expression(expr, header)
 
 
@@ -378,7 +378,7 @@ def format_vector_expression(expr):
     expr_repr = expr._format_expr()
     name = f"grblas.{type(expr).__name__}"
     header = create_header(
-        expr_repr, ["size", "dtype"], [expr.size, expr.dtype], name=name, quote=False
+        expr_repr, ["size", "dtype"], [expr._size, expr.dtype], name=name, quote=False
     )
     return f"{header}\n\nDo expr.new() or other << expr to calculate the expression."
 

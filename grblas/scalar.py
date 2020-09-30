@@ -136,6 +136,8 @@ class Scalar(BaseType):
             return 0
         return 1
 
+    _nvals = nvals
+
     @property
     def _carg(self):
         return self.gb_obj

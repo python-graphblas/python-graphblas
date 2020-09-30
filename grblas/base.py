@@ -210,8 +210,8 @@ class BaseType:
                         [delayed],
                         expr_repr="{0}",
                         dtype=delayed.dtype,
-                        nrows=delayed.nrows,
-                        ncols=delayed.ncols,
+                        nrows=delayed._nrows,
+                        ncols=delayed._ncols,
                     )
                 else:
                     from .scalar import Scalar
@@ -220,16 +220,12 @@ class BaseType:
                         scalar = delayed
                     else:
                         try:
-                            scalar = Scalar.from_value(delayed, name="")
+                            scalar = Scalar.from_value(delayed, name=repr(delayed))
                         except TypeError:
                             raise TypeError(
                                 f"assignment value must be Expression object, not {type(delayed)}"
                             )
-                    updater = self(
-                        mask=mask,
-                        accum=accum,
-                        replace=replace,
-                    )
+                    updater = self(mask=mask, accum=accum, replace=replace)
                     if type(self) is Matrix:
                         if mask is None:
                             raise TypeError(
@@ -268,7 +264,7 @@ class BaseType:
             output_replace=replace,
         )
         if self._is_scalar:
-            args = [self, accum]
+            args = [_Pointer(self), accum]
             cfunc_name = delayed.cfunc_name.format(output_dtype=self.dtype)
         else:
             args = [self, mask, accum]

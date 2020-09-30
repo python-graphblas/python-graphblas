@@ -4,31 +4,19 @@ ffi_new = ffi.new
 NULL = ffi.NULL
 
 
-class _Index:
-    def __init__(self, scalar):
-        self._carg = scalar
-
-    def __repr__(self):
-        return repr(self._carg)
-
-    @property
-    def name(self):
-        return repr(self._carg)
-
-    def __int__(self):
-        return self._carg
-
-    __hash__ = None
-
-
-class _Indices:
-    def __init__(self, index, ctype="GrB_Index"):
+# A similar object will eventually make it to the GraphBLAS spec.
+# Hide this from the user for now.
+class _CArray:
+    def __init__(self, index, ctype="GrB_Index", name=None):
         self.index = index
         self._carg = ffi_new(f"{ctype}[]", index)
         self.ctype = ctype
+        self._name = name
 
     @property
     def name(self):
+        if self._name is not None:
+            return self._name
         if len(self.index) < 20:
             values = ", ".join(map(str, self.index))
         else:
@@ -93,21 +81,23 @@ class IndexerResolver:
         return out
 
     def parse_index(self, index, typ, size):
+        from .scalar import _CScalar
+
         if typ is int:
             if index >= size:
                 raise IndexError(f"index={index}, size={size}")
-            return _Index(index), None
+            return _CScalar(index), None
         if typ is slice:
             if index == slice(None):
                 # [:] means all indices; use special GrB_ALL indicator
-                return _ALL_INDICES, _Index(size)
+                return _ALL_INDICES, _CScalar(size)
             index = tuple(range(size)[index])
         elif typ is not list:
             try:
                 index = tuple(index)
             except Exception:
                 raise TypeError("Unable to convert to tuple")
-        return _Indices(index), _Index(len(index))
+        return _CArray(index), _CScalar(len(index))
 
 
 class AmbiguousAssignOrExtract:
@@ -150,8 +140,8 @@ class AmbiguousAssignOrExtract:
             raise TypeError("Cannot extract from an Updater")
         if not self.resolved_indexes.is_single_element:
             raise AttributeError("Only Scalars have `.value` attribute")
-        val, _ = self.parent._extract_element(self.resolved_indexes)
-        return val
+        scalar = self.parent._extract_element(self.resolved_indexes, name="s_extract")
+        return scalar.value
 
     def new(self, *, dtype=None, mask=None, name=None):
         """
@@ -163,12 +153,7 @@ class AmbiguousAssignOrExtract:
         if self.resolved_indexes.is_single_element:
             if mask is not None:
                 raise TypeError("mask is not allowed for single element extraction")
-            val, cur_dtype = self.parent._extract_element(self.resolved_indexes)
-            if dtype is None:
-                dtype = cur_dtype
-            from .scalar import Scalar
-
-            return Scalar.from_value(val, dtype=dtype, name=name)
+            return self.parent._extract_element(self.resolved_indexes, dtype=dtype, name=name)
         else:
             delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
             return delayed_extractor.new(dtype=dtype, mask=mask, name=name)

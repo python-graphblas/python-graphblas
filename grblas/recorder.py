@@ -1,3 +1,4 @@
+import collections
 from . import lib
 from .base import recorder
 from .dtypes import DataType
@@ -38,12 +39,14 @@ class Recorder:
     >>> rec.data[0]
     'GrB_mxm(C, NULL, NULL, GxB_PLUS_TIMES_INT64, A, B, NULL)'
 
-    Currently, only one recorder will record at a given time.
+    Currently, only one recorder will record at a time within a context.
     """
 
-    def __init__(self):
+    def __init__(self, *, record=False):
         self.data = []
         self._token = None
+        if record:
+            self.start()
 
     def record(self, cfunc_name, args):
         if not hasattr(lib, cfunc_name):
@@ -65,3 +68,7 @@ class Recorder:
 
     def __exit__(self, type_, value, traceback):
         self.stop()
+
+
+skip_record = Recorder()
+skip_record.data = collections.deque([], 0)
