@@ -23,12 +23,12 @@ def test_bool_doesnt_get_too_large():
     b = grblas.Vector.from_values([0, 1, 2, 3], [True, True, False, False])
     z = a.ewise_mult(b, grblas.monoid.numpy.add).new()
     x, y = z.to_values()
-    assert y == (True, True, True, False)
+    np.testing.assert_array_equal(y, (True, True, True, False))
 
     op = grblas.ops.UnaryOp.register_anonymous(lambda x: np.add(x, x))
     z = a.apply(op).new()
     x, y = z.to_values()
-    assert y == (True, False, True, False)
+    np.testing.assert_array_equal(y, (True, False, True, False))
 
 
 @pytest.mark.slow

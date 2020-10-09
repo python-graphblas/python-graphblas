@@ -1,5 +1,6 @@
 import pytest
 import grblas
+import numpy as np
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
@@ -149,13 +150,13 @@ def test_build(A):
 
 def test_extract_values(A):
     rows, cols, vals = A.to_values()
-    assert rows == (0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6)
-    assert cols == (1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4)
-    assert vals == (2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3)
+    np.testing.assert_array_equal(rows, (0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6))
+    np.testing.assert_array_equal(cols, (1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4))
+    np.testing.assert_array_equal(vals, (2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3))
     Trows, Tcols, Tvals = A.T.to_values()
-    assert rows == Tcols
-    assert cols == Trows
-    assert vals == Tvals
+    np.testing.assert_array_equal(rows, Tcols)
+    np.testing.assert_array_equal(cols, Trows)
+    np.testing.assert_array_equal(vals, Tvals)
 
 
 def test_extract_element(A):

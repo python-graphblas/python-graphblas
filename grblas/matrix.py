@@ -1,4 +1,5 @@
 import itertools
+import numpy as np
 from . import ffi, lib, backend, binary, monoid, semiring
 from .base import BaseExpression, BaseType
 from .dtypes import libget, lookup_dtype, unify
@@ -149,7 +150,7 @@ class Matrix(BaseType):
     def to_values(self):
         """
         GrB_Matrix_extractTuples
-        Extract the rows, columns and values as 3 generators
+        Extract the rows, columns and values as a 3-tuple of numpy arrays
         """
         rows = ffi_new("GrB_Index[]", self.nvals)
         columns = ffi_new("GrB_Index[]", self.nvals)
@@ -158,15 +159,19 @@ class Matrix(BaseType):
         n[0] = self.nvals
         func = libget(f"GrB_Matrix_extractTuples_{self.dtype.name}")
         check_status(func(rows, columns, values, n, self.gb_obj[0]))
-        return tuple(rows), tuple(columns), tuple(values)
+        return (np.frombuffer(ffi.buffer(rows), dtype=np.uint64),
+                np.frombuffer(ffi.buffer(columns), dtype=np.uint64),
+                np.frombuffer(ffi.buffer(values), dtype=self.dtype.np_type))
 
-    def build(self, rows, columns, values, *, dup_op=None, clear=False):
-        # TODO: add `size` option once .resize is available
-        if not isinstance(rows, (tuple, list)):
+    def build(self, rows, columns, values, *, dup_op=None, clear=False, nrows=None, ncols=None):
+        np_rows = isinstance(rows, np.ndarray)
+        if not np_rows and not isinstance(rows, (tuple, list)):
             rows = tuple(rows)
-        if not isinstance(columns, (tuple, list)):
+        np_cols = isinstance(columns, np.ndarray)
+        if not np_cols and not isinstance(columns, (tuple, list)):
             columns = tuple(columns)
-        if not isinstance(values, (tuple, list)):
+        np_vals = isinstance(values, np.ndarray)
+        if not np_vals and not isinstance(values, (tuple, list)):
             values = tuple(values)
         n = len(values)
         if len(rows) != n or len(columns) != n:
@@ -176,6 +181,12 @@ class Matrix(BaseType):
             )
         if clear:
             self.clear()
+        if nrows is not None or ncols is not None:
+            if nrows is None:
+                nrows = self.nrows
+            if ncols is None:
+                ncols = self.ncols
+            self.resize(nrows, ncols)
         if n <= 0:
             return
 
@@ -184,14 +195,27 @@ class Matrix(BaseType):
             dup_op = binary.plus
         dup_op = get_typed_op(dup_op, self.dtype)
         self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
-        rows = ffi_new("GrB_Index[]", rows)
-        columns = ffi_new("GrB_Index[]", columns)
-        values = ffi_new(f"{self.dtype.c_type}[]", values)
+
+        if np_rows:
+            urows = rows.astype(np.uint64, copy=False)
+            rows = ffi.cast("GrB_Index*", ffi.from_buffer(urows))
+        else:
+            rows = ffi_new("GrB_Index[]", rows)
+        if np_cols:
+            ucols = columns.astype(np.uint64, copy=False)
+            columns = ffi.cast("GrB_Index*", ffi.from_buffer(ucols))
+        else:
+            columns = ffi_new("GrB_Index[]", columns)
+        if np_vals:
+            verified_vals = values.astype(self.dtype.np_type, copy=False)
+            values = ffi.cast(f"{self.dtype.c_type}*", ffi.from_buffer(verified_vals))
+        else:
+            values = ffi_new(f"{self.dtype.c_type}[]", values)
         # Push values into w
         func = libget(f"GrB_Matrix_build_{self.dtype.name}")
         check_status(func(self.gb_obj[0], rows, columns, values, n, dup_op.gb_obj))
         # Check for duplicates when dup_op was not provided
-        if not dup_op_given and self.nvals < len(values):
+        if not dup_op_given and self.nvals < n:
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
 
     def dup(self, *, dtype=None, mask=None, name=None):
@@ -237,30 +261,48 @@ class Matrix(BaseType):
         indices, and values.  If nrows or ncols are not provided, they
         are computed from the max row and coumn index found.
         """
-        if not isinstance(rows, (tuple, list)):
-            rows = tuple(rows)
-        if not isinstance(columns, (tuple, list)):
-            columns = tuple(columns)
-        if not isinstance(values, (tuple, list)):
-            values = tuple(values)
+        rarr = rows
+        carr = columns
+        varr = values
+        if not isinstance(rarr, np.ndarray):
+            if not isinstance(rows, (tuple, list)):
+                rows = tuple(rows)
+            rarr = np.array(rows)
+        if not isinstance(carr, np.ndarray):
+            if not isinstance(columns, (tuple, list)):
+                columns = tuple(columns)
+            carr = np.array(columns)
+        if not isinstance(varr, np.ndarray):
+            if not isinstance(values, (tuple, list)):
+                values = tuple(values)
+            varr = np.array(values)
+
         if dtype is None:
-            if len(values) <= 0:
+            if len(varr) <= 0:
                 raise ValueError("No values provided. Unable to determine type.")
-            # Find dtype from any of the values (assumption is they are the same type)
-            dtype = type(values[0])
+            dtype = varr.dtype
+            if dtype == object:
+                raise ValueError(f"Unable to convert values to a usable dtype")
         dtype = lookup_dtype(dtype)
+        if varr.dtype != dtype.np_type:
+            varr = varr.astype(dtype.np_type)
         # Compute nrows and ncols if not provided
         if nrows is None:
-            if not rows:
+            if len(rarr) <= 0:
                 raise ValueError("No row indices provided. Unable to infer nrows.")
-            nrows = max(rows) + 1
+            nrows = int(rarr.max() + 1)
         if ncols is None:
-            if not columns:
+            if len(carr) <= 0:
                 raise ValueError("No column indices provided. Unable to infer ncols.")
-            ncols = max(columns) + 1
+            ncols = int(carr.max() + 1)
+        if len(rarr) > 0 and 'int' not in rarr.dtype.name:
+            raise ValueError(f"row indices must be integers, not {rarr.dtype.name}")
+        if len(carr) > 0 and 'int' not in carr.dtype.name:
+            raise ValueError(f"column indices must be integers, not {carr.dtype.name}")
         # Create the new matrix
         C = cls.new(dtype, nrows, ncols, name=name)
         # Add the data
+        # This needs to be the original data to get proper error messages
         C.build(rows, columns, values, dup_op=dup_op)
         return C
 

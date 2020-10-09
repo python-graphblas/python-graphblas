@@ -18,11 +18,12 @@ def libget(name):
 
 
 class DataType:
-    def __init__(self, name, gb_type, c_type, numba_type):
+    def __init__(self, name, gb_type, c_type, numba_type, np_type):
         self.name = name
         self.gb_type = gb_type
         self.c_type = c_type
         self.numba_type = numba_type
+        self.np_type = np_type
 
     def __repr__(self):
         return self.name
@@ -39,19 +40,19 @@ class DataType:
                 raise TypeError(f"Invalid or unknown datatype: {other}")
 
 
-BOOL = DataType("BOOL", lib.GrB_BOOL, "_Bool", numba.types.bool_)
-INT8 = DataType("INT8", lib.GrB_INT8, "int8_t", numba.types.int8)
-UINT8 = DataType("UINT8", lib.GrB_UINT8, "uint8_t", numba.types.uint8)
-INT16 = DataType("INT16", lib.GrB_INT16, "int16_t", numba.types.int16)
-UINT16 = DataType("UINT16", lib.GrB_UINT16, "uint16_t", numba.types.uint16)
-INT32 = DataType("INT32", lib.GrB_INT32, "int32_t", numba.types.int32)
-UINT32 = DataType("UINT32", lib.GrB_UINT32, "uint32_t", numba.types.uint32)
-INT64 = DataType("INT64", lib.GrB_INT64, "int64_t", numba.types.int64)
-UINT64 = DataType("UINT64", lib.GrB_UINT64, "uint64_t", numba.types.uint64)
-FP32 = DataType("FP32", lib.GrB_FP32, "float", numba.types.float32)
-FP64 = DataType("FP64", lib.GrB_FP64, "double", numba.types.float64)
-FC32 = DataType("FC32", libget("GrB_FC32"), "float _Complex", numba.types.complex64)
-FC64 = DataType("FC64", libget("GrB_FC64"), "double _Complex", numba.types.complex128)
+BOOL = DataType("BOOL", lib.GrB_BOOL, "_Bool", numba.types.bool_, np.bool_)
+INT8 = DataType("INT8", lib.GrB_INT8, "int8_t", numba.types.int8, np.int8)
+UINT8 = DataType("UINT8", lib.GrB_UINT8, "uint8_t", numba.types.uint8, np.uint8)
+INT16 = DataType("INT16", lib.GrB_INT16, "int16_t", numba.types.int16, np.int16)
+UINT16 = DataType("UINT16", lib.GrB_UINT16, "uint16_t", numba.types.uint16, np.uint16)
+INT32 = DataType("INT32", lib.GrB_INT32, "int32_t", numba.types.int32, np.int32)
+UINT32 = DataType("UINT32", lib.GrB_UINT32, "uint32_t", numba.types.uint32, np.uint32)
+INT64 = DataType("INT64", lib.GrB_INT64, "int64_t", numba.types.int64, np.int64)
+UINT64 = DataType("UINT64", lib.GrB_UINT64, "uint64_t", numba.types.uint64, np.uint64)
+FP32 = DataType("FP32", lib.GrB_FP32, "float", numba.types.float32, np.float32)
+FP64 = DataType("FP64", lib.GrB_FP64, "double", numba.types.float64, np.float64)
+FC32 = DataType("FC32", libget("GrB_FC32"), "float _Complex", numba.types.complex64, np.complex64)
+FC64 = DataType("FC64", libget("GrB_FC64"), "double _Complex", numba.types.complex128, np.complex128)
 
 # Used for testing user-defined functions
 _sample_values = {
