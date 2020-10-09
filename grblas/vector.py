@@ -145,7 +145,7 @@ class Vector(BaseType):
         check_status(func(indices, values, n, self.gb_obj[0]))
         return (
             np.frombuffer(ffi.buffer(indices), dtype=np.uint64),
-            np.frombuffer(ffi.buffer(values), dtype=self.dtype.np_type)
+            np.frombuffer(ffi.buffer(values), dtype=self.dtype.np_type),
         )
 
     def build(self, indices, values, *, dup_op=None, clear=False, size=None):

@@ -1,4 +1,5 @@
 from . import ffi, lib
+import numpy as np
 
 ffi_new = ffi.new
 NULL = ffi.NULL
@@ -47,10 +48,10 @@ class IndexerResolver:
         return out
 
     def parse_index(self, index, typ, size):
-        if typ is int:
+        if np.issubdtype(typ, np.integer):
             if index >= size:
                 raise IndexError(f"index={index}, size={size}")
-            return index, None
+            return int(index), None
         if typ is slice:
             if index == slice(None):
                 # [:] means all indices; use special GrB_ALL indicator

@@ -162,7 +162,7 @@ class Matrix(BaseType):
         return (
             np.frombuffer(ffi.buffer(rows), dtype=np.uint64),
             np.frombuffer(ffi.buffer(columns), dtype=np.uint64),
-            np.frombuffer(ffi.buffer(values), dtype=self.dtype.np_type)
+            np.frombuffer(ffi.buffer(values), dtype=self.dtype.np_type),
         )
 
     def build(self, rows, columns, values, *, dup_op=None, clear=False, nrows=None, ncols=None):
