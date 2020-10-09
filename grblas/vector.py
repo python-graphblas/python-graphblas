@@ -143,8 +143,10 @@ class Vector(BaseType):
         n[0] = self.nvals
         func = libget(f"GrB_Vector_extractTuples_{self.dtype.name}")
         check_status(func(indices, values, n, self.gb_obj[0]))
-        return (np.frombuffer(ffi.buffer(indices), dtype=np.uint64),
-                np.frombuffer(ffi.buffer(values), dtype=self.dtype.np_type))
+        return (
+            np.frombuffer(ffi.buffer(indices), dtype=np.uint64),
+            np.frombuffer(ffi.buffer(values), dtype=self.dtype.np_type)
+        )
 
     def build(self, indices, values, *, dup_op=None, clear=False, size=None):
         np_index = isinstance(indices, np.ndarray)
@@ -235,14 +237,14 @@ class Vector(BaseType):
                 raise ValueError("No values provided. Unable to determine type.")
             dtype = varr.dtype
             if dtype == object:
-                raise ValueError(f"Unable to convert values to a usable dtype")
+                raise ValueError("Unable to convert values to a usable dtype")
         dtype = lookup_dtype(dtype)
         # Compute size if not provided
         if size is None:
             if len(iarr) <= 0:
                 raise ValueError("No indices provided. Unable to infer size.")
             size = int(iarr.max() + 1)
-        if len(iarr) > 0 and 'int' not in iarr.dtype.name:
+        if len(iarr) > 0 and "int" not in iarr.dtype.name:
             raise ValueError(f"indices must be integers, not {iarr.dtype.name}")
         # Create the new vector
         w = cls.new(dtype, size, name=name)

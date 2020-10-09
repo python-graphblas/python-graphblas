@@ -52,7 +52,9 @@ UINT64 = DataType("UINT64", lib.GrB_UINT64, "uint64_t", numba.types.uint64, np.u
 FP32 = DataType("FP32", lib.GrB_FP32, "float", numba.types.float32, np.float32)
 FP64 = DataType("FP64", lib.GrB_FP64, "double", numba.types.float64, np.float64)
 FC32 = DataType("FC32", libget("GrB_FC32"), "float _Complex", numba.types.complex64, np.complex64)
-FC64 = DataType("FC64", libget("GrB_FC64"), "double _Complex", numba.types.complex128, np.complex128)
+FC64 = DataType(
+    "FC64", libget("GrB_FC64"), "double _Complex", numba.types.complex128, np.complex128
+)
 
 # Used for testing user-defined functions
 _sample_values = {

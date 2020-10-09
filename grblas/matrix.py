@@ -159,9 +159,11 @@ class Matrix(BaseType):
         n[0] = self.nvals
         func = libget(f"GrB_Matrix_extractTuples_{self.dtype.name}")
         check_status(func(rows, columns, values, n, self.gb_obj[0]))
-        return (np.frombuffer(ffi.buffer(rows), dtype=np.uint64),
-                np.frombuffer(ffi.buffer(columns), dtype=np.uint64),
-                np.frombuffer(ffi.buffer(values), dtype=self.dtype.np_type))
+        return (
+            np.frombuffer(ffi.buffer(rows), dtype=np.uint64),
+            np.frombuffer(ffi.buffer(columns), dtype=np.uint64),
+            np.frombuffer(ffi.buffer(values), dtype=self.dtype.np_type)
+        )
 
     def build(self, rows, columns, values, *, dup_op=None, clear=False, nrows=None, ncols=None):
         np_rows = isinstance(rows, np.ndarray)
@@ -282,7 +284,7 @@ class Matrix(BaseType):
                 raise ValueError("No values provided. Unable to determine type.")
             dtype = varr.dtype
             if dtype == object:
-                raise ValueError(f"Unable to convert values to a usable dtype")
+                raise ValueError("Unable to convert values to a usable dtype")
         dtype = lookup_dtype(dtype)
         if varr.dtype != dtype.np_type:
             varr = varr.astype(dtype.np_type)
@@ -295,9 +297,9 @@ class Matrix(BaseType):
             if len(carr) <= 0:
                 raise ValueError("No column indices provided. Unable to infer ncols.")
             ncols = int(carr.max() + 1)
-        if len(rarr) > 0 and 'int' not in rarr.dtype.name:
+        if len(rarr) > 0 and "int" not in rarr.dtype.name:
             raise ValueError(f"row indices must be integers, not {rarr.dtype.name}")
-        if len(carr) > 0 and 'int' not in carr.dtype.name:
+        if len(carr) > 0 and "int" not in carr.dtype.name:
             raise ValueError(f"column indices must be integers, not {carr.dtype.name}")
         # Create the new matrix
         C = cls.new(dtype, nrows, ncols, name=name)
