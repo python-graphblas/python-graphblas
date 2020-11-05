@@ -10,7 +10,8 @@ from .unary import identity
 
 NULL = ffi.NULL
 CData = ffi.CData
-recorder = ContextVar("recorder", default=None)
+_recorder = ContextVar("recorder")
+_prev_recorder = None
 
 
 def call(cfunc_name, args):
@@ -18,7 +19,7 @@ def call(cfunc_name, args):
     cfunc = libget(cfunc_name)
     err_code = cfunc(*call_args)
     check_status(err_code)
-    rec = recorder.get()
+    rec = _recorder.get(_prev_recorder)
     if rec is not None:
         rec.record(cfunc_name, args)
     return err_code
