@@ -96,6 +96,12 @@ class IndexerResolver:
                 # [:] means all indices; use special GrB_ALL indicator
                 return _ALL_INDICES, _CScalar(size)
             index = tuple(range(size)[index])
+        elif typ is np.ndarray:
+            if len(index.shape) != 1:
+                raise TypeError(f"Invalid number of dimensions for index: {len(index.shape)}")
+            if not np.issubdtype(index.dtype, np.integer):
+                raise TypeError(f"Invalid dtype for index: {index.dtype}")
+            return _CArray(index, from_buffer=True), _CScalar(len(index))
         elif typ is not list:
             try:
                 index = tuple(index)
