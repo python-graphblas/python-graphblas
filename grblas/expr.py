@@ -3,7 +3,44 @@ import numpy as np
 
 ffi_new = ffi.new
 NULL = ffi.NULL
-GrB_ALL = lib.GrB_ALL
+
+
+# A similar object will eventually make it to the GraphBLAS spec.
+# Hide this from the user for now.
+class _CArray:
+    def __init__(self, index, ctype="GrB_Index", name=None, *, from_buffer=False):
+        self.index = index
+        if from_buffer:
+            self._carg = ffi.cast(f"{ctype}*", ffi.from_buffer(index))
+        else:
+            self._carg = ffi_new(f"{ctype}[]", index)
+        self.ctype = ctype
+        self._name = name
+
+    @property
+    def name(self):
+        if self._name is not None:
+            return self._name
+        if len(self.index) < 20:
+            values = ", ".join(map(str, self.index))
+        else:
+            values = (
+                f"{', '.join(map(str, self.index[:5]))}, "
+                "..., "
+                f"{', '.join(map(str, self.index[-5:]))}"
+            )
+        return "(%s[]){%s}" % (self.ctype, values)
+
+    __hash__ = None
+
+
+class _AllIndices:
+    def __init__(self):
+        self._carg = lib.GrB_ALL
+        self.name = "GrB_ALL"
+
+
+_ALL_INDICES = _AllIndices()
 
 
 class IndexerResolver:
@@ -48,21 +85,23 @@ class IndexerResolver:
         return out
 
     def parse_index(self, index, typ, size):
+        from .scalar import _CScalar
+
         if np.issubdtype(typ, np.integer):
             if index >= size:
                 raise IndexError(f"index={index}, size={size}")
-            return int(index), None
+            return _CScalar(int(index)), None
         if typ is slice:
             if index == slice(None):
                 # [:] means all indices; use special GrB_ALL indicator
-                return GrB_ALL, size
+                return _ALL_INDICES, _CScalar(size)
             index = tuple(range(size)[index])
         elif typ is not list:
             try:
                 index = tuple(index)
             except Exception:
                 raise TypeError("Unable to convert to tuple")
-        return ffi_new("GrB_Index[]", index), len(index)
+        return _CArray(index), _CScalar(len(index))
 
 
 class AmbiguousAssignOrExtract:
@@ -73,9 +112,9 @@ class AmbiguousAssignOrExtract:
     def __call__(self, *args, **kwargs):
         if type(self.parent) is Updater:
             parent_kwargs = []
-            if self.parent.kwargs["accum"] is not NULL:
+            if self.parent.kwargs["accum"] is not None:
                 parent_kwargs.append(f"accum={self.parent.kwargs['accum']}")
-            if self.parent.kwargs["mask"] is not NULL:
+            if self.parent.kwargs["mask"] is not None:
                 # It would sure be nice if we knew the mask type.
                 # Passing around C objects directly is sometimes inconvenient.
                 parent_kwargs.append("mask=<Mask>")
@@ -105,8 +144,8 @@ class AmbiguousAssignOrExtract:
             raise TypeError("Cannot extract from an Updater")
         if not self.resolved_indexes.is_single_element:
             raise AttributeError("Only Scalars have `.value` attribute")
-        val, _ = self.parent._extract_element(self.resolved_indexes)
-        return val
+        scalar = self.parent._extract_element(self.resolved_indexes, name="s_extract")
+        return scalar.value
 
     def new(self, *, dtype=None, mask=None, name=None):
         """
@@ -118,12 +157,7 @@ class AmbiguousAssignOrExtract:
         if self.resolved_indexes.is_single_element:
             if mask is not None:
                 raise TypeError("mask is not allowed for single element extraction")
-            val, cur_dtype = self.parent._extract_element(self.resolved_indexes)
-            if dtype is None:
-                dtype = cur_dtype
-            from .scalar import Scalar
-
-            return Scalar.from_value(val, dtype=dtype, name=name)
+            return self.parent._extract_element(self.resolved_indexes, dtype=dtype, name=name)
         else:
             delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
             return delayed_extractor.new(dtype=dtype, mask=mask, name=name)

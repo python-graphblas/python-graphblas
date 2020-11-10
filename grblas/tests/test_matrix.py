@@ -163,6 +163,12 @@ def test_extract_element(A):
     assert A[3, 0].new() == 3
     assert A[1, 6].value == 4
     assert A.T[6, 1].value == 4
+    s = A[0, 0].new()
+    assert s.value is None
+    assert s.dtype == "INT64"
+    s = A[1, 6].new(dtype=float)
+    assert s.value == 4.0
+    assert s.dtype == "FP64"
 
 
 def test_set_element(A):

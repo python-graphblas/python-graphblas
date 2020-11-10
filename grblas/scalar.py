@@ -136,6 +136,8 @@ class Scalar(BaseType):
             return 0
         return 1
 
+    _nvals = nvals
+
     @property
     def _carg(self):
         return self.gb_obj
@@ -223,6 +225,8 @@ class ScalarExpression(BaseExpression):
 
 class _CScalar:
     def __init__(self, scalar):
+        if type(scalar) is not Scalar:
+            scalar = Scalar.from_value(scalar, name=repr(scalar))
         self.scalar = scalar
         self.dtype = scalar.dtype
 
@@ -235,6 +239,10 @@ class _CScalar:
     @property
     def _carg(self):
         return self.scalar.value
+
+    @property
+    def name(self):
+        return self.scalar.name or repr(self.scalar.value)
 
     def __eq__(self, other):
         if type(other) is _CScalar:

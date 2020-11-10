@@ -47,17 +47,17 @@ def test_ctype():
 
 
 def test_gbtype():
-    assert dtypes.BOOL.gb_type == lib.GrB_BOOL
-    assert dtypes.INT8.gb_type == lib.GrB_INT8
-    assert dtypes.INT16.gb_type == lib.GrB_INT16
-    assert dtypes.INT32.gb_type == lib.GrB_INT32
-    assert dtypes.INT64.gb_type == lib.GrB_INT64
-    assert dtypes.UINT8.gb_type == lib.GrB_UINT8
-    assert dtypes.UINT16.gb_type == lib.GrB_UINT16
-    assert dtypes.UINT32.gb_type == lib.GrB_UINT32
-    assert dtypes.UINT64.gb_type == lib.GrB_UINT64
-    assert dtypes.FP32.gb_type == lib.GrB_FP32
-    assert dtypes.FP64.gb_type == lib.GrB_FP64
+    assert dtypes.BOOL.gb_obj == lib.GrB_BOOL
+    assert dtypes.INT8.gb_obj == lib.GrB_INT8
+    assert dtypes.INT16.gb_obj == lib.GrB_INT16
+    assert dtypes.INT32.gb_obj == lib.GrB_INT32
+    assert dtypes.INT64.gb_obj == lib.GrB_INT64
+    assert dtypes.UINT8.gb_obj == lib.GrB_UINT8
+    assert dtypes.UINT16.gb_obj == lib.GrB_UINT16
+    assert dtypes.UINT32.gb_obj == lib.GrB_UINT32
+    assert dtypes.UINT64.gb_obj == lib.GrB_UINT64
+    assert dtypes.FP32.gb_obj == lib.GrB_FP32
+    assert dtypes.FP64.gb_obj == lib.GrB_FP64
 
 
 def test_lookup_by_name():
@@ -76,7 +76,7 @@ def test_lookup_by_ctype():
 
 def test_lookup_by_gbtype():
     for dt in all_dtypes:
-        assert lookup_dtype(dt.gb_type) is dt
+        assert lookup_dtype(dt.gb_obj) is dt
 
 
 def test_lookup_by_dtype():
