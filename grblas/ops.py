@@ -24,11 +24,12 @@ class OpPath:
 
 
 class TypedOpBase:
-    def __init__(self, name, type_, return_type, gb_obj):
+    def __init__(self, name, type_, return_type, gb_obj, gb_name):
         self.name = name
         self.type = _normalize_type(type_)
         self.return_type = _normalize_type(return_type)
         self.gb_obj = gb_obj
+        self.gb_name = gb_name
 
     def __repr__(self):
         classname = self.opclass.lower()
@@ -61,7 +62,7 @@ class TypedUserUnaryOp(TypedOpBase):
     opclass = "UnaryOp"
 
     def __init__(self, name, type_, return_type, gb_obj, orig_func, numba_func):
-        super().__init__(name, type_, return_type, gb_obj)
+        super().__init__(name, type_, return_type, gb_obj, f"{name}_{type_}")
         self.orig_func = orig_func
         self.numba_func = numba_func
 
@@ -70,7 +71,7 @@ class TypedUserBinaryOp(TypedOpBase):
     opclass = "BinaryOp"
 
     def __init__(self, name, type_, return_type, gb_obj, orig_func, numba_func):
-        super().__init__(name, type_, return_type, gb_obj)
+        super().__init__(name, type_, return_type, gb_obj, f"{name}_{type_}")
         self.orig_func = orig_func
         self.numba_func = numba_func
 
@@ -79,7 +80,7 @@ class TypedUserMonoid(TypedOpBase):
     opclass = "Monoid"
 
     def __init__(self, name, type_, return_type, gb_obj, binaryop, identity):
-        super().__init__(name, type_, return_type, gb_obj)
+        super().__init__(name, type_, return_type, gb_obj, f"{name}_{type_}")
         self.binaryop = binaryop
         self.identity = identity
 
@@ -88,7 +89,7 @@ class TypedUserSemiring(TypedOpBase):
     opclass = "Semiring"
 
     def __init__(self, name, type_, return_type, gb_obj, monoid, binaryop):
-        super().__init__(name, type_, return_type, gb_obj)
+        super().__init__(name, type_, return_type, gb_obj, f"{name}_{type_}")
         self.monoid = monoid
         self.binaryop = binaryop
 
@@ -273,7 +274,8 @@ class OpBase:
                     m = r.match(varname)
                     if m:
                         # Parse function into name and datatype
-                        splitname = m.string[trim_from_front:].split("_")
+                        gb_name = m.string
+                        splitname = gb_name[trim_from_front:].split("_")
                         if delete_exact and delete_exact in splitname:
                             splitname.remove(delete_exact)
                         if len(splitname) == num_underscores + 1:
@@ -302,7 +304,7 @@ class OpBase:
                                 if num_bits not in {"32", "64"}:  # pragma: no cover
                                     raise TypeError(f"Unexpected number of bits: {num_bits}")
                                 return_type = f"{return_prefix}{num_bits}"
-                        op = cls._typed_class(name, type_, return_type, gb_obj)
+                        op = cls._typed_class(name, type_, return_type, gb_obj, gb_name)
                         obj._add(op)
         cls._initialized = True
 
@@ -411,7 +413,7 @@ class UnaryOp(OpBase):
                 new_unary = ffi_new("GrB_UnaryOp*")
                 check_status(
                     lib.GrB_UnaryOp_new(
-                        new_unary, unary_wrapper.cffi, ret_type.gb_type, type_.gb_type
+                        new_unary, unary_wrapper.cffi, ret_type.gb_obj, type_.gb_obj
                     )
                 )
                 op = TypedUserUnaryOp(
@@ -561,9 +563,9 @@ class BinaryOp(OpBase):
                     lib.GrB_BinaryOp_new(
                         new_binary,
                         binary_wrapper.cffi,
-                        ret_type.gb_type,
-                        type_.gb_type,
-                        type_.gb_type,
+                        ret_type.gb_obj,
+                        type_.gb_obj,
+                        type_.gb_obj,
                     )
                 )
                 op = TypedUserBinaryOp(
@@ -600,7 +602,8 @@ class BinaryOp(OpBase):
         # Rename div to cdiv
         binary.cdiv = BinaryOp("cdiv")
         for dtype, ret_type in binary.div.types.items():
-            op = TypedBuiltinBinaryOp("cdiv", dtype, ret_type, binary.div[dtype].gb_obj)
+            orig_op = binary.div[dtype]
+            op = TypedBuiltinBinaryOp("cdiv", dtype, ret_type, orig_op.gb_obj, orig_op.gb_name)
             binary.cdiv._add(op)
         del binary.div
         # Add truediv which always points to floating point cdiv
@@ -609,11 +612,13 @@ class BinaryOp(OpBase):
         binary.truediv = BinaryOp("truediv")
         for dtype in binary.cdiv.types:
             float_type = "FP32" if dtype == "FP32" else "FP64"
+            orig_op = binary.cdiv[float_type]
             op = TypedBuiltinBinaryOp(
                 "truediv",
                 dtype,
                 binary.cdiv.types[float_type],
-                binary.cdiv[float_type].gb_obj,
+                orig_op.gb_obj,
+                orig_op.gb_name,
             )
             binary.truediv._add(op)
         # Add floordiv

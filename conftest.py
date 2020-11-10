@@ -21,3 +21,10 @@ def pytest_addoption(parser):
         action="store_false",
         help="run in non-blocking mode",
     )
+    parser.addoption(
+        "--record",
+        dest="record",
+        default=False,
+        action="store_true",
+        help="Record GraphBLAS C calls and save to 'record.txt'",
+    )

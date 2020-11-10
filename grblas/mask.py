@@ -12,6 +12,10 @@ class Mask:
     def _repr_html_(self):
         return self.mask._repr_html_(mask=self)
 
+    @property
+    def _carg(self):
+        return self.mask.gb_obj[0]
+
 
 class StructuralMask(Mask):
     complement = False

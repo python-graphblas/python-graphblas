@@ -6,7 +6,7 @@ python:
     - "3.7"
     - "3.8"
 env:
-    - TESTOPTIONS="--blocking"
+    - TESTOPTIONS="--blocking --record"
     - TESTOPTIONS="--non-blocking"
     - TESTOPTIONS="--backend=pygraphblas"
 
@@ -30,10 +30,12 @@ script:
     - coverage run --branch -m pytest --runslow $TESTOPTIONS
     # Test (and cover) automatic initialization
     - coverage run -a --branch grblas/tests/test_auto_init.py
+    # Make sure `from grblas import *` works as expected
+    - python -c "from grblas import * ; Matrix"
     # Make sure all top-level imports work
-    - ( for attr in Matrix Scalar Vector backends base binary descriptor dtypes exceptions expr ffi formatting init io lib mask matrix monoid ops scalar semiring tests unary vector ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
+    - ( for attr in Matrix Scalar Vector Recorder backends base binary descriptor dtypes exceptions expr ffi formatting init io lib mask matrix monoid ops scalar semiring tests unary vector recorder ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
     # Make sure notebooks execute
-    - conda install -c conda-forge matplotlib nbconvert jupyter flake8 black
+    - conda install -c conda-forge matplotlib nbconvert jupyter flake8 black 'ipython>=7'
     - jupyter nbconvert --to notebook --execute notebooks/*ipynb
     # Style checks
     - flake8 grblas *.py

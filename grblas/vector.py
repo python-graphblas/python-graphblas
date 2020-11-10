@@ -1,9 +1,9 @@
 import itertools
 from . import ffi, lib, backend, binary, monoid, semiring
-from .base import BaseExpression, BaseType
-from .dtypes import libget, lookup_dtype, unify
-from .exceptions import check_status, is_error, NoValue
-from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
+from .base import BaseExpression, BaseType, call, _Pointer
+from .dtypes import lookup_dtype, unify, UINT64
+from .exceptions import check_status, NoValue
+from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater, _CArray
 from .mask import StructuralMask, ValueMask
 from .ops import get_typed_op
 from .scalar import Scalar, ScalarExpression, _CScalar
@@ -22,22 +22,28 @@ class Vector(BaseType):
     def __init__(self, gb_obj, dtype, *, name=None):
         if name is None:
             name = f"v_{next(Vector._name_counter)}"
+        self._size = None
         super().__init__(gb_obj, dtype, name)
 
     def __del__(self):
         gb_obj = getattr(self, "gb_obj", None)
         if gb_obj is not None:
+            # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Vector_free(gb_obj))
 
     def __repr__(self, mask=None):
         from .formatting import format_vector
+        from .recorder import skip_record
 
-        return format_vector(self, mask=mask)
+        with skip_record:
+            return format_vector(self, mask=mask)
 
     def _repr_html_(self, mask=None):
         from .formatting import format_vector_html
+        from .recorder import skip_record
 
-        return format_vector_html(self, mask=mask)
+        with skip_record:
+            return format_vector_html(self, mask=mask)
 
     @property
     def S(self):
@@ -66,9 +72,9 @@ class Vector(BaseType):
         self._expect_type(other, Vector, within="isequal", argname="other")
         if check_dtype and self.dtype != other.dtype:
             return False
-        if self.size != other.size:
+        if self._size != other._size:
             return False
-        if self.nvals != other.nvals:
+        if self._nvals != other._nvals:
             return False
         if check_dtype:
             # dtypes are equivalent, so not need to unify
@@ -76,10 +82,10 @@ class Vector(BaseType):
         else:
             common_dtype = unify(self.dtype, other.dtype)
 
-        matches = Vector.new(bool, self.size, name="v_isequal")
+        matches = Vector.new(bool, self._size, name="v_isequal")
         matches << self.ewise_mult(other, binary.eq[common_dtype])
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
-        if matches.nvals != self.nvals:
+        if matches._nvals != self._nvals:
             return False
 
         # Check if all results are True
@@ -94,16 +100,16 @@ class Vector(BaseType):
         self._expect_type(other, Vector, within="isclose", argname="other")
         if check_dtype and self.dtype != other.dtype:
             return False
-        if self.size != other.size:
+        if self._size != other._size:
             return False
-        if self.nvals != other.nvals:
+        if self._nvals != other._nvals:
             return False
 
         matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(
             dtype=bool, name="M_isclose"
         )
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
-        if matches.nvals != self.nvals:
+        if matches._nvals != self._nvals:
             return False
 
         # Check if all results are True
@@ -112,40 +118,57 @@ class Vector(BaseType):
     @property
     def size(self):
         n = ffi_new("GrB_Index*")
-        check_status(lib.GrB_Vector_size(n, self.gb_obj[0]))
+        scalar = Scalar(n, UINT64, name="s_size", empty=True)  # Actually GrB_Index dtype
+        call("GrB_Vector_size", (_Pointer(scalar), self))
         return n[0]
 
     @property
     def shape(self):
-        return (self.size,)
+        return (self._size,)
 
     @property
     def nvals(self):
+        n = ffi_new("GrB_Index*")
+        scalar = Scalar(n, UINT64, name="s_nvals", empty=True)  # Actually GrB_Index dtype
+        call("GrB_Vector_nvals", (_Pointer(scalar), self))
+        return n[0]
+
+    @property
+    def _nvals(self):
+        """Like nvals, but doesn't record calls"""
         n = ffi_new("GrB_Index*")
         check_status(lib.GrB_Vector_nvals(n, self.gb_obj[0]))
         return n[0]
 
     def clear(self):
-        check_status(lib.GrB_Vector_clear(self.gb_obj[0]))
+        call("GrB_Vector_clear", [self])
 
     def resize(self, size):
-        check_status(lib.GrB_Vector_resize(self.gb_obj[0], size))
+        size = _CScalar(size)
+        call("GrB_Vector_resize", (self, size))
+        self._size = size.scalar.value
 
-    def to_values(self):
+    def to_values(self, *, dtype=None):
         """
         GrB_Vector_extractTuples
         Extract the indices and values as 2 generators
         """
-        indices = ffi_new("GrB_Index[]", self.nvals)
-        values = ffi_new(f"{self.dtype.c_type}[]", self.nvals)
+        if dtype is None:
+            dtype = self.dtype
+        else:
+            dtype = lookup_dtype(dtype)
+        nvals = self._nvals
+        indices = _CArray(nvals, name="&index_array")
+        values = _CArray(nvals, ctype=self.dtype.c_type, name="&values_array")
         n = ffi_new("GrB_Index*")
-        n[0] = self.nvals
-        func = libget(f"GrB_Vector_extractTuples_{self.dtype.name}")
-        check_status(func(indices, values, n, self.gb_obj[0]))
-        return tuple(indices), tuple(values)
+        scalar = Scalar(n, UINT64, name="s_nvals", empty=True)  # Actually GrB_Index dtype
+        scalar.value = nvals
+        call(f"GrB_Vector_extractTuples_{dtype.name}", (indices, values, _Pointer(scalar), self))
+        return tuple(indices._carg), tuple(values._carg)
 
     def build(self, indices, values, *, dup_op=None, clear=False):
         # TODO: add `size` option once .resize is available
+        # We could also accept `dtype` keyword to match the dtype of `values`
         if not isinstance(indices, (tuple, list)):
             indices = tuple(indices)
         if not isinstance(values, (tuple, list)):
@@ -166,13 +189,12 @@ class Vector(BaseType):
         dup_op = get_typed_op(dup_op, self.dtype)
         self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
 
-        indices = ffi_new("GrB_Index[]", indices)
-        values = ffi_new(f"{self.dtype.c_type}[]", values)
-        # Push values into w
-        func = libget(f"GrB_Vector_build_{self.dtype.name}")
-        check_status(func(self.gb_obj[0], indices, values, n, dup_op.gb_obj))
+        indices = _CArray(indices)
+        values = _CArray(values, ctype=self.dtype.c_type)
+        call(f"GrB_Vector_build_{self.dtype.name}", (self, indices, values, _CScalar(n), dup_op))
+
         # Check for duplicates when dup_op was not provided
-        if not dup_op_given and self.nvals < len(values):
+        if not dup_op_given and self._nvals < n:
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
 
     def dup(self, *, dtype=None, mask=None, name=None):
@@ -183,12 +205,14 @@ class Vector(BaseType):
         if dtype is not None or mask is not None:
             if dtype is None:
                 dtype = self.dtype
-            new_vec = type(self).new(dtype, size=self.size, name=name)
-            new_vec(mask=mask)[:] << self
-            return new_vec
-        new_vec = ffi_new("GrB_Vector*")
-        check_status(lib.GrB_Vector_dup(new_vec, self.gb_obj[0]))
-        return type(self)(new_vec, self.dtype, name=name)
+            rv = Vector.new(dtype, size=self._size, name=name)
+            rv(mask=mask)[:] << self
+        else:
+            new_vec = ffi_new("GrB_Vector*")
+            rv = Vector(new_vec, self.dtype, name=name)
+            call("GrB_Vector_dup", (_Pointer(rv), self))
+        rv._size = self._size
+        return rv
 
     @classmethod
     def new(cls, dtype, size=0, *, name=None):
@@ -198,8 +222,12 @@ class Vector(BaseType):
         """
         new_vector = ffi_new("GrB_Vector*")
         dtype = lookup_dtype(dtype)
-        check_status(lib.GrB_Vector_new(new_vector, dtype.gb_type, size))
-        return cls(new_vector, dtype, name=name)
+        rv = cls(new_vector, dtype, name=name)
+        if type(size) is not _CScalar:
+            size = _CScalar(size)
+        call("GrB_Vector_new", (_Pointer(rv), dtype, size))
+        rv._size = size.scalar.value
+        return rv
 
     @classmethod
     def from_values(cls, indices, values, *, size=None, dup_op=None, dtype=None, name=None):
@@ -280,7 +308,7 @@ class Vector(BaseType):
             [self, other],
             op=op,
         )
-        if self.size != other.size:
+        if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
         return expr
 
@@ -301,7 +329,7 @@ class Vector(BaseType):
             [self, other],
             op=op,
         )
-        if self.size != other.size:
+        if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
         return expr
 
@@ -322,10 +350,10 @@ class Vector(BaseType):
             "GrB_vxm",
             [self, other],
             op=op,
-            size=other.ncols,
+            size=other._ncols,
             bt=other._is_transposed,
         )
-        if self.size != other.nrows:
+        if self._size != other._nrows:
             expr.new(name="")  # incompatible shape; raise now
         return expr
 
@@ -353,17 +381,16 @@ class Vector(BaseType):
             args = [self]
             expr_repr = None
         elif right is None:
-            if type(left) is not Scalar:
-                try:
-                    left = Scalar.from_value(left, name="left")
-                except TypeError:
-                    self._expect_type(
-                        left,
-                        Scalar,
-                        within=method_name,
-                        keyword_name="left",
-                        extra_message="Literal scalars also accepted.",
-                    )
+            try:
+                left = _CScalar(left)
+            except TypeError:
+                self._expect_type(
+                    left,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="left",
+                    extra_message="Literal scalars also accepted.",
+                )
             op = get_typed_op(op, self.dtype, left.dtype)
             self._expect_op(
                 op,
@@ -373,20 +400,19 @@ class Vector(BaseType):
                 extra_message=extra_message,
             )
             cfunc_name = f"GrB_Vector_apply_BinaryOp1st_{left.dtype}"
-            args = [_CScalar(left), self]
+            args = [left, self]
             expr_repr = "{1.name}.apply({op}, left={0})"
         elif left is None:
-            if type(right) is not Scalar:
-                try:
-                    right = Scalar.from_value(right, name="right")
-                except TypeError:
-                    self._expect_type(
-                        right,
-                        Scalar,
-                        within=method_name,
-                        keyword_name="right",
-                        extra_message="Literal scalars also accepted.",
-                    )
+            try:
+                right = _CScalar(right)
+            except TypeError:
+                self._expect_type(
+                    right,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="right",
+                    extra_message="Literal scalars also accepted.",
+                )
             op = get_typed_op(op, self.dtype, right.dtype)
             self._expect_op(
                 op,
@@ -396,7 +422,7 @@ class Vector(BaseType):
                 extra_message=extra_message,
             )
             cfunc_name = f"GrB_Vector_apply_BinaryOp2nd_{right.dtype}"
-            args = [self, _CScalar(right)]
+            args = [self, right]
             expr_repr = "{0.name}.apply({op}, right={1})"
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
@@ -406,7 +432,7 @@ class Vector(BaseType):
             args,
             op=op,
             expr_repr=expr_repr,
-            size=self.size,
+            size=self._size,
         )
 
     def reduce(self, op=monoid.plus):
@@ -428,16 +454,20 @@ class Vector(BaseType):
     ##################################
     # Extract and Assign index methods
     ##################################
-    def _extract_element(self, resolved_indexes):
+    def _extract_element(self, resolved_indexes, dtype=None, name="s_extract"):
+        if dtype is None:
+            dtype = self.dtype
+        else:
+            dtype = lookup_dtype(dtype)
         index, _ = resolved_indexes.indices[0]
-        func = libget(f"GrB_Vector_extractElement_{self.dtype}")
-        result = ffi_new(f"{self.dtype.c_type}*")
-        err_code = func(result, self.gb_obj[0], index)
-        # Don't raise error for no value, simply return `None`
-        if is_error(err_code, NoValue):
-            return None, self.dtype
-        check_status(err_code)
-        return result[0], self.dtype
+        result = Scalar.new(dtype, name=name)
+        try:
+            call(f"GrB_Vector_extractElement_{dtype}", (_Pointer(result), self, index))
+        except NoValue:
+            pass
+        else:
+            result._is_empty = False
+        return result
 
     def _prep_for_extract(self, resolved_indexes):
         index, isize = resolved_indexes.indices[0]
@@ -452,19 +482,18 @@ class Vector(BaseType):
 
     def _assign_element(self, resolved_indexes, value):
         index, _ = resolved_indexes.indices[0]
-        if type(value) is not Scalar:
-            try:
-                value = Scalar.from_value(value, name="s_assign")
-            except TypeError:
-                self._expect_type(
-                    value,
-                    Scalar,
-                    within="__setitem__",
-                    argname="value",
-                    extra_message="Literal scalars also accepted.",
-                )
-        func = libget(f"GrB_Vector_setElement_{value.dtype}")
-        check_status(func(self.gb_obj[0], value.value, index))  # should we cast?
+        try:
+            value = _CScalar(value)
+        except TypeError:
+            self._expect_type(
+                value,
+                Scalar,
+                within="__setitem__",
+                argname="value",
+                extra_message="Literal scalars also accepted.",
+            )
+        # should we cast?
+        call(f"GrB_Vector_setElement_{value.dtype}", (self, value, index))
 
     def _prep_for_assign(self, resolved_indexes, value):
         method_name = "__setitem__"
@@ -473,32 +502,30 @@ class Vector(BaseType):
             cfunc_name = "GrB_Vector_assign"
             expr_repr = "[[{2} elements]] = {0.name}"
         else:
-            if type(value) is not Scalar:
-                try:
-                    value = Scalar.from_value(value, name="s_assign")
-                except TypeError:
-                    self._expect_type(
-                        value,
-                        (Scalar, Vector),
-                        within=method_name,
-                        argname="value",
-                        extra_message="Literal scalars also accepted.",
-                    )
+            try:
+                value = _CScalar(value)
+            except TypeError:
+                self._expect_type(
+                    value,
+                    (Scalar, Vector),
+                    within=method_name,
+                    argname="value",
+                    extra_message="Literal scalars also accepted.",
+                )
             cfunc_name = f"GrB_Vector_assign_{value.dtype}"
-            value = _CScalar(value)
             expr_repr = "[[{2} elements]] = {0}"
         return VectorExpression(
             method_name,
             cfunc_name,
             [value, index, isize],
             expr_repr=expr_repr,
-            size=self.size,
+            size=self._size,
             dtype=self.dtype,
         )
 
     def _delete_element(self, resolved_indexes):
         index, _ = resolved_indexes.indices[0]
-        check_status(lib.GrB_Vector_removeElement(self.gb_obj[0], index))
+        call("GrB_Vector_removeElement", (self, index))
 
     if backend == "pygraphblas":
 
@@ -512,7 +539,7 @@ class Vector(BaseType):
             """
             import pygraphblas as pg
 
-            vector = pg.Vector(self.gb_obj, pg.types.gb_type_to_type(self.dtype.gb_type))
+            vector = pg.Vector(self.gb_obj, pg.types.gb_type_to_type(self.dtype.gb_obj))
             self.gb_obj = ffi.NULL
             return vector
 
@@ -527,6 +554,7 @@ class Vector(BaseType):
             """
             dtype = lookup_dtype(vector.gb_type)
             rv = cls(vector.vector, dtype)
+            rv._size = vector.size
             vector.vector = ffi.NULL
             return rv
 
@@ -558,13 +586,13 @@ class VectorExpression(BaseExpression):
             expr_repr=expr_repr,
         )
         if size is None:
-            size = args[0].size
-        self.size = size
+            size = args[0]._size
+        self.size = self._size = size
 
     def construct_output(self, dtype=None, *, name=None):
         if dtype is None:
             dtype = self.dtype
-        return Vector.new(dtype, self.size, name=name)
+        return Vector.new(dtype, self._size, name=name)
 
     def __repr__(self):
         from .formatting import format_vector_expression
