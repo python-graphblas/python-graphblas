@@ -1,4 +1,5 @@
 import itertools
+import numpy as np
 from . import ffi, lib, backend, binary, monoid, semiring
 from .base import BaseExpression, BaseType, call, _Pointer
 from .dtypes import lookup_dtype, unify, UINT64
@@ -151,7 +152,7 @@ class Vector(BaseType):
     def to_values(self, *, dtype=None):
         """
         GrB_Vector_extractTuples
-        Extract the indices and values as 2 generators
+        Extract the indices and values as a 2-tuple of numpy arrays
         """
         if dtype is None:
             dtype = self.dtype
@@ -164,22 +165,28 @@ class Vector(BaseType):
         scalar = Scalar(n, UINT64, name="s_nvals", empty=True)  # Actually GrB_Index dtype
         scalar.value = nvals
         call(f"GrB_Vector_extractTuples_{dtype.name}", (indices, values, _Pointer(scalar), self))
-        return tuple(indices._carg), tuple(values._carg)
+        return (
+            np.frombuffer(ffi.buffer(indices._carg), dtype=np.uint64),
+            np.frombuffer(ffi.buffer(values._carg), dtype=dtype.np_type),
+        )
 
-    def build(self, indices, values, *, dup_op=None, clear=False):
-        # TODO: add `size` option once .resize is available
-        # We could also accept `dtype` keyword to match the dtype of `values`
-        if not isinstance(indices, (tuple, list)):
+    def build(self, indices, values, *, dup_op=None, clear=False, size=None):
+        # TODO: accept `dtype` keyword to match the dtype of `values`?
+        np_index = isinstance(indices, np.ndarray)
+        if not np_index and not isinstance(indices, (tuple, list)):
             indices = tuple(indices)
-        if not isinstance(values, (tuple, list)):
+        np_value = isinstance(values, np.ndarray)
+        if not np_value and not isinstance(values, (tuple, list)):
             values = tuple(values)
-        if len(indices) != len(values):
+        n = len(values)
+        if len(indices) != n:
             raise ValueError(
-                f"`indices` and `values` have different lengths " f"{len(indices)} != {len(values)}"
+                f"`indices` and `values` lengths must match: {len(indices)} != {len(values)}"
             )
         if clear:
             self.clear()
-        n = len(indices)
+        if size is not None:
+            self.resize(size)
         if n <= 0:
             return
 
@@ -189,8 +196,16 @@ class Vector(BaseType):
         dup_op = get_typed_op(dup_op, self.dtype)
         self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
 
-        indices = _CArray(indices)
-        values = _CArray(values, ctype=self.dtype.c_type)
+        if np_index:
+            uindices = indices.astype(np.uint64, copy=False)
+            indices = _CArray(uindices, from_buffer=True)
+        else:
+            indices = _CArray(indices)
+        if np_value:
+            verified_values = values.astype(self.dtype.np_type, copy=False)
+            values = _CArray(verified_values, ctype=self.dtype.c_type, from_buffer=True)
+        else:
+            values = _CArray(values, ctype=self.dtype.c_type)
         call(f"GrB_Vector_build_{self.dtype.name}", (self, indices, values, _CScalar(n), dup_op))
 
         # Check for duplicates when dup_op was not provided
@@ -234,24 +249,35 @@ class Vector(BaseType):
         """Create a new Vector from the given lists of indices and values.  If
         size is not provided, it is computed from the max index found.
         """
-        if not isinstance(indices, (tuple, list)):
-            indices = tuple(indices)
-        if not isinstance(values, (tuple, list)):
-            values = tuple(values)
+        iarr = indices
+        varr = values
+        if not isinstance(iarr, np.ndarray):
+            if not isinstance(indices, (list, tuple)):
+                indices = tuple(indices)
+            iarr = np.array(indices)
+        if not isinstance(varr, np.ndarray):
+            if not isinstance(values, (list, tuple)):
+                values = tuple(values)
+            varr = np.array(values)
+
         if dtype is None:
-            if len(values) <= 0:
+            if len(varr) <= 0:
                 raise ValueError("No values provided. Unable to determine type.")
-            # Find dtype from any of the values (assumption is they are the same type)
-            dtype = type(values[0])
+            dtype = varr.dtype
+            if dtype == object:
+                raise ValueError("Unable to convert values to a usable dtype")
         dtype = lookup_dtype(dtype)
         # Compute size if not provided
         if size is None:
-            if not indices:
+            if len(iarr) <= 0:
                 raise ValueError("No indices provided. Unable to infer size.")
-            size = max(indices) + 1
+            size = int(iarr.max() + 1)
+        if len(iarr) > 0 and "int" not in iarr.dtype.name:
+            raise ValueError(f"indices must be integers, not {iarr.dtype.name}")
         # Create the new vector
         w = cls.new(dtype, size, name=name)
         # Add the data
+        # This needs to be the original data to get proper error messages
         w.build(indices, values, dup_op=dup_op)
         return w
 

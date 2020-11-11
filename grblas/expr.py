@@ -1,4 +1,5 @@
 from . import ffi, lib
+import numpy as np
 
 ffi_new = ffi.new
 NULL = ffi.NULL
@@ -7,9 +8,12 @@ NULL = ffi.NULL
 # A similar object will eventually make it to the GraphBLAS spec.
 # Hide this from the user for now.
 class _CArray:
-    def __init__(self, index, ctype="GrB_Index", name=None):
+    def __init__(self, index, ctype="GrB_Index", name=None, *, from_buffer=False):
         self.index = index
-        self._carg = ffi_new(f"{ctype}[]", index)
+        if from_buffer:
+            self._carg = ffi.cast(f"{ctype}*", ffi.from_buffer(index))
+        else:
+            self._carg = ffi_new(f"{ctype}[]", index)
         self.ctype = ctype
         self._name = name
 
@@ -83,15 +87,21 @@ class IndexerResolver:
     def parse_index(self, index, typ, size):
         from .scalar import _CScalar
 
-        if typ is int:
+        if np.issubdtype(typ, np.integer):
             if index >= size:
                 raise IndexError(f"index={index}, size={size}")
-            return _CScalar(index), None
+            return _CScalar(int(index)), None
         if typ is slice:
             if index == slice(None):
                 # [:] means all indices; use special GrB_ALL indicator
                 return _ALL_INDICES, _CScalar(size)
             index = tuple(range(size)[index])
+        elif typ is np.ndarray:
+            if len(index.shape) != 1:
+                raise TypeError(f"Invalid number of dimensions for index: {len(index.shape)}")
+            if not np.issubdtype(index.dtype, np.integer):
+                raise TypeError(f"Invalid dtype for index: {index.dtype}")
+            return _CArray(index, from_buffer=True), _CScalar(len(index))
         elif typ is not list:
             try:
                 index = tuple(index)

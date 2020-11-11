@@ -121,8 +121,8 @@ def test_build(v):
 
 def test_extract_values(v):
     idx, vals = v.to_values()
-    assert idx == (1, 3, 4, 6)
-    assert vals == (1, 1, 2, 0)
+    np.testing.assert_array_equal(idx, (1, 3, 4, 6))
+    np.testing.assert_array_equal(vals, (1, 1, 2, 0))
 
 
 def test_extract_element(v):
@@ -268,6 +268,13 @@ def test_extract(v):
     assert w.isequal(result)
     w2 = v[1::2].new()
     assert w2.isequal(w)
+
+
+def test_extract_array(v):
+    w = Vector.new(v.dtype, 3)
+    result = Vector.from_values(np.array([0, 1]), np.array([1, 1]), size=3)
+    w << v[np.array([1, 3, 5])]
+    assert w.isequal(result)
 
 
 def test_extract_fancy_scalars(v):
