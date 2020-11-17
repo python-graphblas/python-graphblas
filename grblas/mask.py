@@ -5,6 +5,11 @@ class Mask:
 
     def __init__(self, mask):
         self.mask = mask
+        from .matrix import Matrix
+        from .vector import Vector
+
+        if type(mask) not in {Matrix, Vector}:
+            raise TypeError(f"Mask value must be Matrix or Vector; got {type(mask)}")
 
     def __repr__(self):
         return self.mask.__repr__(mask=self)

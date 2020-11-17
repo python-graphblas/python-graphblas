@@ -98,8 +98,11 @@ def _check_mask(mask, output=None):
         raise TypeError("Mask must indicate values (M.V) or structure (M.S)")
     if not isinstance(mask, Mask):
         raise TypeError(f"Invalid mask: {type(mask)}")
-    if output is not None and type(mask.mask) is not type(output):
-        raise TypeError(f"Mask object must be type {type(output)}; got {type(mask)}")
+    if output is not None:
+        from .vector import Vector
+
+        if type(output) is Vector and type(mask.mask) is not Vector:
+            raise TypeError(f"Mask object must be type Vector; got {type(mask.mask)}")
 
 
 class BaseType:
@@ -224,7 +227,10 @@ class BaseType:
                             scalar = Scalar.from_value(delayed, name=repr(delayed))
                         except TypeError:
                             raise TypeError(
-                                f"assignment value must be Expression object, not {type(delayed)}"
+                                "Assignment value must be a valid expression type, not "
+                                f"{type(delayed)}.\n\nValid expression types include "
+                                f"{type(self).__name__}, {type(self).__name__}Expression, "
+                                "AmbiguousAssignOrExtract, and scalars."
                             )
                     updater = self(mask=mask, accum=accum, replace=replace)
                     if type(self) is Matrix:

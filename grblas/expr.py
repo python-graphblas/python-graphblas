@@ -110,44 +110,45 @@ class IndexerResolver:
         return _CArray(index), _CScalar(len(index))
 
 
+class Assigner:
+    def __init__(self, updater, resolved_indexes, *, is_submask):
+        # We could check here whether mask dimensions match index dimensions.
+        # We could also check for valid `updater.kwargs` if `resolved_indexes.is_single_element`.
+        self.updater = updater
+        self.resolved_indexes = resolved_indexes
+        self.is_submask = is_submask
+
+    def update(self, obj):
+        # Occurs when user calls `C[index](...).update(obj)` or `C(...)[index].update(obj)`
+        self.updater._setitem(self.resolved_indexes, obj, is_submask=self.is_submask)
+
+    def __lshift__(self, obj):
+        # Occurs when user calls `C[index](...) << obj` or `C(...)[index] << obj`
+        self.updater._setitem(self.resolved_indexes, obj, is_submask=self.is_submask)
+
+
 class AmbiguousAssignOrExtract:
     def __init__(self, parent, resolved_indexes):
         self.parent = parent
         self.resolved_indexes = resolved_indexes
 
     def __call__(self, *args, **kwargs):
-        if type(self.parent) is Updater:
-            parent_kwargs = []
-            if self.parent.kwargs["accum"] is not None:
-                parent_kwargs.append(f"accum={self.parent.kwargs['accum']}")
-            if self.parent.kwargs["mask"] is not None:
-                # It would sure be nice if we knew the mask type.
-                # Passing around C objects directly is sometimes inconvenient.
-                parent_kwargs.append("mask=<Mask>")
-                parent_kwargs.append(f"replace={self.parent.kwargs['replace']}")
-            if not parent_kwargs:
-                raise ValueError("GraphBLAS object already called (with no keywords)")
-            parent_kwargs = ", ".join(parent_kwargs)
-            raise ValueError(f"GraphBLAS object already called with keywords: {parent_kwargs}")
-        # Occurs when user calls C[index](params)
+        # Occurs when user calls `C[index](params)`
         # Reverse the call order so we can parse the call args and kwargs
         updater = self.parent(*args, **kwargs)
-        return updater[self.resolved_indexes]
+        is_submask = updater.kwargs.get("mask") is not None
+        return Assigner(updater, self.resolved_indexes, is_submask=is_submask)
 
     def __lshift__(self, obj):
-        # Occurs when user calls C(params)[index] << obj or C[index] << obj
-        # Delegate back to parent's __setitem__ method
+        # Occurs when user calls `C[index] << obj`
         self.parent[self.resolved_indexes] = obj
 
     def update(self, obj):
-        # Occurs when user calls C(params)[index].update(obj) or C[index].update(obj)
-        # Delegate back to parent's __setitem__ method
+        # Occurs when user calls `C[index].update(obj)`
         self.parent[self.resolved_indexes] = obj
 
     @property
     def value(self):
-        if type(self.parent) is Updater:
-            raise TypeError("Cannot extract from an Updater")
         if not self.resolved_indexes.is_single_element:
             raise AttributeError("Only Scalars have `.value` attribute")
         scalar = self.parent._extract_element(self.resolved_indexes, name="s_extract")
@@ -158,8 +159,6 @@ class AmbiguousAssignOrExtract:
         Force extraction of the indexes into a new object
         dtype and mask are the only controllable parameters.
         """
-        if type(self.parent) is Updater:
-            raise TypeError("Cannot extract from an Updater")
         if self.resolved_indexes.is_single_element:
             if mask is not None:
                 raise TypeError("mask is not allowed for single element extraction")
@@ -170,8 +169,6 @@ class AmbiguousAssignOrExtract:
 
     def _extract_delayed(self):
         """Return an Expression object, treating this as an extract call"""
-        if type(self.parent) is Updater:
-            raise TypeError("Cannot extract from an Updater")
         return self.parent._prep_for_extract(self.resolved_indexes)
 
 
@@ -181,7 +178,7 @@ class Updater:
         self.kwargs = kwargs
 
     def __getitem__(self, keys):
-        # Occurs when user calls C(params)[index]
+        # Occurs when user calls `C(params)[index]`
         # Need something prepared to receive `<<` or `.update()`
         if self.parent._is_scalar:
             raise TypeError("Indexing not supported for Scalars")
@@ -189,9 +186,9 @@ class Updater:
             resolved_indexes = keys
         else:
             resolved_indexes = IndexerResolver(self.parent, keys)
-        return AmbiguousAssignOrExtract(self, resolved_indexes)
+        return Assigner(self, resolved_indexes, is_submask=False)
 
-    def __setitem__(self, keys, obj):
+    def _setitem(self, keys, obj, *, is_submask):
         # Occurs when user calls C(params)[index] = delayed
         if self.parent._is_scalar:
             raise TypeError("Indexing not supported for Scalars")
@@ -204,8 +201,14 @@ class Updater:
             # Fast path using assignElement
             self.parent._assign_element(resolved_indexes, obj)
         else:
-            delayed = self.parent._prep_for_assign(resolved_indexes, obj)
+            mask = self.kwargs.get("mask")
+            delayed = self.parent._prep_for_assign(
+                resolved_indexes, obj, mask=mask, is_submask=is_submask
+            )
             self.update(delayed)
+
+    def __setitem__(self, keys, obj):
+        self._setitem(keys, obj, is_submask=False)
 
     def __delitem__(self, keys):
         # Occurs when user calls `del C(params)[index]`
@@ -222,9 +225,9 @@ class Updater:
             raise TypeError("Remove Element only supports a single index")
 
     def __lshift__(self, delayed):
-        # Occurs when user calls C(params) << delayed
+        # Occurs when user calls `C(params) << delayed`
         self.parent._update(delayed, **self.kwargs)
 
     def update(self, delayed):
-        # Occurs when user calls C(params).update(delayed)
+        # Occurs when user calls `C(params).update(delayed)`
         self.parent._update(delayed, **self.kwargs)

@@ -387,6 +387,34 @@ def test_assign_scalar_mask(v):
     assert w.isequal(result4)
 
 
+def test_subassign(A):
+    v = Vector.from_values([0, 1, 2], [0, 1, 2])
+    w = Vector.from_values([0, 1], [10, 20])
+    m = Vector.from_values([1], [True])
+    v[[0, 1]](m.S) << w
+    result1 = Vector.from_values([0, 1, 2], [0, 20, 2])
+    assert v.isequal(result1)
+    with pytest.raises(DimensionMismatch):
+        v[[0, 1]](v.S) << w
+    with pytest.raises(DimensionMismatch):
+        v[[0, 1]](m.S) << v
+
+    v[[0, 1]](m.S) << 100
+    result2 = Vector.from_values([0, 1, 2], [0, 100, 2])
+    assert v.isequal(result2)
+    with pytest.raises(DimensionMismatch):
+        v[[0, 1]](v.S) << 99
+    with pytest.raises(TypeError, match="Mask object must be type Vector"):
+        v[[0, 1]](A.S) << 88
+    with pytest.raises(TypeError, match="Mask object must be type Vector"):
+        v[[0, 1]](A.S) << w
+
+    # It may be nice for these to also raise
+    v[[0, 1]](A.S)
+    v[0](m.S)
+    v[0](replace=True)
+
+
 def test_apply(v):
     result = Vector.from_values([1, 3, 4, 6], [-1, -1, -2, 0])
     w = v.apply(unary.ainv).new()

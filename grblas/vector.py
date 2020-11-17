@@ -495,7 +495,7 @@ class Vector(BaseType):
             result._is_empty = False
         return result
 
-    def _prep_for_extract(self, resolved_indexes):
+    def _prep_for_extract(self, resolved_indexes, mask=None, is_submask=False):
         index, isize = resolved_indexes.indices[0]
         return VectorExpression(
             "__getitem__",
@@ -521,12 +521,16 @@ class Vector(BaseType):
         # should we cast?
         call(f"GrB_Vector_setElement_{value.dtype}", (self, value, index))
 
-    def _prep_for_assign(self, resolved_indexes, value):
+    def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
         index, isize = resolved_indexes.indices[0]
         if type(value) is Vector:
-            cfunc_name = "GrB_Vector_assign"
-            expr_repr = "[[{2} elements]] = {0.name}"
+            if is_submask:
+                cfunc_name = "GrB_Vector_subassign"
+                expr_repr = "[[{2} elements]](%s) = {0.name}" % mask.name
+            else:
+                cfunc_name = "GrB_Vector_assign"
+                expr_repr = "[[{2} elements]] = {0.name}"
         else:
             try:
                 value = _CScalar(value)
@@ -538,8 +542,12 @@ class Vector(BaseType):
                     argname="value",
                     extra_message="Literal scalars also accepted.",
                 )
-            cfunc_name = f"GrB_Vector_assign_{value.dtype}"
-            expr_repr = "[[{2} elements]] = {0}"
+            if is_submask:
+                cfunc_name = f"GrB_Vector_subassign_{value.dtype}"
+                expr_repr = "[[{2} elements]](%s) = {0}" % mask.name
+            else:
+                cfunc_name = f"GrB_Vector_assign_{value.dtype}"
+                expr_repr = "[[{2} elements]] = {0}"
         return VectorExpression(
             method_name,
             cfunc_name,
