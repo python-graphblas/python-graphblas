@@ -415,6 +415,35 @@ def test_subassign(A):
     v[0](replace=True)
 
 
+def test_assign_scalar_with_mask():
+    v = Vector.from_values([0, 1, 2], [1, 2, 3])
+    m = Vector.from_values([0, 2], [False, True])
+    w1 = Vector.from_values([0], [50])
+    w3 = Vector.from_values([0, 1, 2], [10, 20, 30])
+
+    v(m.V)[:] << w3
+    result = Vector.from_values([0, 1, 2], [1, 2, 30])
+    assert v.isequal(result)
+
+    v(m.V)[:] << 100
+    result = Vector.from_values([0, 1, 2], [1, 2, 100])
+    assert v.isequal(result)
+
+    v(m.V, accum=binary.plus)[2] << 1000
+    result = Vector.from_values([0, 1, 2], [1, 2, 1100])
+    assert v.isequal(result)
+
+    with pytest.raises(TypeError, match="TODO"):
+        v[2](w1.S) << w1
+
+    with pytest.raises(TypeError, match="TODO"):
+        v[2](w1.S) << 7
+
+    v[[2]](w1.S) << 7
+    result = Vector.from_values([0, 1, 2], [1, 2, 7])
+    assert v.isequal(result)
+
+
 def test_apply(v):
     result = Vector.from_values([1, 3, 4, 6], [-1, -1, -2, 0])
     w = v.apply(unary.ainv).new()

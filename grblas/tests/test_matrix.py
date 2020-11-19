@@ -564,6 +564,140 @@ def test_assign_row_scalar(A, v):
     assert C.isequal(result)
 
 
+def test_assign_row_col_matrix_mask():
+    # A         B       v1      v2
+    # 0 1       4 _     100     10
+    # 2 _       0 5             20
+    A = Matrix.from_values([0, 0, 1], [0, 1, 0], [0, 1, 2])
+    B = Matrix.from_values([0, 1, 1], [0, 0, 1], [4, 0, 5])
+    v1 = Vector.from_values([0], [100])
+    v2 = Vector.from_values([0, 1], [10, 20])
+
+    # row assign
+    C = A.dup()
+    C(B.S)[0, :] << v2
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [10, 1, 2])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, accum=binary.plus)[1, :] = v2
+    result = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 12, 20])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, replace=True)[1, :] << v2
+    result = Matrix.from_values([0, 1, 1], [0, 0, 1], [0, 10, 20])
+    assert C.isequal(result)
+
+    # col assign
+    C = A.dup()
+    C(B.S)[:, 0] = v2
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [10, 1, 20])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, accum=binary.plus)[:, 1] << v2
+    result = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 2, 20])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, replace=True)[:, 1] = v2
+    result = Matrix.from_values([0, 1, 1], [0, 0, 1], [0, 2, 20])
+    assert C.isequal(result)
+
+    # row assign scalar (as a sanity check)
+    C = A.dup()
+    C(B.S)[0, :] = 100
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, accum=binary.plus)[1, :] << 100
+    result = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 102, 100])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, replace=True)[1, :] = 100
+    result = Matrix.from_values([0, 1, 1], [0, 0, 1], [0, 100, 100])
+    assert C.isequal(result)
+
+    # col assign scalar (as a sanity check)
+    C = A.dup()
+    C(B.S)[:, 0] << 100
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 100])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, accum=binary.plus)[:, 1] = 100
+    result = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 2, 100])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, replace=True)[:, 1] << 100
+    result = Matrix.from_values([0, 1, 1], [0, 0, 1], [0, 2, 100])
+    assert C.isequal(result)
+
+    # row subassign
+    C = A.dup()
+    C[0, :](v2.S) << v2
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [10, 20, 2])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C[0, [0]](v1.S) << v1
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    assert C.isequal(result)
+
+    with pytest.raises(TypeError, match="TODO"):
+        C[0, :](B.S) << v2
+
+    # col subassign
+    C = A.dup()
+    C[:, 0](v2.S) << v2
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [10, 1, 20])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C[[0], 0](v1.S) << v1
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    assert C.isequal(result)
+
+    with pytest.raises(TypeError, match="TODO"):
+        C[:, 0](B.S) << v2
+
+    # row subassign scalar
+    C = A.dup()
+    C[0, :](v2.S) << 100
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 100, 2])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C[0, [0]](v1.S) << 100
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    assert C.isequal(result)
+
+    with pytest.raises(TypeError, match="TODO"):
+        C[:, 0](B.S) << 100
+
+    # col subassign scalar
+    C = A.dup()
+    C[:, 0](v2.S) << 100
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 100])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C[[0], 0](v1.S) << 100
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    assert C.isequal(result)
+
+    with pytest.raises(TypeError, match="TODO"):
+        C[:, 0](B.S) << 100
+
+    # Bad subassign
+    with pytest.raises(TypeError, match="TODO"):
+        C[0, 0](B.S) << 100
+
+
 def test_assign_column_scalar(A, v):
     C = A.dup()
     C[:, 0](v.S) << v

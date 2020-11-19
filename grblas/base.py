@@ -17,7 +17,21 @@ _prev_recorder = None
 def call(cfunc_name, args):
     call_args = [getattr(x, "_carg", x) if x is not None else NULL for x in args]
     cfunc = libget(cfunc_name)
-    err_code = cfunc(*call_args)
+    try:
+        err_code = cfunc(*call_args)
+    except TypeError as exc:
+        # We should strive to not encounter this during normal usage
+        from .recorder import gbstr
+
+        callstr = f'{cfunc.__name__}({", ".join(gbstr(x) for x in args)})'
+        lines = cfunc.__doc__.splitlines()
+        sig = lines[0] if lines else ""
+        raise TypeError(
+            f"Error calling {cfunc.__name__}:\n"
+            f" - Call objects: {callstr}\n"
+            f" - C signature: {sig}\n"
+            f" - Error: {exc}"
+        )
     check_status(err_code)
     rec = _recorder.get(_prev_recorder)
     if rec is not None:

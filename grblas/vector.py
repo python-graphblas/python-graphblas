@@ -526,9 +526,15 @@ class Vector(BaseType):
         index, isize = resolved_indexes.indices[0]
         if type(value) is Vector:
             if is_submask:
+                if isize is None:
+                    # v[i](m) << w
+                    raise TypeError("TODO")
+                # v[I](m) << w
                 cfunc_name = "GrB_Vector_subassign"
                 expr_repr = "[[{2} elements]](%s) = {0.name}" % mask.name
             else:
+                # v(m)[I] << w
+                # v[I] << w
                 cfunc_name = "GrB_Vector_assign"
                 expr_repr = "[[{2} elements]] = {0.name}"
         else:
@@ -543,9 +549,18 @@ class Vector(BaseType):
                     extra_message="Literal scalars also accepted.",
                 )
             if is_submask:
+                if isize is None:
+                    # v[i](m) << c
+                    raise TypeError("TODO")
+                # v[I](m) << c
                 cfunc_name = f"GrB_Vector_subassign_{value.dtype}"
                 expr_repr = "[[{2} elements]](%s) = {0}" % mask.name
             else:
+                # v(m)[I] << c
+                # v[I] << c
+                if isize is None:
+                    index = _CArray([index.scalar.value])
+                    isize = _CScalar(1)
                 cfunc_name = f"GrB_Vector_assign_{value.dtype}"
                 expr_repr = "[[{2} elements]] = {0}"
         return VectorExpression(
