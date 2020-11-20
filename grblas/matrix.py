@@ -194,6 +194,106 @@ class Matrix(BaseType):
             np.frombuffer(ffi.buffer(values._carg), dtype=dtype.np_type),
         )
 
+    def fast_export(self, format=None):
+        """
+        GxB_Matrix_export_xxx
+
+        Returns a dict of the constituent parts:
+         - format: str
+         - nrows: number of rows (int)
+         - ncols: number of columns (int)
+         - h: header mapping (ndarray<uinte64>) (only for HyperCSR or HyperCSC)
+         - p: pointers (ndarray<uint64>)
+         - i or j: indices (ndarray<uint64>) (i for CSC, j for CSR)
+         - x: values (ndarray of appropriate dtype)
+
+        To reimport the Matrix:
+        ```
+        pieces = A.fast_export()
+        A2 = Matrix.fast_import(**pieces)
+        ```
+
+        The underlying GraphBLAS object transfers ownership to numpy, disallowing further access.
+        The caller should delete or stop using the Matrix after calling `fast_export`.
+
+        If `format` is not specified, this method exports in the currently stored format
+        To control the export format, set `format` to one of:
+          - "csr"
+          - "csc"
+          - "hypercsr"
+          - "hypercsc"
+        """
+        dtype = np.dtype(self.dtype.np_type)
+        index_dtype = np.dtype(np.uint64)
+
+        if format is None:
+            # Determine current format
+            hyper_ptr = ffi_new("bool*")
+            format_ptr = ffi_new("int*")
+            call("GxB_Matrix_Option_get", (self, lib.GxB_IS_HYPER, hyper_ptr))
+            call("GxB_Matrix_Option_get", (self, lib.GxB_FORMAT, format_ptr))
+            if hyper_ptr[0]:
+                format = "hypercsc" if format_ptr[0] == lib.GxB_BY_COL else "hypercsr"
+            else:
+                format = "csc" if format_ptr[0] == lib.GxB_BY_COL else "csr"
+        format = format.lower()
+
+        mhandle = ffi_new("GrB_Matrix*", self._carg)
+        type_ = ffi_new("GrB_Type*")
+        nrows = ffi_new("GrB_Index*")
+        ncols = ffi_new("GrB_Index*")
+        nvals = ffi_new("GrB_Index*")
+        nonempty = ffi_new("int64_t*")
+        Ap = ffi_new("GrB_Index**")
+        Ax = ffi_new("void**")
+        if format == "csr":
+            Aj = ffi_new("GrB_Index**")
+            call("GxB_Matrix_export_CSR", (mhandle, type_, nrows, ncols, nvals, nonempty, Ap, Aj, Ax, ffi.NULL))
+            rv = {
+                'p': np.frombuffer(ffi.buffer(Ap[0], (nrows[0] + 1) * index_dtype.itemsize), dtype=index_dtype),
+                'j': np.frombuffer(ffi.buffer(Aj[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype),
+                'x': np.frombuffer(ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype),
+            }
+        elif format == "csc":
+            Ai = ffi_new("GrB_Index**")
+            call("GxB_Matrix_export_CSC", (mhandle, type_, nrows, ncols, nvals, nonempty, Ap, Ai, Ax, ffi.NULL))
+            rv = {
+                'p': np.frombuffer(ffi.buffer(Ap[0], (ncols[0] + 1) * index_dtype.itemsize), dtype=index_dtype),
+                'i': np.frombuffer(ffi.buffer(Ai[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype),
+                'x': np.frombuffer(ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype),
+            }
+        elif format == "hypercsr":
+            nvec = ffi_new("GrB_Index*")
+            Ah = ffi_new("GrB_Index**")
+            Aj = ffi_new("GrB_Index**")
+            call("GxB_Matrix_export_HyperCSR", (mhandle, type_, nrows, ncols, nvals, nonempty, nvec, Ah, Ap, Aj, Ax, ffi.NULL))
+            rv = {
+                'h': np.frombuffer(ffi.buffer(Ah[0], nvec[0] * index_dtype.itemsize), dtype=index_dtype),
+                'p': np.frombuffer(ffi.buffer(Ap[0], (nvec[0] + 1) * index_dtype.itemsize), dtype=index_dtype),
+                'j': np.frombuffer(ffi.buffer(Aj[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype),
+                'x': np.frombuffer(ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype),
+            }
+        elif format == "hypercsc":
+            nvec = ffi_new("GrB_Index*")
+            Ah = ffi_new("GrB_Index**")
+            Ai = ffi_new("GrB_Index**")
+            call("GxB_Matrix_export_HyperCSC", (mhandle, type_, nrows, ncols, nvals, nonempty, nvec, Ah, Ap, Ai, Ax, ffi.NULL))
+            rv = {
+                'h': np.frombuffer(ffi.buffer(Ah[0], nvec[0] * index_dtype.itemsize), dtype=index_dtype),
+                'p': np.frombuffer(ffi.buffer(Ap[0], (nvec[0] + 1) * index_dtype.itemsize), dtype=index_dtype),
+                'i': np.frombuffer(ffi.buffer(Ai[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype),
+                'x': np.frombuffer(ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype),
+            }
+        else:
+            raise ValueError(f"Invalid format: {format}")
+
+        rv.update({
+            "format": format,
+            'nrows': nrows[0],
+            'ncols': ncols[0],
+        })
+        return rv
+
     def build(self, rows, columns, values, *, dup_op=None, clear=False, nrows=None, ncols=None):
         # TODO: accept `dtype` keyword to match the dtype of `values`?
         np_rows = isinstance(rows, np.ndarray)
@@ -348,6 +448,53 @@ class Matrix(BaseType):
         # This needs to be the original data to get proper error messages
         C.build(rows, columns, values, dup_op=dup_op)
         return C
+
+    @classmethod
+    def fast_import(cls, *, nrows, ncols, p, x, h=None, i=None, j=None, format=None, name=None):
+        """
+        GxB_Matrix_import_xxx
+
+        The new Matrix uses the underlying buffer of the input arrays.
+        The caller should delete or stop using the input arrays after calling `fast_import`.
+        """
+        mhandle = ffi_new("GrB_Matrix*")
+        dtype = lookup_dtype(x.dtype)
+
+        if format is None:
+            # Determine format based on provided inputs
+            if i is None and j is None:
+                raise ValueError("Must provide either `i` or `j`")
+            if i is not None and j is not None:
+                raise ValueError("Cannot provide both `i` and `j`")
+            if h is not None:
+                format = "hypercsr" if i is None else "hypercsc"
+            else:
+                format = "csr" if i is None else "csc"
+        format = format.lower()
+
+        Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(p)))
+        Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(x)))
+        if format == 'csr':
+            Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(j)))
+            call("GxB_Matrix_import_CSR", (mhandle, dtype, nrows, ncols, len(x), -1, Ap, Aj, Ax, ffi.NULL))
+        elif format == 'csc':
+            Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(i)))
+            call("GxB_Matrix_import_CSC", (mhandle, dtype, nrows, ncols, len(x), -1, Ap, Ai, Ax, ffi.NULL))
+        elif format == 'hypercsr':
+            Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(h)))
+            Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(j)))
+            call("GxB_Matrix_import_HyperCSR", (mhandle, dtype, nrows, ncols, len(x), -1, len(h), Ah, Ap, Aj, Ax, ffi.NULL))
+        elif format == 'hypercsc':
+            Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(h)))
+            Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(i)))
+            call("GxB_Matrix_import_HyperCSC", (mhandle, dtype, nrows, ncols, len(x), -1, len(h), Ah, Ap, Ai, Ax, ffi.NULL))
+        else:
+            raise ValueError(f"Invalid format: {format}")
+
+        rv = cls(mhandle, dtype, name=name)
+        rv._nrows = nrows
+        rv._ncols = ncols
+        return rv
 
     @property
     def _carg(self):

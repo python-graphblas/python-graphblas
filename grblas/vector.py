@@ -170,6 +170,40 @@ class Vector(BaseType):
             np.frombuffer(ffi.buffer(values._carg), dtype=dtype.np_type),
         )
 
+    def fast_export(self):
+        """
+        GxB_Vector_export
+
+        Returns a dict of the constituent parts:
+         - n: size (int)
+         - i: indices (ndarray<uint64>)
+         - x: values (ndarray of appropriate dtype)
+
+        To reimport the Vector:
+        ```
+        pieces = v.fast_export()
+        v2 = Vector.fast_import(**pieces)
+        ```
+
+        The underlying GraphBLAS object transfers ownership to numpy, disallowing further access.
+        The caller should delete or stop using the Vector after calling `fast_export`.
+        """
+        dtype = np.dtype(self.dtype.np_type)
+        index_dtype = np.dtype(np.uint64)
+
+        vhandle = ffi_new("GrB_Vector*", self._carg)
+        type_ = ffi_new("GrB_Type*")
+        n = ffi_new("GrB_Index*")
+        nvals = ffi_new("GrB_Index*")
+        vi = ffi_new("GrB_Index**")
+        vx = ffi_new("void**")
+        call("GxB_Vector_export", (vhandle, type_, n, nvals, vi, vx, ffi.NULL))
+        return {
+            'n': n[0],
+            'i': np.frombuffer(ffi.buffer(vi[0], nvals[0]*index_dtype.itemsize), dtype=index_dtype),
+            'x': np.frombuffer(ffi.buffer(vx[0], nvals[0]*dtype.itemsize), dtype=dtype),
+        }
+
     def build(self, indices, values, *, dup_op=None, clear=False, size=None):
         # TODO: accept `dtype` keyword to match the dtype of `values`?
         np_index = isinstance(indices, np.ndarray)
@@ -280,6 +314,25 @@ class Vector(BaseType):
         # This needs to be the original data to get proper error messages
         w.build(indices, values, dup_op=dup_op)
         return w
+
+    @classmethod
+    def fast_import(cls, *, n, i, x, name=None):
+        """
+        GxB_Vector_import
+
+        Returns a new Vector created from the pieces.
+
+        The new Vector uses the underlying buffer of the input arrays.
+        The caller should delete or stop using the input arrays after calling `fast_import`.
+        """
+        vhandle = ffi_new("GrB_Vector*")
+        dtype = lookup_dtype(x.dtype)
+        vi = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(i)))
+        vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(x)))
+        call("GxB_Vector_import", (vhandle, dtype, n, len(x), vi, vx, ffi.NULL))
+        rv = cls(vhandle, dtype, name=name)
+        rv._size = n
+        return rv
 
     @property
     def _carg(self):
