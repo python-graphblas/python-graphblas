@@ -154,20 +154,23 @@ class Vector(BaseType):
         GrB_Vector_extractTuples
         Extract the indices and values as a 2-tuple of numpy arrays
         """
-        if dtype is None:
-            dtype = self.dtype
-        else:
-            dtype = lookup_dtype(dtype)
         nvals = self._nvals
         indices = _CArray(nvals, name="&index_array")
         values = _CArray(nvals, ctype=self.dtype.c_type, name="&values_array")
         n = ffi_new("GrB_Index*")
         scalar = Scalar(n, UINT64, name="s_nvals", empty=True)  # Actually GrB_Index dtype
         scalar.value = nvals
-        call(f"GrB_Vector_extractTuples_{dtype.name}", (indices, values, _Pointer(scalar), self))
+        call(
+            f"GrB_Vector_extractTuples_{self.dtype.name}", (indices, values, _Pointer(scalar), self)
+        )
+        values = np.frombuffer(ffi.buffer(values._carg), dtype=self.dtype.np_type)
+        if dtype is not None:
+            dtype = lookup_dtype(dtype)
+            if dtype != self.dtype:
+                values = values.astype(dtype.np_type)  # copies
         return (
             np.frombuffer(ffi.buffer(indices._carg), dtype=np.uint64),
-            np.frombuffer(ffi.buffer(values._carg), dtype=dtype.np_type),
+            values,
         )
 
     def build(self, indices, values, *, dup_op=None, clear=False, size=None):
@@ -487,11 +490,10 @@ class Vector(BaseType):
             dtype = lookup_dtype(dtype)
         index, _ = resolved_indexes.indices[0]
         result = Scalar.new(dtype, name=name)
-        try:
+        if (
             call(f"GrB_Vector_extractElement_{dtype}", (_Pointer(result), self, index))
-        except NoValue:
-            pass
-        else:
+            is not NoValue
+        ):
             result._is_empty = False
         return result
 

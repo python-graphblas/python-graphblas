@@ -45,8 +45,6 @@ _ALL_INDICES = _AllIndices()
 
 class IndexerResolver:
     def __init__(self, obj, indices):
-        if obj._is_scalar:
-            raise TypeError("Cannot index into Scalars")
         self.obj = obj
         self.indices = self.parse_indices(indices, obj.shape)
 
@@ -141,11 +139,13 @@ class AmbiguousAssignOrExtract:
 
     def __lshift__(self, obj):
         # Occurs when user calls `C[index] << obj`
-        self.parent[self.resolved_indexes] = obj
+        self.update(obj)
 
     def update(self, obj):
         # Occurs when user calls `C[index].update(obj)`
-        self.parent[self.resolved_indexes] = obj
+        if getattr(self.parent, "_is_transposed", False):
+            raise TypeError("'TransposedMatrix' object does not support item assignment")
+        Updater(self.parent)._setitem(self.resolved_indexes, obj, is_submask=False)
 
     @property
     def value(self):
@@ -182,21 +182,11 @@ class Updater:
         # Need something prepared to receive `<<` or `.update()`
         if self.parent._is_scalar:
             raise TypeError("Indexing not supported for Scalars")
-        if type(keys) is IndexerResolver:
-            resolved_indexes = keys
-        else:
-            resolved_indexes = IndexerResolver(self.parent, keys)
+        resolved_indexes = IndexerResolver(self.parent, keys)
         return Assigner(self, resolved_indexes, is_submask=False)
 
-    def _setitem(self, keys, obj, *, is_submask):
+    def _setitem(self, resolved_indexes, obj, *, is_submask):
         # Occurs when user calls C(params)[index] = delayed
-        if self.parent._is_scalar:
-            raise TypeError("Indexing not supported for Scalars")
-        if type(keys) is IndexerResolver:
-            resolved_indexes = keys
-        else:
-            resolved_indexes = IndexerResolver(self.parent, keys)
-
         if resolved_indexes.is_single_element and not self.kwargs:
             # Fast path using assignElement
             self.parent._assign_element(resolved_indexes, obj)
@@ -208,17 +198,16 @@ class Updater:
             self.update(delayed)
 
     def __setitem__(self, keys, obj):
-        self._setitem(keys, obj, is_submask=False)
+        if self.parent._is_scalar:
+            raise TypeError("Indexing not supported for Scalars")
+        resolved_indexes = IndexerResolver(self.parent, keys)
+        self._setitem(resolved_indexes, obj, is_submask=False)
 
     def __delitem__(self, keys):
         # Occurs when user calls `del C(params)[index]`
         if self.parent._is_scalar:
             raise TypeError("Indexing not supported for Scalars")
-        if type(keys) is IndexerResolver:
-            resolved_indexes = keys
-        else:
-            resolved_indexes = IndexerResolver(self.parent, keys)
-
+        resolved_indexes = IndexerResolver(self.parent, keys)
         if resolved_indexes.is_single_element:
             self.parent._delete_element(resolved_indexes)
         else:

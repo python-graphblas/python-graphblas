@@ -32,11 +32,11 @@ def call(cfunc_name, args):
             f" - C signature: {sig}\n"
             f" - Error: {exc}"
         )
-    check_status(err_code)
+    rv = check_status(err_code)
     rec = _recorder.get(_prev_recorder)
     if rec is not None:
         rec.record(cfunc_name, args)
-    return err_code
+    return rv
 
 
 def _expect_type_message(

@@ -21,3 +21,10 @@ def test_recorder():
         "GrB_mxm(D, NULL, NULL, GxB_MIN_PLUS_INT64, A, B, GrB_DESC_T1);",
         "GrB_eWiseMult_Matrix_BinaryOp(C, D, NULL, GrB_TIMES_INT64, A, B, GrB_DESC_ST0);",
     ]
+
+
+def test_record_novalue():
+    A = gb.Matrix.new(int, 3, 3, name="A")
+    with gb.Recorder() as rec:
+        A[0, 0].new(name="c")
+    assert rec.data == ["GrB_Matrix_extractElement_INT64(&c, A, 0, 0);"]

@@ -123,6 +123,20 @@ def test_extract_values(v):
     idx, vals = v.to_values()
     np.testing.assert_array_equal(idx, (1, 3, 4, 6))
     np.testing.assert_array_equal(vals, (1, 1, 2, 0))
+    assert idx.dtype == np.uint64
+    assert vals.dtype == np.int64
+
+    idx, vals = v.to_values(dtype=int)
+    np.testing.assert_array_equal(idx, (1, 3, 4, 6))
+    np.testing.assert_array_equal(vals, (1, 1, 2, 0))
+    assert idx.dtype == np.uint64
+    assert vals.dtype == np.int64
+
+    idx, vals = v.to_values(dtype=float)
+    np.testing.assert_array_equal(idx, (1, 3, 4, 6))
+    np.testing.assert_array_equal(vals, (1, 1, 2, 0))
+    assert idx.dtype == np.uint64
+    assert vals.dtype == np.float64
 
 
 def test_extract_element(v):

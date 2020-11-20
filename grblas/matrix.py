@@ -173,25 +173,26 @@ class Matrix(BaseType):
         GrB_Matrix_extractTuples
         Extract the rows, columns and values as a 3-tuple of numpy arrays
         """
-        if dtype is None:
-            dtype = self.dtype
-        else:
-            dtype = lookup_dtype(dtype)
         nvals = self._nvals
         rows = _CArray(nvals, name="&rows_array")
         columns = _CArray(nvals, name="&columns_array")
-        values = _CArray(nvals, ctype=dtype.c_type, name="&values_array")
+        values = _CArray(nvals, ctype=self.dtype.c_type, name="&values_array")
         n = ffi_new("GrB_Index*")
         scalar = Scalar(n, UINT64, name="s_nvals", empty=True)  # Actually GrB_Index dtype
         scalar.value = nvals
         call(
-            f"GrB_Matrix_extractTuples_{dtype.name}",
+            f"GrB_Matrix_extractTuples_{self.dtype.name}",
             (rows, columns, values, _Pointer(scalar), self),
         )
+        values = np.frombuffer(ffi.buffer(values._carg), dtype=self.dtype.np_type)
+        if dtype is not None:
+            dtype = lookup_dtype(dtype)
+            if dtype != self.dtype:
+                values = values.astype(dtype.np_type)  # copies
         return (
             np.frombuffer(ffi.buffer(rows._carg), dtype=np.uint64),
             np.frombuffer(ffi.buffer(columns._carg), dtype=np.uint64),
-            np.frombuffer(ffi.buffer(values._carg), dtype=dtype.np_type),
+            values,
         )
 
     def build(self, rows, columns, values, *, dup_op=None, clear=False, nrows=None, ncols=None):
@@ -643,11 +644,10 @@ class Matrix(BaseType):
         if self._is_transposed:
             row, col = col, row
         result = Scalar.new(dtype, name=name)
-        try:
+        if (
             call(f"GrB_Matrix_extractElement_{dtype}", (_Pointer(result), self, row, col))
-        except NoValue:
-            pass
-        else:
+            is not NoValue
+        ):
             result._is_empty = False
         return result
 
@@ -1106,8 +1106,8 @@ class TransposedMatrix:
     def dtype(self):
         return self._matrix.dtype
 
-    def to_values(self):
-        rows, cols, vals = self._matrix.to_values()
+    def to_values(self, *, dtype=None):
+        rows, cols, vals = self._matrix.to_values(dtype=dtype)
         return cols, rows, vals
 
     @property

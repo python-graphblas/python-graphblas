@@ -8,6 +8,13 @@ from grblas import Vector, Matrix
 from grblas.ops import UnaryOp, BinaryOp, Monoid, Semiring
 
 
+def test_op_repr():
+    assert repr(unary.ainv) == "unary.ainv"
+    assert repr(binary.plus) == "binary.plus"
+    assert repr(monoid.times) == "monoid.times"
+    assert repr(semiring.plus_times) == "semiring.plus_times"
+
+
 def test_unaryop():
     assert unary.ainv["INT32"].gb_obj == lib.GrB_AINV_INT32
     assert unary.ainv[dtypes.UINT16].gb_obj == lib.GrB_AINV_UINT16

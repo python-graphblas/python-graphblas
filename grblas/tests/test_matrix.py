@@ -149,14 +149,20 @@ def test_build(A):
 
 
 def test_extract_values(A):
-    rows, cols, vals = A.to_values()
+    rows, cols, vals = A.to_values(dtype=int)
     np.testing.assert_array_equal(rows, (0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6))
     np.testing.assert_array_equal(cols, (1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4))
     np.testing.assert_array_equal(vals, (2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3))
-    Trows, Tcols, Tvals = A.T.to_values()
+    assert rows.dtype == np.uint64
+    assert cols.dtype == np.uint64
+    assert vals.dtype == np.int64
+    Trows, Tcols, Tvals = A.T.to_values(dtype=float)
     np.testing.assert_array_equal(rows, Tcols)
     np.testing.assert_array_equal(cols, Trows)
     np.testing.assert_array_equal(vals, Tvals)
+    assert Trows.dtype == np.uint64
+    assert Tcols.dtype == np.uint64
+    assert Tvals.dtype == np.float64
 
 
 def test_extract_element(A):
@@ -405,7 +411,7 @@ def test_subassign_row_col():
     )
     assert A.isequal(result1)
 
-    A[1, [1, 2]](m.V, accum=binary.plus) << v
+    A[1, [1, 2]](m.V, accum=binary.plus).update(v)
     result2 = Matrix.from_values(
         [0, 0, 0, 1, 1, 1, 2, 2, 2],
         [0, 1, 2, 0, 1, 2, 0, 1, 2],
