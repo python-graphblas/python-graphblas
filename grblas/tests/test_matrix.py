@@ -770,43 +770,43 @@ def test_del(capsys):
 
 def test_import_export(A):
     A1 = A.dup()
-    k = A1.fast_export('csr')
-    assert k['nrows'] == 7
-    assert k['ncols'] == 7
-    assert (k['p'] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
-    assert (k['j'] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
-    assert (k['x'] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
+    k = A1.fast_export("csr")
+    assert k["nrows"] == 7
+    assert k["ncols"] == 7
+    assert (k["indptr"] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
+    assert (k["col_indices"] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
+    assert (k["values"] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
     B1 = Matrix.fast_import(**k)
     assert B1.isequal(A)
 
     A2 = A.dup()
-    k = A2.fast_export('csc')
-    assert k['nrows'] == 7
-    assert k['ncols'] == 7
-    assert (k['p'] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
-    assert (k['i'] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
-    assert (k['x'] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
+    k = A2.fast_export("csc")
+    assert k["nrows"] == 7
+    assert k["ncols"] == 7
+    assert (k["indptr"] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
+    assert (k["row_indices"] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
+    assert (k["values"] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
     B2 = Matrix.fast_import(**k)
     assert B2.isequal(A)
 
     A3 = A.dup()
-    k = A3.fast_export('hypercsr')
-    assert k['nrows'] == 7
-    assert k['ncols'] == 7
-    assert (k['h'] == [0, 1, 2, 3, 4, 5, 6]).all()
-    assert (k['p'] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
-    assert (k['j'] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
-    assert (k['x'] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
+    k = A3.fast_export("hypercsr")
+    assert k["nrows"] == 7
+    assert k["ncols"] == 7
+    assert (k["rows"] == [0, 1, 2, 3, 4, 5, 6]).all()
+    assert (k["indptr"] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
+    assert (k["col_indices"] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
+    assert (k["values"] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
     B3 = Matrix.fast_import(**k)
     assert B3.isequal(A)
 
     A4 = A.dup()
-    k = A4.fast_export('hypercsc')
-    assert k['nrows'] == 7
-    assert k['ncols'] == 7
-    assert (k['h'] == [0, 1, 2, 3, 4, 5, 6]).all()
-    assert (k['p'] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
-    assert (k['i'] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
-    assert (k['x'] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
+    k = A4.fast_export("hypercsc")
+    assert k["nrows"] == 7
+    assert k["ncols"] == 7
+    assert (k["cols"] == [0, 1, 2, 3, 4, 5, 6]).all()
+    assert (k["indptr"] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
+    assert (k["row_indices"] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
+    assert (k["values"] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
     B4 = Matrix.fast_import(**k)
     assert B4.isequal(A)

@@ -197,11 +197,13 @@ class Vector(BaseType):
         nvals = ffi_new("GrB_Index*")
         vi = ffi_new("GrB_Index**")
         vx = ffi_new("void**")
-        call("GxB_Vector_export", (vhandle, type_, n, nvals, vi, vx, ffi.NULL))
+        check_status(lib.GxB_Vector_export(vhandle, type_, n, nvals, vi, vx, ffi.NULL))
         return {
-            'n': n[0],
-            'i': np.frombuffer(ffi.buffer(vi[0], nvals[0]*index_dtype.itemsize), dtype=index_dtype),
-            'x': np.frombuffer(ffi.buffer(vx[0], nvals[0]*dtype.itemsize), dtype=dtype),
+            "size": n[0],
+            "indices": np.frombuffer(
+                ffi.buffer(vi[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
+            ),
+            "values": np.frombuffer(ffi.buffer(vx[0], nvals[0] * dtype.itemsize), dtype=dtype),
         }
 
     def build(self, indices, values, *, dup_op=None, clear=False, size=None):
@@ -316,7 +318,7 @@ class Vector(BaseType):
         return w
 
     @classmethod
-    def fast_import(cls, *, n, i, x, name=None):
+    def fast_import(cls, *, size, indices, values, name=None):
         """
         GxB_Vector_import
 
@@ -326,12 +328,14 @@ class Vector(BaseType):
         The caller should delete or stop using the input arrays after calling `fast_import`.
         """
         vhandle = ffi_new("GrB_Vector*")
-        dtype = lookup_dtype(x.dtype)
-        vi = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(i)))
-        vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(x)))
-        call("GxB_Vector_import", (vhandle, dtype, n, len(x), vi, vx, ffi.NULL))
+        dtype = lookup_dtype(values.dtype)
+        vi = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indices)))
+        vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+        check_status(
+            lib.GxB_Vector_import(vhandle, dtype._carg, size, len(values), vi, vx, ffi.NULL)
+        )
         rv = cls(vhandle, dtype, name=name)
-        rv._size = n
+        rv._size = size
         return rv
 
     @property
@@ -382,10 +386,7 @@ class Vector(BaseType):
                 op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op"
             )
         expr = VectorExpression(
-            method_name,
-            f"GrB_eWiseAdd_Vector_{op.opclass}",
-            [self, other],
-            op=op,
+            method_name, f"GrB_eWiseAdd_Vector_{op.opclass}", [self, other], op=op,
         )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
@@ -403,10 +404,7 @@ class Vector(BaseType):
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op")
         expr = VectorExpression(
-            method_name,
-            f"GrB_eWiseMult_Vector_{op.opclass}",
-            [self, other],
-            op=op,
+            method_name, f"GrB_eWiseMult_Vector_{op.opclass}", [self, other], op=op,
         )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
@@ -450,11 +448,7 @@ class Vector(BaseType):
         if left is None and right is None:
             op = get_typed_op(op, self.dtype)
             self._expect_op(
-                op,
-                "UnaryOp",
-                within=method_name,
-                argname="op",
-                extra_message=extra_message,
+                op, "UnaryOp", within=method_name, argname="op", extra_message=extra_message,
             )
             cfunc_name = "GrB_Vector_apply"
             args = [self]
@@ -472,11 +466,7 @@ class Vector(BaseType):
                 )
             op = get_typed_op(op, self.dtype, left.dtype)
             self._expect_op(
-                op,
-                "BinaryOp",
-                within=method_name,
-                argname="op",
-                extra_message=extra_message,
+                op, "BinaryOp", within=method_name, argname="op", extra_message=extra_message,
             )
             cfunc_name = f"GrB_Vector_apply_BinaryOp1st_{left.dtype}"
             args = [left, self]
@@ -494,11 +484,7 @@ class Vector(BaseType):
                 )
             op = get_typed_op(op, self.dtype, right.dtype)
             self._expect_op(
-                op,
-                "BinaryOp",
-                within=method_name,
-                argname="op",
-                extra_message=extra_message,
+                op, "BinaryOp", within=method_name, argname="op", extra_message=extra_message,
             )
             cfunc_name = f"GrB_Vector_apply_BinaryOp2nd_{right.dtype}"
             args = [self, right]
@@ -506,12 +492,7 @@ class Vector(BaseType):
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
         return VectorExpression(
-            method_name,
-            cfunc_name,
-            args,
-            op=op,
-            expr_repr=expr_repr,
-            size=self._size,
+            method_name, cfunc_name, args, op=op, expr_repr=expr_repr, size=self._size,
         )
 
     def reduce(self, op=monoid.plus):
@@ -655,14 +636,7 @@ class VectorExpression(BaseExpression):
         size=None,
     ):
         super().__init__(
-            method_name,
-            cfunc_name,
-            args,
-            at=at,
-            bt=bt,
-            op=op,
-            dtype=dtype,
-            expr_repr=expr_repr,
+            method_name, cfunc_name, args, at=at, bt=bt, op=op, dtype=dtype, expr_repr=expr_repr,
         )
         if size is None:
             size = args[0]._size

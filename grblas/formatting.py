@@ -194,13 +194,7 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
     for row_group, row_offset in row_groups:
         for column_group, column_offset in column_groups:
             _update_matrix_dataframe(
-                df,
-                matrix,
-                row_group,
-                row_offset,
-                column_group,
-                column_offset,
-                mask=mask,
+                df, matrix, row_group, row_offset, column_group, column_offset, mask=mask,
             )
     return df.where(pd.notnull(df), "")
 
@@ -314,10 +308,7 @@ def format_scalar_html(scalar):
 
 def format_scalar(scalar):
     return create_header(
-        "grblas.Scalar",
-        ["value", "dtype"],
-        [scalar.value, scalar.dtype],
-        name=scalar.name,
+        "grblas.Scalar", ["value", "dtype"], [scalar.value, scalar.dtype], name=scalar.name,
     )
 
 
@@ -426,11 +417,7 @@ def create_header(type_name, keys, vals, *, lower_border=False, name="", quote=T
 def format_matrix(matrix, *, max_rows=None, min_rows=None, max_columns=None, mask=None):
     name, keys, vals = matrix_info(matrix, mask=mask, for_html=False)
     header = create_header(
-        name,
-        keys,
-        vals,
-        lower_border=has_pandas,
-        name=matrix.name if mask is None else mask.name,
+        name, keys, vals, lower_border=has_pandas, name=matrix.name if mask is None else mask.name,
     )
     if has_pandas:
         df = _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, mask=mask)
@@ -443,11 +430,7 @@ def format_matrix(matrix, *, max_rows=None, min_rows=None, max_columns=None, mas
 def format_vector(vector, *, max_columns=None, mask=None):
     name, keys, vals = vector_info(vector, mask=mask, for_html=False)
     header = create_header(
-        name,
-        keys,
-        vals,
-        lower_border=has_pandas,
-        name=vector.name if mask is None else mask.name,
+        name, keys, vals, lower_border=has_pandas, name=vector.name if mask is None else mask.name,
     )
     if has_pandas:
         df = _get_vector_dataframe(vector, max_columns, mask=mask)

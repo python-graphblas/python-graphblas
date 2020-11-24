@@ -547,8 +547,8 @@ def test_del(capsys):
 def test_import_export(v):
     v1 = v.dup()
     k = v1.fast_export()
-    assert k['n'] == 7
-    assert (k['i'] == [1, 3, 4, 6]).all()
-    assert (k['x'] == [1, 1, 2, 0]).all()
+    assert k["size"] == 7
+    assert (k["indices"] == [1, 3, 4, 6]).all()
+    assert (k["values"] == [1, 1, 2, 0]).all()
     w1 = Vector.fast_import(**k)
     assert w1.isequal(v)
