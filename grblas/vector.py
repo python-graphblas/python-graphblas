@@ -25,6 +25,8 @@ class Vector(BaseType):
             name = f"v_{next(Vector._name_counter)}"
         self._size = None
         super().__init__(gb_obj, dtype, name)
+        # Add ss extension methods
+        self.ss = Vector.ss(self)
 
     def __del__(self):
         gb_obj = getattr(self, "gb_obj", None)
@@ -170,42 +172,6 @@ class Vector(BaseType):
             np.frombuffer(ffi.buffer(values._carg), dtype=dtype.np_type),
         )
 
-    def fast_export(self):
-        """
-        GxB_Vector_export
-
-        Returns a dict of the constituent parts:
-         - n: size (int)
-         - i: indices (ndarray<uint64>)
-         - x: values (ndarray of appropriate dtype)
-
-        To reimport the Vector:
-        ```
-        pieces = v.fast_export()
-        v2 = Vector.fast_import(**pieces)
-        ```
-
-        The underlying GraphBLAS object transfers ownership to numpy, disallowing further access.
-        The caller should delete or stop using the Vector after calling `fast_export`.
-        """
-        dtype = np.dtype(self.dtype.np_type)
-        index_dtype = np.dtype(np.uint64)
-
-        vhandle = ffi_new("GrB_Vector*", self._carg)
-        type_ = ffi_new("GrB_Type*")
-        n = ffi_new("GrB_Index*")
-        nvals = ffi_new("GrB_Index*")
-        vi = ffi_new("GrB_Index**")
-        vx = ffi_new("void**")
-        check_status(lib.GxB_Vector_export(vhandle, type_, n, nvals, vi, vx, ffi.NULL))
-        return {
-            "size": n[0],
-            "indices": np.frombuffer(
-                ffi.buffer(vi[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
-            ),
-            "values": np.frombuffer(ffi.buffer(vx[0], nvals[0] * dtype.itemsize), dtype=dtype),
-        }
-
     def build(self, indices, values, *, dup_op=None, clear=False, size=None):
         # TODO: accept `dtype` keyword to match the dtype of `values`?
         np_index = isinstance(indices, np.ndarray)
@@ -317,27 +283,6 @@ class Vector(BaseType):
         w.build(indices, values, dup_op=dup_op)
         return w
 
-    @classmethod
-    def fast_import(cls, *, size, indices, values, name=None):
-        """
-        GxB_Vector_import
-
-        Returns a new Vector created from the pieces.
-
-        The new Vector uses the underlying buffer of the input arrays.
-        The caller should delete or stop using the input arrays after calling `fast_import`.
-        """
-        vhandle = ffi_new("GrB_Vector*")
-        dtype = lookup_dtype(values.dtype)
-        vi = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indices)))
-        vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-        check_status(
-            lib.GxB_Vector_import(vhandle, dtype._carg, size, len(values), vi, vx, ffi.NULL)
-        )
-        rv = cls(vhandle, dtype, name=name)
-        rv._size = size
-        return rv
-
     @property
     def _carg(self):
         return self.gb_obj[0]
@@ -386,7 +331,10 @@ class Vector(BaseType):
                 op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op"
             )
         expr = VectorExpression(
-            method_name, f"GrB_eWiseAdd_Vector_{op.opclass}", [self, other], op=op,
+            method_name,
+            f"GrB_eWiseAdd_Vector_{op.opclass}",
+            [self, other],
+            op=op,
         )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
@@ -404,7 +352,10 @@ class Vector(BaseType):
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op")
         expr = VectorExpression(
-            method_name, f"GrB_eWiseMult_Vector_{op.opclass}", [self, other], op=op,
+            method_name,
+            f"GrB_eWiseMult_Vector_{op.opclass}",
+            [self, other],
+            op=op,
         )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
@@ -448,7 +399,11 @@ class Vector(BaseType):
         if left is None and right is None:
             op = get_typed_op(op, self.dtype)
             self._expect_op(
-                op, "UnaryOp", within=method_name, argname="op", extra_message=extra_message,
+                op,
+                "UnaryOp",
+                within=method_name,
+                argname="op",
+                extra_message=extra_message,
             )
             cfunc_name = "GrB_Vector_apply"
             args = [self]
@@ -466,7 +421,11 @@ class Vector(BaseType):
                 )
             op = get_typed_op(op, self.dtype, left.dtype)
             self._expect_op(
-                op, "BinaryOp", within=method_name, argname="op", extra_message=extra_message,
+                op,
+                "BinaryOp",
+                within=method_name,
+                argname="op",
+                extra_message=extra_message,
             )
             cfunc_name = f"GrB_Vector_apply_BinaryOp1st_{left.dtype}"
             args = [left, self]
@@ -484,7 +443,11 @@ class Vector(BaseType):
                 )
             op = get_typed_op(op, self.dtype, right.dtype)
             self._expect_op(
-                op, "BinaryOp", within=method_name, argname="op", extra_message=extra_message,
+                op,
+                "BinaryOp",
+                within=method_name,
+                argname="op",
+                extra_message=extra_message,
             )
             cfunc_name = f"GrB_Vector_apply_BinaryOp2nd_{right.dtype}"
             args = [self, right]
@@ -492,7 +455,12 @@ class Vector(BaseType):
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
         return VectorExpression(
-            method_name, cfunc_name, args, op=op, expr_repr=expr_repr, size=self._size,
+            method_name,
+            cfunc_name,
+            args,
+            op=op,
+            expr_repr=expr_repr,
+            size=self._size,
         )
 
     def reduce(self, op=monoid.plus):
@@ -618,6 +586,68 @@ class Vector(BaseType):
             vector.vector = ffi.NULL
             return rv
 
+    class ss:
+        def __init__(self, parent):
+            self._parent = parent
+
+        def fast_export(self):
+            """
+            GxB_Vector_export
+
+            Returns a dict of the constituent parts:
+             - n: size (int)
+             - i: indices (ndarray<uint64>)
+             - x: values (ndarray of appropriate dtype)
+
+            To reimport the Vector:
+            ```
+            pieces = v.fast_export()
+            v2 = Vector.fast_import(**pieces)
+            ```
+
+            The underlying GraphBLAS object transfers ownership to numpy, disallowing further access.
+            The caller should delete or stop using the Vector after calling `fast_export`.
+            """
+            dtype = np.dtype(self._parent.dtype.np_type)
+            index_dtype = np.dtype(np.uint64)
+
+            vhandle = ffi_new("GrB_Vector*", self._parent._carg)
+            type_ = ffi_new("GrB_Type*")
+            n = ffi_new("GrB_Index*")
+            nvals = ffi_new("GrB_Index*")
+            vi = ffi_new("GrB_Index**")
+            vx = ffi_new("void**")
+            check_status(lib.GxB_Vector_export(vhandle, type_, n, nvals, vi, vx, ffi.NULL))
+            self._parent.gb_obj = ffi.NULL
+            return {
+                "size": n[0],
+                "indices": np.frombuffer(
+                    ffi.buffer(vi[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
+                ),
+                "values": np.frombuffer(ffi.buffer(vx[0], nvals[0] * dtype.itemsize), dtype=dtype),
+            }
+
+        @classmethod
+        def fast_import(cls, *, size, indices, values, name=None):
+            """
+            GxB_Vector_import
+
+            Returns a new Vector created from the pieces.
+
+            The new Vector uses the underlying buffer of the input arrays.
+            The caller should delete or stop using the input arrays after calling `fast_import`.
+            """
+            vhandle = ffi_new("GrB_Vector*")
+            dtype = lookup_dtype(values.dtype)
+            vi = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indices)))
+            vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            check_status(
+                lib.GxB_Vector_import(vhandle, dtype._carg, size, len(values), vi, vx, ffi.NULL)
+            )
+            rv = Vector(vhandle, dtype, name=name)
+            rv._size = size
+            return rv
+
 
 class VectorExpression(BaseExpression):
     output_type = Vector
@@ -636,7 +666,14 @@ class VectorExpression(BaseExpression):
         size=None,
     ):
         super().__init__(
-            method_name, cfunc_name, args, at=at, bt=bt, op=op, dtype=dtype, expr_repr=expr_repr,
+            method_name,
+            cfunc_name,
+            args,
+            at=at,
+            bt=bt,
+            op=op,
+            dtype=dtype,
+            expr_repr=expr_repr,
         )
         if size is None:
             size = args[0]._size

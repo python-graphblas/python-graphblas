@@ -384,7 +384,8 @@ class UnaryOp(OpBase):
                 unary_udf = numba.njit(func)
                 # Build wrapper because GraphBLAS wants pointers and void return
                 wrapper_sig = nt.void(
-                    nt.CPointer(return_type.numba_type), nt.CPointer(input_type.numba_type),
+                    nt.CPointer(return_type.numba_type),
+                    nt.CPointer(input_type.numba_type),
                 )
 
                 if type_ == "BOOL":
@@ -613,7 +614,11 @@ class BinaryOp(OpBase):
             float_type = "FP32" if dtype == "FP32" else "FP64"
             orig_op = binary.cdiv[float_type]
             op = TypedBuiltinBinaryOp(
-                "truediv", dtype, binary.cdiv.types[float_type], orig_op.gb_obj, orig_op.gb_name,
+                "truediv",
+                dtype,
+                binary.cdiv.types[float_type],
+                orig_op.gb_obj,
+                orig_op.gb_name,
             )
             binary.truediv._add(op)
         # Add floordiv
@@ -758,7 +763,12 @@ class Semiring(OpBase):
             )
             ret_type = monoid[binary_out].return_type
             op = TypedUserSemiring(
-                name, binary_in, ret_type, new_semiring[0], monoid[binary_out], binary_func,
+                name,
+                binary_in,
+                ret_type,
+                new_semiring[0],
+                monoid[binary_out],
+                binary_func,
             )
             new_type_obj._add(op)
         return new_type_obj
