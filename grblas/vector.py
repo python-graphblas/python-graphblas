@@ -605,8 +605,9 @@ class Vector(BaseType):
             v2 = Vector.fast_import(**pieces)
             ```
 
-            The underlying GraphBLAS object transfers ownership to numpy, disallowing further access.
-            The caller should delete or stop using the Vector after calling `fast_export`.
+            The underlying GraphBLAS object transfers ownership to numpy,
+            disallowing further access. The caller should delete or stop using
+            the Vector after calling `fast_export`.
             """
             dtype = np.dtype(self._parent.dtype.np_type)
             index_dtype = np.dtype(np.uint64)

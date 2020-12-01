@@ -856,8 +856,9 @@ class Matrix(BaseType):
             A2 = Matrix.fast_import(**pieces)
             ```
 
-            The underlying GraphBLAS object transfers ownership to numpy, disallowing further access.
-            The caller should delete or stop using the Matrix after calling `fast_export`.
+            The underlying GraphBLAS object transfers ownership to numpy,
+            disallowing further access. The caller should delete or stop using
+            the Matrix after calling `fast_export`.
 
             If `format` is not specified, this method exports in the currently stored format
             To control the export format, set `format` to one of:
@@ -903,7 +904,9 @@ class Matrix(BaseType):
                     "col_indices": np.frombuffer(
                         ffi.buffer(Aj[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
-                    "values": np.frombuffer(ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype),
+                    "values": np.frombuffer(
+                        ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype
+                    ),
                 }
             elif format == "csc":
                 Ai = ffi_new("GrB_Index**")
@@ -919,7 +922,9 @@ class Matrix(BaseType):
                     "row_indices": np.frombuffer(
                         ffi.buffer(Ai[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
-                    "values": np.frombuffer(ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype),
+                    "values": np.frombuffer(
+                        ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype
+                    ),
                 }
             elif format == "hypercsr":
                 nvec = ffi_new("GrB_Index*")
@@ -927,7 +932,18 @@ class Matrix(BaseType):
                 Aj = ffi_new("GrB_Index**")
                 check_status(
                     lib.GxB_Matrix_export_HyperCSR(
-                        mhandle, type_, nrows, ncols, nvals, nonempty, nvec, Ah, Ap, Aj, Ax, ffi.NULL
+                        mhandle,
+                        type_,
+                        nrows,
+                        ncols,
+                        nvals,
+                        nonempty,
+                        nvec,
+                        Ah,
+                        Ap,
+                        Aj,
+                        Ax,
+                        ffi.NULL,
                     )
                 )
                 rv = {
@@ -940,7 +956,9 @@ class Matrix(BaseType):
                     "col_indices": np.frombuffer(
                         ffi.buffer(Aj[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
-                    "values": np.frombuffer(ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype),
+                    "values": np.frombuffer(
+                        ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype
+                    ),
                 }
             elif format == "hypercsc":
                 nvec = ffi_new("GrB_Index*")
@@ -948,7 +966,18 @@ class Matrix(BaseType):
                 Ai = ffi_new("GrB_Index**")
                 check_status(
                     lib.GxB_Matrix_export_HyperCSC(
-                        mhandle, type_, nrows, ncols, nvals, nonempty, nvec, Ah, Ap, Ai, Ax, ffi.NULL
+                        mhandle,
+                        type_,
+                        nrows,
+                        ncols,
+                        nvals,
+                        nonempty,
+                        nvec,
+                        Ah,
+                        Ap,
+                        Ai,
+                        Ax,
+                        ffi.NULL,
                     )
                 )
                 rv = {
@@ -961,7 +990,9 @@ class Matrix(BaseType):
                     "row_indices": np.frombuffer(
                         ffi.buffer(Ai[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
-                    "values": np.frombuffer(ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype),
+                    "values": np.frombuffer(
+                        ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype
+                    ),
                 }
             else:
                 raise ValueError(f"Invalid format: {format}")
@@ -978,18 +1009,18 @@ class Matrix(BaseType):
 
         @classmethod
         def fast_import(
-                cls,
-                *,
-                nrows,
-                ncols,
-                indptr,
-                values,
-                row_indices=None,
-                col_indices=None,
-                rows=None,
-                cols=None,
-                format=None,
-                name=None,
+            cls,
+            *,
+            nrows,
+            ncols,
+            indptr,
+            values,
+            row_indices=None,
+            col_indices=None,
+            rows=None,
+            cols=None,
+            format=None,
+            name=None,
         ):
             """
             GxB_Matrix_import_xxx
