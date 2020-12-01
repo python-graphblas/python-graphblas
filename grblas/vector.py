@@ -530,7 +530,7 @@ class Vector(BaseType):
             if is_submask:
                 if isize is None:
                     # v[i](m) << w
-                    raise TypeError("TODO")
+                    raise TypeError("Single element assign does not accept a submask")
                 # v[I](m) << w
                 cfunc_name = "GrB_Vector_subassign"
                 expr_repr = "[[{2} elements]](%s) = {0.name}" % mask.name
@@ -553,7 +553,7 @@ class Vector(BaseType):
             if is_submask:
                 if isize is None:
                     # v[i](m) << c
-                    raise TypeError("TODO")
+                    raise TypeError("Single element assign does not accept a submask")
                 # v[I](m) << c
                 cfunc_name = f"GrB_Vector_subassign_{value.dtype}"
                 expr_repr = "[[{2} elements]](%s) = {0}" % mask.name

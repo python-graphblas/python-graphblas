@@ -177,6 +177,8 @@ def test_update(s):
         s(accum=binary.plus) << 6
     with pytest.raises(TypeError, match="Mask not allowed for Scalars"):
         s(s)
+    with pytest.raises(TypeError, match="input_mask not allowed for Scalars"):
+        s(input_mask=s)
 
 
 def test_not_hashable(s):

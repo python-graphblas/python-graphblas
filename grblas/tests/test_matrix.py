@@ -356,6 +356,127 @@ def test_extract_column(A):
     assert w2.isequal(result)
 
 
+def test_extract_input_mask():
+    # A       M
+    # 0 1 2   _ 0 1
+    # 3 4 5   2 3 _
+    A = Matrix.from_values(
+        [0, 0, 0, 1, 1, 1],
+        [0, 1, 2, 0, 1, 2],
+        [0, 1, 2, 3, 4, 5],
+    )
+    M = Matrix.from_values(
+        [0, 0, 1, 1],
+        [1, 2, 0, 1],
+        [0, 1, 2, 3],
+    )
+    m = M[0, :].new()
+    MT = M.T.new()
+    # Matrix structure mask
+    result = A[0, [0, 1]].new(input_mask=M.S)
+    expected = Vector.from_values([1], [1])
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=M.S) << A[0, [0, 1]]
+    assert result.isequal(expected)
+
+    # Vector mask
+    result = A[0, [0, 1]].new(input_mask=m.S)
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=m.S) << A[0, [0, 1]]
+    assert result.isequal(expected)
+
+    # Matrix value mask
+    result = A[0, [1, 2]].new(input_mask=M.V)
+    expected = Vector.from_values([1], [2], size=2)
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=M.V) << A[0, [1, 2]]
+    assert result.isequal(expected)
+
+    with pytest.raises(ValueError, match="Shape of `input_mask` does not match shape of input"):
+        A[0, [0, 1]].new(input_mask=MT.S)
+    with pytest.raises(ValueError, match="Shape of `input_mask` does not match shape of input"):
+        m(input_mask=MT.S) << A[0, [0, 1]]
+    with pytest.raises(
+        ValueError, match="Size of `input_mask` Vector does not match ncols of Matrix"
+    ):
+        A[0, [0]].new(input_mask=expected.S)
+    with pytest.raises(
+        ValueError, match="Size of `input_mask` Vector does not match ncols of Matrix"
+    ):
+        m(input_mask=expected.S) << A[0, [0]]
+    with pytest.raises(
+        ValueError, match="Size of `input_mask` Vector does not match nrows of Matrix"
+    ):
+        A[[0], 0].new(input_mask=m.S)
+    with pytest.raises(
+        ValueError, match="Size of `input_mask` Vector does not match nrows of Matrix"
+    ):
+        m(input_mask=m.S) << A[[0], 0]
+    with pytest.raises(
+        TypeError, match="Got Vector `input_mask` when extracting a submatrix from a Matrix"
+    ):
+        A[[0], [0]].new(input_mask=expected.S)
+    with pytest.raises(
+        TypeError, match="Got Vector `input_mask` when extracting a submatrix from a Matrix"
+    ):
+        A(input_mask=expected.S) << A[[0], [0]]
+    with pytest.raises(TypeError, match="mask is not allowed for single element extraction"):
+        A[0, 0].new(input_mask=M.S)
+    with pytest.raises(TypeError, match="mask and input_mask arguments cannot both be given"):
+        A[0, [0, 1]].new(input_mask=M.S, mask=expected.S)
+    with pytest.raises(TypeError, match="mask and input_mask arguments cannot both be given"):
+        A(input_mask=M.S, mask=expected.S)
+    with pytest.raises(TypeError, match=r"Mask must indicate values \(M.V\) or structure \(M.S\)"):
+        A[0, [0, 1]].new(input_mask=M)
+    with pytest.raises(TypeError, match=r"Mask must indicate values \(M.V\) or structure \(M.S\)"):
+        A(input_mask=M)
+    with pytest.raises(TypeError, match="Mask object must be type Vector"):
+        expected[[0, 1]].new(input_mask=M.S)
+    with pytest.raises(TypeError, match="Mask object must be type Vector"):
+        expected(input_mask=M.S) << expected[[0, 1]]
+    with pytest.raises(TypeError, match=r"new\(\) got an unexpected keyword argument 'input_mask'"):
+        A.new(input_mask=M.S)
+    with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
+        A(input_mask=M.S) << A.apply(unary.ainv)
+    with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
+        A(input_mask=M.S)[[0], [0]] = 1
+    with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
+        A(input_mask=M.S)[[0], [0]]
+
+    # With transpose input value
+    # Matrix structure mask
+    result = A.T[[0, 1], 0].new(input_mask=MT.S)
+    expected = Vector.from_values([1], [1])
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=MT.S) << A.T[[0, 1], 0]
+    assert result.isequal(expected)
+
+    # Vector mask
+    result = A.T[[0, 1], 0].new(input_mask=m.S)
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=m.S) << A.T[[0, 1], 0]
+    assert result.isequal(expected)
+
+    # Matrix value mask
+    result = A.T[[1, 2], 0].new(input_mask=MT.V)
+    expected = Vector.from_values([1], [2], size=2)
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=MT.V) << A.T[[1, 2], 0]
+    assert result.isequal(expected)
+
+
 def test_assign(A):
     B = Matrix.from_values([0, 0, 1], [0, 1, 0], [9, 8, 7])
     result = Matrix.from_values(
@@ -654,7 +775,9 @@ def test_assign_row_col_matrix_mask():
     result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
     assert C.isequal(result)
 
-    with pytest.raises(TypeError, match="TODO"):
+    with pytest.raises(
+        TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
+    ):
         C[0, :](B.S) << v2
 
     # col subassign
@@ -668,7 +791,9 @@ def test_assign_row_col_matrix_mask():
     result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
     assert C.isequal(result)
 
-    with pytest.raises(TypeError, match="TODO"):
+    with pytest.raises(
+        TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
+    ):
         C[:, 0](B.S) << v2
 
     # row subassign scalar
@@ -682,7 +807,9 @@ def test_assign_row_col_matrix_mask():
     result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
     assert C.isequal(result)
 
-    with pytest.raises(TypeError, match="TODO"):
+    with pytest.raises(
+        TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
+    ):
         C[:, 0](B.S) << 100
 
     # col subassign scalar
@@ -696,11 +823,13 @@ def test_assign_row_col_matrix_mask():
     result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
     assert C.isequal(result)
 
-    with pytest.raises(TypeError, match="TODO"):
+    with pytest.raises(
+        TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
+    ):
         C[:, 0](B.S) << 100
 
     # Bad subassign
-    with pytest.raises(TypeError, match="TODO"):
+    with pytest.raises(TypeError, match="Single element assign does not accept a submask"):
         C[0, 0](B.S) << 100
 
 

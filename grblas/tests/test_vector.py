@@ -139,6 +139,22 @@ def test_extract_values(v):
     assert vals.dtype == np.float64
 
 
+def test_extract_input_mask():
+    v = Vector.from_values([0, 1, 2], [0, 1, 2])
+    m = Vector.from_values([0, 2], [0, 2])
+    result = v[[0, 1]].new(input_mask=m.S)
+    expected = Vector.from_values([0], [0], size=2)
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=m.S) << v[[0, 1]]
+    assert result.isequal(expected)
+    with pytest.raises(ValueError, match="Size of `input_mask` does not match size of input"):
+        v[[0, 2]].new(input_mask=expected.S)
+    with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
+        v(input_mask=m.S) << 1
+
+
 def test_extract_element(v):
     assert v[1].value == 1
     assert v[6].new() == 0
@@ -447,10 +463,10 @@ def test_assign_scalar_with_mask():
     result = Vector.from_values([0, 1, 2], [1, 2, 1100])
     assert v.isequal(result)
 
-    with pytest.raises(TypeError, match="TODO"):
+    with pytest.raises(TypeError, match="Single element assign does not accept a submask"):
         v[2](w1.S) << w1
 
-    with pytest.raises(TypeError, match="TODO"):
+    with pytest.raises(TypeError, match="Single element assign does not accept a submask"):
         v[2](w1.S) << 7
 
     v[[2]](w1.S) << 7

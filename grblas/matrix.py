@@ -719,7 +719,10 @@ class Matrix(BaseType):
                 if mask is not None and type(mask.mask) is Matrix:
                     if is_submask:
                         # C[i, J](M) << v
-                        raise TypeError("TODO")
+                        raise TypeError(
+                            "Indices for subassign imply Vector submask, "
+                            "but got Matrix mask instead"
+                        )
                     else:
                         # C(M)[i, J] << v
                         # Upcast v to a Matrix and use Matrix_assign
@@ -764,7 +767,10 @@ class Matrix(BaseType):
                 if mask is not None and type(mask.mask) is Matrix:
                     if is_submask:
                         # C[I, j](M) << v
-                        raise TypeError("TODO")
+                        raise TypeError(
+                            "Indices for subassign imply Vector submask, "
+                            "but got Matrix mask instead"
+                        )
                     else:
                         # C(M)[I, j] << v
                         # Upcast v to a Matrix and use Matrix_assign
@@ -944,11 +950,14 @@ class Matrix(BaseType):
                     if rowsize is None or colsize is None:
                         if rowsize is None and colsize is None:
                             # C[i, j](M) << c
-                            raise TypeError("TODO")
+                            raise TypeError("Single element assign does not accept a submask")
                         else:
                             # C[i, J](M) << c
                             # C[I, j](M) << c
-                            raise TypeError("TODO")
+                            raise TypeError(
+                                "Indices for subassign imply Vector submask, "
+                                "but got Matrix mask instead"
+                            )
                     # C[I, J](M) << c
                     # SS, SuiteSparse-specific: subassign
                     cfunc_name = f"GrB_Matrix_subassign_{value.dtype}"

@@ -130,7 +130,9 @@ class BaseType:
         self.dtype = lookup_dtype(dtype)
         self.name = name
 
-    def __call__(self, *optional_mask_and_accum, mask=None, accum=None, replace=False):
+    def __call__(
+        self, *optional_mask_and_accum, mask=None, accum=None, replace=False, input_mask=None
+    ):
         # Pick out mask and accum from positional arguments
         mask_arg = None
         accum_arg = None
@@ -155,16 +157,23 @@ class BaseType:
         if mask_arg is not None:
             mask = mask_arg
         if mask is None:
-            pass
+            if input_mask is None:
+                pass
+            elif self._is_scalar:
+                raise TypeError("input_mask not allowed for Scalars")
+            else:
+                _check_mask(input_mask)
         elif self._is_scalar:
             raise TypeError("Mask not allowed for Scalars")
+        elif input_mask is not None:
+            raise TypeError("mask and input_mask arguments cannot both be given")
         else:
             _check_mask(mask)
         if accum_arg is not None and accum is not None:
             raise TypeError("Got multiple values for argument 'accum'")
         if accum_arg is not None:
             accum = accum_arg
-        return Updater(self, mask=mask, accum=accum, replace=replace)
+        return Updater(self, mask=mask, accum=accum, replace=replace, input_mask=input_mask)
 
     def __eq__(self, other):
         raise TypeError(
@@ -180,7 +189,7 @@ class BaseType:
         """
         return self._update(delayed)
 
-    def _update(self, delayed, mask=None, accum=None, replace=False):
+    def _update(self, delayed, mask=None, accum=None, replace=False, input_mask=None):
         # TODO: check expected output type (now included in Expression object)
         if not isinstance(delayed, BaseExpression):
             if type(delayed) is AmbiguousAssignOrExtract:
@@ -195,6 +204,12 @@ class BaseType:
                     return
 
                 # Extract (C << A[rows, cols])
+                if input_mask is not None:
+                    if mask is not None:
+                        raise TypeError("mask and input_mask arguments cannot both be given")
+                    _check_mask(input_mask, output=delayed.parent)
+                    mask = delayed._input_mask_to_mask(input_mask)
+                    input_mask = None
                 delayed = delayed._extract_delayed()
             elif type(delayed) is type(self):
                 # Simple assignment (w << v)
@@ -246,7 +261,7 @@ class BaseType:
                                 f"{type(self).__name__}, {type(self).__name__}Expression, "
                                 "AmbiguousAssignOrExtract, and scalars."
                             )
-                    updater = self(mask=mask, accum=accum, replace=replace)
+                    updater = self(mask=mask, accum=accum, replace=replace, input_mask=input_mask)
                     if type(self) is Matrix:
                         if mask is None:
                             raise TypeError(
@@ -262,6 +277,8 @@ class BaseType:
                         updater[:] = scalar
                     return
 
+        if input_mask is not None:
+            raise TypeError("`input_mask` argument may only be used for extract")
         # Normalize mask and separate out complement and structural flags
         if mask is None:
             complement = False
