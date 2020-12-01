@@ -17,12 +17,26 @@ _prev_recorder = None
 def call(cfunc_name, args):
     call_args = [getattr(x, "_carg", x) if x is not None else NULL for x in args]
     cfunc = libget(cfunc_name)
-    err_code = cfunc(*call_args)
-    check_status(err_code)
+    try:
+        err_code = cfunc(*call_args)
+    except TypeError as exc:
+        # We should strive to not encounter this during normal usage
+        from .recorder import gbstr
+
+        callstr = f'{cfunc.__name__}({", ".join(gbstr(x) for x in args)})'
+        lines = cfunc.__doc__.splitlines()
+        sig = lines[0] if lines else ""
+        raise TypeError(
+            f"Error calling {cfunc.__name__}:\n"
+            f" - Call objects: {callstr}\n"
+            f" - C signature: {sig}\n"
+            f" - Error: {exc}"
+        )
+    rv = check_status(err_code)
     rec = _recorder.get(_prev_recorder)
     if rec is not None:
         rec.record(cfunc_name, args)
-    return err_code
+    return rv
 
 
 def _expect_type_message(
@@ -98,8 +112,11 @@ def _check_mask(mask, output=None):
         raise TypeError("Mask must indicate values (M.V) or structure (M.S)")
     if not isinstance(mask, Mask):
         raise TypeError(f"Invalid mask: {type(mask)}")
-    if output is not None and type(mask.mask) is not type(output):
-        raise TypeError(f"Mask object must be type {type(output)}; got {type(mask)}")
+    if output is not None:
+        from .vector import Vector
+
+        if type(output) is Vector and type(mask.mask) is not Vector:
+            raise TypeError(f"Mask object must be type Vector; got {type(mask.mask)}")
 
 
 class BaseType:
@@ -113,7 +130,9 @@ class BaseType:
         self.dtype = lookup_dtype(dtype)
         self.name = name
 
-    def __call__(self, *optional_mask_and_accum, mask=None, accum=None, replace=False):
+    def __call__(
+        self, *optional_mask_and_accum, mask=None, accum=None, replace=False, input_mask=None
+    ):
         # Pick out mask and accum from positional arguments
         mask_arg = None
         accum_arg = None
@@ -138,16 +157,23 @@ class BaseType:
         if mask_arg is not None:
             mask = mask_arg
         if mask is None:
-            pass
+            if input_mask is None:
+                pass
+            elif self._is_scalar:
+                raise TypeError("input_mask not allowed for Scalars")
+            else:
+                _check_mask(input_mask)
         elif self._is_scalar:
             raise TypeError("Mask not allowed for Scalars")
+        elif input_mask is not None:
+            raise TypeError("mask and input_mask arguments cannot both be given")
         else:
             _check_mask(mask)
         if accum_arg is not None and accum is not None:
             raise TypeError("Got multiple values for argument 'accum'")
         if accum_arg is not None:
             accum = accum_arg
-        return Updater(self, mask=mask, accum=accum, replace=replace)
+        return Updater(self, mask=mask, accum=accum, replace=replace, input_mask=input_mask)
 
     def __eq__(self, other):
         raise TypeError(
@@ -163,7 +189,7 @@ class BaseType:
         """
         return self._update(delayed)
 
-    def _update(self, delayed, mask=None, accum=None, replace=False):
+    def _update(self, delayed, mask=None, accum=None, replace=False, input_mask=None):
         # TODO: check expected output type (now included in Expression object)
         if not isinstance(delayed, BaseExpression):
             if type(delayed) is AmbiguousAssignOrExtract:
@@ -178,6 +204,12 @@ class BaseType:
                     return
 
                 # Extract (C << A[rows, cols])
+                if input_mask is not None:
+                    if mask is not None:
+                        raise TypeError("mask and input_mask arguments cannot both be given")
+                    _check_mask(input_mask, output=delayed.parent)
+                    mask = delayed._input_mask_to_mask(input_mask)
+                    input_mask = None
                 delayed = delayed._extract_delayed()
             elif type(delayed) is type(self):
                 # Simple assignment (w << v)
@@ -224,9 +256,12 @@ class BaseType:
                             scalar = Scalar.from_value(delayed, name=repr(delayed))
                         except TypeError:
                             raise TypeError(
-                                f"assignment value must be Expression object, not {type(delayed)}"
+                                "Assignment value must be a valid expression type, not "
+                                f"{type(delayed)}.\n\nValid expression types include "
+                                f"{type(self).__name__}, {type(self).__name__}Expression, "
+                                "AmbiguousAssignOrExtract, and scalars."
                             )
-                    updater = self(mask=mask, accum=accum, replace=replace)
+                    updater = self(mask=mask, accum=accum, replace=replace, input_mask=input_mask)
                     if type(self) is Matrix:
                         if mask is None:
                             raise TypeError(
@@ -242,6 +277,8 @@ class BaseType:
                         updater[:] = scalar
                     return
 
+        if input_mask is not None:
+            raise TypeError("`input_mask` argument may only be used for extract")
         # Normalize mask and separate out complement and structural flags
         if mask is None:
             complement = False

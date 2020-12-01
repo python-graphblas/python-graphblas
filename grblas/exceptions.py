@@ -80,19 +80,13 @@ _error_code_lookup = {
     lib.GrB_INDEX_OUT_OF_BOUNDS: IndexOutOfBound,
     lib.GrB_PANIC: Panic,
 }
-
-
-def is_error(response_code, error_class):
-    if response_code in _error_code_lookup:
-        if _error_code_lookup[response_code] == error_class:  # pragma: no branch
-            return True
-    return False
-
-
 GrB_SUCCESS = lib.GrB_SUCCESS
+GrB_NO_VALUE = lib.GrB_NO_VALUE
 
 
 def check_status(response_code):
     if response_code != GrB_SUCCESS:
+        if response_code == GrB_NO_VALUE:
+            return NoValue
         text = ffi.string(lib.GrB_error()).decode()
         raise _error_code_lookup[response_code](text)

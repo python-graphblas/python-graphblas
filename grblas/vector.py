@@ -156,20 +156,23 @@ class Vector(BaseType):
         GrB_Vector_extractTuples
         Extract the indices and values as a 2-tuple of numpy arrays
         """
-        if dtype is None:
-            dtype = self.dtype
-        else:
-            dtype = lookup_dtype(dtype)
         nvals = self._nvals
         indices = _CArray(nvals, name="&index_array")
         values = _CArray(nvals, ctype=self.dtype.c_type, name="&values_array")
         n = ffi_new("GrB_Index*")
         scalar = Scalar(n, UINT64, name="s_nvals", empty=True)  # Actually GrB_Index dtype
         scalar.value = nvals
-        call(f"GrB_Vector_extractTuples_{dtype.name}", (indices, values, _Pointer(scalar), self))
+        call(
+            f"GrB_Vector_extractTuples_{self.dtype.name}", (indices, values, _Pointer(scalar), self)
+        )
+        values = np.frombuffer(ffi.buffer(values._carg), dtype=self.dtype.np_type)
+        if dtype is not None:
+            dtype = lookup_dtype(dtype)
+            if dtype != self.dtype:
+                values = values.astype(dtype.np_type)  # copies
         return (
             np.frombuffer(ffi.buffer(indices._carg), dtype=np.uint64),
-            np.frombuffer(ffi.buffer(values._carg), dtype=dtype.np_type),
+            values,
         )
 
     def build(self, indices, values, *, dup_op=None, clear=False, size=None):
@@ -489,15 +492,14 @@ class Vector(BaseType):
             dtype = lookup_dtype(dtype)
         index, _ = resolved_indexes.indices[0]
         result = Scalar.new(dtype, name=name)
-        try:
+        if (
             call(f"GrB_Vector_extractElement_{dtype}", (_Pointer(result), self, index))
-        except NoValue:
-            pass
-        else:
+            is not NoValue
+        ):
             result._is_empty = False
         return result
 
-    def _prep_for_extract(self, resolved_indexes):
+    def _prep_for_extract(self, resolved_indexes, mask=None, is_submask=False):
         index, isize = resolved_indexes.indices[0]
         return VectorExpression(
             "__getitem__",
@@ -523,12 +525,22 @@ class Vector(BaseType):
         # should we cast?
         call(f"GrB_Vector_setElement_{value.dtype}", (self, value, index))
 
-    def _prep_for_assign(self, resolved_indexes, value):
+    def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
         index, isize = resolved_indexes.indices[0]
         if type(value) is Vector:
-            cfunc_name = "GrB_Vector_assign"
-            expr_repr = "[[{2} elements]] = {0.name}"
+            if is_submask:
+                if isize is None:
+                    # v[i](m) << w
+                    raise TypeError("Single element assign does not accept a submask")
+                # v[I](m) << w
+                cfunc_name = "GrB_Vector_subassign"
+                expr_repr = "[[{2} elements]](%s) = {0.name}" % mask.name
+            else:
+                # v(m)[I] << w
+                # v[I] << w
+                cfunc_name = "GrB_Vector_assign"
+                expr_repr = "[[{2} elements]] = {0.name}"
         else:
             try:
                 value = _CScalar(value)
@@ -540,8 +552,21 @@ class Vector(BaseType):
                     argname="value",
                     extra_message="Literal scalars also accepted.",
                 )
-            cfunc_name = f"GrB_Vector_assign_{value.dtype}"
-            expr_repr = "[[{2} elements]] = {0}"
+            if is_submask:
+                if isize is None:
+                    # v[i](m) << c
+                    raise TypeError("Single element assign does not accept a submask")
+                # v[I](m) << c
+                cfunc_name = f"GrB_Vector_subassign_{value.dtype}"
+                expr_repr = "[[{2} elements]](%s) = {0}" % mask.name
+            else:
+                # v(m)[I] << c
+                # v[I] << c
+                if isize is None:
+                    index = _CArray([index.scalar.value])
+                    isize = _CScalar(1)
+                cfunc_name = f"GrB_Vector_assign_{value.dtype}"
+                expr_repr = "[[{2} elements]] = {0}"
         return VectorExpression(
             method_name,
             cfunc_name,

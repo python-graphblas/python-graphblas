@@ -123,6 +123,36 @@ def test_extract_values(v):
     idx, vals = v.to_values()
     np.testing.assert_array_equal(idx, (1, 3, 4, 6))
     np.testing.assert_array_equal(vals, (1, 1, 2, 0))
+    assert idx.dtype == np.uint64
+    assert vals.dtype == np.int64
+
+    idx, vals = v.to_values(dtype=int)
+    np.testing.assert_array_equal(idx, (1, 3, 4, 6))
+    np.testing.assert_array_equal(vals, (1, 1, 2, 0))
+    assert idx.dtype == np.uint64
+    assert vals.dtype == np.int64
+
+    idx, vals = v.to_values(dtype=float)
+    np.testing.assert_array_equal(idx, (1, 3, 4, 6))
+    np.testing.assert_array_equal(vals, (1, 1, 2, 0))
+    assert idx.dtype == np.uint64
+    assert vals.dtype == np.float64
+
+
+def test_extract_input_mask():
+    v = Vector.from_values([0, 1, 2], [0, 1, 2])
+    m = Vector.from_values([0, 2], [0, 2])
+    result = v[[0, 1]].new(input_mask=m.S)
+    expected = Vector.from_values([0], [0], size=2)
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=m.S) << v[[0, 1]]
+    assert result.isequal(expected)
+    with pytest.raises(ValueError, match="Size of `input_mask` does not match size of input"):
+        v[[0, 2]].new(input_mask=expected.S)
+    with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
+        v(input_mask=m.S) << 1
 
 
 def test_extract_element(v):
@@ -385,6 +415,63 @@ def test_assign_scalar_mask(v):
     w = v.dup()
     w(~mask.S)[:] << 5
     assert w.isequal(result4)
+
+
+def test_subassign(A):
+    v = Vector.from_values([0, 1, 2], [0, 1, 2])
+    w = Vector.from_values([0, 1], [10, 20])
+    m = Vector.from_values([1], [True])
+    v[[0, 1]](m.S) << w
+    result1 = Vector.from_values([0, 1, 2], [0, 20, 2])
+    assert v.isequal(result1)
+    with pytest.raises(DimensionMismatch):
+        v[[0, 1]](v.S) << w
+    with pytest.raises(DimensionMismatch):
+        v[[0, 1]](m.S) << v
+
+    v[[0, 1]](m.S) << 100
+    result2 = Vector.from_values([0, 1, 2], [0, 100, 2])
+    assert v.isequal(result2)
+    with pytest.raises(DimensionMismatch):
+        v[[0, 1]](v.S) << 99
+    with pytest.raises(TypeError, match="Mask object must be type Vector"):
+        v[[0, 1]](A.S) << 88
+    with pytest.raises(TypeError, match="Mask object must be type Vector"):
+        v[[0, 1]](A.S) << w
+
+    # It may be nice for these to also raise
+    v[[0, 1]](A.S)
+    v[0](m.S)
+    v[0](replace=True)
+
+
+def test_assign_scalar_with_mask():
+    v = Vector.from_values([0, 1, 2], [1, 2, 3])
+    m = Vector.from_values([0, 2], [False, True])
+    w1 = Vector.from_values([0], [50])
+    w3 = Vector.from_values([0, 1, 2], [10, 20, 30])
+
+    v(m.V)[:] << w3
+    result = Vector.from_values([0, 1, 2], [1, 2, 30])
+    assert v.isequal(result)
+
+    v(m.V)[:] << 100
+    result = Vector.from_values([0, 1, 2], [1, 2, 100])
+    assert v.isequal(result)
+
+    v(m.V, accum=binary.plus)[2] << 1000
+    result = Vector.from_values([0, 1, 2], [1, 2, 1100])
+    assert v.isequal(result)
+
+    with pytest.raises(TypeError, match="Single element assign does not accept a submask"):
+        v[2](w1.S) << w1
+
+    with pytest.raises(TypeError, match="Single element assign does not accept a submask"):
+        v[2](w1.S) << 7
+
+    v[[2]](w1.S) << 7
+    result = Vector.from_values([0, 1, 2], [1, 2, 7])
+    assert v.isequal(result)
 
 
 def test_apply(v):

@@ -33,3 +33,16 @@ def test_bad_libget():
 def test_lib_attrs():
     for attr in dir(grblas.lib):
         getattr(grblas.lib, attr)
+
+
+def test_bad_call():
+    class bad:
+        name = "bad"
+        _carg = 1
+
+    with pytest.raises(TypeError, match="Error calling GrB_Matrix_apply"):
+        grblas.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad])
+    with pytest.raises(
+        TypeError, match=r"Call objects: GrB_Matrix_apply\(bad, bad, bad, bad, bad, bad\)"
+    ):
+        grblas.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad, bad])

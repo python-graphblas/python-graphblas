@@ -45,8 +45,6 @@ _ALL_INDICES = _AllIndices()
 
 class IndexerResolver:
     def __init__(self, obj, indices):
-        if obj._is_scalar:
-            raise TypeError("Cannot index into Scalars")
         self.obj = obj
         self.indices = self.parse_indices(indices, obj.shape)
 
@@ -109,6 +107,32 @@ class IndexerResolver:
                 raise TypeError("Unable to convert to tuple")
         return _CArray(index), _CScalar(len(index))
 
+    def get_index(self, dim):
+        """Return a new IndexerResolver with index for the selected dimension"""
+        rv = object.__new__(IndexerResolver)
+        rv.obj = self.obj
+        rv.indices = (self.indices[dim],)
+        return rv
+
+
+class Assigner:
+    def __init__(self, updater, resolved_indexes, *, is_submask):
+        # We could check here whether mask dimensions match index dimensions.
+        # We could also check for valid `updater.kwargs` if `resolved_indexes.is_single_element`.
+        self.updater = updater
+        self.resolved_indexes = resolved_indexes
+        self.is_submask = is_submask
+        if updater.kwargs.get("input_mask") is not None:
+            raise TypeError("`input_mask` argument may only be used for extract")
+
+    def update(self, obj):
+        # Occurs when user calls `C[index](...).update(obj)` or `C(...)[index].update(obj)`
+        self.updater._setitem(self.resolved_indexes, obj, is_submask=self.is_submask)
+
+    def __lshift__(self, obj):
+        # Occurs when user calls `C[index](...) << obj` or `C(...)[index] << obj`
+        self.updater._setitem(self.resolved_indexes, obj, is_submask=self.is_submask)
+
 
 class AmbiguousAssignOrExtract:
     def __init__(self, parent, resolved_indexes):
@@ -116,63 +140,98 @@ class AmbiguousAssignOrExtract:
         self.resolved_indexes = resolved_indexes
 
     def __call__(self, *args, **kwargs):
-        if type(self.parent) is Updater:
-            parent_kwargs = []
-            if self.parent.kwargs["accum"] is not None:
-                parent_kwargs.append(f"accum={self.parent.kwargs['accum']}")
-            if self.parent.kwargs["mask"] is not None:
-                # It would sure be nice if we knew the mask type.
-                # Passing around C objects directly is sometimes inconvenient.
-                parent_kwargs.append("mask=<Mask>")
-                parent_kwargs.append(f"replace={self.parent.kwargs['replace']}")
-            if not parent_kwargs:
-                raise ValueError("GraphBLAS object already called (with no keywords)")
-            parent_kwargs = ", ".join(parent_kwargs)
-            raise ValueError(f"GraphBLAS object already called with keywords: {parent_kwargs}")
-        # Occurs when user calls C[index](params)
+        # Occurs when user calls `C[index](params)`
         # Reverse the call order so we can parse the call args and kwargs
         updater = self.parent(*args, **kwargs)
-        return updater[self.resolved_indexes]
+        is_submask = updater.kwargs.get("mask") is not None
+        return Assigner(updater, self.resolved_indexes, is_submask=is_submask)
 
     def __lshift__(self, obj):
-        # Occurs when user calls C(params)[index] << obj or C[index] << obj
-        # Delegate back to parent's __setitem__ method
-        self.parent[self.resolved_indexes] = obj
+        # Occurs when user calls `C[index] << obj`
+        self.update(obj)
 
     def update(self, obj):
-        # Occurs when user calls C(params)[index].update(obj) or C[index].update(obj)
-        # Delegate back to parent's __setitem__ method
-        self.parent[self.resolved_indexes] = obj
+        # Occurs when user calls `C[index].update(obj)`
+        if getattr(self.parent, "_is_transposed", False):
+            raise TypeError("'TransposedMatrix' object does not support item assignment")
+        Updater(self.parent)._setitem(self.resolved_indexes, obj, is_submask=False)
 
     @property
     def value(self):
-        if type(self.parent) is Updater:
-            raise TypeError("Cannot extract from an Updater")
         if not self.resolved_indexes.is_single_element:
             raise AttributeError("Only Scalars have `.value` attribute")
         scalar = self.parent._extract_element(self.resolved_indexes, name="s_extract")
         return scalar.value
 
-    def new(self, *, dtype=None, mask=None, name=None):
+    def new(self, *, dtype=None, mask=None, input_mask=None, name=None):
         """
         Force extraction of the indexes into a new object
         dtype and mask are the only controllable parameters.
         """
-        if type(self.parent) is Updater:
-            raise TypeError("Cannot extract from an Updater")
         if self.resolved_indexes.is_single_element:
-            if mask is not None:
+            if mask is not None or input_mask is not None:
                 raise TypeError("mask is not allowed for single element extraction")
             return self.parent._extract_element(self.resolved_indexes, dtype=dtype, name=name)
         else:
+            if input_mask is not None:
+                if mask is not None:
+                    raise TypeError("mask and input_mask arguments cannot both be given")
+                from .base import _check_mask
+
+                _check_mask(input_mask, output=self.parent)
+                mask = self._input_mask_to_mask(input_mask)
             delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
             return delayed_extractor.new(dtype=dtype, mask=mask, name=name)
 
     def _extract_delayed(self):
         """Return an Expression object, treating this as an extract call"""
-        if type(self.parent) is Updater:
-            raise TypeError("Cannot extract from an Updater")
         return self.parent._prep_for_extract(self.resolved_indexes)
+
+    def _input_mask_to_mask(self, input_mask):
+        from .vector import Vector
+
+        if type(input_mask.mask) is Vector and type(self.parent) is not Vector:
+            (_, rowsize), (_, colsize) = self.resolved_indexes.indices
+            if rowsize is None:
+                if self.parent._ncols != input_mask.mask._size:
+                    raise ValueError(
+                        "Size of `input_mask` Vector does not match ncols of Matrix:\n"
+                        f"{self.parent.name}.ncols != {input_mask.mask.name}.size  -->  "
+                        f"{self.parent._ncols} != {input_mask.mask._size}"
+                    )
+                mask_expr = input_mask.mask._prep_for_extract(self.resolved_indexes.get_index(1))
+            elif colsize is None:
+                if self.parent._nrows != input_mask.mask._size:
+                    raise ValueError(
+                        "Size of `input_mask` Vector does not match nrows of Matrix:\n"
+                        f"{self.parent.name}.nrows != {input_mask.mask.name}.size  -->  "
+                        f"{self.parent._nrows} != {input_mask.mask._size}"
+                    )
+                mask_expr = input_mask.mask._prep_for_extract(self.resolved_indexes.get_index(0))
+            else:
+                raise TypeError(
+                    "Got Vector `input_mask` when extracting a submatrix from a Matrix.  "
+                    "Vector `input_mask` with a Matrix (or TransposedMatrix) input is "
+                    "only valid when extracting from a single row or column."
+                )
+        elif input_mask.mask.shape != self.parent.shape:
+            if type(self.parent) is Vector:
+                attr = "size"
+                shape1 = self.parent._size
+                shape2 = input_mask.mask._size
+            else:
+                attr = "shape"
+                shape1 = self.parent.shape
+                shape2 = input_mask.mask.shape
+            raise ValueError(
+                f"{attr.capitalize()} of `input_mask` does not match {attr} of input:\n"
+                f"{self.parent.name}.{attr} != {input_mask.mask.name}.{attr}  -->  "
+                f"{shape1} != {shape2}"
+            )
+        else:
+            mask_expr = input_mask.mask._prep_for_extract(self.resolved_indexes)
+        mask_value = mask_expr.new(name="mask_temp")
+        return type(input_mask)(mask_value)
 
 
 class Updater:
@@ -181,50 +240,45 @@ class Updater:
         self.kwargs = kwargs
 
     def __getitem__(self, keys):
-        # Occurs when user calls C(params)[index]
+        # Occurs when user calls `C(params)[index]`
         # Need something prepared to receive `<<` or `.update()`
         if self.parent._is_scalar:
             raise TypeError("Indexing not supported for Scalars")
-        if type(keys) is IndexerResolver:
-            resolved_indexes = keys
-        else:
-            resolved_indexes = IndexerResolver(self.parent, keys)
-        return AmbiguousAssignOrExtract(self, resolved_indexes)
+        resolved_indexes = IndexerResolver(self.parent, keys)
+        return Assigner(self, resolved_indexes, is_submask=False)
 
-    def __setitem__(self, keys, obj):
+    def _setitem(self, resolved_indexes, obj, *, is_submask):
         # Occurs when user calls C(params)[index] = delayed
-        if self.parent._is_scalar:
-            raise TypeError("Indexing not supported for Scalars")
-        if type(keys) is IndexerResolver:
-            resolved_indexes = keys
-        else:
-            resolved_indexes = IndexerResolver(self.parent, keys)
-
         if resolved_indexes.is_single_element and not self.kwargs:
             # Fast path using assignElement
             self.parent._assign_element(resolved_indexes, obj)
         else:
-            delayed = self.parent._prep_for_assign(resolved_indexes, obj)
+            mask = self.kwargs.get("mask")
+            delayed = self.parent._prep_for_assign(
+                resolved_indexes, obj, mask=mask, is_submask=is_submask
+            )
             self.update(delayed)
+
+    def __setitem__(self, keys, obj):
+        if self.parent._is_scalar:
+            raise TypeError("Indexing not supported for Scalars")
+        resolved_indexes = IndexerResolver(self.parent, keys)
+        self._setitem(resolved_indexes, obj, is_submask=False)
 
     def __delitem__(self, keys):
         # Occurs when user calls `del C(params)[index]`
         if self.parent._is_scalar:
             raise TypeError("Indexing not supported for Scalars")
-        if type(keys) is IndexerResolver:
-            resolved_indexes = keys
-        else:
-            resolved_indexes = IndexerResolver(self.parent, keys)
-
+        resolved_indexes = IndexerResolver(self.parent, keys)
         if resolved_indexes.is_single_element:
             self.parent._delete_element(resolved_indexes)
         else:
             raise TypeError("Remove Element only supports a single index")
 
     def __lshift__(self, delayed):
-        # Occurs when user calls C(params) << delayed
+        # Occurs when user calls `C(params) << delayed`
         self.parent._update(delayed, **self.kwargs)
 
     def update(self, delayed):
-        # Occurs when user calls C(params).update(delayed)
+        # Occurs when user calls `C(params).update(delayed)`
         self.parent._update(delayed, **self.kwargs)

@@ -80,7 +80,7 @@ def test_updater_bad_types():
         v(mask=object())
     with pytest.raises(TypeError, match="Invalid mask"):
         v[[1, 2]].new(mask=object())
-    with pytest.raises(TypeError, match="Mask object must be type"):
+    with pytest.raises(TypeError, match="Mask object must be type Vector"):
         v.ewise_mult(v).new(mask=M.S)
     with pytest.raises(TypeError, match="Invalid"):
         v(object())
@@ -109,15 +109,15 @@ def test_updater_returns_updater():
 
 def test_updater_only_once():
     u = Vector.from_values([0, 1, 3], [1, 2, 3])
-    with pytest.raises(ValueError, match="already called.*no keywords"):
+    with pytest.raises(TypeError, match="'Assigner' object is not callable"):
         u()[0]()
-    with pytest.raises(ValueError, match="already called.*mask="):
+    with pytest.raises(TypeError, match="'Assigner' object is not callable"):
         u(mask=u.S)[0]()
-    with pytest.raises(ValueError, match="already called.*accum="):
+    with pytest.raises(TypeError, match="'Assigner' object is not callable"):
         u(accum=binary.plus)[0]()
     with pytest.raises(TypeError, match="not callable"):
         u()()
-    with pytest.raises(ValueError, match="already called.*no keywords"):
+    with pytest.raises(TypeError, match="'Assigner' object is not callable"):
         u[[0, 1]]()()
     # While we're at it...
     with pytest.raises(TypeError, match="is not subscriptable"):
@@ -131,15 +131,15 @@ def test_updater_only_once():
 def test_bad_extract_with_updater():
     u = Vector.from_values([0, 1, 3], [1, 2, 3])
     assert u[0].value == 1
-    with pytest.raises(TypeError, match="Cannot extract from an Updater"):
+    with pytest.raises(AttributeError, match="'Assigner' object has no attribute 'value'"):
         u(mask=u.S)[0].value
     with pytest.raises(AttributeError, match="Only Scalars"):
         u[[0, 1]].value
-    with pytest.raises(TypeError, match="Cannot extract from an Updater"):
+    with pytest.raises(AttributeError, match="'Assigner' object has no attribute 'new'"):
         u(mask=u.S)[0].new()
-    with pytest.raises(TypeError, match="Cannot extract from an Updater"):
+    with pytest.raises(TypeError, match="Assignment value must be a valid expression"):
         u << u(mask=u.S)[[1, 2]]
-    with pytest.raises(TypeError, match="Cannot extract from an Updater"):
+    with pytest.raises(TypeError, match="Assignment value must be a valid expression"):
         u << u()[[1, 2]]
     with pytest.raises(TypeError, match="mask is not allowed for single element extraction"):
         u[0].new(mask=u.S)
@@ -150,3 +150,13 @@ def test_bad_extract_with_updater():
         s()[0] = 1
     with pytest.raises(TypeError, match="Indexing not supported for Scalars"):
         s()[0]
+
+
+def test_updater_on_rhs():
+    u = Vector.from_values([0, 1, 3], [1, 2, 3])
+    with pytest.raises(TypeError, match="Assignment value must be a valid expression"):
+        u << u(replace=True)
+    with pytest.raises(TypeError, match="Assignment value must be a valid expression"):
+        u << u()
+    with pytest.raises(TypeError, match="Bad type for argument `value`"):
+        u[:] << u()

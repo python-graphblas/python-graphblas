@@ -27,7 +27,8 @@ def _printer(text, name, repr_name, indent):
                 # line = f"f'{{CSS_STYLE}}'"
                 in_style = False
                 is_style = True
-            else:
+            else:  # pragma: no cover
+                # This definitely gets covered, but why is it not picked up?
                 continue
         if repr_name == "repr_html" and line.startswith("<style>"):
             prev_line = prev_line[:-1]  # remove "\n"
