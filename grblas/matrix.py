@@ -173,25 +173,26 @@ class Matrix(BaseType):
         GrB_Matrix_extractTuples
         Extract the rows, columns and values as a 3-tuple of numpy arrays
         """
-        if dtype is None:
-            dtype = self.dtype
-        else:
-            dtype = lookup_dtype(dtype)
         nvals = self._nvals
         rows = _CArray(nvals, name="&rows_array")
         columns = _CArray(nvals, name="&columns_array")
-        values = _CArray(nvals, ctype=dtype.c_type, name="&values_array")
+        values = _CArray(nvals, ctype=self.dtype.c_type, name="&values_array")
         n = ffi_new("GrB_Index*")
         scalar = Scalar(n, UINT64, name="s_nvals", empty=True)  # Actually GrB_Index dtype
         scalar.value = nvals
         call(
-            f"GrB_Matrix_extractTuples_{dtype.name}",
+            f"GrB_Matrix_extractTuples_{self.dtype.name}",
             (rows, columns, values, _Pointer(scalar), self),
         )
+        values = np.frombuffer(ffi.buffer(values._carg), dtype=self.dtype.np_type)
+        if dtype is not None:
+            dtype = lookup_dtype(dtype)
+            if dtype != self.dtype:
+                values = values.astype(dtype.np_type)  # copies
         return (
             np.frombuffer(ffi.buffer(rows._carg), dtype=np.uint64),
             np.frombuffer(ffi.buffer(columns._carg), dtype=np.uint64),
-            np.frombuffer(ffi.buffer(values._carg), dtype=dtype.np_type),
+            values,
         )
 
     def build(self, rows, columns, values, *, dup_op=None, clear=False, nrows=None, ncols=None):
@@ -643,11 +644,10 @@ class Matrix(BaseType):
         if self._is_transposed:
             row, col = col, row
         result = Scalar.new(dtype, name=name)
-        try:
+        if (
             call(f"GrB_Matrix_extractElement_{dtype}", (_Pointer(result), self, row, col))
-        except NoValue:
-            pass
-        else:
+            is not NoValue
+        ):
             result._is_empty = False
         return result
 
@@ -707,7 +707,7 @@ class Matrix(BaseType):
         # should we cast?
         call(f"GrB_Matrix_setElement_{value.dtype}", (self, value, row, col))
 
-    def _prep_for_assign(self, resolved_indexes, value):
+    def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
         rows, rowsize = resolved_indexes.indices[0]
         cols, colsize = resolved_indexes.indices[1]
@@ -716,28 +716,109 @@ class Matrix(BaseType):
             if rowsize is None and colsize is not None:
                 # Row-only selection
                 row_index = rows
-                delayed = MatrixExpression(
-                    method_name,
-                    "GrB_Row_assign",
-                    [value, row_index, cols, colsize],
-                    expr_repr="[{1}, [{3} cols]] = {0.name}",
-                    nrows=self._nrows,
-                    ncols=self._ncols,
-                    dtype=self.dtype,
-                )
+                if mask is not None and type(mask.mask) is Matrix:
+                    if is_submask:
+                        # C[i, J](M) << v
+                        raise TypeError(
+                            "Indices for subassign imply Vector submask, "
+                            "but got Matrix mask instead"
+                        )
+                    else:
+                        # C(M)[i, J] << v
+                        # Upcast v to a Matrix and use Matrix_assign
+                        rows = _CArray([rows.scalar.value])
+                        rowsize = _CScalar(1)
+                        new_value = Matrix.new(
+                            value.dtype, nrows=1, ncols=value.size, name=f"{value.name}_as_matrix"
+                        )
+                        new_value[0, :] = value
+                        delayed = MatrixExpression(
+                            method_name,
+                            "GrB_Matrix_assign",
+                            [new_value, rows, rowsize, cols, colsize],
+                            expr_repr="[[{2} rows], [{4} cols]] = {0.name}",
+                            nrows=self._nrows,
+                            ncols=self._ncols,
+                            dtype=self.dtype,
+                        )
+                else:
+                    if is_submask:
+                        # C[i, J](m) << v
+                        # SS, SuiteSparse-specific: subassign
+                        cfunc_name = "GrB_Row_subassign"
+                        expr_repr = "[{1}, [{3} cols]](%s) << {0.name}" % mask.name
+                    else:
+                        # C(m)[i, J] << v
+                        # C[i, J] << v
+                        cfunc_name = "GrB_Row_assign"
+                        expr_repr = "[{1}, [{3} cols]] = {0.name}"
+                    delayed = MatrixExpression(
+                        method_name,
+                        cfunc_name,
+                        [value, row_index, cols, colsize],
+                        expr_repr=expr_repr,
+                        nrows=self._nrows,
+                        ncols=self._ncols,
+                        dtype=self.dtype,
+                    )
             elif colsize is None and rowsize is not None:
                 # Column-only selection
                 col_index = cols
-                delayed = MatrixExpression(
-                    method_name,
-                    "GrB_Col_assign",
-                    [value, rows, rowsize, col_index],
-                    expr_repr="[[{2} rows], {3}] = {0.name}",
-                    nrows=self._nrows,
-                    ncols=self._ncols,
-                    dtype=self.dtype,
+                if mask is not None and type(mask.mask) is Matrix:
+                    if is_submask:
+                        # C[I, j](M) << v
+                        raise TypeError(
+                            "Indices for subassign imply Vector submask, "
+                            "but got Matrix mask instead"
+                        )
+                    else:
+                        # C(M)[I, j] << v
+                        # Upcast v to a Matrix and use Matrix_assign
+                        cols = _CArray([cols.scalar.value])
+                        colsize = _CScalar(1)
+                        new_value = Matrix.new(
+                            value.dtype, nrows=value.size, ncols=1, name=f"{value.name}_as_matrix"
+                        )
+                        new_value[:, 0] = value
+                        delayed = MatrixExpression(
+                            method_name,
+                            "GrB_Matrix_assign",
+                            [new_value, rows, rowsize, cols, colsize],
+                            expr_repr="[[{2} rows], [{4} cols]] = {0.name}",
+                            nrows=self._nrows,
+                            ncols=self._ncols,
+                            dtype=self.dtype,
+                        )
+                else:
+                    if is_submask:
+                        # C[I, j](m) << v
+                        # SS, SuiteSparse-specific: subassign
+                        cfunc_name = "GrB_Col_subassign"
+                        expr_repr = "[{1}, [{3} cols]](%s) << {0.name}" % mask.name
+                    else:
+                        # C(m)[I, j] << v
+                        # C[I, j] << v
+                        cfunc_name = "GrB_Col_assign"
+                        expr_repr = "[{1}, [{3} cols]] = {0.name}"
+                    delayed = MatrixExpression(
+                        method_name,
+                        cfunc_name,
+                        [value, rows, rowsize, col_index],
+                        expr_repr=expr_repr,
+                        nrows=self._nrows,
+                        ncols=self._ncols,
+                        dtype=self.dtype,
+                    )
+            elif colsize is None and rowsize is None:
+                # C[i, j] << v  (mask doesn't matter)
+                self._expect_type(
+                    value,
+                    Scalar,
+                    within=method_name,
+                    extra_message=extra_message,
                 )
             else:
+                # C[I, J] << v  (mask doesn't matter)
                 self._expect_type(
                     value,
                     (Scalar, Matrix, TransposedMatrix),
@@ -746,17 +827,38 @@ class Matrix(BaseType):
                 )
         elif type(value) in {Matrix, TransposedMatrix}:
             if rowsize is None or colsize is None:
-                self._expect_type(
-                    value,
-                    (Scalar, Vector),
-                    within=method_name,
-                    extra_message=extra_message,
-                )
+                if rowsize is None and colsize is None:
+                    # C[i, j] << A  (mask doesn't matter)
+                    self._expect_type(
+                        value,
+                        Scalar,
+                        within=method_name,
+                        extra_message=extra_message,
+                    )
+                else:
+                    # C[I, j] << A
+                    # C[i, J] << A  (mask doesn't matter)
+                    self._expect_type(
+                        value,
+                        (Scalar, Vector),
+                        within=method_name,
+                        extra_message=extra_message,
+                    )
+            if is_submask:
+                # C[I, J](M) << A
+                # SS, SuiteSparse-specific: subassign
+                cfunc_name = "GrB_Matrix_subassign"
+                expr_repr = "[[{2} rows], [{4} cols]](%s) << {0.name}" % mask.name
+            else:
+                # C[I, J] << A
+                # C(M)[I, J] << A
+                cfunc_name = "GrB_Matrix_assign"
+                expr_repr = "[[{2} rows], [{4} cols]] = {0.name}"
             delayed = MatrixExpression(
                 method_name,
-                "GrB_Matrix_assign",
+                cfunc_name,
                 [value, rows, rowsize, cols, colsize],
-                expr_repr="[[{2} rows], [{4} cols]] = {0.name}",
+                expr_repr=expr_repr,
                 nrows=self._nrows,
                 ncols=self._ncols,
                 dtype=self.dtype,
@@ -777,21 +879,111 @@ class Matrix(BaseType):
                     argname="value",
                     extra_message=extra_message,
                 )
-            if rowsize is None:
-                rows = _CArray([rows.scalar.value])
-                rowsize = _CScalar(1)
-            if colsize is None:
-                cols = _CArray([cols.scalar.value])
-                colsize = _CScalar(1)
-            delayed = MatrixExpression(
-                method_name,
-                f"GrB_Matrix_assign_{value.dtype}",
-                [value, rows, rowsize, cols, colsize],
-                expr_repr="[[{2} rows], [{4} cols]] = {0}",
-                nrows=self._nrows,
-                ncols=self._ncols,
-                dtype=self.dtype,
-            )
+            if mask is not None and type(mask.mask) is Vector:
+                value = value.scalar
+                if rowsize is None and colsize is not None:
+                    if is_submask:
+                        # C[i, J](m) << c
+                        # SS, SuiteSparse-specific: subassign
+                        cfunc_name = "GrB_Row_subassign"
+                        value_vector = Vector.new(value.dtype, size=mask.mask.size, name="v_temp")
+                        expr_repr = "[{1}, [{3} cols]](%s) << {0.name}" % mask.name
+                    else:
+                        # C(m)[i, J] << c
+                        # C[i, J] << c
+                        cfunc_name = "GrB_Row_assign"
+                        value_vector = Vector.new(value.dtype, size=colsize, name="v_temp")
+                        expr_repr = "[{1}, [{3} cols]] = {0.name}"
+                    # SS, SuiteSparse-specific: assume efficient vector with single scalar
+                    value_vector << value
+
+                    # Row-only selection
+                    row_index = rows
+                    delayed = MatrixExpression(
+                        method_name,
+                        cfunc_name,
+                        [value_vector, row_index, cols, colsize],
+                        expr_repr=expr_repr,
+                        nrows=self._nrows,
+                        ncols=self._ncols,
+                        dtype=self.dtype,
+                    )
+                elif colsize is None and rowsize is not None:
+                    if is_submask:
+                        # C[I, j](m) << c
+                        # SS, SuiteSparse-specific: subassign
+                        cfunc_name = "GrB_Col_subassign"
+                        value_vector = Vector.new(value.dtype, size=mask.mask.size, name="v_temp")
+                    else:
+                        # C(m)[I, j] << c
+                        # C[I, j] << c
+                        cfunc_name = "GrB_Col_assign"
+                        value_vector = Vector.new(value.dtype, size=rowsize, name="v_temp")
+                    # SS, SuiteSparse-specific: assume efficient vector with single scalar
+                    value_vector << value
+
+                    # Column-only selection
+                    col_index = cols
+                    delayed = MatrixExpression(
+                        method_name,
+                        cfunc_name,
+                        [value_vector, rows, rowsize, col_index],
+                        expr_repr="[[{2} rows], {3}] = {0.name}",
+                        nrows=self._nrows,
+                        ncols=self._ncols,
+                        dtype=self.dtype,
+                    )
+                elif colsize is None and rowsize is None:
+                    # Matrix object, Vector mask, scalar index
+                    # C(m)[i, j] << c
+                    # C[i, j](m) << c
+                    raise TypeError(
+                        "Unable to use Vector mask on single element assignment to a Matrix"
+                    )
+                else:
+                    # Matrix object, Vector mask, Matrix index
+                    # C(m)[I, J] << c
+                    # C[I, J](m) << c
+                    raise TypeError("Unable to use Vector mask on Matrix assignment to a Matrix")
+            else:
+                if is_submask:
+                    if rowsize is None or colsize is None:
+                        if rowsize is None and colsize is None:
+                            # C[i, j](M) << c
+                            raise TypeError("Single element assign does not accept a submask")
+                        else:
+                            # C[i, J](M) << c
+                            # C[I, j](M) << c
+                            raise TypeError(
+                                "Indices for subassign imply Vector submask, "
+                                "but got Matrix mask instead"
+                            )
+                    # C[I, J](M) << c
+                    # SS, SuiteSparse-specific: subassign
+                    cfunc_name = f"GrB_Matrix_subassign_{value.dtype}"
+                    expr_repr = "[[{2} rows], [{4} cols]](%s) = {0}" % mask.name
+                else:
+                    # C(M)[I, J] << c
+                    # C(M)[i, J] << c
+                    # C(M)[I, j] << c
+                    # C(M)[i, j] << c
+                    if rowsize is None:
+                        rows = _CArray([rows.scalar.value])
+                        rowsize = _CScalar(1)
+                    if colsize is None:
+                        cols = _CArray([cols.scalar.value])
+                        colsize = _CScalar(1)
+                    cfunc_name = f"GrB_Matrix_assign_{value.dtype}"
+                    expr_repr = "[[{2} rows], [{4} cols]] = {0}"
+                delayed = MatrixExpression(
+                    method_name,
+                    cfunc_name,
+                    [value, rows, rowsize, cols, colsize],
+                    expr_repr=expr_repr,
+                    nrows=self._nrows,
+                    ncols=self._ncols,
+                    dtype=self.dtype,
+                )
         return delayed
 
     def _delete_element(self, resolved_indexes):
@@ -923,8 +1115,8 @@ class TransposedMatrix:
     def dtype(self):
         return self._matrix.dtype
 
-    def to_values(self):
-        rows, cols, vals = self._matrix.to_values()
+    def to_values(self, *, dtype=None):
+        rows, cols, vals = self._matrix.to_values(dtype=dtype)
         return cols, rows, vals
 
     @property

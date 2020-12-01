@@ -39,7 +39,7 @@ def __getattr__(name):
             _load(name)
         return globals()[name]
     else:
-        raise AttributeError(f"module {__name__!r} has not attribute {name!r}")
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__():

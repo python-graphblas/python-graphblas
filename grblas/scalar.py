@@ -138,10 +138,6 @@ class Scalar(BaseType):
 
     _nvals = nvals
 
-    @property
-    def _carg(self):
-        return self.gb_obj
-
     def dup(self, *, dtype=None, name=None):
         """Create a new Scalar by duplicating this one"""
         if dtype is None:

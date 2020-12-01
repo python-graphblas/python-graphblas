@@ -149,14 +149,20 @@ def test_build(A):
 
 
 def test_extract_values(A):
-    rows, cols, vals = A.to_values()
+    rows, cols, vals = A.to_values(dtype=int)
     np.testing.assert_array_equal(rows, (0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6))
     np.testing.assert_array_equal(cols, (1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4))
     np.testing.assert_array_equal(vals, (2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3))
-    Trows, Tcols, Tvals = A.T.to_values()
+    assert rows.dtype == np.uint64
+    assert cols.dtype == np.uint64
+    assert vals.dtype == np.int64
+    Trows, Tcols, Tvals = A.T.to_values(dtype=float)
     np.testing.assert_array_equal(rows, Tcols)
     np.testing.assert_array_equal(cols, Trows)
     np.testing.assert_array_equal(vals, Tvals)
+    assert Trows.dtype == np.uint64
+    assert Tcols.dtype == np.uint64
+    assert Tvals.dtype == np.float64
 
 
 def test_extract_element(A):
@@ -350,6 +356,127 @@ def test_extract_column(A):
     assert w2.isequal(result)
 
 
+def test_extract_input_mask():
+    # A       M
+    # 0 1 2   _ 0 1
+    # 3 4 5   2 3 _
+    A = Matrix.from_values(
+        [0, 0, 0, 1, 1, 1],
+        [0, 1, 2, 0, 1, 2],
+        [0, 1, 2, 3, 4, 5],
+    )
+    M = Matrix.from_values(
+        [0, 0, 1, 1],
+        [1, 2, 0, 1],
+        [0, 1, 2, 3],
+    )
+    m = M[0, :].new()
+    MT = M.T.new()
+    # Matrix structure mask
+    result = A[0, [0, 1]].new(input_mask=M.S)
+    expected = Vector.from_values([1], [1])
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=M.S) << A[0, [0, 1]]
+    assert result.isequal(expected)
+
+    # Vector mask
+    result = A[0, [0, 1]].new(input_mask=m.S)
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=m.S) << A[0, [0, 1]]
+    assert result.isequal(expected)
+
+    # Matrix value mask
+    result = A[0, [1, 2]].new(input_mask=M.V)
+    expected = Vector.from_values([1], [2], size=2)
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=M.V) << A[0, [1, 2]]
+    assert result.isequal(expected)
+
+    with pytest.raises(ValueError, match="Shape of `input_mask` does not match shape of input"):
+        A[0, [0, 1]].new(input_mask=MT.S)
+    with pytest.raises(ValueError, match="Shape of `input_mask` does not match shape of input"):
+        m(input_mask=MT.S) << A[0, [0, 1]]
+    with pytest.raises(
+        ValueError, match="Size of `input_mask` Vector does not match ncols of Matrix"
+    ):
+        A[0, [0]].new(input_mask=expected.S)
+    with pytest.raises(
+        ValueError, match="Size of `input_mask` Vector does not match ncols of Matrix"
+    ):
+        m(input_mask=expected.S) << A[0, [0]]
+    with pytest.raises(
+        ValueError, match="Size of `input_mask` Vector does not match nrows of Matrix"
+    ):
+        A[[0], 0].new(input_mask=m.S)
+    with pytest.raises(
+        ValueError, match="Size of `input_mask` Vector does not match nrows of Matrix"
+    ):
+        m(input_mask=m.S) << A[[0], 0]
+    with pytest.raises(
+        TypeError, match="Got Vector `input_mask` when extracting a submatrix from a Matrix"
+    ):
+        A[[0], [0]].new(input_mask=expected.S)
+    with pytest.raises(
+        TypeError, match="Got Vector `input_mask` when extracting a submatrix from a Matrix"
+    ):
+        A(input_mask=expected.S) << A[[0], [0]]
+    with pytest.raises(TypeError, match="mask is not allowed for single element extraction"):
+        A[0, 0].new(input_mask=M.S)
+    with pytest.raises(TypeError, match="mask and input_mask arguments cannot both be given"):
+        A[0, [0, 1]].new(input_mask=M.S, mask=expected.S)
+    with pytest.raises(TypeError, match="mask and input_mask arguments cannot both be given"):
+        A(input_mask=M.S, mask=expected.S)
+    with pytest.raises(TypeError, match=r"Mask must indicate values \(M.V\) or structure \(M.S\)"):
+        A[0, [0, 1]].new(input_mask=M)
+    with pytest.raises(TypeError, match=r"Mask must indicate values \(M.V\) or structure \(M.S\)"):
+        A(input_mask=M)
+    with pytest.raises(TypeError, match="Mask object must be type Vector"):
+        expected[[0, 1]].new(input_mask=M.S)
+    with pytest.raises(TypeError, match="Mask object must be type Vector"):
+        expected(input_mask=M.S) << expected[[0, 1]]
+    with pytest.raises(TypeError, match=r"new\(\) got an unexpected keyword argument 'input_mask'"):
+        A.new(input_mask=M.S)
+    with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
+        A(input_mask=M.S) << A.apply(unary.ainv)
+    with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
+        A(input_mask=M.S)[[0], [0]] = 1
+    with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
+        A(input_mask=M.S)[[0], [0]]
+
+    # With transpose input value
+    # Matrix structure mask
+    result = A.T[[0, 1], 0].new(input_mask=MT.S)
+    expected = Vector.from_values([1], [1])
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=MT.S) << A.T[[0, 1], 0]
+    assert result.isequal(expected)
+
+    # Vector mask
+    result = A.T[[0, 1], 0].new(input_mask=m.S)
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=m.S) << A.T[[0, 1], 0]
+    assert result.isequal(expected)
+
+    # Matrix value mask
+    result = A.T[[1, 2], 0].new(input_mask=MT.V)
+    expected = Vector.from_values([1], [2], size=2)
+    assert result.isequal(expected)
+    # again
+    result.clear()
+    result(input_mask=MT.V) << A.T[[1, 2], 0]
+    assert result.isequal(expected)
+
+
 def test_assign(A):
     B = Matrix.from_values([0, 0, 1], [0, 1, 0], [9, 8, 7])
     result = Matrix.from_values(
@@ -388,6 +515,129 @@ def test_assign_row(A, v):
     assert C.isequal(result)
 
 
+def test_subassign_row_col():
+    A = Matrix.from_values(
+        [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        [0, 1, 2, 0, 1, 2, 0, 1, 2],
+        [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    )
+    m = Vector.from_values([1], [True])
+    v = Vector.from_values([0, 1], [10, 20])
+
+    A[[0, 1], 0](m.S) << v
+    result1 = Matrix.from_values(
+        [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        [0, 1, 2, 0, 1, 2, 0, 1, 2],
+        [0, 1, 2, 20, 4, 5, 6, 7, 8],
+    )
+    assert A.isequal(result1)
+
+    A[1, [1, 2]](m.V, accum=binary.plus).update(v)
+    result2 = Matrix.from_values(
+        [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        [0, 1, 2, 0, 1, 2, 0, 1, 2],
+        [0, 1, 2, 20, 4, 25, 6, 7, 8],
+    )
+    assert A.isequal(result2)
+
+    A[[0, 1], 0](m.S, binary.plus, replace=True) << v
+    result3 = Matrix.from_values(
+        [0, 0, 1, 1, 1, 2, 2, 2],
+        [1, 2, 0, 1, 2, 0, 1, 2],
+        [1, 2, 40, 4, 25, 6, 7, 8],
+    )
+    assert A.isequal(result3)
+
+    with pytest.raises(DimensionMismatch):
+        A(m.S)[[0, 1], 0] << v
+
+    A[[0, 1], 0](m.S) << 99
+    result4 = Matrix.from_values(
+        [0, 0, 1, 1, 1, 2, 2, 2],
+        [1, 2, 0, 1, 2, 0, 1, 2],
+        [1, 2, 99, 4, 25, 6, 7, 8],
+    )
+    assert A.isequal(result4)
+
+    A[[1, 2], 0](m.S, binary.plus, replace=True) << 100
+    result5 = Matrix.from_values(
+        [0, 0, 1, 1, 2, 2, 2],
+        [1, 2, 1, 2, 0, 1, 2],
+        [1, 2, 4, 25, 106, 7, 8],
+    )
+    assert A.isequal(result5)
+
+    A[2, [0, 1]](m.S) << -1
+    result6 = Matrix.from_values(
+        [0, 0, 1, 1, 2, 2, 2],
+        [1, 2, 1, 2, 0, 1, 2],
+        [1, 2, 4, 25, 106, -1, 8],
+    )
+    assert A.isequal(result6)
+
+
+def test_subassign_matrix():
+    A = Matrix.from_values(
+        [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        [0, 1, 2, 0, 1, 2, 0, 1, 2],
+        [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    )
+    m = Matrix.from_values([1], [0], [True])
+    v = Matrix.from_values([0, 1], [0, 0], [10, 20])
+    mT = m.T.new()
+
+    A[[0, 1], [0]](m.S) << v
+    result1 = Matrix.from_values(
+        [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        [0, 1, 2, 0, 1, 2, 0, 1, 2],
+        [0, 1, 2, 20, 4, 5, 6, 7, 8],
+    )
+    assert A.isequal(result1)
+
+    A[[1], [1, 2]](mT.V, accum=binary.plus) << v.T
+    result2 = Matrix.from_values(
+        [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        [0, 1, 2, 0, 1, 2, 0, 1, 2],
+        [0, 1, 2, 20, 4, 25, 6, 7, 8],
+    )
+    assert A.isequal(result2)
+
+    A[[0, 1], [0]](m.S, binary.plus, replace=True) << v
+    result3 = Matrix.from_values(
+        [0, 0, 1, 1, 1, 2, 2, 2],
+        [1, 2, 0, 1, 2, 0, 1, 2],
+        [1, 2, 40, 4, 25, 6, 7, 8],
+    )
+    assert A.isequal(result3)
+
+    with pytest.raises(DimensionMismatch):
+        A(m.S)[[0, 1], [0]] << v
+
+    A[[0, 1], [0]](m.S) << 99
+    result4 = Matrix.from_values(
+        [0, 0, 1, 1, 1, 2, 2, 2],
+        [1, 2, 0, 1, 2, 0, 1, 2],
+        [1, 2, 99, 4, 25, 6, 7, 8],
+    )
+    assert A.isequal(result4)
+
+    A[[1, 2], [0]](m.S, binary.plus, replace=True) << 100
+    result5 = Matrix.from_values(
+        [0, 0, 1, 1, 2, 2, 2],
+        [1, 2, 1, 2, 0, 1, 2],
+        [1, 2, 4, 25, 106, 7, 8],
+    )
+    assert A.isequal(result5)
+
+    A[[2], [0, 1]](mT.S) << -1
+    result6 = Matrix.from_values(
+        [0, 0, 1, 1, 2, 2, 2],
+        [1, 2, 1, 2, 0, 1, 2],
+        [1, 2, 4, 25, 106, -1, 8],
+    )
+    assert A.isequal(result6)
+
+
 def test_assign_column(A, v):
     result = Matrix.from_values(
         [3, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1, 1, 3, 4, 6],
@@ -396,6 +646,216 @@ def test_assign_column(A, v):
     )
     C = A.dup()
     C[:, 1] = v
+    assert C.isequal(result)
+
+
+def test_assign_row_scalar(A, v):
+    C = A.dup()
+    C[0, :](v.S) << v
+    D = A.dup()
+    D(v.S)[0, :] << v
+    assert C.isequal(D)
+
+    C[:, :](C.S) << 1
+
+    with pytest.raises(
+        TypeError, match="Unable to use Vector mask on Matrix assignment to a Matrix"
+    ):
+        C[:, :](v.S) << 1
+    with pytest.raises(
+        TypeError, match="Unable to use Vector mask on single element assignment to a Matrix"
+    ):
+        C[0, 0](v.S) << 1
+
+    with pytest.raises(TypeError):
+        C[0, 0](v.S) << v
+    with pytest.raises(TypeError):
+        C(v.S)[0, 0] << v
+    with pytest.raises(TypeError):
+        C[0, 0](C.S) << v
+    with pytest.raises(TypeError):
+        C(C.S)[0, 0] << v
+
+    with pytest.raises(TypeError):
+        C[0, 0](v.S) << C
+    with pytest.raises(TypeError):
+        C[0, 0](C.S) << C
+
+    C = A.dup()
+    C(v.S)[0, :] = 10
+    result = Matrix.from_values(
+        [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1, 0, 0],
+        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 4, 6],
+        [3, 10, 3, 1, 5, 10, 7, 8, 3, 1, 7, 4, 10, 10],
+    )
+    assert C.isequal(result)
+
+
+def test_assign_row_col_matrix_mask():
+    # A         B       v1      v2
+    # 0 1       4 _     100     10
+    # 2 _       0 5             20
+    A = Matrix.from_values([0, 0, 1], [0, 1, 0], [0, 1, 2])
+    B = Matrix.from_values([0, 1, 1], [0, 0, 1], [4, 0, 5])
+    v1 = Vector.from_values([0], [100])
+    v2 = Vector.from_values([0, 1], [10, 20])
+
+    # row assign
+    C = A.dup()
+    C(B.S)[0, :] << v2
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [10, 1, 2])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, accum=binary.plus)[1, :] = v2
+    result = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 12, 20])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, replace=True)[1, :] << v2
+    result = Matrix.from_values([0, 1, 1], [0, 0, 1], [0, 10, 20])
+    assert C.isequal(result)
+
+    # col assign
+    C = A.dup()
+    C(B.S)[:, 0] = v2
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [10, 1, 20])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, accum=binary.plus)[:, 1] << v2
+    result = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 2, 20])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, replace=True)[:, 1] = v2
+    result = Matrix.from_values([0, 1, 1], [0, 0, 1], [0, 2, 20])
+    assert C.isequal(result)
+
+    # row assign scalar (as a sanity check)
+    C = A.dup()
+    C(B.S)[0, :] = 100
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, accum=binary.plus)[1, :] << 100
+    result = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 102, 100])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, replace=True)[1, :] = 100
+    result = Matrix.from_values([0, 1, 1], [0, 0, 1], [0, 100, 100])
+    assert C.isequal(result)
+
+    # col assign scalar (as a sanity check)
+    C = A.dup()
+    C(B.S)[:, 0] << 100
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 100])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, accum=binary.plus)[:, 1] = 100
+    result = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 2, 100])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C(B.S, replace=True)[:, 1] << 100
+    result = Matrix.from_values([0, 1, 1], [0, 0, 1], [0, 2, 100])
+    assert C.isequal(result)
+
+    # row subassign
+    C = A.dup()
+    C[0, :](v2.S) << v2
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [10, 20, 2])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C[0, [0]](v1.S) << v1
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    assert C.isequal(result)
+
+    with pytest.raises(
+        TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
+    ):
+        C[0, :](B.S) << v2
+
+    # col subassign
+    C = A.dup()
+    C[:, 0](v2.S) << v2
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [10, 1, 20])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C[[0], 0](v1.S) << v1
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    assert C.isequal(result)
+
+    with pytest.raises(
+        TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
+    ):
+        C[:, 0](B.S) << v2
+
+    # row subassign scalar
+    C = A.dup()
+    C[0, :](v2.S) << 100
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 100, 2])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C[0, [0]](v1.S) << 100
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    assert C.isequal(result)
+
+    with pytest.raises(
+        TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
+    ):
+        C[:, 0](B.S) << 100
+
+    # col subassign scalar
+    C = A.dup()
+    C[:, 0](v2.S) << 100
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 100])
+    assert C.isequal(result)
+
+    C = A.dup()
+    C[[0], 0](v1.S) << 100
+    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    assert C.isequal(result)
+
+    with pytest.raises(
+        TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
+    ):
+        C[:, 0](B.S) << 100
+
+    # Bad subassign
+    with pytest.raises(TypeError, match="Single element assign does not accept a submask"):
+        C[0, 0](B.S) << 100
+
+
+def test_assign_column_scalar(A, v):
+    C = A.dup()
+    C[:, 0](v.S) << v
+    D = A.dup()
+    D(v.S)[:, 0] << v
+    assert C.isequal(D)
+
+    C = A.dup()
+    C[:, 1] = v
+    C(v.S)[:, 1] = 10
+    result = Matrix.from_values(
+        [3, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1, 1, 3, 4, 6],
+        [0, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 1, 1, 1, 1],
+        [3, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4, 10, 10, 10, 10],
+    )
+    assert C.isequal(result)
+
+    C(v.V, replace=True, accum=binary.plus)[:, 1] = 20
+    result = Matrix.from_values(
+        [3, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1, 1, 3, 4],
+        [0, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 1, 1, 1],
+        [3, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4, 30, 30, 30],
+    )
     assert C.isequal(result)
 
 
@@ -732,7 +1192,7 @@ def test_no_equals(A):
 
 
 def test_bad_update(A):
-    with pytest.raises(TypeError, match="assignment value must be Expression"):
+    with pytest.raises(TypeError, match="Assignment value must be a valid expression"):
         A << None
 
 
