@@ -3,10 +3,10 @@ name: Test and Build
 on:
   # Run this workflow every time a PR is opened or a new commit is pushed to the PR
   pull_request:
-  # Run this workflow every time a PR is merged to master
+  # Run this workflow every time a PR is merged to main
   push:
     branches:
-      - master
+      - main
 
 jobs:
   lint:
@@ -15,7 +15,10 @@ jobs:
       - uses: actions/checkout@v2
       - uses: github/super-linter@v3
         env:
-          DEFAULT_BRANCH: master
+          DEFAULT_BRANCH: main
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VALIDATE_PYTHON_FLAKE8: true
           VALIDATE_PYTHON_BLACK: true
+          LINTER_RULES_PATH: ''
+          PYTHON_BLACK_CONFIG_FILE: pyproject.toml
+          PYTHON_FLAKE8_CONFIG_FILE: setup.cfg
