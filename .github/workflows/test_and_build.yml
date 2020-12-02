@@ -76,6 +76,8 @@ jobs:
           COVERALLS_FLAG_NAME: ${{ matrix.pyver}}/${{ matrix.testopts }}
           COVERALLS_PARALLEL: true
         run: |
+          source "$CONDA/etc/profile.d/conda.sh"
+          conda activate grblas
           coverage report --show-missing
           coveralls
 
