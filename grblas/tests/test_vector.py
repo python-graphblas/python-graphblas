@@ -629,3 +629,13 @@ def test_del(capsys):
     captured = capsys.readouterr()
     assert not captured.out
     assert not captured.err
+
+
+def test_import_export(v):
+    v1 = v.dup()
+    k = v1.ss.fast_export()
+    assert k["size"] == 7
+    assert (k["indices"] == [1, 3, 4, 6]).all()
+    assert (k["values"] == [1, 1, 2, 0]).all()
+    w1 = Vector.ss.fast_import(**k)
+    assert w1.isequal(v)

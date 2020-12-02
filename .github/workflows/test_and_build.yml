@@ -1,0 +1,21 @@
+name: Test and Build
+
+on:
+  # Run this workflow every time a PR is opened or a new commit is pushed to the PR
+  pull_request:
+  # Run this workflow every time a PR is merged to master
+  push:
+    branches:
+      - master
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: github/super-linter@v3
+        env:
+          DEFAULT_BRANCH: master
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_PYTHON_FLAKE8: true
+          VALIDATE_PYTHON_BLACK: true

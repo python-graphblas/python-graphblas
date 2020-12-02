@@ -25,6 +25,8 @@ class Vector(BaseType):
             name = f"v_{next(Vector._name_counter)}"
         self._size = None
         super().__init__(gb_obj, dtype, name)
+        # Add ss extension methods
+        self.ss = Vector.ss(self)
 
     def __del__(self):
         gb_obj = getattr(self, "gb_obj", None)
@@ -607,6 +609,69 @@ class Vector(BaseType):
             rv = cls(vector.vector, dtype)
             rv._size = vector.size
             vector.vector = ffi.NULL
+            return rv
+
+    class ss:
+        def __init__(self, parent):
+            self._parent = parent
+
+        def fast_export(self):
+            """
+            GxB_Vector_export
+
+            Returns a dict of the constituent parts:
+             - n: size (int)
+             - i: indices (ndarray<uint64>)
+             - x: values (ndarray of appropriate dtype)
+
+            To reimport the Vector:
+            ```
+            pieces = v.fast_export()
+            v2 = Vector.fast_import(**pieces)
+            ```
+
+            The underlying GraphBLAS object transfers ownership to numpy,
+            disallowing further access. The caller should delete or stop using
+            the Vector after calling `fast_export`.
+            """
+            dtype = np.dtype(self._parent.dtype.np_type)
+            index_dtype = np.dtype(np.uint64)
+
+            vhandle = ffi_new("GrB_Vector*", self._parent._carg)
+            type_ = ffi_new("GrB_Type*")
+            n = ffi_new("GrB_Index*")
+            nvals = ffi_new("GrB_Index*")
+            vi = ffi_new("GrB_Index**")
+            vx = ffi_new("void**")
+            check_status(lib.GxB_Vector_export(vhandle, type_, n, nvals, vi, vx, ffi.NULL))
+            self._parent.gb_obj = ffi.NULL
+            return {
+                "size": n[0],
+                "indices": np.frombuffer(
+                    ffi.buffer(vi[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
+                ),
+                "values": np.frombuffer(ffi.buffer(vx[0], nvals[0] * dtype.itemsize), dtype=dtype),
+            }
+
+        @classmethod
+        def fast_import(cls, *, size, indices, values, name=None):
+            """
+            GxB_Vector_import
+
+            Returns a new Vector created from the pieces.
+
+            The new Vector uses the underlying buffer of the input arrays.
+            The caller should delete or stop using the input arrays after calling `fast_import`.
+            """
+            vhandle = ffi_new("GrB_Vector*")
+            dtype = lookup_dtype(values.dtype)
+            vi = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indices)))
+            vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            check_status(
+                lib.GxB_Vector_import(vhandle, dtype._carg, size, len(values), vi, vx, ffi.NULL)
+            )
+            rv = Vector(vhandle, dtype, name=name)
+            rv._size = size
             return rv
 
 
