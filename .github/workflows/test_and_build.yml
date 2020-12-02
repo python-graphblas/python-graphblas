@@ -29,7 +29,7 @@ jobs:
           conda config --set always_yes yes --set changeps1 no
           conda update -q conda
           conda info -a
-          conda create -n grblas -c conda-forge python=${{ matrix.pyver }} pytest-runner coverage 'black>=20.8b1' flake8
+          conda create -n grblas -c conda-forge python=${{ matrix.pyver }} pytest-runner coverage 'black>=20.8b1' flake8 coveralls
       - name: Style Checks
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
@@ -63,26 +63,36 @@ jobs:
           conda activate grblas
           conda install -c conda-forge matplotlib nbconvert jupyter 'ipython>=7'
           jupyter nbconvert --to notebook --execute notebooks/*ipynb
-      - name: Coverage
+      - name: Unit tests
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
           coverage run --branch -m pytest --runslow ${{ matrix.testopts }}
           # Test (and cover) automatic initialization
           coverage run -a --branch grblas/tests/test_auto_init.py
-      - name: Coveralls Parallel
-        uses: coverallsapp/github-action@master
-        with:
-          github-token: ${{ secrets.github_token }}
-          flag-name: run-${{ matrix.pyver }}-${{ matrix.testopts }}
-          parallel: true
+      - name: Coverage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COVERALLS_FLAG_NAME: ${{ matrix.pyver}}/${{ matrix.testopts }}
+          COVERALLS_PARALLEL: true
+        run: |
+          coverage report --show-missing
+          coveralls
 
   finish:
     needs: build_and_test
     runs-on: ubuntu-latest
     steps:
+      - name: Setup conda env
+        run: |
+          source "$CONDA/etc/profile.d/conda.sh"
+          conda config --set always_yes yes --set changeps1 no
+          conda update -q conda
+          conda create -n coveralls_final -c conda-forge python=3.8 coveralls
       - name: Coveralls Finished
-        uses: coverallsapp/github-action@master
-        with:
-          github-token: ${{ secrets.github_token }}
-          parallel-finished: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          source "$CONDA/etc/profile.d/conda.sh"
+          conda activate coveralls_final
+          coveralls --finish
