@@ -26,5 +26,7 @@ jobs:
           conda create -n grblas -c conda-forge python=3.8 pytest-runner coverage black>=20.8 flake8
       - name: Lint
         run: |
+          source "$CONDA/etc/profile.d/conda.sh"
+          conda activate grblas
           flake8 grblas *.py
           black grblas *.py --check --diff
