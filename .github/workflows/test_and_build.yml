@@ -19,6 +19,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VALIDATE_PYTHON_FLAKE8: true
           VALIDATE_PYTHON_BLACK: true
-          LINTER_RULES_PATH: ''
+          LINTER_RULES_PATH: /
           PYTHON_BLACK_CONFIG_FILE: pyproject.toml
           PYTHON_FLAKE8_CONFIG_FILE: setup.cfg
