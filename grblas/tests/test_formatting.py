@@ -3422,6 +3422,8 @@ def test_matrix_huge():
         "1152921504606846975                      ...                    "
     )
     assert 2 ** 60 - 1 == 1152921504606846975  # sanity
+    M2 = M[0:, 0:].new()
+    assert M.isequal(M2)
 
 
 @pytest.mark.skipif("not pd")
@@ -3626,6 +3628,8 @@ def test_vector_huge():
         " 0                    ... 1152921504606846975\n"
         "                      ...                    "
     )
+    v2 = v[0:].new()
+    assert v2.isequal(v)
 
 
 @pytest.mark.skipif("not pd")
