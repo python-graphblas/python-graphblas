@@ -6,6 +6,7 @@
 [![Build Status](https://travis-ci.org/metagraph-dev/grblas.svg?branch=master)](https://travis-ci.org/metagraph-dev/grblas)
 [![Coverage Status](https://coveralls.io/repos/metagraph-dev/grblas/badge.svg?branch=master)](https://coveralls.io/r/metagraph-dev/grblas)
 [![Code style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/metagraph-dev/grblas/HEAD?filepath=notebooks%2FIntro%20to%20GraphBLAS%20%2B%20SSSP%20example.ipynb)
 
 Python wrapper around GraphBLAS
 
