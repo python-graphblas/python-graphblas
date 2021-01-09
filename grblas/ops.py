@@ -322,7 +322,7 @@ class UnaryOp(OpBase):
                 "_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64|FC32|FC64)$"
             ),
             re.compile(
-                "^GxB_(LNOT|ONE)"
+                "^GxB_(LNOT|ONE|POSITIONI1|POSITIONI|POSITIONJ1|POSITIONJ)"
                 "_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$"
             ),
             re.compile(
@@ -469,7 +469,8 @@ class BinaryOp(OpBase):
                 "GrB_(BOR|BAND|BXOR|BXNOR)" "_(INT8|INT16|INT32|INT64|UINT8|UINT16|UINT32|UINT64)$"
             ),
             re.compile(
-                "GxB_(BGET|BSET|BCLR|BSHIFT)"
+                "GxB_(BGET|BSET|BCLR|BSHIFT|FIRSTI1|FIRSTI|FIRSTJ1|FIRSTJ"
+                "|SECONDI1|SECONDI|SECONDJ1|SECONDJ)"
                 "_(INT8|INT16|INT32|INT64|UINT8|UINT16|UINT32|UINT64)$"
             ),
         ],
@@ -722,7 +723,8 @@ class Semiring(OpBase):
             re.compile(
                 "^GxB_(MIN|MAX|PLUS|TIMES|ANY)"
                 "_(FIRST|SECOND|PAIR|MIN|MAX|PLUS|MINUS|RMINUS|TIMES"
-                "|DIV|RDIV|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR)"
+                "|DIV|RDIV|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR"
+                "|FIRSTI1|FIRSTI|FIRSTJ1|FIRSTJ|SECONDI1|SECONDI|SECONDJ1|SECONDJ)"
                 "_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$"
             ),
             re.compile(
