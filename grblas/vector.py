@@ -32,7 +32,7 @@ class Vector(BaseType):
         gb_obj = getattr(self, "gb_obj", None)
         if gb_obj is not None:
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
-            check_status(lib.GrB_Vector_free(gb_obj))
+            check_status(lib.GrB_Vector_free(gb_obj), [self])
 
     def __repr__(self, mask=None):
         from .formatting import format_vector
@@ -140,7 +140,7 @@ class Vector(BaseType):
     def _nvals(self):
         """Like nvals, but doesn't record calls"""
         n = ffi_new("GrB_Index*")
-        check_status(lib.GrB_Vector_nvals(n, self.gb_obj[0]))
+        check_status(lib.GrB_Vector_nvals(n, self.gb_obj[0]), [self])
         return n[0]
 
     def clear(self):
@@ -299,7 +299,7 @@ class Vector(BaseType):
 
     def ewise_add(self, other, op=monoid.plus, *, require_monoid=True):
         """
-        GrB_eWiseAdd_Vector
+        GrB_Vector_eWiseAdd
 
         Result will contain the union of indices from both Vectors.
 
@@ -335,7 +335,7 @@ class Vector(BaseType):
             )
         expr = VectorExpression(
             method_name,
-            f"GrB_eWiseAdd_Vector_{op.opclass}",
+            f"GrB_Vector_eWiseAdd_{op.opclass}",
             [self, other],
             op=op,
         )
@@ -345,7 +345,7 @@ class Vector(BaseType):
 
     def ewise_mult(self, other, op=binary.times):
         """
-        GrB_eWiseMult_Vector
+        GrB_Vector_eWiseMult
 
         Result will contain the intersection of indices from both Vectors
         Default op is binary.times
@@ -356,7 +356,7 @@ class Vector(BaseType):
         self._expect_op(op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op")
         expr = VectorExpression(
             method_name,
-            f"GrB_eWiseMult_Vector_{op.opclass}",
+            f"GrB_Vector_eWiseMult_{op.opclass}",
             [self, other],
             op=op,
         )
@@ -640,21 +640,35 @@ class Vector(BaseType):
             vhandle = ffi_new("GrB_Vector*", self._parent._carg)
             type_ = ffi_new("GrB_Type*")
             n = ffi_new("GrB_Index*")
-            nvals = ffi_new("GrB_Index*")
             vi = ffi_new("GrB_Index**")
             vx = ffi_new("void**")
-            check_status(lib.GxB_Vector_export(vhandle, type_, n, nvals, vi, vx, ffi.NULL))
+            vi_size = ffi_new("GrB_Index*")
+            vx_size = ffi_new("GrB_Index*")
+            nvals = ffi_new("GrB_Index*")
+            jumbled = ffi_new("bool*")
+            check_status(
+                lib.GxB_Vector_export_CSC(
+                    vhandle, type_, n, vi, vx, vi_size, vx_size, nvals, jumbled, ffi.NULL
+                ),
+                self,
+            )
             self._parent.gb_obj = ffi.NULL
             return {
                 "size": n[0],
                 "indices": np.frombuffer(
-                    ffi.buffer(vi[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
+                    ffi.buffer(vi[0], vi_size[0] * index_dtype.itemsize), dtype=index_dtype
                 ),
-                "values": np.frombuffer(ffi.buffer(vx[0], nvals[0] * dtype.itemsize), dtype=dtype),
+                "values": np.frombuffer(
+                    ffi.buffer(vx[0], vx_size[0] * dtype.itemsize), dtype=dtype
+                ),
+                "jumbled": jumbled[0],
+                "nvals": nvals[0],  # TODO: understand nvals
             }
 
         @classmethod
-        def fast_import(cls, *, size, indices, values, name=None):
+        def fast_import(
+            cls, *, size, indices, values, name=None, jumbled=True, nvals
+        ):  # TODO: understand nvals
             """
             GxB_Vector_import
 
@@ -667,8 +681,34 @@ class Vector(BaseType):
             dtype = lookup_dtype(values.dtype)
             vi = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indices)))
             vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            for x in (
+                vhandle,
+                dtype._carg,
+                size,
+                vi,
+                vx,
+                len(indices),
+                len(values),
+                nvals,
+                jumbled,
+                ffi.NULL,
+            ):
+                print(x)
             check_status(
-                lib.GxB_Vector_import(vhandle, dtype._carg, size, len(values), vi, vx, ffi.NULL)
+                lib.GxB_Vector_import_CSC(
+                    vhandle,
+                    dtype._carg,
+                    size,
+                    vi,
+                    vx,
+                    len(indices),
+                    len(values),
+                    nvals,
+                    jumbled,
+                    ffi.NULL,
+                ),
+                "Vector",
+                vhandle,  # [0]?
             )
             rv = Vector(vhandle, dtype, name=name)
             rv._size = size

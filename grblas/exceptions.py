@@ -1,4 +1,5 @@
 from . import ffi, lib
+from .dtypes import libget
 
 
 class GrblasException(Exception):
@@ -84,9 +85,23 @@ GrB_SUCCESS = lib.GrB_SUCCESS
 GrB_NO_VALUE = lib.GrB_NO_VALUE
 
 
-def check_status(response_code):
+def check_status(response_code, args_or_name, carg_or_None=None):
     if response_code != GrB_SUCCESS:
         if response_code == GrB_NO_VALUE:
             return NoValue
-        text = ffi.string(lib.GrB_error()).decode()
+        if carg_or_None is not None:
+            type_name = args_or_name
+            carg = carg_or_None
+        else:
+            if type(args_or_name) in {tuple, list}:
+                arg = args_or_name[0]
+            else:
+                arg = args_or_name
+            type_name = type(arg).__name__
+            carg = arg._carg
+
+        error_func = libget(f"GrB_{type_name}_error")
+        string = ffi.new("char**")
+        error_func(string, carg)
+        text = ffi.string(string[0]).decode()
         raise _error_code_lookup[response_code](text)

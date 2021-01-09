@@ -35,7 +35,7 @@ class Matrix(BaseType):
         gb_obj = getattr(self, "gb_obj", None)
         if gb_obj is not None:
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
-            check_status(lib.GrB_Matrix_free(gb_obj))
+            check_status(lib.GrB_Matrix_free(gb_obj), self)
 
     def __repr__(self, mask=None):
         from .formatting import format_matrix
@@ -153,7 +153,7 @@ class Matrix(BaseType):
     def _nvals(self):
         """Like nvals, but doesn't record calls"""
         n = ffi_new("GrB_Index*")
-        check_status(lib.GrB_Matrix_nvals(n, self.gb_obj[0]))
+        check_status(lib.GrB_Matrix_nvals(n, self.gb_obj[0]), self)
         return n[0]
 
     @property
@@ -365,7 +365,7 @@ class Matrix(BaseType):
 
     def ewise_add(self, other, op=monoid.plus, *, require_monoid=True):
         """
-        GrB_eWiseAdd_Matrix
+        GrB_Matrix_eWiseAdd
 
         Result will contain the union of indices from both Matrices
 
@@ -401,7 +401,7 @@ class Matrix(BaseType):
             )
         expr = MatrixExpression(
             method_name,
-            f"GrB_eWiseAdd_Matrix_{op.opclass}",
+            f"GrB_Matrix_eWiseAdd_{op.opclass}",
             [self, other],
             op=op,
             at=self._is_transposed,
@@ -413,7 +413,7 @@ class Matrix(BaseType):
 
     def ewise_mult(self, other, op=binary.times):
         """
-        GrB_eWiseMult_Matrix
+        GrB_Matrix_eWiseMult
 
         Result will contain the intersection of indices from both Matrices
         Default op is binary.times
@@ -424,7 +424,7 @@ class Matrix(BaseType):
         self._expect_op(op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op")
         expr = MatrixExpression(
             method_name,
-            f"GrB_eWiseMult_Matrix_{op.opclass}",
+            f"GrB_Matrix_eWiseMult_{op.opclass}",
             [self, other],
             op=op,
             at=self._is_transposed,
@@ -1078,113 +1078,158 @@ class Matrix(BaseType):
             type_ = ffi_new("GrB_Type*")
             nrows = ffi_new("GrB_Index*")
             ncols = ffi_new("GrB_Index*")
-            nvals = ffi_new("GrB_Index*")
-            nonempty = ffi_new("int64_t*")
             Ap = ffi_new("GrB_Index**")
             Ax = ffi_new("void**")
+            Ap_size = ffi_new("GrB_Index*")
+            Ax_size = ffi_new("GrB_Index*")
+            jumbled = ffi_new("bool*")
             if format == "csr":
                 Aj = ffi_new("GrB_Index**")
+                Aj_size = ffi_new("GrB_Index*")
                 check_status(
                     lib.GxB_Matrix_export_CSR(
-                        mhandle, type_, nrows, ncols, nvals, nonempty, Ap, Aj, Ax, ffi.NULL
-                    )
+                        mhandle,
+                        type_,
+                        nrows,
+                        ncols,
+                        Ap,
+                        Aj,
+                        Ax,
+                        Ap_size,
+                        Aj_size,
+                        Ax_size,
+                        jumbled,
+                        ffi.NULL,
+                    ),
+                    self,
                 )
                 rv = {
                     "indptr": np.frombuffer(
-                        ffi.buffer(Ap[0], (nrows[0] + 1) * index_dtype.itemsize), dtype=index_dtype
+                        ffi.buffer(Ap[0], Ap_size[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
                     "col_indices": np.frombuffer(
-                        ffi.buffer(Aj[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
+                        ffi.buffer(Aj[0], Aj_size[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
                     "values": np.frombuffer(
-                        ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype
+                        ffi.buffer(Ax[0], Ax_size[0] * dtype.itemsize), dtype=dtype
                     ),
+                    "jumbled": jumbled[0],
                 }
             elif format == "csc":
                 Ai = ffi_new("GrB_Index**")
+                Ai_size = ffi_new("GrB_Index*")
                 check_status(
                     lib.GxB_Matrix_export_CSC(
-                        mhandle, type_, nrows, ncols, nvals, nonempty, Ap, Ai, Ax, ffi.NULL
-                    )
+                        mhandle,
+                        type_,
+                        nrows,
+                        ncols,
+                        Ap,
+                        Ai,
+                        Ax,
+                        Ap_size,
+                        Ai_size,
+                        Ax_size,
+                        jumbled,
+                        ffi.NULL,
+                    ),
+                    self,
                 )
                 rv = {
                     "indptr": np.frombuffer(
-                        ffi.buffer(Ap[0], (ncols[0] + 1) * index_dtype.itemsize), dtype=index_dtype
+                        ffi.buffer(Ap[0], Ap_size[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
                     "row_indices": np.frombuffer(
-                        ffi.buffer(Ai[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
+                        ffi.buffer(Ai[0], Ai_size[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
                     "values": np.frombuffer(
-                        ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype
+                        ffi.buffer(Ax[0], Ax_size[0] * dtype.itemsize), dtype=dtype
                     ),
+                    "jumbled": jumbled[0],
                 }
             elif format == "hypercsr":
                 nvec = ffi_new("GrB_Index*")
                 Ah = ffi_new("GrB_Index**")
                 Aj = ffi_new("GrB_Index**")
+                Ah_size = ffi_new("GrB_Index*")
+                Aj_size = ffi_new("GrB_Index*")
                 check_status(
                     lib.GxB_Matrix_export_HyperCSR(
                         mhandle,
                         type_,
                         nrows,
                         ncols,
-                        nvals,
-                        nonempty,
-                        nvec,
-                        Ah,
                         Ap,
+                        Ah,
                         Aj,
                         Ax,
+                        Ap_size,
+                        Ah_size,
+                        Aj_size,
+                        Ax_size,
+                        nvec,
+                        jumbled,
                         ffi.NULL,
-                    )
+                    ),
+                    self,
                 )
                 rv = {
                     "rows": np.frombuffer(
-                        ffi.buffer(Ah[0], nvec[0] * index_dtype.itemsize), dtype=index_dtype
+                        ffi.buffer(Ah[0], Ah_size[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
                     "indptr": np.frombuffer(
-                        ffi.buffer(Ap[0], (nvec[0] + 1) * index_dtype.itemsize), dtype=index_dtype
+                        ffi.buffer(Ap[0], Ap_size[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
                     "col_indices": np.frombuffer(
-                        ffi.buffer(Aj[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
+                        ffi.buffer(Aj[0], Aj_size[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
                     "values": np.frombuffer(
-                        ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype
+                        ffi.buffer(Ax[0], Ax_size[0] * dtype.itemsize), dtype=dtype
                     ),
+                    "nvec": nvec[0],  # XXX: better name?
+                    "jumbled": jumbled[0],
                 }
             elif format == "hypercsc":
                 nvec = ffi_new("GrB_Index*")
                 Ah = ffi_new("GrB_Index**")
                 Ai = ffi_new("GrB_Index**")
+                Ah_size = ffi_new("GrB_Index*")
+                Ai_size = ffi_new("GrB_Index*")
                 check_status(
                     lib.GxB_Matrix_export_HyperCSC(
                         mhandle,
                         type_,
                         nrows,
                         ncols,
-                        nvals,
-                        nonempty,
-                        nvec,
-                        Ah,
                         Ap,
+                        Ah,
                         Ai,
                         Ax,
+                        Ap_size,
+                        Ah_size,
+                        Ai_size,
+                        Ax_size,
+                        nvec,
+                        jumbled,
                         ffi.NULL,
-                    )
+                    ),
+                    self,
                 )
                 rv = {
                     "cols": np.frombuffer(
-                        ffi.buffer(Ah[0], nvec[0] * index_dtype.itemsize), dtype=index_dtype
+                        ffi.buffer(Ah[0], Ah_size[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
                     "indptr": np.frombuffer(
-                        ffi.buffer(Ap[0], (nvec[0] + 1) * index_dtype.itemsize), dtype=index_dtype
+                        ffi.buffer(Ap[0], Ap_size[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
                     "row_indices": np.frombuffer(
-                        ffi.buffer(Ai[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
+                        ffi.buffer(Ai[0], Ai_size[0] * index_dtype.itemsize), dtype=index_dtype
                     ),
                     "values": np.frombuffer(
-                        ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype
+                        ffi.buffer(Ax[0], Ax_size[0] * dtype.itemsize), dtype=dtype
                     ),
+                    "nvec": nvec[0],  # XXX: better name?
+                    "jumbled": jumbled[0],
                 }
             else:
                 raise ValueError(f"Invalid format: {format}")
@@ -1213,6 +1258,8 @@ class Matrix(BaseType):
             cols=None,
             format=None,
             name=None,
+            jumbled=True,
+            nvec=None,  # XXX: better name?
         ):
             """
             GxB_Matrix_import_xxx
@@ -1255,15 +1302,41 @@ class Matrix(BaseType):
                 Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
                 check_status(
                     lib.GxB_Matrix_import_CSR(
-                        mhandle, dtype._carg, nrows, ncols, len(values), -1, Ap, Aj, Ax, ffi.NULL
-                    )
+                        mhandle,
+                        dtype._carg,
+                        nrows,
+                        ncols,
+                        Ap,
+                        Aj,
+                        Ax,
+                        len(indptr),
+                        len(col_indices),
+                        len(values),
+                        jumbled,
+                        ffi.NULL,
+                    ),
+                    "Matrix",
+                    mhandle,  # XXX [0]??
                 )
             elif format == "csc":
                 Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
                 check_status(
                     lib.GxB_Matrix_import_CSC(
-                        mhandle, dtype._carg, nrows, ncols, len(values), -1, Ap, Ai, Ax, ffi.NULL
-                    )
+                        mhandle,
+                        dtype._carg,
+                        nrows,
+                        ncols,
+                        Ap,
+                        Ai,
+                        Ax,
+                        len(indptr),
+                        len(row_indices),
+                        len(values),
+                        jumbled,
+                        ffi.NULL,
+                    ),
+                    "Matrix",
+                    mhandle,  # XXX [0]??
                 )
             elif format == "hypercsr":
                 Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(rows)))
@@ -1274,15 +1347,20 @@ class Matrix(BaseType):
                         dtype._carg,
                         nrows,
                         ncols,
-                        len(values),
-                        -1,
-                        len(rows),
-                        Ah,
                         Ap,
+                        Ah,
                         Aj,
                         Ax,
+                        len(indptr),
+                        len(rows),
+                        len(col_indices),
+                        len(values),
+                        nvec,
+                        jumbled,
                         ffi.NULL,
-                    )
+                    ),
+                    "Matrix",
+                    mhandle,  # XXX [0]??
                 )
             elif format == "hypercsc":
                 Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(cols)))
@@ -1293,15 +1371,20 @@ class Matrix(BaseType):
                         dtype._carg,
                         nrows,
                         ncols,
-                        len(values),
-                        -1,
-                        len(cols),
-                        Ah,
                         Ap,
+                        Ah,
                         Ai,
                         Ax,
+                        len(indptr),
+                        len(cols),
+                        len(row_indices),
+                        len(values),
+                        nvec,
+                        jumbled,
                         ffi.NULL,
-                    )
+                    ),
+                    "Matrix",
+                    mhandle,  # XXX [0]??
                 )
             else:
                 raise ValueError(f"Invalid format: {format}")

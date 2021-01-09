@@ -92,7 +92,7 @@ def lookup(
             # Default descriptor stays a NULL pointer
             desc[0] = NULL
         else:
-            check_status(lib.GrB_Descriptor_new(desc))
+            lib.GrB_Descriptor_new(desc)
             for cond, field, val in [
                 (output_replace, lib.GrB_OUTP, lib.GrB_REPLACE),
                 (mask_complement, lib.GrB_MASK, lib.GrB_COMP),
@@ -101,6 +101,6 @@ def lookup(
                 (transpose_second, lib.GrB_INP1, lib.GrB_TRAN),
             ]:
                 if cond:
-                    check_status(lib.GrB_Descriptor_set(desc[0], field, val))
+                    check_status(lib.GrB_Descriptor_set(desc[0], field, val), "Descriptor", desc[0])
         _desc_map[key] = Descriptor(desc[0], "custom_descriptor", *key)
     return _desc_map[key]
