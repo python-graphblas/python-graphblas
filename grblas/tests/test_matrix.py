@@ -4,7 +4,7 @@ import numpy as np
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
-from grblas.exceptions import IndexOutOfBound, DimensionMismatch, OutputNotEmpty
+from grblas.exceptions import IndexOutOfBound, DimensionMismatch, OutputNotEmpty, InvalidValue
 
 
 @pytest.fixture
@@ -1230,43 +1230,189 @@ def test_del(capsys):
 
 def test_import_export(A):
     A1 = A.dup()
-    k = A1.ss.fast_export("csr")
-    assert k["nrows"] == 7
-    assert k["ncols"] == 7
-    assert (k["indptr"] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
-    assert (k["col_indices"] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
-    assert (k["values"] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
-    B1 = Matrix.ss.fast_import(**k)
+    d = A1.ss.fast_export("csr")
+    assert d["nrows"] == 7
+    assert d["ncols"] == 7
+    assert (d["indptr"] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
+    assert (d["col_indices"] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
+    assert (d["values"] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
+    B1 = Matrix.ss.fast_import(**d)
     assert B1.isequal(A)
 
     A2 = A.dup()
-    k = A2.ss.fast_export("csc")
-    assert k["nrows"] == 7
-    assert k["ncols"] == 7
-    assert (k["indptr"] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
-    assert (k["row_indices"] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
-    assert (k["values"] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
-    B2 = Matrix.ss.fast_import(**k)
+    d = A2.ss.fast_export("csc")
+    assert d["nrows"] == 7
+    assert d["ncols"] == 7
+    assert (d["indptr"] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
+    assert (d["row_indices"] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
+    assert (d["values"] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
+    B2 = Matrix.ss.fast_import(**d)
     assert B2.isequal(A)
 
     A3 = A.dup()
-    k = A3.ss.fast_export("hypercsr")
-    assert k["nrows"] == 7
-    assert k["ncols"] == 7
-    assert (k["rows"] == [0, 1, 2, 3, 4, 5, 6]).all()
-    assert (k["indptr"] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
-    assert (k["col_indices"] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
-    assert (k["values"] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
-    B3 = Matrix.ss.fast_import(**k)
+    d = A3.ss.fast_export("hypercsr")
+    assert d["nrows"] == 7
+    assert d["ncols"] == 7
+    assert (d["rows"] == [0, 1, 2, 3, 4, 5, 6]).all()
+    assert (d["indptr"] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
+    assert (d["col_indices"] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
+    assert (d["values"] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
+    B3 = Matrix.ss.fast_import(**d)
     assert B3.isequal(A)
 
     A4 = A.dup()
-    k = A4.ss.fast_export("hypercsc")
-    assert k["nrows"] == 7
-    assert k["ncols"] == 7
-    assert (k["cols"] == [0, 1, 2, 3, 4, 5, 6]).all()
-    assert (k["indptr"] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
-    assert (k["row_indices"] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
-    assert (k["values"] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
-    B4 = Matrix.ss.fast_import(**k)
+    d = A4.ss.fast_export("hypercsc")
+    assert d["nrows"] == 7
+    assert d["ncols"] == 7
+    assert (d["cols"] == [0, 1, 2, 3, 4, 5, 6]).all()
+    assert (d["indptr"] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
+    assert (d["row_indices"] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
+    assert (d["values"] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
+    B4 = Matrix.ss.fast_import(**d)
     assert B4.isequal(A)
+
+    A5 = A.dup()
+    d = A5.ss.fast_export("bitmapr")
+    assert d["nrows"] == 7
+    assert d["ncols"] == 7
+    # fmt: off
+    assert (
+        d["bitmap"] == [
+            0, 1, 0, 1, 0, 0, 0,
+            0, 0, 0, 0, 1, 0, 1,
+            0, 0, 0, 0, 0, 1, 0,
+            1, 0, 1, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 1, 0,
+            0, 0, 1, 0, 0, 0, 0,
+            0, 0, 1, 1, 1, 0, 0,
+        ]
+    ).all()
+    # fmt: on
+    assert len(d["values"]) == 49
+    assert (d["values"][d["bitmap"]] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
+    B5 = Matrix.ss.fast_import(**d)
+    assert B5.isequal(A)
+
+    A6 = A.dup()
+    d = A6.ss.fast_export("bitmapc")
+    assert d["nrows"] == 7
+    assert d["ncols"] == 7
+    # fmt: off
+    assert (
+        d["bitmap"] == [
+            0, 0, 0, 1, 0, 0, 0,
+            1, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 1, 0, 1, 1,
+            1, 0, 0, 0, 0, 0, 1,
+            0, 1, 0, 0, 0, 0, 1,
+            0, 0, 1, 0, 1, 0, 0,
+            0, 1, 0, 0, 0, 0, 0,
+        ]
+    ).all()
+    # fmt: on
+    assert len(d["values"]) == 49
+    assert (d["values"][d["bitmap"]] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
+    B6 = Matrix.ss.fast_import(**d)
+    assert B6.isequal(A)
+
+    C = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
+    C1 = C.dup()
+    d = C1.ss.fast_export("fullr")
+    assert d["nrows"] == 2
+    assert d["ncols"] == 2
+    assert (d["values"] == [1, 2, 3, 4]).all()
+    D1 = Matrix.ss.fast_import(**d)
+    assert D1.isequal(C)
+
+    C2 = C.dup()
+    d = C2.ss.fast_export("fullc")
+    assert d["nrows"] == 2
+    assert d["ncols"] == 2
+    assert (d["values"] == [1, 3, 2, 4]).all()
+    D2 = Matrix.ss.fast_import(**d)
+    assert D2.isequal(C)
+
+    # all elements must have values
+    with pytest.raises(InvalidValue):
+        A.dup().ss.fast_export("fullr")
+    with pytest.raises(InvalidValue):
+        A.dup().ss.fast_export("fullc")
+
+
+def test_import_on_view():
+    A = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
+    B = Matrix.ss.fast_import(nrows=2, ncols=2, values=np.array([1, 2, 3, 4, 99, 99, 99])[:4])
+    assert A.isequal(B)
+
+
+def test_import_export_empty():
+    A = Matrix.new(int, 2, 3)
+    A1 = A.dup()
+    d = A1.ss.fast_export("csr")
+    assert d["nrows"] == 2
+    assert d["ncols"] == 3
+    assert (d["indptr"] == [0, 0, 0]).all()
+    assert len(d["col_indices"]) == 0
+    assert len(d["values"]) == 0
+    B1 = Matrix.ss.fast_import(**d)
+    assert B1.isequal(A)
+
+    A2 = A.dup()
+    d = A2.ss.fast_export("csc")
+    assert d["nrows"] == 2
+    assert d["ncols"] == 3
+    assert (d["indptr"] == [0, 0, 0, 0]).all()
+    assert len(d["row_indices"]) == 0
+    assert len(d["values"]) == 0
+    B2 = Matrix.ss.fast_import(**d)
+    assert B2.isequal(A)
+
+    A3 = A.dup()
+    d = A3.ss.fast_export("hypercsr")
+    assert d["nrows"] == 2
+    assert d["ncols"] == 3
+    assert len(d["indptr"]) == 1
+    assert d["indptr"][0] == 0
+    assert len(d["col_indices"]) == 0
+    assert len(d["values"]) == 0
+    assert len(d["rows"]) == 0
+    B3 = Matrix.ss.fast_import(**d)
+    assert B3.isequal(A)
+
+    A4 = A.dup()
+    d = A4.ss.fast_export("hypercsc")
+    assert d["nrows"] == 2
+    assert d["ncols"] == 3
+    assert len(d["indptr"]) == 1
+    assert d["indptr"][0] == 0
+    assert len(d["row_indices"]) == 0
+    assert len(d["values"]) == 0
+    assert len(d["cols"]) == 0
+    B4 = Matrix.ss.fast_import(**d)
+    assert B4.isequal(A)
+
+    A5 = A.dup()
+    d = A5.ss.fast_export("bitmapr")
+    assert d["nrows"] == 2
+    assert d["ncols"] == 3
+    assert d["nvals"] == 0
+    assert (d["bitmap"] == 6 * [0]).all()
+    assert len(d["values"]) == 6  # values are undefined
+    B5 = Matrix.ss.fast_import(**d)
+    assert B5.isequal(A)
+
+    A6 = A.dup()
+    d = A6.ss.fast_export("bitmapc")
+    assert d["nrows"] == 2
+    assert d["ncols"] == 3
+    assert d["nvals"] == 0
+    assert (d["bitmap"] == 6 * [0]).all()
+    assert len(d["values"]) == 6  # values are undefined
+    B6 = Matrix.ss.fast_import(**d)
+    assert B6.isequal(A)
+
+    # all elements must have values
+    with pytest.raises(InvalidValue):
+        A.dup().ss.fast_export("fullr")
+    with pytest.raises(InvalidValue):
+        A.dup().ss.fast_export("fullc")
