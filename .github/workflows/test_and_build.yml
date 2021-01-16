@@ -17,7 +17,7 @@ jobs:
         testopts:
           - "--blocking --record"
           - "--non-blocking"
-          # - "--backend=pygraphblas"  # SKIP TEMPORARILY
+          - "--backend=pygraphblas"
     steps:
       - name: Checkout
         uses: actions/checkout@v2
