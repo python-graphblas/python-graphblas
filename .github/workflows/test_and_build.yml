@@ -79,7 +79,7 @@ jobs:
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
           coverage report --show-missing
-          coveralls
+          coveralls --service=github
 
   finish:
     needs: build_and_test

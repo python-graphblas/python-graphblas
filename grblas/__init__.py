@@ -97,11 +97,11 @@ def _init(backend_arg, blocking, automatic=False):
         ffi_backend = _importlib.import_module(f".backends.{backend}", __name__)
         lib = ffi_backend.lib
         ffi = ffi_backend.ffi
-        # This must be called before anything else happens
-        if blocking:
-            ffi_backend.lib.GrB_init(ffi_backend.lib.GrB_BLOCKING)
-        else:
-            ffi_backend.lib.GrB_init(ffi_backend.lib.GrB_NONBLOCKING)
+        blocking = lib.GrB_BLOCKING if blocking else lib.GrB_NONBLOCKING
+        from ._ss import call_gxb_init
+
+        # This must be called before anything else happens (and only once)
+        call_gxb_init(ffi, lib, blocking)
 
 
 def _load(name):
