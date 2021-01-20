@@ -40,7 +40,7 @@ jobs:
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
-          conda install -c conda-forge pandas numba cffi graphblas scipy networkx
+          conda install -c conda-forge pandas numba cffi graphblas scipy networkx cython
           python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
           python setup.py develop
       - name: Optional pygraphblas
