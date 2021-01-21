@@ -90,7 +90,7 @@ class IndexerResolver:
                 raise IndexError(f"index={index}, size={size}")
             return _CScalar(int(index)), None
         if typ is slice:
-            if index == slice(None):
+            if index == slice(None) or index == slice(0, None):
                 # [:] means all indices; use special GrB_ALL indicator
                 return _ALL_INDICES, _CScalar(size)
             index = tuple(range(size)[index])
