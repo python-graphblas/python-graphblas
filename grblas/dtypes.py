@@ -4,19 +4,6 @@ import numba
 from . import lib
 
 
-def libget(name):
-    """Helper to get items from GraphBLAS which might be GrB or GxB"""
-    try:
-        return getattr(lib, name)
-    except AttributeError:
-        ext_name = f"GxB_{name[4:]}"
-        try:
-            return getattr(lib, ext_name)
-        except AttributeError:
-            pass
-        raise
-
-
 class DataType:
     def __init__(self, name, gb_obj, gb_name, c_type, numba_type, np_type):
         self.name = name
@@ -54,6 +41,8 @@ INT32 = DataType("INT32", lib.GrB_INT32, "GrB_INT32", "int32_t", numba.types.int
 UINT32 = DataType("UINT32", lib.GrB_UINT32, "GrB_UINT32", "uint32_t", numba.types.uint32, np.uint32)
 INT64 = DataType("INT64", lib.GrB_INT64, "GrB_INT64", "int64_t", numba.types.int64, np.int64)
 UINT64 = DataType("UINT64", lib.GrB_UINT64, "GrB_UINT64", "uint64_t", numba.types.uint64, np.uint64)
+# _Index (like UINT64) is for internal use only and shouldn't be exposed to the user
+_INDEX = DataType("INDEX", lib.GrB_UINT64, "GrB_Index", "uint64_t", numba.types.uint64, np.uint64)
 FP32 = DataType("FP32", lib.GrB_FP32, "GrB_FP32", "float", numba.types.float32, np.float32)
 FP64 = DataType("FP64", lib.GrB_FP64, "GrB_FP64", "double", numba.types.float64, np.float64)
 if hasattr(lib, "GxB_FC32"):  # pragma: no cover

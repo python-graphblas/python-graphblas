@@ -1,14 +1,15 @@
 import itertools
 import numpy as np
 from . import ffi, lib, backend, binary, monoid, semiring
-from .base import BaseExpression, BaseType, call, _Pointer
+from .base import BaseExpression, BaseType, call
 from .dtypes import lookup_dtype, unify, UINT64
 from .exceptions import check_status, NoValue
-from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater, _CArray
+from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .ops import get_typed_op
 from .vector import Vector, VectorExpression
 from .scalar import Scalar, ScalarExpression, _CScalar
+from .utils import ints_to_numpy_buffer, values_to_numpy_buffer, _CArray, _Pointer
 from . import _ss
 
 ffi_new = ffi.new
@@ -177,9 +178,9 @@ class Matrix(BaseType):
         Extract the rows, columns and values as a 3-tuple of numpy arrays
         """
         nvals = self._nvals
-        rows = _CArray(nvals, name="&rows_array")
-        columns = _CArray(nvals, name="&columns_array")
-        values = _CArray(nvals, ctype=self.dtype.c_type, name="&values_array")
+        rows = _CArray(size=nvals, name="&rows_array")
+        columns = _CArray(size=nvals, name="&columns_array")
+        values = _CArray(size=nvals, dtype=self.dtype, name="&values_array")
         n = ffi_new("GrB_Index*")
         scalar = Scalar(n, UINT64, name="s_nvals", empty=True)  # Actually GrB_Index dtype
         scalar.value = nvals
@@ -187,28 +188,22 @@ class Matrix(BaseType):
             f"GrB_Matrix_extractTuples_{self.dtype.name}",
             (rows, columns, values, _Pointer(scalar), self),
         )
-        values = np.frombuffer(ffi.buffer(values._carg), dtype=self.dtype.np_type)
+        values = values.array
         if dtype is not None:
             dtype = lookup_dtype(dtype)
             if dtype != self.dtype:
                 values = values.astype(dtype.np_type)  # copies
         return (
-            np.frombuffer(ffi.buffer(rows._carg), dtype=np.uint64),
-            np.frombuffer(ffi.buffer(columns._carg), dtype=np.uint64),
+            rows.array,
+            columns.array,
             values,
         )
 
     def build(self, rows, columns, values, *, dup_op=None, clear=False, nrows=None, ncols=None):
         # TODO: accept `dtype` keyword to match the dtype of `values`?
-        np_rows = isinstance(rows, np.ndarray)
-        if not np_rows and not isinstance(rows, (tuple, list)):
-            rows = tuple(rows)
-        np_cols = isinstance(columns, np.ndarray)
-        if not np_cols and not isinstance(columns, (tuple, list)):
-            columns = tuple(columns)
-        np_vals = isinstance(values, np.ndarray)
-        if not np_vals and not isinstance(values, (tuple, list)):
-            values = tuple(values)
+        rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
+        columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
+        values, dtype = values_to_numpy_buffer(values, self.dtype)
         n = len(values)
         if len(rows) != n or len(columns) != n:
             raise ValueError(
@@ -223,7 +218,7 @@ class Matrix(BaseType):
             if ncols is None:
                 ncols = self.ncols
             self.resize(nrows, ncols)
-        if n <= 0:
+        if n == 0:
             return
 
         dup_op_given = dup_op is not None
@@ -232,21 +227,9 @@ class Matrix(BaseType):
         dup_op = get_typed_op(dup_op, self.dtype)
         self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
 
-        if np_rows:
-            urows = rows.astype(np.uint64, copy=False)
-            rows = _CArray(urows, from_buffer=True)
-        else:
-            rows = _CArray(rows)
-        if np_cols:
-            ucols = columns.astype(np.uint64, copy=False)
-            columns = _CArray(ucols, from_buffer=True)
-        else:
-            columns = _CArray(columns)
-        if np_vals:
-            verified_vals = values.astype(self.dtype.np_type, copy=False)
-            values = _CArray(verified_vals, ctype=self.dtype.c_type, from_buffer=True)
-        else:
-            values = _CArray(values, ctype=self.dtype.c_type)
+        rows = _CArray(rows)
+        columns = _CArray(columns)
+        values = _CArray(values, dtype=self.dtype)
         call(
             f"GrB_Matrix_build_{self.dtype.name}",
             (self, rows, columns, values, _CScalar(n), dup_op),
@@ -308,44 +291,18 @@ class Matrix(BaseType):
         indices, and values.  If nrows or ncols are not provided, they
         are computed from the max row and coumn index found.
         """
-        rarr = rows
-        carr = columns
-        varr = values
-        if not isinstance(rarr, np.ndarray):
-            if not isinstance(rows, (tuple, list)):
-                rows = tuple(rows)
-            rarr = np.array(rows)
-        if not isinstance(carr, np.ndarray):
-            if not isinstance(columns, (tuple, list)):
-                columns = tuple(columns)
-            carr = np.array(columns)
-        if not isinstance(varr, np.ndarray):
-            if not isinstance(values, (tuple, list)):
-                values = tuple(values)
-            varr = np.array(values)
-
-        if dtype is None:
-            if len(varr) <= 0:
-                raise ValueError("No values provided. Unable to determine type.")
-            dtype = varr.dtype
-            if dtype == object:
-                raise ValueError("Unable to convert values to a usable dtype")
-        dtype = lookup_dtype(dtype)
-        if varr.dtype != dtype.np_type:
-            varr = varr.astype(dtype.np_type)
+        rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
+        columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
+        values, dtype = values_to_numpy_buffer(values, dtype)
         # Compute nrows and ncols if not provided
         if nrows is None:
-            if len(rarr) <= 0:
+            if len(rows) == 0:
                 raise ValueError("No row indices provided. Unable to infer nrows.")
-            nrows = int(rarr.max() + 1)
+            nrows = int(rows.max() + 1)
         if ncols is None:
-            if len(carr) <= 0:
+            if len(columns) == 0:
                 raise ValueError("No column indices provided. Unable to infer ncols.")
-            ncols = int(carr.max() + 1)
-        if len(rarr) > 0 and "int" not in rarr.dtype.name:
-            raise ValueError(f"row indices must be integers, not {rarr.dtype.name}")
-        if len(carr) > 0 and "int" not in carr.dtype.name:
-            raise ValueError(f"column indices must be integers, not {carr.dtype.name}")
+            ncols = int(columns.max() + 1)
         # Create the new matrix
         C = cls.new(dtype, nrows, ncols, name=name)
         # Add the data
@@ -1030,7 +987,7 @@ class Matrix(BaseType):
         def __init__(self, parent):
             self._parent = parent
 
-        def fast_export(self, format=None, *, sort=False):
+        def export(self, format=None, *, sort=False, give_ownership=False):
             """
             GxB_Matrix_export_xxx
 
@@ -1045,13 +1002,13 @@ class Matrix(BaseType):
 
             To reimport the Matrix:
             ```
-            pieces = A.fast_export()
-            A2 = Matrix.fast_import(**pieces)
+            pieces = A.export()
+            A2 = Matrix.import_any(**pieces)
             ```
 
             The underlying GraphBLAS object transfers ownership to numpy,
             disallowing further access. The caller should delete or stop using
-            the Matrix after calling `fast_export`.
+            the Matrix after calling `export`.
 
             If `format` is not specified, this method exports in the currently stored format
             To control the export format, set `format` to one of:
@@ -1064,6 +1021,10 @@ class Matrix(BaseType):
               - "fullr"
               - "fullc"
             """
+            if give_ownership:
+                parent = self._parent
+            else:
+                parent = self._parent.dup()
             dtype = np.dtype(self._parent.dtype.np_type)
             index_dtype = np.dtype(np.uint64)
 
@@ -1071,15 +1032,16 @@ class Matrix(BaseType):
                 # Determine current format
                 hyper_ptr = ffi_new("bool*")
                 format_ptr = ffi_new("int*")
-                call("GxB_Matrix_Option_get", (self._parent, lib.GxB_IS_HYPER, hyper_ptr))
-                call("GxB_Matrix_Option_get", (self._parent, lib.GxB_FORMAT, format_ptr))
+                call("GxB_Matrix_Option_get", (parent, lib.GxB_IS_HYPER, hyper_ptr))
+                call("GxB_Matrix_Option_get", (parent, lib.GxB_FORMAT, format_ptr))
+                # TODO: get more options to determine other if bitmap or full
                 if hyper_ptr[0]:
                     format = "hypercsc" if format_ptr[0] == lib.GxB_BY_COL else "hypercsr"
                 else:
                     format = "csc" if format_ptr[0] == lib.GxB_BY_COL else "csr"
             format = format.lower()
 
-            mhandle = ffi_new("GrB_Matrix*", self._parent._carg)
+            mhandle = ffi_new("GrB_Matrix*", parent._carg)
             type_ = ffi_new("GrB_Type*")
             nrows = ffi_new("GrB_Index*")
             ncols = ffi_new("GrB_Index*")
@@ -1091,7 +1053,7 @@ class Matrix(BaseType):
                 jumbled = ffi.NULL
             else:
                 jumbled = ffi_new("bool*")
-            nvals = self._parent._nvals
+            nvals = parent._nvals
             if format == "csr":
                 Aj = ffi_new("GrB_Index**")
                 Aj_size = ffi_new("GrB_Index*")
@@ -1110,7 +1072,7 @@ class Matrix(BaseType):
                         jumbled,
                         ffi.NULL,
                     ),
-                    self._parent,
+                    parent,
                 )
                 indptr = _ss.claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
                 col_indices = _ss.claim_buffer(ffi, Aj[0], Aj_size[0], index_dtype)
@@ -1144,7 +1106,7 @@ class Matrix(BaseType):
                         jumbled,
                         ffi.NULL,
                     ),
-                    self._parent,
+                    parent,
                 )
                 indptr = _ss.claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
                 row_indices = _ss.claim_buffer(ffi, Ai[0], Ai_size[0], index_dtype)
@@ -1184,7 +1146,7 @@ class Matrix(BaseType):
                         jumbled,
                         ffi.NULL,
                     ),
-                    self._parent,
+                    parent,
                 )
                 indptr = _ss.claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
                 rows = _ss.claim_buffer(ffi, Ah[0], Ah_size[0], index_dtype)
@@ -1229,7 +1191,7 @@ class Matrix(BaseType):
                         jumbled,
                         ffi.NULL,
                     ),
-                    self._parent,
+                    parent,
                 )
                 indptr = _ss.claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
                 cols = _ss.claim_buffer(ffi, Ah[0], Ah_size[0], index_dtype)
@@ -1271,7 +1233,7 @@ class Matrix(BaseType):
                         nvals_,
                         ffi.NULL,
                     ),
-                    self._parent,
+                    parent,
                 )
                 bitmap = _ss.claim_buffer(ffi, Ab[0], Ab_size[0], np.dtype(np.bool8))
                 values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
@@ -1296,7 +1258,7 @@ class Matrix(BaseType):
                         Ax_size,
                         ffi.NULL,
                     ),
-                    self._parent,
+                    parent,
                 )
                 values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
                 size = nrows[0] * ncols[0]
@@ -1312,11 +1274,11 @@ class Matrix(BaseType):
                 ncols=ncols[0],
                 values=values,
             )
-            self._parent.gb_obj = ffi.NULL
+            parent.gb_obj = ffi.NULL
             return rv
 
         @classmethod
-        def fast_import_csr(
+        def import_csr(
             cls,
             *,
             nrows,
@@ -1325,19 +1287,22 @@ class Matrix(BaseType):
             values,
             col_indices,
             sorted_index=False,
+            take_ownership=False,
+            dtype=None,
             format=None,
             name=None,
         ):
             if format is not None and format.lower() != "csr":
                 raise ValueError(f"Invalid format: {format!r}.  Must be None or 'csr'.")
-            if not indptr.flags.owndata:
-                indptr = indptr.copy()
-            if not col_indices.flags.owndata:
-                col_indices = col_indices.copy()
-            if not values.flags.owndata:
-                values = values.copy()
+            copy = not take_ownership
+            indptr = ints_to_numpy_buffer(
+                indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
+            )
+            col_indices = ints_to_numpy_buffer(
+                col_indices, np.uint64, copy=copy, ownable=True, name="column indices"
+            )
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
             mhandle = ffi_new("GrB_Matrix*")
-            dtype = lookup_dtype(values.dtype)
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
@@ -1362,13 +1327,13 @@ class Matrix(BaseType):
             rv = Matrix(mhandle, dtype, name=name)
             rv._nrows = nrows
             rv._ncols = ncols
-            _ss.disclaim_buffer(indptr)
-            _ss.disclaim_buffer(col_indices)
-            _ss.disclaim_buffer(values)
+            _ss.unclaim_buffer(indptr)
+            _ss.unclaim_buffer(col_indices)
+            _ss.unclaim_buffer(values)
             return rv
 
         @classmethod
-        def fast_import_csc(
+        def import_csc(
             cls,
             *,
             nrows,
@@ -1377,19 +1342,22 @@ class Matrix(BaseType):
             values,
             row_indices,
             sorted_index=False,
+            take_ownership=False,
+            dtype=None,
             format=None,
             name=None,
         ):
             if format is not None and format.lower() != "csc":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'csc'.")
-            if not indptr.flags.owndata:
-                indptr = indptr.copy()
-            if not row_indices.flags.owndata:
-                row_indices = row_indices.copy()
-            if not values.flags.owndata:
-                values = values.copy()
+            copy = not take_ownership
+            indptr = ints_to_numpy_buffer(
+                indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
+            )
+            row_indices = ints_to_numpy_buffer(
+                row_indices, np.uint64, copy=copy, ownable=True, name="row indices"
+            )
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
             mhandle = ffi_new("GrB_Matrix*")
-            dtype = lookup_dtype(values.dtype)
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
@@ -1414,13 +1382,13 @@ class Matrix(BaseType):
             rv = Matrix(mhandle, dtype, name=name)
             rv._nrows = nrows
             rv._ncols = ncols
-            _ss.disclaim_buffer(indptr)
-            _ss.disclaim_buffer(row_indices)
-            _ss.disclaim_buffer(values)
+            _ss.unclaim_buffer(indptr)
+            _ss.unclaim_buffer(row_indices)
+            _ss.unclaim_buffer(values)
             return rv
 
         @classmethod
-        def fast_import_hypercsr(
+        def import_hypercsr(
             cls,
             *,
             nrows,
@@ -1430,21 +1398,23 @@ class Matrix(BaseType):
             values,
             col_indices,
             sorted_index=False,
+            take_ownership=False,
+            dtype=None,
             format=None,
             name=None,
         ):
             if format is not None and format.lower() != "hypercsr":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsr'.")
-            if not indptr.flags.owndata:
-                indptr = indptr.copy()
-            if not rows.flags.owndata:
-                rows = rows.copy()
-            if not col_indices.flags.owndata:
-                col_indices = col_indices.copy()
-            if not values.flags.owndata:
-                values = values.copy()
+            copy = not take_ownership
+            indptr = ints_to_numpy_buffer(
+                indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
+            )
+            rows = ints_to_numpy_buffer(rows, np.uint64, copy=copy, ownable=True, name="rows")
+            col_indices = ints_to_numpy_buffer(
+                col_indices, np.uint64, copy=copy, ownable=True, name="column indices"
+            )
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
             mhandle = ffi_new("GrB_Matrix*")
-            dtype = lookup_dtype(values.dtype)
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(rows)))
             Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
@@ -1474,14 +1444,14 @@ class Matrix(BaseType):
             rv = Matrix(mhandle, dtype, name=name)
             rv._nrows = nrows
             rv._ncols = ncols
-            _ss.disclaim_buffer(indptr)
-            _ss.disclaim_buffer(rows)
-            _ss.disclaim_buffer(col_indices)
-            _ss.disclaim_buffer(values)
+            _ss.unclaim_buffer(indptr)
+            _ss.unclaim_buffer(rows)
+            _ss.unclaim_buffer(col_indices)
+            _ss.unclaim_buffer(values)
             return rv
 
         @classmethod
-        def fast_import_hypercsc(
+        def import_hypercsc(
             cls,
             *,
             nrows,
@@ -1491,21 +1461,23 @@ class Matrix(BaseType):
             values,
             row_indices,
             sorted_index=False,
+            take_ownership=False,
+            dtype=None,
             format=None,
             name=None,
         ):
             if format is not None and format.lower() != "hypercsc":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsc'.")
-            if not indptr.flags.owndata:
-                indptr = indptr.copy()
-            if not cols.flags.owndata:
-                cols = cols.copy()
-            if not row_indices.flags.owndata:
-                row_indices = row_indices.copy()
-            if not values.flags.owndata:
-                values = values.copy()
+            copy = not take_ownership
+            indptr = ints_to_numpy_buffer(
+                indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
+            )
+            cols = ints_to_numpy_buffer(cols, np.uint64, copy=copy, ownable=True, name="columns")
+            row_indices = ints_to_numpy_buffer(
+                row_indices, np.uint64, copy=copy, ownable=True, name="row indices"
+            )
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
             mhandle = ffi_new("GrB_Matrix*")
-            dtype = lookup_dtype(values.dtype)
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(cols)))
             Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
@@ -1535,32 +1507,32 @@ class Matrix(BaseType):
             rv = Matrix(mhandle, dtype, name=name)
             rv._nrows = nrows
             rv._ncols = ncols
-            _ss.disclaim_buffer(indptr)
-            _ss.disclaim_buffer(cols)
-            _ss.disclaim_buffer(row_indices)
-            _ss.disclaim_buffer(values)
+            _ss.unclaim_buffer(indptr)
+            _ss.unclaim_buffer(cols)
+            _ss.unclaim_buffer(row_indices)
+            _ss.unclaim_buffer(values)
             return rv
 
         @classmethod
-        def fast_import_bitmapr(
+        def import_bitmapr(
             cls,
             *,
             nrows,
             ncols,
             bitmap,
             values,
+            take_ownership=False,
             nvals=None,
+            dtype=None,
             format=None,
             name=None,
         ):
             if format is not None and format.lower() != "bitmapr":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapr'.")
-            if not bitmap.flags.owndata:
-                bitmap = bitmap.copy()
-            if not values.flags.owndata:
-                values = values.copy()
+            copy = not take_ownership
+            bitmap = ints_to_numpy_buffer(bitmap, np.bool8, copy=copy, ownable=True, name="bitmap")
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
             mhandle = ffi_new("GrB_Matrix*")
-            dtype = lookup_dtype(values.dtype)
             Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
             if nvals is None:
@@ -1584,30 +1556,30 @@ class Matrix(BaseType):
             rv = Matrix(mhandle, dtype, name=name)
             rv._nrows = nrows
             rv._ncols = ncols
-            _ss.disclaim_buffer(bitmap)
-            _ss.disclaim_buffer(values)
+            _ss.unclaim_buffer(bitmap)
+            _ss.unclaim_buffer(values)
             return rv
 
         @classmethod
-        def fast_import_bitmapc(
+        def import_bitmapc(
             cls,
             *,
             nrows,
             ncols,
             bitmap,
             values,
+            take_ownership=False,
             nvals=None,
             format=None,
+            dtype=None,
             name=None,
         ):
             if format is not None and format.lower() != "bitmapc":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapc'.")
-            if not bitmap.flags.owndata:
-                bitmap = bitmap.copy()
-            if not values.flags.owndata:
-                values = values.copy()
+            copy = not take_ownership
+            bitmap = ints_to_numpy_buffer(bitmap, np.bool8, copy=copy, ownable=True, name="bitmap")
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
             mhandle = ffi_new("GrB_Matrix*")
-            dtype = lookup_dtype(values.dtype)
             Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
             if nvals is None:
@@ -1631,26 +1603,27 @@ class Matrix(BaseType):
             rv = Matrix(mhandle, dtype, name=name)
             rv._nrows = nrows
             rv._ncols = ncols
-            _ss.disclaim_buffer(bitmap)
-            _ss.disclaim_buffer(values)
+            _ss.unclaim_buffer(bitmap)
+            _ss.unclaim_buffer(values)
             return rv
 
         @classmethod
-        def fast_import_fullr(
+        def import_fullr(
             cls,
             *,
             nrows,
             ncols,
             values,
+            take_ownership=False,
+            dtype=None,
             format=None,
             name=None,
         ):
             if format is not None and format.lower() != "fullr":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'fullr'.")
-            if not values.flags.owndata:
-                values = values.copy()
+            copy = not take_ownership
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
             mhandle = ffi_new("GrB_Matrix*")
-            dtype = lookup_dtype(values.dtype)
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
             check_status(
                 lib.GxB_Matrix_import_FullR(
@@ -1668,25 +1641,26 @@ class Matrix(BaseType):
             rv = Matrix(mhandle, dtype, name=name)
             rv._nrows = nrows
             rv._ncols = ncols
-            _ss.disclaim_buffer(values)
+            _ss.unclaim_buffer(values)
             return rv
 
         @classmethod
-        def fast_import_fullc(
+        def import_fullc(
             cls,
             *,
             nrows,
             ncols,
             values,
+            take_ownership=False,
+            dtype=None,
             format=None,
             name=None,
         ):
             if format is not None and format.lower() != "fullc":
                 raise ValueError(f"Invalid format: {format!r}.  Must be None or 'fullc'.")
-            if not values.flags.owndata:
-                values = values.copy()
+            copy = not take_ownership
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
             mhandle = ffi_new("GrB_Matrix*")
-            dtype = lookup_dtype(values.dtype)
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
             check_status(
                 lib.GxB_Matrix_import_FullC(
@@ -1704,17 +1678,18 @@ class Matrix(BaseType):
             rv = Matrix(mhandle, dtype, name=name)
             rv._nrows = nrows
             rv._ncols = ncols
-            _ss.disclaim_buffer(values)
+            _ss.unclaim_buffer(values)
             return rv
 
         @classmethod
-        def fast_import(
+        def import_any(
             cls,
             *,
             # All
             nrows,
             ncols,
             values,
+            take_ownership=False,
             format=None,
             name=None,
             # CSR/CSC/HyperCSR/HyperCSC
@@ -1736,7 +1711,7 @@ class Matrix(BaseType):
             GxB_Matrix_import_xxx
 
             The new Matrix uses the underlying buffer of the input arrays.
-            The caller should delete or stop using the input arrays after calling `fast_import`.
+            The caller should delete or stop using the input arrays after calling `import_any`.
 
             Valid formats:
              - csr  (needs indptr, col_indices, values)
@@ -1789,7 +1764,7 @@ class Matrix(BaseType):
 
             format = format.lower()
             if format == "csr":
-                return cls.fast_import_csr(
+                return cls.import_csr(
                     nrows=nrows,
                     ncols=ncols,
                     indptr=indptr,
@@ -1800,7 +1775,7 @@ class Matrix(BaseType):
                     name=name,
                 )
             elif format == "csc":
-                return cls.fast_import_csc(
+                return cls.import_csc(
                     nrows=nrows,
                     ncols=ncols,
                     indptr=indptr,
@@ -1811,7 +1786,7 @@ class Matrix(BaseType):
                     name=name,
                 )
             elif format == "hypercsr":
-                return cls.fast_import_hypercsr(
+                return cls.import_hypercsr(
                     nrows=nrows,
                     ncols=ncols,
                     rows=rows,
@@ -1823,7 +1798,7 @@ class Matrix(BaseType):
                     name=name,
                 )
             elif format == "hypercsc":
-                return cls.fast_import_hypercsc(
+                return cls.import_hypercsc(
                     nrows=nrows,
                     ncols=ncols,
                     cols=cols,
@@ -1835,7 +1810,7 @@ class Matrix(BaseType):
                     name=name,
                 )
             elif format == "bitmapr":
-                return cls.fast_import_bitmapr(
+                return cls.import_bitmapr(
                     nrows=nrows,
                     ncols=ncols,
                     values=values,
@@ -1845,7 +1820,7 @@ class Matrix(BaseType):
                     name=name,
                 )
             elif format == "bitmapc":
-                return cls.fast_import_bitmapc(
+                return cls.import_bitmapc(
                     nrows=nrows,
                     ncols=ncols,
                     values=values,
@@ -1855,7 +1830,7 @@ class Matrix(BaseType):
                     name=name,
                 )
             elif format == "fullr":
-                return cls.fast_import_fullr(
+                return cls.import_fullr(
                     nrows=nrows,
                     ncols=ncols,
                     values=values,
@@ -1863,7 +1838,7 @@ class Matrix(BaseType):
                     name=name,
                 )
             elif format == "fullc":
-                return cls.fast_import_fullc(
+                return cls.import_fullc(
                     nrows=nrows,
                     ncols=ncols,
                     values=values,

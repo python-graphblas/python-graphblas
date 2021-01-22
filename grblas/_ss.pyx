@@ -1,5 +1,5 @@
 import numpy as np
-from numpy cimport import_array, ndarray, npy_intp, PyArray_SimpleNewFromData, NPY_ARRAY_OWNDATA
+from numpy cimport import_array, ndarray, npy_intp, PyArray_SimpleNewFromData, NPY_ARRAY_OWNDATA, NPY_ARRAY_WRITEABLE
 from libc.stdint cimport uintptr_t
 
 import_array()
@@ -17,6 +17,5 @@ cpdef ndarray claim_buffer(ffi, cdata, size_t size, dtype):
     return array
 
 
-cpdef disclaim_buffer(ndarray array):
-    PyArray_CLEARFLAGS(array, NPY_ARRAY_OWNDATA)
-
+cpdef unclaim_buffer(ndarray array):
+    PyArray_CLEARFLAGS(array, NPY_ARRAY_OWNDATA | NPY_ARRAY_WRITEABLE)

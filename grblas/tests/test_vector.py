@@ -66,10 +66,16 @@ def test_from_values():
     with pytest.raises(ValueError, match="Duplicate indices found"):
         # Duplicate indices requires a dup_op
         Vector.from_values([0, 1, 1], [True, True, True])
-    with pytest.raises(ValueError, match="No values provided. Unable to determine type"):
+    with pytest.raises(ValueError, match="No indices provided. Unable to infer size."):
         Vector.from_values([], [])
-    with pytest.raises(ValueError, match="No values provided. Unable to determine type"):
-        Vector.from_values([], [], size=10)
+
+    # Changed: Assume empty value is float64 (like numpy)
+    # with pytest.raises(ValueError, match="No values provided. Unable to determine type"):
+    w = Vector.from_values([], [], size=10)
+    assert w.size == 10
+    assert w.nvals == 0
+    assert w.dtype == dtypes.FP64
+
     with pytest.raises(ValueError, match="No indices provided. Unable to infer size"):
         Vector.from_values([], [], dtype=dtypes.INT64)
     u4 = Vector.from_values([], [], size=10, dtype=dtypes.INT64)
@@ -633,9 +639,9 @@ def test_del(capsys):
 
 def test_import_export(v):
     v1 = v.dup()
-    k = v1.ss.fast_export()
+    k = v1.ss.export()
     assert k["size"] == 7
     assert (k["indices"] == [1, 3, 4, 6]).all()
     assert (k["values"] == [1, 1, 2, 0]).all()
-    w1 = Vector.ss.fast_import(**k)
+    w1 = Vector.ss.import_any(**k)
     assert w1.isequal(v)

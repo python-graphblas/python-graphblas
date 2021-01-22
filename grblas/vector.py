@@ -1,13 +1,14 @@
 import itertools
 import numpy as np
 from . import ffi, lib, backend, binary, monoid, semiring
-from .base import BaseExpression, BaseType, call, _Pointer
+from .base import BaseExpression, BaseType, call
 from .dtypes import lookup_dtype, unify, UINT64
 from .exceptions import check_status, NoValue
-from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater, _CArray
+from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .ops import get_typed_op
 from .scalar import Scalar, ScalarExpression, _CScalar
+from .utils import ints_to_numpy_buffer, values_to_numpy_buffer, _CArray, _Pointer
 
 ffi_new = ffi.new
 
@@ -157,32 +158,28 @@ class Vector(BaseType):
         Extract the indices and values as a 2-tuple of numpy arrays
         """
         nvals = self._nvals
-        indices = _CArray(nvals, name="&index_array")
-        values = _CArray(nvals, ctype=self.dtype.c_type, name="&values_array")
+        indices = _CArray(size=nvals, name="&index_array")
+        values = _CArray(size=nvals, dtype=self.dtype, name="&values_array")
         n = ffi_new("GrB_Index*")
         scalar = Scalar(n, UINT64, name="s_nvals", empty=True)  # Actually GrB_Index dtype
         scalar.value = nvals
         call(
             f"GrB_Vector_extractTuples_{self.dtype.name}", (indices, values, _Pointer(scalar), self)
         )
-        values = np.frombuffer(ffi.buffer(values._carg), dtype=self.dtype.np_type)
+        values = values.array
         if dtype is not None:
             dtype = lookup_dtype(dtype)
             if dtype != self.dtype:
                 values = values.astype(dtype.np_type)  # copies
         return (
-            np.frombuffer(ffi.buffer(indices._carg), dtype=np.uint64),
+            indices.array,
             values,
         )
 
     def build(self, indices, values, *, dup_op=None, clear=False, size=None):
         # TODO: accept `dtype` keyword to match the dtype of `values`?
-        np_index = isinstance(indices, np.ndarray)
-        if not np_index and not isinstance(indices, (tuple, list)):
-            indices = tuple(indices)
-        np_value = isinstance(values, np.ndarray)
-        if not np_value and not isinstance(values, (tuple, list)):
-            values = tuple(values)
+        indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
+        values, dtype = values_to_numpy_buffer(values, self.dtype)
         n = len(values)
         if len(indices) != n:
             raise ValueError(
@@ -192,7 +189,7 @@ class Vector(BaseType):
             self.clear()
         if size is not None:
             self.resize(size)
-        if n <= 0:
+        if n == 0:
             return
 
         dup_op_given = dup_op is not None
@@ -201,16 +198,8 @@ class Vector(BaseType):
         dup_op = get_typed_op(dup_op, self.dtype)
         self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
 
-        if np_index:
-            uindices = indices.astype(np.uint64, copy=False)
-            indices = _CArray(uindices, from_buffer=True)
-        else:
-            indices = _CArray(indices)
-        if np_value:
-            verified_values = values.astype(self.dtype.np_type, copy=False)
-            values = _CArray(verified_values, ctype=self.dtype.c_type, from_buffer=True)
-        else:
-            values = _CArray(values, ctype=self.dtype.c_type)
+        indices = _CArray(indices)
+        values = _CArray(values, dtype=self.dtype)
         call(f"GrB_Vector_build_{self.dtype.name}", (self, indices, values, _CScalar(n), dup_op))
 
         # Check for duplicates when dup_op was not provided
@@ -254,31 +243,13 @@ class Vector(BaseType):
         """Create a new Vector from the given lists of indices and values.  If
         size is not provided, it is computed from the max index found.
         """
-        iarr = indices
-        varr = values
-        if not isinstance(iarr, np.ndarray):
-            if not isinstance(indices, (list, tuple)):
-                indices = tuple(indices)
-            iarr = np.array(indices)
-        if not isinstance(varr, np.ndarray):
-            if not isinstance(values, (list, tuple)):
-                values = tuple(values)
-            varr = np.array(values)
-
-        if dtype is None:
-            if len(varr) <= 0:
-                raise ValueError("No values provided. Unable to determine type.")
-            dtype = varr.dtype
-            if dtype == object:
-                raise ValueError("Unable to convert values to a usable dtype")
-        dtype = lookup_dtype(dtype)
+        indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
+        values, dtype = values_to_numpy_buffer(values, dtype)
         # Compute size if not provided
         if size is None:
-            if len(iarr) <= 0:
+            if len(indices) == 0:
                 raise ValueError("No indices provided. Unable to infer size.")
-            size = int(iarr.max() + 1)
-        if len(iarr) > 0 and "int" not in iarr.dtype.name:
-            raise ValueError(f"indices must be integers, not {iarr.dtype.name}")
+            size = int(indices.max() + 1)
         # Create the new vector
         w = cls.new(dtype, size, name=name)
         # Add the data
@@ -615,7 +586,7 @@ class Vector(BaseType):
         def __init__(self, parent):
             self._parent = parent
 
-        def fast_export(self):
+        def export(self):
             """
             GxB_Vector_export
 
@@ -626,13 +597,13 @@ class Vector(BaseType):
 
             To reimport the Vector:
             ```
-            pieces = v.fast_export()
+            pieces = v.export()
             v2 = Vector.fast_import(**pieces)
             ```
 
             The underlying GraphBLAS object transfers ownership to numpy,
             disallowing further access. The caller should delete or stop using
-            the Vector after calling `fast_export`.
+            the Vector after calling `export`.
             """
             dtype = np.dtype(self._parent.dtype.np_type)
             index_dtype = np.dtype(np.uint64)
@@ -666,7 +637,7 @@ class Vector(BaseType):
             }
 
         @classmethod
-        def fast_import(
+        def import_any(
             cls, *, size, indices, values, name=None, jumbled=True, nvals
         ):  # TODO: understand nvals
             """
@@ -675,7 +646,7 @@ class Vector(BaseType):
             Returns a new Vector created from the pieces.
 
             The new Vector uses the underlying buffer of the input arrays.
-            The caller should delete or stop using the input arrays after calling `fast_import`.
+            The caller should delete or stop using the input arrays after calling `import_any`.
             """
             vhandle = ffi_new("GrB_Vector*")
             dtype = lookup_dtype(values.dtype)

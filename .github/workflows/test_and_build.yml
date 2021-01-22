@@ -44,7 +44,7 @@ jobs:
           python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
           python setup.py develop
       - name: Optional pygraphblas
-        if: contains(${{ matrix.testopts }}, "pygraphblas")
+        if: contains(matrix.testopts, "pygraphblas")
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas

@@ -45,7 +45,7 @@ setup(
     setup_requires=["cffi>=1.0.0", "pytest-runner"],
     cffi_modules=["grblas/backends/suitesparse/build.py:ffibuilder"],
     python_requires=">=3.7",
-    install_requires=["cffi>=1.0.0", "numpy>=1.15", "numba"],
+    install_requires=["cffi>=1.0.0", "numpy>=1.15", "numba", "cython"],
     tests_require=["pytest", "pandas"],
     license="Apache License 2.0",
     keywords=["graphblas", "graph", "sparse", "matrix", "lagraph", "suitesparse"],

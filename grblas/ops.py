@@ -6,8 +6,9 @@ from collections.abc import Mapping
 from functools import lru_cache
 from types import FunctionType, ModuleType
 from . import ffi, lib, unary, binary, monoid, semiring
-from .dtypes import libget, lookup_dtype, unify, INT8, _sample_values
+from .dtypes import lookup_dtype, unify, INT8, _sample_values
 from .exceptions import UdfParseError, check_status
+from .utils import libget
 
 ffi_new = ffi.new
 UNKNOWN_OPCLASS = "UnknownOpClass"

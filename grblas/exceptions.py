@@ -1,5 +1,5 @@
 from . import ffi, lib
-from .dtypes import libget
+from .utils import libget
 
 
 class GrblasException(Exception):

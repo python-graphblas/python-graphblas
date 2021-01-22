@@ -27,6 +27,7 @@ _SPECIAL_ATTRS = {
     "vector",
     "scalar",
     "tests",
+    "utils",
 }
 
 
