@@ -639,9 +639,31 @@ def test_del(capsys):
 
 def test_import_export(v):
     v1 = v.dup()
-    k = v1.ss.export()
+    k = v1.ss.export("sparse")
     assert k["size"] == 7
     assert (k["indices"] == [1, 3, 4, 6]).all()
     assert (k["values"] == [1, 1, 2, 0]).all()
     w1 = Vector.ss.import_any(**k)
     assert w1.isequal(v)
+
+    v2 = v.dup()
+    k = v2.ss.export("bitmap")
+    assert k["nvals"] == 4
+    assert len(k["bitmap"]) == 7
+    assert (k["bitmap"] == [0, 1, 0, 1, 1, 0, 1]).all()
+    assert (k["values"][k["bitmap"]] == [1, 1, 2, 0]).all()
+    w2 = Vector.ss.import_any(**k)
+    assert w2.isequal(v)
+
+    v3 = Vector.from_values([0, 1, 2], [1, 3, 5])
+    v3_copy = v3.dup()
+    k = v3.ss.export("full")
+    assert (k["values"] == [1, 3, 5]).all()
+    w3 = Vector.ss.import_any(**k)
+    assert w3.isequal(v3_copy)
+
+    v4 = v.dup()
+    k = v4.ss.export()
+    assert k["format"] in {"sparse", "bitmap", "full"}
+    w4 = Vector.ss.import_any(**k)
+    assert w4.isequal(v)

@@ -1025,21 +1025,38 @@ class Matrix(BaseType):
                 parent = self._parent
             else:
                 parent = self._parent.dup()
-            dtype = np.dtype(self._parent.dtype.np_type)
+            dtype = np.dtype(parent.dtype.np_type)
             index_dtype = np.dtype(np.uint64)
 
             if format is None:
                 # Determine current format
-                hyper_ptr = ffi_new("bool*")
                 format_ptr = ffi_new("int*")
-                call("GxB_Matrix_Option_get", (parent, lib.GxB_IS_HYPER, hyper_ptr))
-                call("GxB_Matrix_Option_get", (parent, lib.GxB_FORMAT, format_ptr))
-                # TODO: get more options to determine other if bitmap or full
-                if hyper_ptr[0]:
-                    format = "hypercsc" if format_ptr[0] == lib.GxB_BY_COL else "hypercsr"
+                sparsity_ptr = ffi_new("int*")
+                check_status(
+                    lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, format_ptr),
+                    parent,
+                )
+                check_status(
+                    lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
+                    parent,
+                )
+                sparsity_status = sparsity_ptr[0]
+                if sparsity_status == lib.GxB_HYPERSPARSE:
+                    format = "hypercs"
+                elif sparsity_status == lib.GxB_SPARSE:
+                    format = "cs"
+                elif sparsity_status == lib.GxB_BITMAP:
+                    format = "bitmap"
+                elif sparsity_status == lib.GxB_FULL:
+                    format = "full"
+                else:  # pragma: no cover
+                    raise NotImplementedError(f"Unknown sparsity status: {sparsity_status}")
+                if format_ptr[0] == lib.GxB_BY_COL:
+                    format = f"{format}c"
                 else:
-                    format = "csc" if format_ptr[0] == lib.GxB_BY_COL else "csr"
-            format = format.lower()
+                    format = f"{format}r"
+            else:
+                format = format.lower()
 
             mhandle = ffi_new("GrB_Matrix*", parent._carg)
             type_ = ffi_new("GrB_Type*")
@@ -1691,6 +1708,7 @@ class Matrix(BaseType):
             values,
             take_ownership=False,
             format=None,
+            dtype=None,
             name=None,
             # CSR/CSC/HyperCSR/HyperCSC
             indptr=None,
@@ -1761,8 +1779,9 @@ class Matrix(BaseType):
                 else:
                     # Assume row-oriented
                     format = "fullr"
+            else:
+                format = format.lower()
 
-            format = format.lower()
             if format == "csr":
                 return cls.import_csr(
                     nrows=nrows,
@@ -1771,7 +1790,8 @@ class Matrix(BaseType):
                     values=values,
                     col_indices=col_indices,
                     sorted_index=sorted_index,
-                    format=format,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
                     name=name,
                 )
             elif format == "csc":
@@ -1782,7 +1802,8 @@ class Matrix(BaseType):
                     values=values,
                     row_indices=row_indices,
                     sorted_index=sorted_index,
-                    format=format,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
                     name=name,
                 )
             elif format == "hypercsr":
@@ -1794,7 +1815,8 @@ class Matrix(BaseType):
                     values=values,
                     col_indices=col_indices,
                     sorted_index=sorted_index,
-                    format=format,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
                     name=name,
                 )
             elif format == "hypercsc":
@@ -1806,7 +1828,8 @@ class Matrix(BaseType):
                     values=values,
                     row_indices=row_indices,
                     sorted_index=sorted_index,
-                    format=format,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
                     name=name,
                 )
             elif format == "bitmapr":
@@ -1816,7 +1839,8 @@ class Matrix(BaseType):
                     values=values,
                     nvals=nvals,
                     bitmap=bitmap,
-                    format=format,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
                     name=name,
                 )
             elif format == "bitmapc":
@@ -1826,7 +1850,8 @@ class Matrix(BaseType):
                     values=values,
                     nvals=nvals,
                     bitmap=bitmap,
-                    format=format,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
                     name=name,
                 )
             elif format == "fullr":
@@ -1834,7 +1859,8 @@ class Matrix(BaseType):
                     nrows=nrows,
                     ncols=ncols,
                     values=values,
-                    format=format,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
                     name=name,
                 )
             elif format == "fullc":
@@ -1842,7 +1868,8 @@ class Matrix(BaseType):
                     nrows=nrows,
                     ncols=ncols,
                     values=values,
-                    format=format,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
                     name=name,
                 )
             else:

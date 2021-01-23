@@ -1,0 +1,70 @@
+diff --git a/grblas/backends/suitesparse/suitesparse_graphblas_4.0.1.h b/grblas/backends/suitesparse/suitesparse_graphblas_4.0.1.h
+index 1ebfaeb..aac9a9f 100644
+--- a/grblas/backends/suitesparse/suitesparse_graphblas_4.0.1.h
++++ b/grblas/backends/suitesparse/suitesparse_graphblas_4.0.1.h
+88c88
+< #define GxB_STDC_VERSION 199001L
+---
+> /* #define GxB_STDC_VERSION 199001L */
+100,101c100,101
+<     extern "C++" {
+<         // C++ complex types
+---
+> /*    extern "C++" { */
+> /*        // C++ complex types */
+105,107c105,107
+<         typedef std::complex<float>  GxB_FC32_t ;
+<         typedef std::complex<double> GxB_FC64_t ;
+<     }
+---
+> /*        typedef std::complex<float>  GxB_FC32_t ; */
+> /*        typedef std::complex<double> GxB_FC64_t ; */
+> /*    } */
+114c114
+<     // Microsoft Windows complex types
+---
+> /*    // Microsoft Windows complex types */
+117,118c117,118
+<     typedef _Fcomplex GxB_FC32_t ;
+<     typedef _Dcomplex GxB_FC64_t ;
+---
+> /*    typedef _Fcomplex GxB_FC32_t ; */
+> /*    typedef _Dcomplex GxB_FC64_t ; */
+125c125
+<     // ANSI C11 complex types
+---
+> /*    // ANSI C11 complex types */
+128,129c128,129
+<     typedef float  complex GxB_FC32_t ;
+<     typedef double complex GxB_FC64_t ;
+---
+> /*    typedef float  complex GxB_FC32_t ; */
+> /*    typedef double complex GxB_FC64_t ; */
+132c132
+<         // gcc 6.2 on the the Mac doesn't #define CMPLX
+---
+> /*        // gcc 6.2 on the the Mac doesn't #define CMPLX */
+136c136
+<         // use the ANSI C11 CMPLX macro
+---
+> /*        // use the ANSI C11 CMPLX macro */
+141c141
+<         // gcc 6.2 on the the Mac doesn't #define CMPLXF
+---
+> /*        // gcc 6.2 on the the Mac doesn't #define CMPLXF */
+145c145
+<         // use the ANSI C11 CMPLX macro
+---
+> /*        // use the ANSI C11 CMPLX macro */
+150a151,153
+> typedef float _Complex GxB_FC32_t ;
+> typedef double _Complex GxB_FC64_t ;
+> 
+3707c3710
+< /* #define GxB_ANY_SPARSITY (GxB_HYPERSPARSE + GxB_SPARSE + GxB_BITMAP + GxB_FULL) */
+---
+> #define GxB_ANY_SPARSITY 15  /* (GxB_HYPERSPARSE + GxB_SPARSE + GxB_BITMAP + GxB_FULL) */
+3710c3713
+< /* #define GxB_AUTO_SPARSITY GxB_ANY_SPARSITY */
+---
+> #define GxB_AUTO_SPARSITY 15  /* GxB_ANY_SPARSITY */

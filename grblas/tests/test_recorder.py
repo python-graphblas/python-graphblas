@@ -32,6 +32,7 @@ def test_record_novalue():
     rec = gb.Recorder(record=True)
     A[0, 0].new(name="c")
     assert rec.data == ["GrB_Matrix_extractElement_INT64(&c, A, 0, 0);"]
+    rec.stop()
 
 
 def test_record_repr():
@@ -70,6 +71,7 @@ def test_record_repr():
         "  GrB_Matrix_extractElement_INT64(&c18, A, 0, 0);\n"
         "  GrB_Matrix_extractElement_INT64(&c19, A, 0, 0);"
     )
+    rec.stop()
 
 
 def test_record_repr_markdown():

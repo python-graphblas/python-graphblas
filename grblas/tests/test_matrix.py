@@ -1322,6 +1322,11 @@ def test_import_export(A):
     B6 = Matrix.ss.import_any(**d)
     assert B6.isequal(A)
 
+    A7 = A.dup()
+    d = A7.ss.export()
+    B7 = Matrix.ss.import_any(**d)
+    assert B7.isequal(A)
+
     C = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
     C1 = C.dup()
     d = C1.ss.export("fullr")

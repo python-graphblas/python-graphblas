@@ -3613,7 +3613,7 @@ GrB_DESC_RSCT0T1 ; // GrB_REPLACE  GrB_STRUCTURE  GrB_COMP   GrB_TRAN  GrB_TRAN
 //      GxB_Global_Option_set:  sets an option for all future matrices
 //      GxB_Global_Option_get:  queries current option for all future matrices
 
-/* #define GxB_HYPER 0     // (deprecated, use GxB_HYPER_SWITCH) */
+#define GxB_HYPER 0     // (deprecated, use GxB_HYPER_SWITCH)
 
 typedef enum            // for global options or matrix options
 {
@@ -3698,19 +3698,19 @@ extern const GxB_Format_Value GxB_FORMAT_DEFAULT ;
 extern const double GxB_HYPER_DEFAULT ;
 
 // GxB_SPARSITY_CONTROL can be any sum or bitwise OR of these 4 values:
-/* #define GxB_HYPERSPARSE 1   // store matrix in hypersparse form */
-/* #define GxB_SPARSE      2   // store matrix as sparse form (compressed vector) */
-/* #define GxB_BITMAP      4   // store matrix as a bitmap */
-/* #define GxB_FULL        8   // store matrix as full; all entries must be present */
+#define GxB_HYPERSPARSE 1   // store matrix in hypersparse form
+#define GxB_SPARSE      2   // store matrix as sparse form (compressed vector)
+#define GxB_BITMAP      4   // store matrix as a bitmap
+#define GxB_FULL        8   // store matrix as full; all entries must be present
 
 // size of b array for GxB_set/get (GxB_BITMAP_SWITCH, b)
-/* #define GxB_NBITMAP_SWITCH 8    // size of bitmap_switch parameter array */
+#define GxB_NBITMAP_SWITCH 8    // size of bitmap_switch parameter array
 
 // any sparsity value:
-/* #define GxB_ANY_SPARSITY (GxB_HYPERSPARSE + GxB_SPARSE + GxB_BITMAP + GxB_FULL) */
+#define GxB_ANY_SPARSITY 15  /* (GxB_HYPERSPARSE + GxB_SPARSE + GxB_BITMAP + GxB_FULL) */
 
 // the default sparsity control is any format:
-/* #define GxB_AUTO_SPARSITY GxB_ANY_SPARSITY */
+#define GxB_AUTO_SPARSITY 15  /* GxB_ANY_SPARSITY */
 
 // GxB_Matrix_Option_set (A, GxB_SPARSITY_CONTROL, scontrol) provides hints
 // about which data structure GraphBLAS should use for the matrix A:
