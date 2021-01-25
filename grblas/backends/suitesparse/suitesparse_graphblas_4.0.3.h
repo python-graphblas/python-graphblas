@@ -179,10 +179,10 @@ typedef double _Complex GxB_FC64_t ;
 
 // The version of this implementation, and the GraphBLAS API version:
 /* #define GxB_IMPLEMENTATION_NAME "SuiteSparse:GraphBLAS" */
-/* #define GxB_IMPLEMENTATION_DATE "Jan 4, 2021" */
+/* #define GxB_IMPLEMENTATION_DATE "Jan 19, 2021" */
 #define GxB_IMPLEMENTATION_MAJOR 4
 #define GxB_IMPLEMENTATION_MINOR 0
-#define GxB_IMPLEMENTATION_SUB   1
+#define GxB_IMPLEMENTATION_SUB   3
 /* #define GxB_SPEC_DATE "Sept 25, 2019" */
 #define GxB_SPEC_MAJOR 1
 #define GxB_SPEC_MINOR 3
@@ -771,18 +771,18 @@ extern GrB_BinaryOp
     // the same type.  The value z is either 1 for true or 0 for false, but it
     // is a value with the same type as x and y.
 
-    // z = (x == y)     z = (x != y)        
-    GxB_ISEQ_BOOL,      GxB_ISNE_BOOL,      
-    GxB_ISEQ_INT8,      GxB_ISNE_INT8,      
-    GxB_ISEQ_INT16,     GxB_ISNE_INT16,     
-    GxB_ISEQ_INT32,     GxB_ISNE_INT32,     
-    GxB_ISEQ_INT64,     GxB_ISNE_INT64,     
-    GxB_ISEQ_UINT8,     GxB_ISNE_UINT8,     
-    GxB_ISEQ_UINT16,    GxB_ISNE_UINT16,    
-    GxB_ISEQ_UINT32,    GxB_ISNE_UINT32,    
-    GxB_ISEQ_UINT64,    GxB_ISNE_UINT64,    
-    GxB_ISEQ_FP32,      GxB_ISNE_FP32,      
-    GxB_ISEQ_FP64,      GxB_ISNE_FP64,      
+    // z = (x == y)     z = (x != y)
+    GxB_ISEQ_BOOL,      GxB_ISNE_BOOL,
+    GxB_ISEQ_INT8,      GxB_ISNE_INT8,
+    GxB_ISEQ_INT16,     GxB_ISNE_INT16,
+    GxB_ISEQ_INT32,     GxB_ISNE_INT32,
+    GxB_ISEQ_INT64,     GxB_ISNE_INT64,
+    GxB_ISEQ_UINT8,     GxB_ISNE_UINT8,
+    GxB_ISEQ_UINT16,    GxB_ISNE_UINT16,
+    GxB_ISEQ_UINT32,    GxB_ISNE_UINT32,
+    GxB_ISEQ_UINT64,    GxB_ISNE_UINT64,
+    GxB_ISEQ_FP32,      GxB_ISNE_FP32,
+    GxB_ISEQ_FP64,      GxB_ISNE_FP64,
     // complex:
     GxB_ISEQ_FC32,      GxB_ISNE_FC32,
     GxB_ISEQ_FC64,      GxB_ISNE_FC64,
@@ -7503,8 +7503,8 @@ extern GrB_Semiring
 // 64 bitwise semirings
 //------------------------------------------------------------------------------
 
-    // monoids: (BOR, BAND, BXOR, BXNOR) x 
-    // mult:    (BOR, BAND, BXOR, BXNOR) x 
+    // monoids: (BOR, BAND, BXOR, BXNOR) x
+    // mult:    (BOR, BAND, BXOR, BXNOR) x
     // types:   (UINT8, UINT16, UINT32, UINT64)
 
     GxB_BOR_BOR_UINT8      , GxB_BOR_BOR_UINT16     , GxB_BOR_BOR_UINT32     , GxB_BOR_BOR_UINT64     ,
@@ -7599,7 +7599,7 @@ extern GrB_Semiring
     // MIN_PLUS, MIN_TIMES, MIN_FIRST, MIN_SECOND, MIN_MAX,
     // MAX_PLUS, MAX_TIMES, MAX_FIRST, MAX_SECOND, MAX_MIN
 
-// and 4 semirings for boolean only: 
+// and 4 semirings for boolean only:
 
     // LOR_LAND, LAND_LOR, LXOR_LAND, LXNOR_LOR.
 
@@ -7620,8 +7620,8 @@ extern GrB_Semiring
     GrB_PLUS_TIMES_SEMIRING_UINT16,     // GxB_PLUS_TIMES_UINT16
     GrB_PLUS_TIMES_SEMIRING_UINT32,     // GxB_PLUS_TIMES_UINT32
     GrB_PLUS_TIMES_SEMIRING_UINT64,     // GxB_PLUS_TIMES_UINT64
-    GrB_PLUS_TIMES_SEMIRING_FP32,       // GxB_PLUS_TIMES_FP32  
-    GrB_PLUS_TIMES_SEMIRING_FP64,       // GxB_PLUS_TIMES_FP64  
+    GrB_PLUS_TIMES_SEMIRING_FP32,       // GxB_PLUS_TIMES_FP32
+    GrB_PLUS_TIMES_SEMIRING_FP64,       // GxB_PLUS_TIMES_FP64
 
     // PLUS_MIN semirings for all 10 real, non-boolean types:
     GrB_PLUS_MIN_SEMIRING_INT8,         // GxB_PLUS_MIN_INT8
@@ -7632,8 +7632,8 @@ extern GrB_Semiring
     GrB_PLUS_MIN_SEMIRING_UINT16,       // GxB_PLUS_MIN_UINT16
     GrB_PLUS_MIN_SEMIRING_UINT32,       // GxB_PLUS_MIN_UINT32
     GrB_PLUS_MIN_SEMIRING_UINT64,       // GxB_PLUS_MIN_UINT64
-    GrB_PLUS_MIN_SEMIRING_FP32,         // GxB_PLUS_MIN_FP32  
-    GrB_PLUS_MIN_SEMIRING_FP64,         // GxB_PLUS_MIN_FP64  
+    GrB_PLUS_MIN_SEMIRING_FP32,         // GxB_PLUS_MIN_FP32
+    GrB_PLUS_MIN_SEMIRING_FP64,         // GxB_PLUS_MIN_FP64
 
     //--------------------------------------------------------------------------
     // 50 semirings with MIN monoids
@@ -7648,8 +7648,8 @@ extern GrB_Semiring
     GrB_MIN_PLUS_SEMIRING_UINT16,       // GxB_MIN_PLUS_UINT16
     GrB_MIN_PLUS_SEMIRING_UINT32,       // GxB_MIN_PLUS_UINT32
     GrB_MIN_PLUS_SEMIRING_UINT64,       // GxB_MIN_PLUS_UINT64
-    GrB_MIN_PLUS_SEMIRING_FP32,         // GxB_MIN_PLUS_FP32  
-    GrB_MIN_PLUS_SEMIRING_FP64,         // GxB_MIN_PLUS_FP64  
+    GrB_MIN_PLUS_SEMIRING_FP32,         // GxB_MIN_PLUS_FP32
+    GrB_MIN_PLUS_SEMIRING_FP64,         // GxB_MIN_PLUS_FP64
 
     // MIN_TIMES semirings for all 10 real, non-boolean types:
     GrB_MIN_TIMES_SEMIRING_INT8,        // GxB_MIN_TIMES_INT8
@@ -7660,8 +7660,8 @@ extern GrB_Semiring
     GrB_MIN_TIMES_SEMIRING_UINT16,      // GxB_MIN_TIMES_UINT16
     GrB_MIN_TIMES_SEMIRING_UINT32,      // GxB_MIN_TIMES_UINT32
     GrB_MIN_TIMES_SEMIRING_UINT64,      // GxB_MIN_TIMES_UINT64
-    GrB_MIN_TIMES_SEMIRING_FP32,        // GxB_MIN_TIMES_FP32  
-    GrB_MIN_TIMES_SEMIRING_FP64,        // GxB_MIN_PLUS_FP64  
+    GrB_MIN_TIMES_SEMIRING_FP32,        // GxB_MIN_TIMES_FP32
+    GrB_MIN_TIMES_SEMIRING_FP64,        // GxB_MIN_PLUS_FP64
 
     // MIN_FIRST semirings for all 10 real, non-boolean types:
     GrB_MIN_FIRST_SEMIRING_INT8,        // GxB_MIN_FIRST_INT8
@@ -7672,8 +7672,8 @@ extern GrB_Semiring
     GrB_MIN_FIRST_SEMIRING_UINT16,      // GxB_MIN_FIRST_UINT16
     GrB_MIN_FIRST_SEMIRING_UINT32,      // GxB_MIN_FIRST_UINT32
     GrB_MIN_FIRST_SEMIRING_UINT64,      // GxB_MIN_FIRST_UINT64
-    GrB_MIN_FIRST_SEMIRING_FP32,        // GxB_MIN_FIRST_FP32  
-    GrB_MIN_FIRST_SEMIRING_FP64,        // GxB_MIN_FIRST_FP64  
+    GrB_MIN_FIRST_SEMIRING_FP32,        // GxB_MIN_FIRST_FP32
+    GrB_MIN_FIRST_SEMIRING_FP64,        // GxB_MIN_FIRST_FP64
 
     // MIN_SECOND semirings for all 10 real, non-boolean types:
     GrB_MIN_SECOND_SEMIRING_INT8,       // GxB_MIN_SECOND_INT8
@@ -7684,8 +7684,8 @@ extern GrB_Semiring
     GrB_MIN_SECOND_SEMIRING_UINT16,     // GxB_MIN_SECOND_UINT16
     GrB_MIN_SECOND_SEMIRING_UINT32,     // GxB_MIN_SECOND_UINT32
     GrB_MIN_SECOND_SEMIRING_UINT64,     // GxB_MIN_SECOND_UINT64
-    GrB_MIN_SECOND_SEMIRING_FP32,       // GxB_MIN_SECOND_FP32  
-    GrB_MIN_SECOND_SEMIRING_FP64,       // GxB_MIN_SECOND_FP64  
+    GrB_MIN_SECOND_SEMIRING_FP32,       // GxB_MIN_SECOND_FP32
+    GrB_MIN_SECOND_SEMIRING_FP64,       // GxB_MIN_SECOND_FP64
 
     // MIN_MAX semirings for all 10 real, non-boolean types:
     GrB_MIN_MAX_SEMIRING_INT8,          // GxB_MIN_MAX_INT8
@@ -7696,8 +7696,8 @@ extern GrB_Semiring
     GrB_MIN_MAX_SEMIRING_UINT16,        // GxB_MIN_MAX_UINT16
     GrB_MIN_MAX_SEMIRING_UINT32,        // GxB_MIN_MAX_UINT32
     GrB_MIN_MAX_SEMIRING_UINT64,        // GxB_MIN_MAX_UINT64
-    GrB_MIN_MAX_SEMIRING_FP32,          // GxB_MIN_MAX_FP32  
-    GrB_MIN_MAX_SEMIRING_FP64,          // GxB_MIN_MAX_FP64  
+    GrB_MIN_MAX_SEMIRING_FP32,          // GxB_MIN_MAX_FP32
+    GrB_MIN_MAX_SEMIRING_FP64,          // GxB_MIN_MAX_FP64
 
     //--------------------------------------------------------------------------
     // 50 semirings with MAX monoids
@@ -7712,8 +7712,8 @@ extern GrB_Semiring
     GrB_MAX_PLUS_SEMIRING_UINT16,       // GxB_MAX_PLUS_UINT16
     GrB_MAX_PLUS_SEMIRING_UINT32,       // GxB_MAX_PLUS_UINT32
     GrB_MAX_PLUS_SEMIRING_UINT64,       // GxB_MAX_PLUS_UINT64
-    GrB_MAX_PLUS_SEMIRING_FP32,         // GxB_MAX_PLUS_FP32  
-    GrB_MAX_PLUS_SEMIRING_FP64,         // GxB_MAX_PLUS_FP64  
+    GrB_MAX_PLUS_SEMIRING_FP32,         // GxB_MAX_PLUS_FP32
+    GrB_MAX_PLUS_SEMIRING_FP64,         // GxB_MAX_PLUS_FP64
 
     // MAX_TIMES semirings for all 10 real, non-boolean types:
     GrB_MAX_TIMES_SEMIRING_INT8,        // GxB_MAX_TIMES_INT8
@@ -7724,8 +7724,8 @@ extern GrB_Semiring
     GrB_MAX_TIMES_SEMIRING_UINT16,      // GxB_MAX_TIMES_UINT16
     GrB_MAX_TIMES_SEMIRING_UINT32,      // GxB_MAX_TIMES_UINT32
     GrB_MAX_TIMES_SEMIRING_UINT64,      // GxB_MAX_TIMES_UINT64
-    GrB_MAX_TIMES_SEMIRING_FP32,        // GxB_MAX_TIMES_FP32  
-    GrB_MAX_TIMES_SEMIRING_FP64,        // GxB_MAX_TIMES_FP64  
+    GrB_MAX_TIMES_SEMIRING_FP32,        // GxB_MAX_TIMES_FP32
+    GrB_MAX_TIMES_SEMIRING_FP64,        // GxB_MAX_TIMES_FP64
 
     // MAX_FIRST semirings for all 10 real, non-boolean types:
     GrB_MAX_FIRST_SEMIRING_INT8,        // GxB_MAX_FIRST_INT8
@@ -7736,8 +7736,8 @@ extern GrB_Semiring
     GrB_MAX_FIRST_SEMIRING_UINT16,      // GxB_MAX_FIRST_UINT16
     GrB_MAX_FIRST_SEMIRING_UINT32,      // GxB_MAX_FIRST_UINT32
     GrB_MAX_FIRST_SEMIRING_UINT64,      // GxB_MAX_FIRST_UINT64
-    GrB_MAX_FIRST_SEMIRING_FP32,        // GxB_MAX_FIRST_FP32  
-    GrB_MAX_FIRST_SEMIRING_FP64,        // GxB_MAX_FIRST_FP64  
+    GrB_MAX_FIRST_SEMIRING_FP32,        // GxB_MAX_FIRST_FP32
+    GrB_MAX_FIRST_SEMIRING_FP64,        // GxB_MAX_FIRST_FP64
 
     // MAX_SECOND semirings for all 10 real, non-boolean types:
     GrB_MAX_SECOND_SEMIRING_INT8,       // GxB_MAX_SECOND_INT8
@@ -7748,8 +7748,8 @@ extern GrB_Semiring
     GrB_MAX_SECOND_SEMIRING_UINT16,     // GxB_MAX_SECOND_UINT16
     GrB_MAX_SECOND_SEMIRING_UINT32,     // GxB_MAX_SECOND_UINT32
     GrB_MAX_SECOND_SEMIRING_UINT64,     // GxB_MAX_SECOND_UINT64
-    GrB_MAX_SECOND_SEMIRING_FP32,       // GxB_MAX_SECOND_FP32  
-    GrB_MAX_SECOND_SEMIRING_FP64,       // GxB_MAX_SECOND_FP64  
+    GrB_MAX_SECOND_SEMIRING_FP32,       // GxB_MAX_SECOND_FP32
+    GrB_MAX_SECOND_SEMIRING_FP64,       // GxB_MAX_SECOND_FP64
 
     // MAX_MIN semirings for all 10 real, non-boolean types:
     GrB_MAX_MIN_SEMIRING_INT8,          // GxB_MAX_MIN_INT8
@@ -7760,8 +7760,8 @@ extern GrB_Semiring
     GrB_MAX_MIN_SEMIRING_UINT16,        // GxB_MAX_MIN_UINT16
     GrB_MAX_MIN_SEMIRING_UINT32,        // GxB_MAX_MIN_UINT32
     GrB_MAX_MIN_SEMIRING_UINT64,        // GxB_MAX_MIN_UINT64
-    GrB_MAX_MIN_SEMIRING_FP32,          // GxB_MAX_MIN_FP32  
-    GrB_MAX_MIN_SEMIRING_FP64,          // GxB_MAX_MIN_FP64  
+    GrB_MAX_MIN_SEMIRING_FP32,          // GxB_MAX_MIN_FP32
+    GrB_MAX_MIN_SEMIRING_FP64,          // GxB_MAX_MIN_FP64
 
     //--------------------------------------------------------------------------
     // 4 boolean semirings:
