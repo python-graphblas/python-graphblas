@@ -7,7 +7,7 @@ from functools import lru_cache
 from types import FunctionType, ModuleType
 from . import ffi, lib, unary, binary, monoid, semiring
 from .dtypes import lookup_dtype, unify, INT8, _sample_values
-from .exceptions import UdfParseError, check_status
+from .exceptions import UdfParseError, check_status_carg
 from .utils import libget
 
 ffi_new = ffi.new
@@ -412,7 +412,7 @@ class UnaryOp(OpBase):
 
                 unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
                 new_unary = ffi_new("GrB_UnaryOp*")
-                check_status(
+                check_status_carg(
                     lib.GrB_UnaryOp_new(
                         new_unary, unary_wrapper.cffi, ret_type.gb_obj, type_.gb_obj
                     ),
@@ -563,7 +563,7 @@ class BinaryOp(OpBase):
 
                 binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
                 new_binary = ffi_new("GrB_BinaryOp*")
-                check_status(
+                check_status_carg(
                     lib.GrB_BinaryOp_new(
                         new_binary,
                         binary_wrapper.cffi,
@@ -685,7 +685,9 @@ class Monoid(OpBase):
             new_monoid = ffi_new("GrB_Monoid*")
             func = libget(f"GrB_Monoid_new_{type_.name}")
             zcast = ffi.cast(type_.c_type, identity)
-            check_status(func(new_monoid, binaryop[type_].gb_obj, zcast), "Monoid", new_monoid[0])
+            check_status_carg(
+                func(new_monoid, binaryop[type_].gb_obj, zcast), "Monoid", new_monoid[0]
+            )
             op = TypedUserMonoid(
                 name, type_.name, ret_type, new_monoid[0], binaryop[type_], identity
             )
@@ -765,7 +767,7 @@ class Semiring(OpBase):
                 continue
             binary_out = lookup_dtype(binary_out)
             new_semiring = ffi_new("GrB_Semiring*")
-            check_status(
+            check_status_carg(
                 lib.GrB_Semiring_new(new_semiring, monoid[binary_out].gb_obj, binary_func.gb_obj),
                 "Semiring",
                 new_semiring,

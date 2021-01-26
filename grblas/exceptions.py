@@ -1,5 +1,5 @@
 from . import ffi, lib
-from .utils import libget
+from .utils import libget, _Pointer
 
 
 class GrblasException(Exception):
@@ -85,23 +85,39 @@ GrB_SUCCESS = lib.GrB_SUCCESS
 GrB_NO_VALUE = lib.GrB_NO_VALUE
 
 
-def check_status(response_code, args_or_name, carg_or_None=None):
-    if response_code != GrB_SUCCESS:
-        if response_code == GrB_NO_VALUE:
-            return NoValue
-        if carg_or_None is not None:
-            type_name = args_or_name
-            carg = carg_or_None
-        else:
-            if type(args_or_name) in {tuple, list}:
-                arg = args_or_name[0]
-            else:
-                arg = args_or_name
-            type_name = type(arg).__name__
-            carg = arg._carg
+def check_status(response_code, args):
+    if response_code == GrB_SUCCESS:
+        return
+    if response_code == GrB_NO_VALUE:
+        return NoValue
+    if type(args) is list:
+        arg = args[0]
+    else:
+        arg = args
+    if type(arg) is _Pointer:
+        arg = arg.val
+    type_name = type(arg).__name__
+    carg = arg._carg
+    return check_status_carg(response_code, type_name, carg)
 
+
+def check_status_carg(response_code, type_name, carg):
+    if response_code == GrB_SUCCESS:
+        return
+    if response_code == GrB_NO_VALUE:
+        return NoValue
+    try:
         error_func = libget(f"GrB_{type_name}_error")
+    except AttributeError:
+        text = (
+            f"Unable to get the error string for type {type_name}.  "
+            "This is most likely a bug in grblas.  Please report this as an issue at:\n"
+            "    https://github.com/metagraph-dev/grblas/issues\n"
+            "Thanks (and sorry)!"
+        )
+        raise ValueError(text)
+    else:
         string = ffi.new("char**")
         error_func(string, carg)
         text = ffi.string(string[0]).decode()
-        raise _error_code_lookup[response_code](text)
+    raise _error_code_lookup[response_code](text)

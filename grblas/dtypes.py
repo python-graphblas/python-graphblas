@@ -42,7 +42,7 @@ UINT32 = DataType("UINT32", lib.GrB_UINT32, "GrB_UINT32", "uint32_t", numba.type
 INT64 = DataType("INT64", lib.GrB_INT64, "GrB_INT64", "int64_t", numba.types.int64, np.int64)
 UINT64 = DataType("UINT64", lib.GrB_UINT64, "GrB_UINT64", "uint64_t", numba.types.uint64, np.uint64)
 # _Index (like UINT64) is for internal use only and shouldn't be exposed to the user
-_INDEX = DataType("INDEX", lib.GrB_UINT64, "GrB_Index", "GrB_Index", numba.types.uint64, np.uint64)
+_INDEX = DataType("UINT64", lib.GrB_UINT64, "GrB_Index", "GrB_Index", numba.types.uint64, np.uint64)
 FP32 = DataType("FP32", lib.GrB_FP32, "GrB_FP32", "float", numba.types.float32, np.float32)
 FP64 = DataType("FP64", lib.GrB_FP64, "GrB_FP64", "double", numba.types.float64, np.float64)
 if hasattr(lib, "GxB_FC32"):  # pragma: no cover

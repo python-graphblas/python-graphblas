@@ -2,8 +2,8 @@ import itertools
 import numpy as np
 from . import ffi, lib, backend, binary, monoid, semiring
 from .base import BaseExpression, BaseType, call
-from .dtypes import lookup_dtype, unify, UINT64
-from .exceptions import check_status, NoValue
+from .dtypes import lookup_dtype, unify, _INDEX
+from .exceptions import check_status, check_status_carg, NoValue
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .ops import get_typed_op
@@ -129,15 +129,15 @@ class Matrix(BaseType):
     @property
     def nrows(self):
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, UINT64, name="s_nrows", empty=True)  # Actually GrB_Index dtype
-        call("GrB_Matrix_nrows", (_Pointer(scalar), self))
+        scalar = Scalar(n, _INDEX, name="s_nrows", empty=True)
+        call("GrB_Matrix_nrows", [_Pointer(scalar), self])
         return n[0]
 
     @property
     def ncols(self):
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, UINT64, name="s_ncols", empty=True)  # Actually GrB_Index dtype
-        call("GrB_Matrix_ncols", (_Pointer(scalar), self))
+        scalar = Scalar(n, _INDEX, name="s_ncols", empty=True)
+        call("GrB_Matrix_ncols", [_Pointer(scalar), self])
         return n[0]
 
     @property
@@ -147,8 +147,8 @@ class Matrix(BaseType):
     @property
     def nvals(self):
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, UINT64, name="s_nvals", empty=True)  # Actually GrB_Index dtype
-        call("GrB_Matrix_nvals", (_Pointer(scalar), self))
+        scalar = Scalar(n, _INDEX, name="s_nvals", empty=True)
+        call("GrB_Matrix_nvals", [_Pointer(scalar), self])
         return n[0]
 
     @property
@@ -168,7 +168,7 @@ class Matrix(BaseType):
     def resize(self, nrows, ncols):
         nrows = _CScalar(nrows)
         ncols = _CScalar(ncols)
-        call("GrB_Matrix_resize", (self, nrows, ncols))
+        call("GrB_Matrix_resize", [self, nrows, ncols])
         self._nrows = nrows.scalar.value
         self._ncols = ncols.scalar.value
 
@@ -182,11 +182,11 @@ class Matrix(BaseType):
         columns = _CArray(size=nvals, name="&columns_array")
         values = _CArray(size=nvals, dtype=self.dtype, name="&values_array")
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, UINT64, name="s_nvals", empty=True)  # Actually GrB_Index dtype
+        scalar = Scalar(n, _INDEX, name="s_nvals", empty=True)
         scalar.value = nvals
         call(
             f"GrB_Matrix_extractTuples_{self.dtype.name}",
-            (rows, columns, values, _Pointer(scalar), self),
+            [rows, columns, values, _Pointer(scalar), self],
         )
         values = values.array
         if dtype is not None:
@@ -232,7 +232,7 @@ class Matrix(BaseType):
         values = _CArray(values, dtype=self.dtype)
         call(
             f"GrB_Matrix_build_{self.dtype.name}",
-            (self, rows, columns, values, _CScalar(n), dup_op),
+            [self, rows, columns, values, _CScalar(n), dup_op],
         )
         # Check for duplicates when dup_op was not provided
         if not dup_op_given and self._nvals < n:
@@ -251,7 +251,7 @@ class Matrix(BaseType):
         else:
             new_mat = ffi_new("GrB_Matrix*")
             rv = Matrix(new_mat, self.dtype, name=name)
-            call("GrB_Matrix_dup", (_Pointer(rv), self))
+            call("GrB_Matrix_dup", [_Pointer(rv), self])
         rv._nrows = self._nrows
         rv._ncols = self._ncols
         return rv
@@ -269,7 +269,7 @@ class Matrix(BaseType):
             nrows = _CScalar(nrows)
         if type(ncols) is not _CScalar:
             ncols = _CScalar(ncols)
-        call("GrB_Matrix_new", (_Pointer(rv), dtype, nrows, ncols))
+        call("GrB_Matrix_new", [_Pointer(rv), dtype, nrows, ncols])
         rv._nrows = nrows.scalar.value
         rv._ncols = ncols.scalar.value
         return rv
@@ -298,11 +298,11 @@ class Matrix(BaseType):
         if nrows is None:
             if len(rows) == 0:
                 raise ValueError("No row indices provided. Unable to infer nrows.")
-            nrows = int(rows.max() + 1)
+            nrows = int(rows.max()) + 1
         if ncols is None:
             if len(columns) == 0:
                 raise ValueError("No column indices provided. Unable to infer ncols.")
-            ncols = int(columns.max() + 1)
+            ncols = int(columns.max()) + 1
         # Create the new matrix
         C = cls.new(dtype, nrows, ncols, name=name)
         # Add the data
@@ -483,16 +483,17 @@ class Matrix(BaseType):
             args = [self]
             expr_repr = None
         elif right is None:
-            try:
-                left = _CScalar(left)
-            except TypeError:
-                self._expect_type(
-                    left,
-                    Scalar,
-                    within=method_name,
-                    keyword_name="left",
-                    extra_message="Literal scalars also accepted.",
-                )
+            if type(left) is not Scalar:
+                try:
+                    left = Scalar.from_value(left)
+                except TypeError:
+                    self._expect_type(
+                        left,
+                        Scalar,
+                        within=method_name,
+                        keyword_name="left",
+                        extra_message="Literal scalars also accepted.",
+                    )
             op = get_typed_op(op, self.dtype, left.dtype)
             self._expect_op(
                 op,
@@ -502,19 +503,20 @@ class Matrix(BaseType):
                 extra_message=extra_message,
             )
             cfunc_name = f"GrB_Matrix_apply_BinaryOp1st_{left.dtype}"
-            args = [left, self]
+            args = [_CScalar(left), self]
             expr_repr = "{1.name}.apply({op}, left={0})"
         elif left is None:
-            try:
-                right = _CScalar(right)
-            except TypeError:
-                self._expect_type(
-                    right,
-                    Scalar,
-                    within=method_name,
-                    keyword_name="right",
-                    extra_message="Literal scalars also accepted.",
-                )
+            if type(right) is not Scalar:
+                try:
+                    right = Scalar.from_value(right)
+                except TypeError:
+                    self._expect_type(
+                        right,
+                        Scalar,
+                        within=method_name,
+                        keyword_name="right",
+                        extra_message="Literal scalars also accepted.",
+                    )
             op = get_typed_op(op, self.dtype, right.dtype)
             self._expect_op(
                 op,
@@ -524,7 +526,7 @@ class Matrix(BaseType):
                 extra_message=extra_message,
             )
             cfunc_name = f"GrB_Matrix_apply_BinaryOp2nd_{right.dtype}"
-            args = [self, right]
+            args = [self, _CScalar(right)]
             expr_repr = "{0.name}.apply({op}, right={1})"
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
@@ -605,7 +607,7 @@ class Matrix(BaseType):
             row, col = col, row
         result = Scalar.new(dtype, name=name)
         if (
-            call(f"GrB_Matrix_extractElement_{dtype}", (_Pointer(result), self, row, col))
+            call(f"GrB_Matrix_extractElement_{dtype}", [_Pointer(result), self, row, col])
             is not NoValue
         ):
             result._is_empty = False
@@ -654,18 +656,19 @@ class Matrix(BaseType):
     def _assign_element(self, resolved_indexes, value):
         row, _ = resolved_indexes.indices[0]
         col, _ = resolved_indexes.indices[1]
-        try:
-            value = _CScalar(value)
-        except TypeError:
-            self._expect_type(
-                value,
-                Scalar,
-                within="__setitem__",
-                argname="value",
-                extra_message="Literal scalars also accepted.",
-            )
+        if type(value) is not Scalar:
+            try:
+                value = Scalar.from_value(value)
+            except TypeError:
+                self._expect_type(
+                    value,
+                    Scalar,
+                    within="__setitem__",
+                    argname="value",
+                    extra_message="Literal scalars also accepted.",
+                )
         # should we cast?
-        call(f"GrB_Matrix_setElement_{value.dtype}", (self, value, row, col))
+        call(f"GrB_Matrix_setElement_{value.dtype}", [self, _CScalar(value), row, col])
 
     def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
@@ -825,22 +828,22 @@ class Matrix(BaseType):
                 at=value._is_transposed,
             )
         else:
-            try:
-                value = _CScalar(value)
-            except TypeError:
-                if rowsize is None or colsize is None:
-                    types = (Scalar, Vector)
-                else:
-                    types = (Scalar, Matrix, TransposedMatrix)
-                self._expect_type(
-                    value,
-                    types,
-                    within=method_name,
-                    argname="value",
-                    extra_message=extra_message,
-                )
+            if type(value) is not Scalar:
+                try:
+                    value = Scalar.from_value(value)
+                except TypeError:
+                    if rowsize is None or colsize is None:
+                        types = (Scalar, Vector)
+                    else:
+                        types = (Scalar, Matrix, TransposedMatrix)
+                    self._expect_type(
+                        value,
+                        types,
+                        within=method_name,
+                        argname="value",
+                        extra_message=extra_message,
+                    )
             if mask is not None and type(mask.mask) is Vector:
-                value = value.scalar
                 if rowsize is None and colsize is not None:
                     if is_submask:
                         # C[i, J](m) << c
@@ -938,7 +941,7 @@ class Matrix(BaseType):
                 delayed = MatrixExpression(
                     method_name,
                     cfunc_name,
-                    [value, rows, rowsize, cols, colsize],
+                    [_CScalar(value), rows, rowsize, cols, colsize],
                     expr_repr=expr_repr,
                     nrows=self._nrows,
                     ncols=self._ncols,
@@ -949,7 +952,7 @@ class Matrix(BaseType):
     def _delete_element(self, resolved_indexes):
         row, _ = resolved_indexes.indices[0]
         col, _ = resolved_indexes.indices[1]
-        call("GrB_Matrix_removeElement", (self, row, col))
+        call("GrB_Matrix_removeElement", [self, row, col])
 
     if backend == "pygraphblas":
 
@@ -1024,7 +1027,7 @@ class Matrix(BaseType):
             if give_ownership:
                 parent = self._parent
             else:
-                parent = self._parent.dup()
+                parent = self._parent.dup(name=f'{self._parent.name}_export')
             dtype = np.dtype(parent.dtype.np_type)
             index_dtype = np.dtype(np.uint64)
 
@@ -1323,7 +1326,7 @@ class Matrix(BaseType):
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-            check_status(
+            check_status_carg(
                 lib.GxB_Matrix_import_CSR(
                     mhandle,
                     dtype._carg,
@@ -1378,7 +1381,7 @@ class Matrix(BaseType):
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-            check_status(
+            check_status_carg(
                 lib.GxB_Matrix_import_CSC(
                     mhandle,
                     dtype._carg,
@@ -1437,7 +1440,7 @@ class Matrix(BaseType):
             Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
             nvec = len(rows)
-            check_status(
+            check_status_carg(
                 lib.GxB_Matrix_import_HyperCSR(
                     mhandle,
                     dtype._carg,
@@ -1500,7 +1503,7 @@ class Matrix(BaseType):
             Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
             nvec = len(cols)
-            check_status(
+            check_status_carg(
                 lib.GxB_Matrix_import_HyperCSC(
                     mhandle,
                     dtype._carg,
@@ -1554,7 +1557,7 @@ class Matrix(BaseType):
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
             if nvals is None:
                 nvals = np.count_nonzero(bitmap)
-            check_status(
+            check_status_carg(
                 lib.GxB_Matrix_import_BitmapR(
                     mhandle,
                     dtype._carg,
@@ -1601,7 +1604,7 @@ class Matrix(BaseType):
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
             if nvals is None:
                 nvals = np.count_nonzero(bitmap)
-            check_status(
+            check_status_carg(
                 lib.GxB_Matrix_import_BitmapC(
                     mhandle,
                     dtype._carg,
@@ -1642,7 +1645,7 @@ class Matrix(BaseType):
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
             mhandle = ffi_new("GrB_Matrix*")
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-            check_status(
+            check_status_carg(
                 lib.GxB_Matrix_import_FullR(
                     mhandle,
                     dtype._carg,
@@ -1679,7 +1682,7 @@ class Matrix(BaseType):
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
             mhandle = ffi_new("GrB_Matrix*")
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-            check_status(
+            check_status_carg(
                 lib.GxB_Matrix_import_FullC(
                     mhandle,
                     dtype._carg,

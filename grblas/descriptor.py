@@ -1,5 +1,5 @@
 from . import ffi, lib
-from .exceptions import check_status
+from .exceptions import check_status_carg
 
 NULL = ffi.NULL
 
@@ -101,6 +101,8 @@ def lookup(
                 (transpose_second, lib.GrB_INP1, lib.GrB_TRAN),
             ]:
                 if cond:
-                    check_status(lib.GrB_Descriptor_set(desc[0], field, val), "Descriptor", desc[0])
+                    check_status_carg(
+                        lib.GrB_Descriptor_set(desc[0], field, val), "Descriptor", desc[0]
+                    )
         _desc_map[key] = Descriptor(desc[0], "custom_descriptor", *key)
     return _desc_map[key]

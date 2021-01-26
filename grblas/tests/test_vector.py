@@ -4,7 +4,7 @@ import grblas
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
-from grblas.exceptions import IndexOutOfBound, OutputNotEmpty, DimensionMismatch
+from grblas.exceptions import IndexOutOfBound, OutputNotEmpty, DimensionMismatch, InvalidValue
 
 
 @pytest.fixture
@@ -28,6 +28,16 @@ def test_new():
     assert u.dtype == "INT8"
     assert u.nvals == 0
     assert u.size == 17
+
+
+def test_large_vector():
+    u = Vector.from_values([0, 2 ** 59], [0, 1])
+    assert u.size == 2 ** 59 + 1
+    assert u[2 ** 59].value == 1
+    with pytest.raises(InvalidValue):
+        Vector.from_values([0, 2 ** 64 - 2], [0, 1])
+    with pytest.raises(OverflowError):
+        Vector.from_values([0, 2 ** 64], [0, 1])
 
 
 def test_dup(v):
