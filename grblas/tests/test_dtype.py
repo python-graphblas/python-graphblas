@@ -109,7 +109,12 @@ def test_dtype_bad_comparison():
 def test_dtypes_match_numpy():
     for key, val in dtypes._registry.items():
         try:
-            npval = np.dtype(key)
+            if key is int or (isinstance(key, str) and key == "int"):
+                # For win64, numpy treats int as int32, not int64
+                # grblas won't allow this craziness
+                npval = np.int64
+            else:
+                npval = np.dtype(key)
         except Exception:
             continue
-        assert dtypes.lookup_dtype(npval) == val
+        assert dtypes.lookup_dtype(npval) == val, f"{key} of type {type(key)}"

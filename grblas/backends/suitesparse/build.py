@@ -1,5 +1,8 @@
 import os
+import sys
 from cffi import FFI
+
+is_win = sys.platform.startswith("win")
 
 ffibuilder = FFI()
 
@@ -11,7 +14,10 @@ ffibuilder.set_source(
 
 thisdir = os.path.dirname(__file__)
 
-gb_cdef = open(os.path.join(thisdir, "suitesparse_graphblas_4.0.3.h"))
+header = "suitesparse_graphblas_4.0.3.h"
+if is_win:
+    header = "suitesparse_graphblas_no_complex_4.0.3.h"
+gb_cdef = open(os.path.join(thisdir, header))
 
 ffibuilder.cdef(gb_cdef.read())
 
