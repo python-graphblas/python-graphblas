@@ -104,6 +104,11 @@ def test_from_values():
     C5 = Matrix.new(dtypes.INT64, nrows=3, ncols=4)
     assert C4.isequal(C5, check_dtype=True)
 
+    with pytest.raises(
+        ValueError, match="`rows` and `columns` and `values` lengths must match: 1, 2, 1"
+    ):
+        Matrix.from_values([0], [1, 2], [0])
+
 
 def test_clear(A):
     A.clear()
@@ -1237,13 +1242,13 @@ def test_del(capsys):
 
 def test_import_export(A):
     A1 = A.dup()
-    d = A1.ss.export("csr")
+    d = A1.ss.export("csr", give_ownership=True)
     assert d["nrows"] == 7
     assert d["ncols"] == 7
     assert (d["indptr"] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
     assert (d["col_indices"] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
     assert (d["values"] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
-    B1 = Matrix.ss.import_any(**d)
+    B1 = Matrix.ss.import_any(take_ownership=True, **d)
     assert B1.isequal(A)
 
     A2 = A.dup()
@@ -1349,6 +1354,22 @@ def test_import_export(A):
         A.dup().ss.export("fullr")
     with pytest.raises(InvalidValue):
         A.dup().ss.export("fullc")
+
+    a = np.array([0, 1, 2])
+    for bad_combos in [
+        ["indptr", "bitmap"],
+        ["indptr"],
+        ["indptr", "row_indices", "col_indices"],
+        ["indptr", "rows", "cols"],
+        ["indptr", "rows"],
+        ["indptr", "cols"],
+        ["bitmap", "col_indices"],
+        ["bitmap", "row_indices"],
+        ["bitmap", "rows"],
+        ["bitmap", "cols"],
+    ]:
+        with pytest.raises(ValueError):
+            Matrix.ss.import_any(nrows=3, ncols=3, values=a, **dict.fromkeys(bad_combos, a))
 
 
 def test_import_on_view():

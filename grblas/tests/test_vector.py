@@ -92,6 +92,17 @@ def test_from_values():
     u5 = Vector.new(dtypes.INT64, size=10)
     assert u4.isequal(u5, check_dtype=True)
 
+    # we check index dtype if given numpy array
+    with pytest.raises(ValueError, match="indices must be integers, not float64"):
+        Vector.from_values(np.array([1.2, 3.4]), [1, 2])
+    # but coerce index if given Python lists (we defer to numpy casting)
+    u6 = Vector.from_values([1.2, 3.4], [1, 2])
+    assert u6.isequal(Vector.from_values([1, 3], [1, 2]))
+
+    # mis-matched sizes
+    with pytest.raises(ValueError, match="`indices` and `values` lengths must match"):
+        Vector.from_values([0], [1, 2])
+
 
 def test_clear(v):
     v.clear()
@@ -649,31 +660,57 @@ def test_del(capsys):
 
 def test_import_export(v):
     v1 = v.dup()
-    k = v1.ss.export("sparse")
-    assert k["size"] == 7
-    assert (k["indices"] == [1, 3, 4, 6]).all()
-    assert (k["values"] == [1, 1, 2, 0]).all()
-    w1 = Vector.ss.import_any(**k)
+    d = v1.ss.export("sparse", give_ownership=True)
+    assert d["size"] == 7
+    assert (d["indices"] == [1, 3, 4, 6]).all()
+    assert (d["values"] == [1, 1, 2, 0]).all()
+    w1 = Vector.ss.import_any(**d)
     assert w1.isequal(v)
 
     v2 = v.dup()
-    k = v2.ss.export("bitmap")
-    assert k["nvals"] == 4
-    assert len(k["bitmap"]) == 7
-    assert (k["bitmap"] == [0, 1, 0, 1, 1, 0, 1]).all()
-    assert (k["values"][k["bitmap"]] == [1, 1, 2, 0]).all()
-    w2 = Vector.ss.import_any(**k)
+    d = v2.ss.export("bitmap")
+    assert d["nvals"] == 4
+    assert len(d["bitmap"]) == 7
+    assert (d["bitmap"] == [0, 1, 0, 1, 1, 0, 1]).all()
+    assert (d["values"][d["bitmap"]] == [1, 1, 2, 0]).all()
+    w2 = Vector.ss.import_any(**d)
     assert w2.isequal(v)
 
     v3 = Vector.from_values([0, 1, 2], [1, 3, 5])
     v3_copy = v3.dup()
-    k = v3.ss.export("full")
-    assert (k["values"] == [1, 3, 5]).all()
-    w3 = Vector.ss.import_any(**k)
+    d = v3.ss.export("full")
+    assert (d["values"] == [1, 3, 5]).all()
+    w3 = Vector.ss.import_any(**d)
     assert w3.isequal(v3_copy)
 
     v4 = v.dup()
-    k = v4.ss.export()
-    assert k["format"] in {"sparse", "bitmap", "full"}
-    w4 = Vector.ss.import_any(**k)
+    d = v4.ss.export()
+    assert d["format"] in {"sparse", "bitmap", "full"}
+    w4 = Vector.ss.import_any(**d)
     assert w4.isequal(v)
+
+    # can't own if we can't write
+    d = v.ss.export("sparse")
+    d["indices"].flags.writeable = False
+    # can't own a view
+    size = len(d["values"])
+    vals = np.zeros(2 * size, dtype=d["values"].dtype)
+    vals[:size] = d["values"]
+    view = vals[:size]
+    w5 = Vector.ss.import_sparse(take_ownership=True, **dict(d, values=view))
+    assert w5.isequal(v)
+    assert d["values"].flags.owndata
+    assert d["values"].flags.writeable
+    assert d["indices"].flags.owndata
+
+    # now let's take ownership!
+    d = v.ss.export("sparse", sort=True)
+    w6 = Vector.ss.import_any(take_ownership=True, **d)
+    assert w6.isequal(v)
+    assert not d["values"].flags.owndata
+    assert not d["values"].flags.writeable
+    assert not d["indices"].flags.owndata
+    assert not d["indices"].flags.writeable
+
+    with pytest.raises(ValueError, match="Invalid format: bad_name"):
+        v.ss.export("bad_name")

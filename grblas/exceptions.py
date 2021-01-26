@@ -104,18 +104,17 @@ def check_status(response_code, args):
 def check_status_carg(response_code, type_name, carg):
     if response_code == GrB_SUCCESS:
         return
-    if response_code == GrB_NO_VALUE:
+    if response_code == GrB_NO_VALUE:  # pragma: no cover
         return NoValue
     try:
         error_func = libget(f"GrB_{type_name}_error")
-    except AttributeError:
+    except AttributeError:  # pragma: no cover
         text = (
             f"Unable to get the error string for type {type_name}.  "
             "This is most likely a bug in grblas.  Please report this as an issue at:\n"
             "    https://github.com/metagraph-dev/grblas/issues\n"
             "Thanks (and sorry)!"
         )
-        raise ValueError(text)
     else:
         string = ffi.new("char**")
         error_func(string, carg)

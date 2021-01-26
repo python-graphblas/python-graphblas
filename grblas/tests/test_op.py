@@ -359,12 +359,12 @@ def test_semiring_parameterized():
     # SuiteSparse 4.0.1 no longer supports reduce with user-defined binary op
     with pytest.raises(exceptions.DomainMismatch):
         x = A.reduce_rows(bin_op).new()
-        assert x.isequal(A.reduce_rows(binary.plus).new())
+        # assert x.isequal(A.reduce_rows(binary.plus).new())
 
     # SuiteSparse 4.0.1 no longer supports reduce with user-defined binary op
     with pytest.raises(exceptions.DomainMismatch):
         x = A.reduce_columns(bin_op).new()
-        assert x.isequal(A.reduce_columns(binary.plus).new())
+        # assert x.isequal(A.reduce_columns(binary.plus).new())
 
     s = A.reduce_scalar(mymonoid).new()
     assert s.value == A.reduce_scalar(monoid.plus).value

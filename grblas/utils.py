@@ -17,9 +17,12 @@ def libget(name):
 
 
 def ints_to_numpy_buffer(array, dtype, *, name="array", copy=False, ownable=False):
-    if isinstance(array, np.ndarray):
-        if not np.issubdtype(array.dtype, np.integer) and not np.issubdtype(array.dtype, np.bool8):
-            raise ValueError(f"{name} must be integers, not {array.dtype.name}")
+    if (
+        isinstance(array, np.ndarray)
+        and not np.issubdtype(array.dtype, np.integer)
+        and not np.issubdtype(array.dtype, np.bool8)
+    ):
+        raise ValueError(f"{name} must be integers, not {array.dtype.name}")
     array = np.array(array, dtype, copy=copy, order="C")
     if ownable and (not array.flags.owndata or not array.flags.writeable):
         array = array.copy()
