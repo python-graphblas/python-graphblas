@@ -40,11 +40,11 @@ jobs:
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
-          conda install -c conda-forge pandas numba cffi graphblas scipy networkx
+          conda install -c conda-forge pandas numba cffi graphblas scipy networkx cython
           python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
           python setup.py develop
       - name: Optional pygraphblas
-        if: contains(${{ matrix.testopts }}, "pygraphblas")
+        if: contains(matrix.testopts, 'pygraphblas')
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
@@ -57,12 +57,6 @@ jobs:
           python -c "from grblas import * ; Matrix"
           # Make sure all top-level imports work
           ( for attr in Matrix Scalar Vector Recorder backends base binary descriptor dtypes exceptions expr ffi formatting init io lib mask matrix monoid ops scalar semiring tests unary vector recorder ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
-      - name: Notebooks Execution check
-        run: |
-          source "$CONDA/etc/profile.d/conda.sh"
-          conda activate grblas
-          conda install -c conda-forge matplotlib nbconvert jupyter 'ipython>=7'
-          jupyter nbconvert --to notebook --execute notebooks/*ipynb
       - name: Unit tests
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
@@ -79,7 +73,13 @@ jobs:
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
           coverage report --show-missing
-          coveralls
+          coveralls --service=github
+      - name: Notebooks Execution check
+        run: |
+          source "$CONDA/etc/profile.d/conda.sh"
+          conda activate grblas
+          conda install -c conda-forge matplotlib nbconvert jupyter 'ipython>=7'
+          jupyter nbconvert --to notebook --execute notebooks/*ipynb
 
   finish:
     needs: build_and_test

@@ -1,12 +1,13 @@
 from contextvars import ContextVar
 from . import ffi
 from .descriptor import lookup as descriptor_lookup
-from .dtypes import libget, lookup_dtype
+from .dtypes import lookup_dtype
 from .exceptions import check_status
 from .expr import AmbiguousAssignOrExtract, Updater
 from .mask import Mask
 from .ops import UNKNOWN_OPCLASS, find_opclass, get_typed_op
 from .unary import identity
+from .utils import libget, _Pointer
 
 NULL = ffi.NULL
 CData = ffi.CData
@@ -32,7 +33,7 @@ def call(cfunc_name, args):
             f" - C signature: {sig}\n"
             f" - Error: {exc}"
         )
-    rv = check_status(err_code)
+    rv = check_status(err_code, args)
     rec = _recorder.get(_prev_recorder)
     if rec is not None:
         rec.record(cfunc_name, args)
@@ -377,19 +378,3 @@ class BaseExpression:
     def _format_expr_html(self):
         expr_repr = self.expr_repr.replace(".name", "._name_html")
         return expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
-
-
-class _Pointer:
-    def __init__(self, val):
-        self.val = val
-
-    @property
-    def _carg(self):
-        return self.val.gb_obj
-
-    @property
-    def name(self):
-        name = self.val.name
-        if not name:
-            name = f"temp_{type(self.val).__name__.lower()}"
-        return f"&{name}"

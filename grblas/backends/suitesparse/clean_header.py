@@ -14,7 +14,7 @@ def remove_directives(text):
     # There are a few cases of safe `#define` directives that we need to keep
     #  - #define FOO 12
     #  - #define BAR ...
-    safe_define = re.compile(r"^#define\s+\S+\s+(\d+|\.{3})$")
+    safe_define = re.compile(r"^#define\s+\w+\s+(\d+|\.{3})")
 
     out = []
     multiline = False

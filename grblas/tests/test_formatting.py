@@ -121,6 +121,7 @@ def t():
 
 def test_no_pandas_repr(A, C, v, w):
     # This is a bit of a hack...
+    has_pandas_prev = formatting.has_pandas
     formatting.has_pandas = False
     try:
         repr_printer(A, "A", indent=8)
@@ -150,7 +151,7 @@ def test_no_pandas_repr(A, C, v, w):
             "of grblas.Vector           4    77  INT64"
         )
     finally:
-        formatting.has_pandas = True
+        formatting.has_pandas = has_pandas_prev
 
 
 @pytest.mark.skipif("not pd")
@@ -384,8 +385,8 @@ def test_vector_repr_small(v):
         '"v"            nvals  size  dtype\n'
         "grblas.Vector      3     5   FP64\n"
         "---------------------------------\n"
-        "  0 1    2 3    4\n"
-        "  0    1.1    2.2"
+        "    0 1    2 3    4\n"
+        "  0.0    1.1    2.2"
     )
 
 
@@ -491,6 +492,7 @@ def test_scalar_repr(s, t):
 
 def test_no_pandas_repr_html(A, C, v, w):
     # This is a bit of a hack...
+    has_pandas_prev = formatting.has_pandas
     formatting.has_pandas = False
     try:
         html_printer(A, "A", indent=8)
@@ -609,7 +611,7 @@ def test_no_pandas_repr_html(A, C, v, w):
             "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
         )
     finally:
-        formatting.has_pandas = True
+        formatting.has_pandas = has_pandas_prev
 
 
 @pytest.mark.skipif("not pd")
@@ -2102,7 +2104,7 @@ def test_vector_repr_html_small(v):
         "  <tbody>\n"
         "    <tr>\n"
         "      <th></th>\n"
-        "      <td>0</td>\n"
+        "      <td>0.0</td>\n"
         "      <td></td>\n"
         "      <td>1.1</td>\n"
         "      <td></td>\n"
@@ -2861,7 +2863,7 @@ def test_apply_repr_html(v):
         "  <tbody>\n"
         "    <tr>\n"
         "      <th></th>\n"
-        "      <td>0</td>\n"
+        "      <td>0.0</td>\n"
         "      <td></td>\n"
         "      <td>1.1</td>\n"
         "      <td></td>\n"
@@ -3148,7 +3150,7 @@ def test_mxv_repr_html(A, v):
         "  <tbody>\n"
         "    <tr>\n"
         "      <th></th>\n"
-        "      <td>0</td>\n"
+        "      <td>0.0</td>\n"
         "      <td></td>\n"
         "      <td>1.1</td>\n"
         "      <td></td>\n"

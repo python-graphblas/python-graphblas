@@ -11,7 +11,7 @@ ffibuilder.set_source(
 
 thisdir = os.path.dirname(__file__)
 
-gb_cdef = open(os.path.join(thisdir, "suitesparse_graphblas_3.3.3.h"))
+gb_cdef = open(os.path.join(thisdir, "suitesparse_graphblas_4.0.3.h"))
 
 ffibuilder.cdef(gb_cdef.read())
 
