@@ -14,35 +14,35 @@ except ImportError:  # pragma: no cover
 
 @pytest.mark.skipif("not ss")
 def test_vector_to_from_numpy():
-    a = np.array([0, 2, 4])
+    a = np.array([0.0, 2.0, 4.1])
     v = gb.io.from_numpy(a)
-    assert v.isequal(gb.Vector.from_values([1, 2], [2, 4]), check_dtype=True)
+    assert v.isequal(gb.Vector.from_values([1, 2], [2.0, 4.1]), check_dtype=True)
     a2 = gb.io.to_numpy(v)
     np.testing.assert_array_equal(a, a2)
 
     csr = gb.io.to_scipy_sparse_matrix(v, "csr")
     assert csr.nnz == 2
     assert ss.isspmatrix_csr(csr)
-    np.testing.assert_array_equal(csr.toarray(), np.array([[0, 2, 4]]))
+    np.testing.assert_array_equal(csr.toarray(), np.array([[0.0, 2.0, 4.1]]))
 
     csc = gb.io.to_scipy_sparse_matrix(v, "csc")
     assert csc.nnz == 2
     assert ss.isspmatrix_csc(csc)
-    np.testing.assert_array_equal(csc.toarray(), np.array([[0, 2, 4]]).T)
+    np.testing.assert_array_equal(csc.toarray(), np.array([[0.0, 2.0, 4.1]]).T)
 
     # default to csr-like
     coo = gb.io.to_scipy_sparse_matrix(v, "coo")
     assert coo.shape == csr.shape
     assert ss.isspmatrix_coo(coo)
     assert coo.nnz == 2
-    np.testing.assert_array_equal(coo.toarray(), np.array([[0, 2, 4]]))
+    np.testing.assert_array_equal(coo.toarray(), np.array([[0.0, 2.0, 4.1]]))
 
 
 @pytest.mark.skipif("not ss")
 def test_matrix_to_from_numpy():
-    a = np.array([[1, 0], [2, 3]])
+    a = np.array([[1.0, 0.0], [2.0, 3.7]])
     M = gb.io.from_numpy(a)
-    assert M.isequal(gb.Matrix.from_values([0, 1, 1], [0, 0, 1], [1, 2, 3]), check_dtype=True)
+    assert M.isequal(gb.Matrix.from_values([0, 1, 1], [0, 0, 1], [1.0, 2.0, 3.7]), check_dtype=True)
     a2 = gb.io.to_numpy(M)
     np.testing.assert_array_equal(a, a2)
 
@@ -58,7 +58,7 @@ def test_matrix_to_from_numpy():
         gb.io.to_scipy_sparse_matrix(M, "bad format")
 
     with pytest.raises(gb.exceptions.GrblasException, match="ndim must be"):
-        gb.io.from_numpy(np.array([[[1, 0], [2, 3]]]))
+        gb.io.from_numpy(np.array([[[1.0, 0.0], [2.0, 3.7]]]))
 
 
 @pytest.mark.skipif("not nx or not ss")

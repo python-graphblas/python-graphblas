@@ -18,7 +18,7 @@ else:
 include_dirs = [np.get_include()]
 ext_modules = [
     Extension(
-        name[: -len(suffix)].replace("/", "."),
+        name[: -len(suffix)].replace("/", ".").replace("\\", "."),
         [name],
         include_dirs=include_dirs,
         define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")],
