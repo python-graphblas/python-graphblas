@@ -6,8 +6,9 @@ from collections.abc import Mapping
 from functools import lru_cache
 from types import FunctionType, ModuleType
 from . import ffi, lib, unary, binary, monoid, semiring
-from .dtypes import libget, lookup_dtype, unify, INT8, _sample_values
-from .exceptions import UdfParseError, check_status
+from .dtypes import lookup_dtype, unify, INT8, _sample_values
+from .exceptions import UdfParseError, check_status_carg
+from .utils import libget
 
 ffi_new = ffi.new
 UNKNOWN_OPCLASS = "UnknownOpClass"
@@ -322,7 +323,7 @@ class UnaryOp(OpBase):
                 "_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64|FC32|FC64)$"
             ),
             re.compile(
-                "^GxB_(LNOT|ONE)"
+                "^GxB_(LNOT|ONE|POSITIONI1|POSITIONI|POSITIONJ1|POSITIONJ)"
                 "_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$"
             ),
             re.compile(
@@ -411,10 +412,12 @@ class UnaryOp(OpBase):
 
                 unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
                 new_unary = ffi_new("GrB_UnaryOp*")
-                check_status(
+                check_status_carg(
                     lib.GrB_UnaryOp_new(
                         new_unary, unary_wrapper.cffi, ret_type.gb_obj, type_.gb_obj
-                    )
+                    ),
+                    "UnaryOp",
+                    new_unary,
                 )
                 op = TypedUserUnaryOp(
                     name, type_.name, ret_type.name, new_unary[0], func, unary_udf
@@ -467,7 +470,8 @@ class BinaryOp(OpBase):
                 "GrB_(BOR|BAND|BXOR|BXNOR)" "_(INT8|INT16|INT32|INT64|UINT8|UINT16|UINT32|UINT64)$"
             ),
             re.compile(
-                "GxB_(BGET|BSET|BCLR|BSHIFT)"
+                "GxB_(BGET|BSET|BCLR|BSHIFT|FIRSTI1|FIRSTI|FIRSTJ1|FIRSTJ"
+                "|SECONDI1|SECONDI|SECONDJ1|SECONDJ)"
                 "_(INT8|INT16|INT32|INT64|UINT8|UINT16|UINT32|UINT64)$"
             ),
         ],
@@ -559,14 +563,16 @@ class BinaryOp(OpBase):
 
                 binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
                 new_binary = ffi_new("GrB_BinaryOp*")
-                check_status(
+                check_status_carg(
                     lib.GrB_BinaryOp_new(
                         new_binary,
                         binary_wrapper.cffi,
                         ret_type.gb_obj,
                         type_.gb_obj,
                         type_.gb_obj,
-                    )
+                    ),
+                    "BinaryOp",
+                    new_binary,
                 )
                 op = TypedUserBinaryOp(
                     name, type_.name, ret_type.name, new_binary[0], func, binary_udf
@@ -679,7 +685,9 @@ class Monoid(OpBase):
             new_monoid = ffi_new("GrB_Monoid*")
             func = libget(f"GrB_Monoid_new_{type_.name}")
             zcast = ffi.cast(type_.c_type, identity)
-            check_status(func(new_monoid, binaryop[type_].gb_obj, zcast))
+            check_status_carg(
+                func(new_monoid, binaryop[type_].gb_obj, zcast), "Monoid", new_monoid[0]
+            )
             op = TypedUserMonoid(
                 name, type_.name, ret_type, new_monoid[0], binaryop[type_], identity
             )
@@ -718,7 +726,8 @@ class Semiring(OpBase):
             re.compile(
                 "^GxB_(MIN|MAX|PLUS|TIMES|ANY)"
                 "_(FIRST|SECOND|PAIR|MIN|MAX|PLUS|MINUS|RMINUS|TIMES"
-                "|DIV|RDIV|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR)"
+                "|DIV|RDIV|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR"
+                "|FIRSTI1|FIRSTI|FIRSTJ1|FIRSTJ|SECONDI1|SECONDI|SECONDJ1|SECONDJ)"
                 "_(INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$"
             ),
             re.compile(
@@ -758,8 +767,10 @@ class Semiring(OpBase):
                 continue
             binary_out = lookup_dtype(binary_out)
             new_semiring = ffi_new("GrB_Semiring*")
-            check_status(
-                lib.GrB_Semiring_new(new_semiring, monoid[binary_out].gb_obj, binary_func.gb_obj)
+            check_status_carg(
+                lib.GrB_Semiring_new(new_semiring, monoid[binary_out].gb_obj, binary_func.gb_obj),
+                "Semiring",
+                new_semiring,
             )
             ret_type = monoid[binary_out].return_type
             op = TypedUserSemiring(

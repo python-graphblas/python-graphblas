@@ -1,14 +1,16 @@
 import itertools
 import numpy as np
 from . import ffi, lib, backend, binary, monoid, semiring
-from .base import BaseExpression, BaseType, call, _Pointer
-from .dtypes import lookup_dtype, unify, UINT64
-from .exceptions import check_status, NoValue
-from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater, _CArray
+from .base import BaseExpression, BaseType, call
+from .dtypes import lookup_dtype, unify, _INDEX
+from .exceptions import check_status, check_status_carg, NoValue
+from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .ops import get_typed_op
 from .vector import Vector, VectorExpression
 from .scalar import Scalar, ScalarExpression, _CScalar
+from .utils import ints_to_numpy_buffer, values_to_numpy_buffer, _CArray, _Pointer
+from . import _ss
 
 ffi_new = ffi.new
 
@@ -35,7 +37,7 @@ class Matrix(BaseType):
         gb_obj = getattr(self, "gb_obj", None)
         if gb_obj is not None:
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
-            check_status(lib.GrB_Matrix_free(gb_obj))
+            check_status(lib.GrB_Matrix_free(gb_obj), self)
 
     def __repr__(self, mask=None):
         from .formatting import format_matrix
@@ -127,15 +129,15 @@ class Matrix(BaseType):
     @property
     def nrows(self):
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, UINT64, name="s_nrows", empty=True)  # Actually GrB_Index dtype
-        call("GrB_Matrix_nrows", (_Pointer(scalar), self))
+        scalar = Scalar(n, _INDEX, name="s_nrows", empty=True)
+        call("GrB_Matrix_nrows", [_Pointer(scalar), self])
         return n[0]
 
     @property
     def ncols(self):
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, UINT64, name="s_ncols", empty=True)  # Actually GrB_Index dtype
-        call("GrB_Matrix_ncols", (_Pointer(scalar), self))
+        scalar = Scalar(n, _INDEX, name="s_ncols", empty=True)
+        call("GrB_Matrix_ncols", [_Pointer(scalar), self])
         return n[0]
 
     @property
@@ -145,15 +147,15 @@ class Matrix(BaseType):
     @property
     def nvals(self):
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, UINT64, name="s_nvals", empty=True)  # Actually GrB_Index dtype
-        call("GrB_Matrix_nvals", (_Pointer(scalar), self))
+        scalar = Scalar(n, _INDEX, name="s_nvals", empty=True)
+        call("GrB_Matrix_nvals", [_Pointer(scalar), self])
         return n[0]
 
     @property
     def _nvals(self):
         """Like nvals, but doesn't record calls"""
         n = ffi_new("GrB_Index*")
-        check_status(lib.GrB_Matrix_nvals(n, self.gb_obj[0]))
+        check_status(lib.GrB_Matrix_nvals(n, self.gb_obj[0]), self)
         return n[0]
 
     @property
@@ -166,7 +168,7 @@ class Matrix(BaseType):
     def resize(self, nrows, ncols):
         nrows = _CScalar(nrows)
         ncols = _CScalar(ncols)
-        call("GrB_Matrix_resize", (self, nrows, ncols))
+        call("GrB_Matrix_resize", [self, nrows, ncols])
         self._nrows = nrows.scalar.value
         self._ncols = ncols.scalar.value
 
@@ -176,38 +178,32 @@ class Matrix(BaseType):
         Extract the rows, columns and values as a 3-tuple of numpy arrays
         """
         nvals = self._nvals
-        rows = _CArray(nvals, name="&rows_array")
-        columns = _CArray(nvals, name="&columns_array")
-        values = _CArray(nvals, ctype=self.dtype.c_type, name="&values_array")
+        rows = _CArray(size=nvals, name="&rows_array")
+        columns = _CArray(size=nvals, name="&columns_array")
+        values = _CArray(size=nvals, dtype=self.dtype, name="&values_array")
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, UINT64, name="s_nvals", empty=True)  # Actually GrB_Index dtype
+        scalar = Scalar(n, _INDEX, name="s_nvals", empty=True)
         scalar.value = nvals
         call(
             f"GrB_Matrix_extractTuples_{self.dtype.name}",
-            (rows, columns, values, _Pointer(scalar), self),
+            [rows, columns, values, _Pointer(scalar), self],
         )
-        values = np.frombuffer(ffi.buffer(values._carg), dtype=self.dtype.np_type)
+        values = values.array
         if dtype is not None:
             dtype = lookup_dtype(dtype)
             if dtype != self.dtype:
                 values = values.astype(dtype.np_type)  # copies
         return (
-            np.frombuffer(ffi.buffer(rows._carg), dtype=np.uint64),
-            np.frombuffer(ffi.buffer(columns._carg), dtype=np.uint64),
+            rows.array,
+            columns.array,
             values,
         )
 
     def build(self, rows, columns, values, *, dup_op=None, clear=False, nrows=None, ncols=None):
         # TODO: accept `dtype` keyword to match the dtype of `values`?
-        np_rows = isinstance(rows, np.ndarray)
-        if not np_rows and not isinstance(rows, (tuple, list)):
-            rows = tuple(rows)
-        np_cols = isinstance(columns, np.ndarray)
-        if not np_cols and not isinstance(columns, (tuple, list)):
-            columns = tuple(columns)
-        np_vals = isinstance(values, np.ndarray)
-        if not np_vals and not isinstance(values, (tuple, list)):
-            values = tuple(values)
+        rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
+        columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
+        values, dtype = values_to_numpy_buffer(values, self.dtype)
         n = len(values)
         if len(rows) != n or len(columns) != n:
             raise ValueError(
@@ -222,7 +218,7 @@ class Matrix(BaseType):
             if ncols is None:
                 ncols = self.ncols
             self.resize(nrows, ncols)
-        if n <= 0:
+        if n == 0:
             return
 
         dup_op_given = dup_op is not None
@@ -231,24 +227,12 @@ class Matrix(BaseType):
         dup_op = get_typed_op(dup_op, self.dtype)
         self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
 
-        if np_rows:
-            urows = rows.astype(np.uint64, copy=False)
-            rows = _CArray(urows, from_buffer=True)
-        else:
-            rows = _CArray(rows)
-        if np_cols:
-            ucols = columns.astype(np.uint64, copy=False)
-            columns = _CArray(ucols, from_buffer=True)
-        else:
-            columns = _CArray(columns)
-        if np_vals:
-            verified_vals = values.astype(self.dtype.np_type, copy=False)
-            values = _CArray(verified_vals, ctype=self.dtype.c_type, from_buffer=True)
-        else:
-            values = _CArray(values, ctype=self.dtype.c_type)
+        rows = _CArray(rows)
+        columns = _CArray(columns)
+        values = _CArray(values, dtype=self.dtype)
         call(
             f"GrB_Matrix_build_{self.dtype.name}",
-            (self, rows, columns, values, _CScalar(n), dup_op),
+            [self, rows, columns, values, _CScalar(n), dup_op],
         )
         # Check for duplicates when dup_op was not provided
         if not dup_op_given and self._nvals < n:
@@ -267,7 +251,7 @@ class Matrix(BaseType):
         else:
             new_mat = ffi_new("GrB_Matrix*")
             rv = Matrix(new_mat, self.dtype, name=name)
-            call("GrB_Matrix_dup", (_Pointer(rv), self))
+            call("GrB_Matrix_dup", [_Pointer(rv), self])
         rv._nrows = self._nrows
         rv._ncols = self._ncols
         return rv
@@ -285,7 +269,7 @@ class Matrix(BaseType):
             nrows = _CScalar(nrows)
         if type(ncols) is not _CScalar:
             ncols = _CScalar(ncols)
-        call("GrB_Matrix_new", (_Pointer(rv), dtype, nrows, ncols))
+        call("GrB_Matrix_new", [_Pointer(rv), dtype, nrows, ncols])
         rv._nrows = nrows.scalar.value
         rv._ncols = ncols.scalar.value
         return rv
@@ -307,44 +291,18 @@ class Matrix(BaseType):
         indices, and values.  If nrows or ncols are not provided, they
         are computed from the max row and coumn index found.
         """
-        rarr = rows
-        carr = columns
-        varr = values
-        if not isinstance(rarr, np.ndarray):
-            if not isinstance(rows, (tuple, list)):
-                rows = tuple(rows)
-            rarr = np.array(rows)
-        if not isinstance(carr, np.ndarray):
-            if not isinstance(columns, (tuple, list)):
-                columns = tuple(columns)
-            carr = np.array(columns)
-        if not isinstance(varr, np.ndarray):
-            if not isinstance(values, (tuple, list)):
-                values = tuple(values)
-            varr = np.array(values)
-
-        if dtype is None:
-            if len(varr) <= 0:
-                raise ValueError("No values provided. Unable to determine type.")
-            dtype = varr.dtype
-            if dtype == object:
-                raise ValueError("Unable to convert values to a usable dtype")
-        dtype = lookup_dtype(dtype)
-        if varr.dtype != dtype.np_type:
-            varr = varr.astype(dtype.np_type)
+        rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
+        columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
+        values, dtype = values_to_numpy_buffer(values, dtype)
         # Compute nrows and ncols if not provided
         if nrows is None:
-            if len(rarr) <= 0:
+            if len(rows) == 0:
                 raise ValueError("No row indices provided. Unable to infer nrows.")
-            nrows = int(rarr.max() + 1)
+            nrows = int(rows.max()) + 1
         if ncols is None:
-            if len(carr) <= 0:
+            if len(columns) == 0:
                 raise ValueError("No column indices provided. Unable to infer ncols.")
-            ncols = int(carr.max() + 1)
-        if len(rarr) > 0 and "int" not in rarr.dtype.name:
-            raise ValueError(f"row indices must be integers, not {rarr.dtype.name}")
-        if len(carr) > 0 and "int" not in carr.dtype.name:
-            raise ValueError(f"column indices must be integers, not {carr.dtype.name}")
+            ncols = int(columns.max()) + 1
         # Create the new matrix
         C = cls.new(dtype, nrows, ncols, name=name)
         # Add the data
@@ -365,7 +323,7 @@ class Matrix(BaseType):
 
     def ewise_add(self, other, op=monoid.plus, *, require_monoid=True):
         """
-        GrB_eWiseAdd_Matrix
+        GrB_Matrix_eWiseAdd
 
         Result will contain the union of indices from both Matrices
 
@@ -401,7 +359,7 @@ class Matrix(BaseType):
             )
         expr = MatrixExpression(
             method_name,
-            f"GrB_eWiseAdd_Matrix_{op.opclass}",
+            f"GrB_Matrix_eWiseAdd_{op.opclass}",
             [self, other],
             op=op,
             at=self._is_transposed,
@@ -413,7 +371,7 @@ class Matrix(BaseType):
 
     def ewise_mult(self, other, op=binary.times):
         """
-        GrB_eWiseMult_Matrix
+        GrB_Matrix_eWiseMult
 
         Result will contain the intersection of indices from both Matrices
         Default op is binary.times
@@ -424,7 +382,7 @@ class Matrix(BaseType):
         self._expect_op(op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op")
         expr = MatrixExpression(
             method_name,
-            f"GrB_eWiseMult_Matrix_{op.opclass}",
+            f"GrB_Matrix_eWiseMult_{op.opclass}",
             [self, other],
             op=op,
             at=self._is_transposed,
@@ -525,16 +483,17 @@ class Matrix(BaseType):
             args = [self]
             expr_repr = None
         elif right is None:
-            try:
-                left = _CScalar(left)
-            except TypeError:
-                self._expect_type(
-                    left,
-                    Scalar,
-                    within=method_name,
-                    keyword_name="left",
-                    extra_message="Literal scalars also accepted.",
-                )
+            if type(left) is not Scalar:
+                try:
+                    left = Scalar.from_value(left)
+                except TypeError:
+                    self._expect_type(
+                        left,
+                        Scalar,
+                        within=method_name,
+                        keyword_name="left",
+                        extra_message="Literal scalars also accepted.",
+                    )
             op = get_typed_op(op, self.dtype, left.dtype)
             self._expect_op(
                 op,
@@ -544,19 +503,20 @@ class Matrix(BaseType):
                 extra_message=extra_message,
             )
             cfunc_name = f"GrB_Matrix_apply_BinaryOp1st_{left.dtype}"
-            args = [left, self]
+            args = [_CScalar(left), self]
             expr_repr = "{1.name}.apply({op}, left={0})"
         elif left is None:
-            try:
-                right = _CScalar(right)
-            except TypeError:
-                self._expect_type(
-                    right,
-                    Scalar,
-                    within=method_name,
-                    keyword_name="right",
-                    extra_message="Literal scalars also accepted.",
-                )
+            if type(right) is not Scalar:
+                try:
+                    right = Scalar.from_value(right)
+                except TypeError:
+                    self._expect_type(
+                        right,
+                        Scalar,
+                        within=method_name,
+                        keyword_name="right",
+                        extra_message="Literal scalars also accepted.",
+                    )
             op = get_typed_op(op, self.dtype, right.dtype)
             self._expect_op(
                 op,
@@ -566,7 +526,7 @@ class Matrix(BaseType):
                 extra_message=extra_message,
             )
             cfunc_name = f"GrB_Matrix_apply_BinaryOp2nd_{right.dtype}"
-            args = [self, right]
+            args = [self, _CScalar(right)]
             expr_repr = "{0.name}.apply({op}, right={1})"
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
@@ -647,7 +607,7 @@ class Matrix(BaseType):
             row, col = col, row
         result = Scalar.new(dtype, name=name)
         if (
-            call(f"GrB_Matrix_extractElement_{dtype}", (_Pointer(result), self, row, col))
+            call(f"GrB_Matrix_extractElement_{dtype}", [_Pointer(result), self, row, col])
             is not NoValue
         ):
             result._is_empty = False
@@ -696,18 +656,19 @@ class Matrix(BaseType):
     def _assign_element(self, resolved_indexes, value):
         row, _ = resolved_indexes.indices[0]
         col, _ = resolved_indexes.indices[1]
-        try:
-            value = _CScalar(value)
-        except TypeError:
-            self._expect_type(
-                value,
-                Scalar,
-                within="__setitem__",
-                argname="value",
-                extra_message="Literal scalars also accepted.",
-            )
+        if type(value) is not Scalar:
+            try:
+                value = Scalar.from_value(value)
+            except TypeError:
+                self._expect_type(
+                    value,
+                    Scalar,
+                    within="__setitem__",
+                    argname="value",
+                    extra_message="Literal scalars also accepted.",
+                )
         # should we cast?
-        call(f"GrB_Matrix_setElement_{value.dtype}", (self, value, row, col))
+        call(f"GrB_Matrix_setElement_{value.dtype}", [self, _CScalar(value), row, col])
 
     def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
@@ -867,22 +828,22 @@ class Matrix(BaseType):
                 at=value._is_transposed,
             )
         else:
-            try:
-                value = _CScalar(value)
-            except TypeError:
-                if rowsize is None or colsize is None:
-                    types = (Scalar, Vector)
-                else:
-                    types = (Scalar, Matrix, TransposedMatrix)
-                self._expect_type(
-                    value,
-                    types,
-                    within=method_name,
-                    argname="value",
-                    extra_message=extra_message,
-                )
+            if type(value) is not Scalar:
+                try:
+                    value = Scalar.from_value(value)
+                except TypeError:
+                    if rowsize is None or colsize is None:
+                        types = (Scalar, Vector)
+                    else:
+                        types = (Scalar, Matrix, TransposedMatrix)
+                    self._expect_type(
+                        value,
+                        types,
+                        within=method_name,
+                        argname="value",
+                        extra_message=extra_message,
+                    )
             if mask is not None and type(mask.mask) is Vector:
-                value = value.scalar
                 if rowsize is None and colsize is not None:
                     if is_submask:
                         # C[i, J](m) << c
@@ -980,7 +941,7 @@ class Matrix(BaseType):
                 delayed = MatrixExpression(
                     method_name,
                     cfunc_name,
-                    [value, rows, rowsize, cols, colsize],
+                    [_CScalar(value), rows, rowsize, cols, colsize],
                     expr_repr=expr_repr,
                     nrows=self._nrows,
                     ncols=self._ncols,
@@ -991,7 +952,7 @@ class Matrix(BaseType):
     def _delete_element(self, resolved_indexes):
         row, _ = resolved_indexes.indices[0]
         col, _ = resolved_indexes.indices[1]
-        call("GrB_Matrix_removeElement", (self, row, col))
+        call("GrB_Matrix_removeElement", [self, row, col])
 
     if backend == "pygraphblas":
 
@@ -1029,7 +990,7 @@ class Matrix(BaseType):
         def __init__(self, parent):
             self._parent = parent
 
-        def fast_export(self, format=None):
+        def export(self, format=None, *, sort=False, give_ownership=False):
             """
             GxB_Matrix_export_xxx
 
@@ -1044,13 +1005,13 @@ class Matrix(BaseType):
 
             To reimport the Matrix:
             ```
-            pieces = A.fast_export()
-            A2 = Matrix.fast_import(**pieces)
+            pieces = A.export()
+            A2 = Matrix.import_any(**pieces)
             ```
 
             The underlying GraphBLAS object transfers ownership to numpy,
             disallowing further access. The caller should delete or stop using
-            the Matrix after calling `fast_export`.
+            the Matrix after calling `export`.
 
             If `format` is not specified, this method exports in the currently stored format
             To control the export format, set `format` to one of:
@@ -1058,258 +1019,864 @@ class Matrix(BaseType):
               - "csc"
               - "hypercsr"
               - "hypercsc"
+              - "bitmapr"
+              - "bitmapc"
+              - "fullr"
+              - "fullc"
             """
-            dtype = np.dtype(self._parent.dtype.np_type)
+            if give_ownership:
+                parent = self._parent
+            else:
+                parent = self._parent.dup(name=f"{self._parent.name}_export")
+            dtype = np.dtype(parent.dtype.np_type)
             index_dtype = np.dtype(np.uint64)
 
             if format is None:
                 # Determine current format
-                hyper_ptr = ffi_new("bool*")
                 format_ptr = ffi_new("int*")
-                call("GxB_Matrix_Option_get", (self, lib.GxB_IS_HYPER, hyper_ptr))
-                call("GxB_Matrix_Option_get", (self, lib.GxB_FORMAT, format_ptr))
-                if hyper_ptr[0]:
-                    format = "hypercsc" if format_ptr[0] == lib.GxB_BY_COL else "hypercsr"
+                sparsity_ptr = ffi_new("int*")
+                check_status(
+                    lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, format_ptr),
+                    parent,
+                )
+                check_status(
+                    lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
+                    parent,
+                )
+                sparsity_status = sparsity_ptr[0]
+                if sparsity_status == lib.GxB_HYPERSPARSE:
+                    format = "hypercs"
+                elif sparsity_status == lib.GxB_SPARSE:
+                    format = "cs"
+                elif sparsity_status == lib.GxB_BITMAP:
+                    format = "bitmap"
+                elif sparsity_status == lib.GxB_FULL:
+                    format = "full"
+                else:  # pragma: no cover
+                    raise NotImplementedError(f"Unknown sparsity status: {sparsity_status}")
+                if format_ptr[0] == lib.GxB_BY_COL:
+                    format = f"{format}c"
                 else:
-                    format = "csc" if format_ptr[0] == lib.GxB_BY_COL else "csr"
-            format = format.lower()
+                    format = f"{format}r"
+            else:
+                format = format.lower()
 
-            mhandle = ffi_new("GrB_Matrix*", self._parent._carg)
+            mhandle = ffi_new("GrB_Matrix*", parent._carg)
             type_ = ffi_new("GrB_Type*")
             nrows = ffi_new("GrB_Index*")
             ncols = ffi_new("GrB_Index*")
-            nvals = ffi_new("GrB_Index*")
-            nonempty = ffi_new("int64_t*")
             Ap = ffi_new("GrB_Index**")
             Ax = ffi_new("void**")
+            Ap_size = ffi_new("GrB_Index*")
+            Ax_size = ffi_new("GrB_Index*")
+            if sort:
+                jumbled = ffi.NULL
+            else:
+                jumbled = ffi_new("bool*")
+            nvals = parent._nvals
             if format == "csr":
                 Aj = ffi_new("GrB_Index**")
+                Aj_size = ffi_new("GrB_Index*")
                 check_status(
                     lib.GxB_Matrix_export_CSR(
-                        mhandle, type_, nrows, ncols, nvals, nonempty, Ap, Aj, Ax, ffi.NULL
-                    )
+                        mhandle,
+                        type_,
+                        nrows,
+                        ncols,
+                        Ap,
+                        Aj,
+                        Ax,
+                        Ap_size,
+                        Aj_size,
+                        Ax_size,
+                        jumbled,
+                        ffi.NULL,
+                    ),
+                    parent,
                 )
+                indptr = _ss.claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
+                col_indices = _ss.claim_buffer(ffi, Aj[0], Aj_size[0], index_dtype)
+                values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+                if len(indptr) > nrows[0] + 1:
+                    indptr = indptr[: nrows[0] + 1]
+                if len(col_indices) > nvals:
+                    col_indices = col_indices[:nvals]
+                if len(values) > nvals:
+                    values = values[:nvals]
                 rv = {
-                    "indptr": np.frombuffer(
-                        ffi.buffer(Ap[0], (nrows[0] + 1) * index_dtype.itemsize), dtype=index_dtype
-                    ),
-                    "col_indices": np.frombuffer(
-                        ffi.buffer(Aj[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
-                    ),
-                    "values": np.frombuffer(
-                        ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype
-                    ),
+                    "indptr": indptr,
+                    "col_indices": col_indices,
+                    "sorted_index": True if sort else not jumbled[0],
                 }
             elif format == "csc":
                 Ai = ffi_new("GrB_Index**")
+                Ai_size = ffi_new("GrB_Index*")
                 check_status(
                     lib.GxB_Matrix_export_CSC(
-                        mhandle, type_, nrows, ncols, nvals, nonempty, Ap, Ai, Ax, ffi.NULL
-                    )
+                        mhandle,
+                        type_,
+                        nrows,
+                        ncols,
+                        Ap,
+                        Ai,
+                        Ax,
+                        Ap_size,
+                        Ai_size,
+                        Ax_size,
+                        jumbled,
+                        ffi.NULL,
+                    ),
+                    parent,
                 )
+                indptr = _ss.claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
+                row_indices = _ss.claim_buffer(ffi, Ai[0], Ai_size[0], index_dtype)
+                values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+                if len(indptr) > ncols[0] + 1:
+                    indptr = indptr[: ncols[0] + 1]
+                if len(row_indices) > nvals:
+                    row_indices = row_indices[:nvals]
+                if len(values) > nvals:
+                    values = values[:nvals]
                 rv = {
-                    "indptr": np.frombuffer(
-                        ffi.buffer(Ap[0], (ncols[0] + 1) * index_dtype.itemsize), dtype=index_dtype
-                    ),
-                    "row_indices": np.frombuffer(
-                        ffi.buffer(Ai[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
-                    ),
-                    "values": np.frombuffer(
-                        ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype
-                    ),
+                    "indptr": indptr,
+                    "row_indices": row_indices,
+                    "sorted_index": True if sort else not jumbled[0],
                 }
             elif format == "hypercsr":
                 nvec = ffi_new("GrB_Index*")
                 Ah = ffi_new("GrB_Index**")
                 Aj = ffi_new("GrB_Index**")
+                Ah_size = ffi_new("GrB_Index*")
+                Aj_size = ffi_new("GrB_Index*")
                 check_status(
                     lib.GxB_Matrix_export_HyperCSR(
                         mhandle,
                         type_,
                         nrows,
                         ncols,
-                        nvals,
-                        nonempty,
-                        nvec,
-                        Ah,
                         Ap,
+                        Ah,
                         Aj,
                         Ax,
+                        Ap_size,
+                        Ah_size,
+                        Aj_size,
+                        Ax_size,
+                        nvec,
+                        jumbled,
                         ffi.NULL,
-                    )
+                    ),
+                    parent,
                 )
+                indptr = _ss.claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
+                rows = _ss.claim_buffer(ffi, Ah[0], Ah_size[0], index_dtype)
+                col_indices = _ss.claim_buffer(ffi, Aj[0], Aj_size[0], index_dtype)
+                values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+                nvec = nvec[0]
+                if len(indptr) > nvec + 1:
+                    indptr = indptr[: nvec + 1]
+                if len(rows) > nvec:
+                    rows = rows[:nvec]
+                if len(col_indices) > nvals:
+                    col_indices = col_indices[:nvals]
+                if len(values) > nvals:
+                    values = values[:nvals]
                 rv = {
-                    "rows": np.frombuffer(
-                        ffi.buffer(Ah[0], nvec[0] * index_dtype.itemsize), dtype=index_dtype
-                    ),
-                    "indptr": np.frombuffer(
-                        ffi.buffer(Ap[0], (nvec[0] + 1) * index_dtype.itemsize), dtype=index_dtype
-                    ),
-                    "col_indices": np.frombuffer(
-                        ffi.buffer(Aj[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
-                    ),
-                    "values": np.frombuffer(
-                        ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype
-                    ),
+                    "indptr": indptr,
+                    "rows": rows,
+                    "col_indices": col_indices,
+                    "sorted_index": True if sort else not jumbled[0],
                 }
             elif format == "hypercsc":
                 nvec = ffi_new("GrB_Index*")
                 Ah = ffi_new("GrB_Index**")
                 Ai = ffi_new("GrB_Index**")
+                Ah_size = ffi_new("GrB_Index*")
+                Ai_size = ffi_new("GrB_Index*")
                 check_status(
                     lib.GxB_Matrix_export_HyperCSC(
                         mhandle,
                         type_,
                         nrows,
                         ncols,
-                        nvals,
-                        nonempty,
-                        nvec,
-                        Ah,
                         Ap,
+                        Ah,
                         Ai,
                         Ax,
+                        Ap_size,
+                        Ah_size,
+                        Ai_size,
+                        Ax_size,
+                        nvec,
+                        jumbled,
                         ffi.NULL,
-                    )
+                    ),
+                    parent,
                 )
+                indptr = _ss.claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
+                cols = _ss.claim_buffer(ffi, Ah[0], Ah_size[0], index_dtype)
+                row_indices = _ss.claim_buffer(ffi, Ai[0], Ai_size[0], index_dtype)
+                values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+                nvec = nvec[0]
+                if len(indptr) > nvec + 1:
+                    indptr = indptr[: nvec + 1]
+                if len(cols) > nvec:
+                    cols = cols[:nvec]
+                if len(row_indices) > nvals:
+                    row_indices = row_indices[:nvals]
+                if len(values) > nvals:
+                    values = values[:nvals]
                 rv = {
-                    "cols": np.frombuffer(
-                        ffi.buffer(Ah[0], nvec[0] * index_dtype.itemsize), dtype=index_dtype
-                    ),
-                    "indptr": np.frombuffer(
-                        ffi.buffer(Ap[0], (nvec[0] + 1) * index_dtype.itemsize), dtype=index_dtype
-                    ),
-                    "row_indices": np.frombuffer(
-                        ffi.buffer(Ai[0], nvals[0] * index_dtype.itemsize), dtype=index_dtype
-                    ),
-                    "values": np.frombuffer(
-                        ffi.buffer(Ax[0], nvals[0] * dtype.itemsize), dtype=dtype
-                    ),
+                    "indptr": indptr,
+                    "cols": cols,
+                    "row_indices": row_indices,
+                    "sorted_index": True if sort else not jumbled[0],
                 }
+            elif format == "bitmapr" or format == "bitmapc":
+                if format == "bitmapr":
+                    cfunc = lib.GxB_Matrix_export_BitmapR
+                else:
+                    cfunc = lib.GxB_Matrix_export_BitmapC
+                Ab = ffi_new("int8_t**")
+                Ab_size = ffi_new("GrB_Index*")
+                nvals_ = ffi_new("GrB_Index*")
+                check_status(
+                    cfunc(
+                        mhandle,
+                        type_,
+                        nrows,
+                        ncols,
+                        Ab,
+                        Ax,
+                        Ab_size,
+                        Ax_size,
+                        nvals_,
+                        ffi.NULL,
+                    ),
+                    parent,
+                )
+                bitmap = _ss.claim_buffer(ffi, Ab[0], Ab_size[0], np.dtype(np.bool8))
+                values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+                size = nrows[0] * ncols[0]
+                if len(bitmap) > size:
+                    bitmap = bitmap[:size]
+                if len(values) > size:
+                    values = values[:size]
+                rv = {"bitmap": bitmap, "nvals": nvals_[0]}
+            elif format == "fullr" or format == "fullc":
+                if format == "fullr":
+                    cfunc = lib.GxB_Matrix_export_FullR
+                else:
+                    cfunc = lib.GxB_Matrix_export_FullC
+                check_status(
+                    cfunc(
+                        mhandle,
+                        type_,
+                        nrows,
+                        ncols,
+                        Ax,
+                        Ax_size,
+                        ffi.NULL,
+                    ),
+                    parent,
+                )
+                values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+                size = nrows[0] * ncols[0]
+                if len(values) > size:
+                    values = values[:size]
+                rv = {}
             else:
                 raise ValueError(f"Invalid format: {format}")
 
             rv.update(
-                {
-                    "format": format,
-                    "nrows": nrows[0],
-                    "ncols": ncols[0],
-                }
+                format=format,
+                nrows=nrows[0],
+                ncols=ncols[0],
+                values=values,
             )
-            self._parent.gb_obj = ffi.NULL
+            parent.gb_obj = ffi.NULL
             return rv
 
         @classmethod
-        def fast_import(
+        def import_csr(
             cls,
             *,
             nrows,
             ncols,
             indptr,
             values,
-            row_indices=None,
-            col_indices=None,
-            rows=None,
-            cols=None,
+            col_indices,
+            sorted_index=False,
+            take_ownership=False,
+            dtype=None,
             format=None,
             name=None,
+        ):
+            if format is not None and format.lower() != "csr":
+                raise ValueError(f"Invalid format: {format!r}.  Must be None or 'csr'.")
+            copy = not take_ownership
+            indptr = ints_to_numpy_buffer(
+                indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
+            )
+            col_indices = ints_to_numpy_buffer(
+                col_indices, np.uint64, copy=copy, ownable=True, name="column indices"
+            )
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            mhandle = ffi_new("GrB_Matrix*")
+            Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
+            Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
+            Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            check_status_carg(
+                lib.GxB_Matrix_import_CSR(
+                    mhandle,
+                    dtype._carg,
+                    nrows,
+                    ncols,
+                    Ap,
+                    Aj,
+                    Ax,
+                    len(indptr),
+                    len(col_indices),
+                    len(values),
+                    not sorted_index,
+                    ffi.NULL,
+                ),
+                "Matrix",
+                mhandle[0],
+            )
+            rv = Matrix(mhandle, dtype, name=name)
+            rv._nrows = nrows
+            rv._ncols = ncols
+            _ss.unclaim_buffer(indptr)
+            _ss.unclaim_buffer(col_indices)
+            _ss.unclaim_buffer(values)
+            return rv
+
+        @classmethod
+        def import_csc(
+            cls,
+            *,
+            nrows,
+            ncols,
+            indptr,
+            values,
+            row_indices,
+            sorted_index=False,
+            take_ownership=False,
+            dtype=None,
+            format=None,
+            name=None,
+        ):
+            if format is not None and format.lower() != "csc":
+                raise ValueError(f"Invalid format: {format!r}  Must be None or 'csc'.")
+            copy = not take_ownership
+            indptr = ints_to_numpy_buffer(
+                indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
+            )
+            row_indices = ints_to_numpy_buffer(
+                row_indices, np.uint64, copy=copy, ownable=True, name="row indices"
+            )
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            mhandle = ffi_new("GrB_Matrix*")
+            Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
+            Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
+            Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            check_status_carg(
+                lib.GxB_Matrix_import_CSC(
+                    mhandle,
+                    dtype._carg,
+                    nrows,
+                    ncols,
+                    Ap,
+                    Ai,
+                    Ax,
+                    len(indptr),
+                    len(row_indices),
+                    len(values),
+                    not sorted_index,
+                    ffi.NULL,
+                ),
+                "Matrix",
+                mhandle[0],
+            )
+            rv = Matrix(mhandle, dtype, name=name)
+            rv._nrows = nrows
+            rv._ncols = ncols
+            _ss.unclaim_buffer(indptr)
+            _ss.unclaim_buffer(row_indices)
+            _ss.unclaim_buffer(values)
+            return rv
+
+        @classmethod
+        def import_hypercsr(
+            cls,
+            *,
+            nrows,
+            ncols,
+            rows,
+            indptr,
+            values,
+            col_indices,
+            sorted_index=False,
+            take_ownership=False,
+            dtype=None,
+            format=None,
+            name=None,
+        ):
+            if format is not None and format.lower() != "hypercsr":
+                raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsr'.")
+            copy = not take_ownership
+            indptr = ints_to_numpy_buffer(
+                indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
+            )
+            rows = ints_to_numpy_buffer(rows, np.uint64, copy=copy, ownable=True, name="rows")
+            col_indices = ints_to_numpy_buffer(
+                col_indices, np.uint64, copy=copy, ownable=True, name="column indices"
+            )
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            mhandle = ffi_new("GrB_Matrix*")
+            Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
+            Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(rows)))
+            Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
+            Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            nvec = len(rows)
+            check_status_carg(
+                lib.GxB_Matrix_import_HyperCSR(
+                    mhandle,
+                    dtype._carg,
+                    nrows,
+                    ncols,
+                    Ap,
+                    Ah,
+                    Aj,
+                    Ax,
+                    len(indptr),
+                    len(rows),
+                    len(col_indices),
+                    len(values),
+                    nvec,
+                    not sorted_index,
+                    ffi.NULL,
+                ),
+                "Matrix",
+                mhandle[0],
+            )
+            rv = Matrix(mhandle, dtype, name=name)
+            rv._nrows = nrows
+            rv._ncols = ncols
+            _ss.unclaim_buffer(indptr)
+            _ss.unclaim_buffer(rows)
+            _ss.unclaim_buffer(col_indices)
+            _ss.unclaim_buffer(values)
+            return rv
+
+        @classmethod
+        def import_hypercsc(
+            cls,
+            *,
+            nrows,
+            ncols,
+            cols,
+            indptr,
+            values,
+            row_indices,
+            sorted_index=False,
+            take_ownership=False,
+            dtype=None,
+            format=None,
+            name=None,
+        ):
+            if format is not None and format.lower() != "hypercsc":
+                raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsc'.")
+            copy = not take_ownership
+            indptr = ints_to_numpy_buffer(
+                indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
+            )
+            cols = ints_to_numpy_buffer(cols, np.uint64, copy=copy, ownable=True, name="columns")
+            row_indices = ints_to_numpy_buffer(
+                row_indices, np.uint64, copy=copy, ownable=True, name="row indices"
+            )
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            mhandle = ffi_new("GrB_Matrix*")
+            Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
+            Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(cols)))
+            Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
+            Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            nvec = len(cols)
+            check_status_carg(
+                lib.GxB_Matrix_import_HyperCSC(
+                    mhandle,
+                    dtype._carg,
+                    nrows,
+                    ncols,
+                    Ap,
+                    Ah,
+                    Ai,
+                    Ax,
+                    len(indptr),
+                    len(cols),
+                    len(row_indices),
+                    len(values),
+                    nvec,
+                    not sorted_index,
+                    ffi.NULL,
+                ),
+                "Matrix",
+                mhandle[0],
+            )
+            rv = Matrix(mhandle, dtype, name=name)
+            rv._nrows = nrows
+            rv._ncols = ncols
+            _ss.unclaim_buffer(indptr)
+            _ss.unclaim_buffer(cols)
+            _ss.unclaim_buffer(row_indices)
+            _ss.unclaim_buffer(values)
+            return rv
+
+        @classmethod
+        def import_bitmapr(
+            cls,
+            *,
+            nrows,
+            ncols,
+            bitmap,
+            values,
+            take_ownership=False,
+            nvals=None,
+            dtype=None,
+            format=None,
+            name=None,
+        ):
+            if format is not None and format.lower() != "bitmapr":
+                raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapr'.")
+            copy = not take_ownership
+            bitmap = ints_to_numpy_buffer(bitmap, np.bool8, copy=copy, ownable=True, name="bitmap")
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            mhandle = ffi_new("GrB_Matrix*")
+            Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
+            Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            if nvals is None:
+                nvals = np.count_nonzero(bitmap)
+            check_status_carg(
+                lib.GxB_Matrix_import_BitmapR(
+                    mhandle,
+                    dtype._carg,
+                    nrows,
+                    ncols,
+                    Ab,
+                    Ax,
+                    len(bitmap),
+                    len(values),
+                    nvals,
+                    ffi.NULL,
+                ),
+                "Matrix",
+                mhandle[0],
+            )
+            rv = Matrix(mhandle, dtype, name=name)
+            rv._nrows = nrows
+            rv._ncols = ncols
+            _ss.unclaim_buffer(bitmap)
+            _ss.unclaim_buffer(values)
+            return rv
+
+        @classmethod
+        def import_bitmapc(
+            cls,
+            *,
+            nrows,
+            ncols,
+            bitmap,
+            values,
+            take_ownership=False,
+            nvals=None,
+            format=None,
+            dtype=None,
+            name=None,
+        ):
+            if format is not None and format.lower() != "bitmapc":
+                raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapc'.")
+            copy = not take_ownership
+            bitmap = ints_to_numpy_buffer(bitmap, np.bool8, copy=copy, ownable=True, name="bitmap")
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            mhandle = ffi_new("GrB_Matrix*")
+            Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
+            Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            if nvals is None:
+                nvals = np.count_nonzero(bitmap)
+            check_status_carg(
+                lib.GxB_Matrix_import_BitmapC(
+                    mhandle,
+                    dtype._carg,
+                    nrows,
+                    ncols,
+                    Ab,
+                    Ax,
+                    len(bitmap),
+                    len(values),
+                    nvals,
+                    ffi.NULL,
+                ),
+                "Matrix",
+                mhandle[0],
+            )
+            rv = Matrix(mhandle, dtype, name=name)
+            rv._nrows = nrows
+            rv._ncols = ncols
+            _ss.unclaim_buffer(bitmap)
+            _ss.unclaim_buffer(values)
+            return rv
+
+        @classmethod
+        def import_fullr(
+            cls,
+            *,
+            nrows,
+            ncols,
+            values,
+            take_ownership=False,
+            dtype=None,
+            format=None,
+            name=None,
+        ):
+            if format is not None and format.lower() != "fullr":
+                raise ValueError(f"Invalid format: {format!r}  Must be None or 'fullr'.")
+            copy = not take_ownership
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            mhandle = ffi_new("GrB_Matrix*")
+            Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            check_status_carg(
+                lib.GxB_Matrix_import_FullR(
+                    mhandle,
+                    dtype._carg,
+                    nrows,
+                    ncols,
+                    Ax,
+                    len(values),
+                    ffi.NULL,
+                ),
+                "Matrix",
+                mhandle[0],
+            )
+            rv = Matrix(mhandle, dtype, name=name)
+            rv._nrows = nrows
+            rv._ncols = ncols
+            _ss.unclaim_buffer(values)
+            return rv
+
+        @classmethod
+        def import_fullc(
+            cls,
+            *,
+            nrows,
+            ncols,
+            values,
+            take_ownership=False,
+            dtype=None,
+            format=None,
+            name=None,
+        ):
+            if format is not None and format.lower() != "fullc":
+                raise ValueError(f"Invalid format: {format!r}.  Must be None or 'fullc'.")
+            copy = not take_ownership
+            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            mhandle = ffi_new("GrB_Matrix*")
+            Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            check_status_carg(
+                lib.GxB_Matrix_import_FullC(
+                    mhandle,
+                    dtype._carg,
+                    nrows,
+                    ncols,
+                    Ax,
+                    len(values),
+                    ffi.NULL,
+                ),
+                "Matrix",
+                mhandle[0],
+            )
+            rv = Matrix(mhandle, dtype, name=name)
+            rv._nrows = nrows
+            rv._ncols = ncols
+            _ss.unclaim_buffer(values)
+            return rv
+
+        @classmethod
+        def import_any(
+            cls,
+            *,
+            # All
+            nrows,
+            ncols,
+            values,
+            take_ownership=False,
+            format=None,
+            dtype=None,
+            name=None,
+            # CSR/CSC/HyperCSR/HyperCSC
+            indptr=None,
+            sorted_index=False,
+            # CSR/HyperCSR
+            col_indices=None,
+            # HyperCSR
+            rows=None,
+            # CSC/HyperCSC
+            row_indices=None,
+            # HyperCSC
+            cols=None,
+            # BitmapR/BitmapC
+            bitmap=None,
+            nvals=None,  # optional
         ):
             """
             GxB_Matrix_import_xxx
 
             The new Matrix uses the underlying buffer of the input arrays.
-            The caller should delete or stop using the input arrays after calling `fast_import`.
+            The caller should delete or stop using the input arrays after calling `import_any`.
 
             Valid formats:
              - csr  (needs indptr, col_indices, values)
              - csc  (needs indptr, row_indices, values)
              - hypercsr  (needs rows, indptr, col_indices, values)
              - hypercsc  (needs cols, indptr, row_indices, values)
+             - bitmapr  (needs bitmap, nvals (optional), values)
+             - bitmapc  (needs bitmap, nvals (optional), values)
+             - fullr  (needs values)
+             - fullc  (needs values)
             """
-            mhandle = ffi_new("GrB_Matrix*")
-            dtype = lookup_dtype(values.dtype)
-
             if format is None:
                 # Determine format based on provided inputs
-                if row_indices is None and col_indices is None:
-                    raise ValueError("Must provide either `row_indices` or `col_indices`")
-                if row_indices is not None and col_indices is not None:
-                    raise ValueError("Cannot provide both `row_indices` and `col_indices`")
-                if rows is not None and cols is not None:
-                    raise ValueError("Cannot provide both `rows` and `cols`")
-                elif rows is None and cols is None:
-                    format = "csr" if row_indices is None else "csc"
-                elif rows is not None:
-                    if col_indices is None:
-                        raise ValueError("HyperCSR requires col_indices, not row_indices")
-                    format = "hypercsr"
+                if indptr is not None:
+                    if bitmap is not None:
+                        raise ValueError("Cannot provide both `indptr` and `bitmap`")
+                    if row_indices is None and col_indices is None:
+                        raise ValueError("Must provide either `row_indices` or `col_indices`")
+                    if row_indices is not None and col_indices is not None:
+                        raise ValueError("Cannot provide both `row_indices` and `col_indices`")
+                    if rows is not None and cols is not None:
+                        raise ValueError("Cannot provide both `rows` and `cols`")
+                    elif rows is None and cols is None:
+                        if row_indices is None:
+                            format = "csr"
+                        else:
+                            format = "csc"
+                    elif rows is not None:
+                        if col_indices is None:
+                            raise ValueError("HyperCSR requires col_indices, not row_indices")
+                        format = "hypercsr"
+                    else:
+                        if row_indices is None:
+                            raise ValueError("HyperCSC requires row_indices, not col_indices")
+                        format = "hypercsc"
+                elif bitmap is not None:
+                    if col_indices is not None:
+                        raise ValueError("Cannot provide both `bitmap` and `col_indices`")
+                    if row_indices is not None:
+                        raise ValueError("Cannot provide both `bitmap` and `row_indices`")
+                    if cols is not None:
+                        raise ValueError("Cannot provide both `bitmap` and `cols`")
+                    if rows is not None:
+                        raise ValueError("Cannot provide both `bitmap` and `rows`")
+                    # Assume row-oriented
+                    format = "bitmapr"
                 else:
-                    if row_indices is None:
-                        raise ValueError("HyperCSC requires row_indices, not col_indices")
-                    format = "hypercsc"
-            format = format.lower()
+                    # Assume row-oriented
+                    format = "fullr"
+            else:
+                format = format.lower()
 
-            Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
-            Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
             if format == "csr":
-                Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
-                check_status(
-                    lib.GxB_Matrix_import_CSR(
-                        mhandle, dtype._carg, nrows, ncols, len(values), -1, Ap, Aj, Ax, ffi.NULL
-                    )
+                return cls.import_csr(
+                    nrows=nrows,
+                    ncols=ncols,
+                    indptr=indptr,
+                    values=values,
+                    col_indices=col_indices,
+                    sorted_index=sorted_index,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
+                    name=name,
                 )
             elif format == "csc":
-                Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
-                check_status(
-                    lib.GxB_Matrix_import_CSC(
-                        mhandle, dtype._carg, nrows, ncols, len(values), -1, Ap, Ai, Ax, ffi.NULL
-                    )
+                return cls.import_csc(
+                    nrows=nrows,
+                    ncols=ncols,
+                    indptr=indptr,
+                    values=values,
+                    row_indices=row_indices,
+                    sorted_index=sorted_index,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
+                    name=name,
                 )
             elif format == "hypercsr":
-                Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(rows)))
-                Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
-                check_status(
-                    lib.GxB_Matrix_import_HyperCSR(
-                        mhandle,
-                        dtype._carg,
-                        nrows,
-                        ncols,
-                        len(values),
-                        -1,
-                        len(rows),
-                        Ah,
-                        Ap,
-                        Aj,
-                        Ax,
-                        ffi.NULL,
-                    )
+                return cls.import_hypercsr(
+                    nrows=nrows,
+                    ncols=ncols,
+                    rows=rows,
+                    indptr=indptr,
+                    values=values,
+                    col_indices=col_indices,
+                    sorted_index=sorted_index,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
+                    name=name,
                 )
             elif format == "hypercsc":
-                Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(cols)))
-                Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
-                check_status(
-                    lib.GxB_Matrix_import_HyperCSC(
-                        mhandle,
-                        dtype._carg,
-                        nrows,
-                        ncols,
-                        len(values),
-                        -1,
-                        len(cols),
-                        Ah,
-                        Ap,
-                        Ai,
-                        Ax,
-                        ffi.NULL,
-                    )
+                return cls.import_hypercsc(
+                    nrows=nrows,
+                    ncols=ncols,
+                    cols=cols,
+                    indptr=indptr,
+                    values=values,
+                    row_indices=row_indices,
+                    sorted_index=sorted_index,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
+                    name=name,
+                )
+            elif format == "bitmapr":
+                return cls.import_bitmapr(
+                    nrows=nrows,
+                    ncols=ncols,
+                    values=values,
+                    nvals=nvals,
+                    bitmap=bitmap,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
+                    name=name,
+                )
+            elif format == "bitmapc":
+                return cls.import_bitmapc(
+                    nrows=nrows,
+                    ncols=ncols,
+                    values=values,
+                    nvals=nvals,
+                    bitmap=bitmap,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
+                    name=name,
+                )
+            elif format == "fullr":
+                return cls.import_fullr(
+                    nrows=nrows,
+                    ncols=ncols,
+                    values=values,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
+                    name=name,
+                )
+            elif format == "fullc":
+                return cls.import_fullc(
+                    nrows=nrows,
+                    ncols=ncols,
+                    values=values,
+                    take_ownership=take_ownership,
+                    dtype=dtype,
+                    name=name,
                 )
             else:
                 raise ValueError(f"Invalid format: {format}")
-
-            rv = Matrix(mhandle, dtype, name=name)
-            rv._nrows = nrows
-            rv._ncols = ncols
-            return rv
 
 
 class MatrixExpression(BaseExpression):

@@ -18,8 +18,12 @@ def test_from_values_dtype_resolving():
 
 
 def test_from_values_invalid_dtype():
-    with pytest.raises(OverflowError):
-        Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, 3], dtype=dtypes.BOOL)
+    # We now rely on numpy to coerce the data
+    A = Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, 3], dtype=dtypes.BOOL)
+    expected = Matrix.from_values([0, 1, 2], [2, 0, 1], [False, True, True], dtype=dtypes.BOOL)
+    assert A.isequal(expected)
+    with pytest.raises(ValueError, match="object dtype for values is not allowed"):
+        Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, object()])
 
 
 def test_resolve_ops_using_common_dtype():

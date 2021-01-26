@@ -18,11 +18,15 @@ def test_op_repr():
 def test_unaryop():
     assert unary.ainv["INT32"].gb_obj == lib.GrB_AINV_INT32
     assert unary.ainv[dtypes.UINT16].gb_obj == lib.GrB_AINV_UINT16
+    assert set(unary.positioni.types) == {"INT32", "INT64"}
+    assert set(unary.positionj1.types) == {"INT32", "INT64"}
 
 
 def test_binaryop():
     assert binary.plus["INT32"].gb_obj == lib.GrB_PLUS_INT32
     assert binary.plus[dtypes.UINT16].gb_obj == lib.GrB_PLUS_UINT16
+    assert set(binary.firsti.types) == {"INT32", "INT64"}
+    assert set(binary.secondj1.types) == {"INT32", "INT64"}
 
 
 def test_monoid():
@@ -33,6 +37,7 @@ def test_monoid():
 def test_semiring():
     assert semiring.min_plus["INT32"].gb_obj == lib.GxB_MIN_PLUS_INT32
     assert semiring.min_plus[dtypes.UINT16].gb_obj == lib.GxB_MIN_PLUS_UINT16
+    assert set(semiring.min_firsti.types) == {"INT32", "INT64"}
 
 
 def test_find_opclass_unaryop():
@@ -351,11 +356,15 @@ def test_semiring_parameterized():
     B = A.apply(unaryop).new()
     assert B.isequal(A)
 
-    x = A.reduce_rows(bin_op).new()
-    assert x.isequal(A.reduce_rows(binary.plus).new())
+    # SuiteSparse 4.0.1 no longer supports reduce with user-defined binary op
+    with pytest.raises(exceptions.DomainMismatch):
+        x = A.reduce_rows(bin_op).new()
+        # assert x.isequal(A.reduce_rows(binary.plus).new())
 
-    x = A.reduce_columns(bin_op).new()
-    assert x.isequal(A.reduce_columns(binary.plus).new())
+    # SuiteSparse 4.0.1 no longer supports reduce with user-defined binary op
+    with pytest.raises(exceptions.DomainMismatch):
+        x = A.reduce_columns(bin_op).new()
+        # assert x.isequal(A.reduce_columns(binary.plus).new())
 
     s = A.reduce_scalar(mymonoid).new()
     assert s.value == A.reduce_scalar(monoid.plus).value

@@ -2,7 +2,7 @@ import itertools
 from . import ffi, backend
 from .base import BaseExpression, BaseType
 from .binary import isclose
-from .dtypes import lookup_dtype
+from .dtypes import lookup_dtype, _INDEX
 from .ops import get_typed_op
 
 ffi_new = ffi.new
@@ -146,7 +146,7 @@ class Scalar(BaseType):
         else:
             new_scalar = type(self).new(dtype, name=name)
             if not self.is_empty:
-                new_scalar.value = new_scalar.dtype.numba_type(self.value)
+                new_scalar.value = new_scalar.dtype.np_type(self.value)
         return new_scalar
 
     @classmethod
@@ -220,9 +220,14 @@ class ScalarExpression(BaseExpression):
 
 
 class _CScalar:
+    """Wrap scalars for calling into C.
+
+    If a Scalar is not provided, then a datatype of GrB_Index is assumed.
+    """
+
     def __init__(self, scalar):
         if type(scalar) is not Scalar:
-            scalar = Scalar.from_value(scalar, name=repr(scalar))
+            scalar = Scalar.from_value(scalar, name=repr(scalar), dtype=_INDEX)
         self.scalar = scalar
         self.dtype = scalar.dtype
 

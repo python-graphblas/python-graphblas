@@ -169,17 +169,16 @@ def test_npmonoid():
             ],
             [np.array([True, False, True, False]), np.array([True, True, False, False])],
         ],
-        # Complex monoids not working yet
-        # [
-        #     [
-        #         grblas.Vector.from_values(index, values1, dtype='FC64'),
-        #         grblas.Vector.from_values(index, values2, dtype='FC64'),
-        #     ],
-        #     [
-        #         np.array(values1, dtype=np.complex128),
-        #         np.array(values2, dtype=np.complex128),
-        #     ],
-        # ],
+        [
+            [
+                grblas.Vector.from_values(index, values1, dtype="FC64"),
+                grblas.Vector.from_values(index, values2, dtype="FC64"),
+            ],
+            [
+                np.array(values1, dtype=np.complex128),
+                np.array(values2, dtype=np.complex128),
+            ],
+        ],
     ]
     blacklist = {}
     reduction_blacklist = {

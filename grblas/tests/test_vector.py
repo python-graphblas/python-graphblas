@@ -4,7 +4,7 @@ import grblas
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
-from grblas.exceptions import IndexOutOfBound, OutputNotEmpty, DimensionMismatch
+from grblas.exceptions import IndexOutOfBound, OutputNotEmpty, DimensionMismatch, InvalidValue
 
 
 @pytest.fixture
@@ -28,6 +28,16 @@ def test_new():
     assert u.dtype == "INT8"
     assert u.nvals == 0
     assert u.size == 17
+
+
+def test_large_vector():
+    u = Vector.from_values([0, 2 ** 59], [0, 1])
+    assert u.size == 2 ** 59 + 1
+    assert u[2 ** 59].value == 1
+    with pytest.raises(InvalidValue):
+        Vector.from_values([0, 2 ** 64 - 2], [0, 1])
+    with pytest.raises(OverflowError):
+        Vector.from_values([0, 2 ** 64], [0, 1])
 
 
 def test_dup(v):
@@ -66,15 +76,32 @@ def test_from_values():
     with pytest.raises(ValueError, match="Duplicate indices found"):
         # Duplicate indices requires a dup_op
         Vector.from_values([0, 1, 1], [True, True, True])
-    with pytest.raises(ValueError, match="No values provided. Unable to determine type"):
+    with pytest.raises(ValueError, match="No indices provided. Unable to infer size."):
         Vector.from_values([], [])
-    with pytest.raises(ValueError, match="No values provided. Unable to determine type"):
-        Vector.from_values([], [], size=10)
+
+    # Changed: Assume empty value is float64 (like numpy)
+    # with pytest.raises(ValueError, match="No values provided. Unable to determine type"):
+    w = Vector.from_values([], [], size=10)
+    assert w.size == 10
+    assert w.nvals == 0
+    assert w.dtype == dtypes.FP64
+
     with pytest.raises(ValueError, match="No indices provided. Unable to infer size"):
         Vector.from_values([], [], dtype=dtypes.INT64)
     u4 = Vector.from_values([], [], size=10, dtype=dtypes.INT64)
     u5 = Vector.new(dtypes.INT64, size=10)
     assert u4.isequal(u5, check_dtype=True)
+
+    # we check index dtype if given numpy array
+    with pytest.raises(ValueError, match="indices must be integers, not float64"):
+        Vector.from_values(np.array([1.2, 3.4]), [1, 2])
+    # but coerce index if given Python lists (we defer to numpy casting)
+    u6 = Vector.from_values([1.2, 3.4], [1, 2])
+    assert u6.isequal(Vector.from_values([1, 3], [1, 2]))
+
+    # mis-matched sizes
+    with pytest.raises(ValueError, match="`indices` and `values` lengths must match"):
+        Vector.from_values([0], [1, 2])
 
 
 def test_clear(v):
@@ -633,9 +660,57 @@ def test_del(capsys):
 
 def test_import_export(v):
     v1 = v.dup()
-    k = v1.ss.fast_export()
-    assert k["size"] == 7
-    assert (k["indices"] == [1, 3, 4, 6]).all()
-    assert (k["values"] == [1, 1, 2, 0]).all()
-    w1 = Vector.ss.fast_import(**k)
+    d = v1.ss.export("sparse", give_ownership=True)
+    assert d["size"] == 7
+    assert (d["indices"] == [1, 3, 4, 6]).all()
+    assert (d["values"] == [1, 1, 2, 0]).all()
+    w1 = Vector.ss.import_any(**d)
     assert w1.isequal(v)
+
+    v2 = v.dup()
+    d = v2.ss.export("bitmap")
+    assert d["nvals"] == 4
+    assert len(d["bitmap"]) == 7
+    assert (d["bitmap"] == [0, 1, 0, 1, 1, 0, 1]).all()
+    assert (d["values"][d["bitmap"]] == [1, 1, 2, 0]).all()
+    w2 = Vector.ss.import_any(**d)
+    assert w2.isequal(v)
+
+    v3 = Vector.from_values([0, 1, 2], [1, 3, 5])
+    v3_copy = v3.dup()
+    d = v3.ss.export("full")
+    assert (d["values"] == [1, 3, 5]).all()
+    w3 = Vector.ss.import_any(**d)
+    assert w3.isequal(v3_copy)
+
+    v4 = v.dup()
+    d = v4.ss.export()
+    assert d["format"] in {"sparse", "bitmap", "full"}
+    w4 = Vector.ss.import_any(**d)
+    assert w4.isequal(v)
+
+    # can't own if we can't write
+    d = v.ss.export("sparse")
+    d["indices"].flags.writeable = False
+    # can't own a view
+    size = len(d["values"])
+    vals = np.zeros(2 * size, dtype=d["values"].dtype)
+    vals[:size] = d["values"]
+    view = vals[:size]
+    w5 = Vector.ss.import_sparse(take_ownership=True, **dict(d, values=view))
+    assert w5.isequal(v)
+    assert d["values"].flags.owndata
+    assert d["values"].flags.writeable
+    assert d["indices"].flags.owndata
+
+    # now let's take ownership!
+    d = v.ss.export("sparse", sort=True)
+    w6 = Vector.ss.import_any(take_ownership=True, **d)
+    assert w6.isequal(v)
+    assert not d["values"].flags.owndata
+    assert not d["values"].flags.writeable
+    assert not d["indices"].flags.owndata
+    assert not d["indices"].flags.writeable
+
+    with pytest.raises(ValueError, match="Invalid format: bad_name"):
+        v.ss.export("bad_name")
