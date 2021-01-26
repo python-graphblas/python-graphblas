@@ -40,7 +40,7 @@ def test_npunary():
         [grblas.Vector.from_values(L, L), np.array(L, dtype=np.int64)],
         [grblas.Vector.from_values(L, L, dtype="float64"), np.array(L, dtype=np.float64)],
     ]
-    if not sys.platform.startswith('win'):
+    if not sys.platform.startswith("win"):
         data.append(
             [grblas.Vector.from_values(L, L, dtype="FC64"), np.array(L, dtype=np.complex128)],
         )
