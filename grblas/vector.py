@@ -614,7 +614,7 @@ class Vector(BaseType):
             if give_ownership:
                 parent = self._parent
             else:
-                parent = self._parent.dup(name=f'{self._parent.name}_export')
+                parent = self._parent.dup(name=f"{self._parent.name}_export")
             dtype = np.dtype(parent.dtype.np_type)
             index_dtype = np.dtype(np.uint64)
 
