@@ -65,9 +65,9 @@ def remove_complex(text):
                 # By commenting the terminating line out, we lose the closing semicolon
                 # Walk back up the lines and look for the last non-commented out line and add the semicolon
                 for i in range(5):  # it's never more than 5 away
-                    if out[-i].startswith('//'):
+                    if out[-i].startswith("//"):
                         continue
-                    last_comma_pos = out[-i].rfind(',')
+                    last_comma_pos = out[-i].rfind(",")
                     if last_comma_pos < 0:
                         continue
                     out[-i] = f"{out[-i][:last_comma_pos]};{out[-i][last_comma_pos+1:]}"

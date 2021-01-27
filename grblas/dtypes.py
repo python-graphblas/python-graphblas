@@ -1,5 +1,4 @@
 import re
-import sys
 import numpy as np
 import numba
 from . import lib
@@ -50,23 +49,22 @@ UINT64 = DataType("UINT64", lib.GrB_UINT64, "GrB_UINT64", "uint64_t", numba.type
 _INDEX = DataType("UINT64", lib.GrB_UINT64, "GrB_Index", "GrB_Index", numba.types.uint64, np.uint64)
 FP32 = DataType("FP32", lib.GrB_FP32, "GrB_FP32", "float", numba.types.float32, np.float32)
 FP64 = DataType("FP64", lib.GrB_FP64, "GrB_FP64", "double", numba.types.float64, np.float64)
-if _supports_complex:
-    if hasattr(lib, "GxB_FC32"):  # pragma: no cover
-        FC32 = DataType(
-            "FC32", lib.GxB_FC32, "GxB_FC32", "float _Complex", numba.types.complex64, np.complex64
-        )
-    if hasattr(lib, "GrB_FC32"):  # pragma: no cover
-        FC32 = DataType(
-            "FC32", lib.GrB_FC32, "GrB_FC32", "float _Complex", numba.types.complex64, np.complex64
-        )
-    if hasattr(lib, "GxB_FC64"):  # pragma: no cover
-        FC64 = DataType(
-            "FC64", lib.GxB_FC64, "GxB_FC64", "double _Complex", numba.types.complex128, np.complex128
-        )
-    if hasattr(lib, "GrB_FC64"):  # pragma: no cover
-        FC64 = DataType(
-            "FC64", lib.GrB_FC64, "GrB_FC64", "double _Complex", numba.types.complex128, np.complex128
-        )
+if _supports_complex and hasattr(lib, "GxB_FC32"):  # pragma: no cover
+    FC32 = DataType(
+        "FC32", lib.GxB_FC32, "GxB_FC32", "float _Complex", numba.types.complex64, np.complex64
+    )
+if _supports_complex and hasattr(lib, "GrB_FC32"):  # pragma: no cover
+    FC32 = DataType(
+        "FC32", lib.GrB_FC32, "GrB_FC32", "float _Complex", numba.types.complex64, np.complex64
+    )
+if _supports_complex and hasattr(lib, "GxB_FC64"):  # pragma: no cover
+    FC64 = DataType(
+        "FC64", lib.GxB_FC64, "GxB_FC64", "double _Complex", numba.types.complex128, np.complex128
+    )
+if _supports_complex and hasattr(lib, "GrB_FC64"):  # pragma: no cover
+    FC64 = DataType(
+        "FC64", lib.GrB_FC64, "GrB_FC64", "double _Complex", numba.types.complex128, np.complex128
+    )
 
 # Used for testing user-defined functions
 _sample_values = {
@@ -83,10 +81,12 @@ _sample_values = {
     BOOL.name: np.bool_(True),
 }
 if _supports_complex:
-    _sample_values.update({
-        FC32.name: np.complex64(complex(0, 0.5)),
-        FC64.name: np.complex128(complex(0, 0.5)),
-    })
+    _sample_values.update(
+        {
+            FC32.name: np.complex64(complex(0, 0.5)),
+            FC64.name: np.complex128(complex(0, 0.5)),
+        }
+    )
 
 # Create register to easily lookup types by name, gb_obj, or c_type
 _registry = {}
