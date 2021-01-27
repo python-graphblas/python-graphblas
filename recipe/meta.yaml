@@ -9,20 +9,24 @@ source:
   path: ../
 
 build:
-  skip: true  # [win or py<37]
+  skip: true  # [py<37]
   number: 0
   script: "{{ PYTHON }} -m pip install . -vv"
 
 requirements:
   build:
     - {{ compiler('c') }}
+    - cython
+    - numpy >=1.15
 
   host:
     - python
     - pip
     - setuptools
     - cffi
+    - cython
     - graphblas
+    - numpy >=1.15
     - pytest-runner
 
   run:

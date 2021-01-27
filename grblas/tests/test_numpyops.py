@@ -1,6 +1,7 @@
 # These tests are very slow, since they force creation of all
 # numpy unary, binary, monoid, and semiring objects.
 import pytest
+import sys
 import numpy as np
 import itertools
 import grblas
@@ -36,10 +37,13 @@ def test_npunary():
     L = list(range(5))
     data = [
         [grblas.Vector.from_values([0, 1], [True, False]), np.array([True, False])],
-        [grblas.Vector.from_values(L, L), np.array(L, dtype=int)],
+        [grblas.Vector.from_values(L, L), np.array(L, dtype=np.int64)],
         [grblas.Vector.from_values(L, L, dtype="float64"), np.array(L, dtype=np.float64)],
-        [grblas.Vector.from_values(L, L, dtype="FC64"), np.array(L, dtype=np.complex128)],
     ]
+    if not sys.platform.startswith("win"):
+        data.append(
+            [grblas.Vector.from_values(L, L, dtype="FC64"), np.array(L, dtype=np.complex128)],
+        )
     blacklist = {}
     isclose = grblas.binary.isclose(1e-7, 0)
     for gb_input, np_input in data:
@@ -88,7 +92,7 @@ def test_npbinary():
     data = [
         [
             [grblas.Vector.from_values(index, values1), grblas.Vector.from_values(index, values2)],
-            [np.array(values1, dtype=int), np.array(values2, dtype=int)],
+            [np.array(values1, dtype=np.int64), np.array(values2, dtype=np.int64)],
         ],
         [
             [
@@ -104,14 +108,17 @@ def test_npbinary():
             ],
             [np.array([True, False, True, False]), np.array([True, True, False, False])],
         ],
-        [
-            [
-                grblas.Vector.from_values(index, values1, dtype="FC64"),
-                grblas.Vector.from_values(index, values2, dtype="FC64"),
-            ],
-            [np.array(values1, dtype=np.complex128), np.array(values2, dtype=np.complex128)],
-        ],
     ]
+    if not sys.platform.startswith("win"):
+        data.append(
+            [
+                [
+                    grblas.Vector.from_values(index, values1, dtype="FC64"),
+                    grblas.Vector.from_values(index, values2, dtype="FC64"),
+                ],
+                [np.array(values1, dtype=np.complex128), np.array(values2, dtype=np.complex128)],
+            ],
+        )
     blacklist = {
         "FP64": {"floor_divide"},  # numba/numpy difference for 1.0 / 0.0
     }

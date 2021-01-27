@@ -106,7 +106,7 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
             submatrix = Matrix.new(parent.dtype, parent._nrows, parent._ncols, name="")
             submatrix(parent.S)[columns, rows] = 0
             submatrix(submatrix.S) << parent
-            if row_offset > 0 or column_offset > 0:
+            if row_offset is not None or column_offset is not None:
                 submatrix = submatrix[column_offset:, row_offset:].new(name="")
             submatrix = submatrix.T
         else:
@@ -121,7 +121,7 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
                 else:
                     submatrix(matrix.S)[rows, columns] = 1 if mask.complement else 0
                     submatrix(matrix.V)[rows, columns] = 0 if mask.complement else 1
-            if row_offset > 0 or column_offset > 0:
+            if row_offset is not None or column_offset is not None:
                 submatrix = submatrix[row_offset:, column_offset:].new(name="")
     rows, cols, vals = submatrix.to_values()
     df.values[rows, cols] = vals
@@ -150,7 +150,7 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
             else:
                 subvector(vector.S)[columns] = 1 if mask.complement else 0
                 subvector(vector.V)[columns] = 0 if mask.complement else 1
-        if column_offset > 0:
+        if column_offset is not None:
             subvector = subvector[column_offset:].new(name="")
     cols, vals = subvector.to_values()
     df.values[0, cols] = vals
@@ -168,14 +168,14 @@ def _get_max_columns():
 def _get_chunk(length, min_length, max_length):
     if length <= max_length:
         chunk = list(range(length))
-        chunk_groups = [(None, 0)]
+        chunk_groups = [(None, None)]
     else:
         half = min_length // 2
         first_chunk = list(range(half))
         second_chunk = list(range(length - half, length))
         chunk = list(range(max_length + 1))
         chunk[-half:] = second_chunk
-        chunk_groups = [(first_chunk, 0), (second_chunk, length - len(chunk))]
+        chunk_groups = [(first_chunk, None), (second_chunk, length - len(chunk))]
     return chunk, chunk_groups
 
 
