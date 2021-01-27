@@ -1285,45 +1285,34 @@ def test_import_export(A):
 
     A5 = A.dup()
     d = A5.ss.export("bitmapr")
-    assert d["nrows"] == 7
-    assert d["ncols"] == 7
-    # fmt: off
-    assert (
-        d["bitmap"] == [
-            0, 1, 0, 1, 0, 0, 0,
-            0, 0, 0, 0, 1, 0, 1,
-            0, 0, 0, 0, 0, 1, 0,
-            1, 0, 1, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 1, 0,
-            0, 0, 1, 0, 0, 0, 0,
-            0, 0, 1, 1, 1, 0, 0,
+    assert "nrows" not in d
+    assert "ncols" not in d
+    assert d["values"].shape == (7, 7)
+    assert d["bitmap"].shape == (7, 7)
+    bitmap = np.array(
+        [
+            [0, 1, 0, 1, 0, 0, 0],
+            [0, 0, 0, 0, 1, 0, 1],
+            [0, 0, 0, 0, 0, 1, 0],
+            [1, 0, 1, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0, 0, 0],
+            [0, 0, 1, 1, 1, 0, 0],
         ]
+    )
+    assert (d["bitmap"] == bitmap).all()
+    assert (
+        d["values"].ravel("K")[d["bitmap"].ravel("K")] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]
     ).all()
-    # fmt: on
-    assert len(d["values"]) == 49
-    assert (d["values"][d["bitmap"]] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
     B5 = Matrix.ss.import_any(**d)
     assert B5.isequal(A)
 
     A6 = A.dup()
     d = A6.ss.export("bitmapc")
-    assert d["nrows"] == 7
-    assert d["ncols"] == 7
-    # fmt: off
+    assert (d["bitmap"] == bitmap).all()
     assert (
-        d["bitmap"] == [
-            0, 0, 0, 1, 0, 0, 0,
-            1, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 1, 0, 1, 1,
-            1, 0, 0, 0, 0, 0, 1,
-            0, 1, 0, 0, 0, 0, 1,
-            0, 0, 1, 0, 1, 0, 0,
-            0, 1, 0, 0, 0, 0, 0,
-        ]
+        d["values"].ravel("K")[d["bitmap"].ravel("K")] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]
     ).all()
-    # fmt: on
-    assert len(d["values"]) == 49
-    assert (d["values"][d["bitmap"]] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
     B6 = Matrix.ss.import_any(**d)
     assert B6.isequal(A)
 
@@ -1335,17 +1324,18 @@ def test_import_export(A):
     C = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
     C1 = C.dup()
     d = C1.ss.export("fullr")
-    assert d["nrows"] == 2
-    assert d["ncols"] == 2
-    assert (d["values"] == [1, 2, 3, 4]).all()
+    assert "nrows" not in d
+    assert "ncols" not in d
+    assert d["values"].shape == (2, 2)
+    assert (d["values"] == [[1, 2], [3, 4]]).all()
+    assert d["values"].flags.c_contiguous
     D1 = Matrix.ss.import_any(**d)
     assert D1.isequal(C)
 
     C2 = C.dup()
     d = C2.ss.export("fullc")
-    assert d["nrows"] == 2
-    assert d["ncols"] == 2
-    assert (d["values"] == [1, 3, 2, 4]).all()
+    assert (d["values"] == [[1, 2], [3, 4]]).all()
+    assert d["values"].flags.f_contiguous
     D2 = Matrix.ss.import_any(**d)
     assert D2.isequal(C)
 
@@ -1368,7 +1358,7 @@ def test_import_export(A):
         ["bitmap", "rows"],
         ["bitmap", "cols"],
     ]:
-        with pytest.raises(ValueError):
+        with pytest.raises(TypeError):
             Matrix.ss.import_any(nrows=3, ncols=3, values=a, **dict.fromkeys(bad_combos, a))
 
 
@@ -1426,21 +1416,19 @@ def test_import_export_empty():
 
     A5 = A.dup()
     d = A5.ss.export("bitmapr")
-    assert d["nrows"] == 2
-    assert d["ncols"] == 3
+    assert d["bitmap"].shape == (2, 3)
+    assert d["bitmap"].flags.c_contiguous
     assert d["nvals"] == 0
-    assert (d["bitmap"] == 6 * [0]).all()
-    assert len(d["values"]) == 6  # values are undefined
+    assert (d["bitmap"].ravel() == 6 * [0]).all()
     B5 = Matrix.ss.import_any(**d)
     assert B5.isequal(A)
 
     A6 = A.dup()
     d = A6.ss.export("bitmapc")
-    assert d["nrows"] == 2
-    assert d["ncols"] == 3
+    assert d["bitmap"].shape == (2, 3)
+    assert d["bitmap"].flags.f_contiguous
     assert d["nvals"] == 0
-    assert (d["bitmap"] == 6 * [0]).all()
-    assert len(d["values"]) == 6  # values are undefined
+    assert (d["bitmap"].ravel() == 6 * [0]).all()
     B6 = Matrix.ss.import_any(**d)
     assert B6.isequal(A)
 

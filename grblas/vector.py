@@ -181,10 +181,10 @@ class Vector(BaseType):
         # TODO: accept `dtype` keyword to match the dtype of `values`?
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         values, dtype = values_to_numpy_buffer(values, self.dtype)
-        n = len(values)
-        if len(indices) != n:
+        n = values.size
+        if indices.size != n:
             raise ValueError(
-                f"`indices` and `values` lengths must match: {len(indices)} != {len(values)}"
+                f"`indices` and `values` lengths must match: {indices.size} != {values.size}"
             )
         if clear:
             self.clear()
@@ -248,7 +248,7 @@ class Vector(BaseType):
         values, dtype = values_to_numpy_buffer(values, dtype)
         # Compute size if not provided
         if size is None:
-            if len(indices) == 0:
+            if indices.size == 0:
                 raise ValueError("No indices provided. Unable to infer size.")
             size = int(indices.max()) + 1
         # Create the new vector
@@ -592,7 +592,7 @@ class Vector(BaseType):
         def __init__(self, parent):
             self._parent = parent
 
-        def export(self, format=None, sort=False, give_ownership=False):
+        def export(self, format=None, sort=False, give_ownership=False, raw=False):
             """
             GxB_Vector_export
 
@@ -659,15 +659,18 @@ class Vector(BaseType):
                 nvals = nvals[0]
                 indices = _ss.claim_buffer(ffi, vi[0], vi_size[0], index_dtype)
                 values = _ss.claim_buffer(ffi, vx[0], vx_size[0], dtype)
-                if len(indices) > nvals:
-                    indices = indices[:nvals]
-                if len(values) > nvals:
-                    values = values[:nvals]
+                if not raw:
+                    if indices.size > nvals:
+                        indices = indices[:nvals]
+                    if values.size > nvals:
+                        values = values[:nvals]
                 rv = {
                     "size": size[0],
                     "indices": indices,
                     "sorted_index": True if sort else not jumbled[0],
                 }
+                if raw:
+                    rv["nvals"] = nvals
             elif format == "bitmap":
                 vb = ffi_new("int8_t**")
                 vb_size = ffi_new("GrB_Index*")
@@ -681,14 +684,17 @@ class Vector(BaseType):
                 bitmap = _ss.claim_buffer(ffi, vb[0], vb_size[0], np.dtype(np.bool8))
                 values = _ss.claim_buffer(ffi, vx[0], vx_size[0], dtype)
                 size = size[0]
-                if len(bitmap) > size:
-                    bitmap = bitmap[:size]
-                if len(values) > size:
-                    values = values[:size]
+                if not raw:
+                    if bitmap.size > size:
+                        bitmap = bitmap[:size]
+                    if values.size > size:
+                        values = values[:size]
                 rv = {
                     "bitmap": bitmap,
                     "nvals": nvals[0],
                 }
+                if raw:
+                    rv["size"] = size
             elif format == "full":
                 check_status(
                     lib.GxB_Vector_export_Full(vhandle, type_, size, vx, vx_size, ffi.NULL),
@@ -696,9 +702,12 @@ class Vector(BaseType):
                 )
                 values = _ss.claim_buffer(ffi, vx[0], vx_size[0], dtype)
                 size = size[0]
-                if len(values) > size:
-                    values = values[:size]
+                if not raw:
+                    if values.size > size:
+                        values = values[:size]
                 rv = {}
+                if raw:
+                    rv["size"] = size
             else:
                 raise ValueError(f"Invalid format: {format}")
 
@@ -715,15 +724,16 @@ class Vector(BaseType):
             *,
             # All
             values,
+            size=None,
             take_ownership=False,
             format=None,
             name=None,
             # Sparse
-            size=None,
             indices=None,
             sorted_index=False,
             # Bitmap
             bitmap=None,
+            # Bitmap/Sparse
             nvals=None,  # optional
         ):
             """
@@ -776,6 +786,7 @@ class Vector(BaseType):
             size,
             indices,
             values,
+            nvals=None,
             sorted_index=False,
             take_ownership=False,
             dtype=None,
@@ -792,7 +803,8 @@ class Vector(BaseType):
             vhandle = ffi_new("GrB_Vector*")
             vi = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indices)))
             vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-            nvals = len(values)
+            if nvals is None:
+                nvals = values.size
             check_status_carg(
                 lib.GxB_Vector_import_CSC(
                     vhandle,
@@ -800,8 +812,8 @@ class Vector(BaseType):
                     size,
                     vi,
                     vx,
-                    len(indices),
-                    len(values),
+                    indices.size,
+                    values.size,
                     nvals,
                     not sorted_index,
                     ffi.NULL,
@@ -822,6 +834,7 @@ class Vector(BaseType):
             bitmap,
             values,
             nvals=None,
+            size=None,
             take_ownership=False,
             dtype=None,
             format=None,
@@ -837,7 +850,8 @@ class Vector(BaseType):
             vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
             if nvals is None:
                 nvals = np.count_nonzero(bitmap)
-            size = len(values)
+            if size is None:
+                size = values.size
             check_status_carg(
                 lib.GxB_Vector_import_Bitmap(
                     vhandle,
@@ -845,8 +859,8 @@ class Vector(BaseType):
                     size,
                     vb,
                     vx,
-                    len(bitmap),
-                    len(values),
+                    bitmap.size,
+                    values.size,
                     nvals,
                     ffi.NULL,
                 ),
@@ -861,7 +875,7 @@ class Vector(BaseType):
 
         @classmethod
         def import_full(
-            cls, *, values, nvals=None, take_ownership=False, dtype=None, format=None, name=None
+            cls, *, values, size=None, take_ownership=False, dtype=None, format=None, name=None
         ):
             if format is not None and format.lower() != "full":
                 raise ValueError(f"Invalid format: {format!r}.  Must be None or 'full'.")
@@ -869,14 +883,15 @@ class Vector(BaseType):
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
             vhandle = ffi_new("GrB_Vector*")
             vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-            size = len(values)
+            if size is None:
+                size = values.size
             check_status_carg(
                 lib.GxB_Vector_import_Full(
                     vhandle,
                     dtype._carg,
                     size,
                     vx,
-                    len(values),
+                    values.size,
                     ffi.NULL,
                 ),
                 "Vector",

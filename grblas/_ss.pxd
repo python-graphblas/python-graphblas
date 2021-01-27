@@ -28,5 +28,7 @@ cpdef int call_gxb_init(ffi, lib, int mode)
 
 cpdef ndarray claim_buffer(ffi, cdata, size_t size, dtype)
 
+cpdef ndarray claim_buffer_2d(ffi, cdata, size_t cdata_size, size_t nrows, size_t ncols, dtype, bint is_c_order)
+
 cpdef unclaim_buffer(ndarray array)
 
