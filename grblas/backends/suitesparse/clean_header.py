@@ -63,7 +63,8 @@ def remove_complex(text):
             # Check if the line is a terminating line
             if re.search(r"FC(32|64)\s*;", line):
                 # By commenting the terminating line out, we lose the closing semicolon
-                # Walk back up the lines and look for the last non-commented out line and add the semicolon
+                # Walk up the lines, looking for the last non-commented out line
+                # then replace the trailing comma with a semicolon
                 for i in range(5):  # it's never more than 5 away
                     if out[-i].startswith("//"):
                         continue
