@@ -97,25 +97,25 @@
 
 /* #if defined ( __cplusplus ) */
 
-/*    extern "C++" { */
+//    extern "C++" {
         // C++ complex types
 /*         #include <cmath> */
 /*         #include <complex> */
 /*         #undef I */
-/*         typedef std::complex<float>  GxB_FC32_t ; */
-/*         typedef std::complex<double> GxB_FC64_t ; */
-/*    } */
+//         typedef std::complex<float>  GxB_FC32_t ;
+//         typedef std::complex<double> GxB_FC64_t ;
+//    }
 
-/*     #define GxB_CMPLXF(r,i) GxB_FC32_t(r,i) */
-/*     #define GxB_CMPLX(r,i)  GxB_FC64_t(r,i) */
+// /*     #define GxB_CMPLXF(r,i) GxB_FC32_t(r,i) */
+// /*     #define GxB_CMPLX(r,i)  GxB_FC64_t(r,i) */
 
 /* #elif ( _MSC_VER && !__INTEL_COMPILER ) */
 
     // Microsoft Windows complex types
 /*     #include <complex.h> */
 /*     #undef I */
-/*     typedef _Fcomplex GxB_FC32_t ; */
-/*     typedef _Dcomplex GxB_FC64_t ; */
+//     typedef _Fcomplex GxB_FC32_t ;
+//     typedef _Dcomplex GxB_FC64_t ;
 
 /*     #define GxB_CMPLXF(r,i) (_FCbuild (r,i)) */
 /*     #define GxB_CMPLX(r,i)  ( _Cbuild (r,i)) */
@@ -125,13 +125,13 @@
     // ANSI C11 complex types
 /*     #include <complex.h> */
 /*     #undef I */
-/*     typedef float  complex GxB_FC32_t ; */
-/*     typedef double complex GxB_FC64_t ; */
+//     typedef float  complex GxB_FC32_t ;
+//     typedef double complex GxB_FC64_t ;
 
 /*     #ifndef CMPLX */
         // gcc 6.2 on the the Mac doesn't #define CMPLX
 /*         #define GxB_CMPLX(r,i) \ */
-/*         ((GxB_FC64_t)((double)(r)) + (GxB_FC64_t)((double)(i) * _Complex_I)) */
+// /*         ((GxB_FC64_t)((double)(r)) + (GxB_FC64_t)((double)(i) * _Complex_I)) */
 /*     #else */
         // use the ANSI C11 CMPLX macro
 /*         #define GxB_CMPLX(r,i) CMPLX (r,i) */
@@ -140,7 +140,7 @@
 /*     #ifndef CMPLXF */
         // gcc 6.2 on the the Mac doesn't #define CMPLXF
 /*         #define GxB_CMPLXF(r,i) \ */
-/*         ((GxB_FC32_t)((float)(r)) + (GxB_FC32_t)((float)(i) * _Complex_I)) */
+// /*         ((GxB_FC32_t)((float)(r)) + (GxB_FC32_t)((float)(i) * _Complex_I)) */
 /*     #else */
         // use the ANSI C11 CMPLX macro
 /*         #define GxB_CMPLXF(r,i) CMPLXF (r,i) */
@@ -361,9 +361,9 @@ extern GrB_Type
     GrB_UINT32 ,        // in C: uint32_t           in MATLAB: uint32
     GrB_UINT64 ,        // in C: uint64_t           in MATLAB: uint64
     GrB_FP32   ,        // in C: float              in MATLAB: single
-    GrB_FP64   ,        // in C: double             in MATLAB: double
-/*     GxB_FC32   ,        // in C: float complex      in MATLAB: single complex */
-/*     GxB_FC64   ;        // in C: double complex     in MATLAB: double complex */
+    GrB_FP64   ;        // in C: double             in MATLAB: double
+//     GxB_FC32   ,        // in C: float complex      in MATLAB: single complex
+//     GxB_FC64   ;        // in C: double complex     in MATLAB: double complex
 
 //------------------------------------------------------------------------------
 // GB_ helper macro for polymorphic functions: do not use outside this file
@@ -393,10 +393,10 @@ extern GrB_Type
 /*               float      p : prefix ## _ ## func ## _FP32   ,   \ */
 /*         const double     p : prefix ## _ ## func ## _FP64   ,   \ */
 /*               double     p : prefix ## _ ## func ## _FP64   ,   \ */
-/*         const GxB_FC32_t p : GxB    ## _ ## func ## _FC32   ,   \ */
-/*               GxB_FC32_t p : GxB    ## _ ## func ## _FC32   ,   \ */
-/*         const GxB_FC64_t p : GxB    ## _ ## func ## _FC64   ,   \ */
-/*               GxB_FC64_t p : GxB    ## _ ## func ## _FC64   ,   \ */
+// /*         const GxB_FC32_t p : GxB    ## _ ## func ## _FC32   ,   \ */
+// /*               GxB_FC32_t p : GxB    ## _ ## func ## _FC32   ,   \ */
+// /*         const GxB_FC64_t p : GxB    ## _ ## func ## _FC64   ,   \ */
+// /*               GxB_FC64_t p : GxB    ## _ ## func ## _FC64   ,   \ */
 /*         const void       * : prefix ## _ ## func ## _UDT    ,   \ */
 /*               void       * : prefix ## _ ## func ## _UDT */
 /* #endif */
@@ -493,8 +493,8 @@ extern GrB_UnaryOp
     GrB_IDENTITY_FP32,   GrB_AINV_FP32,     GrB_MINV_FP32,      GxB_LNOT_FP32,
     GrB_IDENTITY_FP64,   GrB_AINV_FP64,     GrB_MINV_FP64,      GxB_LNOT_FP64,
     // complex unary operators:
-/*     GxB_IDENTITY_FC32,   GxB_AINV_FC32,     GxB_MINV_FC32,      // no LNOT */
-/*     GxB_IDENTITY_FC64,   GxB_AINV_FC64,     GxB_MINV_FC64,      // for complex */
+//     GxB_IDENTITY_FC32,   GxB_AINV_FC32,     GxB_MINV_FC32,      // no LNOT
+//     GxB_IDENTITY_FC64,   GxB_AINV_FC64,     GxB_MINV_FC64,      // for complex
 
     // z = 1             z = abs(x)         z = bnot(x)         z = signum
     // one               absolute value     bitwise negation
@@ -510,8 +510,8 @@ extern GrB_UnaryOp
     GxB_ONE_FP32,        GrB_ABS_FP32,
     GxB_ONE_FP64,        GrB_ABS_FP64,
     // complex unary operators:
-/*     GxB_ONE_FC32,        // for complex types, z = abs(x) */
-/*     GxB_ONE_FC64,        // is real; listed below. */
+//     GxB_ONE_FC32,        // for complex types, z = abs(x)
+//     GxB_ONE_FC64,        // is real; listed below.
 
     // Boolean negation, z = !x, where both z and x are boolean.  There is no
     // suffix since z and x are only boolean.  This operator is identical to
@@ -550,44 +550,44 @@ extern GrB_UnaryOp
     // z = sqrt (x)     z = log (x)         z = exp (x)         z = log2 (x)
     GxB_SQRT_FP32,      GxB_LOG_FP32,       GxB_EXP_FP32,       GxB_LOG2_FP32,
     GxB_SQRT_FP64,      GxB_LOG_FP64,       GxB_EXP_FP64,       GxB_LOG2_FP64,
-/*     GxB_SQRT_FC32,      GxB_LOG_FC32,       GxB_EXP_FC32,       GxB_LOG2_FC32, */
-/*     GxB_SQRT_FC64,      GxB_LOG_FC64,       GxB_EXP_FC64,       GxB_LOG2_FC64, */
+//     GxB_SQRT_FC32,      GxB_LOG_FC32,       GxB_EXP_FC32,       GxB_LOG2_FC32,
+//     GxB_SQRT_FC64,      GxB_LOG_FC64,       GxB_EXP_FC64,       GxB_LOG2_FC64,
 
     // z = sin (x)      z = cos (x)         z = tan (x)
     GxB_SIN_FP32,       GxB_COS_FP32,       GxB_TAN_FP32,
     GxB_SIN_FP64,       GxB_COS_FP64,       GxB_TAN_FP64,
-/*     GxB_SIN_FC32,       GxB_COS_FC32,       GxB_TAN_FC32, */
-/*     GxB_SIN_FC64,       GxB_COS_FC64,       GxB_TAN_FC64, */
+//     GxB_SIN_FC32,       GxB_COS_FC32,       GxB_TAN_FC32,
+//     GxB_SIN_FC64,       GxB_COS_FC64,       GxB_TAN_FC64,
 
     // z = acos (x)     z = asin (x)        z = atan (x)
     GxB_ACOS_FP32,      GxB_ASIN_FP32,      GxB_ATAN_FP32,
     GxB_ACOS_FP64,      GxB_ASIN_FP64,      GxB_ATAN_FP64,
-/*     GxB_ACOS_FC32,      GxB_ASIN_FC32,      GxB_ATAN_FC32, */
-/*     GxB_ACOS_FC64,      GxB_ASIN_FC64,      GxB_ATAN_FC64, */
+//     GxB_ACOS_FC32,      GxB_ASIN_FC32,      GxB_ATAN_FC32,
+//     GxB_ACOS_FC64,      GxB_ASIN_FC64,      GxB_ATAN_FC64,
 
     // z = sinh (x)     z = cosh (x)        z = tanh (x)
     GxB_SINH_FP32,      GxB_COSH_FP32,      GxB_TANH_FP32,
     GxB_SINH_FP64,      GxB_COSH_FP64,      GxB_TANH_FP64,
-/*     GxB_SINH_FC32,      GxB_COSH_FC32,      GxB_TANH_FC32, */
-/*     GxB_SINH_FC64,      GxB_COSH_FC64,      GxB_TANH_FC64, */
+//     GxB_SINH_FC32,      GxB_COSH_FC32,      GxB_TANH_FC32,
+//     GxB_SINH_FC64,      GxB_COSH_FC64,      GxB_TANH_FC64,
 
     // z = acosh (x)    z = asinh (x)       z = atanh (x)       z = signum (x)
     GxB_ACOSH_FP32,     GxB_ASINH_FP32,     GxB_ATANH_FP32,     GxB_SIGNUM_FP32,
     GxB_ACOSH_FP64,     GxB_ASINH_FP64,     GxB_ATANH_FP64,     GxB_SIGNUM_FP64,
-/*     GxB_ACOSH_FC32,     GxB_ASINH_FC32,     GxB_ATANH_FC32,     GxB_SIGNUM_FC32, */
-/*     GxB_ACOSH_FC64,     GxB_ASINH_FC64,     GxB_ATANH_FC64,     GxB_SIGNUM_FC64, */
+//     GxB_ACOSH_FC32,     GxB_ASINH_FC32,     GxB_ATANH_FC32,     GxB_SIGNUM_FC32,
+//     GxB_ACOSH_FC64,     GxB_ASINH_FC64,     GxB_ATANH_FC64,     GxB_SIGNUM_FC64,
 
     // z = ceil (x)     z = floor (x)       z = round (x)       z = trunc (x)
     GxB_CEIL_FP32,      GxB_FLOOR_FP32,     GxB_ROUND_FP32,     GxB_TRUNC_FP32,
     GxB_CEIL_FP64,      GxB_FLOOR_FP64,     GxB_ROUND_FP64,     GxB_TRUNC_FP64,
-/*     GxB_CEIL_FC32,      GxB_FLOOR_FC32,     GxB_ROUND_FC32,     GxB_TRUNC_FC32, */
-/*     GxB_CEIL_FC64,      GxB_FLOOR_FC64,     GxB_ROUND_FC64,     GxB_TRUNC_FC64, */
+//     GxB_CEIL_FC32,      GxB_FLOOR_FC32,     GxB_ROUND_FC32,     GxB_TRUNC_FC32,
+//     GxB_CEIL_FC64,      GxB_FLOOR_FC64,     GxB_ROUND_FC64,     GxB_TRUNC_FC64,
 
     // z = exp2 (x)     z = expm1 (x)       z = log10 (x)       z = log1p (x)
     GxB_EXP2_FP32,      GxB_EXPM1_FP32,     GxB_LOG10_FP32,     GxB_LOG1P_FP32,
     GxB_EXP2_FP64,      GxB_EXPM1_FP64,     GxB_LOG10_FP64,     GxB_LOG1P_FP64,
-/*     GxB_EXP2_FC32,      GxB_EXPM1_FC32,     GxB_LOG10_FC32,     GxB_LOG1P_FC32, */
-/*     GxB_EXP2_FC64,      GxB_EXPM1_FC64,     GxB_LOG10_FC64,     GxB_LOG1P_FC64, */
+//     GxB_EXP2_FC32,      GxB_EXPM1_FC32,     GxB_LOG10_FC32,     GxB_LOG1P_FC32,
+//     GxB_EXP2_FC64,      GxB_EXPM1_FC64,     GxB_LOG10_FC64,     GxB_LOG1P_FC64,
 
     //--------------------------------------------------------------------------
     // z = f(x) where z and x are the same type (floating-point real only)
@@ -610,16 +610,16 @@ extern GrB_UnaryOp
     //--------------------------------------------------------------------------
 
     // z = conj (x)
-/*     GxB_CONJ_FC32, */
-/*     GxB_CONJ_FC64, */
+//     GxB_CONJ_FC32,
+//     GxB_CONJ_FC64,
 
     //--------------------------------------------------------------------------
     // z = f(x) where z is real and x is complex:
     //--------------------------------------------------------------------------
 
     // z = creal (x)    z = cimag (x)       z = carg (x)       z = abs (x)
-/*     GxB_CREAL_FC32,     GxB_CIMAG_FC32,     GxB_CARG_FC32,     GxB_ABS_FC32, */
-/*     GxB_CREAL_FC64,     GxB_CIMAG_FC64,     GxB_CARG_FC64,     GxB_ABS_FC64, */
+//     GxB_CREAL_FC32,     GxB_CIMAG_FC32,     GxB_CARG_FC32,     GxB_ABS_FC32,
+//     GxB_CREAL_FC64,     GxB_CIMAG_FC64,     GxB_CARG_FC64,     GxB_ABS_FC64,
 
     //--------------------------------------------------------------------------
     // z = f(x) where z is bool and x is any floating-point type
@@ -628,20 +628,20 @@ extern GrB_UnaryOp
     // z = isinf (x)
     GxB_ISINF_FP32,
     GxB_ISINF_FP64,
-/*     GxB_ISINF_FC32,     // isinf (creal (x)) || isinf (cimag (x)) */
-/*     GxB_ISINF_FC64,     // isinf (creal (x)) || isinf (cimag (x)) */
+//     GxB_ISINF_FC32,     // isinf (creal (x)) || isinf (cimag (x))
+//     GxB_ISINF_FC64,     // isinf (creal (x)) || isinf (cimag (x))
 
     // z = isnan (x)
     GxB_ISNAN_FP32,
     GxB_ISNAN_FP64,
-/*     GxB_ISNAN_FC32,     // isnan (creal (x)) || isnan (cimag (x)) */
-/*     GxB_ISNAN_FC64,     // isnan (creal (x)) || isnan (cimag (x)) */
+//     GxB_ISNAN_FC32,     // isnan (creal (x)) || isnan (cimag (x))
+//     GxB_ISNAN_FC64,     // isnan (creal (x)) || isnan (cimag (x))
 
     // z = isfinite (x)
     GxB_ISFINITE_FP32,
-    GxB_ISFINITE_FP64,
-/*     GxB_ISFINITE_FC32,  // isfinite (real (x)) && isfinite (cimag (x)) */
-/*     GxB_ISFINITE_FC64 ; // isfinite (real (x)) && isfinite (cimag (x)) */
+    GxB_ISFINITE_FP64;
+//     GxB_ISFINITE_FC32,  // isfinite (real (x)) && isfinite (cimag (x))
+//     GxB_ISFINITE_FC64 ; // isfinite (real (x)) && isfinite (cimag (x))
 
 //------------------------------------------------------------------------------
 // methods for unary operators
@@ -728,8 +728,8 @@ extern GrB_BinaryOp
     GrB_FIRST_FP32,     GrB_SECOND_FP32,    GxB_POW_FP32,
     GrB_FIRST_FP64,     GrB_SECOND_FP64,    GxB_POW_FP64,
     // complex:
-/*     GxB_FIRST_FC32,     GxB_SECOND_FC32,    GxB_POW_FC32, */
-/*     GxB_FIRST_FC64,     GxB_SECOND_FC64,    GxB_POW_FC64, */
+//     GxB_FIRST_FC32,     GxB_SECOND_FC32,    GxB_POW_FC32,
+//     GxB_FIRST_FC64,     GxB_SECOND_FC64,    GxB_POW_FC64,
 
     // z = x+y          z = x-y             z = x*y             z = x/y
     GrB_PLUS_BOOL,      GrB_MINUS_BOOL,     GrB_TIMES_BOOL,     GrB_DIV_BOOL,
@@ -744,8 +744,8 @@ extern GrB_BinaryOp
     GrB_PLUS_FP32,      GrB_MINUS_FP32,     GrB_TIMES_FP32,     GrB_DIV_FP32,
     GrB_PLUS_FP64,      GrB_MINUS_FP64,     GrB_TIMES_FP64,     GrB_DIV_FP64,
     // complex:
-/*     GxB_PLUS_FC32,      GxB_MINUS_FC32,     GxB_TIMES_FC32,     GxB_DIV_FC32, */
-/*     GxB_PLUS_FC64,      GxB_MINUS_FC64,     GxB_TIMES_FC64,     GxB_DIV_FC64, */
+//     GxB_PLUS_FC32,      GxB_MINUS_FC32,     GxB_TIMES_FC32,     GxB_DIV_FC32,
+//     GxB_PLUS_FC64,      GxB_MINUS_FC64,     GxB_TIMES_FC64,     GxB_DIV_FC64,
 
     // z = y-x          z = y/x             z = 1               z = any(x,y)
     GxB_RMINUS_BOOL,    GxB_RDIV_BOOL,      GxB_PAIR_BOOL,      GxB_ANY_BOOL,
@@ -760,8 +760,8 @@ extern GrB_BinaryOp
     GxB_RMINUS_FP32,    GxB_RDIV_FP32,      GxB_PAIR_FP32,      GxB_ANY_FP32,
     GxB_RMINUS_FP64,    GxB_RDIV_FP64,      GxB_PAIR_FP64,      GxB_ANY_FP64,
     // complex:
-/*     GxB_RMINUS_FC32,    GxB_RDIV_FC32,      GxB_PAIR_FC32,      GxB_ANY_FC32, */
-/*     GxB_RMINUS_FC64,    GxB_RDIV_FC64,      GxB_PAIR_FC64,      GxB_ANY_FC64, */
+//     GxB_RMINUS_FC32,    GxB_RDIV_FC32,      GxB_PAIR_FC32,      GxB_ANY_FC32,
+//     GxB_RMINUS_FC64,    GxB_RDIV_FC64,      GxB_PAIR_FC64,      GxB_ANY_FC64,
 
     // The GxB_IS* comparison operators z=f(x,y) return the same type as their
     // inputs.  Each of them compute z = (x OP y), where x, y, and z all have
@@ -781,8 +781,8 @@ extern GrB_BinaryOp
     GxB_ISEQ_FP32,      GxB_ISNE_FP32,
     GxB_ISEQ_FP64,      GxB_ISNE_FP64,
     // complex:
-/*     GxB_ISEQ_FC32,      GxB_ISNE_FC32, */
-/*     GxB_ISEQ_FC64,      GxB_ISNE_FC64, */
+//     GxB_ISEQ_FC32,      GxB_ISNE_FC32,
+//     GxB_ISEQ_FC64,      GxB_ISNE_FC64,
 
     // z = (x > y)      z = (x < y)         z = (x >= y)     z = (x <= y)
     GxB_ISGT_BOOL,      GxB_ISLT_BOOL,      GxB_ISGE_BOOL,      GxB_ISLE_BOOL,
@@ -923,8 +923,8 @@ extern GrB_BinaryOp
     GrB_EQ_FP32,        GrB_NE_FP32,        GrB_GT_FP32,        GrB_LT_FP32,
     GrB_EQ_FP64,        GrB_NE_FP64,        GrB_GT_FP64,        GrB_LT_FP64,
     // complex:
-/*     GxB_EQ_FC32,        GxB_NE_FC32, */
-/*     GxB_EQ_FC64,        GxB_NE_FC64, */
+//     GxB_EQ_FC32,        GxB_NE_FC32,
+//     GxB_EQ_FC64,        GxB_NE_FC64,
 
     // z = (x >= y)     z = (x <= y)
     GrB_GE_BOOL,        GrB_LE_BOOL,
@@ -1378,21 +1378,21 @@ GrB_Info GrB_Monoid_new_FP64        // create a new double monoid
     double identity                 // identity value of the monoid
 ) ;
 
-/* extern
-GrB_Info GxB_Monoid_new_FC32        // create a new float complex monoid
-(
-    GrB_Monoid *monoid,             // handle of monoid to create
-    GrB_BinaryOp op,                // binary operator of the monoid
-    GxB_FC32_t identity             // identity value of the monoid
-) ; */
+// extern
+// GrB_Info GxB_Monoid_new_FC32        // create a new float complex monoid
+// (
+//     GrB_Monoid *monoid,             // handle of monoid to create
+//     GrB_BinaryOp op,                // binary operator of the monoid
+//     GxB_FC32_t identity             // identity value of the monoid
+// ) ;
 
-/* extern
-GrB_Info GxB_Monoid_new_FC64        // create a new double complex monoid
-(
-    GrB_Monoid *monoid,             // handle of monoid to create
-    GrB_BinaryOp op,                // binary operator of the monoid
-    GxB_FC64_t identity             // identity value of the monoid
-) ; */
+// extern
+// GrB_Info GxB_Monoid_new_FC64        // create a new double complex monoid
+// (
+//     GrB_Monoid *monoid,             // handle of monoid to create
+//     GrB_BinaryOp op,                // binary operator of the monoid
+//     GxB_FC64_t identity             // identity value of the monoid
+// ) ;
 
 extern
 GrB_Info GrB_Monoid_new_UDT         // create a monoid with a user-defined type
@@ -1525,23 +1525,23 @@ GrB_Info GxB_Monoid_terminal_new_FP64        // create a new double monoid
     double terminal                 // terminal value of the monoid
 ) ;
 
-/* extern
-GrB_Info GxB_Monoid_terminal_new_FC32   // create a new float complex monoid
-(
-    GrB_Monoid *monoid,             // handle of monoid to create
-    GrB_BinaryOp op,                // binary operator of the monoid
-    GxB_FC32_t identity,            // identity value of the monoid
-    GxB_FC32_t terminal             // terminal value of the monoid
-) ; */
+// extern
+// GrB_Info GxB_Monoid_terminal_new_FC32   // create a new float complex monoid
+// (
+//     GrB_Monoid *monoid,             // handle of monoid to create
+//     GrB_BinaryOp op,                // binary operator of the monoid
+//     GxB_FC32_t identity,            // identity value of the monoid
+//     GxB_FC32_t terminal             // terminal value of the monoid
+// ) ;
 
-/* extern
-GrB_Info GxB_Monoid_terminal_new_FC64   // create a new double complex monoid
-(
-    GrB_Monoid *monoid,             // handle of monoid to create
-    GrB_BinaryOp op,                // binary operator of the monoid
-    GxB_FC64_t identity,            // identity value of the monoid
-    GxB_FC64_t terminal             // terminal value of the monoid
-) ; */
+// extern
+// GrB_Info GxB_Monoid_terminal_new_FC64   // create a new double complex monoid
+// (
+//     GrB_Monoid *monoid,             // handle of monoid to create
+//     GrB_BinaryOp op,                // binary operator of the monoid
+//     GxB_FC64_t identity,            // identity value of the monoid
+//     GxB_FC64_t terminal             // terminal value of the monoid
+// ) ;
 
 extern
 GrB_Info GxB_Monoid_terminal_new_UDT    // create a monoid with a user type
@@ -1769,19 +1769,19 @@ GrB_Info GxB_Scalar_setElement_FP64     // s = x
     double x                            // user scalar to assign to s
 ) ;
 
-/* extern
-GrB_Info GxB_Scalar_setElement_FC32     // s = x
-(
-    GxB_Scalar s,                       // GxB_Scalar to modify
-    GxB_FC32_t x                        // user scalar to assign to s
-) ; */
+// extern
+// GrB_Info GxB_Scalar_setElement_FC32     // s = x
+// (
+//     GxB_Scalar s,                       // GxB_Scalar to modify
+//     GxB_FC32_t x                        // user scalar to assign to s
+// ) ;
 
-/* extern
-GrB_Info GxB_Scalar_setElement_FC64     // s = x
-(
-    GxB_Scalar s,                       // GxB_Scalar to modify
-    GxB_FC64_t x                        // user scalar to assign to s
-) ; */
+// extern
+// GrB_Info GxB_Scalar_setElement_FC64     // s = x
+// (
+//     GxB_Scalar s,                       // GxB_Scalar to modify
+//     GxB_FC64_t x                        // user scalar to assign to s
+// ) ;
 
 extern
 GrB_Info GxB_Scalar_setElement_UDT      // s = x
@@ -1893,19 +1893,19 @@ GrB_Info GxB_Scalar_extractElement_FP64     // x = s
     const GxB_Scalar s              // GxB_Scalar to extract an entry from
 ) ;
 
-/* extern
-GrB_Info GxB_Scalar_extractElement_FC32     // x = s
-(
-    GxB_FC32_t *x,                  // user scalar extracted
-    const GxB_Scalar s              // GxB_Scalar to extract an entry from
-) ; */
+// extern
+// GrB_Info GxB_Scalar_extractElement_FC32     // x = s
+// (
+//     GxB_FC32_t *x,                  // user scalar extracted
+//     const GxB_Scalar s              // GxB_Scalar to extract an entry from
+// ) ;
 
-/* extern
-GrB_Info GxB_Scalar_extractElement_FC64     // x = s
-(
-    GxB_FC64_t *x,                  // user scalar extracted
-    const GxB_Scalar s              // GxB_Scalar to extract an entry from
-) ; */
+// extern
+// GrB_Info GxB_Scalar_extractElement_FC64     // x = s
+// (
+//     GxB_FC64_t *x,                  // user scalar extracted
+//     const GxB_Scalar s              // GxB_Scalar to extract an entry from
+// ) ;
 
 extern
 GrB_Info GxB_Scalar_extractElement_UDT      // x = s
@@ -2107,25 +2107,25 @@ GrB_Info GrB_Vector_build_FP64      // build a vector from (I,X) tuples
     const GrB_BinaryOp dup          // binary function to assemble duplicates
 ) ;
 
-/* extern
-GrB_Info GxB_Vector_build_FC32      // build a vector from (I,X) tuples
-(
-    GrB_Vector w,                   // vector to build
-    const GrB_Index *I,             // array of row indices of tuples
-    const GxB_FC32_t *X,            // array of values of tuples
-    GrB_Index nvals,                // number of tuples
-    const GrB_BinaryOp dup          // binary function to assemble duplicates
-) ; */
+// extern
+// GrB_Info GxB_Vector_build_FC32      // build a vector from (I,X) tuples
+// (
+//     GrB_Vector w,                   // vector to build
+//     const GrB_Index *I,             // array of row indices of tuples
+//     const GxB_FC32_t *X,            // array of values of tuples
+//     GrB_Index nvals,                // number of tuples
+//     const GrB_BinaryOp dup          // binary function to assemble duplicates
+// ) ;
 
-/* extern
-GrB_Info GxB_Vector_build_FC64      // build a vector from (I,X) tuples
-(
-    GrB_Vector w,                   // vector to build
-    const GrB_Index *I,             // array of row indices of tuples
-    const GxB_FC64_t *X,            // array of values of tuples
-    GrB_Index nvals,                // number of tuples
-    const GrB_BinaryOp dup          // binary function to assemble duplicates
-) ; */
+// extern
+// GrB_Info GxB_Vector_build_FC64      // build a vector from (I,X) tuples
+// (
+//     GrB_Vector w,                   // vector to build
+//     const GrB_Index *I,             // array of row indices of tuples
+//     const GxB_FC64_t *X,            // array of values of tuples
+//     GrB_Index nvals,                // number of tuples
+//     const GrB_BinaryOp dup          // binary function to assemble duplicates
+// ) ;
 
 extern
 GrB_Info GrB_Vector_build_UDT       // build a vector from (I,X) tuples
@@ -2255,21 +2255,21 @@ GrB_Info GrB_Vector_setElement_FP64     // w(i) = x
     GrB_Index i                         // row index
 ) ;
 
-/* extern
-GrB_Info GxB_Vector_setElement_FC32     // w(i) = x
-(
-    GrB_Vector w,                       // vector to modify
-    GxB_FC32_t x,                       // scalar to assign to w(i)
-    GrB_Index i                         // row index
-) ; */
+// extern
+// GrB_Info GxB_Vector_setElement_FC32     // w(i) = x
+// (
+//     GrB_Vector w,                       // vector to modify
+//     GxB_FC32_t x,                       // scalar to assign to w(i)
+//     GrB_Index i                         // row index
+// ) ;
 
-/* extern
-GrB_Info GxB_Vector_setElement_FC64     // w(i) = x
-(
-    GrB_Vector w,                       // vector to modify
-    GxB_FC64_t x,                       // scalar to assign to w(i)
-    GrB_Index i                         // row index
-) ; */
+// extern
+// GrB_Info GxB_Vector_setElement_FC64     // w(i) = x
+// (
+//     GrB_Vector w,                       // vector to modify
+//     GxB_FC64_t x,                       // scalar to assign to w(i)
+//     GrB_Index i                         // row index
+// ) ;
 
 extern
 GrB_Info GrB_Vector_setElement_UDT      // w(i) = x
@@ -2394,21 +2394,21 @@ GrB_Info GrB_Vector_extractElement_FP64     // x = v(i)
     GrB_Index i                     // row index
 ) ;
 
-/* extern
-GrB_Info GxB_Vector_extractElement_FC32     // x = v(i)
-(
-    GxB_FC32_t *x,                  // scalar extracted
-    const GrB_Vector v,             // vector to extract an entry from
-    GrB_Index i                     // row index
-) ; */
+// extern
+// GrB_Info GxB_Vector_extractElement_FC32     // x = v(i)
+// (
+//     GxB_FC32_t *x,                  // scalar extracted
+//     const GrB_Vector v,             // vector to extract an entry from
+//     GrB_Index i                     // row index
+// ) ;
 
-/* extern
-GrB_Info GxB_Vector_extractElement_FC64     // x = v(i)
-(
-    GxB_FC64_t *x,                  // scalar extracted
-    const GrB_Vector v,             // vector to extract an entry from
-    GrB_Index i                     // row index
-) ; */
+// extern
+// GrB_Info GxB_Vector_extractElement_FC64     // x = v(i)
+// (
+//     GxB_FC64_t *x,                  // scalar extracted
+//     const GrB_Vector v,             // vector to extract an entry from
+//     GrB_Index i                     // row index
+// ) ;
 
 extern
 GrB_Info GrB_Vector_extractElement_UDT      // x = v(i)
@@ -2559,23 +2559,23 @@ GrB_Info GrB_Vector_extractTuples_FP64      // [I,~,X] = find (v)
     const GrB_Vector v          // vector to extract tuples from
 ) ;
 
-/* extern
-GrB_Info GxB_Vector_extractTuples_FC32      // [I,~,X] = find (v)
-(
-    GrB_Index *I,               // array for returning row indices of tuples
-    GxB_FC32_t *X,              // array for returning values of tuples
-    GrB_Index *nvals,           // I, X size on input; # tuples on output
-    const GrB_Vector v          // vector to extract tuples from
-) ; */
+// extern
+// GrB_Info GxB_Vector_extractTuples_FC32      // [I,~,X] = find (v)
+// (
+//     GrB_Index *I,               // array for returning row indices of tuples
+//     GxB_FC32_t *X,              // array for returning values of tuples
+//     GrB_Index *nvals,           // I, X size on input; # tuples on output
+//     const GrB_Vector v          // vector to extract tuples from
+// ) ;
 
-/* extern
-GrB_Info GxB_Vector_extractTuples_FC64      // [I,~,X] = find (v)
-(
-    GrB_Index *I,               // array for returning row indices of tuples
-    GxB_FC64_t *X,              // array for returning values of tuples
-    GrB_Index *nvals,           // I, X size on input; # tuples on output
-    const GrB_Vector v          // vector to extract tuples from
-) ; */
+// extern
+// GrB_Info GxB_Vector_extractTuples_FC64      // [I,~,X] = find (v)
+// (
+//     GrB_Index *I,               // array for returning row indices of tuples
+//     GxB_FC64_t *X,              // array for returning values of tuples
+//     GrB_Index *nvals,           // I, X size on input; # tuples on output
+//     const GrB_Vector v          // vector to extract tuples from
+// ) ;
 
 extern
 GrB_Info GrB_Vector_extractTuples_UDT       // [I,~,X] = find (v)
@@ -2800,27 +2800,27 @@ GrB_Info GrB_Matrix_build_FP64      // build a matrix from (I,J,X) tuples
     const GrB_BinaryOp dup          // binary function to assemble duplicates
 ) ;
 
-/* extern
-GrB_Info GxB_Matrix_build_FC32      // build a matrix from (I,J,X) tuples
-(
-    GrB_Matrix C,                   // matrix to build
-    const GrB_Index *I,             // array of row indices of tuples
-    const GrB_Index *J,             // array of column indices of tuples
-    const GxB_FC32_t *X,            // array of values of tuples
-    GrB_Index nvals,                // number of tuples
-    const GrB_BinaryOp dup          // binary function to assemble duplicates
-) ; */
+// extern
+// GrB_Info GxB_Matrix_build_FC32      // build a matrix from (I,J,X) tuples
+// (
+//     GrB_Matrix C,                   // matrix to build
+//     const GrB_Index *I,             // array of row indices of tuples
+//     const GrB_Index *J,             // array of column indices of tuples
+//     const GxB_FC32_t *X,            // array of values of tuples
+//     GrB_Index nvals,                // number of tuples
+//     const GrB_BinaryOp dup          // binary function to assemble duplicates
+// ) ;
 
-/* extern
-GrB_Info GxB_Matrix_build_FC64      // build a matrix from (I,J,X) tuples
-(
-    GrB_Matrix C,                   // matrix to build
-    const GrB_Index *I,             // array of row indices of tuples
-    const GrB_Index *J,             // array of column indices of tuples
-    const GxB_FC64_t *X,            // array of values of tuples
-    GrB_Index nvals,                // number of tuples
-    const GrB_BinaryOp dup          // binary function to assemble duplicates
-) ; */
+// extern
+// GrB_Info GxB_Matrix_build_FC64      // build a matrix from (I,J,X) tuples
+// (
+//     GrB_Matrix C,                   // matrix to build
+//     const GrB_Index *I,             // array of row indices of tuples
+//     const GrB_Index *J,             // array of column indices of tuples
+//     const GxB_FC64_t *X,            // array of values of tuples
+//     GrB_Index nvals,                // number of tuples
+//     const GrB_BinaryOp dup          // binary function to assemble duplicates
+// ) ;
 
 extern
 GrB_Info GrB_Matrix_build_UDT       // build a matrix from (I,J,X) tuples
@@ -2963,23 +2963,23 @@ GrB_Info GrB_Matrix_setElement_FP64     // C (i,j) = x
     GrB_Index j                         // column index
 ) ;
 
-/* extern
-GrB_Info GxB_Matrix_setElement_FC32     // C (i,j) = x
-(
-    GrB_Matrix C,                       // matrix to modify
-    GxB_FC32_t x,                       // scalar to assign to C(i,j)
-    GrB_Index i,                        // row index
-    GrB_Index j                         // column index
-) ; */
+// extern
+// GrB_Info GxB_Matrix_setElement_FC32     // C (i,j) = x
+// (
+//     GrB_Matrix C,                       // matrix to modify
+//     GxB_FC32_t x,                       // scalar to assign to C(i,j)
+//     GrB_Index i,                        // row index
+//     GrB_Index j                         // column index
+// ) ;
 
-/* extern
-GrB_Info GxB_Matrix_setElement_FC64     // C (i,j) = x
-(
-    GrB_Matrix C,                       // matrix to modify
-    GxB_FC64_t x,                       // scalar to assign to C(i,j)
-    GrB_Index i,                        // row index
-    GrB_Index j                         // column index
-) ; */
+// extern
+// GrB_Info GxB_Matrix_setElement_FC64     // C (i,j) = x
+// (
+//     GrB_Matrix C,                       // matrix to modify
+//     GxB_FC64_t x,                       // scalar to assign to C(i,j)
+//     GrB_Index i,                        // row index
+//     GrB_Index j                         // column index
+// ) ;
 
 extern
 GrB_Info GrB_Matrix_setElement_UDT      // C (i,j) = x
@@ -3117,23 +3117,23 @@ GrB_Info GrB_Matrix_extractElement_FP64     // x = A(i,j)
     GrB_Index j                         // column index
 ) ;
 
-/* extern
-GrB_Info GxB_Matrix_extractElement_FC32     // x = A(i,j)
-(
-    GxB_FC32_t *x,                      // extracted scalar
-    const GrB_Matrix A,                 // matrix to extract a scalar from
-    GrB_Index i,                        // row index
-    GrB_Index j                         // column index
-) ; */
+// extern
+// GrB_Info GxB_Matrix_extractElement_FC32     // x = A(i,j)
+// (
+//     GxB_FC32_t *x,                      // extracted scalar
+//     const GrB_Matrix A,                 // matrix to extract a scalar from
+//     GrB_Index i,                        // row index
+//     GrB_Index j                         // column index
+// ) ;
 
-/* extern
-GrB_Info GxB_Matrix_extractElement_FC64     // x = A(i,j)
-(
-    GxB_FC64_t *x,                      // extracted scalar
-    const GrB_Matrix A,                 // matrix to extract a scalar from
-    GrB_Index i,                        // row index
-    GrB_Index j                         // column index
-) ; */
+// extern
+// GrB_Info GxB_Matrix_extractElement_FC64     // x = A(i,j)
+// (
+//     GxB_FC64_t *x,                      // extracted scalar
+//     const GrB_Matrix A,                 // matrix to extract a scalar from
+//     GrB_Index i,                        // row index
+//     GrB_Index j                         // column index
+// ) ;
 
 extern
 GrB_Info GrB_Matrix_extractElement_UDT      // x = A(i,j)
@@ -3298,25 +3298,25 @@ GrB_Info GrB_Matrix_extractTuples_FP64      // [I,J,X] = find (A)
     const GrB_Matrix A          // matrix to extract tuples from
 ) ;
 
-/* extern
-GrB_Info GxB_Matrix_extractTuples_FC32      // [I,J,X] = find (A)
-(
-    GrB_Index *I,               // array for returning row indices of tuples
-    GrB_Index *J,               // array for returning col indices of tuples
-    GxB_FC32_t *X,              // array for returning values of tuples
-    GrB_Index *nvals,           // I,J,X size on input; # tuples on output
-    const GrB_Matrix A          // matrix to extract tuples from
-) ; */
+// extern
+// GrB_Info GxB_Matrix_extractTuples_FC32      // [I,J,X] = find (A)
+// (
+//     GrB_Index *I,               // array for returning row indices of tuples
+//     GrB_Index *J,               // array for returning col indices of tuples
+//     GxB_FC32_t *X,              // array for returning values of tuples
+//     GrB_Index *nvals,           // I,J,X size on input; # tuples on output
+//     const GrB_Matrix A          // matrix to extract tuples from
+// ) ;
 
-/* extern
-GrB_Info GxB_Matrix_extractTuples_FC64      // [I,J,X] = find (A)
-(
-    GrB_Index *I,               // array for returning row indices of tuples
-    GrB_Index *J,               // array for returning col indices of tuples
-    GxB_FC64_t *X,              // array for returning values of tuples
-    GrB_Index *nvals,           // I,J,X size on input; # tuples on output
-    const GrB_Matrix A          // matrix to extract tuples from
-) ; */
+// extern
+// GrB_Info GxB_Matrix_extractTuples_FC64      // [I,J,X] = find (A)
+// (
+//     GrB_Index *I,               // array for returning row indices of tuples
+//     GrB_Index *J,               // array for returning col indices of tuples
+//     GxB_FC64_t *X,              // array for returning values of tuples
+//     GrB_Index *nvals,           // I,J,X size on input; # tuples on output
+//     const GrB_Matrix A          // matrix to extract tuples from
+// ) ;
 
 extern
 GrB_Info GrB_Matrix_extractTuples_UDT       // [I,J,X] = find (A)
@@ -3610,7 +3610,7 @@ GrB_DESC_RSCT0T1 ; // GrB_REPLACE  GrB_STRUCTURE  GrB_COMP   GrB_TRAN  GrB_TRAN
 //      GxB_Global_Option_set:  sets an option for all future matrices
 //      GxB_Global_Option_get:  queries current option for all future matrices
 
-/* #define GxB_HYPER 0     // (deprecated, use GxB_HYPER_SWITCH) */
+#define GxB_HYPER 0     // (deprecated, use GxB_HYPER_SWITCH)
 
 typedef enum            // for global options or matrix options
 {
@@ -3695,13 +3695,13 @@ extern const GxB_Format_Value GxB_FORMAT_DEFAULT ;
 extern const double GxB_HYPER_DEFAULT ;
 
 // GxB_SPARSITY_CONTROL can be any sum or bitwise OR of these 4 values:
-/* #define GxB_HYPERSPARSE 1   // store matrix in hypersparse form */
-/* #define GxB_SPARSE      2   // store matrix as sparse form (compressed vector) */
-/* #define GxB_BITMAP      4   // store matrix as a bitmap */
-/* #define GxB_FULL        8   // store matrix as full; all entries must be present */
+#define GxB_HYPERSPARSE 1   // store matrix in hypersparse form
+#define GxB_SPARSE      2   // store matrix as sparse form (compressed vector)
+#define GxB_BITMAP      4   // store matrix as a bitmap
+#define GxB_FULL        8   // store matrix as full; all entries must be present
 
 // size of b array for GxB_set/get (GxB_BITMAP_SWITCH, b)
-/* #define GxB_NBITMAP_SWITCH 8    // size of bitmap_switch parameter array */
+#define GxB_NBITMAP_SWITCH 8    // size of bitmap_switch parameter array
 
 // any sparsity value:
 /* #define GxB_ANY_SPARSITY (GxB_HYPERSPARSE + GxB_SPARSE + GxB_BITMAP + GxB_FULL) */
@@ -4704,29 +4704,29 @@ GrB_Info GxB_Vector_subassign_FP64     // w(I)<mask> = accum (w(I),x)
     const GrB_Descriptor desc       // descriptor for w(I) and mask
 ) ;
 
-/* extern
-GrB_Info GxB_Vector_subassign_FC32     // w(I)<mask> = accum (w(I),x)
-(
-    GrB_Vector w,                   // input/output vector for results
-    const GrB_Vector mask,          // optional mask for w(I), unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for Z=accum(w(I),x)
-    GxB_FC32_t x,                   // scalar to assign to w(I)
-    const GrB_Index *I,             // row indices
-    GrB_Index ni,                   // number of row indices
-    const GrB_Descriptor desc       // descriptor for w(I) and mask
-) ; */
+// extern
+// GrB_Info GxB_Vector_subassign_FC32     // w(I)<mask> = accum (w(I),x)
+// (
+//     GrB_Vector w,                   // input/output vector for results
+//     const GrB_Vector mask,          // optional mask for w(I), unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for Z=accum(w(I),x)
+//     GxB_FC32_t x,                   // scalar to assign to w(I)
+//     const GrB_Index *I,             // row indices
+//     GrB_Index ni,                   // number of row indices
+//     const GrB_Descriptor desc       // descriptor for w(I) and mask
+// ) ;
 
-/* extern
-GrB_Info GxB_Vector_subassign_FC64     // w(I)<mask> = accum (w(I),x)
-(
-    GrB_Vector w,                   // input/output vector for results
-    const GrB_Vector mask,          // optional mask for w(I), unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for Z=accum(w(I),x)
-    GxB_FC64_t x,                   // scalar to assign to w(I)
-    const GrB_Index *I,             // row indices
-    GrB_Index ni,                   // number of row indices
-    const GrB_Descriptor desc       // descriptor for w(I) and mask
-) ; */
+// extern
+// GrB_Info GxB_Vector_subassign_FC64     // w(I)<mask> = accum (w(I),x)
+// (
+//     GrB_Vector w,                   // input/output vector for results
+//     const GrB_Vector mask,          // optional mask for w(I), unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for Z=accum(w(I),x)
+//     GxB_FC64_t x,                   // scalar to assign to w(I)
+//     const GrB_Index *I,             // row indices
+//     GrB_Index ni,                   // number of row indices
+//     const GrB_Descriptor desc       // descriptor for w(I) and mask
+// ) ;
 
 extern
 GrB_Info GxB_Vector_subassign_UDT      // w(I)<mask> = accum (w(I),x)
@@ -4902,33 +4902,33 @@ GrB_Info GxB_Matrix_subassign_FP64     // C(I,J)<Mask> = accum (C(I,J),x)
     const GrB_Descriptor desc       // descriptor for C(I,J) and Mask
 ) ;
 
-/* extern
-GrB_Info GxB_Matrix_subassign_FC32     // C(I,J)<Mask> = accum (C(I,J),x)
-(
-    GrB_Matrix C,                   // input/output matrix for results
-    const GrB_Matrix Mask,          // optional mask for C(I,J), unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for Z=accum(C(I,J),x)
-    GxB_FC32_t x,                   // scalar to assign to C(I,J)
-    const GrB_Index *I,             // row indices
-    GrB_Index ni,                   // number of row indices
-    const GrB_Index *J,             // column indices
-    GrB_Index nj,                   // number of column indices
-    const GrB_Descriptor desc       // descriptor for C(I,J) and Mask
-) ; */
+// extern
+// GrB_Info GxB_Matrix_subassign_FC32     // C(I,J)<Mask> = accum (C(I,J),x)
+// (
+//     GrB_Matrix C,                   // input/output matrix for results
+//     const GrB_Matrix Mask,          // optional mask for C(I,J), unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for Z=accum(C(I,J),x)
+//     GxB_FC32_t x,                   // scalar to assign to C(I,J)
+//     const GrB_Index *I,             // row indices
+//     GrB_Index ni,                   // number of row indices
+//     const GrB_Index *J,             // column indices
+//     GrB_Index nj,                   // number of column indices
+//     const GrB_Descriptor desc       // descriptor for C(I,J) and Mask
+// ) ;
 
-/* extern
-GrB_Info GxB_Matrix_subassign_FC64     // C(I,J)<Mask> = accum (C(I,J),x)
-(
-    GrB_Matrix C,                   // input/output matrix for results
-    const GrB_Matrix Mask,          // optional mask for C(I,J), unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for Z=accum(C(I,J),x)
-    GxB_FC64_t x,                   // scalar to assign to C(I,J)
-    const GrB_Index *I,             // row indices
-    GrB_Index ni,                   // number of row indices
-    const GrB_Index *J,             // column indices
-    GrB_Index nj,                   // number of column indices
-    const GrB_Descriptor desc       // descriptor for C(I,J) and Mask
-) ; */
+// extern
+// GrB_Info GxB_Matrix_subassign_FC64     // C(I,J)<Mask> = accum (C(I,J),x)
+// (
+//     GrB_Matrix C,                   // input/output matrix for results
+//     const GrB_Matrix Mask,          // optional mask for C(I,J), unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for Z=accum(C(I,J),x)
+//     GxB_FC64_t x,                   // scalar to assign to C(I,J)
+//     const GrB_Index *I,             // row indices
+//     GrB_Index ni,                   // number of row indices
+//     const GrB_Index *J,             // column indices
+//     GrB_Index nj,                   // number of column indices
+//     const GrB_Descriptor desc       // descriptor for C(I,J) and Mask
+// ) ;
 
 extern
 GrB_Info GxB_Matrix_subassign_UDT      // C(I,J)<Mask> = accum (C(I,J),x)
@@ -5196,29 +5196,29 @@ GrB_Info GrB_Vector_assign_FP64     // w<mask>(I) = accum (w(I),x)
     const GrB_Descriptor desc       // descriptor for w and mask
 ) ;
 
-/* extern
-GrB_Info GxB_Vector_assign_FC32     // w<mask>(I) = accum (w(I),x)
-(
-    GrB_Vector w,                   // input/output vector for results
-    const GrB_Vector mask,          // optional mask for w, unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for Z=accum(w(I),x)
-    GxB_FC32_t x,                   // scalar to assign to w(I)
-    const GrB_Index *I,             // row indices
-    GrB_Index ni,                   // number of row indices
-    const GrB_Descriptor desc       // descriptor for w and mask
-) ; */
+// extern
+// GrB_Info GxB_Vector_assign_FC32     // w<mask>(I) = accum (w(I),x)
+// (
+//     GrB_Vector w,                   // input/output vector for results
+//     const GrB_Vector mask,          // optional mask for w, unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for Z=accum(w(I),x)
+//     GxB_FC32_t x,                   // scalar to assign to w(I)
+//     const GrB_Index *I,             // row indices
+//     GrB_Index ni,                   // number of row indices
+//     const GrB_Descriptor desc       // descriptor for w and mask
+// ) ;
 
-/* extern
-GrB_Info GxB_Vector_assign_FC64     // w<mask>(I) = accum (w(I),x)
-(
-    GrB_Vector w,                   // input/output vector for results
-    const GrB_Vector mask,          // optional mask for w, unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for Z=accum(w(I),x)
-    GxB_FC64_t x,                   // scalar to assign to w(I)
-    const GrB_Index *I,             // row indices
-    GrB_Index ni,                   // number of row indices
-    const GrB_Descriptor desc       // descriptor for w and mask
-) ; */
+// extern
+// GrB_Info GxB_Vector_assign_FC64     // w<mask>(I) = accum (w(I),x)
+// (
+//     GrB_Vector w,                   // input/output vector for results
+//     const GrB_Vector mask,          // optional mask for w, unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for Z=accum(w(I),x)
+//     GxB_FC64_t x,                   // scalar to assign to w(I)
+//     const GrB_Index *I,             // row indices
+//     GrB_Index ni,                   // number of row indices
+//     const GrB_Descriptor desc       // descriptor for w and mask
+// ) ;
 
 extern
 GrB_Info GrB_Vector_assign_UDT      // w<mask>(I) = accum (w(I),x)
@@ -5394,33 +5394,33 @@ GrB_Info GrB_Matrix_assign_FP64     // C<Mask>(I,J) = accum (C(I,J),x)
     const GrB_Descriptor desc       // descriptor for C and Mask
 ) ;
 
-/* extern
-GrB_Info GxB_Matrix_assign_FC32     // C<Mask>(I,J) = accum (C(I,J),x)
-(
-    GrB_Matrix C,                   // input/output matrix for results
-    const GrB_Matrix Mask,          // optional mask for C, unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for Z=accum(C(I,J),x)
-    GxB_FC32_t x,                   // scalar to assign to C(I,J)
-    const GrB_Index *I,             // row indices
-    GrB_Index ni,                   // number of row indices
-    const GrB_Index *J,             // column indices
-    GrB_Index nj,                   // number of column indices
-    const GrB_Descriptor desc       // descriptor for C and Mask
-) ; */
+// extern
+// GrB_Info GxB_Matrix_assign_FC32     // C<Mask>(I,J) = accum (C(I,J),x)
+// (
+//     GrB_Matrix C,                   // input/output matrix for results
+//     const GrB_Matrix Mask,          // optional mask for C, unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for Z=accum(C(I,J),x)
+//     GxB_FC32_t x,                   // scalar to assign to C(I,J)
+//     const GrB_Index *I,             // row indices
+//     GrB_Index ni,                   // number of row indices
+//     const GrB_Index *J,             // column indices
+//     GrB_Index nj,                   // number of column indices
+//     const GrB_Descriptor desc       // descriptor for C and Mask
+// ) ;
 
-/* extern
-GrB_Info GxB_Matrix_assign_FC64     // C<Mask>(I,J) = accum (C(I,J),x)
-(
-    GrB_Matrix C,                   // input/output matrix for results
-    const GrB_Matrix Mask,          // optional mask for C, unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for Z=accum(C(I,J),x)
-    GxB_FC64_t x,                   // scalar to assign to C(I,J)
-    const GrB_Index *I,             // row indices
-    GrB_Index ni,                   // number of row indices
-    const GrB_Index *J,             // column indices
-    GrB_Index nj,                   // number of column indices
-    const GrB_Descriptor desc       // descriptor for C and Mask
-) ; */
+// extern
+// GrB_Info GxB_Matrix_assign_FC64     // C<Mask>(I,J) = accum (C(I,J),x)
+// (
+//     GrB_Matrix C,                   // input/output matrix for results
+//     const GrB_Matrix Mask,          // optional mask for C, unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for Z=accum(C(I,J),x)
+//     GxB_FC64_t x,                   // scalar to assign to C(I,J)
+//     const GrB_Index *I,             // row indices
+//     GrB_Index ni,                   // number of row indices
+//     const GrB_Index *J,             // column indices
+//     GrB_Index nj,                   // number of column indices
+//     const GrB_Descriptor desc       // descriptor for C and Mask
+// ) ;
 
 extern
 GrB_Info GrB_Matrix_assign_UDT      // C<Mask>(I,J) = accum (C(I,J),x)
@@ -5669,29 +5669,29 @@ GrB_Info GrB_Vector_apply_BinaryOp1st_FP64      // w<mask> = accum (w, op(x,u))
     const GrB_Descriptor desc       // descriptor for w and mask
 ) ;
 
-/* extern
-GrB_Info GxB_Vector_apply_BinaryOp1st_FC32      // w<mask> = accum (w, op(x,u))
-(
-    GrB_Vector w,                   // input/output vector for results
-    const GrB_Vector mask,          // optional mask for w, unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for z=accum(w,t)
-    const GrB_BinaryOp op,          // operator to apply to the entries
-    GxB_FC32_t x,                   // first input:  scalar x
-    const GrB_Vector u,             // second input: vector u
-    const GrB_Descriptor desc       // descriptor for w and mask
-) ; */
+// extern
+// GrB_Info GxB_Vector_apply_BinaryOp1st_FC32      // w<mask> = accum (w, op(x,u))
+// (
+//     GrB_Vector w,                   // input/output vector for results
+//     const GrB_Vector mask,          // optional mask for w, unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for z=accum(w,t)
+//     const GrB_BinaryOp op,          // operator to apply to the entries
+//     GxB_FC32_t x,                   // first input:  scalar x
+//     const GrB_Vector u,             // second input: vector u
+//     const GrB_Descriptor desc       // descriptor for w and mask
+// ) ;
 
-/* extern
-GrB_Info GxB_Vector_apply_BinaryOp1st_FC64      // w<mask> = accum (w, op(x,u))
-(
-    GrB_Vector w,                   // input/output vector for results
-    const GrB_Vector mask,          // optional mask for w, unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for z=accum(w,t)
-    const GrB_BinaryOp op,          // operator to apply to the entries
-    GxB_FC64_t x,                   // first input:  scalar x
-    const GrB_Vector u,             // second input: vector u
-    const GrB_Descriptor desc       // descriptor for w and mask
-) ; */
+// extern
+// GrB_Info GxB_Vector_apply_BinaryOp1st_FC64      // w<mask> = accum (w, op(x,u))
+// (
+//     GrB_Vector w,                   // input/output vector for results
+//     const GrB_Vector mask,          // optional mask for w, unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for z=accum(w,t)
+//     const GrB_BinaryOp op,          // operator to apply to the entries
+//     GxB_FC64_t x,                   // first input:  scalar x
+//     const GrB_Vector u,             // second input: vector u
+//     const GrB_Descriptor desc       // descriptor for w and mask
+// ) ;
 
 extern
 GrB_Info GrB_Vector_apply_BinaryOp1st_UDT       // w<mask> = accum (w, op(x,u))
@@ -5856,29 +5856,29 @@ GrB_Info GrB_Vector_apply_BinaryOp2nd_FP64      // w<mask> = accum (w, op(u,y))
     const GrB_Descriptor desc       // descriptor for w and mask
 ) ;
 
-/* extern
-GrB_Info GxB_Vector_apply_BinaryOp2nd_FC32      // w<mask> = accum (w, op(u,y))
-(
-    GrB_Vector w,                   // input/output vector for results
-    const GrB_Vector mask,          // optional mask for w, unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for z=accum(w,t)
-    const GrB_BinaryOp op,          // operator to apply to the entries
-    const GrB_Vector u,             // first input:  vector u
-    GxB_FC32_t y,                   // second input: scalar y
-    const GrB_Descriptor desc       // descriptor for w and mask
-) ; */
+// extern
+// GrB_Info GxB_Vector_apply_BinaryOp2nd_FC32      // w<mask> = accum (w, op(u,y))
+// (
+//     GrB_Vector w,                   // input/output vector for results
+//     const GrB_Vector mask,          // optional mask for w, unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for z=accum(w,t)
+//     const GrB_BinaryOp op,          // operator to apply to the entries
+//     const GrB_Vector u,             // first input:  vector u
+//     GxB_FC32_t y,                   // second input: scalar y
+//     const GrB_Descriptor desc       // descriptor for w and mask
+// ) ;
 
-/* extern
-GrB_Info GxB_Vector_apply_BinaryOp2nd_FC64      // w<mask> = accum (w, op(u,y))
-(
-    GrB_Vector w,                   // input/output vector for results
-    const GrB_Vector mask,          // optional mask for w, unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for z=accum(w,t)
-    const GrB_BinaryOp op,          // operator to apply to the entries
-    const GrB_Vector u,             // first input:  vector u
-    GxB_FC64_t y,                   // second input: scalar y
-    const GrB_Descriptor desc       // descriptor for w and mask
-) ; */
+// extern
+// GrB_Info GxB_Vector_apply_BinaryOp2nd_FC64      // w<mask> = accum (w, op(u,y))
+// (
+//     GrB_Vector w,                   // input/output vector for results
+//     const GrB_Vector mask,          // optional mask for w, unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for z=accum(w,t)
+//     const GrB_BinaryOp op,          // operator to apply to the entries
+//     const GrB_Vector u,             // first input:  vector u
+//     GxB_FC64_t y,                   // second input: scalar y
+//     const GrB_Descriptor desc       // descriptor for w and mask
+// ) ;
 
 extern
 GrB_Info GrB_Vector_apply_BinaryOp2nd_UDT       // w<mask> = accum (w, op(u,y))
@@ -6043,29 +6043,29 @@ GrB_Info GrB_Matrix_apply_BinaryOp1st_FP64      // C<M>=accum(C,op(x,A))
     const GrB_Descriptor desc       // descriptor for C, mask, and A
 ) ;
 
-/* extern
-GrB_Info GxB_Matrix_apply_BinaryOp1st_FC32      // C<M>=accum(C,op(x,A))
-(
-    GrB_Matrix C,                   // input/output matrix for results
-    const GrB_Matrix Mask,          // optional mask for C, unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for Z=accum(C,T)
-    const GrB_BinaryOp op,          // operator to apply to the entries
-    GxB_FC32_t x,                   // first input:  scalar x
-    const GrB_Matrix A,             // second input: matrix A
-    const GrB_Descriptor desc       // descriptor for C, mask, and A
-) ; */
+// extern
+// GrB_Info GxB_Matrix_apply_BinaryOp1st_FC32      // C<M>=accum(C,op(x,A))
+// (
+//     GrB_Matrix C,                   // input/output matrix for results
+//     const GrB_Matrix Mask,          // optional mask for C, unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for Z=accum(C,T)
+//     const GrB_BinaryOp op,          // operator to apply to the entries
+//     GxB_FC32_t x,                   // first input:  scalar x
+//     const GrB_Matrix A,             // second input: matrix A
+//     const GrB_Descriptor desc       // descriptor for C, mask, and A
+// ) ;
 
-/* extern
-GrB_Info GxB_Matrix_apply_BinaryOp1st_FC64      // C<M>=accum(C,op(x,A))
-(
-    GrB_Matrix C,                   // input/output matrix for results
-    const GrB_Matrix Mask,          // optional mask for C, unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for Z=accum(C,T)
-    const GrB_BinaryOp op,          // operator to apply to the entries
-    GxB_FC64_t x,                   // first input:  scalar x
-    const GrB_Matrix A,             // second input: matrix A
-    const GrB_Descriptor desc       // descriptor for C, mask, and A
-) ; */
+// extern
+// GrB_Info GxB_Matrix_apply_BinaryOp1st_FC64      // C<M>=accum(C,op(x,A))
+// (
+//     GrB_Matrix C,                   // input/output matrix for results
+//     const GrB_Matrix Mask,          // optional mask for C, unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for Z=accum(C,T)
+//     const GrB_BinaryOp op,          // operator to apply to the entries
+//     GxB_FC64_t x,                   // first input:  scalar x
+//     const GrB_Matrix A,             // second input: matrix A
+//     const GrB_Descriptor desc       // descriptor for C, mask, and A
+// ) ;
 
 extern
 GrB_Info GrB_Matrix_apply_BinaryOp1st_UDT       // C<M>=accum(C,op(x,A))
@@ -6230,29 +6230,29 @@ GrB_Info GrB_Matrix_apply_BinaryOp2nd_FP64      // C<M>=accum(C,op(x,A))
     const GrB_Descriptor desc       // descriptor for C, mask, and A
 ) ;
 
-/* extern
-GrB_Info GxB_Matrix_apply_BinaryOp2nd_FC32      // C<M>=accum(C,op(x,A))
-(
-    GrB_Matrix C,                   // input/output matrix for results
-    const GrB_Matrix Mask,          // optional mask for C, unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for Z=accum(C,T)
-    const GrB_BinaryOp op,          // operator to apply to the entries
-    const GrB_Matrix A,             // first input:  matrix A
-    GxB_FC32_t y,                   // second input: scalar y
-    const GrB_Descriptor desc       // descriptor for C, mask, and A
-) ; */
+// extern
+// GrB_Info GxB_Matrix_apply_BinaryOp2nd_FC32      // C<M>=accum(C,op(x,A))
+// (
+//     GrB_Matrix C,                   // input/output matrix for results
+//     const GrB_Matrix Mask,          // optional mask for C, unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for Z=accum(C,T)
+//     const GrB_BinaryOp op,          // operator to apply to the entries
+//     const GrB_Matrix A,             // first input:  matrix A
+//     GxB_FC32_t y,                   // second input: scalar y
+//     const GrB_Descriptor desc       // descriptor for C, mask, and A
+// ) ;
 
-/* extern
-GrB_Info GxB_Matrix_apply_BinaryOp2nd_FC64      // C<M>=accum(C,op(x,A))
-(
-    GrB_Matrix C,                   // input/output matrix for results
-    const GrB_Matrix Mask,          // optional mask for C, unused if NULL
-    const GrB_BinaryOp accum,       // optional accum for Z=accum(C,T)
-    const GrB_BinaryOp op,          // operator to apply to the entries
-    const GrB_Matrix A,             // first input:  matrix A
-    GxB_FC64_t y,                   // second input: scalar y
-    const GrB_Descriptor desc       // descriptor for C, mask, and A
-) ; */
+// extern
+// GrB_Info GxB_Matrix_apply_BinaryOp2nd_FC64      // C<M>=accum(C,op(x,A))
+// (
+//     GrB_Matrix C,                   // input/output matrix for results
+//     const GrB_Matrix Mask,          // optional mask for C, unused if NULL
+//     const GrB_BinaryOp accum,       // optional accum for Z=accum(C,T)
+//     const GrB_BinaryOp op,          // operator to apply to the entries
+//     const GrB_Matrix A,             // first input:  matrix A
+//     GxB_FC64_t y,                   // second input: scalar y
+//     const GrB_Descriptor desc       // descriptor for C, mask, and A
+// ) ;
 
 extern
 GrB_Info GrB_Matrix_apply_BinaryOp2nd_UDT       // C<M>=accum(C,op(x,A))
@@ -6533,25 +6533,25 @@ GrB_Info GrB_Vector_reduce_FP64     // c = accum (c, reduce_to_scalar (u))
     const GrB_Descriptor desc       // descriptor (currently unused)
 ) ;
 
-/* extern
-GrB_Info GxB_Vector_reduce_FC32     // c = accum (c, reduce_to_scalar (u))
-(
-    GxB_FC32_t *c,                  // result scalar
-    const GrB_BinaryOp accum,       // optional accum for c=accum(c,t)
-    const GrB_Monoid monoid,        // monoid to do the reduction
-    const GrB_Vector u,             // vector to reduce
-    const GrB_Descriptor desc       // descriptor (currently unused)
-) ; */
+// extern
+// GrB_Info GxB_Vector_reduce_FC32     // c = accum (c, reduce_to_scalar (u))
+// (
+//     GxB_FC32_t *c,                  // result scalar
+//     const GrB_BinaryOp accum,       // optional accum for c=accum(c,t)
+//     const GrB_Monoid monoid,        // monoid to do the reduction
+//     const GrB_Vector u,             // vector to reduce
+//     const GrB_Descriptor desc       // descriptor (currently unused)
+// ) ;
 
-/* extern
-GrB_Info GxB_Vector_reduce_FC64     // c = accum (c, reduce_to_scalar (u))
-(
-    GxB_FC64_t *c,                  // result scalar
-    const GrB_BinaryOp accum,       // optional accum for c=accum(c,t)
-    const GrB_Monoid monoid,        // monoid to do the reduction
-    const GrB_Vector u,             // vector to reduce
-    const GrB_Descriptor desc       // descriptor (currently unused)
-) ; */
+// extern
+// GrB_Info GxB_Vector_reduce_FC64     // c = accum (c, reduce_to_scalar (u))
+// (
+//     GxB_FC64_t *c,                  // result scalar
+//     const GrB_BinaryOp accum,       // optional accum for c=accum(c,t)
+//     const GrB_Monoid monoid,        // monoid to do the reduction
+//     const GrB_Vector u,             // vector to reduce
+//     const GrB_Descriptor desc       // descriptor (currently unused)
+// ) ;
 
 extern
 GrB_Info GrB_Vector_reduce_UDT      // c = accum (c, reduce_to_scalar (u))
@@ -6679,25 +6679,25 @@ GrB_Info GrB_Matrix_reduce_FP64     // c = accum (c, reduce_to_scalar (A))
     const GrB_Descriptor desc       // descriptor (currently unused)
 ) ;
 
-/* extern
-GrB_Info GxB_Matrix_reduce_FC32     // c = accum (c, reduce_to_scalar (A))
-(
-    GxB_FC32_t *c,                  // result scalar
-    const GrB_BinaryOp accum,       // optional accum for c=accum(c,t)
-    const GrB_Monoid monoid,        // monoid to do the reduction
-    const GrB_Matrix A,             // matrix to reduce
-    const GrB_Descriptor desc       // descriptor (currently unused)
-) ; */
+// extern
+// GrB_Info GxB_Matrix_reduce_FC32     // c = accum (c, reduce_to_scalar (A))
+// (
+//     GxB_FC32_t *c,                  // result scalar
+//     const GrB_BinaryOp accum,       // optional accum for c=accum(c,t)
+//     const GrB_Monoid monoid,        // monoid to do the reduction
+//     const GrB_Matrix A,             // matrix to reduce
+//     const GrB_Descriptor desc       // descriptor (currently unused)
+// ) ;
 
-/* extern
-GrB_Info GxB_Matrix_reduce_FC64     // c = accum (c, reduce_to_scalar (A))
-(
-    GxB_FC64_t *c,                  // result scalar
-    const GrB_BinaryOp accum,       // optional accum for c=accum(c,t)
-    const GrB_Monoid monoid,        // monoid to do the reduction
-    const GrB_Matrix A,             // matrix to reduce
-    const GrB_Descriptor desc       // descriptor (currently unused)
-) ; */
+// extern
+// GrB_Info GxB_Matrix_reduce_FC64     // c = accum (c, reduce_to_scalar (A))
+// (
+//     GxB_FC64_t *c,                  // result scalar
+//     const GrB_BinaryOp accum,       // optional accum for c=accum(c,t)
+//     const GrB_Monoid monoid,        // monoid to do the reduction
+//     const GrB_Matrix A,             // matrix to reduce
+//     const GrB_Descriptor desc       // descriptor (currently unused)
+// ) ;
 
 extern
 GrB_Info GrB_Matrix_reduce_UDT      // c = accum (c, reduce_to_scalar (A))
@@ -6922,8 +6922,8 @@ extern GrB_Monoid
     GrB_PLUS_MONOID_FP64,       // identity: 0
 
     // complex monoids:
-/*     GxB_PLUS_FC32_MONOID,       // identity: 0 */
-/*     GxB_PLUS_FC64_MONOID,       // identity: 0 */
+//     GxB_PLUS_FC32_MONOID,       // identity: 0
+//     GxB_PLUS_FC64_MONOID,       // identity: 0
 
     //--------------------------------------------------------------------------
     // 12 TIMES monoids: identity value is 1, int* and uint* are terminal
@@ -6954,8 +6954,8 @@ extern GrB_Monoid
     GrB_TIMES_MONOID_FP64,      // identity: 1
 
     // complex monoids:
-/*     GxB_TIMES_FC32_MONOID,      // identity: 1 */
-/*     GxB_TIMES_FC64_MONOID,      // identity: 1 */
+//     GxB_TIMES_FC32_MONOID,      // identity: 1
+//     GxB_TIMES_FC64_MONOID,      // identity: 1
 
     //--------------------------------------------------------------------------
     // 13 ANY monoids:
@@ -6972,8 +6972,8 @@ extern GrB_Monoid
     GxB_ANY_UINT64_MONOID,      // identity: any value    terminal: any value
     GxB_ANY_FP32_MONOID,        // identity: any value    terminal: any value
     GxB_ANY_FP64_MONOID,        // identity: any value    terminal: any value
-/*     GxB_ANY_FC32_MONOID,        // identity: any value    terminal: any value */
-/*     GxB_ANY_FC64_MONOID,        // identity: any value    terminal: any value */
+//     GxB_ANY_FC32_MONOID,        // identity: any value    terminal: any value
+//     GxB_ANY_FC64_MONOID,        // identity: any value    terminal: any value
 
     //--------------------------------------------------------------------------
     // 4 Boolean monoids: (see also the GxB_ANY_BOOL_MONOID above)
@@ -7463,38 +7463,38 @@ extern GrB_Semiring
 // 54 complex semirings
 //------------------------------------------------------------------------------
 
-/*     // 3 monoids (plus, times, any), 2 types (FC32 and FC64), and 9 */
+//     // 3 monoids (plus, times, any), 2 types (FC32 and FC64), and 9
     // multiplicative operators.
 
     // Note that times_pair is identical to any_pair.
     // These 2 are marked below.
 
-/*     GxB_PLUS_FIRST_FC32    , GxB_TIMES_FIRST_FC32   , GxB_ANY_FIRST_FC32     , */
-/*     GxB_PLUS_FIRST_FC64    , GxB_TIMES_FIRST_FC64   , GxB_ANY_FIRST_FC64     , */
+//     GxB_PLUS_FIRST_FC32    , GxB_TIMES_FIRST_FC32   , GxB_ANY_FIRST_FC32     ,
+//     GxB_PLUS_FIRST_FC64    , GxB_TIMES_FIRST_FC64   , GxB_ANY_FIRST_FC64     ,
 
-/*     GxB_PLUS_SECOND_FC32   , GxB_TIMES_SECOND_FC32  , GxB_ANY_SECOND_FC32    , */
-/*     GxB_PLUS_SECOND_FC64   , GxB_TIMES_SECOND_FC64  , GxB_ANY_SECOND_FC64    , */
+//     GxB_PLUS_SECOND_FC32   , GxB_TIMES_SECOND_FC32  , GxB_ANY_SECOND_FC32    ,
+//     GxB_PLUS_SECOND_FC64   , GxB_TIMES_SECOND_FC64  , GxB_ANY_SECOND_FC64    ,
 
-/*     GxB_PLUS_PAIR_FC32     , GxB_TIMES_PAIR_FC32/**/, GxB_ANY_PAIR_FC32      , */
-/*     GxB_PLUS_PAIR_FC64     , GxB_TIMES_PAIR_FC64/**/, GxB_ANY_PAIR_FC64      , */
+//     GxB_PLUS_PAIR_FC32     , GxB_TIMES_PAIR_FC32/**/, GxB_ANY_PAIR_FC32      ,
+//     GxB_PLUS_PAIR_FC64     , GxB_TIMES_PAIR_FC64/**/, GxB_ANY_PAIR_FC64      ,
 
-/*     GxB_PLUS_PLUS_FC32     , GxB_TIMES_PLUS_FC32    , GxB_ANY_PLUS_FC32      , */
-/*     GxB_PLUS_PLUS_FC64     , GxB_TIMES_PLUS_FC64    , GxB_ANY_PLUS_FC64      , */
+//     GxB_PLUS_PLUS_FC32     , GxB_TIMES_PLUS_FC32    , GxB_ANY_PLUS_FC32      ,
+//     GxB_PLUS_PLUS_FC64     , GxB_TIMES_PLUS_FC64    , GxB_ANY_PLUS_FC64      ,
 
-/*     GxB_PLUS_MINUS_FC32    , GxB_TIMES_MINUS_FC32   , GxB_ANY_MINUS_FC32     , */
-/*     GxB_PLUS_MINUS_FC64    , GxB_TIMES_MINUS_FC64   , GxB_ANY_MINUS_FC64     , */
+//     GxB_PLUS_MINUS_FC32    , GxB_TIMES_MINUS_FC32   , GxB_ANY_MINUS_FC32     ,
+//     GxB_PLUS_MINUS_FC64    , GxB_TIMES_MINUS_FC64   , GxB_ANY_MINUS_FC64     ,
 
-/*     GxB_PLUS_TIMES_FC32    , GxB_TIMES_TIMES_FC32   , GxB_ANY_TIMES_FC32     , */
-/*     GxB_PLUS_TIMES_FC64    , GxB_TIMES_TIMES_FC64   , GxB_ANY_TIMES_FC64     , */
+//     GxB_PLUS_TIMES_FC32    , GxB_TIMES_TIMES_FC32   , GxB_ANY_TIMES_FC32     ,
+//     GxB_PLUS_TIMES_FC64    , GxB_TIMES_TIMES_FC64   , GxB_ANY_TIMES_FC64     ,
 
-/*     GxB_PLUS_DIV_FC32      , GxB_TIMES_DIV_FC32     , GxB_ANY_DIV_FC32       , */
-/*     GxB_PLUS_DIV_FC64      , GxB_TIMES_DIV_FC64     , GxB_ANY_DIV_FC64       , */
+//     GxB_PLUS_DIV_FC32      , GxB_TIMES_DIV_FC32     , GxB_ANY_DIV_FC32       ,
+//     GxB_PLUS_DIV_FC64      , GxB_TIMES_DIV_FC64     , GxB_ANY_DIV_FC64       ,
 
-/*     GxB_PLUS_RDIV_FC32     , GxB_TIMES_RDIV_FC32    , GxB_ANY_RDIV_FC32      , */
-/*     GxB_PLUS_RDIV_FC64     , GxB_TIMES_RDIV_FC64    , GxB_ANY_RDIV_FC64      , */
+//     GxB_PLUS_RDIV_FC32     , GxB_TIMES_RDIV_FC32    , GxB_ANY_RDIV_FC32      ,
+//     GxB_PLUS_RDIV_FC64     , GxB_TIMES_RDIV_FC64    , GxB_ANY_RDIV_FC64      ,
 
-/*     GxB_PLUS_RMINUS_FC32   , GxB_TIMES_RMINUS_FC32  , GxB_ANY_RMINUS_FC32    , */
-/*     GxB_PLUS_RMINUS_FC64   , GxB_TIMES_RMINUS_FC64  , GxB_ANY_RMINUS_FC64    , */
+//     GxB_PLUS_RMINUS_FC32   , GxB_TIMES_RMINUS_FC32  , GxB_ANY_RMINUS_FC32    ,
+//     GxB_PLUS_RMINUS_FC64   , GxB_TIMES_RMINUS_FC64  , GxB_ANY_RMINUS_FC64    ,
 
 //------------------------------------------------------------------------------
 // 64 bitwise semirings
