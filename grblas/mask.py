@@ -6,6 +6,12 @@ class Mask:
     def __init__(self, mask):
         self.mask = mask
 
+    def __eq__(self, other):
+        raise TypeError(f"__eq__ not defined for objects of type {type(self)}.")
+
+    def __bool__(self):
+        raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
+
     def __repr__(self):
         return self.mask.__repr__(mask=self)
 

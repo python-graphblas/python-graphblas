@@ -1,4 +1,5 @@
 import pytest
+import itertools
 import grblas
 import numpy as np
 from grblas import Matrix, Vector, Scalar
@@ -1437,3 +1438,72 @@ def test_import_export_empty():
         A.dup().ss.export("fullr")
     with pytest.raises(InvalidValue):
         A.dup().ss.export("fullc")
+
+
+def test_import_export_auto(A):
+    A_orig = A.dup()
+    for format in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc"]:
+        for (
+            sort,
+            raw,
+            import_format,
+            give_ownership,
+            take_ownership,
+            import_func,
+        ) in itertools.product(
+            [False, True],
+            [False, True],
+            [format, None],
+            [False, True],
+            [False, True],
+            [Matrix.ss.import_any, getattr(Matrix.ss, f"import_{format}")],
+        ):
+            A2 = A.dup() if give_ownership else A
+            d = A2.ss.export(format, sort=sort, raw=raw, give_ownership=give_ownership)
+            d["format"] = import_format
+            other = import_func(take_ownership=take_ownership, **d)
+            if (
+                format == "bitmapc"
+                and raw
+                and import_format is None
+                and import_func.__name__ == "import_any"
+            ):
+                # It's 1d, so we can't tell we're column-oriented w/o format keyword
+                assert other.isequal(A_orig.T)
+            else:
+                assert other.isequal(A_orig)
+            d["format"] = "bad_format"
+            with pytest.raises(ValueError, match="Invalid format"):
+                import_func(**d)
+    assert A.isequal(A_orig)
+
+    C = Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], [1, 2, 3, 4, 5, 6])
+    C_orig = C.dup()
+    for format in ["fullr", "fullc"]:
+        for raw, import_format, give_ownership, take_ownership, import_func in itertools.product(
+            [False, True],
+            [format, None],
+            [False, True],
+            [False, True],
+            [Matrix.ss.import_any, getattr(Matrix.ss, f"import_{format}")],
+        ):
+            C2 = C.dup() if give_ownership else C
+            d = C2.ss.export(format, raw=raw, give_ownership=give_ownership)
+            d["format"] = import_format
+            other = import_func(take_ownership=take_ownership, **d)
+            if (
+                format == "fullc"
+                and raw
+                and import_format is None
+                and import_func.__name__ == "import_any"
+            ):
+                # It's 1d, so we can't tell we're column-oriented w/o format keyword
+                assert other.isequal(
+                    Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], [1, 3, 5, 2, 4, 6])
+                )
+            else:
+                assert other.isequal(C_orig)
+            d["format"] = "bad_format"
+            with pytest.raises(ValueError, match="Invalid format"):
+                import_func(**d)
+    assert C.isequal(C_orig)

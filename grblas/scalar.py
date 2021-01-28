@@ -14,6 +14,7 @@ class Scalar(BaseType):
     Pseudo-object for GraphBLAS functions which accumlate into a scalar type
     """
 
+    shape = ()
     _is_scalar = True
     _name_counter = itertools.count()
 
@@ -36,12 +37,18 @@ class Scalar(BaseType):
     def __eq__(self, other):
         return self.isequal(other)
 
-    __hash__ = None
-
     def __bool__(self):
         if self.is_empty:
             return False
         return bool(self.value)
+
+    def __float__(self):
+        return float(self.value)
+
+    def __int__(self):
+        return int(self.value)
+
+    __index__ = __int__
 
     def isequal(self, other, *, check_dtype=False):
         """
@@ -208,6 +215,20 @@ class ScalarExpression(BaseExpression):
     def new(self, *, dtype=None, name=None):
         return super().new(dtype=dtype, name=name)
 
+    def __eq__(self, other):
+        return self.value == other
+
+    def __bool__(self):
+        return bool(self.value)
+
+    def __float__(self):
+        return float(self.value)
+
+    def __int__(self):
+        return int(self.value)
+
+    __index__ = __int__
+
     def __repr__(self):
         from .formatting import format_scalar_expression
 
@@ -249,5 +270,3 @@ class _CScalar:
         if type(other) is _CScalar:
             return self.scalar == other.scalar
         return self.scalar == other
-
-    __hash__ = None

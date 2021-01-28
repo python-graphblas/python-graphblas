@@ -88,8 +88,6 @@ class _CArray:
             )
         return "(%s[]){%s}" % (self.dtype.c_type, values)
 
-    __hash__ = None
-
 
 class _Pointer:
     def __init__(self, val):

@@ -1,4 +1,5 @@
 import pytest
+import itertools
 import numpy as np
 import grblas
 from grblas import Matrix, Vector, Scalar
@@ -714,3 +715,32 @@ def test_import_export(v):
 
     with pytest.raises(ValueError, match="Invalid format: bad_name"):
         v.ss.export("bad_name")
+
+
+def test_import_export_auto(v):
+    v_orig = v.dup()
+    for format in ["sparse", "bitmap"]:
+        for (
+            sort,
+            raw,
+            import_format,
+            give_ownership,
+            take_ownership,
+            import_func,
+        ) in itertools.product(
+            [False, True],
+            [False, True],
+            [format, None],
+            [False, True],
+            [False, True],
+            [Vector.ss.import_any, getattr(Vector.ss, f"import_{format}")],
+        ):
+            v2 = v.dup() if give_ownership else v
+            d = v2.ss.export(format, sort=sort, raw=raw, give_ownership=give_ownership)
+            d["format"] = import_format
+            other = import_func(take_ownership=take_ownership, **d)
+            assert other.isequal(v_orig)
+            d["format"] = "bad_format"
+            with pytest.raises(ValueError, match="Invalid format"):
+                import_func(**d)
+    assert v.isequal(v_orig)

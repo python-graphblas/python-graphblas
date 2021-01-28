@@ -47,8 +47,11 @@ cpdef ndarray claim_buffer_2d(ffi, cdata, size_t cdata_size, size_t nrows, size_
         if is_c_order:
             array = PyArray_SimpleNewFromData(2, dims, dtype.num, <void*>ptr)
         else:
-            array = PyArray_New(ndarray, 2, dims, dtype.num, NULL, <void*>ptr, -1, NPY_ARRAY_F_CONTIGUOUS, <object>NULL)
-        PyArray_ENABLEFLAGS(array, NPY_ARRAY_OWNDATA | NPY_ARRAY_WRITEABLE)
+            array = PyArray_New(
+                ndarray, 2, dims, dtype.num, NULL, <void*>ptr, -1,
+                NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_WRITEABLE, <object>NULL
+            )
+        PyArray_ENABLEFLAGS(array, NPY_ARRAY_OWNDATA)
     elif cdata_size > size:
         array = claim_buffer(ffi, cdata, cdata_size, dtype)
         if is_c_order:

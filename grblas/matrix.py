@@ -71,6 +71,16 @@ class Matrix(BaseType):
     def __setitem__(self, keys, delayed):
         Updater(self)[keys] = delayed
 
+    def __contains__(self, index):
+        extractor = self[index]
+        if not extractor.resolved_indexes.is_single_element:
+            raise TypeError(
+                f"Invalid index to Matrix contains: {index!r}.  A 2-tuple of ints is expected.  "
+                "Doing `(i, j) in my_matrix` checks whether a value is present at that index."
+            )
+        scalar = extractor.new(name="s_contains")
+        return not scalar.is_empty
+
     def isequal(self, other, *, check_dtype=False):
         """
         Check for exact equality (same size, same empty values)
@@ -994,40 +1004,143 @@ class Matrix(BaseType):
             """
             GxB_Matrix_export_xxx
 
-            Returns a dict of the constituent parts:
-             - format: str
-             - nrows: number of rows (int)
-             - ncols: number of columns (int)
-             - h: header mapping (ndarray<uinte64>) (only for HyperCSR or HyperCSC)
-             - p: pointers (ndarray<uint64>)
-             - i or j: indices (ndarray<uint64>) (i for CSC, j for CSR)
-             - x: values (ndarray of appropriate dtype)
+            Parameters
+            ----------
+            format : str or None, default None
+                If `format` is not specified, this method exports in the currently stored format.
+                To control the export format, set `format` to one of:
+                    - "csr"
+                    - "csc"
+                    - "hypercsr"
+                    - "hypercsc"
+                    - "bitmapr"
+                    - "bitmapc"
+                    - "fullr"
+                    - "fullc"
+            sort : bool, default False
+                Whether to sort indices if the format is "csr", "csc", "hypercsr", or "hypercsc".
+            give_ownership : bool, default False
+                Perform a zero-copy data transfer to Python if possible.  This gives ownership of
+                the underlying memory buffers to Numpy.
+                ** If True, this nullifies the current object, which should no longer be used! **
+            raw : bool, default False
+                If True, always return 1d arrays the same size as returned by SuiteSparse.
+                If False, arrays may be trimmed to be the expected size, and 2d arrays are
+                returned when format is "bitmapr", "bitmapc", "fullr", or "fullc".
+                It may make sense to choose ``raw=True`` if one wants to use the data to perform
+                a zero-copy import back to SuiteSparse.
 
-            To reimport the Matrix:
-            ```
-            pieces = A.export()
-            A2 = Matrix.import_any(**pieces)
-            ```
+            Returns
+            -------
+            dict; keys depend on `format` and `raw` arguments (see below).
 
-            The underlying GraphBLAS object transfers ownership to numpy,
-            disallowing further access. The caller should delete or stop using
-            the Matrix after calling `export`.
+            See Also
+            --------
+            Matrix.to_values
 
-            If `format` is not specified, this method exports in the currently stored format
-            To control the export format, set `format` to one of:
-              - "csr"
-              - "csc"
-              - "hypercsr"
-              - "hypercsc"
-              - "bitmapr"
-              - "bitmapc"
-              - "fullr"
-              - "fullc"
+            Return values
+                - Note: for ``raw=True``, arrays may be larger than specified.
+                - "csr" format
+                    - indptr : ndarray(dtype=uint64, ndim=1, size=nrows + 1)
+                    - col_indices : ndarray(dtype=uint64, ndim=1, size=nvals)
+                    - values : ndarray(ndim=1, size=nvals)
+                    - sorted_index : bool
+                        - True if the values in "col_indices" are sorted
+                    - nrows : int
+                    - ncols : int
+                - "csc" format
+                    - indptr : ndarray(dtype=uint64, ndim=1, size=ncols + 1)
+                    - row_indices : ndarray(dtype=uint64, ndim=1, size=nvals)
+                    - values : ndarray(ndim=1, size=nvals)
+                    - sorted_index : bool
+                        - True if the values in "row_indices" are sorted
+                    - nrows : int
+                    - ncols : int
+                - "hypercsr" format
+                    - indptr : ndarray(dtype=uint64, ndim=1, size=nvec + 1)
+                    - rows : ndarray(dtype=uint64, ndim=1, size=nvec)
+                    - col_indices : ndarray(dtype=uint64, ndim=1, size=nvals)
+                    - values : ndarray(ndim=1, size=nvals)
+                    - sorted_index : bool
+                        - True if the values in "col_indices" are sorted
+                    - nrows : int
+                    - ncols : int
+                    - nvec : int, only present if raw == True
+                        - The number of rows present in the data structure
+                - "hypercsc" format
+                    - indptr : ndarray(dtype=uint64, ndim=1, size=nvec + 1)
+                    - cols : ndarray(dtype=uint64, ndim=1, size=nvec)
+                    - row_indices : ndarray(dtype=uint64, ndim=1, size=nvals)
+                    - values : ndarray(ndim=1, size=nvals)
+                    - sorted_index : bool
+                        - True if the values in "row_indices" are sorted
+                    - nrows : int
+                    - ncols : int
+                    - nvec : int, only present if raw == True
+                        - The number of cols present in the data structure
+                - "bitmapr" format
+                    - ``raw=False``
+                        - bitmap : ndarray(dtype=bool8, ndim=2, shape=(nrows, ncols), order="C")
+                        - values : ndarray(ndim=2, shape=(nrows, ncols), order="C")
+                            - Elements where bitmap is False are undefined
+                        - nvals : int
+                            - The number of True elements in the bitmap
+                    - ``raw=True``
+                        - bitmap : ndarray(dtype=bool8, ndim=1, size=nrows * ncols)
+                            - Stored row-oriented
+                        - values : ndarray(ndim=1, size=nrows * ncols)
+                            - Elements where bitmap is False are undefined
+                            - Stored row-oriented
+                        - nvals : int
+                            - The number of True elements in the bitmap
+                        - nrows : int
+                        - ncols : int
+                - "bitmapc" format
+                    - ``raw=False``
+                        - bitmap : ndarray(dtype=bool8, ndim=2, shape=(nrows, ncols), order="F")
+                        - values : ndarray(ndim=2, shape=(nrows, ncols), order="F")
+                            - Elements where bitmap is False are undefined
+                        - nvals : int
+                            - The number of True elements in the bitmap
+                    - ``raw=True``
+                        - bitmap : ndarray(dtype=bool8, ndim=1, size=nrows * ncols)
+                            - Stored column-oriented
+                        - values : ndarray(ndim=1, size=nrows * ncols)
+                            - Elements where bitmap is False are undefined
+                            - Stored column-oriented
+                        - nvals : int
+                            - The number of True elements in the bitmap
+                        - nrows : int
+                        - ncols : int
+                - "fullr" format
+                    - ``raw=False``
+                        - values : ndarray(ndim=2, shape=(nrows, ncols), order="C")
+                    - ``raw=True``
+                        - values : ndarray(ndim=1, size=nrows * ncols)
+                            - Stored row-oriented
+                        - nrows : int
+                        - ncols : int
+                - "fullc" format
+                    - ``raw=False``
+                        - values : ndarray(ndim=2, shape=(nrows, ncols), order="F")
+                    - ``raw=True``
+                        - values : ndarray(ndim=1, size=nrows * ncols)
+                            - Stored row-oriented
+                        - nrows : int
+                        - ncols : int
+
+            Examples
+            --------
+            Simple usage:
+
+            >>> pieces = A.ss.export()
+            >>> A2 = Matrix.ss.import_any(**pieces)
+
             """
             if give_ownership:
                 parent = self._parent
             else:
-                parent = self._parent.dup(name=f"{self._parent.name}_export")
+                parent = self._parent.dup(name="M_export")
             dtype = np.dtype(parent.dtype.np_type)
             index_dtype = np.dtype(np.uint64)
 
@@ -1200,7 +1313,7 @@ class Matrix(BaseType):
                     "ncols": ncols[0],
                 }
                 if raw:
-                    rv["nvec"] = nvec  # better name?
+                    rv["nvec"] = nvec
             elif format == "hypercsc":
                 nvec = ffi_new("GrB_Index*")
                 Ah = ffi_new("GrB_Index**")
@@ -1251,7 +1364,7 @@ class Matrix(BaseType):
                     "ncols": ncols[0],
                 }
                 if raw:
-                    rv["nvec"] = nvec  # better name?
+                    rv["nvec"] = nvec
             elif format == "bitmapr" or format == "bitmapc":
                 if format == "bitmapr":
                     cfunc = lib.GxB_Matrix_export_BitmapR
@@ -1288,8 +1401,8 @@ class Matrix(BaseType):
                     )
                 rv = {"bitmap": bitmap, "nvals": nvals_[0]}
                 if raw:
-                    rv["nrows"] = nrows
-                    rv["ncols"] = ncols
+                    rv["nrows"] = nrows[0]
+                    rv["ncols"] = ncols[0]
             elif format == "fullr" or format == "fullc":
                 if format == "fullr":
                     cfunc = lib.GxB_Matrix_export_FullR
@@ -1592,7 +1705,10 @@ class Matrix(BaseType):
             Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
             if nvals is None:
-                nvals = np.count_nonzero(bitmap)
+                if bitmap.size == nrows * ncols:
+                    nvals = np.count_nonzero(bitmap)
+                else:
+                    nvals = np.count_nonzero(bitmap.ravel()[: nrows * ncols])
             check_status_carg(
                 lib.GxB_Matrix_import_BitmapR(
                     mhandle,
@@ -1644,7 +1760,10 @@ class Matrix(BaseType):
             Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap.T)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values.T)))
             if nvals is None:
-                nvals = np.count_nonzero(bitmap)
+                if bitmap.size == nrows * ncols:
+                    nvals = np.count_nonzero(bitmap)
+                else:
+                    nvals = np.count_nonzero(bitmap.ravel("F")[: nrows * ncols])
             check_status_carg(
                 lib.GxB_Matrix_import_BitmapC(
                     mhandle,
@@ -1826,11 +1945,31 @@ class Matrix(BaseType):
                         raise TypeError("Cannot provide both `bitmap` and `cols`")
                     if rows is not None:
                         raise TypeError("Cannot provide both `bitmap` and `rows`")
-                    # Assume row-oriented
-                    format = "bitmapr"
+
+                    # Choose format based on contiguousness of values fist
+                    if isinstance(values, np.ndarray) and values.ndim == 2:
+                        if values.flags.f_contiguous:
+                            format = "bitmapc"
+                        elif values.flags.c_contiguous:
+                            format = "bitmapr"
+                    # Then consider bitmap contiguousness if necessary
+                    if format is None and isinstance(bitmap, np.ndarray) and bitmap.ndim == 2:
+                        if bitmap.flags.f_contiguous:
+                            format = "bitmapc"
+                        elif bitmap.flags.c_contiguous:
+                            format = "bitmapr"
+                    # Then default to row-oriented
+                    if format is None:
+                        format = "bitmapr"
                 else:
-                    # Assume row-oriented
-                    format = "fullr"
+                    if (
+                        isinstance(values, np.ndarray)
+                        and values.ndim == 2
+                        and values.flags.f_contiguous
+                    ):
+                        format = "fullc"
+                    else:
+                        format = "fullr"
             else:
                 format = format.lower()
 
@@ -2061,6 +2200,8 @@ class TransposedMatrix:
     _extract_element = Matrix._extract_element
     _prep_for_extract = Matrix._prep_for_extract
     __eq__ = Matrix.__eq__
+    __bool__ = Matrix.__bool__
     __getitem__ = Matrix.__getitem__
+    __contains__ = Matrix.__contains__
     _expect_type = Matrix._expect_type
     _expect_op = Matrix._expect_op

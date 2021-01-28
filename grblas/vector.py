@@ -68,6 +68,16 @@ class Vector(BaseType):
     def __setitem__(self, keys, delayed):
         Updater(self)[keys] = delayed
 
+    def __contains__(self, index):
+        extractor = self[index]
+        if not extractor.resolved_indexes.is_single_element:
+            raise TypeError(
+                f"Invalid index to Vector contains: {index!r}.  An integer is expected.  "
+                "Doing `index in my_vector` checks whether a value is present at that index."
+            )
+        scalar = extractor.new(name="s_contains")
+        return not scalar.is_empty
+
     def isequal(self, other, *, check_dtype=False):
         """
         Check for exact equality (same size, same empty values)
@@ -594,27 +604,76 @@ class Vector(BaseType):
 
         def export(self, format=None, sort=False, give_ownership=False, raw=False):
             """
-            GxB_Vector_export
+            GxB_Vextor_export_xxx
 
-            Returns a dict of the constituent parts:
-             - n: size (int)
-             - i: indices (ndarray<uint64>)
-             - x: values (ndarray of appropriate dtype)
+            Parameters
+            ----------
+            format : str or None, default None
+                If `format` is not specified, this method exports in the currently stored format.
+                To control the export format, set `format` to one of:
+                    - "sparse"
+                    - "bitmap"
+                    - "full"
+            sort : bool, default False
+                Whether to sort indices if the format is "sparse"
+            give_ownership : bool, default False
+                Perform a zero-copy data transfer to Python if possible.  This gives ownership of
+                the underlying memory buffers to Numpy.
+                ** If True, this nullifies the current object, which should no longer be used! **
+            raw : bool, default False
+                If True, always return array the same size as returned by SuiteSparse.
+                If False, arrays may be trimmed to be the expected size.
+                It may make sense to choose ``raw=True`` if one wants to use the data to perform
+                a zero-copy import back to SuiteSparse.
 
-            To reimport the Vector:
-            ```
-            pieces = v.export()
-            v2 = Vector.fast_import(**pieces)
-            ```
+            Returns
+            -------
+            dict; keys depend on `format` and `raw` arguments (see below).
 
-            The underlying GraphBLAS object transfers ownership to numpy,
-            disallowing further access. The caller should delete or stop using
-            the Vector after calling `export`.
+            See Also
+            --------
+            Vector.to_values
+            Vector.ss.import_any
+
+            Return values
+                - Note: for `raw=True`, arrays may be larger than specified.
+                - "sparse" format
+                    - indices : ndarray(dtype=uint64, size=nvals)
+                    - values : ndarray(size=nvals)
+                    - sorted_index : bool
+                        - True if the values in "indices" are sorted
+                    - size : int
+                    - nvals : int, only present if raw == True
+                - "bitmap" format
+                    - bitmap : ndarray(dtype=bool8, size=size)
+                    - values : ndarray(size=size)
+                        - Elements where bitmap is False are undefined
+                    - nvals : int
+                        - The number of True elements in the bitmap
+                    - size : int, only present if raw == True
+                - "bitmap" format
+                    - bitmap : ndarray(dtype=bool8, size=size)
+                    - values : ndarray(size=size)
+                        - Elements where bitmap is False are undefined
+                    - nvals : int
+                        - The number of True elements in the bitmap
+                    - size : int, only present if raw == True
+                - "full" format
+                    - values : ndarray(size=size)
+                    - size : int, only present if raw == True
+
+            Examples
+            --------
+            Simple usage:
+
+            >>> pieces = v.ss.export()
+            >>> v2 = Vector.ss.import_any(**pieces)
+
             """
             if give_ownership:
                 parent = self._parent
             else:
-                parent = self._parent.dup(name=f"{self._parent.name}_export")
+                parent = self._parent.dup(name="v_export")
             dtype = np.dtype(parent.dtype.np_type)
             index_dtype = np.dtype(np.uint64)
 
@@ -746,6 +805,8 @@ class Vector(BaseType):
             """
             if format is None:
                 if indices is not None:
+                    if bitmap is not None:
+                        raise TypeError("Cannot provide both `indptr` and `bitmap`")
                     format = "sparse"
                 elif bitmap is not None:
                     format = "bitmap"
@@ -758,6 +819,7 @@ class Vector(BaseType):
                     size=size,
                     indices=indices,
                     values=values,
+                    nvals=nvals,
                     sorted_index=sorted_index,
                     take_ownership=take_ownership,
                     name=name,
@@ -767,12 +829,14 @@ class Vector(BaseType):
                     nvals=nvals,
                     bitmap=bitmap,
                     values=values,
+                    size=size,
                     take_ownership=take_ownership,
                     name=name,
                 )
             elif format == "full":
                 return cls.import_full(
                     values=values,
+                    size=size,
                     take_ownership=take_ownership,
                     name=name,
                 )
@@ -848,10 +912,13 @@ class Vector(BaseType):
             vhandle = ffi_new("GrB_Vector*")
             vb = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
             vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-            if nvals is None:
-                nvals = np.count_nonzero(bitmap)
             if size is None:
                 size = values.size
+            if nvals is None:
+                if bitmap.size == size:
+                    nvals = np.count_nonzero(bitmap)
+                else:
+                    nvals = np.count_nonzero(bitmap.ravel()[:size])
             check_status_carg(
                 lib.GxB_Vector_import_Bitmap(
                     vhandle,
