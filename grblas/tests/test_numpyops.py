@@ -1,10 +1,10 @@
 # These tests are very slow, since they force creation of all
 # numpy unary, binary, monoid, and semiring objects.
 import pytest
-import sys
 import numpy as np
 import itertools
 import grblas
+from grblas.dtypes import _supports_complex
 import grblas.unary.numpy as npunary
 import grblas.binary.numpy as npbinary
 import grblas.monoid.numpy as npmonoid
@@ -40,7 +40,7 @@ def test_npunary():
         [grblas.Vector.from_values(L, L), np.array(L, dtype=np.int64)],
         [grblas.Vector.from_values(L, L, dtype="float64"), np.array(L, dtype=np.float64)],
     ]
-    if not sys.platform.startswith("win"):
+    if _supports_complex:
         data.append(
             [grblas.Vector.from_values(L, L, dtype="FC64"), np.array(L, dtype=np.complex128)],
         )
@@ -109,7 +109,7 @@ def test_npbinary():
             [np.array([True, False, True, False]), np.array([True, True, False, False])],
         ],
     ]
-    if not sys.platform.startswith("win"):
+    if _supports_complex:
         data.append(
             [
                 [
@@ -176,17 +176,20 @@ def test_npmonoid():
             ],
             [np.array([True, False, True, False]), np.array([True, True, False, False])],
         ],
-        [
-            [
-                grblas.Vector.from_values(index, values1, dtype="FC64"),
-                grblas.Vector.from_values(index, values2, dtype="FC64"),
-            ],
-            [
-                np.array(values1, dtype=np.complex128),
-                np.array(values2, dtype=np.complex128),
-            ],
-        ],
     ]
+    if _supports_complex:
+        data.append(
+            [
+                [
+                    grblas.Vector.from_values(index, values1, dtype="FC64"),
+                    grblas.Vector.from_values(index, values2, dtype="FC64"),
+                ],
+                [
+                    np.array(values1, dtype=np.complex128),
+                    np.array(values2, dtype=np.complex128),
+                ],
+            ]
+        )
     blacklist = {}
     reduction_blacklist = {
         "BOOL": {"add"},

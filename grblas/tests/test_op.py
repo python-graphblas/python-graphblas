@@ -79,7 +79,7 @@ def test_unaryop_udf():
 
     UnaryOp.register_new("plus_one", plus_one)
     assert hasattr(unary, "plus_one")
-    assert set(unary.plus_one.types) == {
+    comp_set = {
         "INT8",
         "INT16",
         "INT32",
@@ -91,9 +91,10 @@ def test_unaryop_udf():
         "FP32",
         "FP64",
         "BOOL",
-        "FC32",
-        "FC64",
     }
+    if dtypes._supports_complex:
+        comp_set.update({"FC32", "FC64"})
+    assert set(unary.plus_one.types) == comp_set
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.plus_one)
     result = Vector.from_values([0, 1, 3], [2, 3, -3], dtype=dtypes.INT32)
@@ -407,7 +408,7 @@ def test_binaryop_udf():
 
     BinaryOp.register_new("bin_test_func", times_minus_sum)
     assert hasattr(binary, "bin_test_func")
-    assert set(binary.bin_test_func.types) == {
+    comp_set = {
         "INT8",
         "INT16",
         "INT32",
@@ -418,9 +419,10 @@ def test_binaryop_udf():
         "UINT64",
         "FP32",
         "FP64",
-        "FC32",
-        "FC64",
     }
+    if dtypes._supports_complex:
+        comp_set.update({"FC32", "FC64"})
+    assert set(binary.bin_test_func.types) == comp_set
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
     w = v1.ewise_add(v2, binary.bin_test_func, require_monoid=False).new()
@@ -500,7 +502,7 @@ def test_nested_names():
     assert hasattr(unary, "incrementers")
     assert type(unary.incrementers) is ops.OpPath
     assert hasattr(unary.incrementers, "plus_three")
-    assert set(unary.incrementers.plus_three.types) == {
+    comp_set = {
         "INT8",
         "INT16",
         "INT32",
@@ -512,9 +514,10 @@ def test_nested_names():
         "FP32",
         "FP64",
         "BOOL",
-        "FC32",
-        "FC64",
     }
+    if dtypes._supports_complex:
+        comp_set.update({"FC32", "FC64"})
+    assert set(unary.incrementers.plus_three.types) == comp_set
 
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.incrementers.plus_three)

@@ -4,6 +4,10 @@ import numba
 from . import lib
 
 
+# Default assumption unless FC32/FC64 are found in lib
+_supports_complex = hasattr(lib, "GrB_FC64") or hasattr(lib, "GxB_FC64")
+
+
 class DataType:
     def __init__(self, name, gb_obj, gb_name, c_type, numba_type, np_type):
         self.name = name
@@ -45,19 +49,19 @@ UINT64 = DataType("UINT64", lib.GrB_UINT64, "GrB_UINT64", "uint64_t", numba.type
 _INDEX = DataType("UINT64", lib.GrB_UINT64, "GrB_Index", "GrB_Index", numba.types.uint64, np.uint64)
 FP32 = DataType("FP32", lib.GrB_FP32, "GrB_FP32", "float", numba.types.float32, np.float32)
 FP64 = DataType("FP64", lib.GrB_FP64, "GrB_FP64", "double", numba.types.float64, np.float64)
-if hasattr(lib, "GxB_FC32"):  # pragma: no cover
+if _supports_complex and hasattr(lib, "GxB_FC32"):  # pragma: no cover
     FC32 = DataType(
         "FC32", lib.GxB_FC32, "GxB_FC32", "float _Complex", numba.types.complex64, np.complex64
     )
-if hasattr(lib, "GrB_FC32"):  # pragma: no cover
+if _supports_complex and hasattr(lib, "GrB_FC32"):  # pragma: no cover
     FC32 = DataType(
         "FC32", lib.GrB_FC32, "GrB_FC32", "float _Complex", numba.types.complex64, np.complex64
     )
-if hasattr(lib, "GxB_FC64"):  # pragma: no cover
+if _supports_complex and hasattr(lib, "GxB_FC64"):  # pragma: no cover
     FC64 = DataType(
         "FC64", lib.GxB_FC64, "GxB_FC64", "double _Complex", numba.types.complex128, np.complex128
     )
-if hasattr(lib, "GrB_FC64"):  # pragma: no cover
+if _supports_complex and hasattr(lib, "GrB_FC64"):  # pragma: no cover
     FC64 = DataType(
         "FC64", lib.GrB_FC64, "GrB_FC64", "double _Complex", numba.types.complex128, np.complex128
     )
@@ -74,14 +78,19 @@ _sample_values = {
     UINT64.name: np.uint64(1),
     FP32.name: np.float32(0.5),
     FP64.name: np.float64(0.5),
-    FC32.name: np.complex64(complex(0, 0.5)),
-    FC64.name: np.complex128(complex(0, 0.5)),
     BOOL.name: np.bool_(True),
 }
+if _supports_complex:
+    _sample_values.update(
+        {
+            FC32.name: np.complex64(complex(0, 0.5)),
+            FC64.name: np.complex128(complex(0, 0.5)),
+        }
+    )
 
 # Create register to easily lookup types by name, gb_obj, or c_type
 _registry = {}
-for dtype in [
+_dtypes_to_register = [
     BOOL,
     INT8,
     UINT8,
@@ -93,9 +102,11 @@ for dtype in [
     UINT64,
     FP32,
     FP64,
-    FC32,
-    FC64,
-]:
+]
+if _supports_complex:
+    _dtypes_to_register.extend([FC32, FC64])
+
+for dtype in _dtypes_to_register:
     _registry[dtype.name] = dtype
     _registry[dtype.gb_obj] = dtype
     _registry[dtype.gb_name] = dtype
@@ -113,11 +124,12 @@ _registry["float16"] = FP32
 _registry[bool] = BOOL
 _registry[int] = INT64
 _registry[float] = FP64
-_registry[complex] = FC64
 _registry["bool"] = BOOL
 _registry["int"] = INT64
 _registry["float"] = FP64  # Choose 'float' to match numpy/Python; c_type 'float' would be FP32
-_registry["complex"] = FC64
+if _supports_complex:
+    _registry[complex] = FC64
+    _registry["complex"] = FC64
 
 
 def lookup_dtype(key):

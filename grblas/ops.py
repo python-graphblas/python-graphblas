@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from functools import lru_cache
 from types import FunctionType, ModuleType
 from . import ffi, lib, unary, binary, monoid, semiring
-from .dtypes import lookup_dtype, unify, INT8, _sample_values
+from .dtypes import lookup_dtype, unify, INT8, _sample_values, _supports_complex
 from .exceptions import UdfParseError, check_status_carg
 from .utils import libget
 
@@ -269,6 +269,8 @@ class OpBase:
             ("re_exprs_return_complex", "FC"),
         ):
             if re_str not in cls._parse_config:
+                continue
+            if "complex" in re_str and not _supports_complex:
                 continue
             for r in cls._parse_config[re_str]:
                 for varname in varnames:
