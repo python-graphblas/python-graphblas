@@ -182,7 +182,10 @@ class BaseType:
         )
 
     def __bool__(self):
-        raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
+        raise TypeError(
+            f"__bool__ not defined for objects of type {type(self)}.  "
+            "Perhaps use .nvals attribute instead."
+        )
 
     def __lshift__(self, delayed):
         return self._update(delayed)

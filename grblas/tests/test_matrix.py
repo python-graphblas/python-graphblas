@@ -1314,13 +1314,20 @@ def test_import_export(A):
     assert (
         d["values"].ravel("K")[d["bitmap"].ravel("K")] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]
     ).all()
-    B6 = Matrix.ss.import_any(**d)
+    B6 = Matrix.ss.import_any(nrows=7, **d)
     assert B6.isequal(A)
 
     A7 = A.dup()
     d = A7.ss.export()
     B7 = Matrix.ss.import_any(**d)
     assert B7.isequal(A)
+
+    A8 = A.dup()
+    d = A8.ss.export("bitmapr", raw=True)
+    del d["nrows"]
+    del d["ncols"]
+    with pytest.raises(ValueError, match="nrows and ncols must be provided"):
+        Matrix.ss.import_any(**d)
 
     C = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
     C1 = C.dup()
@@ -1330,7 +1337,7 @@ def test_import_export(A):
     assert d["values"].shape == (2, 2)
     assert (d["values"] == [[1, 2], [3, 4]]).all()
     assert d["values"].flags.c_contiguous
-    D1 = Matrix.ss.import_any(**d)
+    D1 = Matrix.ss.import_any(ncols=2, **d)
     assert D1.isequal(C)
 
     C2 = C.dup()
@@ -1439,6 +1446,20 @@ def test_import_export_empty():
     with pytest.raises(InvalidValue):
         A.dup().ss.export("fullc")
 
+    # if we give the same value, make sure it's copied
+    for format, key1, key2 in [
+        ("csr", "values", "col_indices"),
+        ("hypercsr", "values", "col_indices"),
+        ("csc", "values", "row_indices"),
+        ("hypercsc", "values", "row_indices"),
+        ("bitmapr", "values", "bitmap"),
+        ("bitmapc", "values", "bitmap"),
+    ]:
+        # No assertions here, but code coverage should be "good enough"
+        d = A.ss.export(format, raw=True)
+        d[key1] = d[key2]
+        Matrix.ss.import_any(take_ownership=True, **d)
+
 
 def test_import_export_auto(A):
     A_orig = A.dup()
@@ -1507,3 +1528,59 @@ def test_import_export_auto(A):
             with pytest.raises(ValueError, match="Invalid format"):
                 import_func(**d)
     assert C.isequal(C_orig)
+
+
+def test_no_bool_or_eq(A):
+    with pytest.raises(TypeError, match="not defined"):
+        bool(A)
+    with pytest.raises(TypeError, match="not defined"):
+        A == A
+    with pytest.raises(TypeError, match="not defined"):
+        bool(A.S)
+    with pytest.raises(TypeError, match="not defined"):
+        A.S == A.S
+    expr = A.ewise_mult(A)
+    with pytest.raises(TypeError, match="not defined"):
+        bool(expr)
+    with pytest.raises(TypeError, match="not defined"):
+        expr == expr
+
+
+def test_bool_eq_on_scalar_expressions(A):
+    expr = A.reduce_scalar()
+    assert expr == 47
+    assert int(expr) == 47
+    assert float(expr) == 47.0
+    assert range(expr) == range(47)
+
+    expr = A[0, 1]
+    assert expr == 2
+    assert bool(expr)
+    assert int(expr) == 2
+    assert float(expr) == 2.0
+    assert range(expr) == range(2)
+
+    expr = A[0, [1, 1]]
+    with pytest.raises(TypeError, match="not defined"):
+        expr == expr
+    with pytest.raises(TypeError, match="not defined"):
+        bool(expr)
+    with pytest.raises(TypeError, match="not defined"):
+        int(expr)
+    with pytest.raises(TypeError, match="not defined"):
+        float(expr)
+    with pytest.raises(TypeError, match="not defined"):
+        range(expr)
+
+
+def test_contains(A):
+    assert (0, 1) in A
+    assert (1, 0) in A.T
+
+    assert (0, 1) not in A.T
+    assert (1, 0) not in A
+
+    with pytest.raises(TypeError):
+        1 in A
+    with pytest.raises(TypeError):
+        (1,) in A.T

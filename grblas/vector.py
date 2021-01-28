@@ -864,6 +864,8 @@ class Vector(BaseType):
                 indices, np.uint64, copy=copy, ownable=True, name="indices"
             )
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            if indices is values:
+                values = np.copy(values)
             vhandle = ffi_new("GrB_Vector*")
             vi = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indices)))
             vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
@@ -909,6 +911,8 @@ class Vector(BaseType):
             copy = not take_ownership
             bitmap = ints_to_numpy_buffer(bitmap, np.bool8, copy=copy, ownable=True, name="bitmap")
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            if bitmap is values:
+                values = np.copy(values)
             vhandle = ffi_new("GrB_Vector*")
             vb = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
             vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))

@@ -38,7 +38,8 @@ def values_to_numpy_buffer(array, dtype=None, *, copy=False, ownable=False, orde
         array = np.array(array, copy=copy, order=order)
         if array.dtype == object:
             raise ValueError("object dtype for values is not allowed")
-        if not is_input_np and array.dtype == np.int32:  # fix for win64 numpy handling of ints
+        if not is_input_np and array.dtype == np.int32:  # pragma: no cover
+            # fix for win64 numpy handling of ints
             array = array.astype(np.int64)
         dtype = lookup_dtype(array.dtype)
     if ownable and (not array.flags.owndata or not array.flags.writeable):

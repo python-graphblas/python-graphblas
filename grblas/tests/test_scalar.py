@@ -84,6 +84,12 @@ def test_equal(s):
     assert s != 27
 
 
+def test_casting(s):
+    assert int(s) == 5
+    assert float(s) == 5.0
+    assert range(s) == range(5)
+
+
 def test_truthy(s):
     assert s, "s did not register as truthy"
     with pytest.raises(AssertionError):

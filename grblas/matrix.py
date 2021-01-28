@@ -1462,6 +1462,8 @@ class Matrix(BaseType):
                 col_indices, np.uint64, copy=copy, ownable=True, name="column indices"
             )
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            if col_indices is values:
+                values = np.copy(values)
             mhandle = ffi_new("GrB_Matrix*")
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
@@ -1517,6 +1519,8 @@ class Matrix(BaseType):
                 row_indices, np.uint64, copy=copy, ownable=True, name="row indices"
             )
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            if row_indices is values:
+                values = np.copy(values)
             mhandle = ffi_new("GrB_Matrix*")
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
@@ -1575,6 +1579,8 @@ class Matrix(BaseType):
                 col_indices, np.uint64, copy=copy, ownable=True, name="column indices"
             )
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            if col_indices is values:
+                values = np.copy(values)
             mhandle = ffi_new("GrB_Matrix*")
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(rows)))
@@ -1640,6 +1646,8 @@ class Matrix(BaseType):
                 row_indices, np.uint64, copy=copy, ownable=True, name="row indices"
             )
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            if row_indices is values:
+                values = np.copy(values)
             mhandle = ffi_new("GrB_Matrix*")
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(cols)))
@@ -1700,6 +1708,8 @@ class Matrix(BaseType):
             values, dtype = values_to_numpy_buffer(
                 values, dtype, copy=copy, ownable=True, order="C"
             )
+            if bitmap is values:
+                values = np.copy(values)
             nrows, ncols = get_shape(nrows, ncols, bitmap=bitmap, values=values)
             mhandle = ffi_new("GrB_Matrix*")
             Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
@@ -1755,6 +1765,8 @@ class Matrix(BaseType):
             values, dtype = values_to_numpy_buffer(
                 values, dtype, copy=copy, ownable=True, order="F"
             )
+            if bitmap is values:
+                values = np.copy(values)
             nrows, ncols = get_shape(nrows, ncols, bitmap=bitmap, values=values)
             mhandle = ffi_new("GrB_Matrix*")
             Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap.T)))
