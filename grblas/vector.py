@@ -719,9 +719,9 @@ class Vector(BaseType):
                 indices = _ss.claim_buffer(ffi, vi[0], vi_size[0], index_dtype)
                 values = _ss.claim_buffer(ffi, vx[0], vx_size[0], dtype)
                 if not raw:
-                    if indices.size > nvals:
+                    if indices.size > nvals:  # pragma: no cover
                         indices = indices[:nvals]
-                    if values.size > nvals:
+                    if values.size > nvals:  # pragma: no cover
                         values = values[:nvals]
                 rv = {
                     "size": size[0],
@@ -744,9 +744,9 @@ class Vector(BaseType):
                 values = _ss.claim_buffer(ffi, vx[0], vx_size[0], dtype)
                 size = size[0]
                 if not raw:
-                    if bitmap.size > size:
+                    if bitmap.size > size:  # pragma: no cover
                         bitmap = bitmap[:size]
-                    if values.size > size:
+                    if values.size > size:  # pragma: no cover
                         values = values[:size]
                 rv = {
                     "bitmap": bitmap,
@@ -762,7 +762,7 @@ class Vector(BaseType):
                 values = _ss.claim_buffer(ffi, vx[0], vx_size[0], dtype)
                 size = size[0]
                 if not raw:
-                    if values.size > size:
+                    if values.size > size:  # pragma: no cover
                         values = values[:size]
                 rv = {}
                 if raw:

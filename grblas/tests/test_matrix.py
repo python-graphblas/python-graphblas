@@ -1359,8 +1359,11 @@ def test_import_export(A):
         ["indptr"],
         ["indptr", "row_indices", "col_indices"],
         ["indptr", "rows", "cols"],
+        ["indptr", "col_indices", "rows", "cols"],
         ["indptr", "rows"],
         ["indptr", "cols"],
+        ["indptr", "row_indices", "rows"],
+        ["indptr", "col_indices", "cols"],
         ["bitmap", "col_indices"],
         ["bitmap", "row_indices"],
         ["bitmap", "rows"],
@@ -1460,6 +1463,9 @@ def test_import_export_empty():
         d[key1] = d[key2]
         Matrix.ss.import_any(take_ownership=True, **d)
 
+    with pytest.raises(ValueError, match="Invalid format"):
+        A.ss.export(format="bad_format")
+
 
 def test_import_export_auto(A):
     A_orig = A.dup()
@@ -1544,11 +1550,22 @@ def test_no_bool_or_eq(A):
         bool(expr)
     with pytest.raises(TypeError, match="not defined"):
         expr == expr
+    assigner = A[1, 2]()
+    with pytest.raises(TypeError, match="not defined"):
+        bool(assigner)
+    with pytest.raises(TypeError, match="not defined"):
+        assigner == assigner
+    updater = A()
+    with pytest.raises(TypeError, match="not defined"):
+        bool(updater)
+    with pytest.raises(TypeError, match="not defined"):
+        updater == updater
 
 
 def test_bool_eq_on_scalar_expressions(A):
     expr = A.reduce_scalar()
     assert expr == 47
+    assert bool(expr)
     assert int(expr) == 47
     assert float(expr) == 47.0
     assert range(expr) == range(47)
@@ -1584,3 +1601,5 @@ def test_contains(A):
         1 in A
     with pytest.raises(TypeError):
         (1,) in A.T
+    with pytest.raises(TypeError, match="Invalid index"):
+        (1, [1, 2]) in A

@@ -1211,11 +1211,11 @@ class Matrix(BaseType):
                 col_indices = _ss.claim_buffer(ffi, Aj[0], Aj_size[0], index_dtype)
                 values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
                 if not raw:
-                    if indptr.size > nrows[0] + 1:
+                    if indptr.size > nrows[0] + 1:  # pragma: no cover
                         indptr = indptr[: nrows[0] + 1]
-                    if col_indices.size > nvals:
+                    if col_indices.size > nvals:  # pragma: no cover
                         col_indices = col_indices[:nvals]
-                    if values.size > nvals:
+                    if values.size > nvals:  # pragma: no cover
                         values = values[:nvals]
                 # Note: nvals is also at `indptr[nrows]`
                 rv = {
@@ -1249,11 +1249,11 @@ class Matrix(BaseType):
                 row_indices = _ss.claim_buffer(ffi, Ai[0], Ai_size[0], index_dtype)
                 values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
                 if not raw:
-                    if indptr.size > ncols[0] + 1:
+                    if indptr.size > ncols[0] + 1:  # pragma: no cover
                         indptr = indptr[: ncols[0] + 1]
-                    if row_indices.size > nvals:
+                    if row_indices.size > nvals:  # pragma: no cover
                         row_indices = row_indices[:nvals]
-                    if values.size > nvals:
+                    if values.size > nvals:  # pragma: no cover
                         values = values[:nvals]
                 # Note: nvals is also at `indptr[ncols]`
                 rv = {
@@ -1295,13 +1295,13 @@ class Matrix(BaseType):
                 values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
                 nvec = nvec[0]
                 if not raw:
-                    if indptr.size > nvec + 1:
+                    if indptr.size > nvec + 1:  # pragma: no cover
                         indptr = indptr[: nvec + 1]
-                    if rows.size > nvec:
+                    if rows.size > nvec:  # pragma: no cover
                         rows = rows[:nvec]
-                    if col_indices.size > nvals:
+                    if col_indices.size > nvals:  # pragma: no cover
                         col_indices = col_indices[:nvals]
-                    if values.size > nvals:
+                    if values.size > nvals:  # pragma: no cover
                         values = values[:nvals]
                 # Note: nvals is also at `indptr[nvec]`
                 rv = {
@@ -1346,13 +1346,13 @@ class Matrix(BaseType):
                 values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
                 nvec = nvec[0]
                 if not raw:
-                    if indptr.size > nvec + 1:
+                    if indptr.size > nvec + 1:  # pragma: no cover
                         indptr = indptr[: nvec + 1]
-                    if cols.size > nvec:
+                    if cols.size > nvec:  # pragma: no cover
                         cols = cols[:nvec]
-                    if row_indices.size > nvals:
+                    if row_indices.size > nvals:  # pragma: no cover
                         row_indices = row_indices[:nvals]
-                    if values.size > nvals:
+                    if values.size > nvals:  # pragma: no cover
                         values = values[:nvals]
                 # Note: nvals is also at `indptr[nvec]`
                 rv = {
