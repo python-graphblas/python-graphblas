@@ -37,6 +37,8 @@ jobs:
           flake8 grblas *.py
           black grblas *.py --check --diff
       - name: Build extension module
+        env:
+          CYTHON_COVERAGE: true
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas

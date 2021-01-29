@@ -3,6 +3,7 @@ from glob import glob
 from Cython.Build import cythonize
 from Cython.Compiler.Options import get_directive_defaults
 import numpy as np
+import os
 import versioneer
 
 directive_defaults = get_directive_defaults()
@@ -15,13 +16,18 @@ if use_cython:
 else:
     suffix = ".c"
 
+define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
+if os.environ.get("CYTHON_COVERAGE"):
+    directive_defaults["linetrace"] = True
+    define_macros.append(("CYTHON_TRACE_NOGIL", "1"))
+
 include_dirs = [np.get_include()]
 ext_modules = [
     Extension(
         name[: -len(suffix)].replace("/", ".").replace("\\", "."),
         [name],
         include_dirs=include_dirs,
-        define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")],
+        define_macros=define_macros,
     )
     for name in glob(f"grblas/**/*{suffix}", recursive=True)
 ]
