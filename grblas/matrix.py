@@ -1051,7 +1051,7 @@ class Matrix(BaseType):
 
             Parameters
             ----------
-            format : str or None, default None
+            format : str, optional
                 If `format` is not specified, this method exports in the currently stored format.
                 To control the export format, set `format` to one of:
                     - "csr"
@@ -1082,6 +1082,7 @@ class Matrix(BaseType):
             See Also
             --------
             Matrix.to_values
+            Matrix.ss.import_any
 
             Return values
                 - Note: for ``raw=True``, arrays may be larger than specified.
@@ -1472,6 +1473,45 @@ class Matrix(BaseType):
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_CSR
+
+            Create a new Matrix from standard CSR format.
+
+            Parameters
+            ----------
+            nrows : int
+            ncols : int
+            indptr : array-like
+            values : array-like
+            col_indices : array-like
+            sorted_index : bool, default False
+                Indicate whether the values in "col_indices" are sorted.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (uint64 for indptr and col_indices)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "csr" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "csr":
                 raise ValueError(f"Invalid format: {format!r}.  Must be None or 'csr'.")
             copy = not take_ownership
@@ -1529,6 +1569,45 @@ class Matrix(BaseType):
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_CSC
+
+            Create a new Matrix from standard CSC format.
+
+            Parameters
+            ----------
+            nrows : int
+            ncols : int
+            indptr : array-like
+            values : array-like
+            row_indices : array-like
+            sorted_index : bool, default False
+                Indicate whether the values in "row_indices" are sorted.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (uint64 for indptr and row_indices)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "csc" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "csc":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'csc'.")
             copy = not take_ownership
@@ -1588,6 +1667,49 @@ class Matrix(BaseType):
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_HyperCSR
+
+            Create a new Matrix from standard HyperCSR format.
+
+            Parameters
+            ----------
+            nrows : int
+            ncols : int
+            rows : array-like
+            indptr : array-like
+            values : array-like
+            col_indices : array-like
+            nvec : int, optional
+                The number of elements in "rows" to use.
+                If not specified, will be set to ``len(rows)``.
+            sorted_index : bool, default False
+                Indicate whether the values in "col_indices" are sorted.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (uint64 for rows, indptr, col_indices)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "hypercsr" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "hypercsr":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsr'.")
             copy = not take_ownership
@@ -1655,6 +1777,48 @@ class Matrix(BaseType):
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_HyperCSC
+
+            Create a new Matrix from standard HyperCSC format.
+
+            Parameters
+            ----------
+            nrows : int
+            ncols : int
+            indptr : array-like
+            values : array-like
+            row_indices : array-like
+            nvec : int, optional
+                The number of elements in "cols" to use.
+                If not specified, will be set to ``len(cols)``.
+            sorted_index : bool, default False
+                Indicate whether the values in "row_indices" are sorted.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (uint64 for indptr and row_indices)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "hypercsc" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "hypercsc":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsc'.")
             copy = not take_ownership
@@ -1719,6 +1883,51 @@ class Matrix(BaseType):
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_BitmapR
+
+            Create a new Matrix from values and bitmap (as mask) arrays.
+
+            Parameters
+            ----------
+            bitmap : array-like
+                True elements indicate where there are values in "values".
+                May be 1d or 2d, but there need to have at least ``nrows*ncols`` elements.
+            values : array-like
+                May be 1d or 2d, but there need to have at least ``nrows*ncols`` elements.
+            nvals : int, optional
+                The number of True elements in the bitmap for this Matrix.
+            nrows : int, optional
+                The number of rows for the Matrix.
+                If not provided, will be inferred from values or bitmap if either is 2d.
+            ncols : int
+                The number of columns for the Matrix.
+                If not provided, will be inferred from values or bitmap if either is 2d.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (bool8 for bitmap)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "bitmapr" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "bitmapr":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapr'.")
             copy = not take_ownership
@@ -1776,6 +1985,51 @@ class Matrix(BaseType):
             dtype=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_BitmapC
+
+            Create a new Matrix from values and bitmap (as mask) arrays.
+
+            Parameters
+            ----------
+            bitmap : array-like
+                True elements indicate where there are values in "values".
+                May be 1d or 2d, but there need to have at least ``nrows*ncols`` elements.
+            values : array-like
+                May be 1d or 2d, but there need to have at least ``nrows*ncols`` elements.
+            nvals : int, optional
+                The number of True elements in the bitmap for this Matrix.
+            nrows : int, optional
+                The number of rows for the Matrix.
+                If not provided, will be inferred from values or bitmap if either is 2d.
+            ncols : int
+                The number of columns for the Matrix.
+                If not provided, will be inferred from values or bitmap if either is 2d.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be FORTRAN contiguous
+                    - have the correct dtype (bool8 for bitmap)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "bitmapc" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "bitmapc":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapc'.")
             copy = not take_ownership
@@ -1831,6 +2085,46 @@ class Matrix(BaseType):
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_FullR
+
+            Create a new Matrix from values.
+
+            Parameters
+            ----------
+            values : array-like
+                May be 1d or 2d, but there need to have at least ``nrows*ncols`` elements.
+            nrows : int, optional
+                The number of rows for the Matrix.
+                If not provided, will be inferred from values if it is 2d.
+            ncols : int
+                The number of columns for the Matrix.
+                If not provided, will be inferred from values if it is 2d.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "fullr" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "fullr":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'fullr'.")
             copy = not take_ownership
@@ -1871,6 +2165,46 @@ class Matrix(BaseType):
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_FullC
+
+            Create a new Matrix from values.
+
+            Parameters
+            ----------
+            values : array-like
+                May be 1d or 2d, but there need to have at least ``nrows*ncols`` elements.
+            nrows : int, optional
+                The number of rows for the Matrix.
+                If not provided, will be inferred from values if it is 2d.
+            ncols : int
+                The number of columns for the Matrix.
+                If not provided, will be inferred from values if it is 2d.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be FORTRAN contiguous
+                    - have the correct dtype
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "fullc" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "fullc":
                 raise ValueError(f"Invalid format: {format!r}.  Must be None or 'fullc'.")
             copy = not take_ownership
@@ -1931,18 +2265,33 @@ class Matrix(BaseType):
             """
             GxB_Matrix_import_xxx
 
-            The new Matrix uses the underlying buffer of the input arrays.
-            The caller should delete or stop using the input arrays after calling `import_any`.
+            Dispatch to appropriate import method inferred from inputs.
+            See the other import functions and `Matrix.ss.export`` for details.
 
-            Valid formats:
-             - csr  (needs indptr, col_indices, values)
-             - csc  (needs indptr, row_indices, values)
-             - hypercsr  (needs rows, indptr, col_indices, values)
-             - hypercsc  (needs cols, indptr, row_indices, values)
-             - bitmapr  (needs bitmap, nvals (optional), values)
-             - bitmapc  (needs bitmap, nvals (optional), values)
-             - fullr  (needs values)
-             - fullc  (needs values)
+            Returns
+            -------
+            Matrix
+
+            See Also
+            --------
+            Matrix.from_values
+            Matrix.ss.export
+            Matrix.ss.import_csr
+            Matrix.ss.import_csc
+            Matrix.ss.import_hypercsr
+            Matrix.ss.import_hypercsc
+            Matrix.ss.import_bitmapr
+            Matrix.ss.import_bitmapc
+            Matrix.ss.import_fullr
+            Matrix.ss.import_fullc
+
+            Examples
+            --------
+            Simple usage:
+
+            >>> pieces = A.ss.export()
+            >>> A2 = Matrix.ss.import_any(**pieces)
+
             """
             if format is None:
                 # Determine format based on provided inputs

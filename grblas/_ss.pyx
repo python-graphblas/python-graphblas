@@ -52,13 +52,13 @@ cpdef ndarray claim_buffer_2d(ffi, cdata, size_t cdata_size, size_t nrows, size_
                 NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_WRITEABLE, <object>NULL
             )
         PyArray_ENABLEFLAGS(array, NPY_ARRAY_OWNDATA)
-    elif cdata_size > size:
+    elif cdata_size > size:  # pragma: no cover
         array = claim_buffer(ffi, cdata, cdata_size, dtype)
         if is_c_order:
             array = array[:size].reshape((nrows, ncols))
         else:
             array = array[:size].reshape((ncols, nrows)).T
-    else:
+    else:  # pragma: no cover
         raise ValueError(
             f"Buffer size too small: {cdata_size}.  "
             f"Unable to create matrix of size {nrows}x{ncols} = {size}"

@@ -816,12 +816,30 @@ class Vector(BaseType):
             nvals=None,  # optional
         ):
             """
-            GxB_Vector_import
+            GxB_Vector_import_xxx
 
-            Returns a new Vector created from the pieces.
+            Dispatch to appropriate import method inferred from inputs.
+            See the other import functions and `Vector.ss.export`` for details.
 
-            The new Vector uses the underlying buffer of the input arrays.
-            The caller should delete or stop using the input arrays after calling `import_any`.
+            Returns
+            -------
+            Vector
+
+            See Also
+            --------
+            Vector.from_values
+            Vector.ss.export
+            Vector.ss.import_sparse
+            Vector.ss.import_bitmap
+            Vector.ss.import_full
+
+            Examples
+            --------
+            Simple usage:
+
+            >>> pieces = v.ss.export()
+            >>> v2 = Vector.ss.import_any(**pieces)
+
             """
             if format is None:
                 if indices is not None:
@@ -877,6 +895,46 @@ class Vector(BaseType):
             format=None,
             name=None,
         ):
+            """
+            GxB_Vector_import_CSC
+
+            Create a new Vector from sparse input.
+
+            Parameters
+            ----------
+            size : int
+            indices : array-like
+            values : array-like
+            nvals : int, optional
+                The number of elements in "values" to use.
+                If not specified, will be set to ``len(values)``.
+            sorted_index : bool, default False
+                Indicate whether the values in "col_indices" are sorted.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (uint64 for indices)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Vector.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "sparse" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Vector.
+
+            Returns
+            -------
+            Vector
+            """
             if format is not None and format.lower() != "sparse":
                 raise ValueError(f"Invalid format: {format!r}.  Must be None or 'sparse'.")
             copy = not take_ownership
@@ -926,6 +984,46 @@ class Vector(BaseType):
             format=None,
             name=None,
         ):
+            """
+            GxB_Vector_import_Bitmap
+
+            Create a new Vector from values and bitmap (as mask) arrays.
+
+            Parameters
+            ----------
+            bitmap : array-like
+                True elements indicate where there are values in "values".
+            values : array-like
+            nvals : int, optional
+                The number of True elements in the bitmap for this Vector.
+            size : int, optional
+                The size of the new Vector.
+                If not specified, it will be set to the size of values.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (bool8 for bitmap)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Vector.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "bitmap" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Vector.
+
+            Returns
+            -------
+            Vector
+            """
             if format is not None and format.lower() != "bitmap":
                 raise ValueError(f"Invalid format: {format!r}.  Must be None or 'bitmap'.")
             copy = not take_ownership
@@ -968,6 +1066,42 @@ class Vector(BaseType):
         def import_full(
             cls, *, values, size=None, take_ownership=False, dtype=None, format=None, name=None
         ):
+            """
+            GxB_Vector_import_Full
+
+            Create a new Vector from values.
+
+            Parameters
+            ----------
+            values : array-like
+            size : int, optional
+                The size of the new Vector.
+                If not specified, it will be set to the size of values.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (bool8 for bitmap)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Vector.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "full" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Vector.
+
+            Returns
+            -------
+            Vector
+            """
             if format is not None and format.lower() != "full":
                 raise ValueError(f"Invalid format: {format!r}.  Must be None or 'full'.")
             copy = not take_ownership
