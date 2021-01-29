@@ -1,4 +1,5 @@
 import pytest
+import itertools
 import grblas
 import numpy as np
 from grblas import Matrix, Vector, Scalar
@@ -1285,67 +1286,73 @@ def test_import_export(A):
 
     A5 = A.dup()
     d = A5.ss.export("bitmapr")
-    assert d["nrows"] == 7
-    assert d["ncols"] == 7
-    # fmt: off
-    assert (
-        d["bitmap"] == [
-            0, 1, 0, 1, 0, 0, 0,
-            0, 0, 0, 0, 1, 0, 1,
-            0, 0, 0, 0, 0, 1, 0,
-            1, 0, 1, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 1, 0,
-            0, 0, 1, 0, 0, 0, 0,
-            0, 0, 1, 1, 1, 0, 0,
+    assert "nrows" not in d
+    assert "ncols" not in d
+    assert d["values"].shape == (7, 7)
+    assert d["bitmap"].shape == (7, 7)
+    assert d["nvals"] == 12
+    bitmap = np.array(
+        [
+            [0, 1, 0, 1, 0, 0, 0],
+            [0, 0, 0, 0, 1, 0, 1],
+            [0, 0, 0, 0, 0, 1, 0],
+            [1, 0, 1, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0, 0, 0],
+            [0, 0, 1, 1, 1, 0, 0],
         ]
+    )
+    assert (d["bitmap"] == bitmap).all()
+    assert (
+        d["values"].ravel("K")[d["bitmap"].ravel("K")] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]
     ).all()
-    # fmt: on
-    assert len(d["values"]) == 49
-    assert (d["values"][d["bitmap"]] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
+    del d["nvals"]
     B5 = Matrix.ss.import_any(**d)
     assert B5.isequal(A)
+    d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=0)
+    B5b = Matrix.ss.import_any(**d)
+    assert B5b.isequal(A)
 
     A6 = A.dup()
     d = A6.ss.export("bitmapc")
-    assert d["nrows"] == 7
-    assert d["ncols"] == 7
-    # fmt: off
+    assert (d["bitmap"] == bitmap).all()
     assert (
-        d["bitmap"] == [
-            0, 0, 0, 1, 0, 0, 0,
-            1, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 1, 0, 1, 1,
-            1, 0, 0, 0, 0, 0, 1,
-            0, 1, 0, 0, 0, 0, 1,
-            0, 0, 1, 0, 1, 0, 0,
-            0, 1, 0, 0, 0, 0, 0,
-        ]
+        d["values"].ravel("K")[d["bitmap"].ravel("K")] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]
     ).all()
-    # fmt: on
-    assert len(d["values"]) == 49
-    assert (d["values"][d["bitmap"]] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
-    B6 = Matrix.ss.import_any(**d)
+    del d["nvals"]
+    B6 = Matrix.ss.import_any(nrows=7, **d)
     assert B6.isequal(A)
+    d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=1)
+    B6b = Matrix.ss.import_any(ncols=7, **d)
+    assert B6b.isequal(A)
 
     A7 = A.dup()
     d = A7.ss.export()
     B7 = Matrix.ss.import_any(**d)
     assert B7.isequal(A)
 
+    A8 = A.dup()
+    d = A8.ss.export("bitmapr", raw=True)
+    del d["nrows"]
+    del d["ncols"]
+    with pytest.raises(ValueError, match="nrows and ncols must be provided"):
+        Matrix.ss.import_any(**d)
+
     C = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
     C1 = C.dup()
     d = C1.ss.export("fullr")
-    assert d["nrows"] == 2
-    assert d["ncols"] == 2
-    assert (d["values"] == [1, 2, 3, 4]).all()
-    D1 = Matrix.ss.import_any(**d)
+    assert "nrows" not in d
+    assert "ncols" not in d
+    assert d["values"].shape == (2, 2)
+    assert (d["values"] == [[1, 2], [3, 4]]).all()
+    assert d["values"].flags.c_contiguous
+    D1 = Matrix.ss.import_any(ncols=2, **d)
     assert D1.isequal(C)
 
     C2 = C.dup()
     d = C2.ss.export("fullc")
-    assert d["nrows"] == 2
-    assert d["ncols"] == 2
-    assert (d["values"] == [1, 3, 2, 4]).all()
+    assert (d["values"] == [[1, 2], [3, 4]]).all()
+    assert d["values"].flags.f_contiguous
     D2 = Matrix.ss.import_any(**d)
     assert D2.isequal(C)
 
@@ -1361,14 +1368,17 @@ def test_import_export(A):
         ["indptr"],
         ["indptr", "row_indices", "col_indices"],
         ["indptr", "rows", "cols"],
+        ["indptr", "col_indices", "rows", "cols"],
         ["indptr", "rows"],
         ["indptr", "cols"],
+        ["indptr", "row_indices", "rows"],
+        ["indptr", "col_indices", "cols"],
         ["bitmap", "col_indices"],
         ["bitmap", "row_indices"],
         ["bitmap", "rows"],
         ["bitmap", "cols"],
     ]:
-        with pytest.raises(ValueError):
+        with pytest.raises(TypeError):
             Matrix.ss.import_any(nrows=3, ncols=3, values=a, **dict.fromkeys(bad_combos, a))
 
 
@@ -1426,21 +1436,19 @@ def test_import_export_empty():
 
     A5 = A.dup()
     d = A5.ss.export("bitmapr")
-    assert d["nrows"] == 2
-    assert d["ncols"] == 3
+    assert d["bitmap"].shape == (2, 3)
+    assert d["bitmap"].flags.c_contiguous
     assert d["nvals"] == 0
-    assert (d["bitmap"] == 6 * [0]).all()
-    assert len(d["values"]) == 6  # values are undefined
+    assert (d["bitmap"].ravel() == 6 * [0]).all()
     B5 = Matrix.ss.import_any(**d)
     assert B5.isequal(A)
 
     A6 = A.dup()
     d = A6.ss.export("bitmapc")
-    assert d["nrows"] == 2
-    assert d["ncols"] == 3
+    assert d["bitmap"].shape == (2, 3)
+    assert d["bitmap"].flags.f_contiguous
     assert d["nvals"] == 0
-    assert (d["bitmap"] == 6 * [0]).all()
-    assert len(d["values"]) == 6  # values are undefined
+    assert (d["bitmap"].ravel() == 6 * [0]).all()
     B6 = Matrix.ss.import_any(**d)
     assert B6.isequal(A)
 
@@ -1449,3 +1457,179 @@ def test_import_export_empty():
         A.dup().ss.export("fullr")
     with pytest.raises(InvalidValue):
         A.dup().ss.export("fullc")
+
+    # if we give the same value, make sure it's copied
+    for format, key1, key2 in [
+        ("csr", "values", "col_indices"),
+        ("hypercsr", "values", "col_indices"),
+        ("csc", "values", "row_indices"),
+        ("hypercsc", "values", "row_indices"),
+        ("bitmapr", "values", "bitmap"),
+        ("bitmapc", "values", "bitmap"),
+    ]:
+        # No assertions here, but code coverage should be "good enough"
+        d = A.ss.export(format, raw=True)
+        d[key1] = d[key2]
+        Matrix.ss.import_any(take_ownership=True, **d)
+
+    with pytest.raises(ValueError, match="Invalid format"):
+        A.ss.export(format="bad_format")
+
+
+def test_import_export_auto(A):
+    A_orig = A.dup()
+    for format in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc"]:
+        for (
+            sort,
+            raw,
+            import_format,
+            give_ownership,
+            take_ownership,
+            import_func,
+        ) in itertools.product(
+            [False, True],
+            [False, True],
+            [format, None],
+            [False, True],
+            [False, True],
+            [Matrix.ss.import_any, getattr(Matrix.ss, f"import_{format}")],
+        ):
+            A2 = A.dup() if give_ownership else A
+            d = A2.ss.export(format, sort=sort, raw=raw, give_ownership=give_ownership)
+            d["format"] = import_format
+            other = import_func(take_ownership=take_ownership, **d)
+            if (
+                format == "bitmapc"
+                and raw
+                and import_format is None
+                and import_func.__name__ == "import_any"
+            ):
+                # It's 1d, so we can't tell we're column-oriented w/o format keyword
+                assert other.isequal(A_orig.T)
+            else:
+                assert other.isequal(A_orig)
+            d["format"] = "bad_format"
+            with pytest.raises(ValueError, match="Invalid format"):
+                import_func(**d)
+    assert A.isequal(A_orig)
+
+    C = Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], [1, 2, 3, 4, 5, 6])
+    C_orig = C.dup()
+    for format in ["fullr", "fullc"]:
+        for raw, import_format, give_ownership, take_ownership, import_func in itertools.product(
+            [False, True],
+            [format, None],
+            [False, True],
+            [False, True],
+            [Matrix.ss.import_any, getattr(Matrix.ss, f"import_{format}")],
+        ):
+            C2 = C.dup() if give_ownership else C
+            d = C2.ss.export(format, raw=raw, give_ownership=give_ownership)
+            d["format"] = import_format
+            other = import_func(take_ownership=take_ownership, **d)
+            if (
+                format == "fullc"
+                and raw
+                and import_format is None
+                and import_func.__name__ == "import_any"
+            ):
+                # It's 1d, so we can't tell we're column-oriented w/o format keyword
+                assert other.isequal(
+                    Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], [1, 3, 5, 2, 4, 6])
+                )
+            else:
+                assert other.isequal(C_orig)
+            d["format"] = "bad_format"
+            with pytest.raises(ValueError, match="Invalid format"):
+                import_func(**d)
+    assert C.isequal(C_orig)
+
+
+def test_no_bool_or_eq(A):
+    with pytest.raises(TypeError, match="not defined"):
+        bool(A)
+    with pytest.raises(TypeError, match="not defined"):
+        A == A
+    with pytest.raises(TypeError, match="not defined"):
+        bool(A.S)
+    with pytest.raises(TypeError, match="not defined"):
+        A.S == A.S
+    expr = A.ewise_mult(A)
+    with pytest.raises(TypeError, match="not defined"):
+        bool(expr)
+    with pytest.raises(TypeError, match="not defined"):
+        expr == expr
+    assigner = A[1, 2]()
+    with pytest.raises(TypeError, match="not defined"):
+        bool(assigner)
+    with pytest.raises(TypeError, match="not defined"):
+        assigner == assigner
+    updater = A()
+    with pytest.raises(TypeError, match="not defined"):
+        bool(updater)
+    with pytest.raises(TypeError, match="not defined"):
+        updater == updater
+
+
+def test_bool_eq_on_scalar_expressions(A):
+    expr = A.reduce_scalar()
+    assert expr == 47
+    assert bool(expr)
+    assert int(expr) == 47
+    assert float(expr) == 47.0
+    assert range(expr) == range(47)
+
+    expr = A[0, 1]
+    assert expr == 2
+    assert bool(expr)
+    assert int(expr) == 2
+    assert float(expr) == 2.0
+    assert range(expr) == range(2)
+
+    expr = A[0, [1, 1]]
+    with pytest.raises(TypeError, match="not defined"):
+        expr == expr
+    with pytest.raises(TypeError, match="not defined"):
+        bool(expr)
+    with pytest.raises(TypeError, match="not defined"):
+        int(expr)
+    with pytest.raises(TypeError, match="not defined"):
+        float(expr)
+    with pytest.raises(TypeError, match="not defined"):
+        range(expr)
+
+
+def test_contains(A):
+    assert (0, 1) in A
+    assert (1, 0) in A.T
+
+    assert (0, 1) not in A.T
+    assert (1, 0) not in A
+
+    with pytest.raises(TypeError):
+        1 in A
+    with pytest.raises(TypeError):
+        (1,) in A.T
+    with pytest.raises(TypeError, match="Invalid index"):
+        (1, [1, 2]) in A
+
+
+def test_iter(A):
+    assert set(A) == set(
+        zip(
+            [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+            [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        )
+    )
+    assert set(A.T) == set(
+        zip(
+            [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+            [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+        )
+    )
+
+
+def test_wait(A):
+    A2 = A.dup()
+    A2.wait()
+    assert A2.isequal(A)

@@ -40,7 +40,7 @@ def test_npunary():
         [grblas.Vector.from_values(L, L), np.array(L, dtype=np.int64)],
         [grblas.Vector.from_values(L, L, dtype="float64"), np.array(L, dtype=np.float64)],
     ]
-    if _supports_complex:
+    if _supports_complex:  # pragma: no branch
         data.append(
             [grblas.Vector.from_values(L, L, dtype="FC64"), np.array(L, dtype=np.complex128)],
         )
@@ -109,7 +109,7 @@ def test_npbinary():
             [np.array([True, False, True, False]), np.array([True, True, False, False])],
         ],
     ]
-    if _supports_complex:
+    if _supports_complex:  # pragma: no branch
         data.append(
             [
                 [
@@ -177,7 +177,7 @@ def test_npmonoid():
             [np.array([True, False, True, False]), np.array([True, True, False, False])],
         ],
     ]
-    if _supports_complex:
+    if _supports_complex:  # pragma: no branch
         data.append(
             [
                 [

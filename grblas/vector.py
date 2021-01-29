@@ -68,6 +68,20 @@ class Vector(BaseType):
     def __setitem__(self, keys, delayed):
         Updater(self)[keys] = delayed
 
+    def __contains__(self, index):
+        extractor = self[index]
+        if not extractor.resolved_indexes.is_single_element:
+            raise TypeError(
+                f"Invalid index to Vector contains: {index!r}.  An integer is expected.  "
+                "Doing `index in my_vector` checks whether a value is present at that index."
+            )
+        scalar = extractor.new(name="s_contains")
+        return not scalar.is_empty
+
+    def __iter__(self):
+        indices, values = self.to_values()
+        return indices.flat
+
     def isequal(self, other, *, check_dtype=False):
         """
         Check for exact equality (same size, same empty values)
@@ -181,10 +195,10 @@ class Vector(BaseType):
         # TODO: accept `dtype` keyword to match the dtype of `values`?
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         values, dtype = values_to_numpy_buffer(values, self.dtype)
-        n = len(values)
-        if len(indices) != n:
+        n = values.size
+        if indices.size != n:
             raise ValueError(
-                f"`indices` and `values` lengths must match: {len(indices)} != {len(values)}"
+                f"`indices` and `values` lengths must match: {indices.size} != {values.size}"
             )
         if clear:
             self.clear()
@@ -224,6 +238,16 @@ class Vector(BaseType):
         rv._size = self._size
         return rv
 
+    def wait(self):
+        """
+        GrB_Vector_wait
+
+        In non-blocking mode, the computations may be delayed and not yet safe
+        to use by multiple threads.  Use wait to force completion of a Vector
+        and make it safe to use as input parameters on multiple threads.
+        """
+        call("GrB_Vector_wait", [_Pointer(self)])
+
     @classmethod
     def new(cls, dtype, size=0, *, name=None):
         """
@@ -248,7 +272,7 @@ class Vector(BaseType):
         values, dtype = values_to_numpy_buffer(values, dtype)
         # Compute size if not provided
         if size is None:
-            if len(indices) == 0:
+            if indices.size == 0:
                 raise ValueError("No indices provided. Unable to infer size.")
             size = int(indices.max()) + 1
         # Create the new vector
@@ -592,47 +616,102 @@ class Vector(BaseType):
         def __init__(self, parent):
             self._parent = parent
 
-        def export(self, format=None, sort=False, give_ownership=False):
+        @property
+        def format(self):
+            parent = self._parent
+            sparsity_ptr = ffi_new("GxB_Option_Field*")
+            check_status(
+                lib.GxB_Vector_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
+                parent,
+            )
+            sparsity_status = sparsity_ptr[0]
+            if sparsity_status == lib.GxB_SPARSE:
+                format = "sparse"
+            elif sparsity_status == lib.GxB_BITMAP:
+                format = "bitmap"
+            elif sparsity_status == lib.GxB_FULL:
+                format = "full"
+            else:  # pragma: no cover
+                raise NotImplementedError(f"Unknown sparsity status: {sparsity_status}")
+            return format
+
+        def export(self, format=None, sort=False, give_ownership=False, raw=False):
             """
-            GxB_Vector_export
+            GxB_Vextor_export_xxx
 
-            Returns a dict of the constituent parts:
-             - n: size (int)
-             - i: indices (ndarray<uint64>)
-             - x: values (ndarray of appropriate dtype)
+            Parameters
+            ----------
+            format : str or None, default None
+                If `format` is not specified, this method exports in the currently stored format.
+                To control the export format, set `format` to one of:
+                    - "sparse"
+                    - "bitmap"
+                    - "full"
+            sort : bool, default False
+                Whether to sort indices if the format is "sparse"
+            give_ownership : bool, default False
+                Perform a zero-copy data transfer to Python if possible.  This gives ownership of
+                the underlying memory buffers to Numpy.
+                ** If True, this nullifies the current object, which should no longer be used! **
+            raw : bool, default False
+                If True, always return array the same size as returned by SuiteSparse.
+                If False, arrays may be trimmed to be the expected size.
+                It may make sense to choose ``raw=True`` if one wants to use the data to perform
+                a zero-copy import back to SuiteSparse.
 
-            To reimport the Vector:
-            ```
-            pieces = v.export()
-            v2 = Vector.fast_import(**pieces)
-            ```
+            Returns
+            -------
+            dict; keys depend on `format` and `raw` arguments (see below).
 
-            The underlying GraphBLAS object transfers ownership to numpy,
-            disallowing further access. The caller should delete or stop using
-            the Vector after calling `export`.
+            See Also
+            --------
+            Vector.to_values
+            Vector.ss.import_any
+
+            Return values
+                - Note: for `raw=True`, arrays may be larger than specified.
+                - "sparse" format
+                    - indices : ndarray(dtype=uint64, size=nvals)
+                    - values : ndarray(size=nvals)
+                    - sorted_index : bool
+                        - True if the values in "indices" are sorted
+                    - size : int
+                    - nvals : int, only present if raw == True
+                - "bitmap" format
+                    - bitmap : ndarray(dtype=bool8, size=size)
+                    - values : ndarray(size=size)
+                        - Elements where bitmap is False are undefined
+                    - nvals : int
+                        - The number of True elements in the bitmap
+                    - size : int, only present if raw == True
+                - "bitmap" format
+                    - bitmap : ndarray(dtype=bool8, size=size)
+                    - values : ndarray(size=size)
+                        - Elements where bitmap is False are undefined
+                    - nvals : int
+                        - The number of True elements in the bitmap
+                    - size : int, only present if raw == True
+                - "full" format
+                    - values : ndarray(size=size)
+                    - size : int, only present if raw == True
+
+            Examples
+            --------
+            Simple usage:
+
+            >>> pieces = v.ss.export()
+            >>> v2 = Vector.ss.import_any(**pieces)
+
             """
             if give_ownership:
                 parent = self._parent
             else:
-                parent = self._parent.dup(name=f"{self._parent.name}_export")
+                parent = self._parent.dup(name="v_export")
             dtype = np.dtype(parent.dtype.np_type)
             index_dtype = np.dtype(np.uint64)
 
             if format is None:
-                sparsity_ptr = ffi_new("int*")
-                check_status(
-                    lib.GxB_Vector_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
-                    parent,
-                )
-                sparsity_status = sparsity_ptr[0]
-                if sparsity_status == lib.GxB_SPARSE:
-                    format = "sparse"
-                elif sparsity_status == lib.GxB_BITMAP:
-                    format = "bitmap"
-                elif sparsity_status == lib.GxB_FULL:
-                    format = "full"
-                else:  # pragma: no cover
-                    raise NotImplementedError(f"Unknown sparsity status: {sparsity_status}")
+                format = self.format
             else:
                 format = format.lower()
 
@@ -659,15 +738,18 @@ class Vector(BaseType):
                 nvals = nvals[0]
                 indices = _ss.claim_buffer(ffi, vi[0], vi_size[0], index_dtype)
                 values = _ss.claim_buffer(ffi, vx[0], vx_size[0], dtype)
-                if len(indices) > nvals:
-                    indices = indices[:nvals]
-                if len(values) > nvals:
-                    values = values[:nvals]
+                if not raw:
+                    if indices.size > nvals:  # pragma: no cover
+                        indices = indices[:nvals]
+                    if values.size > nvals:  # pragma: no cover
+                        values = values[:nvals]
                 rv = {
                     "size": size[0],
                     "indices": indices,
                     "sorted_index": True if sort else not jumbled[0],
                 }
+                if raw:
+                    rv["nvals"] = nvals
             elif format == "bitmap":
                 vb = ffi_new("int8_t**")
                 vb_size = ffi_new("GrB_Index*")
@@ -681,14 +763,17 @@ class Vector(BaseType):
                 bitmap = _ss.claim_buffer(ffi, vb[0], vb_size[0], np.dtype(np.bool8))
                 values = _ss.claim_buffer(ffi, vx[0], vx_size[0], dtype)
                 size = size[0]
-                if len(bitmap) > size:
-                    bitmap = bitmap[:size]
-                if len(values) > size:
-                    values = values[:size]
+                if not raw:
+                    if bitmap.size > size:  # pragma: no cover
+                        bitmap = bitmap[:size]
+                    if values.size > size:  # pragma: no cover
+                        values = values[:size]
                 rv = {
                     "bitmap": bitmap,
                     "nvals": nvals[0],
                 }
+                if raw:
+                    rv["size"] = size
             elif format == "full":
                 check_status(
                     lib.GxB_Vector_export_Full(vhandle, type_, size, vx, vx_size, ffi.NULL),
@@ -696,9 +781,12 @@ class Vector(BaseType):
                 )
                 values = _ss.claim_buffer(ffi, vx[0], vx_size[0], dtype)
                 size = size[0]
-                if len(values) > size:
-                    values = values[:size]
+                if not raw:
+                    if values.size > size:  # pragma: no cover
+                        values = values[:size]
                 rv = {}
+                if raw:
+                    rv["size"] = size
             else:
                 raise ValueError(f"Invalid format: {format}")
 
@@ -715,27 +803,48 @@ class Vector(BaseType):
             *,
             # All
             values,
+            size=None,
             take_ownership=False,
             format=None,
             name=None,
             # Sparse
-            size=None,
             indices=None,
             sorted_index=False,
             # Bitmap
             bitmap=None,
+            # Bitmap/Sparse
             nvals=None,  # optional
         ):
             """
-            GxB_Vector_import
+            GxB_Vector_import_xxx
 
-            Returns a new Vector created from the pieces.
+            Dispatch to appropriate import method inferred from inputs.
+            See the other import functions and `Vector.ss.export`` for details.
 
-            The new Vector uses the underlying buffer of the input arrays.
-            The caller should delete or stop using the input arrays after calling `import_any`.
+            Returns
+            -------
+            Vector
+
+            See Also
+            --------
+            Vector.from_values
+            Vector.ss.export
+            Vector.ss.import_sparse
+            Vector.ss.import_bitmap
+            Vector.ss.import_full
+
+            Examples
+            --------
+            Simple usage:
+
+            >>> pieces = v.ss.export()
+            >>> v2 = Vector.ss.import_any(**pieces)
+
             """
             if format is None:
                 if indices is not None:
+                    if bitmap is not None:
+                        raise TypeError("Cannot provide both `indptr` and `bitmap`")
                     format = "sparse"
                 elif bitmap is not None:
                     format = "bitmap"
@@ -748,6 +857,7 @@ class Vector(BaseType):
                     size=size,
                     indices=indices,
                     values=values,
+                    nvals=nvals,
                     sorted_index=sorted_index,
                     take_ownership=take_ownership,
                     name=name,
@@ -757,12 +867,14 @@ class Vector(BaseType):
                     nvals=nvals,
                     bitmap=bitmap,
                     values=values,
+                    size=size,
                     take_ownership=take_ownership,
                     name=name,
                 )
             elif format == "full":
                 return cls.import_full(
                     values=values,
+                    size=size,
                     take_ownership=take_ownership,
                     name=name,
                 )
@@ -776,12 +888,53 @@ class Vector(BaseType):
             size,
             indices,
             values,
+            nvals=None,
             sorted_index=False,
             take_ownership=False,
             dtype=None,
             format=None,
             name=None,
         ):
+            """
+            GxB_Vector_import_CSC
+
+            Create a new Vector from sparse input.
+
+            Parameters
+            ----------
+            size : int
+            indices : array-like
+            values : array-like
+            nvals : int, optional
+                The number of elements in "values" to use.
+                If not specified, will be set to ``len(values)``.
+            sorted_index : bool, default False
+                Indicate whether the values in "col_indices" are sorted.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (uint64 for indices)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Vector.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "sparse" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Vector.
+
+            Returns
+            -------
+            Vector
+            """
             if format is not None and format.lower() != "sparse":
                 raise ValueError(f"Invalid format: {format!r}.  Must be None or 'sparse'.")
             copy = not take_ownership
@@ -789,10 +942,13 @@ class Vector(BaseType):
                 indices, np.uint64, copy=copy, ownable=True, name="indices"
             )
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            if indices is values:
+                values = np.copy(values)
             vhandle = ffi_new("GrB_Vector*")
             vi = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indices)))
             vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-            nvals = len(values)
+            if nvals is None:
+                nvals = values.size
             check_status_carg(
                 lib.GxB_Vector_import_CSC(
                     vhandle,
@@ -800,8 +956,8 @@ class Vector(BaseType):
                     size,
                     vi,
                     vx,
-                    len(indices),
-                    len(values),
+                    indices.size,
+                    values.size,
                     nvals,
                     not sorted_index,
                     ffi.NULL,
@@ -822,22 +978,69 @@ class Vector(BaseType):
             bitmap,
             values,
             nvals=None,
+            size=None,
             take_ownership=False,
             dtype=None,
             format=None,
             name=None,
         ):
+            """
+            GxB_Vector_import_Bitmap
+
+            Create a new Vector from values and bitmap (as mask) arrays.
+
+            Parameters
+            ----------
+            bitmap : array-like
+                True elements indicate where there are values in "values".
+            values : array-like
+            nvals : int, optional
+                The number of True elements in the bitmap for this Vector.
+            size : int, optional
+                The size of the new Vector.
+                If not specified, it will be set to the size of values.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (bool8 for bitmap)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Vector.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "bitmap" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Vector.
+
+            Returns
+            -------
+            Vector
+            """
             if format is not None and format.lower() != "bitmap":
                 raise ValueError(f"Invalid format: {format!r}.  Must be None or 'bitmap'.")
             copy = not take_ownership
             bitmap = ints_to_numpy_buffer(bitmap, np.bool8, copy=copy, ownable=True, name="bitmap")
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            if bitmap is values:
+                values = np.copy(values)
             vhandle = ffi_new("GrB_Vector*")
             vb = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
             vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            if size is None:
+                size = values.size
             if nvals is None:
-                nvals = np.count_nonzero(bitmap)
-            size = len(values)
+                if bitmap.size == size:
+                    nvals = np.count_nonzero(bitmap)
+                else:
+                    nvals = np.count_nonzero(bitmap.ravel()[:size])
             check_status_carg(
                 lib.GxB_Vector_import_Bitmap(
                     vhandle,
@@ -845,8 +1048,8 @@ class Vector(BaseType):
                     size,
                     vb,
                     vx,
-                    len(bitmap),
-                    len(values),
+                    bitmap.size,
+                    values.size,
                     nvals,
                     ffi.NULL,
                 ),
@@ -861,22 +1064,59 @@ class Vector(BaseType):
 
         @classmethod
         def import_full(
-            cls, *, values, nvals=None, take_ownership=False, dtype=None, format=None, name=None
+            cls, *, values, size=None, take_ownership=False, dtype=None, format=None, name=None
         ):
+            """
+            GxB_Vector_import_Full
+
+            Create a new Vector from values.
+
+            Parameters
+            ----------
+            values : array-like
+            size : int, optional
+                The size of the new Vector.
+                If not specified, it will be set to the size of values.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (bool8 for bitmap)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Vector.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "full" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Vector.
+
+            Returns
+            -------
+            Vector
+            """
             if format is not None and format.lower() != "full":
                 raise ValueError(f"Invalid format: {format!r}.  Must be None or 'full'.")
             copy = not take_ownership
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
             vhandle = ffi_new("GrB_Vector*")
             vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-            size = len(values)
+            if size is None:
+                size = values.size
             check_status_carg(
                 lib.GxB_Vector_import_Full(
                     vhandle,
                     dtype._carg,
                     size,
                     vx,
-                    len(values),
+                    values.size,
                     ffi.NULL,
                 ),
                 "Vector",

@@ -16,34 +16,51 @@ def libget(name):
         raise
 
 
-def ints_to_numpy_buffer(array, dtype, *, name="array", copy=False, ownable=False):
+def ints_to_numpy_buffer(array, dtype, *, name="array", copy=False, ownable=False, order="C"):
     if (
         isinstance(array, np.ndarray)
         and not np.issubdtype(array.dtype, np.integer)
         and not np.issubdtype(array.dtype, np.bool8)
     ):
         raise ValueError(f"{name} must be integers, not {array.dtype.name}")
-    array = np.array(array, dtype, copy=copy, order="C")
+    array = np.array(array, dtype, copy=copy, order=order)
     if ownable and (not array.flags.owndata or not array.flags.writeable):
         array = array.copy()
     return array
 
 
-def values_to_numpy_buffer(array, dtype=None, *, copy=False, ownable=False):
+def values_to_numpy_buffer(array, dtype=None, *, copy=False, ownable=False, order="C"):
     if dtype is not None:
         dtype = lookup_dtype(dtype)
-        array = np.array(array, dtype.np_type, copy=copy, order="C")
+        array = np.array(array, dtype.np_type, copy=copy, order=order)
     else:
         is_input_np = isinstance(array, np.ndarray)
-        array = np.array(array, copy=copy, order="C")
+        array = np.array(array, copy=copy, order=order)
         if array.dtype == object:
             raise ValueError("object dtype for values is not allowed")
-        if not is_input_np and array.dtype == np.int32:  # fix for win64 numpy handling of ints
+        if not is_input_np and array.dtype == np.int32:  # pragma: no cover
+            # fix for win64 numpy handling of ints
             array = array.astype(np.int64)
         dtype = lookup_dtype(array.dtype)
     if ownable and (not array.flags.owndata or not array.flags.writeable):
         array = array.copy()
     return array, dtype
+
+
+def get_shape(nrows, ncols, **arrays):
+    if nrows is None or ncols is None:
+        # Get nrows and ncols from the first 2d array
+        arr = next((array for array in arrays.values() if array.ndim == 2), None)
+        if arr is None:
+            raise ValueError(
+                "Either nrows and ncols must be provided, or one of the following arrays"
+                f'must be 2d (from which to get nrows and ncols): {", ".join(arrays)}'
+            )
+        if nrows is None:
+            nrows = arr.shape[0]
+        if ncols is None:
+            ncols = arr.shape[1]
+    return nrows, ncols
 
 
 # A similar object may eventually make it to the GraphBLAS spec.
@@ -71,8 +88,6 @@ class _CArray:
                 f"{', '.join(map(str, self.array[-5:]))}"
             )
         return "(%s[]){%s}" % (self.dtype.c_type, values)
-
-    __hash__ = None
 
 
 class _Pointer:

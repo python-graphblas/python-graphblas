@@ -1,4 +1,5 @@
 import pytest
+import itertools
 import numpy as np
 import grblas
 from grblas import Matrix, Vector, Scalar
@@ -675,6 +676,12 @@ def test_import_export(v):
     assert (d["values"][d["bitmap"]] == [1, 1, 2, 0]).all()
     w2 = Vector.ss.import_any(**d)
     assert w2.isequal(v)
+    del d["nvals"]
+    w2b = Vector.ss.import_any(**d)
+    assert w2b.isequal(v)
+    d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]])
+    w2c = Vector.ss.import_any(**d)
+    assert w2c.isequal(v)
 
     v3 = Vector.from_values([0, 1, 2], [1, 3, 5])
     v3_copy = v3.dup()
@@ -714,3 +721,86 @@ def test_import_export(v):
 
     with pytest.raises(ValueError, match="Invalid format: bad_name"):
         v.ss.export("bad_name")
+
+    d = v.ss.export("sparse")
+    del d["format"]
+    with pytest.raises(TypeError, match="Cannot provide both"):
+        Vector.ss.import_any(bitmap=d["values"], **d)
+
+    # if we give the same value, make sure it's copied
+    for format, key1, key2 in [
+        ("sparse", "values", "indices"),
+        ("bitmap", "values", "bitmap"),
+    ]:
+        # No assertions here, but code coverage should be "good enough"
+        d = v.ss.export(format, raw=True)
+        d[key1] = d[key2]
+        Vector.ss.import_any(take_ownership=True, **d)
+
+
+def test_import_export_auto(v):
+    v_orig = v.dup()
+    for format in ["sparse", "bitmap"]:
+        for (
+            sort,
+            raw,
+            import_format,
+            give_ownership,
+            take_ownership,
+            import_func,
+        ) in itertools.product(
+            [False, True],
+            [False, True],
+            [format, None],
+            [False, True],
+            [False, True],
+            [Vector.ss.import_any, getattr(Vector.ss, f"import_{format}")],
+        ):
+            v2 = v.dup() if give_ownership else v
+            d = v2.ss.export(format, sort=sort, raw=raw, give_ownership=give_ownership)
+            d["format"] = import_format
+            other = import_func(take_ownership=take_ownership, **d)
+            assert other.isequal(v_orig)
+            d["format"] = "bad_format"
+            with pytest.raises(ValueError, match="Invalid format"):
+                import_func(**d)
+    assert v.isequal(v_orig)
+
+    w = Vector.from_values([0, 1, 2], [10, 20, 30])
+    w_orig = w.dup()
+    format = "full"
+    for (raw, import_format, give_ownership, take_ownership, import_func,) in itertools.product(
+        [False, True],
+        [format, None],
+        [False, True],
+        [False, True],
+        [Vector.ss.import_any, getattr(Vector.ss, f"import_{format}")],
+    ):
+        w2 = w.dup() if give_ownership else w
+        d = w2.ss.export(format, raw=raw, give_ownership=give_ownership)
+        d["format"] = import_format
+        other = import_func(take_ownership=take_ownership, **d)
+        assert other.isequal(w_orig)
+        d["format"] = "bad_format"
+        with pytest.raises(ValueError, match="Invalid format"):
+            import_func(**d)
+    assert w.isequal(w_orig)
+
+
+def test_contains(v):
+    assert 0 not in v
+    assert 1 in v
+    with pytest.raises(TypeError):
+        [0] in v
+    with pytest.raises(TypeError):
+        (0,) in v
+
+
+def test_iter(v):
+    assert set(v) == {1, 3, 4, 6}
+
+
+def test_wait(v):
+    v2 = v.dup()
+    v2.wait()
+    assert v2.isequal(v)

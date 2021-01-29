@@ -102,6 +102,12 @@ class Assigner:
         # Occurs when user calls `C[index](...) << obj` or `C(...)[index] << obj`
         self.updater._setitem(self.resolved_indexes, obj, is_submask=self.is_submask)
 
+    def __eq__(self, other):
+        raise TypeError(f"__eq__ not defined for objects of type {type(self)}.")
+
+    def __bool__(self):
+        raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
+
 
 class AmbiguousAssignOrExtract:
     def __init__(self, parent, resolved_indexes):
@@ -151,6 +157,31 @@ class AmbiguousAssignOrExtract:
                 mask = self._input_mask_to_mask(input_mask)
             delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
             return delayed_extractor.new(dtype=dtype, mask=mask, name=name)
+
+    def __eq__(self, other):
+        if not self.resolved_indexes.is_single_element:
+            raise TypeError(
+                f"__eq__ not defined for objects of type {type(self)}.  "
+                f"Use `.new()` to create a new object, then use `.isequal` method."
+            )
+        return self.value == other
+
+    def __bool__(self):
+        if not self.resolved_indexes.is_single_element:
+            raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
+        return bool(self.value)
+
+    def __float__(self):
+        if not self.resolved_indexes.is_single_element:
+            raise TypeError(f"__float__ not defined for objects of type {type(self)}.")
+        return float(self.value)
+
+    def __int__(self):
+        if not self.resolved_indexes.is_single_element:
+            raise TypeError(f"__int__ not defined for objects of type {type(self)}.")
+        return int(self.value)
+
+    __index__ = __int__
 
     def _extract_delayed(self):
         """Return an Expression object, treating this as an extract call"""
@@ -251,3 +282,9 @@ class Updater:
     def update(self, delayed):
         # Occurs when user calls `C(params).update(delayed)`
         self.parent._update(delayed, **self.kwargs)
+
+    def __eq__(self, other):
+        raise TypeError(f"__eq__ not defined for objects of type {type(self)}.")
+
+    def __bool__(self):
+        raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")

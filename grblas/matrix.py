@@ -9,7 +9,7 @@ from .mask import StructuralMask, ValueMask
 from .ops import get_typed_op
 from .vector import Vector, VectorExpression
 from .scalar import Scalar, ScalarExpression, _CScalar
-from .utils import ints_to_numpy_buffer, values_to_numpy_buffer, _CArray, _Pointer
+from .utils import get_shape, ints_to_numpy_buffer, values_to_numpy_buffer, _CArray, _Pointer
 from . import _ss
 
 ffi_new = ffi.new
@@ -70,6 +70,20 @@ class Matrix(BaseType):
 
     def __setitem__(self, keys, delayed):
         Updater(self)[keys] = delayed
+
+    def __contains__(self, index):
+        extractor = self[index]
+        if not extractor.resolved_indexes.is_single_element:
+            raise TypeError(
+                f"Invalid index to Matrix contains: {index!r}.  A 2-tuple of ints is expected.  "
+                "Doing `(i, j) in my_matrix` checks whether a value is present at that index."
+            )
+        scalar = extractor.new(name="s_contains")
+        return not scalar.is_empty
+
+    def __iter__(self):
+        rows, columns, values = self.to_values()
+        return zip(rows.flat, columns.flat)
 
     def isequal(self, other, *, check_dtype=False):
         """
@@ -204,11 +218,11 @@ class Matrix(BaseType):
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
         values, dtype = values_to_numpy_buffer(values, self.dtype)
-        n = len(values)
-        if len(rows) != n or len(columns) != n:
+        n = values.size
+        if rows.size != n or columns.size != n:
             raise ValueError(
                 f"`rows` and `columns` and `values` lengths must match: "
-                f"{len(rows)}, {len(columns)}, {len(values)}"
+                f"{rows.size}, {columns.size}, {values.size}"
             )
         if clear:
             self.clear()
@@ -256,6 +270,16 @@ class Matrix(BaseType):
         rv._ncols = self._ncols
         return rv
 
+    def wait(self):
+        """
+        GrB_Matrix_wait
+
+        In non-blocking mode, the computations may be delayed and not yet safe
+        to use by multiple threads.  Use wait to force completion of a Matrix
+        and make it safe to use as input parameters on multiple threads.
+        """
+        call("GrB_Matrix_wait", [_Pointer(self)])
+
     @classmethod
     def new(cls, dtype, nrows=0, ncols=0, *, name=None):
         """
@@ -296,11 +320,11 @@ class Matrix(BaseType):
         values, dtype = values_to_numpy_buffer(values, dtype)
         # Compute nrows and ncols if not provided
         if nrows is None:
-            if len(rows) == 0:
+            if rows.size == 0:
                 raise ValueError("No row indices provided. Unable to infer nrows.")
             nrows = int(rows.max()) + 1
         if ncols is None:
-            if len(columns) == 0:
+            if columns.size == 0:
                 raise ValueError("No column indices provided. Unable to infer ncols.")
             ncols = int(columns.max()) + 1
         # Create the new matrix
@@ -990,74 +1014,184 @@ class Matrix(BaseType):
         def __init__(self, parent):
             self._parent = parent
 
-        def export(self, format=None, *, sort=False, give_ownership=False):
+        @property
+        def format(self):
+            # Determine current format
+            parent = self._parent
+            format_ptr = ffi_new("GxB_Option_Field*")
+            sparsity_ptr = ffi_new("GxB_Option_Field*")
+            check_status(
+                lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, format_ptr),
+                parent,
+            )
+            check_status(
+                lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
+                parent,
+            )
+            sparsity_status = sparsity_ptr[0]
+            if sparsity_status == lib.GxB_HYPERSPARSE:
+                format = "hypercs"
+            elif sparsity_status == lib.GxB_SPARSE:
+                format = "cs"
+            elif sparsity_status == lib.GxB_BITMAP:
+                format = "bitmap"
+            elif sparsity_status == lib.GxB_FULL:
+                format = "full"
+            else:  # pragma: no cover
+                raise NotImplementedError(f"Unknown sparsity status: {sparsity_status}")
+            if format_ptr[0] == lib.GxB_BY_COL:
+                format = f"{format}c"
+            else:
+                format = f"{format}r"
+            return format
+
+        def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
             """
             GxB_Matrix_export_xxx
 
-            Returns a dict of the constituent parts:
-             - format: str
-             - nrows: number of rows (int)
-             - ncols: number of columns (int)
-             - h: header mapping (ndarray<uinte64>) (only for HyperCSR or HyperCSC)
-             - p: pointers (ndarray<uint64>)
-             - i or j: indices (ndarray<uint64>) (i for CSC, j for CSR)
-             - x: values (ndarray of appropriate dtype)
+            Parameters
+            ----------
+            format : str, optional
+                If `format` is not specified, this method exports in the currently stored format.
+                To control the export format, set `format` to one of:
+                    - "csr"
+                    - "csc"
+                    - "hypercsr"
+                    - "hypercsc"
+                    - "bitmapr"
+                    - "bitmapc"
+                    - "fullr"
+                    - "fullc"
+            sort : bool, default False
+                Whether to sort indices if the format is "csr", "csc", "hypercsr", or "hypercsc".
+            give_ownership : bool, default False
+                Perform a zero-copy data transfer to Python if possible.  This gives ownership of
+                the underlying memory buffers to Numpy.
+                ** If True, this nullifies the current object, which should no longer be used! **
+            raw : bool, default False
+                If True, always return 1d arrays the same size as returned by SuiteSparse.
+                If False, arrays may be trimmed to be the expected size, and 2d arrays are
+                returned when format is "bitmapr", "bitmapc", "fullr", or "fullc".
+                It may make sense to choose ``raw=True`` if one wants to use the data to perform
+                a zero-copy import back to SuiteSparse.
 
-            To reimport the Matrix:
-            ```
-            pieces = A.export()
-            A2 = Matrix.import_any(**pieces)
-            ```
+            Returns
+            -------
+            dict; keys depend on `format` and `raw` arguments (see below).
 
-            The underlying GraphBLAS object transfers ownership to numpy,
-            disallowing further access. The caller should delete or stop using
-            the Matrix after calling `export`.
+            See Also
+            --------
+            Matrix.to_values
+            Matrix.ss.import_any
 
-            If `format` is not specified, this method exports in the currently stored format
-            To control the export format, set `format` to one of:
-              - "csr"
-              - "csc"
-              - "hypercsr"
-              - "hypercsc"
-              - "bitmapr"
-              - "bitmapc"
-              - "fullr"
-              - "fullc"
+            Return values
+                - Note: for ``raw=True``, arrays may be larger than specified.
+                - "csr" format
+                    - indptr : ndarray(dtype=uint64, ndim=1, size=nrows + 1)
+                    - col_indices : ndarray(dtype=uint64, ndim=1, size=nvals)
+                    - values : ndarray(ndim=1, size=nvals)
+                    - sorted_index : bool
+                        - True if the values in "col_indices" are sorted
+                    - nrows : int
+                    - ncols : int
+                - "csc" format
+                    - indptr : ndarray(dtype=uint64, ndim=1, size=ncols + 1)
+                    - row_indices : ndarray(dtype=uint64, ndim=1, size=nvals)
+                    - values : ndarray(ndim=1, size=nvals)
+                    - sorted_index : bool
+                        - True if the values in "row_indices" are sorted
+                    - nrows : int
+                    - ncols : int
+                - "hypercsr" format
+                    - indptr : ndarray(dtype=uint64, ndim=1, size=nvec + 1)
+                    - rows : ndarray(dtype=uint64, ndim=1, size=nvec)
+                    - col_indices : ndarray(dtype=uint64, ndim=1, size=nvals)
+                    - values : ndarray(ndim=1, size=nvals)
+                    - sorted_index : bool
+                        - True if the values in "col_indices" are sorted
+                    - nrows : int
+                    - ncols : int
+                    - nvec : int, only present if raw == True
+                        - The number of rows present in the data structure
+                - "hypercsc" format
+                    - indptr : ndarray(dtype=uint64, ndim=1, size=nvec + 1)
+                    - cols : ndarray(dtype=uint64, ndim=1, size=nvec)
+                    - row_indices : ndarray(dtype=uint64, ndim=1, size=nvals)
+                    - values : ndarray(ndim=1, size=nvals)
+                    - sorted_index : bool
+                        - True if the values in "row_indices" are sorted
+                    - nrows : int
+                    - ncols : int
+                    - nvec : int, only present if raw == True
+                        - The number of cols present in the data structure
+                - "bitmapr" format
+                    - ``raw=False``
+                        - bitmap : ndarray(dtype=bool8, ndim=2, shape=(nrows, ncols), order="C")
+                        - values : ndarray(ndim=2, shape=(nrows, ncols), order="C")
+                            - Elements where bitmap is False are undefined
+                        - nvals : int
+                            - The number of True elements in the bitmap
+                    - ``raw=True``
+                        - bitmap : ndarray(dtype=bool8, ndim=1, size=nrows * ncols)
+                            - Stored row-oriented
+                        - values : ndarray(ndim=1, size=nrows * ncols)
+                            - Elements where bitmap is False are undefined
+                            - Stored row-oriented
+                        - nvals : int
+                            - The number of True elements in the bitmap
+                        - nrows : int
+                        - ncols : int
+                - "bitmapc" format
+                    - ``raw=False``
+                        - bitmap : ndarray(dtype=bool8, ndim=2, shape=(nrows, ncols), order="F")
+                        - values : ndarray(ndim=2, shape=(nrows, ncols), order="F")
+                            - Elements where bitmap is False are undefined
+                        - nvals : int
+                            - The number of True elements in the bitmap
+                    - ``raw=True``
+                        - bitmap : ndarray(dtype=bool8, ndim=1, size=nrows * ncols)
+                            - Stored column-oriented
+                        - values : ndarray(ndim=1, size=nrows * ncols)
+                            - Elements where bitmap is False are undefined
+                            - Stored column-oriented
+                        - nvals : int
+                            - The number of True elements in the bitmap
+                        - nrows : int
+                        - ncols : int
+                - "fullr" format
+                    - ``raw=False``
+                        - values : ndarray(ndim=2, shape=(nrows, ncols), order="C")
+                    - ``raw=True``
+                        - values : ndarray(ndim=1, size=nrows * ncols)
+                            - Stored row-oriented
+                        - nrows : int
+                        - ncols : int
+                - "fullc" format
+                    - ``raw=False``
+                        - values : ndarray(ndim=2, shape=(nrows, ncols), order="F")
+                    - ``raw=True``
+                        - values : ndarray(ndim=1, size=nrows * ncols)
+                            - Stored row-oriented
+                        - nrows : int
+                        - ncols : int
+
+            Examples
+            --------
+            Simple usage:
+
+            >>> pieces = A.ss.export()
+            >>> A2 = Matrix.ss.import_any(**pieces)
+
             """
             if give_ownership:
                 parent = self._parent
             else:
-                parent = self._parent.dup(name=f"{self._parent.name}_export")
+                parent = self._parent.dup(name="M_export")
             dtype = np.dtype(parent.dtype.np_type)
             index_dtype = np.dtype(np.uint64)
 
             if format is None:
-                # Determine current format
-                format_ptr = ffi_new("int*")
-                sparsity_ptr = ffi_new("int*")
-                check_status(
-                    lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, format_ptr),
-                    parent,
-                )
-                check_status(
-                    lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
-                    parent,
-                )
-                sparsity_status = sparsity_ptr[0]
-                if sparsity_status == lib.GxB_HYPERSPARSE:
-                    format = "hypercs"
-                elif sparsity_status == lib.GxB_SPARSE:
-                    format = "cs"
-                elif sparsity_status == lib.GxB_BITMAP:
-                    format = "bitmap"
-                elif sparsity_status == lib.GxB_FULL:
-                    format = "full"
-                else:  # pragma: no cover
-                    raise NotImplementedError(f"Unknown sparsity status: {sparsity_status}")
-                if format_ptr[0] == lib.GxB_BY_COL:
-                    format = f"{format}c"
-                else:
-                    format = f"{format}r"
+                format = self.format
             else:
                 format = format.lower()
 
@@ -1097,16 +1231,20 @@ class Matrix(BaseType):
                 indptr = _ss.claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
                 col_indices = _ss.claim_buffer(ffi, Aj[0], Aj_size[0], index_dtype)
                 values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
-                if len(indptr) > nrows[0] + 1:
-                    indptr = indptr[: nrows[0] + 1]
-                if len(col_indices) > nvals:
-                    col_indices = col_indices[:nvals]
-                if len(values) > nvals:
-                    values = values[:nvals]
+                if not raw:
+                    if indptr.size > nrows[0] + 1:  # pragma: no cover
+                        indptr = indptr[: nrows[0] + 1]
+                    if col_indices.size > nvals:  # pragma: no cover
+                        col_indices = col_indices[:nvals]
+                    if values.size > nvals:  # pragma: no cover
+                        values = values[:nvals]
+                # Note: nvals is also at `indptr[nrows]`
                 rv = {
                     "indptr": indptr,
                     "col_indices": col_indices,
                     "sorted_index": True if sort else not jumbled[0],
+                    "nrows": nrows[0],
+                    "ncols": ncols[0],
                 }
             elif format == "csc":
                 Ai = ffi_new("GrB_Index**")
@@ -1131,16 +1269,20 @@ class Matrix(BaseType):
                 indptr = _ss.claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
                 row_indices = _ss.claim_buffer(ffi, Ai[0], Ai_size[0], index_dtype)
                 values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
-                if len(indptr) > ncols[0] + 1:
-                    indptr = indptr[: ncols[0] + 1]
-                if len(row_indices) > nvals:
-                    row_indices = row_indices[:nvals]
-                if len(values) > nvals:
-                    values = values[:nvals]
+                if not raw:
+                    if indptr.size > ncols[0] + 1:  # pragma: no cover
+                        indptr = indptr[: ncols[0] + 1]
+                    if row_indices.size > nvals:  # pragma: no cover
+                        row_indices = row_indices[:nvals]
+                    if values.size > nvals:  # pragma: no cover
+                        values = values[:nvals]
+                # Note: nvals is also at `indptr[ncols]`
                 rv = {
                     "indptr": indptr,
                     "row_indices": row_indices,
                     "sorted_index": True if sort else not jumbled[0],
+                    "nrows": nrows[0],
+                    "ncols": ncols[0],
                 }
             elif format == "hypercsr":
                 nvec = ffi_new("GrB_Index*")
@@ -1173,20 +1315,26 @@ class Matrix(BaseType):
                 col_indices = _ss.claim_buffer(ffi, Aj[0], Aj_size[0], index_dtype)
                 values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
                 nvec = nvec[0]
-                if len(indptr) > nvec + 1:
-                    indptr = indptr[: nvec + 1]
-                if len(rows) > nvec:
-                    rows = rows[:nvec]
-                if len(col_indices) > nvals:
-                    col_indices = col_indices[:nvals]
-                if len(values) > nvals:
-                    values = values[:nvals]
+                if not raw:
+                    if indptr.size > nvec + 1:  # pragma: no cover
+                        indptr = indptr[: nvec + 1]
+                    if rows.size > nvec:  # pragma: no cover
+                        rows = rows[:nvec]
+                    if col_indices.size > nvals:  # pragma: no cover
+                        col_indices = col_indices[:nvals]
+                    if values.size > nvals:  # pragma: no cover
+                        values = values[:nvals]
+                # Note: nvals is also at `indptr[nvec]`
                 rv = {
                     "indptr": indptr,
                     "rows": rows,
                     "col_indices": col_indices,
                     "sorted_index": True if sort else not jumbled[0],
+                    "nrows": nrows[0],
+                    "ncols": ncols[0],
                 }
+                if raw:
+                    rv["nvec"] = nvec
             elif format == "hypercsc":
                 nvec = ffi_new("GrB_Index*")
                 Ah = ffi_new("GrB_Index**")
@@ -1218,20 +1366,26 @@ class Matrix(BaseType):
                 row_indices = _ss.claim_buffer(ffi, Ai[0], Ai_size[0], index_dtype)
                 values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
                 nvec = nvec[0]
-                if len(indptr) > nvec + 1:
-                    indptr = indptr[: nvec + 1]
-                if len(cols) > nvec:
-                    cols = cols[:nvec]
-                if len(row_indices) > nvals:
-                    row_indices = row_indices[:nvals]
-                if len(values) > nvals:
-                    values = values[:nvals]
+                if not raw:
+                    if indptr.size > nvec + 1:  # pragma: no cover
+                        indptr = indptr[: nvec + 1]
+                    if cols.size > nvec:  # pragma: no cover
+                        cols = cols[:nvec]
+                    if row_indices.size > nvals:  # pragma: no cover
+                        row_indices = row_indices[:nvals]
+                    if values.size > nvals:  # pragma: no cover
+                        values = values[:nvals]
+                # Note: nvals is also at `indptr[nvec]`
                 rv = {
                     "indptr": indptr,
                     "cols": cols,
                     "row_indices": row_indices,
                     "sorted_index": True if sort else not jumbled[0],
+                    "nrows": nrows[0],
+                    "ncols": ncols[0],
                 }
+                if raw:
+                    rv["nvec"] = nvec
             elif format == "bitmapr" or format == "bitmapc":
                 if format == "bitmapr":
                     cfunc = lib.GxB_Matrix_export_BitmapR
@@ -1255,14 +1409,21 @@ class Matrix(BaseType):
                     ),
                     parent,
                 )
-                bitmap = _ss.claim_buffer(ffi, Ab[0], Ab_size[0], np.dtype(np.bool8))
-                values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
-                size = nrows[0] * ncols[0]
-                if len(bitmap) > size:
-                    bitmap = bitmap[:size]
-                if len(values) > size:
-                    values = values[:size]
+                if raw:
+                    bitmap = _ss.claim_buffer(ffi, Ab[0], Ab_size[0], np.dtype(np.bool8))
+                    values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+                else:
+                    is_c_order = format == "bitmapr"
+                    bitmap = _ss.claim_buffer_2d(
+                        ffi, Ab[0], Ab_size[0], nrows[0], ncols[0], np.dtype(np.bool8), is_c_order
+                    )
+                    values = _ss.claim_buffer_2d(
+                        ffi, Ax[0], Ax_size[0], nrows[0], ncols[0], dtype, is_c_order
+                    )
                 rv = {"bitmap": bitmap, "nvals": nvals_[0]}
+                if raw:
+                    rv["nrows"] = nrows[0]
+                    rv["ncols"] = ncols[0]
             elif format == "fullr" or format == "fullc":
                 if format == "fullr":
                     cfunc = lib.GxB_Matrix_export_FullR
@@ -1280,20 +1441,20 @@ class Matrix(BaseType):
                     ),
                     parent,
                 )
-                values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
-                size = nrows[0] * ncols[0]
-                if len(values) > size:
-                    values = values[:size]
-                rv = {}
+                if raw:
+                    values = _ss.claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+                    rv = {"nrows": nrows[0], "ncols": ncols[0]}
+                else:
+                    is_c_order = format == "fullr"
+                    values = _ss.claim_buffer_2d(
+                        ffi, Ax[0], Ax_size[0], nrows[0], ncols[0], dtype, is_c_order
+                    )
+                    rv = {}
             else:
                 raise ValueError(f"Invalid format: {format}")
 
-            rv.update(
-                format=format,
-                nrows=nrows[0],
-                ncols=ncols[0],
-                values=values,
-            )
+            rv["format"] = format
+            rv["values"] = values
             parent.gb_obj = ffi.NULL
             return rv
 
@@ -1312,6 +1473,45 @@ class Matrix(BaseType):
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_CSR
+
+            Create a new Matrix from standard CSR format.
+
+            Parameters
+            ----------
+            nrows : int
+            ncols : int
+            indptr : array-like
+            values : array-like
+            col_indices : array-like
+            sorted_index : bool, default False
+                Indicate whether the values in "col_indices" are sorted.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (uint64 for indptr and col_indices)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "csr" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "csr":
                 raise ValueError(f"Invalid format: {format!r}.  Must be None or 'csr'.")
             copy = not take_ownership
@@ -1322,6 +1522,8 @@ class Matrix(BaseType):
                 col_indices, np.uint64, copy=copy, ownable=True, name="column indices"
             )
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            if col_indices is values:
+                values = np.copy(values)
             mhandle = ffi_new("GrB_Matrix*")
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
@@ -1335,9 +1537,9 @@ class Matrix(BaseType):
                     Ap,
                     Aj,
                     Ax,
-                    len(indptr),
-                    len(col_indices),
-                    len(values),
+                    indptr.size,
+                    col_indices.size,
+                    values.size,
                     not sorted_index,
                     ffi.NULL,
                 ),
@@ -1367,6 +1569,45 @@ class Matrix(BaseType):
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_CSC
+
+            Create a new Matrix from standard CSC format.
+
+            Parameters
+            ----------
+            nrows : int
+            ncols : int
+            indptr : array-like
+            values : array-like
+            row_indices : array-like
+            sorted_index : bool, default False
+                Indicate whether the values in "row_indices" are sorted.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (uint64 for indptr and row_indices)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "csc" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "csc":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'csc'.")
             copy = not take_ownership
@@ -1377,6 +1618,8 @@ class Matrix(BaseType):
                 row_indices, np.uint64, copy=copy, ownable=True, name="row indices"
             )
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            if row_indices is values:
+                values = np.copy(values)
             mhandle = ffi_new("GrB_Matrix*")
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
@@ -1390,9 +1633,9 @@ class Matrix(BaseType):
                     Ap,
                     Ai,
                     Ax,
-                    len(indptr),
-                    len(row_indices),
-                    len(values),
+                    indptr.size,
+                    row_indices.size,
+                    values.size,
                     not sorted_index,
                     ffi.NULL,
                 ),
@@ -1417,12 +1660,56 @@ class Matrix(BaseType):
             indptr,
             values,
             col_indices,
+            nvec=None,
             sorted_index=False,
             take_ownership=False,
             dtype=None,
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_HyperCSR
+
+            Create a new Matrix from standard HyperCSR format.
+
+            Parameters
+            ----------
+            nrows : int
+            ncols : int
+            rows : array-like
+            indptr : array-like
+            values : array-like
+            col_indices : array-like
+            nvec : int, optional
+                The number of elements in "rows" to use.
+                If not specified, will be set to ``len(rows)``.
+            sorted_index : bool, default False
+                Indicate whether the values in "col_indices" are sorted.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (uint64 for rows, indptr, col_indices)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "hypercsr" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "hypercsr":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsr'.")
             copy = not take_ownership
@@ -1434,12 +1721,15 @@ class Matrix(BaseType):
                 col_indices, np.uint64, copy=copy, ownable=True, name="column indices"
             )
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            if col_indices is values:
+                values = np.copy(values)
             mhandle = ffi_new("GrB_Matrix*")
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(rows)))
             Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-            nvec = len(rows)
+            if nvec is None:
+                nvec = rows.size
             check_status_carg(
                 lib.GxB_Matrix_import_HyperCSR(
                     mhandle,
@@ -1450,10 +1740,10 @@ class Matrix(BaseType):
                     Ah,
                     Aj,
                     Ax,
-                    len(indptr),
-                    len(rows),
-                    len(col_indices),
-                    len(values),
+                    indptr.size,
+                    rows.size,
+                    col_indices.size,
+                    values.size,
                     nvec,
                     not sorted_index,
                     ffi.NULL,
@@ -1480,12 +1770,55 @@ class Matrix(BaseType):
             indptr,
             values,
             row_indices,
+            nvec=None,
             sorted_index=False,
             take_ownership=False,
             dtype=None,
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_HyperCSC
+
+            Create a new Matrix from standard HyperCSC format.
+
+            Parameters
+            ----------
+            nrows : int
+            ncols : int
+            indptr : array-like
+            values : array-like
+            row_indices : array-like
+            nvec : int, optional
+                The number of elements in "cols" to use.
+                If not specified, will be set to ``len(cols)``.
+            sorted_index : bool, default False
+                Indicate whether the values in "row_indices" are sorted.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (uint64 for indptr and row_indices)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "hypercsc" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "hypercsc":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsc'.")
             copy = not take_ownership
@@ -1497,12 +1830,15 @@ class Matrix(BaseType):
                 row_indices, np.uint64, copy=copy, ownable=True, name="row indices"
             )
             values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            if row_indices is values:
+                values = np.copy(values)
             mhandle = ffi_new("GrB_Matrix*")
             Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
             Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(cols)))
             Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-            nvec = len(cols)
+            if nvec is None:
+                nvec = cols.size
             check_status_carg(
                 lib.GxB_Matrix_import_HyperCSC(
                     mhandle,
@@ -1513,10 +1849,10 @@ class Matrix(BaseType):
                     Ah,
                     Ai,
                     Ax,
-                    len(indptr),
-                    len(cols),
-                    len(row_indices),
-                    len(values),
+                    indptr.size,
+                    cols.size,
+                    row_indices.size,
+                    values.size,
                     nvec,
                     not sorted_index,
                     ffi.NULL,
@@ -1537,26 +1873,81 @@ class Matrix(BaseType):
         def import_bitmapr(
             cls,
             *,
-            nrows,
-            ncols,
             bitmap,
             values,
-            take_ownership=False,
             nvals=None,
+            nrows=None,
+            ncols=None,
+            take_ownership=False,
             dtype=None,
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_BitmapR
+
+            Create a new Matrix from values and bitmap (as mask) arrays.
+
+            Parameters
+            ----------
+            bitmap : array-like
+                True elements indicate where there are values in "values".
+                May be 1d or 2d, but there need to have at least ``nrows*ncols`` elements.
+            values : array-like
+                May be 1d or 2d, but there need to have at least ``nrows*ncols`` elements.
+            nvals : int, optional
+                The number of True elements in the bitmap for this Matrix.
+            nrows : int, optional
+                The number of rows for the Matrix.
+                If not provided, will be inferred from values or bitmap if either is 2d.
+            ncols : int
+                The number of columns for the Matrix.
+                If not provided, will be inferred from values or bitmap if either is 2d.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype (bool8 for bitmap)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "bitmapr" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "bitmapr":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapr'.")
             copy = not take_ownership
-            bitmap = ints_to_numpy_buffer(bitmap, np.bool8, copy=copy, ownable=True, name="bitmap")
-            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            bitmap = ints_to_numpy_buffer(
+                bitmap, np.bool8, copy=copy, ownable=True, order="C", name="bitmap"
+            )
+            values, dtype = values_to_numpy_buffer(
+                values, dtype, copy=copy, ownable=True, order="C"
+            )
+            if bitmap is values:
+                values = np.copy(values)
+            nrows, ncols = get_shape(nrows, ncols, values=values, bitmap=bitmap)
             mhandle = ffi_new("GrB_Matrix*")
             Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
             if nvals is None:
-                nvals = np.count_nonzero(bitmap)
+                if bitmap.size == nrows * ncols:
+                    nvals = np.count_nonzero(bitmap)
+                else:
+                    nvals = np.count_nonzero(bitmap.ravel()[: nrows * ncols])
             check_status_carg(
                 lib.GxB_Matrix_import_BitmapR(
                     mhandle,
@@ -1565,8 +1956,8 @@ class Matrix(BaseType):
                     ncols,
                     Ab,
                     Ax,
-                    len(bitmap),
-                    len(values),
+                    bitmap.size,
+                    values.size,
                     nvals,
                     ffi.NULL,
                 ),
@@ -1584,26 +1975,81 @@ class Matrix(BaseType):
         def import_bitmapc(
             cls,
             *,
-            nrows,
-            ncols,
             bitmap,
             values,
-            take_ownership=False,
             nvals=None,
+            nrows=None,
+            ncols=None,
+            take_ownership=False,
             format=None,
             dtype=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_BitmapC
+
+            Create a new Matrix from values and bitmap (as mask) arrays.
+
+            Parameters
+            ----------
+            bitmap : array-like
+                True elements indicate where there are values in "values".
+                May be 1d or 2d, but there need to have at least ``nrows*ncols`` elements.
+            values : array-like
+                May be 1d or 2d, but there need to have at least ``nrows*ncols`` elements.
+            nvals : int, optional
+                The number of True elements in the bitmap for this Matrix.
+            nrows : int, optional
+                The number of rows for the Matrix.
+                If not provided, will be inferred from values or bitmap if either is 2d.
+            ncols : int
+                The number of columns for the Matrix.
+                If not provided, will be inferred from values or bitmap if either is 2d.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be FORTRAN contiguous
+                    - have the correct dtype (bool8 for bitmap)
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "bitmapc" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "bitmapc":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapc'.")
             copy = not take_ownership
-            bitmap = ints_to_numpy_buffer(bitmap, np.bool8, copy=copy, ownable=True, name="bitmap")
-            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            bitmap = ints_to_numpy_buffer(
+                bitmap, np.bool8, copy=copy, ownable=True, order="F", name="bitmap"
+            )
+            values, dtype = values_to_numpy_buffer(
+                values, dtype, copy=copy, ownable=True, order="F"
+            )
+            if bitmap is values:
+                values = np.copy(values)
+            nrows, ncols = get_shape(nrows, ncols, values=values, bitmap=bitmap)
             mhandle = ffi_new("GrB_Matrix*")
-            Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
-            Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap.T)))
+            Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values.T)))
             if nvals is None:
-                nvals = np.count_nonzero(bitmap)
+                if bitmap.size == nrows * ncols:
+                    nvals = np.count_nonzero(bitmap)
+                else:
+                    nvals = np.count_nonzero(bitmap.ravel("F")[: nrows * ncols])
             check_status_carg(
                 lib.GxB_Matrix_import_BitmapC(
                     mhandle,
@@ -1612,8 +2058,8 @@ class Matrix(BaseType):
                     ncols,
                     Ab,
                     Ax,
-                    len(bitmap),
-                    len(values),
+                    bitmap.size,
+                    values.size,
                     nvals,
                     ffi.NULL,
                 ),
@@ -1631,18 +2077,61 @@ class Matrix(BaseType):
         def import_fullr(
             cls,
             *,
-            nrows,
-            ncols,
             values,
+            nrows=None,
+            ncols=None,
             take_ownership=False,
             dtype=None,
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_FullR
+
+            Create a new Matrix from values.
+
+            Parameters
+            ----------
+            values : array-like
+                May be 1d or 2d, but there need to have at least ``nrows*ncols`` elements.
+            nrows : int, optional
+                The number of rows for the Matrix.
+                If not provided, will be inferred from values if it is 2d.
+            ncols : int
+                The number of columns for the Matrix.
+                If not provided, will be inferred from values if it is 2d.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be C contiguous
+                    - have the correct dtype
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "fullr" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "fullr":
                 raise ValueError(f"Invalid format: {format!r}  Must be None or 'fullr'.")
             copy = not take_ownership
-            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            values, dtype = values_to_numpy_buffer(
+                values, dtype, copy=copy, order="C", ownable=True
+            )
+            nrows, ncols = get_shape(nrows, ncols, values=values)
             mhandle = ffi_new("GrB_Matrix*")
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
             check_status_carg(
@@ -1652,7 +2141,7 @@ class Matrix(BaseType):
                     nrows,
                     ncols,
                     Ax,
-                    len(values),
+                    values.size,
                     ffi.NULL,
                 ),
                 "Matrix",
@@ -1668,20 +2157,63 @@ class Matrix(BaseType):
         def import_fullc(
             cls,
             *,
-            nrows,
-            ncols,
             values,
+            nrows=None,
+            ncols=None,
             take_ownership=False,
             dtype=None,
             format=None,
             name=None,
         ):
+            """
+            GxB_Matrix_import_FullC
+
+            Create a new Matrix from values.
+
+            Parameters
+            ----------
+            values : array-like
+                May be 1d or 2d, but there need to have at least ``nrows*ncols`` elements.
+            nrows : int, optional
+                The number of rows for the Matrix.
+                If not provided, will be inferred from values if it is 2d.
+            ncols : int
+                The number of columns for the Matrix.
+                If not provided, will be inferred from values if it is 2d.
+            take_ownership : bool, default False
+                If True, perform a zero-copy data transfer from input numpy arrays
+                to GraphBLAS if possible.  To give ownership of the underlying
+                memory buffers to GraphBLAS, the arrays must:
+                    - be FORTRAN contiguous
+                    - have the correct dtype
+                    - own its own data
+                    - be writeable
+                If all of these conditions are not met, then the data will be
+                copied and the original array will be unmodified.  If zero copy
+                to GraphBLAS is successful, then the array will be mofied to be
+                read-only and will no longer own the data.
+            dtype : dtype, optional
+                dtype of the new Matrix.
+                If not specified, this will be inferred from `values`.
+            format : str, optional
+                Must be "fullc" or None.  This is included to be compatible with
+                the dict returned from exporting.
+            name : str, optional
+                Name of the new Matrix.
+
+            Returns
+            -------
+            Matrix
+            """
             if format is not None and format.lower() != "fullc":
                 raise ValueError(f"Invalid format: {format!r}.  Must be None or 'fullc'.")
             copy = not take_ownership
-            values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+            values, dtype = values_to_numpy_buffer(
+                values, dtype, copy=copy, order="F", ownable=True
+            )
+            nrows, ncols = get_shape(nrows, ncols, values=values)
             mhandle = ffi_new("GrB_Matrix*")
-            Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+            Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values.T)))
             check_status_carg(
                 lib.GxB_Matrix_import_FullC(
                     mhandle,
@@ -1689,7 +2221,7 @@ class Matrix(BaseType):
                     nrows,
                     ncols,
                     Ax,
-                    len(values),
+                    values.size,
                     ffi.NULL,
                 ),
                 "Matrix",
@@ -1706,9 +2238,9 @@ class Matrix(BaseType):
             cls,
             *,
             # All
-            nrows,
-            ncols,
             values,
+            nrows=None,
+            ncols=None,
             take_ownership=False,
             format=None,
             dtype=None,
@@ -1724,6 +2256,8 @@ class Matrix(BaseType):
             row_indices=None,
             # HyperCSC
             cols=None,
+            # HyperCSR/HyperCSC
+            nvec=None,  # optional
             # BitmapR/BitmapC
             bitmap=None,
             nvals=None,  # optional
@@ -1731,30 +2265,45 @@ class Matrix(BaseType):
             """
             GxB_Matrix_import_xxx
 
-            The new Matrix uses the underlying buffer of the input arrays.
-            The caller should delete or stop using the input arrays after calling `import_any`.
+            Dispatch to appropriate import method inferred from inputs.
+            See the other import functions and `Matrix.ss.export`` for details.
 
-            Valid formats:
-             - csr  (needs indptr, col_indices, values)
-             - csc  (needs indptr, row_indices, values)
-             - hypercsr  (needs rows, indptr, col_indices, values)
-             - hypercsc  (needs cols, indptr, row_indices, values)
-             - bitmapr  (needs bitmap, nvals (optional), values)
-             - bitmapc  (needs bitmap, nvals (optional), values)
-             - fullr  (needs values)
-             - fullc  (needs values)
+            Returns
+            -------
+            Matrix
+
+            See Also
+            --------
+            Matrix.from_values
+            Matrix.ss.export
+            Matrix.ss.import_csr
+            Matrix.ss.import_csc
+            Matrix.ss.import_hypercsr
+            Matrix.ss.import_hypercsc
+            Matrix.ss.import_bitmapr
+            Matrix.ss.import_bitmapc
+            Matrix.ss.import_fullr
+            Matrix.ss.import_fullc
+
+            Examples
+            --------
+            Simple usage:
+
+            >>> pieces = A.ss.export()
+            >>> A2 = Matrix.ss.import_any(**pieces)
+
             """
             if format is None:
                 # Determine format based on provided inputs
                 if indptr is not None:
                     if bitmap is not None:
-                        raise ValueError("Cannot provide both `indptr` and `bitmap`")
+                        raise TypeError("Cannot provide both `indptr` and `bitmap`")
                     if row_indices is None and col_indices is None:
-                        raise ValueError("Must provide either `row_indices` or `col_indices`")
+                        raise TypeError("Must provide either `row_indices` or `col_indices`")
                     if row_indices is not None and col_indices is not None:
-                        raise ValueError("Cannot provide both `row_indices` and `col_indices`")
+                        raise TypeError("Cannot provide both `row_indices` and `col_indices`")
                     if rows is not None and cols is not None:
-                        raise ValueError("Cannot provide both `rows` and `cols`")
+                        raise TypeError("Cannot provide both `rows` and `cols`")
                     elif rows is None and cols is None:
                         if row_indices is None:
                             format = "csr"
@@ -1762,26 +2311,46 @@ class Matrix(BaseType):
                             format = "csc"
                     elif rows is not None:
                         if col_indices is None:
-                            raise ValueError("HyperCSR requires col_indices, not row_indices")
+                            raise TypeError("HyperCSR requires col_indices, not row_indices")
                         format = "hypercsr"
                     else:
                         if row_indices is None:
-                            raise ValueError("HyperCSC requires row_indices, not col_indices")
+                            raise TypeError("HyperCSC requires row_indices, not col_indices")
                         format = "hypercsc"
                 elif bitmap is not None:
                     if col_indices is not None:
-                        raise ValueError("Cannot provide both `bitmap` and `col_indices`")
+                        raise TypeError("Cannot provide both `bitmap` and `col_indices`")
                     if row_indices is not None:
-                        raise ValueError("Cannot provide both `bitmap` and `row_indices`")
+                        raise TypeError("Cannot provide both `bitmap` and `row_indices`")
                     if cols is not None:
-                        raise ValueError("Cannot provide both `bitmap` and `cols`")
+                        raise TypeError("Cannot provide both `bitmap` and `cols`")
                     if rows is not None:
-                        raise ValueError("Cannot provide both `bitmap` and `rows`")
-                    # Assume row-oriented
-                    format = "bitmapr"
+                        raise TypeError("Cannot provide both `bitmap` and `rows`")
+
+                    # Choose format based on contiguousness of values fist
+                    if isinstance(values, np.ndarray) and values.ndim == 2:
+                        if values.flags.f_contiguous:
+                            format = "bitmapc"
+                        elif values.flags.c_contiguous:
+                            format = "bitmapr"
+                    # Then consider bitmap contiguousness if necessary
+                    if format is None and isinstance(bitmap, np.ndarray) and bitmap.ndim == 2:
+                        if bitmap.flags.f_contiguous:
+                            format = "bitmapc"
+                        elif bitmap.flags.c_contiguous:
+                            format = "bitmapr"
+                    # Then default to row-oriented
+                    if format is None:
+                        format = "bitmapr"
                 else:
-                    # Assume row-oriented
-                    format = "fullr"
+                    if (
+                        isinstance(values, np.ndarray)
+                        and values.ndim == 2
+                        and values.flags.f_contiguous
+                    ):
+                        format = "fullc"
+                    else:
+                        format = "fullr"
             else:
                 format = format.lower()
 
@@ -1813,6 +2382,7 @@ class Matrix(BaseType):
                 return cls.import_hypercsr(
                     nrows=nrows,
                     ncols=ncols,
+                    nvec=nvec,
                     rows=rows,
                     indptr=indptr,
                     values=values,
@@ -1826,6 +2396,7 @@ class Matrix(BaseType):
                 return cls.import_hypercsc(
                     nrows=nrows,
                     ncols=ncols,
+                    nvec=nvec,
                     cols=cols,
                     indptr=indptr,
                     values=values,
@@ -2010,6 +2581,9 @@ class TransposedMatrix:
     _extract_element = Matrix._extract_element
     _prep_for_extract = Matrix._prep_for_extract
     __eq__ = Matrix.__eq__
+    __bool__ = Matrix.__bool__
     __getitem__ = Matrix.__getitem__
+    __contains__ = Matrix.__contains__
+    __iter__ = Matrix.__iter__
     _expect_type = Matrix._expect_type
     _expect_op = Matrix._expect_op
