@@ -1290,6 +1290,7 @@ def test_import_export(A):
     assert "ncols" not in d
     assert d["values"].shape == (7, 7)
     assert d["bitmap"].shape == (7, 7)
+    assert d["nvals"] == 12
     bitmap = np.array(
         [
             [0, 1, 0, 1, 0, 0, 0],
@@ -1305,8 +1306,12 @@ def test_import_export(A):
     assert (
         d["values"].ravel("K")[d["bitmap"].ravel("K")] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]
     ).all()
+    del d["nvals"]
     B5 = Matrix.ss.import_any(**d)
     assert B5.isequal(A)
+    d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=0)
+    B5b = Matrix.ss.import_any(**d)
+    assert B5b.isequal(A)
 
     A6 = A.dup()
     d = A6.ss.export("bitmapc")
@@ -1314,8 +1319,12 @@ def test_import_export(A):
     assert (
         d["values"].ravel("K")[d["bitmap"].ravel("K")] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]
     ).all()
+    del d["nvals"]
     B6 = Matrix.ss.import_any(nrows=7, **d)
     assert B6.isequal(A)
+    d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=1)
+    B6b = Matrix.ss.import_any(ncols=7, **d)
+    assert B6b.isequal(A)
 
     A7 = A.dup()
     d = A7.ss.export()
@@ -1603,3 +1612,18 @@ def test_contains(A):
         (1,) in A.T
     with pytest.raises(TypeError, match="Invalid index"):
         (1, [1, 2]) in A
+
+
+def test_iter(A):
+    assert set(A) == set(
+        zip(
+            [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+            [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        )
+    )
+    assert set(A.T) == set(
+        zip(
+            [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+            [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+        )
+    )

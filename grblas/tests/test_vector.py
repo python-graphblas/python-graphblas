@@ -676,6 +676,12 @@ def test_import_export(v):
     assert (d["values"][d["bitmap"]] == [1, 1, 2, 0]).all()
     w2 = Vector.ss.import_any(**d)
     assert w2.isequal(v)
+    del d["nvals"]
+    w2b = Vector.ss.import_any(**d)
+    assert w2b.isequal(v)
+    d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]])
+    w2c = Vector.ss.import_any(**d)
+    assert w2c.isequal(v)
 
     v3 = Vector.from_values([0, 1, 2], [1, 3, 5])
     v3_copy = v3.dup()
@@ -788,3 +794,7 @@ def test_contains(v):
         [0] in v
     with pytest.raises(TypeError):
         (0,) in v
+
+
+def test_iter(v):
+    assert set(v) == {1, 3, 4, 6}

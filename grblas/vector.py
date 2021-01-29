@@ -78,6 +78,10 @@ class Vector(BaseType):
         scalar = extractor.new(name="s_contains")
         return not scalar.is_empty
 
+    def __iter__(self):
+        indices, values = self.to_values()
+        return indices.flat
+
     def isequal(self, other, *, check_dtype=False):
         """
         Check for exact equality (same size, same empty values)
@@ -233,6 +237,16 @@ class Vector(BaseType):
             call("GrB_Vector_dup", [_Pointer(rv), self])
         rv._size = self._size
         return rv
+
+    def wait(self):
+        """
+        GrB_Vector_wait
+
+        In non-blocking mode, the computations may be delayed and not yet safe
+        to use by multiple threads.  Use wait to force completion of a Vector
+        and make it safe to use as input parameters on multiple threads.
+        """
+        call("GrB_Vector_wait", [_Pointer(self)])
 
     @classmethod
     def new(cls, dtype, size=0, *, name=None):

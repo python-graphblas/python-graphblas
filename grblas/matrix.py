@@ -81,6 +81,10 @@ class Matrix(BaseType):
         scalar = extractor.new(name="s_contains")
         return not scalar.is_empty
 
+    def __iter__(self):
+        rows, columns, values = self.to_values()
+        return zip(rows.flat, columns.flat)
+
     def isequal(self, other, *, check_dtype=False):
         """
         Check for exact equality (same size, same empty values)
@@ -265,6 +269,16 @@ class Matrix(BaseType):
         rv._nrows = self._nrows
         rv._ncols = self._ncols
         return rv
+
+    def wait(self):
+        """
+        GrB_Matrix_wait
+
+        In non-blocking mode, the computations may be delayed and not yet safe
+        to use by multiple threads.  Use wait to force completion of a Matrix
+        and make it safe to use as input parameters on multiple threads.
+        """
+        call("GrB_Matrix_wait", [_Pointer(self)])
 
     @classmethod
     def new(cls, dtype, nrows=0, ncols=0, *, name=None):
@@ -1710,7 +1724,7 @@ class Matrix(BaseType):
             )
             if bitmap is values:
                 values = np.copy(values)
-            nrows, ncols = get_shape(nrows, ncols, bitmap=bitmap, values=values)
+            nrows, ncols = get_shape(nrows, ncols, values=values, bitmap=bitmap)
             mhandle = ffi_new("GrB_Matrix*")
             Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
@@ -1767,7 +1781,7 @@ class Matrix(BaseType):
             )
             if bitmap is values:
                 values = np.copy(values)
-            nrows, ncols = get_shape(nrows, ncols, bitmap=bitmap, values=values)
+            nrows, ncols = get_shape(nrows, ncols, values=values, bitmap=bitmap)
             mhandle = ffi_new("GrB_Matrix*")
             Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap.T)))
             Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values.T)))
@@ -2215,5 +2229,6 @@ class TransposedMatrix:
     __bool__ = Matrix.__bool__
     __getitem__ = Matrix.__getitem__
     __contains__ = Matrix.__contains__
+    __iter__ = Matrix.__iter__
     _expect_type = Matrix._expect_type
     _expect_op = Matrix._expect_op

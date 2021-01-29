@@ -270,7 +270,7 @@ class OpBase:
         ):
             if re_str not in cls._parse_config:
                 continue
-            if "complex" in re_str and not _supports_complex:
+            if "complex" in re_str and not _supports_complex:  # pragma: no cover
                 continue
             for r in cls._parse_config[re_str]:
                 for varname in varnames:
