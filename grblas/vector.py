@@ -616,6 +616,25 @@ class Vector(BaseType):
         def __init__(self, parent):
             self._parent = parent
 
+        @property
+        def format(self):
+            parent = self._parent
+            sparsity_ptr = ffi_new("GxB_Option_Field*")
+            check_status(
+                lib.GxB_Vector_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
+                parent,
+            )
+            sparsity_status = sparsity_ptr[0]
+            if sparsity_status == lib.GxB_SPARSE:
+                format = "sparse"
+            elif sparsity_status == lib.GxB_BITMAP:
+                format = "bitmap"
+            elif sparsity_status == lib.GxB_FULL:
+                format = "full"
+            else:  # pragma: no cover
+                raise NotImplementedError(f"Unknown sparsity status: {sparsity_status}")
+            return format
+
         def export(self, format=None, sort=False, give_ownership=False, raw=False):
             """
             GxB_Vextor_export_xxx
@@ -692,20 +711,7 @@ class Vector(BaseType):
             index_dtype = np.dtype(np.uint64)
 
             if format is None:
-                sparsity_ptr = ffi_new("int*")
-                check_status(
-                    lib.GxB_Vector_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
-                    parent,
-                )
-                sparsity_status = sparsity_ptr[0]
-                if sparsity_status == lib.GxB_SPARSE:
-                    format = "sparse"
-                elif sparsity_status == lib.GxB_BITMAP:
-                    format = "bitmap"
-                elif sparsity_status == lib.GxB_FULL:
-                    format = "full"
-                else:  # pragma: no cover
-                    raise NotImplementedError(f"Unknown sparsity status: {sparsity_status}")
+                format = self.format
             else:
                 format = format.lower()
 

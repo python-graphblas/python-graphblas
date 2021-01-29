@@ -798,3 +798,9 @@ def test_contains(v):
 
 def test_iter(v):
     assert set(v) == {1, 3, 4, 6}
+
+
+def test_wait(v):
+    v2 = v.dup()
+    v2.wait()
+    assert v2.isequal(v)

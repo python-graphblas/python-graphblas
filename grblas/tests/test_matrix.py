@@ -1627,3 +1627,9 @@ def test_iter(A):
             [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         )
     )
+
+
+def test_wait(A):
+    A2 = A.dup()
+    A2.wait()
+    assert A2.isequal(A)
