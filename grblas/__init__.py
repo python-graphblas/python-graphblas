@@ -17,6 +17,7 @@ _SPECIAL_ATTRS = {
     "expr",
     "formatting",
     "io",
+    "op",
     "ops",
     "unary",
     "binary",

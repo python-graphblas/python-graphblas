@@ -85,10 +85,11 @@ _semiring_names -= {
         },
     )
 }
+__all__ = list(_semiring_names)
 
 
 def __dir__():
-    return list(_semiring_names)
+    return __all__
 
 
 def __getattr__(name):

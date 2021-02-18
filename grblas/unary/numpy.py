@@ -60,10 +60,11 @@ _unary_names = {
     "trunc",
     "spacing",
 }
+__all__ = list(_unary_names)
 
 
 def __dir__():
-    return list(_unary_names)
+    return __all__
 
 
 def __getattr__(name):

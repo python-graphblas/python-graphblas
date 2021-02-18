@@ -52,10 +52,11 @@ _binary_names = {
     "nextafter",
     "ldexp",
 }
+__all__ = list(_binary_names)
 
 
 def __dir__():
-    return list(_binary_names)
+    return __all__
 
 
 def __getattr__(name):

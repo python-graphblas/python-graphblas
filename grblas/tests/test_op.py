@@ -540,3 +540,24 @@ def test_nested_names():
         UnaryOp.register_new("incrementers", bad_will_overwrite_path)
     with pytest.raises(AttributeError, match="already defined"):
         UnaryOp.register_new("identity.newfunc", bad_will_overwrite_path)
+
+
+def test_op_namespace():
+    from grblas import op
+
+    assert op.abs is unary.abs
+    assert op.minus is binary.minus
+    assert op.plus is monoid.plus
+    assert op.plus_times is semiring.plus_times
+
+    assert op.numpy.fabs is unary.numpy.fabs
+    assert op.numpy.subtract is binary.numpy.subtract
+    assert op.numpy.add is monoid.numpy.add
+    assert op.numpy.add_add is semiring.numpy.add_add
+    assert len(dir(op)) > 300
+    assert len(dir(op.numpy)) > 500
+
+    with pytest.raises(
+        AttributeError, match="module 'grblas.op.numpy' has no attribute 'bad_attr'"
+    ):
+        op.numpy.bad_attr

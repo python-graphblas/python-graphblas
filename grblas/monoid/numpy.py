@@ -83,10 +83,11 @@ _monoid_identities = {
         "FP64": np.inf,  # or np.nan?
     },
 }
+__all__ = list(_monoid_identities)
 
 
 def __dir__():
-    return list(_monoid_identities)
+    return __all__
 
 
 def __getattr__(name):
