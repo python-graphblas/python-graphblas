@@ -3,7 +3,7 @@ from . import ffi
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import lookup_dtype
 from .exceptions import check_status
-from .expr import AmbiguousAssignOrExtract, Updater
+from .expr import AmbiguousAssignOrExtract, Updater, EwiseAddExpr, EwiseMultExpr, MatMulExpr
 from .mask import Mask
 from .ops import UNKNOWN_OPCLASS, find_opclass, get_typed_op
 from .unary import identity
@@ -175,6 +175,45 @@ class BaseType:
         if accum_arg is not None:
             accum = accum_arg
         return Updater(self, mask=mask, accum=accum, replace=replace, input_mask=input_mask)
+
+    def __or__(self, other):
+        if self._is_scalar:
+            return NotImplemented
+        return EwiseAddExpr(self, other)
+
+    def __ror__(self, other):
+        if self._is_scalar:
+            return NotImplemented
+        return EwiseAddExpr(other, self)
+
+    def __ior__(self, other):
+        raise TypeError("TODO")
+
+    def __and__(self, other):
+        if self._is_scalar:
+            return NotImplemented
+        return EwiseMultExpr(self, other)
+
+    def __rand__(self, other):
+        if self._is_scalar:
+            return NotImplemented
+        return EwiseMultExpr(other, self)
+
+    def __iand__(self, other):
+        raise TypeError("TODO")
+
+    def __matmul__(self, other):
+        if self._is_scalar:
+            return NotImplemented
+        return MatMulExpr(self, other)
+
+    def __rmatmul__(self, other):
+        if self._is_scalar:
+            return NotImplemented
+        return MatMulExpr(other, self)
+
+    def __imatmul__(self, other):
+        raise TypeError("TODO")
 
     def __eq__(self, other):
         raise TypeError(

@@ -288,3 +288,86 @@ class Updater:
 
     def __bool__(self):
         raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
+
+
+class InfixExprBase:
+    def __init__(self, left, right):
+        # Default init shared by ewise_add and ewise_mult
+        from .vector import Vector
+        from .matrix import Matrix, TransposedMatrix
+
+        left_type = type(left)
+        right_type = type(right)
+
+        if left_type in {Vector, Matrix, TransposedMatrix}:
+            if not (
+                left_type is right_type
+                or (left_type is Matrix and right_type is TransposedMatrix)
+                or (left_type is TransposedMatrix and right_type is Matrix)
+            ):
+                if left_type is Vector:
+                    left._expect_type(right, Vector, within=self._within, argname="right")
+                else:
+                    left._expect_type(
+                        right, (Matrix, TransposedMatrix), within=self._within, argname="right"
+                    )
+        elif right_type is Vector:
+            right._expect_type(left, Vector, within=self._within, argname="left")
+        elif right_type is Matrix or right_type is TransposedMatrix:
+            right._expect_type(
+                left, (Matrix, TransposedMatrix), within=self._within, argname="left"
+            )
+        else:
+            raise TypeError("TODO")
+
+        self.left = left
+        self.right = right
+
+    # TODO: __repr__ and _repr_html_
+
+
+class EwiseAddExpr(InfixExprBase):
+    _method = "ewise_add"
+    _within = "__or__"
+
+
+class EwiseMultExpr(InfixExprBase):
+    _method = "ewise_mult"
+    _within = "__and__"
+
+
+class MatMulExpr(InfixExprBase):
+    def __init__(self, left, right):
+        from .vector import Vector
+        from .matrix import Matrix, TransposedMatrix
+
+        left_type = type(left)
+        right_type = type(right)
+
+        if left_type is Vector:
+            if right_type is Matrix or right_type is TransposedMatrix:
+                self._method = "vxm"
+            else:
+                left._expect_type(
+                    right,
+                    (Matrix, TransposedMatrix),
+                    within="__matmul__",
+                    argname="right",
+                )
+        elif left_type is Matrix or left_type is TransposedMatrix:
+            if right_type is Vector:
+                self._method = "mxv"
+            elif right_type is Matrix or right_type is TransposedMatrix:
+                self._method = "mxm"
+            else:
+                left._expect_type(
+                    right,
+                    (Vector, Matrix, TransposedMatrix),
+                    within="__matmul__",
+                    argname="right",
+                )
+        else:
+            raise TypeError("TODO")
+
+        self.left = left
+        self.right = right

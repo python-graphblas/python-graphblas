@@ -2575,6 +2575,17 @@ class TransposedMatrix:
     reduce_columns = Matrix.reduce_columns
     reduce_scalar = Matrix.reduce_scalar
 
+    # Operator sugar
+    __or__ = Matrix.__or__
+    __ror__ = Matrix.__ror__
+    __ior__ = Matrix.__ior__
+    __and__ = Matrix.__and__
+    __rand__ = Matrix.__rand__
+    __iand__ = Matrix.__iand__
+    __matmul__ = Matrix.__matmul__
+    __rmatmul__ = Matrix.__rmatmul__
+    __imatmul__ = Matrix.__imatmul__
+
     # Misc.
     isequal = Matrix.isequal
     isclose = Matrix.isclose

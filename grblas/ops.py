@@ -8,6 +8,7 @@ from types import FunctionType, ModuleType
 from . import ffi, lib, unary, binary, monoid, semiring
 from .dtypes import lookup_dtype, unify, INT8, _sample_values, _supports_complex
 from .exceptions import UdfParseError, check_status_carg
+from .expr import InfixExprBase
 from .utils import libget
 
 ffi_new = ffi.new
@@ -22,6 +23,26 @@ class OpPath:
     def __init__(self, parent, name):
         self._parent = parent
         self._name = name
+
+
+def _call_op(op, left, right=None, **kwargs):
+    if right is None:
+        if isinstance(left, InfixExprBase):
+            # op(A & B), op(A | B), op(A @ B)
+            return getattr(left.left, left._method)(left.right, op, **kwargs)
+        else:
+            raise TypeError("TODO")
+
+    # op(A, 1) -> apply (or select once available)
+    from .vector import Vector
+    from .matrix import Matrix, TransposedMatrix
+
+    if type(left) in {Vector, Matrix, TransposedMatrix}:
+        return left.apply(op, right=right, **kwargs)
+    elif type(right) in {Vector, Matrix, TransposedMatrix}:
+        return right.apply(op, left=left, **kwargs)
+    else:
+        raise TypeError("TODO")
 
 
 class TypedOpBase:
@@ -46,17 +67,36 @@ class TypedOpBase:
 class TypedBuiltinUnaryOp(TypedOpBase):
     opclass = "UnaryOp"
 
+    def __call__(self, val):
+        try:
+            return val.apply(self)
+        except AttributeError:
+            raise TypeError("TODO")
+
 
 class TypedBuiltinBinaryOp(TypedOpBase):
     opclass = "BinaryOp"
+
+    def __call__(self, left, right=None, *, require_monoid=None):
+        if require_monoid is not None:
+            if right is not None:
+                1 / 0  # TODO: bad keyword when calling apply
+            return _call_op(self, left, require_monoid=require_monoid)
+        return _call_op(self, left, right)
 
 
 class TypedBuiltinMonoid(TypedOpBase):
     opclass = "Monoid"
 
+    def __call__(self, left, right=None):
+        return _call_op(self, left, right)
+
 
 class TypedBuiltinSemiring(TypedOpBase):
     opclass = "Semiring"
+
+    def __call__(self, left, right=None):
+        return _call_op(self, left, right)
 
 
 class TypedUserUnaryOp(TypedOpBase):
@@ -67,6 +107,8 @@ class TypedUserUnaryOp(TypedOpBase):
         self.orig_func = orig_func
         self.numba_func = numba_func
 
+    __call__ = TypedBuiltinUnaryOp.__call__
+
 
 class TypedUserBinaryOp(TypedOpBase):
     opclass = "BinaryOp"
@@ -75,6 +117,8 @@ class TypedUserBinaryOp(TypedOpBase):
         super().__init__(name, type_, return_type, gb_obj, f"{name}_{type_}")
         self.orig_func = orig_func
         self.numba_func = numba_func
+
+    __call__ = TypedBuiltinBinaryOp.__call__
 
 
 class TypedUserMonoid(TypedOpBase):
@@ -85,6 +129,8 @@ class TypedUserMonoid(TypedOpBase):
         self.binaryop = binaryop
         self.identity = identity
 
+    __call__ = TypedBuiltinMonoid.__call__
+
 
 class TypedUserSemiring(TypedOpBase):
     opclass = "Semiring"
@@ -93,6 +139,8 @@ class TypedUserSemiring(TypedOpBase):
         super().__init__(name, type_, return_type, gb_obj, f"{name}_{type_}")
         self.monoid = monoid
         self.binaryop = binaryop
+
+    __call__ = TypedBuiltinSemiring.__call__
 
 
 class ParameterizedUdf:
@@ -449,6 +497,8 @@ class UnaryOp(OpBase):
             unary_op = cls._build(name, func)
         setattr(module, funcname, unary_op)
 
+    __call__ = TypedBuiltinUnaryOp.__call__
+
 
 class BinaryOp(OpBase):
     _module = binary
@@ -641,6 +691,8 @@ class BinaryOp(OpBase):
 
         BinaryOp.register_new("isclose", isclose, parameterized=True)
 
+    __call__ = TypedBuiltinBinaryOp.__call__
+
 
 class Monoid(OpBase):
     _module = monoid
@@ -710,6 +762,8 @@ class Monoid(OpBase):
         else:
             monoid = cls._build(name, binaryop, identity)
         setattr(module, funcname, monoid)
+
+    __call__ = TypedBuiltinMonoid.__call__
 
 
 class Semiring(OpBase):
@@ -800,6 +854,8 @@ class Semiring(OpBase):
         else:
             semiring = cls._build(name, monoid, binaryop)
         setattr(module, funcname, semiring)
+
+    __call__ = TypedBuiltinSemiring.__call__
 
 
 def get_typed_op(op, dtype, dtype2=None):
