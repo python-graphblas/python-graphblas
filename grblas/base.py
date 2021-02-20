@@ -150,7 +150,9 @@ class BaseType:
                 accum_arg, opclass = find_opclass(arg)
                 if opclass == UNKNOWN_OPCLASS:
                     raise TypeError(f"Invalid item found in output params: {type(arg)}")
-                if opclass != "BinaryOp":
+                elif opclass == "Monoid":
+                    accum_arg = accum_arg.binaryop
+                elif opclass != "BinaryOp":
                     raise TypeError(f"accum must be a BinaryOp, not {opclass}")
         # Merge positional and keyword arguments
         if mask_arg is not None and mask is not None:
@@ -298,7 +300,10 @@ class BaseType:
         # Normalize accumulator
         if accum is not None:
             accum = get_typed_op(accum, self.dtype)
-            self._expect_op(accum, "BinaryOp", within="FIXME", keyword_name="accum")
+            if accum.opclass == "Monoid":
+                accum = accum.binaryop
+            else:
+                self._expect_op(accum, "BinaryOp", within="update", keyword_name="accum")
 
         # Get descriptor based on flags
         desc = descriptor_lookup(

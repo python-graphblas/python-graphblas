@@ -79,6 +79,9 @@ def test_from_values():
     assert C3.nvals == 2  # duplicates were combined
     assert C3.dtype == int
     assert C3[1, 1].value == 6  # 2*3
+    C3monoid = Matrix.from_values([0, 1, 1], [2, 1, 1], [1, 2, 3], nrows=10, dup_op=monoid.times)
+    assert C3.isequal(C3monoid)
+
     with pytest.raises(ValueError, match="Duplicate indices found"):
         # Duplicate indices requires a dup_op
         Matrix.from_values([0, 1, 1], [2, 1, 1], [True, True, True])
@@ -980,6 +983,13 @@ def test_apply_binary(A):
     with pytest.raises(TypeError, match="Cannot provide both"):
         A.apply(binary.plus, left=1, right=1)
 
+    # allow monoids
+    w1 = A.apply(binary.plus, left=1).new()
+    w2 = A.apply(monoid.plus, left=1).new()
+    w3 = A.apply(monoid.plus, right=1).new()
+    assert w1.isequal(w2)
+    assert w1.isequal(w3)
+
 
 def test_reduce_row(A):
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
@@ -996,6 +1006,10 @@ def test_reduce_column(A):
 def test_reduce_scalar(A):
     s = A.reduce_scalar(monoid.plus).new()
     assert s == 47
+    assert A.reduce_scalar(binary.plus).value == 47
+    with pytest.raises(TypeError, match="Expected type: Monoid"):
+        A.reduce_scalar(binary.minus)
+
     # test dtype coercion
     assert A.dtype == dtypes.INT64
     s = A.reduce_scalar().new(dtype=float)

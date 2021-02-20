@@ -211,7 +211,10 @@ class Vector(BaseType):
         if not dup_op_given:
             dup_op = binary.plus
         dup_op = get_typed_op(dup_op, self.dtype)
-        self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
+        if dup_op.opclass == "Monoid":
+            dup_op = dup_op.binaryop
+        else:
+            self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
 
         indices = _CArray(indices)
         values = _CArray(values, dtype=self.dtype)
@@ -317,7 +320,7 @@ class Vector(BaseType):
         method_name = "ewise_add"
         self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
-        if require_monoid:
+        if require_monoid and op.opclass == "BinaryOp" and op.monoid is None:
             self._expect_op(
                 op,
                 ("Monoid", "Semiring"),
@@ -420,13 +423,16 @@ class Vector(BaseType):
                         extra_message="Literal scalars also accepted.",
                     )
             op = get_typed_op(op, self.dtype, left.dtype)
-            self._expect_op(
-                op,
-                "BinaryOp",
-                within=method_name,
-                argname="op",
-                extra_message=extra_message,
-            )
+            if op.opclass == "Monoid":
+                op = op.binaryop
+            else:
+                self._expect_op(
+                    op,
+                    "BinaryOp",
+                    within=method_name,
+                    argname="op",
+                    extra_message=extra_message,
+                )
             cfunc_name = f"GrB_Vector_apply_BinaryOp1st_{left.dtype}"
             args = [_CScalar(left), self]
             expr_repr = "{1.name}.apply({op}, left={0})"
@@ -443,13 +449,16 @@ class Vector(BaseType):
                         extra_message="Literal scalars also accepted.",
                     )
             op = get_typed_op(op, self.dtype, right.dtype)
-            self._expect_op(
-                op,
-                "BinaryOp",
-                within=method_name,
-                argname="op",
-                extra_message=extra_message,
-            )
+            if op.opclass == "Monoid":
+                op = op.binaryop
+            else:
+                self._expect_op(
+                    op,
+                    "BinaryOp",
+                    within=method_name,
+                    argname="op",
+                    extra_message=extra_message,
+                )
             cfunc_name = f"GrB_Vector_apply_BinaryOp2nd_{right.dtype}"
             args = [self, _CScalar(right)]
             expr_repr = "{0.name}.apply({op}, right={1})"
@@ -472,7 +481,10 @@ class Vector(BaseType):
         """
         method_name = "reduce_scalar"
         op = get_typed_op(op, self.dtype)
-        self._expect_op(op, "Monoid", within=method_name, argname="op")
+        if op.opclass == "BinaryOp" and op.monoid is not None:
+            op = op.monoid
+        else:
+            self._expect_op(op, "Monoid", within=method_name, argname="op")
         return ScalarExpression(
             method_name,
             "GrB_Vector_reduce_{output_dtype}",

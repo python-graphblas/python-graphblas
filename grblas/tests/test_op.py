@@ -222,8 +222,10 @@ def test_monoid_parameterized():
 
     assert v.reduce(monoid).value == -1
     assert v.reduce(monoid(1)).value == 1
-    with pytest.raises(TypeError, match="BinaryOp"):
-        Vector.from_values([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=monoid)
+    # with pytest.raises(TypeError, match="BinaryOp"):  # NOW OKAY
+    w1 = Vector.from_values([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=monoid)
+    w2 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    assert w1.isequal(w2)
 
     # identity may be a value
     def logaddexp(base):
@@ -561,3 +563,68 @@ def test_op_namespace():
         AttributeError, match="module 'grblas.op.numpy' has no attribute 'bad_attr'"
     ):
         op.numpy.bad_attr
+
+
+def test_binaryop_attributes():
+    assert binary.plus[int].monoid is monoid.plus[int]
+    assert binary.minus[int].monoid is None
+    assert binary.plus.monoid is monoid.plus
+    assert binary.minus.monoid is None
+
+    assert binary.numpy.add[int].monoid is monoid.numpy.add[int]
+    assert binary.numpy.subtract[int].monoid is None
+    assert binary.numpy.add.monoid is monoid.numpy.add
+    assert binary.numpy.subtract.monoid is None
+
+    op = BinaryOp.register_anonymous(lambda x, y: x + y, name="plus")
+    assert op.monoid is None
+    assert op[int].monoid is None
+
+    assert binary.plus[int].parent is binary.plus
+    assert binary.numpy.add[int].parent is binary.numpy.add
+    assert op[int].parent is op
+
+
+def test_monoid_attributes():
+    assert monoid.plus[int].binaryop is binary.plus[int]
+    assert monoid.plus[int].identity == 0
+    assert monoid.plus.binaryop is binary.plus
+    assert monoid.plus.identities == {typ: 0 for typ in monoid.plus.types}
+
+    assert monoid.numpy.add[int].binaryop is binary.numpy.add[int]
+    assert monoid.numpy.add[int].identity == 0
+    assert monoid.numpy.add.binaryop is binary.numpy.add
+    assert monoid.numpy.add.identities == {typ: 0 for typ in monoid.numpy.add.types}
+
+    binop = BinaryOp.register_anonymous(lambda x, y: x + y, name="plus")
+    op = Monoid.register_anonymous(binop, 0, name="plus")
+    assert op.binaryop is binop
+    assert op[int].binaryop is binop[int]
+
+    assert monoid.plus[int].parent is monoid.plus
+    assert monoid.numpy.add[int].parent is monoid.numpy.add
+    assert op[int].parent is op
+
+
+def test_semiring_attributes():
+    assert semiring.min_plus[int].monoid is monoid.min[int]
+    assert semiring.min_plus[int].binaryop is binary.plus[int]
+    assert semiring.min_plus.monoid is monoid.min
+    assert semiring.min_plus.binaryop is binary.plus
+
+    assert semiring.numpy.add_subtract[int].monoid is monoid.numpy.add[int]
+    assert semiring.numpy.add_subtract[int].binaryop is binary.numpy.subtract[int]
+    assert semiring.numpy.add_subtract.monoid is monoid.numpy.add
+    assert semiring.numpy.add_subtract.binaryop is binary.numpy.subtract
+
+    binop = BinaryOp.register_anonymous(lambda x, y: x + y, name="plus")
+    mymonoid = Monoid.register_anonymous(binop, 0, name="plus")
+    op = Semiring.register_anonymous(mymonoid, binop, name="plus_plus")
+    assert op.binaryop is binop
+    assert op.binaryop[int] is binop[int]
+    assert op.monoid is mymonoid
+    assert op.monoid[int] is mymonoid[int]
+
+    assert semiring.min_plus[int].parent is semiring.min_plus
+    assert semiring.numpy.add_subtract[int].parent is semiring.numpy.add_subtract
+    assert op[int].parent is op
