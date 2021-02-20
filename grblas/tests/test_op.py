@@ -3,9 +3,9 @@ import numpy as np
 import grblas
 from grblas import lib
 from grblas import unary, binary, monoid, semiring
-from grblas import dtypes, ops, exceptions
+from grblas import dtypes, operator, exceptions
 from grblas import Vector, Matrix
-from grblas.ops import UnaryOp, BinaryOp, Monoid, Semiring
+from grblas.operator import UnaryOp, BinaryOp, Monoid, Semiring
 
 
 def test_op_repr():
@@ -41,36 +41,36 @@ def test_semiring():
 
 
 def test_find_opclass_unaryop():
-    assert ops.find_opclass(unary.minv)[1] == "UnaryOp"
-    # assert ops.find_opclass(lib.GrB_MINV_INT64)[1] == 'UnaryOp'
+    assert operator.find_opclass(unary.minv)[1] == "UnaryOp"
+    # assert operator.find_opclass(lib.GrB_MINV_INT64)[1] == 'UnaryOp'
 
 
 def test_find_opclass_binaryop():
-    assert ops.find_opclass(binary.times)[1] == "BinaryOp"
-    # assert ops.find_opclass(lib.GrB_TIMES_INT64)[1] == 'BinaryOp'
+    assert operator.find_opclass(binary.times)[1] == "BinaryOp"
+    # assert operator.find_opclass(lib.GrB_TIMES_INT64)[1] == 'BinaryOp'
 
 
 def test_find_opclass_monoid():
-    assert ops.find_opclass(monoid.max)[1] == "Monoid"
-    # assert ops.find_opclass(lib.GxB_MAX_INT64_MONOID)[1] == 'Monoid'
+    assert operator.find_opclass(monoid.max)[1] == "Monoid"
+    # assert operator.find_opclass(lib.GxB_MAX_INT64_MONOID)[1] == 'Monoid'
 
 
 def test_find_opclass_semiring():
-    assert ops.find_opclass(semiring.plus_plus)[1] == "Semiring"
-    # assert ops.find_opclass(lib.GxB_PLUS_PLUS_INT64)[1] == 'Semiring'
+    assert operator.find_opclass(semiring.plus_plus)[1] == "Semiring"
+    # assert operator.find_opclass(lib.GxB_PLUS_PLUS_INT64)[1] == 'Semiring'
 
 
 def test_find_opclass_invalid():
-    assert ops.find_opclass("foobar")[1] == ops.UNKNOWN_OPCLASS
-    # assert ops.find_opclass(lib.GrB_INP0)[1] == ops.UNKNOWN_OPCLASS
+    assert operator.find_opclass("foobar")[1] == operator.UNKNOWN_OPCLASS
+    # assert operator.find_opclass(lib.GrB_INP0)[1] == operator.UNKNOWN_OPCLASS
 
 
 def test_get_typed_op():
-    assert ops.get_typed_op(binary.bor, dtypes.INT64) is binary.bor[dtypes.INT64]
+    assert operator.get_typed_op(binary.bor, dtypes.INT64) is binary.bor[dtypes.INT64]
     with pytest.raises(KeyError, match="bor does not work with FP64"):
-        ops.get_typed_op(binary.bor, dtypes.FP64)
+        operator.get_typed_op(binary.bor, dtypes.FP64)
     with pytest.raises(TypeError, match="Unable to get typed operator"):
-        ops.get_typed_op(object(), dtypes.INT64)
+        operator.get_typed_op(object(), dtypes.INT64)
 
 
 def test_unaryop_udf():
@@ -205,7 +205,7 @@ def test_monoid_parameterized():
     with pytest.raises(ValueError, match="Signatures"):
         Monoid.register_anonymous(bin_op, lambda y=0: -y)  # pragma: no cover
     with pytest.raises(TypeError, match="binaryop must be parameterized"):
-        ops.ParameterizedMonoid("bad_monoid", binary.plus, 0)
+        operator.ParameterizedMonoid("bad_monoid", binary.plus, 0)
 
     def plus_plus_x_identity(x=0):
         return -x
@@ -334,11 +334,11 @@ def test_semiring_parameterized():
     with pytest.raises(TypeError, match="must be a BinaryOp"):
         Semiring.register_anonymous(monoid.plus, monoid.plus)
     with pytest.raises(TypeError, match="At least one of"):
-        ops.ParameterizedSemiring("bad_semiring", monoid.plus, binary.plus)
+        operator.ParameterizedSemiring("bad_semiring", monoid.plus, binary.plus)
     with pytest.raises(TypeError, match="monoid must be of type"):
-        ops.ParameterizedSemiring("bad_semiring", binary.plus, binary.plus)
+        operator.ParameterizedSemiring("bad_semiring", binary.plus, binary.plus)
     with pytest.raises(TypeError, match="binaryop must be of"):
-        ops.ParameterizedSemiring("bad_semiring", monoid.plus, monoid.plus)
+        operator.ParameterizedSemiring("bad_semiring", monoid.plus, monoid.plus)
 
     # While we're here, let's check misc Matrix operations
     Adup = Matrix.from_values([0, 0, 0, 1, 1], [0, 0, 1, 0, 1], [100, 1, 2, 3, 4], dup_op=bin_op)
@@ -500,7 +500,7 @@ def test_nested_names():
 
     UnaryOp.register_new("incrementers.plus_three", plus_three)
     assert hasattr(unary, "incrementers")
-    assert type(unary.incrementers) is ops.OpPath
+    assert type(unary.incrementers) is operator.OpPath
     assert hasattr(unary.incrementers, "plus_three")
     comp_set = {
         "INT8",

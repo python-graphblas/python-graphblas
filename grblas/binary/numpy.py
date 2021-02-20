@@ -6,7 +6,7 @@ https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operat
 
 """
 import numpy as np
-from .. import ops
+from .. import operator
 
 _binary_names = {
     # Math operations
@@ -63,5 +63,5 @@ def __getattr__(name):
     if name not in _binary_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     numpy_func = getattr(np, name)
-    ops.BinaryOp.register_new(f"numpy.{name}", lambda x, y: numpy_func(x, y))
+    operator.BinaryOp.register_new(f"numpy.{name}", lambda x, y: numpy_func(x, y))
     return globals()[name]

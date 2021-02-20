@@ -5,7 +5,7 @@ from .dtypes import lookup_dtype
 from .exceptions import check_status
 from .expr import AmbiguousAssignOrExtract, Updater
 from .mask import Mask
-from .ops import UNKNOWN_OPCLASS, find_opclass, get_typed_op
+from .operator import UNKNOWN_OPCLASS, find_opclass, get_typed_op
 from .unary import identity
 from .utils import libget, _Pointer
 

@@ -6,7 +6,7 @@ from .dtypes import lookup_dtype, unify, _INDEX
 from .exceptions import check_status, check_status_carg, NoValue
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
-from .ops import get_typed_op
+from .operator import get_typed_op
 from .vector import Vector, VectorExpression
 from .scalar import Scalar, ScalarExpression, _CScalar
 from .utils import get_shape, ints_to_numpy_buffer, values_to_numpy_buffer, _CArray, _Pointer

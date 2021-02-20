@@ -26,7 +26,7 @@ def test_bool_doesnt_get_too_large():
     x, y = z.to_values()
     np.testing.assert_array_equal(y, (True, True, True, False))
 
-    op = grblas.ops.UnaryOp.register_anonymous(lambda x: np.add(x, x))
+    op = grblas.operator.UnaryOp.register_anonymous(lambda x: np.add(x, x))
     z = a.apply(op).new()
     x, y = z.to_values()
     np.testing.assert_array_equal(y, (True, False, True, False))
@@ -239,7 +239,7 @@ def test_npsemiring():
         monoid = getattr(npmonoid, monoid_name)
         binary = getattr(npbinary, binary_name)
         name = monoid.name.split(".")[-1] + "_" + binary.name.split(".")[-1]
-        semiring = grblas.ops.Semiring.register_anonymous(monoid, binary, name)
+        semiring = grblas.operator.Semiring.register_anonymous(monoid, binary, name)
         if len(semiring.types) == 0:
             assert not hasattr(npsemiring, semiring.name), name
         else:

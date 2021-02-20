@@ -6,7 +6,7 @@ https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operat
 
 """
 import numpy as np
-from .. import ops
+from .. import operator
 
 _unary_names = {
     # Math operations
@@ -71,10 +71,10 @@ def __getattr__(name):
     if name not in _unary_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     numpy_func = getattr(np, name)
-    ops.UnaryOp.register_new(f"numpy.{name}", lambda x: numpy_func(x))
+    operator.UnaryOp.register_new(f"numpy.{name}", lambda x: numpy_func(x))
     rv = globals()[name]
     if name == "reciprocal":
         # numba doesn't match numpy here
-        op = ops.UnaryOp.register_anonymous(lambda x: 1 if x else 0)
+        op = operator.UnaryOp.register_anonymous(lambda x: 1 if x else 0)
         rv._add(op["BOOL"])
     return rv
