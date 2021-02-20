@@ -289,9 +289,8 @@ def test_semiring_parameterized():
     B = A.mxm(A, mysemiring(1)).new()  # three extra pluses
     assert B.isequal(Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [10, 12, 14, 16]))
 
-    B = A.ewise_add(A, mysemiring).new()
-    assert B.isequal(A.ewise_add(A, semiring.plus_plus).new())
-    assert B.isequal(A.ewise_mult(A, mysemiring).new())
+    with pytest.raises(TypeError, match="Expected type: Monoid"):
+        A.ewise_add(A, mysemiring)
 
     # mismatched signatures.
     def other_binary(y=0):  # pragma: no cover

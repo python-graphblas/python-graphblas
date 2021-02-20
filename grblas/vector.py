@@ -320,18 +320,17 @@ class Vector(BaseType):
         method_name = "ewise_add"
         self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
-        if require_monoid and op.opclass == "BinaryOp" and op.monoid is None:
-            self._expect_op(
-                op,
-                ("Monoid", "Semiring"),
-                within=method_name,
-                argname="op",
-                extra_message="A BinaryOp may be given if require_monoid keyword is False",
-            )
+        if require_monoid:
+            if op.opclass != "BinaryOp" or op.monoid is None:
+                self._expect_op(
+                    op,
+                    "Monoid",
+                    within=method_name,
+                    argname="op",
+                    extra_message="A BinaryOp may be given if require_monoid keyword is False",
+                )
         else:
-            self._expect_op(
-                op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op"
-            )
+            self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         expr = VectorExpression(
             method_name,
             f"GrB_Vector_eWiseAdd_{op.opclass}",
@@ -352,7 +351,7 @@ class Vector(BaseType):
         method_name = "ewise_add"
         self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
-        self._expect_op(op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op")
+        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         expr = VectorExpression(
             method_name,
             f"GrB_Vector_eWiseMult_{op.opclass}",

@@ -279,8 +279,8 @@ def test_ewise_mult(v):
     assert w.isequal(result)
     w << v.ewise_mult(v2, monoid.times)
     assert w.isequal(result)
-    w.update(v.ewise_mult(v2, semiring.plus_times))
-    assert w.isequal(result)
+    with pytest.raises(TypeError, match="Expected type: BinaryOp, Monoid"):
+        v.ewise_mult(v2, semiring.plus_times)
 
 
 def test_ewise_mult_change_dtype(v):
@@ -314,8 +314,8 @@ def test_ewise_add(v):
     assert w.isequal(result)
     w.update(v.ewise_add(v2, monoid.max))
     assert w.isequal(result)
-    w << v.ewise_add(v2, semiring.max_times)
-    assert w.isequal(result)
+    with pytest.raises(TypeError, match="Expected type: Monoid"):
+        v.ewise_add(v2, semiring.max_times)
     # default is plus
     w = v.ewise_add(v2).new()
     result = v.ewise_add(v2, monoid.plus).new()

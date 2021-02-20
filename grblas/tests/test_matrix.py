@@ -307,8 +307,8 @@ def test_ewise_mult(A):
     assert C.isequal(result)
     C() << A.ewise_mult(B, monoid.times)
     assert C.isequal(result)
-    C << A.ewise_mult(B, semiring.plus_times)
-    assert C.isequal(result)
+    with pytest.raises(TypeError, match="Expected type: BinaryOp, Monoid"):
+        A.ewise_mult(B, semiring.plus_times)
 
 
 def test_ewise_add(A):
@@ -327,8 +327,8 @@ def test_ewise_add(A):
     assert C.isequal(result)
     C << A.ewise_add(B, monoid.max)
     assert C.isequal(result)
-    C << A.ewise_add(B, semiring.max_minus)
-    assert C.isequal(result)
+    with pytest.raises(TypeError, match="Expected type: Monoid"):
+        A.ewise_add(B, semiring.max_minus)
 
 
 def test_extract(A):
