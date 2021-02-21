@@ -516,6 +516,8 @@ def test_apply(v):
     result = Vector.from_values([1, 3, 4, 6], [-1, -1, -2, 0])
     w = v.apply(unary.ainv).new()
     assert w.isequal(result)
+    with pytest.raises(TypeError, match="apply only accepts UnaryOp with no scalars or BinaryOp"):
+        v.apply(semiring.min_plus)
 
 
 def test_apply_binary(v):
