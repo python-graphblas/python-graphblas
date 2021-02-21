@@ -1,11 +1,9 @@
 from ..unary import numpy as _np_unary
 from ..binary import numpy as _np_binary
-from ..monoid import numpy as _np_monoid
 from ..semiring import numpy as _np_semiring
 
 _op_to_mod = dict.fromkeys(_np_unary.__all__, _np_unary)
 _op_to_mod.update(dict.fromkeys(_np_binary.__all__, _np_binary))
-_op_to_mod.update(dict.fromkeys(_np_monoid.__all__, _np_monoid))
 _op_to_mod.update(dict.fromkeys(_np_semiring.__all__, _np_semiring))
 __all__ = list(_op_to_mod)
 

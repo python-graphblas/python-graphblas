@@ -548,12 +548,12 @@ def test_op_namespace():
 
     assert op.abs is unary.abs
     assert op.minus is binary.minus
-    assert op.plus is monoid.plus
+    assert op.plus is binary.plus
     assert op.plus_times is semiring.plus_times
 
     assert op.numpy.fabs is unary.numpy.fabs
     assert op.numpy.subtract is binary.numpy.subtract
-    assert op.numpy.add is monoid.numpy.add
+    assert op.numpy.add is binary.numpy.add
     assert op.numpy.add_add is semiring.numpy.add_add
     assert len(dir(op)) > 300
     assert len(dir(op.numpy)) > 500
@@ -632,3 +632,8 @@ def test_semiring_attributes():
     assert semiring.min_plus[int].parent is semiring.min_plus
     assert semiring.numpy.add_subtract[int].parent is semiring.numpy.add_subtract
     assert op[int].parent is op
+
+
+def test_binaryop_superset_monoids():
+    assert len(set(dir(monoid)) - set(dir(binary))) == 0
+    assert len(set(dir(monoid.numpy)) - set(dir(binary.numpy))) == 0
