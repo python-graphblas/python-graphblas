@@ -115,7 +115,8 @@ class TypedUserBinaryOp(TypedOpBase):
     def monoid(self):
         if self._monoid is None and not self.parent._anonymous:
             monoid = Monoid._find(self.name)
-            if monoid is not None:
+            if monoid is not None:  # pragma: no cover
+                # This is used by grblas.binary.numpy objects
                 self._monoid = monoid[self.type]
         return self._monoid
 

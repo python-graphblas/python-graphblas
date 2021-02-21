@@ -327,6 +327,8 @@ def test_ewise_add(A):
     assert C.isequal(result)
     C << A.ewise_add(B, monoid.max)
     assert C.isequal(result)
+    C << A.ewise_add(B, binary.max)
+    assert C.isequal(result)
     with pytest.raises(TypeError, match="Expected type: Monoid"):
         A.ewise_add(B, semiring.max_minus)
 
@@ -995,12 +997,16 @@ def test_reduce_row(A):
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
     w = A.reduce_rows(monoid.plus).new()
     assert w.isequal(result)
+    w2 = A.reduce_rows(binary.plus).new()
+    assert w2.isequal(result)
 
 
 def test_reduce_column(A):
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 9, 10, 11, 8, 4])
     w = A.reduce_columns(monoid.plus).new()
     assert w.isequal(result)
+    w2 = A.reduce_columns(binary.plus).new()
+    assert w2.isequal(result)
 
 
 def test_reduce_scalar(A):

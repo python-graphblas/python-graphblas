@@ -637,12 +637,13 @@ def test_binary_op(v):
 
 def test_accum_must_be_binaryop(v):
     # THIS IS NOW OKAY
-    # with pytest.raises(TypeError):
     w1 = v.dup()
     w1(accum=monoid.plus) << v.ewise_mult(v)
     w2 = v.dup()
     w2(accum=binary.plus) << v.ewise_mult(v)
     assert w1.isequal(w2)
+    with pytest.raises(TypeError, match="Expected type: BinaryOp"):
+        v(accum=semiring.min_plus)
 
 
 def test_mask_must_be_value_or_structure(v):

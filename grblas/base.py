@@ -150,10 +150,6 @@ class BaseType:
                 accum_arg, opclass = find_opclass(arg)
                 if opclass == UNKNOWN_OPCLASS:
                     raise TypeError(f"Invalid item found in output params: {type(arg)}")
-                elif opclass == "Monoid":
-                    accum_arg = accum_arg.binaryop
-                elif opclass != "BinaryOp":
-                    raise TypeError(f"accum must be a BinaryOp, not {opclass}")
         # Merge positional and keyword arguments
         if mask_arg is not None and mask is not None:
             raise TypeError("Got multiple values for argument 'mask'")
@@ -172,10 +168,17 @@ class BaseType:
             raise TypeError("mask and input_mask arguments cannot both be given")
         else:
             _check_mask(mask)
-        if accum_arg is not None and accum is not None:
-            raise TypeError("Got multiple values for argument 'accum'")
         if accum_arg is not None:
+            if accum is not None:
+                raise TypeError("Got multiple values for argument 'accum'")
             accum = accum_arg
+        if accum is not None:
+            # Normalize accumulator
+            accum = get_typed_op(accum, self.dtype)
+            if accum.opclass == "Monoid":
+                accum = accum.binaryop
+            else:
+                self._expect_op(accum, "BinaryOp", within="__call__", keyword_name="accum")
         return Updater(self, mask=mask, accum=accum, replace=replace, input_mask=input_mask)
 
     def __eq__(self, other):
@@ -296,14 +299,6 @@ class BaseType:
             _check_mask(mask, self)
             complement = mask.complement
             structure = mask.structure
-
-        # Normalize accumulator
-        if accum is not None:
-            accum = get_typed_op(accum, self.dtype)
-            if accum.opclass == "Monoid":
-                accum = accum.binaryop
-            else:
-                self._expect_op(accum, "BinaryOp", within="update", keyword_name="accum")
 
         # Get descriptor based on flags
         desc = descriptor_lookup(

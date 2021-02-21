@@ -320,6 +320,7 @@ class Vector(BaseType):
         method_name = "ewise_add"
         self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
+        # Per the spec, op may be a semiring, but this is weird, so don't.
         if require_monoid:
             if op.opclass != "BinaryOp" or op.monoid is None:
                 self._expect_op(
@@ -351,6 +352,7 @@ class Vector(BaseType):
         method_name = "ewise_add"
         self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
+        # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         expr = VectorExpression(
             method_name,
