@@ -236,8 +236,8 @@ def test_monoid_parameterized():
 
     fv = v.apply(unary.identity).new(dtype=dtypes.FP64)
     bin_op = BinaryOp.register_anonymous(logaddexp, parameterized=True)
-    Monoid.register_new("user_defined_monoid", bin_op, -np.inf)
-    monoid = grblas.monoid.user_defined_monoid
+    Monoid.register_new("_user_defined_monoid", bin_op, -np.inf)
+    monoid = grblas.monoid._user_defined_monoid
     fv2 = fv.ewise_mult(fv, monoid(2)).new()
     plus1 = UnaryOp.register_anonymous(lambda x: x + 1)
     expected = fv.apply(plus1).new()
