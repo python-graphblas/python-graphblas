@@ -635,5 +635,8 @@ def test_semiring_attributes():
 
 
 def test_binaryop_superset_monoids():
-    assert len(set(dir(monoid)) - set(dir(binary))) == 0
+    monoid_names = {x for x in dir(monoid) if not x.startswith("_")}
+    binary_names = {x for x in dir(binary) if not x.startswith("_")}
+    diff = monoid_names - binary_names
+    assert len(diff) == 0
     assert len(set(dir(monoid.numpy)) - set(dir(binary.numpy))) == 0
