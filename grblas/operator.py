@@ -54,9 +54,8 @@ class TypedBuiltinBinaryOp(TypedOpBase):
     @property
     def monoid(self):
         rv = getattr(monoid, self.name, None)
-        if rv is not None:
-            rv = rv[self.type]
-        return rv
+        if rv is not None and self.type in rv._typed_ops:
+            return rv[self.type]
 
 
 class TypedBuiltinMonoid(TypedOpBase):
@@ -115,8 +114,8 @@ class TypedUserBinaryOp(TypedOpBase):
     def monoid(self):
         if self._monoid is None and not self.parent._anonymous:
             monoid = Monoid._find(self.name)
-            if monoid is not None:  # pragma: no cover
-                # This is used by grblas.binary.numpy objects
+            if monoid is not None and self.type in monoid._typed_ops:  # pragma: no cover
+                # This may be used by grblas.binary.numpy objects
                 self._monoid = monoid[self.type]
         return self._monoid
 

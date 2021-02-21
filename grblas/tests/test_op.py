@@ -583,6 +583,11 @@ def test_binaryop_attributes():
     assert binary.numpy.add[int].parent is binary.numpy.add
     assert op[int].parent is op
 
+    # bad type
+    assert binary.plus[bool].monoid is None
+    assert binary.numpy.equal[int].monoid is None
+    assert binary.numpy.equal[bool].monoid is monoid.numpy.equal[bool]  # sanity
+
 
 def test_monoid_attributes():
     assert monoid.plus[int].binaryop is binary.plus[int]

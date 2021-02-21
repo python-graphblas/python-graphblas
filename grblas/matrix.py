@@ -585,9 +585,6 @@ class Matrix(BaseType):
         method_name = "reduce_rows"
         op = get_typed_op(op, self.dtype)
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
-        # using a monoid may be more efficient, so change to one if possible
-        if op.opclass == "BinaryOp" and op.monoid is not None:
-            op = op.monoid
         return VectorExpression(
             method_name,
             f"GrB_Matrix_reduce_{op.opclass}",
@@ -606,9 +603,6 @@ class Matrix(BaseType):
         method_name = "reduce_columns"
         op = get_typed_op(op, self.dtype)
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
-        # using a monoid may be more efficient, so change to one if possible
-        if op.opclass == "BinaryOp" and op.monoid is not None:
-            op = op.monoid
         return VectorExpression(
             method_name,
             f"GrB_Matrix_reduce_{op.opclass}",
