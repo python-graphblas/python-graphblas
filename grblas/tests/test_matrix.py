@@ -5,7 +5,13 @@ import numpy as np
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
-from grblas.exceptions import IndexOutOfBound, DimensionMismatch, OutputNotEmpty, InvalidValue
+from grblas.exceptions import (
+    IndexOutOfBound,
+    DimensionMismatch,
+    OutputNotEmpty,
+    InvalidValue,
+    DomainMismatch,
+)
 
 
 @pytest.fixture
@@ -998,6 +1004,20 @@ def test_reduce_row(A):
     w = A.reduce_rows(monoid.plus).new()
     assert w.isequal(result)
     w2 = A.reduce_rows(binary.plus).new()
+    assert w2.isequal(result)
+
+
+def test_reduce_row_udf(A):
+    result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
+    binop = grblas.operator.BinaryOp.register_anonymous(lambda x, y: x + y)
+    with pytest.raises(DomainMismatch):
+        # Although allowed by the spec, SuiteSparse doesn't like user-defined binarops here
+        A.reduce_rows(binop).new()
+    # If the user creates a monoid from the binop, then we can use the monoid instead
+    monoid = grblas.operator.Monoid.register_anonymous(binop, 0)
+    w = A.reduce_rows(binop).new()
+    assert w.isequal(result)
+    w2 = A.reduce_rows(monoid).new()
     assert w2.isequal(result)
 
 
