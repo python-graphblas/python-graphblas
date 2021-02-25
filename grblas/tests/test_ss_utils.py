@@ -1,6 +1,6 @@
+import numpy as np
 from numpy.testing import assert_array_equal
 from grblas import Matrix, Vector
-from grblas._ss_utils import vector_head, matrix_head
 
 
 def test_vector_head():
@@ -12,22 +12,32 @@ def test_vector_head():
     assert v2.ss.export()["format"] == "bitmap"
     assert v3.ss.export()["format"] == "sparse"
 
-    for _ in range(2):
-        indices, vals = vector_head(v0, 2, sort=True)
-        assert_array_equal(indices, [])
-        assert_array_equal(vals, [])
+    for dtype in [None, np.float64]:
+        expected_dtype = np.int64 if dtype is None else dtype
+        for _ in range(2):
+            indices, vals = v0.ss.head(2, sort=True, dtype=dtype)
+            assert_array_equal(indices, [])
+            assert_array_equal(vals, [])
+            assert indices.dtype == np.uint64
+            assert vals.dtype == expected_dtype
 
-        indices, vals = vector_head(v1, 2, sort=True)
-        assert_array_equal(indices, [0, 1])
-        assert_array_equal(vals, [10, 20])
+            indices, vals = v1.ss.head(2, sort=True, dtype=dtype)
+            assert_array_equal(indices, [0, 1])
+            assert_array_equal(vals, [10, 20])
+            assert indices.dtype == np.uint64
+            assert vals.dtype == expected_dtype
 
-        indices, vals = vector_head(v2, 2, sort=True)
-        assert_array_equal(indices, [1, 3])
-        assert_array_equal(vals, [2, 4])
+            indices, vals = v2.ss.head(2, sort=True, dtype=dtype)
+            assert_array_equal(indices, [1, 3])
+            assert_array_equal(vals, [2, 4])
+            assert indices.dtype == np.uint64
+            assert vals.dtype == expected_dtype
 
-        indices, vals = vector_head(v3, 2, sort=True)
-        assert_array_equal(indices, [100, 200])
-        assert_array_equal(vals, [1, 2])
+            indices, vals = v3.ss.head(2, sort=True, dtype=dtype)
+            assert_array_equal(indices, [100, 200])
+            assert_array_equal(vals, [1, 2])
+            assert indices.dtype == np.uint64
+            assert vals.dtype == expected_dtype
 
 
 def test_matrix_head():
@@ -63,48 +73,68 @@ def test_matrix_head():
     del d["rows"]
     A8 = Matrix.ss.import_any(**d)  # hypercsc
 
-    for _ in range(2):
-        rows, cols, vals = matrix_head(A0, 2, sort=True)
-        assert_array_equal(rows, [])
-        assert_array_equal(cols, [])
-        assert_array_equal(vals, [])
+    for dtype in [None, np.float64]:
+        expected_dtype = np.int64 if dtype is None else dtype
+        for _ in range(2):
+            rows, cols, vals = A0.ss.head(2, sort=True, dtype=dtype)
+            assert_array_equal(rows, [])
+            assert_array_equal(cols, [])
+            assert_array_equal(vals, [])
+            assert rows.dtype == cols.dtype == np.uint64
+            assert vals.dtype == expected_dtype
 
-        rows, cols, vals = matrix_head(A1, 2, sort=True)
-        assert_array_equal(rows, [0, 0])
-        assert_array_equal(cols, [0, 1])
-        assert_array_equal(vals, [1, 2])
+            rows, cols, vals = A1.ss.head(2, sort=True, dtype=dtype)
+            assert_array_equal(rows, [0, 0])
+            assert_array_equal(cols, [0, 1])
+            assert_array_equal(vals, [1, 2])
+            assert rows.dtype == cols.dtype == np.uint64
+            assert vals.dtype == expected_dtype
 
-        rows, cols, vals = matrix_head(A2, 2, sort=True)
-        assert_array_equal(rows, [0, 0])
-        assert_array_equal(cols, [0, 1])
-        assert_array_equal(vals, [1, 2])
+            rows, cols, vals = A2.ss.head(2, sort=True, dtype=dtype)
+            assert_array_equal(rows, [0, 0])
+            assert_array_equal(cols, [0, 1])
+            assert_array_equal(vals, [1, 2])
+            assert rows.dtype == cols.dtype == np.uint64
+            assert vals.dtype == expected_dtype
 
-        rows, cols, vals = matrix_head(A3, 2, sort=True)
-        assert_array_equal(rows, [5, 5])
-        assert_array_equal(cols, [4, 5])
-        assert_array_equal(vals, [1, 2])
+            rows, cols, vals = A3.ss.head(2, sort=True, dtype=dtype)
+            assert_array_equal(rows, [5, 5])
+            assert_array_equal(cols, [4, 5])
+            assert_array_equal(vals, [1, 2])
+            assert rows.dtype == cols.dtype == np.uint64
+            assert vals.dtype == expected_dtype
 
-        rows, cols, vals = matrix_head(A4, 2, sort=True)
-        assert_array_equal(rows, [500, 500])
-        assert_array_equal(cols, [400, 500])
-        assert_array_equal(vals, [1, 2])
+            rows, cols, vals = A4.ss.head(2, sort=True, dtype=dtype)
+            assert_array_equal(rows, [500, 500])
+            assert_array_equal(cols, [400, 500])
+            assert_array_equal(vals, [1, 2])
+            assert rows.dtype == cols.dtype == np.uint64
+            assert vals.dtype == expected_dtype
 
-        rows, cols, vals = matrix_head(A5, 2, sort=True)
-        assert_array_equal(rows, [0, 1])
-        assert_array_equal(cols, [0, 0])
-        assert_array_equal(vals, [1, 2])
+            rows, cols, vals = A5.ss.head(2, sort=True, dtype=dtype)
+            assert_array_equal(rows, [0, 1])
+            assert_array_equal(cols, [0, 0])
+            assert_array_equal(vals, [1, 2])
+            assert rows.dtype == cols.dtype == np.uint64
+            assert vals.dtype == expected_dtype
 
-        rows, cols, vals = matrix_head(A6, 2, sort=True)
-        assert_array_equal(rows, [0, 1])
-        assert_array_equal(cols, [0, 0])
-        assert_array_equal(vals, [1, 2])
+            rows, cols, vals = A6.ss.head(2, sort=True, dtype=dtype)
+            assert_array_equal(rows, [0, 1])
+            assert_array_equal(cols, [0, 0])
+            assert_array_equal(vals, [1, 2])
+            assert rows.dtype == cols.dtype == np.uint64
+            assert vals.dtype == expected_dtype
 
-        rows, cols, vals = matrix_head(A7, 2, sort=True)
-        assert_array_equal(rows, [4, 5])
-        assert_array_equal(cols, [5, 5])
-        assert_array_equal(vals, [1, 2])
+            rows, cols, vals = A7.ss.head(2, sort=True, dtype=dtype)
+            assert_array_equal(rows, [4, 5])
+            assert_array_equal(cols, [5, 5])
+            assert_array_equal(vals, [1, 2])
+            assert rows.dtype == cols.dtype == np.uint64
+            assert vals.dtype == expected_dtype
 
-        rows, cols, vals = matrix_head(A8, 2, sort=True)
-        assert_array_equal(rows, [400, 500])
-        assert_array_equal(cols, [500, 500])
-        assert_array_equal(vals, [1, 2])
+            rows, cols, vals = A8.ss.head(2, sort=True, dtype=dtype)
+            assert_array_equal(rows, [400, 500])
+            assert_array_equal(cols, [500, 500])
+            assert_array_equal(vals, [1, 2])
+            assert rows.dtype == cols.dtype == np.uint64
+            assert vals.dtype == expected_dtype
