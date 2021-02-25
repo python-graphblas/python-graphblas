@@ -51,7 +51,7 @@ def vector_head(vector, n=10, *, sort=False, dtype=None):
             raise RuntimeError(f"Invalid format: {fmt}")
     finally:
         rebuilt = gb.Vector.ss.import_any(take_ownership=True, name="", **d)
-        # We need to set rebuild.gb_obj to NULL so it doesn't get deleted early, so might
+        # We need to set rebuilt.gb_obj to NULL so it doesn't get deleted early, so might
         # as well do a swap, b/c vector.gb_obj is already "destroyed" from the export.
         vector.gb_obj, rebuilt.gb_obj = rebuilt.gb_obj, vector.gb_obj
     return indices, vals
@@ -186,7 +186,7 @@ def matrix_head(matrix, n=10, *, sort=False, dtype=None):
             raise RuntimeError(f"Invalid format: {fmt}")
     finally:
         rebuilt = gb.Matrix.ss.import_any(take_ownership=True, name="", **d)
-        # We need to set rebuild.gb_obj to NULL so it doesn't get deleted early, so might
+        # We need to set rebuilt.gb_obj to NULL so it doesn't get deleted early, so might
         # as well do a swap, b/c matrix.gb_obj is already "destroyed" from the export.
         matrix.gb_obj, rebuilt.gb_obj = rebuilt.gb_obj, matrix.gb_obj
     return rows, cols, vals
