@@ -470,7 +470,7 @@ def test_subassign(A):
     # It may be nice for these to also raise
     v[[0, 1]](A.S)
     v[0](m.S)
-    v[0](replace=True)
+    v[0](v.S, replace=True)
 
 
 def test_assign_scalar_with_mask():

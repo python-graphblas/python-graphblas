@@ -161,7 +161,13 @@ class BaseType:
             mask = mask_arg
         if mask is None:
             if input_mask is None:
-                pass
+                if replace:
+                    if self._is_scalar:
+                        raise TypeError(
+                            "'replace' argument may not be True for Scalar (replace may only be "
+                            "True when a mask is provided, and masks aren't allowed for Scalars)."
+                        )
+                    raise TypeError("'replace' argument may only be True if a mask is provided")
             elif self._is_scalar:
                 raise TypeError("input_mask not allowed for Scalars")
             else:
