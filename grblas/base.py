@@ -1,5 +1,5 @@
 from contextvars import ContextVar
-from . import ffi
+from . import ffi, replace as replace_singleton
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import lookup_dtype
 from .exceptions import check_status
@@ -132,13 +132,15 @@ class BaseType:
         self.name = name
 
     def __call__(
-        self, *optional_mask_and_accum, mask=None, accum=None, replace=False, input_mask=None
+        self, *optional_mask_accum_replace, mask=None, accum=None, replace=False, input_mask=None
     ):
         # Pick out mask and accum from positional arguments
         mask_arg = None
         accum_arg = None
-        for arg in optional_mask_and_accum:
-            if isinstance(arg, (BaseType, Mask)):
+        for arg in optional_mask_accum_replace:
+            if arg is replace_singleton:
+                replace = True
+            elif isinstance(arg, (BaseType, Mask)):
                 if self._is_scalar:
                     raise TypeError("Mask not allowed for Scalars")
                 if mask_arg is not None:

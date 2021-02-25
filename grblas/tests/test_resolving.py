@@ -61,6 +61,10 @@ def test_order_of_updater_params_does_not_matter():
     v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
     v(replace=True, mask=mask.V, accum=accum) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
+    # replace, mask=, accum=
+    v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v(grblas.replace, mask=mask.V, accum=accum) << u.ewise_mult(u, binary.times)
+    assert v.isequal(result)
 
 
 def test_updater_repeat_argument_types():
