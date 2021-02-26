@@ -5,7 +5,7 @@ from .dtypes import lookup_dtype
 
 
 @njit
-def _head_indices_vector_bitmap(bitmap, values, size, dtype, n):
+def _head_indices_vector_bitmap(bitmap, values, size, dtype, n):  # pragma: no cover
     indices = np.empty(n, dtype=np.uint64)
     vals = np.empty(n, dtype=dtype)
     j = 0
@@ -58,7 +58,7 @@ def vector_head(vector, n=10, *, sort=False, dtype=None):
 
 
 @njit
-def _head_matrix_full(values, nrows, ncols, dtype, n):
+def _head_matrix_full(values, nrows, ncols, dtype, n):  # pragma: no cover
     rows = np.empty(n, dtype=np.uint64)
     cols = np.empty(n, dtype=np.uint64)
     vals = np.empty(n, dtype=dtype)
@@ -75,7 +75,7 @@ def _head_matrix_full(values, nrows, ncols, dtype, n):
 
 
 @njit
-def _head_matrix_bitmap(bitmap, values, nrows, ncols, dtype, n):
+def _head_matrix_bitmap(bitmap, values, nrows, ncols, dtype, n):  # pragma: no cover
     rows = np.empty(n, dtype=np.uint64)
     cols = np.empty(n, dtype=np.uint64)
     vals = np.empty(n, dtype=dtype)
@@ -93,7 +93,7 @@ def _head_matrix_bitmap(bitmap, values, nrows, ncols, dtype, n):
 
 
 @njit
-def _head_csr_rows(indptr, n):
+def _head_csr_rows(indptr, n):  # pragma: no cover
     rows = np.empty(n, dtype=np.uint64)
     idx = 0
     index = 0
@@ -109,7 +109,7 @@ def _head_csr_rows(indptr, n):
 
 
 @njit
-def _head_hypercsr_rows(indptr, rows, n):
+def _head_hypercsr_rows(indptr, rows, n):  # pragma: no cover
     rv = np.empty(n, dtype=np.uint64)
     idx = 0
     index = 0
