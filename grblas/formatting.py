@@ -202,18 +202,35 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
                 column_offset,
                 mask=mask,
             )
+    if df.shape != matrix.shape and min(matrix._nvals, max_rows) > 2 * df.count().sum():
+        # The data is sparse and it's better to show in COO format.
+        # SS, SuiteSparse-specific: head
+        if matrix._is_transposed:
+            cols, rows, vals = matrix._matrix.ss.head(max_rows)
+        else:
+            rows, cols, vals = matrix.ss.head(max_rows)
+        df = pd.DataFrame({"row": rows, "col": cols, "val": vals}).sort_values(
+            ["row", "col"], ignore_index=True
+        )
     return df.where(pd.notnull(df), "")
 
 
-def _get_vector_dataframe(vector, max_columns, *, mask=None):
+def _get_vector_dataframe(vector, max_rows, max_columns, *, mask=None):
     if not has_pandas:
         return
+    if max_rows is None:  # pragma: no branch
+        max_rows = pd.options.display.max_rows
     if max_columns is None:  # pragma: no branch
         max_columns = _get_max_columns()
     columns, column_groups = _get_chunk(vector._size, max_columns, max_columns)
     df = pd.DataFrame(columns=columns, index=[""])
     for column_group, column_offset in column_groups:
         _update_vector_dataframe(df, vector, column_group, column_offset, mask=mask)
+    if df.size != vector.size and min(vector._nvals, max_rows) > 2 * df.count().sum():
+        # The data is sparse and it's better to show in COO format.
+        # SS, SuiteSparse-specific: head
+        indices, vals = vector.ss.head(max_rows)
+        df = pd.DataFrame({"index": indices, "val": vals}).sort_values("index", ignore_index=True)
     return df.where(pd.notnull(df), "")
 
 
@@ -297,9 +314,9 @@ def format_matrix_html(matrix, *, max_rows=None, min_rows=None, max_columns=None
     return _format_html(name, header, df)
 
 
-def format_vector_html(vector, *, max_columns=None, mask=None):
+def format_vector_html(vector, *, max_rows=None, max_columns=None, mask=None):
     header = vector_header_html(vector, mask=mask)
-    df = _get_vector_dataframe(vector, max_columns, mask=mask)
+    df = _get_vector_dataframe(vector, max_rows, max_columns, mask=mask)
     if mask is None:
         name = vector._name_html
     else:
@@ -440,7 +457,7 @@ def format_matrix(matrix, *, max_rows=None, min_rows=None, max_columns=None, mas
     return header
 
 
-def format_vector(vector, *, max_columns=None, mask=None):
+def format_vector(vector, *, max_rows=None, max_columns=None, mask=None):
     name, keys, vals = vector_info(vector, mask=mask, for_html=False)
     header = create_header(
         name,
@@ -450,7 +467,7 @@ def format_vector(vector, *, max_columns=None, mask=None):
         name=vector.name if mask is None else mask.name,
     )
     if has_pandas:
-        df = _get_vector_dataframe(vector, max_columns, mask=mask)
+        df = _get_vector_dataframe(vector, max_rows, max_columns, mask=mask)
         with pd.option_context("display.show_dimensions", False, "display.large_repr", "truncate"):
             df_repr = df.__repr__()
         return f"{header}\n{df_repr}"
