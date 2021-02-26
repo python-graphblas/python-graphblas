@@ -212,7 +212,7 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
     ):
         # The data is sparse and it's better to show in COO format.
         # SS, SuiteSparse-specific: head
-        num_rows = max_rows if matrix._nvals <= max_rows else min_rows
+        num_rows = matrix._nvals if matrix._nvals <= max_rows else min_rows
         if matrix._is_transposed:
             cols, rows, vals = matrix._matrix.ss.head(num_rows, sort=True)
         else:
@@ -223,17 +223,22 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
             else:
                 vals = np.ones(vals.size, dtype=np.uint8)
         df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
+        if num_rows < matrix._nvals:
+            df = df.append(pd.Series(["..."] * 3, index=df.columns, name="..."))
+        return df
     if mask is not None and not mask.structure and df.shape != matrix.shape:
         # This performs more calculation and uses more memory than I would prefer.
         # Perhaps we could use the efficient "constant vector or matrix" trick.
         nonzero = matrix.apply(unary.one["UINT8"]).new(mask=matrix.V, name="")
-        num_nonzero = nonzero.nvals
-        num_rows = max_rows if matrix._nvals <= max_rows else min_rows
-        if min(num_nonzero, num_rows) > 2 * df.count().sum():
+        num_rows = matrix._nvals if matrix._nvals <= max_rows else min_rows
+        if min(nonzero._nvals, num_rows) > 2 * df.count().sum():
             rows, cols, vals = nonzero.ss.head(num_rows, sort=True)
             if mask.complement:
                 vals[:] = 0
             df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
+            if num_rows < nonzero._nvals:
+                df = df.append(pd.Series(["..."] * 3, index=df.columns, name="..."))
+            return df
     return df.where(pd.notnull(df), "")
 
 
@@ -258,7 +263,7 @@ def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None)
     ):
         # The data is sparse and it's better to show in COO format.
         # SS, SuiteSparse-specific: head
-        num_rows = max_rows if vector._nvals <= max_rows else min_rows
+        num_rows = vector._nvals if vector._nvals <= max_rows else min_rows
         indices, vals = vector.ss.head(num_rows, sort=True)
         if mask is not None:
             if mask.complement:
@@ -266,17 +271,22 @@ def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None)
             else:
                 vals = np.ones(vals.size, dtype=np.uint8)
         df = pd.DataFrame({"index": indices, "val": vals})
+        if num_rows < vector._nvals:
+            df = df.append(pd.Series(["..."] * 2, index=df.columns, name="..."))
+        return df
     if mask is not None and not mask.structure and df.size != vector._size:
         # This performs more calculation and uses more memory than I would prefer.
         # Perhaps we could use the efficient "constant vector or matrix" trick.
         nonzero = vector.apply(unary.one["UINT8"]).new(mask=vector.V, name="")
-        num_nonzero = nonzero.nvals
-        num_rows = max_rows if vector._nvals <= max_rows else min_rows
-        if min(num_nonzero, num_rows) > 2 * df.count().sum():
+        num_rows = vector._nvals if vector._nvals <= max_rows else min_rows
+        if min(nonzero._nvals, num_rows) > 2 * df.count().sum():
             indices, vals = nonzero.ss.head(num_rows, sort=True)
             if mask.complement:
                 vals[:] = 0
             df = pd.DataFrame({"index": indices, "val": vals})
+            if num_rows < nonzero._nvals:
+                df = df.append(pd.Series(["..."] * 2, index=df.columns, name="..."))
+            return df
     return df.where(pd.notnull(df), "")
 
 
