@@ -530,6 +530,7 @@ def test_nested_names():
 
     UnaryOp.register_new("incrementers.plus_four", plus_four)
     assert hasattr(unary.incrementers, "plus_four")
+    assert hasattr(grblas.op.incrementers, "plus_four")  # Also save it to `grblas.op`!
     v << v.apply(unary.incrementers.plus_four)  # this is in addition to the plus_three earlier
     result2 = Vector.from_values([0, 1, 3], [8, 9, 3], dtype=dtypes.INT32)
     assert v.isequal(result2), v
@@ -541,6 +542,8 @@ def test_nested_names():
         UnaryOp.register_new("incrementers", bad_will_overwrite_path)
     with pytest.raises(AttributeError, match="already defined"):
         UnaryOp.register_new("identity.newfunc", bad_will_overwrite_path)
+    with pytest.raises(AttributeError, match="already defined"):
+        UnaryOp.register_new("incrementers.plus_four", bad_will_overwrite_path)
 
 
 def test_op_namespace():

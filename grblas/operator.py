@@ -5,7 +5,7 @@ import numba
 from collections.abc import Mapping
 from functools import lru_cache
 from types import FunctionType, ModuleType
-from . import ffi, lib, unary, binary, monoid, semiring
+from . import ffi, lib, unary, binary, monoid, semiring, op
 from .dtypes import lookup_dtype, unify, INT8, _sample_values, _supports_complex
 from .exceptions import UdfParseError, check_status_carg
 from .utils import libget
@@ -278,11 +278,13 @@ class OpBase:
         return type_ in self._typed_ops
 
     @classmethod
-    def _remove_nesting(cls, funcname):
-        module = cls._module
-        modname = cls._modname
+    def _remove_nesting(cls, funcname, *, module=None, modname=None, strict=True):
+        if module is None:
+            module = cls._module
+        if modname is None:
+            modname = cls._modname
         if "." not in funcname:
-            if hasattr(module, funcname):
+            if strict and hasattr(module, funcname):
                 raise AttributeError(f"{modname}.{funcname} is already defined")
         else:
             path, funcname = funcname.rsplit(".", 1)
@@ -295,6 +297,9 @@ class OpBase:
                     raise AttributeError(
                         f"{modname} is already defined. Cannot use as a nested path."
                     )
+            # Can't use `hasattr` here, b/c we use `__getattr__` in numpy namespaces
+            if strict and funcname in module.__dict__:
+                raise AttributeError(f"{path}.{funcname} is already defined")
         return module, funcname
 
     @classmethod
@@ -326,7 +331,7 @@ class OpBase:
                 continue
             if "complex" in re_str and not _supports_complex:  # pragma: no cover
                 continue
-            for r in cls._parse_config[re_str]:
+            for r in reversed(cls._parse_config[re_str]):
                 for varname in varnames:
                     m = r.match(varname)
                     if m:
@@ -342,8 +347,12 @@ class OpBase:
                         name = "_".join(splitname).lower()
                         # Create object for name unless it already exists
                         if not hasattr(cls._module, name):
-                            setattr(cls._module, name, cls(name))
-                        obj = getattr(cls._module, name)
+                            obj = cls(name)
+                            setattr(cls._module, name, obj)
+                            if not hasattr(op, name):
+                                setattr(op, name, obj)
+                        else:
+                            obj = getattr(cls._module, name)
                         gb_obj = getattr(lib, varname)
                         # Determine return type
                         if return_prefix == "BOOL":
@@ -361,8 +370,10 @@ class OpBase:
                                 if num_bits not in {"32", "64"}:  # pragma: no cover
                                     raise TypeError(f"Unexpected number of bits: {num_bits}")
                                 return_type = f"{return_prefix}{num_bits}"
-                        op = cls._typed_class(obj, name, type_, return_type, gb_obj, gb_name)
-                        obj._add(op)
+                        builtin_op = cls._typed_class(
+                            obj, name, type_, return_type, gb_obj, gb_name
+                        )
+                        obj._add(builtin_op)
         cls._initialized = True
 
 
@@ -502,6 +513,10 @@ class UnaryOp(OpBase):
         else:
             unary_op = cls._build(name, func)
         setattr(module, funcname, unary_op)
+        # Also save it to `grblas.op` if not yet defined
+        module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
+        if not hasattr(module, funcname):
+            setattr(module, funcname, unary_op)
 
 
 class BinaryOp(OpBase):
@@ -517,14 +532,14 @@ class BinaryOp(OpBase):
                 "_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64|FC32|FC64)$"
             ),
             re.compile(
+                "GrB_(BOR|BAND|BXOR|BXNOR)" "_(INT8|INT16|INT32|INT64|UINT8|UINT16|UINT32|UINT64)$"
+            ),
+            re.compile(
                 "^GxB_(POW|RMINUS|RDIV|PAIR|ANY|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR)"
                 "_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64|FC32|FC64)$"
             ),
             re.compile("^GxB_(FIRST|SECOND|PLUS|MINUS|TIMES|DIV)_(FC32|FC64)$"),
             re.compile("^GxB_(ATAN2|HYPOT|FMOD|REMAINDER|LDEXP|COPYSIGN)_(FP32|FP64)$"),
-            re.compile(
-                "GrB_(BOR|BAND|BXOR|BXNOR)" "_(INT8|INT16|INT32|INT64|UINT8|UINT16|UINT32|UINT64)$"
-            ),
             re.compile(
                 "GxB_(BGET|BSET|BCLR|BSHIFT|FIRSTI1|FIRSTI|FIRSTJ1|FIRSTJ"
                 "|SECONDI1|SECONDI|SECONDJ1|SECONDJ)"
@@ -657,6 +672,10 @@ class BinaryOp(OpBase):
         else:
             binary_op = cls._build(name, func)
         setattr(module, funcname, binary_op)
+        # Also save it to `grblas.op` if not yet defined
+        module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
+        if not hasattr(module, funcname):
+            setattr(module, funcname, binary_op)
 
     @classmethod
     def _initialize(cls):
@@ -778,6 +797,10 @@ class Monoid(OpBase):
         else:
             monoid = cls._build(name, binaryop, identity)
         setattr(module, funcname, monoid)
+        # Also save it to `grblas.op` if not yet defined
+        module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
+        if not hasattr(module, funcname):
+            setattr(module, funcname, monoid)
 
     def __init__(self, name, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
@@ -886,6 +909,10 @@ class Semiring(OpBase):
         else:
             semiring = cls._build(name, monoid, binaryop)
         setattr(module, funcname, semiring)
+        # Also save it to `grblas.op` if not yet defined
+        module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
+        if not hasattr(module, funcname):
+            setattr(module, funcname, semiring)
 
     def __init__(self, name, monoid=None, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
