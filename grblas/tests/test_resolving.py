@@ -61,6 +61,27 @@ def test_order_of_updater_params_does_not_matter():
     v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
     v(replace=True, mask=mask.V, accum=accum) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
+    # replace, mask=, accum=
+    v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v(grblas.replace, mask=mask.V, accum=accum) << u.ewise_mult(u, binary.times)
+    assert v.isequal(result)
+
+
+def test_updater_replace_no_mask():
+    u = Vector.from_values([0, 1, 2], [1, 2, 3])
+    with pytest.raises(
+        TypeError, match="'replace' argument may only be True if a mask is provided"
+    ):
+        u(replace=True)
+    with pytest.raises(
+        TypeError, match="'replace' argument may only be True if a mask is provided"
+    ):
+        u(grblas.replace)
+
+
+def test_replace_repr():
+    assert repr(grblas.replace) == "replace"
+    assert str(grblas.replace) == "replace"
 
 
 def test_updater_repeat_argument_types():
@@ -159,7 +180,7 @@ def test_bad_extract_with_updater():
 def test_updater_on_rhs():
     u = Vector.from_values([0, 1, 3], [1, 2, 3])
     with pytest.raises(TypeError, match="Assignment value must be a valid expression"):
-        u << u(replace=True)
+        u << u(mask=u.S)
     with pytest.raises(TypeError, match="Assignment value must be a valid expression"):
         u << u()
     with pytest.raises(TypeError, match="Bad type for argument `value`"):
