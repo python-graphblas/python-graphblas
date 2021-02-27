@@ -8,8 +8,8 @@ from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .ops import get_typed_op
 from .scalar import Scalar, ScalarExpression, _CScalar
-from .utils import ints_to_numpy_buffer, values_to_numpy_buffer, _CArray, _Pointer
-from . import _ss
+from .utils import ints_to_numpy_buffer, values_to_numpy_buffer, wrapdoc, _CArray, _Pointer
+from . import _ss, _ss_utils
 
 ffi_new = ffi.new
 
@@ -1126,6 +1126,10 @@ class Vector(BaseType):
             rv._size = size
             _ss.unclaim_buffer(values)
             return rv
+
+        @wrapdoc(_ss_utils.vector_head)
+        def head(self, n=10, *, sort=False, dtype=None):
+            return _ss_utils.vector_head(self._parent, n, sort=sort, dtype=dtype)
 
 
 class VectorExpression(BaseExpression):

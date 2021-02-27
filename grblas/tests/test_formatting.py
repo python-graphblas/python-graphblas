@@ -3768,3 +3768,331 @@ def test_vector_huge_html():
         "</table>\n"
         "</div></details></div>"
     )
+
+
+@pytest.mark.skipif("not pd")
+def test_sparse_vector_repr():
+    v = Vector.from_values([100 * i for i in range(100)], [10 * i for i in range(100)], name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"            nvals  size  dtype\n'
+        "grblas.Vector    100  9901  INT64\n"
+        "---------------------------------\n"
+        "    index  val\n"
+        "0       0    0\n"
+        "1     100   10\n"
+        "2     200   20\n"
+        "3     300   30\n"
+        "4     400   40\n"
+        "5     500   50\n"
+        "6     600   60\n"
+        "7     700   70\n"
+        "8     800   80\n"
+        "9     900   90\n"
+        "...   ...  ..."
+    )
+    repr_printer(v.S, "v.S")
+    assert repr(v.S) == (
+        '"v.S"             nvals  size  dtype\n'
+        "StructuralMask  \n"
+        "of grblas.Vector    100  9901  INT64\n"
+        "------------------------------------\n"
+        "    index  val\n"
+        "0       0    1\n"
+        "1     100    1\n"
+        "2     200    1\n"
+        "3     300    1\n"
+        "4     400    1\n"
+        "5     500    1\n"
+        "6     600    1\n"
+        "7     700    1\n"
+        "8     800    1\n"
+        "9     900    1\n"
+        "...   ...  ..."
+    )
+    repr_printer(~v.S, "~v.S")
+    assert repr(~v.S) == (
+        '"~v.S"                      nvals  size  dtype\n'
+        "ComplementedStructuralMask\n"
+        "of grblas.Vector              100  9901  INT64\n"
+        "----------------------------------------------\n"
+        "    index  val\n"
+        "0       0    0\n"
+        "1     100    0\n"
+        "2     200    0\n"
+        "3     300    0\n"
+        "4     400    0\n"
+        "5     500    0\n"
+        "6     600    0\n"
+        "7     700    0\n"
+        "8     800    0\n"
+        "9     900    0\n"
+        "...   ...  ..."
+    )
+    repr_printer(v.V, "v.V")
+    assert repr(v.V) == (
+        '"v.V"             nvals  size  dtype\n'
+        "ValueMask       \n"
+        "of grblas.Vector    100  9901  INT64\n"
+        "------------------------------------\n"
+        "    index  val\n"
+        "0     100    1\n"
+        "1     200    1\n"
+        "2     300    1\n"
+        "3     400    1\n"
+        "4     500    1\n"
+        "5     600    1\n"
+        "6     700    1\n"
+        "7     800    1\n"
+        "8     900    1\n"
+        "9    1000    1\n"
+        "...   ...  ..."
+    )
+    repr_printer(~v.V, "~v.V")
+    assert repr(~v.V) == (
+        '"~v.V"                 nvals  size  dtype\n'
+        "ComplementedValueMask\n"
+        "of grblas.Vector         100  9901  INT64\n"
+        "-----------------------------------------\n"
+        "    index  val\n"
+        "0     100    0\n"
+        "1     200    0\n"
+        "2     300    0\n"
+        "3     400    0\n"
+        "4     500    0\n"
+        "5     600    0\n"
+        "6     700    0\n"
+        "7     800    0\n"
+        "8     900    0\n"
+        "9    1000    0\n"
+        "...   ...  ..."
+    )
+    v2 = v[:2000].new(name="v2")
+    repr_printer(v2, "v2")
+    assert repr(v2) == (
+        '"v2"           nvals  size  dtype\n'
+        "grblas.Vector     20  2000  INT64\n"
+        "---------------------------------\n"
+        "    index  val\n"
+        "0       0    0\n"
+        "1     100   10\n"
+        "2     200   20\n"
+        "3     300   30\n"
+        "4     400   40\n"
+        "5     500   50\n"
+        "6     600   60\n"
+        "7     700   70\n"
+        "8     800   80\n"
+        "9     900   90\n"
+        "10   1000  100\n"
+        "11   1100  110\n"
+        "12   1200  120\n"
+        "13   1300  130\n"
+        "14   1400  140\n"
+        "15   1500  150\n"
+        "16   1600  160\n"
+        "17   1700  170\n"
+        "18   1800  180\n"
+        "19   1900  190"
+    )
+    repr_printer(v2.V, "v2.V")
+    assert repr(v2.V) == (
+        '"v2.V"            nvals  size  dtype\n'
+        "ValueMask       \n"
+        "of grblas.Vector     20  2000  INT64\n"
+        "------------------------------------\n"
+        "    index  val\n"
+        "0     100    1\n"
+        "1     200    1\n"
+        "2     300    1\n"
+        "3     400    1\n"
+        "4     500    1\n"
+        "5     600    1\n"
+        "6     700    1\n"
+        "7     800    1\n"
+        "8     900    1\n"
+        "9    1000    1\n"
+        "10   1100    1\n"
+        "11   1200    1\n"
+        "12   1300    1\n"
+        "13   1400    1\n"
+        "14   1500    1\n"
+        "15   1600    1\n"
+        "16   1700    1\n"
+        "17   1800    1\n"
+        "18   1900    1"
+    )
+
+
+@pytest.mark.skipif("not pd")
+def test_sparse_matrix_repr():
+    A = Matrix.from_values(
+        [100 * i for i in range(100)], [10 * i for i in range(100)], list(range(100)), name="A"
+    )
+    repr_printer(A, "A")
+    assert repr(A) == (
+        '"A"            nvals  nrows  ncols  dtype\n'
+        "grblas.Matrix    100   9901    991  INT64\n"
+        "-----------------------------------------\n"
+        "     row  col  val\n"
+        "0      0    0    0\n"
+        "1    100   10    1\n"
+        "2    200   20    2\n"
+        "3    300   30    3\n"
+        "4    400   40    4\n"
+        "5    500   50    5\n"
+        "6    600   60    6\n"
+        "7    700   70    7\n"
+        "8    800   80    8\n"
+        "9    900   90    9\n"
+        "...  ...  ...  ..."
+    )
+    repr_printer(A.T, "A.T")
+    assert repr(A.T) == (
+        '"A.T"                    nvals  nrows  ncols  dtype\n'
+        "grblas.TransposedMatrix    100    991   9901  INT64\n"
+        "---------------------------------------------------\n"
+        "     row  col  val\n"
+        "0      0    0    0\n"
+        "1     10  100    1\n"
+        "2     20  200    2\n"
+        "3     30  300    3\n"
+        "4     40  400    4\n"
+        "5     50  500    5\n"
+        "6     60  600    6\n"
+        "7     70  700    7\n"
+        "8     80  800    8\n"
+        "9     90  900    9\n"
+        "...  ...  ...  ..."
+    )
+    repr_printer(A.S, "A.S")
+    assert repr(A.S) == (
+        '"A.S"             nvals  nrows  ncols  dtype\n'
+        "StructuralMask  \n"
+        "of grblas.Matrix    100   9901    991  INT64\n"
+        "--------------------------------------------\n"
+        "     row  col  val\n"
+        "0      0    0    1\n"
+        "1    100   10    1\n"
+        "2    200   20    1\n"
+        "3    300   30    1\n"
+        "4    400   40    1\n"
+        "5    500   50    1\n"
+        "6    600   60    1\n"
+        "7    700   70    1\n"
+        "8    800   80    1\n"
+        "9    900   90    1\n"
+        "...  ...  ...  ..."
+    )
+    repr_printer(~A.S, "~A.S")
+    assert repr(~A.S) == (
+        '"~A.S"                      nvals  nrows  ncols  dtype\n'
+        "ComplementedStructuralMask\n"
+        "of grblas.Matrix              100   9901    991  INT64\n"
+        "------------------------------------------------------\n"
+        "     row  col  val\n"
+        "0      0    0    0\n"
+        "1    100   10    0\n"
+        "2    200   20    0\n"
+        "3    300   30    0\n"
+        "4    400   40    0\n"
+        "5    500   50    0\n"
+        "6    600   60    0\n"
+        "7    700   70    0\n"
+        "8    800   80    0\n"
+        "9    900   90    0\n"
+        "...  ...  ...  ..."
+    )
+    repr_printer(A.V, "A.V")
+    assert repr(A.V) == (
+        '"A.V"             nvals  nrows  ncols  dtype\n'
+        "ValueMask       \n"
+        "of grblas.Matrix    100   9901    991  INT64\n"
+        "--------------------------------------------\n"
+        "      row  col  val\n"
+        "0     100   10    1\n"
+        "1     200   20    1\n"
+        "2     300   30    1\n"
+        "3     400   40    1\n"
+        "4     500   50    1\n"
+        "5     600   60    1\n"
+        "6     700   70    1\n"
+        "7     800   80    1\n"
+        "8     900   90    1\n"
+        "9    1000  100    1\n"
+        "...   ...  ...  ..."
+    )
+    repr_printer(~A.V, "~A.V")
+    assert repr(~A.V) == (
+        '"~A.V"                 nvals  nrows  ncols  dtype\n'
+        "ComplementedValueMask\n"
+        "of grblas.Matrix         100   9901    991  INT64\n"
+        "-------------------------------------------------\n"
+        "      row  col  val\n"
+        "0     100   10    0\n"
+        "1     200   20    0\n"
+        "2     300   30    0\n"
+        "3     400   40    0\n"
+        "4     500   50    0\n"
+        "5     600   60    0\n"
+        "6     700   70    0\n"
+        "7     800   80    0\n"
+        "8     900   90    0\n"
+        "9    1000  100    0\n"
+        "...   ...  ...  ..."
+    )
+    A2 = A[:2000, :].new(name="A2")
+    repr_printer(A2, "A2")
+    assert repr(A2) == (
+        '"A2"           nvals  nrows  ncols  dtype\n'
+        "grblas.Matrix     20   2000    991  INT64\n"
+        "-----------------------------------------\n"
+        "     row  col  val\n"
+        "0      0    0    0\n"
+        "1    100   10    1\n"
+        "2    200   20    2\n"
+        "3    300   30    3\n"
+        "4    400   40    4\n"
+        "5    500   50    5\n"
+        "6    600   60    6\n"
+        "7    700   70    7\n"
+        "8    800   80    8\n"
+        "9    900   90    9\n"
+        "10  1000  100   10\n"
+        "11  1100  110   11\n"
+        "12  1200  120   12\n"
+        "13  1300  130   13\n"
+        "14  1400  140   14\n"
+        "15  1500  150   15\n"
+        "16  1600  160   16\n"
+        "17  1700  170   17\n"
+        "18  1800  180   18\n"
+        "19  1900  190   19"
+    )
+    repr_printer(A2.V, "A2.V")
+    assert repr(A2.V) == (
+        '"A2.V"            nvals  nrows  ncols  dtype\n'
+        "ValueMask       \n"
+        "of grblas.Matrix     20   2000    991  INT64\n"
+        "--------------------------------------------\n"
+        "     row  col  val\n"
+        "0    100   10    1\n"
+        "1    200   20    1\n"
+        "2    300   30    1\n"
+        "3    400   40    1\n"
+        "4    500   50    1\n"
+        "5    600   60    1\n"
+        "6    700   70    1\n"
+        "7    800   80    1\n"
+        "8    900   90    1\n"
+        "9   1000  100    1\n"
+        "10  1100  110    1\n"
+        "11  1200  120    1\n"
+        "12  1300  130    1\n"
+        "13  1400  140    1\n"
+        "14  1500  150    1\n"
+        "15  1600  160    1\n"
+        "16  1700  170    1\n"
+        "17  1800  180    1\n"
+        "18  1900  190    1"
+    )

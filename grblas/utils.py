@@ -16,6 +16,16 @@ def libget(name):
         raise
 
 
+def wrapdoc(func_with_doc):
+    """Decorator to copy `__doc__` from a function onto the wrapped function"""
+
+    def inner(func_wo_doc):
+        func_wo_doc.__doc__ = func_with_doc.__doc__
+        return func_wo_doc
+
+    return inner
+
+
 def ints_to_numpy_buffer(array, dtype, *, name="array", copy=False, ownable=False, order="C"):
     if (
         isinstance(array, np.ndarray)

@@ -9,8 +9,15 @@ from .mask import StructuralMask, ValueMask
 from .ops import get_typed_op
 from .vector import Vector, VectorExpression
 from .scalar import Scalar, ScalarExpression, _CScalar
-from .utils import get_shape, ints_to_numpy_buffer, values_to_numpy_buffer, _CArray, _Pointer
-from . import _ss
+from .utils import (
+    get_shape,
+    ints_to_numpy_buffer,
+    values_to_numpy_buffer,
+    wrapdoc,
+    _CArray,
+    _Pointer,
+)
+from . import _ss, _ss_utils
 
 ffi_new = ffi.new
 
@@ -2449,6 +2456,10 @@ class Matrix(BaseType):
             else:
                 raise ValueError(f"Invalid format: {format}")
 
+        @wrapdoc(_ss_utils.matrix_head)
+        def head(self, n=10, *, sort=False, dtype=None):
+            return _ss_utils.matrix_head(self._parent, n, sort=sort, dtype=dtype)
+
 
 class MatrixExpression(BaseExpression):
     output_type = Matrix
@@ -2541,6 +2552,7 @@ class TransposedMatrix:
     def dtype(self):
         return self._matrix.dtype
 
+    @wrapdoc(Matrix.to_values)
     def to_values(self, *, dtype=None):
         rows, cols, vals = self._matrix.to_values(dtype=dtype)
         return cols, rows, vals
