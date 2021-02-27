@@ -109,7 +109,7 @@ def test_updater_bad_types():
         v.ewise_mult(v).new(mask=M.S)
     with pytest.raises(TypeError, match="Invalid"):
         v(object())
-    with pytest.raises(TypeError, match="accum must be a BinaryOp, not UnaryO"):
+    with pytest.raises(TypeError, match="Expected type: BinaryOp"):
         v(unary.one)
 
 

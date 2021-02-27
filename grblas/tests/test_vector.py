@@ -258,9 +258,17 @@ def test_vxm_mask(v, A):
 
 
 def test_vxm_accum(v, A):
-    v(binary.plus) << v.vxm(A, semiring.plus_times)
+    w1 = v.dup()
+    w1(binary.plus) << v.vxm(A, semiring.plus_times)
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 1, 3, 1, 10, 14, 4], size=7)
-    assert v.isequal(result)
+    assert w1.isequal(result)
+    # Allow monoids
+    w2 = v.dup()
+    w2(monoid.plus) << v.vxm(A, semiring.plus_times)
+    assert w2.isequal(result)
+    w3 = v.dup()
+    w3(accum=monoid.plus) << v.vxm(A, semiring.plus_times)
+    assert w3.isequal(result)
 
 
 def test_ewise_mult(v):
@@ -271,8 +279,8 @@ def test_ewise_mult(v):
     assert w.isequal(result)
     w << v.ewise_mult(v2, monoid.times)
     assert w.isequal(result)
-    w.update(v.ewise_mult(v2, semiring.plus_times))
-    assert w.isequal(result)
+    with pytest.raises(TypeError, match="Expected type: BinaryOp, Monoid"):
+        v.ewise_mult(v2, semiring.plus_times)
 
 
 def test_ewise_mult_change_dtype(v):
@@ -299,13 +307,15 @@ def test_ewise_add(v):
     v2 = Vector.from_values([0, 3, 5, 6], [2, 3, 2, 1])
     result = Vector.from_values([0, 1, 3, 4, 5, 6], [2, 1, 3, 2, 2, 1])
     with pytest.raises(TypeError, match="require_monoid"):
-        v.ewise_add(v2, binary.max)
+        v.ewise_add(v2, binary.minus)
+    w = v.ewise_add(v2, binary.max).new()  # ok if the binaryop is part of a monoid
+    assert w.isequal(result)
     w = v.ewise_add(v2, binary.max, require_monoid=False).new()
     assert w.isequal(result)
     w.update(v.ewise_add(v2, monoid.max))
     assert w.isequal(result)
-    w << v.ewise_add(v2, semiring.max_times)
-    assert w.isequal(result)
+    with pytest.raises(TypeError, match="Expected type: Monoid"):
+        v.ewise_add(v2, semiring.max_times)
     # default is plus
     w = v.ewise_add(v2).new()
     result = v.ewise_add(v2, monoid.plus).new()
@@ -506,6 +516,8 @@ def test_apply(v):
     result = Vector.from_values([1, 3, 4, 6], [-1, -1, -2, 0])
     w = v.apply(unary.ainv).new()
     assert w.isequal(result)
+    with pytest.raises(TypeError, match="apply only accepts UnaryOp with no scalars or BinaryOp"):
+        v.apply(semiring.min_plus)
 
 
 def test_apply_binary(v):
@@ -525,12 +537,22 @@ def test_apply_binary(v):
         v.apply(binary.plus, right=v)
     with pytest.raises(TypeError, match="Cannot provide both"):
         v.apply(binary.plus, left=1, right=1)
+    # accept monoids
+    w1 = v.apply(binary.plus, left=1).new()
+    w2 = v.apply(monoid.plus, left=1).new()
+    w3 = v.apply(monoid.plus, right=1).new()
+    assert w1.isequal(w2)
+    assert w1.isequal(w3)
 
 
 def test_reduce(v):
     s = v.reduce(monoid.plus).new()
     assert s == 4
     assert s.dtype == dtypes.INT64
+    assert v.reduce(binary.plus).value == 4
+    with pytest.raises(TypeError, match="Expected type: Monoid"):
+        v.reduce(binary.minus)
+
     # Test accum
     s(accum=binary.times) << v.reduce(monoid.plus)
     assert s == 16
@@ -616,8 +638,14 @@ def test_binary_op(v):
 
 
 def test_accum_must_be_binaryop(v):
-    with pytest.raises(TypeError):
-        v(accum=monoid.plus) << v.ewise_mult(v)
+    # THIS IS NOW OKAY
+    w1 = v.dup()
+    w1(accum=monoid.plus) << v.ewise_mult(v)
+    w2 = v.dup()
+    w2(accum=binary.plus) << v.ewise_mult(v)
+    assert w1.isequal(w2)
+    with pytest.raises(TypeError, match="Expected type: BinaryOp"):
+        v(accum=semiring.min_plus)
 
 
 def test_mask_must_be_value_or_structure(v):

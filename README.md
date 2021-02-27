@@ -146,7 +146,7 @@ from grblas import Matrix, Vector, Scalar
 Example customized UnaryOp:
 ```python
 from grblas import unary
-from grblas.ops import UnaryOp
+from grblas.operator import UnaryOp
 
 def force_odd_func(x):
     if x % 2 == 0:

@@ -6,8 +6,10 @@ https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operat
 
 """
 import numpy as np
-from .. import ops, binary
+from .. import operator, binary
+from ..dtypes import _supports_complex
 
+_complex_dtypes = {"FC32", "FC64"}
 _float_dtypes = {"FP32", "FP64"}
 _int_dtypes = {"INT8", "UINT8", "INT16", "UINT16", "INT32", "UINT32", "INT64", "UINT64"}
 _bool_int_dtypes = _int_dtypes | {"BOOL"}
@@ -83,15 +85,22 @@ _monoid_identities = {
         "FP64": np.inf,  # or np.nan?
     },
 }
+if _supports_complex:
+    _monoid_identities["fmax"].update(dict.fromkeys(_complex_dtypes, complex(-np.inf, -np.inf)))
+    _monoid_identities["fmin"].update(dict.fromkeys(_complex_dtypes, complex(np.inf, np.inf)))
+    _monoid_identities["maximum"].update(dict.fromkeys(_complex_dtypes, complex(-np.inf, -np.inf)))
+    _monoid_identities["minimum"].update(dict.fromkeys(_complex_dtypes, complex(np.inf, np.inf)))
+
+__all__ = list(_monoid_identities)
 
 
 def __dir__():
-    return list(_monoid_identities)
+    return __all__
 
 
 def __getattr__(name):
     if name not in _monoid_identities:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     func = getattr(binary.numpy, name)
-    ops.Monoid.register_new(f"numpy.{name}", func, _monoid_identities[name])
+    operator.Monoid.register_new(f"numpy.{name}", func, _monoid_identities[name])
     return globals()[name]

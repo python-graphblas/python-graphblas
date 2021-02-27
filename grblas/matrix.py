@@ -6,7 +6,7 @@ from .dtypes import lookup_dtype, unify, _INDEX
 from .exceptions import check_status, check_status_carg, NoValue
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
-from .ops import get_typed_op
+from .operator import get_typed_op
 from .vector import Vector, VectorExpression
 from .scalar import Scalar, ScalarExpression, _CScalar
 from .utils import (
@@ -246,7 +246,10 @@ class Matrix(BaseType):
         if not dup_op_given:
             dup_op = binary.plus
         dup_op = get_typed_op(dup_op, self.dtype)
-        self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
+        if dup_op.opclass == "Monoid":
+            dup_op = dup_op.binaryop
+        else:
+            self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
 
         rows = _CArray(rows)
         columns = _CArray(columns)
@@ -376,18 +379,18 @@ class Matrix(BaseType):
         method_name = "ewise_add"
         self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
+        # Per the spec, op may be a semiring, but this is weird, so don't.
         if require_monoid:
-            self._expect_op(
-                op,
-                ("Monoid", "Semiring"),
-                within=method_name,
-                argname="op",
-                extra_message="A BinaryOp may be given if require_monoid keyword is False",
-            )
+            if op.opclass != "BinaryOp" or op.monoid is None:
+                self._expect_op(
+                    op,
+                    "Monoid",
+                    within=method_name,
+                    argname="op",
+                    extra_message="A BinaryOp may be given if require_monoid keyword is False",
+                )
         else:
-            self._expect_op(
-                op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op"
-            )
+            self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         expr = MatrixExpression(
             method_name,
             f"GrB_Matrix_eWiseAdd_{op.opclass}",
@@ -410,7 +413,8 @@ class Matrix(BaseType):
         method_name = "ewise_mult"
         self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
-        self._expect_op(op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op")
+        # Per the spec, op may be a semiring, but this is weird, so don't.
+        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         expr = MatrixExpression(
             method_name,
             f"GrB_Matrix_eWiseMult_{op.opclass}",
@@ -478,7 +482,8 @@ class Matrix(BaseType):
         method_name = "kronecker"
         self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
-        self._expect_op(op, ("BinaryOp", "Monoid", "Semiring"), within=method_name, argname="op")
+        # Per the spec, op may be a semiring, but this is weird, so don't.
+        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         return MatrixExpression(
             method_name,
             f"GrB_Matrix_kronecker_{op.opclass}",
@@ -526,13 +531,16 @@ class Matrix(BaseType):
                         extra_message="Literal scalars also accepted.",
                     )
             op = get_typed_op(op, self.dtype, left.dtype)
-            self._expect_op(
-                op,
-                "BinaryOp",
-                within=method_name,
-                argname="op",
-                extra_message=extra_message,
-            )
+            if op.opclass == "Monoid":
+                op = op.binaryop
+            else:
+                self._expect_op(
+                    op,
+                    "BinaryOp",
+                    within=method_name,
+                    argname="op",
+                    extra_message=extra_message,
+                )
             cfunc_name = f"GrB_Matrix_apply_BinaryOp1st_{left.dtype}"
             args = [_CScalar(left), self]
             expr_repr = "{1.name}.apply({op}, left={0})"
@@ -549,13 +557,16 @@ class Matrix(BaseType):
                         extra_message="Literal scalars also accepted.",
                     )
             op = get_typed_op(op, self.dtype, right.dtype)
-            self._expect_op(
-                op,
-                "BinaryOp",
-                within=method_name,
-                argname="op",
-                extra_message=extra_message,
-            )
+            if op.opclass == "Monoid":
+                op = op.binaryop
+            else:
+                self._expect_op(
+                    op,
+                    "BinaryOp",
+                    within=method_name,
+                    argname="op",
+                    extra_message=extra_message,
+                )
             cfunc_name = f"GrB_Matrix_apply_BinaryOp2nd_{right.dtype}"
             args = [self, _CScalar(right)]
             expr_repr = "{0.name}.apply({op}, right={1})"
@@ -581,6 +592,10 @@ class Matrix(BaseType):
         method_name = "reduce_rows"
         op = get_typed_op(op, self.dtype)
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        # Using a monoid may be more efficient, so change to one if possible.
+        # Also, SuiteSparse doesn't like user-defined binarops here.
+        if op.opclass == "BinaryOp" and op.monoid is not None:
+            op = op.monoid
         return VectorExpression(
             method_name,
             f"GrB_Matrix_reduce_{op.opclass}",
@@ -599,6 +614,10 @@ class Matrix(BaseType):
         method_name = "reduce_columns"
         op = get_typed_op(op, self.dtype)
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        # Using a monoid may be more efficient, so change to one if possible.
+        # Also, SuiteSparse doesn't like user-defined binarops here.
+        if op.opclass == "BinaryOp" and op.monoid is not None:
+            op = op.monoid
         return VectorExpression(
             method_name,
             f"GrB_Matrix_reduce_{op.opclass}",
@@ -616,7 +635,10 @@ class Matrix(BaseType):
         """
         method_name = "reduce_scalar"
         op = get_typed_op(op, self.dtype)
-        self._expect_op(op, "Monoid", within=method_name, argname="op")
+        if op.opclass == "BinaryOp" and op.monoid is not None:
+            op = op.monoid
+        else:
+            self._expect_op(op, "Monoid", within=method_name, argname="op")
         return ScalarExpression(
             method_name,
             "GrB_Matrix_reduce_{output_dtype}",

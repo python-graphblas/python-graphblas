@@ -5,7 +5,7 @@ from .dtypes import lookup_dtype
 from .exceptions import check_status
 from .expr import AmbiguousAssignOrExtract, Updater
 from .mask import Mask
-from .ops import UNKNOWN_OPCLASS, find_opclass, get_typed_op
+from .operator import UNKNOWN_OPCLASS, find_opclass, get_typed_op
 from .unary import identity
 from .utils import libget, _Pointer
 
@@ -92,13 +92,28 @@ def _expect_op_message(
         expected = ", ".join(values)
     else:
         expected = values
+    special_message = ""
+    if op.opclass == "Semiring":
+        if "BinaryOp" in values:
+            if "Monoid" in values:
+                special_message = (
+                    f"\nYou may do `{op.name}.binaryop` or `{op.name}.monoid` "
+                    "to get the BinaryOp or Monoid."
+                )
+            else:
+                special_message = f"\nYou may do `{op.name}.binaryop` to get the BinaryOp."
+        elif "Monoid" in values:
+            special_message = f"\nYou may do `{op.name}.monoid` to get the Monoid."
+    elif op.opclass == "BinaryOp" and op.monoid is None and "Monoid" in values:
+        special_message = "\nThe BinaryOp {op.name} is not known to be part of a Monoid."
     if extra_message:
         extra_message = f"\n{extra_message}"
     return (
         f"Bad type {argmsg}in {type(self).__name__}.{within}(...).\n"
         f"    - Expected type: {expected}.\n"
-        f"    - Got: {op.opclass}."
+        f"    - Got: {op.opclass} ({op.name})."
         f"{extra_message}"
+        f"{special_message}"
     )
 
 
@@ -152,8 +167,6 @@ class BaseType:
                 accum_arg, opclass = find_opclass(arg)
                 if opclass == UNKNOWN_OPCLASS:
                     raise TypeError(f"Invalid item found in output params: {type(arg)}")
-                if opclass != "BinaryOp":
-                    raise TypeError(f"accum must be a BinaryOp, not {opclass}")
         # Merge positional and keyword arguments
         if mask_arg is not None and mask is not None:
             raise TypeError("Got multiple values for argument 'mask'")
@@ -178,10 +191,17 @@ class BaseType:
             raise TypeError("mask and input_mask arguments cannot both be given")
         else:
             _check_mask(mask)
-        if accum_arg is not None and accum is not None:
-            raise TypeError("Got multiple values for argument 'accum'")
         if accum_arg is not None:
+            if accum is not None:
+                raise TypeError("Got multiple values for argument 'accum'")
             accum = accum_arg
+        if accum is not None:
+            # Normalize accumulator
+            accum = get_typed_op(accum, self.dtype)
+            if accum.opclass == "Monoid":
+                accum = accum.binaryop
+            else:
+                self._expect_op(accum, "BinaryOp", within="__call__", keyword_name="accum")
         return Updater(self, mask=mask, accum=accum, replace=replace, input_mask=input_mask)
 
     def __eq__(self, other):
@@ -302,11 +322,6 @@ class BaseType:
             _check_mask(mask, self)
             complement = mask.complement
             structure = mask.structure
-
-        # Normalize accumulator
-        if accum is not None:
-            accum = get_typed_op(accum, self.dtype)
-            self._expect_op(accum, "BinaryOp", within="FIXME", keyword_name="accum")
 
         # Get descriptor based on flags
         desc = descriptor_lookup(

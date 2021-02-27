@@ -1,6 +1,6 @@
-# All items are dynamically added by classes in ops.py
+# All items are dynamically added by classes in operator.py
 # This module acts as a container of Monoid instances
-from grblas import ops
+from grblas import operator
 from . import numpy  # noqa
 
-del ops
+del operator
