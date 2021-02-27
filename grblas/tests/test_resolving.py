@@ -79,6 +79,11 @@ def test_updater_replace_no_mask():
         u(grblas.replace)
 
 
+def test_replace_repr():
+    assert repr(grblas.replace) == "replace"
+    assert str(grblas.replace) == "replace"
+
+
 def test_updater_repeat_argument_types():
     mask = Vector.from_values([0, 3], [True, True])
     accum = binary.plus
