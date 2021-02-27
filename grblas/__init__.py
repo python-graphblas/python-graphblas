@@ -1,6 +1,21 @@
 import importlib as _importlib
 from . import backends, mask  # noqa
 
+
+class replace:
+    """Singleton to indicate ``replace=True`` when updating objects.
+
+    >>> C(mask, replace) << A.mxm(B)
+
+    """
+
+    def __repr__(self):
+        return "replace"
+
+
+replace = replace()
+
+
 backend = None
 _init_params = None
 _SPECIAL_ATTRS = {
@@ -17,7 +32,8 @@ _SPECIAL_ATTRS = {
     "expr",
     "formatting",
     "io",
-    "ops",
+    "op",
+    "operator",
     "unary",
     "binary",
     "monoid",

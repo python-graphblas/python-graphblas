@@ -1,4 +1,5 @@
 import pytest
+import grblas
 from grblas import Scalar
 from grblas import dtypes, binary
 from grblas.scalar import _CScalar
@@ -185,6 +186,10 @@ def test_update(s):
         s(s)
     with pytest.raises(TypeError, match="input_mask not allowed for Scalars"):
         s(input_mask=s)
+    with pytest.raises(TypeError, match="'replace' argument may not be True for Scalar"):
+        s(replace=True)
+    with pytest.raises(TypeError, match="'replace' argument may not be True for Scalar"):
+        s(grblas.replace)
 
 
 def test_not_hashable(s):

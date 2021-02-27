@@ -4,7 +4,7 @@ from .base import _recorder
 from .dtypes import DataType
 from .mask import Mask
 from .matrix import TransposedMatrix
-from .ops import TypedOpBase
+from .operator import TypedOpBase
 
 
 def gbstr(arg):

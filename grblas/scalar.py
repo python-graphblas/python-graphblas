@@ -3,7 +3,7 @@ from . import ffi, backend
 from .base import BaseExpression, BaseType
 from .binary import isclose
 from .dtypes import lookup_dtype, _INDEX
-from .ops import get_typed_op
+from .operator import get_typed_op
 
 ffi_new = ffi.new
 

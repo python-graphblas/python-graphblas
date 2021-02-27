@@ -1,5 +1,7 @@
+import numpy as np
 from .matrix import Matrix, TransposedMatrix
 from .vector import Vector
+from . import unary
 
 try:
     import pandas as pd
@@ -202,18 +204,89 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
                 column_offset,
                 mask=mask,
             )
+    if (
+        (mask is None or mask.structure)
+        and df.shape != matrix.shape
+        and min(matrix._nvals, max_rows if matrix._nvals <= max_rows else min_rows)
+        > 2 * df.count().sum()
+    ):
+        # The data is sparse and it's better to show in COO format.
+        # SS, SuiteSparse-specific: head
+        num_rows = matrix._nvals if matrix._nvals <= max_rows else min_rows
+        if matrix._is_transposed:
+            cols, rows, vals = matrix._matrix.ss.head(num_rows, sort=True)
+        else:
+            rows, cols, vals = matrix.ss.head(num_rows, sort=True)
+        if mask is not None:
+            if mask.complement:
+                vals = np.zeros(vals.size, dtype=np.uint8)
+            else:
+                vals = np.ones(vals.size, dtype=np.uint8)
+        df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
+        if num_rows < matrix._nvals:
+            df = df.append(pd.Series(["..."] * 3, index=df.columns, name="..."))
+        return df
+    if mask is not None and not mask.structure and df.shape != matrix.shape:
+        # This performs more calculation and uses more memory than I would prefer.
+        # Perhaps we could use the efficient "constant vector or matrix" trick.
+        nonzero = matrix.apply(unary.one["UINT8"]).new(mask=matrix.V, name="")
+        num_rows = matrix._nvals if matrix._nvals <= max_rows else min_rows
+        if min(nonzero._nvals, num_rows) > 2 * df.count().sum():
+            rows, cols, vals = nonzero.ss.head(num_rows, sort=True)
+            if mask.complement:
+                vals[:] = 0
+            df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
+            if num_rows < nonzero._nvals:
+                df = df.append(pd.Series(["..."] * 3, index=df.columns, name="..."))
+            return df
     return df.where(pd.notnull(df), "")
 
 
-def _get_vector_dataframe(vector, max_columns, *, mask=None):
+def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None):
     if not has_pandas:
         return
+    if max_rows is None:  # pragma: no branch
+        max_rows = pd.options.display.max_rows
+    if min_rows is None:  # pragma: no branch
+        min_rows = pd.options.display.min_rows
     if max_columns is None:  # pragma: no branch
         max_columns = _get_max_columns()
     columns, column_groups = _get_chunk(vector._size, max_columns, max_columns)
     df = pd.DataFrame(columns=columns, index=[""])
     for column_group, column_offset in column_groups:
         _update_vector_dataframe(df, vector, column_group, column_offset, mask=mask)
+    if (
+        (mask is None or mask.structure)
+        and df.size != vector._size
+        and min(vector._nvals, max_rows if vector._nvals <= max_rows else min_rows)
+        > 2 * df.count().sum()
+    ):
+        # The data is sparse and it's better to show in COO format.
+        # SS, SuiteSparse-specific: head
+        num_rows = vector._nvals if vector._nvals <= max_rows else min_rows
+        indices, vals = vector.ss.head(num_rows, sort=True)
+        if mask is not None:
+            if mask.complement:
+                vals = np.zeros(vals.size, dtype=np.uint8)
+            else:
+                vals = np.ones(vals.size, dtype=np.uint8)
+        df = pd.DataFrame({"index": indices, "val": vals})
+        if num_rows < vector._nvals:
+            df = df.append(pd.Series(["..."] * 2, index=df.columns, name="..."))
+        return df
+    if mask is not None and not mask.structure and df.size != vector._size:
+        # This performs more calculation and uses more memory than I would prefer.
+        # Perhaps we could use the efficient "constant vector or matrix" trick.
+        nonzero = vector.apply(unary.one["UINT8"]).new(mask=vector.V, name="")
+        num_rows = vector._nvals if vector._nvals <= max_rows else min_rows
+        if min(nonzero._nvals, num_rows) > 2 * df.count().sum():
+            indices, vals = nonzero.ss.head(num_rows, sort=True)
+            if mask.complement:
+                vals[:] = 0
+            df = pd.DataFrame({"index": indices, "val": vals})
+            if num_rows < nonzero._nvals:
+                df = df.append(pd.Series(["..."] * 2, index=df.columns, name="..."))
+            return df
     return df.where(pd.notnull(df), "")
 
 
@@ -297,9 +370,9 @@ def format_matrix_html(matrix, *, max_rows=None, min_rows=None, max_columns=None
     return _format_html(name, header, df)
 
 
-def format_vector_html(vector, *, max_columns=None, mask=None):
+def format_vector_html(vector, *, max_rows=None, min_rows=None, max_columns=None, mask=None):
     header = vector_header_html(vector, mask=mask)
-    df = _get_vector_dataframe(vector, max_columns, mask=mask)
+    df = _get_vector_dataframe(vector, max_rows, min_rows, max_columns, mask=mask)
     if mask is None:
         name = vector._name_html
     else:
@@ -440,7 +513,7 @@ def format_matrix(matrix, *, max_rows=None, min_rows=None, max_columns=None, mas
     return header
 
 
-def format_vector(vector, *, max_columns=None, mask=None):
+def format_vector(vector, *, max_rows=None, min_rows=None, max_columns=None, mask=None):
     name, keys, vals = vector_info(vector, mask=mask, for_html=False)
     header = create_header(
         name,
@@ -450,7 +523,7 @@ def format_vector(vector, *, max_columns=None, mask=None):
         name=vector.name if mask is None else mask.name,
     )
     if has_pandas:
-        df = _get_vector_dataframe(vector, max_columns, mask=mask)
+        df = _get_vector_dataframe(vector, max_rows, min_rows, max_columns, mask=mask)
         with pd.option_context("display.show_dimensions", False, "display.large_repr", "truncate"):
             df_repr = df.__repr__()
         return f"{header}\n{df_repr}"

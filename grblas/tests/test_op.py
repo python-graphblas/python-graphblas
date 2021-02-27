@@ -3,9 +3,9 @@ import numpy as np
 import grblas
 from grblas import lib
 from grblas import unary, binary, monoid, semiring
-from grblas import dtypes, ops, exceptions
+from grblas import dtypes, operator, exceptions
 from grblas import Vector, Matrix
-from grblas.ops import UnaryOp, BinaryOp, Monoid, Semiring
+from grblas.operator import UnaryOp, BinaryOp, Monoid, Semiring
 
 
 def test_op_repr():
@@ -41,36 +41,36 @@ def test_semiring():
 
 
 def test_find_opclass_unaryop():
-    assert ops.find_opclass(unary.minv)[1] == "UnaryOp"
-    # assert ops.find_opclass(lib.GrB_MINV_INT64)[1] == 'UnaryOp'
+    assert operator.find_opclass(unary.minv)[1] == "UnaryOp"
+    # assert operator.find_opclass(lib.GrB_MINV_INT64)[1] == 'UnaryOp'
 
 
 def test_find_opclass_binaryop():
-    assert ops.find_opclass(binary.times)[1] == "BinaryOp"
-    # assert ops.find_opclass(lib.GrB_TIMES_INT64)[1] == 'BinaryOp'
+    assert operator.find_opclass(binary.times)[1] == "BinaryOp"
+    # assert operator.find_opclass(lib.GrB_TIMES_INT64)[1] == 'BinaryOp'
 
 
 def test_find_opclass_monoid():
-    assert ops.find_opclass(monoid.max)[1] == "Monoid"
-    # assert ops.find_opclass(lib.GxB_MAX_INT64_MONOID)[1] == 'Monoid'
+    assert operator.find_opclass(monoid.max)[1] == "Monoid"
+    # assert operator.find_opclass(lib.GxB_MAX_INT64_MONOID)[1] == 'Monoid'
 
 
 def test_find_opclass_semiring():
-    assert ops.find_opclass(semiring.plus_plus)[1] == "Semiring"
-    # assert ops.find_opclass(lib.GxB_PLUS_PLUS_INT64)[1] == 'Semiring'
+    assert operator.find_opclass(semiring.plus_plus)[1] == "Semiring"
+    # assert operator.find_opclass(lib.GxB_PLUS_PLUS_INT64)[1] == 'Semiring'
 
 
 def test_find_opclass_invalid():
-    assert ops.find_opclass("foobar")[1] == ops.UNKNOWN_OPCLASS
-    # assert ops.find_opclass(lib.GrB_INP0)[1] == ops.UNKNOWN_OPCLASS
+    assert operator.find_opclass("foobar")[1] == operator.UNKNOWN_OPCLASS
+    # assert operator.find_opclass(lib.GrB_INP0)[1] == operator.UNKNOWN_OPCLASS
 
 
 def test_get_typed_op():
-    assert ops.get_typed_op(binary.bor, dtypes.INT64) is binary.bor[dtypes.INT64]
+    assert operator.get_typed_op(binary.bor, dtypes.INT64) is binary.bor[dtypes.INT64]
     with pytest.raises(KeyError, match="bor does not work with FP64"):
-        ops.get_typed_op(binary.bor, dtypes.FP64)
+        operator.get_typed_op(binary.bor, dtypes.FP64)
     with pytest.raises(TypeError, match="Unable to get typed operator"):
-        ops.get_typed_op(object(), dtypes.INT64)
+        operator.get_typed_op(object(), dtypes.INT64)
 
 
 def test_unaryop_udf():
@@ -205,7 +205,7 @@ def test_monoid_parameterized():
     with pytest.raises(ValueError, match="Signatures"):
         Monoid.register_anonymous(bin_op, lambda y=0: -y)  # pragma: no cover
     with pytest.raises(TypeError, match="binaryop must be parameterized"):
-        ops.ParameterizedMonoid("bad_monoid", binary.plus, 0)
+        operator.ParameterizedMonoid("bad_monoid", binary.plus, 0)
 
     def plus_plus_x_identity(x=0):
         return -x
@@ -222,8 +222,10 @@ def test_monoid_parameterized():
 
     assert v.reduce(monoid).value == -1
     assert v.reduce(monoid(1)).value == 1
-    with pytest.raises(TypeError, match="BinaryOp"):
-        Vector.from_values([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=monoid)
+    # with pytest.raises(TypeError, match="BinaryOp"):  # NOW OKAY
+    w1 = Vector.from_values([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=monoid)
+    w2 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    assert w1.isequal(w2)
 
     # identity may be a value
     def logaddexp(base):
@@ -234,8 +236,8 @@ def test_monoid_parameterized():
 
     fv = v.apply(unary.identity).new(dtype=dtypes.FP64)
     bin_op = BinaryOp.register_anonymous(logaddexp, parameterized=True)
-    Monoid.register_new("user_defined_monoid", bin_op, -np.inf)
-    monoid = grblas.monoid.user_defined_monoid
+    Monoid.register_new("_user_defined_monoid", bin_op, -np.inf)
+    monoid = grblas.monoid._user_defined_monoid
     fv2 = fv.ewise_mult(fv, monoid(2)).new()
     plus1 = UnaryOp.register_anonymous(lambda x: x + 1)
     expected = fv.apply(plus1).new()
@@ -287,9 +289,8 @@ def test_semiring_parameterized():
     B = A.mxm(A, mysemiring(1)).new()  # three extra pluses
     assert B.isequal(Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [10, 12, 14, 16]))
 
-    B = A.ewise_add(A, mysemiring).new()
-    assert B.isequal(A.ewise_add(A, semiring.plus_plus).new())
-    assert B.isequal(A.ewise_mult(A, mysemiring).new())
+    with pytest.raises(TypeError, match="Expected type: Monoid"):
+        A.ewise_add(A, mysemiring)
 
     # mismatched signatures.
     def other_binary(y=0):  # pragma: no cover
@@ -334,11 +335,11 @@ def test_semiring_parameterized():
     with pytest.raises(TypeError, match="must be a BinaryOp"):
         Semiring.register_anonymous(monoid.plus, monoid.plus)
     with pytest.raises(TypeError, match="At least one of"):
-        ops.ParameterizedSemiring("bad_semiring", monoid.plus, binary.plus)
+        operator.ParameterizedSemiring("bad_semiring", monoid.plus, binary.plus)
     with pytest.raises(TypeError, match="monoid must be of type"):
-        ops.ParameterizedSemiring("bad_semiring", binary.plus, binary.plus)
+        operator.ParameterizedSemiring("bad_semiring", binary.plus, binary.plus)
     with pytest.raises(TypeError, match="binaryop must be of"):
-        ops.ParameterizedSemiring("bad_semiring", monoid.plus, monoid.plus)
+        operator.ParameterizedSemiring("bad_semiring", monoid.plus, monoid.plus)
 
     # While we're here, let's check misc Matrix operations
     Adup = Matrix.from_values([0, 0, 0, 1, 1], [0, 0, 1, 0, 1], [100, 1, 2, 3, 4], dup_op=bin_op)
@@ -500,7 +501,7 @@ def test_nested_names():
 
     UnaryOp.register_new("incrementers.plus_three", plus_three)
     assert hasattr(unary, "incrementers")
-    assert type(unary.incrementers) is ops.OpPath
+    assert type(unary.incrementers) is operator.OpPath
     assert hasattr(unary.incrementers, "plus_three")
     comp_set = {
         "INT8",
@@ -529,6 +530,7 @@ def test_nested_names():
 
     UnaryOp.register_new("incrementers.plus_four", plus_four)
     assert hasattr(unary.incrementers, "plus_four")
+    assert hasattr(grblas.op.incrementers, "plus_four")  # Also save it to `grblas.op`!
     v << v.apply(unary.incrementers.plus_four)  # this is in addition to the plus_three earlier
     result2 = Vector.from_values([0, 1, 3], [8, 9, 3], dtype=dtypes.INT32)
     assert v.isequal(result2), v
@@ -540,3 +542,104 @@ def test_nested_names():
         UnaryOp.register_new("incrementers", bad_will_overwrite_path)
     with pytest.raises(AttributeError, match="already defined"):
         UnaryOp.register_new("identity.newfunc", bad_will_overwrite_path)
+    with pytest.raises(AttributeError, match="already defined"):
+        UnaryOp.register_new("incrementers.plus_four", bad_will_overwrite_path)
+
+
+def test_op_namespace():
+    from grblas import op
+
+    assert op.abs is unary.abs
+    assert op.minus is binary.minus
+    assert op.plus is binary.plus
+    assert op.plus_times is semiring.plus_times
+
+    assert op.numpy.fabs is unary.numpy.fabs
+    assert op.numpy.subtract is binary.numpy.subtract
+    assert op.numpy.add is binary.numpy.add
+    assert op.numpy.add_add is semiring.numpy.add_add
+    assert len(dir(op)) > 300
+    assert len(dir(op.numpy)) > 500
+
+    with pytest.raises(
+        AttributeError, match="module 'grblas.op.numpy' has no attribute 'bad_attr'"
+    ):
+        op.numpy.bad_attr
+
+
+def test_binaryop_attributes():
+    assert binary.plus[int].monoid is monoid.plus[int]
+    assert binary.minus[int].monoid is None
+    assert binary.plus.monoid is monoid.plus
+    assert binary.minus.monoid is None
+
+    assert binary.numpy.add[int].monoid is monoid.numpy.add[int]
+    assert binary.numpy.subtract[int].monoid is None
+    assert binary.numpy.add.monoid is monoid.numpy.add
+    assert binary.numpy.subtract.monoid is None
+
+    op = BinaryOp.register_anonymous(lambda x, y: x + y, name="plus")
+    assert op.monoid is None
+    assert op[int].monoid is None
+
+    assert binary.plus[int].parent is binary.plus
+    assert binary.numpy.add[int].parent is binary.numpy.add
+    assert op[int].parent is op
+
+    # bad type
+    assert binary.plus[bool].monoid is None
+    assert binary.numpy.equal[int].monoid is None
+    assert binary.numpy.equal[bool].monoid is monoid.numpy.equal[bool]  # sanity
+
+
+def test_monoid_attributes():
+    assert monoid.plus[int].binaryop is binary.plus[int]
+    assert monoid.plus[int].identity == 0
+    assert monoid.plus.binaryop is binary.plus
+    assert monoid.plus.identities == {typ: 0 for typ in monoid.plus.types}
+
+    assert monoid.numpy.add[int].binaryop is binary.numpy.add[int]
+    assert monoid.numpy.add[int].identity == 0
+    assert monoid.numpy.add.binaryop is binary.numpy.add
+    assert monoid.numpy.add.identities == {typ: 0 for typ in monoid.numpy.add.types}
+
+    binop = BinaryOp.register_anonymous(lambda x, y: x + y, name="plus")
+    op = Monoid.register_anonymous(binop, 0, name="plus")
+    assert op.binaryop is binop
+    assert op[int].binaryop is binop[int]
+
+    assert monoid.plus[int].parent is monoid.plus
+    assert monoid.numpy.add[int].parent is monoid.numpy.add
+    assert op[int].parent is op
+
+
+def test_semiring_attributes():
+    assert semiring.min_plus[int].monoid is monoid.min[int]
+    assert semiring.min_plus[int].binaryop is binary.plus[int]
+    assert semiring.min_plus.monoid is monoid.min
+    assert semiring.min_plus.binaryop is binary.plus
+
+    assert semiring.numpy.add_subtract[int].monoid is monoid.numpy.add[int]
+    assert semiring.numpy.add_subtract[int].binaryop is binary.numpy.subtract[int]
+    assert semiring.numpy.add_subtract.monoid is monoid.numpy.add
+    assert semiring.numpy.add_subtract.binaryop is binary.numpy.subtract
+
+    binop = BinaryOp.register_anonymous(lambda x, y: x + y, name="plus")
+    mymonoid = Monoid.register_anonymous(binop, 0, name="plus")
+    op = Semiring.register_anonymous(mymonoid, binop, name="plus_plus")
+    assert op.binaryop is binop
+    assert op.binaryop[int] is binop[int]
+    assert op.monoid is mymonoid
+    assert op.monoid[int] is mymonoid[int]
+
+    assert semiring.min_plus[int].parent is semiring.min_plus
+    assert semiring.numpy.add_subtract[int].parent is semiring.numpy.add_subtract
+    assert op[int].parent is op
+
+
+def test_binaryop_superset_monoids():
+    monoid_names = {x for x in dir(monoid) if not x.startswith("_")}
+    binary_names = {x for x in dir(binary) if not x.startswith("_")}
+    diff = monoid_names - binary_names
+    assert len(diff) == 0
+    assert len(set(dir(monoid.numpy)) - set(dir(binary.numpy))) == 0

@@ -20,9 +20,9 @@ def test_recorder():
     assert len(rec.data) == 5
     assert list(rec) == [
         "GrB_Matrix_new(&C, GrB_INT64, 2, 2);",
-        "GrB_mxm(C, NULL, NULL, GxB_PLUS_TIMES_INT64, A, B, NULL);",
+        "GrB_mxm(C, NULL, NULL, GrB_PLUS_TIMES_SEMIRING_INT64, A, B, NULL);",
         "GrB_Matrix_new(&D, GrB_INT64, 2, 2);",
-        "GrB_mxm(D, NULL, NULL, GxB_MIN_PLUS_INT64, A, B, GrB_DESC_T1);",
+        "GrB_mxm(D, NULL, NULL, GrB_MIN_PLUS_SEMIRING_INT64, A, B, GrB_DESC_T1);",
         "GrB_Matrix_eWiseMult_BinaryOp(C, D, NULL, GrB_TIMES_INT64, A, B, GrB_DESC_ST0);",
     ]
 
