@@ -17,7 +17,7 @@ from .utils import (
     _CArray,
     _Pointer,
 )
-from . import _ss, _ss_utils
+from . import _ss, _ss_utils, expr
 
 ffi_new = ffi.new
 
@@ -2632,3 +2632,8 @@ class TransposedMatrix:
     __iter__ = Matrix.__iter__
     _expect_type = Matrix._expect_type
     _expect_op = Matrix._expect_op
+
+
+expr.MatrixEwiseAddExpr.output_type = MatrixExpression
+expr.MatrixEwiseMultExpr.output_type = MatrixExpression
+expr.MatrixMatMulExpr.output_type = MatrixExpression

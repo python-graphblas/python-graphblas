@@ -29,7 +29,7 @@ def _call_op(op, left, right=None, **kwargs):
     if right is None:
         if isinstance(left, InfixExprBase):
             # op(A & B), op(A | B), op(A @ B)
-            return getattr(left.left, left._method)(left.right, op, **kwargs)
+            return getattr(left.left, left.method_name)(left.right, op, **kwargs)
         else:
             raise TypeError("TODO")
 

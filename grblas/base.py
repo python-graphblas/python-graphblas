@@ -3,7 +3,7 @@ from . import ffi, replace as replace_singleton
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import lookup_dtype
 from .exceptions import check_status
-from .expr import AmbiguousAssignOrExtract, Updater, EwiseAddExpr, EwiseMultExpr, MatMulExpr
+from .expr import AmbiguousAssignOrExtract, Updater, _ewise_infix_expr, _matmul_infix_expr
 from .mask import Mask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_typed_op
 from .unary import identity
@@ -207,12 +207,12 @@ class BaseType:
     def __or__(self, other):
         if self._is_scalar:
             return NotImplemented
-        return EwiseAddExpr(self, other)
+        return _ewise_infix_expr(self, other, method="ewise_add", within="__or__")
 
     def __ror__(self, other):
         if self._is_scalar:
             return NotImplemented
-        return EwiseAddExpr(other, self)
+        return _ewise_infix_expr(other, self, method="ewise_add", within="__ror__")
 
     def __ior__(self, other):
         raise TypeError("TODO")
@@ -220,12 +220,12 @@ class BaseType:
     def __and__(self, other):
         if self._is_scalar:
             return NotImplemented
-        return EwiseMultExpr(self, other)
+        return _ewise_infix_expr(self, other, method="ewise_mult", within="__and__")
 
     def __rand__(self, other):
         if self._is_scalar:
             return NotImplemented
-        return EwiseMultExpr(other, self)
+        return _ewise_infix_expr(self, other, method="ewise_mult", within="__rand__")
 
     def __iand__(self, other):
         raise TypeError("TODO")
@@ -233,12 +233,12 @@ class BaseType:
     def __matmul__(self, other):
         if self._is_scalar:
             return NotImplemented
-        return MatMulExpr(self, other)
+        return _matmul_infix_expr(self, other, within="__matmul__")
 
     def __rmatmul__(self, other):
         if self._is_scalar:
             return NotImplemented
-        return MatMulExpr(other, self)
+        return _matmul_infix_expr(other, self, within="__rmatmul__")
 
     def __imatmul__(self, other):
         raise TypeError("TODO")
