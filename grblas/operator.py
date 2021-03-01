@@ -69,10 +69,12 @@ class TypedBuiltinUnaryOp(TypedOpBase):
     opclass = "UnaryOp"
 
     def __call__(self, val):
-        try:
+        from .vector import Vector
+        from .matrix import Matrix, TransposedMatrix
+
+        if type(val) in {Vector, Matrix, TransposedMatrix}:
             return val.apply(self)
-        except AttributeError:
-            raise TypeError("TODO")
+        raise TypeError("TODO")
 
 
 class TypedBuiltinBinaryOp(TypedOpBase):
@@ -81,7 +83,7 @@ class TypedBuiltinBinaryOp(TypedOpBase):
     def __call__(self, left, right=None, *, require_monoid=None):
         if require_monoid is not None:
             if right is not None:
-                1 / 0  # TODO: bad keyword when calling apply
+                raise TypeError("TODO")
             return _call_op(self, left, require_monoid=require_monoid)
         return _call_op(self, left, right)
 

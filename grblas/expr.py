@@ -318,7 +318,7 @@ class InfixExprBase:
 
 class VectorEwiseAddExpr(InfixExprBase):
     method_name = "ewise_add"
-    output_type = None
+    output_type = None  # VectorExpression
     _infix = "|"
     _example_op = "plus"
 
@@ -329,7 +329,7 @@ class VectorEwiseAddExpr(InfixExprBase):
 
 class VectorEwiseMultExpr(InfixExprBase):
     method_name = "ewise_mult"
-    output_type = None
+    output_type = None  # VectorExpression
     _infix = "&"
     _example_op = "times"
 
@@ -339,7 +339,7 @@ class VectorEwiseMultExpr(InfixExprBase):
 
 
 class VectorMatMulExpr(InfixExprBase):
-    output_type = None
+    output_type = None  # VectorExpression
     _infix = "@"
     _example_op = "plus_times"
 
@@ -351,7 +351,7 @@ class VectorMatMulExpr(InfixExprBase):
 
 class MatrixEwiseAddExpr(InfixExprBase):
     method_name = "ewise_add"
-    output_type = None
+    output_type = None  # MatrixExpression
     _infix = "|"
     _example_op = "plus"
 
@@ -363,7 +363,7 @@ class MatrixEwiseAddExpr(InfixExprBase):
 
 class MatrixEwiseMultExpr(InfixExprBase):
     method_name = "ewise_mult"
-    output_type = None
+    output_type = None  # MatrixExpression
     _infix = "&"
     _example_op = "times"
 
@@ -375,7 +375,7 @@ class MatrixEwiseMultExpr(InfixExprBase):
 
 class MatrixMatMulExpr(InfixExprBase):
     method_name = "mxm"
-    output_type = None
+    output_type = None  # MatrixExpression
     _infix = "@"
     _example_op = "plus_times"
 
@@ -406,8 +406,8 @@ def _ewise_infix_expr(left, right, *, method, within):
         right._expect_type(left, Vector, within=within, argname="left")
     elif right_type is Matrix or right_type is TransposedMatrix:
         right._expect_type(left, (Matrix, TransposedMatrix), within=within, argname="left")
-    else:
-        raise TypeError("TODO")
+    else:  # pragma: no cover
+        raise TypeError(f"Bad types for ewise infix: {type(left).__name__}, {type(right).__name__}")
 
     from .binary import any
 
@@ -451,8 +451,24 @@ def _matmul_infix_expr(left, right, *, within):
                 within=within,
                 argname="right",
             )
-    else:
-        raise TypeError("TODO")
+    elif right_type is Vector:
+        right._expect_type(
+            left,
+            (Matrix, TransposedMatrix),
+            within=within,
+            argname="left",
+        )
+    elif right_type is Matrix or right_type is TransposedMatrix:
+        right._expect_type(
+            left,
+            (Vector, Matrix, TransposedMatrix),
+            within=within,
+            argname="left",
+        )
+    else:  # pragma: no cover
+        raise TypeError(
+            f"Bad types for matmul infix: {type(left).__name__}, {type(right).__name__}"
+        )
 
     from .semiring import any_pair
 
