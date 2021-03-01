@@ -30,7 +30,7 @@ def _call_op(op, left, right=None, **kwargs):
         if isinstance(left, InfixExprBase):
             # op(A & B), op(A | B), op(A @ B)
             return getattr(left.left, left.method_name)(left.right, op, **kwargs)
-        if find_opclass(op) == "Semiring":
+        if find_opclass(op)[1] == "Semiring":
             raise TypeError(
                 f"Bad type when calling {op!r}.  Got type: {type(left)}.\n"
                 f"Expected an infix expression, such as: {op!r}(A @ B)"
