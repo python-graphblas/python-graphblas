@@ -37,9 +37,11 @@ def test_ewise(v1, v2, A1, A2):
     ]:
         expected = left.ewise_mult(right, monoid.plus).new()
         assert expected.isequal(monoid.plus(left & right).new())
+        assert expected.isequal(monoid.plus[float](left & right).new())
 
         expected = left.ewise_add(right, op.plus).new()
         assert expected.isequal(op.plus(left | right).new())
+        assert expected.isequal(op.plus[float](left | right).new())
 
         expected = left.ewise_mult(right, op.minus).new()
         assert expected.isequal(op.minus(left & right).new())
@@ -61,6 +63,7 @@ def test_matmul(v1, v2, A1, A2):
     ]:
         expected = getattr(left, method)(right, op.plus_times).new()
         assert expected.isequal(op.plus_times(left @ right).new())
+        assert expected.isequal(op.plus_times[float](left @ right).new())
 
 
 def test_bad_ewise(s1, v1, A1, A2):
@@ -171,6 +174,7 @@ def test_bad_matmul(s1, v1, A1, A2):
 def test_apply_unary(v1, A1):
     expected = v1.apply(op.exp).new()
     assert expected.isequal(op.exp(v1).new())
+    assert expected.isequal(op.exp[float](v1).new())
 
     expected = A1.apply(op.exp).new()
     assert expected.isequal(op.exp(A1).new())
@@ -192,9 +196,11 @@ def test_apply_unary_bad(s1, v1):
 def test_apply_binary(v1, A1):
     expected = v1.apply(monoid.plus, right=2).new()
     assert expected.isequal(monoid.plus(v1, 2).new())
+    assert expected.isequal(monoid.plus[float](v1, 2).new())
 
     expected = v1.apply(op.minus, right=2).new()
     assert expected.isequal(op.minus(v1, 2).new())
+    assert expected.isequal(op.minus[float](v1, 2).new())
 
     expected = v1.apply(op.minus, left=2).new()
     assert expected.isequal(op.minus(2, v1).new())
