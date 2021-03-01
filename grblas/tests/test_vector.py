@@ -145,6 +145,9 @@ def test_build(v):
     v.clear()
     with pytest.raises(IndexOutOfBound):
         v.build([0, 11], [1, 1])
+    w = Vector.new(int, size=3)
+    w.build([0, 11], [1, 1], size=12)
+    assert w.isequal(Vector.from_values([0, 11], [1, 1]))
 
 
 def test_extract_values(v):

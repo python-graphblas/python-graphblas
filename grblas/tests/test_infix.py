@@ -1,5 +1,5 @@
 from pytest import fixture, raises
-from grblas import op, Scalar, Vector, Matrix
+from grblas import op, monoid, Scalar, Vector, Matrix
 from grblas.exceptions import DimensionMismatch
 
 
@@ -35,8 +35,8 @@ def test_ewise(v1, v2, A1, A2):
         (A1.T, A1.T),
         (A1, A1),
     ]:
-        expected = left.ewise_mult(right, op.plus).new()
-        assert expected.isequal(op.plus(left & right).new())
+        expected = left.ewise_mult(right, monoid.plus).new()
+        assert expected.isequal(monoid.plus(left & right).new())
 
         expected = left.ewise_add(right, op.plus).new()
         assert expected.isequal(op.plus(left | right).new())
@@ -121,6 +121,8 @@ def test_bad_ewise(s1, v1, A1, A2):
         op.minus(v1 | v1)
     with raises(TypeError):
         op.minus(v1 & v1, require_monoid=False)
+    with raises(TypeError, match="Bad types when calling binary.plus"):
+        op.plus(v1 & v1, 1)
 
 
 def test_bad_matmul(s1, v1, A1, A2):
@@ -151,6 +153,19 @@ def test_bad_matmul(s1, v1, A1, A2):
         A1 @ A1
     with raises(DimensionMismatch):
         A1.T @ A1.T
+    with raises(TypeError, match="__imatmul__"):
+        A1 @= A1
+    with raises(TypeError):
+        s1 @ 1
+    with raises(TypeError):
+        1 @ s1
+
+    with raises(TypeError, match="Bad type when calling semiring.plus_times"):
+        op.plus_times(A1)
+    with raises(TypeError, match="Bad types when calling semiring.plus_times."):
+        op.plus_times(A1, A2)
+    with raises(TypeError, match="Bad types when calling semiring.plus_times."):
+        op.plus_times(A1 @ A2, 1)
 
 
 def test_apply_unary(v1, A1):
@@ -166,15 +181,18 @@ def test_apply_unary_bad(s1, v1):
         op.exp(v1, 1)
     with raises(TypeError, match="__call__"):
         op.exp(1, v1)
-    with raises(TypeError, match="TODO"):
+    with raises(TypeError, match="Bad type when calling unary.exp"):
         op.exp(s1)
-    with raises(TypeError, match="TODO"):
+    with raises(TypeError, match="Bad type when calling unary.exp"):
         op.exp(1)
-    with raises(TypeError, match="TODO"):
+    with raises(TypeError, match="Bad type when calling unary.exp"):
         op.exp(v1 | v1)
 
 
 def test_apply_binary(v1, A1):
+    expected = v1.apply(monoid.plus, right=2).new()
+    assert expected.isequal(monoid.plus(v1, 2).new())
+
     expected = v1.apply(op.minus, right=2).new()
     assert expected.isequal(op.minus(v1, 2).new())
 
@@ -189,11 +207,11 @@ def test_apply_binary(v1, A1):
 
 
 def test_apply_binary_bad(s1, v1):
-    with raises(TypeError, match="TODO"):
+    with raises(TypeError, match="Bad types when calling binary.plus"):
         op.plus(1, 1)
-    with raises(TypeError, match="TODO"):
+    with raises(TypeError, match="Bad type when calling binary.plus"):
         op.plus(v1)
     with raises(TypeError, match="Bad type for keyword argument `right="):
         op.plus(v1, v1)
-    with raises(TypeError, match="TODO"):
+    with raises(TypeError, match="may only be used when performing an ewise_add"):
         op.plus(v1, 1, require_monoid=False)

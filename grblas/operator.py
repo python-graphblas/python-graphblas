@@ -30,8 +30,18 @@ def _call_op(op, left, right=None, **kwargs):
         if isinstance(left, InfixExprBase):
             # op(A & B), op(A | B), op(A @ B)
             return getattr(left.left, left.method_name)(left.right, op, **kwargs)
-        else:
-            raise TypeError("TODO")
+        if find_opclass(op) == "Semiring":
+            raise TypeError(
+                f"Bad type when calling {op!r}.  Got type: {type(left)}.\n"
+                f"Expected an infix expression, such as: {op!r}(A @ B)"
+            )
+        raise TypeError(
+            f"Bad type when calling {op!r}.  Got type: {type(left)}.\n"
+            "Expected an infix expression or an apply with a Vector or Matrix and a scalar:\n"
+            f"    - {op!r}(A & B)\n"
+            f"    - {op!r}(A, 1)\n"
+            f"    - {op!r}(1, A)"
+        )
 
     # op(A, 1) -> apply (or select once available)
     from .vector import Vector
@@ -41,8 +51,13 @@ def _call_op(op, left, right=None, **kwargs):
         return left.apply(op, right=right, **kwargs)
     elif type(right) in {Vector, Matrix, TransposedMatrix}:
         return right.apply(op, left=left, **kwargs)
-    else:
-        raise TypeError("TODO")
+    raise TypeError(
+        f"Bad types when calling {op!r}.  Got types: {type(left)}, {type(right)}.\n"
+        "Expected an infix expression or an apply with a Vector or Matrix and a scalar:\n"
+        f"    - {op!r}(A & B)\n"
+        f"    - {op!r}(A, 1)\n"
+        f"    - {op!r}(1, A)"
+    )
 
 
 class TypedOpBase:
@@ -74,7 +89,13 @@ class TypedBuiltinUnaryOp(TypedOpBase):
 
         if type(val) in {Vector, Matrix, TransposedMatrix}:
             return val.apply(self)
-        raise TypeError("TODO")
+        raise TypeError(
+            f"Bad type when calling {self!r}.\n"
+            "    - Expected type: Vector, Matrix, TransposedMatrix.\n"
+            f"    - Got: {type(val)}.\n"
+            "Calling a UnaryOp is syntactic sugar for calling apply.  "
+            f"For example, `A.apply({self!r})` is the same as `{self!r}(A)`."
+        )
 
 
 class TypedBuiltinBinaryOp(TypedOpBase):
@@ -83,7 +104,11 @@ class TypedBuiltinBinaryOp(TypedOpBase):
     def __call__(self, left, right=None, *, require_monoid=None):
         if require_monoid is not None:
             if right is not None:
-                raise TypeError("TODO")
+                raise TypeError(
+                    f"Bad keyword argument `require_monoid=` when calling {self!r}.\n"
+                    "require_monoid keyword may only be used when performing an ewise_add.\n"
+                    f"For example: {self!r}(A | B, require_monoid=False)."
+                )
             return _call_op(self, left, require_monoid=require_monoid)
         return _call_op(self, left, right)
 
@@ -123,7 +148,12 @@ class TypedBuiltinSemiring(TypedOpBase):
     opclass = "Semiring"
 
     def __call__(self, left, right=None):
-        return _call_op(self, left, right)
+        if right is not None:
+            raise TypeError(
+                f"Bad types when calling {self!r}.  Got types: {type(left)}, {type(right)}.\n"
+                f"Expected an infix expression, such as: {self!r}(A @ B)"
+            )
+        return _call_op(self, left)
 
     @property
     def binaryop(self):
