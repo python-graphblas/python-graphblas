@@ -68,7 +68,7 @@ def from_numpy(m):
         return from_scipy_sparse_matrix(ss)
 
 
-def from_scipy_sparse_matrix(m):
+def from_scipy_sparse_matrix(m, *, name=None):
     """
     dtype is inferred from m.dtype
     """
@@ -76,7 +76,7 @@ def from_scipy_sparse_matrix(m):
     nrows, ncols = ss.shape
     rows, cols = ss.nonzero()
     dtype = lookup_dtype(m.dtype)
-    g = Matrix.from_values(rows, cols, ss.data, nrows=nrows, ncols=ncols, dtype=dtype)
+    g = Matrix.from_values(rows, cols, ss.data, nrows=nrows, ncols=ncols, dtype=dtype, name=name)
     return g
 
 
@@ -125,3 +125,26 @@ def to_scipy_sparse_matrix(m, format="csr"):
     if format not in {"bsr", "csr", "csc", "coo", "lil", "dia", "dok"}:
         raise GrblasException(f"Invalid format: {format}")
     return rv.asformat(format)
+
+
+def mmread(source, *, name=None):
+    """Read the contents of a Matrix Market filename or file into a new Matrix.
+
+    This requires scipy to be installed.
+
+    For more information on the Matrix Market format, see:
+    https://math.nist.gov/MatrixMarket/formats.html
+    """
+    try:
+        from scipy.io import mmread  # noqa
+        from scipy.sparse import coo_matrix  # noqa
+    except ImportError:  # pragma: no cover
+        raise ImportError("scipy is required to read Matrix Market files")
+    array = mmread(source)
+    if isinstance(array, coo_matrix):
+        nrows, ncols = array.shape
+        return Matrix.from_values(
+            array.row, array.col, array.data, nrows=nrows, ncols=ncols, name=name
+        )
+    # SS, SuiteSparse-specific: import_full
+    return Matrix.ss.import_fullr(values=array, take_ownership=True, name=name)

@@ -1,6 +1,8 @@
 import pytest
 import grblas as gb
 import numpy as np
+from grblas import Matrix
+from io import StringIO
 
 try:
     import networkx as nx
@@ -73,3 +75,115 @@ def test_matrix_to_from_networkx():
 
     M2 = gb.io.from_networkx(G, dtype=int)
     assert M.isequal(M2, check_dtype=True)
+
+
+@pytest.mark.skipif("not ss")
+def test_mmread():
+    from scipy.io.tests import test_mmio
+
+    p31 = 2 ** 31
+    p63 = 2 ** 63
+    m31 = -p31
+    m63 = -p63
+    p311 = p31 - 1
+    p312 = p31 - 2
+    p631 = p63 - 1
+    m631 = m63 + 1
+    m632 = m63 + 2
+
+    # Use example Matrix Market files from scipy
+    examples = {
+        "_32bit_integer_dense_example": (
+            False,
+            Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [p311, p311, p312, p312]),
+        ),
+        "_32bit_integer_sparse_example": (
+            False,
+            Matrix.from_values([0, 1], [0, 1], [p311, p312]),
+        ),
+        "_64bit_integer_dense_example": (
+            False,
+            Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [p31, m31, m632, p631]),
+        ),
+        "_64bit_integer_sparse_general_example": (
+            False,
+            Matrix.from_values([0, 0, 1], [0, 1, 1], [p31, p631, p631]),
+        ),
+        "_64bit_integer_sparse_symmetric_example": (
+            False,
+            Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [p31, m631, m631, p631]),
+        ),
+        "_64bit_integer_sparse_skew_example": (
+            False,
+            Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [p31, m631, p631, p631]),
+        ),
+        "_over64bit_integer_dense_example": (True, None),
+        "_over64bit_integer_sparse_example": (True, None),
+        "_general_example": (
+            False,
+            Matrix.from_values(
+                [0, 0, 1, 2, 3, 3, 3, 4],
+                [0, 3, 1, 2, 1, 3, 4, 4],
+                [1, 6, 10.5, 0.015, 250.5, -280, 33.32, 12],
+            ),
+        ),
+        "_hermitian_example": (
+            False,
+            Matrix.from_values(
+                [0, 1, 1, 2, 3, 3, 3, 4, 4],
+                [0, 1, 3, 2, 1, 3, 4, 3, 4],
+                [1, 10.5, 250.5 - 22.22j, 0.015, 250.5 + 22.22j, -280, -33.32j, 33.32j, 12],
+            ),
+        ),
+        "_skew_example": (
+            False,
+            Matrix.from_values(
+                [0, 1, 1, 2, 3, 3, 3, 4, 4],
+                [0, 1, 3, 2, 1, 3, 4, 3, 4],
+                [1, 10.5, -250.5, 0.015, 250.5, -280, 0, 0, 12],
+            ),
+        ),
+        "_symmetric_example": (
+            False,
+            Matrix.from_values(
+                [0, 1, 1, 2, 3, 3, 3, 4, 4],
+                [0, 1, 3, 2, 1, 3, 4, 3, 4],
+                [1, 10.5, 250.5, 0.015, 250.5, -280, 8, 8, 12],
+            ),
+        ),
+        "_symmetric_pattern_example": (
+            False,
+            Matrix.from_values(
+                [0, 1, 1, 2, 3, 3, 3, 4, 4],
+                [0, 1, 3, 2, 1, 3, 4, 3, 4],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1],
+            ),
+        ),
+        "_empty_lines_example": (
+            False,
+            Matrix.from_values(
+                [0, 0, 1, 2, 3, 3, 3, 4],
+                [0, 3, 1, 2, 1, 3, 4, 4],
+                [1, 6, 10.5, 0.015, 250.5, -280, 33.32, 12],
+            ),
+        ),
+    }
+    success = 0
+    for example, (over64, expected) in examples.items():
+        if not hasattr(test_mmio, example):  # pragma: no cover
+            continue
+        mm = StringIO(getattr(test_mmio, example))
+        if over64:
+            with pytest.raises(OverflowError):
+                M = gb.io.mmread(mm)
+        else:
+            M = gb.io.mmread(mm)
+            if not M.isequal(expected):  # pragma: no cover
+                print(example)
+                print("Expected:")
+                print(expected)
+                print("Got:")
+                print(M)
+                raise AssertionError("Matrix not as expected.  See print output above")
+        success += 1
+    assert success > 0
