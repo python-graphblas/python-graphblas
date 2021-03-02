@@ -2,7 +2,7 @@ import pytest
 import grblas as gb
 import numpy as np
 from grblas import Matrix
-from io import StringIO
+from io import StringIO, BytesIO
 
 try:
     import networkx as nx
@@ -78,7 +78,7 @@ def test_matrix_to_from_networkx():
 
 
 @pytest.mark.skipif("not ss")
-def test_mmread():
+def test_mmread_mmwrite():
     from scipy.io.tests import test_mmio
 
     p31 = 2 ** 31
@@ -172,18 +172,34 @@ def test_mmread():
     for example, (over64, expected) in examples.items():
         if not hasattr(test_mmio, example):  # pragma: no cover
             continue
-        mm = StringIO(getattr(test_mmio, example))
+        mm_in = StringIO(getattr(test_mmio, example))
         if over64:
             with pytest.raises(OverflowError):
-                M = gb.io.mmread(mm)
+                M = gb.io.mmread(mm_in)
         else:
-            M = gb.io.mmread(mm)
+            M = gb.io.mmread(mm_in)
             if not M.isequal(expected):  # pragma: no cover
                 print(example)
                 print("Expected:")
                 print(expected)
                 print("Got:")
                 print(M)
-                raise AssertionError("Matrix not as expected.  See print output above")
+                raise AssertionError("Matrix M not as expected.  See print output above")
+            mm_out = BytesIO()
+            gb.io.mmwrite(mm_out, M)
+            mm_out.flush()
+            mm_out.seek(0)
+            mm_out_str = b"".join(mm_out.readlines()).decode()
+            mm_out.seek(0)
+            M2 = gb.io.mmread(mm_out)
+            if not M2.isequal(expected):  # pragma: no cover
+                print(example)
+                print("Expected:")
+                print(expected)
+                print("Got:")
+                print(M2)
+                print("Matrix Market file:")
+                print(mm_out_str)
+                raise AssertionError("Matrix M2 not as expected.  See print output above")
         success += 1
     assert success > 0

@@ -130,7 +130,8 @@ def to_scipy_sparse_matrix(m, format="csr"):
 def mmread(source, *, name=None):
     """Read the contents of a Matrix Market filename or file into a new Matrix.
 
-    This requires scipy to be installed.
+    This uses `scipy.io.mmread`:
+    https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.mmread.html
 
     For more information on the Matrix Market format, see:
     https://math.nist.gov/MatrixMarket/formats.html
@@ -148,3 +149,27 @@ def mmread(source, *, name=None):
         )
     # SS, SuiteSparse-specific: import_full
     return Matrix.ss.import_fullr(values=array, take_ownership=True, name=name)
+
+
+def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=None):
+    """Write matrix to Matrix Market file `target`.
+
+    This uses `scipy.io.mmwrite`.  See documentation for the parameters here:
+    https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.mmwrite.html
+    """
+    try:
+        from scipy.io import mmwrite  # noqa
+    except ImportError:  # pragma: no cover
+        raise ImportError("scipy is required to write Matrix Market files")
+
+    # Note: it would be preferable to write the data in full format if it is indeed full.
+    #       However, there may be a bug: https://github.com/scipy/scipy/issues/13634
+    #
+    # SS, SuiteSparse-specific: format
+    # fmt = matrix.ss.format
+    # if fmt == 'fullr' or fmt == 'fullc':
+    #    array = matrix.ss.export(format=fmt)['values']
+    # else:
+
+    array = to_scipy_sparse_matrix(matrix, format="coo")
+    mmwrite(target, array, comment=comment, field=field, precision=precision, symmetry=symmetry)
