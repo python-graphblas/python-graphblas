@@ -16,7 +16,7 @@ from .utils import (
     class_property,
 )
 from . import expr
-from .ss._vector import ss
+from ._ss.vector import ss
 
 ffi_new = ffi.new
 

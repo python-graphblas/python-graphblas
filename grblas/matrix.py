@@ -18,7 +18,7 @@ from .utils import (
     class_property,
 )
 from . import expr
-from .ss._matrix import ss
+from ._ss.matrix import ss
 
 ffi_new = ffi.new
 

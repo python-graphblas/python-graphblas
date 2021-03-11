@@ -44,7 +44,7 @@ _SPECIAL_ATTRS = {
     "scalar",
     "tests",
     "utils",
-    "ss",
+    "_ss",
 }
 
 
@@ -116,7 +116,7 @@ def _init(backend_arg, blocking, automatic=False):
         lib = ffi_backend.lib
         ffi = ffi_backend.ffi
         blocking = lib.GrB_BLOCKING if blocking else lib.GrB_NONBLOCKING
-        from .ss._utils import call_gxb_init
+        from ._ss.utils import call_gxb_init
 
         # This must be called before anything else happens (and only once)
         call_gxb_init(ffi, lib, blocking)
