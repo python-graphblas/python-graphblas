@@ -180,6 +180,13 @@ class Scalar(BaseType):
         new_scalar.value = value
         return new_scalar
 
+    def __reduce__(self):
+        return Scalar._deserialize, (self.value, self.dtype, self.name)
+
+    @staticmethod
+    def _deserialize(value, dtype, name):
+        return Scalar.from_value(value, dtype=dtype, name=name)
+
     if backend == "pygraphblas":
 
         def to_pygraphblas(self):

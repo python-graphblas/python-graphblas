@@ -1,5 +1,6 @@
 import pytest
 import grblas
+import pickle
 from grblas import Scalar
 from grblas import dtypes, binary
 from grblas.scalar import _CScalar
@@ -207,3 +208,10 @@ def test_cscalar():
     assert c1 != 6
     assert repr(c1) == "5"
     assert c1._repr_html_() == c1.scalar._repr_html_()
+
+
+def test_pickle(s):
+    blob = pickle.dumps(s)
+    s2 = pickle.loads(blob)
+    assert s.isequal(s2, check_dtype=True)
+    assert s.name == s2.name

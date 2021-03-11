@@ -58,6 +58,16 @@ class Vector(BaseType):
         with skip_record:
             return format_vector_html(self, mask=mask)
 
+    def __reduce__(self):
+        # SS, SuiteSparse-specific: export
+        pieces = self.ss.export(raw=True)
+        return self._deserialize, (pieces, self.name)
+
+    @staticmethod
+    def _deserialize(pieces, name):
+        # SS, SuiteSparse-specific: import
+        return Vector.ss.import_any(name=name, **pieces)
+
     @property
     def S(self):
         return StructuralMask(self)

@@ -33,6 +33,11 @@ class DataType:
             except ValueError:
                 raise TypeError(f"Invalid or unknown datatype: {other}")
 
+    def __reduce__(self):
+        if self.gb_name == "GrB_Index":
+            return "_INDEX"
+        return self.name
+
     @property
     def _carg(self):
         return self.gb_obj
