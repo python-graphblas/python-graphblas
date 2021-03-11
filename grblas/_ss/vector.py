@@ -5,7 +5,7 @@ from .. import ffi, lib
 from ..dtypes import lookup_dtype
 from ..exceptions import check_status, check_status_carg
 from ..utils import ints_to_numpy_buffer, values_to_numpy_buffer, wrapdoc
-from ._utils import claim_buffer, unclaim_buffer
+from .utils import claim_buffer, unclaim_buffer
 
 ffi_new = ffi.new
 
