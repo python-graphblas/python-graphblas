@@ -49,7 +49,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Jim Kitchen and Erik Welch",
-    author_email="erik.n.welch@gmail.com",
+    author_email="erik.n.welch@gmail.com,jim22k@gmail.com",
     url="https://github.com/metagraph-dev/grblas",
     ext_modules=ext_modules,
     packages=find_packages(exclude=["grblas.backends.python"]),
