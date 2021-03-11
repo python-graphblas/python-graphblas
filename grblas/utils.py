@@ -73,9 +73,36 @@ def get_shape(nrows, ncols, **arrays):
     return nrows, ncols
 
 
+class class_property:
+    __slots__ = "classval", "member_property"
+
+    def __init__(self, member_property, classval):
+        self.classval = classval
+        self.member_property = member_property
+
+    def __get__(self, obj, type=None):
+        if obj is None:
+            return self.classval
+        return self.member_property.__get__(obj, type)
+
+    @property
+    def __set__(self):
+        return self.member_property.__set__
+
+    @property
+    def __doc__(self):
+        return self.member_property.__doc__
+
+    @__doc__.setter
+    def __doc__(self, value):
+        self.member_property.__doc__ = value
+
+
 # A similar object may eventually make it to the GraphBLAS spec.
 # Hide this from the user for now.
 class _CArray:
+    __slots__ = "array", "_carg", "dtype", "_name"
+
     def __init__(self, array=None, *, size=None, dtype=_INDEX, name=None):
         if size is not None:
             self.array = np.empty(size, dtype=dtype.np_type)
@@ -101,6 +128,8 @@ class _CArray:
 
 
 class _Pointer:
+    __slots__ = "val"
+
     def __init__(self, val):
         self.val = val
 

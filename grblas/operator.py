@@ -61,6 +61,8 @@ def _call_op(op, left, right=None, **kwargs):
 
 
 class TypedOpBase:
+    __slots__ = "parent", "name", "type", "return_type", "gb_obj", "gb_name"
+
     def __init__(self, parent, name, type_, return_type, gb_obj, gb_name):
         self.parent = parent
         self.name = name
@@ -81,6 +83,7 @@ class TypedOpBase:
 
 
 class TypedBuiltinUnaryOp(TypedOpBase):
+    __slots__ = ()
     opclass = "UnaryOp"
 
     def __call__(self, val):
@@ -99,6 +102,7 @@ class TypedBuiltinUnaryOp(TypedOpBase):
 
 
 class TypedBuiltinBinaryOp(TypedOpBase):
+    __slots__ = ()
     opclass = "BinaryOp"
 
     def __call__(self, left, right=None, *, require_monoid=None):
@@ -120,6 +124,7 @@ class TypedBuiltinBinaryOp(TypedOpBase):
 
 
 class TypedBuiltinMonoid(TypedOpBase):
+    __slots__ = "_identity"
     opclass = "Monoid"
 
     def __init__(self, parent, name, type_, return_type, gb_obj, gb_name):
@@ -145,6 +150,7 @@ class TypedBuiltinMonoid(TypedOpBase):
 
 
 class TypedBuiltinSemiring(TypedOpBase):
+    __slots__ = ()
     opclass = "Semiring"
 
     def __call__(self, left, right=None):
@@ -165,6 +171,7 @@ class TypedBuiltinSemiring(TypedOpBase):
 
 
 class TypedUserUnaryOp(TypedOpBase):
+    __slots__ = "orig_func", "numba_func"
     opclass = "UnaryOp"
 
     def __init__(self, parent, name, type_, return_type, gb_obj, orig_func, numba_func):
@@ -176,6 +183,7 @@ class TypedUserUnaryOp(TypedOpBase):
 
 
 class TypedUserBinaryOp(TypedOpBase):
+    __slots__ = "orig_func", "numba_func", "_monoid"
     opclass = "BinaryOp"
 
     def __init__(self, parent, name, type_, return_type, gb_obj, orig_func, numba_func):
@@ -197,6 +205,7 @@ class TypedUserBinaryOp(TypedOpBase):
 
 
 class TypedUserMonoid(TypedOpBase):
+    __slots__ = "binaryop", "identity"
     opclass = "Monoid"
 
     def __init__(self, parent, name, type_, return_type, gb_obj, binaryop, identity):
@@ -209,6 +218,7 @@ class TypedUserMonoid(TypedOpBase):
 
 
 class TypedUserSemiring(TypedOpBase):
+    __slots__ = "monoid", "binaryop"
     opclass = "Semiring"
 
     def __init__(self, parent, name, type_, return_type, gb_obj, monoid, binaryop):
@@ -220,44 +230,76 @@ class TypedUserSemiring(TypedOpBase):
 
 
 class ParameterizedUdf:
-    def __init__(self, name):
+    __slots__ = "name", "__call__", "_anonymous"
+
+    def __init__(self, name, anonymous):
         self.name = name
+        self._anonymous = anonymous
         # lru_cache per instance
-        method = self.__call__.__get__(self, type(self))
+        method = self._call.__get__(self, type(self))
         self.__call__ = lru_cache(maxsize=1024)(method)
 
-    def __call__(self, *args, **kwargs):
+    def _call(self, *args, **kwargs):
         raise NotImplementedError()
 
 
 class ParameterizedUnaryOp(ParameterizedUdf):
-    def __init__(self, name, func):
+    __slots__ = "func", "__signature__"
+
+    def __init__(self, name, func, *, anonymous=False):
         self.func = func
         self.__signature__ = inspect.signature(func)
         if name is None:
             name = getattr(func, "__name__", name)
-        super().__init__(name)
+        super().__init__(name, anonymous)
 
-    def __call__(self, *args, **kwargs):
+    def _call(self, *args, **kwargs):
         unary = self.func(*args, **kwargs)
         return UnaryOp.register_anonymous(unary, self.name)
 
 
 class ParameterizedBinaryOp(ParameterizedUdf):
-    def __init__(self, name, func):
+    __slots__ = "func", "__signature__", "_monoid", "_cached_call"
+
+    def __init__(self, name, func, *, anonymous=False):
         self.func = func
         self.__signature__ = inspect.signature(func)
+        self._monoid = None
         if name is None:
             name = getattr(func, "__name__", name)
-        super().__init__(name)
+        super().__init__(name, anonymous)
+        method = self._call_to_cache.__get__(self, type(self))
+        self._cached_call = lru_cache(maxsize=1024)(method)
+        self.__call__ = self._call
 
-    def __call__(self, *args, **kwargs):
+    def _call_to_cache(self, *args, **kwargs):
         binary = self.func(*args, **kwargs)
         return BinaryOp.register_anonymous(binary, self.name)
 
+    def _call(self, *args, **kwargs):
+        binop = self._cached_call(*args, **kwargs)
+        if self._monoid is not None and binop._monoid is None:
+            # This is all a bit funky.  We try our best to associate a binaryop
+            # to a monoid.  So, if we made a ParameterizedMonoid using this object,
+            # then try to create a monoid with the given arguments.
+            binop._monoid = binop  # temporary!
+            try:
+                # If this call is successful, then it will set `binop._monoid`
+                self._monoid(*args, **kwargs)
+            except Exception:
+                binop._monoid = None
+            assert binop._monoid is not binop
+        return binop
+
+    @property
+    def monoid(self):
+        return self._monoid
+
 
 class ParameterizedMonoid(ParameterizedUdf):
-    def __init__(self, name, binaryop, identity):
+    __slots__ = "binaryop", "identity", "__signature__"
+
+    def __init__(self, name, binaryop, identity, *, anonymous=False):
         if not type(binaryop) is ParameterizedBinaryOp:
             raise TypeError("binaryop must be parameterized")
         self.binaryop = binaryop
@@ -267,7 +309,7 @@ class ParameterizedMonoid(ParameterizedUdf):
             sig = inspect.signature(identity)
             if sig != self.__signature__:
                 raise ValueError(
-                    f"Signatures of binarop and identity passed to "
+                    f"Signatures of binaryop and identity passed to "
                     f"{type(self).__name__} must be the same.  Got:\n"
                     f"    binaryop{self.__signature__}\n"
                     f"    !=\n"
@@ -276,11 +318,13 @@ class ParameterizedMonoid(ParameterizedUdf):
         self.identity = identity
         if name is None:
             name = binaryop.name
-        super().__init__(name)
+        super().__init__(name, anonymous)
+        binaryop._monoid = self
+        # clear binaryop cache so it can be associated with this monoid
+        binaryop._cached_call.cache_clear()
 
-    def __call__(self, *args, **kwargs):
-        binary = self.binaryop
-        binary = binary(*args, **kwargs)
+    def _call(self, *args, **kwargs):
+        binary = self.binaryop(*args, **kwargs)
         identity = self.identity
         if callable(identity):
             identity = identity(*args, **kwargs)
@@ -288,14 +332,16 @@ class ParameterizedMonoid(ParameterizedUdf):
 
 
 class ParameterizedSemiring(ParameterizedUdf):
-    def __init__(self, name, monoid, binaryop):
+    __slots__ = "monoid", "binaryop", "__signature__"
+
+    def __init__(self, name, monoid, binaryop, *, anonymous=False):
         if type(monoid) not in {ParameterizedMonoid, Monoid}:
             raise TypeError("monoid must be of type Monoid or ParameterizedMonoid")
         if type(binaryop) is ParameterizedBinaryOp:
             self.__signature__ = binaryop.__signature__
             if type(monoid) is ParameterizedMonoid and monoid.__signature__ != self.__signature__:
                 raise ValueError(
-                    f"Signatures of monoid and binarop passed to "
+                    f"Signatures of monoid and binaryop passed to "
                     f"{type(self).__name__} must be the same.  Got:\n"
                     f"    monoid{monoid.__signature__}\n"
                     f"    !=\n"
@@ -312,9 +358,9 @@ class ParameterizedSemiring(ParameterizedUdf):
         self.binaryop = binaryop
         if name is None:
             name = f"{monoid.name}_{binaryop.name}"
-        super().__init__(name)
+        super().__init__(name, anonymous)
 
-    def __call__(self, *args, **kwargs):
+    def _call(self, *args, **kwargs):
         monoid = self.monoid
         if type(monoid) is ParameterizedMonoid:
             monoid = monoid(*args, **kwargs)
@@ -325,6 +371,7 @@ class ParameterizedSemiring(ParameterizedUdf):
 
 
 class OpBase:
+    __slots__ = "name", "_typed_ops", "types", "_anonymous"
     _parse_config = None
     _initialized = False
     _module = None
@@ -458,6 +505,7 @@ class OpBase:
 
 
 class UnaryOp(OpBase):
+    __slots__ = ()
     _module = unary
     _modname = "unary"
     _typed_class = TypedBuiltinUnaryOp
@@ -582,7 +630,7 @@ class UnaryOp(OpBase):
     @classmethod
     def register_anonymous(cls, func, name=None, *, parameterized=False):
         if parameterized:
-            return ParameterizedUnaryOp(name, func)
+            return ParameterizedUnaryOp(name, func, anonymous=True)
         return cls._build(name, func, anonymous=True)
 
     @classmethod
@@ -602,6 +650,7 @@ class UnaryOp(OpBase):
 
 
 class BinaryOp(OpBase):
+    __slots__ = "_monoid"
     _module = binary
     _modname = "binary"
     _typed_class = TypedBuiltinBinaryOp
@@ -743,7 +792,7 @@ class BinaryOp(OpBase):
     @classmethod
     def register_anonymous(cls, func, name=None, *, parameterized=False):
         if parameterized:
-            return ParameterizedBinaryOp(name, func)
+            return ParameterizedBinaryOp(name, func, anonymous=True)
         return cls._build(name, func, anonymous=True)
 
     @classmethod
@@ -813,6 +862,7 @@ class BinaryOp(OpBase):
 
 
 class Monoid(OpBase):
+    __slots__ = "_binaryop"
     _module = monoid
     _modname = "monoid"
     _typed_class = TypedBuiltinMonoid
@@ -870,7 +920,7 @@ class Monoid(OpBase):
     @classmethod
     def register_anonymous(cls, binaryop, identity, name=None):
         if type(binaryop) is ParameterizedBinaryOp:
-            return ParameterizedMonoid(name, binaryop, identity)
+            return ParameterizedMonoid(name, binaryop, identity, anonymous=True)
         return cls._build(name, binaryop, identity, anonymous=True)
 
     @classmethod
@@ -907,6 +957,7 @@ class Monoid(OpBase):
 
 
 class Semiring(OpBase):
+    __slots__ = "_monoid", "_binaryop"
     _module = semiring
     _modname = "semiring"
     _typed_class = TypedBuiltinSemiring
@@ -984,7 +1035,7 @@ class Semiring(OpBase):
     @classmethod
     def register_anonymous(cls, monoid, binaryop, name=None):
         if type(monoid) is ParameterizedMonoid or type(binaryop) is ParameterizedBinaryOp:
-            return ParameterizedSemiring(name, monoid, binaryop)
+            return ParameterizedSemiring(name, monoid, binaryop, anonymous=True)
         return cls._build(name, monoid, binaryop, anonymous=True)
 
     @classmethod

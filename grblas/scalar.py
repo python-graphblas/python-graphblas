@@ -14,6 +14,7 @@ class Scalar(BaseType):
     Pseudo-object for GraphBLAS functions which accumlate into a scalar type
     """
 
+    __slots__ = "_is_empty"
     shape = ()
     _is_scalar = True
     _name_counter = itertools.count()
@@ -201,6 +202,7 @@ class Scalar(BaseType):
 
 
 class ScalarExpression(BaseExpression):
+    __slots__ = ()
     output_type = Scalar
 
     @property
@@ -245,6 +247,8 @@ class _CScalar:
 
     If a Scalar is not provided, then a datatype of GrB_Index is assumed.
     """
+
+    __slots__ = "scalar", "dtype"
 
     def __init__(self, scalar):
         if type(scalar) is not Scalar:

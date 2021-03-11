@@ -1,4 +1,5 @@
 class Mask:
+    __slots__ = "mask"
     complement = False
     structure = False
     value = False
@@ -24,6 +25,7 @@ class Mask:
 
 
 class StructuralMask(Mask):
+    __slots__ = ()
     complement = False
     structure = True
     value = False
@@ -41,6 +43,7 @@ class StructuralMask(Mask):
 
 
 class ValueMask(Mask):
+    __slots__ = ()
     complement = False
     structure = False
     value = True
@@ -58,6 +61,7 @@ class ValueMask(Mask):
 
 
 class ComplementedStructuralMask(Mask):
+    __slots__ = ()
     complement = True
     structure = True
     value = False
@@ -75,6 +79,7 @@ class ComplementedStructuralMask(Mask):
 
 
 class ComplementedValueMask(Mask):
+    __slots__ = ()
     complement = True
     structure = False
     value = True

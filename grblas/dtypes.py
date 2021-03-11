@@ -9,6 +9,8 @@ _supports_complex = hasattr(lib, "GrB_FC64") or hasattr(lib, "GxB_FC64")
 
 
 class DataType:
+    __slots__ = "name", "gb_obj", "gb_name", "c_type", "numba_type", "np_type"
+
     def __init__(self, name, gb_obj, gb_name, c_type, numba_type, np_type):
         self.name = name
         self.gb_obj = gb_obj
@@ -139,14 +141,17 @@ def lookup_dtype(key):
     try:
         return _registry[key]
     except KeyError:
-        if hasattr(key, "name"):
+        pass
+    if hasattr(key, "name"):
+        try:
             return _registry[key.name]
-        else:
-            try:
-                return lookup_dtype(np.dtype(key))
-            except Exception:
-                pass
-            raise ValueError(f"Unknown dtype: {key}")
+        except KeyError:
+            pass
+    try:
+        return lookup_dtype(np.dtype(key))
+    except Exception:
+        pass
+    raise ValueError(f"Unknown dtype: {key}")
 
 
 _bits_pattern = re.compile(r"\D+(\d+)$")

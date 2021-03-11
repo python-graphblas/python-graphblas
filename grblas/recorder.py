@@ -42,6 +42,8 @@ class Recorder:
     Currently, only one recorder will record at a time within a context.
     """
 
+    __slots__ = "data", "_token", "max_rows"
+
     def __init__(self, *, record=False, max_rows=20):
         self.data = []
         self._token = None
