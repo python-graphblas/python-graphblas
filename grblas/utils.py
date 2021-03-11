@@ -89,14 +89,6 @@ class class_property:
     def __set__(self):
         return self.member_property.__set__
 
-    @property
-    def __doc__(self):
-        return self.member_property.__doc__
-
-    @__doc__.setter
-    def __doc__(self, value):
-        self.member_property.__doc__ = value
-
 
 # A similar object may eventually make it to the GraphBLAS spec.
 # Hide this from the user for now.
