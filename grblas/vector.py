@@ -9,7 +9,7 @@ from .mask import StructuralMask, ValueMask
 from .operator import get_typed_op
 from .scalar import Scalar, ScalarExpression, _CScalar
 from .utils import ints_to_numpy_buffer, values_to_numpy_buffer, wrapdoc, _CArray, _Pointer
-from . import _ss, _ss_utils
+from . import _ss, _ss_utils, expr
 
 ffi_new = ffi.new
 
@@ -349,7 +349,7 @@ class Vector(BaseType):
         Result will contain the intersection of indices from both Vectors
         Default op is binary.times
         """
-        method_name = "ewise_add"
+        method_name = "ewise_mult"
         self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         # Per the spec, op may be a semiring, but this is weird, so don't.
@@ -1189,3 +1189,8 @@ class VectorExpression(BaseExpression):
         from .formatting import format_vector_expression_html
 
         return format_vector_expression_html(self)
+
+
+expr.VectorEwiseAddExpr.output_type = VectorExpression
+expr.VectorEwiseMultExpr.output_type = VectorExpression
+expr.VectorMatMulExpr.output_type = VectorExpression

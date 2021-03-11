@@ -3,7 +3,7 @@ from . import ffi, replace as replace_singleton
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import lookup_dtype
 from .exceptions import check_status
-from .expr import AmbiguousAssignOrExtract, Updater
+from .expr import AmbiguousAssignOrExtract, Updater, _ewise_infix_expr, _matmul_infix_expr
 from .mask import Mask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_typed_op
 from .unary import identity
@@ -203,6 +203,54 @@ class BaseType:
             else:
                 self._expect_op(accum, "BinaryOp", within="__call__", keyword_name="accum")
         return Updater(self, mask=mask, accum=accum, replace=replace, input_mask=input_mask)
+
+    def __or__(self, other):
+        if self._is_scalar:
+            return NotImplemented
+        return _ewise_infix_expr(self, other, method="ewise_add", within="__or__")
+
+    def __ror__(self, other):
+        if self._is_scalar:
+            return NotImplemented
+        return _ewise_infix_expr(other, self, method="ewise_add", within="__ror__")
+
+    def __ior__(self, other):
+        raise TypeError(
+            f"Using __ior__ (e.g., x |= y) is not supported for type {type(self).__name__}."
+            "  To create an ewise_add expression using infix notation, do e.g. `op(x | y)`."
+        )
+
+    def __and__(self, other):
+        if self._is_scalar:
+            return NotImplemented
+        return _ewise_infix_expr(self, other, method="ewise_mult", within="__and__")
+
+    def __rand__(self, other):
+        if self._is_scalar:
+            return NotImplemented
+        return _ewise_infix_expr(self, other, method="ewise_mult", within="__rand__")
+
+    def __iand__(self, other):
+        raise TypeError(
+            f"Using __iand__ (e.g., x &= y) is not supported for type {type(self).__name__}."
+            "  To create an ewise_mult expression using infix notation, do e.g. `op(x & y)`."
+        )
+
+    def __matmul__(self, other):
+        if self._is_scalar:
+            return NotImplemented
+        return _matmul_infix_expr(self, other, within="__matmul__")
+
+    def __rmatmul__(self, other):
+        if self._is_scalar:
+            return NotImplemented
+        return _matmul_infix_expr(other, self, within="__rmatmul__")
+
+    def __imatmul__(self, other):
+        raise TypeError(
+            f"Using __imatmul__ (e.g., x @= y) is not supported for type {type(self).__name__}."
+            "  To create an matmul expression using infix notation, do e.g. `semiring(x @ y)`."
+        )
 
     def __eq__(self, other):
         raise TypeError(

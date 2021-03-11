@@ -528,3 +528,78 @@ def format_vector(vector, *, max_rows=None, min_rows=None, max_columns=None, mas
             df_repr = df.__repr__()
         return f"{header}\n{df_repr}"
     return header
+
+
+def _format_infix_expression(expr, header, expr_name):
+    return (
+        "<div>"
+        '<details class="gb-expr-details">'
+        '<summary class="gb-expr-summary">'
+        f"<b><tt>grblas.{type(expr).__name__}:</tt></b>"
+        f"{header}"
+        "</summary>"
+        '<blockquote class="gb-expr-blockquote">'
+        f"{expr.left._repr_html_()}{expr.right._repr_html_()}"
+        "</blockquote>"
+        "</details>"
+        "<em>"
+        f"Do <code>op(expr)</code> to create a <tt>{expr.output_type.__name__}</tt> "
+        f"for <tt>{expr.method_name}</tt>."
+        f"<br>For example: <code>{expr._example_op}({expr_name})</code>"
+        "</em>"
+        "</div>"
+    )
+
+
+def format_vector_infix_expression(expr):
+    expr_repr = expr._format_expr()
+    name = f"grblas.{type(expr).__name__}"
+    header = create_header(
+        expr_repr,
+        ["size", "left_dtype", "right_dtype"],
+        [expr._size, expr.left.dtype, expr.right.dtype],
+        name=name,
+        quote=False,
+    )
+    return (
+        f"{header}\n\n"
+        f"Do op(expr) to create a {expr.output_type.__name__} for {expr.method_name}.\n"
+        f"For example: {expr._example_op}({expr_repr})"
+    )
+
+
+def format_vector_infix_expression_html(expr):
+    expr_html = expr._format_expr_html()
+    header = create_header_html(
+        expr_html,
+        ["size", "left_dtype", "right_dtype"],
+        [expr._size, expr.left.dtype, expr.right.dtype],
+    )
+    return _format_infix_expression(expr, header, expr_html)
+
+
+def format_matrix_infix_expression(expr):
+    expr_repr = expr._format_expr()
+    name = f"grblas.{type(expr).__name__}"
+    header = create_header(
+        expr_repr,
+        ["nrows", "ncols", "left_dtype", "right_dtype"],
+        [expr._nrows, expr._ncols, expr.left.dtype, expr.right.dtype],
+        name=name,
+        quote=False,
+    )
+    return (
+        f"{header}\n\n"
+        f"Do op(expr) to create a {expr.output_type.__name__} for {expr.method_name}.\n"
+        f"For example: {expr._example_op}({expr_repr})"
+    )
+
+
+def format_matrix_infix_expression_html(expr):
+    expr_html = expr._format_expr_html()
+    header = create_header_html(
+        expr_html,
+        ["nrows", "ncols", "right_dtype", "left_dtype"],
+        [expr._nrows, expr._ncols, expr.left.dtype, expr.right.dtype],
+    )
+    return _format_infix_expression(expr, header, expr_html)

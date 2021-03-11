@@ -168,6 +168,12 @@ def test_build(A):
     A.clear()
     with pytest.raises(IndexOutOfBound):
         A.build([0, 11], [0, 0], [1, 1])
+    B = Matrix.new(int, nrows=2, ncols=2)
+    B.build([0, 11], [0, 0], [1, 1], nrows=12)
+    assert B.isequal(Matrix.from_values([0, 11], [0, 0], [1, 1], ncols=2))
+    C = Matrix.new(int, nrows=2, ncols=2)
+    C.build([0, 0], [0, 11], [1, 1], ncols=12)
+    assert C.isequal(Matrix.from_values([0, 0], [0, 11], [1, 1], nrows=2))
 
 
 def test_extract_values(A):

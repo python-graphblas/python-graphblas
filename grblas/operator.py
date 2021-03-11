@@ -8,6 +8,7 @@ from types import FunctionType, ModuleType
 from . import ffi, lib, unary, binary, monoid, semiring, op
 from .dtypes import lookup_dtype, unify, INT8, _sample_values, _supports_complex
 from .exceptions import UdfParseError, check_status_carg
+from .expr import InfixExprBase
 from .utils import libget
 
 ffi_new = ffi.new
@@ -22,6 +23,41 @@ class OpPath:
     def __init__(self, parent, name):
         self._parent = parent
         self._name = name
+
+
+def _call_op(op, left, right=None, **kwargs):
+    if right is None:
+        if isinstance(left, InfixExprBase):
+            # op(A & B), op(A | B), op(A @ B)
+            return getattr(left.left, left.method_name)(left.right, op, **kwargs)
+        if find_opclass(op)[1] == "Semiring":
+            raise TypeError(
+                f"Bad type when calling {op!r}.  Got type: {type(left)}.\n"
+                f"Expected an infix expression, such as: {op!r}(A @ B)"
+            )
+        raise TypeError(
+            f"Bad type when calling {op!r}.  Got type: {type(left)}.\n"
+            "Expected an infix expression or an apply with a Vector or Matrix and a scalar:\n"
+            f"    - {op!r}(A & B)\n"
+            f"    - {op!r}(A, 1)\n"
+            f"    - {op!r}(1, A)"
+        )
+
+    # op(A, 1) -> apply (or select once available)
+    from .vector import Vector
+    from .matrix import Matrix, TransposedMatrix
+
+    if type(left) in {Vector, Matrix, TransposedMatrix}:
+        return left.apply(op, right=right, **kwargs)
+    elif type(right) in {Vector, Matrix, TransposedMatrix}:
+        return right.apply(op, left=left, **kwargs)
+    raise TypeError(
+        f"Bad types when calling {op!r}.  Got types: {type(left)}, {type(right)}.\n"
+        "Expected an infix expression or an apply with a Vector or Matrix and a scalar:\n"
+        f"    - {op!r}(A & B)\n"
+        f"    - {op!r}(A, 1)\n"
+        f"    - {op!r}(1, A)"
+    )
 
 
 class TypedOpBase:
@@ -47,9 +83,34 @@ class TypedOpBase:
 class TypedBuiltinUnaryOp(TypedOpBase):
     opclass = "UnaryOp"
 
+    def __call__(self, val):
+        from .vector import Vector
+        from .matrix import Matrix, TransposedMatrix
+
+        if type(val) in {Vector, Matrix, TransposedMatrix}:
+            return val.apply(self)
+        raise TypeError(
+            f"Bad type when calling {self!r}.\n"
+            "    - Expected type: Vector, Matrix, TransposedMatrix.\n"
+            f"    - Got: {type(val)}.\n"
+            "Calling a UnaryOp is syntactic sugar for calling apply.  "
+            f"For example, `A.apply({self!r})` is the same as `{self!r}(A)`."
+        )
+
 
 class TypedBuiltinBinaryOp(TypedOpBase):
     opclass = "BinaryOp"
+
+    def __call__(self, left, right=None, *, require_monoid=None):
+        if require_monoid is not None:
+            if right is not None:
+                raise TypeError(
+                    f"Bad keyword argument `require_monoid=` when calling {self!r}.\n"
+                    "require_monoid keyword may only be used when performing an ewise_add.\n"
+                    f"For example: {self!r}(A | B, require_monoid=False)."
+                )
+            return _call_op(self, left, require_monoid=require_monoid)
+        return _call_op(self, left, right)
 
     @property
     def monoid(self):
@@ -64,6 +125,9 @@ class TypedBuiltinMonoid(TypedOpBase):
     def __init__(self, parent, name, type_, return_type, gb_obj, gb_name):
         super().__init__(parent, name, type_, return_type, gb_obj, gb_name)
         self._identity = None
+
+    def __call__(self, left, right=None):
+        return _call_op(self, left, right)
 
     @property
     def identity(self):
@@ -83,6 +147,14 @@ class TypedBuiltinMonoid(TypedOpBase):
 class TypedBuiltinSemiring(TypedOpBase):
     opclass = "Semiring"
 
+    def __call__(self, left, right=None):
+        if right is not None:
+            raise TypeError(
+                f"Bad types when calling {self!r}.  Got types: {type(left)}, {type(right)}.\n"
+                f"Expected an infix expression, such as: {self!r}(A @ B)"
+            )
+        return _call_op(self, left)
+
     @property
     def binaryop(self):
         return getattr(binary, self.name.split("_", 1)[1])[self.type]
@@ -99,6 +171,8 @@ class TypedUserUnaryOp(TypedOpBase):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
         self.orig_func = orig_func
         self.numba_func = numba_func
+
+    __call__ = TypedBuiltinUnaryOp.__call__
 
 
 class TypedUserBinaryOp(TypedOpBase):
@@ -119,6 +193,8 @@ class TypedUserBinaryOp(TypedOpBase):
                 self._monoid = monoid[self.type]
         return self._monoid
 
+    __call__ = TypedBuiltinBinaryOp.__call__
+
 
 class TypedUserMonoid(TypedOpBase):
     opclass = "Monoid"
@@ -129,6 +205,8 @@ class TypedUserMonoid(TypedOpBase):
         self.identity = identity
         binaryop._monoid = self
 
+    __call__ = TypedBuiltinMonoid.__call__
+
 
 class TypedUserSemiring(TypedOpBase):
     opclass = "Semiring"
@@ -137,6 +215,8 @@ class TypedUserSemiring(TypedOpBase):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
         self.monoid = monoid
         self.binaryop = binaryop
+
+    __call__ = TypedBuiltinSemiring.__call__
 
 
 class ParameterizedUdf:
@@ -518,6 +598,8 @@ class UnaryOp(OpBase):
         if not hasattr(module, funcname):
             setattr(module, funcname, unary_op)
 
+    __call__ = TypedBuiltinUnaryOp.__call__
+
 
 class BinaryOp(OpBase):
     _module = binary
@@ -721,6 +803,8 @@ class BinaryOp(OpBase):
         super().__init__(name, anonymous=anonymous)
         self._monoid = None
 
+    __call__ = TypedBuiltinBinaryOp.__call__
+
     @property
     def monoid(self):
         if self._monoid is None and not self._anonymous:
@@ -818,6 +902,8 @@ class Monoid(OpBase):
     @property
     def identities(self):
         return {dtype: val.identity for dtype, val in self._typed_ops.items()}
+
+    __call__ = TypedBuiltinMonoid.__call__
 
 
 class Semiring(OpBase):
@@ -932,6 +1018,8 @@ class Semiring(OpBase):
             return self._monoid
         # Must be builtin
         return getattr(monoid, self.name.split("_")[0])
+
+    __call__ = TypedBuiltinSemiring.__call__
 
 
 def get_typed_op(op, dtype, dtype2=None):

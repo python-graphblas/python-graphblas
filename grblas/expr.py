@@ -288,3 +288,192 @@ class Updater:
 
     def __bool__(self):
         raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
+
+
+class InfixExprBase:
+    def __init__(self, left, right):
+        self.left = left
+        self.right = right
+
+    def _format_expr(self):
+        return f"{self.left.name} {self._infix} {self.right.name}"
+
+    def _format_expr_html(self):
+        return f"{self.left._name_html} {self._infix} {self.right._name_html}"
+
+    def _repr_html_(self):
+        from . import formatting
+
+        if self.output_type.__name__ == "VectorExpression":
+            return formatting.format_vector_infix_expression_html(self)
+        return formatting.format_matrix_infix_expression_html(self)
+
+    def __repr__(self):
+        from . import formatting
+
+        if self.output_type.__name__ == "VectorExpression":
+            return formatting.format_vector_infix_expression(self)
+        return formatting.format_matrix_infix_expression(self)
+
+
+class VectorEwiseAddExpr(InfixExprBase):
+    method_name = "ewise_add"
+    output_type = None  # VectorExpression
+    _infix = "|"
+    _example_op = "plus"
+
+    def __init__(self, left, right):
+        super().__init__(left, right)
+        self.size = self._size = left.size
+
+
+class VectorEwiseMultExpr(InfixExprBase):
+    method_name = "ewise_mult"
+    output_type = None  # VectorExpression
+    _infix = "&"
+    _example_op = "times"
+
+    def __init__(self, left, right):
+        super().__init__(left, right)
+        self.size = self._size = left.size
+
+
+class VectorMatMulExpr(InfixExprBase):
+    output_type = None  # VectorExpression
+    _infix = "@"
+    _example_op = "plus_times"
+
+    def __init__(self, left, right, *, method_name, size):
+        super().__init__(left, right)
+        self.method_name = method_name
+        self.size = self._size = size
+
+
+class MatrixEwiseAddExpr(InfixExprBase):
+    method_name = "ewise_add"
+    output_type = None  # MatrixExpression
+    _infix = "|"
+    _example_op = "plus"
+
+    def __init__(self, left, right):
+        super().__init__(left, right)
+        self.nrows = self._nrows = left.nrows
+        self.ncols = self._ncols = left.ncols
+
+
+class MatrixEwiseMultExpr(InfixExprBase):
+    method_name = "ewise_mult"
+    output_type = None  # MatrixExpression
+    _infix = "&"
+    _example_op = "times"
+
+    def __init__(self, left, right):
+        super().__init__(left, right)
+        self.nrows = self._nrows = left.nrows
+        self.ncols = self._ncols = left.ncols
+
+
+class MatrixMatMulExpr(InfixExprBase):
+    method_name = "mxm"
+    output_type = None  # MatrixExpression
+    _infix = "@"
+    _example_op = "plus_times"
+
+    def __init__(self, left, right, *, nrows, ncols):
+        super().__init__(left, right)
+        self.nrows = self._nrows = nrows
+        self.ncols = self._ncols = ncols
+
+
+def _ewise_infix_expr(left, right, *, method, within):
+    from .vector import Vector
+    from .matrix import Matrix, TransposedMatrix
+
+    left_type = type(left)
+    right_type = type(right)
+
+    if left_type in {Vector, Matrix, TransposedMatrix}:
+        if not (
+            left_type is right_type
+            or (left_type is Matrix and right_type is TransposedMatrix)
+            or (left_type is TransposedMatrix and right_type is Matrix)
+        ):
+            if left_type is Vector:
+                left._expect_type(right, Vector, within=within, argname="right")
+            else:
+                left._expect_type(right, (Matrix, TransposedMatrix), within=within, argname="right")
+    elif right_type is Vector:
+        right._expect_type(left, Vector, within=within, argname="left")
+    elif right_type is Matrix or right_type is TransposedMatrix:
+        right._expect_type(left, (Matrix, TransposedMatrix), within=within, argname="left")
+    else:  # pragma: no cover
+        raise TypeError(f"Bad types for ewise infix: {type(left).__name__}, {type(right).__name__}")
+
+    from .binary import any
+
+    # Create dummy expression to check compatibility of dimensions, etc.
+    expr = getattr(left, method)(right, any)
+    if expr.output_type is Vector:
+        if method == "ewise_mult":
+            return VectorEwiseMultExpr(left, right)
+        return VectorEwiseAddExpr(left, right)
+    elif method == "ewise_mult":
+        return MatrixEwiseMultExpr(left, right)
+    return MatrixEwiseAddExpr(left, right)
+
+
+def _matmul_infix_expr(left, right, *, within):
+    from .vector import Vector
+    from .matrix import Matrix, TransposedMatrix
+
+    left_type = type(left)
+    right_type = type(right)
+
+    if left_type is Vector:
+        if right_type is Matrix or right_type is TransposedMatrix:
+            method = "vxm"
+        else:
+            left._expect_type(
+                right,
+                (Matrix, TransposedMatrix),
+                within=within,
+                argname="right",
+            )
+    elif left_type is Matrix or left_type is TransposedMatrix:
+        if right_type is Vector:
+            method = "mxv"
+        elif right_type is Matrix or right_type is TransposedMatrix:
+            method = "mxm"
+        else:
+            left._expect_type(
+                right,
+                (Vector, Matrix, TransposedMatrix),
+                within=within,
+                argname="right",
+            )
+    elif right_type is Vector:
+        right._expect_type(
+            left,
+            (Matrix, TransposedMatrix),
+            within=within,
+            argname="left",
+        )
+    elif right_type is Matrix or right_type is TransposedMatrix:
+        right._expect_type(
+            left,
+            (Vector, Matrix, TransposedMatrix),
+            within=within,
+            argname="left",
+        )
+    else:  # pragma: no cover
+        raise TypeError(
+            f"Bad types for matmul infix: {type(left).__name__}, {type(right).__name__}"
+        )
+
+    from .semiring import any_pair
+
+    # Create dummy expression to check compatibility of dimensions, etc.
+    expr = getattr(left, method)(right, any_pair[bool])
+    if expr.output_type is Vector:
+        return VectorMatMulExpr(left, right, method_name=method, size=expr._size)
+    return MatrixMatMulExpr(left, right, nrows=expr.nrows, ncols=expr.ncols)
