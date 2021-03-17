@@ -75,7 +75,7 @@ setup(
         "Topic :: Scientific/Engineering",
         "Topic :: Scientific/Engineering :: Mathematics",
     ],
-    package_data={"grblas": ["*.pyx", "*.pxd", "backends/suitesparse/*.h"]},
+    package_data={"grblas": ["*/*.pyx", "*/*.pxd", "backends/suitesparse/*.h"]},
     include_package_data=True,
     zip_safe=False,
 )

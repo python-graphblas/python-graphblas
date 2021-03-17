@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+import pickle
 from grblas import dtypes, lib
 from grblas.dtypes import lookup_dtype
 
@@ -118,3 +119,13 @@ def test_dtypes_match_numpy():
         except Exception:
             continue
         assert dtypes.lookup_dtype(npval) == val, f"{key} of type {type(key)}"
+
+
+def test_pickle():
+    for val in dtypes._registry.values():
+        s = pickle.dumps(val)
+        val2 = pickle.loads(s)
+        assert val == val2
+    s = pickle.dumps(dtypes._INDEX)
+    val2 = pickle.loads(s)
+    assert dtypes._INDEX == val2

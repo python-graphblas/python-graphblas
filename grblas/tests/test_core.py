@@ -3,7 +3,7 @@ import grblas
 
 
 def test_import_special_attrs():
-    not_hidden = {x for x in dir(grblas) if not x.startswith("_")}
+    not_hidden = {x for x in dir(grblas) if not x.startswith("__")}
     # Is everything imported?
     assert len(not_hidden & grblas._SPECIAL_ATTRS) == len(grblas._SPECIAL_ATTRS)
     # Is everything special that needs to be?

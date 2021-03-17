@@ -38,6 +38,14 @@ def test_ewise(v1, v2, A1, A2):
         expected = left.ewise_mult(right, monoid.plus).new()
         assert expected.isequal(monoid.plus(left & right).new())
         assert expected.isequal(monoid.plus[float](left & right).new())
+        if isinstance(left, Vector):
+            assert (left & right).size == left.size
+            assert (left | right).size == left.size
+        else:
+            assert (left & right).nrows == left.nrows
+            assert (left | right).nrows == left.nrows
+            assert (left & right).ncols == left.ncols
+            assert (left | right).ncols == left.ncols
 
         expected = left.ewise_add(right, op.plus).new()
         assert expected.isequal(op.plus(left | right).new())
@@ -64,6 +72,15 @@ def test_matmul(v1, v2, A1, A2):
         expected = getattr(left, method)(right, op.plus_times).new()
         assert expected.isequal(op.plus_times(left @ right).new())
         assert expected.isequal(op.plus_times[float](left @ right).new())
+        if isinstance(left, Vector):
+            assert (left @ right).size == right.ncols
+            assert op.plus_times(left @ right).size == right.ncols
+        elif isinstance(right, Vector):
+            assert (left @ right).size == left.nrows
+            assert op.plus_times(left @ right).size == left.nrows
+        else:
+            assert (left @ right).nrows == left.nrows
+            assert (left @ right).ncols == right.ncols
 
 
 def test_bad_ewise(s1, v1, A1, A2):

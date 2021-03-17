@@ -136,6 +136,7 @@ def _check_mask(mask, output=None):
 
 
 class BaseType:
+    __slots__ = "gb_obj", "dtype", "name"
     # Flag for operations which depend on scalar vs vector/matrix
     _is_scalar = False
 
@@ -407,6 +408,7 @@ class BaseType:
 
 
 class BaseExpression:
+    __slots__ = "method_name", "cfunc_name", "args", "at", "bt", "op", "expr_repr", "dtype"
     output_type = None
 
     def __init__(

@@ -4,6 +4,8 @@ from .utils import _CArray
 
 
 class _AllIndices:
+    __slots__ = "_carg", "name"
+
     def __init__(self):
         self._carg = lib.GrB_ALL
         self.name = "GrB_ALL"
@@ -13,6 +15,8 @@ _ALL_INDICES = _AllIndices()
 
 
 class IndexerResolver:
+    __slots__ = "obj", "indices"
+
     def __init__(self, obj, indices):
         self.obj = obj
         self.indices = self.parse_indices(indices, obj.shape)
@@ -85,6 +89,8 @@ class IndexerResolver:
 
 
 class Assigner:
+    __slots__ = "updater", "resolved_indexes", "is_submask"
+
     def __init__(self, updater, resolved_indexes, *, is_submask):
         # We could check here whether mask dimensions match index dimensions.
         # We could also check for valid `updater.kwargs` if `resolved_indexes.is_single_element`.
@@ -110,6 +116,8 @@ class Assigner:
 
 
 class AmbiguousAssignOrExtract:
+    __slots__ = "parent", "resolved_indexes"
+
     def __init__(self, parent, resolved_indexes):
         self.parent = parent
         self.resolved_indexes = resolved_indexes
@@ -235,6 +243,8 @@ class AmbiguousAssignOrExtract:
 
 
 class Updater:
+    __slots__ = "parent", "kwargs"
+
     def __init__(self, parent, **kwargs):
         self.parent = parent
         self.kwargs = kwargs
@@ -291,6 +301,8 @@ class Updater:
 
 
 class InfixExprBase:
+    __slots__ = "left", "right"
+
     def __init__(self, left, right):
         self.left = left
         self.right = right
@@ -317,6 +329,7 @@ class InfixExprBase:
 
 
 class VectorEwiseAddExpr(InfixExprBase):
+    __slots__ = "_size"
     method_name = "ewise_add"
     output_type = None  # VectorExpression
     _infix = "|"
@@ -324,10 +337,15 @@ class VectorEwiseAddExpr(InfixExprBase):
 
     def __init__(self, left, right):
         super().__init__(left, right)
-        self.size = self._size = left.size
+        self._size = left.size
+
+    @property
+    def size(self):
+        return self._size
 
 
 class VectorEwiseMultExpr(InfixExprBase):
+    __slots__ = "_size"
     method_name = "ewise_mult"
     output_type = None  # VectorExpression
     _infix = "&"
@@ -335,10 +353,15 @@ class VectorEwiseMultExpr(InfixExprBase):
 
     def __init__(self, left, right):
         super().__init__(left, right)
-        self.size = self._size = left.size
+        self._size = left.size
+
+    @property
+    def size(self):
+        return self._size
 
 
 class VectorMatMulExpr(InfixExprBase):
+    __slots__ = "method_name", "_size"
     output_type = None  # VectorExpression
     _infix = "@"
     _example_op = "plus_times"
@@ -346,10 +369,15 @@ class VectorMatMulExpr(InfixExprBase):
     def __init__(self, left, right, *, method_name, size):
         super().__init__(left, right)
         self.method_name = method_name
-        self.size = self._size = size
+        self._size = size
+
+    @property
+    def size(self):
+        return self._size
 
 
 class MatrixEwiseAddExpr(InfixExprBase):
+    __slots__ = "_nrows", "_ncols"
     method_name = "ewise_add"
     output_type = None  # MatrixExpression
     _infix = "|"
@@ -357,11 +385,20 @@ class MatrixEwiseAddExpr(InfixExprBase):
 
     def __init__(self, left, right):
         super().__init__(left, right)
-        self.nrows = self._nrows = left.nrows
-        self.ncols = self._ncols = left.ncols
+        self._nrows = left.nrows
+        self._ncols = left.ncols
+
+    @property
+    def nrows(self):
+        return self._nrows
+
+    @property
+    def ncols(self):
+        return self._ncols
 
 
 class MatrixEwiseMultExpr(InfixExprBase):
+    __slots__ = "_nrows", "_ncols"
     method_name = "ewise_mult"
     output_type = None  # MatrixExpression
     _infix = "&"
@@ -369,11 +406,20 @@ class MatrixEwiseMultExpr(InfixExprBase):
 
     def __init__(self, left, right):
         super().__init__(left, right)
-        self.nrows = self._nrows = left.nrows
-        self.ncols = self._ncols = left.ncols
+        self._nrows = left.nrows
+        self._ncols = left.ncols
+
+    @property
+    def nrows(self):
+        return self._nrows
+
+    @property
+    def ncols(self):
+        return self._ncols
 
 
 class MatrixMatMulExpr(InfixExprBase):
+    __slots__ = "_nrows", "_ncols"
     method_name = "mxm"
     output_type = None  # MatrixExpression
     _infix = "@"
@@ -381,8 +427,16 @@ class MatrixMatMulExpr(InfixExprBase):
 
     def __init__(self, left, right, *, nrows, ncols):
         super().__init__(left, right)
-        self.nrows = self._nrows = nrows
-        self.ncols = self._ncols = ncols
+        self._nrows = nrows
+        self._ncols = ncols
+
+    @property
+    def nrows(self):
+        return self._nrows
+
+    @property
+    def ncols(self):
+        return self._ncols
 
 
 def _ewise_infix_expr(left, right, *, method, within):

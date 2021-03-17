@@ -144,6 +144,8 @@ def test_binaryop_parameterized():
         return inner
 
     op = BinaryOp.register_anonymous(plus_plus_x, parameterized=True)
+    assert op.monoid is None
+    assert op(1).monoid is None
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v0 = v.ewise_mult(v, op).new()
     r0 = Vector.from_values([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
@@ -210,7 +212,19 @@ def test_monoid_parameterized():
     def plus_plus_x_identity(x=0):
         return -x
 
+    assert bin_op.monoid is None
+    bin_op1 = bin_op(1)
+    assert bin_op1.monoid is None
     monoid = Monoid.register_anonymous(bin_op, plus_plus_x_identity, name="my_monoid")
+    assert bin_op.monoid is monoid
+    assert bin_op(1).monoid is monoid(1)
+    assert monoid(2) is bin_op(2).monoid
+    # However, this still fails.
+    # For this to work, we would need `bin_op1` to know it was created from a
+    # ParameterizedBinaryOp. It would then need to check to see if the parameterized
+    # parent has been associated with a monoid since the creation of `bin_op1`.
+    assert bin_op1.monoid is None
+
     assert monoid.name == "my_monoid"
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v0 = v.ewise_add(v, monoid).new()
@@ -244,6 +258,22 @@ def test_monoid_parameterized():
     assert fv2.isclose(expected, check_dtype=True)
     with pytest.raises(TypeError, match="must be a BinaryOp"):
         Monoid.register_anonymous(monoid, 0)
+
+    def plus_times_x(x=0):
+        def inner(left, right):
+            return (left + right) * x
+
+        return inner
+
+    bin_op = BinaryOp.register_anonymous(plus_times_x, parameterized=True)
+
+    def bad_identity(x=0):
+        raise ValueError("hahaha!")
+
+    assert bin_op.monoid is None
+    monoid = Monoid.register_anonymous(bin_op, bad_identity, name="broken_monoid")
+    assert bin_op.monoid is monoid
+    assert bin_op(1).monoid is None
 
 
 @pytest.mark.slow
@@ -359,20 +389,17 @@ def test_semiring_parameterized():
     assert B.isequal(A)
 
     # SuiteSparse 4.0.1 no longer supports reduce with user-defined binary op
-    with pytest.raises(exceptions.DomainMismatch):
-        x = A.reduce_rows(bin_op).new()
-        # assert x.isequal(A.reduce_rows(binary.plus).new())
-
-    # SuiteSparse 4.0.1 no longer supports reduce with user-defined binary op
-    with pytest.raises(exceptions.DomainMismatch):
-        x = A.reduce_columns(bin_op).new()
-        # assert x.isequal(A.reduce_columns(binary.plus).new())
+    # But, we can associate this to a monoid!
+    x = A.reduce_rows(bin_op).new()
+    assert x.isequal(A.reduce_rows(binary.plus).new())
+    x = A.reduce_columns(bin_op).new()
+    assert x.isequal(A.reduce_columns(binary.plus).new())
 
     s = A.reduce_scalar(mymonoid).new()
     assert s.value == A.reduce_scalar(monoid.plus).value
 
-    with pytest.raises(TypeError, match="Monoid"):
-        A.reduce_scalar(bin_op).new()
+    assert A.reduce_scalar(bin_op) == A.reduce_scalar(binary.plus)
+
     B = A.kronecker(A, bin_op).new()
     assert B.isequal(A.kronecker(A, binary.plus).new())
 

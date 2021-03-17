@@ -2,6 +2,7 @@ import pytest
 import itertools
 import numpy as np
 import grblas
+import pickle
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
@@ -835,3 +836,10 @@ def test_wait(v):
     v2 = v.dup()
     v2.wait()
     assert v2.isequal(v)
+
+
+def test_pickle(v):
+    s = pickle.dumps(v)
+    v2 = pickle.loads(s)
+    assert v.isequal(v2, check_dtype=True)
+    assert v.name == v2.name
