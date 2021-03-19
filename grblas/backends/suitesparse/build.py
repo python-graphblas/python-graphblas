@@ -10,6 +10,7 @@ ffibuilder.set_source(
     "grblas.backends.suitesparse._suitesparse_grblas",
     r"""#include "GraphBLAS.h" """,
     libraries=["graphblas"],
+    include_dirs=[os.path.join(sys.prefix, "include")],
 )
 
 thisdir = os.path.dirname(__file__)

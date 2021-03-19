@@ -10,6 +10,7 @@ except ImportError:
     use_cython = False
 import numpy as np
 import os
+import sys
 import versioneer
 
 define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
@@ -25,7 +26,7 @@ if use_cython:
 else:
     suffix = ".c"
 
-include_dirs = [np.get_include()]
+include_dirs = [np.get_include(), os.path.join(sys.prefix, "include")]
 ext_modules = [
     Extension(
         name[: -len(suffix)].replace("/", ".").replace("\\", "."),
