@@ -4,6 +4,6 @@ include LICENSE
 include MANIFEST.in
 include versioneer.py
 include grblas/_version.py
-include grblas/*.pxd
-include grblas/*.pyx
+include grblas/*/*.pxd
+include grblas/*/*.pyx
 include grblas/backends/suitesparse/*.h
