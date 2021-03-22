@@ -15,7 +15,7 @@ _ALL_INDICES = _AllIndices()
 
 
 class IndexerResolver:
-    __slots__ = "obj", "indices"
+    __slots__ = "obj", "indices", "__weakref__"
 
     def __init__(self, obj, indices):
         self.obj = obj
@@ -89,7 +89,7 @@ class IndexerResolver:
 
 
 class Assigner:
-    __slots__ = "updater", "resolved_indexes", "is_submask"
+    __slots__ = "updater", "resolved_indexes", "is_submask", "__weakref__"
 
     def __init__(self, updater, resolved_indexes, *, is_submask):
         # We could check here whether mask dimensions match index dimensions.
@@ -116,7 +116,7 @@ class Assigner:
 
 
 class AmbiguousAssignOrExtract:
-    __slots__ = "parent", "resolved_indexes"
+    __slots__ = "parent", "resolved_indexes", "__weakref__"
 
     def __init__(self, parent, resolved_indexes):
         self.parent = parent
@@ -243,7 +243,7 @@ class AmbiguousAssignOrExtract:
 
 
 class Updater:
-    __slots__ = "parent", "kwargs"
+    __slots__ = "parent", "kwargs", "__weakref__"
 
     def __init__(self, parent, **kwargs):
         self.parent = parent
@@ -301,7 +301,7 @@ class Updater:
 
 
 class InfixExprBase:
-    __slots__ = "left", "right"
+    __slots__ = "left", "right", "__weakref__"
 
     def __init__(self, left, right):
         self.left = left

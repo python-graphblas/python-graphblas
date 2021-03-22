@@ -1,6 +1,7 @@
 import pytest
 import grblas
 import pickle
+import weakref
 from grblas import Scalar
 from grblas import dtypes, binary
 from grblas.scalar import _CScalar
@@ -215,3 +216,9 @@ def test_pickle(s):
     s2 = pickle.loads(blob)
     assert s.isequal(s2, check_dtype=True)
     assert s.name == s2.name
+
+
+def test_weakref(s):
+    d = weakref.WeakValueDictionary()
+    d["s"] = s
+    assert d["s"] is s

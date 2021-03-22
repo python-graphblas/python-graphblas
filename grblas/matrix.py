@@ -1115,7 +1115,7 @@ class MatrixExpression(BaseExpression):
 
 
 class TransposedMatrix:
-    __slots__ = "_matrix", "_ncols", "_nrows"
+    __slots__ = "_matrix", "_ncols", "_nrows", "__weakref__"
     _is_scalar = False
     _is_transposed = True
 

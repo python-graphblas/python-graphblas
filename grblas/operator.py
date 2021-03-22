@@ -61,7 +61,7 @@ def _call_op(op, left, right=None, **kwargs):
 
 
 class TypedOpBase:
-    __slots__ = "parent", "name", "type", "return_type", "gb_obj", "gb_name"
+    __slots__ = "parent", "name", "type", "return_type", "gb_obj", "gb_name", "__weakref__"
 
     def __init__(self, parent, name, type_, return_type, gb_obj, gb_name):
         self.parent = parent
@@ -230,7 +230,7 @@ class TypedUserSemiring(TypedOpBase):
 
 
 class ParameterizedUdf:
-    __slots__ = "name", "__call__", "_anonymous"
+    __slots__ = "name", "__call__", "_anonymous", "__weakref__"
 
     def __init__(self, name, anonymous):
         self.name = name
@@ -371,7 +371,7 @@ class ParameterizedSemiring(ParameterizedUdf):
 
 
 class OpBase:
-    __slots__ = "name", "_typed_ops", "types", "_anonymous"
+    __slots__ = "name", "_typed_ops", "types", "_anonymous", "__weakref__"
     _parse_config = None
     _initialized = False
     _module = None
