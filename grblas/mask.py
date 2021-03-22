@@ -1,5 +1,5 @@
 class Mask:
-    __slots__ = "mask"
+    __slots__ = "mask", "__weakref__"
     complement = False
     structure = False
     value = False

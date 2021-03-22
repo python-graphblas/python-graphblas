@@ -3,6 +3,7 @@ import itertools
 import numpy as np
 import grblas
 import pickle
+import weakref
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
@@ -843,3 +844,12 @@ def test_pickle(v):
     v2 = pickle.loads(s)
     assert v.isequal(v2, check_dtype=True)
     assert v.name == v2.name
+
+
+def test_weakref(v):
+    d = weakref.WeakValueDictionary()
+    d["v"] = v
+    assert d["v"] is v
+    vS = v.S
+    d["v.S"] = vS
+    assert d["v.S"] is vS

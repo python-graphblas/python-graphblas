@@ -9,7 +9,7 @@ _supports_complex = hasattr(lib, "GrB_FC64") or hasattr(lib, "GxB_FC64")
 
 
 class DataType:
-    __slots__ = "name", "gb_obj", "gb_name", "c_type", "numba_type", "np_type"
+    __slots__ = "name", "gb_obj", "gb_name", "c_type", "numba_type", "np_type", "__weakref__"
 
     def __init__(self, name, gb_obj, gb_name, c_type, numba_type, np_type):
         self.name = name
