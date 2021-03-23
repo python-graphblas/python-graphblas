@@ -42,6 +42,10 @@ if use_cython:
 with open("README.md") as f:
     long_description = f.read()
 
+package_data = {"grblas": ["*/*.pyx", "*/*.pxd", "backends/suitesparse/*.h"]}
+if sys.platform == "win32":
+    package_data["grblas"].append("backends/suitesparse/*.dll")
+
 setup(
     name="grblas",
     version=versioneer.get_version(),
@@ -78,7 +82,7 @@ setup(
         "Topic :: Scientific/Engineering",
         "Topic :: Scientific/Engineering :: Mathematics",
     ],
-    package_data={"grblas": ["*/*.pyx", "*/*.pxd", "backends/suitesparse/*.h"]},
+    package_data=package_data,
     include_package_data=True,
     zip_safe=False,
 )
