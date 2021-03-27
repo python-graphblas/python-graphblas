@@ -704,7 +704,7 @@ def test_binaryop_superset_monoids():
 
 
 def test_div_semirings():
-    assert not hasattr(semiring, 'plus_div')
+    assert not hasattr(semiring, "plus_div")
     A1 = Matrix.from_values([0, 1], [0, 0], [-1, -3])
     A2 = Matrix.from_values([0, 1], [0, 0], [2, 2])
     result = A1.T.mxm(A2, semiring.plus_cdiv).new()
