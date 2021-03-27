@@ -167,7 +167,14 @@ class TypedBuiltinSemiring(TypedOpBase):
 
     @property
     def monoid(self):
-        return getattr(monoid, self.name.split("_", 1)[0])[self.type]
+        monoid_name, binary_name = self.name.split("_", 1)
+        binop = getattr(binary, binary_name)[self.type]
+        val = getattr(monoid, monoid_name)
+        if binop.return_type not in val.types and binary_name in {"land", "lor", "lxor"}:
+            # e.g., with `plus_land`, `land` always returns a BOOL, but `plus` doesn't
+            # operate on BOOL, so assume the return of `land` is coerced.
+            return val[self.type]
+        return val[binop.return_type]
 
 
 class TypedUserUnaryOp(TypedOpBase):
@@ -1050,6 +1057,36 @@ class Semiring(OpBase):
         module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
         if not hasattr(module, funcname):
             setattr(module, funcname, semiring)
+
+    @classmethod
+    def _initialize(cls):
+        super()._initialize()
+        # Rename div to cdiv (truncate towards 0)
+        div_semirings = {
+            attr: val
+            for attr, val in vars(semiring).items()
+            if type(val) is Semiring and attr.endswith("_div")
+        }
+        for orig_name, orig in div_semirings.items():
+            name = f"{orig_name[:-3]}cdiv"
+            cdiv_semiring = Semiring(name)
+            setattr(semiring, name, cdiv_semiring)
+            delattr(semiring, orig_name)
+            for dtype, ret_type in orig.types.items():
+                orig_semiring = orig[dtype]
+                new_semiring = TypedBuiltinSemiring(
+                    cdiv_semiring,
+                    name,
+                    dtype,
+                    ret_type,
+                    orig_semiring.gb_obj,
+                    orig_semiring.gb_name,
+                )
+                cdiv_semiring._add(new_semiring)
+        # Also add truediv (always floating point) and floordiv (truncate towards -inf)
+        for orig_name, orig in div_semirings.items():
+            cls.register_new(f"{orig_name[:-3]}truediv", orig.monoid, binary.truediv)
+            cls.register_new(f"{orig_name[:-3]}floordiv", orig.monoid, binary.floordiv)
 
     def __init__(self, name, monoid=None, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
