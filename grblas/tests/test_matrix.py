@@ -509,6 +509,15 @@ def test_extract_input_mask():
     assert result.isequal(expected)
 
 
+def test_extract_with_matrix(A):
+    with pytest.raises(TypeError, match="Invalid type for index"):
+        A[A.T, 1].new()
+    with pytest.raises(TypeError, match="Invalid type for index"):
+        A[A, [1]].new()
+    with pytest.raises(TypeError, match="Invalid type for index"):
+        A[[0], A.V].new()
+
+
 def test_assign(A):
     B = Matrix.from_values([0, 0, 1], [0, 1, 0], [9, 8, 7])
     result = Matrix.from_values(
@@ -528,6 +537,8 @@ def test_assign(A):
     C(C.S) << 1
     assert C.nvals == nvals
     assert C.reduce_scalar().value == nvals
+    with pytest.raises(TypeError, match="Invalid type for index"):
+        C[C, [1]] = C
 
 
 def test_assign_wrong_dims(A):
@@ -1700,3 +1711,12 @@ def test_weakref(A):
     expr = A.mxm(A)
     d["expr"] = expr
     assert d["expr"] is expr
+
+
+def test_not_to_array(A):
+    with pytest.raises(TypeError, match="Matrix can't be directly converted to a numpy array"):
+        np.array(A)
+    with pytest.raises(
+        TypeError, match="TransposedMatrix can't be directly converted to a numpy array"
+    ):
+        np.array(A.T)
