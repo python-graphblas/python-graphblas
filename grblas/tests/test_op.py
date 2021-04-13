@@ -618,6 +618,15 @@ def test_binaryop_attributes():
     assert binary.numpy.equal[int].monoid is None
     assert binary.numpy.equal[bool].monoid is monoid.numpy.equal[bool]  # sanity
 
+    for attr, val in vars(monoid).items():
+        if not isinstance(val, BinaryOp):
+            continue
+        print(attr)
+        assert val.monoid is not None
+        for type_ in val.types:
+            x = val[type_]
+            assert x.monoid is not None
+
 
 def test_monoid_attributes():
     assert monoid.plus[int].binaryop is binary.plus[int]
@@ -638,6 +647,17 @@ def test_monoid_attributes():
     assert monoid.plus[int].parent is monoid.plus
     assert monoid.numpy.add[int].parent is monoid.numpy.add
     assert op[int].parent is op
+
+    for attr, val in vars(monoid).items():
+        if not isinstance(val, Monoid):
+            continue
+        print(attr)
+        assert val.binaryop is not None
+        assert val.identities is not None
+        for type_ in val.types:
+            x = val[type_]
+            assert x.binaryop is not None
+            assert x.identity is not None
 
 
 def test_semiring_attributes():
@@ -663,6 +683,17 @@ def test_semiring_attributes():
     assert semiring.numpy.add_subtract[int].parent is semiring.numpy.add_subtract
     assert op[int].parent is op
 
+    for attr, val in vars(semiring).items():
+        if not isinstance(val, Semiring):
+            continue
+        print(attr)
+        assert val.binaryop is not None
+        assert val.monoid is not None
+        for type_ in val.types:
+            x = val[type_]
+            assert x.binaryop is not None
+            assert x.monoid is not None
+
 
 def test_binaryop_superset_monoids():
     monoid_names = {x for x in dir(monoid) if not x.startswith("_")}
@@ -670,3 +701,20 @@ def test_binaryop_superset_monoids():
     diff = monoid_names - binary_names
     assert len(diff) == 0
     assert len(set(dir(monoid.numpy)) - set(dir(binary.numpy))) == 0
+
+
+def test_div_semirings():
+    assert not hasattr(semiring, "plus_div")
+    A1 = Matrix.from_values([0, 1], [0, 0], [-1, -3])
+    A2 = Matrix.from_values([0, 1], [0, 0], [2, 2])
+    result = A1.T.mxm(A2, semiring.plus_cdiv).new()
+    assert result[0, 0].value == -1
+    assert result.dtype == dtypes.INT64
+
+    result = A1.T.mxm(A2, semiring.plus_truediv).new()
+    assert result[0, 0].value == -2
+    assert result.dtype == dtypes.FP64
+
+    result = A1.T.mxm(A2, semiring.plus_floordiv).new()
+    assert result[0, 0].value == -3
+    assert result.dtype == dtypes.INT64
