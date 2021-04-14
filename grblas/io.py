@@ -53,30 +53,31 @@ def from_numpy(m):
         raise GrblasException("m.ndim must be <= 2")
 
     try:
-        from scipy.sparse import csr_matrix
+        from scipy.sparse import csr_matrix, coo_matrix
     except ImportError:  # pragma: no cover
         raise ImportError("scipy is required to import from numpy")
 
     if m.ndim == 1:
-        ss = csr_matrix([m])
+        ss = csr_matrix(m)
         _, size = ss.shape
         dtype = lookup_dtype(m.dtype)
         g = Vector.from_values(ss.indices, ss.data, size=size, dtype=dtype)
         return g
     else:
-        ss = csr_matrix(m)
+        ss = coo_matrix(m)
         return from_scipy_sparse_matrix(ss)
 
 
-def from_scipy_sparse_matrix(m, *, name=None):
+def from_scipy_sparse_matrix(m, *, dup_op=None, name=None):
     """
     dtype is inferred from m.dtype
     """
-    ss = m.tocsr()
+    ss = m.tocoo()
     nrows, ncols = ss.shape
-    rows, cols = ss.nonzero()
     dtype = lookup_dtype(m.dtype)
-    g = Matrix.from_values(rows, cols, ss.data, nrows=nrows, ncols=ncols, dtype=dtype, name=name)
+    g = Matrix.from_values(
+        ss.row, ss.col, ss.data, nrows=nrows, ncols=ncols, dtype=dtype, dup_op=dup_op, name=name
+    )
     return g
 
 
@@ -127,7 +128,7 @@ def to_scipy_sparse_matrix(m, format="csr"):
     return rv.asformat(format)
 
 
-def mmread(source, *, name=None):
+def mmread(source, *, dup_op=None, name=None):
     """Read the contents of a Matrix Market filename or file into a new Matrix.
 
     This uses `scipy.io.mmread`:
@@ -145,7 +146,7 @@ def mmread(source, *, name=None):
     if isinstance(array, coo_matrix):
         nrows, ncols = array.shape
         return Matrix.from_values(
-            array.row, array.col, array.data, nrows=nrows, ncols=ncols, name=name
+            array.row, array.col, array.data, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
         )
     # SS, SuiteSparse-specific: import_full
     return Matrix.ss.import_fullr(values=array, take_ownership=True, name=name)

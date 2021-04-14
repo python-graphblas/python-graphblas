@@ -203,3 +203,32 @@ def test_mmread_mmwrite():
                 raise AssertionError("Matrix M2 not as expected.  See print output above")
         success += 1
     assert success > 0
+
+
+@pytest.mark.skipif("not ss")
+def test_from_scipy_sparse_duplicates():
+    a = ss.coo_matrix(([1, 2, 3, 4], ([0, 1, 2, 2], [2, 1, 0, 0])))
+    np.testing.assert_array_equal(a.toarray(), np.array(([[0, 0, 1], [0, 2, 0], [7, 0, 0]])))
+    with pytest.raises(ValueError, match="Duplicate indices found"):
+        gb.io.from_scipy_sparse_matrix(a)
+    a2 = gb.io.from_scipy_sparse_matrix(a, dup_op=gb.binary.plus)
+    expected = gb.Matrix.from_values([0, 1, 2], [2, 1, 0], [1, 2, 7])
+    assert a2.isequal(expected)
+
+
+@pytest.mark.skipif("not ss")
+def test_matrix_market_sparse_duplicates():
+    mm = StringIO(
+        """%%MatrixMarket matrix coordinate real general
+        3 3 4
+        1 3 1
+        2 2 2
+        3 1 3
+        3 1 4"""
+    )
+    with pytest.raises(ValueError, match="Duplicate indices found"):
+        gb.io.mmread(mm)
+    mm.seek(0)
+    a = gb.io.mmread(mm, dup_op=gb.binary.plus)
+    expected = gb.Matrix.from_values([0, 1, 2], [2, 1, 0], [1, 2, 7])
+    assert a.isequal(expected)
