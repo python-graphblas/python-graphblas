@@ -35,6 +35,18 @@ def test_record_novalue():
     rec.stop()
 
 
+def test_record_scalars():
+    A = gb.Matrix.new(int, 3, 3, name="A")
+    with gb.Recorder() as rec:
+        A[0, 0] = 5
+        A.apply(gb.binary.lt, right=10).new(name="B")
+    assert list(rec) == [
+        "GrB_Matrix_setElement_INT64(A, 5, 0, 0);",
+        "GrB_Matrix_new(&B, GrB_BOOL, 3, 3);",
+        "GrB_Matrix_apply_BinaryOp2nd_INT64(B, NULL, NULL, GrB_LT_INT64, A, 10, NULL);",
+    ]
+
+
 def test_record_repr():
     A = gb.Matrix.new(int, 3, 3, name="A")
     rec = gb.Recorder(record=True)

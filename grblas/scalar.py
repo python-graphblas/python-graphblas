@@ -259,7 +259,7 @@ class _CScalar:
 
     def __init__(self, scalar):
         if type(scalar) is not Scalar:
-            scalar = Scalar.from_value(scalar, name=repr(scalar), dtype=_INDEX)
+            scalar = Scalar.from_value(scalar, name="", dtype=_INDEX)
         self.scalar = scalar
         self.dtype = scalar.dtype
 

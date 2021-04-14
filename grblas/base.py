@@ -337,7 +337,7 @@ class BaseType:
                         scalar = delayed
                     else:
                         try:
-                            scalar = Scalar.from_value(delayed, name=repr(delayed))
+                            scalar = Scalar.from_value(delayed, name="")
                         except TypeError:
                             raise TypeError(
                                 "Assignment value must be a valid expression type, not "
