@@ -432,7 +432,7 @@ class Vector(BaseType):
         elif right is None:
             if type(left) is not Scalar:
                 try:
-                    left = Scalar.from_value(left)
+                    left = Scalar.from_value(left, name="")
                 except TypeError:
                     self._expect_type(
                         left,
@@ -458,7 +458,7 @@ class Vector(BaseType):
         elif left is None:
             if type(right) is not Scalar:
                 try:
-                    right = Scalar.from_value(right)
+                    right = Scalar.from_value(right, name="")
                 except TypeError:
                     self._expect_type(
                         right,
@@ -543,7 +543,7 @@ class Vector(BaseType):
         index, _ = resolved_indexes.indices[0]
         if type(value) is not Scalar:
             try:
-                value = Scalar.from_value(value)
+                value = Scalar.from_value(value, name="")
             except TypeError:
                 self._expect_type(
                     value,
@@ -574,7 +574,7 @@ class Vector(BaseType):
         else:
             if type(value) is not Scalar:
                 try:
-                    value = Scalar.from_value(value)
+                    value = Scalar.from_value(value, name="")
                 except TypeError:
                     self._expect_type(
                         value,
