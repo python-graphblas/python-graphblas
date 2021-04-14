@@ -42,11 +42,12 @@ class Recorder:
     Currently, only one recorder will record at a time within a context.
     """
 
-    __slots__ = "data", "_token", "max_rows", "__weakref__"
+    __slots__ = "data", "_token", "max_rows", "_prev_recorder", "__weakref__"
 
     def __init__(self, *, record=False, max_rows=20):
         self.data = []
         self._token = None
+        self._prev_recorder = None
         self.max_rows = max_rows
         if record:
             self.start()
@@ -59,6 +60,7 @@ class Recorder:
 
     def start(self):
         if self._token is None:
+            self._prev_recorder = _recorder.get(base._prev_recorder)
             self._token = _recorder.set(self)
         base._prev_recorder = self
 
@@ -67,7 +69,8 @@ class Recorder:
             _recorder.reset(self._token)
             self._token = None
         if base._prev_recorder is self or base._prev_recorder is None:
-            base._prev_recorder = _recorder.get(None)
+            base._prev_recorder = _recorder.get(self._prev_recorder)
+        self._prev_recorder = None
 
     def __enter__(self):
         self.start()
