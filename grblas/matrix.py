@@ -1214,6 +1214,8 @@ class TransposedMatrix:
     __iter__ = Matrix.__iter__
     _expect_type = Matrix._expect_type
     _expect_op = Matrix._expect_op
+    __array__ = Matrix.__array__
+    __array_struct__ = Matrix.__array_struct__
 
 
 expr.MatrixEwiseAddExpr.output_type = MatrixExpression

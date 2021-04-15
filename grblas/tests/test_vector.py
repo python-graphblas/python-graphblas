@@ -350,6 +350,13 @@ def test_extract_array(v):
     assert w.isequal(result)
 
 
+def test_extract_with_vector(v):
+    with pytest.raises(TypeError, match="Invalid type for index"):
+        v[v].new()
+    with pytest.raises(TypeError, match="Invalid type for index"):
+        v[v.S].new()
+
+
 def test_extract_fancy_scalars(v):
     assert v.dtype == dtypes.INT64
     s = v[1].new()
@@ -392,6 +399,8 @@ def test_assign(v):
     assert w.isequal(result)
     with pytest.raises(TypeError):
         w[:] << u()
+    with pytest.raises(TypeError, match="Invalid type for index: Vector."):
+        w[w] = 1
 
 
 def test_assign_scalar(v):
@@ -853,3 +862,8 @@ def test_weakref(v):
     vS = v.S
     d["v.S"] = vS
     assert d["v.S"] is vS
+
+
+def test_not_to_array(v):
+    with pytest.raises(TypeError, match="Vector can't be directly converted to a numpy array"):
+        np.array(v)

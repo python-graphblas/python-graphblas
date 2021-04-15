@@ -62,22 +62,47 @@ class IndexerResolver:
             if index >= size:
                 raise IndexError(f"index={index}, size={size}")
             return _CScalar(int(index)), None
-        if typ is slice:
+        if typ is list:
+            pass
+        elif typ is slice:
             if index == slice(None) or index == slice(0, None):
                 # [:] means all indices; use special GrB_ALL indicator
                 return _ALL_INDICES, _CScalar(size)
-            index = tuple(range(size)[index])
+            index = list(range(size)[index])
         elif typ is np.ndarray:
             if len(index.shape) != 1:
                 raise TypeError(f"Invalid number of dimensions for index: {len(index.shape)}")
             if not np.issubdtype(index.dtype, np.integer):
                 raise TypeError(f"Invalid dtype for index: {index.dtype}")
             return _CArray(index), _CScalar(len(index))
-        elif typ is not list:
+        else:
+            from .vector import Vector
+            from .matrix import Matrix, TransposedMatrix
+
+            if typ is Vector or typ is Matrix:
+                raise TypeError(
+                    f"Invalid type for index: {typ.__name__}.\n"
+                    f"If you want to apply a mask, perhaps do something like "
+                    f"`x.dup(mask={index.name}.S)`.\n"
+                    f"If you want to assign with a mask, perhaps do something like "
+                    f"`x(mask={index.name}.S) << value`."
+                )
+            elif typ is TransposedMatrix:
+                raise TypeError(f"Invalid type for index: {typ.__name__}.")
             try:
-                index = tuple(index)
+                index = list(index)
             except Exception:
-                raise TypeError("Unable to convert to tuple")
+                from .mask import Mask
+
+                if isinstance(index, Mask):
+                    raise TypeError(
+                        f"Invalid type for index: {typ.__name__}.\n"
+                        f"If you want to apply a mask, perhaps do something like "
+                        f"`x.dup(mask={index.name})`.\n"
+                        f"If you want to assign with a mask, perhaps do something like "
+                        f"`x(mask={index.name}) << value`."
+                    )
+                raise TypeError(f"Invalid type for index: {typ}; unable to convert to list")
         return _CArray(index), _CScalar(len(index))
 
     def get_index(self, dim):

@@ -406,6 +406,15 @@ class BaseType:
     _expect_type = _expect_type
     _expect_op = _expect_op
 
+    # Don't let objects be coerced to numpy arrays
+    def __array__(self, *args, **kwargs):
+        raise TypeError(
+            f"{type(self).__name__} can't be directly converted to a numpy array; "
+            f"perhaps use `{self.name}.to_values()` method instead."
+        )
+
+    __array_struct__ = property(__array__)
+
 
 class BaseExpression:
     __slots__ = (
