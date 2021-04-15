@@ -30,13 +30,13 @@ def test_binaryop():
 
 
 def test_monoid():
-    assert monoid.max["INT32"].gb_obj == lib.GxB_MAX_INT32_MONOID
-    assert monoid.max[dtypes.UINT16].gb_obj == lib.GxB_MAX_UINT16_MONOID
+    assert monoid.max["INT32"].gb_obj == lib.GrB_MAX_MONOID_INT32
+    assert monoid.max[dtypes.UINT16].gb_obj == lib.GrB_MAX_MONOID_UINT16
 
 
 def test_semiring():
-    assert semiring.min_plus["INT32"].gb_obj == lib.GxB_MIN_PLUS_INT32
-    assert semiring.min_plus[dtypes.UINT16].gb_obj == lib.GxB_MIN_PLUS_UINT16
+    assert semiring.min_plus["INT32"].gb_obj == lib.GrB_MIN_PLUS_SEMIRING_INT32
+    assert semiring.min_plus[dtypes.UINT16].gb_obj == lib.GrB_MIN_PLUS_SEMIRING_UINT16
     assert set(semiring.min_firsti.types) == {"INT32", "INT64"}
 
 
