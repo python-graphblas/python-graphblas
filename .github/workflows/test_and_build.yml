@@ -37,12 +37,10 @@ jobs:
           flake8 grblas *.py
           black grblas *.py --check --diff
       - name: Build extension module
-        env:
-          CYTHON_COVERAGE: true
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
-          conda install -c conda-forge pandas numba cffi graphblas scipy networkx cython
+          conda install -c conda-forge pandas numba scipy networkx python-suitesparse-graphblas
           python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
           python setup.py develop
       - name: Optional pygraphblas

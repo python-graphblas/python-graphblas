@@ -1,11 +1,11 @@
 import grblas as gb
 import numpy as np
 from numba import njit
+from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
 from .. import ffi, lib
 from ..dtypes import lookup_dtype
 from ..exceptions import check_status, check_status_carg
 from ..utils import get_shape, ints_to_numpy_buffer, values_to_numpy_buffer, wrapdoc
-from .utils import claim_buffer, claim_buffer_2d, unclaim_buffer
 
 ffi_new = ffi.new
 
