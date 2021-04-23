@@ -112,13 +112,10 @@ def _init(backend_arg, blocking, automatic=False):
         # I think pygraphblas is only non-blocking.
         # Don't call GrB_init; defer to pygraphblas.
     else:
-        from suitesparse_graphblas import lib, ffi
-        from suitesparse_graphblas.utils import call_gxb_init
+        from suitesparse_graphblas import lib, ffi, is_initialized, initialize
 
-        blocking = lib.GrB_BLOCKING if blocking else lib.GrB_NONBLOCKING
-
-        # This must be called before anything else happens (and only once)
-        call_gxb_init(ffi, lib, blocking)
+        if not is_initialized:
+            initialize(blocking=blocking)
 
 
 def _load(name):
