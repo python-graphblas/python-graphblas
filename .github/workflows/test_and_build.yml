@@ -20,7 +20,8 @@ jobs:
           - "--backend=pygraphblas"
         sourcetype:
           - "wheel"
-          - "source"
+          # - "source"  # dope!  I broke it.
+          - "upstream"
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -45,8 +46,9 @@ jobs:
           conda activate grblas
           conda install -c conda-forge pandas numba scipy networkx cffi  # python-suitesparse-graphblas
           if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then pip install suitesparse-graphblas ; fi
-          if [[ ${{ matrix.sourcetype }} == "source" ]]; then conda install -c conda-forge graphblas ; fi
-          if [[ ${{ matrix.sourcetype }} == "source" ]]; then pip install --no-binary suitesparse-graphblas ; fi
+          if [[ ${{ matrix.sourcetype }} != "wheel" ]]; then conda install -c conda-forge graphblas ; fi
+          if [[ ${{ matrix.sourcetype }} == "source" ]]; then pip install --no-binary=all suitesparse-graphblas ; fi
+          if [[ ${{ matrix.sourcetype }} == "upstream" ]]; then pip install git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main ; fi
           python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
           python setup.py develop
       - name: Optional pygraphblas
