@@ -50,7 +50,7 @@ jobs:
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
-          conda install -c conda-forge pandas numba scipy networkx cffi  # python-suitesparse-graphblas
+          conda install -c conda-forge pandas numba scipy networkx cffi
           if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then
               pip install suitesparse-graphblas
           else
