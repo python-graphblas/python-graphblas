@@ -90,6 +90,7 @@ jobs:
           coverage run --branch -m pytest ${{ matrix.testopts }}
           # Test (and cover) automatic initialization
           coverage run -a --branch grblas/tests/test_auto_init.py
+          coverage run -a --branch grblas/tests/test_external_init.py
       - name: Coverage
         if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
         env:

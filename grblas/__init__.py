@@ -88,9 +88,7 @@ def _init(backend_arg, blocking, automatic=False):
     global _init_params, backend, lib, ffi
 
     passed_params = dict(backend=backend_arg, blocking=blocking, automatic=automatic)
-    if _init_params is None:
-        _init_params = passed_params
-    else:
+    if _init_params is not None:
         if _init_params != passed_params:
             from .exceptions import GrblasException
 
@@ -124,6 +122,7 @@ def _init(backend_arg, blocking, automatic=False):
                 )
         else:
             initialize(blocking=blocking)
+    _init_params = passed_params
 
 
 def _load(name):
