@@ -26,6 +26,8 @@ jobs:
         exclude:
           - sourcetype: "upstream"
             testopts: "--non-blocking --record --runslow"
+          - sourcetype: "upstream"
+            testopts: "--backend=pygraphblas"
 
     steps:
       - name: Checkout
