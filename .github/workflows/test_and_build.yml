@@ -18,6 +18,7 @@ jobs:
           - "--blocking --record"
           - "--non-blocking"
           - "--backend=pygraphblas"
+          - "--runslow"
         sourcetype:
           - "wheel"
           # - "source"  # dope!  I broke it.
@@ -48,6 +49,7 @@ jobs:
           if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then pip install suitesparse-graphblas ; fi
           if [[ ${{ matrix.sourcetype }} != "wheel" ]]; then conda install -c conda-forge graphblas ; fi
           if [[ ${{ matrix.sourcetype }} == "source" ]]; then pip install --no-binary=all suitesparse-graphblas ; fi
+          if [[ ${{ matrix.sourcetype }} == "upstream" ]]; then conda install -c conda-forge cython ; fi
           if [[ ${{ matrix.sourcetype }} == "upstream" ]]; then pip install git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main ; fi
           python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
           python setup.py develop
@@ -70,7 +72,7 @@ jobs:
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
-          coverage run --branch -m pytest --runslow ${{ matrix.testopts }}
+          coverage run --branch -m pytest ${{ matrix.testopts }}
           # Test (and cover) automatic initialization
           coverage run -a --branch grblas/tests/test_auto_init.py
       - name: Coverage
