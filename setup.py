@@ -2,8 +2,12 @@ from setuptools import setup, find_packages
 import versioneer
 
 extras_require = {
-    "complete": ["pandas", "scipy", "networkx", "matplotlib"],
+    "repr": ["pandas"],
+    "io": ["networkx", "scipy"],
+    "viz": ["matplotlib"],
 }
+extras_require["complete"] = sorted({v for req in extras_require.values() for v in req})
+
 with open("README.md") as f:
     long_description = f.read()
 
