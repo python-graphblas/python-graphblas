@@ -19,11 +19,15 @@ jobs:
           - "--blocking --record"
           - "--non-blocking"
           - "--backend=pygraphblas"
-          - "--runslow"
+          - "--non-blocking --record --runslow"
         sourcetype:
           - "wheel"
           # - "source"  # dope!  I broke it.
           - "upstream"
+        exclude:
+          - sourcetype: "upstream"
+            testopts: "--non-blocking --record --runslow"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -47,8 +51,11 @@ jobs:
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
           conda install -c conda-forge pandas numba scipy networkx cffi  # python-suitesparse-graphblas
-          if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then pip install suitesparse-graphblas ; fi
-          if [[ ${{ matrix.sourcetype }} != "wheel" ]]; then conda install -c conda-forge graphblas ; fi
+          if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then
+              pip install suitesparse-graphblas
+          else
+              conda install -c conda-forge graphblas
+          fi
           if [[ ${{ matrix.sourcetype }} == "source" ]]; then pip install --no-binary=all suitesparse-graphblas ; fi
           # I can't get pip install from git to work, so git clone instead.
           # pip install git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
