@@ -17,7 +17,6 @@ jobs:
         pyver: [3.7, 3.8, 3.9]
         testopts:
           - "--blocking --record"
-          - "--non-blocking"
           - "--backend=pygraphblas"
           - "--non-blocking --record --runslow"
         sourcetype:
