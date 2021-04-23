@@ -12,6 +12,7 @@ jobs:
   build_and_test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         pyver: [3.7, 3.8, 3.9]
         testopts:
