@@ -24,7 +24,7 @@ setup(
     packages=find_packages(exclude=["grblas.backends.python"]),
     setup_requires=["pytest-runner"],
     python_requires=">=3.7",
-    install_requires=["suitesparse-graphblas"],
+    install_requires=["suitesparse-graphblas", "numba"],
     tests_require=["pytest", "pandas"],
     extras_require=extras_require,
     license="Apache License 2.0",
@@ -46,4 +46,5 @@ setup(
         "Topic :: Scientific/Engineering",
         "Topic :: Scientific/Engineering :: Mathematics",
     ],
+    zip_safe=False,
 )
