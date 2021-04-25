@@ -18,24 +18,24 @@ jobs:
           - { pyver: 3.7, os: ubuntu-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
           - { pyver: 3.8, os: ubuntu-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
           - { pyver: 3.9, os: ubuntu-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
-          - { pyver: 3.7, os: windows-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
-          - { pyver: 3.8, os: windows-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
-          - { pyver: 3.9, os: windows-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
-          - { pyver: 3.7, os: macos-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
-          - { pyver: 3.8, os: macos-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
-          - { pyver: 3.9, os: macos-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
+          # - { pyver: 3.7, os: windows-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
+          # - { pyver: 3.8, os: windows-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
+          # - { pyver: 3.9, os: windows-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
+          # - { pyver: 3.7, os: macos-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
+          # - { pyver: 3.8, os: macos-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
+          # - { pyver: 3.9, os: macos-latest, testops: "--non-blocking --record --runslow", sourcetype: "wheel" }
           # pygraphblas
           - { pyver: 3.7, os: ubuntu-latest, testops: "--backend=pygraphblas", sourcetype: "wheel" }
           - { pyver: 3.8, os: ubuntu-latest, testops: "--backend=pygraphblas --record", sourcetype: "wheel" }
           - { pyver: 3.9, os: ubuntu-latest, testops: "--backend=pygraphblas --runslow", sourcetype: "wheel" }
           # blocking
           - { pyver: 3.7, os: ubuntu-latest, testops: "--blocking", sourcetype: "wheel" }
-          - { pyver: 3.8, os: windows-latest, testops: "--blocking", sourcetype: "wheel" }
-          - { pyver: 3.9, os: macos-latest, testops: "--blocking", sourcetype: "wheel" }
+          # - { pyver: 3.8, os: windows-latest, testops: "--blocking", sourcetype: "wheel" }
+          # - { pyver: 3.9, os: macos-latest, testops: "--blocking", sourcetype: "wheel" }
           # upstream
           - { pyver: 3.9, os: ubuntu-latest, testops: "--non-blocking --runslow", sourcetype: "upstream" }
-          - { pyver: 3.9, os: windows-latest, testops: "--non-blocking --runslow", sourcetype: "upstream" }
-          - { pyver: 3.9, os: macos-latest, testops: "--non-blocking --runslow", sourcetype: "upstream" }
+          # - { pyver: 3.9, os: windows-latest, testops: "--non-blocking --runslow", sourcetype: "upstream" }
+          # - { pyver: 3.9, os: macos-latest, testops: "--non-blocking --runslow", sourcetype: "upstream" }
           # TODO: test against `sourcetype: "source"` (once fixed)
 
     runs-on: ${{ matrix.cfg.os }}
