@@ -12,12 +12,23 @@ jobs:
   build_and_test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         pyver: [3.7, 3.8, 3.9]
         testopts:
           - "--blocking --record"
-          - "--non-blocking"
           - "--backend=pygraphblas"
+          - "--non-blocking --record --runslow"
+        sourcetype:
+          - "wheel"
+          # - "source"  # dope!  I broke it.
+          - "upstream"
+        exclude:
+          - sourcetype: "upstream"
+            testopts: "--non-blocking --record --runslow"
+          - sourcetype: "upstream"
+            testopts: "--backend=pygraphblas"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -37,12 +48,25 @@ jobs:
           flake8 grblas *.py
           black grblas *.py --check --diff
       - name: Build extension module
-        env:
-          CYTHON_COVERAGE: true
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
-          conda install -c conda-forge pandas numba cffi graphblas scipy networkx cython
+          conda install -c conda-forge pandas numba scipy networkx cffi
+          if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then
+              pip install suitesparse-graphblas
+          else
+              conda install -c conda-forge graphblas
+          fi
+          if [[ ${{ matrix.sourcetype }} == "source" ]]; then pip install --no-binary=all suitesparse-graphblas ; fi
+          # I can't get pip install from git to work, so git clone instead.
+          # pip install git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
+          if [[ ${{ matrix.sourcetype }} == "upstream" ]]; then
+              conda install -c conda-forge cython
+              git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
+              pushd ssgb
+              python setup.py install
+              popd
+          fi
           python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
           python setup.py develop
       - name: Optional pygraphblas
@@ -64,9 +88,10 @@ jobs:
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
-          coverage run --branch -m pytest --runslow ${{ matrix.testopts }}
+          coverage run --branch -m pytest ${{ matrix.testopts }}
           # Test (and cover) automatic initialization
           coverage run -a --branch grblas/tests/test_auto_init.py
+          coverage run -a --branch grblas/tests/test_external_init.py
       - name: Coverage
         if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
         env:

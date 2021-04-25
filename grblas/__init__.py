@@ -88,9 +88,7 @@ def _init(backend_arg, blocking, automatic=False):
     global _init_params, backend, lib, ffi
 
     passed_params = dict(backend=backend_arg, blocking=blocking, automatic=automatic)
-    if _init_params is None:
-        _init_params = passed_params
-    else:
+    if _init_params is not None:
         if _init_params != passed_params:
             from .exceptions import GrblasException
 
@@ -112,14 +110,19 @@ def _init(backend_arg, blocking, automatic=False):
         # I think pygraphblas is only non-blocking.
         # Don't call GrB_init; defer to pygraphblas.
     else:
-        ffi_backend = _importlib.import_module(f".backends.{backend}", __name__)
-        lib = ffi_backend.lib
-        ffi = ffi_backend.ffi
-        blocking = lib.GrB_BLOCKING if blocking else lib.GrB_NONBLOCKING
-        from ._ss.utils import call_gxb_init
+        from suitesparse_graphblas import lib, ffi, initialize, is_initialized
 
-        # This must be called before anything else happens (and only once)
-        call_gxb_init(ffi, lib, blocking)
+        if is_initialized():
+            mode = ffi.new("GrB_Mode*")
+            assert lib.GxB_Global_Option_get(lib.GxB_MODE, mode) == 0
+            is_blocking = mode[0] == lib.GrB_BLOCKING
+            if is_blocking != blocking:
+                raise RuntimeError(
+                    f"GraphBLAS has already been initialized with `blocking={is_blocking}`"
+                )
+        else:
+            initialize(blocking=blocking)
+    _init_params = passed_params
 
 
 def _load(name):

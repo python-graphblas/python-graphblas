@@ -618,14 +618,16 @@ def test_binaryop_attributes():
     assert binary.numpy.equal[int].monoid is None
     assert binary.numpy.equal[bool].monoid is monoid.numpy.equal[bool]  # sanity
 
-    for attr, val in vars(monoid).items():
+    for attr, val in vars(binary).items():
         if not isinstance(val, BinaryOp):
             continue
         print(attr)
-        assert val.monoid is not None
-        for type_ in val.types:
-            x = val[type_]
-            assert x.monoid is not None
+        if hasattr(monoid, attr):
+            assert val.monoid is not None
+            assert any(val[type_].monoid is not None for type_ in val.types)
+        else:
+            assert val.monoid is None
+            assert all(val[type_].monoid is None for type_ in val.types)
 
 
 def test_monoid_attributes():

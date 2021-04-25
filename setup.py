@@ -1,50 +1,15 @@
-from setuptools import setup, find_packages, Extension
-from glob import glob
-
-try:
-    from Cython.Build import cythonize
-    from Cython.Compiler.Options import get_directive_defaults
-
-    use_cython = True
-except ImportError:
-    use_cython = False
-import numpy as np
-import os
-import sys
+from setuptools import setup, find_packages
 import versioneer
 
-define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
-
-if use_cython:
-    suffix = ".pyx"
-    directive_defaults = get_directive_defaults()
-    directive_defaults["binding"] = True
-    directive_defaults["language_level"] = 3
-    if os.environ.get("CYTHON_COVERAGE"):
-        directive_defaults["linetrace"] = True
-        define_macros.append(("CYTHON_TRACE_NOGIL", "1"))
-else:
-    suffix = ".c"
-
-include_dirs = [np.get_include(), os.path.join(sys.prefix, "include")]
-ext_modules = [
-    Extension(
-        name[: -len(suffix)].replace("/", ".").replace("\\", "."),
-        [name],
-        include_dirs=include_dirs,
-        define_macros=define_macros,
-    )
-    for name in glob(f"grblas/**/*{suffix}", recursive=True)
-]
-if use_cython:
-    ext_modules = cythonize(ext_modules, include_path=include_dirs)
+extras_require = {
+    "repr": ["pandas"],
+    "io": ["networkx", "scipy"],
+    "viz": ["matplotlib"],
+}
+extras_require["complete"] = sorted({v for req in extras_require.values() for v in req})
 
 with open("README.md") as f:
     long_description = f.read()
-
-package_data = {"grblas": ["*/*.pyx", "*/*.pxd", "backends/suitesparse/*.h"]}
-if sys.platform == "win32":
-    package_data["grblas"].append("backends/suitesparse/*.dll")
 
 setup(
     name="grblas",
@@ -56,13 +21,12 @@ setup(
     author="Jim Kitchen and Erik Welch",
     author_email="erik.n.welch@gmail.com,jim22k@gmail.com",
     url="https://github.com/metagraph-dev/grblas",
-    ext_modules=ext_modules,
     packages=find_packages(exclude=["grblas.backends.python"]),
-    setup_requires=["cffi>=1.0.0", "pytest-runner"],
-    cffi_modules=["grblas/backends/suitesparse/build.py:ffibuilder"],
+    setup_requires=["pytest-runner"],
     python_requires=">=3.7",
-    install_requires=["cffi>=1.0.0", "numpy>=1.15", "numba"],
+    install_requires=["suitesparse-graphblas", "numba"],
     tests_require=["pytest", "pandas"],
+    extras_require=extras_require,
     license="Apache License 2.0",
     keywords=["graphblas", "graph", "sparse", "matrix", "lagraph", "suitesparse"],
     classifiers=[
@@ -82,7 +46,5 @@ setup(
         "Topic :: Scientific/Engineering",
         "Topic :: Scientific/Engineering :: Mathematics",
     ],
-    package_data=package_data,
-    include_package_data=True,
     zip_safe=False,
 )
