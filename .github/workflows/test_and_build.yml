@@ -59,8 +59,10 @@ jobs:
               curl -L https://github.com/DrTimothyAldenDavis/GraphBLAS/archive/v4.0.3.tar.gz > GraphBLAS-4.0.3.tar.gz
               tar -zxvf GraphBLAS-4.0.3.tar.gz
               cd GraphBLAS-4.0.3
-              make library VERBOSE=1 JOBS=20 CMAKE_OPTIONS="-DCMAKE_BUILD_TYPE=Release"
-              make install VERBOSE=1 CMAKE_OPTIONS="-DCMAKE_BUILD_TYPE=Release"
+              export INSTALL="${CONDA_PREFIX}"
+              export CMAKE_OPTIONS="-DCMAKE_INSTALL_PREFIX=${CONDA_PREFIX} -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release"
+              make library VERBOSE=1 JOBS=4
+              make install VERBOSE=1
               cd ..
           fi
           if [[ ${{ matrix.sourcetype }} == "source" ]]; then pip install --no-binary=all suitesparse-graphblas ; fi
