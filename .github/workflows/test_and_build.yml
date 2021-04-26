@@ -55,7 +55,13 @@ jobs:
           if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then
               pip install suitesparse-graphblas
           else
-              conda install -c conda-forge graphblas
+              # Let's see if we can build GraphBLAS by scratch!
+              curl -L https://github.com/DrTimothyAldenDavis/GraphBLAS/archive/v4.0.3.tar.gz > GraphBLAS-4.0.3.tar.gz
+              tar -zxvf GraphBLAS-4.0.3.tar.gz
+              cd GraphBLAS-4.0.3
+              make library VERBOSE=1 JOBS=20 CMAKE_OPTIONS="-DCMAKE_BUILD_TYPE=Release"
+              make install VERBOSE=1 CMAKE_OPTIONS="-DCMAKE_BUILD_TYPE=Release"
+              cd ..
           fi
           if [[ ${{ matrix.sourcetype }} == "source" ]]; then pip install --no-binary=all suitesparse-graphblas ; fi
           # I can't get pip install from git to work, so git clone instead.
