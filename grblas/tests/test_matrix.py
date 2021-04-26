@@ -1247,7 +1247,7 @@ def test_transpose_exceptional():
 
 
 def test_nested_matrix_operations():
-    """ Make sure temporaries aren't garbage-collected too soon"""
+    """Make sure temporaries aren't garbage-collected too soon"""
     A = Matrix.new(int, 8, 8)
     A.ewise_mult(A.mxm(A.T).new()).new().reduce_scalar().new()
     A.ewise_mult(A.ewise_mult(A.ewise_mult(A.ewise_mult(A).new()).new()).new())
