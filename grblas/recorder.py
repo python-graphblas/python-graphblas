@@ -8,7 +8,7 @@ from .operator import TypedOpBase
 
 
 def gbstr(arg):
-    """ Convert arg to a string as an argument in a GraphBLAS call"""
+    """Convert arg to a string as an argument in a GraphBLAS call"""
     if arg is None:
         return "NULL"
     elif isinstance(arg, TypedOpBase):
