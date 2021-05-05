@@ -5,7 +5,7 @@ import grblas
 import pickle
 import weakref
 from grblas import Matrix, Vector, Scalar
-from grblas import unary, binary, monoid, semiring
+from grblas import unary, binary, monoid, semiring, agg
 from grblas import dtypes
 from grblas.exceptions import IndexOutOfBound, OutputNotEmpty, DimensionMismatch, InvalidValue
 
@@ -579,6 +579,55 @@ def test_reduce(v):
         b1.reduce()
 
 
+def test_reduce_agg(v):
+    assert v.reduce(agg.sum) == 4
+    assert v.reduce(agg.prod) == 0
+    assert v.reduce(agg.count) == 4
+    assert v.reduce(agg.count_nonzero) == 3
+    assert v.reduce(agg.count_zero) == 1
+    assert v.reduce(agg.sum_of_squares) == 6
+    assert v.reduce(agg.hypot[float]).new().isclose(6 ** 0.5)
+    assert v.reduce(agg.logaddexp[float]).new().isclose(np.log(1 + 2 * np.e + np.e ** 2))
+    assert v.reduce(agg.logaddexp2[float]).new().isclose(np.log2(9))
+    assert v.reduce(agg.mean) == 1
+    assert v.reduce(agg.ptp) == 2
+    assert v.reduce(agg.varp).new().isclose(0.5)
+    assert v.reduce(agg.vars).new().isclose(2 / 3)
+    assert v.reduce(agg.stdp).new().isclose(0.5 ** 0.5)
+    assert v.reduce(agg.stds).new().isclose((2 / 3) ** 0.5)
+    w = binary.plus(v, 1).new()
+    assert w.reduce(agg.geometric_mean).new().isclose(12 ** 0.25)
+    assert w.reduce(agg.harmonic_mean).new().isclose(12 / 7)
+
+
+def test_reduce_agg_argminmax(v):
+    # This behavior differs from SuiteSparse, which treats vectors as
+    # column vectors with j == 0
+    assert v.reduce(agg.argmin).value == 6
+    assert v.reduce(agg.argmini).value == 6
+    with pytest.raises(
+        ValueError,
+        match="Aggregator argminj may not be used with Vector.reduce; use argmin instead",
+    ):
+        v.reduce(agg.argminj).value
+    assert v.reduce(agg.argmax).value == 4
+    assert v.reduce(agg.argmaxi).value == 4
+    with pytest.raises(
+        ValueError,
+        match="Aggregator argmaxj may not be used with Vector.reduce; use argmax instead",
+    ):
+        v.reduce(agg.argmaxj).value
+
+
+def test_reduce_agg_firstlast(v):
+    empty = Vector.new(int, size=4)
+    assert empty.reduce(agg.first).value is None
+    assert empty.reduce(agg.last).value is None
+
+    assert v.reduce(agg.first).value == 1
+    assert v.reduce(agg.last).value == 0
+
+
 def test_reduce_coerce_dtype(v):
     assert v.dtype == dtypes.INT64
     s = v.reduce().new(dtype=float)
@@ -867,3 +916,18 @@ def test_weakref(v):
 def test_not_to_array(v):
     with pytest.raises(TypeError, match="Vector can't be directly converted to a numpy array"):
         np.array(v)
+
+
+def test_vector_index_with_scalar():
+    v = Vector.from_values([0, 1, 2], [10, 20, 30])
+    expected = Vector.from_values([0, 1], [20, 10])
+    for dtype in ["bool", "int8", "uint8", "int16", "uint16", "int32", "uint32"]:
+        s1 = Scalar.from_value(1, dtype=dtype)
+        assert v[s1] == 20
+        s0 = Scalar.from_value(0, dtype=dtype)
+        w = v[[s1, s0]].new()
+        assert w.isequal(expected)
+    for dtype in ["fp32", "fp64", "fc32", "fc64"]:
+        s = Scalar.from_value(1, dtype=dtype)
+        with pytest.raises(TypeError, match="An integer is required for indexing"):
+            v[s]

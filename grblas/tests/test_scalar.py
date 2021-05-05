@@ -2,6 +2,7 @@ import pytest
 import grblas
 import pickle
 import weakref
+import numpy as np
 from grblas import Scalar
 from grblas import dtypes, binary
 from grblas.scalar import _CScalar
@@ -222,3 +223,17 @@ def test_weakref(s):
     d = weakref.WeakValueDictionary()
     d["s"] = s
     assert d["s"] is s
+
+
+def test_scalar_to_numpy(s):
+    for a, b in [
+        (np.array(s), np.array(5)),
+        (np.array(s, dtype=float), np.array(5.0)),
+        (np.array([s]), np.array([5])),
+        (np.array([s], dtype=float), np.array([5.0])),
+        (np.array([s, s]), np.array([5, 5])),
+        (np.array([s, s], dtype=float), np.array([5.0, 5.0])),
+    ]:
+        np.testing.assert_array_equal(a, b)
+        assert a.dtype == b.dtype
+        assert a.shape == b.shape

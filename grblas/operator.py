@@ -1087,6 +1087,8 @@ class Semiring(OpBase):
         for orig_name, orig in div_semirings.items():
             cls.register_new(f"{orig_name[:-3]}truediv", orig.monoid, binary.truediv)
             cls.register_new(f"{orig_name[:-3]}floordiv", orig.monoid, binary.floordiv)
+        # plus_pow for aggregators
+        cls.register_new("plus_pow", monoid.plus, binary.pow)
 
     def __init__(self, name, monoid=None, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
@@ -1120,6 +1122,12 @@ def get_typed_op(op, dtype, dtype2=None):
         return get_typed_op(op, dtype, dtype2)
     elif isinstance(op, TypedOpBase):
         return op
+    elif isinstance(op, Aggregator):
+        if dtype2 is not None:
+            dtype = unify(dtype, dtype2)
+        return op[dtype]
+    elif isinstance(op, TypedAggregator):
+        return op
     else:
         raise TypeError(f"Unable to get typed operator from object with type {type(op)}")
 
@@ -1142,3 +1150,5 @@ UnaryOp._initialize()
 BinaryOp._initialize()
 Monoid._initialize()
 Semiring._initialize()
+
+from .agg import Aggregator, TypedAggregator  # noqa

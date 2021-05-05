@@ -38,6 +38,7 @@ _SPECIAL_ATTRS = {
     "binary",
     "monoid",
     "semiring",
+    "agg",
     "matrix",
     "recorder",
     "vector",

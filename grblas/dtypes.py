@@ -115,9 +115,12 @@ if _supports_complex:  # pragma: no branch
 
 for dtype in _dtypes_to_register:
     _registry[dtype.name] = dtype
+    _registry[dtype.name.lower()] = dtype
     _registry[dtype.gb_obj] = dtype
     _registry[dtype.gb_name] = dtype
+    _registry[dtype.gb_name.lower()] = dtype
     _registry[dtype.c_type] = dtype
+    _registry[dtype.c_type.upper()] = dtype
     _registry[dtype.numba_type] = dtype
     _registry[dtype.numba_type.name] = dtype
     val = _sample_values[dtype.name]
@@ -182,12 +185,25 @@ def unify(type1, type2):
     # Compute bit numbers for comparison
     num1 = int(_bits_pattern.match(type1.name).group(1))
     num2 = int(_bits_pattern.match(type2.name).group(1))
-    # Floats anywhere requires floats
-    if type1.name[0] == "F" or type2.name[0] == "F":
-        return lookup_dtype(f"FP{max(num1, num2)}")
-    # Both ints or both uints is easy
-    if type1.name[0] == type2.name[0]:
+
+    # Same type with different numbers is easy: choose the larger one
+    if type1.name[1] == type2.name[1]:
         return type2 if num2 > num1 else type1
+    # One FC, one FP
+    if type1.name[0] == "F" and type2.name[0] == "F":
+        return lookup_dtype(f"FC{max(num1, num2)}")
+    # Float or complex with int
+    if type1.name[0] == "F":
+        maxnum = min(64, max(num1, 2 * num2))
+        if type1.name[1] == "C":
+            return lookup_dtype(f"FC{maxnum}")
+        return lookup_dtype(f"FP{maxnum}")
+    # Int with float or complex
+    if type2.name[0] == "F":
+        maxnum = min(64, max(2 * num1, num2))
+        if type2.name[1] == "C":
+            return lookup_dtype(f"FC{maxnum}")
+        return lookup_dtype(f"FP{maxnum}")
     # Mixed int/uint is a little harder
     # Need to double the uint bit number to safely store as int
     # Beyond 64, we have to move to float

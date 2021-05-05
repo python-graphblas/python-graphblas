@@ -5,7 +5,7 @@ import numpy as np
 import pickle
 import weakref
 from grblas import Matrix, Vector, Scalar
-from grblas import unary, binary, monoid, semiring
+from grblas import unary, binary, monoid, semiring, agg
 from grblas import dtypes
 from grblas.exceptions import (
     IndexOutOfBound,
@@ -1024,6 +1024,146 @@ def test_reduce_row(A):
     assert w.isequal(result)
     w2 = A.reduce_rows(binary.plus).new()
     assert w2.isequal(result)
+
+
+def test_reduce_agg(A):
+    result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
+    w1 = A.reduce_rows(agg.sum).new()
+    assert w1.isequal(result)
+    w2 = A.T.reduce_columns(agg.sum).new()
+    assert w2.isequal(result)
+
+    counts = A.dup(dtype=bool).reduce_rows(monoid.plus[int]).new()
+    w3 = A.reduce_rows(agg.count).new()
+    assert w3.isequal(counts)
+    w4 = A.T.reduce_columns(agg.count).new()
+    assert w4.isequal(counts)
+
+    Asquared = monoid.times(A & A).new()
+    squared = Asquared.reduce_rows(monoid.plus).new()
+    expected = unary.sqrt[float](squared).new()
+    w5 = A.reduce_rows(agg.hypot[float]).new()
+    assert w5.isclose(expected)
+    w6 = A.reduce_rows(monoid.numpy.hypot[float]).new()
+    assert w6.isclose(expected)
+    w7 = Vector.new(w5.dtype, size=w5.size)
+    w7 << A.reduce_rows(agg.hypot)
+    assert w7.isclose(expected)
+
+    w8 = A.reduce_rows(agg.logaddexp[float]).new()
+    expected = A.reduce_rows(monoid.numpy.logaddexp[float]).new()
+    assert w8.isclose(w8)
+
+    result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 9, 10, 11, 8, 4])
+    w9 = A.reduce_columns(agg.sum).new()
+    assert w9.isequal(result)
+    w10 = A.T.reduce_rows(agg.sum).new()
+    assert w10.isequal(result)
+
+    counts = A.dup(dtype=bool).reduce_columns(monoid.plus[int]).new()
+    w11 = A.reduce_columns(agg.count).new()
+    assert w11.isequal(counts)
+    w12 = A.T.reduce_rows(agg.count).new()
+    assert w12.isequal(counts)
+
+    assert A.reduce_scalar(agg.sum).value == 47
+    assert A.reduce_scalar(agg.prod).value == 1270080
+    assert A.reduce_scalar(agg.count).value == 12
+    assert A.reduce_scalar(agg.count_nonzero).value == 12
+    assert A.reduce_scalar(agg.count_zero).value == 0
+    assert A.reduce_scalar(agg.sum_of_squares).value == 245
+    assert A.reduce_scalar(agg.hypot[float]).new().isclose(245 ** 0.5)
+    assert A.reduce_scalar(agg.logaddexp[float]).new().isclose(8.6071076)
+    assert A.reduce_scalar(agg.logaddexp2[float]).new().isclose(9.2288187)
+
+
+def test_reduce_agg_argminmax(A):
+    # reduce_rows
+    w1 = A.reduce_rows(agg.argminj).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [1, 6, 5, 0, 5, 2, 4])
+    assert w1.isequal(expected)
+    w1b = A.reduce_rows(agg.argmin).new()
+    assert w1b.isequal(expected)
+    w1c = A.T.reduce_columns(agg.argmini).new()
+    assert w1c.isequal(expected)
+    w2 = A.reduce_rows(agg.argmaxj).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 4, 5, 0, 5, 2, 3])
+    assert w2.isequal(expected)
+    w2b = A.reduce_rows(agg.argmax).new()
+    assert w2b.isequal(expected)
+    w2c = A.T.reduce_columns(agg.argmaxi).new()
+    assert w2c.isequal(expected)
+    w3 = A.reduce_rows(agg.argmini).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5, 6])
+    assert w3.isequal(expected)
+    w4 = A.reduce_rows(agg.argmaxi).new()
+    assert w4.isequal(expected)
+
+    # reduce_cols
+    w5 = A.reduce_columns(agg.argminj).new()
+    assert w5.isequal(expected)
+    w6 = A.reduce_columns(agg.argmaxj).new()
+    assert w6.isequal(expected)
+    w7 = A.reduce_columns(agg.argmini).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 5, 0, 6, 2, 1])
+    assert w7.isequal(expected)
+    w7b = A.reduce_columns(agg.argmin).new()
+    assert w7b.isequal(expected)
+    w7c = A.T.reduce_rows(agg.argminj).new()
+    assert w7c.isequal(expected)
+    w8 = A.reduce_columns(agg.argmaxi).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 6, 6, 1, 4, 1])
+    assert w8.isequal(expected)
+    w8b = A.reduce_columns(agg.argmax).new()
+    assert w8b.isequal(expected)
+    w8c = A.reduce_columns(agg.argmaxi).new()
+    assert w8c.isequal(expected)
+
+    # reduce_scalar
+    assert A.reduce_scalar(agg.argmini) == 2
+    assert A.reduce_scalar(agg.argmaxi) == 1
+    assert A.reduce_scalar(agg.argminj) == 5
+    assert A.reduce_scalar(agg.argmaxj) == 4
+    with pytest.raises(
+        ValueError,
+        match="Aggregator argmin may not be used with Matrix.reduce_scalar; "
+        "use argmini or argminj instead",
+    ):
+        A.reduce_scalar(agg.argmin).value
+    assert A.T.reduce_scalar(agg.argmini) == 2
+    assert A.T.reduce_scalar(agg.argmaxi) == 4
+    assert A.T.reduce_scalar(agg.argminj) == 5
+    assert A.T.reduce_scalar(agg.argmaxj) == 1
+
+
+def test_reduce_agg_firstlast(A):
+    # reduce_rows
+    w1 = A.reduce_rows(agg.first).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [2, 8, 1, 3, 7, 1, 5])
+    assert w1.isequal(expected)
+    w1b = A.T.reduce_columns(agg.first).new()
+    assert w1b.isequal(expected)
+    w2 = A.reduce_rows(agg.last).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 4, 1, 3, 7, 1, 3])
+    assert w2.isequal(expected)
+    w2b = A.T.reduce_columns(agg.last).new()
+    assert w2b.isequal(expected)
+
+    # reduce_columns
+    w3 = A.reduce_columns(agg.first).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 3, 3, 8, 1, 4])
+    assert w3.isequal(expected)
+    w3b = A.T.reduce_rows(agg.first).new()
+    assert w3b.isequal(expected)
+    w4 = A.reduce_columns(agg.last).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 5, 7, 3, 7, 4])
+    assert w4.isequal(expected)
+    w4b = A.T.reduce_rows(agg.last).new()
+    assert w4b.isequal(expected)
+
+    # TODO: reduce_scalar
+    # w5 = A.reduce_scalar(agg.first).new()
+    # w6 = A.reduce_scalar(agg.last).new()
 
 
 def test_reduce_row_udf(A):

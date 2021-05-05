@@ -76,6 +76,13 @@ class IndexerResolver:
                 raise TypeError(f"Invalid dtype for index: {index.dtype}")
             return _CArray(index), _CScalar(len(index))
         else:
+            from .scalar import Scalar
+
+            if typ is Scalar:
+                if index.dtype.name.startswith("F"):
+                    raise TypeError(f"An integer is required for indexing.  Got: {index.dtype}")
+                return _CScalar(index), None
+
             from .vector import Vector
             from .matrix import Matrix, TransposedMatrix
 

@@ -1,3 +1,4 @@
+import numpy as np
 from contextvars import ContextVar
 from . import ffi, replace as replace_singleton
 from .descriptor import lookup as descriptor_lookup
@@ -363,6 +364,11 @@ class BaseType:
 
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
+        if delayed.op is not None and delayed.op.opclass == "Aggregator":
+            updater = self(mask=mask, accum=accum, replace=replace)
+            delayed.op._new(updater, delayed)
+            return
+
         # Normalize mask and separate out complement and structural flags
         if mask is None:
             complement = False
@@ -406,14 +412,16 @@ class BaseType:
     _expect_type = _expect_type
     _expect_op = _expect_op
 
-    # Don't let objects be coerced to numpy arrays
-    def __array__(self, *args, **kwargs):
+    # Don't let non-scalars be coerced to numpy arrays
+    def __array__(self, dtype=None):
+        if self._is_scalar:
+            if dtype is None:
+                dtype = self.dtype.np_type
+            return np.array(self.value, dtype=dtype)
         raise TypeError(
             f"{type(self).__name__} can't be directly converted to a numpy array; "
             f"perhaps use `{self.name}.to_values()` method instead."
         )
-
-    __array_struct__ = property(__array__)
 
 
 class BaseExpression:
@@ -463,7 +471,10 @@ class BaseExpression:
 
     def new(self, *, dtype=None, mask=None, name=None):
         output = self.construct_output(dtype=dtype, name=name)
-        if mask is None:
+        if self.op is not None and self.op.opclass == "Aggregator":
+            updater = output(mask=mask)
+            self.op._new(updater, self)
+        elif mask is None:
             output.update(self)
         else:
             _check_mask(mask, output)
