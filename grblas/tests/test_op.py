@@ -9,7 +9,7 @@ from grblas.operator import UnaryOp, BinaryOp, Monoid, Semiring
 
 
 def orig_types(op):
-    return op.types.keys() - op.coersions.keys()
+    return op.types.keys() - op.coercions.keys()
 
 
 def test_op_repr():

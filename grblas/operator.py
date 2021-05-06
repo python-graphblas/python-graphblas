@@ -379,7 +379,7 @@ class ParameterizedSemiring(ParameterizedUdf):
 
 
 class OpBase:
-    __slots__ = "name", "_typed_ops", "types", "coersions", "_anonymous", "__weakref__"
+    __slots__ = "name", "_typed_ops", "types", "coercions", "_anonymous", "__weakref__"
     _parse_config = None
     _initialized = False
     _module = None
@@ -388,7 +388,7 @@ class OpBase:
         self.name = name
         self._typed_ops = {}
         self.types = {}
-        self.coersions = {}
+        self.coercions = {}
         self._anonymous = anonymous
 
     def __repr__(self):
@@ -692,7 +692,7 @@ class UnaryOp(OpBase):
                         if dtype not in op.types:
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
-                            op.coersions[dtype] = target_type
+                            op.coercions[dtype] = target_type
 
     __call__ = TypedBuiltinUnaryOp.__call__
 
@@ -942,7 +942,7 @@ class BinaryOp(OpBase):
                         if dtype not in op.types:
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
-                            op.coersions[dtype] = target_type
+                            op.coercions[dtype] = target_type
 
     def __init__(self, name, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
@@ -1191,7 +1191,7 @@ class Semiring(OpBase):
                 typed_op = source_op._typed_ops["BOOL"]
                 target_op.types["BOOL"] = "BOOL"
                 target_op._typed_ops["BOOL"] = typed_op
-                target_op.coersions[dtype] = "BOOL"
+                target_op.coercions[dtype] = "BOOL"
 
         for lnames, rnames, *types in (
             # fmt: off
@@ -1254,7 +1254,7 @@ class Semiring(OpBase):
                         if dtype not in op.types:
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
-                            op.coersions[dtype] = target_type
+                            op.coercion[dtype] = target_type
 
     def __init__(self, name, monoid=None, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
