@@ -106,6 +106,9 @@ class TypedAggregator:
         else:
             raise NotImplementedError()
 
+    def __repr__(self):
+        return f"{self.name}[{self._dtype}]"
+
     def _new(self, updater, expr, *, in_composite=False):
         agg = self._agg
         if agg._monoid is not None:
@@ -114,7 +117,7 @@ class TypedAggregator:
                 parent = updater.parent
                 if not parent._is_scalar:
                     return parent
-                rv = gb.Vector.new(parent.dtype, size=1, name="TODO")
+                rv = gb.Vector.new(parent.dtype, size=1)
                 rv[0] = parent
                 return rv
         elif agg._composite is not None:
@@ -129,7 +132,7 @@ class TypedAggregator:
             elif expr.cfunc_name.startswith("GrB_Vector_reduce") or expr.cfunc_name.startswith(
                 "GrB_Matrix_reduce"
             ):
-                final = final_expr.new(name="TODO")
+                final = final_expr.new()
                 updater << final.reduce(gb.monoid.any)
             else:
                 raise NotImplementedError()
@@ -147,8 +150,8 @@ class TypedAggregator:
                 updater = step1(mask=updater.kwargs.get("mask"))
             if expr.method_name == "reduce_columns":
                 A = A.T
-            size = A._nrows if agg._switch else A._ncols
-            init = gb.Vector.new(agg._initdtype, size=size, name="TODO")
+            size = A._ncols
+            init = gb.Vector.new(agg._initdtype, size=size)
             init[:] = agg._initval  # O(1) dense vector in SuiteSparse 5
             if agg._switch:
                 updater << agg._semiring(init @ A.T)
@@ -162,7 +165,7 @@ class TypedAggregator:
             # Vector -> Scalar
             v = expr.args[0]
             step1 = gb.Vector.new(updater.parent.dtype, size=1)
-            init = gb.Matrix.new(agg._initdtype, nrows=v._size, ncols=1, name="TODO")
+            init = gb.Matrix.new(agg._initdtype, nrows=v._size, ncols=1)
             init[:, :] = agg._initval  # O(1) dense column vector in SuiteSparse 5
             if agg._switch:
                 step1 << agg._semiring(init.T @ v)
@@ -179,20 +182,14 @@ class TypedAggregator:
             # We need to compute in two steps: Matrix -> Vector -> Scalar.
             # This has not been benchmarked or optimized.
             # We may be able to intelligently choose the faster path.
-            if agg._switch:
-                size1 = A._nrows
-                size2 = A._ncols
-            else:
-                size1 = A._ncols
-                size2 = A._nrows
-            init1 = gb.Vector.new(agg._initdtype, size=size1, name="TODO")
+            init1 = gb.Vector.new(agg._initdtype, size=A._ncols)
             init1[:] = agg._initval  # O(1) dense vector in SuiteSparse 5
-            step1 = gb.Vector.new(updater.parent.dtype, size=size2)
+            step1 = gb.Vector.new(updater.parent.dtype, size=A._nrows)
             if agg._switch:
                 step1 << agg._semiring(init1 @ A.T)
             else:
                 step1 << agg._semiring(A @ init1)
-            init2 = gb.Matrix.new(agg._initdtype, nrows=size2, ncols=1, name="TODO")
+            init2 = gb.Matrix.new(agg._initdtype, nrows=A._nrows, ncols=1)
             init2[:, :] = agg._initval  # O(1) dense vector in SuiteSparse 5
             step2 = gb.Vector.new(updater.parent.dtype, size=1)
             step2 << agg._semiring2(step1 @ init2)
@@ -365,30 +362,30 @@ def _argminmaxij(
     if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
         A = expr.args[0]
         if expr.method_name == "reduce_rows":
-            step1 = A.reduce_rows(monoid).new(name="TODO")
+            step1 = A.reduce_rows(monoid).new()
 
             # TODO: use diag
             i, j = step1.to_values()
-            D = gb.Matrix.from_values(i, i, j, nrows=A._nrows, ncols=A._nrows, name="TODO")
+            D = gb.Matrix.from_values(i, i, j, nrows=A._nrows, ncols=A._nrows)
 
-            masked = gb.semiring.any_eq(D @ A).new(name="TODO")
+            masked = gb.semiring.any_eq(D @ A).new()
             masked(mask=masked.V, replace=True) << masked  # Could use select
-            init = gb.Vector.new(bool, size=A._ncols, name="TODO")
+            init = gb.Vector.new(bool, size=A._ncols)
             init[:] = False  # O(1) dense vector in SuiteSparse 5
             updater << row_semiring(masked @ init)
             if in_composite:
                 1 / 0
                 return updater.parent
         else:
-            step1 = A.reduce_columns(monoid).new(name="TODO")
+            step1 = A.reduce_columns(monoid).new()
 
             # TODO: use diag
             i, j = step1.to_values()
-            D = gb.Matrix.from_values(i, i, j, nrows=A._ncols, ncols=A._ncols, name="TODO")
+            D = gb.Matrix.from_values(i, i, j, nrows=A._ncols, ncols=A._ncols)
 
-            masked = gb.semiring.any_eq(A @ D).new(name="TODO")
+            masked = gb.semiring.any_eq(A @ D).new()
             masked(mask=masked.V, replace=True) << masked  # Could use select
-            init = gb.Vector.new(bool, size=A._nrows, name="TODO")
+            init = gb.Vector.new(bool, size=A._nrows)
             init[:] = False  # O(1) dense vector in SuiteSparse 5
             updater << col_semiring(init @ masked)
             if in_composite:
@@ -402,10 +399,10 @@ def _argminmaxij(
                 f"use {agg.name[:-1]} instead."
             )
         v = expr.args[0]
-        step1 = v.reduce(monoid).new(name="TODO")
-        masked = gb.binary.eq(v, step1).new(name="TODO")
+        step1 = v.reduce(monoid).new()
+        masked = gb.binary.eq(v, step1).new()
         masked(mask=masked.V, replace=True) << masked  # Could use select
-        init = gb.Matrix.new(bool, nrows=v._size, ncols=1, name="TODO")
+        init = gb.Matrix.new(bool, nrows=v._size, ncols=1)
         init[:, :] = False  # O(1) dense column vector in SuiteSparse 5
         step2 = gb.Vector.new(updater.parent.dtype, size=1)
         step2 << col_semiring(masked @ init)
@@ -415,15 +412,15 @@ def _argminmaxij(
         updater << step2.reduce(gb.monoid.any)
     elif expr.cfunc_name.startswith("GrB_Matrix_reduce"):
         A = expr.args[0]
-        step1 = A.reduce_scalar(monoid).new(name="TODO")
+        step1 = A.reduce_scalar(monoid).new()
 
-        masked = gb.binary.eq(A, step1).new(name="TODO")
+        masked = gb.binary.eq(A, step1).new()
         masked(mask=masked.V, replace=True) << masked  # Could use select
-        init = gb.Vector.new(bool, size=A._nrows, name="TODO")
+        init = gb.Vector.new(bool, size=A._nrows)
         init[:] = False  # O(1) dense vector in SuiteSparse 5
 
         # Always choose the one with smallest i
-        step2 = gb.semiring.min_secondi(init @ masked).new(name="TODO")
+        step2 = gb.semiring.min_secondi(init @ masked).new()
         step3 = step2.reduce(gb.monoid.min)
         if agg.name in {"argmini", "argmaxi"}:
             # We're done!
@@ -434,8 +431,8 @@ def _argminmaxij(
             updater << step3
             return
         i = step3.value
-        step4 = gb.Vector.from_values([i], [False], size=A._nrows, name="TODO")
-        step5 = col_semiring(step4 @ masked).new(name="TODO")
+        step4 = gb.Vector.from_values([i], [False], size=A._nrows)
+        step5 = col_semiring(step4 @ masked).new()
         step6 = step5.reduce(gb.monoid.min)
         if in_composite:
             1 / 0
@@ -537,9 +534,9 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
         A = expr.args[0]
         if expr.method_name == "reduce_columns":
             A = A.T
-        init = gb.Vector.new(bool, size=A._ncols, name="TODO")
+        init = gb.Vector.new(bool, size=A._ncols)
         init[:] = False
-        step1 = semiring(A @ init).new(name="TODO")
+        step1 = semiring(A @ init).new()
         Is, Js = step1.to_values()
         # TODO: perform these loops in e.g. Cython
         # Populate numpy array
@@ -550,13 +547,13 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
         # v = gb.Vector.new(A.dtype, size=A._nrows)
         # for i, j in zip(Is, Js):
         #     v[i] = A[i, j].value
-        result = gb.Vector.from_values(Is, vals, name="TODO")
+        result = gb.Vector.from_values(Is, vals)
         updater << result
     elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
         v = expr.args[0]
-        init = gb.Matrix.new(bool, nrows=v._size, ncols=1, name="TODO")
+        init = gb.Matrix.new(bool, nrows=v._size, ncols=1)
         init[:, :] = False
-        step1 = semiring(v @ init).new(name="TODO")
+        step1 = semiring(v @ init).new()
         index = step1[0].value
         if index is None:
             index = 0

@@ -72,6 +72,9 @@ class Recorder:
             base._prev_recorder = _recorder.get(self._prev_recorder)
         self._prev_recorder = None
 
+    def clear(self):
+        self.data.clear()
+
     def __enter__(self):
         self.start()
         return self
