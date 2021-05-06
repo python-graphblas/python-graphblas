@@ -134,14 +134,15 @@ class TypedAggregator:
             else:
                 raise NotImplementedError()
             if in_composite:
+                1 / 0
                 return updater.parent
         elif agg._custom is not None:
             return agg._custom(self, updater, expr, in_composite=in_composite)
         elif expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
             # Matrix -> Vector
             A = expr.args[0]
+            orig_updater = updater
             if agg._finalize is not None:
-                orig_updater = updater
                 step1 = expr.construct_output(dtype=updater.parent.dtype)
                 updater = step1(mask=updater.kwargs.get("mask"))
             if expr.method_name == "reduce_columns":
@@ -370,15 +371,13 @@ def _argminmaxij(
             i, j = step1.to_values()
             D = gb.Matrix.from_values(i, i, j, nrows=A._nrows, ncols=A._nrows, name="TODO")
 
-            mask = gb.semiring.any_eq(D @ A).new(name="TODO")
-            if A._is_transposed:
-                Amasked = A.new(mask=mask.V)
-            else:
-                Amasked = A.dup(mask=mask.V)
+            masked = gb.semiring.any_eq(D @ A).new(name="TODO")
+            masked(mask=masked.V, replace=True) << masked  # Could use select
             init = gb.Vector.new(bool, size=A._ncols, name="TODO")
             init[:] = False  # O(1) dense vector in SuiteSparse 5
-            updater << row_semiring(Amasked @ init)
+            updater << row_semiring(masked @ init)
             if in_composite:
+                1 / 0
                 return updater.parent
         else:
             step1 = A.reduce_columns(monoid).new(name="TODO")
@@ -387,15 +386,13 @@ def _argminmaxij(
             i, j = step1.to_values()
             D = gb.Matrix.from_values(i, i, j, nrows=A._ncols, ncols=A._ncols, name="TODO")
 
-            mask = gb.semiring.any_eq(A @ D).new(name="TODO")
-            if A._is_transposed:
-                Amasked = A.new(mask=mask.V)
-            else:
-                Amasked = A.dup(mask=mask.V)
+            masked = gb.semiring.any_eq(A @ D).new(name="TODO")
+            masked(mask=masked.V, replace=True) << masked  # Could use select
             init = gb.Vector.new(bool, size=A._nrows, name="TODO")
             init[:] = False  # O(1) dense vector in SuiteSparse 5
-            updater << col_semiring(init @ Amasked)
+            updater << col_semiring(init @ masked)
             if in_composite:
+                1 / 0
                 return updater.parent
     elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
         if not allow_vector:
@@ -406,42 +403,42 @@ def _argminmaxij(
             )
         v = expr.args[0]
         step1 = v.reduce(monoid).new(name="TODO")
-        mask = gb.binary.eq(v, step1).new(name="TODO")
-        vmasked = v.dup(mask=mask.V)
+        masked = gb.binary.eq(v, step1).new(name="TODO")
+        masked(mask=masked.V, replace=True) << masked  # Could use select
         init = gb.Matrix.new(bool, nrows=v._size, ncols=1, name="TODO")
         init[:, :] = False  # O(1) dense column vector in SuiteSparse 5
         step2 = gb.Vector.new(updater.parent.dtype, size=1)
-        step2 << col_semiring(vmasked @ init)
+        step2 << col_semiring(masked @ init)
         if in_composite:
+            1 / 0
             return step2
         updater << step2.reduce(gb.monoid.any)
     elif expr.cfunc_name.startswith("GrB_Matrix_reduce"):
         A = expr.args[0]
         step1 = A.reduce_scalar(monoid).new(name="TODO")
-        mask = gb.binary.eq(A, step1).new(name="TODO")
-        if A._is_transposed:
-            Amasked = A.new(mask=mask.V)
-        else:
-            Amasked = A.dup(mask=mask.V)
 
+        masked = gb.binary.eq(A, step1).new(name="TODO")
+        masked(mask=masked.V, replace=True) << masked  # Could use select
         init = gb.Vector.new(bool, size=A._nrows, name="TODO")
         init[:] = False  # O(1) dense vector in SuiteSparse 5
 
         # Always choose the one with smallest i
-        step2 = gb.semiring.min_secondi(init @ Amasked).new(name="TODO")
+        step2 = gb.semiring.min_secondi(init @ masked).new(name="TODO")
         step3 = step2.reduce(gb.monoid.min)
         if agg.name in {"argmini", "argmaxi"}:
             # We're done!
             if in_composite:
+                1 / 0
                 # TODO: put scalar in vector
                 raise NotImplementedError()
             updater << step3
             return
         i = step3.value
         step4 = gb.Vector.from_values([i], [False], size=A._nrows, name="TODO")
-        step5 = col_semiring(step4 @ Amasked).new(name="TODO")
+        step5 = col_semiring(step4 @ masked).new(name="TODO")
         step6 = step5.reduce(gb.monoid.min)
         if in_composite:
+            1 / 0
             # TODO: put scalar in vector
             raise NotImplementedError()
         updater << step6
@@ -570,89 +567,3 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
 
 first = Aggregator("first", custom=partial(_first_last, semiring=gb.op.min_secondi))
 last = Aggregator("last", custom=partial(_first_last, semiring=gb.op.max_secondi))
-
-
-"""
-first / last
-
-# first (reduce_rows)
-zeros = gb.Vector.new(bool, size=B._ncols)
-zeros[:] = False
-step1 = gb.op.min_secondi(B @ zeros).new()
-Is, Js = step1.to_values()
-# into numpy array
-vals = np.empty(Is.size, dtype=np.uint64)
-for index, (i, j) in enumerate(zip(Is, Js)):
-    vals[index] = B[i, j].value
-gb.Vector.from_values(Is, vals)
-
-
-# first (reduce_columns)
-zeros = gb.Vector.new(bool, size=B._nrows)
-zeros[:] = False
-step1 = gb.op.min_secondi(zeros @ B).new()
-Is, Js = step1.to_values()
-# into numpy array
-vals = np.empty(Is.size, dtype=np.uint64)
-for index, (i, j) in enumerate(zip(Is, Js)):
-    vals[index] = B[j, i].value
-gb.Vector.from_values(Is, vals)
-
-
-zeros = gb.Vector.new(bool, size=B._nrows)
-zeros[:] = False
-step1 = gb.op.min_secondi(zeros @ B).new()
-Is, Js = step1.to_values()
-# into numpy array
-vals = np.empty(Is.size, dtype=np.uint64)
-for index, (i, j) in enumerate(zip(Is, Js)):
-    vals[index] = B[i, j].value
-gb.Vector.from_values(Is, vals)
-
-
-# or into Vector
-v = gb.Vector.new('uint64', size=7)
-for i, j in zip(Is, Js):
-    v[i] = B[i, j].value
-
-
-B.take_from_row(v) -> Vector
-B.take_from_column(v) -> Vector
-
-w[v] -> w.reindex(v)
-
-Is, Js = v.extract()
-
-
-
-positions = min_firstj(A @ init)
-Is, Js = positions.to_values()
-for i, j in zip(Is, Js)
-    v[i] = A[i, j]
-
-###
-pos = positionj(A).new()
-D =
-
-v = Vector
-
-result = w[v].new()
-
-w
- 0  1  2
-10 20 30
-
-v
-0 1 2
-2   1
--->
- 0  1  2
-30    20
-
-
-w[[2, 1]]
--->
- 0  1
-30 20
-
-"""

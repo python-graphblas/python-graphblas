@@ -1066,6 +1066,13 @@ def test_reduce_agg(A):
     w12 = A.T.reduce_rows(agg.count).new()
     assert w12.isequal(counts)
 
+    w13 = A.reduce_rows(agg.mean).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [2.5, 6, 1, 3, 7, 1, 5])
+    assert w13.isequal(expected)
+    w14 = A.reduce_columns(agg.mean).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 3, 5, 5.5, 4, 4])
+    assert w14.isequal(expected)
+
     assert A.reduce_scalar(agg.sum).value == 47
     assert A.reduce_scalar(agg.prod).value == 1270080
     assert A.reduce_scalar(agg.count).value == 12
@@ -1075,6 +1082,7 @@ def test_reduce_agg(A):
     assert A.reduce_scalar(agg.hypot[float]).new().isclose(245 ** 0.5)
     assert A.reduce_scalar(agg.logaddexp[float]).new().isclose(8.6071076)
     assert A.reduce_scalar(agg.logaddexp2[float]).new().isclose(9.2288187)
+    assert A.reduce_scalar(agg.mean).new().isclose(47 / 12)
 
 
 def test_reduce_agg_argminmax(A):

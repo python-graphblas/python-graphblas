@@ -1,4 +1,5 @@
 import inspect
+import itertools
 import re
 import numpy as np
 import numba
@@ -378,7 +379,7 @@ class ParameterizedSemiring(ParameterizedUdf):
 
 
 class OpBase:
-    __slots__ = "name", "_typed_ops", "types", "_anonymous", "__weakref__"
+    __slots__ = "name", "_typed_ops", "types", "coersions", "_anonymous", "__weakref__"
     _parse_config = None
     _initialized = False
     _module = None
@@ -387,6 +388,7 @@ class OpBase:
         self.name = name
         self._typed_ops = {}
         self.types = {}
+        self.coersions = {}
         self._anonymous = anonymous
 
     def __repr__(self):
@@ -653,6 +655,45 @@ class UnaryOp(OpBase):
         if not hasattr(module, funcname):
             setattr(module, funcname, unary_op)
 
+    @classmethod
+    def _initialize(cls):
+        super()._initialize()
+        # Update type information with sane coercion
+        for names, *types in (
+            # fmt: off
+            (
+                (
+                    "erf", "erfc", "lgamma", "tgamma", "acos", "acosh", "asin", "asinh",
+                    "atan", "atanh", "ceil", "cos", "cosh", "exp", "exp2", "expm1", "floor",
+                    "log", "log10", "log1p", "log2", "round", "signum", "sin", "sinh", "sqrt",
+                    "tan", "tanh", "trunc",
+                ),
+                (("BOOL", "INT8", "INT16", "UINT8", "UINT16"), "FP32"),
+                (("INT32", "INT64", "UINT32", "UINT64"), "FP64"),
+            ),
+            (
+                ("positioni", "positioni1", "positionj", "positionj1"),
+                (
+                    (
+                        "BOOL", "FC32", "FC64", "FP32", "FP64", "INT8", "INT16",
+                        "UINT8", "UINT16", "UINT32", "UINT64",
+                    ),
+                    "INT64",
+                ),
+            ),
+            # fmt: on
+        ):
+            for name in names:
+                op = getattr(unary, name)
+                for input_types, target_type in types:
+                    typed_op = op._typed_ops[target_type]
+                    output_type = op.types[target_type]
+                    for dtype in input_types:
+                        if dtype not in op.types:
+                            op.types[dtype] = output_type
+                            op._typed_ops[dtype] = typed_op
+                            op.coersions[dtype] = target_type
+
     __call__ = TypedBuiltinUnaryOp.__call__
 
 
@@ -854,6 +895,54 @@ class BinaryOp(OpBase):
             return inner
 
         BinaryOp.register_new("isclose", isclose, parameterized=True)
+
+        # Update type information with sane coercion
+        for names, *types in (
+            # fmt: off
+            (
+                ("atan2", "copysign", "fmod", "hypot", "ldexp", "remainder"),
+                (("BOOL", "INT8", "INT16", "UINT8", "UINT16"), "FP32"),
+                (("INT32", "INT64", "UINT32", "UINT64"), "FP64"),
+            ),
+            (
+                (
+                    "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1",
+                    "secondj", "secondj1",),
+                (
+                    (
+                        "BOOL", "FC32", "FC64", "FP32", "FP64", "INT8", "INT16",
+                        "UINT8", "UINT16", "UINT32", "UINT64",
+                    ),
+                    "INT64",
+                ),
+            ),
+            (
+                ["lxnor"],
+                (
+                    (
+                        "FP32", "FP64", "INT8", "INT16", "INT32", "INT64",
+                        "UINT8", "UINT16", "UINT32", "UINT64",
+                    ),
+                    "BOOL",
+                ),
+            ),
+            (
+                ["cmplx"],
+                (("BOOL", "INT8", "INT16", "UINT8", "UINT16"), "FP32"),
+                (("INT32", "INT64", "UINT32", "UINT64"), "FP64"),
+            ),
+            # fmt: on
+        ):
+            for name in names:
+                op = getattr(binary, name)
+                for input_types, target_type in types:
+                    typed_op = op._typed_ops[target_type]
+                    output_type = op.types[target_type]
+                    for dtype in input_types:
+                        if dtype not in op.types:
+                            op.types[dtype] = output_type
+                            op._typed_ops[dtype] = typed_op
+                            op.coersions[dtype] = target_type
 
     def __init__(self, name, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
@@ -1090,6 +1179,83 @@ class Semiring(OpBase):
         # plus_pow for aggregators
         cls.register_new("plus_pow", monoid.plus, binary.pow)
 
+        # Update type information with sane coercion
+        for lname in ("any", "eq", "land", "lor", "lxnor", "lxor"):
+            target_name = f"{lname}_ne"
+            source_name = f"{lname}_lxor"
+            if not hasattr(semiring, target_name):
+                continue
+            target_op = getattr(semiring, target_name)
+            if "BOOL" not in target_op.types:
+                source_op = getattr(semiring, source_name)
+                typed_op = source_op._typed_ops["BOOL"]
+                target_op.types["BOOL"] = "BOOL"
+                target_op._typed_ops["BOOL"] = typed_op
+                target_op.coersions[dtype] = "BOOL"
+
+        for lnames, rnames, *types in (
+            # fmt: off
+            (
+                ("any", "max", "min", "plus", "times"),
+                (
+                    "firsti", "firsti1", "firstj", "firstj1",
+                    "secondi", "secondi1", "secondj", "secondj1",
+                ),
+                (
+                    (
+                        "BOOL", "FC32", "FC64", "FP32", "FP64", "INT8", "INT16",
+                        "UINT8", "UINT16", "UINT32", "UINT64",
+                    ),
+                    "INT64",
+                ),
+            ),
+            (
+                ("eq", "land", "lor", "lxnor", "lxor"),
+                ("first", "pair", "second"),
+                # TODO: check if FC coercion works here
+                (
+                    (
+                        "FC32", "FC64", "FP32", "FP64", "INT8", "INT16", "INT32", "INT64",
+                        "UINT8", "UINT16", "UINT32", "UINT64",
+                    ),
+                    "BOOL",
+                ),
+            ),
+            (
+                ("band", "bor", "bxnor", "bxor"),
+                ("band", "bor", "bxnor", "bxor"),
+                (["INT8"], "UINT16"),
+                (["INT16"], "UINT32"),
+                (["INT32"], "UINT64"),
+                (["INT64"], "UINT64"),
+            ),
+            (
+                ("any", "eq", "land", "lor", "lxnor", "lxor"),
+                ("eq", "land", "lor", "lxor", "ne"),
+                (
+                    (
+                        "FP32", "FP64", "INT8", "INT16", "INT32", "INT64",
+                        "UINT8", "UINT16", "UINT32", "UINT64",
+                    ),
+                    "BOOL",
+                ),
+            ),
+            # fmt: on
+        ):
+            for left, right in itertools.product(lnames, rnames):
+                name = f"{left}_{right}"
+                if not hasattr(semiring, name):
+                    continue
+                op = getattr(semiring, name)
+                for input_types, target_type in types:
+                    typed_op = op._typed_ops[target_type]
+                    output_type = op.types[target_type]
+                    for dtype in input_types:
+                        if dtype not in op.types:
+                            op.types[dtype] = output_type
+                            op._typed_ops[dtype] = typed_op
+                            op.coersions[dtype] = target_type
+
     def __init__(self, name, monoid=None, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
         self._monoid = monoid
@@ -1123,8 +1289,6 @@ def get_typed_op(op, dtype, dtype2=None):
     elif isinstance(op, TypedOpBase):
         return op
     elif isinstance(op, Aggregator):
-        if dtype2 is not None:
-            dtype = unify(dtype, dtype2)
         return op[dtype]
     elif isinstance(op, TypedAggregator):
         return op

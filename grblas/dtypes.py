@@ -173,7 +173,7 @@ def unify(type1, type2):
     unify(INT32, INT64) -> INT64
     unify(INT8, UINT16) -> INT32
     unify(BOOL, UINT16) -> UINT16
-    unify(FP32, INT32) -> FP32
+    unify(FP32, INT32) -> FP64
     """
     if type1 == type2:
         return type1
