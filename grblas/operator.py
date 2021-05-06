@@ -1254,7 +1254,7 @@ class Semiring(OpBase):
                         if dtype not in op.types:
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
-                            op.coercion[dtype] = target_type
+                            op.coercions[dtype] = target_type
 
     def __init__(self, name, monoid=None, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
