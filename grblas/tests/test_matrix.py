@@ -1556,7 +1556,11 @@ def test_import_export_auto(A):
             A2 = A.dup() if give_ownership else A
             d = A2.ss.export(format, sort=sort, raw=raw, give_ownership=give_ownership)
             d["format"] = import_format
-            other = import_func(take_ownership=take_ownership, **d)
+            try:
+                other = import_func(take_ownership=take_ownership, **d)
+            except Exception:
+                print(dict(take_ownership=take_ownership, **d))
+                raise
             if (
                 format == "bitmapc"
                 and raw

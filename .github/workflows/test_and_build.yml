@@ -55,7 +55,7 @@ jobs:
           if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then
               pip install suitesparse-graphblas
           else
-              conda install -c conda-forge graphblas
+              conda install -c conda-forge graphblas=5.0.3
           fi
           if [[ ${{ matrix.sourcetype }} == "source" ]]; then pip install --no-binary=all suitesparse-graphblas ; fi
           # I can't get pip install from git to work, so git clone instead.

@@ -177,6 +177,7 @@ class ss:
             jumbled = ffi.NULL
         else:
             jumbled = ffi_new("bool*")
+        is_uniform = ffi_new("bool*")
 
         if format == "sparse":
             vi = ffi_new("GrB_Index**")
@@ -184,13 +185,23 @@ class ss:
             nvals = ffi_new("GrB_Index*")
             check_status(
                 lib.GxB_Vector_export_CSC(
-                    vhandle, type_, size, vi, vx, vi_size, vx_size, nvals, jumbled, ffi.NULL
+                    vhandle,
+                    type_,
+                    size,
+                    vi,
+                    vx,
+                    vi_size,
+                    vx_size,
+                    is_uniform,
+                    nvals,
+                    jumbled,
+                    ffi.NULL,
                 ),
                 parent,
             )
             nvals = nvals[0]
-            indices = claim_buffer(ffi, vi[0], vi_size[0], index_dtype)
-            values = claim_buffer(ffi, vx[0], vx_size[0], dtype)
+            indices = claim_buffer(ffi, vi[0], vi_size[0] // index_dtype.itemsize, index_dtype)
+            values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
             if not raw:
                 if indices.size > nvals:  # pragma: no cover
                     indices = indices[:nvals]
@@ -209,12 +220,13 @@ class ss:
             nvals = ffi_new("GrB_Index*")
             check_status(
                 lib.GxB_Vector_export_Bitmap(
-                    vhandle, type_, size, vb, vx, vb_size, vx_size, nvals, ffi.NULL
+                    vhandle, type_, size, vb, vx, vb_size, vx_size, is_uniform, nvals, ffi.NULL
                 ),
                 parent,
             )
-            bitmap = claim_buffer(ffi, vb[0], vb_size[0], np.dtype(np.bool8))
-            values = claim_buffer(ffi, vx[0], vx_size[0], dtype)
+            bool_dtype = np.dtype(np.bool8)
+            bitmap = claim_buffer(ffi, vb[0], vb_size[0] // bool_dtype.itemsize, bool_dtype)
+            values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
             size = size[0]
             if not raw:
                 if bitmap.size > size:  # pragma: no cover
@@ -229,10 +241,10 @@ class ss:
                 rv["size"] = size
         elif format == "full":
             check_status(
-                lib.GxB_Vector_export_Full(vhandle, type_, size, vx, vx_size, ffi.NULL),
+                lib.GxB_Vector_export_Full(vhandle, type_, size, vx, vx_size, is_uniform, ffi.NULL),
                 parent,
             )
-            values = claim_buffer(ffi, vx[0], vx_size[0], dtype)
+            values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
             size = size[0]
             if not raw:
                 if values.size > size:  # pragma: no cover
@@ -243,6 +255,8 @@ class ss:
         else:
             raise ValueError(f"Invalid format: {format}")
 
+        if is_uniform[0]:
+            rv["is_uniform"] = True
         rv.update(
             format=format,
             values=values,
@@ -257,6 +271,7 @@ class ss:
         # All
         values,
         size=None,
+        is_uniform=False,
         take_ownership=False,
         format=None,
         name=None,
@@ -311,6 +326,7 @@ class ss:
                 indices=indices,
                 values=values,
                 nvals=nvals,
+                is_uniform=is_uniform,
                 sorted_index=sorted_index,
                 take_ownership=take_ownership,
                 name=name,
@@ -321,6 +337,7 @@ class ss:
                 bitmap=bitmap,
                 values=values,
                 size=size,
+                is_uniform=is_uniform,
                 take_ownership=take_ownership,
                 name=name,
             )
@@ -328,6 +345,7 @@ class ss:
             return cls.import_full(
                 values=values,
                 size=size,
+                is_uniform=is_uniform,
                 take_ownership=take_ownership,
                 name=name,
             )
@@ -342,6 +360,7 @@ class ss:
         indices,
         values,
         nvals=None,
+        is_uniform=False,
         sorted_index=False,
         take_ownership=False,
         dtype=None,
@@ -361,6 +380,8 @@ class ss:
         nvals : int, optional
             The number of elements in "values" to use.
             If not specified, will be set to ``len(values)``.
+        is_uniform : bool, default False
+            Not yet supported.
         sorted_index : bool, default False
             Indicate whether the values in "col_indices" are sorted.
         take_ownership : bool, default False
@@ -407,8 +428,9 @@ class ss:
                 size,
                 vi,
                 vx,
-                indices.size,
-                values.size,
+                indices.nbytes,
+                values.nbytes,
+                is_uniform,
                 nvals,
                 not sorted_index,
                 ffi.NULL,
@@ -430,6 +452,7 @@ class ss:
         values,
         nvals=None,
         size=None,
+        is_uniform=False,
         take_ownership=False,
         dtype=None,
         format=None,
@@ -450,6 +473,8 @@ class ss:
         size : int, optional
             The size of the new Vector.
             If not specified, it will be set to the size of values.
+        is_uniform : bool, default False
+            Not yet supported.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -499,8 +524,9 @@ class ss:
                 size,
                 vb,
                 vx,
-                bitmap.size,
-                values.size,
+                bitmap.nbytes,
+                values.nbytes,
+                is_uniform,
                 nvals,
                 ffi.NULL,
             ),
@@ -515,7 +541,15 @@ class ss:
 
     @classmethod
     def import_full(
-        cls, *, values, size=None, take_ownership=False, dtype=None, format=None, name=None
+        cls,
+        *,
+        values,
+        size=None,
+        is_uniform=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
     ):
         """
         GxB_Vector_import_Full
@@ -528,6 +562,8 @@ class ss:
         size : int, optional
             The size of the new Vector.
             If not specified, it will be set to the size of values.
+        is_uniform : bool, default False
+            Not yet supported.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -567,7 +603,8 @@ class ss:
                 dtype._carg,
                 size,
                 vx,
-                values.size,
+                values.nbytes,
+                is_uniform,
                 ffi.NULL,
             ),
             "Vector",

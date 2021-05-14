@@ -35,7 +35,7 @@ def ints_to_numpy_buffer(array, dtype, *, name="array", copy=False, ownable=Fals
         raise ValueError(f"{name} must be integers, not {array.dtype.name}")
     array = np.array(array, dtype, copy=copy, order=order)
     if ownable and (not array.flags.owndata or not array.flags.writeable):
-        array = array.copy()
+        array = array.copy(order)
     return array
 
 
@@ -53,7 +53,7 @@ def values_to_numpy_buffer(array, dtype=None, *, copy=False, ownable=False, orde
             array = array.astype(np.int64)
         dtype = lookup_dtype(array.dtype)
     if ownable and (not array.flags.owndata or not array.flags.writeable):
-        array = array.copy()
+        array = array.copy(order)
     return array, dtype
 
 

@@ -344,6 +344,7 @@ class ss:
             jumbled = ffi.NULL
         else:
             jumbled = ffi_new("bool*")
+        is_uniform = ffi_new("bool*")
         nvals = parent._nvals
         if format == "csr":
             Aj = ffi_new("GrB_Index**")
@@ -360,14 +361,15 @@ class ss:
                     Ap_size,
                     Aj_size,
                     Ax_size,
+                    is_uniform,
                     jumbled,
                     ffi.NULL,
                 ),
                 parent,
             )
-            indptr = claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
-            col_indices = claim_buffer(ffi, Aj[0], Aj_size[0], index_dtype)
-            values = claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+            indptr = claim_buffer(ffi, Ap[0], Ap_size[0] // index_dtype.itemsize, index_dtype)
+            col_indices = claim_buffer(ffi, Aj[0], Aj_size[0] // index_dtype.itemsize, index_dtype)
+            values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             if not raw:
                 if indptr.size > nrows[0] + 1:  # pragma: no cover
                     indptr = indptr[: nrows[0] + 1]
@@ -398,14 +400,15 @@ class ss:
                     Ap_size,
                     Ai_size,
                     Ax_size,
+                    is_uniform,
                     jumbled,
                     ffi.NULL,
                 ),
                 parent,
             )
-            indptr = claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
-            row_indices = claim_buffer(ffi, Ai[0], Ai_size[0], index_dtype)
-            values = claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+            indptr = claim_buffer(ffi, Ap[0], Ap_size[0] // index_dtype.itemsize, index_dtype)
+            row_indices = claim_buffer(ffi, Ai[0], Ai_size[0] // index_dtype.itemsize, index_dtype)
+            values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             if not raw:
                 if indptr.size > ncols[0] + 1:  # pragma: no cover
                     indptr = indptr[: ncols[0] + 1]
@@ -441,16 +444,17 @@ class ss:
                     Ah_size,
                     Aj_size,
                     Ax_size,
+                    is_uniform,
                     nvec,
                     jumbled,
                     ffi.NULL,
                 ),
                 parent,
             )
-            indptr = claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
-            rows = claim_buffer(ffi, Ah[0], Ah_size[0], index_dtype)
-            col_indices = claim_buffer(ffi, Aj[0], Aj_size[0], index_dtype)
-            values = claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+            indptr = claim_buffer(ffi, Ap[0], Ap_size[0] // index_dtype.itemsize, index_dtype)
+            rows = claim_buffer(ffi, Ah[0], Ah_size[0] // index_dtype.itemsize, index_dtype)
+            col_indices = claim_buffer(ffi, Aj[0], Aj_size[0] // index_dtype.itemsize, index_dtype)
+            values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             nvec = nvec[0]
             if not raw:
                 if indptr.size > nvec + 1:  # pragma: no cover
@@ -492,16 +496,17 @@ class ss:
                     Ah_size,
                     Ai_size,
                     Ax_size,
+                    is_uniform,
                     nvec,
                     jumbled,
                     ffi.NULL,
                 ),
                 parent,
             )
-            indptr = claim_buffer(ffi, Ap[0], Ap_size[0], index_dtype)
-            cols = claim_buffer(ffi, Ah[0], Ah_size[0], index_dtype)
-            row_indices = claim_buffer(ffi, Ai[0], Ai_size[0], index_dtype)
-            values = claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+            indptr = claim_buffer(ffi, Ap[0], Ap_size[0] // index_dtype.itemsize, index_dtype)
+            cols = claim_buffer(ffi, Ah[0], Ah_size[0] // index_dtype.itemsize, index_dtype)
+            row_indices = claim_buffer(ffi, Ai[0], Ai_size[0] // index_dtype.itemsize, index_dtype)
+            values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             nvec = nvec[0]
             if not raw:
                 if indptr.size > nvec + 1:  # pragma: no cover
@@ -541,21 +546,32 @@ class ss:
                     Ax,
                     Ab_size,
                     Ax_size,
+                    is_uniform,
                     nvals_,
                     ffi.NULL,
                 ),
                 parent,
             )
+            bool_dtype = np.dtype(np.bool8)
             if raw:
-                bitmap = claim_buffer(ffi, Ab[0], Ab_size[0], np.dtype(np.bool8))
-                values = claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+                bitmap = claim_buffer(ffi, Ab[0], Ab_size[0] // bool_dtype.itemsize, bool_dtype)
+                values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             else:
                 is_c_order = format == "bitmapr"
                 bitmap = claim_buffer_2d(
-                    ffi, Ab[0], Ab_size[0], nrows[0], ncols[0], np.dtype(np.bool8), is_c_order
+                    ffi,
+                    Ab[0],
+                    Ab_size[0] // bool_dtype.itemsize,
+                    nrows[0],
+                    ncols[0],
+                    bool_dtype,
+                    is_c_order,
                 )
+                print("nrows", nrows[0])
+                print("ncols", ncols[0])
+                print("Ax_size", Ax_size[0])
                 values = claim_buffer_2d(
-                    ffi, Ax[0], Ax_size[0], nrows[0], ncols[0], dtype, is_c_order
+                    ffi, Ax[0], Ax_size[0] // dtype.itemsize, nrows[0], ncols[0], dtype, is_c_order
                 )
             rv = {"bitmap": bitmap, "nvals": nvals_[0]}
             if raw:
@@ -574,22 +590,25 @@ class ss:
                     ncols,
                     Ax,
                     Ax_size,
+                    is_uniform,
                     ffi.NULL,
                 ),
                 parent,
             )
             if raw:
-                values = claim_buffer(ffi, Ax[0], Ax_size[0], dtype)
+                values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
                 rv = {"nrows": nrows[0], "ncols": ncols[0]}
             else:
                 is_c_order = format == "fullr"
                 values = claim_buffer_2d(
-                    ffi, Ax[0], Ax_size[0], nrows[0], ncols[0], dtype, is_c_order
+                    ffi, Ax[0], Ax_size[0] // dtype.itemsize, nrows[0], ncols[0], dtype, is_c_order
                 )
                 rv = {}
         else:
             raise ValueError(f"Invalid format: {format}")
 
+        if is_uniform[0]:
+            rv["is_uniform"] = True
         rv["format"] = format
         rv["values"] = values
         parent.gb_obj = ffi.NULL
@@ -604,6 +623,7 @@ class ss:
         indptr,
         values,
         col_indices,
+        is_uniform=False,
         sorted_index=False,
         take_ownership=False,
         dtype=None,
@@ -622,6 +642,8 @@ class ss:
         indptr : array-like
         values : array-like
         col_indices : array-like
+        is_uniform : bool, default False
+            Not yet supported.
         sorted_index : bool, default False
             Indicate whether the values in "col_indices" are sorted.
         take_ownership : bool, default False
@@ -674,9 +696,10 @@ class ss:
                 Ap,
                 Aj,
                 Ax,
-                indptr.size,
-                col_indices.size,
-                values.size,
+                indptr.nbytes,
+                col_indices.nbytes,
+                values.nbytes,
+                is_uniform,
                 not sorted_index,
                 ffi.NULL,
             ),
@@ -700,6 +723,7 @@ class ss:
         indptr,
         values,
         row_indices,
+        is_uniform=False,
         sorted_index=False,
         take_ownership=False,
         dtype=None,
@@ -718,6 +742,8 @@ class ss:
         indptr : array-like
         values : array-like
         row_indices : array-like
+        is_uniform : bool, default False
+            Not yet supported.
         sorted_index : bool, default False
             Indicate whether the values in "row_indices" are sorted.
         take_ownership : bool, default False
@@ -770,9 +796,10 @@ class ss:
                 Ap,
                 Ai,
                 Ax,
-                indptr.size,
-                row_indices.size,
-                values.size,
+                indptr.nbytes,
+                row_indices.nbytes,
+                values.nbytes,
+                is_uniform,
                 not sorted_index,
                 ffi.NULL,
             ),
@@ -798,6 +825,7 @@ class ss:
         values,
         col_indices,
         nvec=None,
+        is_uniform=False,
         sorted_index=False,
         take_ownership=False,
         dtype=None,
@@ -820,6 +848,8 @@ class ss:
         nvec : int, optional
             The number of elements in "rows" to use.
             If not specified, will be set to ``len(rows)``.
+        is_uniform : bool, default False
+            Not yet supported.
         sorted_index : bool, default False
             Indicate whether the values in "col_indices" are sorted.
         take_ownership : bool, default False
@@ -877,10 +907,11 @@ class ss:
                 Ah,
                 Aj,
                 Ax,
-                indptr.size,
-                rows.size,
-                col_indices.size,
-                values.size,
+                indptr.nbytes,
+                rows.nbytes,
+                col_indices.nbytes,
+                values.nbytes,
+                is_uniform,
                 nvec,
                 not sorted_index,
                 ffi.NULL,
@@ -908,6 +939,7 @@ class ss:
         values,
         row_indices,
         nvec=None,
+        is_uniform=False,
         sorted_index=False,
         take_ownership=False,
         dtype=None,
@@ -929,6 +961,8 @@ class ss:
         nvec : int, optional
             The number of elements in "cols" to use.
             If not specified, will be set to ``len(cols)``.
+        is_uniform : bool, default False
+            Not yet supported.
         sorted_index : bool, default False
             Indicate whether the values in "row_indices" are sorted.
         take_ownership : bool, default False
@@ -986,10 +1020,11 @@ class ss:
                 Ah,
                 Ai,
                 Ax,
-                indptr.size,
-                cols.size,
-                row_indices.size,
-                values.size,
+                indptr.nbytes,
+                cols.nbytes,
+                row_indices.nbytes,
+                values.nbytes,
+                is_uniform,
                 nvec,
                 not sorted_index,
                 ffi.NULL,
@@ -1015,6 +1050,7 @@ class ss:
         nvals=None,
         nrows=None,
         ncols=None,
+        is_uniform=False,
         take_ownership=False,
         dtype=None,
         format=None,
@@ -1040,6 +1076,8 @@ class ss:
         ncols : int
             The number of columns for the Matrix.
             If not provided, will be inferred from values or bitmap if either is 2d.
+        is_uniform : bool, default False
+            Not yet supported.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -1091,8 +1129,9 @@ class ss:
                 ncols,
                 Ab,
                 Ax,
-                bitmap.size,
-                values.size,
+                bitmap.nbytes,
+                values.nbytes,
+                is_uniform,
                 nvals,
                 ffi.NULL,
             ),
@@ -1115,6 +1154,7 @@ class ss:
         nvals=None,
         nrows=None,
         ncols=None,
+        is_uniform=False,
         take_ownership=False,
         format=None,
         dtype=None,
@@ -1140,6 +1180,8 @@ class ss:
         ncols : int
             The number of columns for the Matrix.
             If not provided, will be inferred from values or bitmap if either is 2d.
+        is_uniform : bool, default False
+            Not yet supported.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -1191,8 +1233,9 @@ class ss:
                 ncols,
                 Ab,
                 Ax,
-                bitmap.size,
-                values.size,
+                bitmap.nbytes,
+                values.nbytes,
+                is_uniform,
                 nvals,
                 ffi.NULL,
             ),
@@ -1213,6 +1256,7 @@ class ss:
         values,
         nrows=None,
         ncols=None,
+        is_uniform=False,
         take_ownership=False,
         dtype=None,
         format=None,
@@ -1233,6 +1277,8 @@ class ss:
         ncols : int
             The number of columns for the Matrix.
             If not provided, will be inferred from values if it is 2d.
+        is_uniform : bool, default False
+            Not yet supported.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -1272,7 +1318,8 @@ class ss:
                 nrows,
                 ncols,
                 Ax,
-                values.size,
+                values.nbytes,
+                is_uniform,
                 ffi.NULL,
             ),
             "Matrix",
@@ -1291,6 +1338,7 @@ class ss:
         values,
         nrows=None,
         ncols=None,
+        is_uniform=False,
         take_ownership=False,
         dtype=None,
         format=None,
@@ -1311,6 +1359,8 @@ class ss:
         ncols : int
             The number of columns for the Matrix.
             If not provided, will be inferred from values if it is 2d.
+        is_uniform : bool, default False
+            Not yet supported.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -1350,7 +1400,8 @@ class ss:
                 nrows,
                 ncols,
                 Ax,
-                values.size,
+                values.nbytes,
+                is_uniform,
                 ffi.NULL,
             ),
             "Matrix",
@@ -1370,6 +1421,7 @@ class ss:
         values,
         nrows=None,
         ncols=None,
+        is_uniform=False,
         take_ownership=False,
         format=None,
         dtype=None,
@@ -1490,6 +1542,7 @@ class ss:
                 indptr=indptr,
                 values=values,
                 col_indices=col_indices,
+                is_uniform=is_uniform,
                 sorted_index=sorted_index,
                 take_ownership=take_ownership,
                 dtype=dtype,
@@ -1502,6 +1555,7 @@ class ss:
                 indptr=indptr,
                 values=values,
                 row_indices=row_indices,
+                is_uniform=is_uniform,
                 sorted_index=sorted_index,
                 take_ownership=take_ownership,
                 dtype=dtype,
@@ -1516,6 +1570,7 @@ class ss:
                 indptr=indptr,
                 values=values,
                 col_indices=col_indices,
+                is_uniform=is_uniform,
                 sorted_index=sorted_index,
                 take_ownership=take_ownership,
                 dtype=dtype,
@@ -1530,6 +1585,7 @@ class ss:
                 indptr=indptr,
                 values=values,
                 row_indices=row_indices,
+                is_uniform=is_uniform,
                 sorted_index=sorted_index,
                 take_ownership=take_ownership,
                 dtype=dtype,
@@ -1542,6 +1598,7 @@ class ss:
                 values=values,
                 nvals=nvals,
                 bitmap=bitmap,
+                is_uniform=is_uniform,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
@@ -1553,6 +1610,7 @@ class ss:
                 values=values,
                 nvals=nvals,
                 bitmap=bitmap,
+                is_uniform=is_uniform,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
@@ -1562,6 +1620,7 @@ class ss:
                 nrows=nrows,
                 ncols=ncols,
                 values=values,
+                is_uniform=is_uniform,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
@@ -1571,6 +1630,7 @@ class ss:
                 nrows=nrows,
                 ncols=ncols,
                 values=values,
+                is_uniform=is_uniform,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
