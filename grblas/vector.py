@@ -498,7 +498,7 @@ class Vector(BaseType):
         Reduce all values into a scalar
         Default op is monoid.lor for boolean and monoid.plus otherwise
         """
-        method_name = "reduce_scalar"
+        method_name = "reduce"
         op = get_typed_op(op, self.dtype)
         if op.opclass == "BinaryOp" and op.monoid is not None:
             op = op.monoid

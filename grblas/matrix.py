@@ -593,6 +593,7 @@ class Matrix(BaseType):
             ncols=self._ncols,
             expr_repr=expr_repr,
             at=self._is_transposed,
+            bt=self._is_transposed,
         )
 
     def reduce_rows(self, op=monoid.plus):
@@ -1215,7 +1216,6 @@ class TransposedMatrix:
     _expect_type = Matrix._expect_type
     _expect_op = Matrix._expect_op
     __array__ = Matrix.__array__
-    __array_struct__ = Matrix.__array_struct__
 
 
 expr.MatrixEwiseAddExpr.output_type = MatrixExpression
