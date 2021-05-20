@@ -45,6 +45,7 @@ _SPECIAL_ATTRS = {
     "tests",
     "utils",
     "_ss",
+    "ss",
 }
 
 

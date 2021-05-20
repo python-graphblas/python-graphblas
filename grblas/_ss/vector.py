@@ -3,8 +3,10 @@ import grblas as gb
 from numba import njit
 from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
 from .. import ffi, lib
-from ..dtypes import lookup_dtype
+from ..base import call
+from ..dtypes import lookup_dtype, INT64
 from ..exceptions import check_status, check_status_carg
+from ..scalar import _CScalar
 from ..utils import ints_to_numpy_buffer, values_to_numpy_buffer, wrapdoc
 
 ffi_new = ffi.new
@@ -87,6 +89,36 @@ class ss:
         else:  # pragma: no cover
             raise NotImplementedError(f"Unknown sparsity status: {sparsity_status}")
         return format
+
+    def diag(self, matrix, k=0):
+        """
+        GxB_Vector_diag
+
+        Extract a diagonal from a Matrix or TransposedMatrix into a Vector.
+        Existing entries in the Vector are discarded.
+
+        Parameters
+        ----------
+        matrix : Matrix or TransposedMatrix
+            Extract a diagonal from this matrix.
+        k : int, default 0
+            Diagonal in question.  Use `k>0` for diagonals above the main diagonal,
+            and `k<0` for diagonals below the main diagonal.
+
+        See Also
+        --------
+        grblas.ss.diag
+        Matrix.ss.diag
+
+        """
+        self._parent._expect_type(
+            matrix, (gb.Matrix, gb.matrix.TransposedMatrix), within="ss.diag", argname="matrix"
+        )
+        if type(matrix) is gb.matrix.TransposedMatrix:
+            # Transpose descriptor doesn't do anything, so use the parent
+            k = -k
+            matrix = matrix._matrix
+        call("GxB_Vector_diag", [self._parent, matrix, _CScalar(k, dtype=INT64), None])
 
     def export(self, format=None, sort=False, give_ownership=False, raw=False):
         """

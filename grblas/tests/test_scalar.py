@@ -237,3 +237,22 @@ def test_scalar_to_numpy(s):
         np.testing.assert_array_equal(a, b)
         assert a.dtype == b.dtype
         assert a.shape == b.shape
+
+
+def test_neg():
+    for dtype in vars(dtypes).values():
+        if not isinstance(dtype, dtypes.DataType):
+            continue
+        s = Scalar.from_value(1, dtype=dtype)
+        empty = Scalar.new(dtype)
+        if dtype.name == "BOOL" or dtype.name.startswith("U"):
+            with pytest.raises(TypeError, match="The negative operator, `-`, is not supported"):
+                -s
+            with pytest.raises(TypeError, match="The negative operator, `-`, is not supported"):
+                -empty
+        else:
+            minus_s = Scalar.from_value(-1, dtype=dtype)
+            assert s == -minus_s
+            assert (-s).value == minus_s.value
+            assert empty == -empty
+            assert (-empty).value is None

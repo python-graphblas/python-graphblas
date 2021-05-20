@@ -1,4 +1,3 @@
-import re
 import numpy as np
 import numba
 from . import lib
@@ -163,9 +162,6 @@ def lookup_dtype(key):
     raise ValueError(f"Unknown dtype: {key}")
 
 
-_bits_pattern = re.compile(r"\D+(\d+)$")
-
-
 def unify(type1, type2):
     """
     Returns a type that can hold both type1 and type2
@@ -184,8 +180,8 @@ def unify(type1, type2):
     if type2 == BOOL:
         return type1
     # Compute bit numbers for comparison
-    num1 = int(_bits_pattern.match(type1.name).group(1))
-    num2 = int(_bits_pattern.match(type2.name).group(1))
+    num1 = 8 if type1.name[-1] == "8" else int(type1.name[-2:])
+    num2 = 8 if type2.name[-1] == "8" else int(type2.name[-2:])
 
     # Same type with different numbers is easy: choose the larger one
     if type1.name[1] == type2.name[1]:

@@ -3,8 +3,10 @@ import numpy as np
 from numba import njit
 from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
 from .. import ffi, lib
-from ..dtypes import lookup_dtype
+from ..base import call
+from ..dtypes import lookup_dtype, INT64
 from ..exceptions import check_status, check_status_carg
+from ..scalar import _CScalar
 from ..utils import get_shape, ints_to_numpy_buffer, values_to_numpy_buffer, wrapdoc
 
 ffi_new = ffi.new
@@ -181,6 +183,30 @@ class ss:
         else:
             format = f"{format}r"
         return format
+
+    def diag(self, vector, k=0):
+        """
+        GxB_Matrix_diag
+
+        Construct a diagonal Matrix from the given vector.
+        Existing entries in the Matrix are discarded.
+
+        Parameters
+        ----------
+        vector : Vector
+            Create a diagonal from this Vector.
+        k : int, default 0
+            Diagonal in question.  Use `k>0` for diagonals above the main diagonal,
+            and `k<0` for diagonals below the main diagonal.
+
+        See Also
+        --------
+        grblas.ss.diag
+        Vector.ss.diag
+
+        """
+        self._parent._expect_type(vector, gb.Vector, within="ss.diag", argname="vector")
+        call("GxB_Matrix_diag", [self._parent, vector, _CScalar(k, dtype=INT64), None])
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
         """
@@ -567,9 +593,6 @@ class ss:
                     bool_dtype,
                     is_c_order,
                 )
-                print("nrows", nrows[0])
-                print("ncols", ncols[0])
-                print("Ax_size", Ax_size[0])
                 values = claim_buffer_2d(
                     ffi, Ax[0], Ax_size[0] // dtype.itemsize, nrows[0], ncols[0], dtype, is_c_order
                 )

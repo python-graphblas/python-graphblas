@@ -1724,3 +1724,30 @@ def test_not_to_array(A):
         TypeError, match="TransposedMatrix can't be directly converted to a numpy array"
     ):
         np.array(A.T)
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        (0, [], []),
+        (1, [0, 4], [2, 7]),
+        (3, [0, 1, 2], [3, 8, 1]),
+        (10, [], []),
+        (-1, [2], [3]),
+        (-3, [0, 2, 3], [3, 1, 7]),
+        (-10, [], []),
+    ],
+)
+def test_diag(A, params):
+    k, indices, values = params
+    expected = Vector.from_values(indices, values, dtype=A.dtype, size=max(0, A.nrows - abs(k)))
+    v = grblas.ss.diag(A, k=k)
+    assert expected.isequal(v)
+    v[:] = 0
+    v.ss.diag(A, k=k)
+    assert expected.isequal(v)
+    v = grblas.ss.diag(A.T, k=-k)
+    assert expected.isequal(v)
+    v[:] = 0
+    v.ss.diag(A.T, -k)
+    assert expected.isequal(v)

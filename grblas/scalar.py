@@ -49,6 +49,16 @@ class Scalar(BaseType):
     def __int__(self):
         return int(self.value)
 
+    def __neg__(self):
+        dtype = self.dtype
+        if dtype.name[0] == "U" or dtype.name == "BOOL":
+            raise TypeError(f"The negative operator, `-`, is not supported for {dtype.name} dtype")
+        rv = Scalar.new(dtype, name=f"-{self.name}")
+        if self.is_empty:
+            return rv
+        rv.value = -self.value
+        return rv
+
     __index__ = __int__
 
     def isequal(self, other, *, check_dtype=False):
@@ -257,9 +267,9 @@ class _CScalar:
 
     __slots__ = "scalar", "dtype"
 
-    def __init__(self, scalar):
+    def __init__(self, scalar, dtype=_INDEX):
         if type(scalar) is not Scalar:
-            scalar = Scalar.from_value(scalar, name="", dtype=_INDEX)
+            scalar = Scalar.from_value(scalar, name="", dtype=dtype)
         self.scalar = scalar
         self.dtype = scalar.dtype
 
