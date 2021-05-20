@@ -25,6 +25,8 @@ def test_recorder():
         "GrB_mxm(D, NULL, NULL, GrB_MIN_PLUS_SEMIRING_INT64, A, B, GrB_DESC_T1);",
         "GrB_Matrix_eWiseMult_BinaryOp(C, D, NULL, GrB_TIMES_INT64, A, B, GrB_DESC_ST0);",
     ]
+    rec.clear()
+    assert list(rec) == []
 
 
 def test_record_novalue():

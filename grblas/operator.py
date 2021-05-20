@@ -939,7 +939,7 @@ class BinaryOp(OpBase):
                     typed_op = op._typed_ops[target_type]
                     output_type = op.types[target_type]
                     for dtype in input_types:
-                        if dtype not in op.types:
+                        if dtype not in op.types:  # pragma: no branch
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
                             op.coercions[dtype] = target_type
@@ -1060,7 +1060,7 @@ class Monoid(OpBase):
             # (monoid.plus, lor),  # two choices: lor, or plus[int]
             (monoid.times, land),
         ]:
-            if "BOOL" not in cur_op.types:
+            if "BOOL" not in cur_op.types:  # pragma: no branch
                 cur_op.types["BOOL"] = "BOOL"
                 cur_op.coercions["BOOL"] = "BOOL"
                 cur_op._typed_ops["BOOL"] = typed_op
@@ -1218,7 +1218,7 @@ class Semiring(OpBase):
             if not hasattr(semiring, target_name):
                 continue
             target_op = getattr(semiring, target_name)
-            if "BOOL" not in target_op.types:
+            if "BOOL" not in target_op.types:  # pragma: no branch
                 source_op = getattr(semiring, source_name)
                 typed_op = source_op._typed_ops["BOOL"]
                 target_op.types["BOOL"] = "BOOL"

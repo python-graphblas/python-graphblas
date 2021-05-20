@@ -8,7 +8,7 @@ INT = frozenset({"INT8", "INT16", "INT32", "INT64", "UINT8", "UINT16", "UINT32",
 FP = frozenset({"FP32", "FP64"})
 FPINT = frozenset(FP | INT)
 NOFC = frozenset(BOOL | FPINT)
-if dtypes._supports_complex:
+if dtypes._supports_complex:  # pragma: no branch
     FC = frozenset({"FC32", "FC64"})
 else:
     FC = frozenset()
@@ -144,7 +144,7 @@ def _run_test(module, typ, expected):
         key = (frozenset(val.types.keys()), frozenset(val.types.values()))
         seen[key].add(name)
     seen = dict(seen)
-    if seen != expected:
+    if seen != expected:  # pragma: no cover
         seen_names = set()
         for names in seen.values():
             seen_names.update(names)
