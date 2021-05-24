@@ -162,9 +162,11 @@ def normalize_chunks(chunks, shape):
     elif isinstance(chunks, np.ndarray):
         chunks = chunks.tolist()
     else:
-        raise TypeError("TODO")
+        raise TypeError(
+            f"chunks argument must be a list, tuple, or numpy array; got: {type(chunks)}"
+        )
     if len(chunks) != 2:
-        raise ValueError("TODO")
+        raise ValueError("chunks argument must be of length 2 (one for each dimension of a Matrix)")
     chunksizes = []
     for size, chunk in zip(shape, chunks):
         if chunk is None:
@@ -187,27 +189,40 @@ def normalize_chunks(chunks, shape):
                         raise ValueError(f"Chunksize must be greater than 0; got: {c}")
                 elif c is None:
                     if none_index is not None:
-                        raise TypeError("TODO")
+                        raise TypeError(
+                            'None value in chunks for "the rest" can only appear once per dimension'
+                        )
                     none_index = len(cur_chunks)
                     c = 0
                 elif c is not None:
-                    raise TypeError("TODO")
+                    raise TypeError(
+                        "Bad type for element in chunks; expected int or None, but got: "
+                        f"{type(chunks)}"
+                    )
                 cur_chunks.append(c)
             if none_index is not None:
                 fill = size - sum(cur_chunks)
                 if fill < 0:
-                    raise ValueError("TODO")
+                    raise ValueError(
+                        "Chunks are too large; None value in chunks would need to be negative "
+                        "to match size of input"
+                    )
                 cur_chunks[none_index] = fill
         elif isinstance(chunk, np.ndarray):
             if not np.issubdtype(chunk.dtype, np.integer):
-                raise TypeError("TODO")
+                raise TypeError(f"numpy array for chunks must be integer dtype; got {chunk.dtype}")
             if chunk.ndim != 1:
-                raise TypeError("TODO")
+                raise TypeError(
+                    f"numpy array for chunks must be 1-dimension; got ndim={chunk.ndim}"
+                )
             if (chunk < 0).any():
-                raise ValueError("TODO")
+                raise ValueError(f"Chunksize must be greater than 0; got: {chunk[chunk < 0]}")
             cur_chunks = chunk.tolist()
         else:
-            raise TypeError("TODO")
+            raise TypeError(
+                "Chunks for a dimension must be an integer, a list or tuple of integers, or None."
+                f"  Got: {type(chunk)}"
+            )
         chunksizes.append(cur_chunks)
     return chunksizes
 

@@ -17,11 +17,11 @@ jobs:
         pyver: [3.7, 3.8, 3.9]
         testopts:
           - "--blocking --record"
-          - "--backend=pygraphblas"
           - "--non-blocking --record --runslow"
+          # - "--backend=pygraphblas"  # Skip for now
         sourcetype:
           - "wheel"
-          # - "source"  # dope!  I broke it.
+          - "source"  # Is this still broken?
           - "upstream"
         exclude:
           - sourcetype: "upstream"

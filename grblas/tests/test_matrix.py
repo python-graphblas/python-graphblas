@@ -1765,32 +1765,32 @@ def test_normalize_chunks():
     assert normalize_chunks([[5, None], (None, 6)], shape) == [[5, 15], [14, 6]]
     assert normalize_chunks(np.array([10, 10]), shape) == [[10, 10], [10, 10]]
 
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="chunks argument must be a list"):
         normalize_chunks(None, shape)
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="None value in chunks"):
         normalize_chunks([[5, 5, None, None], 10], shape)
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="expected int or None, but got"):
         normalize_chunks([[15.5, 4.5], 10], shape)
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="Chunks for a dimension must be"):
         normalize_chunks([10, 10.5], shape)
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="must be integer dtype; got float64"):
         normalize_chunks([10, np.array([1.5, 2.5])], shape)
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="numpy array for chunks must be 1-dimension"):
         normalize_chunks([10, np.array([[1, 2], [3, 4]])], shape)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="hunks argument must be of length 2"):
         normalize_chunks([10], shape)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Chunksize must be greater than 0"):
         normalize_chunks(-10, shape)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Chunksize must be greater than 0"):
         normalize_chunks([-10, -10], shape)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Chunksize must be greater than 0"):
         normalize_chunks([[-10, 30], [-10, 30]], shape)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="chunks argument must be of length 2"):
         normalize_chunks([5, 5, 5], shape)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Chunks are too large"):
         normalize_chunks([[30, None], 10], shape)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Chunksize must be greater than 0"):
         normalize_chunks([10, np.array([-1, 2])], shape)
 
 
