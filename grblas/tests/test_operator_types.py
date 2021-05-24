@@ -8,9 +8,9 @@ INT = frozenset({"INT8", "INT16", "INT32", "INT64", "UINT8", "UINT16", "UINT32",
 FP = frozenset({"FP32", "FP64"})
 FPINT = frozenset(FP | INT)
 NOFC = frozenset(BOOL | FPINT)
-if dtypes._supports_complex:  # pragma: no branch
+if dtypes._supports_complex:
     FC = frozenset({"FC32", "FC64"})
-else:
+else:  # pragma: no cover
     FC = frozenset()
 FCFP = frozenset(FC | FP)
 ALL = frozenset(NOFC | FC)

@@ -16,7 +16,8 @@ jobs:
       matrix:
         pyver: [3.7, 3.8, 3.9]
         testopts:
-          - "--blocking --record"
+          # - "--blocking --record"
+          - "--blocking"
           - "--non-blocking --record --runslow"
           # - "--backend=pygraphblas"  # Skip for now
         sourcetype:

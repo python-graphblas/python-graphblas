@@ -1558,7 +1558,7 @@ def test_import_export_auto(A):
             d["format"] = import_format
             try:
                 other = import_func(take_ownership=take_ownership, **d)
-            except Exception:
+            except Exception:  # pragma: no cover
                 print(dict(take_ownership=take_ownership, **d))
                 raise
             if (
@@ -1796,11 +1796,12 @@ def test_normalize_chunks():
 
 def test_split(A):
     results = A.ss.split([4, 3])
-    row_boundaries = [0, 4, 7]
-    col_boundaries = [0, 3, 6, 7]
-    for i, (i1, i2) in enumerate(zip(row_boundaries[:-1], row_boundaries[1:])):
-        for j, (j1, j2) in enumerate(zip(col_boundaries[:-1], col_boundaries[1:])):
-            expected = A[i1:i2, j1:j2].new()
-            assert expected.isequal(results[i][j])
+    for results in [A.ss.split([4, 3]), A.ss.split([[4, None], 3], name="split")]:
+        row_boundaries = [0, 4, 7]
+        col_boundaries = [0, 3, 6, 7]
+        for i, (i1, i2) in enumerate(zip(row_boundaries[:-1], row_boundaries[1:])):
+            for j, (j1, j2) in enumerate(zip(col_boundaries[:-1], col_boundaries[1:])):
+                expected = A[i1:i2, j1:j2].new()
+                assert expected.isequal(results[i][j])
     with pytest.raises(DimensionMismatch):
         A.ss.split([[5, 5], 3])

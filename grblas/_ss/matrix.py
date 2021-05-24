@@ -194,7 +194,7 @@ def normalize_chunks(chunks, shape):
                         )
                     none_index = len(cur_chunks)
                     c = 0
-                elif c is not None:
+                else:
                     raise TypeError(
                         "Bad type for element in chunks; expected int or None, but got: "
                         f"{type(chunks)}"
@@ -759,7 +759,7 @@ class ss:
         else:
             raise ValueError(f"Invalid format: {format}")
 
-        if is_uniform[0]:
+        if is_uniform[0]:  # pragma: no cover
             rv["is_uniform"] = True
         rv["format"] = format
         rv["values"] = values
