@@ -1751,3 +1751,56 @@ def test_diag(A, params):
     v[:] = 0
     v.ss.diag(A.T, -k)
     assert expected.isequal(v)
+
+
+def test_normalize_chunks():
+    from grblas._ss.matrix import normalize_chunks
+
+    shape = (20, 20)
+    assert normalize_chunks(10, shape) == [[10, 10], [10, 10]]
+    assert normalize_chunks(15.0, shape) == [[15, 5], [15, 5]]
+    assert normalize_chunks(((10, 10), [10, 10]), shape) == [[10, 10], [10, 10]]
+    assert normalize_chunks((15, [10, 10.0]), shape) == [[15, 5], [10, 10]]
+    assert normalize_chunks((None, np.array([10, 10])), shape) == [[20], [10, 10]]
+    assert normalize_chunks([[5, None], (None, 6)], shape) == [[5, 15], [14, 6]]
+    assert normalize_chunks(np.array([10, 10]), shape) == [[10, 10], [10, 10]]
+
+    with pytest.raises(TypeError):
+        normalize_chunks(None, shape)
+    with pytest.raises(TypeError):
+        normalize_chunks([[5, 5, None, None], 10], shape)
+    with pytest.raises(TypeError):
+        normalize_chunks([[15.5, 4.5], 10], shape)
+    with pytest.raises(TypeError):
+        normalize_chunks([10, 10.5], shape)
+    with pytest.raises(TypeError):
+        normalize_chunks([10, np.array([1.5, 2.5])], shape)
+    with pytest.raises(TypeError):
+        normalize_chunks([10, np.array([[1, 2], [3, 4]])], shape)
+
+    with pytest.raises(ValueError):
+        normalize_chunks([10], shape)
+    with pytest.raises(ValueError):
+        normalize_chunks(-10, shape)
+    with pytest.raises(ValueError):
+        normalize_chunks([-10, -10], shape)
+    with pytest.raises(ValueError):
+        normalize_chunks([[-10, 30], [-10, 30]], shape)
+    with pytest.raises(ValueError):
+        normalize_chunks([5, 5, 5], shape)
+    with pytest.raises(ValueError):
+        normalize_chunks([[30, None], 10], shape)
+    with pytest.raises(ValueError):
+        normalize_chunks([10, np.array([-1, 2])], shape)
+
+
+def test_split(A):
+    results = A.ss.split([4, 3])
+    row_boundaries = [0, 4, 7]
+    col_boundaries = [0, 3, 6, 7]
+    for i, (i1, i2) in enumerate(zip(row_boundaries[:-1], row_boundaries[1:])):
+        for j, (j1, j2) in enumerate(zip(col_boundaries[:-1], col_boundaries[1:])):
+            expected = A[i1:i2, j1:j2].new()
+            assert expected.isequal(results[i][j])
+    with pytest.raises(DimensionMismatch):
+        A.ss.split([[5, 5], 3])

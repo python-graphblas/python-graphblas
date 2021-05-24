@@ -29,7 +29,7 @@ class Matrix(BaseType):
     High-level wrapper around GrB_Matrix type
     """
 
-    __slots__ = "_nrows", "_ncols", "ss"
+    __slots__ = "_nrows", "_ncols", "ss", "_keepalive"
     _is_transposed = False
     _name_counter = itertools.count()
 
@@ -38,6 +38,7 @@ class Matrix(BaseType):
             name = f"M_{next(Matrix._name_counter)}"
         self._nrows = None
         self._ncols = None
+        self._keepalive = None
         super().__init__(gb_obj, dtype, name)
         # Add ss extension methods
         self.ss = ss(self)

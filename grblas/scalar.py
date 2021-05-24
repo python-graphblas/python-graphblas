@@ -49,6 +49,9 @@ class Scalar(BaseType):
     def __int__(self):
         return int(self.value)
 
+    def __complex__(self):
+        return complex(self.value)
+
     def __neg__(self):
         dtype = self.dtype
         if dtype.name[0] == "U" or dtype.name == "BOOL":

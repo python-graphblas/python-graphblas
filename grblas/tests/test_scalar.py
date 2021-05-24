@@ -90,8 +90,12 @@ def test_equal(s):
 
 def test_casting(s):
     assert int(s) == 5
+    assert type(int(s)) is int
     assert float(s) == 5.0
+    assert type(float(s)) is float
     assert range(s) == range(5)
+    assert complex(s) == complex(5)
+    assert type(complex(s)) is complex
 
 
 def test_truthy(s):

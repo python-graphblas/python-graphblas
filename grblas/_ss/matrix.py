@@ -1,13 +1,14 @@
 import grblas as gb
 import numpy as np
 from numba import njit
+from numbers import Integral, Number
 from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
 from .. import ffi, lib
-from ..base import call
+from ..base import call, record_raw
 from ..dtypes import lookup_dtype, INT64
 from ..exceptions import check_status, check_status_carg
 from ..scalar import _CScalar
-from ..utils import get_shape, ints_to_numpy_buffer, values_to_numpy_buffer, wrapdoc
+from ..utils import get_shape, ints_to_numpy_buffer, values_to_numpy_buffer, wrapdoc, _CArray
 
 ffi_new = ffi.new
 
@@ -147,6 +148,80 @@ def head(matrix, n=10, *, sort=False, dtype=None):
     return rows, cols, vals
 
 
+# 10                        -> ((10, 10), (10, 10))
+# (10, 10)                  -> ((10, 10), (10, 10))
+# (None, 10)                -> ((20,), (10, 10))
+# (10, (10, 10))            -> ((10, 10), (10, 10))
+# 15                        -> ((15, 5), (15, 5))
+# ((5, None), (None, 5))    -> ((5, 15), (15, 5))
+def normalize_chunks(chunks, shape):
+    if isinstance(chunks, (list, tuple)):
+        pass
+    elif isinstance(chunks, Number):
+        chunks = (chunks, chunks)
+    elif isinstance(chunks, np.ndarray):
+        chunks = chunks.tolist()
+    else:
+        raise TypeError("TODO")
+    if len(chunks) != 2:
+        raise ValueError("TODO")
+    chunksizes = []
+    for size, chunk in zip(shape, chunks):
+        if chunk is None:
+            cur_chunks = [size]
+        elif isinstance(chunk, Integral) or isinstance(chunk, float) and chunk.is_integer():
+            chunk = int(chunk)
+            if chunk < 0:
+                raise ValueError(f"Chunksize must be greater than 0; got: {chunk}")
+            div, mod = divmod(size, chunk)
+            cur_chunks = [chunk] * div
+            if mod:
+                cur_chunks.append(mod)
+        elif isinstance(chunk, (list, tuple)):
+            cur_chunks = []
+            none_index = None
+            for c in chunk:
+                if isinstance(c, Integral) or isinstance(c, float) and c.is_integer():
+                    c = int(c)
+                    if c < 0:
+                        raise ValueError(f"Chunksize must be greater than 0; got: {c}")
+                elif c is None:
+                    if none_index is not None:
+                        raise TypeError("TODO")
+                    none_index = len(cur_chunks)
+                    c = 0
+                elif c is not None:
+                    raise TypeError("TODO")
+                cur_chunks.append(c)
+            if none_index is not None:
+                fill = size - sum(cur_chunks)
+                if fill < 0:
+                    raise ValueError("TODO")
+                cur_chunks[none_index] = fill
+        elif isinstance(chunk, np.ndarray):
+            if not np.issubdtype(chunk.dtype, np.integer):
+                raise TypeError("TODO")
+            if chunk.ndim != 1:
+                raise TypeError("TODO")
+            if (chunk < 0).any():
+                raise ValueError("TODO")
+            cur_chunks = chunk.tolist()
+        else:
+            raise TypeError("TODO")
+        chunksizes.append(cur_chunks)
+    return chunksizes
+
+
+class MatrixArray:
+    __slots__ = "_carg", "_exc_arg", "name"
+
+    def __init__(self, matrices, exc_arg, *, name):
+        self._carg = matrices
+        self._exc_arg = exc_arg
+        self.name = name
+        record_raw(f"GrB_Matrix {name}[{len(matrices)}];")
+
+
 class ss:
     __slots__ = "_parent"
 
@@ -207,6 +282,45 @@ class ss:
         """
         self._parent._expect_type(vector, gb.Vector, within="ss.diag", argname="vector")
         call("GxB_Matrix_diag", [self._parent, vector, _CScalar(k, dtype=INT64), None])
+
+    def split(self, chunks, *, name=None):
+        """
+        GxB_Matrix_split
+        """
+        from ..matrix import Matrix
+
+        tile_nrows, tile_ncols = normalize_chunks(chunks, self._parent.shape)
+        m = len(tile_nrows)
+        n = len(tile_ncols)
+        tiles = ffi.new("GrB_Matrix[]", m * n)
+        call(
+            "GxB_Matrix_split",
+            [
+                MatrixArray(tiles, self._parent, name="tiles"),
+                _CScalar(m),
+                _CScalar(n),
+                _CArray(tile_nrows),
+                _CArray(tile_ncols),
+                self._parent,
+                None,
+            ],
+        )
+        rv = []
+        dtype = self._parent.dtype
+        if name is None:
+            name = self._parent.name
+        index = 0
+        for i, nrows in enumerate(tile_nrows):
+            cur = []
+            for j, ncols in enumerate(tile_ncols):
+                tile = Matrix(ffi.addressof(tiles, index), dtype, name=f"{name}_{i}x{j}")
+                tile._keepalive = tiles
+                tile._nrows = nrows
+                tile._ncols = ncols
+                cur.append(tile)
+                index += 1
+            rv.append(cur)
+        return rv
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
         """
