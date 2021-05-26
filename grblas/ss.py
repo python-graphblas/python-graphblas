@@ -3,6 +3,7 @@ from .dtypes import INT64
 from .matrix import Matrix, TransposedMatrix
 from .scalar import Scalar
 from .vector import Vector
+from ._ss.matrix import _concat_mn
 
 
 class _grblas_ss:
@@ -55,4 +56,15 @@ def diag(x, k=0, *, dtype=None, name=None):
             size = 0
         rv = Vector.new(dtype, size=size, name=name)
         rv.ss.diag(x, k)
+    return rv
+
+
+def concat(tiles, *, dtype=None, name=None):
+    m, n = _concat_mn(tiles)
+    if dtype is None:
+        dtype = tiles[0][0].dtype
+    nrows = sum(row_tiles[0]._nrows for row_tiles in tiles)
+    ncols = sum(tile._ncols for tile in tiles[0])
+    rv = Matrix.new(dtype, nrows=nrows, ncols=ncols, name=name)
+    rv.ss._concat(tiles, m, n)
     return rv

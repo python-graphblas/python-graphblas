@@ -227,10 +227,39 @@ def normalize_chunks(chunks, shape):
     return chunksizes
 
 
+def _concat_mn(tiles):
+    from ..matrix import Matrix
+
+    if not isinstance(tiles, (list, tuple)):
+        raise TypeError(f"tiles argument must be list or tuple; got: {type(tiles)}")
+    if not tiles:
+        raise ValueError("tiles argument must not be empty")
+    m = len(tiles)
+    n = None
+    for row_tiles in tiles:
+        if not isinstance(row_tiles, (list, tuple)):
+            raise TypeError(f"tiles must be lists or tuples; got: {type(row_tiles)}")
+        if n is None:
+            n = len(row_tiles)
+            if n == 0:
+                raise ValueError("tiles must not be empty")
+        elif len(row_tiles) != n:
+            raise ValueError(
+                f"tiles must all be the same length; got tiles of length {n} and "
+                f"{len(row_tiles)}"
+            )
+        for tile in row_tiles:
+            if type(tile) is not Matrix:
+                raise TypeError(
+                    f"Bad tile type in concat.  Each tile must be a Matrix; got {type(tile)}"
+                )
+    return m, n
+
+
 class MatrixArray:
     __slots__ = "_carg", "_exc_arg", "name"
 
-    def __init__(self, matrices, exc_arg, *, name):
+    def __init__(self, matrices, exc_arg=None, *, name):
         self._carg = matrices
         self._exc_arg = exc_arg
         self.name = name
@@ -336,6 +365,31 @@ class ss:
                 index += 1
             rv.append(cur)
         return rv
+
+    def _concat(self, tiles, m, n):
+        ctiles = ffi.new("GrB_Matrix[]", m * n)
+        index = 0
+        for row_tiles in tiles:
+            for tile in row_tiles:
+                ctiles[index] = tile.gb_obj[0]
+                index += 1
+        call(
+            "GxB_Matrix_concat",
+            [
+                self._parent,
+                MatrixArray(ctiles, name="tiles"),
+                _CScalar(m),
+                _CScalar(n),
+                None,
+            ],
+        )
+
+    def concat(self, tiles):
+        """
+        GxB_Matrix_concat
+        """
+        m, n = _concat_mn(tiles)
+        self._concat(tiles, m, n)
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
         """
@@ -759,7 +813,7 @@ class ss:
         else:
             raise ValueError(f"Invalid format: {format}")
 
-        if is_uniform[0]:  # pragma: no cover
+        if is_uniform[0]:
             rv["is_uniform"] = True
         rv["format"] = format
         rv["values"] = values

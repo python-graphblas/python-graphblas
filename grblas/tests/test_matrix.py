@@ -1805,3 +1805,37 @@ def test_split(A):
                 assert expected.isequal(results[i][j])
     with pytest.raises(DimensionMismatch):
         A.ss.split([[5, 5], 3])
+
+
+def test_concat(A):
+    B1 = grblas.ss.concat([[A, A]], dtype=float)
+    assert B1.dtype == "FP64"
+    expected = Matrix.new(A.dtype, nrows=A.nrows, ncols=2 * A.ncols)
+    expected[:, : A.ncols] = A
+    expected[:, A.ncols :] = A
+    assert B1.isequal(expected)
+
+    B2 = Matrix.new(A.dtype, nrows=2 * A.nrows, ncols=A.ncols)
+    B2.ss.concat([[A], [A]])
+    expected = Matrix.new(A.dtype, nrows=2 * A.nrows, ncols=A.ncols)
+    expected[: A.nrows, :] = A
+    expected[A.nrows :, :] = A
+    assert B2.isequal(expected)
+
+    tiles = A.ss.split([4, 3])
+    A2 = grblas.ss.concat(tiles)
+    assert A2.isequal(A)
+
+    with pytest.raises(TypeError, match="tiles argument must be list or tuple"):
+        grblas.ss.concat(1)
+    with pytest.raises(TypeError, match="Each tile must be a Matrix"):
+        grblas.ss.concat([[A.T]])
+    with pytest.raises(TypeError, match="tiles must be lists or tuples"):
+        grblas.ss.concat([A])
+
+    with pytest.raises(ValueError, match="tiles argument must not be empty"):
+        grblas.ss.concat([])
+    with pytest.raises(ValueError, match="tiles must not be empty"):
+        grblas.ss.concat([[]])
+    with pytest.raises(ValueError, match="tiles must all be the same length"):
+        grblas.ss.concat([[A], [A, A]])

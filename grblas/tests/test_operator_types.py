@@ -47,7 +47,6 @@ BINARY = {
     },
     (INT, INT): {"band", "bclr", "bget", "bor", "bset", "bshift", "bxnor", "bxor"},
     (NOFC, BOOL): {"ge", "gt", "land", "le", "lor", "lt", "lxnor", "lxor"},
-    # (NOFC, BOOL): {"lxnor"},
     (NOFC, FC): {"cmplx"},
     (NOFC, FP): {"atan2", "copysign", "fmod", "hypot", "ldexp", "remainder"},
     (NOFC, FPINT): {"floordiv"},

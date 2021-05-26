@@ -287,7 +287,7 @@ class ss:
         else:
             raise ValueError(f"Invalid format: {format}")
 
-        if is_uniform[0]:  # pragma: no cover
+        if is_uniform[0]:
             rv["is_uniform"] = True
         rv.update(
             format=format,

@@ -200,9 +200,9 @@ class Scalar(BaseType):
     def _deserialize(value, dtype, name):
         return Scalar.from_value(value, dtype=dtype, name=name)
 
-    if backend == "pygraphblas":
+    if backend == "suitesparse":
 
-        def to_pygraphblas(self):
+        def to_pygraphblas(self):  # pragma: no cover
             """Convert to a new `pygraphblas.Scalar`
 
             This copies data.
@@ -212,11 +212,15 @@ class Scalar(BaseType):
             return pg.Scalar.from_value(self.value)
 
         @classmethod
-        def from_pygraphblas(cls, scalar):
+        def from_pygraphblas(cls, scalar):  # pragma: no cover
             """Convert a `pygraphblas.Scalar` to a new `grblas.Scalar`
 
             This copies data.
             """
+            import pygraphblas as pg
+
+            if not isinstance(scalar, pg.Scalar):
+                raise TypeError(f"Expected pygraphblas.Scalar object.  Got type: {type(scalar)}")
             dtype = lookup_dtype(scalar.gb_type)
             return cls.from_value(scalar[0], dtype)
 
