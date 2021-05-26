@@ -121,7 +121,7 @@ jobs:
           source "$CONDA/etc/profile.d/conda.sh"
           conda config --set always_yes yes --set changeps1 no
           conda update -q conda
-          conda create -n coveralls_final -c conda-forge python=3.8 coveralls
+          conda create -n coveralls_final -c conda-forge python=3.9 coveralls
       - name: Coveralls Finished
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

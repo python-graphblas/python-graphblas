@@ -148,13 +148,21 @@ def head(matrix, n=10, *, sort=False, dtype=None):
     return rows, cols, vals
 
 
-# 10                        -> ((10, 10), (10, 10))
-# (10, 10)                  -> ((10, 10), (10, 10))
-# (None, 10)                -> ((20,), (10, 10))
-# (10, (10, 10))            -> ((10, 10), (10, 10))
-# 15                        -> ((15, 5), (15, 5))
-# ((5, None), (None, 5))    -> ((5, 15), (15, 5))
 def normalize_chunks(chunks, shape):
+    """Normalize chunks argument for use by `Matrix.ss.split`.
+
+    Examples
+    --------
+    >>> shape = (10, 20)
+    >>> normalize_chunks(10, shape)
+    [(10,), (10, 10)]
+    >>> normalize_chunks((10, 10), shape)
+    [(10,), (10, 10)]
+    >>> normalize_chunks([None, (5, 15)], shape)
+    [(10,), (5, 15)]
+    >>> normalize_chunks((5, (5, None)), shape)
+    [(5, 5), (5, 15)]
+    """
     if isinstance(chunks, (list, tuple)):
         pass
     elif isinstance(chunks, Number):
@@ -228,6 +236,7 @@ def normalize_chunks(chunks, shape):
 
 
 def _concat_mn(tiles):
+    """Argument checking for `Matrix.ss.concat` and returns number of tiles in each dimension"""
     from ..matrix import Matrix
 
     if not isinstance(tiles, (list, tuple)):
@@ -330,6 +339,28 @@ class ss:
     def split(self, chunks, *, name=None):
         """
         GxB_Matrix_split
+
+        Split a Matrix into a 2D array of sub-matrices according to `chunks`.
+
+        This performs the opposite operation as ``concat``.
+
+        `chunks` is short for "chunksizes" and indicates the chunk sizes for each dimension.
+        `chunks` may be a single integer, or a length 2 tuple or list.  Example chunks:
+
+        - ``chunks=10``
+            - Split each dimension into chunks of size 10 (the last chunk may be smaller).
+        - ``chunks=(10, 20)``
+            - Split rows into chunks of size 10 and columns into chunks of size 20.
+        - ``chunks=(None, [5, 10])``
+            - Don't split rows into chunks, and split columns into two chunks of size 5 and 10.
+        ` ``chunks=(10, [20, None])``
+            - Split columns into two chunks of size 20 and ``ncols - 20``
+
+        See Also
+        --------
+        Matrix.ss.concat
+        grblas.ss.concat
+
         """
         from ..matrix import Matrix
 
@@ -387,6 +418,18 @@ class ss:
     def concat(self, tiles):
         """
         GxB_Matrix_concat
+
+        Concatenate a 2D list of Matrix objects into the current Matrix.
+        Any existing values in the current Matrix will be discarded.
+        To concatenate into a new Matrix, use `grblas.ss.concat`.
+
+        This performs the opposite operation as ``split``.
+
+        See Also
+        --------
+        Matrix.ss.split
+        grblas.ss.concat
+
         """
         m, n = _concat_mn(tiles)
         self._concat(tiles, m, n)

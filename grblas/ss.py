@@ -60,6 +60,20 @@ def diag(x, k=0, *, dtype=None, name=None):
 
 
 def concat(tiles, *, dtype=None, name=None):
+    """
+    GxB_Matrix_concat
+
+    Concatenate a 2D list of Matrix objects into a new Matrix.
+    To concatenate into an existing Matrix, use ``Matrix.ss.concat``.
+
+    This performs the opposite operation as ``split``.
+
+    See Also
+    --------
+    Matrix.ss.split
+    Matrix.ss.concat
+
+    """
     m, n = _concat_mn(tiles)
     if dtype is None:
         dtype = tiles[0][0].dtype
