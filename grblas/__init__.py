@@ -46,6 +46,7 @@ _SPECIAL_ATTRS = {
     "tests",
     "utils",
     "_ss",
+    "ss",
 }
 
 
@@ -53,7 +54,7 @@ def __getattr__(name):
     """Auto-initialize if special attrs used without explicit init call by user"""
     if name in _SPECIAL_ATTRS:
         if _init_params is None:
-            _init("suitesparse", True, automatic=True)
+            _init("suitesparse", False, automatic=True)
         if name not in globals():
             _load(name)
         return globals()[name]
@@ -70,17 +71,10 @@ def init(backend="suitesparse", blocking=False):
 
     Parameters
     ----------
-    backend : str, {"suitesparse", "pygraphblas"}
+    backend : str, one of {"suitesparse"}
     blocking : bool
         Whether to call GrB_init with GrB_BLOCKING or GrB_NONBLOCKING
 
-    The "pygraphblas" backend uses the pygraphblas Python package.
-    If this backend is chosen, then GrB_init is not called (we defer to pygraphblas)
-    and the `blocking` parameter is ignored.
-
-    Choosing "pygraphblas" allows objects to be converted between the two libraries.
-    Specifically, `Scalar`, `Vector`, and `Matrix` objects from `grblas` will now
-    have `to_pygraphblas` and `from_pygraphblas` methods.
     """
     _init(backend, blocking)
 
@@ -103,14 +97,7 @@ def _init(backend_arg, blocking, automatic=False):
         return
 
     backend = backend_arg
-    if backend == "pygraphblas":
-        import _pygraphblas, pygraphblas  # noqa
-
-        lib = _pygraphblas.lib
-        ffi = _pygraphblas.ffi
-        # I think pygraphblas is only non-blocking.
-        # Don't call GrB_init; defer to pygraphblas.
-    else:
+    if backend == "suitesparse":
         from suitesparse_graphblas import lib, ffi, initialize, is_initialized
 
         if is_initialized():
@@ -123,6 +110,8 @@ def _init(backend_arg, blocking, automatic=False):
                 )
         else:
             initialize(blocking=blocking)
+    else:
+        raise ValueError(f'Bad backend name.  Must be "suitesparse".  Got: {backend}')
     _init_params = passed_params
 
 

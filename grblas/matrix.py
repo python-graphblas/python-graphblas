@@ -1020,9 +1020,9 @@ class Matrix(BaseType):
         col, _ = resolved_indexes.indices[1]
         call("GrB_Matrix_removeElement", [self, row, col])
 
-    if backend == "pygraphblas":
+    if backend == "suitesparse":
 
-        def to_pygraphblas(self):
+        def to_pygraphblas(self):  # pragma: no cover
             """Convert to a new `pygraphblas.Matrix`
 
             This does not copy data.
@@ -1037,7 +1037,7 @@ class Matrix(BaseType):
             return matrix
 
         @classmethod
-        def from_pygraphblas(cls, matrix):
+        def from_pygraphblas(cls, matrix):  # pragma: no cover
             """Convert a `pygraphblas.Matrix` to a new `grblas.Matrix`
 
             This does not copy data.
@@ -1045,6 +1045,10 @@ class Matrix(BaseType):
             This gives control of the underlying GraphBLAS object to `grblas`.
             This means operations on the original `pygraphblas` object will fail!
             """
+            import pygraphblas as pg
+
+            if not isinstance(matrix, pg.Matrix):
+                raise TypeError(f"Expected pygraphblas.Matrix object.  Got type: {type(matrix)}")
             dtype = lookup_dtype(matrix.gb_type)
             rv = cls(matrix.matrix, dtype)
             rv._nrows = matrix.nrows

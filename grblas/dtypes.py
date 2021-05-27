@@ -1,4 +1,3 @@
-import re
 import numpy as np
 import numba
 from . import lib
@@ -51,11 +50,12 @@ UINT16 = DataType("UINT16", lib.GrB_UINT16, "GrB_UINT16", "uint16_t", numba.type
 INT32 = DataType("INT32", lib.GrB_INT32, "GrB_INT32", "int32_t", numba.types.int32, np.int32)
 UINT32 = DataType("UINT32", lib.GrB_UINT32, "GrB_UINT32", "uint32_t", numba.types.uint32, np.uint32)
 INT64 = DataType("INT64", lib.GrB_INT64, "GrB_INT64", "int64_t", numba.types.int64, np.int64)
-UINT64 = DataType("UINT64", lib.GrB_UINT64, "GrB_UINT64", "uint64_t", numba.types.uint64, np.uint64)
 # _Index (like UINT64) is for internal use only and shouldn't be exposed to the user
 _INDEX = DataType("UINT64", lib.GrB_UINT64, "GrB_Index", "GrB_Index", numba.types.uint64, np.uint64)
+UINT64 = DataType("UINT64", lib.GrB_UINT64, "GrB_UINT64", "uint64_t", numba.types.uint64, np.uint64)
 FP32 = DataType("FP32", lib.GrB_FP32, "GrB_FP32", "float", numba.types.float32, np.float32)
 FP64 = DataType("FP64", lib.GrB_FP64, "GrB_FP64", "double", numba.types.float64, np.float64)
+
 if _supports_complex and hasattr(lib, "GxB_FC32"):  # pragma: no branch
     FC32 = DataType(
         "FC32", lib.GxB_FC32, "GxB_FC32", "float _Complex", numba.types.complex64, np.complex64
@@ -162,9 +162,6 @@ def lookup_dtype(key):
     raise ValueError(f"Unknown dtype: {key}")
 
 
-_bits_pattern = re.compile(r"\D+(\d+)$")
-
-
 def unify(type1, type2):
     """
     Returns a type that can hold both type1 and type2
@@ -183,8 +180,8 @@ def unify(type1, type2):
     if type2 == BOOL:
         return type1
     # Compute bit numbers for comparison
-    num1 = int(_bits_pattern.match(type1.name).group(1))
-    num2 = int(_bits_pattern.match(type2.name).group(1))
+    num1 = 8 if type1.name[-1] == "8" else int(type1.name[-2:])
+    num2 = 8 if type2.name[-1] == "8" else int(type2.name[-2:])
 
     # Same type with different numbers is easy: choose the larger one
     if type1.name[1] == type2.name[1]:

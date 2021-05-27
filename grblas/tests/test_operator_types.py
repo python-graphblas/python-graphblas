@@ -10,7 +10,7 @@ FPINT = frozenset(FP | INT)
 NOFC = frozenset(BOOL | FPINT)
 if dtypes._supports_complex:
     FC = frozenset({"FC32", "FC64"})
-else:
+else:  # pragma: no cover
     FC = frozenset()
 FCFP = frozenset(FC | FP)
 ALL = frozenset(NOFC | FC)
@@ -47,7 +47,6 @@ BINARY = {
     },
     (INT, INT): {"band", "bclr", "bget", "bor", "bset", "bshift", "bxnor", "bxor"},
     (NOFC, BOOL): {"ge", "gt", "land", "le", "lor", "lt", "lxnor", "lxor"},
-    # (NOFC, BOOL): {"lxnor"},
     (NOFC, FC): {"cmplx"},
     (NOFC, FP): {"atan2", "copysign", "fmod", "hypot", "ldexp", "remainder"},
     (NOFC, FPINT): {"floordiv"},
@@ -55,10 +54,11 @@ BINARY = {
 }
 MONOID = {
     (UINT, UINT): {"band", "bor", "bxnor", "bxor"},
-    (BOOL, BOOL): {"eq", "land", "lor", "lxnor", "lxor"},
-    (FPINT, FPINT): {"max", "min"},  # max[bool] -> lor, min[bool] -> land
-    (NOBOOL, NOBOOL): {"plus", "times"},  # plus[bool] -> lor, times[bool] -> land
-    (ALL, ALL): {"any"},
+    (BOOL, BOOL): {"eq"},
+    (NOFC, BOOL): {"land", "lor", "lxnor", "lxor"},  # others coerced to bool
+    (NOFC, NOFC): {"max", "min"},  # max[bool] -> lor, min[bool] -> land
+    (NOBOOL, NOBOOL): {"plus"},
+    (ALL, ALL): {"any", "times"},  # times[bool] -> land
 }
 
 _SEMIRING1 = {
@@ -143,7 +143,7 @@ def _run_test(module, typ, expected):
         key = (frozenset(val.types.keys()), frozenset(val.types.values()))
         seen[key].add(name)
     seen = dict(seen)
-    if seen != expected:
+    if seen != expected:  # pragma: no cover
         seen_names = set()
         for names in seen.values():
             seen_names.update(names)

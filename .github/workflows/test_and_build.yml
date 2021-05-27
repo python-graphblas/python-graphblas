@@ -16,18 +16,16 @@ jobs:
       matrix:
         pyver: [3.7, 3.8, 3.9]
         testopts:
-          - "--blocking --record"
-          - "--backend=pygraphblas"
+          - "--blocking"
           - "--non-blocking --record --runslow"
         sourcetype:
           - "wheel"
-          # - "source"  # dope!  I broke it.
+          - "source"
           - "upstream"
+          - "conda-forge"
         exclude:
           - sourcetype: "upstream"
             testopts: "--non-blocking --record --runslow"
-          - sourcetype: "upstream"
-            testopts: "--backend=pygraphblas"
 
     steps:
       - name: Checkout
@@ -55,26 +53,29 @@ jobs:
           if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then
               pip install suitesparse-graphblas
           else
-              conda install -c conda-forge graphblas
+              conda install -c conda-forge graphblas=5.0.3
           fi
-          if [[ ${{ matrix.sourcetype }} == "source" ]]; then pip install --no-binary=all suitesparse-graphblas ; fi
-          # I can't get pip install from git to work, so git clone instead.
-          # pip install git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
-          if [[ ${{ matrix.sourcetype }} == "upstream" ]]; then
+          if [[ ${{ matrix.sourcetype }} == "source" ]]; then
+              pip install --no-binary=all suitesparse-graphblas
+          elif [[ ${{ matrix.sourcetype }} == "upstream" ]]; then
+              # I can't get pip install from git to work, so git clone instead.
+              # pip install git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
               conda install -c conda-forge cython
               git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
               pushd ssgb
               python setup.py install
               popd
+          elif [[ ${{ matrix.sourcetype }} == "conda-forge" ]]; then
+              conda install -c conda-forge python-suitesparse-graphblas
           fi
           python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
           python setup.py develop
-      - name: Optional pygraphblas
-        if: contains(matrix.testopts, 'pygraphblas') && (matrix.pyver != 3.9)
-        run: |
-          source "$CONDA/etc/profile.d/conda.sh"
-          conda activate grblas
-          conda install -c conda-forge pygraphblas
+      # - name: Optional pygraphblas
+      #   if: contains(matrix.testopts, 'pygraphblas') && (matrix.pyver != 3.9)
+      #   run: |
+      #     source "$CONDA/etc/profile.d/conda.sh"
+      #     conda activate grblas
+      #     conda install -c conda-forge pygraphblas
       - name: Verify build
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
@@ -82,9 +83,9 @@ jobs:
           # Make sure `from grblas import *` works as expected
           python -c "from grblas import * ; Matrix"
           # Make sure all top-level imports work
-          ( for attr in Matrix Scalar Vector Recorder backends base binary descriptor dtypes exceptions expr ffi formatting init io lib mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
+          ( for attr in Matrix Scalar Vector Recorder backends base binary descriptor dtypes exceptions expr ffi formatting init io lib mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
       - name: Unit tests
-        if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
+        # if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
@@ -93,7 +94,7 @@ jobs:
           coverage run -a --branch grblas/tests/test_auto_init.py
           coverage run -a --branch grblas/tests/test_external_init.py
       - name: Coverage
-        if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
+        # if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COVERALLS_FLAG_NAME: ${{ matrix.pyver}}/${{ matrix.testopts }}
@@ -104,7 +105,7 @@ jobs:
           coverage report --show-missing
           coveralls --service=github
       - name: Notebooks Execution check
-        if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
+        # if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
@@ -120,7 +121,7 @@ jobs:
           source "$CONDA/etc/profile.d/conda.sh"
           conda config --set always_yes yes --set changeps1 no
           conda update -q conda
-          conda create -n coveralls_final -c conda-forge python=3.8 coveralls
+          conda create -n coveralls_final -c conda-forge python=3.9 coveralls
       - name: Coveralls Finished
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

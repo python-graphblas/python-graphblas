@@ -16,6 +16,12 @@ _recorder = ContextVar("recorder")
 _prev_recorder = None
 
 
+def record_raw(text):
+    rec = _recorder.get(_prev_recorder)
+    if rec is not None:
+        rec.record_raw(text)
+
+
 def call(cfunc_name, args):
     call_args = [getattr(x, "_carg", x) if x is not None else NULL for x in args]
     cfunc = libget(cfunc_name)

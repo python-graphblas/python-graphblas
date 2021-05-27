@@ -49,6 +49,19 @@ class Scalar(BaseType):
     def __int__(self):
         return int(self.value)
 
+    def __complex__(self):
+        return complex(self.value)
+
+    def __neg__(self):
+        dtype = self.dtype
+        if dtype.name[0] == "U" or dtype.name == "BOOL":
+            raise TypeError(f"The negative operator, `-`, is not supported for {dtype.name} dtype")
+        rv = Scalar.new(dtype, name=f"-{self.name}")
+        if self.is_empty:
+            return rv
+        rv.value = -self.value
+        return rv
+
     __index__ = __int__
 
     def isequal(self, other, *, check_dtype=False):
@@ -187,9 +200,9 @@ class Scalar(BaseType):
     def _deserialize(value, dtype, name):
         return Scalar.from_value(value, dtype=dtype, name=name)
 
-    if backend == "pygraphblas":
+    if backend == "suitesparse":
 
-        def to_pygraphblas(self):
+        def to_pygraphblas(self):  # pragma: no cover
             """Convert to a new `pygraphblas.Scalar`
 
             This copies data.
@@ -199,11 +212,15 @@ class Scalar(BaseType):
             return pg.Scalar.from_value(self.value)
 
         @classmethod
-        def from_pygraphblas(cls, scalar):
+        def from_pygraphblas(cls, scalar):  # pragma: no cover
             """Convert a `pygraphblas.Scalar` to a new `grblas.Scalar`
 
             This copies data.
             """
+            import pygraphblas as pg
+
+            if not isinstance(scalar, pg.Scalar):
+                raise TypeError(f"Expected pygraphblas.Scalar object.  Got type: {type(scalar)}")
             dtype = lookup_dtype(scalar.gb_type)
             return cls.from_value(scalar[0], dtype)
 
@@ -257,9 +274,9 @@ class _CScalar:
 
     __slots__ = "scalar", "dtype"
 
-    def __init__(self, scalar):
+    def __init__(self, scalar, dtype=_INDEX):
         if type(scalar) is not Scalar:
-            scalar = Scalar.from_value(scalar, name="", dtype=_INDEX)
+            scalar = Scalar.from_value(scalar, name="", dtype=dtype)
         self.scalar = scalar
         self.dtype = scalar.dtype
 
