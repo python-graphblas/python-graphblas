@@ -1,8 +1,15 @@
+import pytest
 import grblas as gb
 
+try:
+    import pygraphblas as pg
+except ImportError:
+    pg = None
 
-def test_pygraphblas_matrix():
-    if gb.backend != "pygraphblas":
+
+@pytest.mark.skipif("not pg")
+def test_pygraphblas_matrix():  # pragma: no cover
+    if gb.backend != "suitesparse":  # pragma: no cover
         return
     import pygraphblas as pg
 
@@ -16,8 +23,9 @@ def test_pygraphblas_matrix():
     assert A.dtype == A2.dtype
 
 
-def test_pygraphblas_vector():
-    if gb.backend != "pygraphblas":
+@pytest.mark.skipif("not pg")
+def test_pygraphblas_vector():  # pragma: no cover
+    if gb.backend != "suitesparse":  # pragma: no cover
         return
     import pygraphblas as pg
 
@@ -31,8 +39,9 @@ def test_pygraphblas_vector():
     assert v.dtype == v2.dtype
 
 
-def test_pygraphblas_scalar():
-    if gb.backend != "pygraphblas":
+@pytest.mark.skipif("not pg")
+def test_pygraphblas_scalar():  # pragma: no cover
+    if gb.backend != "suitesparse":  # pragma: no cover
         return
     import pygraphblas as pg
 

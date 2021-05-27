@@ -1556,7 +1556,11 @@ def test_import_export_auto(A):
             A2 = A.dup() if give_ownership else A
             d = A2.ss.export(format, sort=sort, raw=raw, give_ownership=give_ownership)
             d["format"] = import_format
-            other = import_func(take_ownership=take_ownership, **d)
+            try:
+                other = import_func(take_ownership=take_ownership, **d)
+            except Exception:  # pragma: no cover
+                print(dict(take_ownership=take_ownership, **d))
+                raise
             if (
                 format == "bitmapc"
                 and raw
@@ -1720,3 +1724,118 @@ def test_not_to_array(A):
         TypeError, match="TransposedMatrix can't be directly converted to a numpy array"
     ):
         np.array(A.T)
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        (0, [], []),
+        (1, [0, 4], [2, 7]),
+        (3, [0, 1, 2], [3, 8, 1]),
+        (10, [], []),
+        (-1, [2], [3]),
+        (-3, [0, 2, 3], [3, 1, 7]),
+        (-10, [], []),
+    ],
+)
+def test_diag(A, params):
+    k, indices, values = params
+    expected = Vector.from_values(indices, values, dtype=A.dtype, size=max(0, A.nrows - abs(k)))
+    v = grblas.ss.diag(A, k=k)
+    assert expected.isequal(v)
+    v[:] = 0
+    v.ss.diag(A, k=k)
+    assert expected.isequal(v)
+    v = grblas.ss.diag(A.T, k=-k)
+    assert expected.isequal(v)
+    v[:] = 0
+    v.ss.diag(A.T, -k)
+    assert expected.isequal(v)
+
+
+def test_normalize_chunks():
+    from grblas._ss.matrix import normalize_chunks
+
+    shape = (20, 20)
+    assert normalize_chunks(10, shape) == [[10, 10], [10, 10]]
+    assert normalize_chunks(15.0, shape) == [[15, 5], [15, 5]]
+    assert normalize_chunks(((10, 10), [10, 10]), shape) == [[10, 10], [10, 10]]
+    assert normalize_chunks((15, [10, 10.0]), shape) == [[15, 5], [10, 10]]
+    assert normalize_chunks((None, np.array([10, 10])), shape) == [[20], [10, 10]]
+    assert normalize_chunks([[5, None], (None, 6)], shape) == [[5, 15], [14, 6]]
+    assert normalize_chunks(np.array([10, 10]), shape) == [[10, 10], [10, 10]]
+
+    with pytest.raises(TypeError, match="chunks argument must be a list"):
+        normalize_chunks(None, shape)
+    with pytest.raises(TypeError, match="None value in chunks"):
+        normalize_chunks([[5, 5, None, None], 10], shape)
+    with pytest.raises(TypeError, match="expected int or None, but got"):
+        normalize_chunks([[15.5, 4.5], 10], shape)
+    with pytest.raises(TypeError, match="Chunks for a dimension must be"):
+        normalize_chunks([10, 10.5], shape)
+    with pytest.raises(TypeError, match="must be integer dtype; got float64"):
+        normalize_chunks([10, np.array([1.5, 2.5])], shape)
+    with pytest.raises(TypeError, match="numpy array for chunks must be 1-dimension"):
+        normalize_chunks([10, np.array([[1, 2], [3, 4]])], shape)
+
+    with pytest.raises(ValueError, match="hunks argument must be of length 2"):
+        normalize_chunks([10], shape)
+    with pytest.raises(ValueError, match="Chunksize must be greater than 0"):
+        normalize_chunks(-10, shape)
+    with pytest.raises(ValueError, match="Chunksize must be greater than 0"):
+        normalize_chunks([-10, -10], shape)
+    with pytest.raises(ValueError, match="Chunksize must be greater than 0"):
+        normalize_chunks([[-10, 30], [-10, 30]], shape)
+    with pytest.raises(ValueError, match="chunks argument must be of length 2"):
+        normalize_chunks([5, 5, 5], shape)
+    with pytest.raises(ValueError, match="Chunks are too large"):
+        normalize_chunks([[30, None], 10], shape)
+    with pytest.raises(ValueError, match="Chunksize must be greater than 0"):
+        normalize_chunks([10, np.array([-1, 2])], shape)
+
+
+def test_split(A):
+    results = A.ss.split([4, 3])
+    for results in [A.ss.split([4, 3]), A.ss.split([[4, None], 3], name="split")]:
+        row_boundaries = [0, 4, 7]
+        col_boundaries = [0, 3, 6, 7]
+        for i, (i1, i2) in enumerate(zip(row_boundaries[:-1], row_boundaries[1:])):
+            for j, (j1, j2) in enumerate(zip(col_boundaries[:-1], col_boundaries[1:])):
+                expected = A[i1:i2, j1:j2].new()
+                assert expected.isequal(results[i][j])
+    with pytest.raises(DimensionMismatch):
+        A.ss.split([[5, 5], 3])
+
+
+def test_concat(A):
+    B1 = grblas.ss.concat([[A, A]], dtype=float)
+    assert B1.dtype == "FP64"
+    expected = Matrix.new(A.dtype, nrows=A.nrows, ncols=2 * A.ncols)
+    expected[:, : A.ncols] = A
+    expected[:, A.ncols :] = A
+    assert B1.isequal(expected)
+
+    B2 = Matrix.new(A.dtype, nrows=2 * A.nrows, ncols=A.ncols)
+    B2.ss.concat([[A], [A]])
+    expected = Matrix.new(A.dtype, nrows=2 * A.nrows, ncols=A.ncols)
+    expected[: A.nrows, :] = A
+    expected[A.nrows :, :] = A
+    assert B2.isequal(expected)
+
+    tiles = A.ss.split([4, 3])
+    A2 = grblas.ss.concat(tiles)
+    assert A2.isequal(A)
+
+    with pytest.raises(TypeError, match="tiles argument must be list or tuple"):
+        grblas.ss.concat(1)
+    with pytest.raises(TypeError, match="Each tile must be a Matrix"):
+        grblas.ss.concat([[A.T]])
+    with pytest.raises(TypeError, match="tiles must be lists or tuples"):
+        grblas.ss.concat([A])
+
+    with pytest.raises(ValueError, match="tiles argument must not be empty"):
+        grblas.ss.concat([])
+    with pytest.raises(ValueError, match="tiles must not be empty"):
+        grblas.ss.concat([[]])
+    with pytest.raises(ValueError, match="tiles must all be the same length"):
+        grblas.ss.concat([[A], [A, A]])

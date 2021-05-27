@@ -1,4 +1,5 @@
 import inspect
+import itertools
 import re
 import numpy as np
 import numba
@@ -170,7 +171,7 @@ class TypedBuiltinSemiring(TypedOpBase):
         monoid_name, binary_name = self.name.split("_", 1)
         binop = getattr(binary, binary_name)[self.type]
         val = getattr(monoid, monoid_name)
-        if binop.return_type not in val.types and binary_name in {"land", "lor", "lxor"}:
+        if binop.return_type not in val.types and binary_name in {"land", "lor", "lxor", "lxnor"}:
             # e.g., with `plus_land`, `land` always returns a BOOL, but `plus` doesn't
             # operate on BOOL, so assume the return of `land` is coerced.
             return val[self.type]
@@ -378,7 +379,7 @@ class ParameterizedSemiring(ParameterizedUdf):
 
 
 class OpBase:
-    __slots__ = "name", "_typed_ops", "types", "_anonymous", "__weakref__"
+    __slots__ = "name", "_typed_ops", "types", "coercions", "_anonymous", "__weakref__"
     _parse_config = None
     _initialized = False
     _module = None
@@ -387,6 +388,7 @@ class OpBase:
         self.name = name
         self._typed_ops = {}
         self.types = {}
+        self.coercions = {}
         self._anonymous = anonymous
 
     def __repr__(self):
@@ -653,6 +655,45 @@ class UnaryOp(OpBase):
         if not hasattr(module, funcname):
             setattr(module, funcname, unary_op)
 
+    @classmethod
+    def _initialize(cls):
+        super()._initialize()
+        # Update type information with sane coercion
+        for names, *types in (
+            # fmt: off
+            (
+                (
+                    "erf", "erfc", "lgamma", "tgamma", "acos", "acosh", "asin", "asinh",
+                    "atan", "atanh", "ceil", "cos", "cosh", "exp", "exp2", "expm1", "floor",
+                    "log", "log10", "log1p", "log2", "round", "signum", "sin", "sinh", "sqrt",
+                    "tan", "tanh", "trunc",
+                ),
+                (("BOOL", "INT8", "INT16", "UINT8", "UINT16"), "FP32"),
+                (("INT32", "INT64", "UINT32", "UINT64"), "FP64"),
+            ),
+            (
+                ("positioni", "positioni1", "positionj", "positionj1"),
+                (
+                    (
+                        "BOOL", "FC32", "FC64", "FP32", "FP64", "INT8", "INT16",
+                        "UINT8", "UINT16", "UINT32", "UINT64",
+                    ),
+                    "INT64",
+                ),
+            ),
+            # fmt: on
+        ):
+            for name in names:
+                op = getattr(unary, name)
+                for input_types, target_type in types:
+                    typed_op = op._typed_ops[target_type]
+                    output_type = op.types[target_type]
+                    for dtype in input_types:
+                        if dtype not in op.types:
+                            op.types[dtype] = output_type
+                            op._typed_ops[dtype] = typed_op
+                            op.coercions[dtype] = target_type
+
     __call__ = TypedBuiltinUnaryOp.__call__
 
 
@@ -855,6 +896,54 @@ class BinaryOp(OpBase):
 
         BinaryOp.register_new("isclose", isclose, parameterized=True)
 
+        # Update type information with sane coercion
+        for names, *types in (
+            # fmt: off
+            (
+                ("atan2", "copysign", "fmod", "hypot", "ldexp", "remainder"),
+                (("BOOL", "INT8", "INT16", "UINT8", "UINT16"), "FP32"),
+                (("INT32", "INT64", "UINT32", "UINT64"), "FP64"),
+            ),
+            (
+                (
+                    "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1",
+                    "secondj", "secondj1",),
+                (
+                    (
+                        "BOOL", "FC32", "FC64", "FP32", "FP64", "INT8", "INT16",
+                        "UINT8", "UINT16", "UINT32", "UINT64",
+                    ),
+                    "INT64",
+                ),
+            ),
+            (
+                ["lxnor"],
+                (
+                    (
+                        "FP32", "FP64", "INT8", "INT16", "INT32", "INT64",
+                        "UINT8", "UINT16", "UINT32", "UINT64",
+                    ),
+                    "BOOL",
+                ),
+            ),
+            (
+                ["cmplx"],
+                (("BOOL", "INT8", "INT16", "UINT8", "UINT16"), "FP32"),
+                (("INT32", "INT64", "UINT32", "UINT64"), "FP64"),
+            ),
+            # fmt: on
+        ):
+            for name in names:
+                op = getattr(binary, name)
+                for input_types, target_type in types:
+                    typed_op = op._typed_ops[target_type]
+                    output_type = op.types[target_type]
+                    for dtype in input_types:
+                        if dtype not in op.types:  # pragma: no branch
+                            op.types[dtype] = output_type
+                            op._typed_ops[dtype] = typed_op
+                            op.coercions[dtype] = target_type
+
     def __init__(self, name, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
         self._monoid = None
@@ -959,6 +1048,40 @@ class Monoid(OpBase):
     @property
     def identities(self):
         return {dtype: val.identity for dtype, val in self._typed_ops.items()}
+
+    @classmethod
+    def _initialize(cls):
+        super()._initialize()
+        lor = monoid.lor._typed_ops["BOOL"]
+        land = monoid.land._typed_ops["BOOL"]
+        for cur_op, typed_op in [
+            (monoid.max, lor),
+            (monoid.min, land),
+            # (monoid.plus, lor),  # two choices: lor, or plus[int]
+            (monoid.times, land),
+        ]:
+            if "BOOL" not in cur_op.types:  # pragma: no branch
+                cur_op.types["BOOL"] = "BOOL"
+                cur_op.coercions["BOOL"] = "BOOL"
+                cur_op._typed_ops["BOOL"] = typed_op
+
+        for cur_op in (monoid.lor, monoid.land, monoid.lxnor, monoid.lxor):
+            for dtype in (
+                "FP32",
+                "FP64",
+                "INT8",
+                "INT16",
+                "INT32",
+                "INT64",
+                "UINT8",
+                "UINT16",
+                "UINT32",
+                "UINT64",
+            ):
+                assert dtype not in cur_op.types
+                cur_op.types[dtype] = "BOOL"
+                cur_op.coercions[dtype] = "BOOL"
+                cur_op._typed_ops[dtype] = lor
 
     __call__ = TypedBuiltinMonoid.__call__
 
@@ -1087,6 +1210,83 @@ class Semiring(OpBase):
         for orig_name, orig in div_semirings.items():
             cls.register_new(f"{orig_name[:-3]}truediv", orig.monoid, binary.truediv)
             cls.register_new(f"{orig_name[:-3]}floordiv", orig.monoid, binary.floordiv)
+
+        # Update type information with sane coercion
+        for lname in ("any", "eq", "land", "lor", "lxnor", "lxor"):
+            target_name = f"{lname}_ne"
+            source_name = f"{lname}_lxor"
+            if not hasattr(semiring, target_name):
+                continue
+            target_op = getattr(semiring, target_name)
+            if "BOOL" not in target_op.types:  # pragma: no branch
+                source_op = getattr(semiring, source_name)
+                typed_op = source_op._typed_ops["BOOL"]
+                target_op.types["BOOL"] = "BOOL"
+                target_op._typed_ops["BOOL"] = typed_op
+                target_op.coercions[dtype] = "BOOL"
+
+        for lnames, rnames, *types in (
+            # fmt: off
+            (
+                ("any", "max", "min", "plus", "times"),
+                (
+                    "firsti", "firsti1", "firstj", "firstj1",
+                    "secondi", "secondi1", "secondj", "secondj1",
+                ),
+                (
+                    (
+                        "BOOL", "FC32", "FC64", "FP32", "FP64", "INT8", "INT16",
+                        "UINT8", "UINT16", "UINT32", "UINT64",
+                    ),
+                    "INT64",
+                ),
+            ),
+            (
+                ("eq", "land", "lor", "lxnor", "lxor"),
+                ("first", "pair", "second"),
+                # TODO: check if FC coercion works here
+                (
+                    (
+                        "FC32", "FC64", "FP32", "FP64", "INT8", "INT16", "INT32", "INT64",
+                        "UINT8", "UINT16", "UINT32", "UINT64",
+                    ),
+                    "BOOL",
+                ),
+            ),
+            (
+                ("band", "bor", "bxnor", "bxor"),
+                ("band", "bor", "bxnor", "bxor"),
+                (["INT8"], "UINT16"),
+                (["INT16"], "UINT32"),
+                (["INT32"], "UINT64"),
+                (["INT64"], "UINT64"),
+            ),
+            (
+                ("any", "eq", "land", "lor", "lxnor", "lxor"),
+                ("eq", "land", "lor", "lxnor", "lxor", "ne"),
+                (
+                    (
+                        "FP32", "FP64", "INT8", "INT16", "INT32", "INT64",
+                        "UINT8", "UINT16", "UINT32", "UINT64",
+                    ),
+                    "BOOL",
+                ),
+            ),
+            # fmt: on
+        ):
+            for left, right in itertools.product(lnames, rnames):
+                name = f"{left}_{right}"
+                if not hasattr(semiring, name):
+                    continue
+                op = getattr(semiring, name)
+                for input_types, target_type in types:
+                    typed_op = op._typed_ops[target_type]
+                    output_type = op.types[target_type]
+                    for dtype in input_types:
+                        if dtype not in op.types:
+                            op.types[dtype] = output_type
+                            op._typed_ops[dtype] = typed_op
+                            op.coercions[dtype] = target_type
 
     def __init__(self, name, monoid=None, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)

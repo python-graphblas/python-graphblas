@@ -1,4 +1,3 @@
-import re
 import numpy as np
 import numba
 from . import lib
@@ -51,11 +50,12 @@ UINT16 = DataType("UINT16", lib.GrB_UINT16, "GrB_UINT16", "uint16_t", numba.type
 INT32 = DataType("INT32", lib.GrB_INT32, "GrB_INT32", "int32_t", numba.types.int32, np.int32)
 UINT32 = DataType("UINT32", lib.GrB_UINT32, "GrB_UINT32", "uint32_t", numba.types.uint32, np.uint32)
 INT64 = DataType("INT64", lib.GrB_INT64, "GrB_INT64", "int64_t", numba.types.int64, np.int64)
-UINT64 = DataType("UINT64", lib.GrB_UINT64, "GrB_UINT64", "uint64_t", numba.types.uint64, np.uint64)
 # _Index (like UINT64) is for internal use only and shouldn't be exposed to the user
 _INDEX = DataType("UINT64", lib.GrB_UINT64, "GrB_Index", "GrB_Index", numba.types.uint64, np.uint64)
+UINT64 = DataType("UINT64", lib.GrB_UINT64, "GrB_UINT64", "uint64_t", numba.types.uint64, np.uint64)
 FP32 = DataType("FP32", lib.GrB_FP32, "GrB_FP32", "float", numba.types.float32, np.float32)
 FP64 = DataType("FP64", lib.GrB_FP64, "GrB_FP64", "double", numba.types.float64, np.float64)
+
 if _supports_complex and hasattr(lib, "GxB_FC32"):  # pragma: no branch
     FC32 = DataType(
         "FC32", lib.GxB_FC32, "GxB_FC32", "float _Complex", numba.types.complex64, np.complex64
@@ -115,9 +115,12 @@ if _supports_complex:  # pragma: no branch
 
 for dtype in _dtypes_to_register:
     _registry[dtype.name] = dtype
+    _registry[dtype.name.lower()] = dtype
     _registry[dtype.gb_obj] = dtype
     _registry[dtype.gb_name] = dtype
+    _registry[dtype.gb_name.lower()] = dtype
     _registry[dtype.c_type] = dtype
+    _registry[dtype.c_type.upper()] = dtype
     _registry[dtype.numba_type] = dtype
     _registry[dtype.numba_type.name] = dtype
     val = _sample_values[dtype.name]
@@ -159,9 +162,6 @@ def lookup_dtype(key):
     raise ValueError(f"Unknown dtype: {key}")
 
 
-_bits_pattern = re.compile(r"\D+(\d+)$")
-
-
 def unify(type1, type2):
     """
     Returns a type that can hold both type1 and type2
@@ -170,7 +170,7 @@ def unify(type1, type2):
     unify(INT32, INT64) -> INT64
     unify(INT8, UINT16) -> INT32
     unify(BOOL, UINT16) -> UINT16
-    unify(FP32, INT32) -> FP32
+    unify(FP32, INT32) -> FP64
     """
     if type1 == type2:
         return type1
@@ -180,14 +180,27 @@ def unify(type1, type2):
     if type2 == BOOL:
         return type1
     # Compute bit numbers for comparison
-    num1 = int(_bits_pattern.match(type1.name).group(1))
-    num2 = int(_bits_pattern.match(type2.name).group(1))
-    # Floats anywhere requires floats
-    if type1.name[0] == "F" or type2.name[0] == "F":
-        return lookup_dtype(f"FP{max(num1, num2)}")
-    # Both ints or both uints is easy
-    if type1.name[0] == type2.name[0]:
+    num1 = 8 if type1.name[-1] == "8" else int(type1.name[-2:])
+    num2 = 8 if type2.name[-1] == "8" else int(type2.name[-2:])
+
+    # Same type with different numbers is easy: choose the larger one
+    if type1.name[1] == type2.name[1]:
         return type2 if num2 > num1 else type1
+    # One FC, one FP
+    if type1.name[0] == "F" and type2.name[0] == "F":
+        return lookup_dtype(f"FC{max(num1, num2)}")
+    # Float or complex with int
+    if type1.name[0] == "F":
+        maxnum = min(64, max(num1, 2 * num2))
+        if type1.name[1] == "C":
+            return lookup_dtype(f"FC{maxnum}")
+        return lookup_dtype(f"FP{maxnum}")
+    # Int with float or complex
+    if type2.name[0] == "F":
+        maxnum = min(64, max(2 * num1, num2))
+        if type2.name[1] == "C":
+            return lookup_dtype(f"FC{maxnum}")
+        return lookup_dtype(f"FP{maxnum}")
     # Mixed int/uint is a little harder
     # Need to double the uint bit number to safely store as int
     # Beyond 64, we have to move to float

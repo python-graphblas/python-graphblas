@@ -498,7 +498,7 @@ class Vector(BaseType):
         Reduce all values into a scalar
         Default op is monoid.lor for boolean and monoid.plus otherwise
         """
-        method_name = "reduce_scalar"
+        method_name = "reduce"
         op = get_typed_op(op, self.dtype)
         if op.opclass == "BinaryOp" and op.monoid is not None:
             op = op.monoid
@@ -612,9 +612,9 @@ class Vector(BaseType):
         index, _ = resolved_indexes.indices[0]
         call("GrB_Vector_removeElement", [self, index])
 
-    if backend == "pygraphblas":
+    if backend == "suitesparse":
 
-        def to_pygraphblas(self):
+        def to_pygraphblas(self):  # pragma: no cover
             """Convert to a new `pygraphblas.Vector`
 
             This does not copy data.
@@ -629,7 +629,7 @@ class Vector(BaseType):
             return vector
 
         @classmethod
-        def from_pygraphblas(cls, vector):
+        def from_pygraphblas(cls, vector):  # pragma: no cover
             """Convert a `pygraphblas.Vector` to a new `grblas.Vector`
 
             This does not copy data.
@@ -637,6 +637,10 @@ class Vector(BaseType):
             This gives control of the underlying GraphBLAS object to `grblas`.
             This means operations on the original `pygraphblas` object will fail!
             """
+            import pygraphblas as pg
+
+            if not isinstance(vector, pg.Vector):
+                raise TypeError(f"Expected pygraphblas.Vector object.  Got type: {type(vector)}")
             dtype = lookup_dtype(vector.gb_type)
             rv = cls(vector.vector, dtype)
             rv._size = vector.size

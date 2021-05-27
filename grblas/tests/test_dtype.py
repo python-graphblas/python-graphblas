@@ -1,10 +1,11 @@
 import pytest
+import itertools
 import numpy as np
 import pickle
 from grblas import dtypes, lib
 from grblas.dtypes import lookup_dtype
 
-all_dtypes = (
+all_dtypes = [
     dtypes.BOOL,
     dtypes.INT8,
     dtypes.INT16,
@@ -16,7 +17,10 @@ all_dtypes = (
     dtypes.UINT64,
     dtypes.FP32,
     dtypes.FP64,
-)
+]
+if dtypes._supports_complex:  # pragma: no branch
+    all_dtypes.append(dtypes.FC32)
+    all_dtypes.append(dtypes.FC64)
 
 
 def test_names():
@@ -92,8 +96,8 @@ def test_unify_dtypes():
     assert dtypes.unify(dtypes.INT16, dtypes.BOOL) == dtypes.INT16
     assert dtypes.unify(dtypes.INT16, dtypes.INT8) == dtypes.INT16
     assert dtypes.unify(dtypes.UINT32, dtypes.UINT8) == dtypes.UINT32
-    assert dtypes.unify(dtypes.UINT32, dtypes.FP32) == dtypes.FP32
-    assert dtypes.unify(dtypes.INT32, dtypes.FP32) == dtypes.FP32
+    assert dtypes.unify(dtypes.UINT32, dtypes.FP32) == dtypes.FP64
+    assert dtypes.unify(dtypes.INT32, dtypes.FP32) == dtypes.FP64
     assert dtypes.unify(dtypes.FP64, dtypes.UINT8) == dtypes.FP64
     assert dtypes.unify(dtypes.FP64, dtypes.FP32) == dtypes.FP64
     assert dtypes.unify(dtypes.INT16, dtypes.UINT16) == dtypes.INT32
@@ -129,3 +133,10 @@ def test_pickle():
     s = pickle.dumps(dtypes._INDEX)
     val2 = pickle.loads(s)
     assert dtypes._INDEX == val2
+
+
+def test_unify_matches_numpy():
+    for type1, type2 in itertools.product(all_dtypes, all_dtypes):
+        gb_type = dtypes.unify(type1, type2)
+        np_type = type(type1.np_type(0) + type2.np_type(0))
+        assert gb_type is lookup_dtype(np_type), f"({type1}, {type2}) -> {gb_type}"

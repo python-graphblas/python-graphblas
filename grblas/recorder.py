@@ -58,6 +58,10 @@ class Recorder:
         self.data.append(f'{cfunc_name}({", ".join(gbstr(x) for x in args)});')
         base._prev_recorder = self
 
+    def record_raw(self, text):
+        self.data.append(text)
+        base._prev_recorder = self
+
     def start(self):
         if self._token is None:
             self._prev_recorder = _recorder.get(base._prev_recorder)
@@ -71,6 +75,9 @@ class Recorder:
         if base._prev_recorder is self or base._prev_recorder is None:
             base._prev_recorder = _recorder.get(self._prev_recorder)
         self._prev_recorder = None
+
+    def clear(self):
+        self.data.clear()
 
     def __enter__(self):
         self.start()

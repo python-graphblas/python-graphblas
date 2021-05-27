@@ -2,6 +2,7 @@ import pytest
 import grblas
 import pickle
 import weakref
+import numpy as np
 from grblas import Scalar
 from grblas import dtypes, binary
 from grblas.scalar import _CScalar
@@ -89,8 +90,12 @@ def test_equal(s):
 
 def test_casting(s):
     assert int(s) == 5
+    assert type(int(s)) is int
     assert float(s) == 5.0
+    assert type(float(s)) is float
     assert range(s) == range(5)
+    assert complex(s) == complex(5)
+    assert type(complex(s)) is complex
 
 
 def test_truthy(s):
@@ -222,3 +227,36 @@ def test_weakref(s):
     d = weakref.WeakValueDictionary()
     d["s"] = s
     assert d["s"] is s
+
+
+def test_scalar_to_numpy(s):
+    for a, b in [
+        (np.array(s), np.array(5)),
+        (np.array(s, dtype=float), np.array(5.0)),
+        (np.array([s]), np.array([5])),
+        (np.array([s], dtype=float), np.array([5.0])),
+        (np.array([s, s]), np.array([5, 5])),
+        (np.array([s, s], dtype=float), np.array([5.0, 5.0])),
+    ]:
+        np.testing.assert_array_equal(a, b)
+        assert a.dtype == b.dtype
+        assert a.shape == b.shape
+
+
+def test_neg():
+    for dtype in vars(dtypes).values():
+        if not isinstance(dtype, dtypes.DataType):
+            continue
+        s = Scalar.from_value(1, dtype=dtype)
+        empty = Scalar.new(dtype)
+        if dtype.name == "BOOL" or dtype.name.startswith("U"):
+            with pytest.raises(TypeError, match="The negative operator, `-`, is not supported"):
+                -s
+            with pytest.raises(TypeError, match="The negative operator, `-`, is not supported"):
+                -empty
+        else:
+            minus_s = Scalar.from_value(-1, dtype=dtype)
+            assert s == -minus_s
+            assert (-s).value == minus_s.value
+            assert empty == -empty
+            assert (-empty).value is None

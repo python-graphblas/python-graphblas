@@ -867,3 +867,35 @@ def test_weakref(v):
 def test_not_to_array(v):
     with pytest.raises(TypeError, match="Vector can't be directly converted to a numpy array"):
         np.array(v)
+
+
+def test_vector_index_with_scalar():
+    v = Vector.from_values([0, 1, 2], [10, 20, 30])
+    expected = Vector.from_values([0, 1], [20, 10])
+    for dtype in ["bool", "int8", "uint8", "int16", "uint16", "int32", "uint32"]:
+        s1 = Scalar.from_value(1, dtype=dtype)
+        assert v[s1] == 20
+        s0 = Scalar.from_value(0, dtype=dtype)
+        w = v[[s1, s0]].new()
+        assert w.isequal(expected)
+    for dtype in ["fp32", "fp64", "fc32", "fc64"]:
+        s = Scalar.from_value(1, dtype=dtype)
+        with pytest.raises(TypeError, match="An integer is required for indexing"):
+            v[s]
+
+
+def test_diag(v):
+    indices, values = v.to_values()
+    for k in range(-5, 5):
+        A = grblas.ss.diag(v, k=k)
+        size = v.size + abs(k)
+        rows = indices + max(0, -k)
+        cols = indices + max(0, k)
+        expected = Matrix.from_values(rows, cols, values, nrows=size, ncols=size, dtype=v.dtype)
+        assert expected.isequal(A)
+        w = grblas.ss.diag(A, Scalar.from_value(k))
+        assert v.isequal(w)
+        assert w.dtype == "INT64"
+        w = grblas.ss.diag(A.T, -k, dtype=float)
+        assert v.isequal(w)
+        assert w.dtype == "FP64"

@@ -94,6 +94,8 @@ def check_status(response_code, args):
         arg = args[0]
     else:
         arg = args
+    if hasattr(arg, "_exc_arg"):
+        arg = arg._exc_arg
     if type(arg) is _Pointer:
         arg = arg.val
     type_name = type(arg).__name__
