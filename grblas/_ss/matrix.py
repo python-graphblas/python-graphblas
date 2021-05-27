@@ -388,8 +388,10 @@ class ss:
         for i, nrows in enumerate(tile_nrows):
             cur = []
             for j, ncols in enumerate(tile_ncols):
-                tile = Matrix(ffi.addressof(tiles, index), dtype, name=f"{name}_{i}x{j}")
-                tile._keepalive = tiles
+                # Copy to a new handle so we can free `tiles`
+                new_matrix = ffi.new("GrB_Matrix*")
+                new_matrix[0] = tiles[index]
+                tile = Matrix(new_matrix, dtype, name=f"{name}_{i}x{j}")
                 tile._nrows = nrows
                 tile._ncols = ncols
                 cur.append(tile)

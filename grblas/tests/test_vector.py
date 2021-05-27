@@ -893,7 +893,7 @@ def test_diag(v):
         cols = indices + max(0, k)
         expected = Matrix.from_values(rows, cols, values, nrows=size, ncols=size, dtype=v.dtype)
         assert expected.isequal(A)
-        w = grblas.ss.diag(A, k)
+        w = grblas.ss.diag(A, Scalar.from_value(k))
         assert v.isequal(w)
         assert w.dtype == "INT64"
         w = grblas.ss.diag(A.T, -k, dtype=float)
