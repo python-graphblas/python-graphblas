@@ -41,6 +41,20 @@ def test_vector_to_from_numpy():
 
 
 @pytest.mark.skipif("not ss")
+@pytest.mark.parametrize("a", [np.array([7, 0]), np.array([0, 0]), np.array([])])
+def test_vector_to_from_numpy_correct_size(a):
+    # Make sure we use the right size
+    v = gb.io.from_numpy(a)
+    assert v.shape == a.shape
+    b = gb.io.to_numpy(v)
+    np.testing.assert_array_equal(a, b)
+    csr = gb.io.to_scipy_sparse_matrix(v, "csr")
+    np.testing.assert_array_equal(a[None, :], csr.toarray())
+    csc = gb.io.to_scipy_sparse_matrix(v, "csc")
+    np.testing.assert_array_equal(a[:, None], csc.toarray())
+
+
+@pytest.mark.skipif("not ss")
 def test_matrix_to_from_numpy():
     a = np.array([[1.0, 0.0], [2.0, 3.7]])
     M = gb.io.from_numpy(a)

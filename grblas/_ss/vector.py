@@ -2,7 +2,8 @@ import numpy as np
 import grblas as gb
 from numba import njit
 from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
-from .. import ffi, lib
+from .prefix_scan import prefix_scan
+from .. import ffi, lib, monoid
 from ..base import call
 from ..dtypes import lookup_dtype, INT64
 from ..exceptions import check_status, check_status_carg
@@ -650,3 +651,6 @@ class ss:
     @wrapdoc(head)
     def head(self, n=10, *, sort=False, dtype=None):
         return head(self._parent, n, sort=sort, dtype=dtype)
+
+    def scan(self, monoid=monoid.plus):
+        return prefix_scan(self._parent, monoid)
