@@ -4,6 +4,7 @@ import numpy as np
 import grblas
 import pickle
 import weakref
+from numpy.testing import assert_array_equal
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
@@ -701,21 +702,30 @@ def test_del(capsys):
     assert not captured.err
 
 
-def test_import_export(v):
+@pytest.mark.parametrize("do_iso", [False, True])
+def test_import_export(v, do_iso):
+    if do_iso:
+        v(v.S) << 1
     v1 = v.dup()
     d = v1.ss.export("sparse", give_ownership=True)
+    if do_iso:
+        assert_array_equal(d["values"], [1])
+    else:
+        assert_array_equal(d["values"], [1, 1, 2, 0])
     assert d["size"] == 7
-    assert (d["indices"] == [1, 3, 4, 6]).all()
-    assert (d["values"] == [1, 1, 2, 0]).all()
+    assert_array_equal(d["indices"], [1, 3, 4, 6])
     w1 = Vector.ss.import_any(**d)
     assert w1.isequal(v)
 
     v2 = v.dup()
     d = v2.ss.export("bitmap")
+    if do_iso:
+        assert_array_equal(d["values"], [1])
+    else:
+        assert_array_equal(d["values"][d["bitmap"]], [1, 1, 2, 0])
     assert d["nvals"] == 4
     assert len(d["bitmap"]) == 7
-    assert (d["bitmap"] == [0, 1, 0, 1, 1, 0, 1]).all()
-    assert (d["values"][d["bitmap"]] == [1, 1, 2, 0]).all()
+    assert_array_equal(d["bitmap"], [0, 1, 0, 1, 1, 0, 1])
     w2 = Vector.ss.import_any(**d)
     assert w2.isequal(v)
     del d["nvals"]
@@ -723,17 +733,28 @@ def test_import_export(v):
     assert w2b.isequal(v)
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]])
     w2c = Vector.ss.import_any(**d)
-    assert w2c.isequal(v)
+    if not do_iso:
+        assert w2c.isequal(v)
+    else:
+        assert w2c.size == 2 * v.size
+        assert w2c.nvals == 2 * v.nvals
 
     v3 = Vector.from_values([0, 1, 2], [1, 3, 5])
+    if do_iso:
+        v3(v3.S) << 1
     v3_copy = v3.dup()
     d = v3.ss.export("full")
-    assert (d["values"] == [1, 3, 5]).all()
+    if do_iso:
+        assert_array_equal(d["values"], [1])
+    else:
+        assert_array_equal(d["values"], [1, 3, 5])
     w3 = Vector.ss.import_any(**d)
     assert w3.isequal(v3_copy)
 
     v4 = v.dup()
     d = v4.ss.export()
+    if do_iso:
+        assert_array_equal(d["values"], [1])
     assert d["format"] in {"sparse", "bitmap", "full"}
     w4 = Vector.ss.import_any(**d)
     assert w4.isequal(v)
@@ -780,7 +801,10 @@ def test_import_export(v):
         Vector.ss.import_any(take_ownership=True, **d)
 
 
-def test_import_export_auto(v):
+@pytest.mark.parametrize("do_iso", [False, True])
+def test_import_export_auto(v, do_iso):
+    if do_iso:
+        v(v.S) << 1
     v_orig = v.dup()
     for format in ["sparse", "bitmap"]:
         for (
@@ -809,6 +833,8 @@ def test_import_export_auto(v):
     assert v.isequal(v_orig)
 
     w = Vector.from_values([0, 1, 2], [10, 20, 30])
+    if do_iso:
+        w(w.S) << 1
     w_orig = w.dup()
     format = "full"
     for (raw, import_format, give_ownership, take_ownership, import_func,) in itertools.product(

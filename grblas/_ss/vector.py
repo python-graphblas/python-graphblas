@@ -178,7 +178,7 @@ class ss:
                 - size : int, only present if raw == True
             - "full" format
                 - values : ndarray(size=size)
-                - size : int, only present if raw == True
+                - size : int, only present if raw == True or is_iso == True
 
         Examples
         --------
@@ -209,7 +209,7 @@ class ss:
             jumbled = ffi.NULL
         else:
             jumbled = ffi_new("bool*")
-        is_uniform = ffi_new("bool*")
+        is_iso = ffi_new("bool*")
 
         if format == "sparse":
             vi = ffi_new("GrB_Index**")
@@ -224,21 +224,26 @@ class ss:
                     vx,
                     vi_size,
                     vx_size,
-                    is_uniform,
+                    is_iso,
                     nvals,
                     jumbled,
                     ffi.NULL,
                 ),
                 parent,
             )
+            is_iso = is_iso[0]
             nvals = nvals[0]
             indices = claim_buffer(ffi, vi[0], vi_size[0] // index_dtype.itemsize, index_dtype)
             values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
             if not raw:
                 if indices.size > nvals:  # pragma: no cover
                     indices = indices[:nvals]
-                if values.size > nvals:  # pragma: no cover
-                    values = values[:nvals]
+                if is_iso:
+                    if values.size > 1:  # pragma: no cover
+                        values = values[:1]
+                else:
+                    if values.size > nvals:  # pragma: no cover
+                        values = values[:nvals]
             rv = {
                 "size": size[0],
                 "indices": indices,
@@ -252,10 +257,11 @@ class ss:
             nvals = ffi_new("GrB_Index*")
             check_status(
                 lib.GxB_Vector_export_Bitmap(
-                    vhandle, type_, size, vb, vx, vb_size, vx_size, is_uniform, nvals, ffi.NULL
+                    vhandle, type_, size, vb, vx, vb_size, vx_size, is_iso, nvals, ffi.NULL
                 ),
                 parent,
             )
+            is_iso = is_iso[0]
             bool_dtype = np.dtype(np.bool8)
             bitmap = claim_buffer(ffi, vb[0], vb_size[0] // bool_dtype.itemsize, bool_dtype)
             values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
@@ -263,8 +269,12 @@ class ss:
             if not raw:
                 if bitmap.size > size:  # pragma: no cover
                     bitmap = bitmap[:size]
-                if values.size > size:  # pragma: no cover
-                    values = values[:size]
+                if is_iso:
+                    if values.size > 1:  # pragma: no cover
+                        values = values[:1]
+                else:
+                    if values.size > size:  # pragma: no cover
+                        values = values[:size]
             rv = {
                 "bitmap": bitmap,
                 "nvals": nvals[0],
@@ -273,22 +283,27 @@ class ss:
                 rv["size"] = size
         elif format == "full":
             check_status(
-                lib.GxB_Vector_export_Full(vhandle, type_, size, vx, vx_size, is_uniform, ffi.NULL),
+                lib.GxB_Vector_export_Full(vhandle, type_, size, vx, vx_size, is_iso, ffi.NULL),
                 parent,
             )
+            is_iso = is_iso[0]
             values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
             size = size[0]
             if not raw:
-                if values.size > size:  # pragma: no cover
-                    values = values[:size]
+                if is_iso:
+                    if values.size > 1:  # pragma: no cover
+                        values = values[:1]
+                else:
+                    if values.size > size:  # pragma: no cover
+                        values = values[:size]
             rv = {}
-            if raw:
+            if raw or is_iso:
                 rv["size"] = size
         else:
             raise ValueError(f"Invalid format: {format}")
 
-        if is_uniform[0]:
-            rv["is_uniform"] = True
+        if is_iso:
+            rv["is_iso"] = True
         rv.update(
             format=format,
             values=values,
@@ -303,7 +318,7 @@ class ss:
         # All
         values,
         size=None,
-        is_uniform=False,
+        is_iso=False,
         take_ownership=False,
         format=None,
         name=None,
@@ -358,7 +373,7 @@ class ss:
                 indices=indices,
                 values=values,
                 nvals=nvals,
-                is_uniform=is_uniform,
+                is_iso=is_iso,
                 sorted_index=sorted_index,
                 take_ownership=take_ownership,
                 name=name,
@@ -369,7 +384,7 @@ class ss:
                 bitmap=bitmap,
                 values=values,
                 size=size,
-                is_uniform=is_uniform,
+                is_iso=is_iso,
                 take_ownership=take_ownership,
                 name=name,
             )
@@ -377,7 +392,7 @@ class ss:
             return cls.import_full(
                 values=values,
                 size=size,
-                is_uniform=is_uniform,
+                is_iso=is_iso,
                 take_ownership=take_ownership,
                 name=name,
             )
@@ -392,7 +407,7 @@ class ss:
         indices,
         values,
         nvals=None,
-        is_uniform=False,
+        is_iso=False,
         sorted_index=False,
         take_ownership=False,
         dtype=None,
@@ -412,8 +427,9 @@ class ss:
         nvals : int, optional
             The number of elements in "values" to use.
             If not specified, will be set to ``len(values)``.
-        is_uniform : bool, default False
-            Not yet supported.
+        is_iso : bool, default False
+            Is the Vector iso-valued (meaning all the same value)?
+            If true, then `values` should be a length 1 array.
         sorted_index : bool, default False
             Indicate whether the values in "col_indices" are sorted.
         take_ownership : bool, default False
@@ -452,7 +468,10 @@ class ss:
         vi = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indices)))
         vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
         if nvals is None:
-            nvals = values.size
+            if is_iso:
+                nvals = indices.size
+            else:
+                nvals = values.size
         check_status_carg(
             lib.GxB_Vector_import_CSC(
                 vhandle,
@@ -462,7 +481,7 @@ class ss:
                 vx,
                 indices.nbytes,
                 values.nbytes,
-                is_uniform,
+                is_iso,
                 nvals,
                 not sorted_index,
                 ffi.NULL,
@@ -484,7 +503,7 @@ class ss:
         values,
         nvals=None,
         size=None,
-        is_uniform=False,
+        is_iso=False,
         take_ownership=False,
         dtype=None,
         format=None,
@@ -505,8 +524,9 @@ class ss:
         size : int, optional
             The size of the new Vector.
             If not specified, it will be set to the size of values.
-        is_uniform : bool, default False
-            Not yet supported.
+        is_iso : bool, default False
+            Is the Vector iso-valued (meaning all the same value)?
+            If true, then `values` should be a length 1 array.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -543,7 +563,10 @@ class ss:
         vb = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
         vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
         if size is None:
-            size = values.size
+            if is_iso:
+                size = bitmap.size
+            else:
+                size = values.size
         if nvals is None:
             if bitmap.size == size:
                 nvals = np.count_nonzero(bitmap)
@@ -558,7 +581,7 @@ class ss:
                 vx,
                 bitmap.nbytes,
                 values.nbytes,
-                is_uniform,
+                is_iso,
                 nvals,
                 ffi.NULL,
             ),
@@ -577,7 +600,7 @@ class ss:
         *,
         values,
         size=None,
-        is_uniform=False,
+        is_iso=False,
         take_ownership=False,
         dtype=None,
         format=None,
@@ -594,8 +617,9 @@ class ss:
         size : int, optional
             The size of the new Vector.
             If not specified, it will be set to the size of values.
-        is_uniform : bool, default False
-            Not yet supported.
+        is_iso : bool, default False
+            Is the Vector iso-valued (meaning all the same value)?
+            If true, then `values` should be a length 1 array.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -636,7 +660,7 @@ class ss:
                 size,
                 vx,
                 values.nbytes,
-                is_uniform,
+                is_iso,
                 ffi.NULL,
             ),
             "Vector",

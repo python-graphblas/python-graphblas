@@ -4,6 +4,7 @@ import grblas
 import numpy as np
 import pickle
 import weakref
+from numpy.testing import assert_array_equal
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
@@ -1300,54 +1301,87 @@ def test_del(capsys):
     assert not captured.err
 
 
-def test_import_export(A):
+@pytest.mark.parametrize("do_iso", [False, True])
+def test_import_export(A, do_iso):
+    if do_iso:
+        A(A.S) << 1
     A1 = A.dup()
     d = A1.ss.export("csr", give_ownership=True)
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
-    assert (d["indptr"] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
-    assert (d["col_indices"] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
-    assert (d["values"] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
+    assert_array_equal(d["indptr"], [0, 2, 4, 5, 7, 8, 9, 12])
+    assert_array_equal(d["col_indices"], [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4])
+    if not do_iso:
+        assert_array_equal(d["values"], [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3])
     B1 = Matrix.ss.import_any(take_ownership=True, **d)
     assert B1.isequal(A)
 
     A2 = A.dup()
     d = A2.ss.export("csc")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
-    assert (d["indptr"] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
-    assert (d["row_indices"] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
-    assert (d["values"] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
+    assert_array_equal(d["indptr"], [0, 1, 2, 5, 7, 9, 11, 12])
+    assert_array_equal(d["row_indices"], [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1])
+    if not do_iso:
+        assert_array_equal(d["values"], [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4])
     B2 = Matrix.ss.import_any(**d)
     assert B2.isequal(A)
 
     A3 = A.dup()
     d = A3.ss.export("hypercsr")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
-    assert (d["rows"] == [0, 1, 2, 3, 4, 5, 6]).all()
-    assert (d["indptr"] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
-    assert (d["col_indices"] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
-    assert (d["values"] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
+    assert_array_equal(d["rows"], [0, 1, 2, 3, 4, 5, 6])
+    assert_array_equal(d["indptr"], [0, 2, 4, 5, 7, 8, 9, 12])
+    assert_array_equal(d["col_indices"], [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4])
+    if not do_iso:
+        assert_array_equal(d["values"], [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3])
     B3 = Matrix.ss.import_any(**d)
     assert B3.isequal(A)
 
     A4 = A.dup()
     d = A4.ss.export("hypercsc")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
-    assert (d["cols"] == [0, 1, 2, 3, 4, 5, 6]).all()
-    assert (d["indptr"] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
-    assert (d["row_indices"] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
-    assert (d["values"] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
+    assert_array_equal(d["cols"], [0, 1, 2, 3, 4, 5, 6])
+    assert_array_equal(d["indptr"], [0, 1, 2, 5, 7, 9, 11, 12])
+    assert_array_equal(d["row_indices"], [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1])
+    if not do_iso:
+        assert_array_equal(d["values"], [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4])
     B4 = Matrix.ss.import_any(**d)
     assert B4.isequal(A)
 
     A5 = A.dup()
     d = A5.ss.export("bitmapr")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert "nrows" not in d
     assert "ncols" not in d
-    assert d["values"].shape == (7, 7)
+    if not do_iso:
+        assert d["values"].shape == (7, 7)
     assert d["bitmap"].shape == (7, 7)
     assert d["nvals"] == 12
     bitmap = np.array(
@@ -1361,23 +1395,36 @@ def test_import_export(A):
             [0, 0, 1, 1, 1, 0, 0],
         ]
     )
-    assert (d["bitmap"] == bitmap).all()
-    assert (
-        d["values"].ravel("K")[d["bitmap"].ravel("K")] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]
-    ).all()
+    assert_array_equal(d["bitmap"], bitmap)
+    if not do_iso:
+        assert_array_equal(
+            d["values"].ravel("K")[d["bitmap"].ravel("K")], [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]
+        )
     del d["nvals"]
     B5 = Matrix.ss.import_any(**d)
     assert B5.isequal(A)
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=0)
     B5b = Matrix.ss.import_any(**d)
-    assert B5b.isequal(A)
+    if not do_iso:
+        assert B5b.isequal(A)
+    else:
+        # B5b == [A, A]
+        B5b.nvals == 2 * A.nvals
+        B5b.nrows == A.nrows
+        B5b.ncols == 2 * A.ncols
 
     A6 = A.dup()
     d = A6.ss.export("bitmapc")
-    assert (d["bitmap"] == bitmap).all()
-    assert (
-        d["values"].ravel("K")[d["bitmap"].ravel("K")] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]
-    ).all()
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
+    assert_array_equal(d["bitmap"], bitmap)
+    if not do_iso:
+        assert_array_equal(
+            d["values"].ravel("K")[d["bitmap"].ravel("K")], [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]
+        )
     del d["nvals"]
     B6 = Matrix.ss.import_any(nrows=7, **d)
     assert B6.isequal(A)
@@ -1387,30 +1434,58 @@ def test_import_export(A):
 
     A7 = A.dup()
     d = A7.ss.export()
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     B7 = Matrix.ss.import_any(**d)
     assert B7.isequal(A)
 
     A8 = A.dup()
     d = A8.ss.export("bitmapr", raw=True)
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     del d["nrows"]
     del d["ncols"]
     with pytest.raises(ValueError, match="nrows and ncols must be provided"):
         Matrix.ss.import_any(**d)
 
     C = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
+    if do_iso:
+        C(C.S) << 1
     C1 = C.dup()
     d = C1.ss.export("fullr")
-    assert "nrows" not in d
-    assert "ncols" not in d
-    assert d["values"].shape == (2, 2)
-    assert (d["values"] == [[1, 2], [3, 4]]).all()
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+        assert "nrows" in d
+        assert "ncols" in d
+    else:
+        assert "is_iso" not in d
+        assert "nrows" not in d
+        assert "ncols" not in d
     assert d["values"].flags.c_contiguous
-    D1 = Matrix.ss.import_any(ncols=2, **d)
+    if not do_iso:
+        assert d["values"].shape == (2, 2)
+        assert_array_equal(d["values"], [[1, 2], [3, 4]])
+        D1 = Matrix.ss.import_any(ncols=2, **d)
+    else:
+        D1 = Matrix.ss.import_any(**d)
     assert D1.isequal(C)
 
     C2 = C.dup()
     d = C2.ss.export("fullc")
-    assert (d["values"] == [[1, 2], [3, 4]]).all()
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
+    if not do_iso:
+        assert_array_equal(d["values"], [[1, 2], [3, 4]])
     assert d["values"].flags.f_contiguous
     D2 = Matrix.ss.import_any(**d)
     assert D2.isequal(C)
@@ -1453,7 +1528,7 @@ def test_import_export_empty():
     d = A1.ss.export("csr")
     assert d["nrows"] == 2
     assert d["ncols"] == 3
-    assert (d["indptr"] == [0, 0, 0]).all()
+    assert_array_equal(d["indptr"], [0, 0, 0])
     assert len(d["col_indices"]) == 0
     assert len(d["values"]) == 0
     B1 = Matrix.ss.import_any(**d)
@@ -1463,7 +1538,7 @@ def test_import_export_empty():
     d = A2.ss.export("csc")
     assert d["nrows"] == 2
     assert d["ncols"] == 3
-    assert (d["indptr"] == [0, 0, 0, 0]).all()
+    assert_array_equal(d["indptr"], [0, 0, 0, 0])
     assert len(d["row_indices"]) == 0
     assert len(d["values"]) == 0
     B2 = Matrix.ss.import_any(**d)
@@ -1498,7 +1573,7 @@ def test_import_export_empty():
     assert d["bitmap"].shape == (2, 3)
     assert d["bitmap"].flags.c_contiguous
     assert d["nvals"] == 0
-    assert (d["bitmap"].ravel() == 6 * [0]).all()
+    assert_array_equal(d["bitmap"].ravel(), 6 * [0])
     B5 = Matrix.ss.import_any(**d)
     assert B5.isequal(A)
 
@@ -1507,7 +1582,7 @@ def test_import_export_empty():
     assert d["bitmap"].shape == (2, 3)
     assert d["bitmap"].flags.f_contiguous
     assert d["nvals"] == 0
-    assert (d["bitmap"].ravel() == 6 * [0]).all()
+    assert_array_equal(d["bitmap"].ravel(), 6 * [0])
     B6 = Matrix.ss.import_any(**d)
     assert B6.isequal(A)
 
@@ -1535,7 +1610,10 @@ def test_import_export_empty():
         A.ss.export(format="bad_format")
 
 
-def test_import_export_auto(A):
+@pytest.mark.parametrize("do_iso", [False, True])
+def test_import_export_auto(A, do_iso):
+    if do_iso:
+        A(A.S) << 1
     A_orig = A.dup()
     for format in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc"]:
         for (
@@ -1577,6 +1655,8 @@ def test_import_export_auto(A):
     assert A.isequal(A_orig)
 
     C = Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], [1, 2, 3, 4, 5, 6])
+    if do_iso:
+        C(C.S) << 1
     C_orig = C.dup()
     for format in ["fullr", "fullc"]:
         for raw, import_format, give_ownership, take_ownership, import_func in itertools.product(
@@ -1597,8 +1677,12 @@ def test_import_export_auto(A):
                 and import_func.__name__ == "import_any"
             ):
                 # It's 1d, so we can't tell we're column-oriented w/o format keyword
+                if do_iso:
+                    values = [1, 1, 1, 1, 1, 1]
+                else:
+                    values = [1, 3, 5, 2, 4, 6]
                 assert other.isequal(
-                    Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], [1, 3, 5, 2, 4, 6])
+                    Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], values)
                 )
             else:
                 assert other.isequal(C_orig)
