@@ -282,6 +282,12 @@ class ss:
         self._parent = parent
 
     @property
+    def nbytes(self):
+        size = ffi_new("size_t*")
+        check_status(lib.GxB_Matrix_memoryUsage(size, self._parent._carg), self._parent)
+        return size[0]
+
+    @property
     def format(self):
         # Determine current format
         parent = self._parent

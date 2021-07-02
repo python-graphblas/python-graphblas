@@ -1923,3 +1923,7 @@ def test_concat(A):
         grblas.ss.concat([[]])
     with pytest.raises(ValueError, match="tiles must all be the same length"):
         grblas.ss.concat([[A], [A, A]])
+
+
+def test_nbytes(A):
+    assert A.ss.nbytes > 0

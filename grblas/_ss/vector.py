@@ -72,6 +72,12 @@ class ss:
         self._parent = parent
 
     @property
+    def nbytes(self):
+        size = ffi_new("size_t*")
+        check_status(lib.GxB_Vector_memoryUsage(size, self._parent._carg), self._parent)
+        return size[0]
+
+    @property
     def format(self):
         parent = self._parent
         sparsity_ptr = ffi_new("GxB_Option_Field*")
