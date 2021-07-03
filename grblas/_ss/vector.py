@@ -42,7 +42,7 @@ def head(vector, n=10, *, sort=False, dtype=None):
     n = min(n, vector._nvals)
     if n == 0:
         return (np.empty(0, dtype=np.uint64), np.empty(0, dtype=dtype.np_type))
-    d = vector.ss.export(raw=True, give_ownership=True, sort=sort)
+    d = vector.ss.unpack(raw=True, sort=sort)
     fmt = d["format"]
     try:
         if fmt == "full":
@@ -58,10 +58,7 @@ def head(vector, n=10, *, sort=False, dtype=None):
         else:  # pragma: no cover
             raise RuntimeError(f"Invalid format: {fmt}")
     finally:
-        rebuilt = ss.import_any(take_ownership=True, name="", **d)
-        # We need to set rebuilt.gb_obj to NULL so it doesn't get deleted early, so might
-        # as well do a swap, b/c vector.gb_obj is already "destroyed" from the export.
-        vector.gb_obj, rebuilt.gb_obj = rebuilt.gb_obj, vector.gb_obj  # pragma: no branch
+        vector.ss.pack_any(take_ownership=True, **d)
     return indices, vals
 
 
