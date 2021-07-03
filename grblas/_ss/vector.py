@@ -554,7 +554,7 @@ class ss:
                 - be writeable
             If all of these conditions are not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
-            to GraphBLAS is successful, then the array will be mofied to be
+            to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Vector.
@@ -722,7 +722,7 @@ class ss:
                 - be writeable
             If all of these conditions are not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
-            to GraphBLAS is successful, then the array will be mofied to be
+            to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Vector.
@@ -886,7 +886,7 @@ class ss:
                 - be writeable
             If all of these conditions are not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
-            to GraphBLAS is successful, then the array will be mofied to be
+            to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Vector.
