@@ -4,6 +4,7 @@ import numpy as np
 import grblas
 import pickle
 import weakref
+from numpy.testing import assert_array_equal
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
@@ -701,42 +702,91 @@ def test_del(capsys):
     assert not captured.err
 
 
-def test_import_export(v):
+@pytest.mark.parametrize("do_iso", [False, True])
+@pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
+def test_import_export(v, do_iso, methods):
+    if do_iso:
+        v(v.S) << 1
     v1 = v.dup()
-    d = v1.ss.export("sparse", give_ownership=True)
+    out_method, in_method = methods
+    if out_method == "export":
+        d = getattr(v1.ss, out_method)("sparse", give_ownership=True)
+    else:
+        d = getattr(v1.ss, out_method)("sparse")
+    if do_iso:
+        assert_array_equal(d["values"], [1])
+    else:
+        assert_array_equal(d["values"], [1, 1, 2, 0])
     assert d["size"] == 7
-    assert (d["indices"] == [1, 3, 4, 6]).all()
-    assert (d["values"] == [1, 1, 2, 0]).all()
-    w1 = Vector.ss.import_any(**d)
-    assert w1.isequal(v)
+    assert_array_equal(d["indices"], [1, 3, 4, 6])
+    if in_method == "import":
+        w1 = Vector.ss.import_any(**d)
+        assert w1.isequal(v)
+    else:
+        v1.ss.pack_any(**d)
+        assert v1.isequal(v)
 
     v2 = v.dup()
-    d = v2.ss.export("bitmap")
+    d = getattr(v2.ss, out_method)("bitmap")
+    if do_iso:
+        assert_array_equal(d["values"], [1])
+    else:
+        assert_array_equal(d["values"][d["bitmap"]], [1, 1, 2, 0])
     assert d["nvals"] == 4
     assert len(d["bitmap"]) == 7
-    assert (d["bitmap"] == [0, 1, 0, 1, 1, 0, 1]).all()
-    assert (d["values"][d["bitmap"]] == [1, 1, 2, 0]).all()
-    w2 = Vector.ss.import_any(**d)
-    assert w2.isequal(v)
+    assert_array_equal(d["bitmap"], [0, 1, 0, 1, 1, 0, 1])
+    if in_method == "import":
+        w2 = Vector.ss.import_any(**d)
+        assert w2.isequal(v)
+    else:
+        v2.ss.pack_any(**d)
+        assert v2.isequal(v)
     del d["nvals"]
-    w2b = Vector.ss.import_any(**d)
-    assert w2b.isequal(v)
+    if in_method == "import":
+        w2b = Vector.ss.import_any(**d)
+        assert w2b.isequal(v)
+    else:
+        v2.ss.pack_any(**d)
+        assert v2.isequal(v)
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]])
-    w2c = Vector.ss.import_any(**d)
-    assert w2c.isequal(v)
+    if in_method == "import":
+        w2c = Vector.ss.import_any(**d)
+        if not do_iso:
+            assert w2c.isequal(v)
+        else:
+            assert w2c.size == 2 * v.size
+            assert w2c.nvals == 2 * v.nvals
+    else:
+        v2.ss.pack_any(**d)
+        assert v2.isequal(v)
 
     v3 = Vector.from_values([0, 1, 2], [1, 3, 5])
+    if do_iso:
+        v3(v3.S) << 1
     v3_copy = v3.dup()
-    d = v3.ss.export("full")
-    assert (d["values"] == [1, 3, 5]).all()
-    w3 = Vector.ss.import_any(**d)
-    assert w3.isequal(v3_copy)
+    d = getattr(v3.ss, out_method)("full")
+    if do_iso:
+        assert_array_equal(d["values"], [1])
+    else:
+        assert_array_equal(d["values"], [1, 3, 5])
+    if in_method == "import":
+        w3 = Vector.ss.import_any(**d)
+        assert w3.isequal(v3_copy)
+    else:
+        v3.ss.pack_any(**d)
+        assert v3.isequal(v3_copy)
 
     v4 = v.dup()
-    d = v4.ss.export()
+    d = getattr(v4.ss, out_method)()
+    if do_iso:
+        assert_array_equal(d["values"], [1])
     assert d["format"] in {"sparse", "bitmap", "full"}
-    w4 = Vector.ss.import_any(**d)
-    assert w4.isequal(v)
+    if in_method == "import":
+        w4 = Vector.ss.import_any(**d)
+        assert w4.isequal(v4)
+    else:
+        v4.ss.pack_any(**d)
+        assert v4.isequal(v)
 
     # can't own if we can't write
     d = v.ss.export("sparse")
@@ -780,8 +830,13 @@ def test_import_export(v):
         Vector.ss.import_any(take_ownership=True, **d)
 
 
-def test_import_export_auto(v):
+@pytest.mark.parametrize("do_iso", [False, True])
+@pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
+def test_import_export_auto(v, do_iso, methods):
+    if do_iso:
+        v(v.S) << 1
     v_orig = v.dup()
+    out_method, in_method = methods
     for format in ["sparse", "bitmap"]:
         for (
             sort,
@@ -789,17 +844,28 @@ def test_import_export_auto(v):
             import_format,
             give_ownership,
             take_ownership,
-            import_func,
+            import_name,
         ) in itertools.product(
             [False, True],
             [False, True],
             [format, None],
             [False, True],
             [False, True],
-            [Vector.ss.import_any, getattr(Vector.ss, f"import_{format}")],
+            ["any", format],
         ):
-            v2 = v.dup() if give_ownership else v
-            d = v2.ss.export(format, sort=sort, raw=raw, give_ownership=give_ownership)
+            v2 = v.dup() if give_ownership or out_method == "unpack" else v
+            if out_method == "export":
+                d = v2.ss.export(format, sort=sort, raw=raw, give_ownership=give_ownership)
+            else:
+                d = v2.ss.unpack(format, sort=sort, raw=raw)
+            if in_method == "import":
+                import_func = getattr(Vector.ss, f"import_{import_name}")
+            else:
+
+                def import_func(**kwargs):
+                    getattr(v2.ss, f"pack_{import_name}")(**kwargs)
+                    return v2
+
             d["format"] = import_format
             other = import_func(take_ownership=take_ownership, **d)
             assert other.isequal(v_orig)
@@ -809,17 +875,30 @@ def test_import_export_auto(v):
     assert v.isequal(v_orig)
 
     w = Vector.from_values([0, 1, 2], [10, 20, 30])
+    if do_iso:
+        w(w.S) << 1
     w_orig = w.dup()
     format = "full"
-    for (raw, import_format, give_ownership, take_ownership, import_func,) in itertools.product(
+    for (raw, import_format, give_ownership, take_ownership, import_name,) in itertools.product(
         [False, True],
         [format, None],
         [False, True],
         [False, True],
-        [Vector.ss.import_any, getattr(Vector.ss, f"import_{format}")],
+        ["any", format],
     ):
-        w2 = w.dup() if give_ownership else w
-        d = w2.ss.export(format, raw=raw, give_ownership=give_ownership)
+        w2 = w.dup() if give_ownership or out_method == "unpack" else w
+        if out_method == "export":
+            d = w2.ss.export(format, raw=raw, give_ownership=give_ownership)
+        else:
+            d = w2.ss.unpack(format, raw=raw)
+        if in_method == "import":
+            import_func = getattr(Vector.ss, f"import_{import_name}")
+        else:
+
+            def import_func(**kwargs):
+                getattr(w2.ss, f"pack_{import_name}")(**kwargs)
+                return w2
+
         d["format"] = import_format
         other = import_func(take_ownership=take_ownership, **d)
         assert other.isequal(w_orig)
@@ -899,3 +978,7 @@ def test_diag(v):
         w = grblas.ss.diag(A.T, -k, dtype=float)
         assert v.isequal(w)
         assert w.dtype == "FP64"
+
+
+def test_nbytes(v):
+    assert v.ss.nbytes > 0

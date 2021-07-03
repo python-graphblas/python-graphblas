@@ -4,6 +4,7 @@ import grblas
 import numpy as np
 import pickle
 import weakref
+from numpy.testing import assert_array_equal
 from grblas import Matrix, Vector, Scalar
 from grblas import unary, binary, monoid, semiring
 from grblas import dtypes
@@ -1300,54 +1301,108 @@ def test_del(capsys):
     assert not captured.err
 
 
-def test_import_export(A):
+@pytest.mark.parametrize("do_iso", [False, True])
+@pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
+def test_import_export(A, do_iso, methods):
+    if do_iso:
+        A(A.S) << 1
     A1 = A.dup()
-    d = A1.ss.export("csr", give_ownership=True)
+    out_method, in_method = methods
+    if out_method == "export":
+        d = getattr(A1.ss, out_method)("csr", give_ownership=True)
+    else:
+        d = getattr(A1.ss, out_method)("csr")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
-    assert (d["indptr"] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
-    assert (d["col_indices"] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
-    assert (d["values"] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
-    B1 = Matrix.ss.import_any(take_ownership=True, **d)
-    assert B1.isequal(A)
+    assert_array_equal(d["indptr"], [0, 2, 4, 5, 7, 8, 9, 12])
+    assert_array_equal(d["col_indices"], [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4])
+    if not do_iso:
+        assert_array_equal(d["values"], [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3])
+    if in_method == "import":
+        B1 = Matrix.ss.import_any(take_ownership=True, **d)
+        assert B1.isequal(A)
+    else:
+        A1.ss.pack_any(take_ownership=True, **d)
+        assert A1.isequal(A)
 
     A2 = A.dup()
-    d = A2.ss.export("csc")
+    d = getattr(A2.ss, out_method)("csc")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
-    assert (d["indptr"] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
-    assert (d["row_indices"] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
-    assert (d["values"] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
-    B2 = Matrix.ss.import_any(**d)
-    assert B2.isequal(A)
+    assert_array_equal(d["indptr"], [0, 1, 2, 5, 7, 9, 11, 12])
+    assert_array_equal(d["row_indices"], [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1])
+    if not do_iso:
+        assert_array_equal(d["values"], [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4])
+    if in_method == "import":
+        B2 = Matrix.ss.import_any(**d)
+        assert B2.isequal(A)
+    else:
+        A2.ss.pack_any(**d)
+        assert A2.isequal(A)
 
     A3 = A.dup()
-    d = A3.ss.export("hypercsr")
+    d = getattr(A3.ss, out_method)("hypercsr")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
-    assert (d["rows"] == [0, 1, 2, 3, 4, 5, 6]).all()
-    assert (d["indptr"] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
-    assert (d["col_indices"] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
-    assert (d["values"] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
-    B3 = Matrix.ss.import_any(**d)
-    assert B3.isequal(A)
+    assert_array_equal(d["rows"], [0, 1, 2, 3, 4, 5, 6])
+    assert_array_equal(d["indptr"], [0, 2, 4, 5, 7, 8, 9, 12])
+    assert_array_equal(d["col_indices"], [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4])
+    if not do_iso:
+        assert_array_equal(d["values"], [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3])
+    if in_method == "import":
+        B3 = Matrix.ss.import_any(**d)
+        assert B3.isequal(A)
+    else:
+        A3.ss.pack_any(**d)
+        assert A3.isequal(A)
 
     A4 = A.dup()
-    d = A4.ss.export("hypercsc")
+    d = getattr(A4.ss, out_method)("hypercsc")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
-    assert (d["cols"] == [0, 1, 2, 3, 4, 5, 6]).all()
-    assert (d["indptr"] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
-    assert (d["row_indices"] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
-    assert (d["values"] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
-    B4 = Matrix.ss.import_any(**d)
-    assert B4.isequal(A)
+    assert_array_equal(d["cols"], [0, 1, 2, 3, 4, 5, 6])
+    assert_array_equal(d["indptr"], [0, 1, 2, 5, 7, 9, 11, 12])
+    assert_array_equal(d["row_indices"], [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1])
+    if not do_iso:
+        assert_array_equal(d["values"], [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4])
+    if in_method == "import":
+        B4 = Matrix.ss.import_any(**d)
+        assert B4.isequal(A)
+    else:
+        A4.ss.pack_any(**d)
+        assert A4.isequal(A)
 
     A5 = A.dup()
-    d = A5.ss.export("bitmapr")
+    d = getattr(A5.ss, out_method)("bitmapr")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert "nrows" not in d
     assert "ncols" not in d
-    assert d["values"].shape == (7, 7)
+    if not do_iso:
+        assert d["values"].shape == (7, 7)
     assert d["bitmap"].shape == (7, 7)
     assert d["nvals"] == 12
     bitmap = np.array(
@@ -1361,65 +1416,143 @@ def test_import_export(A):
             [0, 0, 1, 1, 1, 0, 0],
         ]
     )
-    assert (d["bitmap"] == bitmap).all()
-    assert (
-        d["values"].ravel("K")[d["bitmap"].ravel("K")] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]
-    ).all()
+    assert_array_equal(d["bitmap"], bitmap)
+    if not do_iso:
+        assert_array_equal(
+            d["values"].ravel("K")[d["bitmap"].ravel("K")], [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]
+        )
     del d["nvals"]
-    B5 = Matrix.ss.import_any(**d)
-    assert B5.isequal(A)
+    if in_method == "import":
+        B5 = Matrix.ss.import_any(**d)
+        assert B5.isequal(A)
+    else:
+        A5.ss.pack_any(**d)
+        assert A5.isequal(A)
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=0)
     B5b = Matrix.ss.import_any(**d)
-    assert B5b.isequal(A)
+    if in_method == "import":
+        if not do_iso:
+            assert B5b.isequal(A)
+        else:
+            # B5b == [A, A]
+            B5b.nvals == 2 * A.nvals
+            B5b.nrows == A.nrows
+            B5b.ncols == 2 * A.ncols
+    else:
+        A5.ss.pack_any(**d)
+        assert A5.isequal(A)
 
     A6 = A.dup()
-    d = A6.ss.export("bitmapc")
-    assert (d["bitmap"] == bitmap).all()
-    assert (
-        d["values"].ravel("K")[d["bitmap"].ravel("K")] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]
-    ).all()
+    d = getattr(A6.ss, out_method)("bitmapc")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
+    assert_array_equal(d["bitmap"], bitmap)
+    if not do_iso:
+        assert_array_equal(
+            d["values"].ravel("K")[d["bitmap"].ravel("K")], [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]
+        )
     del d["nvals"]
-    B6 = Matrix.ss.import_any(nrows=7, **d)
-    assert B6.isequal(A)
+    if in_method == "import":
+        B6 = Matrix.ss.import_any(nrows=7, **d)
+        assert B6.isequal(A)
+    else:
+        A6.ss.pack_any(**d)
+        assert A6.isequal(A)
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=1)
-    B6b = Matrix.ss.import_any(ncols=7, **d)
-    assert B6b.isequal(A)
+    if in_method == "import":
+        B6b = Matrix.ss.import_any(ncols=7, **d)
+        assert B6b.isequal(A)
+    else:
+        A6.ss.pack_any(**d)
+        assert A6.isequal(A)
 
     A7 = A.dup()
-    d = A7.ss.export()
-    B7 = Matrix.ss.import_any(**d)
-    assert B7.isequal(A)
+    d = getattr(A7.ss, out_method)()
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
+    if in_method == "import":
+        B7 = Matrix.ss.import_any(**d)
+        assert B7.isequal(A)
+    else:
+        A7.ss.pack_any(**d)
+        assert A7.isequal(A)
 
     A8 = A.dup()
-    d = A8.ss.export("bitmapr", raw=True)
+    d = getattr(A8.ss, out_method)("bitmapr", raw=True)
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     del d["nrows"]
     del d["ncols"]
-    with pytest.raises(ValueError, match="nrows and ncols must be provided"):
-        Matrix.ss.import_any(**d)
+    if in_method == "import":
+        with pytest.raises(ValueError, match="nrows and ncols must be provided"):
+            Matrix.ss.import_any(**d)
+    else:
+        A8.ss.pack_any(**d)
+        assert A8.isequal(A)
 
     C = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
+    if do_iso:
+        C(C.S) << 1
     C1 = C.dup()
-    d = C1.ss.export("fullr")
-    assert "nrows" not in d
-    assert "ncols" not in d
-    assert d["values"].shape == (2, 2)
-    assert (d["values"] == [[1, 2], [3, 4]]).all()
+    d = getattr(C1.ss, out_method)("fullr")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+        assert "nrows" in d
+        assert "ncols" in d
+    else:
+        assert "is_iso" not in d
+        assert "nrows" not in d
+        assert "ncols" not in d
     assert d["values"].flags.c_contiguous
-    D1 = Matrix.ss.import_any(ncols=2, **d)
-    assert D1.isequal(C)
+    if not do_iso:
+        assert d["values"].shape == (2, 2)
+        assert_array_equal(d["values"], [[1, 2], [3, 4]])
+        if in_method == "import":
+            D1 = Matrix.ss.import_any(ncols=2, **d)
+            assert D1.isequal(C)
+        else:
+            C1.ss.pack_any(**d)
+            assert C1.isequal(C)
+    else:
+        if in_method == "import":
+            D1 = Matrix.ss.import_any(**d)
+            assert D1.isequal(C)
+        else:
+            C1.ss.pack_any(**d)
+            assert C1.isequal(C)
 
     C2 = C.dup()
-    d = C2.ss.export("fullc")
-    assert (d["values"] == [[1, 2], [3, 4]]).all()
+    d = getattr(C2.ss, out_method)("fullc")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
+    if not do_iso:
+        assert_array_equal(d["values"], [[1, 2], [3, 4]])
     assert d["values"].flags.f_contiguous
-    D2 = Matrix.ss.import_any(**d)
-    assert D2.isequal(C)
+    if in_method == "import":
+        D2 = Matrix.ss.import_any(**d)
+        assert D2.isequal(C)
+    else:
+        C2.ss.pack_any(**d)
+        assert C2.isequal(C)
 
     # all elements must have values
     with pytest.raises(InvalidValue):
-        A.dup().ss.export("fullr")
+        getattr(A.dup().ss, out_method)("fullr")
     with pytest.raises(InvalidValue):
-        A.dup().ss.export("fullc")
+        getattr(A.dup().ss, out_method)("fullc")
 
     a = np.array([0, 1, 2])
     for bad_combos in [
@@ -1453,7 +1586,7 @@ def test_import_export_empty():
     d = A1.ss.export("csr")
     assert d["nrows"] == 2
     assert d["ncols"] == 3
-    assert (d["indptr"] == [0, 0, 0]).all()
+    assert_array_equal(d["indptr"], [0, 0, 0])
     assert len(d["col_indices"]) == 0
     assert len(d["values"]) == 0
     B1 = Matrix.ss.import_any(**d)
@@ -1463,7 +1596,7 @@ def test_import_export_empty():
     d = A2.ss.export("csc")
     assert d["nrows"] == 2
     assert d["ncols"] == 3
-    assert (d["indptr"] == [0, 0, 0, 0]).all()
+    assert_array_equal(d["indptr"], [0, 0, 0, 0])
     assert len(d["row_indices"]) == 0
     assert len(d["values"]) == 0
     B2 = Matrix.ss.import_any(**d)
@@ -1498,7 +1631,7 @@ def test_import_export_empty():
     assert d["bitmap"].shape == (2, 3)
     assert d["bitmap"].flags.c_contiguous
     assert d["nvals"] == 0
-    assert (d["bitmap"].ravel() == 6 * [0]).all()
+    assert_array_equal(d["bitmap"].ravel(), 6 * [0])
     B5 = Matrix.ss.import_any(**d)
     assert B5.isequal(A)
 
@@ -1507,7 +1640,7 @@ def test_import_export_empty():
     assert d["bitmap"].shape == (2, 3)
     assert d["bitmap"].flags.f_contiguous
     assert d["nvals"] == 0
-    assert (d["bitmap"].ravel() == 6 * [0]).all()
+    assert_array_equal(d["bitmap"].ravel(), 6 * [0])
     B6 = Matrix.ss.import_any(**d)
     assert B6.isequal(A)
 
@@ -1535,8 +1668,13 @@ def test_import_export_empty():
         A.ss.export(format="bad_format")
 
 
-def test_import_export_auto(A):
+@pytest.mark.parametrize("do_iso", [False, True])
+@pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
+def test_import_export_auto(A, do_iso, methods):
+    if do_iso:
+        A(A.S) << 1
     A_orig = A.dup()
+    out_method, in_method = methods
     for format in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc"]:
         for (
             sort,
@@ -1544,29 +1682,31 @@ def test_import_export_auto(A):
             import_format,
             give_ownership,
             take_ownership,
-            import_func,
+            import_name,
         ) in itertools.product(
             [False, True],
             [False, True],
             [format, None],
             [False, True],
             [False, True],
-            [Matrix.ss.import_any, getattr(Matrix.ss, f"import_{format}")],
+            ["any", format],
         ):
-            A2 = A.dup() if give_ownership else A
-            d = A2.ss.export(format, sort=sort, raw=raw, give_ownership=give_ownership)
+            A2 = A.dup() if give_ownership or out_method == "unpack" else A
+            if out_method == "export":
+                d = A2.ss.export(format, sort=sort, raw=raw, give_ownership=give_ownership)
+            else:
+                d = A2.ss.unpack(format, sort=sort, raw=raw)
+            if in_method == "import":
+                import_func = getattr(Matrix.ss, f"import_{import_name}")
+            else:
+
+                def import_func(**kwargs):
+                    getattr(A2.ss, f"pack_{import_name}")(**kwargs)
+                    return A2
+
             d["format"] = import_format
-            try:
-                other = import_func(take_ownership=take_ownership, **d)
-            except Exception:  # pragma: no cover
-                print(dict(take_ownership=take_ownership, **d))
-                raise
-            if (
-                format == "bitmapc"
-                and raw
-                and import_format is None
-                and import_func.__name__ == "import_any"
-            ):
+            other = import_func(take_ownership=take_ownership, **d)
+            if format == "bitmapc" and raw and import_format is None and import_name == "any":
                 # It's 1d, so we can't tell we're column-oriented w/o format keyword
                 assert other.isequal(A_orig.T)
             else:
@@ -1577,31 +1717,67 @@ def test_import_export_auto(A):
     assert A.isequal(A_orig)
 
     C = Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], [1, 2, 3, 4, 5, 6])
+    if do_iso:
+        C(C.S) << 1
     C_orig = C.dup()
     for format in ["fullr", "fullc"]:
-        for raw, import_format, give_ownership, take_ownership, import_func in itertools.product(
+        for raw, import_format, give_ownership, take_ownership, import_name in itertools.product(
             [False, True],
             [format, None],
             [False, True],
             [False, True],
-            [Matrix.ss.import_any, getattr(Matrix.ss, f"import_{format}")],
+            ["any", format],
         ):
-            C2 = C.dup() if give_ownership else C
-            d = C2.ss.export(format, raw=raw, give_ownership=give_ownership)
+            assert C.shape == (C.nrows, C.ncols)
+            C2 = C.dup() if give_ownership or out_method == "unpack" else C
+            if out_method == "export":
+                d = C2.ss.export(format, raw=raw, give_ownership=give_ownership)
+            else:
+                d = C2.ss.unpack(format, raw=raw)
+            if in_method == "import":
+                import_func = getattr(Matrix.ss, f"import_{import_name}")
+            else:
+
+                def import_func(**kwargs):
+                    getattr(C2.ss, f"pack_{import_name}")(**kwargs)
+                    return C2
+
             d["format"] = import_format
             other = import_func(take_ownership=take_ownership, **d)
-            if (
-                format == "fullc"
-                and raw
-                and import_format is None
-                and import_func.__name__ == "import_any"
-            ):
+            if format == "fullc" and raw and import_format is None and import_name == "any":
                 # It's 1d, so we can't tell we're column-oriented w/o format keyword
-                assert other.isequal(
-                    Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], [1, 3, 5, 2, 4, 6])
-                )
+                if do_iso:
+                    values = [1, 1, 1, 1, 1, 1]
+                else:
+                    values = [1, 3, 5, 2, 4, 6]
+                if in_method == "import":
+                    assert other.isequal(
+                        Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], values)
+                    )
+                else:
+                    # We know the shape when using pack
+                    # XXX: the shape of `other` here may be a bug in SuiteSprase:GraphBLAS
+                    M = Matrix.from_values([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], values)
+                    assert other.isequal(M)
             else:
-                assert other.isequal(C_orig)
+                if (
+                    in_method == "pack"
+                    and import_format is None
+                    and (
+                        raw
+                        and format == "fullc"
+                        and import_name != "fullc"
+                        or not raw
+                        and format == "fullc"
+                        and import_name != "fullc"
+                        and do_iso
+                    )
+                ):
+                    # XXX: entering this branch may be due to a bug in SuiteSparse:GraphBLAS
+                    assert other.shape == C_orig.T.shape
+                    assert other.isequal(C_orig.T)
+                else:
+                    assert other.isequal(C_orig)
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
                 import_func(**d)
@@ -1839,3 +2015,7 @@ def test_concat(A):
         grblas.ss.concat([[]])
     with pytest.raises(ValueError, match="tiles must all be the same length"):
         grblas.ss.concat([[A], [A, A]])
+
+
+def test_nbytes(A):
+    assert A.ss.nbytes > 0

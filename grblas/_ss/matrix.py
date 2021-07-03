@@ -8,7 +8,14 @@ from ..base import call, record_raw
 from ..dtypes import lookup_dtype, INT64
 from ..exceptions import check_status, check_status_carg
 from ..scalar import _CScalar
-from ..utils import get_shape, ints_to_numpy_buffer, values_to_numpy_buffer, wrapdoc, _CArray
+from ..utils import (
+    libget,
+    get_shape,
+    ints_to_numpy_buffer,
+    values_to_numpy_buffer,
+    wrapdoc,
+    _CArray,
+)
 
 ffi_new = ffi.new
 
@@ -103,7 +110,7 @@ def head(matrix, n=10, *, sort=False, dtype=None):
             np.empty(0, dtype=np.uint64),
             np.empty(0, dtype=dtype.np_type),
         )
-    d = matrix.ss.export(raw=True, give_ownership=True, sort=sort)
+    d = matrix.ss.unpack(raw=True, sort=sort)
     try:
         fmt = d["format"]
         if fmt == "fullr":
@@ -141,10 +148,7 @@ def head(matrix, n=10, *, sort=False, dtype=None):
         else:  # pragma: no cover
             raise RuntimeError(f"Invalid format: {fmt}")
     finally:
-        rebuilt = ss.import_any(take_ownership=True, name="", **d)
-        # We need to set rebuilt.gb_obj to NULL so it doesn't get deleted early, so might
-        # as well do a swap, b/c matrix.gb_obj is already "destroyed" from the export.
-        matrix.gb_obj, rebuilt.gb_obj = rebuilt.gb_obj, matrix.gb_obj  # pragma: no branch
+        matrix.ss.pack_any(take_ownership=True, **d)
     return rows, cols, vals
 
 
@@ -282,6 +286,12 @@ class ss:
         self._parent = parent
 
     @property
+    def nbytes(self):
+        size = ffi_new("size_t*")
+        check_status(lib.GxB_Matrix_memoryUsage(size, self._parent._carg), self._parent)
+        return size[0]
+
+    @property
     def format(self):
         # Determine current format
         parent = self._parent
@@ -331,7 +341,6 @@ class ss:
         --------
         grblas.ss.diag
         Vector.ss.diag
-
         """
         self._parent._expect_type(vector, gb.Vector, within="ss.diag", argname="vector")
         call("GxB_Matrix_diag", [self._parent, vector, _CScalar(k, dtype=INT64), None])
@@ -360,7 +369,6 @@ class ss:
         --------
         Matrix.ss.concat
         grblas.ss.concat
-
         """
         from ..matrix import Matrix
 
@@ -431,7 +439,6 @@ class ss:
         --------
         Matrix.ss.split
         grblas.ss.concat
-
         """
         m, n = _concat_mn(tiles)
         self._concat(tiles, m, n)
@@ -552,6 +559,10 @@ class ss:
             - "fullr" format
                 - ``raw=False``
                     - values : ndarray(ndim=2, shape=(nrows, ncols), order="C")
+                - ``raw=False, is_iso=True``
+                    - values : ndarray(ndim=1, size=1)
+                    - nrows : int
+                    - ncols : int
                 - ``raw=True``
                     - values : ndarray(ndim=1, size=nrows * ncols)
                         - Stored row-oriented
@@ -572,12 +583,27 @@ class ss:
 
         >>> pieces = A.ss.export()
         >>> A2 = Matrix.ss.import_any(**pieces)
-
         """
+        return self._export(
+            format, sort=sort, give_ownership=give_ownership, raw=raw, method="export"
+        )
+
+    def unpack(self, format=None, *, sort=False, raw=False):
+        """
+        GxB_Matrix_unpack_xxx
+
+        `unpack` is like `export`, except that the Matrix remains valid but empty.
+        `pack_*` methods are the opposite of `unpack`.
+
+        See `Matrix.ss.export` documentation for more details.
+        """
+        return self._export(format, sort=sort, raw=raw, give_ownership=True, method="unpack")
+
+    def _export(self, format=None, *, sort=False, give_ownership=False, raw=False, method):
         if give_ownership:
             parent = self._parent
         else:
-            parent = self._parent.dup(name="M_export")
+            parent = self._parent.dup(name=f"M_{method}")
         dtype = np.dtype(parent.dtype.np_type)
         index_dtype = np.dtype(np.uint64)
 
@@ -586,10 +612,17 @@ class ss:
         else:
             format = format.lower()
 
-        mhandle = ffi_new("GrB_Matrix*", parent._carg)
-        type_ = ffi_new("GrB_Type*")
-        nrows = ffi_new("GrB_Index*")
-        ncols = ffi_new("GrB_Index*")
+        nrows = parent._nrows
+        ncols = parent._ncols
+        if method == "export":
+            mhandle = ffi_new("GrB_Matrix*", parent._carg)
+            type_ = ffi_new("GrB_Type*")
+            nrows_ = ffi_new("GrB_Index*")
+            ncols_ = ffi_new("GrB_Index*")
+            args = (type_, nrows_, ncols_)
+        else:
+            mhandle = parent._carg
+            args = ()
         Ap = ffi_new("GrB_Index**")
         Ax = ffi_new("void**")
         Ap_size = ffi_new("GrB_Index*")
@@ -598,85 +631,91 @@ class ss:
             jumbled = ffi.NULL
         else:
             jumbled = ffi_new("bool*")
-        is_uniform = ffi_new("bool*")
+        is_iso = ffi_new("bool*")
         nvals = parent._nvals
         if format == "csr":
             Aj = ffi_new("GrB_Index**")
             Aj_size = ffi_new("GrB_Index*")
             check_status(
-                lib.GxB_Matrix_export_CSR(
+                libget(f"GxB_Matrix_{method}_CSR")(
                     mhandle,
-                    type_,
-                    nrows,
-                    ncols,
+                    *args,
                     Ap,
                     Aj,
                     Ax,
                     Ap_size,
                     Aj_size,
                     Ax_size,
-                    is_uniform,
+                    is_iso,
                     jumbled,
                     ffi.NULL,
                 ),
                 parent,
             )
+            is_iso = is_iso[0]
             indptr = claim_buffer(ffi, Ap[0], Ap_size[0] // index_dtype.itemsize, index_dtype)
             col_indices = claim_buffer(ffi, Aj[0], Aj_size[0] // index_dtype.itemsize, index_dtype)
             values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             if not raw:
-                if indptr.size > nrows[0] + 1:  # pragma: no cover
-                    indptr = indptr[: nrows[0] + 1]
+                if indptr.size > nrows + 1:  # pragma: no cover
+                    indptr = indptr[: nrows + 1]
                 if col_indices.size > nvals:  # pragma: no cover
                     col_indices = col_indices[:nvals]
-                if values.size > nvals:  # pragma: no cover
-                    values = values[:nvals]
+                if is_iso:
+                    if values.size > 1:  # pragma: no cover
+                        values = values[:1]
+                else:
+                    if values.size > nvals:  # pragma: no cover
+                        values = values[:nvals]
             # Note: nvals is also at `indptr[nrows]`
             rv = {
                 "indptr": indptr,
                 "col_indices": col_indices,
                 "sorted_index": True if sort else not jumbled[0],
-                "nrows": nrows[0],
-                "ncols": ncols[0],
+                "nrows": nrows,
+                "ncols": ncols,
             }
         elif format == "csc":
             Ai = ffi_new("GrB_Index**")
             Ai_size = ffi_new("GrB_Index*")
             check_status(
-                lib.GxB_Matrix_export_CSC(
+                libget(f"GxB_Matrix_{method}_CSC")(
                     mhandle,
-                    type_,
-                    nrows,
-                    ncols,
+                    *args,
                     Ap,
                     Ai,
                     Ax,
                     Ap_size,
                     Ai_size,
                     Ax_size,
-                    is_uniform,
+                    is_iso,
                     jumbled,
                     ffi.NULL,
                 ),
                 parent,
             )
+            is_iso = is_iso[0]
             indptr = claim_buffer(ffi, Ap[0], Ap_size[0] // index_dtype.itemsize, index_dtype)
             row_indices = claim_buffer(ffi, Ai[0], Ai_size[0] // index_dtype.itemsize, index_dtype)
             values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             if not raw:
-                if indptr.size > ncols[0] + 1:  # pragma: no cover
-                    indptr = indptr[: ncols[0] + 1]
+                if indptr.size > ncols + 1:  # pragma: no cover
+                    indptr = indptr[: ncols + 1]
                 if row_indices.size > nvals:  # pragma: no cover
                     row_indices = row_indices[:nvals]
-                if values.size > nvals:  # pragma: no cover
-                    values = values[:nvals]
+                if is_iso:
+                    if values.size > 1:  # pragma: no cover
+                        values = values[:1]
+                else:
+                    if values.size > nvals:  # pragma: no cover
+                        values = values[:nvals]
             # Note: nvals is also at `indptr[ncols]`
             rv = {
                 "indptr": indptr,
                 "row_indices": row_indices,
                 "sorted_index": True if sort else not jumbled[0],
-                "nrows": nrows[0],
-                "ncols": ncols[0],
+                "nrows": nrows,
+                "ncols": ncols,
             }
         elif format == "hypercsr":
             nvec = ffi_new("GrB_Index*")
@@ -685,11 +724,9 @@ class ss:
             Ah_size = ffi_new("GrB_Index*")
             Aj_size = ffi_new("GrB_Index*")
             check_status(
-                lib.GxB_Matrix_export_HyperCSR(
+                libget(f"GxB_Matrix_{method}_HyperCSR")(
                     mhandle,
-                    type_,
-                    nrows,
-                    ncols,
+                    *args,
                     Ap,
                     Ah,
                     Aj,
@@ -698,13 +735,14 @@ class ss:
                     Ah_size,
                     Aj_size,
                     Ax_size,
-                    is_uniform,
+                    is_iso,
                     nvec,
                     jumbled,
                     ffi.NULL,
                 ),
                 parent,
             )
+            is_iso = is_iso[0]
             indptr = claim_buffer(ffi, Ap[0], Ap_size[0] // index_dtype.itemsize, index_dtype)
             rows = claim_buffer(ffi, Ah[0], Ah_size[0] // index_dtype.itemsize, index_dtype)
             col_indices = claim_buffer(ffi, Aj[0], Aj_size[0] // index_dtype.itemsize, index_dtype)
@@ -717,16 +755,20 @@ class ss:
                     rows = rows[:nvec]
                 if col_indices.size > nvals:  # pragma: no cover
                     col_indices = col_indices[:nvals]
-                if values.size > nvals:  # pragma: no cover
-                    values = values[:nvals]
+                if is_iso:
+                    if values.size > 1:  # pragma: no cover
+                        values = values[:1]
+                else:
+                    if values.size > nvals:  # pragma: no cover
+                        values = values[:nvals]
             # Note: nvals is also at `indptr[nvec]`
             rv = {
                 "indptr": indptr,
                 "rows": rows,
                 "col_indices": col_indices,
                 "sorted_index": True if sort else not jumbled[0],
-                "nrows": nrows[0],
-                "ncols": ncols[0],
+                "nrows": nrows,
+                "ncols": ncols,
             }
             if raw:
                 rv["nvec"] = nvec
@@ -737,11 +779,9 @@ class ss:
             Ah_size = ffi_new("GrB_Index*")
             Ai_size = ffi_new("GrB_Index*")
             check_status(
-                lib.GxB_Matrix_export_HyperCSC(
+                libget(f"GxB_Matrix_{method}_HyperCSC")(
                     mhandle,
-                    type_,
-                    nrows,
-                    ncols,
+                    *args,
                     Ap,
                     Ah,
                     Ai,
@@ -750,13 +790,14 @@ class ss:
                     Ah_size,
                     Ai_size,
                     Ax_size,
-                    is_uniform,
+                    is_iso,
                     nvec,
                     jumbled,
                     ffi.NULL,
                 ),
                 parent,
             )
+            is_iso = is_iso[0]
             indptr = claim_buffer(ffi, Ap[0], Ap_size[0] // index_dtype.itemsize, index_dtype)
             cols = claim_buffer(ffi, Ah[0], Ah_size[0] // index_dtype.itemsize, index_dtype)
             row_indices = claim_buffer(ffi, Ai[0], Ai_size[0] // index_dtype.itemsize, index_dtype)
@@ -769,43 +810,46 @@ class ss:
                     cols = cols[:nvec]
                 if row_indices.size > nvals:  # pragma: no cover
                     row_indices = row_indices[:nvals]
-                if values.size > nvals:  # pragma: no cover
-                    values = values[:nvals]
+                if is_iso:
+                    if values.size > 1:  # pragma: no cover
+                        values = values[:1]
+                else:
+                    if values.size > nvals:  # pragma: no cover
+                        values = values[:nvals]
             # Note: nvals is also at `indptr[nvec]`
             rv = {
                 "indptr": indptr,
                 "cols": cols,
                 "row_indices": row_indices,
                 "sorted_index": True if sort else not jumbled[0],
-                "nrows": nrows[0],
-                "ncols": ncols[0],
+                "nrows": nrows,
+                "ncols": ncols,
             }
             if raw:
                 rv["nvec"] = nvec
         elif format == "bitmapr" or format == "bitmapc":
             if format == "bitmapr":
-                cfunc = lib.GxB_Matrix_export_BitmapR
+                cfunc = libget(f"GxB_Matrix_{method}_BitmapR")
             else:
-                cfunc = lib.GxB_Matrix_export_BitmapC
+                cfunc = libget(f"GxB_Matrix_{method}_BitmapC")
             Ab = ffi_new("int8_t**")
             Ab_size = ffi_new("GrB_Index*")
             nvals_ = ffi_new("GrB_Index*")
             check_status(
                 cfunc(
                     mhandle,
-                    type_,
-                    nrows,
-                    ncols,
+                    *args,
                     Ab,
                     Ax,
                     Ab_size,
                     Ax_size,
-                    is_uniform,
+                    is_iso,
                     nvals_,
                     ffi.NULL,
                 ),
                 parent,
             )
+            is_iso = is_iso[0]
             bool_dtype = np.dtype(np.bool8)
             if raw:
                 bitmap = claim_buffer(ffi, Ab[0], Ab_size[0] // bool_dtype.itemsize, bool_dtype)
@@ -816,53 +860,69 @@ class ss:
                     ffi,
                     Ab[0],
                     Ab_size[0] // bool_dtype.itemsize,
-                    nrows[0],
-                    ncols[0],
+                    nrows,
+                    ncols,
                     bool_dtype,
                     is_c_order,
                 )
-                values = claim_buffer_2d(
-                    ffi, Ax[0], Ax_size[0] // dtype.itemsize, nrows[0], ncols[0], dtype, is_c_order
-                )
+                if is_iso:
+                    values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
+                    if values.size > 1:  # pragma: no cover
+                        values = values[:1]
+                else:
+                    values = claim_buffer_2d(
+                        ffi,
+                        Ax[0],
+                        Ax_size[0] // dtype.itemsize,
+                        nrows,
+                        ncols,
+                        dtype,
+                        is_c_order,
+                    )
             rv = {"bitmap": bitmap, "nvals": nvals_[0]}
             if raw:
-                rv["nrows"] = nrows[0]
-                rv["ncols"] = ncols[0]
+                rv["nrows"] = nrows
+                rv["ncols"] = ncols
         elif format == "fullr" or format == "fullc":
             if format == "fullr":
-                cfunc = lib.GxB_Matrix_export_FullR
+                cfunc = libget(f"GxB_Matrix_{method}_FullR")
             else:
-                cfunc = lib.GxB_Matrix_export_FullC
+                cfunc = libget(f"GxB_Matrix_{method}_FullC")
             check_status(
                 cfunc(
                     mhandle,
-                    type_,
-                    nrows,
-                    ncols,
+                    *args,
                     Ax,
                     Ax_size,
-                    is_uniform,
+                    is_iso,
                     ffi.NULL,
                 ),
                 parent,
             )
+            is_iso = is_iso[0]
             if raw:
                 values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
-                rv = {"nrows": nrows[0], "ncols": ncols[0]}
+                rv = {"nrows": nrows, "ncols": ncols}
+            elif is_iso:
+                values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
+                if values.size > 1:  # pragma: no cover
+                    values = values[:1]
+                rv = {"nrows": nrows, "ncols": ncols}
             else:
                 is_c_order = format == "fullr"
                 values = claim_buffer_2d(
-                    ffi, Ax[0], Ax_size[0] // dtype.itemsize, nrows[0], ncols[0], dtype, is_c_order
+                    ffi, Ax[0], Ax_size[0] // dtype.itemsize, nrows, ncols, dtype, is_c_order
                 )
                 rv = {}
         else:
             raise ValueError(f"Invalid format: {format}")
 
-        if is_uniform[0]:
-            rv["is_uniform"] = True
+        if is_iso:
+            rv["is_iso"] = True
         rv["format"] = format
         rv["values"] = values
-        parent.gb_obj = ffi.NULL
+        if method == "export":
+            parent.gb_obj = ffi.NULL
         return rv
 
     @classmethod
@@ -874,7 +934,7 @@ class ss:
         indptr,
         values,
         col_indices,
-        is_uniform=False,
+        is_iso=False,
         sorted_index=False,
         take_ownership=False,
         dtype=None,
@@ -893,8 +953,9 @@ class ss:
         indptr : array-like
         values : array-like
         col_indices : array-like
-        is_uniform : bool, default False
-            Not yet supported.
+        is_iso : bool, default False
+            Is the Matrix iso-valued (meaning all the same value)?
+            If true, then `values` should be a length 1 array.
         sorted_index : bool, default False
             Indicate whether the values in "col_indices" are sorted.
         take_ownership : bool, default False
@@ -922,6 +983,71 @@ class ss:
         -------
         Matrix
         """
+        return cls._import_csr(
+            nrows=nrows,
+            ncols=ncols,
+            indptr=indptr,
+            values=values,
+            col_indices=col_indices,
+            is_iso=is_iso,
+            sorted_index=sorted_index,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            format=format,
+            name=name,
+            method="import",
+        )
+
+    def pack_csr(
+        self,
+        *,
+        indptr,
+        values,
+        col_indices,
+        is_iso=False,
+        sorted_index=False,
+        take_ownership=False,
+        format=None,
+        **ignored_kwargs,
+    ):
+        """
+        GxB_Matrix_pack_CSR
+
+        `pack_csr` is like `import_csr` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("csr")``
+
+        See `Matrix.ss.import_csr` documentation for more details.
+        """
+        return self._import_csr(
+            indptr=indptr,
+            values=values,
+            col_indices=col_indices,
+            is_iso=is_iso,
+            sorted_index=sorted_index,
+            take_ownership=take_ownership,
+            format=format,
+            method="pack",
+            matrix=self._parent,
+        )
+
+    @classmethod
+    def _import_csr(
+        cls,
+        *,
+        nrows=None,
+        ncols=None,
+        indptr,
+        values,
+        col_indices,
+        is_iso=False,
+        sorted_index=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+        method,
+        matrix=None,
+    ):
         if format is not None and format.lower() != "csr":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'csr'.")
         copy = not take_ownership
@@ -931,39 +1057,50 @@ class ss:
         col_indices = ints_to_numpy_buffer(
             col_indices, np.uint64, copy=copy, ownable=True, name="column indices"
         )
+        if method == "pack":
+            dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if col_indices is values:
             values = np.copy(values)
-        mhandle = ffi_new("GrB_Matrix*")
         Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
         Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
         Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-        check_status_carg(
-            lib.GxB_Matrix_import_CSR(
-                mhandle,
-                dtype._carg,
-                nrows,
-                ncols,
-                Ap,
-                Aj,
-                Ax,
-                indptr.nbytes,
-                col_indices.nbytes,
-                values.nbytes,
-                is_uniform,
-                not sorted_index,
-                ffi.NULL,
-            ),
-            "Matrix",
-            mhandle[0],
+        if method == "import":
+            mhandle = ffi_new("GrB_Matrix*")
+            args = (dtype._carg, nrows, ncols)
+        else:
+            mhandle = matrix._carg
+            args = ()
+        status = libget(f"GxB_Matrix_{method}_CSR")(
+            mhandle,
+            *args,
+            Ap,
+            Aj,
+            Ax,
+            indptr.nbytes,
+            col_indices.nbytes,
+            values.nbytes,
+            is_iso,
+            not sorted_index,
+            ffi.NULL,
         )
-        rv = gb.Matrix(mhandle, dtype, name=name)
-        rv._nrows = nrows
-        rv._ncols = ncols
+        if method == "import":
+            check_status_carg(
+                status,
+                "Matrix",
+                mhandle[0],
+            )
+            matrix = gb.Matrix(mhandle, dtype, name=name)
+            matrix._nrows = nrows
+            matrix._ncols = ncols
+        else:
+            check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(indptr)
         unclaim_buffer(col_indices)
         unclaim_buffer(values)
-        return rv
+        return matrix
 
     @classmethod
     def import_csc(
@@ -974,7 +1111,7 @@ class ss:
         indptr,
         values,
         row_indices,
-        is_uniform=False,
+        is_iso=False,
         sorted_index=False,
         take_ownership=False,
         dtype=None,
@@ -993,8 +1130,9 @@ class ss:
         indptr : array-like
         values : array-like
         row_indices : array-like
-        is_uniform : bool, default False
-            Not yet supported.
+        is_iso : bool, default False
+            Is the Matrix iso-valued (meaning all the same value)?
+            If true, then `values` should be a length 1 array.
         sorted_index : bool, default False
             Indicate whether the values in "row_indices" are sorted.
         take_ownership : bool, default False
@@ -1022,6 +1160,71 @@ class ss:
         -------
         Matrix
         """
+        return cls._import_csc(
+            nrows=nrows,
+            ncols=ncols,
+            indptr=indptr,
+            values=values,
+            row_indices=row_indices,
+            is_iso=is_iso,
+            sorted_index=sorted_index,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            format=format,
+            name=name,
+            method="import",
+        )
+
+    def pack_csc(
+        self,
+        *,
+        indptr,
+        values,
+        row_indices,
+        is_iso=False,
+        sorted_index=False,
+        take_ownership=False,
+        format=None,
+        **ignored_kwargs,
+    ):
+        """
+        GxB_Matrix_pack_CSC
+
+        `pack_csc` is like `import_csc` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("csc")``
+
+        See `Matrix.ss.import_csc` documentation for more details.
+        """
+        return self._import_csc(
+            indptr=indptr,
+            values=values,
+            row_indices=row_indices,
+            is_iso=is_iso,
+            sorted_index=sorted_index,
+            take_ownership=take_ownership,
+            format=format,
+            method="pack",
+            matrix=self._parent,
+        )
+
+    @classmethod
+    def _import_csc(
+        cls,
+        *,
+        nrows=None,
+        ncols=None,
+        indptr,
+        values,
+        row_indices,
+        is_iso=False,
+        sorted_index=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+        method,
+        matrix=None,
+    ):
         if format is not None and format.lower() != "csc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'csc'.")
         copy = not take_ownership
@@ -1031,39 +1234,50 @@ class ss:
         row_indices = ints_to_numpy_buffer(
             row_indices, np.uint64, copy=copy, ownable=True, name="row indices"
         )
+        if method == "pack":
+            dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if row_indices is values:
             values = np.copy(values)
-        mhandle = ffi_new("GrB_Matrix*")
         Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
         Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
         Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-        check_status_carg(
-            lib.GxB_Matrix_import_CSC(
-                mhandle,
-                dtype._carg,
-                nrows,
-                ncols,
-                Ap,
-                Ai,
-                Ax,
-                indptr.nbytes,
-                row_indices.nbytes,
-                values.nbytes,
-                is_uniform,
-                not sorted_index,
-                ffi.NULL,
-            ),
-            "Matrix",
-            mhandle[0],
+        if method == "import":
+            mhandle = ffi_new("GrB_Matrix*")
+            args = (dtype._carg, nrows, ncols)
+        else:
+            mhandle = matrix._carg
+            args = ()
+        status = libget(f"GxB_Matrix_{method}_CSC")(
+            mhandle,
+            *args,
+            Ap,
+            Ai,
+            Ax,
+            indptr.nbytes,
+            row_indices.nbytes,
+            values.nbytes,
+            is_iso,
+            not sorted_index,
+            ffi.NULL,
         )
-        rv = gb.Matrix(mhandle, dtype, name=name)
-        rv._nrows = nrows
-        rv._ncols = ncols
+        if method == "import":
+            check_status_carg(
+                status,
+                "Matrix",
+                mhandle[0],
+            )
+            matrix = gb.Matrix(mhandle, dtype, name=name)
+            matrix._nrows = nrows
+            matrix._ncols = ncols
+        else:
+            check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(indptr)
         unclaim_buffer(row_indices)
         unclaim_buffer(values)
-        return rv
+        return matrix
 
     @classmethod
     def import_hypercsr(
@@ -1076,7 +1290,7 @@ class ss:
         values,
         col_indices,
         nvec=None,
-        is_uniform=False,
+        is_iso=False,
         sorted_index=False,
         take_ownership=False,
         dtype=None,
@@ -1099,8 +1313,9 @@ class ss:
         nvec : int, optional
             The number of elements in "rows" to use.
             If not specified, will be set to ``len(rows)``.
-        is_uniform : bool, default False
-            Not yet supported.
+        is_iso : bool, default False
+            Is the Matrix iso-valued (meaning all the same value)?
+            If true, then `values` should be a length 1 array.
         sorted_index : bool, default False
             Indicate whether the values in "col_indices" are sorted.
         take_ownership : bool, default False
@@ -1128,6 +1343,79 @@ class ss:
         -------
         Matrix
         """
+        return cls._import_hypercsr(
+            nrows=nrows,
+            ncols=ncols,
+            rows=rows,
+            indptr=indptr,
+            values=values,
+            col_indices=col_indices,
+            nvec=nvec,
+            is_iso=is_iso,
+            sorted_index=sorted_index,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            format=format,
+            name=name,
+            method="import",
+        )
+
+    def pack_hypercsr(
+        self,
+        *,
+        rows,
+        indptr,
+        values,
+        col_indices,
+        nvec=None,
+        is_iso=False,
+        sorted_index=False,
+        take_ownership=False,
+        format=None,
+        **ignored_kwargs,
+    ):
+        """
+        GxB_Matrix_pack_HyperCSR
+
+        `pack_hypercsr` is like `import_hypercsr` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("hypercsr")``
+
+        See `Matrix.ss.import_hypercsr` documentation for more details.
+        """
+        return self._import_hypercsr(
+            rows=rows,
+            indptr=indptr,
+            values=values,
+            col_indices=col_indices,
+            nvec=nvec,
+            is_iso=is_iso,
+            sorted_index=sorted_index,
+            take_ownership=take_ownership,
+            format=format,
+            method="pack",
+            matrix=self._parent,
+        )
+
+    @classmethod
+    def _import_hypercsr(
+        cls,
+        *,
+        nrows=None,
+        ncols=None,
+        rows,
+        indptr,
+        values,
+        col_indices,
+        nvec=None,
+        is_iso=False,
+        sorted_index=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+        method,
+        matrix=None,
+    ):
         if format is not None and format.lower() != "hypercsr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsr'.")
         copy = not take_ownership
@@ -1138,46 +1426,57 @@ class ss:
         col_indices = ints_to_numpy_buffer(
             col_indices, np.uint64, copy=copy, ownable=True, name="column indices"
         )
+        if method == "pack":
+            dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if col_indices is values:
             values = np.copy(values)
-        mhandle = ffi_new("GrB_Matrix*")
         Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
         Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(rows)))
         Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
         Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
         if nvec is None:
             nvec = rows.size
-        check_status_carg(
-            lib.GxB_Matrix_import_HyperCSR(
-                mhandle,
-                dtype._carg,
-                nrows,
-                ncols,
-                Ap,
-                Ah,
-                Aj,
-                Ax,
-                indptr.nbytes,
-                rows.nbytes,
-                col_indices.nbytes,
-                values.nbytes,
-                is_uniform,
-                nvec,
-                not sorted_index,
-                ffi.NULL,
-            ),
-            "Matrix",
-            mhandle[0],
+        if method == "import":
+            mhandle = ffi_new("GrB_Matrix*")
+            args = (dtype._carg, nrows, ncols)
+        else:
+            mhandle = matrix._carg
+            args = ()
+        status = libget(f"GxB_Matrix_{method}_HyperCSR")(
+            mhandle,
+            *args,
+            Ap,
+            Ah,
+            Aj,
+            Ax,
+            indptr.nbytes,
+            rows.nbytes,
+            col_indices.nbytes,
+            values.nbytes,
+            is_iso,
+            nvec,
+            not sorted_index,
+            ffi.NULL,
         )
-        rv = gb.Matrix(mhandle, dtype, name=name)
-        rv._nrows = nrows
-        rv._ncols = ncols
+        if method == "import":
+            check_status_carg(
+                status,
+                "Matrix",
+                mhandle[0],
+            )
+            matrix = gb.Matrix(mhandle, dtype, name=name)
+            matrix._nrows = nrows
+            matrix._ncols = ncols
+        else:
+            check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(indptr)
         unclaim_buffer(rows)
         unclaim_buffer(col_indices)
         unclaim_buffer(values)
-        return rv
+        return matrix
 
     @classmethod
     def import_hypercsc(
@@ -1190,7 +1489,7 @@ class ss:
         values,
         row_indices,
         nvec=None,
-        is_uniform=False,
+        is_iso=False,
         sorted_index=False,
         take_ownership=False,
         dtype=None,
@@ -1212,8 +1511,9 @@ class ss:
         nvec : int, optional
             The number of elements in "cols" to use.
             If not specified, will be set to ``len(cols)``.
-        is_uniform : bool, default False
-            Not yet supported.
+        is_iso : bool, default False
+            Is the Matrix iso-valued (meaning all the same value)?
+            If true, then `values` should be a length 1 array.
         sorted_index : bool, default False
             Indicate whether the values in "row_indices" are sorted.
         take_ownership : bool, default False
@@ -1241,6 +1541,79 @@ class ss:
         -------
         Matrix
         """
+        return cls._import_hypercsc(
+            nrows=nrows,
+            ncols=ncols,
+            cols=cols,
+            indptr=indptr,
+            values=values,
+            row_indices=row_indices,
+            nvec=nvec,
+            is_iso=is_iso,
+            sorted_index=sorted_index,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            format=format,
+            name=name,
+            method="import",
+        )
+
+    def pack_hypercsc(
+        self,
+        *,
+        cols,
+        indptr,
+        values,
+        row_indices,
+        nvec=None,
+        is_iso=False,
+        sorted_index=False,
+        take_ownership=False,
+        format=None,
+        **ignored_kwargs,
+    ):
+        """
+        GxB_Matrix_pack_HyperCSC
+
+        `pack_hypercsc` is like `import_hypercsc` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("hypercsc")``
+
+        See `Matrix.ss.import_hypercsc` documentation for more details.
+        """
+        return self._import_hypercsc(
+            cols=cols,
+            indptr=indptr,
+            values=values,
+            row_indices=row_indices,
+            nvec=nvec,
+            is_iso=is_iso,
+            sorted_index=sorted_index,
+            take_ownership=take_ownership,
+            format=format,
+            method="pack",
+            matrix=self._parent,
+        )
+
+    @classmethod
+    def _import_hypercsc(
+        cls,
+        *,
+        nrows=None,
+        ncols=None,
+        cols,
+        indptr,
+        values,
+        row_indices,
+        nvec=None,
+        is_iso=False,
+        sorted_index=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+        method,
+        matrix=None,
+    ):
         if format is not None and format.lower() != "hypercsc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsc'.")
         copy = not take_ownership
@@ -1251,46 +1624,57 @@ class ss:
         row_indices = ints_to_numpy_buffer(
             row_indices, np.uint64, copy=copy, ownable=True, name="row indices"
         )
+        if method == "pack":
+            dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if row_indices is values:
             values = np.copy(values)
-        mhandle = ffi_new("GrB_Matrix*")
         Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
         Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(cols)))
         Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
         Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
         if nvec is None:
             nvec = cols.size
-        check_status_carg(
-            lib.GxB_Matrix_import_HyperCSC(
-                mhandle,
-                dtype._carg,
-                nrows,
-                ncols,
-                Ap,
-                Ah,
-                Ai,
-                Ax,
-                indptr.nbytes,
-                cols.nbytes,
-                row_indices.nbytes,
-                values.nbytes,
-                is_uniform,
-                nvec,
-                not sorted_index,
-                ffi.NULL,
-            ),
-            "Matrix",
-            mhandle[0],
+        if method == "import":
+            mhandle = ffi_new("GrB_Matrix*")
+            args = (dtype._carg, nrows, ncols)
+        else:
+            mhandle = matrix._carg
+            args = ()
+        status = libget(f"GxB_Matrix_{method}_HyperCSC")(
+            mhandle,
+            *args,
+            Ap,
+            Ah,
+            Ai,
+            Ax,
+            indptr.nbytes,
+            cols.nbytes,
+            row_indices.nbytes,
+            values.nbytes,
+            is_iso,
+            nvec,
+            not sorted_index,
+            ffi.NULL,
         )
-        rv = gb.Matrix(mhandle, dtype, name=name)
-        rv._nrows = nrows
-        rv._ncols = ncols
+        if method == "import":
+            check_status_carg(
+                status,
+                "Matrix",
+                mhandle[0],
+            )
+            matrix = gb.Matrix(mhandle, dtype, name=name)
+            matrix._nrows = nrows
+            matrix._ncols = ncols
+        else:
+            check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(indptr)
         unclaim_buffer(cols)
         unclaim_buffer(row_indices)
         unclaim_buffer(values)
-        return rv
+        return matrix
 
     @classmethod
     def import_bitmapr(
@@ -1301,7 +1685,7 @@ class ss:
         nvals=None,
         nrows=None,
         ncols=None,
-        is_uniform=False,
+        is_iso=False,
         take_ownership=False,
         dtype=None,
         format=None,
@@ -1327,8 +1711,9 @@ class ss:
         ncols : int
             The number of columns for the Matrix.
             If not provided, will be inferred from values or bitmap if either is 2d.
-        is_uniform : bool, default False
-            Not yet supported.
+        is_iso : bool, default False
+            Is the Matrix iso-valued (meaning all the same value)?
+            If true, then `values` should be a length 1 array.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -1354,17 +1739,82 @@ class ss:
         -------
         Matrix
         """
+        return cls._import_bitmapr(
+            bitmap=bitmap,
+            values=values,
+            nvals=nvals,
+            nrows=nrows,
+            ncols=ncols,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            format=format,
+            name=name,
+            method="import",
+        )
+
+    def pack_bitmapr(
+        self,
+        *,
+        bitmap,
+        values,
+        nvals=None,
+        is_iso=False,
+        take_ownership=False,
+        format=None,
+        **unused_kwargs,
+    ):
+        """
+        GxB_Matrix_pack_BitmapR
+
+        `pack_bitmapr` is like `import_bitmapr` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("bitmapr")``
+
+        See `Matrix.ss.import_bitmapr` documentation for more details.
+        """
+        return self._import_bitmapr(
+            bitmap=bitmap,
+            values=values,
+            nvals=nvals,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            format=format,
+            method="pack",
+            matrix=self._parent,
+        )
+
+    @classmethod
+    def _import_bitmapr(
+        cls,
+        *,
+        bitmap,
+        values,
+        nvals=None,
+        nrows=None,
+        ncols=None,
+        is_iso=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+        method,
+        matrix=None,
+    ):
         if format is not None and format.lower() != "bitmapr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapr'.")
         copy = not take_ownership
         bitmap = ints_to_numpy_buffer(
             bitmap, np.bool8, copy=copy, ownable=True, order="C", name="bitmap"
         )
+        if method == "pack":
+            dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True, order="C")
         if bitmap is values:
             values = np.copy(values)
-        nrows, ncols = get_shape(nrows, ncols, values=values, bitmap=bitmap)
-        mhandle = ffi_new("GrB_Matrix*")
+        if method == "import":
+            nrows, ncols = get_shape(nrows, ncols, values=values, bitmap=bitmap)
+        else:
+            nrows, ncols = matrix.shape
         Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
         Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
         if nvals is None:
@@ -1372,29 +1822,39 @@ class ss:
                 nvals = np.count_nonzero(bitmap)
             else:
                 nvals = np.count_nonzero(bitmap.ravel()[: nrows * ncols])
-        check_status_carg(
-            lib.GxB_Matrix_import_BitmapR(
-                mhandle,
-                dtype._carg,
-                nrows,
-                ncols,
-                Ab,
-                Ax,
-                bitmap.nbytes,
-                values.nbytes,
-                is_uniform,
-                nvals,
-                ffi.NULL,
-            ),
-            "Matrix",
-            mhandle[0],
+        if method == "import":
+            mhandle = ffi_new("GrB_Matrix*")
+            args = (dtype._carg, nrows, ncols)
+        else:
+            mhandle = matrix._carg
+            args = ()
+        status = libget(f"GxB_Matrix_{method}_BitmapR")(
+            mhandle,
+            *args,
+            Ab,
+            Ax,
+            bitmap.nbytes,
+            values.nbytes,
+            is_iso,
+            nvals,
+            ffi.NULL,
         )
-        rv = gb.Matrix(mhandle, dtype, name=name)
-        rv._nrows = nrows
-        rv._ncols = ncols
+        if method == "import":
+            check_status_carg(
+                status,
+                "Matrix",
+                mhandle[0],
+            )
+            matrix = gb.Matrix(mhandle, dtype, name=name)
+            matrix._nrows = nrows
+            matrix._ncols = ncols
+        else:
+            check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(bitmap)
         unclaim_buffer(values)
-        return rv
+        return matrix
 
     @classmethod
     def import_bitmapc(
@@ -1405,10 +1865,10 @@ class ss:
         nvals=None,
         nrows=None,
         ncols=None,
-        is_uniform=False,
+        is_iso=False,
         take_ownership=False,
-        format=None,
         dtype=None,
+        format=None,
         name=None,
     ):
         """
@@ -1431,8 +1891,9 @@ class ss:
         ncols : int
             The number of columns for the Matrix.
             If not provided, will be inferred from values or bitmap if either is 2d.
-        is_uniform : bool, default False
-            Not yet supported.
+        is_iso : bool, default False
+            Is the Matrix iso-valued (meaning all the same value)?
+            If true, then `values` should be a length 1 array.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -1458,17 +1919,82 @@ class ss:
         -------
         Matrix
         """
+        return cls._import_bitmapc(
+            bitmap=bitmap,
+            values=values,
+            nvals=nvals,
+            nrows=nrows,
+            ncols=ncols,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            format=format,
+            name=name,
+            method="import",
+        )
+
+    def pack_bitmapc(
+        self,
+        *,
+        bitmap,
+        values,
+        nvals=None,
+        is_iso=False,
+        take_ownership=False,
+        format=None,
+        **unused_kwargs,
+    ):
+        """
+        GxB_Matrix_pack_BitmapC
+
+        `pack_bitmapc` is like `import_bitmapc` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("bitmapc")``
+
+        See `Matrix.ss.import_bitmapc` documentation for more details.
+        """
+        return self._import_bitmapc(
+            bitmap=bitmap,
+            values=values,
+            nvals=nvals,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            format=format,
+            method="pack",
+            matrix=self._parent,
+        )
+
+    @classmethod
+    def _import_bitmapc(
+        cls,
+        *,
+        bitmap,
+        values,
+        nvals=None,
+        nrows=None,
+        ncols=None,
+        is_iso=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+        method,
+        matrix=None,
+    ):
         if format is not None and format.lower() != "bitmapc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapc'.")
         copy = not take_ownership
         bitmap = ints_to_numpy_buffer(
             bitmap, np.bool8, copy=copy, ownable=True, order="F", name="bitmap"
         )
+        if method == "pack":
+            dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True, order="F")
         if bitmap is values:
             values = np.copy(values)
-        nrows, ncols = get_shape(nrows, ncols, values=values, bitmap=bitmap)
-        mhandle = ffi_new("GrB_Matrix*")
+        if method == "import":
+            nrows, ncols = get_shape(nrows, ncols, values=values, bitmap=bitmap)
+        else:
+            nrows, ncols = matrix.shape
         Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap.T)))
         Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values.T)))
         if nvals is None:
@@ -1476,38 +2002,48 @@ class ss:
                 nvals = np.count_nonzero(bitmap)
             else:
                 nvals = np.count_nonzero(bitmap.ravel("F")[: nrows * ncols])
-        check_status_carg(
-            lib.GxB_Matrix_import_BitmapC(
-                mhandle,
-                dtype._carg,
-                nrows,
-                ncols,
-                Ab,
-                Ax,
-                bitmap.nbytes,
-                values.nbytes,
-                is_uniform,
-                nvals,
-                ffi.NULL,
-            ),
-            "Matrix",
-            mhandle[0],
+        if method == "import":
+            mhandle = ffi_new("GrB_Matrix*")
+            args = (dtype._carg, nrows, ncols)
+        else:
+            mhandle = matrix._carg
+            args = ()
+        status = libget(f"GxB_Matrix_{method}_BitmapC")(
+            mhandle,
+            *args,
+            Ab,
+            Ax,
+            bitmap.nbytes,
+            values.nbytes,
+            is_iso,
+            nvals,
+            ffi.NULL,
         )
-        rv = gb.Matrix(mhandle, dtype, name=name)
-        rv._nrows = nrows
-        rv._ncols = ncols
+        if method == "import":
+            check_status_carg(
+                status,
+                "Matrix",
+                mhandle[0],
+            )
+            matrix = gb.Matrix(mhandle, dtype, name=name)
+            matrix._nrows = nrows
+            matrix._ncols = ncols
+        else:
+            check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(bitmap)
         unclaim_buffer(values)
-        return rv
+        return matrix
 
     @classmethod
     def import_fullr(
         cls,
-        *,
         values,
+        *,
         nrows=None,
         ncols=None,
-        is_uniform=False,
+        is_iso=False,
         take_ownership=False,
         dtype=None,
         format=None,
@@ -1528,8 +2064,9 @@ class ss:
         ncols : int
             The number of columns for the Matrix.
             If not provided, will be inferred from values if it is 2d.
-        is_uniform : bool, default False
-            Not yet supported.
+        is_iso : bool, default False
+            Is the Matrix iso-valued (meaning all the same value)?
+            If true, then `values` should be a length 1 array.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -1555,41 +2092,109 @@ class ss:
         -------
         Matrix
         """
-        if format is not None and format.lower() != "fullr":
-            raise ValueError(f"Invalid format: {format!r}  Must be None or 'fullr'.")
-        copy = not take_ownership
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, order="C", ownable=True)
-        nrows, ncols = get_shape(nrows, ncols, values=values)
-        mhandle = ffi_new("GrB_Matrix*")
-        Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
-        check_status_carg(
-            lib.GxB_Matrix_import_FullR(
-                mhandle,
-                dtype._carg,
-                nrows,
-                ncols,
-                Ax,
-                values.nbytes,
-                is_uniform,
-                ffi.NULL,
-            ),
-            "Matrix",
-            mhandle[0],
+        return cls._import_fullr(
+            values=values,
+            nrows=nrows,
+            ncols=ncols,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            format=format,
+            name=name,
+            method="import",
         )
-        rv = gb.Matrix(mhandle, dtype, name=name)
-        rv._nrows = nrows
-        rv._ncols = ncols
-        unclaim_buffer(values)
-        return rv
+
+    def pack_fullr(
+        self,
+        values,
+        *,
+        is_iso=False,
+        take_ownership=False,
+        format=None,
+        **unused_kwargs,
+    ):
+        """
+        GxB_Matrix_pack_FullR
+
+        `pack_fullr` is like `import_fullr` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("fullr")``
+
+        See `Matrix.ss.import_fullr` documentation for more details.
+        """
+        return self._import_fullr(
+            values=values,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            format=format,
+            method="pack",
+            matrix=self._parent,
+        )
 
     @classmethod
-    def import_fullc(
+    def _import_fullr(
         cls,
         *,
         values,
         nrows=None,
         ncols=None,
-        is_uniform=False,
+        is_iso=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+        method,
+        matrix=None,
+    ):
+        if format is not None and format.lower() != "fullr":
+            raise ValueError(f"Invalid format: {format!r}  Must be None or 'fullr'.")
+        copy = not take_ownership
+        if method == "pack":
+            dtype = matrix.dtype
+        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, order="C", ownable=True)
+        if method == "import":
+            nrows, ncols = get_shape(nrows, ncols, values=values)
+        else:
+            nrows, ncols = matrix.shape
+
+        Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+        if method == "import":
+            mhandle = ffi_new("GrB_Matrix*")
+            args = (dtype._carg, nrows, ncols)
+        else:
+            mhandle = matrix._carg
+            args = ()
+        status = libget(f"GxB_Matrix_{method}_FullR")(
+            mhandle,
+            *args,
+            Ax,
+            values.nbytes,
+            is_iso,
+            ffi.NULL,
+        )
+        if method == "import":
+            check_status_carg(
+                status,
+                "Matrix",
+                mhandle[0],
+            )
+            matrix = gb.Matrix(mhandle, dtype, name=name)
+            matrix._nrows = nrows
+            matrix._ncols = ncols
+        else:
+            check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
+        unclaim_buffer(values)
+        return matrix
+
+    @classmethod
+    def import_fullc(
+        cls,
+        values,
+        *,
+        nrows=None,
+        ncols=None,
+        is_iso=False,
         take_ownership=False,
         dtype=None,
         format=None,
@@ -1610,8 +2215,10 @@ class ss:
         ncols : int
             The number of columns for the Matrix.
             If not provided, will be inferred from values if it is 2d.
-        is_uniform : bool, default False
+        is_iso : bool, default False
             Not yet supported.
+            Is the Matrix iso-valued (meaning all the same value)?
+            If true, then `values` should be a length 1 array.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -1637,32 +2244,99 @@ class ss:
         -------
         Matrix
         """
+        return cls._import_fullc(
+            values=values,
+            nrows=nrows,
+            ncols=ncols,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            format=format,
+            name=name,
+            method="import",
+        )
+
+    def pack_fullc(
+        self,
+        values,
+        *,
+        is_iso=False,
+        take_ownership=False,
+        format=None,
+        **unused_kwargs,
+    ):
+        """
+        GxB_Matrix_pack_FullC
+
+        `pack_fullc` is like `import_fullc` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("fullc")``
+
+        See `Matrix.ss.import_fullc` documentation for more details.
+        """
+        return self._import_fullc(
+            values=values,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            format=format,
+            method="pack",
+            matrix=self._parent,
+        )
+
+    @classmethod
+    def _import_fullc(
+        cls,
+        *,
+        values,
+        nrows=None,
+        ncols=None,
+        is_iso=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+        method,
+        matrix=None,
+    ):
         if format is not None and format.lower() != "fullc":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'fullc'.")
         copy = not take_ownership
+        if method == "pack":
+            dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, order="F", ownable=True)
-        nrows, ncols = get_shape(nrows, ncols, values=values)
-        mhandle = ffi_new("GrB_Matrix*")
+        if method == "import":
+            nrows, ncols = get_shape(nrows, ncols, values=values)
+        else:
+            nrows, ncols = matrix.shape
         Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values.T)))
-        check_status_carg(
-            lib.GxB_Matrix_import_FullC(
-                mhandle,
-                dtype._carg,
-                nrows,
-                ncols,
-                Ax,
-                values.nbytes,
-                is_uniform,
-                ffi.NULL,
-            ),
-            "Matrix",
-            mhandle[0],
+        if method == "import":
+            mhandle = ffi_new("GrB_Matrix*")
+            args = (dtype._carg, nrows, ncols)
+        else:
+            mhandle = matrix._carg
+            args = ()
+        status = libget(f"GxB_Matrix_{method}_FullC")(
+            mhandle,
+            *args,
+            Ax,
+            values.nbytes,
+            is_iso,
+            ffi.NULL,
         )
-        rv = gb.Matrix(mhandle, dtype, name=name)
-        rv._nrows = nrows
-        rv._ncols = ncols
+        if method == "import":
+            check_status_carg(
+                status,
+                "Matrix",
+                mhandle[0],
+            )
+            matrix = gb.Matrix(mhandle, dtype, name=name)
+            matrix._nrows = nrows
+            matrix._ncols = ncols
+        else:
+            check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(values)
-        return rv
+        return matrix
 
     @classmethod
     def import_any(
@@ -1672,7 +2346,7 @@ class ss:
         values,
         nrows=None,
         ncols=None,
-        is_uniform=False,
+        is_iso=False,
         take_ownership=False,
         format=None,
         dtype=None,
@@ -1723,8 +2397,130 @@ class ss:
 
         >>> pieces = A.ss.export()
         >>> A2 = Matrix.ss.import_any(**pieces)
-
         """
+        return cls._import_any(
+            values=values,
+            nrows=nrows,
+            ncols=ncols,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            format=format,
+            dtype=dtype,
+            name=name,
+            # CSR/CSC/HyperCSR/HyperCSC
+            indptr=indptr,
+            sorted_index=sorted_index,
+            # CSR/HyperCSR
+            col_indices=col_indices,
+            # HyperCSR
+            rows=rows,
+            # CSC/HyperCSC
+            row_indices=row_indices,
+            # HyperCSC
+            cols=cols,
+            # HyperCSR/HyperCSC
+            nvec=nvec,
+            # BitmapR/BitmapC
+            bitmap=bitmap,
+            nvals=nvals,
+            method="import",
+        )
+
+    def pack_any(
+        self,
+        *,
+        # All
+        values,
+        is_iso=False,
+        take_ownership=False,
+        format=None,
+        # CSR/CSC/HyperCSR/HyperCSC
+        indptr=None,
+        sorted_index=False,
+        # CSR/HyperCSR
+        col_indices=None,
+        # HyperCSR
+        rows=None,
+        # CSC/HyperCSC
+        row_indices=None,
+        # HyperCSC
+        cols=None,
+        # HyperCSR/HyperCSC
+        nvec=None,  # optional
+        # BitmapR/BitmapC
+        bitmap=None,
+        nvals=None,  # optional
+        # Unused for pack
+        nrows=None,
+        ncols=None,
+        dtype=None,
+        name=None,
+    ):
+        """
+        GxB_Matrix_pack_XXX
+
+        `pack_any` is like `import_any` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack()``
+
+        See `Matrix.ss.import_any` documentation for more details.
+        """
+        return self._import_any(
+            values=values,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            format=format,
+            # CSR/CSC/HyperCSR/HyperCSC
+            indptr=indptr,
+            sorted_index=sorted_index,
+            # CSR/HyperCSR
+            col_indices=col_indices,
+            # HyperCSR
+            rows=rows,
+            # CSC/HyperCSC
+            row_indices=row_indices,
+            # HyperCSC
+            cols=cols,
+            # HyperCSR/HyperCSC
+            nvec=nvec,
+            # BitmapR/BitmapC
+            bitmap=bitmap,
+            nvals=nvals,
+            method="pack",
+            matrix=self._parent,
+        )
+
+    @classmethod
+    def _import_any(
+        cls,
+        *,
+        # All
+        values,
+        nrows=None,
+        ncols=None,
+        is_iso=False,
+        take_ownership=False,
+        format=None,
+        dtype=None,
+        name=None,
+        # CSR/CSC/HyperCSR/HyperCSC
+        indptr=None,
+        sorted_index=False,
+        # CSR/HyperCSR
+        col_indices=None,
+        # HyperCSR
+        rows=None,
+        # CSC/HyperCSC
+        row_indices=None,
+        # HyperCSC
+        cols=None,
+        # HyperCSR/HyperCSC
+        nvec=None,  # optional
+        # BitmapR/BitmapC
+        bitmap=None,
+        nvals=None,  # optional
+        method,
+        matrix=None,
+    ):
         if format is None:
             # Determine format based on provided inputs
             if indptr is not None:
@@ -1785,35 +2581,38 @@ class ss:
                     format = "fullr"
         else:
             format = format.lower()
-
+        if method == "pack":
+            obj = matrix.ss
+        else:
+            obj = cls
         if format == "csr":
-            return cls.import_csr(
+            return getattr(obj, f"{method}_csr")(
                 nrows=nrows,
                 ncols=ncols,
                 indptr=indptr,
                 values=values,
                 col_indices=col_indices,
-                is_uniform=is_uniform,
+                is_iso=is_iso,
                 sorted_index=sorted_index,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
             )
         elif format == "csc":
-            return cls.import_csc(
+            return getattr(obj, f"{method}_csc")(
                 nrows=nrows,
                 ncols=ncols,
                 indptr=indptr,
                 values=values,
                 row_indices=row_indices,
-                is_uniform=is_uniform,
+                is_iso=is_iso,
                 sorted_index=sorted_index,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
             )
         elif format == "hypercsr":
-            return cls.import_hypercsr(
+            return getattr(obj, f"{method}_hypercsr")(
                 nrows=nrows,
                 ncols=ncols,
                 nvec=nvec,
@@ -1821,14 +2620,14 @@ class ss:
                 indptr=indptr,
                 values=values,
                 col_indices=col_indices,
-                is_uniform=is_uniform,
+                is_iso=is_iso,
                 sorted_index=sorted_index,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
             )
         elif format == "hypercsc":
-            return cls.import_hypercsc(
+            return getattr(obj, f"{method}_hypercsc")(
                 nrows=nrows,
                 ncols=ncols,
                 nvec=nvec,
@@ -1836,52 +2635,52 @@ class ss:
                 indptr=indptr,
                 values=values,
                 row_indices=row_indices,
-                is_uniform=is_uniform,
+                is_iso=is_iso,
                 sorted_index=sorted_index,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
             )
         elif format == "bitmapr":
-            return cls.import_bitmapr(
+            return getattr(obj, f"{method}_bitmapr")(
                 nrows=nrows,
                 ncols=ncols,
                 values=values,
                 nvals=nvals,
                 bitmap=bitmap,
-                is_uniform=is_uniform,
+                is_iso=is_iso,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
             )
         elif format == "bitmapc":
-            return cls.import_bitmapc(
+            return getattr(obj, f"{method}_bitmapc")(
                 nrows=nrows,
                 ncols=ncols,
                 values=values,
                 nvals=nvals,
                 bitmap=bitmap,
-                is_uniform=is_uniform,
+                is_iso=is_iso,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
             )
         elif format == "fullr":
-            return cls.import_fullr(
+            return getattr(obj, f"{method}_fullr")(
                 nrows=nrows,
                 ncols=ncols,
                 values=values,
-                is_uniform=is_uniform,
+                is_iso=is_iso,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
             )
         elif format == "fullc":
-            return cls.import_fullc(
+            return getattr(obj, f"{method}_fullc")(
                 nrows=nrows,
                 ncols=ncols,
                 values=values,
-                is_uniform=is_uniform,
+                is_iso=is_iso,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
