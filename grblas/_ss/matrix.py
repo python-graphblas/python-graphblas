@@ -341,7 +341,6 @@ class ss:
         --------
         grblas.ss.diag
         Vector.ss.diag
-
         """
         self._parent._expect_type(vector, gb.Vector, within="ss.diag", argname="vector")
         call("GxB_Matrix_diag", [self._parent, vector, _CScalar(k, dtype=INT64), None])
@@ -370,7 +369,6 @@ class ss:
         --------
         Matrix.ss.concat
         grblas.ss.concat
-
         """
         from ..matrix import Matrix
 
@@ -441,7 +439,6 @@ class ss:
         --------
         Matrix.ss.split
         grblas.ss.concat
-
         """
         m, n = _concat_mn(tiles)
         self._concat(tiles, m, n)
@@ -586,7 +583,6 @@ class ss:
 
         >>> pieces = A.ss.export()
         >>> A2 = Matrix.ss.import_any(**pieces)
-
         """
         return self._export(
             format, sort=sort, give_ownership=give_ownership, raw=raw, method="export"
@@ -600,7 +596,6 @@ class ss:
         `pack_*` methods are the opposite of `unpack`.
 
         See `Matrix.ss.export` documentation for more details.
-
         """
         return self._export(format, sort=sort, raw=raw, give_ownership=True, method="unpack")
 
@@ -1015,6 +1010,14 @@ class ss:
         format=None,
         **ignored_kwargs,
     ):
+        """
+        GxB_Matrix_pack_CSR
+
+        `pack_csr` is like `import_csr` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("csr")``
+
+        See `Matrix.ss.import_csr` documentation for more details.
+        """
         return self._import_csr(
             indptr=indptr,
             values=values,
@@ -1092,6 +1095,8 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(indptr)
         unclaim_buffer(col_indices)
         unclaim_buffer(values)
@@ -1182,6 +1187,14 @@ class ss:
         format=None,
         **ignored_kwargs,
     ):
+        """
+        GxB_Matrix_pack_CSC
+
+        `pack_csc` is like `import_csc` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("csc")``
+
+        See `Matrix.ss.import_csc` documentation for more details.
+        """
         return self._import_csc(
             indptr=indptr,
             values=values,
@@ -1259,6 +1272,8 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(indptr)
         unclaim_buffer(row_indices)
         unclaim_buffer(values)
@@ -1359,6 +1374,14 @@ class ss:
         format=None,
         **ignored_kwargs,
     ):
+        """
+        GxB_Matrix_pack_HyperCSR
+
+        `pack_hypercsr` is like `import_hypercsr` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("hypercsr")``
+
+        See `Matrix.ss.import_hypercsr` documentation for more details.
+        """
         return self._import_hypercsr(
             rows=rows,
             indptr=indptr,
@@ -1447,6 +1470,8 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(indptr)
         unclaim_buffer(rows)
         unclaim_buffer(col_indices)
@@ -1547,6 +1572,14 @@ class ss:
         format=None,
         **ignored_kwargs,
     ):
+        """
+        GxB_Matrix_pack_HyperCSC
+
+        `pack_hypercsc` is like `import_hypercsc` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("hypercsc")``
+
+        See `Matrix.ss.import_hypercsc` documentation for more details.
+        """
         return self._import_hypercsc(
             cols=cols,
             indptr=indptr,
@@ -1635,6 +1668,8 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(indptr)
         unclaim_buffer(cols)
         unclaim_buffer(row_indices)
@@ -1729,6 +1764,14 @@ class ss:
         format=None,
         **unused_kwargs,
     ):
+        """
+        GxB_Matrix_pack_BitmapR
+
+        `pack_bitmapr` is like `import_bitmapr` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("bitmapr")``
+
+        See `Matrix.ss.import_bitmapr` documentation for more details.
+        """
         return self._import_bitmapr(
             bitmap=bitmap,
             values=values,
@@ -1807,6 +1850,8 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(bitmap)
         unclaim_buffer(values)
         return matrix
@@ -1899,6 +1944,14 @@ class ss:
         format=None,
         **unused_kwargs,
     ):
+        """
+        GxB_Matrix_pack_BitmapC
+
+        `pack_bitmapc` is like `import_bitmapc` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("bitmapc")``
+
+        See `Matrix.ss.import_bitmapc` documentation for more details.
+        """
         return self._import_bitmapc(
             bitmap=bitmap,
             values=values,
@@ -1977,6 +2030,8 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(bitmap)
         unclaim_buffer(values)
         return matrix
@@ -1984,8 +2039,8 @@ class ss:
     @classmethod
     def import_fullr(
         cls,
-        *,
         values,
+        *,
         nrows=None,
         ncols=None,
         is_iso=False,
@@ -2051,13 +2106,21 @@ class ss:
 
     def pack_fullr(
         self,
-        *,
         values,
+        *,
         is_iso=False,
         take_ownership=False,
         format=None,
         **unused_kwargs,
     ):
+        """
+        GxB_Matrix_pack_FullR
+
+        `pack_fullr` is like `import_fullr` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("fullr")``
+
+        See `Matrix.ss.import_fullr` documentation for more details.
+        """
         return self._import_fullr(
             values=values,
             is_iso=is_iso,
@@ -2092,6 +2155,7 @@ class ss:
             nrows, ncols = get_shape(nrows, ncols, values=values)
         else:
             nrows, ncols = matrix.shape
+
         Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
         if method == "import":
             mhandle = ffi_new("GrB_Matrix*")
@@ -2118,14 +2182,16 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(values)
         return matrix
 
     @classmethod
     def import_fullc(
         cls,
-        *,
         values,
+        *,
         nrows=None,
         ncols=None,
         is_iso=False,
@@ -2192,13 +2258,21 @@ class ss:
 
     def pack_fullc(
         self,
-        *,
         values,
+        *,
         is_iso=False,
         take_ownership=False,
         format=None,
         **unused_kwargs,
     ):
+        """
+        GxB_Matrix_pack_FullC
+
+        `pack_fullc` is like `import_fullc` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("fullc")``
+
+        See `Matrix.ss.import_fullc` documentation for more details.
+        """
         return self._import_fullc(
             values=values,
             is_iso=is_iso,
@@ -2259,6 +2333,8 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
+        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
+        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(values)
         return matrix
 
@@ -2321,7 +2397,6 @@ class ss:
 
         >>> pieces = A.ss.export()
         >>> A2 = Matrix.ss.import_any(**pieces)
-
         """
         return cls._import_any(
             values=values,
@@ -2381,6 +2456,14 @@ class ss:
         dtype=None,
         name=None,
     ):
+        """
+        GxB_Matrix_pack_XXX
+
+        `pack_any` is like `import_any` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack()``
+
+        See `Matrix.ss.import_any` documentation for more details.
+        """
         return self._import_any(
             values=values,
             is_iso=is_iso,
@@ -2498,11 +2581,10 @@ class ss:
                     format = "fullr"
         else:
             format = format.lower()
-
-        if method == "import":
-            obj = cls
-        else:
+        if method == "pack":
             obj = matrix.ss
+        else:
+            obj = cls
         if format == "csr":
             return getattr(obj, f"{method}_csr")(
                 nrows=nrows,

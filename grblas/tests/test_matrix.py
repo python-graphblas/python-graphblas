@@ -1689,7 +1689,6 @@ def test_import_export_auto(A, do_iso, methods):
             [format, None],
             [False, True],
             [False, True],
-            # [Matrix.ss.import_any, getattr(Matrix.ss, f"import_{format}")],
             ["any", format],
         ):
             A2 = A.dup() if give_ownership or out_method == "unpack" else A
@@ -1706,11 +1705,7 @@ def test_import_export_auto(A, do_iso, methods):
                     return A2
 
             d["format"] = import_format
-            try:
-                other = import_func(take_ownership=take_ownership, **d)
-            except Exception:  # pragma: no cover
-                print(dict(take_ownership=take_ownership, **d))
-                raise
+            other = import_func(take_ownership=take_ownership, **d)
             if format == "bitmapc" and raw and import_format is None and import_name == "any":
                 # It's 1d, so we can't tell we're column-oriented w/o format keyword
                 assert other.isequal(A_orig.T)
@@ -1726,33 +1721,63 @@ def test_import_export_auto(A, do_iso, methods):
         C(C.S) << 1
     C_orig = C.dup()
     for format in ["fullr", "fullc"]:
-        for raw, import_format, give_ownership, take_ownership, import_func in itertools.product(
+        for raw, import_format, give_ownership, take_ownership, import_name in itertools.product(
             [False, True],
             [format, None],
             [False, True],
             [False, True],
-            [Matrix.ss.import_any, getattr(Matrix.ss, f"import_{format}")],
+            ["any", format],
         ):
-            C2 = C.dup() if give_ownership else C
-            d = C2.ss.export(format, raw=raw, give_ownership=give_ownership)
+            assert C.shape == (C.nrows, C.ncols)
+            C2 = C.dup() if give_ownership or out_method == "unpack" else C
+            if out_method == "export":
+                d = C2.ss.export(format, raw=raw, give_ownership=give_ownership)
+            else:
+                d = C2.ss.unpack(format, raw=raw)
+            if in_method == "import":
+                import_func = getattr(Matrix.ss, f"import_{import_name}")
+            else:
+
+                def import_func(**kwargs):
+                    getattr(C2.ss, f"pack_{import_name}")(**kwargs)
+                    return C2
+
             d["format"] = import_format
             other = import_func(take_ownership=take_ownership, **d)
-            if (
-                format == "fullc"
-                and raw
-                and import_format is None
-                and import_func.__name__ == "import_any"
-            ):
+            if format == "fullc" and raw and import_format is None and import_name == "any":
                 # It's 1d, so we can't tell we're column-oriented w/o format keyword
                 if do_iso:
                     values = [1, 1, 1, 1, 1, 1]
                 else:
                     values = [1, 3, 5, 2, 4, 6]
-                assert other.isequal(
-                    Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], values)
-                )
+                if in_method == "import":
+                    assert other.isequal(
+                        Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], values)
+                    )
+                else:
+                    # We know the shape when using pack
+                    # XXX: the shape of `other` here may be a bug in SuiteSprase:GraphBLAS
+                    M = Matrix.from_values([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], values)
+                    assert other.isequal(M)
             else:
-                assert other.isequal(C_orig)
+                if (
+                    in_method == "pack"
+                    and import_format is None
+                    and (
+                        raw
+                        and format == "fullc"
+                        and import_name != "fullc"
+                        or not raw
+                        and format == "fullc"
+                        and import_name != "fullc"
+                        and do_iso
+                    )
+                ):
+                    # XXX: entering this branch may be due to a bug in SuiteSparse:GraphBLAS
+                    assert other.shape == C_orig.T.shape
+                    assert other.isequal(C_orig.T)
+                else:
+                    assert other.isequal(C_orig)
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
                 import_func(**d)

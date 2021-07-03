@@ -7,7 +7,7 @@ from ..base import call
 from ..dtypes import lookup_dtype, INT64
 from ..exceptions import check_status, check_status_carg
 from ..scalar import _CScalar
-from ..utils import ints_to_numpy_buffer, values_to_numpy_buffer, wrapdoc
+from ..utils import libget, ints_to_numpy_buffer, values_to_numpy_buffer, wrapdoc
 
 ffi_new = ffi.new
 
@@ -126,7 +126,7 @@ class ss:
             matrix = matrix._matrix
         call("GxB_Vector_diag", [self._parent, matrix, _CScalar(k, dtype=INT64), None])
 
-    def export(self, format=None, sort=False, give_ownership=False, raw=False):
+    def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
         """
         GxB_Vextor_export_xxx
 
@@ -192,12 +192,27 @@ class ss:
 
         >>> pieces = v.ss.export()
         >>> v2 = Vector.ss.import_any(**pieces)
-
         """
+        return self._export(
+            format=format, sort=sort, give_ownership=give_ownership, raw=raw, method="export"
+        )
+
+    def unpack(self, format=None, *, sort=False, raw=False):
+        """
+        GxB_Vector_unpack_xxx
+
+        `unpack` is like `export`, except that the Vector remains valid but empty.
+        `pack_*` methods are the opposite of `unpack`.
+
+        See `Vector.ss.export` documentation for more details.
+        """
+        return self._export(format=format, sort=sort, give_ownership=True, raw=raw, method="unpack")
+
+    def _export(self, format=None, *, sort=False, give_ownership=False, raw=False, method):
         if give_ownership:
             parent = self._parent
         else:
-            parent = self._parent.dup(name="v_export")
+            parent = self._parent.dup(name=f"v_{method}")
         dtype = np.dtype(parent.dtype.np_type)
         index_dtype = np.dtype(np.uint64)
 
@@ -206,9 +221,15 @@ class ss:
         else:
             format = format.lower()
 
-        vhandle = ffi_new("GrB_Vector*", parent._carg)
-        type_ = ffi_new("GrB_Type*")
-        size = ffi_new("GrB_Index*")
+        size = parent._size
+        if method == "export":
+            vhandle = ffi_new("GrB_Vector*", parent._carg)
+            type_ = ffi_new("GrB_Type*")
+            size_ = ffi_new("GrB_Index*")
+            args = (type_, size_)
+        else:
+            vhandle = parent._carg
+            args = ()
         vx = ffi_new("void**")
         vx_size = ffi_new("GrB_Index*")
         if sort:
@@ -216,16 +237,14 @@ class ss:
         else:
             jumbled = ffi_new("bool*")
         is_iso = ffi_new("bool*")
-
         if format == "sparse":
             vi = ffi_new("GrB_Index**")
             vi_size = ffi_new("GrB_Index*")
             nvals = ffi_new("GrB_Index*")
             check_status(
-                lib.GxB_Vector_export_CSC(
+                libget(f"GxB_Vector_{method}_CSC")(
                     vhandle,
-                    type_,
-                    size,
+                    *args,
                     vi,
                     vx,
                     vi_size,
@@ -251,7 +270,7 @@ class ss:
                     if values.size > nvals:  # pragma: no cover
                         values = values[:nvals]
             rv = {
-                "size": size[0],
+                "size": size,
                 "indices": indices,
                 "sorted_index": True if sort else not jumbled[0],
             }
@@ -262,8 +281,8 @@ class ss:
             vb_size = ffi_new("GrB_Index*")
             nvals = ffi_new("GrB_Index*")
             check_status(
-                lib.GxB_Vector_export_Bitmap(
-                    vhandle, type_, size, vb, vx, vb_size, vx_size, is_iso, nvals, ffi.NULL
+                libget(f"GxB_Vector_{method}_Bitmap")(
+                    vhandle, *args, vb, vx, vb_size, vx_size, is_iso, nvals, ffi.NULL
                 ),
                 parent,
             )
@@ -271,7 +290,6 @@ class ss:
             bool_dtype = np.dtype(np.bool8)
             bitmap = claim_buffer(ffi, vb[0], vb_size[0] // bool_dtype.itemsize, bool_dtype)
             values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
-            size = size[0]
             if not raw:
                 if bitmap.size > size:  # pragma: no cover
                     bitmap = bitmap[:size]
@@ -289,12 +307,11 @@ class ss:
                 rv["size"] = size
         elif format == "full":
             check_status(
-                lib.GxB_Vector_export_Full(vhandle, type_, size, vx, vx_size, is_iso, ffi.NULL),
+                libget(f"GxB_Vector_{method}_Full")(vhandle, *args, vx, vx_size, is_iso, ffi.NULL),
                 parent,
             )
             is_iso = is_iso[0]
             values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
-            size = size[0]
             if not raw:
                 if is_iso:
                     if values.size > 1:  # pragma: no cover
@@ -314,7 +331,8 @@ class ss:
             format=format,
             values=values,
         )
-        parent.gb_obj = ffi.NULL
+        if method == "export":
+            parent.gb_obj = ffi.NULL
         return rv
 
     @classmethod
@@ -327,6 +345,7 @@ class ss:
         is_iso=False,
         take_ownership=False,
         format=None,
+        dtype=None,
         name=None,
         # Sparse
         indices=None,
@@ -360,8 +379,91 @@ class ss:
 
         >>> pieces = v.ss.export()
         >>> v2 = Vector.ss.import_any(**pieces)
-
         """
+        return cls._import_any(
+            values=values,
+            size=size,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            format=format,
+            dtype=dtype,
+            name=name,
+            # Sparse
+            indices=indices,
+            sorted_index=sorted_index,
+            # Bitmap
+            bitmap=bitmap,
+            # Bitmap/Sparse
+            nvals=nvals,
+            method="import",
+        )
+
+    def pack_any(
+        self,
+        *,
+        # All
+        values,
+        is_iso=False,
+        take_ownership=False,
+        format=None,
+        # Sparse
+        indices=None,
+        sorted_index=False,
+        # Bitmap
+        bitmap=None,
+        # Bitmap/Sparse
+        nvals=None,  # optional
+        # Unused for pack
+        size=None,
+        dtype=None,
+        name=None,
+    ):
+        """
+        GxB_Vector_pack_XXX
+
+        `pack_any` is like `import_any` except it "packs" data into an
+        existing Vector.  This is the opposite of ``unpack()``
+
+        See `Vector.ss.import_any` documentation for more details.
+        """
+        return self._import_any(
+            values=values,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            format=format,
+            # Sparse
+            indices=indices,
+            sorted_index=sorted_index,
+            # Bitmap
+            bitmap=bitmap,
+            # Bitmap/Sparse
+            nvals=nvals,
+            method="pack",
+            vector=self._parent,
+        )
+
+    @classmethod
+    def _import_any(
+        cls,
+        *,
+        # All
+        values,
+        size=None,
+        is_iso=False,
+        take_ownership=False,
+        format=None,
+        dtype=None,
+        name=None,
+        # Sparse
+        indices=None,
+        sorted_index=False,
+        # Bitmap
+        bitmap=None,
+        # Bitmap/Sparse
+        nvals=None,  # optional
+        method,
+        vector=None,
+    ):
         if format is None:
             if indices is not None:
                 if bitmap is not None:
@@ -373,8 +475,12 @@ class ss:
                 format = "full"
         else:
             format = format.lower()
+        if method == "pack":
+            obj = vector.ss
+        else:
+            obj = cls
         if format == "sparse":
-            return cls.import_sparse(
+            return getattr(obj, f"{method}_sparse")(
                 size=size,
                 indices=indices,
                 values=values,
@@ -382,24 +488,27 @@ class ss:
                 is_iso=is_iso,
                 sorted_index=sorted_index,
                 take_ownership=take_ownership,
+                dtype=dtype,
                 name=name,
             )
         elif format == "bitmap":
-            return cls.import_bitmap(
+            return getattr(obj, f"{method}_bitmap")(
                 nvals=nvals,
                 bitmap=bitmap,
                 values=values,
                 size=size,
                 is_iso=is_iso,
                 take_ownership=take_ownership,
+                dtype=dtype,
                 name=name,
             )
         elif format == "full":
-            return cls.import_full(
+            return getattr(obj, f"{method}_full")(
                 values=values,
                 size=size,
                 is_iso=is_iso,
                 take_ownership=take_ownership,
+                dtype=dtype,
                 name=name,
             )
         else:
@@ -463,14 +572,78 @@ class ss:
         -------
         Vector
         """
+        return cls._import_sparse(
+            size=size,
+            indices=indices,
+            values=values,
+            nvals=nvals,
+            is_iso=is_iso,
+            sorted_index=sorted_index,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            format=format,
+            name=name,
+            method="import",
+        )
+
+    def pack_sparse(
+        self,
+        *,
+        indices,
+        values,
+        nvals=None,
+        is_iso=False,
+        sorted_index=False,
+        take_ownership=False,
+        format=None,
+        **ignored_kwargs,
+    ):
+        """
+        GxB_Vector_pack_CSC
+
+        `pack_sparse` is like `import_sparse` except it "packs" data into an
+        existing Vector.  This is the opposite of ``unpack("sparse")``
+
+        See `Vector.ss.import_sparse` documentation for more details.
+        """
+        return self._import_sparse(
+            indices=indices,
+            values=values,
+            nvals=nvals,
+            is_iso=is_iso,
+            sorted_index=sorted_index,
+            take_ownership=take_ownership,
+            format=format,
+            method="pack",
+            vector=self._parent,
+        )
+
+    @classmethod
+    def _import_sparse(
+        cls,
+        *,
+        size=None,
+        indices,
+        values,
+        nvals=None,
+        is_iso=False,
+        sorted_index=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+        method,
+        vector=None,
+    ):
         if format is not None and format.lower() != "sparse":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'sparse'.")
         copy = not take_ownership
         indices = ints_to_numpy_buffer(indices, np.uint64, copy=copy, ownable=True, name="indices")
+        if method == "pack":
+            dtype = vector.dtype
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if indices is values:
             values = np.copy(values)
-        vhandle = ffi_new("GrB_Vector*")
         vi = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indices)))
         vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
         if nvals is None:
@@ -478,28 +651,37 @@ class ss:
                 nvals = indices.size
             else:
                 nvals = values.size
-        check_status_carg(
-            lib.GxB_Vector_import_CSC(
-                vhandle,
-                dtype._carg,
-                size,
-                vi,
-                vx,
-                indices.nbytes,
-                values.nbytes,
-                is_iso,
-                nvals,
-                not sorted_index,
-                ffi.NULL,
-            ),
-            "Vector",
-            vhandle[0],
+        if method == "import":
+            vhandle = ffi_new("GrB_Vector*")
+            args = (dtype._carg, size)
+        else:
+            vhandle = vector._carg
+            args = ()
+        status = libget(f"GxB_Vector_{method}_CSC")(
+            vhandle,
+            *args,
+            vi,
+            vx,
+            indices.nbytes,
+            values.nbytes,
+            is_iso,
+            nvals,
+            not sorted_index,
+            ffi.NULL,
         )
-        rv = gb.Vector(vhandle, dtype, name=name)
-        rv._size = size
+        if method == "import":
+            check_status_carg(
+                status,
+                "Vector",
+                vhandle[0],
+            )
+            vector = gb.Vector(vhandle, dtype, name=name)
+            vector._size = size
+        else:
+            check_status(status, vector)
         unclaim_buffer(indices)
         unclaim_buffer(values)
-        return rv
+        return vector
 
     @classmethod
     def import_bitmap(
@@ -558,10 +740,72 @@ class ss:
         -------
         Vector
         """
+        return cls._import_bitmap(
+            bitmap=bitmap,
+            values=values,
+            nvals=nvals,
+            size=size,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            format=format,
+            name=name,
+            method="import",
+        )
+
+    def pack_bitmap(
+        self,
+        *,
+        bitmap,
+        values,
+        nvals=None,
+        is_iso=False,
+        take_ownership=False,
+        format=None,
+        **unused_kwargs,
+    ):
+        """
+        GxB_Vector_pack_Bitmap
+
+        `pack_bitmap` is like `import_bitmap` except it "packs" data into an
+        existing Vector.  This is the opposite of ``unpack("bitmap")``
+
+        See `Vector.ss.import_bitmap` documentation for more details.
+        """
+        return self._import_bitmap(
+            bitmap=bitmap,
+            values=values,
+            nvals=nvals,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            format=format,
+            method="pack",
+            vector=self._parent,
+        )
+
+    @classmethod
+    def _import_bitmap(
+        cls,
+        *,
+        bitmap,
+        values,
+        nvals=None,
+        size=None,
+        is_iso=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+        method,
+        vector=None,
+    ):
         if format is not None and format.lower() != "bitmap":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'bitmap'.")
         copy = not take_ownership
         bitmap = ints_to_numpy_buffer(bitmap, np.bool8, copy=copy, ownable=True, name="bitmap")
+        if method == "pack":
+            dtype = vector.dtype
+            size = vector._size
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if bitmap is values:
             values = np.copy(values)
@@ -578,33 +822,42 @@ class ss:
                 nvals = np.count_nonzero(bitmap)
             else:
                 nvals = np.count_nonzero(bitmap.ravel()[:size])
-        check_status_carg(
-            lib.GxB_Vector_import_Bitmap(
-                vhandle,
-                dtype._carg,
-                size,
-                vb,
-                vx,
-                bitmap.nbytes,
-                values.nbytes,
-                is_iso,
-                nvals,
-                ffi.NULL,
-            ),
-            "Vector",
-            vhandle[0],
+        if method == "import":
+            vhandle = ffi_new("GrB_Vector*")
+            args = (dtype._carg, size)
+        else:
+            vhandle = vector._carg
+            args = ()
+        status = libget(f"GxB_Vector_{method}_Bitmap")(
+            vhandle,
+            *args,
+            vb,
+            vx,
+            bitmap.nbytes,
+            values.nbytes,
+            is_iso,
+            nvals,
+            ffi.NULL,
         )
-        rv = gb.Vector(vhandle, dtype, name=name)
-        rv._size = size
+        if method == "import":
+            check_status_carg(
+                status,
+                "Vector",
+                vhandle[0],
+            )
+            vector = gb.Vector(vhandle, dtype, name=name)
+            vector._size = size
+        else:
+            check_status(status, vector)
         unclaim_buffer(bitmap)
         unclaim_buffer(values)
-        return rv
+        return vector
 
     @classmethod
     def import_full(
         cls,
-        *,
         values,
+        *,
         size=None,
         is_iso=False,
         take_ownership=False,
@@ -651,31 +904,94 @@ class ss:
         -------
         Vector
         """
+        return cls._import_full(
+            values=values,
+            size=size,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            format=format,
+            name=name,
+            method="import",
+        )
+
+    def pack_full(
+        self,
+        values,
+        *,
+        is_iso=False,
+        take_ownership=False,
+        format=None,
+        **unused_kwargs,
+    ):
+        """
+        GxB_Vector_pack_Full
+
+        `pack_full` is like `import_full` except it "packs" data into an
+        existing Vector.  This is the opposite of ``unpack("full")``
+
+        See `Vector.ss.import_full` documentation for more details.
+        """
+        return self._import_full(
+            values=values,
+            is_iso=is_iso,
+            take_ownership=take_ownership,
+            format=format,
+            method="pack",
+            vector=self._parent,
+        )
+
+    @classmethod
+    def _import_full(
+        cls,
+        *,
+        values,
+        size=None,
+        is_iso=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+        method,
+        vector=None,
+    ):
         if format is not None and format.lower() != "full":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'full'.")
         copy = not take_ownership
+        if method == "pack":
+            dtype = vector.dtype
+            size = vector._size
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         vhandle = ffi_new("GrB_Vector*")
         vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
         if size is None:
             size = values.size
-        check_status_carg(
-            lib.GxB_Vector_import_Full(
-                vhandle,
-                dtype._carg,
-                size,
-                vx,
-                values.nbytes,
-                is_iso,
-                ffi.NULL,
-            ),
-            "Vector",
-            vhandle[0],
+        if method == "import":
+            vhandle = ffi_new("GrB_Vector*")
+            args = (dtype._carg, size)
+        else:
+            vhandle = vector._carg
+            args = ()
+        status = libget(f"GxB_Vector_{method}_Full")(
+            vhandle,
+            *args,
+            vx,
+            values.nbytes,
+            is_iso,
+            ffi.NULL,
         )
-        rv = gb.Vector(vhandle, dtype, name=name)
-        rv._size = size
+        if method == "import":
+            check_status_carg(
+                status,
+                "Vector",
+                vhandle[0],
+            )
+            vector = gb.Vector(vhandle, dtype, name=name)
+            vector._size = size
+        else:
+            check_status(status, vector)
         unclaim_buffer(values)
-        return rv
+        return vector
 
     @wrapdoc(head)
     def head(self, n=10, *, sort=False, dtype=None):
