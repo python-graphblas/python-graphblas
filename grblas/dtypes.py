@@ -60,7 +60,7 @@ if _supports_complex and hasattr(lib, "GxB_FC32"):  # pragma: no branch
     FC32 = DataType(
         "FC32", lib.GxB_FC32, "GxB_FC32", "float _Complex", numba.types.complex64, np.complex64
     )
-if _supports_complex and hasattr(lib, "GrB_FC32"):  # pragma: no branch
+if _supports_complex and hasattr(lib, "GrB_FC32"):  # pragma: no coverage
     FC32 = DataType(
         "FC32", lib.GrB_FC32, "GrB_FC32", "float _Complex", numba.types.complex64, np.complex64
     )
@@ -68,7 +68,7 @@ if _supports_complex and hasattr(lib, "GxB_FC64"):  # pragma: no branch
     FC64 = DataType(
         "FC64", lib.GxB_FC64, "GxB_FC64", "double _Complex", numba.types.complex128, np.complex128
     )
-if _supports_complex and hasattr(lib, "GrB_FC64"):  # pragma: no branch
+if _supports_complex and hasattr(lib, "GrB_FC64"):  # pragma: no coverage
     FC64 = DataType(
         "FC64", lib.GrB_FC64, "GrB_FC64", "double _Complex", numba.types.complex128, np.complex128
     )
