@@ -416,7 +416,7 @@ class ss:
         name=None,
     ):
         """
-        GxB_Vector_pack_XXX
+        GxB_Vector_pack_xxx
 
         `pack_any` is like `import_any` except it "packs" data into an
         existing Vector.  This is the opposite of ``unpack()``

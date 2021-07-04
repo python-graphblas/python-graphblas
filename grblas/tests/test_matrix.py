@@ -1750,34 +1750,11 @@ def test_import_export_auto(A, do_iso, methods):
                     values = [1, 1, 1, 1, 1, 1]
                 else:
                     values = [1, 3, 5, 2, 4, 6]
-                if in_method == "import":
-                    assert other.isequal(
-                        Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], values)
-                    )
-                else:
-                    # We know the shape when using pack
-                    # XXX: the shape of `other` here may be a bug in SuiteSprase:GraphBLAS
-                    M = Matrix.from_values([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], values)
-                    assert other.isequal(M)
+                assert other.isequal(
+                    Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], values)
+                )
             else:
-                if (
-                    in_method == "pack"
-                    and import_format is None
-                    and (
-                        raw
-                        and format == "fullc"
-                        and import_name != "fullc"
-                        or not raw
-                        and format == "fullc"
-                        and import_name != "fullc"
-                        and do_iso
-                    )
-                ):
-                    # XXX: entering this branch may be due to a bug in SuiteSparse:GraphBLAS
-                    assert other.shape == C_orig.T.shape
-                    assert other.isequal(C_orig.T)
-                else:
-                    assert other.isequal(C_orig)
+                assert other.isequal(C_orig)
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
                 import_func(**d)

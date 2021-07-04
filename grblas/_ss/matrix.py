@@ -1095,8 +1095,6 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
-        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
-        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(indptr)
         unclaim_buffer(col_indices)
         unclaim_buffer(values)
@@ -1272,8 +1270,6 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
-        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
-        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(indptr)
         unclaim_buffer(row_indices)
         unclaim_buffer(values)
@@ -1470,8 +1466,6 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
-        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
-        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(indptr)
         unclaim_buffer(rows)
         unclaim_buffer(col_indices)
@@ -1668,8 +1662,6 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
-        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
-        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(indptr)
         unclaim_buffer(cols)
         unclaim_buffer(row_indices)
@@ -1850,8 +1842,6 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
-        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
-        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(bitmap)
         unclaim_buffer(values)
         return matrix
@@ -2030,8 +2020,6 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
-        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
-        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(bitmap)
         unclaim_buffer(values)
         return matrix
@@ -2182,8 +2170,6 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
-        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
-        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(values)
         return matrix
 
@@ -2333,8 +2319,6 @@ class ss:
             matrix._ncols = ncols
         else:
             check_status(status, matrix)
-        matrix._nrows = matrix.nrows  # XXX: sometimes changes shape!
-        matrix._ncols = matrix.ncols  # XXX: is this a bug in SuiteSparse:GraphBLAS?
         unclaim_buffer(values)
         return matrix
 
@@ -2457,7 +2441,7 @@ class ss:
         name=None,
     ):
         """
-        GxB_Matrix_pack_XXX
+        GxB_Matrix_pack_xxx
 
         `pack_any` is like `import_any` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack()``
