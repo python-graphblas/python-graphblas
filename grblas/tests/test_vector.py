@@ -722,9 +722,11 @@ def test_import_export(v, do_iso, methods):
     if in_method == "import":
         w1 = Vector.ss.import_any(**d)
         assert w1.isequal(v)
+        assert w1.ss.is_iso is do_iso
     else:
         v1.ss.pack_any(**d)
         assert v1.isequal(v)
+        assert v1.ss.is_iso is do_iso
 
     v2 = v.dup()
     d = getattr(v2.ss, out_method)("bitmap")
@@ -738,16 +740,20 @@ def test_import_export(v, do_iso, methods):
     if in_method == "import":
         w2 = Vector.ss.import_any(**d)
         assert w2.isequal(v)
+        assert w2.ss.is_iso is do_iso
     else:
         v2.ss.pack_any(**d)
         assert v2.isequal(v)
+        assert v2.ss.is_iso is do_iso
     del d["nvals"]
     if in_method == "import":
         w2b = Vector.ss.import_any(**d)
         assert w2b.isequal(v)
+        assert w2b.ss.is_iso is do_iso
     else:
         v2.ss.pack_any(**d)
         assert v2.isequal(v)
+        assert v2.ss.is_iso is do_iso
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]])
     if in_method == "import":
         w2c = Vector.ss.import_any(**d)
@@ -756,9 +762,11 @@ def test_import_export(v, do_iso, methods):
         else:
             assert w2c.size == 2 * v.size
             assert w2c.nvals == 2 * v.nvals
+        assert w2c.ss.is_iso is do_iso
     else:
         v2.ss.pack_any(**d)
         assert v2.isequal(v)
+        assert v2.ss.is_iso is do_iso
 
     v3 = Vector.from_values([0, 1, 2], [1, 3, 5])
     if do_iso:
@@ -772,9 +780,11 @@ def test_import_export(v, do_iso, methods):
     if in_method == "import":
         w3 = Vector.ss.import_any(**d)
         assert w3.isequal(v3_copy)
+        assert w3.ss.is_iso is do_iso
     else:
         v3.ss.pack_any(**d)
         assert v3.isequal(v3_copy)
+        assert v3.ss.is_iso is do_iso
 
     v4 = v.dup()
     d = getattr(v4.ss, out_method)()
@@ -784,9 +794,11 @@ def test_import_export(v, do_iso, methods):
     if in_method == "import":
         w4 = Vector.ss.import_any(**d)
         assert w4.isequal(v4)
+        assert w4.ss.is_iso is do_iso
     else:
         v4.ss.pack_any(**d)
         assert v4.isequal(v)
+        assert v4.ss.is_iso is do_iso
 
     # can't own if we can't write
     d = v.ss.export("sparse")
@@ -798,6 +810,7 @@ def test_import_export(v, do_iso, methods):
     view = vals[:size]
     w5 = Vector.ss.import_sparse(take_ownership=True, **dict(d, values=view))
     assert w5.isequal(v)
+    assert w5.ss.is_iso is do_iso
     assert d["values"].flags.owndata
     assert d["values"].flags.writeable
     assert d["indices"].flags.owndata
@@ -806,6 +819,7 @@ def test_import_export(v, do_iso, methods):
     d = v.ss.export("sparse", sort=True)
     w6 = Vector.ss.import_any(take_ownership=True, **d)
     assert w6.isequal(v)
+    assert w6.ss.is_iso is do_iso
     assert not d["values"].flags.owndata
     assert not d["values"].flags.writeable
     assert not d["indices"].flags.owndata
@@ -869,10 +883,13 @@ def test_import_export_auto(v, do_iso, methods):
             d["format"] = import_format
             other = import_func(take_ownership=take_ownership, **d)
             assert other.isequal(v_orig)
+            assert other.ss.is_iso is do_iso
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
                 import_func(**d)
     assert v.isequal(v_orig)
+    assert v.ss.is_iso is do_iso
+    assert v_orig.ss.is_iso is do_iso
 
     w = Vector.from_values([0, 1, 2], [10, 20, 30])
     if do_iso:
@@ -902,10 +919,13 @@ def test_import_export_auto(v, do_iso, methods):
         d["format"] = import_format
         other = import_func(take_ownership=take_ownership, **d)
         assert other.isequal(w_orig)
+        assert other.ss.is_iso is do_iso
         d["format"] = "bad_format"
         with pytest.raises(ValueError, match="Invalid format"):
             import_func(**d)
     assert w.isequal(w_orig)
+    assert w.ss.is_iso is do_iso
+    assert w_orig.ss.is_iso is do_iso
 
 
 def test_contains(v):

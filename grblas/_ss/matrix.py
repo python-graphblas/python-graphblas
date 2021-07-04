@@ -292,6 +292,12 @@ class ss:
         return size[0]
 
     @property
+    def is_iso(self):
+        is_iso = ffi_new("bool*")
+        check_status(lib.GxB_Matrix_iso(is_iso, self._parent._carg), self._parent)
+        return is_iso[0]
+
+    @property
     def format(self):
         # Determine current format
         parent = self._parent

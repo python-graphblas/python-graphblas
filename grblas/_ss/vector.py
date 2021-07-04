@@ -75,6 +75,12 @@ class ss:
         return size[0]
 
     @property
+    def is_iso(self):
+        is_iso = ffi_new("bool*")
+        check_status(lib.GxB_Vector_iso(is_iso, self._parent._carg), self._parent)
+        return is_iso[0]
+
+    @property
     def format(self):
         parent = self._parent
         sparsity_ptr = ffi_new("GxB_Option_Field*")
