@@ -1326,9 +1326,11 @@ def test_import_export(A, do_iso, methods):
     if in_method == "import":
         B1 = Matrix.ss.import_any(take_ownership=True, **d)
         assert B1.isequal(A)
+        assert B1.ss.is_iso is do_iso
     else:
         A1.ss.pack_any(take_ownership=True, **d)
         assert A1.isequal(A)
+        assert A1.ss.is_iso is do_iso
 
     A2 = A.dup()
     d = getattr(A2.ss, out_method)("csc")
@@ -1346,9 +1348,11 @@ def test_import_export(A, do_iso, methods):
     if in_method == "import":
         B2 = Matrix.ss.import_any(**d)
         assert B2.isequal(A)
+        assert B2.ss.is_iso is do_iso
     else:
         A2.ss.pack_any(**d)
         assert A2.isequal(A)
+        assert A2.ss.is_iso is do_iso
 
     A3 = A.dup()
     d = getattr(A3.ss, out_method)("hypercsr")
@@ -1367,9 +1371,11 @@ def test_import_export(A, do_iso, methods):
     if in_method == "import":
         B3 = Matrix.ss.import_any(**d)
         assert B3.isequal(A)
+        assert B3.ss.is_iso is do_iso
     else:
         A3.ss.pack_any(**d)
         assert A3.isequal(A)
+        assert A3.ss.is_iso is do_iso
 
     A4 = A.dup()
     d = getattr(A4.ss, out_method)("hypercsc")
@@ -1388,9 +1394,11 @@ def test_import_export(A, do_iso, methods):
     if in_method == "import":
         B4 = Matrix.ss.import_any(**d)
         assert B4.isequal(A)
+        assert B4.ss.is_iso is do_iso
     else:
         A4.ss.pack_any(**d)
         assert A4.isequal(A)
+        assert A4.ss.is_iso is do_iso
 
     A5 = A.dup()
     d = getattr(A5.ss, out_method)("bitmapr")
@@ -1425,14 +1433,17 @@ def test_import_export(A, do_iso, methods):
     if in_method == "import":
         B5 = Matrix.ss.import_any(**d)
         assert B5.isequal(A)
+        assert B5.ss.is_iso is do_iso
     else:
         A5.ss.pack_any(**d)
         assert A5.isequal(A)
+        assert A5.ss.is_iso is do_iso
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=0)
     B5b = Matrix.ss.import_any(**d)
     if in_method == "import":
         if not do_iso:
             assert B5b.isequal(A)
+            assert B5b.ss.is_iso is do_iso
         else:
             # B5b == [A, A]
             B5b.nvals == 2 * A.nvals
@@ -1441,6 +1452,7 @@ def test_import_export(A, do_iso, methods):
     else:
         A5.ss.pack_any(**d)
         assert A5.isequal(A)
+        assert A5.ss.is_iso is do_iso
 
     A6 = A.dup()
     d = getattr(A6.ss, out_method)("bitmapc")
@@ -1458,16 +1470,20 @@ def test_import_export(A, do_iso, methods):
     if in_method == "import":
         B6 = Matrix.ss.import_any(nrows=7, **d)
         assert B6.isequal(A)
+        assert B6.ss.is_iso is do_iso
     else:
         A6.ss.pack_any(**d)
         assert A6.isequal(A)
+        assert A6.ss.is_iso is do_iso
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=1)
     if in_method == "import":
         B6b = Matrix.ss.import_any(ncols=7, **d)
         assert B6b.isequal(A)
+        assert B6b.ss.is_iso is do_iso
     else:
         A6.ss.pack_any(**d)
         assert A6.isequal(A)
+        assert A6.ss.is_iso is do_iso
 
     A7 = A.dup()
     d = getattr(A7.ss, out_method)()
@@ -1479,9 +1495,11 @@ def test_import_export(A, do_iso, methods):
     if in_method == "import":
         B7 = Matrix.ss.import_any(**d)
         assert B7.isequal(A)
+        assert B7.ss.is_iso is do_iso
     else:
         A7.ss.pack_any(**d)
         assert A7.isequal(A)
+        assert A7.ss.is_iso is do_iso
 
     A8 = A.dup()
     d = getattr(A8.ss, out_method)("bitmapr", raw=True)
@@ -1498,6 +1516,7 @@ def test_import_export(A, do_iso, methods):
     else:
         A8.ss.pack_any(**d)
         assert A8.isequal(A)
+        assert A8.ss.is_iso is do_iso
 
     C = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
     if do_iso:
@@ -1520,16 +1539,20 @@ def test_import_export(A, do_iso, methods):
         if in_method == "import":
             D1 = Matrix.ss.import_any(ncols=2, **d)
             assert D1.isequal(C)
+            assert D1.ss.is_iso is do_iso
         else:
             C1.ss.pack_any(**d)
             assert C1.isequal(C)
+            assert C1.ss.is_iso is do_iso
     else:
         if in_method == "import":
             D1 = Matrix.ss.import_any(**d)
             assert D1.isequal(C)
+            assert D1.ss.is_iso is do_iso
         else:
             C1.ss.pack_any(**d)
             assert C1.isequal(C)
+            assert C1.ss.is_iso is do_iso
 
     C2 = C.dup()
     d = getattr(C2.ss, out_method)("fullc")
@@ -1544,9 +1567,11 @@ def test_import_export(A, do_iso, methods):
     if in_method == "import":
         D2 = Matrix.ss.import_any(**d)
         assert D2.isequal(C)
+        assert D2.ss.is_iso is do_iso
     else:
         C2.ss.pack_any(**d)
         assert C2.isequal(C)
+        assert C2.ss.is_iso is do_iso
 
     # all elements must have values
     with pytest.raises(InvalidValue):
@@ -1711,10 +1736,13 @@ def test_import_export_auto(A, do_iso, methods):
                 assert other.isequal(A_orig.T)
             else:
                 assert other.isequal(A_orig)
+            assert other.ss.is_iso is do_iso
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
                 import_func(**d)
     assert A.isequal(A_orig)
+    assert A.ss.is_iso is do_iso
+    assert A_orig.ss.is_iso is do_iso
 
     C = Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], [1, 2, 3, 4, 5, 6])
     if do_iso:
@@ -1750,38 +1778,18 @@ def test_import_export_auto(A, do_iso, methods):
                     values = [1, 1, 1, 1, 1, 1]
                 else:
                     values = [1, 3, 5, 2, 4, 6]
-                if in_method == "import":
-                    assert other.isequal(
-                        Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], values)
-                    )
-                else:
-                    # We know the shape when using pack
-                    # XXX: the shape of `other` here may be a bug in SuiteSprase:GraphBLAS
-                    M = Matrix.from_values([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], values)
-                    assert other.isequal(M)
+                assert other.isequal(
+                    Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], values)
+                )
             else:
-                if (
-                    in_method == "pack"
-                    and import_format is None
-                    and (
-                        raw
-                        and format == "fullc"
-                        and import_name != "fullc"
-                        or not raw
-                        and format == "fullc"
-                        and import_name != "fullc"
-                        and do_iso
-                    )
-                ):
-                    # XXX: entering this branch may be due to a bug in SuiteSparse:GraphBLAS
-                    assert other.shape == C_orig.T.shape
-                    assert other.isequal(C_orig.T)
-                else:
-                    assert other.isequal(C_orig)
+                assert other.isequal(C_orig)
+            assert other.ss.is_iso is do_iso
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
                 import_func(**d)
     assert C.isequal(C_orig)
+    assert C.ss.is_iso is do_iso
+    assert C_orig.ss.is_iso is do_iso
 
 
 def test_no_bool_or_eq(A):
