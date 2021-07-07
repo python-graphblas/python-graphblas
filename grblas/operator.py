@@ -897,7 +897,7 @@ class BinaryOp(OpBase):
         BinaryOp.register_new("isclose", isclose, parameterized=True)
 
         # Update type information with sane coercion
-        for names, *types in (
+        name_types = [
             # fmt: off
             (
                 ("atan2", "copysign", "fmod", "hypot", "ldexp", "remainder"),
@@ -926,13 +926,17 @@ class BinaryOp(OpBase):
                     "BOOL",
                 ),
             ),
-            (
-                ["cmplx"],
-                (("BOOL", "INT8", "INT16", "UINT8", "UINT16"), "FP32"),
-                (("INT32", "INT64", "UINT32", "UINT64"), "FP64"),
-            ),
             # fmt: on
-        ):
+        ]
+        if _supports_complex:  # pragma: no branch
+            name_types.append(
+                (
+                    ["cmplx"],
+                    (("BOOL", "INT8", "INT16", "UINT8", "UINT16"), "FP32"),
+                    (("INT32", "INT64", "UINT32", "UINT64"), "FP64"),
+                )
+            )
+        for names, *types in name_types:
             for name in names:
                 op = getattr(binary, name)
                 for input_types, target_type in types:
