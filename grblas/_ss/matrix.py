@@ -21,16 +21,21 @@ ffi_new = ffi.new
 
 
 @njit
-def _head_matrix_full(values, nrows, ncols, dtype, n):  # pragma: no cover
+def _head_matrix_full(values, nrows, ncols, dtype, n, is_iso):  # pragma: no cover
     rows = np.empty(n, dtype=np.uint64)
     cols = np.empty(n, dtype=np.uint64)
-    vals = np.empty(n, dtype=dtype)
+    if is_iso:
+        vals = np.empty(1, dtype=dtype)
+        vals[0] = values[0]
+    else:
+        vals = np.empty(n, dtype=dtype)
     k = 0
     for i in range(nrows):
         for j in range(ncols):
             rows[k] = i
             cols[k] = j
-            vals[k] = values[i * ncols + j]
+            if not is_iso:
+                vals[k] = values[i * ncols + j]
             k += 1
             if k == n:
                 return rows, cols, vals
@@ -38,17 +43,22 @@ def _head_matrix_full(values, nrows, ncols, dtype, n):  # pragma: no cover
 
 
 @njit
-def _head_matrix_bitmap(bitmap, values, nrows, ncols, dtype, n):  # pragma: no cover
+def _head_matrix_bitmap(bitmap, values, nrows, ncols, dtype, n, is_iso):  # pragma: no cover
     rows = np.empty(n, dtype=np.uint64)
     cols = np.empty(n, dtype=np.uint64)
-    vals = np.empty(n, dtype=dtype)
+    if is_iso:
+        vals = np.empty(1, dtype=dtype)
+        vals[0] = values[0]
+    else:
+        vals = np.empty(n, dtype=dtype)
     k = 0
     for i in range(nrows):
         for j in range(ncols):
             if bitmap[i * ncols + j]:
                 rows[k] = i
                 cols[k] = j
-                vals[k] = values[i * ncols + j]
+                if not is_iso:
+                    vals[k] = values[i * ncols + j]
                 k += 1
                 if k == n:
                     return rows, cols, vals
@@ -110,24 +120,25 @@ def head(matrix, n=10, *, sort=False, dtype=None):
             np.empty(0, dtype=np.uint64),
             np.empty(0, dtype=dtype.np_type),
         )
+    is_iso = matrix.ss.is_iso
     d = matrix.ss.unpack(raw=True, sort=sort)
     try:
         fmt = d["format"]
         if fmt == "fullr":
             rows, cols, vals = _head_matrix_full(
-                d["values"], d["nrows"], d["ncols"], dtype.np_type, n
+                d["values"], d["nrows"], d["ncols"], dtype.np_type, n, is_iso
             )
         elif fmt == "fullc":
             cols, rows, vals = _head_matrix_full(
-                d["values"], d["ncols"], d["nrows"], dtype.np_type, n
+                d["values"], d["ncols"], d["nrows"], dtype.np_type, n, is_iso
             )
         elif fmt == "bitmapr":
             rows, cols, vals = _head_matrix_bitmap(
-                d["bitmap"], d["values"], d["nrows"], d["ncols"], dtype.np_type, n
+                d["bitmap"], d["values"], d["nrows"], d["ncols"], dtype.np_type, n, is_iso
             )
         elif fmt == "bitmapc":
             cols, rows, vals = _head_matrix_bitmap(
-                d["bitmap"], d["values"], d["ncols"], d["nrows"], dtype.np_type, n
+                d["bitmap"], d["values"], d["ncols"], d["nrows"], dtype.np_type, n, is_iso
             )
         elif fmt == "csr":
             vals = d["values"][:n].astype(dtype.np_type)
@@ -149,6 +160,8 @@ def head(matrix, n=10, *, sort=False, dtype=None):
             raise RuntimeError(f"Invalid format: {fmt}")
     finally:
         matrix.ss.pack_any(take_ownership=True, **d)
+    if is_iso:
+        vals = np.broadcast_to(vals[:1], (n,))
     return rows, cols, vals
 
 
@@ -1068,9 +1081,9 @@ class ss:
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if col_indices is values:
             values = np.copy(values)
-        Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
-        Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
-        Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+        Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
+        Aj = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", col_indices))
+        Ax = ffi_new("void**", ffi.from_buffer("void*", values))
         if method == "import":
             mhandle = ffi_new("GrB_Matrix*")
             args = (dtype._carg, nrows, ncols)
@@ -1243,9 +1256,9 @@ class ss:
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if row_indices is values:
             values = np.copy(values)
-        Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
-        Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
-        Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+        Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
+        Ai = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", row_indices))
+        Ax = ffi_new("void**", ffi.from_buffer("void*", values))
         if method == "import":
             mhandle = ffi_new("GrB_Matrix*")
             args = (dtype._carg, nrows, ncols)
@@ -1433,10 +1446,10 @@ class ss:
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if col_indices is values:
             values = np.copy(values)
-        Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
-        Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(rows)))
-        Aj = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(col_indices)))
-        Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+        Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
+        Ah = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", rows))
+        Aj = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", col_indices))
+        Ax = ffi_new("void**", ffi.from_buffer("void*", values))
         if nvec is None:
             nvec = rows.size
         if method == "import":
@@ -1629,10 +1642,10 @@ class ss:
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if row_indices is values:
             values = np.copy(values)
-        Ap = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indptr)))
-        Ah = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(cols)))
-        Ai = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(row_indices)))
-        Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+        Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
+        Ah = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", cols))
+        Ai = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", row_indices))
+        Ax = ffi_new("void**", ffi.from_buffer("void*", values))
         if nvec is None:
             nvec = cols.size
         if method == "import":
@@ -1813,8 +1826,8 @@ class ss:
             nrows, ncols = get_shape(nrows, ncols, values=values, bitmap=bitmap)
         else:
             nrows, ncols = matrix.shape
-        Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
-        Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+        Ab = ffi_new("int8_t**", ffi.from_buffer("int8_t*", bitmap))
+        Ax = ffi_new("void**", ffi.from_buffer("void*", values))
         if nvals is None:
             if bitmap.size == nrows * ncols:
                 nvals = np.count_nonzero(bitmap)
@@ -1991,8 +2004,8 @@ class ss:
             nrows, ncols = get_shape(nrows, ncols, values=values, bitmap=bitmap)
         else:
             nrows, ncols = matrix.shape
-        Ab = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap.T)))
-        Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values.T)))
+        Ab = ffi_new("int8_t**", ffi.from_buffer("int8_t*", bitmap.T))
+        Ax = ffi_new("void**", ffi.from_buffer("void*", values.T))
         if nvals is None:
             if bitmap.size == nrows * ncols:
                 nvals = np.count_nonzero(bitmap)
@@ -2150,7 +2163,7 @@ class ss:
         else:
             nrows, ncols = matrix.shape
 
-        Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+        Ax = ffi_new("void**", ffi.from_buffer("void*", values))
         if method == "import":
             mhandle = ffi_new("GrB_Matrix*")
             args = (dtype._carg, nrows, ncols)
@@ -2299,7 +2312,7 @@ class ss:
             nrows, ncols = get_shape(nrows, ncols, values=values)
         else:
             nrows, ncols = matrix.shape
-        Ax = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values.T)))
+        Ax = ffi_new("void**", ffi.from_buffer("void*", values.T))
         if method == "import":
             mhandle = ffi_new("GrB_Matrix*")
             args = (dtype._carg, nrows, ncols)
