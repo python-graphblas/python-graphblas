@@ -13,14 +13,19 @@ ffi_new = ffi.new
 
 
 @njit
-def _head_indices_vector_bitmap(bitmap, values, size, dtype, n):  # pragma: no cover
+def _head_indices_vector_bitmap(bitmap, values, size, dtype, n, is_iso):  # pragma: no cover
     indices = np.empty(n, dtype=np.uint64)
-    vals = np.empty(n, dtype=dtype)
+    if is_iso:
+        vals = np.empty(1, dtype=dtype)
+        vals[0] = values[0]
+    else:
+        vals = np.empty(n, dtype=dtype)
     j = 0
     for i in range(size):
         if bitmap[i]:
             indices[j] = i
-            vals[j] = values[i]
+            if not is_iso:
+                vals[j] = values[i]
             j += 1
             if j == n:
                 break
@@ -42,6 +47,7 @@ def head(vector, n=10, *, sort=False, dtype=None):
     n = min(n, vector._nvals)
     if n == 0:
         return (np.empty(0, dtype=np.uint64), np.empty(0, dtype=dtype.np_type))
+    is_iso = vector.ss.is_iso
     d = vector.ss.unpack(raw=True, sort=sort)
     fmt = d["format"]
     try:
@@ -50,7 +56,7 @@ def head(vector, n=10, *, sort=False, dtype=None):
             vals = d["values"][:n].astype(dtype.np_type)
         elif fmt == "bitmap":
             indices, vals = _head_indices_vector_bitmap(
-                d["bitmap"], d["values"], d["size"], dtype.np_type, n
+                d["bitmap"], d["values"], d["size"], dtype.np_type, n, is_iso
             )
         elif fmt == "sparse":
             indices = d["indices"][:n].copy()
@@ -59,6 +65,8 @@ def head(vector, n=10, *, sort=False, dtype=None):
             raise RuntimeError(f"Invalid format: {fmt}")
     finally:
         vector.ss.pack_any(take_ownership=True, **d)
+    if is_iso:
+        vals = np.broadcast_to(vals[:1], (n,))
     return indices, vals
 
 
@@ -647,8 +655,8 @@ class ss:
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if indices is values:
             values = np.copy(values)
-        vi = ffi_new("GrB_Index**", ffi.cast("GrB_Index*", ffi.from_buffer(indices)))
-        vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+        vi = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indices))
+        vx = ffi_new("void**", ffi.from_buffer("void*", values))
         if nvals is None:
             if is_iso:
                 nvals = indices.size
@@ -813,8 +821,8 @@ class ss:
         if bitmap is values:
             values = np.copy(values)
         vhandle = ffi_new("GrB_Vector*")
-        vb = ffi_new("int8_t**", ffi.cast("int8_t*", ffi.from_buffer(bitmap)))
-        vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+        vb = ffi_new("int8_t**", ffi.from_buffer("int8_t*", bitmap))
+        vx = ffi_new("void**", ffi.from_buffer("void*", values))
         if size is None:
             if is_iso:
                 size = bitmap.size
@@ -966,7 +974,7 @@ class ss:
             size = vector._size
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         vhandle = ffi_new("GrB_Vector*")
-        vx = ffi_new("void**", ffi.cast("void**", ffi.from_buffer(values)))
+        vx = ffi_new("void**", ffi.from_buffer("void*", values))
         if size is None:
             size = values.size
         if method == "import":
