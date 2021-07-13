@@ -487,6 +487,11 @@ class ScalarMatMulExpr(InfixExprBase):
     _infix = "@"
     _example_op = "plus_times"
 
+    def new(self, *, dtype=None, name=None):
+        # Rely on the default operator for the method
+        expr = getattr(self.left, self.method_name)(self.right)
+        return expr.new(dtype=dtype, name=name)
+
 
 def _ewise_infix_expr(left, right, *, method, within):
     from .vector import Vector
