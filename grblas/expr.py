@@ -471,6 +471,14 @@ class MatrixMatMulExpr(InfixExprBase):
         return self._ncols
 
 
+class ScalarMatMulExpr(InfixExprBase):
+    __slots__ = ()
+    method_name = "inner"
+    output_type = None  # ScalarExpression
+    _infix = "@"
+    _example_op = "plus_times"
+
+
 def _ewise_infix_expr(left, right, *, method, within):
     from .vector import Vector
     from .matrix import Matrix, TransposedMatrix
@@ -518,6 +526,8 @@ def _matmul_infix_expr(left, right, *, within):
     if left_type is Vector:
         if right_type is Matrix or right_type is TransposedMatrix:
             method = "vxm"
+        elif right_type is Vector:
+            method = "inner"
         else:
             left._expect_type(
                 right,
@@ -562,4 +572,6 @@ def _matmul_infix_expr(left, right, *, within):
     expr = getattr(left, method)(right, any_pair[bool])
     if expr.output_type is Vector:
         return VectorMatMulExpr(left, right, method_name=method, size=expr._size)
-    return MatrixMatMulExpr(left, right, nrows=expr.nrows, ncols=expr.ncols)
+    elif expr.output_type is Matrix:
+        return MatrixMatMulExpr(left, right, nrows=expr.nrows, ncols=expr.ncols)
+    return ScalarMatMulExpr(left, right)

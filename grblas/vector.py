@@ -511,6 +511,41 @@ class Vector(BaseType):
             op=op,  # to be determined later
         )
 
+    # Unofficial methods
+    def inner(self, other, op=semiring.plus_times):
+        method_name = "inner"
+        self._expect_type(other, Vector, within=method_name, argname="other")
+        op = get_typed_op(op, self.dtype, other.dtype)
+        self._expect_op(op, "Semiring", within=method_name, argname="op")
+        expr = ScalarExpression(
+            method_name,
+            "GrB_vxm",
+            [self, _VectorAsMatrix(other)],
+            op=op,
+            # bt=other._is_transposed,
+        )
+        if self._size != other._size:
+            expr.new(name="")  # incompatible shape; raise now
+        return expr
+
+    def outer(self, other, op=semiring.plus_times):
+        from .matrix import MatrixExpression
+
+        method_name = "outer"
+        self._expect_type(other, Vector, within=method_name, argname="other")
+        op = get_typed_op(op, self.dtype, other.dtype)
+        self._expect_op(op, "Semiring", within=method_name, argname="op")
+        expr = MatrixExpression(
+            method_name,
+            "GrB_mxm",
+            [_VectorAsMatrix(self), _VectorAsMatrix(other)],
+            op=op,
+            nrows=self._size,
+            ncols=other._size,
+            bt=True,
+        )
+        return expr
+
     ##################################
     # Extract and Assign index methods
     ##################################
@@ -700,6 +735,22 @@ class VectorExpression(BaseExpression):
     @property
     def size(self):
         return self._size
+
+
+class _VectorAsMatrix:
+    __slots__ = "vector"
+
+    def __init__(self, vector):
+        self.vector = vector
+
+    @property
+    def _carg(self):
+        # SS, SuiteSparse-specific: casting Vector to Matrix
+        return ffi.cast("GrB_Matrix*", self.vector.gb_obj)[0]
+
+    @property
+    def name(self):
+        return f"(GrB_Matrix){self.vector.name}"
 
 
 expr.VectorEwiseAddExpr.output_type = VectorExpression
