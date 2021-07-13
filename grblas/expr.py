@@ -339,6 +339,11 @@ class InfixExprBase:
         self.left = left
         self.right = right
 
+    def new(self, *, dtype=None, mask=None, name=None):
+        # Rely on the default operator for the method
+        expr = getattr(self.left, self.method_name)(self.right)
+        return expr.new(dtype=dtype, mask=mask, name=name)
+
     def _format_expr(self):
         return f"{self.left.name} {self._infix} {self.right.name}"
 
