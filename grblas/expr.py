@@ -355,14 +355,18 @@ class InfixExprBase:
 
         if self.output_type.__name__ == "VectorExpression":
             return formatting.format_vector_infix_expression_html(self)
-        return formatting.format_matrix_infix_expression_html(self)
+        elif self.output_type.__name__ == "MatrixExpression":
+            return formatting.format_matrix_infix_expression_html(self)
+        return formatting.format_scalar_infix_expression_html(self)
 
     def __repr__(self):
         from . import formatting
 
         if self.output_type.__name__ == "VectorExpression":
             return formatting.format_vector_infix_expression(self)
-        return formatting.format_matrix_infix_expression(self)
+        elif self.output_type.__name__ == "MatrixExpression":
+            return formatting.format_matrix_infix_expression(self)
+        return formatting.format_scalar_infix_expression(self)
 
 
 class VectorEwiseAddExpr(InfixExprBase):
@@ -476,6 +480,19 @@ class MatrixMatMulExpr(InfixExprBase):
         return self._ncols
 
 
+class ScalarMatMulExpr(InfixExprBase):
+    __slots__ = ()
+    method_name = "inner"
+    output_type = None  # ScalarExpression
+    _infix = "@"
+    _example_op = "plus_times"
+
+    def new(self, *, dtype=None, name=None):
+        # Rely on the default operator for the method
+        expr = getattr(self.left, self.method_name)(self.right)
+        return expr.new(dtype=dtype, name=name)
+
+
 def _ewise_infix_expr(left, right, *, method, within):
     from .vector import Vector
     from .matrix import Matrix, TransposedMatrix
@@ -523,6 +540,8 @@ def _matmul_infix_expr(left, right, *, within):
     if left_type is Vector:
         if right_type is Matrix or right_type is TransposedMatrix:
             method = "vxm"
+        elif right_type is Vector:
+            method = "inner"
         else:
             left._expect_type(
                 right,
@@ -567,4 +586,6 @@ def _matmul_infix_expr(left, right, *, within):
     expr = getattr(left, method)(right, any_pair[bool])
     if expr.output_type is Vector:
         return VectorMatMulExpr(left, right, method_name=method, size=expr._size)
-    return MatrixMatMulExpr(left, right, nrows=expr.nrows, ncols=expr.ncols)
+    elif expr.output_type is Matrix:
+        return MatrixMatMulExpr(left, right, nrows=expr.nrows, ncols=expr.ncols)
+    return ScalarMatMulExpr(left, right)

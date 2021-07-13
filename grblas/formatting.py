@@ -551,6 +551,33 @@ def _format_infix_expression(expr, header, expr_name):
     )
 
 
+def format_scalar_infix_expression(expr):
+    expr_repr = expr._format_expr()
+    name = f"grblas.{type(expr).__name__}"
+    header = create_header(
+        expr_repr,
+        ["left_dtype", "right_dtype"],
+        [expr.left.dtype, expr.right.dtype],
+        name=name,
+        quote=False,
+    )
+    return (
+        f"{header}\n\n"
+        f"Do op(expr) to create a {expr.output_type.__name__} for {expr.method_name}.\n"
+        f"For example: {expr._example_op}({expr_repr})"
+    )
+
+
+def format_scalar_infix_expression_html(expr):
+    expr_html = expr._format_expr_html()
+    header = create_header_html(
+        expr_html,
+        ["left_dtype", "right_dtype"],
+        [expr.left.dtype, expr.right.dtype],
+    )
+    return _format_infix_expression(expr, header, expr_html)
+
+
 def format_vector_infix_expression(expr):
     expr_repr = expr._format_expr()
     name = f"grblas.{type(expr).__name__}"

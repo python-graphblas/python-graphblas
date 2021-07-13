@@ -1002,3 +1002,13 @@ def test_diag(v):
 
 def test_nbytes(v):
     assert v.ss.nbytes > 0
+
+
+def test_outer(v):
+    R = Matrix.new(v.dtype, nrows=1, ncols=v.size)  # row vector
+    C = Matrix.new(v.dtype, nrows=v.size, ncols=1)  # column vector
+    R[0, :] = v
+    C[:, 0] = v
+    expected = C.mxm(R).new()
+    result = v.outer(v).new()
+    assert result.isequal(expected)

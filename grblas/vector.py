@@ -511,6 +511,58 @@ class Vector(BaseType):
             op=op,  # to be determined later
         )
 
+    # Unofficial methods
+    def inner(self, other, op=semiring.plus_times):
+        """
+        Vector-vector inner (or dot) product. Result is a Scalar.
+
+        Default op is semiring.plus_times
+
+        *This is not a standard GraphBLAS function*
+        """
+        method_name = "inner"
+        self._expect_type(other, Vector, within=method_name, argname="other")
+        op = get_typed_op(op, self.dtype, other.dtype)
+        self._expect_op(op, "Semiring", within=method_name, argname="op")
+        expr = ScalarExpression(
+            method_name,
+            "GrB_vxm",
+            [self, _VectorAsMatrix(other)],
+            op=op,
+        )
+        if self._size != other._size:
+            expr.new(name="")  # incompatible shape; raise now
+        return expr
+
+    def outer(self, other, op=semiring.plus_times):
+        """
+        Vector-vector outer (or cross) product. Result is a Matrix.
+
+        Default op is semiring.plus_times
+
+        This currently requires a Semiring, even though only the BinaryOp
+        of the Semiring is used.  We may support passing a BinaryOp or Monoid
+        in the future.
+
+        *This is not a standard GraphBLAS function*
+        """
+        from .matrix import MatrixExpression
+
+        method_name = "outer"
+        self._expect_type(other, Vector, within=method_name, argname="other")
+        op = get_typed_op(op, self.dtype, other.dtype)
+        self._expect_op(op, "Semiring", within=method_name, argname="op")
+        expr = MatrixExpression(
+            method_name,
+            "GrB_mxm",
+            [_VectorAsMatrix(self), _VectorAsMatrix(other)],
+            op=op,
+            nrows=self._size,
+            ncols=other._size,
+            bt=True,
+        )
+        return expr
+
     ##################################
     # Extract and Assign index methods
     ##################################
@@ -700,6 +752,31 @@ class VectorExpression(BaseExpression):
     @property
     def size(self):
         return self._size
+
+
+class _VectorAsMatrix:
+    __slots__ = "vector"
+
+    def __init__(self, vector):
+        self.vector = vector
+
+    @property
+    def _carg(self):
+        # SS, SuiteSparse-specific: casting Vector to Matrix
+        return ffi.cast("GrB_Matrix*", self.vector.gb_obj)[0]
+
+    @property
+    def name(self):
+        # Showing `(GrB_Matrix)` is good for the recorder, but not for the html repr
+        return f"(GrB_Matrix){self.vector.name}"
+
+    @property
+    def _name_html(self):
+        return self.vector._name_html
+
+    @property
+    def _repr_html_(self):
+        return self.vector._repr_html_
 
 
 expr.VectorEwiseAddExpr.output_type = VectorExpression

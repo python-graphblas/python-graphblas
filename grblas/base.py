@@ -388,8 +388,16 @@ class BaseType:
             output_replace=replace,
         )
         if self._is_scalar:
-            args = [_Pointer(self), accum]
-            cfunc_name = delayed.cfunc_name.format(output_dtype=self.dtype)
+            is_fake_scalar = delayed.method_name == "inner"
+            if is_fake_scalar:
+                from .vector import Vector
+
+                fake_self = Vector.new(self.dtype, size=1)
+                args = [fake_self, mask, accum]
+                cfunc_name = delayed.cfunc_name
+            else:
+                args = [_Pointer(self), accum]
+                cfunc_name = delayed.cfunc_name.format(output_dtype=self.dtype)
         else:
             args = [self, mask, accum]
             cfunc_name = delayed.cfunc_name
@@ -400,6 +408,8 @@ class BaseType:
         # Make the GraphBLAS call
         call(cfunc_name, args)
         if self._is_scalar:
+            if is_fake_scalar:
+                self.value = fake_self[0].value
             self._is_empty = False
 
     @property
