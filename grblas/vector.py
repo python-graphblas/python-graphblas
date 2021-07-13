@@ -513,6 +513,13 @@ class Vector(BaseType):
 
     # Unofficial methods
     def inner(self, other, op=semiring.plus_times):
+        """
+        Vector-vector inner (or dot) product. Result is a Scalar.
+
+        Default op is semiring.plus_times
+
+        *This is not a standard GraphBLAS function*
+        """
         method_name = "inner"
         self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
@@ -522,13 +529,23 @@ class Vector(BaseType):
             "GrB_vxm",
             [self, _VectorAsMatrix(other)],
             op=op,
-            # bt=other._is_transposed,
         )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
         return expr
 
     def outer(self, other, op=semiring.plus_times):
+        """
+        Vector-vector outer (or cross) product. Result is a Matrix.
+
+        Default op is semiring.plus_times
+
+        This currently requires a Semiring, even though only the BinaryOp
+        of the Semiring is used.  We may support passing a BinaryOp or Monoid
+        in the future.
+
+        *This is not a standard GraphBLAS function*
+        """
         from .matrix import MatrixExpression
 
         method_name = "outer"

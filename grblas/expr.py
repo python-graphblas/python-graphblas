@@ -350,14 +350,18 @@ class InfixExprBase:
 
         if self.output_type.__name__ == "VectorExpression":
             return formatting.format_vector_infix_expression_html(self)
-        return formatting.format_matrix_infix_expression_html(self)
+        elif self.output_type.__name__ == "MatrixExpression":
+            return formatting.format_matrix_infix_expression_html(self)
+        return formatting.format_scalar_infix_expression_html(self)
 
     def __repr__(self):
         from . import formatting
 
         if self.output_type.__name__ == "VectorExpression":
             return formatting.format_vector_infix_expression(self)
-        return formatting.format_matrix_infix_expression(self)
+        elif self.output_type.__name__ == "MatrixExpression":
+            return formatting.format_matrix_infix_expression(self)
+        return formatting.format_scalar_infix_expression(self)
 
 
 class VectorEwiseAddExpr(InfixExprBase):

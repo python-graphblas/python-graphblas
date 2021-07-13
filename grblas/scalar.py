@@ -4,6 +4,7 @@ from .base import BaseExpression, BaseType
 from .binary import isclose
 from .dtypes import lookup_dtype, _INDEX
 from .operator import get_typed_op
+from . import expr
 
 ffi_new = ffi.new
 
@@ -298,3 +299,6 @@ class _CScalar:
         if type(other) is _CScalar:
             return self.scalar == other.scalar
         return self.scalar == other
+
+
+expr.ScalarMatMulExpr.output_type = ScalarExpression

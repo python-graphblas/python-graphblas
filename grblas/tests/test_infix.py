@@ -68,13 +68,16 @@ def test_matmul(v1, v2, A1, A2):
         ("mxm", A1.T, A2.T),
         ("mxm", A1, A1.T),
         ("mxm", A2.T, A2),
+        ("inner", v1, v2),
+        ("inner", v1, v1),
     ]:
         expected = getattr(left, method)(right, op.plus_times).new()
         assert expected.isequal(op.plus_times(left @ right).new())
         assert expected.isequal(op.plus_times[float](left @ right).new())
         if isinstance(left, Vector):
-            assert (left @ right).size == right.ncols
-            assert op.plus_times(left @ right).size == right.ncols
+            if not isinstance(right, Vector):
+                assert (left @ right).size == right.ncols
+                assert op.plus_times(left @ right).size == right.ncols
         elif isinstance(right, Vector):
             assert (left @ right).size == left.nrows
             assert op.plus_times(left @ right).size == left.nrows
@@ -179,6 +182,12 @@ def test_bad_matmul(s1, v1, A1, A2):
         s1 @ 1
     with raises(TypeError):
         1 @ s1
+
+    w = v1[:1].new()
+    with raises(DimensionMismatch):
+        w @ v1
+    with raises(TypeError, match="__imatmul__"):
+        v1 @= v1
 
     with raises(TypeError, match="Bad type when calling semiring.plus_times"):
         op.plus_times(A1)
