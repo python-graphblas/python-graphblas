@@ -35,9 +35,10 @@ def test_ewise(v1, v2, A1, A2):
         (A1.T, A1.T),
         (A1, A1),
     ]:
-        expected = left.ewise_mult(right, monoid.plus).new()
-        assert expected.isequal(monoid.plus(left & right).new())
-        assert expected.isequal(monoid.plus[float](left & right).new())
+        expected = left.ewise_mult(right, monoid.times).new()
+        assert expected.isequal(monoid.times(left & right).new())
+        assert expected.isequal(monoid.times[float](left & right).new())
+        assert expected.isequal((left & right).new())  # use `left.ewise_mult` default op
         if isinstance(left, Vector):
             assert (left & right).size == left.size
             assert (left | right).size == left.size
@@ -50,6 +51,7 @@ def test_ewise(v1, v2, A1, A2):
         expected = left.ewise_add(right, op.plus).new()
         assert expected.isequal(op.plus(left | right).new())
         assert expected.isequal(op.plus[float](left | right).new())
+        assert expected.isequal((left | right).new())  # use `left.ewise_add` default op
 
         expected = left.ewise_mult(right, op.minus).new()
         assert expected.isequal(op.minus(left & right).new())
@@ -74,6 +76,7 @@ def test_matmul(v1, v2, A1, A2):
         expected = getattr(left, method)(right, op.plus_times).new()
         assert expected.isequal(op.plus_times(left @ right).new())
         assert expected.isequal(op.plus_times[float](left @ right).new())
+        assert expected.isequal((left @ right).new())  # use default semiring
         if isinstance(left, Vector):
             if not isinstance(right, Vector):
                 assert (left @ right).size == right.ncols
