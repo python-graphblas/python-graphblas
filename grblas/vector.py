@@ -767,7 +767,16 @@ class _VectorAsMatrix:
 
     @property
     def name(self):
+        # Showing `(GrB_Matrix)` is good for the recorder, but not for the html repr
         return f"(GrB_Matrix){self.vector.name}"
+
+    @property
+    def _name_html(self):
+        return self.vector._name_html
+
+    @property
+    def _repr_html_(self):
+        return self.vector._repr_html_
 
 
 expr.VectorEwiseAddExpr.output_type = VectorExpression
