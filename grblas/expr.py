@@ -492,6 +492,10 @@ class ScalarMatMulExpr(InfixExprBase):
         expr = getattr(self.left, self.method_name)(self.right)
         return expr.new(dtype=dtype, name=name)
 
+    @property
+    def value(self):
+        return self.new().value
+
 
 def _ewise_infix_expr(left, right, *, method, within):
     from .vector import Vector

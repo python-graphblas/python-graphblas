@@ -1004,6 +1004,18 @@ def test_nbytes(v):
     assert v.ss.nbytes > 0
 
 
+def test_inner(v):
+    R = Matrix.new(v.dtype, nrows=1, ncols=v.size)  # row vector
+    C = Matrix.new(v.dtype, nrows=v.size, ncols=1)  # column vector
+    R[0, :] = v
+    C[:, 0] = v
+    expected = R.mxm(C).new()[0, 0].new()
+    assert expected.isequal(v.inner(v).new())
+    assert expected.isequal(v.inner(v).value)
+    assert expected.isequal((v @ v).new())
+    assert expected.isequal((v @ v).value)
+
+
 def test_outer(v):
     R = Matrix.new(v.dtype, nrows=1, ncols=v.size)  # row vector
     C = Matrix.new(v.dtype, nrows=v.size, ncols=1)  # column vector
