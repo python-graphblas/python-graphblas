@@ -17,7 +17,7 @@ from .utils import (
     _Pointer,
     class_property,
 )
-from . import expr
+from . import expr, _automethods
 from ._ss.matrix import ss
 
 ffi_new = ffi.new
@@ -1117,6 +1117,38 @@ class MatrixExpression(BaseExpression):
     @property
     def nrows(self):
         return self._nrows
+
+    @property
+    def shape(self):
+        return (self._rows, self._ncols)
+
+    S = wrapdoc(Matrix.S)(property(_automethods.S))
+    T = wrapdoc(Matrix.T)(property(_automethods.T))
+    V = wrapdoc(Matrix.V)(property(_automethods.V))
+    __and__ = wrapdoc(Matrix.__and__)(property(_automethods.__and__))
+    __contains__ = wrapdoc(Matrix.__contains__)(property(_automethods.__contains__))
+    __getitem__ = wrapdoc(Matrix.__getitem__)(property(_automethods.__getitem__))
+    __iter__ = wrapdoc(Matrix.__iter__)(property(_automethods.__iter__))
+    __matmul__ = wrapdoc(Matrix.__matmul__)(property(_automethods.__matmul__))
+    __or__ = wrapdoc(Matrix.__or__)(property(_automethods.__or__))
+    _carg = wrapdoc(Matrix._carg)(property(_automethods._carg))
+    _name_html = wrapdoc(Matrix._name_html)(property(_automethods._name_html))
+    _nvals = wrapdoc(Matrix._nvals)(property(_automethods._nvals))
+    apply = wrapdoc(Matrix.apply)(property(_automethods.apply))
+    ewise_add = wrapdoc(Matrix.ewise_add)(property(_automethods.ewise_add))
+    ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
+    gb_obj = wrapdoc(Matrix.gb_obj)(property(_automethods.gb_obj))
+    isclose = wrapdoc(Matrix.isclose)(property(_automethods.isclose))
+    isequal = wrapdoc(Matrix.isequal)(property(_automethods.isequal))
+    kronecker = wrapdoc(Matrix.kronecker)(property(_automethods.kronecker))
+    mxm = wrapdoc(Matrix.mxm)(property(_automethods.mxm))
+    mxv = wrapdoc(Matrix.mxv)(property(_automethods.mxv))
+    name = wrapdoc(Matrix.name)(property(_automethods.name))
+    nvals = wrapdoc(Matrix.nvals)(property(_automethods.nvals))
+    reduce_columns = wrapdoc(Matrix.reduce_columns)(property(_automethods.reduce_columns))
+    reduce_rows = wrapdoc(Matrix.reduce_rows)(property(_automethods.reduce_rows))
+    reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
 
 
 class TransposedMatrix:

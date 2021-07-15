@@ -4,7 +4,8 @@ from .base import BaseExpression, BaseType
 from .binary import isclose
 from .dtypes import lookup_dtype, _INDEX
 from .operator import get_typed_op
-from . import expr
+from .utils import wrapdoc
+from . import expr, _automethods
 
 ffi_new = ffi.new
 
@@ -229,10 +230,8 @@ class Scalar(BaseType):
 class ScalarExpression(BaseExpression):
     __slots__ = ()
     output_type = Scalar
-
-    @property
-    def value(self):
-        return self.new(name="s_value").value
+    shape = ()
+    _is_scalar = True
 
     def construct_output(self, dtype=None, *, name=None):
         if dtype is None:
@@ -242,19 +241,7 @@ class ScalarExpression(BaseExpression):
     def new(self, *, dtype=None, name=None):
         return super().new(dtype=dtype, name=name)
 
-    def __eq__(self, other):
-        return self.value == other
-
-    def __bool__(self):
-        return bool(self.value)
-
-    def __float__(self):
-        return float(self.value)
-
-    def __int__(self):
-        return int(self.value)
-
-    __index__ = __int__
+    dup = new
 
     def __repr__(self):
         from .formatting import format_scalar_expression
@@ -265,6 +252,24 @@ class ScalarExpression(BaseExpression):
         from .formatting import format_scalar_expression_html
 
         return format_scalar_expression_html(self)
+
+    __bool__ = wrapdoc(Scalar.__bool__)(property(_automethods.__bool__))
+    __complex__ = wrapdoc(Scalar.__complex__)(property(_automethods.__complex__))
+    __eq__ = wrapdoc(Scalar.__eq__)(property(_automethods.__eq__))
+    __float__ = wrapdoc(Scalar.__float__)(property(_automethods.__float__))
+    __index__ = wrapdoc(Scalar.__index__)(property(_automethods.__index__))
+    __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
+    __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
+    # _carg = wrapdoc(Scalar._carg)(property(_automethods._carg))
+    _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
+    _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
+    gb_obj = wrapdoc(Scalar.gb_obj)(property(_automethods.gb_obj))
+    is_empty = wrapdoc(Scalar.is_empty)(property(_automethods.is_empty))
+    isclose = wrapdoc(Scalar.isclose)(property(_automethods.isclose))
+    isequal = wrapdoc(Scalar.isequal)(property(_automethods.isequal))
+    name = wrapdoc(Scalar.name)(property(_automethods.name))
+    nvals = wrapdoc(Scalar.nvals)(property(_automethods.nvals))
+    value = wrapdoc(Scalar.value)(property(_automethods.value))
 
 
 class _CScalar:

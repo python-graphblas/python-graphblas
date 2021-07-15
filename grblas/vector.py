@@ -14,8 +14,9 @@ from .utils import (
     _CArray,
     _Pointer,
     class_property,
+    wrapdoc,
 )
-from . import expr
+from . import expr, _automethods
 from ._ss.vector import ss
 
 ffi_new = ffi.new
@@ -752,6 +753,35 @@ class VectorExpression(BaseExpression):
     @property
     def size(self):
         return self._size
+
+    @property
+    def shape(self):
+        return (self._size,)
+
+    S = wrapdoc(Vector.S)(property(_automethods.S))
+    V = wrapdoc(Vector.V)(property(_automethods.V))
+    __and__ = wrapdoc(Vector.__and__)(property(_automethods.__and__))
+    __contains__ = wrapdoc(Vector.__contains__)(property(_automethods.__contains__))
+    __getitem__ = wrapdoc(Vector.__getitem__)(property(_automethods.__getitem__))
+    __iter__ = wrapdoc(Vector.__iter__)(property(_automethods.__iter__))
+    __matmul__ = wrapdoc(Vector.__matmul__)(property(_automethods.__matmul__))
+    __or__ = wrapdoc(Vector.__or__)(property(_automethods.__or__))
+    _carg = wrapdoc(Vector._carg)(property(_automethods._carg))
+    _name_html = wrapdoc(Vector._name_html)(property(_automethods._name_html))
+    _nvals = wrapdoc(Vector._nvals)(property(_automethods._nvals))
+    apply = wrapdoc(Vector.apply)(property(_automethods.apply))
+    ewise_add = wrapdoc(Vector.ewise_add)(property(_automethods.ewise_add))
+    ewise_mult = wrapdoc(Vector.ewise_mult)(property(_automethods.ewise_mult))
+    gb_obj = wrapdoc(Vector.gb_obj)(property(_automethods.gb_obj))
+    inner = wrapdoc(Vector.inner)(property(_automethods.inner))
+    isclose = wrapdoc(Vector.isclose)(property(_automethods.isclose))
+    isequal = wrapdoc(Vector.isequal)(property(_automethods.isequal))
+    name = wrapdoc(Vector.name)(property(_automethods.name))
+    nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
+    outer = wrapdoc(Vector.outer)(property(_automethods.outer))
+    reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
+    to_values = wrapdoc(Vector.to_values)(property(_automethods.to_values))
+    vxm = wrapdoc(Vector.vxm)(property(_automethods.vxm))
 
 
 class _VectorAsMatrix:

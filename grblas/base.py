@@ -445,9 +445,11 @@ class BaseExpression:
         "op",
         "expr_repr",
         "dtype",
+        "_value",
         "__weakref__",
     )
     output_type = None
+    _is_scalar = False
 
     def __init__(
         self,
@@ -479,6 +481,7 @@ class BaseExpression:
             self.dtype = op.return_type
         else:
             self.dtype = dtype
+        self._value = None
 
     def new(self, *, dtype=None, mask=None, name=None):
         output = self.construct_output(dtype=dtype, name=name)
