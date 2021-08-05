@@ -92,7 +92,7 @@ jobs:
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
-          coverage run --branch -m pytest ${{ matrix.testopts }}
+          coverage run --branch -m pytest ${{ matrix.testopts }} -vvv
           # Test (and cover) automatic initialization
           coverage run -a --branch grblas/tests/test_auto_init.py
           coverage run -a --branch grblas/tests/test_external_init.py
