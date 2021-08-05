@@ -6,6 +6,7 @@ https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operat
 
 """
 import numpy as np
+
 from .. import operator
 
 _unary_names = {
