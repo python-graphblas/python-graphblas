@@ -89,7 +89,7 @@ jobs:
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
 
-          if [[ ${{ matrix.pyver }} == "3.8" && ${{ matrix.testops }} == "--blocking" ]] ; then
+          if [[ ${{ matrix.pyver }} == "3.8" && ${{ matrix.testopts }} == "--blocking" ]] ; then
               # segfault if we run coverage, so don't run coverage ;)
               echo "skipping coverage"
               pytest ${{ matrix.testopts }}
