@@ -1,5 +1,5 @@
 from . import ffi, lib
-from .utils import _Pointer, libget
+from .utils import libget, _Pointer
 
 
 class GrblasException(Exception):

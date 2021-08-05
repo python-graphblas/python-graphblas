@@ -1,15 +1,13 @@
 import inspect
 import itertools
 import re
+import numpy as np
+import numba
 from collections.abc import Mapping
 from functools import lru_cache
 from types import FunctionType, ModuleType
-
-import numba
-import numpy as np
-
-from . import binary, ffi, lib, monoid, op, semiring, unary
-from .dtypes import INT8, _sample_values, _supports_complex, lookup_dtype, unify
+from . import ffi, lib, unary, binary, monoid, semiring, op
+from .dtypes import lookup_dtype, unify, INT8, _sample_values, _supports_complex
 from .exceptions import UdfParseError, check_status_carg
 from .expr import InfixExprBase
 from .utils import libget
@@ -47,8 +45,8 @@ def _call_op(op, left, right=None, **kwargs):
         )
 
     # op(A, 1) -> apply (or select once available)
-    from .matrix import Matrix, TransposedMatrix
     from .vector import Vector
+    from .matrix import Matrix, TransposedMatrix
 
     if type(left) in {Vector, Matrix, TransposedMatrix}:
         return left.apply(op, right=right, **kwargs)
@@ -90,8 +88,8 @@ class TypedBuiltinUnaryOp(TypedOpBase):
     opclass = "UnaryOp"
 
     def __call__(self, val):
-        from .matrix import Matrix, TransposedMatrix
         from .vector import Vector
+        from .matrix import Matrix, TransposedMatrix
 
         if type(val) in {Vector, Matrix, TransposedMatrix}:
             return val.apply(self)

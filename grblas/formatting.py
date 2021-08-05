@@ -1,8 +1,7 @@
 import numpy as np
-
-from . import unary
 from .matrix import Matrix, TransposedMatrix
 from .vector import Vector
+from . import unary
 
 try:
     import pandas as pd

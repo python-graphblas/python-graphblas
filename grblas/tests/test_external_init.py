@@ -1,7 +1,6 @@
 if __name__ == "__main__":
     import pytest
     import suitesparse_graphblas as ssgb
-
     import grblas
 
     ssgb.initialize(blocking=False)

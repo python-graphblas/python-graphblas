@@ -1,22 +1,14 @@
-from contextvars import ContextVar
-
 import numpy as np
-
-from . import ffi
-from . import replace as replace_singleton
+from contextvars import ContextVar
+from . import ffi, replace as replace_singleton
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import lookup_dtype
 from .exceptions import check_status
-from .expr import (
-    AmbiguousAssignOrExtract,
-    Updater,
-    _ewise_infix_expr,
-    _matmul_infix_expr,
-)
+from .expr import AmbiguousAssignOrExtract, Updater, _ewise_infix_expr, _matmul_infix_expr
 from .mask import Mask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_typed_op
 from .unary import identity
-from .utils import _Pointer, libget
+from .utils import libget, _Pointer
 
 NULL = ffi.NULL
 CData = ffi.CData
@@ -332,7 +324,7 @@ class BaseType:
                 return
 
             else:
-                from .matrix import Matrix, MatrixExpression, TransposedMatrix
+                from .matrix import Matrix, TransposedMatrix, MatrixExpression
 
                 if type(delayed) is TransposedMatrix and type(self) is Matrix:
                     # Transpose (C << A.T)

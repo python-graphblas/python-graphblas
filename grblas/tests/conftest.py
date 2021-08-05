@@ -1,9 +1,7 @@
+import grblas
 import atexit
 import itertools
-
 import pytest
-
-import grblas
 
 
 def pytest_configure(config):

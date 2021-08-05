@@ -1,10 +1,8 @@
-from io import BytesIO, StringIO
-
-import numpy as np
 import pytest
-
 import grblas as gb
+import numpy as np
 from grblas import Matrix
+from io import StringIO, BytesIO
 
 try:
     import networkx as nx

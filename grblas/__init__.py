@@ -1,5 +1,4 @@
 import importlib as _importlib
-
 from . import backends, mask  # noqa
 
 
@@ -54,7 +53,7 @@ def __getattr__(name):
     """Auto-initialize if special attrs used without explicit init call by user"""
     if name in _SPECIAL_ATTRS:
         if _init_params is None:
-            _init("suitesparse", None, automatic=True)
+            _init("suitesparse", False, automatic=True)
         if name not in globals():
             _load(name)
         return globals()[name]
@@ -84,8 +83,6 @@ def _init(backend_arg, blocking, automatic=False):
 
     passed_params = dict(backend=backend_arg, blocking=blocking, automatic=automatic)
     if _init_params is not None:
-        if blocking is None:
-            passed_params["blocking"] = _init_params["blocking"]
         if _init_params != passed_params:
             from .exceptions import GrblasException
 
@@ -100,22 +97,17 @@ def _init(backend_arg, blocking, automatic=False):
 
     backend = backend_arg
     if backend == "suitesparse":
-        from suitesparse_graphblas import ffi, initialize, is_initialized, lib
+        from suitesparse_graphblas import lib, ffi, initialize, is_initialized
 
         if is_initialized():
             mode = ffi.new("GrB_Mode*")
             assert lib.GxB_Global_Option_get(lib.GxB_MODE, mode) == 0
             is_blocking = mode[0] == lib.GrB_BLOCKING
-            if blocking is None:
-                passed_params["blocking"] = is_blocking
-            elif is_blocking != blocking:
+            if is_blocking != blocking:
                 raise RuntimeError(
                     f"GraphBLAS has already been initialized with `blocking={is_blocking}`"
                 )
         else:
-            if blocking is None:
-                blocking = False
-                passed_params["blocking"] = blocking
             initialize(blocking=blocking)
     else:
         raise ValueError(f'Bad backend name.  Must be "suitesparse".  Got: {backend}')

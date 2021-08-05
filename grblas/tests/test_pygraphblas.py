@@ -1,5 +1,4 @@
 import pytest
-
 import grblas as gb
 
 try:

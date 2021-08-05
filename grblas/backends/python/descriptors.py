@@ -1,6 +1,6 @@
-from .base import BasePointer
-from .context import handle_panic
 from .exceptions import GrB_Info, return_error
+from .context import handle_panic
+from .base import BasePointer
 
 
 class GrB_Desc_Field:

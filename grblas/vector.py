@@ -1,23 +1,22 @@
 import itertools
-
 import numpy as np
-
-from . import backend, binary, expr, ffi, lib, monoid, semiring
-from ._ss.vector import ss
+from . import ffi, lib, backend, binary, monoid, semiring
 from .base import BaseExpression, BaseType, call
-from .dtypes import _INDEX, lookup_dtype, unify
-from .exceptions import NoValue, check_status
+from .dtypes import lookup_dtype, unify, _INDEX
+from .exceptions import check_status, NoValue
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_typed_op
 from .scalar import Scalar, ScalarExpression, _CScalar
 from .utils import (
+    ints_to_numpy_buffer,
+    values_to_numpy_buffer,
     _CArray,
     _Pointer,
     class_property,
-    ints_to_numpy_buffer,
-    values_to_numpy_buffer,
 )
+from . import expr
+from ._ss.vector import ss
 
 ffi_new = ffi.new
 
@@ -677,7 +676,7 @@ class Vector(BaseType):
             """
             import pygraphblas as pg
 
-            vector = pg.Vector(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
+            vector = pg.Vector(self.gb_obj, pg.types.gb_type_to_type(self.dtype.gb_obj))
             self.gb_obj = ffi.NULL
             return vector
 
@@ -695,9 +694,9 @@ class Vector(BaseType):
             if not isinstance(vector, pg.Vector):
                 raise TypeError(f"Expected pygraphblas.Vector object.  Got type: {type(vector)}")
             dtype = lookup_dtype(vector.gb_type)
-            rv = cls(vector._vector, dtype)
+            rv = cls(vector.vector, dtype)
             rv._size = vector.size
-            vector._vector = ffi.NULL
+            vector.vector = ffi.NULL
             return rv
 
 

@@ -1,6 +1,5 @@
 if __name__ == "__main__":
     import pytest
-
     import grblas
 
     with pytest.raises(ValueError, match="Bad backend name"):

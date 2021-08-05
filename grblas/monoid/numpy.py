@@ -6,8 +6,7 @@ https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operat
 
 """
 import numpy as np
-
-from .. import binary, operator
+from .. import operator, binary
 from ..dtypes import _supports_complex
 
 _complex_dtypes = {"FC32", "FC64"}

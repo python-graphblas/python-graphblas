@@ -1,16 +1,14 @@
 # These tests are very slow, since they force creation of all
 # numpy unary, binary, monoid, and semiring objects.
-import itertools
-
-import numpy as np
 import pytest
-
+import numpy as np
+import itertools
 import grblas
+from grblas.dtypes import _supports_complex
+import grblas.unary.numpy as npunary
 import grblas.binary.numpy as npbinary
 import grblas.monoid.numpy as npmonoid
 import grblas.semiring.numpy as npsemiring
-import grblas.unary.numpy as npunary
-from grblas.dtypes import _supports_complex
 
 
 def test_numpyops_dir():

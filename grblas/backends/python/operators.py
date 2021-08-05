@@ -1,6 +1,5 @@
-from numba import njit
 from numba import types as nt
-
+from numba import njit
 from .types import GrB_Type
 
 
