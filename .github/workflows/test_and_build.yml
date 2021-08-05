@@ -51,22 +51,24 @@ jobs:
           conda activate grblas
           conda install -c conda-forge pandas numba scipy networkx cffi
           if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then
-              pip install "suitesparse-graphblas==5.1.5.0"
+              pip install "suitesparse-graphblas==5.1.3.0"
           else
-              conda install -c conda-forge graphblas=5.1.5
+              conda install -c conda-forge graphblas=5.1.3
           fi
           if [[ ${{ matrix.sourcetype }} == "source" ]]; then
-              pip install --no-binary=all "suitesparse-graphblas==5.1.5.0"
+              pip install --no-binary=all "suitesparse-graphblas==5.1.3.0"
           elif [[ ${{ matrix.sourcetype }} == "upstream" ]]; then
               # I can't get pip install from git to work, so git clone instead.
               # pip install git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
               conda install -c conda-forge cython
-              git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
+              # git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
+              git clone https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
               pushd ssgb
+              git checkout a568d9a
               python setup.py install
               popd
           elif [[ ${{ matrix.sourcetype }} == "conda-forge" ]]; then
-              conda install -c conda-forge python-suitesparse-graphblas=5.1.5.0
+              conda install -c conda-forge python-suitesparse-graphblas=5.1.3.0
           fi
           # python setup.py build_ext -I $CONDA_PREFIX/include -L $CONDA_PREFIX/lib
           python setup.py develop
