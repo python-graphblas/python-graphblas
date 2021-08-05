@@ -98,7 +98,7 @@ jobs:
 
           ulimit -c unlimited
           sudo chmod -R +rwx /var/crash
-          sudo coverage run --branch -m pytest ${{ matrix.testopts }} -vvv
+          coverage run --branch -m pytest ${{ matrix.testopts }} -vvv
 
           # Test (and cover) automatic initialization
           coverage run -a --branch grblas/tests/test_auto_init.py
