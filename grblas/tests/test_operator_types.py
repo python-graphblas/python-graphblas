@@ -1,6 +1,7 @@
 import itertools
 from collections import defaultdict
-from grblas import dtypes, unary, binary, monoid, semiring, operator
+
+from grblas import binary, dtypes, monoid, operator, semiring, unary
 
 BOOL = frozenset({"BOOL"})
 UINT = frozenset({"UINT8", "UINT16", "UINT32", "UINT64"})

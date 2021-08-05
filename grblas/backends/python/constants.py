@@ -1,4 +1,4 @@
-from . import base, vector, matrix, operators, types, context, descriptors, exceptions
+from . import base, context, descriptors, exceptions, matrix, operators, types, vector
 
 # Standalone constants
 GrB_ALL = base.GrB_ALL

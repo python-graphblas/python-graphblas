@@ -1,11 +1,20 @@
-import pytest
 import numpy as np
+import pytest
+
 import grblas
-from grblas import lib
-from grblas import unary, binary, monoid, semiring
-from grblas import dtypes, operator, exceptions
-from grblas import Vector, Matrix
-from grblas.operator import UnaryOp, BinaryOp, Monoid, Semiring
+from grblas import (
+    Matrix,
+    Vector,
+    binary,
+    dtypes,
+    exceptions,
+    lib,
+    monoid,
+    operator,
+    semiring,
+    unary,
+)
+from grblas.operator import BinaryOp, Monoid, Semiring, UnaryOp
 
 
 def orig_types(op):
