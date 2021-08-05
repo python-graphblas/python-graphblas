@@ -21,8 +21,8 @@ jobs:
           # - "--non-blocking --record --runslow"
         sourcetype:
           # - "wheel"
-          - "source"
-          # - "upstream"
+          # - "source"
+          - "upstream"
           # - "conda-forge"
         exclude:
           - sourcetype: "upstream"
@@ -65,7 +65,7 @@ jobs:
               # git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
               git clone https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
               pushd ssgb
-              git checkout 05a5ad1
+              git checkout a568d9a
               python setup.py install
               popd
           elif [[ ${{ matrix.sourcetype }} == "conda-forge" ]]; then
