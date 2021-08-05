@@ -92,10 +92,28 @@ jobs:
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
-          coverage run --branch -m pytest ${{ matrix.testopts }} -vvv
+
+          # where are cores?
+          (ls /cores/ ; exit 0)
+          (ls /var/crash/ ; exit 0)
+
+          ulimit -c unlimited
+          sudo chmod -R +rwx /cores/*
+          sudo chmod -R +rwx /var/crash
+          sudo chmod -R +rwx /var/crash/*
+          sudo coverage run --branch -m pytest ${{ matrix.testopts }} -vvv
+
           # Test (and cover) automatic initialization
           coverage run -a --branch grblas/tests/test_auto_init.py
           coverage run -a --branch grblas/tests/test_external_init.py
+
+      - name: Cores
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@master  # capture all crashes as build artifacts
+        with:
+          name: crashes
+          path: /var/crash
+
       - name: Coverage
         # if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
         env:
