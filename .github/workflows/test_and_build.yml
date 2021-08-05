@@ -65,7 +65,7 @@ jobs:
               # git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
               git clone https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
               pushd ssgb
-              git checkout 05a5ad1
+              git checkout 9962b58
               python setup.py install
               popd
           elif [[ ${{ matrix.sourcetype }} == "conda-forge" ]]; then
