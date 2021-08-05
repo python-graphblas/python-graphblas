@@ -98,14 +98,14 @@ jobs:
 
           ulimit -c unlimited
           sudo chmod -R +rwx /var/crash
-          coverage run --branch -m pytest ${{ matrix.testopts }} -vvv
+          catchsegv coverage run --branch -m pytest ${{ matrix.testopts }} -vvv
 
           # Test (and cover) automatic initialization
           coverage run -a --branch grblas/tests/test_auto_init.py
           coverage run -a --branch grblas/tests/test_external_init.py
 
       - name: Cores
-        if: ${{ failure() }}
+        # if: ${{ failure() }}
         uses: actions/upload-artifact@master  # capture all crashes as build artifacts
         with:
           name: crashes
