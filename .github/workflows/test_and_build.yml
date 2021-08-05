@@ -98,7 +98,8 @@ jobs:
 
           ulimit -c unlimited
           sudo chmod -R +rwx /var/crash
-          catchsegv pytest ${{ matrix.testopts }} -vvv
+          pytest ${{ matrix.testopts }} -vvv
+          # catchsegv pytest ${{ matrix.testopts }} -vvv
           # catchsegv coverage run --branch -m pytest ${{ matrix.testopts }} -vvv
 
           # Test (and cover) automatic initialization
