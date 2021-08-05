@@ -94,11 +94,9 @@ jobs:
           conda activate grblas
 
           # where are cores?
-          (ls /cores/ ; exit 0)
           (ls /var/crash/ ; exit 0)
 
           ulimit -c unlimited
-          sudo chmod -R +rwx /cores/*
           sudo chmod -R +rwx /var/crash
           sudo chmod -R +rwx /var/crash/*
           sudo coverage run --branch -m pytest ${{ matrix.testopts }} -vvv
