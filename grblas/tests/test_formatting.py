@@ -1,6 +1,7 @@
 import pytest
+
 import grblas
-from grblas import Scalar, Vector, Matrix, formatting, unary
+from grblas import Matrix, Scalar, Vector, formatting, unary
 from grblas.formatting import CSS_STYLE
 
 try:

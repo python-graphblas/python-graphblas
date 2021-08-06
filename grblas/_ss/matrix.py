@@ -1,20 +1,23 @@
-import grblas as gb
+from numbers import Integral, Number
+
 import numpy as np
 from numba import njit
-from numbers import Integral, Number
 from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
+
+import grblas as gb
+
 from .. import ffi, lib
 from ..base import call, record_raw
-from ..dtypes import lookup_dtype, INT64
+from ..dtypes import INT64, lookup_dtype
 from ..exceptions import check_status, check_status_carg
 from ..scalar import _CScalar
 from ..utils import (
-    libget,
+    _CArray,
     get_shape,
     ints_to_numpy_buffer,
+    libget,
     values_to_numpy_buffer,
     wrapdoc,
-    _CArray,
 )
 
 ffi_new = ffi.new

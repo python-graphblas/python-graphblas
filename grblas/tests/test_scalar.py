@@ -1,10 +1,11 @@
-import pytest
-import grblas
 import pickle
 import weakref
+
 import numpy as np
-from grblas import Scalar
-from grblas import dtypes, binary
+import pytest
+
+import grblas
+from grblas import Scalar, binary, dtypes
 from grblas.scalar import _CScalar
 
 
