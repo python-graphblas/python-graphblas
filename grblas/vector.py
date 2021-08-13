@@ -290,7 +290,7 @@ class Vector(BaseType):
         """Create a new Vector from the given lists of indices and values.  If
         size is not provided, it is computed from the max index found.
 
-        values may be a scalar.
+        values may be a scalar, in which case duplicate indices are ignored.
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         values, dtype = values_to_numpy_buffer(values, dtype)
@@ -302,6 +302,11 @@ class Vector(BaseType):
         # Create the new vector
         w = cls.new(dtype, size, name=name)
         if values.ndim == 0:
+            if dup_op is not None:
+                raise ValueError(
+                    "dup_op must be None if values is a scalar so that all "
+                    "values can be identical.  Duplicate indices will be ignored."
+                )
             # SS, SuiteSparse-specific: build_Scalar
             w.ss.build_scalar(indices, values.tolist())
         else:

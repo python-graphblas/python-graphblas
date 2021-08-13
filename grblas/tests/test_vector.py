@@ -121,6 +121,15 @@ def test_from_values_scalar():
     assert u.ss.is_iso
     assert u.reduce(monoid.any) == 7
 
+    # ignore duplicate indices; iso trumps duplicates!
+    u = Vector.from_values([0, 1, 1, 3], 7)
+    assert u.size == 4
+    assert u.nvals == 3
+    assert u.ss.is_iso
+    assert u.reduce(monoid.any) == 7
+    with pytest.raises(ValueError, match="dup_op must be None"):
+        Vector.from_values([0, 1, 1, 3], 7, dup_op=binary.plus)
+
 
 def test_clear(v):
     v.clear()

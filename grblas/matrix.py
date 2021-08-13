@@ -338,7 +338,7 @@ class Matrix(BaseType):
         indices, and values.  If nrows or ncols are not provided, they
         are computed from the max row and column index found.
 
-        values may be a scalar.
+        values may be a scalar, in which case duplicate indices are ignored.
         """
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
@@ -355,6 +355,11 @@ class Matrix(BaseType):
         # Create the new matrix
         C = cls.new(dtype, nrows, ncols, name=name)
         if values.ndim == 0:
+            if dup_op is not None:
+                raise ValueError(
+                    "dup_op must be None if values is a scalar so that all "
+                    "values can be identical.  Duplicate indices will be ignored."
+                )
             # SS, SuiteSparse-specific: build_Scalar
             C.ss.build_scalar(rows, columns, values.tolist())
         else:

@@ -132,6 +132,17 @@ def test_from_values_scalar():
     assert C.ss.is_iso
     assert C.reduce_scalar(monoid.any) == 7
 
+    # iso drumps duplicates
+    C = Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7)
+    assert C.nrows == 4
+    assert C.ncols == 3
+    assert C.nvals == 3
+    assert C.dtype == dtypes.INT64
+    assert C.ss.is_iso
+    assert C.reduce_scalar(monoid.any) == 7
+    with pytest.raises(ValueError, match="dup_op must be None"):
+        Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7, dup_op=binary.plus)
+
 
 def test_clear(A):
     A.clear()
