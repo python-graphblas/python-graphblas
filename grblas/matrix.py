@@ -336,7 +336,9 @@ class Matrix(BaseType):
     ):
         """Create a new Matrix from the given lists of row indices, column
         indices, and values.  If nrows or ncols are not provided, they
-        are computed from the max row and coumn index found.
+        are computed from the max row and column index found.
+
+        values may be a scalar.
         """
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
@@ -352,9 +354,13 @@ class Matrix(BaseType):
             ncols = int(columns.max()) + 1
         # Create the new matrix
         C = cls.new(dtype, nrows, ncols, name=name)
-        # Add the data
-        # This needs to be the original data to get proper error messages
-        C.build(rows, columns, values, dup_op=dup_op)
+        if values.ndim == 0:
+            # SS, SuiteSparse-specific: build_Scalar
+            C.ss.build_scalar(rows, columns, values.tolist())
+        else:
+            # Add the data
+            # This needs to be the original data to get proper error messages
+            C.build(rows, columns, values, dup_op=dup_op)
         return C
 
     @property

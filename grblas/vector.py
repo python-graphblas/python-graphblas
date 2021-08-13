@@ -289,6 +289,8 @@ class Vector(BaseType):
     def from_values(cls, indices, values, *, size=None, dup_op=None, dtype=None, name=None):
         """Create a new Vector from the given lists of indices and values.  If
         size is not provided, it is computed from the max index found.
+
+        values may be a scalar.
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         values, dtype = values_to_numpy_buffer(values, dtype)
@@ -299,9 +301,12 @@ class Vector(BaseType):
             size = int(indices.max()) + 1
         # Create the new vector
         w = cls.new(dtype, size, name=name)
-        # Add the data
-        # This needs to be the original data to get proper error messages
-        w.build(indices, values, dup_op=dup_op)
+        if values.ndim == 0:
+            # SS, SuiteSparse-specific: build_Scalar
+            w.ss.build_scalar(indices, values.tolist())
+        else:
+            # This needs to be the original data to get proper error messages
+            w.build(indices, values, dup_op=dup_op)
         return w
 
     @property

@@ -113,6 +113,15 @@ def test_from_values():
         Vector.from_values([0], [1, 2])
 
 
+def test_from_values_scalar():
+    u = Vector.from_values([0, 1, 3], 7)
+    assert u.size == 4
+    assert u.nvals == 3
+    assert u.dtype == dtypes.INT64
+    assert u.ss.is_iso
+    assert u.reduce(monoid.any) == 7
+
+
 def test_clear(v):
     v.clear()
     assert v.nvals == 0
@@ -156,6 +165,15 @@ def test_build(v):
     w = Vector.new(int, size=3)
     w.build([0, 11], [1, 1], size=12)
     assert w.isequal(Vector.from_values([0, 11], [1, 1]))
+
+
+def test_build_scalar(v):
+    with pytest.raises(OutputNotEmpty):
+        v.ss.build_scalar([1, 5], 3)
+    v.clear()
+    v.ss.build_scalar([1, 5], 3)
+    assert v.nvals == 2
+    assert v.ss.is_iso
 
 
 def test_extract_values(v):
