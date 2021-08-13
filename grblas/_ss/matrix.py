@@ -688,7 +688,7 @@ class ss:
                 scalar.value = nvals
                 call(
                     f"GrB_Matrix_extractTuples_{parent.dtype.name}",
-                    [rows, columns, ffi.NULL, _Pointer(scalar), parent],
+                    [rows, columns, None, _Pointer(scalar), parent],
                 )
                 value = parent.reduce_scalar(gb.monoid.any).value
                 rv = {
