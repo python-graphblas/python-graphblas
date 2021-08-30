@@ -1,6 +1,6 @@
 import itertools
 
-from . import _automethods, backend, expr, ffi
+from . import _automethods, backend, ffi
 from .base import BaseExpression, BaseType
 from .binary import isclose
 from .dtypes import _INDEX, lookup_dtype
@@ -310,6 +310,3 @@ class _CScalar:
         if type(other) is _CScalar:
             return self.scalar == other.scalar
         return self.scalar == other
-
-
-expr.ScalarMatMulExpr.output_type = ScalarExpression

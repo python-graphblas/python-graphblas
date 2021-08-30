@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from . import _automethods, backend, binary, expr, ffi, lib, monoid, semiring
+from . import _automethods, backend, binary, ffi, lib, monoid, semiring
 from ._ss.vector import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, lookup_dtype, unify
@@ -821,8 +821,3 @@ class _VectorAsMatrix:
     @property
     def _repr_html_(self):
         return self.vector._repr_html_
-
-
-expr.VectorEwiseAddExpr.output_type = VectorExpression
-expr.VectorEwiseMultExpr.output_type = VectorExpression
-expr.VectorMatMulExpr.output_type = VectorExpression

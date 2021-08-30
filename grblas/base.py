@@ -7,12 +7,7 @@ from . import replace as replace_singleton
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import lookup_dtype
 from .exceptions import check_status
-from .expr import (
-    AmbiguousAssignOrExtract,
-    Updater,
-    _ewise_infix_expr,
-    _matmul_infix_expr,
-)
+from .expr import AmbiguousAssignOrExtract, InfixExprBase, Updater
 from .mask import Mask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_typed_op
 from .unary import identity
@@ -61,11 +56,21 @@ def _expect_type_message(
     if type(types) is tuple:
         if type(x) in types:
             return x, None
-        elif isinstance(x, BaseExpression) and x.output_type in types:
+        elif (
+            isinstance(x, BaseExpression)
+            and x.output_type in types
+            or isinstance(x, InfixExprBase)
+            and x.output_type.output_type in types
+        ):
             return x._get_value(), None
     elif type(x) is types:
         return x, None
-    elif isinstance(x, BaseExpression) and x.output_type is types:
+    elif (
+        isinstance(x, BaseExpression)
+        and x.output_type is types
+        or isinstance(x, InfixExprBase)
+        and x.output_type.output_type is types
+    ):
         return x._get_value(), None
     if argname:
         argmsg = f"for argument `{argname}` "
@@ -228,11 +233,15 @@ class BaseType:
     def __or__(self, other):
         if self._is_scalar:
             return NotImplemented
+        from .infix import _ewise_infix_expr
+
         return _ewise_infix_expr(self, other, method="ewise_add", within="__or__")
 
     def __ror__(self, other):
         if self._is_scalar:
             return NotImplemented
+        from .infix import _ewise_infix_expr
+
         return _ewise_infix_expr(other, self, method="ewise_add", within="__ror__")
 
     def __ior__(self, other):
@@ -244,11 +253,15 @@ class BaseType:
     def __and__(self, other):
         if self._is_scalar:
             return NotImplemented
+        from .infix import _ewise_infix_expr
+
         return _ewise_infix_expr(self, other, method="ewise_mult", within="__and__")
 
     def __rand__(self, other):
         if self._is_scalar:
             return NotImplemented
+        from .infix import _ewise_infix_expr
+
         return _ewise_infix_expr(self, other, method="ewise_mult", within="__rand__")
 
     def __iand__(self, other):
@@ -260,11 +273,15 @@ class BaseType:
     def __matmul__(self, other):
         if self._is_scalar:
             return NotImplemented
+        from .infix import _matmul_infix_expr
+
         return _matmul_infix_expr(self, other, within="__matmul__")
 
     def __rmatmul__(self, other):
         if self._is_scalar:
             return NotImplemented
+        from .infix import _matmul_infix_expr
+
         return _matmul_infix_expr(other, self, within="__rmatmul__")
 
     def __imatmul__(self, other):
@@ -504,6 +521,8 @@ class BaseExpression:
             _check_mask(mask, output)
             output(mask=mask).update(self)
         return output
+
+    dup = new
 
     def __eq__(self, other):
         raise TypeError(

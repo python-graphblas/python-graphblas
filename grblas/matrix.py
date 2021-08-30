@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from . import _automethods, backend, binary, expr, ffi, lib, monoid, semiring
+from . import _automethods, backend, binary, ffi, lib, monoid, semiring
 from ._ss.matrix import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, lookup_dtype, unify
@@ -1277,8 +1277,3 @@ class TransposedMatrix:
     _expect_type = Matrix._expect_type
     _expect_op = Matrix._expect_op
     __array__ = Matrix.__array__
-
-
-expr.MatrixEwiseAddExpr.output_type = MatrixExpression
-expr.MatrixEwiseMultExpr.output_type = MatrixExpression
-expr.MatrixMatMulExpr.output_type = MatrixExpression
