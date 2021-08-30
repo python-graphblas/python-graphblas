@@ -366,7 +366,7 @@ class ss:
         grblas.ss.diag
         Vector.ss.diag
         """
-        self._parent._expect_type(vector, gb.Vector, within="ss.diag", argname="vector")
+        vector = self._parent._expect_type(vector, gb.Vector, within="ss.diag", argname="vector")
         call("GxB_Matrix_diag", [self._parent, vector, _CScalar(k, dtype=INT64), None])
 
     def split(self, chunks, *, name=None):

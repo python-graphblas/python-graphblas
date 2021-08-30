@@ -111,7 +111,9 @@ class Matrix(BaseType):
         If `check_dtype` is True, also checks that dtypes match
         For equality of floating point Vectors, consider using `isclose`
         """
-        self._expect_type(other, (Matrix, TransposedMatrix), within="isequal", argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within="isequal", argname="other"
+        )
         if check_dtype and self.dtype != other.dtype:
             return False
         if self._nrows != other._nrows:
@@ -140,7 +142,9 @@ class Matrix(BaseType):
         If `check_dtype` is True, also checks that dtypes match
         Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
-        self._expect_type(other, (Matrix, TransposedMatrix), within="isclose", argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within="isclose", argname="other"
+        )
         if check_dtype and self.dtype != other.dtype:
             return False
         if self._nrows != other._nrows:
@@ -401,7 +405,9 @@ class Matrix(BaseType):
         For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
         method_name = "ewise_add"
-        self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+        )
         op = get_typed_op(op, self.dtype, other.dtype)
         # Per the spec, op may be a semiring, but this is weird, so don't.
         if require_monoid:
@@ -435,7 +441,9 @@ class Matrix(BaseType):
         Default op is binary.times
         """
         method_name = "ewise_mult"
-        self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+        )
         op = get_typed_op(op, self.dtype, other.dtype)
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
@@ -458,7 +466,7 @@ class Matrix(BaseType):
         Default op is semiring.plus_times
         """
         method_name = "mxv"
-        self._expect_type(other, Vector, within=method_name, argname="other")
+        other = self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = VectorExpression(
@@ -480,7 +488,9 @@ class Matrix(BaseType):
         Default op is semiring.plus_times
         """
         method_name = "mxm"
-        self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+        )
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = MatrixExpression(
@@ -504,7 +514,9 @@ class Matrix(BaseType):
         Default op is binary.times
         """
         method_name = "kronecker"
-        self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+        )
         op = get_typed_op(op, self.dtype, other.dtype)
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
@@ -547,7 +559,7 @@ class Matrix(BaseType):
                 try:
                     left = Scalar.from_value(left, name="")
                 except TypeError:
-                    self._expect_type(
+                    left = self._expect_type(
                         left,
                         Scalar,
                         within=method_name,
@@ -573,7 +585,7 @@ class Matrix(BaseType):
                 try:
                     right = Scalar.from_value(right, name="")
                 except TypeError:
-                    self._expect_type(
+                    right = self._expect_type(
                         right,
                         Scalar,
                         within=method_name,
@@ -738,7 +750,7 @@ class Matrix(BaseType):
             try:
                 value = Scalar.from_value(value, name="")
             except TypeError:
-                self._expect_type(
+                value = self._expect_type(
                     value,
                     Scalar,
                     within="__setitem__",
@@ -852,7 +864,7 @@ class Matrix(BaseType):
                     )
             elif colsize is None and rowsize is None:
                 # C[i, j] << v  (mask doesn't matter)
-                self._expect_type(
+                value = self._expect_type(
                     value,
                     Scalar,
                     within=method_name,
@@ -860,7 +872,7 @@ class Matrix(BaseType):
                 )
             else:
                 # C[I, J] << v  (mask doesn't matter)
-                self._expect_type(
+                value = self._expect_type(
                     value,
                     (Scalar, Matrix, TransposedMatrix),
                     within=method_name,
@@ -870,7 +882,7 @@ class Matrix(BaseType):
             if rowsize is None or colsize is None:
                 if rowsize is None and colsize is None:
                     # C[i, j] << A  (mask doesn't matter)
-                    self._expect_type(
+                    value = self._expect_type(
                         value,
                         Scalar,
                         within=method_name,
@@ -879,7 +891,7 @@ class Matrix(BaseType):
                 else:
                     # C[I, j] << A
                     # C[i, J] << A  (mask doesn't matter)
-                    self._expect_type(
+                    value = self._expect_type(
                         value,
                         (Scalar, Vector),
                         within=method_name,
@@ -914,7 +926,7 @@ class Matrix(BaseType):
                         types = (Scalar, Vector)
                     else:
                         types = (Scalar, Matrix, TransposedMatrix)
-                    self._expect_type(
+                    value = self._expect_type(
                         value,
                         types,
                         within=method_name,
@@ -1134,6 +1146,7 @@ class MatrixExpression(BaseExpression):
     def shape(self):
         return (self._rows, self._ncols)
 
+    _get_value = _automethods._get_value
     S = wrapdoc(Matrix.S)(property(_automethods.S))
     T = wrapdoc(Matrix.T)(property(_automethods.T))
     V = wrapdoc(Matrix.V)(property(_automethods.V))

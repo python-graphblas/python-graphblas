@@ -7,6 +7,7 @@ To automatically create the functions, run:
 ```python
 
 common = {
+    "_get_value",
     "_name_html",
     "_nvals",
     "gb_obj",
@@ -177,6 +178,12 @@ def _carg(self):
     if self._value is None:
         self._value = self.new()
     return self._value._carg
+
+
+def _get_value(self):
+    if self._value is None:
+        self._value = self.new()
+    return self._value
 
 
 def _name_html(self):

@@ -108,7 +108,7 @@ class Vector(BaseType):
         If `check_dtype` is True, also checks that dtypes match
         For equality of floating point Vectors, consider using `isclose`
         """
-        self._expect_type(other, Vector, within="isequal", argname="other")
+        other = self._expect_type(other, Vector, within="isequal", argname="other")
         if check_dtype and self.dtype != other.dtype:
             return False
         if self._size != other._size:
@@ -136,7 +136,7 @@ class Vector(BaseType):
         If `check_dtype` is True, also checks that dtypes match
         Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
-        self._expect_type(other, Vector, within="isclose", argname="other")
+        other = self._expect_type(other, Vector, within="isclose", argname="other")
         if check_dtype and self.dtype != other.dtype:
             return False
         if self._size != other._size:
@@ -348,7 +348,7 @@ class Vector(BaseType):
         For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
         method_name = "ewise_add"
-        self._expect_type(other, Vector, within=method_name, argname="other")
+        other = self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         # Per the spec, op may be a semiring, but this is weird, so don't.
         if require_monoid:
@@ -380,7 +380,7 @@ class Vector(BaseType):
         Default op is binary.times
         """
         method_name = "ewise_mult"
-        self._expect_type(other, Vector, within=method_name, argname="other")
+        other = self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
@@ -403,7 +403,9 @@ class Vector(BaseType):
         from .matrix import Matrix, TransposedMatrix
 
         method_name = "vxm"
-        self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+        )
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = VectorExpression(
@@ -446,7 +448,7 @@ class Vector(BaseType):
                 try:
                     left = Scalar.from_value(left, name="")
                 except TypeError:
-                    self._expect_type(
+                    left = self._expect_type(
                         left,
                         Scalar,
                         within=method_name,
@@ -472,7 +474,7 @@ class Vector(BaseType):
                 try:
                     right = Scalar.from_value(right, name="")
                 except TypeError:
-                    self._expect_type(
+                    right = self._expect_type(
                         right,
                         Scalar,
                         within=method_name,
@@ -533,7 +535,7 @@ class Vector(BaseType):
         *This is not a standard GraphBLAS function*
         """
         method_name = "inner"
-        self._expect_type(other, Vector, within=method_name, argname="other")
+        other = self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = ScalarExpression(
@@ -561,7 +563,7 @@ class Vector(BaseType):
         from .matrix import MatrixExpression
 
         method_name = "outer"
-        self._expect_type(other, Vector, within=method_name, argname="other")
+        other = self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = MatrixExpression(
@@ -609,7 +611,7 @@ class Vector(BaseType):
             try:
                 value = Scalar.from_value(value, name="")
             except TypeError:
-                self._expect_type(
+                value = self._expect_type(
                     value,
                     Scalar,
                     within="__setitem__",
@@ -640,7 +642,7 @@ class Vector(BaseType):
                 try:
                     value = Scalar.from_value(value, name="")
                 except TypeError:
-                    self._expect_type(
+                    value = self._expect_type(
                         value,
                         (Scalar, Vector),
                         within=method_name,
@@ -769,6 +771,7 @@ class VectorExpression(BaseExpression):
     def shape(self):
         return (self._size,)
 
+    _get_value = _automethods._get_value
     S = wrapdoc(Vector.S)(property(_automethods.S))
     V = wrapdoc(Vector.V)(property(_automethods.V))
     __and__ = wrapdoc(Vector.__and__)(property(_automethods.__and__))

@@ -60,9 +60,13 @@ def _expect_type_message(
 ):
     if type(types) is tuple:
         if type(x) in types:
-            return
+            return x, None
+        elif isinstance(x, BaseExpression) and x.output_type in types:
+            return x._get_value(), None
     elif type(x) is types:
-        return
+        return x, None
+    elif isinstance(x, BaseExpression) and x.output_type is types:
+        return x._get_value(), None
     if argname:
         argmsg = f"for argument `{argname}` "
     elif keyword_name:
@@ -75,7 +79,7 @@ def _expect_type_message(
         expected = types.__name__
     if extra_message:
         extra_message = f"\n{extra_message}"
-    return (
+    return x, (
         f"Bad type {argmsg}in {type(self).__name__}.{within}(...).\n"
         f"    - Expected type: {expected}.\n"
         f"    - Got: {type(x)}."
@@ -84,9 +88,10 @@ def _expect_type_message(
 
 
 def _expect_type(self, x, types, **kwargs):
-    message = _expect_type_message(self, x, types, **kwargs)
+    x, message = _expect_type_message(self, x, types, **kwargs)
     if message is not None:
         raise TypeError(message) from None
+    return x
 
 
 def _expect_op_message(

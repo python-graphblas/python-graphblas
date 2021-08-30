@@ -37,7 +37,7 @@ def diag(x, k=0, *, dtype=None, name=None):
     Matrix.ss.diag
 
     """
-    _expect_type(_grblas_ss, x, (Matrix, TransposedMatrix, Vector), within="diag", argname="x")
+    x = _expect_type(_grblas_ss, x, (Matrix, TransposedMatrix, Vector), within="diag", argname="x")
     if type(k) is not Scalar:
         k = Scalar.from_value(k, dtype=INT64, name="")
     if dtype is None:

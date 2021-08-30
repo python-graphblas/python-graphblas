@@ -79,7 +79,7 @@ class Scalar(BaseType):
             try:
                 other = Scalar.from_value(other, name="s_isequal")
             except TypeError:
-                self._expect_type(
+                other = self._expect_type(
                     other,
                     Scalar,
                     within="isequal",
@@ -110,7 +110,7 @@ class Scalar(BaseType):
             try:
                 other = Scalar.from_value(other, name="s_isclose")
             except TypeError:
-                self._expect_type(
+                other = self._expect_type(
                     other,
                     Scalar,
                     within="isclose",
@@ -184,7 +184,12 @@ class Scalar(BaseType):
     @classmethod
     def from_value(cls, value, dtype=None, *, name=None):
         """Create a new Scalar from a Python value"""
-        if dtype is None:
+        typ = type(value)
+        if typ is Scalar or typ is ScalarExpression:
+            if dtype is None:
+                dtype = value.dtype
+            value = value.value
+        elif dtype is None:
             try:
                 dtype = lookup_dtype(type(value))
             except ValueError:
@@ -253,6 +258,7 @@ class ScalarExpression(BaseExpression):
 
         return format_scalar_expression_html(self)
 
+    _get_value = _automethods._get_value
     __bool__ = wrapdoc(Scalar.__bool__)(property(_automethods.__bool__))
     __complex__ = wrapdoc(Scalar.__complex__)(property(_automethods.__complex__))
     __eq__ = wrapdoc(Scalar.__eq__)(property(_automethods.__eq__))

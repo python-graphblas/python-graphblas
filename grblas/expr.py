@@ -512,13 +512,15 @@ def _ewise_infix_expr(left, right, *, method, within):
             or (left_type is TransposedMatrix and right_type is Matrix)
         ):
             if left_type is Vector:
-                left._expect_type(right, Vector, within=within, argname="right")
+                right = left._expect_type(right, Vector, within=within, argname="right")
             else:
-                left._expect_type(right, (Matrix, TransposedMatrix), within=within, argname="right")
+                right = left._expect_type(
+                    right, (Matrix, TransposedMatrix), within=within, argname="right"
+                )
     elif right_type is Vector:
-        right._expect_type(left, Vector, within=within, argname="left")
+        left = right._expect_type(left, Vector, within=within, argname="left")
     elif right_type is Matrix or right_type is TransposedMatrix:
-        right._expect_type(left, (Matrix, TransposedMatrix), within=within, argname="left")
+        left = right._expect_type(left, (Matrix, TransposedMatrix), within=within, argname="left")
     else:  # pragma: no cover
         raise TypeError(f"Bad types for ewise infix: {type(left).__name__}, {type(right).__name__}")
 
@@ -548,7 +550,7 @@ def _matmul_infix_expr(left, right, *, within):
         elif right_type is Vector:
             method = "inner"
         else:
-            left._expect_type(
+            right = left._expect_type(
                 right,
                 (Matrix, TransposedMatrix),
                 within=within,
@@ -560,21 +562,21 @@ def _matmul_infix_expr(left, right, *, within):
         elif right_type is Matrix or right_type is TransposedMatrix:
             method = "mxm"
         else:
-            left._expect_type(
+            right = left._expect_type(
                 right,
                 (Vector, Matrix, TransposedMatrix),
                 within=within,
                 argname="right",
             )
     elif right_type is Vector:
-        right._expect_type(
+        left = right._expect_type(
             left,
             (Matrix, TransposedMatrix),
             within=within,
             argname="left",
         )
     elif right_type is Matrix or right_type is TransposedMatrix:
-        right._expect_type(
+        left = right._expect_type(
             left,
             (Vector, Matrix, TransposedMatrix),
             within=within,
