@@ -1,24 +1,25 @@
 import itertools
+
 import numpy as np
-from . import ffi, lib, backend, binary, monoid, semiring
+
+from . import _automethods, backend, binary, expr, ffi, lib, monoid, semiring
+from ._ss.matrix import ss
 from .base import BaseExpression, BaseType, call
-from .dtypes import lookup_dtype, unify, _INDEX
-from .exceptions import check_status, NoValue
+from .dtypes import _INDEX, lookup_dtype, unify
+from .exceptions import NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_typed_op
-from .vector import Vector, VectorExpression
 from .scalar import Scalar, ScalarExpression, _CScalar
 from .utils import (
-    ints_to_numpy_buffer,
-    values_to_numpy_buffer,
-    wrapdoc,
     _CArray,
     _Pointer,
     class_property,
+    ints_to_numpy_buffer,
+    values_to_numpy_buffer,
+    wrapdoc,
 )
-from . import expr, _automethods
-from ._ss.matrix import ss
+from .vector import Vector, VectorExpression
 
 ffi_new = ffi.new
 
@@ -335,7 +336,9 @@ class Matrix(BaseType):
     ):
         """Create a new Matrix from the given lists of row indices, column
         indices, and values.  If nrows or ncols are not provided, they
-        are computed from the max row and coumn index found.
+        are computed from the max row and column index found.
+
+        values may be a scalar, in which case duplicate indices are ignored.
         """
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
@@ -351,9 +354,18 @@ class Matrix(BaseType):
             ncols = int(columns.max()) + 1
         # Create the new matrix
         C = cls.new(dtype, nrows, ncols, name=name)
-        # Add the data
-        # This needs to be the original data to get proper error messages
-        C.build(rows, columns, values, dup_op=dup_op)
+        if values.ndim == 0:
+            if dup_op is not None:
+                raise ValueError(
+                    "dup_op must be None if values is a scalar so that all "
+                    "values can be identical.  Duplicate indices will be ignored."
+                )
+            # SS, SuiteSparse-specific: build_Scalar
+            C.ss.build_scalar(rows, columns, values.tolist())
+        else:
+            # Add the data
+            # This needs to be the original data to get proper error messages
+            C.build(rows, columns, values, dup_op=dup_op)
         return C
 
     @property
@@ -1032,7 +1044,7 @@ class Matrix(BaseType):
             """
             import pygraphblas as pg
 
-            matrix = pg.Matrix(self.gb_obj, pg.types.gb_type_to_type(self.dtype.gb_obj))
+            matrix = pg.Matrix(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
             self.gb_obj = ffi.NULL
             return matrix
 
@@ -1050,10 +1062,10 @@ class Matrix(BaseType):
             if not isinstance(matrix, pg.Matrix):
                 raise TypeError(f"Expected pygraphblas.Matrix object.  Got type: {type(matrix)}")
             dtype = lookup_dtype(matrix.gb_type)
-            rv = cls(matrix.matrix, dtype)
+            rv = cls(matrix._matrix, dtype)
             rv._nrows = matrix.nrows
             rv._ncols = matrix.ncols
-            matrix.matrix = ffi.NULL
+            matrix._matrix = ffi.NULL
             return rv
 
 

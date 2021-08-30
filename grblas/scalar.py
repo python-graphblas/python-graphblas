@@ -1,11 +1,11 @@
 import itertools
-from . import ffi, backend
+
+from . import _automethods, backend, expr, ffi
 from .base import BaseExpression, BaseType
 from .binary import isclose
-from .dtypes import lookup_dtype, _INDEX
+from .dtypes import _INDEX, lookup_dtype
 from .operator import get_typed_op
 from .utils import wrapdoc
-from . import expr, _automethods
 
 ffi_new = ffi.new
 

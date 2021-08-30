@@ -1,19 +1,19 @@
-import pytest
 import itertools
-import grblas
-import numpy as np
 import pickle
 import weakref
+
+import numpy as np
+import pytest
 from numpy.testing import assert_array_equal
-from grblas import Matrix, Vector, Scalar
-from grblas import unary, binary, monoid, semiring
-from grblas import dtypes
+
+import grblas
+from grblas import Matrix, Scalar, Vector, binary, dtypes, monoid, semiring, unary
 from grblas.exceptions import (
-    IndexOutOfBound,
     DimensionMismatch,
-    OutputNotEmpty,
-    InvalidValue,
     DomainMismatch,
+    IndexOutOfBound,
+    InvalidValue,
+    OutputNotEmpty,
 )
 
 
@@ -123,6 +123,27 @@ def test_from_values():
         Matrix.from_values([0], [1, 2], [0])
 
 
+def test_from_values_scalar():
+    C = Matrix.from_values([0, 1, 3], [1, 1, 2], 7)
+    assert C.nrows == 4
+    assert C.ncols == 3
+    assert C.nvals == 3
+    assert C.dtype == dtypes.INT64
+    assert C.ss.is_iso
+    assert C.reduce_scalar(monoid.any) == 7
+
+    # iso drumps duplicates
+    C = Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7)
+    assert C.nrows == 4
+    assert C.ncols == 3
+    assert C.nvals == 3
+    assert C.dtype == dtypes.INT64
+    assert C.ss.is_iso
+    assert C.reduce_scalar(monoid.any) == 7
+    with pytest.raises(ValueError, match="dup_op must be None"):
+        Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7, dup_op=binary.plus)
+
+
 def test_clear(A):
     A.clear()
     assert A.nvals == 0
@@ -177,6 +198,19 @@ def test_build(A):
     C = Matrix.new(int, nrows=2, ncols=2)
     C.build([0, 0], [0, 11], [1, 1], ncols=12)
     assert C.isequal(Matrix.from_values([0, 0], [0, 11], [1, 1], nrows=2))
+
+
+def test_build_scalar(A):
+    assert A.nvals == 12
+    with pytest.raises(OutputNotEmpty):
+        A.ss.build_scalar([1, 5], [2, 3], 3)
+    A.clear()
+    A.ss.build_scalar([0, 6], [0, 1], 1)
+    assert A.nvals == 2
+    assert A.ss.is_iso
+    A.clear()
+    with pytest.raises(ValueError, match="lengths must match"):
+        A.ss.build_scalar([0, 6], [0, 1, 2], 1)
 
 
 def test_extract_values(A):
@@ -1518,6 +1552,39 @@ def test_import_export(A, do_iso, methods):
         assert A8.isequal(A)
         assert A8.ss.is_iso is do_iso
 
+    A9 = A.dup()
+    d = getattr(A9.ss, out_method)("coo", sort=True)
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
+    assert d["nrows"] == 7
+    assert d["ncols"] == 7
+    assert d["rows"].shape == (12,)
+    assert d["cols"].shape == (12,)
+    assert d["sorted_rows"]
+    assert "sorted_cols" not in d
+    assert_array_equal(d["rows"], [0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6])
+    assert_array_equal(d["cols"], [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4])
+
+    if do_iso:
+        assert d["values"].shape == (1,)
+    else:
+        assert d["values"].shape == (12,)
+    if in_method == "import":
+        B8 = Matrix.ss.import_any(**d)
+        assert B8.isequal(A)
+        assert B8.ss.is_iso is do_iso
+        del d["rows"]
+        del d["format"]
+        with pytest.raises(ValueError, match="coo requires both"):
+            Matrix.ss.import_any(**d)
+    else:
+        A9.ss.pack_any(**d)
+        assert A9.isequal(A)
+        assert A9.ss.is_iso is do_iso
+
     C = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
     if do_iso:
         C(C.S) << 1
@@ -1675,6 +1742,14 @@ def test_import_export_empty():
     with pytest.raises(InvalidValue):
         A.dup().ss.export("fullc")
 
+    A7 = A.dup()
+    d = A7.ss.export("coo")
+    assert d["nrows"] == 2
+    assert d["ncols"] == 3
+    assert len(d["rows"]) == 0
+    assert len(d["cols"]) == 0
+    assert len(d["values"]) == 0
+
     # if we give the same value, make sure it's copied
     for format, key1, key2 in [
         ("csr", "values", "col_indices"),
@@ -1683,6 +1758,7 @@ def test_import_export_empty():
         ("hypercsc", "values", "row_indices"),
         ("bitmapr", "values", "bitmap"),
         ("bitmapc", "values", "bitmap"),
+        ("coo", "values", "rows"),
     ]:
         # No assertions here, but code coverage should be "good enough"
         d = A.ss.export(format, raw=True)
@@ -1700,7 +1776,7 @@ def test_import_export_auto(A, do_iso, methods):
         A(A.S) << 1
     A_orig = A.dup()
     out_method, in_method = methods
-    for format in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc"]:
+    for format in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc", "coo"]:
         for (
             sort,
             raw,

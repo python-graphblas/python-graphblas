@@ -1,0 +1,73 @@
+name: Debug CI Jobs
+
+on:
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'
+        required: false
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pyver: [3.8]
+        testopts:
+          - "--blocking"
+          # - "--non-blocking --record --runslow"
+        sourcetype:
+          - "wheel"
+          # - "source"
+          # - "upstream"
+          # - "conda-forge"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Setup conda env
+        run: |
+          source "$CONDA/etc/profile.d/conda.sh"
+          conda config --set always_yes yes --set changeps1 no
+          conda update -q conda
+          conda info -a
+          conda create -n grblas -c conda-forge python=${{ matrix.pyver }} pytest-runner coverage 'black>=20.8b1' flake8 coveralls
+      - name: Build extension module
+        run: |
+          source "$CONDA/etc/profile.d/conda.sh"
+          conda activate grblas
+          conda install -c conda-forge pandas numba scipy networkx cffi
+          if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then
+              pip install suitesparse-graphblas
+          else
+              conda install -c conda-forge graphblas
+          fi
+          if [[ ${{ matrix.sourcetype }} == "source" ]]; then
+              pip install --no-binary=all suitesparse-graphblas
+          elif [[ ${{ matrix.sourcetype }} == "upstream" ]]; then
+              # I can't get pip install from git to work, so git clone instead.
+              # pip install git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
+              conda install -c conda-forge cython
+              git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
+              pushd ssgb
+              python setup.py install
+              popd
+          elif [[ ${{ matrix.sourcetype }} == "conda-forge" ]]; then
+              conda install -c conda-forge python-suitesparse-graphblas
+          fi
+          python setup.py develop
+      - name: Verify build
+        run: |
+          source "$CONDA/etc/profile.d/conda.sh"
+          conda activate grblas
+          # Make sure `from grblas import *` works as expected
+          python -c "from grblas import * ; Matrix"
+          # Make sure all top-level imports work
+          ( for attr in Matrix Scalar Vector Recorder backends base binary descriptor dtypes exceptions expr ffi formatting init io lib mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
+
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.debug_enabled }}

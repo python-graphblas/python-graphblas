@@ -1,23 +1,24 @@
 import itertools
+
 import numpy as np
-from . import ffi, lib, backend, binary, monoid, semiring
+
+from . import _automethods, backend, binary, expr, ffi, lib, monoid, semiring
+from ._ss.vector import ss
 from .base import BaseExpression, BaseType, call
-from .dtypes import lookup_dtype, unify, _INDEX
-from .exceptions import check_status, NoValue
+from .dtypes import _INDEX, lookup_dtype, unify
+from .exceptions import NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_typed_op
 from .scalar import Scalar, ScalarExpression, _CScalar
 from .utils import (
-    ints_to_numpy_buffer,
-    values_to_numpy_buffer,
     _CArray,
     _Pointer,
     class_property,
+    ints_to_numpy_buffer,
+    values_to_numpy_buffer,
     wrapdoc,
 )
-from . import expr, _automethods
-from ._ss.vector import ss
 
 ffi_new = ffi.new
 
@@ -289,6 +290,8 @@ class Vector(BaseType):
     def from_values(cls, indices, values, *, size=None, dup_op=None, dtype=None, name=None):
         """Create a new Vector from the given lists of indices and values.  If
         size is not provided, it is computed from the max index found.
+
+        values may be a scalar, in which case duplicate indices are ignored.
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         values, dtype = values_to_numpy_buffer(values, dtype)
@@ -299,9 +302,17 @@ class Vector(BaseType):
             size = int(indices.max()) + 1
         # Create the new vector
         w = cls.new(dtype, size, name=name)
-        # Add the data
-        # This needs to be the original data to get proper error messages
-        w.build(indices, values, dup_op=dup_op)
+        if values.ndim == 0:
+            if dup_op is not None:
+                raise ValueError(
+                    "dup_op must be None if values is a scalar so that all "
+                    "values can be identical.  Duplicate indices will be ignored."
+                )
+            # SS, SuiteSparse-specific: build_Scalar
+            w.ss.build_scalar(indices, values.tolist())
+        else:
+            # This needs to be the original data to get proper error messages
+            w.build(indices, values, dup_op=dup_op)
         return w
 
     @property
@@ -677,7 +688,7 @@ class Vector(BaseType):
             """
             import pygraphblas as pg
 
-            vector = pg.Vector(self.gb_obj, pg.types.gb_type_to_type(self.dtype.gb_obj))
+            vector = pg.Vector(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
             self.gb_obj = ffi.NULL
             return vector
 
@@ -695,9 +706,9 @@ class Vector(BaseType):
             if not isinstance(vector, pg.Vector):
                 raise TypeError(f"Expected pygraphblas.Vector object.  Got type: {type(vector)}")
             dtype = lookup_dtype(vector.gb_type)
-            rv = cls(vector.vector, dtype)
+            rv = cls(vector._vector, dtype)
             rv._size = vector.size
-            vector.vector = ffi.NULL
+            vector._vector = ffi.NULL
             return rv
 
 

@@ -1,8 +1,7 @@
 import pytest
+
 import grblas
-from grblas import Matrix, Vector
-from grblas import unary, binary
-from grblas import dtypes
+from grblas import Matrix, Vector, binary, dtypes, unary
 from grblas.expr import Updater
 
 

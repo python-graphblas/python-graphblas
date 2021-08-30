@@ -1,7 +1,9 @@
-import pytest
 import itertools
-import numpy as np
 import pickle
+
+import numpy as np
+import pytest
+
 from grblas import dtypes, lib
 from grblas.dtypes import lookup_dtype
 

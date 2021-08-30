@@ -1,13 +1,22 @@
 import numpy as np
-import grblas as gb
 from numba import njit
 from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
+
+import grblas as gb
+
 from .. import ffi, lib
 from ..base import call
-from ..dtypes import lookup_dtype, INT64
+from ..dtypes import INT64, lookup_dtype
 from ..exceptions import check_status, check_status_carg
 from ..scalar import _CScalar
-from ..utils import libget, ints_to_numpy_buffer, values_to_numpy_buffer, wrapdoc
+from ..utils import (
+    _CArray,
+    ints_to_numpy_buffer,
+    libget,
+    values_to_numpy_buffer,
+    wrapdoc,
+)
+from .scalar import gxb_scalar
 
 ffi_new = ffi.new
 
@@ -136,6 +145,24 @@ class ss:
             k = -k
             matrix = matrix._matrix
         call("GxB_Vector_diag", [self._parent, matrix, _CScalar(k, dtype=INT64), None])
+
+    def build_scalar(self, indices, value):
+        """
+        GxB_Vector_build_Scalar
+
+        Like ``build``, but uses a scalar for all the values.
+
+        See Also
+        --------
+        Vector.build
+        Vector.from_values
+        """
+        indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
+        scalar = gxb_scalar(self._parent.dtype, value)
+        status = lib.GxB_Vector_build_Scalar(
+            self._parent._carg, _CArray(indices)._carg, scalar[0], indices.size
+        )
+        check_status(status, self._parent)
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
         """
