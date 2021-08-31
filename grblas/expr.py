@@ -1,7 +1,7 @@
 import numpy as np
 
-from . import lib
-from .utils import _CArray
+from . import lib, utils
+from .utils import _CArray, output_type
 
 
 class _AllIndices:
@@ -48,7 +48,7 @@ class IndexerResolver:
 
         out = []
         for i, idx in enumerate(indices):
-            typ = type(idx)
+            typ = output_type(idx)
             if typ is tuple:
                 raise TypeError(
                     f"Index in position {i} cannot be a tuple; must use slice or list or int"
@@ -335,6 +335,7 @@ class Updater:
 
 class InfixExprBase:
     __slots__ = "left", "right", "_value", "__weakref__"
+    _is_scalar = False
 
     def __init__(self, left, right):
         self.left = left
@@ -347,6 +348,10 @@ class InfixExprBase:
         return expr.new(dtype=dtype, mask=mask, name=name)
 
     dup = new
+
+    def _to_expr(self):
+        # Rely on the default operator for the method
+        return getattr(self.left, self.method_name)(self.right)
 
     def _format_expr(self):
         return f"{self.left.name} {self._infix} {self.right.name}"
@@ -371,3 +376,9 @@ class InfixExprBase:
         elif self.output_type.__name__ == "MatrixExpression":
             return formatting.format_matrix_infix_expression(self)
         return formatting.format_scalar_infix_expression(self)
+
+
+# Mistakes
+utils._output_types[AmbiguousAssignOrExtract] = AmbiguousAssignOrExtract
+utils._output_types[Assigner] = Assigner
+utils._output_types[Updater] = Updater

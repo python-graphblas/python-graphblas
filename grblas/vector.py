@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from . import _automethods, backend, binary, ffi, lib, monoid, semiring
+from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
 from ._ss.vector import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, lookup_dtype, unify
@@ -16,6 +16,7 @@ from .utils import (
     _Pointer,
     class_property,
     ints_to_numpy_buffer,
+    output_type,
     values_to_numpy_buffer,
     wrapdoc,
 )
@@ -624,7 +625,10 @@ class Vector(BaseType):
     def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
         index, isize = resolved_indexes.indices[0]
-        if type(value) is Vector:
+
+        if output_type(value) is Vector:
+            if type(value) is not Vector:
+                value = value._get_value()
             if is_submask:
                 if isize is None:
                     # v[i](m) << w
@@ -780,6 +784,9 @@ class VectorExpression(BaseExpression):
     __iter__ = wrapdoc(Vector.__iter__)(property(_automethods.__iter__))
     __matmul__ = wrapdoc(Vector.__matmul__)(property(_automethods.__matmul__))
     __or__ = wrapdoc(Vector.__or__)(property(_automethods.__or__))
+    __rand__ = wrapdoc(Vector.__rand__)(property(_automethods.__rand__))
+    __rmatmul__ = wrapdoc(Vector.__rmatmul__)(property(_automethods.__rmatmul__))
+    __ror__ = wrapdoc(Vector.__ror__)(property(_automethods.__ror__))
     _carg = wrapdoc(Vector._carg)(property(_automethods._carg))
     _name_html = wrapdoc(Vector._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Vector._nvals)(property(_automethods._nvals))
@@ -821,3 +828,7 @@ class _VectorAsMatrix:
     @property
     def _repr_html_(self):
         return self.vector._repr_html_
+
+
+utils._output_types[Vector] = Vector
+utils._output_types[VectorExpression] = Vector

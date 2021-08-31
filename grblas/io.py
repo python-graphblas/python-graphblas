@@ -2,6 +2,7 @@ from . import Matrix, Vector
 from .dtypes import FP64, lookup_dtype
 from .exceptions import GrblasException
 from .matrix import TransposedMatrix
+from .utils import output_type
 
 
 def draw(m):
@@ -96,7 +97,7 @@ def to_numpy(m):
         import scipy  # noqa
     except ImportError:  # pragma: no cover
         raise ImportError("scipy is required to export to numpy")
-    if type(m) is Vector:
+    if output_type(m) is Vector:
         return to_scipy_sparse_matrix(m).toarray()[0]
     else:
         sparse = to_scipy_sparse_matrix(m, "coo")
@@ -110,7 +111,7 @@ def to_scipy_sparse_matrix(m, format="csr"):
     import scipy.sparse as ss
 
     format = format.lower()
-    if type(m) is Vector:
+    if output_type(m) is Vector:
         indices, data = m.to_values()
         if format == "csc":
             return ss.csc_matrix((data, indices, [0, len(data)]))

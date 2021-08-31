@@ -1,11 +1,11 @@
 import itertools
 
-from . import _automethods, backend, ffi
+from . import _automethods, backend, ffi, utils
 from .base import BaseExpression, BaseType
 from .binary import isclose
 from .dtypes import _INDEX, lookup_dtype
 from .operator import get_typed_op
-from .utils import wrapdoc
+from .utils import output_type, wrapdoc
 
 ffi_new = ffi.new
 
@@ -184,11 +184,12 @@ class Scalar(BaseType):
     @classmethod
     def from_value(cls, value, dtype=None, *, name=None):
         """Create a new Scalar from a Python value"""
-        typ = type(value)
-        if typ is Scalar or typ is ScalarExpression:
+        if type(value) is Scalar:
             if dtype is None:
                 dtype = value.dtype
             value = value.value
+        elif output_type(value) is Scalar:
+            return value.new(dtype=dtype, name=name)
         elif dtype is None:
             try:
                 dtype = lookup_dtype(type(value))
@@ -259,6 +260,7 @@ class ScalarExpression(BaseExpression):
         return format_scalar_expression_html(self)
 
     _get_value = _automethods._get_value
+    __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
     __bool__ = wrapdoc(Scalar.__bool__)(property(_automethods.__bool__))
     __complex__ = wrapdoc(Scalar.__complex__)(property(_automethods.__complex__))
     __eq__ = wrapdoc(Scalar.__eq__)(property(_automethods.__eq__))
@@ -266,7 +268,6 @@ class ScalarExpression(BaseExpression):
     __index__ = wrapdoc(Scalar.__index__)(property(_automethods.__index__))
     __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
     __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
-    # _carg = wrapdoc(Scalar._carg)(property(_automethods._carg))
     _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
     gb_obj = wrapdoc(Scalar.gb_obj)(property(_automethods.gb_obj))
@@ -310,3 +311,7 @@ class _CScalar:
         if type(other) is _CScalar:
             return self.scalar == other.scalar
         return self.scalar == other
+
+
+utils._output_types[Scalar] = Scalar
+utils._output_types[ScalarExpression] = Scalar

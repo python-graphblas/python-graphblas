@@ -7,11 +7,11 @@ from . import replace as replace_singleton
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import lookup_dtype
 from .exceptions import check_status
-from .expr import AmbiguousAssignOrExtract, InfixExprBase, Updater
+from .expr import AmbiguousAssignOrExtract, Updater
 from .mask import Mask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_typed_op
 from .unary import identity
-from .utils import _Pointer, libget
+from .utils import _Pointer, libget, output_type
 
 NULL = ffi.NULL
 CData = ffi.CData
@@ -56,21 +56,11 @@ def _expect_type_message(
     if type(types) is tuple:
         if type(x) in types:
             return x, None
-        elif (
-            isinstance(x, BaseExpression)
-            and x.output_type in types
-            or isinstance(x, InfixExprBase)
-            and x.output_type.output_type in types
-        ):
+        elif output_type(x) in types:
             return x._get_value(), None
     elif type(x) is types:
         return x, None
-    elif (
-        isinstance(x, BaseExpression)
-        and x.output_type is types
-        or isinstance(x, InfixExprBase)
-        and x.output_type.output_type is types
-    ):
+    elif output_type(x) is types:
         return x._get_value(), None
     if argname:
         argmsg = f"for argument `{argname}` "
@@ -149,9 +139,9 @@ def _expect_op(self, op, values, **kwargs):
 
 
 def _check_mask(mask, output=None):
-    if isinstance(mask, BaseType) or type(mask) is Mask:
-        raise TypeError("Mask must indicate values (M.V) or structure (M.S)")
     if not isinstance(mask, Mask):
+        if isinstance(mask, BaseType):
+            raise TypeError("Mask must indicate values (M.V) or structure (M.S)")
         raise TypeError(f"Invalid mask: {type(mask)}")
     if output is not None:
         from .vector import Vector
@@ -354,6 +344,7 @@ class BaseType:
                 return
 
             else:
+                from .infix import InfixExprBase
                 from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
                 if type(delayed) is TransposedMatrix and type(self) is Matrix:
@@ -367,6 +358,9 @@ class BaseType:
                         nrows=delayed._nrows,
                         ncols=delayed._ncols,
                     )
+                elif isinstance(delayed, InfixExprBase):
+                    # w << (v & v)
+                    delayed = delayed._to_expr()
                 else:
                     from .scalar import Scalar
 
@@ -539,3 +533,6 @@ class BaseExpression:
     def _format_expr_html(self):
         expr_repr = self.expr_repr.replace(".name", "._name_html")
         return expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
+
+    _expect_type = _expect_type
+    _expect_op = _expect_op

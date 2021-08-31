@@ -2103,3 +2103,37 @@ def test_concat(A):
 
 def test_nbytes(A):
     assert A.ss.nbytes > 0
+
+
+def test_auto(A):
+    expected = binary.times(A & A).new()
+    for expr in [(A & A), binary.times(A & A)]:
+        assert expr.nrows == expected.nrows
+        assert expr.ncols == expected.ncols
+        assert expr.shape == expected.shape
+        assert expr.nvals == expected.nvals
+        assert expr.isclose(expected)
+        assert expected.isclose(expr)
+        assert expr.isequal(expected)
+        assert expected.isequal(expr)
+        for method in [
+            "ewise_add",
+            "ewise_mult",
+            "mxm",
+            "__matmul__",
+            "__and__",
+            "__or__",
+            "kronecker",
+        ]:
+            val1 = getattr(expected, method)(expected).new()
+            val2 = getattr(expected, method)(expr)
+            val3 = getattr(expr, method)(expected)
+            val4 = getattr(expr, method)(expr)
+            assert val1.isequal(val2)
+            assert val1.isequal(val3)
+            assert val1.isequal(val4)
+        for method in ["reduce_rows", "reduce_columns", "reduce_scalar"]:
+            s1 = getattr(expected, method)().new()
+            s2 = getattr(expr, method)()
+            assert s1.isequal(s2.new())
+            assert s1.isequal(s2)

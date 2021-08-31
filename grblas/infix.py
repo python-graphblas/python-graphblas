@@ -1,9 +1,9 @@
-from . import _automethods, binary
+from . import _automethods, binary, utils
 from .expr import InfixExprBase
 from .matrix import Matrix, MatrixExpression, TransposedMatrix
 from .scalar import Scalar, ScalarExpression
 from .semiring import any_pair
-from .utils import wrapdoc
+from .utils import output_type, wrapdoc
 from .vector import Vector, VectorExpression
 
 
@@ -32,6 +32,9 @@ class VectorInfixExpr(InfixExprBase):
     __iter__ = wrapdoc(Vector.__iter__)(property(_automethods.__iter__))
     __matmul__ = wrapdoc(Vector.__matmul__)(property(_automethods.__matmul__))
     __or__ = wrapdoc(Vector.__or__)(property(_automethods.__or__))
+    __rand__ = wrapdoc(Vector.__rand__)(property(_automethods.__rand__))
+    __rmatmul__ = wrapdoc(Vector.__rmatmul__)(property(_automethods.__rmatmul__))
+    __ror__ = wrapdoc(Vector.__ror__)(property(_automethods.__ror__))
     _carg = wrapdoc(Vector._carg)(property(_automethods._carg))
     _name_html = wrapdoc(Vector._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Vector._nvals)(property(_automethods._nvals))
@@ -75,6 +78,11 @@ class VectorMatMulExpr(VectorInfixExpr):
         self._size = size
 
 
+utils._output_types[VectorEwiseAddExpr] = Vector
+utils._output_types[VectorEwiseMultExpr] = Vector
+utils._output_types[VectorInfixExpr] = Vector
+
+
 class MatrixInfixExpr(InfixExprBase):
     __slots__ = "_nrows", "_ncols"
     output_type = MatrixExpression
@@ -106,6 +114,9 @@ class MatrixInfixExpr(InfixExprBase):
     __iter__ = wrapdoc(Matrix.__iter__)(property(_automethods.__iter__))
     __matmul__ = wrapdoc(Matrix.__matmul__)(property(_automethods.__matmul__))
     __or__ = wrapdoc(Matrix.__or__)(property(_automethods.__or__))
+    __rand__ = wrapdoc(Matrix.__rand__)(property(_automethods.__rand__))
+    __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(_automethods.__rmatmul__))
+    __ror__ = wrapdoc(Matrix.__ror__)(property(_automethods.__ror__))
     _carg = wrapdoc(Matrix._carg)(property(_automethods._carg))
     _name_html = wrapdoc(Matrix._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Matrix._nvals)(property(_automethods._nvals))
@@ -152,6 +163,11 @@ class MatrixMatMulExpr(MatrixInfixExpr):
         self._ncols = ncols
 
 
+utils._output_types[MatrixEwiseAddExpr] = Matrix
+utils._output_types[MatrixEwiseMultExpr] = Matrix
+utils._output_types[MatrixMatMulExpr] = Matrix
+
+
 class ScalarMatMulExpr(InfixExprBase):
     __slots__ = ()
     method_name = "inner"
@@ -159,6 +175,7 @@ class ScalarMatMulExpr(InfixExprBase):
     _infix = "@"
     _example_op = "plus_times"
     shape = ()
+    _is_scalar = True
 
     def new(self, *, dtype=None, name=None):
         # Rely on the default operator for the method
@@ -167,6 +184,7 @@ class ScalarMatMulExpr(InfixExprBase):
 
     dup = new
     _get_value = _automethods._get_value
+    __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
     __bool__ = wrapdoc(Scalar.__bool__)(property(_automethods.__bool__))
     __complex__ = wrapdoc(Scalar.__complex__)(property(_automethods.__complex__))
     __eq__ = wrapdoc(Scalar.__eq__)(property(_automethods.__eq__))
@@ -174,7 +192,6 @@ class ScalarMatMulExpr(InfixExprBase):
     __index__ = wrapdoc(Scalar.__index__)(property(_automethods.__index__))
     __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
     __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
-    # _carg = wrapdoc(Scalar._carg)(property(_automethods._carg))
     _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
     gb_obj = wrapdoc(Scalar.gb_obj)(property(_automethods.gb_obj))
@@ -186,9 +203,12 @@ class ScalarMatMulExpr(InfixExprBase):
     value = wrapdoc(Scalar.value)(property(_automethods.value))
 
 
+utils._output_types[ScalarMatMulExpr] = Scalar
+
+
 def _ewise_infix_expr(left, right, *, method, within):
-    left_type = type(left)
-    right_type = type(right)
+    left_type = output_type(left)
+    right_type = output_type(right)
 
     if left_type in {Vector, Matrix, TransposedMatrix}:
         if not (
@@ -222,7 +242,7 @@ def _ewise_infix_expr(left, right, *, method, within):
 
 def _matmul_infix_expr(left, right, *, within):
     left_type = type(left)
-    right_type = type(right)
+    right_type = output_type(right)
 
     if left_type is Vector:
         if right_type is Matrix or right_type is TransposedMatrix:

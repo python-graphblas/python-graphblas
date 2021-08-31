@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from . import _automethods, backend, binary, ffi, lib, monoid, semiring
+from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
 from ._ss.matrix import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, lookup_dtype, unify
@@ -16,6 +16,7 @@ from .utils import (
     _Pointer,
     class_property,
     ints_to_numpy_buffer,
+    output_type,
     values_to_numpy_buffer,
     wrapdoc,
 )
@@ -765,7 +766,11 @@ class Matrix(BaseType):
         rows, rowsize = resolved_indexes.indices[0]
         cols, colsize = resolved_indexes.indices[1]
         extra_message = "Literal scalars also accepted."
-        if type(value) is Vector:
+
+        value_type = output_type(value)
+        if value_type is Vector:
+            if type(value) is not Vector:
+                value = value._get_value()
             if rowsize is None and colsize is not None:
                 # Row-only selection
                 row_index = rows
@@ -878,7 +883,9 @@ class Matrix(BaseType):
                     within=method_name,
                     extra_message=extra_message,
                 )
-        elif type(value) in {Matrix, TransposedMatrix}:
+        elif value_type in {Matrix, TransposedMatrix}:
+            if type(value) not in {Matrix, TransposedMatrix}:
+                value = value._get_value()
             if rowsize is None or colsize is None:
                 if rowsize is None and colsize is None:
                     # C[i, j] << A  (mask doesn't matter)
@@ -1144,7 +1151,7 @@ class MatrixExpression(BaseExpression):
 
     @property
     def shape(self):
-        return (self._rows, self._ncols)
+        return (self._nrows, self._ncols)
 
     _get_value = _automethods._get_value
     S = wrapdoc(Matrix.S)(property(_automethods.S))
@@ -1156,6 +1163,9 @@ class MatrixExpression(BaseExpression):
     __iter__ = wrapdoc(Matrix.__iter__)(property(_automethods.__iter__))
     __matmul__ = wrapdoc(Matrix.__matmul__)(property(_automethods.__matmul__))
     __or__ = wrapdoc(Matrix.__or__)(property(_automethods.__or__))
+    __rand__ = wrapdoc(Matrix.__rand__)(property(_automethods.__rand__))
+    __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(_automethods.__rmatmul__))
+    __ror__ = wrapdoc(Matrix.__ror__)(property(_automethods.__ror__))
     _carg = wrapdoc(Matrix._carg)(property(_automethods._carg))
     _name_html = wrapdoc(Matrix._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Matrix._nvals)(property(_automethods._nvals))
@@ -1277,3 +1287,8 @@ class TransposedMatrix:
     _expect_type = Matrix._expect_type
     _expect_op = Matrix._expect_op
     __array__ = Matrix.__array__
+
+
+utils._output_types[Matrix] = Matrix
+utils._output_types[MatrixExpression] = Matrix
+utils._output_types[TransposedMatrix] = TransposedMatrix

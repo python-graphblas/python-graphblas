@@ -82,7 +82,7 @@ jobs:
           # Make sure `from grblas import *` works as expected
           python -c "from grblas import * ; Matrix"
           # Make sure all top-level imports work
-          ( for attr in Matrix Scalar Vector Recorder backends base binary descriptor dtypes exceptions expr ffi formatting init io lib mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
+          ( for attr in Matrix Scalar Vector Recorder backends base binary descriptor dtypes exceptions expr ffi formatting infix init io lib mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
       - name: Unit tests
         # if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
         run: |

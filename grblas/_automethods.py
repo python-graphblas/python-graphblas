@@ -7,7 +7,6 @@ To automatically create the functions, run:
 ```python
 
 common = {
-    "_get_value",
     "_name_html",
     "_nvals",
     "gb_obj",
@@ -18,6 +17,7 @@ common = {
     # to_pygraphblas,
 }
 scalar = {
+    "__array__",
     "__bool__",
     "__complex__",
     "__eq__",
@@ -37,6 +37,9 @@ vector_matrix = {
     "__iter__",
     "__matmul__",
     "__or__",
+    "__rand__",
+    "__rmatmul__",
+    "__ror__",
     "_carg",
     "apply",
     "ewise_add",
@@ -60,17 +63,17 @@ matrix = {
 }
 
 for name in sorted(common | scalar | vector_matrix | vector | matrix):
-    print(f'''def {name}(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.{name}\n\n''')
+    print(f"def {name}(self):\n    return self._get_value().{name}\n\n")
 
+print("    _get_value = _automethods._get_value")
 for name in sorted(common | scalar):
     print(f"    {name} = wrapdoc(Scalar.{name})(property(_automethods.{name}))")
 print()
+print("    _get_value = _automethods._get_value")
 for name in sorted(common | vector_matrix | vector):
     print(f"    {name} = wrapdoc(Vector.{name})(property(_automethods.{name}))")
 print()
+print("    _get_value = _automethods._get_value")
 for name in sorted(common | vector_matrix | matrix):
     print(f"    {name} = wrapdoc(Matrix.{name})(property(_automethods.{name}))")
 
@@ -78,247 +81,184 @@ for name in sorted(common | vector_matrix | matrix):
 """
 
 
-def S(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.S
-
-
-def T(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.T
-
-
-def V(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.V
-
-
-def __and__(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.__and__
-
-
-def __bool__(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.__bool__
-
-
-def __complex__(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.__complex__
-
-
-def __contains__(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.__contains__
-
-
-def __eq__(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.__eq__
-
-
-def __float__(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.__float__
-
-
-def __getitem__(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.__getitem__
-
-
-def __index__(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.__index__
-
-
-def __int__(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.__int__
-
-
-def __iter__(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.__iter__
-
-
-def __matmul__(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.__matmul__
-
-
-def __neg__(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.__neg__
-
-
-def __or__(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.__or__
-
-
-def _carg(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value._carg
-
-
 def _get_value(self):
+    # A config to control auto-compute would go here
     if self._value is None:
         self._value = self.new()
     return self._value
 
 
+def S(self):
+    return self._get_value().S
+
+
+def T(self):
+    return self._get_value().T
+
+
+def V(self):
+    return self._get_value().V
+
+
+def __and__(self):
+    return self._get_value().__and__
+
+
+def __array__(self):
+    return self._get_value().__array__
+
+
+def __bool__(self):
+    return self._get_value().__bool__
+
+
+def __complex__(self):
+    return self._get_value().__complex__
+
+
+def __contains__(self):
+    return self._get_value().__contains__
+
+
+def __eq__(self):
+    return self._get_value().__eq__
+
+
+def __float__(self):
+    return self._get_value().__float__
+
+
+def __getitem__(self):
+    return self._get_value().__getitem__
+
+
+def __index__(self):
+    return self._get_value().__index__
+
+
+def __int__(self):
+    return self._get_value().__int__
+
+
+def __iter__(self):
+    return self._get_value().__iter__
+
+
+def __matmul__(self):
+    return self._get_value().__matmul__
+
+
+def __neg__(self):
+    return self._get_value().__neg__
+
+
+def __or__(self):
+    return self._get_value().__or__
+
+
+def __rand__(self):
+    return self._get_value().__rand__
+
+
+def __rmatmul__(self):
+    return self._get_value().__rmatmul__
+
+
+def __ror__(self):
+    return self._get_value().__ror__
+
+
+def _carg(self):
+    return self._get_value()._carg
+
+
 def _name_html(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value._name_html
+    return self._get_value()._name_html
 
 
 def _nvals(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value._nvals
+    return self._get_value()._nvals
 
 
 def apply(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.apply
+    return self._get_value().apply
 
 
 def ewise_add(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.ewise_add
+    return self._get_value().ewise_add
 
 
 def ewise_mult(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.ewise_mult
+    return self._get_value().ewise_mult
 
 
 def gb_obj(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.gb_obj
+    return self._get_value().gb_obj
 
 
 def inner(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.inner
+    return self._get_value().inner
 
 
 def is_empty(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.is_empty
+    return self._get_value().is_empty
 
 
 def isclose(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.isclose
+    return self._get_value().isclose
 
 
 def isequal(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.isequal
+    return self._get_value().isequal
 
 
 def kronecker(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.kronecker
+    return self._get_value().kronecker
 
 
 def mxm(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.mxm
+    return self._get_value().mxm
 
 
 def mxv(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.mxv
+    return self._get_value().mxv
 
 
 def name(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.name
+    return self._get_value().name
 
 
 def nvals(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.nvals
+    return self._get_value().nvals
 
 
 def outer(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.outer
+    return self._get_value().outer
 
 
 def reduce(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.reduce
+    return self._get_value().reduce
 
 
 def reduce_columns(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.reduce_columns
+    return self._get_value().reduce_columns
 
 
 def reduce_rows(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.reduce_rows
+    return self._get_value().reduce_rows
 
 
 def reduce_scalar(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.reduce_scalar
+    return self._get_value().reduce_scalar
 
 
 def to_values(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.to_values
+    return self._get_value().to_values
 
 
 def value(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.value
+    return self._get_value().value
 
 
 def vxm(self):
-    if self._value is None:
-        self._value = self.new()
-    return self._value.vxm
+    return self._get_value().vxm

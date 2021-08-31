@@ -1056,3 +1056,38 @@ def test_outer(v):
     expected = C.mxm(R).new()
     result = v.outer(v).new()
     assert result.isequal(expected)
+
+
+def test_auto(v):
+    expected = binary.times(v & v).new()
+    for expr in [(v & v), binary.times(v & v)]:
+        assert expr.size == expected.size
+        assert expr.shape == expected.shape
+        assert expr.nvals == expected.nvals
+        assert expr.isclose(expected)
+        assert expected.isclose(expr)
+        assert expr.isequal(expected)
+        assert expected.isequal(expr)
+        for method in [
+            "ewise_add",
+            "ewise_mult",
+            "inner",
+            "outer",
+            "__matmul__",
+            "__and__",
+            "__or__",
+        ]:
+            val1 = getattr(expected, method)(expected).new()
+            val2 = getattr(expected, method)(expr)
+            val3 = getattr(expr, method)(expected)
+            val4 = getattr(expr, method)(expr)
+            assert val1.isequal(val2)
+            assert val1.isequal(val3)
+            assert val1.isequal(val4)
+            assert val1.isequal(val2.new())
+            assert val1.isequal(val3.new())
+            assert val1.isequal(val4.new())
+        s1 = expected.reduce().new()
+        s2 = expr.reduce()
+        assert s1.isequal(s2.new())
+        assert s1.isequal(s2)
