@@ -1,6 +1,7 @@
 import importlib as _importlib
 
 from . import backends, mask  # noqa
+from ._version import get_versions  # noqa
 
 
 class replace:
@@ -20,33 +21,34 @@ replace = replace()
 backend = None
 _init_params = None
 _SPECIAL_ATTRS = {
-    "ffi",
-    "lib",
     "Matrix",
-    "Vector",
-    "Scalar",
     "Recorder",
+    "Scalar",
+    "Vector",
+    "_ss",
     "base",
+    "binary",
     "descriptor",
     "dtypes",
     "exceptions",
     "expr",
+    "ffi",
     "formatting",
+    "infix",
     "io",
+    "lib",
+    "matrix",
+    "monoid",
     "op",
     "operator",
-    "unary",
-    "binary",
-    "monoid",
-    "semiring",
-    "matrix",
     "recorder",
-    "vector",
     "scalar",
-    "tests",
-    "utils",
-    "_ss",
+    "semiring",
     "ss",
+    "tests",
+    "unary",
+    "utils",
+    "vector",
 }
 
 
@@ -135,8 +137,6 @@ def _load(name):
         module = _importlib.import_module(f".{name}", __name__)
         globals()[name] = module
 
-
-from ._version import get_versions  # noqa
 
 __version__ = get_versions()["version"]
 del get_versions

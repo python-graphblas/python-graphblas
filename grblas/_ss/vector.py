@@ -137,7 +137,7 @@ class ss:
         Matrix.ss.diag
 
         """
-        self._parent._expect_type(
+        matrix = self._parent._expect_type(
             matrix, (gb.Matrix, gb.matrix.TransposedMatrix), within="ss.diag", argname="matrix"
         )
         if type(matrix) is gb.matrix.TransposedMatrix:

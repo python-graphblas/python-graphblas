@@ -148,8 +148,8 @@ def test_bad_ewise(s1, v1, A1, A2):
         op.minus(v1 | v1)
     with raises(TypeError):
         op.minus(v1 & v1, require_monoid=False)
-    with raises(TypeError, match="Bad types when calling binary.plus"):
-        op.plus(v1 & v1, 1)
+    # with raises(TypeError, match="Bad types when calling binary.plus"):
+    op.plus(v1 & v1, 1)  # Now okay
 
 
 def test_bad_matmul(s1, v1, A1, A2):
@@ -219,8 +219,8 @@ def test_apply_unary_bad(s1, v1):
         op.exp(s1)
     with raises(TypeError, match="Bad type when calling unary.exp"):
         op.exp(1)
-    with raises(TypeError, match="Bad type when calling unary.exp"):
-        op.exp(v1 | v1)
+    # with raises(TypeError, match="Bad type when calling unary.exp"):
+    op.exp(v1 | v1)  # Now okay
 
 
 def test_apply_binary(v1, A1):
