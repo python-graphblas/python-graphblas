@@ -1160,6 +1160,7 @@ class MatrixExpression(BaseExpression):
     def shape(self):
         return (self._nrows, self._ncols)
 
+    # Paste here from _automethods.py
     _get_value = _automethods._get_value
     S = wrapdoc(Matrix.S)(property(_automethods.S))
     T = wrapdoc(Matrix.T)(property(_automethods.T))

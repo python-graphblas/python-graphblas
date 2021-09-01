@@ -781,6 +781,7 @@ class VectorExpression(BaseExpression):
     def shape(self):
         return (self._size,)
 
+    # Paste here from _automethods.py
     _get_value = _automethods._get_value
     S = wrapdoc(Vector.S)(property(_automethods.S))
     V = wrapdoc(Vector.V)(property(_automethods.V))

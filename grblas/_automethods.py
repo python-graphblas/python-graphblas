@@ -1,6 +1,6 @@
-""" Define functions ot use as property methods on expressions.
+""" Define functions to use as property methods on expressions.
 
-These will automatically compute the value, so often avoids the need for `.new()`.
+These will automatically compute the value and avoid the need for `.new()`.
 
 To automatically create the functions, run:
 
@@ -82,9 +82,11 @@ vector_matrix_raises = {
     "__eq__",
 }
 
+# Copy the result of this below
 for name in sorted(common | scalar | vector_matrix | vector | matrix):
     print(f"def {name}(self):\n    return self._get_value().{name}\n\n")
 
+# Copy to scalar.py and infix.py
 print("    _get_value = _automethods._get_value")
 for name in sorted(common | scalar):
     print(f"    {name} = wrapdoc(Scalar.{name})(property(_automethods.{name}))")
@@ -94,6 +96,8 @@ print("    # These raise exceptions")
 for name in sorted(common_raises | scalar_raises):
     print(f"    {name} = wrapdoc(Scalar.{name})(Scalar.{name})")
 print()
+
+# Copy to vector.py and infix.py
 print("    _get_value = _automethods._get_value")
 for name in sorted(common | vector_matrix | vector):
     print(f"    {name} = wrapdoc(Vector.{name})(property(_automethods.{name}))")
@@ -103,6 +107,8 @@ print("    # These raise exceptions")
 for name in sorted(common_raises | vector_matrix_raises):
     print(f"    {name} = wrapdoc(Vector.{name})(Vector.{name})")
 print()
+
+# Copy to matrix.py and infix.py
 print("    _get_value = _automethods._get_value")
 for name in sorted(common | vector_matrix | matrix):
     print(f"    {name} = wrapdoc(Matrix.{name})(property(_automethods.{name}))")
@@ -127,6 +133,7 @@ def _set_name(self, name):
     self._get_value().name = name
 
 
+# Paste here
 def S(self):
     return self._get_value().S
 

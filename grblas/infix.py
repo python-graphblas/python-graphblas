@@ -23,6 +23,7 @@ class VectorInfixExpr(InfixExprBase):
     def shape(self):
         return (self._size,)
 
+    # Paste here from _automethods.py
     _get_value = _automethods._get_value
     S = wrapdoc(Vector.S)(property(_automethods.S))
     V = wrapdoc(Vector.V)(property(_automethods.V))
@@ -116,6 +117,7 @@ class MatrixInfixExpr(InfixExprBase):
     def shape(self):
         return (self._nrows, self._ncols)
 
+    # Paste here from _automethods.py
     _get_value = _automethods._get_value
     S = wrapdoc(Matrix.S)(property(_automethods.S))
     T = wrapdoc(Matrix.T)(property(_automethods.T))
@@ -206,6 +208,8 @@ class ScalarMatMulExpr(InfixExprBase):
         return expr.new(dtype=dtype, name=name)
 
     dup = new
+
+    # Paste here from _automethods.py
     _get_value = _automethods._get_value
     __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
     __bool__ = wrapdoc(Scalar.__bool__)(property(_automethods.__bool__))

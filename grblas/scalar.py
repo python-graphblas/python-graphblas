@@ -273,6 +273,7 @@ class ScalarExpression(BaseExpression):
 
         return format_scalar_expression_html(self)
 
+    # Paste here from _automethods.py
     _get_value = _automethods._get_value
     __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
     __bool__ = wrapdoc(Scalar.__bool__)(property(_automethods.__bool__))
