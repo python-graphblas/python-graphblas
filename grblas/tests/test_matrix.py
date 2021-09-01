@@ -1,18 +1,20 @@
-import pytest
+import inspect
 import itertools
-import grblas
-import numpy as np
 import pickle
 import weakref
-from grblas import Matrix, Vector, Scalar
-from grblas import unary, binary, monoid, semiring, agg
-from grblas import dtypes
+
+import numpy as np
+import pytest
+from numpy.testing import assert_array_equal
+
+import grblas
+from grblas import Matrix, Scalar, Vector, agg, binary, dtypes, monoid, semiring, unary
 from grblas.exceptions import (
-    IndexOutOfBound,
     DimensionMismatch,
-    OutputNotEmpty,
-    InvalidValue,
     DomainMismatch,
+    IndexOutOfBound,
+    InvalidValue,
+    OutputNotEmpty,
 )
 
 
@@ -122,6 +124,27 @@ def test_from_values():
         Matrix.from_values([0], [1, 2], [0])
 
 
+def test_from_values_scalar():
+    C = Matrix.from_values([0, 1, 3], [1, 1, 2], 7)
+    assert C.nrows == 4
+    assert C.ncols == 3
+    assert C.nvals == 3
+    assert C.dtype == dtypes.INT64
+    assert C.ss.is_iso
+    assert C.reduce_scalar(monoid.any) == 7
+
+    # iso drumps duplicates
+    C = Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7)
+    assert C.nrows == 4
+    assert C.ncols == 3
+    assert C.nvals == 3
+    assert C.dtype == dtypes.INT64
+    assert C.ss.is_iso
+    assert C.reduce_scalar(monoid.any) == 7
+    with pytest.raises(ValueError, match="dup_op must be None"):
+        Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7, dup_op=binary.plus)
+
+
 def test_clear(A):
     A.clear()
     assert A.nvals == 0
@@ -176,6 +199,19 @@ def test_build(A):
     C = Matrix.new(int, nrows=2, ncols=2)
     C.build([0, 0], [0, 11], [1, 1], ncols=12)
     assert C.isequal(Matrix.from_values([0, 0], [0, 11], [1, 1], nrows=2))
+
+
+def test_build_scalar(A):
+    assert A.nvals == 12
+    with pytest.raises(OutputNotEmpty):
+        A.ss.build_scalar([1, 5], [2, 3], 3)
+    A.clear()
+    A.ss.build_scalar([0, 6], [0, 1], 1)
+    assert A.nvals == 2
+    assert A.ss.is_iso
+    A.clear()
+    with pytest.raises(ValueError, match="lengths must match"):
+        A.ss.build_scalar([0, 6], [0, 1, 2], 1)
 
 
 def test_extract_values(A):
@@ -373,6 +409,15 @@ def test_extract_row(A):
     assert w.isequal(result)
     w2 = A[6, [0, 2, 4]].new()
     assert w2.isequal(result)
+    with pytest.raises(TypeError):
+        # Should be list, not tuple (although tuple isn't so bad)
+        A[6, (0, 2, 4)]
+    w3 = A[6, np.array([0, 2, 4])].new()
+    assert w3.isequal(result)
+    with pytest.raises(TypeError, match="Invalid dtype"):
+        A[6, np.array([0, 2, 4], dtype=float)]
+    with pytest.raises(TypeError, match="Invalid number of dimensions"):
+        A[6, np.array([[0, 2, 4]])]
 
 
 def test_extract_column(A):
@@ -1384,8 +1429,9 @@ def test_transpose_exceptional():
         B.T[1, 0]() << 10
     with pytest.raises(TypeError, match="not callable"):
         B.T()[1, 0] << 10
-    with pytest.raises(AttributeError):
-        B.T.dup()  # should use new instead
+    # with pytest.raises(AttributeError):
+    # should use new instead--Now okay.
+    assert B.T.dup().isequal(B.T.new())
     # Not exceptional, but while we're here...
     C = B.T.new(mask=A.V)
     D = B.T.new()
@@ -1448,54 +1494,116 @@ def test_del(capsys):
     assert not captured.err
 
 
-def test_import_export(A):
+@pytest.mark.parametrize("do_iso", [False, True])
+@pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
+def test_import_export(A, do_iso, methods):
+    if do_iso:
+        A(A.S) << 1
     A1 = A.dup()
-    d = A1.ss.export("csr", give_ownership=True)
+    out_method, in_method = methods
+    if out_method == "export":
+        d = getattr(A1.ss, out_method)("csr", give_ownership=True)
+    else:
+        d = getattr(A1.ss, out_method)("csr")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
-    assert (d["indptr"] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
-    assert (d["col_indices"] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
-    assert (d["values"] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
-    B1 = Matrix.ss.import_any(take_ownership=True, **d)
-    assert B1.isequal(A)
+    assert_array_equal(d["indptr"], [0, 2, 4, 5, 7, 8, 9, 12])
+    assert_array_equal(d["col_indices"], [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4])
+    if not do_iso:
+        assert_array_equal(d["values"], [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3])
+    if in_method == "import":
+        B1 = Matrix.ss.import_any(take_ownership=True, **d)
+        assert B1.isequal(A)
+        assert B1.ss.is_iso is do_iso
+    else:
+        A1.ss.pack_any(take_ownership=True, **d)
+        assert A1.isequal(A)
+        assert A1.ss.is_iso is do_iso
 
     A2 = A.dup()
-    d = A2.ss.export("csc")
+    d = getattr(A2.ss, out_method)("csc")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
-    assert (d["indptr"] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
-    assert (d["row_indices"] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
-    assert (d["values"] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
-    B2 = Matrix.ss.import_any(**d)
-    assert B2.isequal(A)
+    assert_array_equal(d["indptr"], [0, 1, 2, 5, 7, 9, 11, 12])
+    assert_array_equal(d["row_indices"], [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1])
+    if not do_iso:
+        assert_array_equal(d["values"], [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4])
+    if in_method == "import":
+        B2 = Matrix.ss.import_any(**d)
+        assert B2.isequal(A)
+        assert B2.ss.is_iso is do_iso
+    else:
+        A2.ss.pack_any(**d)
+        assert A2.isequal(A)
+        assert A2.ss.is_iso is do_iso
 
     A3 = A.dup()
-    d = A3.ss.export("hypercsr")
+    d = getattr(A3.ss, out_method)("hypercsr")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
-    assert (d["rows"] == [0, 1, 2, 3, 4, 5, 6]).all()
-    assert (d["indptr"] == [0, 2, 4, 5, 7, 8, 9, 12]).all()
-    assert (d["col_indices"] == [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]).all()
-    assert (d["values"] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]).all()
-    B3 = Matrix.ss.import_any(**d)
-    assert B3.isequal(A)
+    assert_array_equal(d["rows"], [0, 1, 2, 3, 4, 5, 6])
+    assert_array_equal(d["indptr"], [0, 2, 4, 5, 7, 8, 9, 12])
+    assert_array_equal(d["col_indices"], [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4])
+    if not do_iso:
+        assert_array_equal(d["values"], [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3])
+    if in_method == "import":
+        B3 = Matrix.ss.import_any(**d)
+        assert B3.isequal(A)
+        assert B3.ss.is_iso is do_iso
+    else:
+        A3.ss.pack_any(**d)
+        assert A3.isequal(A)
+        assert A3.ss.is_iso is do_iso
 
     A4 = A.dup()
-    d = A4.ss.export("hypercsc")
+    d = getattr(A4.ss, out_method)("hypercsc")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
-    assert (d["cols"] == [0, 1, 2, 3, 4, 5, 6]).all()
-    assert (d["indptr"] == [0, 1, 2, 5, 7, 9, 11, 12]).all()
-    assert (d["row_indices"] == [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]).all()
-    assert (d["values"] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]).all()
-    B4 = Matrix.ss.import_any(**d)
-    assert B4.isequal(A)
+    assert_array_equal(d["cols"], [0, 1, 2, 3, 4, 5, 6])
+    assert_array_equal(d["indptr"], [0, 1, 2, 5, 7, 9, 11, 12])
+    assert_array_equal(d["row_indices"], [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1])
+    if not do_iso:
+        assert_array_equal(d["values"], [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4])
+    if in_method == "import":
+        B4 = Matrix.ss.import_any(**d)
+        assert B4.isequal(A)
+        assert B4.ss.is_iso is do_iso
+    else:
+        A4.ss.pack_any(**d)
+        assert A4.isequal(A)
+        assert A4.ss.is_iso is do_iso
 
     A5 = A.dup()
-    d = A5.ss.export("bitmapr")
+    d = getattr(A5.ss, out_method)("bitmapr")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     assert "nrows" not in d
     assert "ncols" not in d
-    assert d["values"].shape == (7, 7)
+    if not do_iso:
+        assert d["values"].shape == (7, 7)
     assert d["bitmap"].shape == (7, 7)
     assert d["nvals"] == 12
     bitmap = np.array(
@@ -1509,65 +1617,193 @@ def test_import_export(A):
             [0, 0, 1, 1, 1, 0, 0],
         ]
     )
-    assert (d["bitmap"] == bitmap).all()
-    assert (
-        d["values"].ravel("K")[d["bitmap"].ravel("K")] == [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]
-    ).all()
+    assert_array_equal(d["bitmap"], bitmap)
+    if not do_iso:
+        assert_array_equal(
+            d["values"].ravel("K")[d["bitmap"].ravel("K")], [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3]
+        )
     del d["nvals"]
-    B5 = Matrix.ss.import_any(**d)
-    assert B5.isequal(A)
+    if in_method == "import":
+        B5 = Matrix.ss.import_any(**d)
+        assert B5.isequal(A)
+        assert B5.ss.is_iso is do_iso
+    else:
+        A5.ss.pack_any(**d)
+        assert A5.isequal(A)
+        assert A5.ss.is_iso is do_iso
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=0)
     B5b = Matrix.ss.import_any(**d)
-    assert B5b.isequal(A)
+    if in_method == "import":
+        if not do_iso:
+            assert B5b.isequal(A)
+            assert B5b.ss.is_iso is do_iso
+        else:
+            # B5b == [A, A]
+            B5b.nvals == 2 * A.nvals
+            B5b.nrows == A.nrows
+            B5b.ncols == 2 * A.ncols
+    else:
+        A5.ss.pack_any(**d)
+        assert A5.isequal(A)
+        assert A5.ss.is_iso is do_iso
 
     A6 = A.dup()
-    d = A6.ss.export("bitmapc")
-    assert (d["bitmap"] == bitmap).all()
-    assert (
-        d["values"].ravel("K")[d["bitmap"].ravel("K")] == [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]
-    ).all()
+    d = getattr(A6.ss, out_method)("bitmapc")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
+    assert_array_equal(d["bitmap"], bitmap)
+    if not do_iso:
+        assert_array_equal(
+            d["values"].ravel("K")[d["bitmap"].ravel("K")], [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4]
+        )
     del d["nvals"]
-    B6 = Matrix.ss.import_any(nrows=7, **d)
-    assert B6.isequal(A)
+    if in_method == "import":
+        B6 = Matrix.ss.import_any(nrows=7, **d)
+        assert B6.isequal(A)
+        assert B6.ss.is_iso is do_iso
+    else:
+        A6.ss.pack_any(**d)
+        assert A6.isequal(A)
+        assert A6.ss.is_iso is do_iso
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=1)
-    B6b = Matrix.ss.import_any(ncols=7, **d)
-    assert B6b.isequal(A)
+    if in_method == "import":
+        B6b = Matrix.ss.import_any(ncols=7, **d)
+        assert B6b.isequal(A)
+        assert B6b.ss.is_iso is do_iso
+    else:
+        A6.ss.pack_any(**d)
+        assert A6.isequal(A)
+        assert A6.ss.is_iso is do_iso
 
     A7 = A.dup()
-    d = A7.ss.export()
-    B7 = Matrix.ss.import_any(**d)
-    assert B7.isequal(A)
+    d = getattr(A7.ss, out_method)()
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
+    if in_method == "import":
+        B7 = Matrix.ss.import_any(**d)
+        assert B7.isequal(A)
+        assert B7.ss.is_iso is do_iso
+    else:
+        A7.ss.pack_any(**d)
+        assert A7.isequal(A)
+        assert A7.ss.is_iso is do_iso
 
     A8 = A.dup()
-    d = A8.ss.export("bitmapr", raw=True)
+    d = getattr(A8.ss, out_method)("bitmapr", raw=True)
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
     del d["nrows"]
     del d["ncols"]
-    with pytest.raises(ValueError, match="nrows and ncols must be provided"):
-        Matrix.ss.import_any(**d)
+    if in_method == "import":
+        with pytest.raises(ValueError, match="nrows and ncols must be provided"):
+            Matrix.ss.import_any(**d)
+    else:
+        A8.ss.pack_any(**d)
+        assert A8.isequal(A)
+        assert A8.ss.is_iso is do_iso
+
+    A9 = A.dup()
+    d = getattr(A9.ss, out_method)("coo", sort=True)
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
+    assert d["nrows"] == 7
+    assert d["ncols"] == 7
+    assert d["rows"].shape == (12,)
+    assert d["cols"].shape == (12,)
+    assert d["sorted_rows"]
+    assert "sorted_cols" not in d
+    assert_array_equal(d["rows"], [0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6])
+    assert_array_equal(d["cols"], [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4])
+
+    if do_iso:
+        assert d["values"].shape == (1,)
+    else:
+        assert d["values"].shape == (12,)
+    if in_method == "import":
+        B8 = Matrix.ss.import_any(**d)
+        assert B8.isequal(A)
+        assert B8.ss.is_iso is do_iso
+        del d["rows"]
+        del d["format"]
+        with pytest.raises(ValueError, match="coo requires both"):
+            Matrix.ss.import_any(**d)
+    else:
+        A9.ss.pack_any(**d)
+        assert A9.isequal(A)
+        assert A9.ss.is_iso is do_iso
 
     C = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
+    if do_iso:
+        C(C.S) << 1
     C1 = C.dup()
-    d = C1.ss.export("fullr")
-    assert "nrows" not in d
-    assert "ncols" not in d
-    assert d["values"].shape == (2, 2)
-    assert (d["values"] == [[1, 2], [3, 4]]).all()
+    d = getattr(C1.ss, out_method)("fullr")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+        assert "nrows" in d
+        assert "ncols" in d
+    else:
+        assert "is_iso" not in d
+        assert "nrows" not in d
+        assert "ncols" not in d
     assert d["values"].flags.c_contiguous
-    D1 = Matrix.ss.import_any(ncols=2, **d)
-    assert D1.isequal(C)
+    if not do_iso:
+        assert d["values"].shape == (2, 2)
+        assert_array_equal(d["values"], [[1, 2], [3, 4]])
+        if in_method == "import":
+            D1 = Matrix.ss.import_any(ncols=2, **d)
+            assert D1.isequal(C)
+            assert D1.ss.is_iso is do_iso
+        else:
+            C1.ss.pack_any(**d)
+            assert C1.isequal(C)
+            assert C1.ss.is_iso is do_iso
+    else:
+        if in_method == "import":
+            D1 = Matrix.ss.import_any(**d)
+            assert D1.isequal(C)
+            assert D1.ss.is_iso is do_iso
+        else:
+            C1.ss.pack_any(**d)
+            assert C1.isequal(C)
+            assert C1.ss.is_iso is do_iso
 
     C2 = C.dup()
-    d = C2.ss.export("fullc")
-    assert (d["values"] == [[1, 2], [3, 4]]).all()
+    d = getattr(C2.ss, out_method)("fullc")
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
+    if not do_iso:
+        assert_array_equal(d["values"], [[1, 2], [3, 4]])
     assert d["values"].flags.f_contiguous
-    D2 = Matrix.ss.import_any(**d)
-    assert D2.isequal(C)
+    if in_method == "import":
+        D2 = Matrix.ss.import_any(**d)
+        assert D2.isequal(C)
+        assert D2.ss.is_iso is do_iso
+    else:
+        C2.ss.pack_any(**d)
+        assert C2.isequal(C)
+        assert C2.ss.is_iso is do_iso
 
     # all elements must have values
     with pytest.raises(InvalidValue):
-        A.dup().ss.export("fullr")
+        getattr(A.dup().ss, out_method)("fullr")
     with pytest.raises(InvalidValue):
-        A.dup().ss.export("fullc")
+        getattr(A.dup().ss, out_method)("fullc")
 
     a = np.array([0, 1, 2])
     for bad_combos in [
@@ -1601,7 +1837,7 @@ def test_import_export_empty():
     d = A1.ss.export("csr")
     assert d["nrows"] == 2
     assert d["ncols"] == 3
-    assert (d["indptr"] == [0, 0, 0]).all()
+    assert_array_equal(d["indptr"], [0, 0, 0])
     assert len(d["col_indices"]) == 0
     assert len(d["values"]) == 0
     B1 = Matrix.ss.import_any(**d)
@@ -1611,7 +1847,7 @@ def test_import_export_empty():
     d = A2.ss.export("csc")
     assert d["nrows"] == 2
     assert d["ncols"] == 3
-    assert (d["indptr"] == [0, 0, 0, 0]).all()
+    assert_array_equal(d["indptr"], [0, 0, 0, 0])
     assert len(d["row_indices"]) == 0
     assert len(d["values"]) == 0
     B2 = Matrix.ss.import_any(**d)
@@ -1646,7 +1882,7 @@ def test_import_export_empty():
     assert d["bitmap"].shape == (2, 3)
     assert d["bitmap"].flags.c_contiguous
     assert d["nvals"] == 0
-    assert (d["bitmap"].ravel() == 6 * [0]).all()
+    assert_array_equal(d["bitmap"].ravel(), 6 * [0])
     B5 = Matrix.ss.import_any(**d)
     assert B5.isequal(A)
 
@@ -1655,7 +1891,7 @@ def test_import_export_empty():
     assert d["bitmap"].shape == (2, 3)
     assert d["bitmap"].flags.f_contiguous
     assert d["nvals"] == 0
-    assert (d["bitmap"].ravel() == 6 * [0]).all()
+    assert_array_equal(d["bitmap"].ravel(), 6 * [0])
     B6 = Matrix.ss.import_any(**d)
     assert B6.isequal(A)
 
@@ -1665,6 +1901,14 @@ def test_import_export_empty():
     with pytest.raises(InvalidValue):
         A.dup().ss.export("fullc")
 
+    A7 = A.dup()
+    d = A7.ss.export("coo")
+    assert d["nrows"] == 2
+    assert d["ncols"] == 3
+    assert len(d["rows"]) == 0
+    assert len(d["cols"]) == 0
+    assert len(d["values"]) == 0
+
     # if we give the same value, make sure it's copied
     for format, key1, key2 in [
         ("csr", "values", "col_indices"),
@@ -1673,6 +1917,7 @@ def test_import_export_empty():
         ("hypercsc", "values", "row_indices"),
         ("bitmapr", "values", "bitmap"),
         ("bitmapc", "values", "bitmap"),
+        ("coo", "values", "rows"),
     ]:
         # No assertions here, but code coverage should be "good enough"
         d = A.ss.export(format, raw=True)
@@ -1683,77 +1928,103 @@ def test_import_export_empty():
         A.ss.export(format="bad_format")
 
 
-def test_import_export_auto(A):
+@pytest.mark.parametrize("do_iso", [False, True])
+@pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
+def test_import_export_auto(A, do_iso, methods):
+    if do_iso:
+        A(A.S) << 1
     A_orig = A.dup()
-    for format in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc"]:
+    out_method, in_method = methods
+    for format in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc", "coo"]:
         for (
             sort,
             raw,
             import_format,
             give_ownership,
             take_ownership,
-            import_func,
+            import_name,
         ) in itertools.product(
             [False, True],
             [False, True],
             [format, None],
             [False, True],
             [False, True],
-            [Matrix.ss.import_any, getattr(Matrix.ss, f"import_{format}")],
+            ["any", format],
         ):
-            A2 = A.dup() if give_ownership else A
-            d = A2.ss.export(format, sort=sort, raw=raw, give_ownership=give_ownership)
+            A2 = A.dup() if give_ownership or out_method == "unpack" else A
+            if out_method == "export":
+                d = A2.ss.export(format, sort=sort, raw=raw, give_ownership=give_ownership)
+            else:
+                d = A2.ss.unpack(format, sort=sort, raw=raw)
+            if in_method == "import":
+                import_func = getattr(Matrix.ss, f"import_{import_name}")
+            else:
+
+                def import_func(**kwargs):
+                    getattr(A2.ss, f"pack_{import_name}")(**kwargs)
+                    return A2
+
             d["format"] = import_format
-            try:
-                other = import_func(take_ownership=take_ownership, **d)
-            except Exception:  # pragma: no cover
-                print(dict(take_ownership=take_ownership, **d))
-                raise
-            if (
-                format == "bitmapc"
-                and raw
-                and import_format is None
-                and import_func.__name__ == "import_any"
-            ):
+            other = import_func(take_ownership=take_ownership, **d)
+            if format == "bitmapc" and raw and import_format is None and import_name == "any":
                 # It's 1d, so we can't tell we're column-oriented w/o format keyword
                 assert other.isequal(A_orig.T)
             else:
                 assert other.isequal(A_orig)
+            assert other.ss.is_iso is do_iso
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
                 import_func(**d)
     assert A.isequal(A_orig)
+    assert A.ss.is_iso is do_iso
+    assert A_orig.ss.is_iso is do_iso
 
     C = Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], [1, 2, 3, 4, 5, 6])
+    if do_iso:
+        C(C.S) << 1
     C_orig = C.dup()
     for format in ["fullr", "fullc"]:
-        for raw, import_format, give_ownership, take_ownership, import_func in itertools.product(
+        for raw, import_format, give_ownership, take_ownership, import_name in itertools.product(
             [False, True],
             [format, None],
             [False, True],
             [False, True],
-            [Matrix.ss.import_any, getattr(Matrix.ss, f"import_{format}")],
+            ["any", format],
         ):
-            C2 = C.dup() if give_ownership else C
-            d = C2.ss.export(format, raw=raw, give_ownership=give_ownership)
+            assert C.shape == (C.nrows, C.ncols)
+            C2 = C.dup() if give_ownership or out_method == "unpack" else C
+            if out_method == "export":
+                d = C2.ss.export(format, raw=raw, give_ownership=give_ownership)
+            else:
+                d = C2.ss.unpack(format, raw=raw)
+            if in_method == "import":
+                import_func = getattr(Matrix.ss, f"import_{import_name}")
+            else:
+
+                def import_func(**kwargs):
+                    getattr(C2.ss, f"pack_{import_name}")(**kwargs)
+                    return C2
+
             d["format"] = import_format
             other = import_func(take_ownership=take_ownership, **d)
-            if (
-                format == "fullc"
-                and raw
-                and import_format is None
-                and import_func.__name__ == "import_any"
-            ):
+            if format == "fullc" and raw and import_format is None and import_name == "any":
                 # It's 1d, so we can't tell we're column-oriented w/o format keyword
+                if do_iso:
+                    values = [1, 1, 1, 1, 1, 1]
+                else:
+                    values = [1, 3, 5, 2, 4, 6]
                 assert other.isequal(
-                    Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], [1, 3, 5, 2, 4, 6])
+                    Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], values)
                 )
             else:
                 assert other.isequal(C_orig)
+            assert other.ss.is_iso is do_iso
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
                 import_func(**d)
     assert C.isequal(C_orig)
+    assert C.ss.is_iso is do_iso
+    assert C_orig.ss.is_iso is do_iso
 
 
 def test_no_bool_or_eq(A):
@@ -1987,3 +2258,107 @@ def test_concat(A):
         grblas.ss.concat([[]])
     with pytest.raises(ValueError, match="tiles must all be the same length"):
         grblas.ss.concat([[A], [A, A]])
+
+
+def test_nbytes(A):
+    assert A.ss.nbytes > 0
+
+
+def test_auto(A, v):
+    expected = binary.times(A & A).new()
+    for expr in [(A & A), binary.times(A & A)]:
+        assert expr.dtype == expected.dtype
+        assert expr.nrows == expected.nrows
+        assert expr.ncols == expected.ncols
+        assert expr.shape == expected.shape
+        assert expr.nvals == expected.nvals
+        assert expr.isclose(expected)
+        assert expected.isclose(expr)
+        assert expr.isequal(expected)
+        assert expected.isequal(expr)
+        assert expr.mxv(v).isequal(expected.mxv(v))
+        assert expected.T.mxv(v).isequal(expr.T.mxv(v))
+        for method in [
+            "ewise_add",
+            "ewise_mult",
+            "mxm",
+            "__matmul__",
+            "__and__",
+            "__or__",
+            "kronecker",
+        ]:
+            val1 = getattr(expected, method)(expected).new()
+            val2 = getattr(expected, method)(expr)
+            val3 = getattr(expr, method)(expected)
+            val4 = getattr(expr, method)(expr)
+            assert val1.isequal(val2)
+            assert val1.isequal(val3)
+            assert val1.isequal(val4)
+        for method in ["reduce_rows", "reduce_columns", "reduce_scalar"]:
+            s1 = getattr(expected, method)().new()
+            s2 = getattr(expr, method)()
+            assert s1.isequal(s2.new())
+            assert s1.isequal(s2)
+
+    expected = semiring.plus_times(A @ v).new()
+    for expr in [(A @ v), (v @ A.T), semiring.plus_times(A @ v)]:
+        assert expr.vxm(A).isequal(expected.vxm(A))
+        assert expr.vxm(A).new(mask=expr.S).isequal(expected.vxm(A).new(mask=expected.S))
+        assert expr.vxm(A).new(mask=expr.V).isequal(expected.vxm(A).new(mask=expected.V))
+
+
+def test_auto_assign(A):
+    expected = A.dup()
+    B = A[1:4, 1:4].new()
+    expr = B & B
+    expected[:3, :3] = expr.new()
+    A[:3, :3] = expr
+    assert expected.isequal(A)
+    with pytest.raises(TypeError):
+        # Not yet supported, but we could!
+        A[:3, :3] = A[1:4, 1:4]
+    v = A[2:5, 5].new()
+    expr = v & v
+    A[:3, 4] << expr
+    expected[:3, 4] << expr.new()
+    assert expected.isequal(A)
+
+
+def test_expr_is_like_matrix(A):
+    attrs = {attr for attr, val in inspect.getmembers(A)}
+    expr_attrs = {attr for attr, val in inspect.getmembers(binary.times(A & A))}
+    infix_attrs = {attr for attr, val in inspect.getmembers(A & A)}
+    transposed_attrs = {attr for attr, val in inspect.getmembers(A.T)}
+    # Should we make any of these raise informative errors?
+    expected = {
+        "__call__",
+        "__del__",
+        "__delitem__",
+        "__lshift__",
+        "__setitem__",
+        "_assign_element",
+        "_delete_element",
+        "_deserialize",
+        "_extract_element",
+        "_name_counter",
+        "_prep_for_assign",
+        "_prep_for_extract",
+        "_update",
+        "build",
+        "clear",
+        "from_pygraphblas",
+        "from_values",
+        "resize",
+        "update",
+    }
+    assert attrs - expr_attrs == expected
+    assert attrs - infix_attrs == expected | {
+        "_expect_op",
+        "_expect_type",
+    }
+    # TransposedMatrix is used differently than other expressions,
+    # so maybe it shouldn't support everything.
+    assert attrs - transposed_attrs == (expected | {"S", "V", "ss", "to_pygraphblas", "wait"}) - {
+        "_prep_for_extract",
+        "_extract_element",
+    }

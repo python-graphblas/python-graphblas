@@ -24,7 +24,7 @@ setup(
     packages=find_packages(exclude=["grblas.backends.python"]),
     setup_requires=["pytest-runner"],
     python_requires=">=3.7",
-    install_requires=["suitesparse-graphblas >=5.0,<5.1", "numba"],
+    install_requires=["suitesparse-graphblas >=5.1.3, <5.2", "numba"],
     tests_require=["pytest", "pandas"],
     extras_require=extras_require,
     license="Apache License 2.0",

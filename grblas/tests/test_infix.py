@@ -1,5 +1,6 @@
 from pytest import fixture, raises
-from grblas import op, monoid, Scalar, Vector, Matrix
+
+from grblas import Matrix, Scalar, Vector, monoid, op
 from grblas.exceptions import DimensionMismatch
 
 
@@ -35,9 +36,10 @@ def test_ewise(v1, v2, A1, A2):
         (A1.T, A1.T),
         (A1, A1),
     ]:
-        expected = left.ewise_mult(right, monoid.plus).new()
-        assert expected.isequal(monoid.plus(left & right).new())
-        assert expected.isequal(monoid.plus[float](left & right).new())
+        expected = left.ewise_mult(right, monoid.times).new()
+        assert expected.isequal(monoid.times(left & right).new())
+        assert expected.isequal(monoid.times[float](left & right).new())
+        assert expected.isequal((left & right).new())  # use `left.ewise_mult` default op
         if isinstance(left, Vector):
             assert (left & right).size == left.size
             assert (left | right).size == left.size
@@ -50,6 +52,7 @@ def test_ewise(v1, v2, A1, A2):
         expected = left.ewise_add(right, op.plus).new()
         assert expected.isequal(op.plus(left | right).new())
         assert expected.isequal(op.plus[float](left | right).new())
+        assert expected.isequal((left | right).new())  # use `left.ewise_add` default op
 
         expected = left.ewise_mult(right, op.minus).new()
         assert expected.isequal(op.minus(left & right).new())
@@ -68,13 +71,17 @@ def test_matmul(v1, v2, A1, A2):
         ("mxm", A1.T, A2.T),
         ("mxm", A1, A1.T),
         ("mxm", A2.T, A2),
+        ("inner", v1, v2),
+        ("inner", v1, v1),
     ]:
         expected = getattr(left, method)(right, op.plus_times).new()
         assert expected.isequal(op.plus_times(left @ right).new())
         assert expected.isequal(op.plus_times[float](left @ right).new())
+        assert expected.isequal((left @ right).new())  # use default semiring
         if isinstance(left, Vector):
-            assert (left @ right).size == right.ncols
-            assert op.plus_times(left @ right).size == right.ncols
+            if not isinstance(right, Vector):
+                assert (left @ right).size == right.ncols
+                assert op.plus_times(left @ right).size == right.ncols
         elif isinstance(right, Vector):
             assert (left @ right).size == left.nrows
             assert op.plus_times(left @ right).size == left.nrows
@@ -141,8 +148,8 @@ def test_bad_ewise(s1, v1, A1, A2):
         op.minus(v1 | v1)
     with raises(TypeError):
         op.minus(v1 & v1, require_monoid=False)
-    with raises(TypeError, match="Bad types when calling binary.plus"):
-        op.plus(v1 & v1, 1)
+    # with raises(TypeError, match="Bad types when calling binary.plus"):
+    op.plus(v1 & v1, 1)  # Now okay
 
 
 def test_bad_matmul(s1, v1, A1, A2):
@@ -180,6 +187,12 @@ def test_bad_matmul(s1, v1, A1, A2):
     with raises(TypeError):
         1 @ s1
 
+    w = v1[:1].new()
+    with raises(DimensionMismatch):
+        w @ v1
+    with raises(TypeError, match="__imatmul__"):
+        v1 @= v1
+
     with raises(TypeError, match="Bad type when calling semiring.plus_times"):
         op.plus_times(A1)
     with raises(TypeError, match="Bad types when calling semiring.plus_times."):
@@ -206,8 +219,8 @@ def test_apply_unary_bad(s1, v1):
         op.exp(s1)
     with raises(TypeError, match="Bad type when calling unary.exp"):
         op.exp(1)
-    with raises(TypeError, match="Bad type when calling unary.exp"):
-        op.exp(v1 | v1)
+    # with raises(TypeError, match="Bad type when calling unary.exp"):
+    op.exp(v1 | v1)  # Now okay
 
 
 def test_apply_binary(v1, A1):

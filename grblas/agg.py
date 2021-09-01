@@ -51,9 +51,11 @@ Custom recipes:
     - argmaxi
     - argmaxj, doesn't work with Vector.reduce
 """
-import numpy as np
-import grblas as gb
 from functools import partial
+
+import numpy as np
+
+import grblas as gb
 
 
 class Aggregator:

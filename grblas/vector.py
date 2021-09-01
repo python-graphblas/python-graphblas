@@ -1,22 +1,25 @@
 import itertools
+
 import numpy as np
-from . import ffi, lib, backend, binary, monoid, semiring
+
+from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
+from ._ss.vector import ss
 from .base import BaseExpression, BaseType, call
-from .dtypes import lookup_dtype, unify, _INDEX
-from .exceptions import check_status, NoValue
+from .dtypes import _INDEX, lookup_dtype, unify
+from .exceptions import NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_typed_op
 from .scalar import Scalar, ScalarExpression, _CScalar
 from .utils import (
-    ints_to_numpy_buffer,
-    values_to_numpy_buffer,
     _CArray,
     _Pointer,
     class_property,
+    ints_to_numpy_buffer,
+    output_type,
+    values_to_numpy_buffer,
+    wrapdoc,
 )
-from . import expr
-from ._ss.vector import ss
 
 ffi_new = ffi.new
 
@@ -106,7 +109,7 @@ class Vector(BaseType):
         If `check_dtype` is True, also checks that dtypes match
         For equality of floating point Vectors, consider using `isclose`
         """
-        self._expect_type(other, Vector, within="isequal", argname="other")
+        other = self._expect_type(other, Vector, within="isequal", argname="other")
         if check_dtype and self.dtype != other.dtype:
             return False
         if self._size != other._size:
@@ -134,7 +137,7 @@ class Vector(BaseType):
         If `check_dtype` is True, also checks that dtypes match
         Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
-        self._expect_type(other, Vector, within="isclose", argname="other")
+        other = self._expect_type(other, Vector, within="isclose", argname="other")
         if check_dtype and self.dtype != other.dtype:
             return False
         if self._size != other._size:
@@ -288,6 +291,8 @@ class Vector(BaseType):
     def from_values(cls, indices, values, *, size=None, dup_op=None, dtype=None, name=None):
         """Create a new Vector from the given lists of indices and values.  If
         size is not provided, it is computed from the max index found.
+
+        values may be a scalar, in which case duplicate indices are ignored.
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         values, dtype = values_to_numpy_buffer(values, dtype)
@@ -298,9 +303,17 @@ class Vector(BaseType):
             size = int(indices.max()) + 1
         # Create the new vector
         w = cls.new(dtype, size, name=name)
-        # Add the data
-        # This needs to be the original data to get proper error messages
-        w.build(indices, values, dup_op=dup_op)
+        if values.ndim == 0:
+            if dup_op is not None:
+                raise ValueError(
+                    "dup_op must be None if values is a scalar so that all "
+                    "values can be identical.  Duplicate indices will be ignored."
+                )
+            # SS, SuiteSparse-specific: build_Scalar
+            w.ss.build_scalar(indices, values.tolist())
+        else:
+            # This needs to be the original data to get proper error messages
+            w.build(indices, values, dup_op=dup_op)
         return w
 
     @property
@@ -336,7 +349,7 @@ class Vector(BaseType):
         For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
         method_name = "ewise_add"
-        self._expect_type(other, Vector, within=method_name, argname="other")
+        other = self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         # Per the spec, op may be a semiring, but this is weird, so don't.
         if require_monoid:
@@ -368,7 +381,7 @@ class Vector(BaseType):
         Default op is binary.times
         """
         method_name = "ewise_mult"
-        self._expect_type(other, Vector, within=method_name, argname="other")
+        other = self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
@@ -391,7 +404,9 @@ class Vector(BaseType):
         from .matrix import Matrix, TransposedMatrix
 
         method_name = "vxm"
-        self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+        )
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = VectorExpression(
@@ -434,7 +449,7 @@ class Vector(BaseType):
                 try:
                     left = Scalar.from_value(left, name="")
                 except TypeError:
-                    self._expect_type(
+                    left = self._expect_type(
                         left,
                         Scalar,
                         within=method_name,
@@ -460,7 +475,7 @@ class Vector(BaseType):
                 try:
                     right = Scalar.from_value(right, name="")
                 except TypeError:
-                    self._expect_type(
+                    right = self._expect_type(
                         right,
                         Scalar,
                         within=method_name,
@@ -511,6 +526,58 @@ class Vector(BaseType):
             op=op,  # to be determined later
         )
 
+    # Unofficial methods
+    def inner(self, other, op=semiring.plus_times):
+        """
+        Vector-vector inner (or dot) product. Result is a Scalar.
+
+        Default op is semiring.plus_times
+
+        *This is not a standard GraphBLAS function*
+        """
+        method_name = "inner"
+        other = self._expect_type(other, Vector, within=method_name, argname="other")
+        op = get_typed_op(op, self.dtype, other.dtype)
+        self._expect_op(op, "Semiring", within=method_name, argname="op")
+        expr = ScalarExpression(
+            method_name,
+            "GrB_vxm",
+            [self, _VectorAsMatrix(other)],
+            op=op,
+        )
+        if self._size != other._size:
+            expr.new(name="")  # incompatible shape; raise now
+        return expr
+
+    def outer(self, other, op=semiring.plus_times):
+        """
+        Vector-vector outer (or cross) product. Result is a Matrix.
+
+        Default op is semiring.plus_times
+
+        This currently requires a Semiring, even though only the BinaryOp
+        of the Semiring is used.  We may support passing a BinaryOp or Monoid
+        in the future.
+
+        *This is not a standard GraphBLAS function*
+        """
+        from .matrix import MatrixExpression
+
+        method_name = "outer"
+        other = self._expect_type(other, Vector, within=method_name, argname="other")
+        op = get_typed_op(op, self.dtype, other.dtype)
+        self._expect_op(op, "Semiring", within=method_name, argname="op")
+        expr = MatrixExpression(
+            method_name,
+            "GrB_mxm",
+            [_VectorAsMatrix(self), _VectorAsMatrix(other)],
+            op=op,
+            nrows=self._size,
+            ncols=other._size,
+            bt=True,
+        )
+        return expr
+
     ##################################
     # Extract and Assign index methods
     ##################################
@@ -545,7 +612,7 @@ class Vector(BaseType):
             try:
                 value = Scalar.from_value(value, name="")
             except TypeError:
-                self._expect_type(
+                value = self._expect_type(
                     value,
                     Scalar,
                     within="__setitem__",
@@ -558,7 +625,10 @@ class Vector(BaseType):
     def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
         index, isize = resolved_indexes.indices[0]
-        if type(value) is Vector:
+
+        if output_type(value) is Vector:
+            if type(value) is not Vector:
+                value = value._get_value()
             if is_submask:
                 if isize is None:
                     # v[i](m) << w
@@ -576,7 +646,7 @@ class Vector(BaseType):
                 try:
                     value = Scalar.from_value(value, name="")
                 except TypeError:
-                    self._expect_type(
+                    value = self._expect_type(
                         value,
                         (Scalar, Vector),
                         within=method_name,
@@ -612,40 +682,46 @@ class Vector(BaseType):
         index, _ = resolved_indexes.indices[0]
         call("GrB_Vector_removeElement", [self, index])
 
-    if backend == "suitesparse":
+    def to_pygraphblas(self):  # pragma: no cover
+        """Convert to a new `pygraphblas.Vector`
 
-        def to_pygraphblas(self):  # pragma: no cover
-            """Convert to a new `pygraphblas.Vector`
+        This does not copy data.
 
-            This does not copy data.
+        This gives control of the underlying GraphBLAS object to `pygraphblas`.
+        This means operations on the current `grblas` object will fail!
+        """
+        if backend != "suitesparse":
+            raise RuntimeError(
+                f"to_pygraphblas only works with 'suitesparse' backend, not {backend}"
+            )
+        import pygraphblas as pg
 
-            This gives control of the underlying GraphBLAS object to `pygraphblas`.
-            This means operations on the current `grblas` object will fail!
-            """
-            import pygraphblas as pg
+        vector = pg.Vector(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
+        self.gb_obj = ffi.NULL
+        return vector
 
-            vector = pg.Vector(self.gb_obj, pg.types.gb_type_to_type(self.dtype.gb_obj))
-            self.gb_obj = ffi.NULL
-            return vector
+    @classmethod
+    def from_pygraphblas(cls, vector):  # pragma: no cover
+        """Convert a `pygraphblas.Vector` to a new `grblas.Vector`
 
-        @classmethod
-        def from_pygraphblas(cls, vector):  # pragma: no cover
-            """Convert a `pygraphblas.Vector` to a new `grblas.Vector`
+        This does not copy data.
 
-            This does not copy data.
+        This gives control of the underlying GraphBLAS object to `grblas`.
+        This means operations on the original `pygraphblas` object will fail!
+        """
+        if backend != "suitesparse":
+            raise RuntimeError(
+                f"from_pygraphblas only works with 'suitesparse' backend, not {backend!r}"
+            )
+        import pygraphblas as pg
 
-            This gives control of the underlying GraphBLAS object to `grblas`.
-            This means operations on the original `pygraphblas` object will fail!
-            """
-            import pygraphblas as pg
-
-            if not isinstance(vector, pg.Vector):
-                raise TypeError(f"Expected pygraphblas.Vector object.  Got type: {type(vector)}")
-            dtype = lookup_dtype(vector.gb_type)
-            rv = cls(vector.vector, dtype)
-            rv._size = vector.size
-            vector.vector = ffi.NULL
-            return rv
+        if not isinstance(vector, pg.Vector):
+            raise TypeError(f"Expected pygraphblas.Vector object.  Got type: {type(vector)}")
+        dtype = lookup_dtype(vector.gb_type)
+        rv = cls(vector._vector, dtype)
+        rv._size = vector.size
+        vector._vector = ffi.NULL
+        return rv
 
 
 Vector.ss = class_property(Vector.ss, ss)
@@ -701,7 +777,76 @@ class VectorExpression(BaseExpression):
     def size(self):
         return self._size
 
+    @property
+    def shape(self):
+        return (self._size,)
 
-expr.VectorEwiseAddExpr.output_type = VectorExpression
-expr.VectorEwiseMultExpr.output_type = VectorExpression
-expr.VectorMatMulExpr.output_type = VectorExpression
+    # Paste here from _automethods.py
+    _get_value = _automethods._get_value
+    S = wrapdoc(Vector.S)(property(_automethods.S))
+    V = wrapdoc(Vector.V)(property(_automethods.V))
+    __and__ = wrapdoc(Vector.__and__)(property(_automethods.__and__))
+    __contains__ = wrapdoc(Vector.__contains__)(property(_automethods.__contains__))
+    __getitem__ = wrapdoc(Vector.__getitem__)(property(_automethods.__getitem__))
+    __iter__ = wrapdoc(Vector.__iter__)(property(_automethods.__iter__))
+    __matmul__ = wrapdoc(Vector.__matmul__)(property(_automethods.__matmul__))
+    __or__ = wrapdoc(Vector.__or__)(property(_automethods.__or__))
+    __rand__ = wrapdoc(Vector.__rand__)(property(_automethods.__rand__))
+    __rmatmul__ = wrapdoc(Vector.__rmatmul__)(property(_automethods.__rmatmul__))
+    __ror__ = wrapdoc(Vector.__ror__)(property(_automethods.__ror__))
+    _carg = wrapdoc(Vector._carg)(property(_automethods._carg))
+    _name_html = wrapdoc(Vector._name_html)(property(_automethods._name_html))
+    _nvals = wrapdoc(Vector._nvals)(property(_automethods._nvals))
+    apply = wrapdoc(Vector.apply)(property(_automethods.apply))
+    ewise_add = wrapdoc(Vector.ewise_add)(property(_automethods.ewise_add))
+    ewise_mult = wrapdoc(Vector.ewise_mult)(property(_automethods.ewise_mult))
+    gb_obj = wrapdoc(Vector.gb_obj)(property(_automethods.gb_obj))
+    inner = wrapdoc(Vector.inner)(property(_automethods.inner))
+    isclose = wrapdoc(Vector.isclose)(property(_automethods.isclose))
+    isequal = wrapdoc(Vector.isequal)(property(_automethods.isequal))
+    name = wrapdoc(Vector.name)(property(_automethods.name))
+    name = name.setter(_automethods._set_name)
+    nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
+    outer = wrapdoc(Vector.outer)(property(_automethods.outer))
+    reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
+    ss = wrapdoc(Vector.ss)(property(_automethods.ss))
+    to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))
+    to_values = wrapdoc(Vector.to_values)(property(_automethods.to_values))
+    vxm = wrapdoc(Vector.vxm)(property(_automethods.vxm))
+    wait = wrapdoc(Vector.wait)(property(_automethods.wait))
+    # These raise exceptions
+    __array__ = wrapdoc(Vector.__array__)(Vector.__array__)
+    __bool__ = wrapdoc(Vector.__bool__)(Vector.__bool__)
+    __eq__ = wrapdoc(Vector.__eq__)(Vector.__eq__)
+    __iand__ = wrapdoc(Vector.__iand__)(Vector.__iand__)
+    __imatmul__ = wrapdoc(Vector.__imatmul__)(Vector.__imatmul__)
+    __ior__ = wrapdoc(Vector.__ior__)(Vector.__ior__)
+
+
+class _VectorAsMatrix:
+    __slots__ = "vector"
+
+    def __init__(self, vector):
+        self.vector = vector
+
+    @property
+    def _carg(self):
+        # SS, SuiteSparse-specific: casting Vector to Matrix
+        return ffi.cast("GrB_Matrix*", self.vector.gb_obj)[0]
+
+    @property
+    def name(self):
+        # Showing `(GrB_Matrix)` is good for the recorder, but not for the html repr
+        return f"(GrB_Matrix){self.vector.name}"
+
+    @property
+    def _name_html(self):
+        return self.vector._name_html
+
+    @property
+    def _repr_html_(self):
+        return self.vector._repr_html_
+
+
+utils._output_types[Vector] = Vector
+utils._output_types[VectorExpression] = Vector

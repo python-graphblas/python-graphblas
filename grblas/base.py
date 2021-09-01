@@ -1,14 +1,15 @@
-import numpy as np
 from contextvars import ContextVar
-from . import ffi, replace as replace_singleton
+
+from . import ffi
+from . import replace as replace_singleton
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import lookup_dtype
 from .exceptions import check_status
-from .expr import AmbiguousAssignOrExtract, Updater, _ewise_infix_expr, _matmul_infix_expr
+from .expr import AmbiguousAssignOrExtract, Updater
 from .mask import Mask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_typed_op
 from .unary import identity
-from .utils import libget, _Pointer
+from .utils import _Pointer, libget, output_type
 
 NULL = ffi.NULL
 CData = ffi.CData
@@ -52,9 +53,13 @@ def _expect_type_message(
 ):
     if type(types) is tuple:
         if type(x) in types:
-            return
+            return x, None
+        elif output_type(x) in types:
+            return x._get_value(), None
     elif type(x) is types:
-        return
+        return x, None
+    elif output_type(x) is types:
+        return x._get_value(), None
     if argname:
         argmsg = f"for argument `{argname}` "
     elif keyword_name:
@@ -67,7 +72,7 @@ def _expect_type_message(
         expected = types.__name__
     if extra_message:
         extra_message = f"\n{extra_message}"
-    return (
+    return x, (
         f"Bad type {argmsg}in {type(self).__name__}.{within}(...).\n"
         f"    - Expected type: {expected}.\n"
         f"    - Got: {type(x)}."
@@ -76,9 +81,10 @@ def _expect_type_message(
 
 
 def _expect_type(self, x, types, **kwargs):
-    message = _expect_type_message(self, x, types, **kwargs)
+    x, message = _expect_type_message(self, x, types, **kwargs)
     if message is not None:
         raise TypeError(message) from None
+    return x
 
 
 def _expect_op_message(
@@ -131,9 +137,9 @@ def _expect_op(self, op, values, **kwargs):
 
 
 def _check_mask(mask, output=None):
-    if isinstance(mask, BaseType) or type(mask) is Mask:
-        raise TypeError("Mask must indicate values (M.V) or structure (M.S)")
     if not isinstance(mask, Mask):
+        if isinstance(mask, BaseType):
+            raise TypeError("Mask must indicate values (M.V) or structure (M.S)")
         raise TypeError(f"Invalid mask: {type(mask)}")
     if output is not None:
         from .vector import Vector
@@ -215,11 +221,15 @@ class BaseType:
     def __or__(self, other):
         if self._is_scalar:
             return NotImplemented
+        from .infix import _ewise_infix_expr
+
         return _ewise_infix_expr(self, other, method="ewise_add", within="__or__")
 
     def __ror__(self, other):
         if self._is_scalar:
             return NotImplemented
+        from .infix import _ewise_infix_expr
+
         return _ewise_infix_expr(other, self, method="ewise_add", within="__ror__")
 
     def __ior__(self, other):
@@ -231,11 +241,15 @@ class BaseType:
     def __and__(self, other):
         if self._is_scalar:
             return NotImplemented
+        from .infix import _ewise_infix_expr
+
         return _ewise_infix_expr(self, other, method="ewise_mult", within="__and__")
 
     def __rand__(self, other):
         if self._is_scalar:
             return NotImplemented
+        from .infix import _ewise_infix_expr
+
         return _ewise_infix_expr(self, other, method="ewise_mult", within="__rand__")
 
     def __iand__(self, other):
@@ -247,11 +261,15 @@ class BaseType:
     def __matmul__(self, other):
         if self._is_scalar:
             return NotImplemented
+        from .infix import _matmul_infix_expr
+
         return _matmul_infix_expr(self, other, within="__matmul__")
 
     def __rmatmul__(self, other):
         if self._is_scalar:
             return NotImplemented
+        from .infix import _matmul_infix_expr
+
         return _matmul_infix_expr(other, self, within="__rmatmul__")
 
     def __imatmul__(self, other):
@@ -324,7 +342,8 @@ class BaseType:
                 return
 
             else:
-                from .matrix import Matrix, TransposedMatrix, MatrixExpression
+                from .infix import InfixExprBase
+                from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
                 if type(delayed) is TransposedMatrix and type(self) is Matrix:
                     # Transpose (C << A.T)
@@ -337,6 +356,9 @@ class BaseType:
                         nrows=delayed._nrows,
                         ncols=delayed._ncols,
                     )
+                elif isinstance(delayed, InfixExprBase):
+                    # w << (v & v)
+                    delayed = delayed._to_expr()
                 else:
                     from .scalar import Scalar
 
@@ -393,8 +415,16 @@ class BaseType:
             output_replace=replace,
         )
         if self._is_scalar:
-            args = [_Pointer(self), accum]
-            cfunc_name = delayed.cfunc_name.format(output_dtype=self.dtype)
+            is_fake_scalar = delayed.method_name == "inner"
+            if is_fake_scalar:
+                from .vector import Vector
+
+                fake_self = Vector.new(self.dtype, size=1)
+                args = [fake_self, mask, accum]
+                cfunc_name = delayed.cfunc_name
+            else:
+                args = [_Pointer(self), accum]
+                cfunc_name = delayed.cfunc_name.format(output_dtype=self.dtype)
         else:
             args = [self, mask, accum]
             cfunc_name = delayed.cfunc_name
@@ -405,6 +435,8 @@ class BaseType:
         # Make the GraphBLAS call
         call(cfunc_name, args)
         if self._is_scalar:
+            if is_fake_scalar:
+                self.value = fake_self[0].value
             self._is_empty = False
 
     @property
@@ -420,10 +452,6 @@ class BaseType:
 
     # Don't let non-scalars be coerced to numpy arrays
     def __array__(self, dtype=None):
-        if self._is_scalar:
-            if dtype is None:
-                dtype = self.dtype.np_type
-            return np.array(self.value, dtype=dtype)
         raise TypeError(
             f"{type(self).__name__} can't be directly converted to a numpy array; "
             f"perhaps use `{self.name}.to_values()` method instead."
@@ -440,9 +468,11 @@ class BaseExpression:
         "op",
         "expr_repr",
         "dtype",
+        "_value",
         "__weakref__",
     )
     output_type = None
+    _is_scalar = False
 
     def __init__(
         self,
@@ -474,6 +504,7 @@ class BaseExpression:
             self.dtype = op.return_type
         else:
             self.dtype = dtype
+        self._value = None
 
     def new(self, *, dtype=None, mask=None, name=None):
         output = self.construct_output(dtype=dtype, name=name)
@@ -487,14 +518,7 @@ class BaseExpression:
             output(mask=mask).update(self)
         return output
 
-    def __eq__(self, other):
-        raise TypeError(
-            f"__eq__ not defined for objects of type {type(self)}.  "
-            f"Use `.new()` to create a new {self.output_type.__name__}, then use `.isequal` method."
-        )
-
-    def __bool__(self):
-        raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
+    dup = new
 
     def _format_expr(self):
         return self.expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
@@ -502,3 +526,6 @@ class BaseExpression:
     def _format_expr_html(self):
         expr_repr = self.expr_repr.replace(".name", "._name_html")
         return expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
+
+    _expect_type = _expect_type
+    _expect_op = _expect_op

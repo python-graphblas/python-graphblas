@@ -1,16 +1,18 @@
 import inspect
 import itertools
 import re
-import numpy as np
-import numba
 from collections.abc import Mapping
 from functools import lru_cache
 from types import FunctionType, ModuleType
-from . import ffi, lib, unary, binary, monoid, semiring, op
-from .dtypes import lookup_dtype, unify, INT8, _sample_values, _supports_complex
+
+import numba
+import numpy as np
+
+from . import binary, ffi, lib, monoid, op, semiring, unary
+from .dtypes import INT8, _sample_values, _supports_complex, lookup_dtype, unify
 from .exceptions import UdfParseError, check_status_carg
 from .expr import InfixExprBase
-from .utils import libget
+from .utils import libget, output_type
 
 ffi_new = ffi.new
 UNKNOWN_OPCLASS = "UnknownOpClass"
@@ -45,12 +47,12 @@ def _call_op(op, left, right=None, **kwargs):
         )
 
     # op(A, 1) -> apply (or select once available)
-    from .vector import Vector
     from .matrix import Matrix, TransposedMatrix
+    from .vector import Vector
 
-    if type(left) in {Vector, Matrix, TransposedMatrix}:
+    if output_type(left) in {Vector, Matrix, TransposedMatrix}:
         return left.apply(op, right=right, **kwargs)
-    elif type(right) in {Vector, Matrix, TransposedMatrix}:
+    elif output_type(right) in {Vector, Matrix, TransposedMatrix}:
         return right.apply(op, left=left, **kwargs)
     raise TypeError(
         f"Bad types when calling {op!r}.  Got types: {type(left)}, {type(right)}.\n"
@@ -88,10 +90,10 @@ class TypedBuiltinUnaryOp(TypedOpBase):
     opclass = "UnaryOp"
 
     def __call__(self, val):
-        from .vector import Vector
         from .matrix import Matrix, TransposedMatrix
+        from .vector import Vector
 
-        if type(val) in {Vector, Matrix, TransposedMatrix}:
+        if output_type(val) in {Vector, Matrix, TransposedMatrix}:
             return val.apply(self)
         raise TypeError(
             f"Bad type when calling {self!r}.\n"
@@ -897,7 +899,7 @@ class BinaryOp(OpBase):
         BinaryOp.register_new("isclose", isclose, parameterized=True)
 
         # Update type information with sane coercion
-        for names, *types in (
+        name_types = [
             # fmt: off
             (
                 ("atan2", "copysign", "fmod", "hypot", "ldexp", "remainder"),
@@ -926,13 +928,17 @@ class BinaryOp(OpBase):
                     "BOOL",
                 ),
             ),
-            (
-                ["cmplx"],
-                (("BOOL", "INT8", "INT16", "UINT8", "UINT16"), "FP32"),
-                (("INT32", "INT64", "UINT32", "UINT64"), "FP64"),
-            ),
             # fmt: on
-        ):
+        ]
+        if _supports_complex:  # pragma: no branch
+            name_types.append(
+                (
+                    ["cmplx"],
+                    (("BOOL", "INT8", "INT16", "UINT8", "UINT16"), "FP32"),
+                    (("INT32", "INT64", "UINT32", "UINT64"), "FP64"),
+                )
+            )
+        for names, *types in name_types:
             for name in names:
                 op = getattr(binary, name)
                 for input_types, target_type in types:
@@ -1349,4 +1355,4 @@ BinaryOp._initialize()
 Monoid._initialize()
 Semiring._initialize()
 
-from .agg import Aggregator, TypedAggregator  # noqa
+from .agg import Aggregator, TypedAggregator  # noqa isort:skip

@@ -1,6 +1,7 @@
 import numpy as np
-from . import ffi, lib
-from .dtypes import lookup_dtype, _INDEX
+
+from . import ffi, lib, mask
+from .dtypes import _INDEX, lookup_dtype
 
 
 def libget(name):
@@ -24,6 +25,33 @@ def wrapdoc(func_with_doc):
         return func_wo_doc
 
     return inner
+
+
+# Include most common types (even mistakes)
+_output_types = {
+    int: int,
+    float: float,
+    list: list,
+    slice: slice,
+    tuple: tuple,
+    np.ndarray: np.ndarray,
+    # Mistakes
+    object: object,
+    type: type,
+    mask.Mask: mask.Mask,
+    mask.StructuralMask: mask.StructuralMask,
+    mask.ValueMask: mask.ValueMask,
+    mask.ComplementedStructuralMask: mask.ComplementedStructuralMask,
+    mask.ComplementedValueMask: mask.ComplementedValueMask,
+}
+_output_types.update((k, k) for k in np.cast)
+
+
+def output_type(val):
+    try:
+        return _output_types[type(val)]
+    except KeyError:
+        return type(val)
 
 
 def ints_to_numpy_buffer(array, dtype, *, name="array", copy=False, ownable=False, order="C"):

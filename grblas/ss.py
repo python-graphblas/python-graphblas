@@ -1,9 +1,9 @@
+from ._ss.matrix import _concat_mn
 from .base import _expect_type
 from .dtypes import INT64
 from .matrix import Matrix, TransposedMatrix
 from .scalar import Scalar
 from .vector import Vector
-from ._ss.matrix import _concat_mn
 
 
 class _grblas_ss:
@@ -37,7 +37,7 @@ def diag(x, k=0, *, dtype=None, name=None):
     Matrix.ss.diag
 
     """
-    _expect_type(_grblas_ss, x, (Matrix, TransposedMatrix, Vector), within="diag", argname="x")
+    x = _expect_type(_grblas_ss, x, (Matrix, TransposedMatrix, Vector), within="diag", argname="x")
     if type(k) is not Scalar:
         k = Scalar.from_value(k, dtype=INT64, name="")
     if dtype is None:
