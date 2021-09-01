@@ -1,3 +1,4 @@
+import inspect
 import itertools
 import pickle
 import weakref
@@ -1271,8 +1272,9 @@ def test_transpose_exceptional():
         B.T[1, 0]() << 10
     with pytest.raises(TypeError, match="not callable"):
         B.T()[1, 0] << 10
-    with pytest.raises(AttributeError):
-        B.T.dup()  # should use new instead
+    # with pytest.raises(AttributeError):
+    # should use new instead--Now okay.
+    assert B.T.dup().isequal(B.T.new())
     # Not exceptional, but while we're here...
     C = B.T.new(mask=A.V)
     D = B.T.new()
@@ -2105,9 +2107,10 @@ def test_nbytes(A):
     assert A.ss.nbytes > 0
 
 
-def test_auto(A):
+def test_auto(A, v):
     expected = binary.times(A & A).new()
     for expr in [(A & A), binary.times(A & A)]:
+        assert expr.dtype == expected.dtype
         assert expr.nrows == expected.nrows
         assert expr.ncols == expected.ncols
         assert expr.shape == expected.shape
@@ -2116,6 +2119,8 @@ def test_auto(A):
         assert expected.isclose(expr)
         assert expr.isequal(expected)
         assert expected.isequal(expr)
+        assert expr.mxv(v).isequal(expected.mxv(v))
+        assert expected.T.mxv(v).isequal(expr.T.mxv(v))
         for method in [
             "ewise_add",
             "ewise_mult",
@@ -2137,3 +2142,49 @@ def test_auto(A):
             s2 = getattr(expr, method)()
             assert s1.isequal(s2.new())
             assert s1.isequal(s2)
+
+    expected = semiring.plus_times(A @ v).new()
+    for expr in [(A @ v), (v @ A.T), semiring.plus_times(A @ v)]:
+        assert expr.vxm(A).isequal(expected.vxm(A))
+        assert expr.vxm(A).new(mask=expr.S).isequal(expected.vxm(A).new(mask=expected.S))
+        assert expr.vxm(A).new(mask=expr.V).isequal(expected.vxm(A).new(mask=expected.V))
+
+
+def test_expr_is_like_matrix(A):
+    attrs = {attr for attr, val in inspect.getmembers(A)}
+    expr_attrs = {attr for attr, val in inspect.getmembers(binary.times(A & A))}
+    infix_attrs = {attr for attr, val in inspect.getmembers(A & A)}
+    transposed_attrs = {attr for attr, val in inspect.getmembers(A.T)}
+    # Should we make any of these raise informative errors?
+    expected = {
+        "__call__",
+        "__del__",
+        "__delitem__",
+        "__lshift__",
+        "__setitem__",
+        "_assign_element",
+        "_delete_element",
+        "_deserialize",
+        "_extract_element",
+        "_name_counter",
+        "_prep_for_assign",
+        "_prep_for_extract",
+        "_update",
+        "build",
+        "clear",
+        "from_pygraphblas",
+        "from_values",
+        "resize",
+        "update",
+    }
+    assert attrs - expr_attrs == expected
+    assert attrs - infix_attrs == expected | {
+        "_expect_op",
+        "_expect_type",
+    }
+    # TransposedMatrix is used differently than other expressions,
+    # so maybe it shouldn't support everything.
+    assert attrs - transposed_attrs == (expected | {"S", "V", "ss", "to_pygraphblas", "wait"}) - {
+        "_prep_for_extract",
+        "_extract_element",
+    }

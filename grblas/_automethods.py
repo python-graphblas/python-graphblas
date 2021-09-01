@@ -14,7 +14,8 @@ common = {
     "isequal",
     "name",
     "nvals",
-    # to_pygraphblas,
+    "to_pygraphblas",
+    "wait",
 }
 scalar = {
     "__array__",
@@ -44,6 +45,7 @@ vector_matrix = {
     "apply",
     "ewise_add",
     "ewise_mult",
+    "ss",
     "to_values",
 }
 vector = {
@@ -61,6 +63,24 @@ matrix = {
     "reduce_rows",
     "reduce_scalar",
 }
+common_raises = {
+    "__ior__",
+    "__iand__",
+    "__imatmul__",
+}
+scalar_raises = {
+    "__and__",
+    "__matmul__",
+    "__or__",
+    "__rand__",
+    "__rmatmul__",
+    "__ror__",
+}
+vector_matrix_raises = {
+    "__array__",
+    "__bool__",
+    "__eq__",
+}
 
 for name in sorted(common | scalar | vector_matrix | vector | matrix):
     print(f"def {name}(self):\n    return self._get_value().{name}\n\n")
@@ -68,14 +88,29 @@ for name in sorted(common | scalar | vector_matrix | vector | matrix):
 print("    _get_value = _automethods._get_value")
 for name in sorted(common | scalar):
     print(f"    {name} = wrapdoc(Scalar.{name})(property(_automethods.{name}))")
+    if name == "name":
+        print("    name = name.setter(_automethods._set_name)")
+print("    # These raise exceptions")
+for name in sorted(common_raises | scalar_raises):
+    print(f"    {name} = wrapdoc(Scalar.{name})(Scalar.{name})")
 print()
 print("    _get_value = _automethods._get_value")
 for name in sorted(common | vector_matrix | vector):
     print(f"    {name} = wrapdoc(Vector.{name})(property(_automethods.{name}))")
+    if name == "name":
+        print("    name = name.setter(_automethods._set_name)")
+print("    # These raise exceptions")
+for name in sorted(common_raises | vector_matrix_raises):
+    print(f"    {name} = wrapdoc(Vector.{name})(Vector.{name})")
 print()
 print("    _get_value = _automethods._get_value")
 for name in sorted(common | vector_matrix | matrix):
     print(f"    {name} = wrapdoc(Matrix.{name})(property(_automethods.{name}))")
+    if name == "name":
+        print("    name = name.setter(_automethods._set_name)")
+print("    # These raise exceptions")
+for name in sorted(common_raises | vector_matrix_raises):
+    print(f"    {name} = wrapdoc(Matrix.{name})(Matrix.{name})")
 
 ```
 """
@@ -86,6 +121,10 @@ def _get_value(self):
     if self._value is None:
         self._value = self.new()
     return self._value
+
+
+def _set_name(self, name):
+    self._get_value().name = name
 
 
 def S(self):
@@ -252,6 +291,14 @@ def reduce_scalar(self):
     return self._get_value().reduce_scalar
 
 
+def ss(self):
+    return self._get_value().ss
+
+
+def to_pygraphblas(self):
+    return self._get_value().to_pygraphblas
+
+
 def to_values(self):
     return self._get_value().to_values
 
@@ -262,3 +309,7 @@ def value(self):
 
 def vxm(self):
     return self._get_value().vxm
+
+
+def wait(self):
+    return self._get_value().wait

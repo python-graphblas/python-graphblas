@@ -1,5 +1,7 @@
 import itertools
 
+import numpy as np
+
 from . import _automethods, backend, ffi, utils
 from .base import BaseExpression, BaseType
 from .binary import isclose
@@ -65,6 +67,11 @@ class Scalar(BaseType):
         return rv
 
     __index__ = __int__
+
+    def __array__(self, dtype=None):
+        if dtype is None:
+            dtype = self.dtype.np_type
+        return np.array(self.value, dtype=dtype)
 
     def isequal(self, other, *, check_dtype=False):
         """
@@ -164,13 +171,16 @@ class Scalar(BaseType):
     def dup(self, *, dtype=None, name=None):
         """Create a new Scalar by duplicating this one"""
         if dtype is None:
-            new_scalar = type(self).new(self.dtype, name=name)
+            new_scalar = Scalar.new(self.dtype, name=name)
             new_scalar.value = self.value
         else:
-            new_scalar = type(self).new(dtype, name=name)
+            new_scalar = Scalar.new(dtype, name=name)
             if not self.is_empty:
                 new_scalar.value = new_scalar.dtype.np_type(self.value)
         return new_scalar
+
+    def wait(self):
+        pass
 
     @classmethod
     def new(cls, dtype, *, name=None):
@@ -185,9 +195,7 @@ class Scalar(BaseType):
     def from_value(cls, value, dtype=None, *, name=None):
         """Create a new Scalar from a Python value"""
         if type(value) is Scalar:
-            if dtype is None:
-                dtype = value.dtype
-            value = value.value
+            return value.dup(dtype=dtype, name=name)
         elif output_type(value) is Scalar:
             return value.new(dtype=dtype, name=name)
         elif dtype is None:
@@ -208,29 +216,35 @@ class Scalar(BaseType):
     def _deserialize(value, dtype, name):
         return Scalar.from_value(value, dtype=dtype, name=name)
 
-    if backend == "suitesparse":
+    def to_pygraphblas(self):  # pragma: no cover
+        """Convert to a new `pygraphblas.Scalar`
 
-        def to_pygraphblas(self):  # pragma: no cover
-            """Convert to a new `pygraphblas.Scalar`
+        This copies data.
+        """
+        if backend != "suitesparse":
+            raise RuntimeError(
+                f"to_pygraphblas only works with 'suitesparse' backend, not {backend}"
+            )
+        import pygraphblas as pg
 
-            This copies data.
-            """
-            import pygraphblas as pg
+        return pg.Scalar.from_value(self.value)
 
-            return pg.Scalar.from_value(self.value)
+    @classmethod
+    def from_pygraphblas(cls, scalar):  # pragma: no cover
+        """Convert a `pygraphblas.Scalar` to a new `grblas.Scalar`
 
-        @classmethod
-        def from_pygraphblas(cls, scalar):  # pragma: no cover
-            """Convert a `pygraphblas.Scalar` to a new `grblas.Scalar`
+        This copies data.
+        """
+        if backend != "suitesparse":
+            raise RuntimeError(
+                f"from_pygraphblas only works with 'suitesparse' backend, not {backend!r}"
+            )
+        import pygraphblas as pg
 
-            This copies data.
-            """
-            import pygraphblas as pg
-
-            if not isinstance(scalar, pg.Scalar):
-                raise TypeError(f"Expected pygraphblas.Scalar object.  Got type: {type(scalar)}")
-            dtype = lookup_dtype(scalar.gb_type)
-            return cls.from_value(scalar[0], dtype)
+        if not isinstance(scalar, pg.Scalar):
+            raise TypeError(f"Expected pygraphblas.Scalar object.  Got type: {type(scalar)}")
+        dtype = lookup_dtype(scalar.gb_type)
+        return cls.from_value(scalar[0], dtype)
 
 
 class ScalarExpression(BaseExpression):
@@ -275,8 +289,21 @@ class ScalarExpression(BaseExpression):
     isclose = wrapdoc(Scalar.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Scalar.isequal)(property(_automethods.isequal))
     name = wrapdoc(Scalar.name)(property(_automethods.name))
+    name = name.setter(_automethods._set_name)
     nvals = wrapdoc(Scalar.nvals)(property(_automethods.nvals))
+    to_pygraphblas = wrapdoc(Scalar.to_pygraphblas)(property(_automethods.to_pygraphblas))
     value = wrapdoc(Scalar.value)(property(_automethods.value))
+    wait = wrapdoc(Scalar.wait)(property(_automethods.wait))
+    # These raise exceptions
+    __and__ = wrapdoc(Scalar.__and__)(Scalar.__and__)
+    __iand__ = wrapdoc(Scalar.__iand__)(Scalar.__iand__)
+    __imatmul__ = wrapdoc(Scalar.__imatmul__)(Scalar.__imatmul__)
+    __ior__ = wrapdoc(Scalar.__ior__)(Scalar.__ior__)
+    __matmul__ = wrapdoc(Scalar.__matmul__)(Scalar.__matmul__)
+    __or__ = wrapdoc(Scalar.__or__)(Scalar.__or__)
+    __rand__ = wrapdoc(Scalar.__rand__)(Scalar.__rand__)
+    __rmatmul__ = wrapdoc(Scalar.__rmatmul__)(Scalar.__rmatmul__)
+    __ror__ = wrapdoc(Scalar.__ror__)(Scalar.__ror__)
 
 
 class _CScalar:

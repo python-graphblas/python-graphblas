@@ -1,7 +1,5 @@
 from contextvars import ContextVar
 
-import numpy as np
-
 from . import ffi
 from . import replace as replace_singleton
 from .descriptor import lookup as descriptor_lookup
@@ -449,10 +447,6 @@ class BaseType:
 
     # Don't let non-scalars be coerced to numpy arrays
     def __array__(self, dtype=None):
-        if self._is_scalar:
-            if dtype is None:
-                dtype = self.dtype.np_type
-            return np.array(self.value, dtype=dtype)
         raise TypeError(
             f"{type(self).__name__} can't be directly converted to a numpy array; "
             f"perhaps use `{self.name}.to_values()` method instead."

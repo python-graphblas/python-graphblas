@@ -46,11 +46,22 @@ class VectorInfixExpr(InfixExprBase):
     isclose = wrapdoc(Vector.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Vector.isequal)(property(_automethods.isequal))
     name = wrapdoc(Vector.name)(property(_automethods.name))
+    name = name.setter(_automethods._set_name)
     nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(_automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
+    ss = wrapdoc(Vector.ss)(property(_automethods.ss))
+    to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(_automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(_automethods.vxm))
+    wait = wrapdoc(Vector.wait)(property(_automethods.wait))
+    # These raise exceptions
+    __array__ = wrapdoc(Vector.__array__)(Vector.__array__)
+    __bool__ = wrapdoc(Vector.__bool__)(Vector.__bool__)
+    __eq__ = wrapdoc(Vector.__eq__)(Vector.__eq__)
+    __iand__ = wrapdoc(Vector.__iand__)(Vector.__iand__)
+    __imatmul__ = wrapdoc(Vector.__imatmul__)(Vector.__imatmul__)
+    __ior__ = wrapdoc(Vector.__ior__)(Vector.__ior__)
 
 
 class VectorEwiseAddExpr(VectorInfixExpr):
@@ -86,6 +97,7 @@ utils._output_types[VectorInfixExpr] = Vector
 class MatrixInfixExpr(InfixExprBase):
     __slots__ = "_nrows", "_ncols"
     output_type = MatrixExpression
+    _is_transposed = False
 
     def __init__(self, left, right):
         super().__init__(left, right)
@@ -130,11 +142,22 @@ class MatrixInfixExpr(InfixExprBase):
     mxm = wrapdoc(Matrix.mxm)(property(_automethods.mxm))
     mxv = wrapdoc(Matrix.mxv)(property(_automethods.mxv))
     name = wrapdoc(Matrix.name)(property(_automethods.name))
+    name = name.setter(_automethods._set_name)
     nvals = wrapdoc(Matrix.nvals)(property(_automethods.nvals))
     reduce_columns = wrapdoc(Matrix.reduce_columns)(property(_automethods.reduce_columns))
     reduce_rows = wrapdoc(Matrix.reduce_rows)(property(_automethods.reduce_rows))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
+    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
+    wait = wrapdoc(Matrix.wait)(property(_automethods.wait))
+    # These raise exceptions
+    __array__ = wrapdoc(Matrix.__array__)(Matrix.__array__)
+    __bool__ = wrapdoc(Matrix.__bool__)(Matrix.__bool__)
+    __eq__ = wrapdoc(Matrix.__eq__)(Matrix.__eq__)
+    __iand__ = wrapdoc(Matrix.__iand__)(Matrix.__iand__)
+    __imatmul__ = wrapdoc(Matrix.__imatmul__)(Matrix.__imatmul__)
+    __ior__ = wrapdoc(Matrix.__ior__)(Matrix.__ior__)
 
 
 class MatrixEwiseAddExpr(MatrixInfixExpr):
@@ -199,8 +222,21 @@ class ScalarMatMulExpr(InfixExprBase):
     isclose = wrapdoc(Scalar.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Scalar.isequal)(property(_automethods.isequal))
     name = wrapdoc(Scalar.name)(property(_automethods.name))
+    name = name.setter(_automethods._set_name)
     nvals = wrapdoc(Scalar.nvals)(property(_automethods.nvals))
+    to_pygraphblas = wrapdoc(Scalar.to_pygraphblas)(property(_automethods.to_pygraphblas))
     value = wrapdoc(Scalar.value)(property(_automethods.value))
+    wait = wrapdoc(Scalar.wait)(property(_automethods.wait))
+    # These raise exceptions
+    __and__ = wrapdoc(Scalar.__and__)(Scalar.__and__)
+    __iand__ = wrapdoc(Scalar.__iand__)(Scalar.__iand__)
+    __imatmul__ = wrapdoc(Scalar.__imatmul__)(Scalar.__imatmul__)
+    __ior__ = wrapdoc(Scalar.__ior__)(Scalar.__ior__)
+    __matmul__ = wrapdoc(Scalar.__matmul__)(Scalar.__matmul__)
+    __or__ = wrapdoc(Scalar.__or__)(Scalar.__or__)
+    __rand__ = wrapdoc(Scalar.__rand__)(Scalar.__rand__)
+    __rmatmul__ = wrapdoc(Scalar.__rmatmul__)(Scalar.__rmatmul__)
+    __ror__ = wrapdoc(Scalar.__ror__)(Scalar.__ror__)
 
 
 utils._output_types[ScalarMatMulExpr] = Scalar
@@ -241,7 +277,7 @@ def _ewise_infix_expr(left, right, *, method, within):
 
 
 def _matmul_infix_expr(left, right, *, within):
-    left_type = type(left)
+    left_type = output_type(left)
     right_type = output_type(right)
 
     if left_type is Vector:

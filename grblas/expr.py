@@ -42,7 +42,7 @@ class IndexerResolver:
                 raise TypeError(f"Index for {type(self.obj).__name__} cannot be a tuple")
             # Convert to tuple for consistent processing
             indices = (indices,)
-        elif len(shape) == 2:
+        else:  # len(shape) == 2
             if type(indices) is not tuple or len(indices) != 2:
                 raise TypeError(f"Index for {type(self.obj).__name__} must be a 2-tuple")
 
@@ -376,6 +376,12 @@ class InfixExprBase:
         elif self.output_type.__name__ == "MatrixExpression":
             return formatting.format_matrix_infix_expression(self)
         return formatting.format_scalar_infix_expression(self)
+
+    @property
+    def dtype(self):
+        if self._value is not None:
+            return self._value.dtype
+        return self._to_expr().dtype
 
 
 # Mistakes

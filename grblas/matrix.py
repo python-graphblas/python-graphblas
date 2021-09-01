@@ -1051,41 +1051,47 @@ class Matrix(BaseType):
         col, _ = resolved_indexes.indices[1]
         call("GrB_Matrix_removeElement", [self, row, col])
 
-    if backend == "suitesparse":
+    def to_pygraphblas(self):  # pragma: no cover
+        """Convert to a new `pygraphblas.Matrix`
 
-        def to_pygraphblas(self):  # pragma: no cover
-            """Convert to a new `pygraphblas.Matrix`
+        This does not copy data.
 
-            This does not copy data.
+        This gives control of the underlying GraphBLAS object to `pygraphblas`.
+        This means operations on the current `grblas` object will fail!
+        """
+        if backend != "suitesparse":
+            raise RuntimeError(
+                f"to_pygraphblas only works with 'suitesparse' backend, not {backend}"
+            )
+        import pygraphblas as pg
 
-            This gives control of the underlying GraphBLAS object to `pygraphblas`.
-            This means operations on the current `grblas` object will fail!
-            """
-            import pygraphblas as pg
+        matrix = pg.Matrix(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
+        self.gb_obj = ffi.NULL
+        return matrix
 
-            matrix = pg.Matrix(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
-            self.gb_obj = ffi.NULL
-            return matrix
+    @classmethod
+    def from_pygraphblas(cls, matrix):  # pragma: no cover
+        """Convert a `pygraphblas.Matrix` to a new `grblas.Matrix`
 
-        @classmethod
-        def from_pygraphblas(cls, matrix):  # pragma: no cover
-            """Convert a `pygraphblas.Matrix` to a new `grblas.Matrix`
+        This does not copy data.
 
-            This does not copy data.
+        This gives control of the underlying GraphBLAS object to `grblas`.
+        This means operations on the original `pygraphblas` object will fail!
+        """
+        if backend != "suitesparse":
+            raise RuntimeError(
+                f"from_pygraphblas only works with 'suitesparse' backend, not {backend!r}"
+            )
+        import pygraphblas as pg
 
-            This gives control of the underlying GraphBLAS object to `grblas`.
-            This means operations on the original `pygraphblas` object will fail!
-            """
-            import pygraphblas as pg
-
-            if not isinstance(matrix, pg.Matrix):
-                raise TypeError(f"Expected pygraphblas.Matrix object.  Got type: {type(matrix)}")
-            dtype = lookup_dtype(matrix.gb_type)
-            rv = cls(matrix._matrix, dtype)
-            rv._nrows = matrix.nrows
-            rv._ncols = matrix.ncols
-            matrix._matrix = ffi.NULL
-            return rv
+        if not isinstance(matrix, pg.Matrix):
+            raise TypeError(f"Expected pygraphblas.Matrix object.  Got type: {type(matrix)}")
+        dtype = lookup_dtype(matrix.gb_type)
+        rv = cls(matrix._matrix, dtype)
+        rv._nrows = matrix.nrows
+        rv._ncols = matrix.ncols
+        matrix._matrix = ffi.NULL
+        return rv
 
 
 Matrix.ss = class_property(Matrix.ss, ss)
@@ -1094,6 +1100,7 @@ Matrix.ss = class_property(Matrix.ss, ss)
 class MatrixExpression(BaseExpression):
     __slots__ = "_ncols", "_nrows"
     output_type = Matrix
+    _is_transposed = False
 
     def __init__(
         self,
@@ -1179,11 +1186,22 @@ class MatrixExpression(BaseExpression):
     mxm = wrapdoc(Matrix.mxm)(property(_automethods.mxm))
     mxv = wrapdoc(Matrix.mxv)(property(_automethods.mxv))
     name = wrapdoc(Matrix.name)(property(_automethods.name))
+    name = name.setter(_automethods._set_name)
     nvals = wrapdoc(Matrix.nvals)(property(_automethods.nvals))
     reduce_columns = wrapdoc(Matrix.reduce_columns)(property(_automethods.reduce_columns))
     reduce_rows = wrapdoc(Matrix.reduce_rows)(property(_automethods.reduce_rows))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
+    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
+    wait = wrapdoc(Matrix.wait)(property(_automethods.wait))
+    # These raise exceptions
+    __array__ = wrapdoc(Matrix.__array__)(Matrix.__array__)
+    __bool__ = wrapdoc(Matrix.__bool__)(Matrix.__bool__)
+    __eq__ = wrapdoc(Matrix.__eq__)(Matrix.__eq__)
+    __iand__ = wrapdoc(Matrix.__iand__)(Matrix.__iand__)
+    __imatmul__ = wrapdoc(Matrix.__imatmul__)(Matrix.__imatmul__)
+    __ior__ = wrapdoc(Matrix.__ior__)(Matrix.__ior__)
 
 
 class TransposedMatrix:
@@ -1215,6 +1233,8 @@ class TransposedMatrix:
         else:
             output(mask=mask).update(self)
         return output
+
+    dup = new
 
     @property
     def T(self):

@@ -682,40 +682,46 @@ class Vector(BaseType):
         index, _ = resolved_indexes.indices[0]
         call("GrB_Vector_removeElement", [self, index])
 
-    if backend == "suitesparse":
+    def to_pygraphblas(self):  # pragma: no cover
+        """Convert to a new `pygraphblas.Vector`
 
-        def to_pygraphblas(self):  # pragma: no cover
-            """Convert to a new `pygraphblas.Vector`
+        This does not copy data.
 
-            This does not copy data.
+        This gives control of the underlying GraphBLAS object to `pygraphblas`.
+        This means operations on the current `grblas` object will fail!
+        """
+        if backend != "suitesparse":
+            raise RuntimeError(
+                f"to_pygraphblas only works with 'suitesparse' backend, not {backend}"
+            )
+        import pygraphblas as pg
 
-            This gives control of the underlying GraphBLAS object to `pygraphblas`.
-            This means operations on the current `grblas` object will fail!
-            """
-            import pygraphblas as pg
+        vector = pg.Vector(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
+        self.gb_obj = ffi.NULL
+        return vector
 
-            vector = pg.Vector(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
-            self.gb_obj = ffi.NULL
-            return vector
+    @classmethod
+    def from_pygraphblas(cls, vector):  # pragma: no cover
+        """Convert a `pygraphblas.Vector` to a new `grblas.Vector`
 
-        @classmethod
-        def from_pygraphblas(cls, vector):  # pragma: no cover
-            """Convert a `pygraphblas.Vector` to a new `grblas.Vector`
+        This does not copy data.
 
-            This does not copy data.
+        This gives control of the underlying GraphBLAS object to `grblas`.
+        This means operations on the original `pygraphblas` object will fail!
+        """
+        if backend != "suitesparse":
+            raise RuntimeError(
+                f"from_pygraphblas only works with 'suitesparse' backend, not {backend!r}"
+            )
+        import pygraphblas as pg
 
-            This gives control of the underlying GraphBLAS object to `grblas`.
-            This means operations on the original `pygraphblas` object will fail!
-            """
-            import pygraphblas as pg
-
-            if not isinstance(vector, pg.Vector):
-                raise TypeError(f"Expected pygraphblas.Vector object.  Got type: {type(vector)}")
-            dtype = lookup_dtype(vector.gb_type)
-            rv = cls(vector._vector, dtype)
-            rv._size = vector.size
-            vector._vector = ffi.NULL
-            return rv
+        if not isinstance(vector, pg.Vector):
+            raise TypeError(f"Expected pygraphblas.Vector object.  Got type: {type(vector)}")
+        dtype = lookup_dtype(vector.gb_type)
+        rv = cls(vector._vector, dtype)
+        rv._size = vector.size
+        vector._vector = ffi.NULL
+        return rv
 
 
 Vector.ss = class_property(Vector.ss, ss)
@@ -798,11 +804,22 @@ class VectorExpression(BaseExpression):
     isclose = wrapdoc(Vector.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Vector.isequal)(property(_automethods.isequal))
     name = wrapdoc(Vector.name)(property(_automethods.name))
+    name = name.setter(_automethods._set_name)
     nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(_automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
+    ss = wrapdoc(Vector.ss)(property(_automethods.ss))
+    to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(_automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(_automethods.vxm))
+    wait = wrapdoc(Vector.wait)(property(_automethods.wait))
+    # These raise exceptions
+    __array__ = wrapdoc(Vector.__array__)(Vector.__array__)
+    __bool__ = wrapdoc(Vector.__bool__)(Vector.__bool__)
+    __eq__ = wrapdoc(Vector.__eq__)(Vector.__eq__)
+    __iand__ = wrapdoc(Vector.__iand__)(Vector.__iand__)
+    __imatmul__ = wrapdoc(Vector.__imatmul__)(Vector.__imatmul__)
+    __ior__ = wrapdoc(Vector.__ior__)(Vector.__ior__)
 
 
 class _VectorAsMatrix:
