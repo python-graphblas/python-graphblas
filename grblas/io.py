@@ -5,15 +5,15 @@ from .matrix import TransposedMatrix
 from .utils import output_type
 
 
-def draw(m):
+def draw(m):  # pragma: no cover
     try:
         import networkx as nx
-    except ImportError:  # pragma: no cover
+    except ImportError:
         print("`draw` requires networkx to be installed")
         return
     try:
         import matplotlib.pyplot as plt
-    except ImportError:  # pragma: no cover
+    except ImportError:
         print("`draw` requires matplotlib to be installed")
         return
 

@@ -227,6 +227,8 @@ def test_extract_element(v):
     assert v[6].new() == 0
     with pytest.raises(TypeError, match="Invalid type for index"):
         v[object()]
+    with pytest.raises(IndexError):
+        v[100]
 
 
 def test_set_element(v):
@@ -1125,6 +1127,22 @@ def test_auto(v):
         assert -s1 == -s2
         assert complex(s1) == complex(s2)
         assert_array_equal(np.array([s1]), np.array([s2]))
+    w = v.dup()
+    expected = v.dup()
+    expected(binary.plus) << (w & w).new()
+    w(binary.plus) << (w & w)
+
+
+def test_auto_assign(v):
+    expected = v.dup()
+    w = v[1:4].new()
+    expr = w & w
+    expected[:3] = expr.new()
+    v[:3] = expr
+    assert expected.isequal(v)
+    with pytest.raises(TypeError):
+        # Not yet supported, but we could!
+        v[:3] = v[1:4]
 
 
 def test_expr_is_like_vector(v):

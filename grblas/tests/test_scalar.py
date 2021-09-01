@@ -68,6 +68,9 @@ def test_from_value():
     s2 = Scalar.from_value(-1.1)
     assert s2.dtype == "FP64"
     assert s2.value == -1.1
+    s3 = Scalar.from_value(s, dtype="INT64")
+    assert s3.dtype == "INT64"
+    assert s3.value == 0
 
 
 def test_clear(s):

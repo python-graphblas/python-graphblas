@@ -409,6 +409,9 @@ def test_extract_row(A):
     assert w.isequal(result)
     w2 = A[6, [0, 2, 4]].new()
     assert w2.isequal(result)
+    with pytest.raises(TypeError):
+        # Should be list, not tuple (although tuple isn't so bad)
+        A[6, (0, 2, 4)]
 
 
 def test_extract_column(A):
@@ -2148,6 +2151,23 @@ def test_auto(A, v):
         assert expr.vxm(A).isequal(expected.vxm(A))
         assert expr.vxm(A).new(mask=expr.S).isequal(expected.vxm(A).new(mask=expected.S))
         assert expr.vxm(A).new(mask=expr.V).isequal(expected.vxm(A).new(mask=expected.V))
+
+
+def test_auto_assign(A):
+    expected = A.dup()
+    B = A[1:4, 1:4].new()
+    expr = B & B
+    expected[:3, :3] = expr.new()
+    A[:3, :3] = expr
+    assert expected.isequal(A)
+    with pytest.raises(TypeError):
+        # Not yet supported, but we could!
+        A[:3, :3] = A[1:4, 1:4]
+    v = A[2:5, 5].new()
+    expr = v & v
+    A[:3, 4] << expr
+    expected[:3, 4] << expr.new()
+    assert expected.isequal(A)
 
 
 def test_expr_is_like_matrix(A):

@@ -61,7 +61,7 @@ class IndexerResolver:
 
         if np.issubdtype(typ, np.integer):
             if index >= size:
-                raise IndexError(f"index={index}, size={size}")
+                raise IndexError(f"Index out of range: index={index}, size={size}")
             return _CScalar(int(index)), None
         if typ is list:
             pass
