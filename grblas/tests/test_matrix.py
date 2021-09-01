@@ -412,6 +412,12 @@ def test_extract_row(A):
     with pytest.raises(TypeError):
         # Should be list, not tuple (although tuple isn't so bad)
         A[6, (0, 2, 4)]
+    w3 = A[6, np.array([0, 2, 4])].new()
+    assert w3.isequal(result)
+    with pytest.raises(TypeError, match="Invalid dtype"):
+        A[6, np.array([0, 2, 4], dtype=float)]
+    with pytest.raises(TypeError, match="Invalid number of dimensions"):
+        A[6, np.array([[0, 2, 4]])]
 
 
 def test_extract_column(A):

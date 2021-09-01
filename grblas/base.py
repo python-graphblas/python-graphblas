@@ -512,15 +512,6 @@ class BaseExpression:
 
     dup = new
 
-    def __eq__(self, other):
-        raise TypeError(
-            f"__eq__ not defined for objects of type {type(self)}.  "
-            f"Use `.new()` to create a new {self.output_type.__name__}, then use `.isequal` method."
-        )
-
-    def __bool__(self):
-        raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
-
     def _format_expr(self):
         return self.expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
 

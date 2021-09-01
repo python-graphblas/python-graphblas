@@ -267,6 +267,10 @@ def test_neg():
             assert (-empty).value is None
 
 
+def test_wait(s):
+    s.wait()
+
+
 def test_expr_is_like_vector(s):
     v = grblas.Vector.from_values([1], [2])
     attrs = {attr for attr, val in inspect.getmembers(s)}
