@@ -890,6 +890,9 @@ class BinaryOp(OpBase):
         # cdiv truncates towards 0, while floordiv truncates towards -inf
         BinaryOp.register_new("floordiv", lambda x, y: x // y)
 
+        # For aggregators
+        BinaryOp.register_new("absfirst", lambda x, y: abs(x))
+
         def isclose(rel_tol=1e-7, abs_tol=0.0):
             def inner(x, y):
                 return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
@@ -1216,8 +1219,10 @@ class Semiring(OpBase):
         for orig_name, orig in div_semirings.items():
             cls.register_new(f"{orig_name[:-3]}truediv", orig.monoid, binary.truediv)
             cls.register_new(f"{orig_name[:-3]}floordiv", orig.monoid, binary.floordiv)
-        # plus_pow for aggregators
+        # For aggregators
         cls.register_new("plus_pow", monoid.plus, binary.pow)
+        cls.register_new("plus_absfirst", monoid.plus, binary.absfirst)
+        cls.register_new("max_absfirst", monoid.max, binary.absfirst)
 
         # Update type information with sane coercion
         for lname in ("any", "eq", "land", "lor", "lxnor", "lxor"):

@@ -1214,9 +1214,35 @@ def test_reduce_agg_firstlast(A):
     w4b = A.T.reduce_rows(agg.last).new()
     assert w4b.isequal(expected)
 
-    # TODO: reduce_scalar
-    # w5 = A.reduce_scalar(agg.first).new()
-    # w6 = A.reduce_scalar(agg.last).new()
+    # reduce_scalar
+    w5 = A.reduce_scalar(agg.first).new()
+    assert w5 == 2
+    w6 = A.reduce_scalar(agg.last).new()
+    assert w6 == 3
+    B = Matrix.new(float, nrows=2, ncols=3)
+    assert B.reduce_scalar(agg.first).value is None
+    assert B.reduce_scalar(agg.last).value is None
+    w7 = B.reduce_rows(agg.first).new()
+    assert w7.isequal(Vector.new(float, size=B.nrows))
+    w8 = B.reduce_columns(agg.last).new()
+    assert w8.isequal(Vector.new(float, size=B.ncols))
+
+
+def test_reduce_agg_empty():
+    A = Matrix.new("UINT8", nrows=3, ncols=4)
+    for B in [A, A.T]:
+        ve = Vector.new(bool, size=B.nrows)
+        we = Vector.new(bool, size=B.ncols)
+        for attr, aggr in vars(agg).items():
+            if not isinstance(aggr, agg.Aggregator):
+                continue
+            v = B.reduce_rows(aggr).new()
+            assert ve.isequal(v)
+            w = B.reduce_columns(aggr).new()
+            assert we.isequal(w)
+            if attr not in {"argmin", "argmax"}:
+                s = B.reduce_scalar(aggr).new()
+                assert s.value is None
 
 
 def test_reduce_row_udf(A):
