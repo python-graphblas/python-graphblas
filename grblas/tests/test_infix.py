@@ -37,6 +37,7 @@ def test_ewise(v1, v2, A1, A2):
         (A1, A1),
     ]:
         expected = left.ewise_mult(right, monoid.times).new()
+        assert expected.isequal((left & right).new(dtype=float))
         assert expected.isequal(monoid.times(left & right).new())
         assert expected.isequal(monoid.times[float](left & right).new())
         assert expected.isequal((left & right).new())  # use `left.ewise_mult` default op
