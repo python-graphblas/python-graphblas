@@ -1,7 +1,6 @@
 import numpy as np
 
 from . import lib, utils
-from .dtypes import lookup_dtype
 from .utils import _CArray, output_type
 
 
@@ -344,8 +343,6 @@ class InfixExprBase:
         self._value = None
 
     def new(self, *, dtype=None, mask=None, name=None):
-        if dtype is not None:
-            dtype = lookup_dtype(dtype)
         if (
             mask is None
             and self._value is not None

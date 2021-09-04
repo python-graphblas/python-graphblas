@@ -502,8 +502,6 @@ class BaseExpression:
         self._value = None
 
     def new(self, *, dtype=None, mask=None, name=None):
-        if dtype is not None:
-            dtype = lookup_dtype(dtype)
         if (
             mask is None
             and self._value is not None
