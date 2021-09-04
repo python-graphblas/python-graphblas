@@ -670,6 +670,11 @@ def test_reduce_agg_firstlast(v):
     assert v.reduce(agg.last).value == 0
 
 
+def test_reduce_agg_firstlast_index(v):
+    assert v.reduce(agg.first_index).value == 1
+    assert v.reduce(agg.last_index).value == 6
+
+
 def test_reduce_agg_empty():
     v = Vector.new("UINT8", size=3)
     for attr, aggr in vars(agg).items():

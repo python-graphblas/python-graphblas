@@ -51,14 +51,20 @@ Composite aggregators (require multiple aggregation steps):
 Custom recipes:
     - first
     - last
-    - argmin, doesn't work with Matrix.reduce_scalar
     - argmini
-    - argminj, doesn't work with Vector.reduce
-    - argmax, doesn't work with Matrix.reduce_scalar
     - argmaxi
-    - argmaxj, doesn't work with Vector.reduce
+    # These don't work with Vector.reduce
+    - argminj
+    - argmaxj
+    # These don't work with Matrix.reduce_scalar
+    - first_index  (argfirst?)
+    - last_index (arglast?)
+    - argmin
+    - argmax
+    # Misc.
     # absolute_deviation, sum(abs(x - mean(x))),  sum_absminus(x, mean(x))
     # mean_absolute_deviation, absolute_deviation / count
+    # firsti, firstj, lasti, lastj
 
 """
 from functools import partial as _partial
@@ -634,3 +640,42 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
 
 first = Aggregator("first", custom=_partial(_first_last, semiring=_gb.op.min_secondi))
 last = Aggregator("last", custom=_partial(_first_last, semiring=_gb.op.max_secondi))
+
+
+def _first_last_index(agg, updater, expr, *, in_composite, semiring):
+    if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
+        A = expr.args[0]
+        if expr.method_name == "reduce_columns":
+            A = A.T
+        init = _gb.Vector.new(bool, size=A._ncols)
+        init[:] = False
+        updater << semiring(A @ init)
+    elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
+        v = expr.args[0]
+        init = _gb.Matrix.new(bool, nrows=v._size, ncols=1)
+        init[:, :] = False
+        step1 = semiring(v @ init).new()
+        updater << step1[0]
+    else:  # GrB_Matrix_reduce
+        # XXX: it would be best to raise upon creation of the expression
+        raise ValueError(f"Aggregator {agg.name} may not be used with Matrix.reduce_scalar")
+        # To get the first/last j index:
+        # A = expr.args[0]
+        # init1 = _gb.Matrix.new(bool, nrows=A._ncols, ncols=1)
+        # init1[:, :] = False
+        # step1 = semiring(A @ init1).new()
+        # init2 = _gb.Vector.new(bool, size=A._nrows)
+        # init2[:] = False
+        # step2 = semiring(step1.T @ init2).new()
+        # i = step2[0].value
+        # if i is None:
+        #     i = 0
+        # updater << step1[i, 0]
+
+
+first_index = Aggregator(
+    "first_index", custom=_partial(_first_last_index, semiring=_gb.op.min_secondi)
+)
+last_index = Aggregator(
+    "last_index", custom=_partial(_first_last_index, semiring=_gb.op.max_secondi)
+)

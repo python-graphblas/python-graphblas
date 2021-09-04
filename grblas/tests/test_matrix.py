@@ -1228,6 +1228,38 @@ def test_reduce_agg_firstlast(A):
     assert w8.isequal(Vector.new(float, size=B.ncols))
 
 
+def test_reduce_agg_firstlast_index(A):
+    # reduce_rows
+    w1 = A.reduce_rows(agg.first_index).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [1, 4, 5, 0, 5, 2, 2])
+    assert w1.isequal(expected)
+    w1b = A.T.reduce_columns(agg.first_index).new()
+    assert w1b.isequal(expected)
+    w2 = A.reduce_rows(agg.last_index).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 6, 5, 2, 5, 2, 4])
+    assert w2.isequal(expected)
+    w2b = A.T.reduce_columns(agg.last_index).new()
+    assert w2b.isequal(expected)
+
+    # reduce_columns
+    w3 = A.reduce_columns(agg.first_index).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 3, 0, 1, 2, 1])
+    assert w3.isequal(expected)
+    w3b = A.T.reduce_rows(agg.first_index).new()
+    assert w3b.isequal(expected)
+    w4 = A.reduce_columns(agg.last_index).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 6, 6, 6, 4, 1])
+    assert w4.isequal(expected)
+    w4b = A.T.reduce_rows(agg.last_index).new()
+    assert w4b.isequal(expected)
+
+    # reduce_scalar
+    with pytest.raises(ValueError, match="Aggregator first_index may not"):
+        A.reduce_scalar(agg.first_index).new()
+    with pytest.raises(ValueError, match="Aggregator last_index may not"):
+        A.reduce_scalar(agg.last_index).new()
+
+
 def test_reduce_agg_empty():
     A = Matrix.new("UINT8", nrows=3, ncols=4)
     for B in [A, A.T]:
@@ -1240,7 +1272,7 @@ def test_reduce_agg_empty():
             assert ve.isequal(v)
             w = B.reduce_columns(aggr).new()
             assert we.isequal(w)
-            if attr not in {"argmin", "argmax"}:
+            if attr not in {"argmin", "argmax", "first_index", "last_index"}:
                 s = B.reduce_scalar(aggr).new()
                 assert s.value is None
 
