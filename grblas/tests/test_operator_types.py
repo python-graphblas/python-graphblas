@@ -43,6 +43,7 @@ BINARY = {
     },
     (ALL, BOOL): {"eq", "ne"},
     (ALL, FP): {"truediv"},
+    (ALL, NOFC): {"absfirst"},
     (ALL, POS): {
         "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1",
     },
@@ -70,6 +71,10 @@ _SEMIRING1 = {
     (ALL, FP): [
         {"any", "max", "min", "plus", "times"},
         {"truediv"},
+    ],
+    (ALL, NOFC): [
+        {"max"},
+        {"absfirst"},
     ],
     (ALL, POS): [  # POS, extra->INT64
         {"any", "max", "min", "plus", "times"},
@@ -102,6 +107,10 @@ _SEMIRING1 = {
         # We could cast BOOL to INT8
         {"any", "plus", "times"},
         {"cdiv", "first", "minus", "pair", "plus", "pow", "rdiv", "rminus", "second", "times"},
+    ],
+    (NOBOOL, FPINT): [
+        {"plus"},
+        {"absfirst"},
     ],
     (NOFC, FPINT): [
         {"any", "max", "min", "plus", "times"},

@@ -392,6 +392,11 @@ class BaseType:
 
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
+        if delayed.op is not None and delayed.op.opclass == "Aggregator":
+            updater = self(mask=mask, accum=accum, replace=replace)
+            delayed.op._new(updater, delayed)
+            return
+
         # Normalize mask and separate out complement and structural flags
         if mask is None:
             complement = False
@@ -503,7 +508,10 @@ class BaseExpression:
 
     def new(self, *, dtype=None, mask=None, name=None):
         output = self.construct_output(dtype=dtype, name=name)
-        if mask is None:
+        if self.op is not None and self.op.opclass == "Aggregator":
+            updater = output(mask=mask)
+            self.op._new(updater, self)
+        elif mask is None:
             output.update(self)
         else:
             _check_mask(mask, output)

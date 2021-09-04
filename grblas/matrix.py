@@ -629,7 +629,7 @@ class Matrix(BaseType):
         """
         method_name = "reduce_rows"
         op = get_typed_op(op, self.dtype)
-        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        self._expect_op(op, ("BinaryOp", "Monoid", "Aggregator"), within=method_name, argname="op")
         # Using a monoid may be more efficient, so change to one if possible.
         # Also, SuiteSparse doesn't like user-defined binarops here.
         if op.opclass == "BinaryOp" and op.monoid is not None:
@@ -651,7 +651,7 @@ class Matrix(BaseType):
         """
         method_name = "reduce_columns"
         op = get_typed_op(op, self.dtype)
-        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        self._expect_op(op, ("BinaryOp", "Monoid", "Aggregator"), within=method_name, argname="op")
         # Using a monoid may be more efficient, so change to one if possible.
         # Also, SuiteSparse doesn't like user-defined binarops here.
         if op.opclass == "BinaryOp" and op.monoid is not None:
@@ -676,7 +676,7 @@ class Matrix(BaseType):
         if op.opclass == "BinaryOp" and op.monoid is not None:
             op = op.monoid
         else:
-            self._expect_op(op, "Monoid", within=method_name, argname="op")
+            self._expect_op(op, ("Monoid", "Aggregator"), within=method_name, argname="op")
         return ScalarExpression(
             method_name,
             "GrB_Matrix_reduce_{output_dtype}",

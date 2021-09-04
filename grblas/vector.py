@@ -518,7 +518,7 @@ class Vector(BaseType):
         if op.opclass == "BinaryOp" and op.monoid is not None:
             op = op.monoid
         else:
-            self._expect_op(op, "Monoid", within=method_name, argname="op")
+            self._expect_op(op, ("Monoid", "Aggregator"), within=method_name, argname="op")
         return ScalarExpression(
             method_name,
             "GrB_Vector_reduce_{output_dtype}",
