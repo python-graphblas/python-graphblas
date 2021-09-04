@@ -502,6 +502,16 @@ class BaseExpression:
         self._value = None
 
     def new(self, *, dtype=None, mask=None, name=None):
+        if (
+            mask is None
+            and self._value is not None
+            and (dtype is None or self._value.dtype == dtype)
+        ):
+            rv = self._value
+            if name is not None:
+                rv.name = name
+            self._value = None
+            return rv
         output = self.construct_output(dtype=dtype, name=name)
         if mask is None:
             output.update(self)
