@@ -21,33 +21,34 @@ replace = replace()
 backend = None
 _init_params = None
 _SPECIAL_ATTRS = {
-    "ffi",
-    "lib",
     "Matrix",
-    "Vector",
-    "Scalar",
     "Recorder",
+    "Scalar",
+    "Vector",
+    "_ss",
     "base",
+    "binary",
     "descriptor",
     "dtypes",
     "exceptions",
     "expr",
+    "ffi",
     "formatting",
+    "infix",
     "io",
+    "lib",
+    "matrix",
+    "monoid",
     "op",
     "operator",
-    "unary",
-    "binary",
-    "monoid",
-    "semiring",
-    "matrix",
     "recorder",
-    "vector",
     "scalar",
-    "tests",
-    "utils",
-    "_ss",
+    "semiring",
     "ss",
+    "tests",
+    "unary",
+    "utils",
+    "vector",
 }
 
 
@@ -55,7 +56,7 @@ def __getattr__(name):
     """Auto-initialize if special attrs used without explicit init call by user"""
     if name in _SPECIAL_ATTRS:
         if _init_params is None:
-            _init("suitesparse", False, automatic=True)
+            _init("suitesparse", None, automatic=True)
         if name not in globals():
             _load(name)
         return globals()[name]
@@ -85,6 +86,8 @@ def _init(backend_arg, blocking, automatic=False):
 
     passed_params = dict(backend=backend_arg, blocking=blocking, automatic=automatic)
     if _init_params is not None:
+        if blocking is None:
+            passed_params["blocking"] = _init_params["blocking"]
         if _init_params != passed_params:
             from .exceptions import GrblasException
 
@@ -105,12 +108,17 @@ def _init(backend_arg, blocking, automatic=False):
             mode = ffi.new("GrB_Mode*")
             assert lib.GxB_Global_Option_get(lib.GxB_MODE, mode) == 0
             is_blocking = mode[0] == lib.GrB_BLOCKING
-            if is_blocking != blocking:
+            if blocking is None:
+                passed_params["blocking"] = is_blocking
+            elif is_blocking != blocking:
                 raise RuntimeError(
                     f"GraphBLAS has already been initialized with `blocking={is_blocking}`"
                 )
         else:
-            initialize(blocking=blocking)
+            if blocking is None:
+                blocking = False
+                passed_params["blocking"] = blocking
+            initialize(blocking=blocking, memory_manager="c")
     else:
         raise ValueError(f'Bad backend name.  Must be "suitesparse".  Got: {backend}')
     _init_params = passed_params

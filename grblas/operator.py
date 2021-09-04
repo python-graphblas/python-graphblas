@@ -12,7 +12,7 @@ from . import binary, ffi, lib, monoid, op, semiring, unary
 from .dtypes import INT8, _sample_values, _supports_complex, lookup_dtype, unify
 from .exceptions import UdfParseError, check_status_carg
 from .expr import InfixExprBase
-from .utils import libget
+from .utils import libget, output_type
 
 ffi_new = ffi.new
 UNKNOWN_OPCLASS = "UnknownOpClass"
@@ -50,9 +50,9 @@ def _call_op(op, left, right=None, **kwargs):
     from .matrix import Matrix, TransposedMatrix
     from .vector import Vector
 
-    if type(left) in {Vector, Matrix, TransposedMatrix}:
+    if output_type(left) in {Vector, Matrix, TransposedMatrix}:
         return left.apply(op, right=right, **kwargs)
-    elif type(right) in {Vector, Matrix, TransposedMatrix}:
+    elif output_type(right) in {Vector, Matrix, TransposedMatrix}:
         return right.apply(op, left=left, **kwargs)
     raise TypeError(
         f"Bad types when calling {op!r}.  Got types: {type(left)}, {type(right)}.\n"
@@ -93,7 +93,7 @@ class TypedBuiltinUnaryOp(TypedOpBase):
         from .matrix import Matrix, TransposedMatrix
         from .vector import Vector
 
-        if type(val) in {Vector, Matrix, TransposedMatrix}:
+        if output_type(val) in {Vector, Matrix, TransposedMatrix}:
             return val.apply(self)
         raise TypeError(
             f"Bad type when calling {self!r}.\n"

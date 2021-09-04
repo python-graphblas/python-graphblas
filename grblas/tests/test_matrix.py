@@ -1,3 +1,4 @@
+import inspect
 import itertools
 import pickle
 import weakref
@@ -123,6 +124,27 @@ def test_from_values():
         Matrix.from_values([0], [1, 2], [0])
 
 
+def test_from_values_scalar():
+    C = Matrix.from_values([0, 1, 3], [1, 1, 2], 7)
+    assert C.nrows == 4
+    assert C.ncols == 3
+    assert C.nvals == 3
+    assert C.dtype == dtypes.INT64
+    assert C.ss.is_iso
+    assert C.reduce_scalar(monoid.any) == 7
+
+    # iso drumps duplicates
+    C = Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7)
+    assert C.nrows == 4
+    assert C.ncols == 3
+    assert C.nvals == 3
+    assert C.dtype == dtypes.INT64
+    assert C.ss.is_iso
+    assert C.reduce_scalar(monoid.any) == 7
+    with pytest.raises(ValueError, match="dup_op must be None"):
+        Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7, dup_op=binary.plus)
+
+
 def test_clear(A):
     A.clear()
     assert A.nvals == 0
@@ -177,6 +199,19 @@ def test_build(A):
     C = Matrix.new(int, nrows=2, ncols=2)
     C.build([0, 0], [0, 11], [1, 1], ncols=12)
     assert C.isequal(Matrix.from_values([0, 0], [0, 11], [1, 1], nrows=2))
+
+
+def test_build_scalar(A):
+    assert A.nvals == 12
+    with pytest.raises(OutputNotEmpty):
+        A.ss.build_scalar([1, 5], [2, 3], 3)
+    A.clear()
+    A.ss.build_scalar([0, 6], [0, 1], 1)
+    assert A.nvals == 2
+    assert A.ss.is_iso
+    A.clear()
+    with pytest.raises(ValueError, match="lengths must match"):
+        A.ss.build_scalar([0, 6], [0, 1, 2], 1)
 
 
 def test_extract_values(A):
@@ -374,6 +409,15 @@ def test_extract_row(A):
     assert w.isequal(result)
     w2 = A[6, [0, 2, 4]].new()
     assert w2.isequal(result)
+    with pytest.raises(TypeError):
+        # Should be list, not tuple (although tuple isn't so bad)
+        A[6, (0, 2, 4)]
+    w3 = A[6, np.array([0, 2, 4])].new()
+    assert w3.isequal(result)
+    with pytest.raises(TypeError, match="Invalid dtype"):
+        A[6, np.array([0, 2, 4], dtype=float)]
+    with pytest.raises(TypeError, match="Invalid number of dimensions"):
+        A[6, np.array([[0, 2, 4]])]
 
 
 def test_extract_column(A):
@@ -1237,8 +1281,9 @@ def test_transpose_exceptional():
         B.T[1, 0]() << 10
     with pytest.raises(TypeError, match="not callable"):
         B.T()[1, 0] << 10
-    with pytest.raises(AttributeError):
-        B.T.dup()  # should use new instead
+    # with pytest.raises(AttributeError):
+    # should use new instead--Now okay.
+    assert B.T.dup().isequal(B.T.new())
     # Not exceptional, but while we're here...
     C = B.T.new(mask=A.V)
     D = B.T.new()
@@ -1518,6 +1563,39 @@ def test_import_export(A, do_iso, methods):
         assert A8.isequal(A)
         assert A8.ss.is_iso is do_iso
 
+    A9 = A.dup()
+    d = getattr(A9.ss, out_method)("coo", sort=True)
+    if do_iso:
+        assert d["is_iso"] is True
+        assert_array_equal(d["values"], [1])
+    else:
+        assert "is_iso" not in d
+    assert d["nrows"] == 7
+    assert d["ncols"] == 7
+    assert d["rows"].shape == (12,)
+    assert d["cols"].shape == (12,)
+    assert d["sorted_rows"]
+    assert "sorted_cols" not in d
+    assert_array_equal(d["rows"], [0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6])
+    assert_array_equal(d["cols"], [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4])
+
+    if do_iso:
+        assert d["values"].shape == (1,)
+    else:
+        assert d["values"].shape == (12,)
+    if in_method == "import":
+        B8 = Matrix.ss.import_any(**d)
+        assert B8.isequal(A)
+        assert B8.ss.is_iso is do_iso
+        del d["rows"]
+        del d["format"]
+        with pytest.raises(ValueError, match="coo requires both"):
+            Matrix.ss.import_any(**d)
+    else:
+        A9.ss.pack_any(**d)
+        assert A9.isequal(A)
+        assert A9.ss.is_iso is do_iso
+
     C = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
     if do_iso:
         C(C.S) << 1
@@ -1675,6 +1753,14 @@ def test_import_export_empty():
     with pytest.raises(InvalidValue):
         A.dup().ss.export("fullc")
 
+    A7 = A.dup()
+    d = A7.ss.export("coo")
+    assert d["nrows"] == 2
+    assert d["ncols"] == 3
+    assert len(d["rows"]) == 0
+    assert len(d["cols"]) == 0
+    assert len(d["values"]) == 0
+
     # if we give the same value, make sure it's copied
     for format, key1, key2 in [
         ("csr", "values", "col_indices"),
@@ -1683,6 +1769,7 @@ def test_import_export_empty():
         ("hypercsc", "values", "row_indices"),
         ("bitmapr", "values", "bitmap"),
         ("bitmapc", "values", "bitmap"),
+        ("coo", "values", "rows"),
     ]:
         # No assertions here, but code coverage should be "good enough"
         d = A.ss.export(format, raw=True)
@@ -1700,7 +1787,7 @@ def test_import_export_auto(A, do_iso, methods):
         A(A.S) << 1
     A_orig = A.dup()
     out_method, in_method = methods
-    for format in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc"]:
+    for format in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc", "coo"]:
         for (
             sort,
             raw,
@@ -2027,3 +2114,103 @@ def test_concat(A):
 
 def test_nbytes(A):
     assert A.ss.nbytes > 0
+
+
+def test_auto(A, v):
+    expected = binary.times(A & A).new()
+    for expr in [(A & A), binary.times(A & A)]:
+        assert expr.dtype == expected.dtype
+        assert expr.nrows == expected.nrows
+        assert expr.ncols == expected.ncols
+        assert expr.shape == expected.shape
+        assert expr.nvals == expected.nvals
+        assert expr.isclose(expected)
+        assert expected.isclose(expr)
+        assert expr.isequal(expected)
+        assert expected.isequal(expr)
+        assert expr.mxv(v).isequal(expected.mxv(v))
+        assert expected.T.mxv(v).isequal(expr.T.mxv(v))
+        for method in [
+            "ewise_add",
+            "ewise_mult",
+            "mxm",
+            "__matmul__",
+            "__and__",
+            "__or__",
+            "kronecker",
+        ]:
+            val1 = getattr(expected, method)(expected).new()
+            val2 = getattr(expected, method)(expr)
+            val3 = getattr(expr, method)(expected)
+            val4 = getattr(expr, method)(expr)
+            assert val1.isequal(val2)
+            assert val1.isequal(val3)
+            assert val1.isequal(val4)
+        for method in ["reduce_rows", "reduce_columns", "reduce_scalar"]:
+            s1 = getattr(expected, method)().new()
+            s2 = getattr(expr, method)()
+            assert s1.isequal(s2.new())
+            assert s1.isequal(s2)
+
+    expected = semiring.plus_times(A @ v).new()
+    for expr in [(A @ v), (v @ A.T), semiring.plus_times(A @ v)]:
+        assert expr.vxm(A).isequal(expected.vxm(A))
+        assert expr.vxm(A).new(mask=expr.S).isequal(expected.vxm(A).new(mask=expected.S))
+        assert expr.vxm(A).new(mask=expr.V).isequal(expected.vxm(A).new(mask=expected.V))
+
+
+def test_auto_assign(A):
+    expected = A.dup()
+    B = A[1:4, 1:4].new()
+    expr = B & B
+    expected[:3, :3] = expr.new()
+    A[:3, :3] = expr
+    assert expected.isequal(A)
+    with pytest.raises(TypeError):
+        # Not yet supported, but we could!
+        A[:3, :3] = A[1:4, 1:4]
+    v = A[2:5, 5].new()
+    expr = v & v
+    A[:3, 4] << expr
+    expected[:3, 4] << expr.new()
+    assert expected.isequal(A)
+
+
+def test_expr_is_like_matrix(A):
+    attrs = {attr for attr, val in inspect.getmembers(A)}
+    expr_attrs = {attr for attr, val in inspect.getmembers(binary.times(A & A))}
+    infix_attrs = {attr for attr, val in inspect.getmembers(A & A)}
+    transposed_attrs = {attr for attr, val in inspect.getmembers(A.T)}
+    # Should we make any of these raise informative errors?
+    expected = {
+        "__call__",
+        "__del__",
+        "__delitem__",
+        "__lshift__",
+        "__setitem__",
+        "_assign_element",
+        "_delete_element",
+        "_deserialize",
+        "_extract_element",
+        "_name_counter",
+        "_prep_for_assign",
+        "_prep_for_extract",
+        "_update",
+        "build",
+        "clear",
+        "from_pygraphblas",
+        "from_values",
+        "resize",
+        "update",
+    }
+    assert attrs - expr_attrs == expected
+    assert attrs - infix_attrs == expected | {
+        "_expect_op",
+        "_expect_type",
+    }
+    # TransposedMatrix is used differently than other expressions,
+    # so maybe it shouldn't support everything.
+    assert attrs - transposed_attrs == (expected | {"S", "V", "ss", "to_pygraphblas", "wait"}) - {
+        "_prep_for_extract",
+        "_extract_element",
+    }

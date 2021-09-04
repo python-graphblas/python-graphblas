@@ -58,7 +58,7 @@ def prefix_scan(A, monoid):
         indptr=np.arange(0, 2 * N_half + 2, 2, dtype=index_t),
         row_indices=nonempty_cols[: 2 * N_half].copy(),
         values=np.ones(2 * N_half, dtype=val_t),
-        sorted_index=True,
+        sorted_rows=True,
         take_ownership=True,
         name="Up_0",
     )
@@ -78,7 +78,7 @@ def prefix_scan(A, monoid):
             cols=cols,
             row_indices=cols - stride,
             values=np.ones(k, dtype=val_t),
-            sorted_index=True,
+            sorted_rows=True,
             take_ownership=True,
             name=f"Up_{index}",
         )
@@ -107,7 +107,7 @@ def prefix_scan(A, monoid):
                 cols=cols,
                 row_indices=cols - stride,
                 values=np.ones(k, dtype=val_t),
-                sorted_index=True,
+                sorted_rows=True,
                 take_ownership=True,
                 name=f"Down_{index}",
             )
@@ -129,7 +129,7 @@ def prefix_scan(A, monoid):
         indptr=indptr,
         col_indices=col_indices,
         values=np.ones(N_cols - 1, dtype=val_t),
-        sorted_index=True,
+        sorted_cols=True,
         take_ownership=True,
         name=f"Down_{index}",
     )

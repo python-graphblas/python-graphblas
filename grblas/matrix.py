@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from . import backend, binary, expr, ffi, lib, monoid, semiring
+from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
 from ._ss.matrix import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, lookup_dtype, unify
@@ -16,6 +16,7 @@ from .utils import (
     _Pointer,
     class_property,
     ints_to_numpy_buffer,
+    output_type,
     values_to_numpy_buffer,
     wrapdoc,
 )
@@ -111,7 +112,9 @@ class Matrix(BaseType):
         If `check_dtype` is True, also checks that dtypes match
         For equality of floating point Vectors, consider using `isclose`
         """
-        self._expect_type(other, (Matrix, TransposedMatrix), within="isequal", argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within="isequal", argname="other"
+        )
         if check_dtype and self.dtype != other.dtype:
             return False
         if self._nrows != other._nrows:
@@ -140,7 +143,9 @@ class Matrix(BaseType):
         If `check_dtype` is True, also checks that dtypes match
         Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
         """
-        self._expect_type(other, (Matrix, TransposedMatrix), within="isclose", argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within="isclose", argname="other"
+        )
         if check_dtype and self.dtype != other.dtype:
             return False
         if self._nrows != other._nrows:
@@ -336,7 +341,9 @@ class Matrix(BaseType):
     ):
         """Create a new Matrix from the given lists of row indices, column
         indices, and values.  If nrows or ncols are not provided, they
-        are computed from the max row and coumn index found.
+        are computed from the max row and column index found.
+
+        values may be a scalar, in which case duplicate indices are ignored.
         """
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
@@ -352,9 +359,18 @@ class Matrix(BaseType):
             ncols = int(columns.max()) + 1
         # Create the new matrix
         C = cls.new(dtype, nrows, ncols, name=name)
-        # Add the data
-        # This needs to be the original data to get proper error messages
-        C.build(rows, columns, values, dup_op=dup_op)
+        if values.ndim == 0:
+            if dup_op is not None:
+                raise ValueError(
+                    "dup_op must be None if values is a scalar so that all "
+                    "values can be identical.  Duplicate indices will be ignored."
+                )
+            # SS, SuiteSparse-specific: build_Scalar
+            C.ss.build_scalar(rows, columns, values.tolist())
+        else:
+            # Add the data
+            # This needs to be the original data to get proper error messages
+            C.build(rows, columns, values, dup_op=dup_op)
         return C
 
     @property
@@ -390,7 +406,9 @@ class Matrix(BaseType):
         For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
         method_name = "ewise_add"
-        self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+        )
         op = get_typed_op(op, self.dtype, other.dtype)
         # Per the spec, op may be a semiring, but this is weird, so don't.
         if require_monoid:
@@ -424,7 +442,9 @@ class Matrix(BaseType):
         Default op is binary.times
         """
         method_name = "ewise_mult"
-        self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+        )
         op = get_typed_op(op, self.dtype, other.dtype)
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
@@ -447,7 +467,7 @@ class Matrix(BaseType):
         Default op is semiring.plus_times
         """
         method_name = "mxv"
-        self._expect_type(other, Vector, within=method_name, argname="other")
+        other = self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = VectorExpression(
@@ -469,7 +489,9 @@ class Matrix(BaseType):
         Default op is semiring.plus_times
         """
         method_name = "mxm"
-        self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+        )
         op = get_typed_op(op, self.dtype, other.dtype)
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = MatrixExpression(
@@ -493,7 +515,9 @@ class Matrix(BaseType):
         Default op is binary.times
         """
         method_name = "kronecker"
-        self._expect_type(other, (Matrix, TransposedMatrix), within=method_name, argname="other")
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+        )
         op = get_typed_op(op, self.dtype, other.dtype)
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
@@ -536,7 +560,7 @@ class Matrix(BaseType):
                 try:
                     left = Scalar.from_value(left, name="")
                 except TypeError:
-                    self._expect_type(
+                    left = self._expect_type(
                         left,
                         Scalar,
                         within=method_name,
@@ -562,7 +586,7 @@ class Matrix(BaseType):
                 try:
                     right = Scalar.from_value(right, name="")
                 except TypeError:
-                    self._expect_type(
+                    right = self._expect_type(
                         right,
                         Scalar,
                         within=method_name,
@@ -727,7 +751,7 @@ class Matrix(BaseType):
             try:
                 value = Scalar.from_value(value, name="")
             except TypeError:
-                self._expect_type(
+                value = self._expect_type(
                     value,
                     Scalar,
                     within="__setitem__",
@@ -742,7 +766,11 @@ class Matrix(BaseType):
         rows, rowsize = resolved_indexes.indices[0]
         cols, colsize = resolved_indexes.indices[1]
         extra_message = "Literal scalars also accepted."
-        if type(value) is Vector:
+
+        value_type = output_type(value)
+        if value_type is Vector:
+            if type(value) is not Vector:
+                value = value._get_value()
             if rowsize is None and colsize is not None:
                 # Row-only selection
                 row_index = rows
@@ -841,7 +869,7 @@ class Matrix(BaseType):
                     )
             elif colsize is None and rowsize is None:
                 # C[i, j] << v  (mask doesn't matter)
-                self._expect_type(
+                value = self._expect_type(
                     value,
                     Scalar,
                     within=method_name,
@@ -849,17 +877,19 @@ class Matrix(BaseType):
                 )
             else:
                 # C[I, J] << v  (mask doesn't matter)
-                self._expect_type(
+                value = self._expect_type(
                     value,
                     (Scalar, Matrix, TransposedMatrix),
                     within=method_name,
                     extra_message=extra_message,
                 )
-        elif type(value) in {Matrix, TransposedMatrix}:
+        elif value_type in {Matrix, TransposedMatrix}:
+            if type(value) not in {Matrix, TransposedMatrix}:
+                value = value._get_value()
             if rowsize is None or colsize is None:
                 if rowsize is None and colsize is None:
                     # C[i, j] << A  (mask doesn't matter)
-                    self._expect_type(
+                    value = self._expect_type(
                         value,
                         Scalar,
                         within=method_name,
@@ -868,7 +898,7 @@ class Matrix(BaseType):
                 else:
                     # C[I, j] << A
                     # C[i, J] << A  (mask doesn't matter)
-                    self._expect_type(
+                    value = self._expect_type(
                         value,
                         (Scalar, Vector),
                         within=method_name,
@@ -903,7 +933,7 @@ class Matrix(BaseType):
                         types = (Scalar, Vector)
                     else:
                         types = (Scalar, Matrix, TransposedMatrix)
-                    self._expect_type(
+                    value = self._expect_type(
                         value,
                         types,
                         within=method_name,
@@ -1021,41 +1051,47 @@ class Matrix(BaseType):
         col, _ = resolved_indexes.indices[1]
         call("GrB_Matrix_removeElement", [self, row, col])
 
-    if backend == "suitesparse":
+    def to_pygraphblas(self):  # pragma: no cover
+        """Convert to a new `pygraphblas.Matrix`
 
-        def to_pygraphblas(self):  # pragma: no cover
-            """Convert to a new `pygraphblas.Matrix`
+        This does not copy data.
 
-            This does not copy data.
+        This gives control of the underlying GraphBLAS object to `pygraphblas`.
+        This means operations on the current `grblas` object will fail!
+        """
+        if backend != "suitesparse":
+            raise RuntimeError(
+                f"to_pygraphblas only works with 'suitesparse' backend, not {backend}"
+            )
+        import pygraphblas as pg
 
-            This gives control of the underlying GraphBLAS object to `pygraphblas`.
-            This means operations on the current `grblas` object will fail!
-            """
-            import pygraphblas as pg
+        matrix = pg.Matrix(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
+        self.gb_obj = ffi.NULL
+        return matrix
 
-            matrix = pg.Matrix(self.gb_obj, pg.types.gb_type_to_type(self.dtype.gb_obj))
-            self.gb_obj = ffi.NULL
-            return matrix
+    @classmethod
+    def from_pygraphblas(cls, matrix):  # pragma: no cover
+        """Convert a `pygraphblas.Matrix` to a new `grblas.Matrix`
 
-        @classmethod
-        def from_pygraphblas(cls, matrix):  # pragma: no cover
-            """Convert a `pygraphblas.Matrix` to a new `grblas.Matrix`
+        This does not copy data.
 
-            This does not copy data.
+        This gives control of the underlying GraphBLAS object to `grblas`.
+        This means operations on the original `pygraphblas` object will fail!
+        """
+        if backend != "suitesparse":
+            raise RuntimeError(
+                f"from_pygraphblas only works with 'suitesparse' backend, not {backend!r}"
+            )
+        import pygraphblas as pg
 
-            This gives control of the underlying GraphBLAS object to `grblas`.
-            This means operations on the original `pygraphblas` object will fail!
-            """
-            import pygraphblas as pg
-
-            if not isinstance(matrix, pg.Matrix):
-                raise TypeError(f"Expected pygraphblas.Matrix object.  Got type: {type(matrix)}")
-            dtype = lookup_dtype(matrix.gb_type)
-            rv = cls(matrix.matrix, dtype)
-            rv._nrows = matrix.nrows
-            rv._ncols = matrix.ncols
-            matrix.matrix = ffi.NULL
-            return rv
+        if not isinstance(matrix, pg.Matrix):
+            raise TypeError(f"Expected pygraphblas.Matrix object.  Got type: {type(matrix)}")
+        dtype = lookup_dtype(matrix.gb_type)
+        rv = cls(matrix._matrix, dtype)
+        rv._nrows = matrix.nrows
+        rv._ncols = matrix.ncols
+        matrix._matrix = ffi.NULL
+        return rv
 
 
 Matrix.ss = class_property(Matrix.ss, ss)
@@ -1064,6 +1100,7 @@ Matrix.ss = class_property(Matrix.ss, ss)
 class MatrixExpression(BaseExpression):
     __slots__ = "_ncols", "_nrows"
     output_type = Matrix
+    _is_transposed = False
 
     def __init__(
         self,
@@ -1119,6 +1156,54 @@ class MatrixExpression(BaseExpression):
     def nrows(self):
         return self._nrows
 
+    @property
+    def shape(self):
+        return (self._nrows, self._ncols)
+
+    # Paste here from _automethods.py
+    _get_value = _automethods._get_value
+    S = wrapdoc(Matrix.S)(property(_automethods.S))
+    T = wrapdoc(Matrix.T)(property(_automethods.T))
+    V = wrapdoc(Matrix.V)(property(_automethods.V))
+    __and__ = wrapdoc(Matrix.__and__)(property(_automethods.__and__))
+    __contains__ = wrapdoc(Matrix.__contains__)(property(_automethods.__contains__))
+    __getitem__ = wrapdoc(Matrix.__getitem__)(property(_automethods.__getitem__))
+    __iter__ = wrapdoc(Matrix.__iter__)(property(_automethods.__iter__))
+    __matmul__ = wrapdoc(Matrix.__matmul__)(property(_automethods.__matmul__))
+    __or__ = wrapdoc(Matrix.__or__)(property(_automethods.__or__))
+    __rand__ = wrapdoc(Matrix.__rand__)(property(_automethods.__rand__))
+    __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(_automethods.__rmatmul__))
+    __ror__ = wrapdoc(Matrix.__ror__)(property(_automethods.__ror__))
+    _carg = wrapdoc(Matrix._carg)(property(_automethods._carg))
+    _name_html = wrapdoc(Matrix._name_html)(property(_automethods._name_html))
+    _nvals = wrapdoc(Matrix._nvals)(property(_automethods._nvals))
+    apply = wrapdoc(Matrix.apply)(property(_automethods.apply))
+    ewise_add = wrapdoc(Matrix.ewise_add)(property(_automethods.ewise_add))
+    ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
+    gb_obj = wrapdoc(Matrix.gb_obj)(property(_automethods.gb_obj))
+    isclose = wrapdoc(Matrix.isclose)(property(_automethods.isclose))
+    isequal = wrapdoc(Matrix.isequal)(property(_automethods.isequal))
+    kronecker = wrapdoc(Matrix.kronecker)(property(_automethods.kronecker))
+    mxm = wrapdoc(Matrix.mxm)(property(_automethods.mxm))
+    mxv = wrapdoc(Matrix.mxv)(property(_automethods.mxv))
+    name = wrapdoc(Matrix.name)(property(_automethods.name))
+    name = name.setter(_automethods._set_name)
+    nvals = wrapdoc(Matrix.nvals)(property(_automethods.nvals))
+    reduce_columns = wrapdoc(Matrix.reduce_columns)(property(_automethods.reduce_columns))
+    reduce_rows = wrapdoc(Matrix.reduce_rows)(property(_automethods.reduce_rows))
+    reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
+    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
+    to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
+    wait = wrapdoc(Matrix.wait)(property(_automethods.wait))
+    # These raise exceptions
+    __array__ = wrapdoc(Matrix.__array__)(Matrix.__array__)
+    __bool__ = wrapdoc(Matrix.__bool__)(Matrix.__bool__)
+    __eq__ = wrapdoc(Matrix.__eq__)(Matrix.__eq__)
+    __iand__ = wrapdoc(Matrix.__iand__)(Matrix.__iand__)
+    __imatmul__ = wrapdoc(Matrix.__imatmul__)(Matrix.__imatmul__)
+    __ior__ = wrapdoc(Matrix.__ior__)(Matrix.__ior__)
+
 
 class TransposedMatrix:
     __slots__ = "_matrix", "_ncols", "_nrows", "__weakref__"
@@ -1149,6 +1234,8 @@ class TransposedMatrix:
         else:
             output(mask=mask).update(self)
         return output
+
+    dup = new
 
     @property
     def T(self):
@@ -1223,6 +1310,6 @@ class TransposedMatrix:
     __array__ = Matrix.__array__
 
 
-expr.MatrixEwiseAddExpr.output_type = MatrixExpression
-expr.MatrixEwiseMultExpr.output_type = MatrixExpression
-expr.MatrixMatMulExpr.output_type = MatrixExpression
+utils._output_types[Matrix] = Matrix
+utils._output_types[MatrixExpression] = Matrix
+utils._output_types[TransposedMatrix] = TransposedMatrix

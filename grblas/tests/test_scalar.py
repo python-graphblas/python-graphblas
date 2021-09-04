@@ -1,3 +1,4 @@
+import inspect
 import pickle
 import weakref
 
@@ -67,6 +68,9 @@ def test_from_value():
     s2 = Scalar.from_value(-1.1)
     assert s2.dtype == "FP64"
     assert s2.value == -1.1
+    s3 = Scalar.from_value(s, dtype="INT64")
+    assert s3.dtype == "INT64"
+    assert s3.value == 0
 
 
 def test_clear(s):
@@ -261,3 +265,32 @@ def test_neg():
             assert (-s).value == minus_s.value
             assert empty == -empty
             assert (-empty).value is None
+
+
+def test_wait(s):
+    s.wait()
+
+
+def test_expr_is_like_vector(s):
+    v = grblas.Vector.from_values([1], [2])
+    attrs = {attr for attr, val in inspect.getmembers(s)}
+    expr_attrs = {attr for attr, val in inspect.getmembers(v.inner(v))}
+    infix_attrs = {attr for attr, val in inspect.getmembers(v @ v)}
+    # Should we make any of these raise informative errors?
+    expected = {
+        "__call__",
+        "__lshift__",
+        "_deserialize",
+        "_is_empty",
+        "_name_counter",
+        "_update",
+        "clear",
+        "from_pygraphblas",
+        "from_value",
+        "update",
+    }
+    assert attrs - expr_attrs == expected
+    assert attrs - infix_attrs == expected | {
+        "_expect_op",
+        "_expect_type",
+    }

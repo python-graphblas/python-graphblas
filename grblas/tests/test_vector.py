@@ -1,3 +1,4 @@
+import inspect
 import itertools
 import pickle
 import weakref
@@ -113,6 +114,24 @@ def test_from_values():
         Vector.from_values([0], [1, 2])
 
 
+def test_from_values_scalar():
+    u = Vector.from_values([0, 1, 3], 7)
+    assert u.size == 4
+    assert u.nvals == 3
+    assert u.dtype == dtypes.INT64
+    assert u.ss.is_iso
+    assert u.reduce(monoid.any) == 7
+
+    # ignore duplicate indices; iso trumps duplicates!
+    u = Vector.from_values([0, 1, 1, 3], 7)
+    assert u.size == 4
+    assert u.nvals == 3
+    assert u.ss.is_iso
+    assert u.reduce(monoid.any) == 7
+    with pytest.raises(ValueError, match="dup_op must be None"):
+        Vector.from_values([0, 1, 1, 3], 7, dup_op=binary.plus)
+
+
 def test_clear(v):
     v.clear()
     assert v.nvals == 0
@@ -158,6 +177,15 @@ def test_build(v):
     assert w.isequal(Vector.from_values([0, 11], [1, 1]))
 
 
+def test_build_scalar(v):
+    with pytest.raises(OutputNotEmpty):
+        v.ss.build_scalar([1, 5], 3)
+    v.clear()
+    v.ss.build_scalar([1, 5], 3)
+    assert v.nvals == 2
+    assert v.ss.is_iso
+
+
 def test_extract_values(v):
     idx, vals = v.to_values()
     np.testing.assert_array_equal(idx, (1, 3, 4, 6))
@@ -197,6 +225,10 @@ def test_extract_input_mask():
 def test_extract_element(v):
     assert v[1].value == 1
     assert v[6].new() == 0
+    with pytest.raises(TypeError, match="Invalid type for index"):
+        v[object()]
+    with pytest.raises(IndexError):
+        v[100]
 
 
 def test_set_element(v):
@@ -671,6 +703,8 @@ def test_accum_must_be_binaryop(v):
 def test_mask_must_be_value_or_structure(v):
     with pytest.raises(TypeError):
         v(mask=v) << v.ewise_mult(v)
+    with pytest.raises(TypeError):
+        v(mask=object()) << v.ewise_mult(v)
 
 
 def test_incompatible_shapes(A, v):
@@ -1007,3 +1041,138 @@ def test_diag(v):
 
 def test_nbytes(v):
     assert v.ss.nbytes > 0
+
+
+def test_inner(v):
+    R = Matrix.new(v.dtype, nrows=1, ncols=v.size)  # row vector
+    C = Matrix.new(v.dtype, nrows=v.size, ncols=1)  # column vector
+    R[0, :] = v
+    C[:, 0] = v
+    expected = R.mxm(C).new()[0, 0].new()
+    assert expected.isequal(v.inner(v).new())
+    assert expected.isequal(v.inner(v).value)
+    assert expected.isequal((v @ v).new())
+    assert expected.isequal((v @ v).value)
+
+
+def test_outer(v):
+    R = Matrix.new(v.dtype, nrows=1, ncols=v.size)  # row vector
+    C = Matrix.new(v.dtype, nrows=v.size, ncols=1)  # column vector
+    R[0, :] = v
+    C[:, 0] = v
+    expected = C.mxm(R).new()
+    result = v.outer(v).new()
+    assert result.isequal(expected)
+
+
+def test_auto(v):
+    expected = binary.times(v & v).new()
+    assert 0 not in expected
+    assert 1 in expected
+    for expr in [(v & v), binary.times(v & v)]:
+        assert expr.size == expected.size
+        assert expr.dtype == expected.dtype
+        assert expr.shape == expected.shape
+        assert expr.nvals == expected.nvals
+        assert expr._nvals == expected._nvals
+        assert expr.isclose(expected)
+        assert expected.isclose(expr)
+        assert expr.isequal(expected)
+        assert expected.isequal(expr)
+        assert 0 not in expr
+        assert 1 in expr
+        assert expr[0].value == expected[0].value
+        assert expr[1].value == expected[1].value
+        assert list(expr) == list(expected)
+        k1, v1 = expected.to_values()
+        k2, v2 = expr.to_values()
+        assert_array_equal(k1, k2)
+        assert_array_equal(v1, v2)
+        unary.sqrt(expected).isequal(unary.sqrt(expr))
+        assert expr.gb_obj is not expected.gb_obj
+        assert expr.gb_obj is expr.gb_obj
+        assert expr.name != expected.name
+        expr.name = "new name"
+        assert expr.name == "new name"
+        # Probably no need for _name_html or _carg
+        assert expr._name_html != expected._name_html
+        assert expr._carg != expected._carg
+        for method in [
+            "ewise_add",
+            "ewise_mult",
+            "inner",
+            "outer",
+            "__matmul__",
+            "__and__",
+            "__or__",
+            "__rmatmul__",
+            "__rand__",
+            "__ror__",
+        ]:
+            val1 = getattr(expected, method)(expected).new()
+            val2 = getattr(expected, method)(expr)
+            val3 = getattr(expr, method)(expected)
+            val4 = getattr(expr, method)(expr)
+            assert val1.isequal(val2)
+            assert val1.isequal(val3)
+            assert val1.isequal(val4)
+            assert val1.isequal(val2.new())
+            assert val1.isequal(val3.new())
+            assert val1.isequal(val4.new())
+        s1 = expected.reduce().new()
+        s2 = expr.reduce()
+        assert s1.isequal(s2.new())
+        assert s1.isequal(s2)
+        assert s1.is_empty == s2.is_empty
+        assert -s1 == -s2
+        assert complex(s1) == complex(s2)
+        assert_array_equal(np.array([s1]), np.array([s2]))
+    w = v.dup()
+    expected = v.dup()
+    expected(binary.plus) << (w & w).new()
+    w(binary.plus) << (w & w)
+
+
+def test_auto_assign(v):
+    expected = v.dup()
+    w = v[1:4].new()
+    expr = w & w
+    expected[:3] = expr.new()
+    v[:3] = expr
+    assert expected.isequal(v)
+    with pytest.raises(TypeError):
+        # Not yet supported, but we could!
+        v[:3] = v[1:4]
+
+
+def test_expr_is_like_vector(v):
+    attrs = {attr for attr, val in inspect.getmembers(v)}
+    expr_attrs = {attr for attr, val in inspect.getmembers(binary.times(v & v))}
+    infix_attrs = {attr for attr, val in inspect.getmembers(v & v)}
+    # Should we make any of these raise informative errors?
+    expected = {
+        "__call__",
+        "__del__",
+        "__delitem__",
+        "__lshift__",
+        "__setitem__",
+        "_assign_element",
+        "_delete_element",
+        "_deserialize",
+        "_extract_element",
+        "_name_counter",
+        "_prep_for_assign",
+        "_prep_for_extract",
+        "_update",
+        "build",
+        "clear",
+        "from_pygraphblas",
+        "from_values",
+        "resize",
+        "update",
+    }
+    assert attrs - expr_attrs == expected
+    assert attrs - infix_attrs == expected | {
+        "_expect_op",
+        "_expect_type",
+    }
