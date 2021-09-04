@@ -1,5 +1,6 @@
 from functools import wraps
-from .exceptions import return_error, GraphBlasException, GrB_Info
+
+from .exceptions import GraphBlasException, GrB_Info, return_error
 
 
 class GrB_Mode:

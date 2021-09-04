@@ -1,22 +1,23 @@
 import itertools
+
 import numpy as np
-from . import ffi, lib, backend, binary, monoid, semiring
+
+from . import backend, binary, expr, ffi, lib, monoid, semiring
+from ._ss.vector import ss
 from .base import BaseExpression, BaseType, call
-from .dtypes import lookup_dtype, unify, _INDEX
-from .exceptions import check_status, NoValue
+from .dtypes import _INDEX, lookup_dtype, unify
+from .exceptions import NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_typed_op
 from .scalar import Scalar, ScalarExpression, _CScalar
 from .utils import (
-    ints_to_numpy_buffer,
-    values_to_numpy_buffer,
     _CArray,
     _Pointer,
     class_property,
+    ints_to_numpy_buffer,
+    values_to_numpy_buffer,
 )
-from . import expr
-from ._ss.vector import ss
 
 ffi_new = ffi.new
 

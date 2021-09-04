@@ -1,14 +1,16 @@
 import numpy as np
-import grblas as gb
 from numba import njit
 from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
-from .prefix_scan import prefix_scan
+
+import grblas as gb
+
 from .. import ffi, lib, monoid
 from ..base import call
-from ..dtypes import lookup_dtype, INT64
+from ..dtypes import INT64, lookup_dtype
 from ..exceptions import check_status, check_status_carg
 from ..scalar import _CScalar
-from ..utils import libget, ints_to_numpy_buffer, values_to_numpy_buffer, wrapdoc
+from ..utils import ints_to_numpy_buffer, libget, values_to_numpy_buffer, wrapdoc
+from .prefix_scan import prefix_scan
 
 ffi_new = ffi.new
 

@@ -1,5 +1,7 @@
 import importlib as _importlib
+
 from . import backends, mask  # noqa
+from ._version import get_versions  # noqa
 
 
 class replace:
@@ -97,7 +99,7 @@ def _init(backend_arg, blocking, automatic=False):
 
     backend = backend_arg
     if backend == "suitesparse":
-        from suitesparse_graphblas import lib, ffi, initialize, is_initialized
+        from suitesparse_graphblas import ffi, initialize, is_initialized, lib
 
         if is_initialized():
             mode = ffi.new("GrB_Mode*")
@@ -127,8 +129,6 @@ def _load(name):
         module = _importlib.import_module(f".{name}", __name__)
         globals()[name] = module
 
-
-from ._version import get_versions  # noqa
 
 __version__ = get_versions()["version"]
 del get_versions

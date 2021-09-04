@@ -1,6 +1,6 @@
 import numpy as np
-from .exceptions import GraphBlasException
 
+from .exceptions import GraphBlasException
 
 GrB_ALL = object()
 GrB_NULL = object()

@@ -1,6 +1,9 @@
-import numpy as np
-import grblas as gb
 from math import ceil, log2
+
+import numpy as np
+
+import grblas as gb
+
 from .. import binary
 
 

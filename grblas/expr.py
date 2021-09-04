@@ -1,4 +1,5 @@
 import numpy as np
+
 from . import lib
 from .utils import _CArray
 
@@ -83,8 +84,8 @@ class IndexerResolver:
                     raise TypeError(f"An integer is required for indexing.  Got: {index.dtype}")
                 return _CScalar(index), None
 
-            from .vector import Vector
             from .matrix import Matrix, TransposedMatrix
+            from .vector import Vector
 
             if typ is Vector or typ is Matrix:
                 raise TypeError(
@@ -472,8 +473,8 @@ class MatrixMatMulExpr(InfixExprBase):
 
 
 def _ewise_infix_expr(left, right, *, method, within):
-    from .vector import Vector
     from .matrix import Matrix, TransposedMatrix
+    from .vector import Vector
 
     left_type = type(left)
     right_type = type(right)
@@ -509,8 +510,8 @@ def _ewise_infix_expr(left, right, *, method, within):
 
 
 def _matmul_infix_expr(left, right, *, within):
-    from .vector import Vector
     from .matrix import Matrix, TransposedMatrix
+    from .vector import Vector
 
     left_type = type(left)
     right_type = type(right)

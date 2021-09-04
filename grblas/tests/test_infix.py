@@ -1,5 +1,6 @@
 from pytest import fixture, raises
-from grblas import op, monoid, Scalar, Vector, Matrix
+
+from grblas import Matrix, Scalar, Vector, monoid, op
 from grblas.exceptions import DimensionMismatch
 
 

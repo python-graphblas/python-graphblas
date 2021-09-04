@@ -1,8 +1,9 @@
 import itertools
-from . import ffi, backend
+
+from . import backend, ffi
 from .base import BaseExpression, BaseType
 from .binary import isclose
-from .dtypes import lookup_dtype, _INDEX
+from .dtypes import _INDEX, lookup_dtype
 from .operator import get_typed_op
 
 ffi_new = ffi.new

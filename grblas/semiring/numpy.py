@@ -6,7 +6,8 @@ https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operat
 
 """
 import itertools
-from .. import operator, binary, monoid
+
+from .. import binary, monoid, operator
 from ..binary.numpy import _binary_names
 from ..monoid.numpy import _monoid_identities
 

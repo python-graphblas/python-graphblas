@@ -1,5 +1,5 @@
 from . import Matrix, Vector
-from .dtypes import lookup_dtype, FP64
+from .dtypes import FP64, lookup_dtype
 from .exceptions import GrblasException
 from .matrix import TransposedMatrix
 
@@ -53,7 +53,7 @@ def from_numpy(m):
         raise GrblasException("m.ndim must be <= 2")
 
     try:
-        from scipy.sparse import csr_matrix, coo_matrix
+        from scipy.sparse import coo_matrix, csr_matrix
     except ImportError:  # pragma: no cover
         raise ImportError("scipy is required to import from numpy")
 

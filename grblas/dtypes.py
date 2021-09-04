@@ -1,7 +1,7 @@
-import numpy as np
 import numba
-from . import lib
+import numpy as np
 
+from . import lib
 
 # Default assumption unless FC32/FC64 are found in lib
 _supports_complex = hasattr(lib, "GrB_FC64") or hasattr(lib, "GxB_FC64")
