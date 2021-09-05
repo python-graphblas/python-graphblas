@@ -4,7 +4,7 @@ import numpy as np
 
 import grblas as gb
 
-from .. import binary
+from .. import binary, unary
 
 
 # TODO: make this smarter and move to grblas.operator
@@ -30,7 +30,8 @@ def prefix_scan(A, monoid):
         return A.dup()
 
     # Which columns have data?
-    if type(A) is Vector:
+    is_vector = type(A) is Vector
+    if is_vector:
         # Can we export the indices w/o the values?
         nonempty_cols = A.ss.export("sparse", sort=True)["indices"]
     else:
@@ -63,6 +64,11 @@ def prefix_scan(A, monoid):
         name="Up_0",
     )
     B = semiring(A @ S).new(name="B")
+    if not is_vector:
+        last_indices = A[:, A._ncols - 1].new(name="last_index")
+        last_indices(last_indices.S)[:] = B._ncols - 1
+        last_indices(~last_indices.S) << B.reduce_rows(gb.agg.last_index)
+        last_indices = gb.ss.diag(last_indices)
 
     # Upsweep
     stride = 1
@@ -83,8 +89,20 @@ def prefix_scan(A, monoid):
             take_ownership=True,
             name=f"Up_{index}",
         )
+        expr = semiring(B @ S)
+        if is_vector:
+            B(binaryop) << expr
+        else:
+            # Don't update beyond the last index of a given row.
+            # If we don't do this (or similar), then the row can become dense!
+            # A more efficient way to do this may be to calculate the mask
+            # beforehand, so no need for intermediate values.
+            vals = expr.new(name=f"UpDelta_{index}")
+            indices = unary.positionj(vals).new(name=f"UpIndices_{index}")
+            mask = gb.semiring.any_ge(last_indices.T @ indices).new(name=f"UpMask_{index}")
+            B(binaryop, mask=mask.V) << vals
+
         index += 1
-        B(binaryop) << semiring(B @ S)
         stride = stride2
         stride2 *= 2
 
@@ -113,8 +131,15 @@ def prefix_scan(A, monoid):
                 take_ownership=True,
                 name=f"Down_{index}",
             )
+            expr = semiring(B @ S)
+            if is_vector:
+                B(binaryop) << expr
+            else:
+                vals = expr.new(name=f"DownDelta_{index}")
+                indices = unary.positionj(vals).new(name=f"DownIndices_{index}")
+                mask = gb.semiring.any_ge(last_indices.T @ indices).new(name=f"DownMask_{index}")
+                B(binaryop, mask=mask.V) << vals
             index += 1
-            B(binaryop) << semiring(B @ S)
             stride2 = stride
             stride //= 2
 
