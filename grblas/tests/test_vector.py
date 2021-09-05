@@ -1143,6 +1143,9 @@ def test_auto(v):
         assert expr.nvals == expected.nvals
         assert expr._nvals == expected._nvals
         assert expr.isclose(expected)
+        val = expr.new(name="val")
+        assert val.name == "val"
+        assert expr._value is None
         assert expected.isclose(expr)
         assert expr.isequal(expected)
         assert expected.isequal(expr)
