@@ -1,10 +1,11 @@
 from math import ceil, log2
 
+import numba
 import numpy as np
 
 import grblas as gb
 
-from .. import binary, unary
+from .. import binary
 
 
 # TODO: make this smarter and move to grblas.operator
@@ -12,16 +13,31 @@ def get_semiring(monoid, binaryop):
     return gb.operator.Semiring.register_anonymous(monoid, binaryop)
 
 
+@numba.njit
+def compact_indices(indptr, size):
+    indptr = indptr.view(np.int64)  # so `diff` below is an integer
+    col_indices = np.empty(size, dtype=np.uint64)
+    start = 0
+    ncols = 0
+    for i in range(1, indptr.size):
+        end = indptr[i]
+        diff = end - start
+        if diff > ncols:
+            ncols = diff
+        for j in range(diff):
+            col_indices[start + j] = j
+        start = end
+    return col_indices, ncols
+
+
 # By default, scans on matrices are done along rows.
 # To perform scans along columns, pass a transposed matrix.
-def prefix_scan(A, monoid):
+def prefix_scan(A, monoid, *, name=None):
     from .. import Matrix, Vector
     from ..matrix import TransposedMatrix
 
     is_transposed = type(A) is TransposedMatrix
     semiring = get_semiring(monoid, binary.first)
-    if is_transposed:
-        semiring2 = get_semiring(monoid, binary.second)
     binaryop = semiring.monoid.binaryop
     N_orig = A.shape[-1]
     if N_orig < 2:
@@ -29,18 +45,32 @@ def prefix_scan(A, monoid):
             return A.T.dup()
         return A.dup()
 
-    # Which columns have data?
+    # Compactify all the elements
     is_vector = type(A) is Vector
     if is_vector:
-        # Can we export the indices w/o the values?
-        nonempty_cols = A.ss.export("sparse", sort=True)["indices"]
-    else:
-        nonempty_cols = (
-            A.reduce_columns(gb.monoid.any)
-            .new()
-            .ss.export("sparse", sort=True, give_ownership=True)["indices"]
+        info = A.ss.export("sparse", sort=True)
+        N_cols = len(info["indices"])
+        compact_info = dict(info, indices=np.arange(N_cols, dtype=np.uint64), size=N_cols)
+    elif is_transposed:
+        info = A.T.ss.export("hypercsc", sort=True)
+        row_indices, N_cols = compact_indices(info["indptr"], info["row_indices"].size)
+        compact_info = dict(
+            info,
+            col_indices=row_indices,
+            ncols=N_cols,
+            nrows=info["ncols"],
+            rows=info["cols"],
+            format="hypercsr",
+            sorted_cols=True,
         )
-    N_cols = len(nonempty_cols)
+        del compact_info["cols"]
+        del compact_info["row_indices"]
+        del compact_info["sorted_rows"]
+    else:
+        info = A.ss.export("hypercsr", sort=True)
+        col_indices, N_cols = compact_indices(info["indptr"], info["col_indices"].size)
+        compact_info = dict(info, col_indices=col_indices, ncols=N_cols)
+
     if N_cols < 2:
         if is_transposed:
             return A.T.dup()
@@ -48,15 +78,18 @@ def prefix_scan(A, monoid):
     N_half = N_cols // 2
     val_t = np.int8
     index_t = np.uint64
-    is_condensed = N_cols != N_orig
     index = 1
+    if is_vector:
+        A = Vector.ss.import_sparse(**compact_info)
+    else:
+        A = Matrix.ss.import_hypercsr(**compact_info)
 
     # First iteration
     S = Matrix.ss.import_csc(
-        nrows=N_orig,
+        nrows=N_cols,
         ncols=N_half,
         indptr=np.arange(0, 2 * N_half + 2, 2, dtype=index_t),
-        row_indices=nonempty_cols[: 2 * N_half].copy(),
+        row_indices=np.arange(2 * N_half, dtype=np.uint64),
         values=np.ones(1, dtype=val_t),  # 2 * N_half
         is_iso=True,
         sorted_rows=True,
@@ -64,11 +97,10 @@ def prefix_scan(A, monoid):
         name="Up_0",
     )
     B = semiring(A @ S).new(name="B")
-    if not is_vector:
-        last_indices = A[:, A._ncols - 1].new(name="last_index")
-        last_indices(last_indices.S)[:] = B._ncols - 1
-        last_indices(~last_indices.S) << B.reduce_rows(gb.agg.last_index)
-        last_indices = gb.ss.diag(last_indices)
+    if is_vector:
+        mask = None
+    else:
+        mask = B.S
 
     # Upsweep
     stride = 1
@@ -89,19 +121,7 @@ def prefix_scan(A, monoid):
             take_ownership=True,
             name=f"Up_{index}",
         )
-        expr = semiring(B @ S)
-        if is_vector:
-            B(binaryop) << expr
-        else:
-            # Don't update beyond the last index of a given row.
-            # If we don't do this (or similar), then the row can become dense!
-            # A more efficient way to do this may be to calculate the mask
-            # beforehand, so no need for intermediate values.
-            vals = expr.new(name=f"UpDelta_{index}")
-            indices = unary.positionj(vals).new(name=f"UpIndices_{index}")
-            mask = gb.semiring.any_ge(last_indices.T @ indices).new(name=f"UpMask_{index}")
-            B(binaryop, mask=mask.V) << vals
-
+        B(binaryop, mask=mask) << semiring(B @ S)
         index += 1
         stride = stride2
         stride2 *= 2
@@ -131,14 +151,7 @@ def prefix_scan(A, monoid):
                 take_ownership=True,
                 name=f"Down_{index}",
             )
-            expr = semiring(B @ S)
-            if is_vector:
-                B(binaryop) << expr
-            else:
-                vals = expr.new(name=f"DownDelta_{index}")
-                indices = unary.positionj(vals).new(name=f"DownIndices_{index}")
-                mask = gb.semiring.any_ge(last_indices.T @ indices).new(name=f"DownMask_{index}")
-                B(binaryop, mask=mask.V) << vals
+            B(binaryop, mask=mask) << semiring(B @ S)
             index += 1
             stride2 = stride
             stride //= 2
@@ -146,13 +159,10 @@ def prefix_scan(A, monoid):
     # Last iteration
     indptr = np.arange(0, 2 * N_half + 2, 2)
     indptr[-1] = N_cols - 1
-    if is_condensed:
-        col_indices = nonempty_cols[1:].copy()
-    else:
-        col_indices = np.arange(1, N_orig, dtype=index_t)
+    col_indices = np.arange(1, N_cols, dtype=index_t)
     S = Matrix.ss.import_csr(
         nrows=N_half,
-        ncols=N_orig,
+        ncols=N_cols,
         indptr=indptr,
         col_indices=col_indices,
         values=np.ones(1, dtype=val_t),  # N_cols - 1
@@ -161,17 +171,11 @@ def prefix_scan(A, monoid):
         take_ownership=True,
         name=f"Down_{index}",
     )
-    if is_transposed:
-        RV = semiring2(S.T @ B.T).new(mask=A.T.S, name="RV")
-    else:
-        RV = semiring(B @ S).new(mask=A.S, name="RV")
+    RV = semiring(B @ S).new(mask=A.S, name="RV")
 
-    if is_condensed:
-        indices = nonempty_cols[::2].copy()
-    else:
-        indices = np.arange(0, N_cols, 2, dtype=index_t)
+    indices = np.arange(0, N_cols, 2, dtype=index_t)
     d = Vector.ss.import_sparse(
-        size=N_orig,
+        size=N_cols,
         indices=indices,
         values=np.ones(1, dtype=val_t),  # (N_cols + 1) // 2
         is_iso=True,
@@ -180,8 +184,15 @@ def prefix_scan(A, monoid):
         name="d",
     )
     D = gb.ss.diag(d, name="D")
-    if is_transposed:
-        RV(binaryop) << semiring2(D @ A.T)
+    RV(binaryop) << semiring(A @ D)
+    # De-compactify into final result
+    if is_vector:
+        rv_info = RV.ss.export("sparse", sort=True, give_ownership=True)
+        RV = Vector.ss.import_sparse(name=name, **dict(info, values=rv_info["values"]))
+    elif is_transposed:
+        rv_info = RV.ss.export("hypercsr", sort=True, give_ownership=True)
+        RV = Matrix.ss.import_hypercsc(name=name, **dict(info, values=rv_info["values"]))
     else:
-        RV(binaryop) << semiring(A @ D)
+        rv_info = RV.ss.export("hypercsr", sort=True, give_ownership=True)
+        RV = Matrix.ss.import_hypercsr(name=name, **dict(info, values=rv_info["values"]))
     return RV

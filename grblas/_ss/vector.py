@@ -1036,5 +1036,5 @@ class ss:
     def head(self, n=10, *, sort=False, dtype=None):
         return head(self._parent, n, sort=sort, dtype=dtype)
 
-    def scan(self, monoid=monoid.plus):
-        return prefix_scan(self._parent, monoid)
+    def scan(self, monoid=monoid.plus, *, name=None):
+        return prefix_scan(self._parent, monoid, name=name)
