@@ -656,6 +656,7 @@ class UnaryOp(OpBase):
         module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
         if not hasattr(module, funcname):
             setattr(module, funcname, unary_op)
+        return unary_op
 
     @classmethod
     def _initialize(cls):
@@ -857,6 +858,7 @@ class BinaryOp(OpBase):
         module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
         if not hasattr(module, funcname):
             setattr(module, funcname, binary_op)
+        return binary_op
 
     @classmethod
     def _initialize(cls):
@@ -889,6 +891,9 @@ class BinaryOp(OpBase):
         # Add floordiv
         # cdiv truncates towards 0, while floordiv truncates towards -inf
         BinaryOp.register_new("floordiv", lambda x, y: x // y)
+
+        # For aggregators
+        BinaryOp.register_new("absfirst", lambda x, y: abs(x))
 
         def isclose(rel_tol=1e-7, abs_tol=0.0):
             def inner(x, y):
@@ -1037,6 +1042,7 @@ class Monoid(OpBase):
         module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
         if not hasattr(module, funcname):
             setattr(module, funcname, monoid)
+        return monoid
 
     def __init__(self, name, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
@@ -1140,7 +1146,7 @@ class Semiring(OpBase):
         if type(binaryop) is not BinaryOp:
             raise TypeError(f"binaryop must be a BinaryOp, not {type(binaryop)}")
         if name is None:
-            name = f"{monoid.name}_{binaryop.name}"
+            name = f"{monoid.name}_{binaryop.name}".replace(".", "_")
         new_type_obj = cls(name, monoid, binaryop, anonymous=anonymous)
         for binary_in, binary_func in binaryop._typed_ops.items():
             binary_out = binary_func.return_type
@@ -1186,6 +1192,7 @@ class Semiring(OpBase):
         module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
         if not hasattr(module, funcname):
             setattr(module, funcname, semiring)
+        return semiring
 
     @classmethod
     def _initialize(cls):
@@ -1216,6 +1223,10 @@ class Semiring(OpBase):
         for orig_name, orig in div_semirings.items():
             cls.register_new(f"{orig_name[:-3]}truediv", orig.monoid, binary.truediv)
             cls.register_new(f"{orig_name[:-3]}floordiv", orig.monoid, binary.floordiv)
+        # For aggregators
+        cls.register_new("plus_pow", monoid.plus, binary.pow)
+        cls.register_new("plus_absfirst", monoid.plus, binary.absfirst)
+        cls.register_new("max_absfirst", monoid.max, binary.absfirst)
 
         # Update type information with sane coercion
         for lname in ("any", "eq", "land", "lor", "lxnor", "lxor"):
@@ -1326,6 +1337,10 @@ def get_typed_op(op, dtype, dtype2=None):
         return get_typed_op(op, dtype, dtype2)
     elif isinstance(op, TypedOpBase):
         return op
+    elif isinstance(op, Aggregator):
+        return op[dtype]
+    elif isinstance(op, TypedAggregator):
+        return op
     else:
         raise TypeError(f"Unable to get typed operator from object with type {type(op)}")
 
@@ -1343,8 +1358,68 @@ def find_opclass(gb_op):
     return gb_op, opclass
 
 
+def get_semiring(monoid, binaryop):
+    """Get or create a Semiring object from a monoid and binaryop.
+
+    If either are typed, then the returned semiring will also be typed.
+
+    See Also
+    --------
+    Semiring.register_anonymous
+    Semiring.register_new
+    """
+    monoid, opclass = find_opclass(monoid)
+    switched = False
+    if opclass == "BinaryOp" and monoid.monoid is not None:
+        switched = True
+        monoid = monoid.monoid
+    elif opclass != "Monoid":
+        raise TypeError(f"Expected a Monoid for the monoid argument.  Got type: {type(monoid)}")
+    binaryop, opclass = find_opclass(binaryop)
+    if opclass == "Monoid":
+        if switched:
+            raise TypeError(
+                "Got a BinaryOp for the monoid argument and a Monoid for the binaryop argument.  "
+                "Are the arguments switched?  Hint: you can do `mymonoid.binaryop` to get the "
+                "binaryop from a monoid."
+            )
+        binaryop = binaryop.binaryop
+    elif opclass != "BinaryOp":
+        raise TypeError(
+            f"Expected a BinaryOp for the binaryop argument.  Got type: {type(binaryop)}"
+        )
+    if isinstance(monoid, Monoid):
+        monoid_type = None
+    else:
+        monoid_type = monoid.type
+        monoid = monoid.parent
+    if isinstance(binaryop, BinaryOp):
+        binary_type = None
+    else:
+        binary_type = binaryop.type
+        binaryop = binaryop.parent
+    if monoid._anonymous or binaryop._anonymous:
+        rv = Semiring.register_anonymous(monoid, binaryop)
+    else:
+        name = f"{monoid.name}_{binaryop.name}".replace(".", "_")
+        rv = getattr(semiring, name, None)
+        if rv is None:
+            rv = Semiring.register_new(name, monoid, binaryop)
+        elif rv.monoid is not monoid or rv.binaryop is not binaryop:  # pragma: no cover
+            # It's not the object we expect (can this happen?)
+            rv = Semiring.register_anonymous(monoid, binaryop)
+    if binary_type is not None:
+        return rv[binary_type]
+    elif monoid_type is not None:
+        return rv[monoid_type]
+    else:
+        return rv
+
+
 # Now initialize all the things!
 UnaryOp._initialize()
 BinaryOp._initialize()
 Monoid._initialize()
 Semiring._initialize()
+
+from .agg import Aggregator, TypedAggregator  # noqa isort:skip

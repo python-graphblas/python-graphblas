@@ -14,7 +14,7 @@ from grblas import (
     semiring,
     unary,
 )
-from grblas.operator import BinaryOp, Monoid, Semiring, UnaryOp
+from grblas.operator import BinaryOp, Monoid, Semiring, UnaryOp, get_semiring
 
 
 def orig_types(op):
@@ -733,3 +733,39 @@ def test_div_semirings():
     result = A1.T.mxm(A2, semiring.plus_floordiv).new()
     assert result[0, 0].value == -3
     assert result.dtype == dtypes.INT64
+
+
+def test_get_semiring():
+    sr = get_semiring(monoid.plus, binary.times)
+    assert sr is semiring.plus_times
+    # Be somewhat forgiving
+    sr = get_semiring(monoid.plus, monoid.times)
+    assert sr is semiring.plus_times
+    sr = get_semiring(binary.plus, binary.times)
+    assert sr is semiring.plus_times
+    # But not if switched
+    with pytest.raises(TypeError, match="switch"):
+        get_semiring(binary.plus, monoid.times)
+
+    def myplus(x, y):
+        return x + y
+
+    binop = BinaryOp.register_anonymous(myplus, name="myplus")
+    st = get_semiring(monoid.plus, binop)
+    assert st.monoid is monoid.plus
+    assert st.binaryop is binop
+
+    binop = BinaryOp.register_new("myplus", myplus)
+    assert binop is binary.myplus
+    st = get_semiring(monoid.plus, binop)
+    assert st.monoid is monoid.plus
+    assert st.binaryop is binop
+
+    with pytest.raises(TypeError, match="Monoid"):
+        get_semiring(None, binary.times)
+    with pytest.raises(TypeError, match="Binary"):
+        get_semiring(monoid.plus, None)
+
+    sr = get_semiring(monoid.plus, binary.numpy.copysign)
+    assert sr.monoid is monoid.plus
+    assert sr.binaryop is binary.numpy.copysign

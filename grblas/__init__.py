@@ -26,6 +26,7 @@ _SPECIAL_ATTRS = {
     "Scalar",
     "Vector",
     "_ss",
+    "agg",
     "base",
     "binary",
     "descriptor",

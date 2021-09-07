@@ -4,7 +4,7 @@ from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
 
 import grblas as gb
 
-from .. import ffi, lib
+from .. import ffi, lib, monoid
 from ..base import call
 from ..dtypes import INT64, lookup_dtype
 from ..exceptions import check_status, check_status_carg
@@ -16,6 +16,7 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
+from .prefix_scan import prefix_scan
 from .scalar import gxb_scalar
 
 ffi_new = ffi.new
@@ -1034,3 +1035,15 @@ class ss:
     @wrapdoc(head)
     def head(self, n=10, *, sort=False, dtype=None):
         return head(self._parent, n, sort=sort, dtype=dtype)
+
+    def scan(self, op=monoid.plus, *, name=None):
+        """Perform a prefix scan with the given monoid.
+
+        For example, use `monoid.plus` (the default) to perform a cumulative sum,
+        and `monoid.times` for cumulative product.  Works with any monoid.
+
+        Returns
+        -------
+        Scalar
+        """
+        return prefix_scan(self._parent, op, name=name, within="scan")

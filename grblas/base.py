@@ -118,7 +118,7 @@ def _expect_op_message(
         elif "Monoid" in values:
             special_message = f"\nYou may do `{op.name}.monoid` to get the Monoid."
     elif op.opclass == "BinaryOp" and op.monoid is None and "Monoid" in values:
-        special_message = "\nThe BinaryOp {op.name} is not known to be part of a Monoid."
+        special_message = f"\nThe BinaryOp {op.name} is not known to be part of a Monoid."
     if extra_message:
         extra_message = f"\n{extra_message}"
     return (
@@ -392,6 +392,11 @@ class BaseType:
 
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
+        if delayed.op is not None and delayed.op.opclass == "Aggregator":
+            updater = self(mask=mask, accum=accum, replace=replace)
+            delayed.op._new(updater, delayed)
+            return
+
         # Normalize mask and separate out complement and structural flags
         if mask is None:
             complement = False
@@ -513,7 +518,10 @@ class BaseExpression:
             self._value = None
             return rv
         output = self.construct_output(dtype=dtype, name=name)
-        if mask is None:
+        if self.op is not None and self.op.opclass == "Aggregator":
+            updater = output(mask=mask)
+            self.op._new(updater, self)
+        elif mask is None:
             output.update(self)
         else:
             _check_mask(mask, output)
