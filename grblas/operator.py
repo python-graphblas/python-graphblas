@@ -1359,6 +1359,15 @@ def find_opclass(gb_op):
 
 
 def get_semiring(monoid, binaryop):
+    """Get or create a Semiring object from a monoid and binaryop.
+
+    If either are typed, then the returned semiring will also be typed.
+
+    See Also
+    --------
+    Semiring.register_anonymous
+    Semiring.register_new
+    """
     monoid, opclass = find_opclass(monoid)
     switched = False
     if opclass == "BinaryOp" and monoid.monoid is not None:

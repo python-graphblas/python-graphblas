@@ -1037,4 +1037,13 @@ class ss:
         return head(self._parent, n, sort=sort, dtype=dtype)
 
     def scan(self, op=monoid.plus, *, name=None):
+        """Perform a prefix scan with the given monoid.
+
+        For example, use `monoid.plus` (the default) to perform a cumulative sum,
+        and `monoid.times` for cumulative product.  Works with any monoid.
+
+        Returns
+        -------
+        Scalar
+        """
         return prefix_scan(self._parent, op, name=name, within="scan")

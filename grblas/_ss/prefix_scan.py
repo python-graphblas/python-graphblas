@@ -11,6 +11,10 @@ from ..operator import get_semiring, get_typed_op
 
 @numba.njit
 def compact_indices(indptr, size):  # pragma: no cover
+    """Given indptr from hypercsr, create a new col_indices array that is compact.
+
+    That is, for each row with degree N, the column indices will be 0..N-1.
+    """
     indptr = indptr.view(np.int64)  # so `diff` below is an integer
     col_indices = np.empty(size, dtype=np.uint64)
     start = 0

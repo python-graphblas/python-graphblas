@@ -2936,7 +2936,25 @@ class ss:
         return head(self._parent, n, sort=sort, dtype=dtype)
 
     def scan_columns(self, op=monoid.plus, *, name=None):
+        """Perform a prefix scan across columns with the given monoid.
+
+        For example, use `monoid.plus` (the default) to perform a cumulative sum,
+        and `monoid.times` for cumulative product.  Works with any monoid.
+
+        Returns
+        -------
+        Vector
+        """
         return prefix_scan(self._parent.T, op, name=name, within="scan_columns")
 
     def scan_rows(self, op=monoid.plus, *, name=None):
+        """Perform a prefix scan across rows with the given monoid.
+
+        For example, use `monoid.plus` (the default) to perform a cumulative sum,
+        and `monoid.times` for cumulative product.  Works with any monoid.
+
+        Returns
+        -------
+        Vector
+        """
         return prefix_scan(self._parent, op, name=name, within="scan_rows")
