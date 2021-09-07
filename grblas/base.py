@@ -118,7 +118,7 @@ def _expect_op_message(
         elif "Monoid" in values:
             special_message = f"\nYou may do `{op.name}.monoid` to get the Monoid."
     elif op.opclass == "BinaryOp" and op.monoid is None and "Monoid" in values:
-        special_message = "\nThe BinaryOp {op.name} is not known to be part of a Monoid."
+        special_message = f"\nThe BinaryOp {op.name} is not known to be part of a Monoid."
     if extra_message:
         extra_message = f"\n{extra_message}"
     return (

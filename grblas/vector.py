@@ -9,7 +9,7 @@ from .dtypes import _INDEX, lookup_dtype, unify
 from .exceptions import NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
-from .operator import get_typed_op
+from .operator import get_semiring, get_typed_op
 from .scalar import Scalar, ScalarExpression, _CScalar
 from .utils import (
     _CArray,
@@ -549,15 +549,11 @@ class Vector(BaseType):
             expr.new(name="")  # incompatible shape; raise now
         return expr
 
-    def outer(self, other, op=semiring.plus_times):
+    def outer(self, other, op=binary.times):
         """
         Vector-vector outer (or cross) product. Result is a Matrix.
 
-        Default op is semiring.plus_times
-
-        This currently requires a Semiring, even though only the BinaryOp
-        of the Semiring is used.  We may support passing a BinaryOp or Monoid
-        in the future.
+        Default op is binary.times
 
         *This is not a standard GraphBLAS function*
         """
@@ -566,7 +562,10 @@ class Vector(BaseType):
         method_name = "outer"
         other = self._expect_type(other, Vector, within=method_name, argname="other")
         op = get_typed_op(op, self.dtype, other.dtype)
-        self._expect_op(op, "Semiring", within=method_name, argname="op")
+        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if op.opclass == "Monoid":
+            op = op.binaryop
+        op = get_semiring(monoid.any, op)
         expr = MatrixExpression(
             method_name,
             "GrB_mxm",

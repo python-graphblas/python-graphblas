@@ -656,6 +656,7 @@ class UnaryOp(OpBase):
         module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
         if not hasattr(module, funcname):
             setattr(module, funcname, unary_op)
+        return unary_op
 
     @classmethod
     def _initialize(cls):
@@ -857,6 +858,7 @@ class BinaryOp(OpBase):
         module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
         if not hasattr(module, funcname):
             setattr(module, funcname, binary_op)
+        return binary_op
 
     @classmethod
     def _initialize(cls):
@@ -1040,6 +1042,7 @@ class Monoid(OpBase):
         module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
         if not hasattr(module, funcname):
             setattr(module, funcname, monoid)
+        return monoid
 
     def __init__(self, name, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
@@ -1143,7 +1146,7 @@ class Semiring(OpBase):
         if type(binaryop) is not BinaryOp:
             raise TypeError(f"binaryop must be a BinaryOp, not {type(binaryop)}")
         if name is None:
-            name = f"{monoid.name}_{binaryop.name}"
+            name = f"{monoid.name}_{binaryop.name}".replace(".", "_")
         new_type_obj = cls(name, monoid, binaryop, anonymous=anonymous)
         for binary_in, binary_func in binaryop._typed_ops.items():
             binary_out = binary_func.return_type
@@ -1189,6 +1192,7 @@ class Semiring(OpBase):
         module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
         if not hasattr(module, funcname):
             setattr(module, funcname, semiring)
+        return semiring
 
     @classmethod
     def _initialize(cls):
@@ -1352,6 +1356,55 @@ def find_opclass(gb_op):
     else:
         opclass = UNKNOWN_OPCLASS
     return gb_op, opclass
+
+
+def get_semiring(monoid, binaryop):
+    monoid, opclass = find_opclass(monoid)
+    switched = False
+    if opclass == "BinaryOp" and monoid.monoid is not None:
+        switched = True
+        monoid = monoid.monoid
+    elif opclass != "Monoid":
+        raise TypeError(f"Expected a Monoid for the monoid argument.  Got type: {type(monoid)}")
+    binaryop, opclass = find_opclass(binaryop)
+    if opclass == "Monoid":
+        if switched:
+            raise TypeError(
+                "Got a BinaryOp for the monoid argument and a Monoid for the binaryop argument.  "
+                "Are the arguments switched?  Hint: you can do `mymonoid.binaryop` to get the "
+                "binaryop from a monoid."
+            )
+        binaryop = binaryop.binaryop
+    elif opclass != "BinaryOp":
+        raise TypeError(
+            f"Expected a BinaryOp for the binaryop argument.  Got type: {type(binaryop)}"
+        )
+    if isinstance(monoid, Monoid):
+        monoid_type = None
+    else:
+        monoid_type = monoid.type
+        monoid = monoid.parent
+    if isinstance(binaryop, BinaryOp):
+        binary_type = None
+    else:
+        binary_type = binaryop.type
+        binaryop = binaryop.parent
+    if monoid._anonymous or binaryop._anonymous:
+        rv = Semiring.register_anonymous(monoid, binaryop)
+    else:
+        name = f"{monoid.name}_{binaryop.name}".replace(".", "_")
+        rv = getattr(semiring, name, None)
+        if rv is None:
+            rv = Semiring.register_new(name, monoid, binaryop)
+        elif rv.monoid is not monoid or rv.binaryop is not binaryop:  # pragma: no cover
+            # It's not the object we expect (can this happen?)
+            rv = Semiring.register_anonymous(monoid, binaryop)
+    if binary_type is not None:
+        return rv[binary_type]
+    elif monoid_type is not None:
+        return rv[monoid_type]
+    else:
+        return rv
 
 
 # Now initialize all the things!

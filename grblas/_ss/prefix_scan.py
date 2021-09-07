@@ -6,11 +6,7 @@ import numpy as np
 import grblas as gb
 
 from .. import binary
-
-
-# TODO: make this smarter and move to grblas.operator
-def get_semiring(monoid, binaryop):
-    return gb.operator.Semiring.register_anonymous(monoid, binaryop)
+from ..operator import get_semiring, get_typed_op
 
 
 @numba.njit
@@ -32,13 +28,21 @@ def compact_indices(indptr, size):
 
 # By default, scans on matrices are done along rows.
 # To perform scans along columns, pass a transposed matrix.
-def prefix_scan(A, monoid, *, name=None):
+def prefix_scan(A, monoid, *, name=None, within):
     from .. import Matrix, Vector
     from ..matrix import TransposedMatrix
 
-    is_transposed = type(A) is TransposedMatrix
+    monoid = get_typed_op(monoid, A.dtype)
+    A._expect_op(monoid, ("BinaryOp", "Monoid"), argname="op", within=within)
+    if monoid.opclass == "BinaryOp":
+        if monoid.monoid is not None:
+            monoid = monoid.monoid
+        else:
+            A._expect_op(monoid, "Monoid", argname="op", within=within)
     semiring = get_semiring(monoid, binary.first)
     binaryop = semiring.monoid.binaryop
+
+    is_transposed = type(A) is TransposedMatrix
     N_orig = A.shape[-1]
     if N_orig < 2:
         if is_transposed:

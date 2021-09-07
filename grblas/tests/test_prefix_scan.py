@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 import grblas as gb
+from grblas import Matrix, Vector, binary
 
 
 @pytest.mark.parametrize("method", ["scan_rows", "scan_columns"])
@@ -12,19 +13,19 @@ def test_scan_matrix(method, length, do_random):
         A = np.random.randint(10, size=2 * length).reshape((2, length))
         mask = (A % 2).astype(bool)
         A[~mask] = 0
-        M = gb.Matrix.ss.import_bitmapr(values=A, bitmap=mask, name="A")
+        M = Matrix.ss.import_bitmapr(values=A, bitmap=mask, name="A")
         expected = A.cumsum(axis=1)
         expected[~mask] = 0
     else:
         A = np.arange(2 * length).reshape((2, length))
-        M = gb.Matrix.ss.import_fullr(values=A, name="A")
+        M = Matrix.ss.import_fullr(values=A, name="A")
         expected = A.cumsum(axis=1)
 
     if method == "scan_rows":
         R = M.ss.scan_rows()
     else:
         M = M.T.new(name="A")
-        R = M.ss.scan_columns().T.new()
+        R = M.ss.scan_columns(binary.plus).T.new()
 
     result = gb.io.to_numpy(R)
     try:
@@ -41,12 +42,12 @@ def test_scan_vector(length, do_random):
         a = np.random.randint(10, size=length)
         mask = (a % 2).astype(bool)
         a[~mask] = 0
-        v = gb.Vector.ss.import_bitmap(values=a, bitmap=mask)
+        v = Vector.ss.import_bitmap(values=a, bitmap=mask)
         expected = a.cumsum()
         expected[~mask] = 0
     else:
         a = np.arange(length)
-        v = gb.Vector.ss.import_full(values=a)
+        v = Vector.ss.import_full(values=a)
         expected = a.cumsum()
     r = v.ss.scan()
     result = gb.io.to_numpy(r)
@@ -55,3 +56,9 @@ def test_scan_vector(length, do_random):
     except Exception:  # pragma: no cover
         print(v)
         raise
+
+
+def test_bad_scan():
+    v = Vector.from_values(range(10), range(10))
+    with pytest.raises(TypeError, match="Bad type for argument `op`"):
+        v.ss.scan(op=binary.first)

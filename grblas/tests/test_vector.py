@@ -1130,6 +1130,8 @@ def test_outer(v):
     expected = C.mxm(R).new()
     result = v.outer(v).new()
     assert result.isequal(expected)
+    result = v.outer(v, monoid.times).new()
+    assert result.isequal(expected)
 
 
 def test_auto(v):

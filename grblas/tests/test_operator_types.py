@@ -142,6 +142,9 @@ IGNORE = {
     "plus_plus_one",
     "plus_plus_two",
     "extra_twos",
+    "myplus",
+    "plus_myplus",
+    "plus_numpy_copysign",
 }
 
 

@@ -5463,7 +5463,7 @@ def test_inner_outer_repr_html(v):
         '<div><details class="gb-expr-details"><summary class="gb-expr-summary"><b><tt>grblas.MatrixExpression:</tt></b><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
-        '    <td rowspan="2" class="gb-info-name-cell"><pre>v.outer(v, op=semiring.plus_times[FP64])</pre></td>\n'
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>v.outer(v, op=semiring.any_times[FP64])</pre></td>\n'
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
@@ -5594,8 +5594,8 @@ def test_inner_outer_repr(v):
     )
     repr_printer(v.outer(v), "v.outer(v)")
     assert repr(v.outer(v)) == (
-        "grblas.MatrixExpression                                           nrows  ncols  dtype\n"
-        "(GrB_Matrix)v.outer((GrB_Matrix)v, op=semiring.plus_times[FP64])      5      5   FP64\n"
+        "grblas.MatrixExpression                                          nrows  ncols  dtype\n"
+        "(GrB_Matrix)v.outer((GrB_Matrix)v, op=semiring.any_times[FP64])      5      5   FP64\n"
         "\n"
         "Do expr.new() or other << expr to calculate the expression."
     )
