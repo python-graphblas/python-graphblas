@@ -117,8 +117,8 @@ _SEMIRING1 = {
         {"floordiv"},
     ],
     (NOFC, NOFC): [
-        {"any"},
-        {"land", "lor", "lxor"},
+        {"any", "min", "max"},
+        {"land", "lor", "lxor", "first", "second"},
     ],
 }
 # fmt: on

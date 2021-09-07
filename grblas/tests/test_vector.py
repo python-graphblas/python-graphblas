@@ -624,9 +624,9 @@ def test_reduce_agg(v):
     assert v.reduce(agg.count_nonzero) == 3
     assert v.reduce(agg.count_zero) == 1
     assert v.reduce(agg.sum_of_squares) == 6
-    assert v.reduce(agg.hypot[float]).new().isclose(6 ** 0.5)
-    assert v.reduce(agg.logaddexp[float]).new().isclose(np.log(1 + 2 * np.e + np.e ** 2))
-    assert v.reduce(agg.logaddexp2[float]).new().isclose(np.log2(9))
+    assert v.reduce(agg.hypot).new().isclose(6 ** 0.5)
+    assert v.reduce(agg.logaddexp).new().isclose(np.log(1 + 2 * np.e + np.e ** 2))
+    assert v.reduce(agg.logaddexp2).new().isclose(np.log2(9))
     assert v.reduce(agg.mean) == 1
     assert v.reduce(agg.peak_to_peak) == 2
     assert v.reduce(agg.varp).new().isclose(0.5)
@@ -635,9 +635,10 @@ def test_reduce_agg(v):
     assert v.reduce(agg.stds).new().isclose((2 / 3) ** 0.5)
     assert v.reduce(agg.L0norm) == 3
     assert v.reduce(agg.L1norm) == 4
-    assert v.reduce(agg.L2norm[float]).new().isclose(6 ** 0.5)
+    assert v.reduce(agg.L2norm).new().isclose(6 ** 0.5)
     assert v.reduce(agg.Linfnorm) == 2
     w = binary.plus(v, 1).new()
+    print(w.reduce(agg.geometric_mean).new())
     assert w.reduce(agg.geometric_mean).new().isclose(12 ** 0.25)
     assert w.reduce(agg.harmonic_mean).new().isclose(12 / 7)
 

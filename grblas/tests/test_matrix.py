@@ -1087,7 +1087,7 @@ def test_reduce_agg(A):
     Asquared = monoid.times(A & A).new()
     squared = Asquared.reduce_rows(monoid.plus).new()
     expected = unary.sqrt[float](squared).new()
-    w5 = A.reduce_rows(agg.hypot[float]).new()
+    w5 = A.reduce_rows(agg.hypot).new()
     assert w5.isclose(expected)
     w6 = A.reduce_rows(monoid.numpy.hypot[float]).new()
     assert w6.isclose(expected)
@@ -1095,7 +1095,7 @@ def test_reduce_agg(A):
     w7 << A.reduce_rows(agg.hypot)
     assert w7.isclose(expected)
 
-    w8 = A.reduce_rows(agg.logaddexp[float]).new()
+    w8 = A.reduce_rows(agg.logaddexp).new()
     expected = A.reduce_rows(monoid.numpy.logaddexp[float]).new()
     assert w8.isclose(w8)
 
@@ -1124,9 +1124,9 @@ def test_reduce_agg(A):
     assert A.reduce_scalar(agg.count_nonzero).value == 12
     assert A.reduce_scalar(agg.count_zero).value == 0
     assert A.reduce_scalar(agg.sum_of_squares).value == 245
-    assert A.reduce_scalar(agg.hypot[float]).new().isclose(245 ** 0.5)
-    assert A.reduce_scalar(agg.logaddexp[float]).new().isclose(8.6071076)
-    assert A.reduce_scalar(agg.logaddexp2[float]).new().isclose(9.2288187)
+    assert A.reduce_scalar(agg.hypot).new().isclose(245 ** 0.5)
+    assert A.reduce_scalar(agg.logaddexp).new().isclose(8.6071076)
+    assert A.reduce_scalar(agg.logaddexp2).new().isclose(9.2288187)
     assert A.reduce_scalar(agg.mean).new().isclose(47 / 12)
 
 
