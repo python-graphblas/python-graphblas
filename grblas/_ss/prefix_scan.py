@@ -10,7 +10,7 @@ from ..operator import get_semiring, get_typed_op
 
 
 @numba.njit
-def compact_indices(indptr, size):
+def compact_indices(indptr, size):  # pragma: no cover
     indptr = indptr.view(np.int64)  # so `diff` below is an integer
     col_indices = np.empty(size, dtype=np.uint64)
     start = 0

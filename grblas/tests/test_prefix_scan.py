@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 import grblas as gb
-from grblas import Matrix, Vector, binary
+from grblas import Matrix, Vector, binary, monoid
 
 
 @pytest.mark.parametrize("method", ["scan_rows", "scan_columns"])
@@ -56,6 +56,13 @@ def test_scan_vector(length, do_random):
     except Exception:  # pragma: no cover
         print(v)
         raise
+
+
+def test_cumprod():
+    v = Vector.from_values([1, 3, 4, 6], [2, 3, 4, 5])
+    expected = Vector.from_values([1, 3, 4, 6], [2, 6, 24, 120])
+    r = v.ss.scan(monoid.times)
+    assert r.isequal(expected)
 
 
 def test_bad_scan():
