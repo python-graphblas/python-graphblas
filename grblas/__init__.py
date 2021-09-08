@@ -25,6 +25,7 @@ _SPECIAL_ATTRS = {
     "Recorder",
     "Scalar",
     "Vector",
+    "_agg",
     "_ss",
     "agg",
     "base",
@@ -125,7 +126,7 @@ def _init(backend_arg, blocking, automatic=False):
     _init_params = passed_params
 
 
-_NEEDS_OPERATOR = {"agg", "base", "io", "matrix", "scalar", "vector", "recorder", "ss"}
+_NEEDS_OPERATOR = {"_agg", "agg", "base", "io", "matrix", "scalar", "vector", "recorder", "ss"}
 
 
 def _load(name):
