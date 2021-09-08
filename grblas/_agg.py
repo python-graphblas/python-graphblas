@@ -72,11 +72,17 @@ class Aggregator:
     def __getitem__(self, dtype):
         dtype = _normalize_type(dtype)
         if dtype not in self.types:
-            1 / 0
             raise KeyError(f"{self.name} does not work with {dtype}")
         if dtype not in self._typed_ops:
             self._typed_ops[dtype] = TypedAggregator(self, dtype)
         return self._typed_ops[dtype]
+
+    def __contains__(self, dtype):
+        dtype = _normalize_type(dtype)
+        return dtype in self.types
+
+    def __repr__(self):
+        return f"agg.{self.name}"
 
 
 class TypedAggregator:
@@ -89,8 +95,7 @@ class TypedAggregator:
         self.return_type = agg.types[dtype]
 
     def __repr__(self):
-        1 / 0
-        return f"{self.name}[{self.type}]"
+        return f"agg.{self.name}[{self.type}]"
 
     def _new(self, updater, expr, *, in_composite=False):
         agg = self.parent

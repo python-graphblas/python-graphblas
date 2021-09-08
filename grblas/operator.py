@@ -1361,7 +1361,6 @@ def get_typed_op(op, dtype, dtype2=None):
     elif isinstance(op, Aggregator):
         return op[dtype]
     elif isinstance(op, TypedAggregator):
-        1 / 0
         return op
     else:
         raise TypeError(f"Unable to get typed operator from object with type {type(op)}")

@@ -618,7 +618,12 @@ def test_reduce(v):
 
 
 def test_reduce_agg(v):
-    assert v.reduce(agg.sum) == 4
+    s = v.reduce(agg.sum).new()
+    assert s.dtype == "INT64"
+    assert s == 4
+    s = v.reduce(agg.sum[float]).new()
+    assert s.dtype == "FP64"
+    assert s == 4
     assert v.reduce(agg.prod) == 0
     assert v.reduce(agg.count) == 4
     assert v.reduce(agg.count_nonzero) == 3
@@ -643,22 +648,8 @@ def test_reduce_agg(v):
 
 
 def test_reduce_agg_argminmax(v):
-    # This behavior differs from SuiteSparse, which treats vectors as
-    # column vectors with j == 0
     assert v.reduce(agg.argmin).value == 6
-    # assert v.reduce(agg.argmini).value == 6
-    # with pytest.raises(
-    #     ValueError,
-    #     match="Aggregator argminj may not be used with Vector.reduce; use argmin instead",
-    # ):
-    #     v.reduce(agg.argminj).value
     assert v.reduce(agg.argmax).value == 4
-    # assert v.reduce(agg.argmaxi).value == 4
-    # with pytest.raises(
-    #     ValueError,
-    #     match="Aggregator argmaxj may not be used with Vector.reduce; use argmax instead",
-    # ):
-    #     v.reduce(agg.argmaxj).value
 
 
 def test_reduce_agg_firstlast(v):
