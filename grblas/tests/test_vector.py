@@ -642,6 +642,7 @@ def test_reduce_agg(v):
     assert v.reduce(agg.L1norm) == 4
     assert v.reduce(agg.L2norm).new().isclose(6 ** 0.5)
     assert v.reduce(agg.Linfnorm) == 2
+    assert v.reduce(agg.exists) == 1
     w = binary.plus(v, 1).new()
     assert w.reduce(agg.geometric_mean).new().isclose(12 ** 0.25)
     assert w.reduce(agg.harmonic_mean).new().isclose(12 / 7)
@@ -654,6 +655,9 @@ def test_reduce_agg(v):
     )
     s = v.reduce(silly).new()
     assert s.isclose(0.5 ** 1.5)
+
+    s = Vector.new(int, size=5).reduce(silly).new()
+    assert s.is_empty
 
 
 def test_reduce_agg_argminmax(v):

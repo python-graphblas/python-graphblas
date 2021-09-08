@@ -13,6 +13,7 @@ from .vector import Vector
 
 
 def _get_types(ops, initdtype):
+    """Determine the input and output types of an aggregator based on a list of ops"""
     if initdtype is None:
         prev = dict(ops[0].types)
     else:
@@ -117,6 +118,10 @@ class TypedAggregator:
             return
 
         if agg._composite is not None:
+            # Masks are applied throughout the aggregation, including composite aggregations.
+            # Aggregations done while `in_composite is True` should return the updater parent
+            # if the result is not a Scalar.  If the result is a Scalar, then there can be no
+            # output mask, and a Vector of size 1 should be returned instead.
             results = []
             mask = updater.kwargs.get("mask")
             for cur_agg in agg._composite:
@@ -256,6 +261,7 @@ agg.sum_of_inverses = Aggregator(
     semiring=semiring.plus_pow,
     semiring2=semiring.plus_first,
 )
+agg.exists = Aggregator("exists", semiring=semiring.any_pair, semiring2=semiring.any_pair)
 
 # Semiring and finalize
 agg.hypot = Aggregator(
@@ -282,10 +288,10 @@ agg.logaddexp2 = Aggregator(
     finalize=unary.log2,
 )
 # Alternatives
-# hypot as monoid doesn't work if single negative element!
-# hypot = Aggregator('hypot', monoid=semiring.numpy.hypot)
 # logaddexp = Aggregator('logaddexp', monoid=semiring.numpy.logaddexp)
 # logaddexp2 = Aggregator('logaddexp2', monoid=semiring.numpy.logaddexp2)
+# hypot as monoid doesn't work if single negative element!
+# hypot = Aggregator('hypot', monoid=semiring.numpy.hypot)
 
 agg.L0norm = agg.count_nonzero
 agg.L1norm = Aggregator("L1norm", semiring=semiring.plus_absfirst, semiring2=semiring.plus_first)
@@ -448,8 +454,7 @@ def _argminmaxij(
         masked(mask=masked.V, replace=True) << masked  # Could use select
         init = Matrix.new(bool, nrows=v._size, ncols=1)
         init[:, :] = False  # O(1) dense column vector in SuiteSparse 5
-        step2 = Vector.new(updater.parent.dtype, size=1)
-        step2 << col_semiring(masked @ init)
+        step2 = col_semiring(masked @ init).new()
         if in_composite:
             return step2
         expr = step2.reduce(_any)
@@ -516,7 +521,7 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
         if expr.method_name == "reduce_columns":
             A = A.T
         init = Vector.new(bool, size=A._ncols)
-        init[:] = False
+        init[:] = False  # O(1) dense vector in SuiteSparse 5
         step1 = semiring(A @ init).new()
         Is, Js = step1.to_values()
         # TODO: perform these loops in e.g. Cython
@@ -529,13 +534,13 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
         # for i, j in zip(Is, Js):
         #     v[i] = A[i, j].value
         result = Vector.from_values(Is, vals, size=A._nrows)
-        if in_composite:
-            return result
         updater << result
+        if in_composite:
+            return updater.parent
     elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
         v = expr.args[0]
         init = Matrix.new(bool, nrows=v._size, ncols=1)
-        init[:, :] = False
+        init[:, :] = False  # O(1) dense matrix in SuiteSparse 5
         step1 = semiring(v @ init).new()
         index = step1[0].value
         if index is None:
@@ -546,10 +551,10 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
     else:  # GrB_Matrix_reduce
         A = expr.args[0]
         init1 = Matrix.new(bool, nrows=A._ncols, ncols=1)
-        init1[:, :] = False
+        init1[:, :] = False  # O(1) dense matrix in SuiteSparse 5
         step1 = semiring(A @ init1).new()
         init2 = Vector.new(bool, size=A._nrows)
-        init2[:] = False
+        init2[:] = False  # O(1) dense vector in SuiteSparse 5
         step2 = semiring(step1.T @ init2).new()
         i = step2[0].value
         if i is None:
@@ -579,15 +584,15 @@ def _first_last_index(agg, updater, expr, *, in_composite, semiring):
         if expr.method_name == "reduce_columns":
             A = A.T
         init = Vector.new(bool, size=A._ncols)
-        init[:] = False
+        init[:] = False  # O(1) dense vector in SuiteSparse 5
         expr = semiring(A @ init)
-        if in_composite:
-            return expr.new()
         updater << expr
+        if in_composite:
+            return updater.parent
     elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
         v = expr.args[0]
         init = Matrix.new(bool, nrows=v._size, ncols=1)
-        init[:, :] = False
+        init[:, :] = False  # O(1) dense matrix in SuiteSparse 5
         step1 = semiring(v @ init).new()
         if in_composite:
             return step1

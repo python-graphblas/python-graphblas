@@ -25,6 +25,7 @@ Semiring aggregators with O(1) dense vector:
     - count_zero
     - sum_of_squares
     - sum_of_inverses
+    - exists, 1 if any values
 
 Semiring aggregators with UnaryOp applied to the final result:
     - hypot
@@ -62,6 +63,10 @@ Custom recipes:
 #   - mean_absolute_deviation, absolute_deviation / count
 #   - argmini, argminj, argmaxi, argmaxj
 #   - firsti, firstj, lasti, lastj
+#   - lxnor monoid: even number of true
+#   - lxor monoid: odd number of true
+#   - bxnor monoid: even bits
+#   - bnor monoid: odd bits
 """
 # All items are dynamically added by classes in _agg.py
 # This module acts as a container of Aggregator instances

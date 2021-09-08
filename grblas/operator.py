@@ -1078,6 +1078,7 @@ class Monoid(OpBase):
                 cur_op._typed_ops["BOOL"] = typed_op
 
         for cur_op in (monoid.lor, monoid.land, monoid.lxnor, monoid.lxor):
+            bool_op = cur_op._typed_ops["BOOL"]
             for dtype in (
                 "FP32",
                 "FP64",
@@ -1090,10 +1091,11 @@ class Monoid(OpBase):
                 "UINT32",
                 "UINT64",
             ):
-                assert dtype not in cur_op.types
+                if dtype in cur_op.types:  # pragma: no cover
+                    continue
                 cur_op.types[dtype] = "BOOL"
                 cur_op.coercions[dtype] = "BOOL"
-                cur_op._typed_ops[dtype] = lor
+                cur_op._typed_ops[dtype] = bool_op
 
     __call__ = TypedBuiltinMonoid.__call__
 

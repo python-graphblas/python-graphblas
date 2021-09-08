@@ -1118,6 +1118,12 @@ def test_reduce_agg(A):
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 3, 5, 5.5, 4, 4])
     assert w14.isequal(expected)
 
+    w15 = A.reduce_rows(agg.exists).new()
+    w16 = A.reduce_columns(agg.exists).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [1, 1, 1, 1, 1, 1, 1])
+    assert w15.isequal(expected)
+    assert w16.isequal(expected)
+
     assert A.reduce_scalar(agg.sum).value == 47
     assert A.reduce_scalar(agg.prod).value == 1270080
     assert A.reduce_scalar(agg.count).value == 12
@@ -1128,6 +1134,7 @@ def test_reduce_agg(A):
     assert A.reduce_scalar(agg.logaddexp).new().isclose(8.6071076)
     assert A.reduce_scalar(agg.logaddexp2).new().isclose(9.2288187)
     assert A.reduce_scalar(agg.mean).new().isclose(47 / 12)
+    assert A.reduce_scalar(agg.exists) == 1
 
     silly = agg.Aggregator(
         "silly",
