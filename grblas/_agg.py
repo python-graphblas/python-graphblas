@@ -1,72 +1,3 @@
-"""`grblas.agg` is an experimental module for exploring Aggregators.
-
-Aggregators may be used in reduce methods:
-    - Matrix.reduce_rows
-    - Matrix.reduce_columns
-    - Matrix.reduce_scalar
-    - Vector.reduce
-
-Aggregators are implemented as recipes that often use monoids or semirings.
-
-Monoid-only aggregators:
-    - sum
-    - prod
-    - all
-    - any
-    - min
-    - max
-    - any_value
-    - bitwise_all
-    - bitwise_any
-
-Semiring aggregators with O(1) dense vector:
-    - count
-    - count_nonzero
-    - count_zero
-    - sum_of_squares
-    - sum_of_inverses
-
-Semiring aggregators with UnaryOp applied to the final result:
-    - hypot
-    - logaddexp
-    - logaddexp2
-
-Vector norms
-    - L0norm (=count_nonzero), sum(x != 0).  Not a proper norm.
-    - L1norm, sum(abs(x))
-    - L2norm (=hypot), sum(x**2)**0.5
-    - Linfnorm, max(abs(x))
-
-Composite aggregators (require multiple aggregation steps):
-    - mean
-    - peak_to_peak, max - min
-    - varp, population variance
-    - vars, sample variance
-    - stdp, population standard deviation
-    - stds, sample standard deviation
-    - geometric_mean
-    - harmonic_mean
-    - root_mean_square
-
-Custom recipes:
-    - first
-    - last
-    - argmini
-    - argmaxi
-    # These don't work with Vector.reduce
-    - argminj
-    - argmaxj
-    # These don't work with Matrix.reduce_scalar
-    - first_index  (argfirst?)
-    - last_index (arglast?)
-    - argmin
-    - argmax
-    # Misc.
-    # absolute_deviation, sum(abs(x - mean(x))),  sum_absminus(x, mean(x))
-    # mean_absolute_deviation, absolute_deviation / count
-    # firsti, firstj, lasti, lastj
-
-"""
 from functools import partial
 
 import numpy as np
@@ -75,7 +6,6 @@ from . import agg, binary, monoid, semiring, unary
 from .dtypes import lookup_dtype, unify
 from .matrix import Matrix
 from .monoid import any as _any
-from .monoid import min as _min
 from .operator import _normalize_type
 from .scalar import Scalar
 from .ss import diag
@@ -159,6 +89,7 @@ class TypedAggregator:
         self.return_type = agg.types[dtype]
 
     def __repr__(self):
+        1 / 0
         return f"{self.name}[{self.type}]"
 
     def _new(self, updater, expr, *, in_composite=False):
@@ -199,7 +130,7 @@ class TypedAggregator:
                     expr = Scalar.new(expr.dtype)
                 updater << expr
             else:
-                raise NotImplementedError()
+                raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
             if in_composite:
                 1 / 0
                 return updater.parent
@@ -283,7 +214,7 @@ class TypedAggregator:
                 expr = Scalar.new(expr.dtype)
             updater << expr
         else:
-            raise NotImplementedError()
+            raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
 
 
 # Monoid-only
@@ -469,7 +400,6 @@ def _argminmaxij(
     monoid,
     col_semiring,
     row_semiring,
-    allow_vector=True,
 ):
     if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
         A = expr.args[0]
@@ -504,12 +434,6 @@ def _argminmaxij(
                 1 / 0
                 return updater.parent
     elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
-        if not allow_vector:
-            # XXX: it would be best to raise upon creation of the expression
-            raise ValueError(
-                f"Aggregator {agg.name} may not be used with Vector.reduce; "
-                f"use {agg.name[:-1]} instead."
-            )
         v = expr.args[0]
         step1 = v.reduce(monoid).new()
         masked = binary.eq(v, step1).new()
@@ -525,45 +449,8 @@ def _argminmaxij(
         if step2._nvals == 0:
             expr = Scalar.new(expr.dtype)
         updater << expr
-    elif expr.cfunc_name.startswith("GrB_Matrix_reduce"):
-        A = expr.args[0]
-        if A._nvals == 0:
-            if in_composite:
-                1 / 0
-                return Vector.new(updater.parent.dtype, size=1)
-            updater << Scalar.new(updater.parent.dtype)
-            return
-        step1 = A.reduce_scalar(monoid).new()
-
-        masked = binary.eq(A, step1).new()
-        masked(mask=masked.V, replace=True) << masked  # Could use select
-        init = Vector.new(bool, size=A._nrows)
-        init[:] = False  # O(1) dense vector in SuiteSparse 5
-
-        # Always choose the one with smallest i
-        step2 = semiring.min_secondi(init @ masked).new()
-        step3 = step2.reduce(_min)
-        if agg.name in {"argmini", "argmaxi"}:
-            # We're done!
-            if in_composite:
-                1 / 0
-                rv = Vector.new(step3.dtype, size=1)
-                rv[0] = step3.value
-                return rv
-            updater << step3
-            return
-        i = step3.value
-        step4 = Vector.from_values([i], [False], size=A._nrows)
-        step5 = col_semiring(step4 @ masked).new()
-        step6 = step5.reduce(_min)
-        if in_composite:
-            1 / 0
-            rv = Vector.new(step6.dtype, size=1)
-            rv[0] = step6.value
-            return rv
-        updater << step6
     else:
-        raise NotImplementedError()
+        raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
 
 
 def _argminmax(agg, updater, expr, *, in_composite, monoid):
@@ -597,60 +484,10 @@ def _argminmax(agg, updater, expr, *, in_composite, monoid):
             row_semiring=semiring.min_firsti,
             col_semiring=semiring.min_secondi,
         )
-    elif expr.cfunc_name.startswith("GrB_Matrix_reduce"):
-        # XXX: it would be best to raise upon creation of the expression
-        raise ValueError(
-            f"Aggregator {agg.name} may not be used with Matrix.reduce_scalar; "
-            f"use {agg.name}i or {agg.name}j instead."
-        )
     else:
-        raise NotImplementedError()
+        raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
 
 
-# argmini (argmaxi) is the same as argmin (argmax) for vectors
-agg.argmini = Aggregator(
-    "argmini",
-    custom=partial(
-        _argminmaxij,
-        monoid=monoid.min,
-        row_semiring=semiring.min_firsti,
-        col_semiring=semiring.min_secondi,
-    ),
-    types=[semiring.min_firsti],
-)
-agg.argmaxi = Aggregator(
-    "argmaxi",
-    custom=partial(
-        _argminmaxij,
-        monoid=monoid.max,
-        row_semiring=semiring.min_firsti,
-        col_semiring=semiring.min_secondi,
-    ),
-    types=[semiring.min_firsti],
-)
-# argminj, argmaxj don't work on vectors
-agg.argminj = Aggregator(
-    "argminj",
-    custom=partial(
-        _argminmaxij,
-        monoid=monoid.min,
-        row_semiring=semiring.min_firstj,
-        col_semiring=semiring.min_secondj,
-        allow_vector=False,
-    ),
-    types=[semiring.min_firstj],
-)
-agg.argmaxj = Aggregator(
-    "argmaxj",
-    custom=partial(
-        _argminmaxij,
-        monoid=monoid.max,
-        row_semiring=semiring.min_firstj,
-        col_semiring=semiring.min_secondj,
-        allow_vector=False,
-    ),
-    types=[semiring.min_firstj],
-)
 # These "do the right thing", but don't work with `reduce_scalar`
 agg.argmin = Aggregator(
     "argmin",
@@ -735,21 +572,8 @@ def _first_last_index(agg, updater, expr, *, in_composite, semiring):
         init[:, :] = False
         step1 = semiring(v @ init).new()
         updater << step1[0]
-    else:  # GrB_Matrix_reduce
-        # XXX: it would be best to raise upon creation of the expression
-        raise ValueError(f"Aggregator {agg.name} may not be used with Matrix.reduce_scalar")
-        # To get the first/last j index:
-        # A = expr.args[0]
-        # init1 = Matrix.new(bool, nrows=A._ncols, ncols=1)
-        # init1[:, :] = False
-        # step1 = semiring(A @ init1).new()
-        # init2 = Vector.new(bool, size=A._nrows)
-        # init2[:] = False
-        # step2 = semiring(step1.T @ init2).new()
-        # i = step2[0].value
-        # if i is None:
-        #     i = 0
-        # updater << step1[i, 0]
+    else:
+        raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
 
 
 agg.first_index = Aggregator(

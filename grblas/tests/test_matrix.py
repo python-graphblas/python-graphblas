@@ -1132,61 +1132,59 @@ def test_reduce_agg(A):
 
 def test_reduce_agg_argminmax(A):
     # reduce_rows
-    w1 = A.reduce_rows(agg.argminj).new()
+    # w1 = A.reduce_rows(agg.argminj).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [1, 6, 5, 0, 5, 2, 4])
-    assert w1.isequal(expected)
+    # assert w1.isequal(expected)
     w1b = A.reduce_rows(agg.argmin).new()
     assert w1b.isequal(expected)
-    w1c = A.T.reduce_columns(agg.argmini).new()
-    assert w1c.isequal(expected)
-    w2 = A.reduce_rows(agg.argmaxj).new()
+    # w1c = A.T.reduce_columns(agg.argmini).new()
+    # assert w1c.isequal(expected)
+    # w2 = A.reduce_rows(agg.argmaxj).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 4, 5, 0, 5, 2, 3])
-    assert w2.isequal(expected)
+    # assert w2.isequal(expected)
     w2b = A.reduce_rows(agg.argmax).new()
     assert w2b.isequal(expected)
-    w2c = A.T.reduce_columns(agg.argmaxi).new()
-    assert w2c.isequal(expected)
-    w3 = A.reduce_rows(agg.argmini).new()
+    # w2c = A.T.reduce_columns(agg.argmaxi).new()
+    # assert w2c.isequal(expected)
+    # w3 = A.reduce_rows(agg.argmini).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5, 6])
-    assert w3.isequal(expected)
-    w4 = A.reduce_rows(agg.argmaxi).new()
-    assert w4.isequal(expected)
+    # assert w3.isequal(expected)
+    # w4 = A.reduce_rows(agg.argmaxi).new()
+    # assert w4.isequal(expected)
 
     # reduce_cols
-    w5 = A.reduce_columns(agg.argminj).new()
-    assert w5.isequal(expected)
-    w6 = A.reduce_columns(agg.argmaxj).new()
-    assert w6.isequal(expected)
-    w7 = A.reduce_columns(agg.argmini).new()
+    # w5 = A.reduce_columns(agg.argminj).new()
+    # assert w5.isequal(expected)
+    # w6 = A.reduce_columns(agg.argmaxj).new()
+    # assert w6.isequal(expected)
+    # w7 = A.reduce_columns(agg.argmini).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 5, 0, 6, 2, 1])
-    assert w7.isequal(expected)
+    # assert w7.isequal(expected)
     w7b = A.reduce_columns(agg.argmin).new()
     assert w7b.isequal(expected)
-    w7c = A.T.reduce_rows(agg.argminj).new()
-    assert w7c.isequal(expected)
-    w8 = A.reduce_columns(agg.argmaxi).new()
+    # w7c = A.T.reduce_rows(agg.argminj).new()
+    # assert w7c.isequal(expected)
+    # w8 = A.reduce_columns(agg.argmaxi).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 6, 6, 1, 4, 1])
-    assert w8.isequal(expected)
+    # assert w8.isequal(expected)
     w8b = A.reduce_columns(agg.argmax).new()
     assert w8b.isequal(expected)
-    w8c = A.reduce_columns(agg.argmaxi).new()
-    assert w8c.isequal(expected)
+    # w8c = A.reduce_columns(agg.argmaxi).new()
+    # assert w8c.isequal(expected)
 
     # reduce_scalar
-    assert A.reduce_scalar(agg.argmini) == 2
-    assert A.reduce_scalar(agg.argmaxi) == 1
-    assert A.reduce_scalar(agg.argminj) == 5
-    assert A.reduce_scalar(agg.argmaxj) == 4
+    # assert A.reduce_scalar(agg.argmini) == 2
+    # assert A.reduce_scalar(agg.argmaxi) == 1
+    # assert A.reduce_scalar(agg.argminj) == 5
+    # assert A.reduce_scalar(agg.argmaxj) == 4
     with pytest.raises(
-        ValueError,
-        match="Aggregator argmin may not be used with Matrix.reduce_scalar; "
-        "use argmini or argminj instead",
+        ValueError, match="Aggregator argmin may not be used with Matrix.reduce_scalar"
     ):
         A.reduce_scalar(agg.argmin).value
-    assert A.T.reduce_scalar(agg.argmini) == 2
-    assert A.T.reduce_scalar(agg.argmaxi) == 4
-    assert A.T.reduce_scalar(agg.argminj) == 5
-    assert A.T.reduce_scalar(agg.argmaxj) == 1
+    # assert A.T.reduce_scalar(agg.argmini) == 2
+    # assert A.T.reduce_scalar(agg.argmaxi) == 4
+    # assert A.T.reduce_scalar(agg.argminj) == 5
+    # assert A.T.reduce_scalar(agg.argmaxj) == 1
 
 
 def test_reduce_agg_firstlast(A):

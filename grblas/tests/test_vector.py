@@ -638,7 +638,6 @@ def test_reduce_agg(v):
     assert v.reduce(agg.L2norm).new().isclose(6 ** 0.5)
     assert v.reduce(agg.Linfnorm) == 2
     w = binary.plus(v, 1).new()
-    print(w.reduce(agg.geometric_mean).new())
     assert w.reduce(agg.geometric_mean).new().isclose(12 ** 0.25)
     assert w.reduce(agg.harmonic_mean).new().isclose(12 / 7)
 
@@ -647,19 +646,19 @@ def test_reduce_agg_argminmax(v):
     # This behavior differs from SuiteSparse, which treats vectors as
     # column vectors with j == 0
     assert v.reduce(agg.argmin).value == 6
-    assert v.reduce(agg.argmini).value == 6
-    with pytest.raises(
-        ValueError,
-        match="Aggregator argminj may not be used with Vector.reduce; use argmin instead",
-    ):
-        v.reduce(agg.argminj).value
+    # assert v.reduce(agg.argmini).value == 6
+    # with pytest.raises(
+    #     ValueError,
+    #     match="Aggregator argminj may not be used with Vector.reduce; use argmin instead",
+    # ):
+    #     v.reduce(agg.argminj).value
     assert v.reduce(agg.argmax).value == 4
-    assert v.reduce(agg.argmaxi).value == 4
-    with pytest.raises(
-        ValueError,
-        match="Aggregator argmaxj may not be used with Vector.reduce; use argmax instead",
-    ):
-        v.reduce(agg.argmaxj).value
+    # assert v.reduce(agg.argmaxi).value == 4
+    # with pytest.raises(
+    #     ValueError,
+    #     match="Aggregator argmaxj may not be used with Vector.reduce; use argmax instead",
+    # ):
+    #     v.reduce(agg.argmaxj).value
 
 
 def test_reduce_agg_firstlast(v):
@@ -679,7 +678,7 @@ def test_reduce_agg_firstlast_index(v):
 def test_reduce_agg_empty():
     v = Vector.new("UINT8", size=3)
     for attr, aggr in vars(agg).items():
-        if not isinstance(aggr, agg.Aggregator) or attr in {"argminj", "argmaxj"}:
+        if not isinstance(aggr, agg.Aggregator):
             continue
         s = v.reduce(aggr).new()
         assert s.value is None
