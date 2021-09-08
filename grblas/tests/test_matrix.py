@@ -1129,6 +1129,24 @@ def test_reduce_agg(A):
     assert A.reduce_scalar(agg.logaddexp2).new().isclose(9.2288187)
     assert A.reduce_scalar(agg.mean).new().isclose(47 / 12)
 
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.varp, agg.stdp],
+        finalize=lambda x, y: binary.times(x & y),
+        types=[agg.varp],
+    )
+    v1 = A.reduce_rows(agg.varp).new()
+    v2 = A.reduce_rows(agg.stdp).new()
+    assert v1.isclose(binary.times(v2 & v2).new())
+    v3 = A.reduce_rows(silly).new()
+    assert v3.isclose(binary.times(v1 & v2).new())
+
+    s1 = A.reduce_scalar(agg.varp).new()
+    s2 = A.reduce_scalar(agg.stdp).new()
+    assert s1.isclose(s2.value * s2.value)
+    s3 = A.reduce_scalar(silly).new()
+    assert s3.isclose(s1.value * s2.value)
+
 
 def test_reduce_agg_argminmax(A):
     # reduce_rows
@@ -1160,6 +1178,25 @@ def test_reduce_agg_argminmax(A):
         ValueError, match="Aggregator argmin may not be used with Matrix.reduce_scalar"
     ):
         A.reduce_scalar(agg.argmin)
+
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.argmin, agg.argmax],
+        finalize=lambda x, y: binary.plus(x & y),
+        types=[agg.argmin],
+    )
+    v1 = A.reduce_rows(agg.argmin).new()
+    v2 = A.reduce_rows(agg.argmax).new()
+    v3 = A.reduce_rows(silly).new()
+    assert v3.isequal(binary.plus(v1 & v2).new())
+
+    v1 = A.reduce_columns(agg.argmin).new()
+    v2 = A.reduce_columns(agg.argmax).new()
+    v3 = A.reduce_columns(silly).new()
+    assert v3.isequal(binary.plus(v1 & v2).new())
+
+    with pytest.raises(ValueError, match="Aggregator"):
+        A.reduce_scalar(silly).new()
 
 
 def test_reduce_agg_firstlast(A):
@@ -1200,6 +1237,22 @@ def test_reduce_agg_firstlast(A):
     w8 = B.reduce_columns(agg.last).new()
     assert w8.isequal(Vector.new(float, size=B.ncols))
 
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.first, agg.last],
+        finalize=lambda x, y: binary.plus(x & y),
+        types=[agg.first],
+    )
+    v1 = A.reduce_rows(agg.first).new()
+    v2 = A.reduce_rows(agg.last).new()
+    v3 = A.reduce_rows(silly).new()
+    assert v3.isequal(binary.plus(v1 & v2).new())
+
+    s1 = A.reduce_scalar(agg.first).new()
+    s2 = A.reduce_scalar(agg.last).new()
+    s3 = A.reduce_scalar(silly).new()
+    assert s3.isequal(s1.value + s2.value)
+
 
 def test_reduce_agg_firstlast_index(A):
     # reduce_rows
@@ -1231,6 +1284,20 @@ def test_reduce_agg_firstlast_index(A):
         A.reduce_scalar(agg.first_index).new()
     with pytest.raises(ValueError, match="Aggregator last_index may not"):
         A.reduce_scalar(agg.last_index).new()
+
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.first_index, agg.last_index],
+        finalize=lambda x, y: binary.plus(x & y),
+        types=[agg.first_index],
+    )
+    v1 = A.reduce_rows(agg.first_index).new()
+    v2 = A.reduce_rows(agg.last_index).new()
+    v3 = A.reduce_rows(silly).new()
+    assert v3.isequal(binary.plus(v1 & v2).new())
+
+    with pytest.raises(ValueError, match="Aggregator"):
+        A.reduce_scalar(silly).new()
 
 
 def test_reduce_agg_empty():

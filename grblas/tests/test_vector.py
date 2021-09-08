@@ -646,10 +646,28 @@ def test_reduce_agg(v):
     assert w.reduce(agg.geometric_mean).new().isclose(12 ** 0.25)
     assert w.reduce(agg.harmonic_mean).new().isclose(12 / 7)
 
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.varp, agg.stdp],
+        finalize=lambda x, y: binary.times(x & y),
+        types=[agg.varp],
+    )
+    s = v.reduce(silly).new()
+    assert s.isclose(0.5 ** 1.5)
+
 
 def test_reduce_agg_argminmax(v):
     assert v.reduce(agg.argmin).value == 6
     assert v.reduce(agg.argmax).value == 4
+
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.argmin, agg.argmax],
+        finalize=lambda x, y: binary.plus(x & y),
+        types=[agg.argmin],
+    )
+    s = v.reduce(silly).new()
+    assert s == 10
 
 
 def test_reduce_agg_firstlast(v):
@@ -660,10 +678,28 @@ def test_reduce_agg_firstlast(v):
     assert v.reduce(agg.first).value == 1
     assert v.reduce(agg.last).value == 0
 
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.first, agg.last],
+        finalize=lambda x, y: binary.plus(x & y),
+        types=[agg.first],
+    )
+    s = v.reduce(silly).new()
+    assert s == 1
+
 
 def test_reduce_agg_firstlast_index(v):
     assert v.reduce(agg.first_index).value == 1
     assert v.reduce(agg.last_index).value == 6
+
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.first_index, agg.last_index],
+        finalize=lambda x, y: binary.plus(x & y),
+        types=[agg.first_index],
+    )
+    s = v.reduce(silly).new()
+    assert s == 7
 
 
 def test_reduce_agg_empty():

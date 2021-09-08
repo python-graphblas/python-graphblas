@@ -137,8 +137,13 @@ class TypedAggregator:
             else:
                 raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
             if in_composite:
-                1 / 0
-                return updater.parent
+                parent = updater.parent
+                if not parent._is_scalar:
+                    return parent
+                rv = Vector.new(parent.dtype, size=1)
+                if parent._nvals != 0:
+                    rv[0] = parent
+                return rv
             return
 
         if agg._custom is not None:
@@ -421,7 +426,6 @@ def _argminmaxij(
             init[:] = False  # O(1) dense vector in SuiteSparse 5
             updater << row_semiring(masked @ init)
             if in_composite:
-                1 / 0
                 return updater.parent
         else:
             step1 = A.reduce_columns(monoid).new()
@@ -436,7 +440,6 @@ def _argminmaxij(
             init[:] = False  # O(1) dense vector in SuiteSparse 5
             updater << col_semiring(init @ masked)
             if in_composite:
-                1 / 0
                 return updater.parent
     elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
         v = expr.args[0]
@@ -448,7 +451,6 @@ def _argminmaxij(
         step2 = Vector.new(updater.parent.dtype, size=1)
         step2 << col_semiring(masked @ init)
         if in_composite:
-            1 / 0
             return step2
         expr = step2.reduce(_any)
         if step2._nvals == 0:
@@ -489,6 +491,8 @@ def _argminmax(agg, updater, expr, *, in_composite, monoid):
             row_semiring=semiring.min_firsti,
             col_semiring=semiring.min_secondi,
         )
+    elif expr.cfunc_name.startswith("GrB_Matrix_reduce"):
+        raise ValueError(f"Aggregator {agg.name} may not be used with Matrix.reduce_scalar.")
     else:
         raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
 
@@ -525,6 +529,8 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
         # for i, j in zip(Is, Js):
         #     v[i] = A[i, j].value
         result = Vector.from_values(Is, vals, size=A._nrows)
+        if in_composite:
+            return result
         updater << result
     elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
         v = expr.args[0]
@@ -534,6 +540,8 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
         index = step1[0].value
         if index is None:
             index = 0
+        if in_composite:
+            return v[[index]].new()
         updater << v[index]
     else:  # GrB_Matrix_reduce
         A = expr.args[0]
@@ -548,6 +556,8 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
             i = j = 0
         else:
             j = step1[i, 0].value
+        if in_composite:
+            return A[i, [j]].new()
         updater << A[i, j]
 
 
@@ -570,13 +580,20 @@ def _first_last_index(agg, updater, expr, *, in_composite, semiring):
             A = A.T
         init = Vector.new(bool, size=A._ncols)
         init[:] = False
-        updater << semiring(A @ init)
+        expr = semiring(A @ init)
+        if in_composite:
+            return expr.new()
+        updater << expr
     elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
         v = expr.args[0]
         init = Matrix.new(bool, nrows=v._size, ncols=1)
         init[:, :] = False
         step1 = semiring(v @ init).new()
+        if in_composite:
+            return step1
         updater << step1[0]
+    elif expr.cfunc_name.startswith("GrB_Matrix_reduce"):
+        raise ValueError(f"Aggregator {agg.name} may not be used with Matrix.reduce_scalar.")
     else:
         raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
 
