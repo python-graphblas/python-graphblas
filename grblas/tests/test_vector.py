@@ -618,15 +618,20 @@ def test_reduce(v):
 
 
 def test_reduce_agg(v):
-    assert v.reduce(agg.sum) == 4
+    s = v.reduce(agg.sum).new()
+    assert s.dtype == "INT64"
+    assert s == 4
+    s = v.reduce(agg.sum[float]).new()
+    assert s.dtype == "FP64"
+    assert s == 4
     assert v.reduce(agg.prod) == 0
     assert v.reduce(agg.count) == 4
     assert v.reduce(agg.count_nonzero) == 3
     assert v.reduce(agg.count_zero) == 1
     assert v.reduce(agg.sum_of_squares) == 6
-    assert v.reduce(agg.hypot[float]).new().isclose(6 ** 0.5)
-    assert v.reduce(agg.logaddexp[float]).new().isclose(np.log(1 + 2 * np.e + np.e ** 2))
-    assert v.reduce(agg.logaddexp2[float]).new().isclose(np.log2(9))
+    assert v.reduce(agg.hypot).new().isclose(6 ** 0.5)
+    assert v.reduce(agg.logaddexp).new().isclose(np.log(1 + 2 * np.e + np.e ** 2))
+    assert v.reduce(agg.logaddexp2).new().isclose(np.log2(9))
     assert v.reduce(agg.mean) == 1
     assert v.reduce(agg.peak_to_peak) == 2
     assert v.reduce(agg.varp).new().isclose(0.5)
@@ -635,30 +640,38 @@ def test_reduce_agg(v):
     assert v.reduce(agg.stds).new().isclose((2 / 3) ** 0.5)
     assert v.reduce(agg.L0norm) == 3
     assert v.reduce(agg.L1norm) == 4
-    assert v.reduce(agg.L2norm[float]).new().isclose(6 ** 0.5)
+    assert v.reduce(agg.L2norm).new().isclose(6 ** 0.5)
     assert v.reduce(agg.Linfnorm) == 2
+    assert v.reduce(agg.exists) == 1
     w = binary.plus(v, 1).new()
     assert w.reduce(agg.geometric_mean).new().isclose(12 ** 0.25)
     assert w.reduce(agg.harmonic_mean).new().isclose(12 / 7)
 
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.varp, agg.stdp],
+        finalize=lambda x, y: binary.times(x & y),
+        types=[agg.varp],
+    )
+    s = v.reduce(silly).new()
+    assert s.isclose(0.5 ** 1.5)
+
+    s = Vector.new(int, size=5).reduce(silly).new()
+    assert s.is_empty
+
 
 def test_reduce_agg_argminmax(v):
-    # This behavior differs from SuiteSparse, which treats vectors as
-    # column vectors with j == 0
     assert v.reduce(agg.argmin).value == 6
-    assert v.reduce(agg.argmini).value == 6
-    with pytest.raises(
-        ValueError,
-        match="Aggregator argminj may not be used with Vector.reduce; use argmin instead",
-    ):
-        v.reduce(agg.argminj).value
     assert v.reduce(agg.argmax).value == 4
-    assert v.reduce(agg.argmaxi).value == 4
-    with pytest.raises(
-        ValueError,
-        match="Aggregator argmaxj may not be used with Vector.reduce; use argmax instead",
-    ):
-        v.reduce(agg.argmaxj).value
+
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.argmin, agg.argmax],
+        finalize=lambda x, y: binary.plus(x & y),
+        types=[agg.argmin],
+    )
+    s = v.reduce(silly).new()
+    assert s == 10
 
 
 def test_reduce_agg_firstlast(v):
@@ -669,16 +682,34 @@ def test_reduce_agg_firstlast(v):
     assert v.reduce(agg.first).value == 1
     assert v.reduce(agg.last).value == 0
 
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.first, agg.last],
+        finalize=lambda x, y: binary.plus(x & y),
+        types=[agg.first],
+    )
+    s = v.reduce(silly).new()
+    assert s == 1
+
 
 def test_reduce_agg_firstlast_index(v):
     assert v.reduce(agg.first_index).value == 1
     assert v.reduce(agg.last_index).value == 6
 
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.first_index, agg.last_index],
+        finalize=lambda x, y: binary.plus(x & y),
+        types=[agg.first_index],
+    )
+    s = v.reduce(silly).new()
+    assert s == 7
+
 
 def test_reduce_agg_empty():
     v = Vector.new("UINT8", size=3)
     for attr, aggr in vars(agg).items():
-        if not isinstance(aggr, agg.Aggregator) or attr in {"argminj", "argmaxj"}:
+        if not isinstance(aggr, agg.Aggregator):
             continue
         s = v.reduce(aggr).new()
         assert s.value is None

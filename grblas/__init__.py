@@ -25,6 +25,7 @@ _SPECIAL_ATTRS = {
     "Recorder",
     "Scalar",
     "Vector",
+    "_agg",
     "_ss",
     "agg",
     "base",
@@ -125,6 +126,9 @@ def _init(backend_arg, blocking, automatic=False):
     _init_params = passed_params
 
 
+_NEEDS_OPERATOR = {"_agg", "agg", "base", "io", "matrix", "scalar", "vector", "recorder", "ss"}
+
+
 def _load(name):
     if name in {"Matrix", "Vector", "Scalar", "Recorder"}:
         module_name = name.lower()
@@ -135,6 +139,9 @@ def _load(name):
         globals()[name] = val
     else:
         # Everything else is a module
+        if name in _NEEDS_OPERATOR and "operator" not in globals():
+            # Avoid circular imports
+            _load("operator")
         module = _importlib.import_module(f".{name}", __name__)
         globals()[name] = module
 

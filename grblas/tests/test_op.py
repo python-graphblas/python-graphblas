@@ -5,6 +5,7 @@ import grblas
 from grblas import (
     Matrix,
     Vector,
+    agg,
     binary,
     dtypes,
     exceptions,
@@ -51,6 +52,17 @@ def test_semiring():
     assert semiring.min_plus["INT32"].gb_obj == lib.GrB_MIN_PLUS_SEMIRING_INT32
     assert semiring.min_plus[dtypes.UINT16].gb_obj == lib.GrB_MIN_PLUS_SEMIRING_UINT16
     assert orig_types(semiring.min_firsti) == {"INT32", "INT64"}
+
+
+def test_agg():
+    assert repr(agg.count) == "agg.count"
+    assert repr(agg.count["INT32"]) == "agg.count[INT32]"
+    assert "INT64" in agg.sum_of_inverses
+    assert agg.sum_of_inverses["INT64"].return_type == "FP64"
+    assert "BOOL" not in agg.sum_of_inverses
+    with pytest.raises(KeyError, match="BOOL"):
+        agg.sum_of_inverses["BOOL"]
+    assert agg.varp["INT64"].return_type == "FP64"
 
 
 def test_find_opclass_unaryop():

@@ -1087,7 +1087,7 @@ def test_reduce_agg(A):
     Asquared = monoid.times(A & A).new()
     squared = Asquared.reduce_rows(monoid.plus).new()
     expected = unary.sqrt[float](squared).new()
-    w5 = A.reduce_rows(agg.hypot[float]).new()
+    w5 = A.reduce_rows(agg.hypot).new()
     assert w5.isclose(expected)
     w6 = A.reduce_rows(monoid.numpy.hypot[float]).new()
     assert w6.isclose(expected)
@@ -1095,7 +1095,7 @@ def test_reduce_agg(A):
     w7 << A.reduce_rows(agg.hypot)
     assert w7.isclose(expected)
 
-    w8 = A.reduce_rows(agg.logaddexp[float]).new()
+    w8 = A.reduce_rows(agg.logaddexp).new()
     expected = A.reduce_rows(monoid.numpy.logaddexp[float]).new()
     assert w8.isclose(w8)
 
@@ -1118,75 +1118,92 @@ def test_reduce_agg(A):
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 3, 5, 5.5, 4, 4])
     assert w14.isequal(expected)
 
+    w15 = A.reduce_rows(agg.exists).new()
+    w16 = A.reduce_columns(agg.exists).new()
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [1, 1, 1, 1, 1, 1, 1])
+    assert w15.isequal(expected)
+    assert w16.isequal(expected)
+
     assert A.reduce_scalar(agg.sum).value == 47
     assert A.reduce_scalar(agg.prod).value == 1270080
     assert A.reduce_scalar(agg.count).value == 12
     assert A.reduce_scalar(agg.count_nonzero).value == 12
     assert A.reduce_scalar(agg.count_zero).value == 0
     assert A.reduce_scalar(agg.sum_of_squares).value == 245
-    assert A.reduce_scalar(agg.hypot[float]).new().isclose(245 ** 0.5)
-    assert A.reduce_scalar(agg.logaddexp[float]).new().isclose(8.6071076)
-    assert A.reduce_scalar(agg.logaddexp2[float]).new().isclose(9.2288187)
+    assert A.reduce_scalar(agg.hypot).new().isclose(245 ** 0.5)
+    assert A.reduce_scalar(agg.logaddexp).new().isclose(8.6071076)
+    assert A.reduce_scalar(agg.logaddexp2).new().isclose(9.2288187)
     assert A.reduce_scalar(agg.mean).new().isclose(47 / 12)
+    assert A.reduce_scalar(agg.exists) == 1
+
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.varp, agg.stdp],
+        finalize=lambda x, y: binary.times(x & y),
+        types=[agg.varp],
+    )
+    v1 = A.reduce_rows(agg.varp).new()
+    v2 = A.reduce_rows(agg.stdp).new()
+    assert v1.isclose(binary.times(v2 & v2).new())
+    v3 = A.reduce_rows(silly).new()
+    assert v3.isclose(binary.times(v1 & v2).new())
+
+    s1 = A.reduce_scalar(agg.varp).new()
+    s2 = A.reduce_scalar(agg.stdp).new()
+    assert s1.isclose(s2.value * s2.value)
+    s3 = A.reduce_scalar(silly).new()
+    assert s3.isclose(s1.value * s2.value)
 
 
 def test_reduce_agg_argminmax(A):
     # reduce_rows
-    w1 = A.reduce_rows(agg.argminj).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [1, 6, 5, 0, 5, 2, 4])
-    assert w1.isequal(expected)
     w1b = A.reduce_rows(agg.argmin).new()
     assert w1b.isequal(expected)
-    w1c = A.T.reduce_columns(agg.argmini).new()
+    w1c = A.T.reduce_columns(agg.argmin).new()
     assert w1c.isequal(expected)
-    w2 = A.reduce_rows(agg.argmaxj).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 4, 5, 0, 5, 2, 3])
-    assert w2.isequal(expected)
     w2b = A.reduce_rows(agg.argmax).new()
     assert w2b.isequal(expected)
-    w2c = A.T.reduce_columns(agg.argmaxi).new()
+    w2c = A.T.reduce_columns(agg.argmax).new()
     assert w2c.isequal(expected)
-    w3 = A.reduce_rows(agg.argmini).new()
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5, 6])
-    assert w3.isequal(expected)
-    w4 = A.reduce_rows(agg.argmaxi).new()
-    assert w4.isequal(expected)
 
     # reduce_cols
-    w5 = A.reduce_columns(agg.argminj).new()
-    assert w5.isequal(expected)
-    w6 = A.reduce_columns(agg.argmaxj).new()
-    assert w6.isequal(expected)
-    w7 = A.reduce_columns(agg.argmini).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 5, 0, 6, 2, 1])
-    assert w7.isequal(expected)
     w7b = A.reduce_columns(agg.argmin).new()
     assert w7b.isequal(expected)
-    w7c = A.T.reduce_rows(agg.argminj).new()
+    w7c = A.T.reduce_rows(agg.argmin).new()
     assert w7c.isequal(expected)
-    w8 = A.reduce_columns(agg.argmaxi).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 6, 6, 1, 4, 1])
-    assert w8.isequal(expected)
     w8b = A.reduce_columns(agg.argmax).new()
     assert w8b.isequal(expected)
-    w8c = A.reduce_columns(agg.argmaxi).new()
+    w8c = A.T.reduce_rows(agg.argmax).new()
     assert w8c.isequal(expected)
 
     # reduce_scalar
-    assert A.reduce_scalar(agg.argmini) == 2
-    assert A.reduce_scalar(agg.argmaxi) == 1
-    assert A.reduce_scalar(agg.argminj) == 5
-    assert A.reduce_scalar(agg.argmaxj) == 4
     with pytest.raises(
-        ValueError,
-        match="Aggregator argmin may not be used with Matrix.reduce_scalar; "
-        "use argmini or argminj instead",
+        ValueError, match="Aggregator argmin may not be used with Matrix.reduce_scalar"
     ):
-        A.reduce_scalar(agg.argmin).value
-    assert A.T.reduce_scalar(agg.argmini) == 2
-    assert A.T.reduce_scalar(agg.argmaxi) == 4
-    assert A.T.reduce_scalar(agg.argminj) == 5
-    assert A.T.reduce_scalar(agg.argmaxj) == 1
+        A.reduce_scalar(agg.argmin)
+
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.argmin, agg.argmax],
+        finalize=lambda x, y: binary.plus(x & y),
+        types=[agg.argmin],
+    )
+    v1 = A.reduce_rows(agg.argmin).new()
+    v2 = A.reduce_rows(agg.argmax).new()
+    v3 = A.reduce_rows(silly).new()
+    assert v3.isequal(binary.plus(v1 & v2).new())
+
+    v1 = A.reduce_columns(agg.argmin).new()
+    v2 = A.reduce_columns(agg.argmax).new()
+    v3 = A.reduce_columns(silly).new()
+    assert v3.isequal(binary.plus(v1 & v2).new())
+
+    with pytest.raises(ValueError, match="Aggregator"):
+        A.reduce_scalar(silly).new()
 
 
 def test_reduce_agg_firstlast(A):
@@ -1227,6 +1244,22 @@ def test_reduce_agg_firstlast(A):
     w8 = B.reduce_columns(agg.last).new()
     assert w8.isequal(Vector.new(float, size=B.ncols))
 
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.first, agg.last],
+        finalize=lambda x, y: binary.plus(x & y),
+        types=[agg.first],
+    )
+    v1 = A.reduce_rows(agg.first).new()
+    v2 = A.reduce_rows(agg.last).new()
+    v3 = A.reduce_rows(silly).new()
+    assert v3.isequal(binary.plus(v1 & v2).new())
+
+    s1 = A.reduce_scalar(agg.first).new()
+    s2 = A.reduce_scalar(agg.last).new()
+    s3 = A.reduce_scalar(silly).new()
+    assert s3.isequal(s1.value + s2.value)
+
 
 def test_reduce_agg_firstlast_index(A):
     # reduce_rows
@@ -1258,6 +1291,20 @@ def test_reduce_agg_firstlast_index(A):
         A.reduce_scalar(agg.first_index).new()
     with pytest.raises(ValueError, match="Aggregator last_index may not"):
         A.reduce_scalar(agg.last_index).new()
+
+    silly = agg.Aggregator(
+        "silly",
+        composite=[agg.first_index, agg.last_index],
+        finalize=lambda x, y: binary.plus(x & y),
+        types=[agg.first_index],
+    )
+    v1 = A.reduce_rows(agg.first_index).new()
+    v2 = A.reduce_rows(agg.last_index).new()
+    v3 = A.reduce_rows(silly).new()
+    assert v3.isequal(binary.plus(v1 & v2).new())
+
+    with pytest.raises(ValueError, match="Aggregator"):
+        A.reduce_scalar(silly).new()
 
 
 def test_reduce_agg_empty():

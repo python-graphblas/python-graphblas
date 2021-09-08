@@ -677,6 +677,13 @@ class Matrix(BaseType):
             op = op.monoid
         else:
             self._expect_op(op, ("Monoid", "Aggregator"), within=method_name, argname="op")
+        if op.opclass == "Aggregator" and op.name in {
+            "argmin",
+            "argmax",
+            "first_index",
+            "last_index",
+        }:
+            raise ValueError(f"Aggregator {op.name} may not be used with Matrix.reduce_scalar.")
         return ScalarExpression(
             method_name,
             "GrB_Matrix_reduce_{output_dtype}",

@@ -1078,6 +1078,7 @@ class Monoid(OpBase):
                 cur_op._typed_ops["BOOL"] = typed_op
 
         for cur_op in (monoid.lor, monoid.land, monoid.lxnor, monoid.lxor):
+            bool_op = cur_op._typed_ops["BOOL"]
             for dtype in (
                 "FP32",
                 "FP64",
@@ -1090,10 +1091,11 @@ class Monoid(OpBase):
                 "UINT32",
                 "UINT64",
             ):
-                assert dtype not in cur_op.types
+                if dtype in cur_op.types:  # pragma: no cover
+                    continue
                 cur_op.types[dtype] = "BOOL"
                 cur_op.coercions[dtype] = "BOOL"
-                cur_op._typed_ops[dtype] = lor
+                cur_op._typed_ops[dtype] = bool_op
 
     __call__ = TypedBuiltinMonoid.__call__
 
@@ -1304,6 +1306,27 @@ class Semiring(OpBase):
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
                             op.coercions[dtype] = target_type
+
+        # Handle a few boolean cases
+        for opname, targetname in (
+            ("max_first", "lor_first"),
+            ("max_second", "lor_second"),
+            ("max_land", "lor_land"),
+            ("max_lor", "lor_lor"),
+            ("max_lxor", "lor_lxor"),
+            ("min_first", "land_first"),
+            ("min_second", "land_second"),
+            ("min_land", "land_land"),
+            ("min_lor", "land_lor"),
+            ("min_lxor", "land_lxor"),
+        ):
+            op = getattr(semiring, opname)
+            target = getattr(semiring, targetname)
+            if "BOOL" in op.types or "BOOL" not in target.types:  # pragma: no cover
+                continue
+            op.types["BOOL"] = target.types["BOOL"]
+            op._typed_ops["BOOL"] = target._typed_ops["BOOL"]
+            op.coercions["BOOL"] = "BOOL"
 
     def __init__(self, name, monoid=None, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
