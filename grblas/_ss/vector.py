@@ -1057,30 +1057,29 @@ class ss:
             )
         fmt = self.format
         if fmt == "sparse":
-            # It may be faster to create the indtpr array ourself and import as csr or csc.
-            # If we do this, we'll need to export as sorted.
-            info = self.export()
+            info = self.export(sort=True)
             indices = info["indices"]
             if order == "rowwise":
-                return gb.Matrix.ss.import_coo(
+                return gb.Matrix.ss.import_coor(
                     nrows=nrows,
                     ncols=ncols,
                     rows=indices // ncols,
                     cols=indices % ncols,
                     values=info["values"],
-                    sorted_cols=info["sorted_index"],
+                    is_iso=info.get("is_iso", False),
+                    sorted_cols=True,
                     take_ownership=True,
                     name=name,
                 )
             else:
-                return gb.Matrix.ss.import_coo(
+                return gb.Matrix.ss.import_cooc(
                     nrows=nrows,
                     ncols=ncols,
                     cols=indices // nrows,
                     rows=indices % nrows,
                     values=info["values"],
                     is_iso=info.get("is_iso", False),
-                    sorted_rows=info["sorted_index"],
+                    sorted_rows=True,
                     take_ownership=True,
                     name=name,
                 )

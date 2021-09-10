@@ -2040,7 +2040,17 @@ def test_import_export_auto(A, do_iso, methods):
         A(A.S) << 1
     A_orig = A.dup()
     out_method, in_method = methods
-    for format in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc", "coo"]:
+    for format in [
+        "csr",
+        "csc",
+        "hypercsr",
+        "hypercsc",
+        "bitmapr",
+        "bitmapc",
+        "coo",
+        "coor",
+        "cooc",
+    ]:
         for (
             sort,
             raw,
