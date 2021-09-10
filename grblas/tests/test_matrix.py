@@ -2467,3 +2467,36 @@ def test_expr_is_like_matrix(A):
         "_prep_for_extract",
         "_extract_element",
     }
+
+
+def test_flatten(A):
+    data = [
+        [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4],
+    ]
+    # row-wise
+    indices = [row * A.ncols + col for row, col in zip(data[0], data[1])]
+    expected = Vector.from_values(indices, data[2], size=A.nrows * A.ncols)
+    for fmt in ["csr", "hypercsr", "bitmapr"]:
+        B = Matrix.ss.import_any(**A.ss.export(format=fmt))
+        v = B.ss.flatten_rows()
+        assert v.isequal(expected)
+    B(mask=~B.S)[:, :] = 10
+    expected(mask=~expected.S)[:] = 10
+    B = Matrix.ss.import_fullr(**B.ss.export(format="fullr"))
+    v = B.ss.flatten_rows()
+    assert v.isequal(expected)
+
+    # column-wise
+    indices = [col * A.nrows + row for row, col in zip(data[0], data[1])]
+    expected = Vector.from_values(indices, data[2], size=A.nrows * A.ncols)
+    for fmt in ["csc", "hypercsc", "bitmapc"]:
+        B = Matrix.ss.import_any(**A.ss.export(format=fmt))
+        v = B.ss.flatten_columns()
+        assert v.isequal(expected)
+    B(mask=~B.S)[:, :] = 10
+    expected(mask=~expected.S)[:] = 10
+    B = Matrix.ss.import_fullc(**B.ss.export(format="fullc"))
+    v = B.ss.flatten_columns()
+    assert v.isequal(expected)

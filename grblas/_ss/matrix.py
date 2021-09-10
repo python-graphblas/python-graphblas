@@ -1,5 +1,6 @@
 from numbers import Integral, Number
 
+import numba
 import numpy as np
 from numba import njit
 from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
@@ -509,6 +510,11 @@ class ss:
                 - "fullr"
                 - "fullc"
                 - "coo"
+                - "rowwise"
+                - "columnwise"
+            The last three ("coo", "rowwise", "columnwise") are not native SuiteSparse formats.
+            "rowwise" will export to "csr", "hypercsr", "bitmapr", or "fullr".
+            "columnwise" will export to "csc", "hypercsc", "bitmapc", or "fullc".
         sort : bool, default False
             Whether to sort indices if the format is "csr", "csc", "hypercsr", or "hypercsc".
         give_ownership : bool, default False
@@ -664,6 +670,10 @@ class ss:
             format = self.format
         else:
             format = format.lower()
+            if format == "rowwise":
+                format = f"{self.format[:-1]}r"
+            elif format == "columnwise":
+                format = f"{self.format[:-1]}c"
         if give_ownership or format == "coo":
             parent = self._parent
         else:
@@ -2958,3 +2968,148 @@ class ss:
         Vector
         """
         return prefix_scan(self._parent, op, name=name, within="scan_rows")
+
+    def flatten_rows(self, *, name=None):
+        info = self.export("rowwise", raw=True)
+        fmt = info["format"]
+        if fmt == "csr":
+            indptr = info["indptr"]
+            nrows = info["nrows"]
+            ncols = info["ncols"]
+            indices = flatten_csr(indptr, info["col_indices"], nrows, ncols)
+            return gb.Vector.ss.import_sparse(
+                size=nrows * ncols,
+                indices=indices,
+                values=info["values"],
+                nvals=indptr[nrows],
+                is_iso=info.get("is_iso", False),
+                sorted_index=info["sorted_cols"],
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "hypercsr":
+            rows = info["rows"]
+            indptr = info["indptr"]
+            nrows = info["nrows"]
+            ncols = info["ncols"]
+            nvec = info["nvec"]
+            indices = flatten_hypercsr(rows, indptr, info["col_indices"], nrows, ncols, nvec)
+            return gb.Vector.ss.import_sparse(
+                size=nrows * ncols,
+                indices=indices,
+                values=info["values"],
+                nvals=indptr[nvec],
+                is_iso=info.get("is_iso", False),
+                sorted_index=info["sorted_cols"],
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "bitmapr":
+            return gb.Vector.ss.import_bitmap(
+                bitmap=info["bitmap"],
+                values=info["values"],
+                nvals=info["nvals"],
+                size=info["nrows"] * info["ncols"],
+                is_iso=info.get("is_iso", False),
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "fullr":
+            return gb.Vector.ss.import_full(
+                values=info["values"],
+                size=info["nrows"] * info["ncols"],
+                is_iso=info.get("is_iso", False),
+                take_ownership=True,
+                name=name,
+            )
+        else:
+            raise NotImplementedError(fmt)
+
+    def flatten_columns(self, *, name=None):
+        info = self.export("columnwise", raw=True)
+        fmt = info["format"]
+        if fmt == "csc":
+            indptr = info["indptr"]
+            nrows = info["nrows"]
+            ncols = info["ncols"]
+            indices = flatten_csr(indptr, info["row_indices"], ncols, nrows)
+            return gb.Vector.ss.import_sparse(
+                size=nrows * ncols,
+                indices=indices,
+                values=info["values"],
+                nvals=indptr[ncols],
+                is_iso=info.get("is_iso", False),
+                sorted_index=info["sorted_rows"],
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "hypercsc":
+            cols = info["cols"]
+            indptr = info["indptr"]
+            nrows = info["nrows"]
+            ncols = info["ncols"]
+            nvec = info["nvec"]
+            indices = flatten_hypercsr(cols, indptr, info["row_indices"], ncols, nrows, nvec)
+            return gb.Vector.ss.import_sparse(
+                size=nrows * ncols,
+                indices=indices,
+                values=info["values"],
+                nvals=indptr[nvec],
+                is_iso=info.get("is_iso", False),
+                sorted_index=info["sorted_rows"],
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "bitmapc":
+            return gb.Vector.ss.import_bitmap(
+                bitmap=info["bitmap"],
+                values=info["values"],
+                nvals=info["nvals"],
+                size=info["nrows"] * info["ncols"],
+                is_iso=info.get("is_iso", False),
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "fullc":
+            return gb.Vector.ss.import_full(
+                values=info["values"],
+                size=info["nrows"] * info["ncols"],
+                is_iso=info.get("is_iso", False),
+                take_ownership=True,
+                name=name,
+            )
+        else:
+            raise NotImplementedError(fmt)
+
+
+# TODO: benchmark using prange and parallel=True
+@njit(locals=dict.fromkeys(["end", "i", "j", "ncols", "nrows", "offset", "start"], numba.uint64))
+def flatten_csr(indptr, indices, nrows, ncols):  # pragma: no cover
+    rv = np.empty(indices.size, indices.dtype)
+    start = 0
+    offset = 0
+    for i in range(1, nrows + 1):
+        end = indptr[i]
+        for j in range(start, end):
+            rv[j] = indices[j] + offset
+        start = end
+        offset += ncols
+    return rv
+
+
+@njit(
+    locals=dict.fromkeys(
+        ["end", "i", "j", "ncols", "nrows", "nvec", "offset", "row", "start"], numba.uint64
+    )
+)
+def flatten_hypercsr(rows, indptr, indices, nrows, ncols, nvec):  # pragma: no cover
+    rv = np.empty(indices.size, indices.dtype)
+    start = 0
+    for i in range(nvec):
+        row = rows[i]
+        offset = row * ncols
+        end = indptr[i + 1]
+        for j in range(start, end):
+            rv[j] = indices[j] + offset
+        start = end
+    return rv
