@@ -23,6 +23,7 @@ from ..utils import (
 )
 from .prefix_scan import prefix_scan
 from .scalar import gxb_scalar
+from .utils import get_order
 
 ffi_new = ffi.new
 
@@ -2969,8 +2970,9 @@ class ss:
         """
         return prefix_scan(self._parent, op, name=name, within="scan_rows")
 
-    def flatten_rows(self, *, name=None):
-        info = self.export("rowwise", raw=True)
+    def flatten(self, order="rowwise", *, name=None):
+        order = get_order(order)
+        info = self.export(order, raw=True)
         fmt = info["format"]
         if fmt == "csr":
             indptr = info["indptr"]
@@ -2978,7 +2980,7 @@ class ss:
             ncols = info["ncols"]
             indices = flatten_csr(indptr, info["col_indices"], nrows, ncols)
             return gb.Vector.ss.import_sparse(
-                size=nrows * ncols,
+                size=nrows * ncols,  # Should we check if this is less than GxB_INDEX_MAX?
                 indices=indices,
                 values=info["values"],
                 nvals=indptr[nrows],
@@ -3022,13 +3024,7 @@ class ss:
                 take_ownership=True,
                 name=name,
             )
-        else:
-            raise NotImplementedError(fmt)
-
-    def flatten_columns(self, *, name=None):
-        info = self.export("columnwise", raw=True)
-        fmt = info["format"]
-        if fmt == "csc":
+        elif fmt == "csc":
             indptr = info["indptr"]
             nrows = info["nrows"]
             ncols = info["ncols"]

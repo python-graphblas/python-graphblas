@@ -2480,23 +2480,31 @@ def test_flatten(A):
     expected = Vector.from_values(indices, data[2], size=A.nrows * A.ncols)
     for fmt in ["csr", "hypercsr", "bitmapr"]:
         B = Matrix.ss.import_any(**A.ss.export(format=fmt))
-        v = B.ss.flatten_rows()
+        v = B.ss.flatten()
         assert v.isequal(expected)
+        C = v.ss.reshape(*B.shape)
+        assert C.isequal(B)
     B(mask=~B.S)[:, :] = 10
     expected(mask=~expected.S)[:] = 10
     B = Matrix.ss.import_fullr(**B.ss.export(format="fullr"))
-    v = B.ss.flatten_rows()
+    v = B.ss.flatten()
     assert v.isequal(expected)
+    C = v.ss.reshape(*B.shape)
+    assert C.isequal(B)
 
     # column-wise
     indices = [col * A.nrows + row for row, col in zip(data[0], data[1])]
     expected = Vector.from_values(indices, data[2], size=A.nrows * A.ncols)
     for fmt in ["csc", "hypercsc", "bitmapc"]:
         B = Matrix.ss.import_any(**A.ss.export(format=fmt))
-        v = B.ss.flatten_columns()
+        v = B.ss.flatten(order="col")
         assert v.isequal(expected)
+        C = v.ss.reshape(*B.shape, order="col")
+        assert C.isequal(B)
     B(mask=~B.S)[:, :] = 10
     expected(mask=~expected.S)[:] = 10
     B = Matrix.ss.import_fullc(**B.ss.export(format="fullc"))
-    v = B.ss.flatten_columns()
+    v = B.ss.flatten(order="F")
     assert v.isequal(expected)
+    C = v.ss.reshape(*B.shape, order="F")
+    assert C.isequal(B)
