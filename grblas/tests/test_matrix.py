@@ -212,6 +212,8 @@ def test_build_scalar(A):
     A.clear()
     with pytest.raises(ValueError, match="lengths must match"):
         A.ss.build_scalar([0, 6], [0, 1, 2], 1)
+    with pytest.raises(InvalidValue):
+        A.ss.build_scalar([0, 5], [0, 1], None)
 
 
 def test_extract_values(A):
@@ -1913,10 +1915,17 @@ def test_import_export(A, do_iso, methods):
     assert info["sorted_rows"]
     E = Matrix.ss.import_any(**info)
     assert E.isequal(A)
+
     info = D.ss.export("coor")
     info["sorted_rows"] = False
     with pytest.raises(ValueError, match="sorted_rows must be True"):
         Matrix.ss.import_coor(**info)
+    info["sorted_rows"] = True
+    info["sorted_cols"] = False
+    del info["format"]
+    E = Matrix.ss.import_any(**info)
+    assert E.isequal(D)
+
     info = D.ss.export("cooc")
     info["sorted_cols"] = False
     with pytest.raises(ValueError, match="sorted_cols must be True"):
