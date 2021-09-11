@@ -45,12 +45,12 @@ class Recorder:
 
     __slots__ = "data", "_token", "max_rows", "_prev_recorder", "__weakref__"
 
-    def __init__(self, *, record=False, max_rows=20):
+    def __init__(self, *, start=True, max_rows=20):
         self.data = []
         self._token = None
         self._prev_recorder = None
         self.max_rows = max_rows
-        if record:
+        if start:
             self.start()
 
     def record(self, cfunc_name, args):
@@ -152,5 +152,5 @@ class Recorder:
         return "\n".join(lines)
 
 
-skip_record = Recorder()
+skip_record = Recorder(start=False)
 skip_record.data = collections.deque([], 0)

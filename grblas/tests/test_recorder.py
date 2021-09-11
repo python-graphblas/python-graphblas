@@ -31,7 +31,7 @@ def test_recorder():
 
 def test_record_novalue():
     A = gb.Matrix.new(int, 3, 3, name="A")
-    rec = gb.Recorder(record=True)
+    rec = gb.Recorder(start=True)
     A[0, 0].new(name="c")
     assert rec.data == ["GrB_Matrix_extractElement_INT64(&c, A, 0, 0);"]
     rec.stop()
@@ -51,7 +51,7 @@ def test_record_scalars():
 
 def test_record_repr():
     A = gb.Matrix.new(int, 3, 3, name="A")
-    rec = gb.Recorder(record=True)
+    rec = gb.Recorder(start=True)
     A[0, 0].new(name="c0")
     assert repr(rec) == (
         "grblas.Recorder (recording)\n"
