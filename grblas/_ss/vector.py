@@ -365,8 +365,7 @@ class ss:
         else:
             raise ValueError(f"Invalid format: {format}")
 
-        if is_iso:
-            rv["is_iso"] = True
+        rv["is_iso"] = is_iso
         rv.update(
             format=format,
             values=values,
@@ -1066,7 +1065,7 @@ class ss:
                     rows=indices // ncols,
                     cols=indices % ncols,
                     values=info["values"],
-                    is_iso=info.get("is_iso", False),
+                    is_iso=info["is_iso"],
                     sorted_cols=True,
                     take_ownership=True,
                     name=name,
@@ -1078,7 +1077,7 @@ class ss:
                     cols=indices // nrows,
                     rows=indices % nrows,
                     values=info["values"],
-                    is_iso=info.get("is_iso", False),
+                    is_iso=info["is_iso"],
                     sorted_rows=True,
                     take_ownership=True,
                     name=name,
@@ -1095,7 +1094,7 @@ class ss:
                 bitmap=info["bitmap"],
                 values=info["values"],
                 nvals=info["nvals"],
-                is_iso=info.get("is_iso", False),
+                is_iso=info["is_iso"],
                 take_ownership=True,
                 name=name,
             )
@@ -1109,7 +1108,7 @@ class ss:
                 nrows=nrows,
                 ncols=ncols,
                 values=info["values"],
-                is_iso=info.get("is_iso", False),
+                is_iso=info["is_iso"],
                 take_ownership=True,
                 name=name,
             )

@@ -1610,11 +1610,9 @@ def test_import_export(A, do_iso, methods):
         d = getattr(A1.ss, out_method)("csr", give_ownership=True)
     else:
         d = getattr(A1.ss, out_method)("csr")
+    assert d["is_iso"] is do_iso
     if do_iso:
-        assert d["is_iso"] is True
         assert_array_equal(d["values"], [1])
-    else:
-        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
     assert_array_equal(d["indptr"], [0, 2, 4, 5, 7, 8, 9, 12])
@@ -1632,11 +1630,9 @@ def test_import_export(A, do_iso, methods):
 
     A2 = A.dup()
     d = getattr(A2.ss, out_method)("csc")
+    assert d["is_iso"] is do_iso
     if do_iso:
-        assert d["is_iso"] is True
         assert_array_equal(d["values"], [1])
-    else:
-        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
     assert_array_equal(d["indptr"], [0, 1, 2, 5, 7, 9, 11, 12])
@@ -1654,11 +1650,9 @@ def test_import_export(A, do_iso, methods):
 
     A3 = A.dup()
     d = getattr(A3.ss, out_method)("hypercsr")
+    assert d["is_iso"] is do_iso
     if do_iso:
-        assert d["is_iso"] is True
         assert_array_equal(d["values"], [1])
-    else:
-        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
     assert_array_equal(d["rows"], [0, 1, 2, 3, 4, 5, 6])
@@ -1677,11 +1671,9 @@ def test_import_export(A, do_iso, methods):
 
     A4 = A.dup()
     d = getattr(A4.ss, out_method)("hypercsc")
+    assert d["is_iso"] is do_iso
     if do_iso:
-        assert d["is_iso"] is True
         assert_array_equal(d["values"], [1])
-    else:
-        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
     assert_array_equal(d["cols"], [0, 1, 2, 3, 4, 5, 6])
@@ -1700,11 +1692,9 @@ def test_import_export(A, do_iso, methods):
 
     A5 = A.dup()
     d = getattr(A5.ss, out_method)("bitmapr")
+    assert d["is_iso"] is do_iso
     if do_iso:
-        assert d["is_iso"] is True
         assert_array_equal(d["values"], [1])
-    else:
-        assert "is_iso" not in d
     assert "nrows" not in d
     assert "ncols" not in d
     if not do_iso:
@@ -1754,11 +1744,9 @@ def test_import_export(A, do_iso, methods):
 
     A6 = A.dup()
     d = getattr(A6.ss, out_method)("bitmapc")
+    assert d["is_iso"] is do_iso
     if do_iso:
-        assert d["is_iso"] is True
         assert_array_equal(d["values"], [1])
-    else:
-        assert "is_iso" not in d
     assert_array_equal(d["bitmap"], bitmap)
     if not do_iso:
         assert_array_equal(
@@ -1785,11 +1773,9 @@ def test_import_export(A, do_iso, methods):
 
     A7 = A.dup()
     d = getattr(A7.ss, out_method)()
+    assert d["is_iso"] is do_iso
     if do_iso:
-        assert d["is_iso"] is True
         assert_array_equal(d["values"], [1])
-    else:
-        assert "is_iso" not in d
     if in_method == "import":
         B7 = Matrix.ss.import_any(**d)
         assert B7.isequal(A)
@@ -1801,11 +1787,9 @@ def test_import_export(A, do_iso, methods):
 
     A8 = A.dup()
     d = getattr(A8.ss, out_method)("bitmapr", raw=True)
+    assert d["is_iso"] is do_iso
     if do_iso:
-        assert d["is_iso"] is True
         assert_array_equal(d["values"], [1])
-    else:
-        assert "is_iso" not in d
     del d["nrows"]
     del d["ncols"]
     if in_method == "import":
@@ -1818,17 +1802,14 @@ def test_import_export(A, do_iso, methods):
 
     A9 = A.dup()
     d = getattr(A9.ss, out_method)("coo", sort=True)
+    assert d["is_iso"] is do_iso
     if do_iso:
-        assert d["is_iso"] is True
         assert_array_equal(d["values"], [1])
-    else:
-        assert "is_iso" not in d
     assert d["nrows"] == 7
     assert d["ncols"] == 7
     assert d["rows"].shape == (12,)
     assert d["cols"].shape == (12,)
-    assert d["sorted_rows"]
-    assert "sorted_cols" not in d
+    assert d["sorted_cols"]
     assert_array_equal(d["rows"], [0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6])
     assert_array_equal(d["cols"], [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4])
 
@@ -1854,13 +1835,12 @@ def test_import_export(A, do_iso, methods):
         C(C.S) << 1
     C1 = C.dup()
     d = getattr(C1.ss, out_method)("fullr")
+    assert d["is_iso"] is do_iso
     if do_iso:
-        assert d["is_iso"] is True
         assert_array_equal(d["values"], [1])
         assert "nrows" in d
         assert "ncols" in d
     else:
-        assert "is_iso" not in d
         assert "nrows" not in d
         assert "ncols" not in d
     assert d["values"].flags.c_contiguous
@@ -1887,11 +1867,9 @@ def test_import_export(A, do_iso, methods):
 
     C2 = C.dup()
     d = getattr(C2.ss, out_method)("fullc")
+    assert d["is_iso"] is do_iso
     if do_iso:
-        assert d["is_iso"] is True
         assert_array_equal(d["values"], [1])
-    else:
-        assert "is_iso" not in d
     if not do_iso:
         assert_array_equal(d["values"], [[1, 2], [3, 4]])
     assert d["values"].flags.f_contiguous
@@ -1928,6 +1906,26 @@ def test_import_export(A, do_iso, methods):
     ]:
         with pytest.raises(TypeError):
             Matrix.ss.import_any(nrows=3, ncols=3, values=a, **dict.fromkeys(bad_combos, a))
+    with pytest.raises(ValueError, match="Invalid format"):
+        A.ss.export("coobad")
+    D = Matrix.ss.import_csc(**A.ss.export("csc"))
+    info = D.ss.export("coo", sort=True)
+    assert info["sorted_rows"]
+    E = Matrix.ss.import_any(**info)
+    assert E.isequal(A)
+    info = D.ss.export("coor")
+    info["sorted_rows"] = False
+    with pytest.raises(ValueError, match="sorted_rows must be True"):
+        Matrix.ss.import_coor(**info)
+    info = D.ss.export("cooc")
+    info["sorted_cols"] = False
+    with pytest.raises(ValueError, match="sorted_cols must be True"):
+        Matrix.ss.import_cooc(**info)
+    info["sorted_cols"] = True
+    info["sorted_rows"] = False
+    del info["format"]
+    E = Matrix.ss.import_any(**info)
+    assert E.isequal(D)
 
 
 def test_import_on_view():
@@ -2518,3 +2516,7 @@ def test_flatten(A):
     assert v.isequal(expected)
     C = v.ss.reshape(*B.shape, order="F")
     assert C.isequal(B)
+    with pytest.raises(ValueError, match="Bad value for order"):
+        A.ss.flatten(order="bad")
+    with pytest.raises(ValueError, match="cannot reshape"):
+        v.ss.reshape(100, 100)

@@ -349,6 +349,19 @@ class ss:
             format = f"{format}r"
         return format
 
+    @property
+    def orientation(self):
+        parent = self._parent
+        format_ptr = ffi_new("GxB_Option_Field*")
+        check_status(
+            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, format_ptr),
+            parent,
+        )
+        if format_ptr[0] == lib.GxB_BY_COL:
+            return "columnwise"
+        else:
+            return "rowwise"
+
     def diag(self, vector, k=0):
         """
         GxB_Matrix_diag
@@ -510,18 +523,19 @@ class ss:
                 - "bitmapc"
                 - "fullr"
                 - "fullc"
-                - "coo"
                 - "coor"
                 - "cooc"
+                - "coo"
                 - "rowwise"
                 - "columnwise"
-            The last five ("coo", "coor", "cooc", "rowwise", "columnwise") are not native
-            SuiteSparse formats.  "coo", "coor", and "cooc" export in coordinate formats.
+            The last five ("coor", "cooc", "coo", "rowwise", "columnwise") are not native
+            SuiteSparse formats.  "coor", "cooc", and "coo" export in coordinate formats.
             "coor" and "cooc" will always sort the row and column indices respectively.
             "rowwise" will export to "csr", "hypercsr", "bitmapr", or "fullr".
             "columnwise" will export to "csc", "hypercsc", "bitmapc", or "fullc".
         sort : bool, default False
-            Whether to sort indices if the format is "csr", "csc", "hypercsr", or "hypercsc".
+            Whether to sort indices if the format is "csr", "csc", "hypercsr", "hypercsc",
+            "coo", "coor", or "cooc".
         give_ownership : bool, default False
             Perform a zero-copy data transfer to Python if possible.  This gives ownership of
             the underlying memory buffers to Numpy.
@@ -636,17 +650,6 @@ class ss:
                         - Stored row-oriented
                     - nrows : int
                     - ncols : int
-            - "coo" format
-                - rows : ndarray(dtype=uint64, ndim=1, size=nvals)
-                - cols : ndarray(dtype=uint64, ndim=1, size=nvals)
-                - values : ndarray(ndim=1, size=nvals)
-                - nrows : int
-                - ncols : int
-                - ``sorted=True``
-                    - sorted_rows : True, only present if stored row-wise
-                        - Indices are sorted by row then by column.
-                    - sorted_columns : True, only present if stored column-wise
-                        - Indices are sorted by column then by row.
             - "coor" format
                 - rows : ndarray(dtype=uint64, ndim=1, size=nvals)
                     - Always sorted
@@ -654,6 +657,7 @@ class ss:
                 - values : ndarray(ndim=1, size=nvals)
                 - nrows : int
                 - ncols : int
+                - sorted_rows : True
                 - sorted_cols : bool
                     - True if the values in "cols" are sorted
             - "cooc" format
@@ -665,6 +669,19 @@ class ss:
                 - ncols : int
                 - sorted_rows : bool
                     - True if the values in "rows" are sorted
+                - sorted_cols : True
+            - "coo" format
+                - Note: exporting "coo" will return "coor" or "cooc" format if ``sort=True``
+                - rows : ndarray(dtype=uint64, ndim=1, size=nvals)
+                - cols : ndarray(dtype=uint64, ndim=1, size=nvals)
+                - values : ndarray(ndim=1, size=nvals)
+                - nrows : int
+                - ncols : int
+                - sorted_rows : bool
+                - sorted_cols : bool
+                    - Both sorted_rows and sorted_cols may be True, which means the
+                      arrays are sorted in lexicographic order, but we don't know if
+                      it's by rows then columns ("coor"), or columns then rows ("cooc").
 
         Examples
         --------
@@ -745,12 +762,17 @@ class ss:
                         "rows": rows,
                         "cols": columns,
                         "values": values,
+                        "is_iso": False,
                     }
+
+                # If rowwise, rows is probably always sorted (but I'm not 100% certain)
+                rv["sorted_rows"] = sort
+                rv["sorted_cols"] = sort
                 if sort:
-                    if self.format[-1] == "r":
-                        rv["sorted_rows"] = True
+                    if self.orientation == "rowwise":
+                        rv["format"] += "r"
                     else:
-                        rv["sorted_cols"] = True
+                        rv["format"] += "c"
                 if give_ownership:
                     if method == "export":
                         parent.__del__()
@@ -764,6 +786,7 @@ class ss:
                 )
                 info["rows"] = indptr_to_indices(info.pop("indptr"))
                 info["cols"] = info.pop("col_indices")
+                info["sorted_rows"] = True
                 info["format"] = "coor"
                 return info
             elif format == "cooc":
@@ -772,6 +795,7 @@ class ss:
                 )
                 info["cols"] = indptr_to_indices(info.pop("indptr"))
                 info["rows"] = info.pop("row_indices")
+                info["sorted_cols"] = True
                 info["format"] = "cooc"
                 return info
 
@@ -1078,8 +1102,7 @@ class ss:
         else:
             raise ValueError(f"Invalid format: {format}")
 
-        if is_iso:
-            rv["is_iso"] = True
+        rv["is_iso"] = is_iso
         rv["format"] = format
         rv["values"] = values
         if method == "export":
@@ -2517,9 +2540,9 @@ class ss:
             Is the Matrix iso-valued (meaning all the same value)?
             If true, then `values` should be a length 1 array.
         sorted_rows : bool, default False
-            Ignored.  True indicates indices are sorted by row, then column.
+            True if rows are sorted or when (cols, rows) are sorted lexicographically
         sorted_cols : bool, default False
-            Ignored.  True indicates indices are sorted by column, then row.
+            True if cols are sorted or when (rows, cols) are sorted lexicographically
         take_ownership : bool, default False
             Ignored.  Zero-copy is not possible for "coo" format.
         dtype : dtype, optional
@@ -2542,6 +2565,8 @@ class ss:
             nrows=nrows,
             ncols=ncols,
             is_iso=is_iso,
+            sorted_rows=sorted_rows,
+            sorted_cols=sorted_cols,
             take_ownership=take_ownership,
             dtype=dtype,
             format=format,
@@ -2571,10 +2596,14 @@ class ss:
         See `Matrix.ss.import_coo` documentation for more details.
         """
         return self._import_coo(
+            nrows=self._parent._nrows,
+            ncols=self._parent._ncols,
             rows=rows,
             cols=cols,
             values=values,
             is_iso=is_iso,
+            sorted_rows=sorted_rows,
+            sorted_cols=sorted_cols,
             take_ownership=take_ownership,
             format=format,
             method="pack",
@@ -2591,6 +2620,8 @@ class ss:
         nrows=None,
         ncols=None,
         is_iso=False,
+        sorted_rows=False,
+        sorted_cols=False,
         take_ownership=False,
         dtype=None,
         format=None,
@@ -2600,6 +2631,37 @@ class ss:
     ):
         if format is not None and format.lower() != "coo":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'coo'.")
+        if sorted_rows and (not sorted_cols or issorted(rows)):
+            return cls._import_coor(
+                rows=rows,
+                cols=cols,
+                values=values,
+                nrows=nrows,
+                ncols=ncols,
+                is_iso=is_iso,
+                sorted_cols=sorted_cols,
+                take_ownership=take_ownership,
+                dtype=dtype,
+                name=name,
+                method=method,
+                matrix=matrix,
+            )
+        elif sorted_cols and (not sorted_rows or issorted(cols)):
+            return cls._import_cooc(
+                rows=rows,
+                cols=cols,
+                values=values,
+                nrows=nrows,
+                ncols=ncols,
+                is_iso=is_iso,
+                sorted_rows=sorted_rows,
+                take_ownership=take_ownership,
+                dtype=dtype,
+                name=name,
+                method=method,
+                matrix=matrix,
+            )
+
         if method == "pack":
             dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype)
@@ -2621,6 +2683,7 @@ class ss:
         nrows,
         ncols,
         is_iso=False,
+        sorted_rows=True,
         sorted_cols=False,
         take_ownership=False,
         dtype=None,
@@ -2680,6 +2743,7 @@ class ss:
             nrows=nrows,
             ncols=ncols,
             is_iso=is_iso,
+            sorted_rows=sorted_rows,
             sorted_cols=sorted_cols,
             take_ownership=take_ownership,
             dtype=dtype,
@@ -2695,6 +2759,7 @@ class ss:
         values,
         *,
         is_iso=False,
+        sorted_rows=True,
         sorted_cols=False,
         take_ownership=False,
         format=None,
@@ -2714,6 +2779,7 @@ class ss:
             nrows=self._parent._nrows,
             values=values,
             is_iso=is_iso,
+            sorted_rows=sorted_rows,
             sorted_cols=sorted_cols,
             take_ownership=take_ownership,
             format=format,
@@ -2731,6 +2797,7 @@ class ss:
         nrows,
         ncols=None,
         is_iso=False,
+        sorted_rows=True,
         sorted_cols=False,
         take_ownership=False,
         dtype=None,
@@ -2741,6 +2808,8 @@ class ss:
     ):
         if format is not None and format.lower() != "coor":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'coor'.")
+        if not sorted_rows:
+            raise ValueError("sorted_rows must be True when importing 'coor' format")
         indptr = indices_to_indptr(rows, nrows + 1)
         return cls._import_csr(
             nrows=nrows,
@@ -2768,6 +2837,7 @@ class ss:
         ncols,
         is_iso=False,
         sorted_rows=False,
+        sorted_cols=True,
         take_ownership=False,
         dtype=None,
         format=None,
@@ -2827,6 +2897,7 @@ class ss:
             ncols=ncols,
             is_iso=is_iso,
             sorted_rows=sorted_rows,
+            sorted_cols=sorted_cols,
             take_ownership=take_ownership,
             dtype=dtype,
             format=format,
@@ -2842,6 +2913,7 @@ class ss:
         *,
         is_iso=False,
         sorted_rows=False,
+        sorted_cols=True,
         take_ownership=False,
         format=None,
         **unused_kwargs,
@@ -2861,6 +2933,7 @@ class ss:
             values=values,
             is_iso=is_iso,
             sorted_rows=sorted_rows,
+            sorted_cols=sorted_cols,
             take_ownership=take_ownership,
             format=format,
             method="pack",
@@ -2878,6 +2951,7 @@ class ss:
         nrows=None,
         is_iso=False,
         sorted_rows=False,
+        sorted_cols=True,
         take_ownership=False,
         dtype=None,
         format=None,
@@ -2887,6 +2961,8 @@ class ss:
     ):
         if format is not None and format.lower() != "cooc":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'cooc'.")
+        if not sorted_cols:
+            raise ValueError("sorted_cols must be True when importing 'cooc' format")
         indptr = indices_to_indptr(cols, ncols + 1)
         return cls._import_csc(
             nrows=nrows,
@@ -2920,11 +2996,13 @@ class ss:
         indptr=None,
         # CSR/HyperCSR
         col_indices=None,
+        # CSR/HyperCSR/COO
         sorted_cols=False,
         # HyperCSR/COO
         rows=None,
         # CSC/HyperCSC
         row_indices=None,
+        # CSC/HyperCSC/COO
         sorted_rows=False,
         # HyperCSC/COO
         cols=None,
@@ -2977,11 +3055,13 @@ class ss:
             indptr=indptr,
             # CSR/HyperCSR
             col_indices=col_indices,
+            # CSR/HyperCSR/COO
             sorted_cols=sorted_cols,
             # HyperCSR/COO
             rows=rows,
             # CSC/HyperCSC
             row_indices=row_indices,
+            # CSC/HyperCSC/COO
             sorted_rows=sorted_rows,
             # HyperCSC/COO
             cols=cols,
@@ -3005,11 +3085,13 @@ class ss:
         indptr=None,
         # CSR/HyperCSR
         col_indices=None,
+        # CSR/HyperCSR/COO
         sorted_cols=False,
         # HyperCSR/COO
         rows=None,
         # CSC/HyperCSC
         row_indices=None,
+        # CSC/HyperCSC/COO
         sorted_rows=False,
         # HyperCSC/COO
         cols=None,
@@ -3041,11 +3123,13 @@ class ss:
             indptr=indptr,
             # CSR/HyperCSR
             col_indices=col_indices,
+            # CSR/HyperCSR/COO
             sorted_cols=sorted_cols,
             # HyperCSR/COO
             rows=rows,
             # CSC/HyperCSC
             row_indices=row_indices,
+            # CSC/HyperCSC/COO
             sorted_rows=sorted_rows,
             # HyperCSC/COO
             cols=cols,
@@ -3075,11 +3159,13 @@ class ss:
         indptr=None,
         # CSR/HyperCSR
         col_indices=None,
+        # CSR/HyperCSR/COO
         sorted_cols=False,
         # HyperCSR/COO
         rows=None,
         # CSC/HyperCSC
         row_indices=None,
+        # CSC/HyperCSC/COO
         sorted_rows=False,
         # HyperCSC/COO
         cols=None,
@@ -3143,7 +3229,15 @@ class ss:
             elif rows is not None or cols is not None:
                 if rows is None or cols is None:
                     raise ValueError("coo requires both `rows` and `cols`")
-                format = "coo"
+                if sorted_rows:
+                    if sorted_cols:
+                        format = "coo"  # can't tell yet
+                    else:
+                        format = "coor"
+                elif sorted_cols:
+                    format = "cooc"
+                else:
+                    format = "coo"
             else:
                 if (
                     isinstance(values, np.ndarray)
@@ -3281,6 +3375,7 @@ class ss:
                 cols=cols,
                 values=values,
                 is_iso=is_iso,
+                sorted_rows=sorted_rows,
                 sorted_cols=sorted_cols,
                 take_ownership=take_ownership,
                 dtype=dtype,
@@ -3295,6 +3390,7 @@ class ss:
                 values=values,
                 is_iso=is_iso,
                 sorted_rows=sorted_rows,
+                sorted_cols=sorted_cols,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
@@ -3344,7 +3440,7 @@ class ss:
                 indices=indices,
                 values=info["values"],
                 nvals=indptr[nrows],
-                is_iso=info.get("is_iso", False),
+                is_iso=info["is_iso"],
                 sorted_index=info["sorted_cols"],
                 take_ownership=True,
                 name=name,
@@ -3361,7 +3457,7 @@ class ss:
                 indices=indices,
                 values=info["values"],
                 nvals=indptr[nvec],
-                is_iso=info.get("is_iso", False),
+                is_iso=info["is_iso"],
                 sorted_index=info["sorted_cols"],
                 take_ownership=True,
                 name=name,
@@ -3372,7 +3468,7 @@ class ss:
                 values=info["values"],
                 nvals=info["nvals"],
                 size=info["nrows"] * info["ncols"],
-                is_iso=info.get("is_iso", False),
+                is_iso=info["is_iso"],
                 take_ownership=True,
                 name=name,
             )
@@ -3380,7 +3476,7 @@ class ss:
             return gb.Vector.ss.import_full(
                 values=info["values"],
                 size=info["nrows"] * info["ncols"],
-                is_iso=info.get("is_iso", False),
+                is_iso=info["is_iso"],
                 take_ownership=True,
                 name=name,
             )
@@ -3394,7 +3490,7 @@ class ss:
                 indices=indices,
                 values=info["values"],
                 nvals=indptr[ncols],
-                is_iso=info.get("is_iso", False),
+                is_iso=info["is_iso"],
                 sorted_index=info["sorted_rows"],
                 take_ownership=True,
                 name=name,
@@ -3411,7 +3507,7 @@ class ss:
                 indices=indices,
                 values=info["values"],
                 nvals=indptr[nvec],
-                is_iso=info.get("is_iso", False),
+                is_iso=info["is_iso"],
                 sorted_index=info["sorted_rows"],
                 take_ownership=True,
                 name=name,
@@ -3422,7 +3518,7 @@ class ss:
                 values=info["values"],
                 nvals=info["nvals"],
                 size=info["nrows"] * info["ncols"],
-                is_iso=info.get("is_iso", False),
+                is_iso=info["is_iso"],
                 take_ownership=True,
                 name=name,
             )
@@ -3430,7 +3526,7 @@ class ss:
             return gb.Vector.ss.import_full(
                 values=info["values"],
                 size=info["nrows"] * info["ncols"],
-                is_iso=info.get("is_iso", False),
+                is_iso=info["is_iso"],
                 take_ownership=True,
                 name=name,
             )
@@ -3451,6 +3547,21 @@ def flatten_csr(indptr, indices, nrows, ncols):  # pragma: no cover
         start = end
         offset += ncols
     return rv
+
+
+@njit
+def issorted(arr):  # pragma: no cover
+    if arr.size > 1:
+        prev = arr[0]
+        for i in range(1, arr.size):
+            cur = arr[i]
+            if cur == prev:
+                continue
+            elif cur < prev:
+                return False
+            else:
+                prev = cur
+    return True
 
 
 @njit(
