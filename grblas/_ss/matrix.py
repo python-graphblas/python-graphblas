@@ -1,5 +1,6 @@
 from numbers import Integral, Number
 
+import numba
 import numpy as np
 from numba import njit
 from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
@@ -22,6 +23,7 @@ from ..utils import (
 )
 from .prefix_scan import prefix_scan
 from .scalar import gxb_scalar
+from .utils import get_order
 
 ffi_new = ffi.new
 
@@ -347,6 +349,19 @@ class ss:
             format = f"{format}r"
         return format
 
+    @property
+    def orientation(self):
+        parent = self._parent
+        format_ptr = ffi_new("GxB_Option_Field*")
+        check_status(
+            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, format_ptr),
+            parent,
+        )
+        if format_ptr[0] == lib.GxB_BY_COL:
+            return "columnwise"
+        else:
+            return "rowwise"
+
     def diag(self, vector, k=0):
         """
         GxB_Matrix_diag
@@ -508,9 +523,19 @@ class ss:
                 - "bitmapc"
                 - "fullr"
                 - "fullc"
+                - "coor"
+                - "cooc"
                 - "coo"
+                - "rowwise"
+                - "columnwise"
+            The last five ("coor", "cooc", "coo", "rowwise", "columnwise") are not native
+            SuiteSparse formats.  "coor", "cooc", and "coo" export in coordinate formats.
+            "coor" and "cooc" will always sort the row and column indices respectively.
+            "rowwise" will export to "csr", "hypercsr", "bitmapr", or "fullr".
+            "columnwise" will export to "csc", "hypercsc", "bitmapc", or "fullc".
         sort : bool, default False
-            Whether to sort indices if the format is "csr", "csc", "hypercsr", or "hypercsc".
+            Whether to sort indices if the format is "csr", "csc", "hypercsr", "hypercsc",
+            "coo", "coor", or "cooc".
         give_ownership : bool, default False
             Perform a zero-copy data transfer to Python if possible.  This gives ownership of
             the underlying memory buffers to Numpy.
@@ -625,17 +650,38 @@ class ss:
                         - Stored row-oriented
                     - nrows : int
                     - ncols : int
+            - "coor" format
+                - rows : ndarray(dtype=uint64, ndim=1, size=nvals)
+                    - Always sorted
+                - cols : ndarray(dtype=uint64, ndim=1, size=nvals)
+                - values : ndarray(ndim=1, size=nvals)
+                - nrows : int
+                - ncols : int
+                - sorted_rows : True
+                - sorted_cols : bool
+                    - True if the values in "cols" are sorted
+            - "cooc" format
+                - rows : ndarray(dtype=uint64, ndim=1, size=nvals)
+                - cols : ndarray(dtype=uint64, ndim=1, size=nvals)
+                    - Always sorted
+                - values : ndarray(ndim=1, size=nvals)
+                - nrows : int
+                - ncols : int
+                - sorted_rows : bool
+                    - True if the values in "rows" are sorted
+                - sorted_cols : True
             - "coo" format
+                - Note: exporting "coo" will return "coor" or "cooc" format if ``sort=True``
                 - rows : ndarray(dtype=uint64, ndim=1, size=nvals)
                 - cols : ndarray(dtype=uint64, ndim=1, size=nvals)
                 - values : ndarray(ndim=1, size=nvals)
                 - nrows : int
                 - ncols : int
-                - ``sorted=True``
-                    - sorted_rows : True, only present if stored row-wise
-                        - Indices are sorted by row then by column.
-                    - sorted_columns : True, only present if stored column-wise
-                        - Indices are sorted by column then by row.
+                - sorted_rows : bool
+                - sorted_cols : bool
+                    - Both sorted_rows and sorted_cols may be True, which means the
+                      arrays are sorted in lexicographic order, but we don't know if
+                      it's by rows then columns ("coor"), or columns then rows ("cooc").
 
         Examples
         --------
@@ -664,6 +710,10 @@ class ss:
             format = self.format
         else:
             format = format.lower()
+            if format == "rowwise":
+                format = f"{self.format[:-1]}r"
+            elif format == "columnwise":
+                format = f"{self.format[:-1]}c"
         if give_ownership or format == "coo":
             parent = self._parent
         else:
@@ -673,56 +723,81 @@ class ss:
 
         nrows = parent._nrows
         ncols = parent._ncols
-        if format == "coo":
-            if sort:
-                # It's weird, but waiting makes values sorted (according to the storage orientation)
-                # If we don't wait, we don't know whether the values are sorted or not.
-                parent.wait()
-            if self.is_iso:
-                # Should we expose a way to do `to_values` without values?
-                # Passing NULL for values is SuiteSparse-specific.
-                nvals = parent._nvals
-                rows = _CArray(size=nvals, name="&rows_array")
-                columns = _CArray(size=nvals, name="&columns_array")
-                n = ffi_new("GrB_Index*")
-                scalar = Scalar(n, _INDEX, name="s_nvals", empty=True)
-                scalar.value = nvals
-                call(
-                    f"GrB_Matrix_extractTuples_{parent.dtype.name}",
-                    [rows, columns, None, _Pointer(scalar), parent],
+        if format.startswith("coo"):
+            if format == "coo":
+                if sort:
+                    # It's weird, but waiting makes values sorted (according to the
+                    # storage orientation) If we don't wait, we don't know whether
+                    # the values are sorted or not.
+                    parent.wait()
+                if self.is_iso:
+                    # Should we expose a way to do `to_values` without values?
+                    # Passing NULL for values is SuiteSparse-specific.
+                    nvals = parent._nvals
+                    rows = _CArray(size=nvals, name="&rows_array")
+                    columns = _CArray(size=nvals, name="&columns_array")
+                    n = ffi_new("GrB_Index*")
+                    scalar = Scalar(n, _INDEX, name="s_nvals", empty=True)
+                    scalar.value = nvals
+                    call(
+                        f"GrB_Matrix_extractTuples_{parent.dtype.name}",
+                        [rows, columns, None, _Pointer(scalar), parent],
+                    )
+                    value = parent.reduce_scalar(gb.monoid.any).value
+                    rv = {
+                        "format": "coo",
+                        "nrows": nrows,
+                        "ncols": ncols,
+                        "rows": rows.array,
+                        "cols": columns.array,
+                        "values": np.array([value], dtype=dtype),
+                        "is_iso": True,
+                    }
+                else:
+                    rows, columns, values = parent.to_values()
+                    rv = {
+                        "format": "coo",
+                        "nrows": nrows,
+                        "ncols": ncols,
+                        "rows": rows,
+                        "cols": columns,
+                        "values": values,
+                        "is_iso": False,
+                    }
+
+                # If rowwise, rows is probably always sorted (but I'm not 100% certain)
+                rv["sorted_rows"] = sort
+                rv["sorted_cols"] = sort
+                if sort:
+                    if self.orientation == "rowwise":
+                        rv["format"] += "r"
+                    else:
+                        rv["format"] += "c"
+                if give_ownership:
+                    if method == "export":
+                        parent.__del__()
+                        parent.gb_obj = ffi.NULL
+                    else:
+                        parent.clear()
+                return rv
+            elif format == "coor":
+                info = self._export(
+                    "csr", sort=sort, give_ownership=give_ownership, raw=False, method=method
                 )
-                value = parent.reduce_scalar(gb.monoid.any).value
-                rv = {
-                    "format": "coo",
-                    "nrows": nrows,
-                    "ncols": ncols,
-                    "rows": rows.array,
-                    "cols": columns.array,
-                    "values": np.array([value], dtype=dtype),
-                    "is_iso": True,
-                }
-            else:
-                rows, columns, values = parent.to_values()
-                rv = {
-                    "format": "coo",
-                    "nrows": nrows,
-                    "ncols": ncols,
-                    "rows": rows,
-                    "cols": columns,
-                    "values": values,
-                }
-            if sort:
-                if self.format[-1] == "r":
-                    rv["sorted_rows"] = True
-                else:
-                    rv["sorted_cols"] = True
-            if give_ownership:
-                if method == "export":
-                    parent.__del__()
-                    parent.gb_obj = ffi.NULL
-                else:
-                    parent.clear()
-            return rv
+                info["rows"] = indptr_to_indices(info.pop("indptr"))
+                info["cols"] = info.pop("col_indices")
+                info["sorted_rows"] = True
+                info["format"] = "coor"
+                return info
+            elif format == "cooc":
+                info = self._export(
+                    "csc", sort=sort, give_ownership=give_ownership, raw=False, method=method
+                )
+                info["cols"] = indptr_to_indices(info.pop("indptr"))
+                info["rows"] = info.pop("row_indices")
+                info["sorted_cols"] = True
+                info["format"] = "cooc"
+                return info
 
         if method == "export":
             mhandle = ffi_new("GrB_Matrix*", parent._carg)
@@ -1027,8 +1102,7 @@ class ss:
         else:
             raise ValueError(f"Invalid format: {format}")
 
-        if is_iso:
-            rv["is_iso"] = True
+        rv["is_iso"] = is_iso
         rv["format"] = format
         rv["values"] = values
         if method == "export":
@@ -2466,9 +2540,9 @@ class ss:
             Is the Matrix iso-valued (meaning all the same value)?
             If true, then `values` should be a length 1 array.
         sorted_rows : bool, default False
-            Ignored.  True indicates indices are sorted by row, then column.
+            True if rows are sorted or when (cols, rows) are sorted lexicographically
         sorted_cols : bool, default False
-            Ignored.  True indicates indices are sorted by column, then row.
+            True if cols are sorted or when (rows, cols) are sorted lexicographically
         take_ownership : bool, default False
             Ignored.  Zero-copy is not possible for "coo" format.
         dtype : dtype, optional
@@ -2491,6 +2565,8 @@ class ss:
             nrows=nrows,
             ncols=ncols,
             is_iso=is_iso,
+            sorted_rows=sorted_rows,
+            sorted_cols=sorted_cols,
             take_ownership=take_ownership,
             dtype=dtype,
             format=format,
@@ -2520,10 +2596,14 @@ class ss:
         See `Matrix.ss.import_coo` documentation for more details.
         """
         return self._import_coo(
+            nrows=self._parent._nrows,
+            ncols=self._parent._ncols,
             rows=rows,
             cols=cols,
             values=values,
             is_iso=is_iso,
+            sorted_rows=sorted_rows,
+            sorted_cols=sorted_cols,
             take_ownership=take_ownership,
             format=format,
             method="pack",
@@ -2540,6 +2620,8 @@ class ss:
         nrows=None,
         ncols=None,
         is_iso=False,
+        sorted_rows=False,
+        sorted_cols=False,
         take_ownership=False,
         dtype=None,
         format=None,
@@ -2549,6 +2631,37 @@ class ss:
     ):
         if format is not None and format.lower() != "coo":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'coo'.")
+        if sorted_rows and (not sorted_cols or issorted(rows)):
+            return cls._import_coor(
+                rows=rows,
+                cols=cols,
+                values=values,
+                nrows=nrows,
+                ncols=ncols,
+                is_iso=is_iso,
+                sorted_cols=sorted_cols,
+                take_ownership=take_ownership,
+                dtype=dtype,
+                name=name,
+                method=method,
+                matrix=matrix,
+            )
+        elif sorted_cols and (not sorted_rows or issorted(cols)):
+            return cls._import_cooc(
+                rows=rows,
+                cols=cols,
+                values=values,
+                nrows=nrows,
+                ncols=ncols,
+                is_iso=is_iso,
+                sorted_rows=sorted_rows,
+                take_ownership=take_ownership,
+                dtype=dtype,
+                name=name,
+                method=method,
+                matrix=matrix,
+            )
+
         if method == "pack":
             dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype)
@@ -2559,6 +2672,312 @@ class ss:
         else:
             matrix.build(rows, cols, values)
         return matrix
+
+    @classmethod
+    def import_coor(
+        cls,
+        rows,
+        cols,
+        values,
+        *,
+        nrows,
+        ncols,
+        is_iso=False,
+        sorted_rows=True,
+        sorted_cols=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+    ):
+        """
+        GxB_Matrix_import_CSR
+
+        Create a new Matrix from indices and values in coordinate format.
+        Rows must be sorted.
+
+        Parameters
+        ----------
+        rows : array-like
+        cols : array-likd
+        values : array-like
+        nrows : int
+            The number of rows for the Matrix.
+        ncols : int
+            The number of columns for the Matrix.
+        is_iso : bool, default False
+            Is the Matrix iso-valued (meaning all the same value)?
+            If true, then `values` should be a length 1 array.
+        sorted_cols : bool, default False
+            True indicates indices are sorted by column, then row.
+        take_ownership : bool, default False
+            If True, perform a zero-copy data transfer from input numpy arrays
+            to GraphBLAS if possible.  To give ownership of the underlying
+            memory buffers to GraphBLAS, the arrays must:
+                - be C contiguous
+                - have the correct dtype (uint64 for indptr and row_indices)
+                - own its own data
+                - be writeable
+            If all of these conditions are not met, then the data will be
+            copied and the original array will be unmodified.  If zero copy
+            to GraphBLAS is successful, then the array will be modified to be
+            read-only and will no longer own the data.
+            For "coor", ownership of "rows" will never change.
+        dtype : dtype, optional
+            dtype of the new Matrix.
+            If not specified, this will be inferred from `values`.
+        format : str, optional
+            Must be "coor" or None.  This is included to be compatible with
+            the dict returned from exporting.
+        name : str, optional
+            Name of the new Matrix.
+
+        Returns
+        -------
+        Matrix
+        """
+        return cls._import_coor(
+            rows=rows,
+            cols=cols,
+            values=values,
+            nrows=nrows,
+            ncols=ncols,
+            is_iso=is_iso,
+            sorted_rows=sorted_rows,
+            sorted_cols=sorted_cols,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            format=format,
+            name=name,
+            method="import",
+        )
+
+    def pack_coor(
+        self,
+        rows,
+        cols,
+        values,
+        *,
+        is_iso=False,
+        sorted_rows=True,
+        sorted_cols=False,
+        take_ownership=False,
+        format=None,
+        **unused_kwargs,
+    ):
+        """
+        GxB_Matrix_pack_CSR
+
+        `pack_coor` is like `import_coor` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("coor")``
+
+        See `Matrix.ss.import_coor` documentation for more details.
+        """
+        return self._import_coor(
+            rows=rows,
+            cols=cols,
+            nrows=self._parent._nrows,
+            values=values,
+            is_iso=is_iso,
+            sorted_rows=sorted_rows,
+            sorted_cols=sorted_cols,
+            take_ownership=take_ownership,
+            format=format,
+            method="pack",
+            matrix=self._parent,
+        )
+
+    @classmethod
+    def _import_coor(
+        cls,
+        rows,
+        cols,
+        values,
+        *,
+        nrows,
+        ncols=None,
+        is_iso=False,
+        sorted_rows=True,
+        sorted_cols=False,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+        method,
+        matrix=None,
+    ):
+        if format is not None and format.lower() != "coor":
+            raise ValueError(f"Invalid format: {format!r}.  Must be None or 'coor'.")
+        if not sorted_rows:
+            raise ValueError("sorted_rows must be True when importing 'coor' format")
+        indptr = indices_to_indptr(rows, nrows + 1)
+        return cls._import_csr(
+            nrows=nrows,
+            ncols=ncols,
+            indptr=indptr,
+            values=values,
+            col_indices=cols,
+            is_iso=is_iso,
+            sorted_cols=sorted_cols,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            name=name,
+            method=method,
+            matrix=matrix,
+        )
+
+    @classmethod
+    def import_cooc(
+        cls,
+        rows,
+        cols,
+        values,
+        *,
+        nrows,
+        ncols,
+        is_iso=False,
+        sorted_rows=False,
+        sorted_cols=True,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+    ):
+        """
+        GxB_Matrix_import_CSC
+
+        Create a new Matrix from indices and values in coordinate format.
+        Rows must be sorted.
+
+        Parameters
+        ----------
+        rows : array-like
+        cols : array-likd
+        values : array-like
+        nrows : int
+            The number of rows for the Matrix.
+        ncols : int
+            The number of columns for the Matrix.
+        is_iso : bool, default False
+            Is the Matrix iso-valued (meaning all the same value)?
+            If true, then `values` should be a length 1 array.
+        sorted_rows : bool, default False
+            True indicates indices are sorted by column, then row.
+        take_ownership : bool, default False
+            If True, perform a zero-copy data transfer from input numpy arrays
+            to GraphBLAS if possible.  To give ownership of the underlying
+            memory buffers to GraphBLAS, the arrays must:
+                - be C contiguous
+                - have the correct dtype (uint64 for indptr and row_indices)
+                - own its own data
+                - be writeable
+            If all of these conditions are not met, then the data will be
+            copied and the original array will be unmodified.  If zero copy
+            to GraphBLAS is successful, then the array will be modified to be
+            read-only and will no longer own the data.
+            For "cooc", ownership of "cols" will never change.
+        dtype : dtype, optional
+            dtype of the new Matrix.
+            If not specified, this will be inferred from `values`.
+        format : str, optional
+            Must be "cooc" or None.  This is included to be compatible with
+            the dict returned from exporting.
+        name : str, optional
+            Name of the new Matrix.
+
+        Returns
+        -------
+        Matrix
+        """
+        return cls._import_cooc(
+            rows=rows,
+            cols=cols,
+            values=values,
+            nrows=nrows,
+            ncols=ncols,
+            is_iso=is_iso,
+            sorted_rows=sorted_rows,
+            sorted_cols=sorted_cols,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            format=format,
+            name=name,
+            method="import",
+        )
+
+    def pack_cooc(
+        self,
+        rows,
+        cols,
+        values,
+        *,
+        is_iso=False,
+        sorted_rows=False,
+        sorted_cols=True,
+        take_ownership=False,
+        format=None,
+        **unused_kwargs,
+    ):
+        """
+        GxB_Matrix_pack_CSC
+
+        `pack_cooc` is like `import_cooc` except it "packs" data into an
+        existing Matrix.  This is the opposite of ``unpack("cooc")``
+
+        See `Matrix.ss.import_cooc` documentation for more details.
+        """
+        return self._import_cooc(
+            ncols=self._parent._ncols,
+            rows=rows,
+            cols=cols,
+            values=values,
+            is_iso=is_iso,
+            sorted_rows=sorted_rows,
+            sorted_cols=sorted_cols,
+            take_ownership=take_ownership,
+            format=format,
+            method="pack",
+            matrix=self._parent,
+        )
+
+    @classmethod
+    def _import_cooc(
+        cls,
+        rows,
+        cols,
+        values,
+        *,
+        ncols,
+        nrows=None,
+        is_iso=False,
+        sorted_rows=False,
+        sorted_cols=True,
+        take_ownership=False,
+        dtype=None,
+        format=None,
+        name=None,
+        method,
+        matrix=None,
+    ):
+        if format is not None and format.lower() != "cooc":
+            raise ValueError(f"Invalid format: {format!r}.  Must be None or 'cooc'.")
+        if not sorted_cols:
+            raise ValueError("sorted_cols must be True when importing 'cooc' format")
+        indptr = indices_to_indptr(cols, ncols + 1)
+        return cls._import_csc(
+            nrows=nrows,
+            ncols=ncols,
+            indptr=indptr,
+            values=values,
+            row_indices=rows,
+            is_iso=is_iso,
+            sorted_rows=sorted_rows,
+            take_ownership=take_ownership,
+            dtype=dtype,
+            name=name,
+            method=method,
+            matrix=matrix,
+        )
 
     @classmethod
     def import_any(
@@ -2577,11 +2996,13 @@ class ss:
         indptr=None,
         # CSR/HyperCSR
         col_indices=None,
+        # CSR/HyperCSR/COO
         sorted_cols=False,
         # HyperCSR/COO
         rows=None,
         # CSC/HyperCSC
         row_indices=None,
+        # CSC/HyperCSC/COO
         sorted_rows=False,
         # HyperCSC/COO
         cols=None,
@@ -2634,11 +3055,13 @@ class ss:
             indptr=indptr,
             # CSR/HyperCSR
             col_indices=col_indices,
+            # CSR/HyperCSR/COO
             sorted_cols=sorted_cols,
             # HyperCSR/COO
             rows=rows,
             # CSC/HyperCSC
             row_indices=row_indices,
+            # CSC/HyperCSC/COO
             sorted_rows=sorted_rows,
             # HyperCSC/COO
             cols=cols,
@@ -2662,11 +3085,13 @@ class ss:
         indptr=None,
         # CSR/HyperCSR
         col_indices=None,
+        # CSR/HyperCSR/COO
         sorted_cols=False,
         # HyperCSR/COO
         rows=None,
         # CSC/HyperCSC
         row_indices=None,
+        # CSC/HyperCSC/COO
         sorted_rows=False,
         # HyperCSC/COO
         cols=None,
@@ -2698,11 +3123,13 @@ class ss:
             indptr=indptr,
             # CSR/HyperCSR
             col_indices=col_indices,
+            # CSR/HyperCSR/COO
             sorted_cols=sorted_cols,
             # HyperCSR/COO
             rows=rows,
             # CSC/HyperCSC
             row_indices=row_indices,
+            # CSC/HyperCSC/COO
             sorted_rows=sorted_rows,
             # HyperCSC/COO
             cols=cols,
@@ -2732,11 +3159,13 @@ class ss:
         indptr=None,
         # CSR/HyperCSR
         col_indices=None,
+        # CSR/HyperCSR/COO
         sorted_cols=False,
         # HyperCSR/COO
         rows=None,
         # CSC/HyperCSC
         row_indices=None,
+        # CSC/HyperCSC/COO
         sorted_rows=False,
         # HyperCSC/COO
         cols=None,
@@ -2800,7 +3229,15 @@ class ss:
             elif rows is not None or cols is not None:
                 if rows is None or cols is None:
                     raise ValueError("coo requires both `rows` and `cols`")
-                format = "coo"
+                if sorted_rows:
+                    if sorted_cols:
+                        format = "coo"  # can't tell yet
+                    else:
+                        format = "coor"
+                elif sorted_cols:
+                    format = "cooc"
+                else:
+                    format = "coo"
             else:
                 if (
                     isinstance(values, np.ndarray)
@@ -2924,6 +3361,36 @@ class ss:
                 cols=cols,
                 values=values,
                 is_iso=is_iso,
+                sorted_rows=sorted_rows,
+                sorted_cols=sorted_cols,
+                take_ownership=take_ownership,
+                dtype=dtype,
+                name=name,
+            )
+        elif format == "coor":
+            return getattr(obj, f"{method}_coor")(
+                nrows=nrows,
+                ncols=ncols,
+                rows=rows,
+                cols=cols,
+                values=values,
+                is_iso=is_iso,
+                sorted_rows=sorted_rows,
+                sorted_cols=sorted_cols,
+                take_ownership=take_ownership,
+                dtype=dtype,
+                name=name,
+            )
+        elif format == "cooc":
+            return getattr(obj, f"{method}_cooc")(
+                nrows=nrows,
+                ncols=ncols,
+                rows=rows,
+                cols=cols,
+                values=values,
+                is_iso=is_iso,
+                sorted_rows=sorted_rows,
+                sorted_cols=sorted_cols,
                 take_ownership=take_ownership,
                 dtype=dtype,
                 name=name,
@@ -2958,3 +3425,186 @@ class ss:
         Vector
         """
         return prefix_scan(self._parent, op, name=name, within="scan_rows")
+
+    def flatten(self, order="rowwise", *, name=None):
+        order = get_order(order)
+        info = self.export(order, raw=True)
+        fmt = info["format"]
+        if fmt == "csr":
+            indptr = info["indptr"]
+            nrows = info["nrows"]
+            ncols = info["ncols"]
+            indices = flatten_csr(indptr, info["col_indices"], nrows, ncols)
+            return gb.Vector.ss.import_sparse(
+                size=nrows * ncols,  # Should we check if this is less than GxB_INDEX_MAX?
+                indices=indices,
+                values=info["values"],
+                nvals=indptr[nrows],
+                is_iso=info["is_iso"],
+                sorted_index=info["sorted_cols"],
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "hypercsr":
+            rows = info["rows"]
+            indptr = info["indptr"]
+            nrows = info["nrows"]
+            ncols = info["ncols"]
+            nvec = info["nvec"]
+            indices = flatten_hypercsr(rows, indptr, info["col_indices"], nrows, ncols, nvec)
+            return gb.Vector.ss.import_sparse(
+                size=nrows * ncols,
+                indices=indices,
+                values=info["values"],
+                nvals=indptr[nvec],
+                is_iso=info["is_iso"],
+                sorted_index=info["sorted_cols"],
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "bitmapr":
+            return gb.Vector.ss.import_bitmap(
+                bitmap=info["bitmap"],
+                values=info["values"],
+                nvals=info["nvals"],
+                size=info["nrows"] * info["ncols"],
+                is_iso=info["is_iso"],
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "fullr":
+            return gb.Vector.ss.import_full(
+                values=info["values"],
+                size=info["nrows"] * info["ncols"],
+                is_iso=info["is_iso"],
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "csc":
+            indptr = info["indptr"]
+            nrows = info["nrows"]
+            ncols = info["ncols"]
+            indices = flatten_csr(indptr, info["row_indices"], ncols, nrows)
+            return gb.Vector.ss.import_sparse(
+                size=nrows * ncols,
+                indices=indices,
+                values=info["values"],
+                nvals=indptr[ncols],
+                is_iso=info["is_iso"],
+                sorted_index=info["sorted_rows"],
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "hypercsc":
+            cols = info["cols"]
+            indptr = info["indptr"]
+            nrows = info["nrows"]
+            ncols = info["ncols"]
+            nvec = info["nvec"]
+            indices = flatten_hypercsr(cols, indptr, info["row_indices"], ncols, nrows, nvec)
+            return gb.Vector.ss.import_sparse(
+                size=nrows * ncols,
+                indices=indices,
+                values=info["values"],
+                nvals=indptr[nvec],
+                is_iso=info["is_iso"],
+                sorted_index=info["sorted_rows"],
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "bitmapc":
+            return gb.Vector.ss.import_bitmap(
+                bitmap=info["bitmap"],
+                values=info["values"],
+                nvals=info["nvals"],
+                size=info["nrows"] * info["ncols"],
+                is_iso=info["is_iso"],
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "fullc":
+            return gb.Vector.ss.import_full(
+                values=info["values"],
+                size=info["nrows"] * info["ncols"],
+                is_iso=info["is_iso"],
+                take_ownership=True,
+                name=name,
+            )
+        else:
+            raise NotImplementedError(fmt)
+
+
+# TODO: benchmark using prange and parallel=True
+@njit(locals=dict.fromkeys(["end", "i", "j", "ncols", "nrows", "offset", "start"], numba.uint64))
+def flatten_csr(indptr, indices, nrows, ncols):  # pragma: no cover
+    rv = np.empty(indices.size, indices.dtype)
+    start = 0
+    offset = 0
+    for i in range(1, nrows + 1):
+        end = indptr[i]
+        for j in range(start, end):
+            rv[j] = indices[j] + offset
+        start = end
+        offset += ncols
+    return rv
+
+
+@njit
+def issorted(arr):  # pragma: no cover
+    if arr.size > 1:
+        prev = arr[0]
+        for i in range(1, arr.size):
+            cur = arr[i]
+            if cur == prev:
+                continue
+            elif cur < prev:
+                return False
+            else:
+                prev = cur
+    return True
+
+
+@njit(
+    locals=dict.fromkeys(
+        ["end", "i", "j", "ncols", "nrows", "nvec", "offset", "row", "start"], numba.uint64
+    )
+)
+def flatten_hypercsr(rows, indptr, indices, nrows, ncols, nvec):  # pragma: no cover
+    rv = np.empty(indices.size, indices.dtype)
+    start = 0
+    for i in range(nvec):
+        row = rows[i]
+        offset = row * ncols
+        end = indptr[i + 1]
+        for j in range(start, end):
+            rv[j] = indices[j] + offset
+        start = end
+    return rv
+
+
+@njit(locals=dict.fromkeys(["i", "index", "row", "size"], numba.uint64))
+def indices_to_indptr(indices, size):  # pragma: no cover
+    """Calculate the indptr for e.g. CSR from sorted COO rows."""
+    indptr = np.zeros(size, dtype=indices.dtype)
+    index = 0
+    for i in range(indices.size):
+        row = indices[i]
+        if row != index:
+            indptr[index + 1] = i
+            index = row
+    indptr[index + 1] = indices.size
+    return indptr
+
+
+@njit(locals=dict.fromkeys(["end", "i", "index", "j", "start"], numba.uint64))
+def indptr_to_indices(indptr):  # pragma: no cover
+    indices = np.empty(indptr[-1], dtype=indptr.dtype)
+    index = 0
+    start = 0
+    for i in range(1, indptr.size):
+        end = indptr[i]
+        for j in range(start, end):
+            indices[j] = index
+        index += 1
+        start = end
+    return indices

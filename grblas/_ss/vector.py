@@ -18,6 +18,7 @@ from ..utils import (
 )
 from .prefix_scan import prefix_scan
 from .scalar import gxb_scalar
+from .utils import get_order
 
 ffi_new = ffi.new
 
@@ -364,8 +365,7 @@ class ss:
         else:
             raise ValueError(f"Invalid format: {format}")
 
-        if is_iso:
-            rv["is_iso"] = True
+        rv["is_iso"] = is_iso
         rv.update(
             format=format,
             values=values,
@@ -1047,3 +1047,70 @@ class ss:
         Scalar
         """
         return prefix_scan(self._parent, op, name=name, within="scan")
+
+    def reshape(self, nrows, ncols, order="rowwise", *, name=None):
+        order = get_order(order)
+        if nrows * ncols != self._parent._size:
+            raise ValueError(
+                f"cannot reshape Vector of size {self._parent._size} into shape {(nrows, ncols)}"
+            )
+        fmt = self.format
+        if fmt == "sparse":
+            info = self.export(sort=True)
+            indices = info["indices"]
+            if order == "rowwise":
+                return gb.Matrix.ss.import_coor(
+                    nrows=nrows,
+                    ncols=ncols,
+                    rows=indices // ncols,
+                    cols=indices % ncols,
+                    values=info["values"],
+                    is_iso=info["is_iso"],
+                    sorted_cols=True,
+                    take_ownership=True,
+                    name=name,
+                )
+            else:
+                return gb.Matrix.ss.import_cooc(
+                    nrows=nrows,
+                    ncols=ncols,
+                    cols=indices // nrows,
+                    rows=indices % nrows,
+                    values=info["values"],
+                    is_iso=info["is_iso"],
+                    sorted_rows=True,
+                    take_ownership=True,
+                    name=name,
+                )
+        elif fmt == "bitmap":
+            info = self.export(raw=True)
+            if order == "rowwise":
+                method = gb.Matrix.ss.import_bitmapr
+            else:
+                method = gb.Matrix.ss.import_bitmapc
+            return method(
+                nrows=nrows,
+                ncols=ncols,
+                bitmap=info["bitmap"],
+                values=info["values"],
+                nvals=info["nvals"],
+                is_iso=info["is_iso"],
+                take_ownership=True,
+                name=name,
+            )
+        elif fmt == "full":
+            info = self.export(raw=True)
+            if order == "rowwise":
+                method = gb.Matrix.ss.import_fullr
+            else:
+                method = gb.Matrix.ss.import_fullc
+            return method(
+                nrows=nrows,
+                ncols=ncols,
+                values=info["values"],
+                is_iso=info["is_iso"],
+                take_ownership=True,
+                name=name,
+            )
+        else:
+            raise NotImplementedError(fmt)
