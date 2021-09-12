@@ -1,6 +1,7 @@
 import numpy as np
 
-from . import unary
+from . import config, unary
+from .exceptions import InsufficientSpace
 from .matrix import Matrix, TransposedMatrix
 from .vector import Vector
 
@@ -403,6 +404,17 @@ def _format_expression(expr, header):
             pos_to_arg[pos] = arg
     args = [pos_to_arg[pos] for pos in sorted(pos_to_arg)]
     arg_string = "".join(x._repr_html_() for x in args if hasattr(x, "_repr_html_"))
+    if config.get("autocompute"):
+        try:
+            val = expr._get_value()
+        except InsufficientSpace:
+            # TODO: add a message about result being too large to compute
+            pass
+        else:
+            name = val.name
+            val.name = "Result"
+            arg_string += f"<hr>{val._repr_html_()}"
+            val.name = name
     return (
         "<div>"
         '<details class="gb-expr-details">'
@@ -532,6 +544,18 @@ def format_vector(vector, *, max_rows=None, min_rows=None, max_columns=None, mas
 
 
 def _format_infix_expression(expr, header, expr_name):
+    arg_string = f"{expr.left._repr_html_()}{expr.right._repr_html_()}"
+    if config.get("autocompute"):
+        try:
+            val = expr._get_value()
+        except InsufficientSpace:
+            # TODO: add a message about result being too large to compute
+            pass
+        else:
+            name = val.name
+            val.name = "Result"
+            arg_string += f"<hr>{val._repr_html_()}"
+            val.name = name
     return (
         "<div>"
         '<details class="gb-expr-details">'
@@ -540,7 +564,7 @@ def _format_infix_expression(expr, header, expr_name):
         f"{header}"
         "</summary>"
         '<blockquote class="gb-expr-blockquote">'
-        f"{expr.left._repr_html_()}{expr.right._repr_html_()}"
+        f"{arg_string}"
         "</blockquote>"
         "</details>"
         "<em>"

@@ -1,6 +1,6 @@
 from contextvars import ContextVar
 
-from . import ffi
+from . import config, ffi
 from . import replace as replace_singleton
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import lookup_dtype
@@ -55,11 +55,15 @@ def _expect_type_message(
         if type(x) in types:
             return x, None
         elif output_type(x) in types:
-            return x._get_value(), None
+            if config["autocompute"]:
+                return x._get_value(), None
+            1 / 0  # TODO: good message for error below
     elif type(x) is types:
         return x, None
     elif output_type(x) is types:
-        return x._get_value(), None
+        if config["autocompute"]:
+            return x._get_value(), None
+        1 / 0  # TODO: good message for error below
     if argname:
         argmsg = f"for argument `{argname}` "
     elif keyword_name:

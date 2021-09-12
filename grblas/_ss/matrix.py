@@ -743,7 +743,7 @@ class ss:
                         f"GrB_Matrix_extractTuples_{parent.dtype.name}",
                         [rows, columns, None, _Pointer(scalar), parent],
                     )
-                    value = parent.reduce_scalar(gb.monoid.any).value
+                    value = parent.reduce_scalar(gb.monoid.any).new().value
                     rv = {
                         "format": "coo",
                         "nrows": nrows,

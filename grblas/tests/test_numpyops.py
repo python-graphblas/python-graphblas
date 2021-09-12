@@ -78,7 +78,7 @@ def test_npunary():
             assert gb_result.nvals == np_result.size
             match = gb_result.ewise_mult(np_result, compare_op).new()
             match(accum=grblas.binary.lor) << gb_result.apply(npunary.isnan)
-            compare = match.reduce(grblas.monoid.land).value
+            compare = match.reduce(grblas.monoid.land).new()
             if not compare:  # pragma: no cover
                 print(unary_name, gb_input.dtype)
                 print(gb_result)
@@ -146,7 +146,7 @@ def test_npbinary():
             assert gb_result.nvals == np_result.size
             match = gb_result.ewise_mult(np_result, compare_op).new()
             match(accum=grblas.binary.lor) << gb_result.apply(npunary.isnan)
-            compare = match.reduce(grblas.monoid.land).value
+            compare = match.reduce(grblas.monoid.land).new()
             if not compare:  # pragma: no cover
                 print(binary_name, gb_left.dtype)
                 print(gb_result)
@@ -214,7 +214,7 @@ def test_npmonoid():
             assert gb_result.nvals == np_result.size
             match = gb_result.ewise_mult(np_result, npbinary.equal).new()
             match(accum=grblas.binary.lor) << gb_result.apply(npunary.isnan)
-            compare = match.reduce(grblas.monoid.land).value
+            compare = match.reduce(grblas.monoid.land).new()
             if not compare:  # pragma: no cover
                 print(binary_name, gb_left.dtype)
                 print(gb_result)

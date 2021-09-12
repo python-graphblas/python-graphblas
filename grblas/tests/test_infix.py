@@ -3,6 +3,8 @@ from pytest import fixture, raises
 from grblas import Matrix, Scalar, Vector, monoid, op
 from grblas.exceptions import DimensionMismatch
 
+from .conftest import autocompute
+
 
 @fixture
 def v1():
@@ -29,6 +31,7 @@ def s1():
     return Scalar.from_value(3, name="s_1")
 
 
+@autocompute
 def test_ewise(v1, v2, A1, A2):
     for left, right in [
         (v1, v2),
@@ -95,6 +98,7 @@ def test_matmul(v1, v2, A1, A2):
             assert (left @ right).ncols == right.ncols
 
 
+@autocompute
 def test_bad_ewise(s1, v1, A1, A2):
     for left, right in [
         (v1, s1),
@@ -215,6 +219,7 @@ def test_apply_unary(v1, A1):
     assert expected.isequal(op.exp(A1).new())
 
 
+@autocompute
 def test_apply_unary_bad(s1, v1):
     with raises(TypeError, match="__call__"):
         op.exp(v1, 1)

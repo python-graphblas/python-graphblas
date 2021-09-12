@@ -182,7 +182,7 @@ def test_binaryop_parameterized():
     w = Vector.from_values([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=op)
     assert v.isequal(w, check_dtype=True)
     with pytest.raises(TypeError, match="Monoid"):
-        assert v.reduce(op).value == -1
+        assert v.reduce(op).new() == -1
 
     v(op) << v
     assert v.isequal(r0)
@@ -259,8 +259,8 @@ def test_monoid_parameterized():
     r1 = Vector.from_values([0, 1, 3], [3, 5, -7], dtype=dtypes.INT32)
     assert v1.isequal(r1, check_dtype=True)
 
-    assert v.reduce(monoid).value == -1
-    assert v.reduce(monoid(1)).value == 1
+    assert v.reduce(monoid).new() == -1
+    assert v.reduce(monoid(1)).new() == 1
     # with pytest.raises(TypeError, match="BinaryOp"):  # NOW OKAY
     w1 = Vector.from_values([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=monoid)
     w2 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
@@ -421,9 +421,9 @@ def test_semiring_parameterized():
     assert x.isequal(A.reduce_columns(binary.plus).new())
 
     s = A.reduce_scalar(mymonoid).new()
-    assert s.value == A.reduce_scalar(monoid.plus).value
+    assert s.value == A.reduce_scalar(monoid.plus).new()
 
-    assert A.reduce_scalar(bin_op) == A.reduce_scalar(binary.plus)
+    assert A.reduce_scalar(bin_op).new() == A.reduce_scalar(binary.plus).new()
 
     B = A.kronecker(A, bin_op).new()
     assert B.isequal(A.kronecker(A, binary.plus).new())

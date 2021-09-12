@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
+from . import _automethods, backend, binary, config, ffi, lib, monoid, semiring, utils
 from ._ss.matrix import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, lookup_dtype, unify
@@ -135,7 +135,7 @@ class Matrix(BaseType):
             return False
 
         # Check if all results are True
-        return matches.reduce_scalar(monoid.land).value
+        return matches.reduce_scalar(monoid.land).new().value
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """
@@ -163,7 +163,7 @@ class Matrix(BaseType):
             return False
 
         # Check if all results are True
-        return matches.reduce_scalar(monoid.land).value
+        return matches.reduce_scalar(monoid.land).new().value
 
     @property
     def nrows(self):
@@ -777,7 +777,10 @@ class Matrix(BaseType):
         value_type = output_type(value)
         if value_type is Vector:
             if type(value) is not Vector:
-                value = value._get_value()
+                if config["autocompute"]:
+                    value = value._get_value()
+                else:
+                    1 / 0  # TODO: good error message
             if rowsize is None and colsize is not None:
                 # Row-only selection
                 row_index = rows
@@ -892,7 +895,10 @@ class Matrix(BaseType):
                 )
         elif value_type in {Matrix, TransposedMatrix}:
             if type(value) not in {Matrix, TransposedMatrix}:
-                value = value._get_value()
+                if config["autocompute"]:
+                    value = value._get_value()
+                else:
+                    1 / 0  # TODO: good error message
             if rowsize is None or colsize is None:
                 if rowsize is None and colsize is None:
                     # C[i, j] << A  (mask doesn't matter)

@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
+from . import _automethods, backend, binary, config, ffi, lib, monoid, semiring, utils
 from ._ss.vector import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, lookup_dtype, unify
@@ -129,7 +129,7 @@ class Vector(BaseType):
             return False
 
         # Check if all results are True
-        return matches.reduce(monoid.land).value
+        return matches.reduce(monoid.land).new().value
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """
@@ -153,7 +153,7 @@ class Vector(BaseType):
             return False
 
         # Check if all results are True
-        return matches.reduce(monoid.land).value
+        return matches.reduce(monoid.land).new().value
 
     @property
     def size(self):
@@ -627,7 +627,10 @@ class Vector(BaseType):
 
         if output_type(value) is Vector:
             if type(value) is not Vector:
-                value = value._get_value()
+                if config["autocompute"]:
+                    value = value._get_value()
+                else:
+                    1 / 0  # TODO: good error message
             if is_submask:
                 if isize is None:
                     # v[i](m) << w

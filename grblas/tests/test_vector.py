@@ -16,6 +16,8 @@ from grblas.exceptions import (
     OutputNotEmpty,
 )
 
+from .conftest import autocompute
+
 
 @pytest.fixture
 def A():
@@ -120,14 +122,14 @@ def test_from_values_scalar():
     assert u.nvals == 3
     assert u.dtype == dtypes.INT64
     assert u.ss.is_iso
-    assert u.reduce(monoid.any) == 7
+    assert u.reduce(monoid.any).new() == 7
 
     # ignore duplicate indices; iso trumps duplicates!
     u = Vector.from_values([0, 1, 1, 3], 7)
     assert u.size == 4
     assert u.nvals == 3
     assert u.ss.is_iso
-    assert u.reduce(monoid.any) == 7
+    assert u.reduce(monoid.any).new() == 7
     with pytest.raises(ValueError, match="dup_op must be None"):
         Vector.from_values([0, 1, 1, 3], 7, dup_op=binary.plus)
 
@@ -601,7 +603,7 @@ def test_reduce(v):
     s = v.reduce(monoid.plus).new()
     assert s == 4
     assert s.dtype == dtypes.INT64
-    assert v.reduce(binary.plus).value == 4
+    assert v.reduce(binary.plus).new() == 4
     with pytest.raises(TypeError, match="Expected type: Monoid"):
         v.reduce(binary.minus)
 
@@ -609,7 +611,7 @@ def test_reduce(v):
     s(accum=binary.times) << v.reduce(monoid.plus)
     assert s == 16
     # Test default for non-bool
-    assert v.reduce().value == 4
+    assert v.reduce().new() == 4
     # Test default for bool
     b1 = Vector.from_values([0, 1], [True, False])
     with pytest.raises(KeyError, match="plus does not work"):
@@ -624,25 +626,25 @@ def test_reduce_agg(v):
     s = v.reduce(agg.sum[float]).new()
     assert s.dtype == "FP64"
     assert s == 4
-    assert v.reduce(agg.prod) == 0
-    assert v.reduce(agg.count) == 4
-    assert v.reduce(agg.count_nonzero) == 3
-    assert v.reduce(agg.count_zero) == 1
-    assert v.reduce(agg.sum_of_squares) == 6
+    assert v.reduce(agg.prod).new() == 0
+    assert v.reduce(agg.count).new() == 4
+    assert v.reduce(agg.count_nonzero).new() == 3
+    assert v.reduce(agg.count_zero).new() == 1
+    assert v.reduce(agg.sum_of_squares).new() == 6
     assert v.reduce(agg.hypot).new().isclose(6 ** 0.5)
     assert v.reduce(agg.logaddexp).new().isclose(np.log(1 + 2 * np.e + np.e ** 2))
     assert v.reduce(agg.logaddexp2).new().isclose(np.log2(9))
-    assert v.reduce(agg.mean) == 1
-    assert v.reduce(agg.peak_to_peak) == 2
+    assert v.reduce(agg.mean).new() == 1
+    assert v.reduce(agg.peak_to_peak).new() == 2
     assert v.reduce(agg.varp).new().isclose(0.5)
     assert v.reduce(agg.vars).new().isclose(2 / 3)
     assert v.reduce(agg.stdp).new().isclose(0.5 ** 0.5)
     assert v.reduce(agg.stds).new().isclose((2 / 3) ** 0.5)
-    assert v.reduce(agg.L0norm) == 3
-    assert v.reduce(agg.L1norm) == 4
+    assert v.reduce(agg.L0norm).new() == 3
+    assert v.reduce(agg.L1norm).new() == 4
     assert v.reduce(agg.L2norm).new().isclose(6 ** 0.5)
-    assert v.reduce(agg.Linfnorm) == 2
-    assert v.reduce(agg.exists) == 1
+    assert v.reduce(agg.Linfnorm).new() == 2
+    assert v.reduce(agg.exists).new() == 1
     w = binary.plus(v, 1).new()
     assert w.reduce(agg.geometric_mean).new().isclose(12 ** 0.25)
     assert w.reduce(agg.harmonic_mean).new().isclose(12 / 7)
@@ -661,8 +663,8 @@ def test_reduce_agg(v):
 
 
 def test_reduce_agg_argminmax(v):
-    assert v.reduce(agg.argmin).value == 6
-    assert v.reduce(agg.argmax).value == 4
+    assert v.reduce(agg.argmin).new() == 6
+    assert v.reduce(agg.argmax).new() == 4
 
     silly = agg.Aggregator(
         "silly",
@@ -676,11 +678,11 @@ def test_reduce_agg_argminmax(v):
 
 def test_reduce_agg_firstlast(v):
     empty = Vector.new(int, size=4)
-    assert empty.reduce(agg.first).value is None
-    assert empty.reduce(agg.last).value is None
+    assert empty.reduce(agg.first).new().is_empty
+    assert empty.reduce(agg.last).new().is_empty
 
-    assert v.reduce(agg.first).value == 1
-    assert v.reduce(agg.last).value == 0
+    assert v.reduce(agg.first).new() == 1
+    assert v.reduce(agg.last).new() == 0
 
     silly = agg.Aggregator(
         "silly",
@@ -693,8 +695,8 @@ def test_reduce_agg_firstlast(v):
 
 
 def test_reduce_agg_firstlast_index(v):
-    assert v.reduce(agg.first_index).value == 1
-    assert v.reduce(agg.last_index).value == 6
+    assert v.reduce(agg.first_index).new() == 1
+    assert v.reduce(agg.last_index).new() == 6
 
     silly = agg.Aggregator(
         "silly",
@@ -728,7 +730,7 @@ def test_reduce_coerce_dtype(v):
     assert t == 4.0
     t(accum=binary.times) << v.reduce(monoid.plus)
     assert t == 16.0
-    assert v.reduce(monoid.plus[dtypes.UINT64]).value == 4
+    assert v.reduce(monoid.plus[dtypes.UINT64]).new() == 4
     # Make sure we accumulate as a float, not int
     t.value = 1.23
     t(accum=binary.plus) << v.reduce()
@@ -1148,9 +1150,7 @@ def test_inner(v):
     C[:, 0] = v
     expected = R.mxm(C).new()[0, 0].new()
     assert expected.isequal(v.inner(v).new())
-    assert expected.isequal(v.inner(v).value)
     assert expected.isequal((v @ v).new())
-    assert expected.isequal((v @ v).value)
 
 
 def test_outer(v):
@@ -1165,6 +1165,7 @@ def test_outer(v):
     assert result.isequal(expected)
 
 
+@autocompute
 def test_auto(v):
     expected = binary.times(v & v).new()
     assert 0 not in expected
@@ -1236,6 +1237,7 @@ def test_auto(v):
     w(binary.plus) << (w & w)
 
 
+@autocompute
 def test_auto_assign(v):
     expected = v.dup()
     w = v[1:4].new()
@@ -1248,6 +1250,7 @@ def test_auto_assign(v):
         v[:3] = v[1:4]
 
 
+@autocompute
 def test_expr_is_like_vector(v):
     attrs = {attr for attr, val in inspect.getmembers(v)}
     expr_attrs = {attr for attr, val in inspect.getmembers(binary.times(v & v))}

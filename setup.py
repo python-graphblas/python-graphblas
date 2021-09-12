@@ -1,4 +1,5 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
+
 import versioneer
 
 extras_require = {
@@ -24,9 +25,10 @@ setup(
     packages=find_packages(exclude=["grblas.backends.python"]),
     setup_requires=["pytest-runner"],
     python_requires=">=3.7",
-    install_requires=["suitesparse-graphblas >=5.1.3, <5.2", "numba"],
+    install_requires=["suitesparse-graphblas >=5.1.3, <5.2", "numba", "donfig", "pyyaml"],
     tests_require=["pytest", "pandas"],
     extras_require=extras_require,
+    include_package_data=True,
     license="Apache License 2.0",
     keywords=["graphblas", "graph", "sparse", "matrix", "lagraph", "suitesparse"],
     classifiers=[
