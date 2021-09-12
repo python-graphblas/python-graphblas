@@ -2524,6 +2524,8 @@ def test_flatten(A):
     assert v.isequal(expected)
     C = v.ss.reshape(*B.shape)
     assert C.isequal(B)
+    C = v.ss.reshape(B.shape)
+    assert C.isequal(B)
 
     # column-wise
     indices = [col * A.nrows + row for row, col in zip(data[0], data[1])]
@@ -2541,7 +2543,11 @@ def test_flatten(A):
     assert v.isequal(expected)
     C = v.ss.reshape(*B.shape, order="F")
     assert C.isequal(B)
+    C = v.ss.reshape(B.shape, order="F")
+    assert C.isequal(B)
     with pytest.raises(ValueError, match="Bad value for order"):
         A.ss.flatten(order="bad")
     with pytest.raises(ValueError, match="cannot reshape"):
         v.ss.reshape(100, 100)
+    with pytest.raises(ValueError):
+        v.ss.reshape(A.shape + (1,))

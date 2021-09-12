@@ -1048,12 +1048,43 @@ class ss:
         """
         return prefix_scan(self._parent, op, name=name, within="scan")
 
-    def reshape(self, nrows, ncols, order="rowwise", *, name=None):
+    def reshape(self, nrows, ncols=None, order="rowwise", *, name=None):
+        """Return a copy of the Vector as a Matrix of the given shape.
+
+        The shape of the Matrix must be compatible with the original shape.
+        That is, the number of elements must be equal: ``nrows * ncols == size``.
+        One of the dimensions may be -1, which will infer the correct size.
+
+        Parameters
+        ----------
+        nrows : int or tuple of ints
+        ncols : int or None
+        order : {"rowwise", "columnwise"}, optional
+            "rowwise" means to fill the Matrix in row-major (C-style) order.
+            Aliases of "rowwise" also accepted: "row", "rows", "C".
+            "columnwise" means to fill the Matrix in column-major (F-style) order.
+            Aliases of "rowwise" also accepted: "col", "cols", "column", "columns", "F".
+            The default is "rowwise".
+        name : str, optional
+            Name of the new Matrix.
+
+        Returns
+        -------
+        Matrix
+
+        See Also
+        --------
+        Matrix.ss.flatten : flatten a Matrix into a Vector.
+        """
         order = get_order(order)
-        if nrows * ncols != self._parent._size:
-            raise ValueError(
-                f"cannot reshape Vector of size {self._parent._size} into shape {(nrows, ncols)}"
-            )
+        array = np.broadcast_to(False, self._parent._size)
+        if ncols is None:
+            array = array.reshape(nrows)
+        else:
+            array = array.reshape(nrows, ncols)
+        if array.ndim != 2:
+            raise ValueError(f"Shape tuple must be of length 2, not {array.ndim}")
+        nrows, ncols = array.shape
         fmt = self.format
         if fmt == "sparse":
             info = self.export(sort=True)

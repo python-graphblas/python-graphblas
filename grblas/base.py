@@ -318,7 +318,7 @@ class BaseType:
 
                 # Extract (C << A[rows, cols])
                 if input_mask is not None:
-                    if mask is not None:
+                    if mask is not None:  # pragma: no cover (can this be covered?)
                         raise TypeError("mask and input_mask arguments cannot both be given")
                     _check_mask(input_mask, output=delayed.parent)
                     mask = delayed._input_mask_to_mask(input_mask)
