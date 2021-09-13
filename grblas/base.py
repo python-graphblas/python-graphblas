@@ -59,7 +59,7 @@ def _expect_type_message(
                 return x._get_value(), None
             extra_message = extra_message or f"{extra_message}\n\n"
             extra_message += (
-                'Hint: use `grblas.config.set("autocompute", True)` to automatically '
+                "Hint: use `grblas.config.set(autocompute=True)` to automatically "
                 "compute arguments that are expressions."
             )
     elif type(x) is types:
@@ -69,7 +69,7 @@ def _expect_type_message(
             return x._get_value(), None
         extra_message = extra_message or f"{extra_message}\n\n"
         extra_message += (
-            'Hint: use `grblas.config.set("autocompute", True)` to automatically '
+            "Hint: use `grblas.config.set(autocompute=True)` to automatically "
             "compute arguments that are expressions."
         )
     if argname:

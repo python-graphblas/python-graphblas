@@ -5607,7 +5607,7 @@ def test_inner_outer_repr(v):
 def test_autocompute_html(A, B, v):
     if not pd:  # pragma: no cover
         return
-    html_printer(A & A, 'A & A')
+    html_printer(A & A, "A & A")
     assert repr_html(A & A) == (
         '<div><details class="gb-expr-details"><summary class="gb-expr-summary"><b><tt>grblas.MatrixEwiseMultExpr:</tt></b><div>\n'
         '<table class="gb-info-table">\n'
@@ -5790,7 +5790,7 @@ def test_autocompute_html(A, B, v):
         "</table>\n"
         "</div></details></div></blockquote></details><em>Do <code>op(expr)</code> to create a <tt>MatrixExpression</tt> for <tt>ewise_mult</tt>.<br>For example: <code>times(A<sub>1</sub> & A<sub>1</sub>)</code></em></div>"
     )
-    html_printer(A.ewise_add(A), 'A.ewise_add(A)')
+    html_printer(A.ewise_add(A), "A.ewise_add(A)")
     assert repr_html(A.ewise_add(A)) == (
         '<div><details class="gb-expr-details"><summary class="gb-expr-summary"><b><tt>grblas.MatrixExpression:</tt></b><div>\n'
         '<table class="gb-info-table">\n'
@@ -5979,7 +5979,7 @@ def test_autocompute_html(A, B, v):
     small = Vector.new(int, size=2 ** 55)
     BIG[:] = 1
     small[0] = 2
-    html_printer(BIG.ewise_mult(small), 'BIG.ewise_mult(small)')
+    html_printer(BIG.ewise_mult(small), "BIG.ewise_mult(small)")
     assert repr_html(BIG.ewise_mult(small)) == (
         '<div><details class="gb-expr-details"><summary class="gb-expr-summary"><b><tt>grblas.VectorExpression:</tt></b><div>\n'
         '<table class="gb-info-table">\n'
@@ -6376,7 +6376,7 @@ def test_autocompute_html(A, B, v):
         "</table>\n"
         "</div></details></div></blockquote></details><em>Do <code>expr.new()</code> or <code>other << expr</code> to calculate the expression.</em></div>"
     )
-    html_printer(BIG.ewise_add(small), 'BIG.ewise_add(small)')
+    html_printer(BIG.ewise_add(small), "BIG.ewise_add(small)")
     assert repr_html(BIG.ewise_add(small)) == (
         '<div><details class="gb-expr-details"><summary class="gb-expr-summary"><b><tt>grblas.VectorExpression:</tt></b><div>\n'
         '<table class="gb-info-table">\n'
