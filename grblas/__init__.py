@@ -18,6 +18,23 @@ class replace:
 replace = replace()
 
 
+def get_config():
+    import os
+
+    import donfig
+    import yaml
+
+    filename = os.path.join(os.path.dirname(__file__), "grblas.yaml")
+    config = donfig.Config("grblas")
+    with open(filename) as f:
+        defaults = yaml.safe_load(f)
+    config.update_defaults(defaults)
+    return config
+
+
+config = get_config()
+del get_config
+
 backend = None
 _init_params = None
 _SPECIAL_ATTRS = {

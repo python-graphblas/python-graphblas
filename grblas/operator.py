@@ -144,7 +144,9 @@ class TypedBuiltinMonoid(TypedOpBase):
             from .vector import Vector
 
             with skip_record:
-                self._identity = Vector.new(size=1, dtype=self.type, name="").reduce(self).value
+                self._identity = (
+                    Vector.new(size=1, dtype=self.type, name="").reduce(self).new().value
+                )
         return self._identity
 
     @property

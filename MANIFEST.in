@@ -1,6 +1,8 @@
+recursive-include grblas *.py
 include setup.py
 include README.md
 include LICENSE
 include MANIFEST.in
 include versioneer.py
 include grblas/_version.py
+include grblas/grblas.yaml

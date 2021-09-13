@@ -9,6 +9,8 @@ import grblas
 from grblas import Scalar, binary, dtypes
 from grblas.scalar import _CScalar
 
+from .conftest import autocompute
+
 
 @pytest.fixture
 def s():
@@ -271,6 +273,7 @@ def test_wait(s):
     s.wait()
 
 
+@autocompute
 def test_expr_is_like_vector(s):
     v = grblas.Vector.from_values([1], [2])
     attrs = {attr for attr, val in inspect.getmembers(s)}

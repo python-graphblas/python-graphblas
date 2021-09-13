@@ -17,6 +17,8 @@ from grblas.exceptions import (
     OutputNotEmpty,
 )
 
+from .conftest import autocompute
+
 
 @pytest.fixture
 def A():
@@ -131,7 +133,7 @@ def test_from_values_scalar():
     assert C.nvals == 3
     assert C.dtype == dtypes.INT64
     assert C.ss.is_iso
-    assert C.reduce_scalar(monoid.any) == 7
+    assert C.reduce_scalar(monoid.any).new() == 7
 
     # iso drumps duplicates
     C = Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7)
@@ -140,7 +142,7 @@ def test_from_values_scalar():
     assert C.nvals == 3
     assert C.dtype == dtypes.INT64
     assert C.ss.is_iso
-    assert C.reduce_scalar(monoid.any) == 7
+    assert C.reduce_scalar(monoid.any).new() == 7
     with pytest.raises(ValueError, match="dup_op must be None"):
         Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7, dup_op=binary.plus)
 
@@ -583,7 +585,7 @@ def test_assign(A):
     nvals = C.nvals
     C(C.S) << 1
     assert C.nvals == nvals
-    assert C.reduce_scalar().value == nvals
+    assert C.reduce_scalar().new() == nvals
     with pytest.raises(TypeError, match="Invalid type for index"):
         C[C, [1]] = C
 
@@ -1126,17 +1128,17 @@ def test_reduce_agg(A):
     assert w15.isequal(expected)
     assert w16.isequal(expected)
 
-    assert A.reduce_scalar(agg.sum).value == 47
-    assert A.reduce_scalar(agg.prod).value == 1270080
-    assert A.reduce_scalar(agg.count).value == 12
-    assert A.reduce_scalar(agg.count_nonzero).value == 12
-    assert A.reduce_scalar(agg.count_zero).value == 0
-    assert A.reduce_scalar(agg.sum_of_squares).value == 245
+    assert A.reduce_scalar(agg.sum).new() == 47
+    assert A.reduce_scalar(agg.prod).new() == 1270080
+    assert A.reduce_scalar(agg.count).new() == 12
+    assert A.reduce_scalar(agg.count_nonzero).new() == 12
+    assert A.reduce_scalar(agg.count_zero).new() == 0
+    assert A.reduce_scalar(agg.sum_of_squares).new() == 245
     assert A.reduce_scalar(agg.hypot).new().isclose(245 ** 0.5)
     assert A.reduce_scalar(agg.logaddexp).new().isclose(8.6071076)
     assert A.reduce_scalar(agg.logaddexp2).new().isclose(9.2288187)
     assert A.reduce_scalar(agg.mean).new().isclose(47 / 12)
-    assert A.reduce_scalar(agg.exists) == 1
+    assert A.reduce_scalar(agg.exists).new() == 1
 
     silly = agg.Aggregator(
         "silly",
@@ -1239,8 +1241,8 @@ def test_reduce_agg_firstlast(A):
     w6 = A.reduce_scalar(agg.last).new()
     assert w6 == 3
     B = Matrix.new(float, nrows=2, ncols=3)
-    assert B.reduce_scalar(agg.first).value is None
-    assert B.reduce_scalar(agg.last).value is None
+    assert B.reduce_scalar(agg.first).new().is_empty
+    assert B.reduce_scalar(agg.last).new().is_empty
     w7 = B.reduce_rows(agg.first).new()
     assert w7.isequal(Vector.new(float, size=B.nrows))
     w8 = B.reduce_columns(agg.last).new()
@@ -1351,7 +1353,7 @@ def test_reduce_column(A):
 def test_reduce_scalar(A):
     s = A.reduce_scalar(monoid.plus).new()
     assert s == 47
-    assert A.reduce_scalar(binary.plus).value == 47
+    assert A.reduce_scalar(binary.plus).new() == 47
     with pytest.raises(TypeError, match="Expected type: Monoid"):
         A.reduce_scalar(binary.minus)
 
@@ -1368,7 +1370,7 @@ def test_reduce_scalar(A):
     assert t == 47.0
     t(accum=binary.times) << A.reduce_scalar(monoid.plus)
     assert t == 47 * 47
-    assert A.reduce_scalar(monoid.plus[dtypes.UINT64]).value == 47
+    assert A.reduce_scalar(monoid.plus[dtypes.UINT64]).new() == 47
     # Make sure we accumulate as a float, not int
     t.value = 1.23
     t(accum=binary.plus) << A.reduce_scalar()
@@ -2175,6 +2177,7 @@ def test_no_bool_or_eq(A):
         updater == updater
 
 
+@autocompute
 def test_bool_eq_on_scalar_expressions(A):
     expr = A.reduce_scalar()
     assert expr == 47
@@ -2201,6 +2204,16 @@ def test_bool_eq_on_scalar_expressions(A):
         float(expr)
     with pytest.raises(TypeError, match="not defined"):
         range(expr)
+
+
+def test_bool_eq_on_scalar_expressions_no_auto(A):
+    expr = A.reduce_scalar()
+    with pytest.raises(TypeError, match="autocompute"):
+        expr == 47
+    with pytest.raises(TypeError, match="autocompute"):
+        bool(expr)
+    with pytest.raises(TypeError, match="autocompute"):
+        int(expr)
 
 
 def test_contains(A):
@@ -2386,6 +2399,7 @@ def test_nbytes(A):
     assert A.ss.nbytes > 0
 
 
+@autocompute
 def test_auto(A, v):
     expected = binary.times(A & A).new()
     for expr in [(A & A), binary.times(A & A)]:
@@ -2429,6 +2443,7 @@ def test_auto(A, v):
         assert expr.vxm(A).new(mask=expr.V).isequal(expected.vxm(A).new(mask=expected.V))
 
 
+@autocompute
 def test_auto_assign(A):
     expected = A.dup()
     B = A[1:4, 1:4].new()
@@ -2446,6 +2461,7 @@ def test_auto_assign(A):
     assert expected.isequal(A)
 
 
+@autocompute
 def test_expr_is_like_matrix(A):
     attrs = {attr for attr, val in inspect.getmembers(A)}
     expr_attrs = {attr for attr, val in inspect.getmembers(binary.times(A & A))}
@@ -2508,6 +2524,8 @@ def test_flatten(A):
     assert v.isequal(expected)
     C = v.ss.reshape(*B.shape)
     assert C.isequal(B)
+    C = v.ss.reshape(B.shape)
+    assert C.isequal(B)
 
     # column-wise
     indices = [col * A.nrows + row for row, col in zip(data[0], data[1])]
@@ -2525,7 +2543,18 @@ def test_flatten(A):
     assert v.isequal(expected)
     C = v.ss.reshape(*B.shape, order="F")
     assert C.isequal(B)
+    C = v.ss.reshape(B.shape, order="F")
+    assert C.isequal(B)
     with pytest.raises(ValueError, match="Bad value for order"):
         A.ss.flatten(order="bad")
     with pytest.raises(ValueError, match="cannot reshape"):
         v.ss.reshape(100, 100)
+    with pytest.raises(ValueError):
+        v.ss.reshape(A.shape + (1,))
+
+
+def test_autocompute_argument_messages(A, v):
+    with pytest.raises(TypeError, match="autocompute"):
+        A.ewise_mult(A & A)
+    with pytest.raises(TypeError, match="autocompute"):
+        A.mxv(A @ v)

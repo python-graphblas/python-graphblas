@@ -1,6 +1,6 @@
 from contextvars import ContextVar
 
-from . import ffi
+from . import config, ffi
 from . import replace as replace_singleton
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import lookup_dtype
@@ -55,11 +55,23 @@ def _expect_type_message(
         if type(x) in types:
             return x, None
         elif output_type(x) in types:
-            return x._get_value(), None
+            if config["autocompute"]:
+                return x._get_value(), None
+            extra_message = extra_message or f"{extra_message}\n\n"
+            extra_message += (
+                "Hint: use `grblas.config.set(autocompute=True)` to automatically "
+                "compute arguments that are expressions."
+            )
     elif type(x) is types:
         return x, None
     elif output_type(x) is types:
-        return x._get_value(), None
+        if config["autocompute"]:
+            return x._get_value(), None
+        extra_message = extra_message or f"{extra_message}\n\n"
+        extra_message += (
+            "Hint: use `grblas.config.set(autocompute=True)` to automatically "
+            "compute arguments that are expressions."
+        )
     if argname:
         argmsg = f"for argument `{argname}` "
     elif keyword_name:
@@ -314,7 +326,7 @@ class BaseType:
 
                 # Extract (C << A[rows, cols])
                 if input_mask is not None:
-                    if mask is not None:
+                    if mask is not None:  # pragma: no cover (can this be covered?)
                         raise TypeError("mask and input_mask arguments cannot both be given")
                     _check_mask(input_mask, output=delayed.parent)
                     mask = delayed._input_mask_to_mask(input_mask)

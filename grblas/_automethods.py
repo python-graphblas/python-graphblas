@@ -81,10 +81,17 @@ vector_matrix_raises = {
     "__bool__",
     "__eq__",
 }
+has_defaults = {
+    "__eq__",
+}
 
 # Copy the result of this below
 for name in sorted(common | scalar | vector_matrix | vector | matrix):
-    print(f"def {name}(self):\n    return self._get_value().{name}\n\n")
+    print(f"def {name}(self):")
+    if name in has_defaults:
+        print(f"    return self._get_value({name!r}, default{name})\n\n")
+    else:
+        print(f"    return self._get_value({name!r})\n\n")
 
 # Copy to scalar.py and infix.py
 print("    _get_value = _automethods._get_value")
@@ -120,203 +127,224 @@ for name in sorted(common_raises | vector_matrix_raises):
 
 ```
 """
+from . import config
 
 
-def _get_value(self):
-    # A config to control auto-compute would go here
-    if self._value is None:
-        self._value = self.new()
-    return self._value
+def _get_value(self, attr=None, default=None):
+    if config.get("autocompute"):
+        if self._value is None:
+            self._value = self.new()
+        if attr is None:
+            return self._value
+        else:
+            return getattr(self._value, attr)
+    if default is not None:
+        return default.__get__(self)
+    raise TypeError(
+        f"{attr} not enabled for objects of type {type(self)}.  "
+        f"Use `.new()` to create a new {self.output_type.__name__}.\n\n"
+        "Hint: use `grblas.config.set(autocompute=True)` to enable "
+        "automatic computation of expressions."
+    )
 
 
 def _set_name(self, name):
     self._get_value().name = name
 
 
+def default__eq__(self, other):
+    raise TypeError(
+        f"__eq__ not enabled for objects of type {type(self)}.  "
+        f"Use `.new()` to create a new {self.output_type.__name__}, then use `.isequal` method.\n\n"
+        "Hint: use `grblas.config.set(autocompute=True)` to enable "
+        "automatic computation of expressions."
+    )
+
+
 # Paste here
 def S(self):
-    return self._get_value().S
+    return self._get_value("S")
 
 
 def T(self):
-    return self._get_value().T
+    return self._get_value("T")
 
 
 def V(self):
-    return self._get_value().V
+    return self._get_value("V")
 
 
 def __and__(self):
-    return self._get_value().__and__
+    return self._get_value("__and__")
 
 
 def __array__(self):
-    return self._get_value().__array__
+    return self._get_value("__array__")
 
 
 def __bool__(self):
-    return self._get_value().__bool__
+    return self._get_value("__bool__")
 
 
 def __complex__(self):
-    return self._get_value().__complex__
+    return self._get_value("__complex__")
 
 
 def __contains__(self):
-    return self._get_value().__contains__
+    return self._get_value("__contains__")
 
 
 def __eq__(self):
-    return self._get_value().__eq__
+    return self._get_value("__eq__", default__eq__)
 
 
 def __float__(self):
-    return self._get_value().__float__
+    return self._get_value("__float__")
 
 
 def __getitem__(self):
-    return self._get_value().__getitem__
+    return self._get_value("__getitem__")
 
 
 def __index__(self):
-    return self._get_value().__index__
+    return self._get_value("__index__")
 
 
 def __int__(self):
-    return self._get_value().__int__
+    return self._get_value("__int__")
 
 
 def __iter__(self):
-    return self._get_value().__iter__
+    return self._get_value("__iter__")
 
 
 def __matmul__(self):
-    return self._get_value().__matmul__
+    return self._get_value("__matmul__")
 
 
 def __neg__(self):
-    return self._get_value().__neg__
+    return self._get_value("__neg__")
 
 
 def __or__(self):
-    return self._get_value().__or__
+    return self._get_value("__or__")
 
 
 def __rand__(self):
-    return self._get_value().__rand__
+    return self._get_value("__rand__")
 
 
 def __rmatmul__(self):
-    return self._get_value().__rmatmul__
+    return self._get_value("__rmatmul__")
 
 
 def __ror__(self):
-    return self._get_value().__ror__
+    return self._get_value("__ror__")
 
 
 def _carg(self):
-    return self._get_value()._carg
+    return self._get_value("_carg")
 
 
 def _name_html(self):
-    return self._get_value()._name_html
+    return self._get_value("_name_html")
 
 
 def _nvals(self):
-    return self._get_value()._nvals
+    return self._get_value("_nvals")
 
 
 def apply(self):
-    return self._get_value().apply
+    return self._get_value("apply")
 
 
 def ewise_add(self):
-    return self._get_value().ewise_add
+    return self._get_value("ewise_add")
 
 
 def ewise_mult(self):
-    return self._get_value().ewise_mult
+    return self._get_value("ewise_mult")
 
 
 def gb_obj(self):
-    return self._get_value().gb_obj
+    return self._get_value("gb_obj")
 
 
 def inner(self):
-    return self._get_value().inner
+    return self._get_value("inner")
 
 
 def is_empty(self):
-    return self._get_value().is_empty
+    return self._get_value("is_empty")
 
 
 def isclose(self):
-    return self._get_value().isclose
+    return self._get_value("isclose")
 
 
 def isequal(self):
-    return self._get_value().isequal
+    return self._get_value("isequal")
 
 
 def kronecker(self):
-    return self._get_value().kronecker
+    return self._get_value("kronecker")
 
 
 def mxm(self):
-    return self._get_value().mxm
+    return self._get_value("mxm")
 
 
 def mxv(self):
-    return self._get_value().mxv
+    return self._get_value("mxv")
 
 
 def name(self):
-    return self._get_value().name
+    return self._get_value("name")
 
 
 def nvals(self):
-    return self._get_value().nvals
+    return self._get_value("nvals")
 
 
 def outer(self):
-    return self._get_value().outer
+    return self._get_value("outer")
 
 
 def reduce(self):
-    return self._get_value().reduce
+    return self._get_value("reduce")
 
 
 def reduce_columns(self):
-    return self._get_value().reduce_columns
+    return self._get_value("reduce_columns")
 
 
 def reduce_rows(self):
-    return self._get_value().reduce_rows
+    return self._get_value("reduce_rows")
 
 
 def reduce_scalar(self):
-    return self._get_value().reduce_scalar
+    return self._get_value("reduce_scalar")
 
 
 def ss(self):
-    return self._get_value().ss
+    return self._get_value("ss")
 
 
 def to_pygraphblas(self):
-    return self._get_value().to_pygraphblas
+    return self._get_value("to_pygraphblas")
 
 
 def to_values(self):
-    return self._get_value().to_values
+    return self._get_value("to_values")
 
 
 def value(self):
-    return self._get_value().value
+    return self._get_value("value")
 
 
 def vxm(self):
-    return self._get_value().vxm
+    return self._get_value("vxm")
 
 
 def wait(self):
-    return self._get_value().wait
+    return self._get_value("wait")

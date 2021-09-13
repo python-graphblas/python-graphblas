@@ -129,7 +129,7 @@ class Vector(BaseType):
             return False
 
         # Check if all results are True
-        return matches.reduce(monoid.land).value
+        return matches.reduce(monoid.land).new().value
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """
@@ -153,7 +153,7 @@ class Vector(BaseType):
             return False
 
         # Check if all results are True
-        return matches.reduce(monoid.land).value
+        return matches.reduce(monoid.land).new().value
 
     @property
     def size(self):
@@ -627,7 +627,11 @@ class Vector(BaseType):
 
         if output_type(value) is Vector:
             if type(value) is not Vector:
-                value = value._get_value()
+                value = self._expect_type(
+                    value,
+                    Vector,
+                    within=method_name,
+                )
             if is_submask:
                 if isize is None:
                     # v[i](m) << w

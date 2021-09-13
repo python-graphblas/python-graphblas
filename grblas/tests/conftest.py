@@ -1,4 +1,5 @@
 import atexit
+import functools
 import itertools
 
 import pytest
@@ -11,6 +12,7 @@ def pytest_configure(config):
     blocking = config.getoption("--blocking", True)
     record = config.getoption("--record", False)
 
+    grblas.config.set(autocompute=False)
     grblas.init(backend, blocking=blocking)
     print(f'Running tests with "{backend}" backend, blocking={blocking}, record={record}')
     if record:
@@ -36,3 +38,12 @@ def reset_name_counters():
     grblas.Matrix._name_counter = itertools.count()
     grblas.Vector._name_counter = itertools.count()
     grblas.Scalar._name_counter = itertools.count()
+
+
+def autocompute(func):
+    @functools.wraps(func)
+    def inner(*args, **kwargs):
+        with grblas.config.set(autocompute=True):
+            return func(*args, **kwargs)
+
+    return inner

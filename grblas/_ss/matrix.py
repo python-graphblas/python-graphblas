@@ -743,7 +743,7 @@ class ss:
                         f"GrB_Matrix_extractTuples_{parent.dtype.name}",
                         [rows, columns, None, _Pointer(scalar), parent],
                     )
-                    value = parent.reduce_scalar(gb.monoid.any).value
+                    value = parent.reduce_scalar(gb.monoid.any).new().value
                     rv = {
                         "format": "coo",
                         "nrows": nrows,
@@ -3427,6 +3427,27 @@ class ss:
         return prefix_scan(self._parent, op, name=name, within="scan_rows")
 
     def flatten(self, order="rowwise", *, name=None):
+        """Return a copy of the Matrix collapsed into a Vector.
+
+        Parameters
+        ----------
+        order : {"rowwise", "columnwise"}, optional
+            "rowwise" means to flatten in row-major (C-style) order.
+            Aliases of "rowwise" also accepted: "row", "rows", "C".
+            "columnwise" means to flatten in column-major (F-style) order.
+            Aliases of "rowwise" also accepted: "col", "cols", "column", "columns", "F".
+            The default is "rowwise".
+        name : str, optional
+            Name of the new Vector.
+
+        Returns
+        -------
+        Vector
+
+        See Also
+        --------
+        Vector.ss.reshape : copy a Vector to a Matrix.
+        """
         order = get_order(order)
         info = self.export(order, raw=True)
         fmt = info["format"]
