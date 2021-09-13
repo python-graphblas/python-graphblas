@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from . import _automethods, backend, binary, config, ffi, lib, monoid, semiring, utils
+from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
 from ._ss.matrix import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, lookup_dtype, unify
@@ -777,10 +777,11 @@ class Matrix(BaseType):
         value_type = output_type(value)
         if value_type is Vector:
             if type(value) is not Vector:
-                if config["autocompute"]:
-                    value = value._get_value()
-                else:
-                    1 / 0  # TODO: good error message
+                value = self._expect_type(
+                    value,
+                    Vector,
+                    within=method_name,
+                )
             if rowsize is None and colsize is not None:
                 # Row-only selection
                 row_index = rows
@@ -895,10 +896,11 @@ class Matrix(BaseType):
                 )
         elif value_type in {Matrix, TransposedMatrix}:
             if type(value) not in {Matrix, TransposedMatrix}:
-                if config["autocompute"]:
-                    value = value._get_value()
-                else:
-                    1 / 0  # TODO: good error message
+                value = self._expect_type(
+                    value,
+                    (Matrix, TransposedMatrix),
+                    within=method_name,
+                )
             if rowsize is None or colsize is None:
                 if rowsize is None and colsize is None:
                     # C[i, j] << A  (mask doesn't matter)

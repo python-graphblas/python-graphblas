@@ -92,7 +92,7 @@ class VectorMatMulExpr(VectorInfixExpr):
 
 utils._output_types[VectorEwiseAddExpr] = Vector
 utils._output_types[VectorEwiseMultExpr] = Vector
-utils._output_types[VectorInfixExpr] = Vector
+utils._output_types[VectorMatMulExpr] = Vector
 
 
 class MatrixInfixExpr(InfixExprBase):

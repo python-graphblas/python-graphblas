@@ -2551,3 +2551,10 @@ def test_flatten(A):
         v.ss.reshape(100, 100)
     with pytest.raises(ValueError):
         v.ss.reshape(A.shape + (1,))
+
+
+def test_autocompute_argument_messages(A, v):
+    with pytest.raises(TypeError, match="autocompute"):
+        A.ewise_mult(A & A)
+    with pytest.raises(TypeError, match="autocompute"):
+        A.mxv(A @ v)

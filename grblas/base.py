@@ -57,13 +57,21 @@ def _expect_type_message(
         elif output_type(x) in types:
             if config["autocompute"]:
                 return x._get_value(), None
-            1 / 0  # TODO: good message for error below
+            extra_message = extra_message or f"{extra_message}\n\n"
+            extra_message += (
+                'Hint: use `grblas.config.set("autocompute", True)` to automatically '
+                "compute arguments that are expressions."
+            )
     elif type(x) is types:
         return x, None
     elif output_type(x) is types:
         if config["autocompute"]:
             return x._get_value(), None
-        1 / 0  # TODO: good message for error below
+        extra_message = extra_message or f"{extra_message}\n\n"
+        extra_message += (
+            'Hint: use `grblas.config.set("autocompute", True)` to automatically '
+            "compute arguments that are expressions."
+        )
     if argname:
         argmsg = f"for argument `{argname}` "
     elif keyword_name:

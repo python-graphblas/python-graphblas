@@ -1,7 +1,7 @@
 import numpy as np
 
 from . import config, unary
-from .exceptions import InsufficientSpace
+from .exceptions import OutOfMemory
 from .matrix import Matrix, TransposedMatrix
 from .vector import Vector
 
@@ -115,6 +115,7 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
             submatrix = submatrix.T
         else:
             if mask is None:
+                # XXX: very large iso-valued Matrix objects break here from OutOfMemory.
                 submatrix = Matrix.new(matrix.dtype, matrix._nrows, matrix._ncols, name="")
                 submatrix(matrix.S)[rows, columns] = 0
                 submatrix(submatrix.S) << matrix
@@ -407,9 +408,8 @@ def _format_expression(expr, header):
     if config.get("autocompute"):
         try:
             val = expr._get_value()
-        except InsufficientSpace:
-            # TODO: add a message about result being too large to compute
-            pass
+        except OutOfMemory:
+            arg_string += "<hr><b>Result is too large to compute!</b>"
         else:
             name = val.name
             val.name = "Result"
@@ -548,9 +548,8 @@ def _format_infix_expression(expr, header, expr_name):
     if config.get("autocompute"):
         try:
             val = expr._get_value()
-        except InsufficientSpace:
-            # TODO: add a message about result being too large to compute
-            pass
+        except OutOfMemory:
+            arg_string += "<hr><b>Result is too large to compute!</b>"
         else:
             name = val.name
             val.name = "Result"
