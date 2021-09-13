@@ -2208,11 +2208,11 @@ def test_bool_eq_on_scalar_expressions(A):
 
 def test_bool_eq_on_scalar_expressions_no_auto(A):
     expr = A.reduce_scalar()
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="autocompute"):
         expr == 47
-    with pytest.raises(TypeError):  # is TypeError correct?
+    with pytest.raises(TypeError, match="autocompute"):
         bool(expr)
-    with pytest.raises(Exception):  # TODO: which exception?
+    with pytest.raises(TypeError, match="autocompute"):
         int(expr)
 
 

@@ -82,7 +82,6 @@ vector_matrix_raises = {
     "__eq__",
 }
 has_defaults = {
-    "__bool__",
     "__eq__",
 }
 
@@ -141,7 +140,12 @@ def _get_value(self, attr=None, default=None):
             return getattr(self._value, attr)
     if default is not None:
         return default.__get__(self)
-    raise AttributeError("TODO")
+    raise TypeError(
+        f"{attr} not enabled for objects of type {type(self)}.  "
+        f"Use `.new()` to create a new {self.output_type.__name__}.\n\n"
+        "Hint: use `grblas.config.set(autocompute=True)` to enable "
+        "automatic computation of expressions."
+    )
 
 
 def _set_name(self, name):
@@ -149,16 +153,12 @@ def _set_name(self, name):
 
 
 def default__eq__(self, other):
-    # TODO: update the error message
     raise TypeError(
-        f"__eq__ not defined for objects of type {type(self)}.  "
-        f"Use `.new()` to create a new {self.output_type.__name__}, then use `.isequal` method."
+        f"__eq__ not enabled for objects of type {type(self)}.  "
+        f"Use `.new()` to create a new {self.output_type.__name__}, then use `.isequal` method.\n\n"
+        "Hint: use `grblas.config.set(autocompute=True)` to enable "
+        "automatic computation of expressions."
     )
-
-
-def default__bool__(self):
-    # TODO: update the error message
-    raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
 
 
 # Paste here
@@ -183,7 +183,7 @@ def __array__(self):
 
 
 def __bool__(self):
-    return self._get_value("__bool__", default__bool__)
+    return self._get_value("__bool__")
 
 
 def __complex__(self):
