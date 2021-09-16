@@ -58,18 +58,29 @@ print(
     "    setattr(Matrix, name, val)\n"
     "    if not name.startswith('__i'):\n"
     "        setattr(TransposedMatrix, name, val)\n"
+    "        setattr(VectorExpression, name, val)\n"
+    "        setattr(MatrixExpression, name, val)\n"
+    "        setattr(VectorInfixExpr, name, val)\n"
+    "        setattr(MatrixInfixExpr, name, val)\n"
 )
 """
 from . import binary, unary
-from .matrix import Matrix, TransposedMatrix
+from .infix import MatrixInfixExpr, VectorInfixExpr
+from .matrix import Matrix, MatrixExpression, TransposedMatrix
 from .utils import output_type
-from .vector import Vector
+from .vector import Vector, VectorExpression
 
 
 def comparison(self, other, method, op):
-    type1 = type(self)
+    type1 = output_type(self)
     type2 = output_type(other)
-    if type1 is type2 or type1 is Matrix and type2 is TransposedMatrix:
+    if (
+        type1 is type2
+        or type1 is Matrix
+        and type2 is TransposedMatrix
+        or type1 is TransposedMatrix
+        and type2 is Matrix
+    ):
         return op(self & other)
     return op(self, other)
 
@@ -240,3 +251,7 @@ for name in [
     setattr(Matrix, name, val)
     if not name.startswith("__i"):
         setattr(TransposedMatrix, name, val)
+        setattr(VectorExpression, name, val)
+        setattr(MatrixExpression, name, val)
+        setattr(VectorInfixExpr, name, val)
+        setattr(MatrixInfixExpr, name, val)
