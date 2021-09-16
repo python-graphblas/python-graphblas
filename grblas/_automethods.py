@@ -83,32 +83,7 @@ vector_matrix_raises = {
 has_defaults = {
     "__eq__",
 }
-sugar = {
-    "__add__",
-    "__divmod__",
-    "__eq__",
-    "__floordiv__",
-    "__ge__",
-    "__gt__",
-    "__le__",
-    "__lt__",
-    "__mod__",
-    "__mul__",
-    "__ne__",
-    "__neg__",
-    "__pow__",
-    "__radd__",
-    "__rdivmod__",
-    "__rfloordiv__",
-    "__rmod__",
-    "__rmul__",
-    "__rpow__",
-    "__rsub__",
-    "__rtruediv__",
-    "__sub__",
-    "__truediv__",
-}
-# no inplace for expressions
+# no inplace math for expressions
 bad_sugar = {
     "__iadd__",
     "__ifloordiv__",
@@ -147,7 +122,6 @@ for name in sorted(common | vector_matrix | vector):
     print(f"    {name} = wrapdoc(Vector.{name})(property(_automethods.{name}))")
     if name == "name":
         print("    name = name.setter(_automethods._set_name)")
-
 print("    # These raise exceptions")
 for name in sorted(common_raises | vector_matrix_raises):
     print(f"    {name} = wrapdoc(Vector.{name})(Vector.{name})")
@@ -161,8 +135,6 @@ for name in sorted(common | vector_matrix | matrix):
     print(f"    {name} = wrapdoc(Matrix.{name})(property(_automethods.{name}))")
     if name == "name":
         print("    name = name.setter(_automethods._set_name)")
-for name in sorted(common | vector_matrix | matrix):
-    print(f"    {name} = property(_automethods.{name})")
 print("    # These raise exceptions")
 for name in sorted(common_raises | vector_matrix_raises):
     print(f"    {name} = wrapdoc(Matrix.{name})(Matrix.{name})")

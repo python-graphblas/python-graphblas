@@ -17,11 +17,13 @@ operations = {
     "pow": "pow",
 }
 custom = {
+    "abs",
     "divmod",
-    "rdivmod",
+    "invert",
     "neg",
+    "rdivmod",
 }
-# Skipped: rshift, xor, invert (used by masks)
+# Skipped: rshift, xor, pos
 # Already used for syntax: lshift, and, or
 
 for method, op in sorted(comparisons.items()):
@@ -56,7 +58,7 @@ print(
     "    val = d[name]\n"
     "    setattr(Vector, name, val)\n"
     "    setattr(Matrix, name, val)\n"
-    "    if not name.startswith('__i'):\n"
+    "    if not name.startswith('__i') or name == '__invert__':\n"
     "        setattr(TransposedMatrix, name, val)\n"
     "        setattr(VectorExpression, name, val)\n"
     "        setattr(MatrixExpression, name, val)\n"
@@ -91,6 +93,14 @@ def __divmod__(self, other):
 
 def __rdivmod__(self, other):
     return (binary.floordiv(other, self), binary.numpy.mod(other, self))
+
+
+def __abs__(self):
+    return unary.abs(self)
+
+
+def __invert__(self):
+    return unary.lnot(self)
 
 
 def __neg__(self):
@@ -215,6 +225,7 @@ def __itruediv__(self, other):
 
 d = globals()
 for name in [
+    "__abs__",
     "__add__",
     "__divmod__",
     "__eq__",
@@ -225,6 +236,7 @@ for name in [
     "__ifloordiv__",
     "__imod__",
     "__imul__",
+    "__invert__",
     "__ipow__",
     "__isub__",
     "__itruediv__",
@@ -249,7 +261,7 @@ for name in [
     val = d[name]
     setattr(Vector, name, val)
     setattr(Matrix, name, val)
-    if not name.startswith("__i"):
+    if not name.startswith("__i") or name == "__invert__":
         setattr(TransposedMatrix, name, val)
         setattr(VectorExpression, name, val)
         setattr(MatrixExpression, name, val)

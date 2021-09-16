@@ -2579,6 +2579,9 @@ def test_infix_sugar(A):
     assert binary.pow(2, A).isequal(2 ** A)
     assert binary.pow(A, 2).isequal(pow(A, 2))
     assert unary.ainv(A).isequal(-A)
+    assert unary.ainv(A.T).isequal(-A.T)
+    assert unary.lnot(A).isequal(~A)
+    assert unary.lnot(A.T).isequal(~A.T)
     assert binary.lt(A, 4).isequal(A < 4)
     assert binary.le(A, 4).isequal(A <= 4)
     assert binary.gt(A, 4).isequal(A > 4)
@@ -2625,7 +2628,10 @@ def test_infix_sugar(A):
     assert type(B) is Matrix
     assert binary.pow(A, 2).isequal(B)
 
-    expr = A & A
+    expr = binary.plus(A & A)
+    assert unary.abs(expr).isequal(abs(expr))
+    assert unary.ainv(expr).isequal(-expr)
+    assert unary.lnot(expr).isequal(~expr)
     with pytest.raises(TypeError):
         expr += 1
     with pytest.raises(TypeError):
