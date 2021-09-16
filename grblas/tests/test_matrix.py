@@ -1561,9 +1561,8 @@ def test_bad_init():
         Matrix(None, float, name="bad_matrix")
 
 
-def test_no_equals(A):
-    with pytest.raises(TypeError, match="not defined for objects of type"):
-        A == A
+def test_equals(A):
+    assert (A == A).new().reduce_scalar(monoid.land).new()
 
 
 def test_bad_update(A):
@@ -2154,8 +2153,8 @@ def test_import_export_auto(A, do_iso, methods):
 def test_no_bool_or_eq(A):
     with pytest.raises(TypeError, match="not defined"):
         bool(A)
-    with pytest.raises(TypeError, match="not defined"):
-        A == A
+    # with pytest.raises(TypeError, match="not defined"):
+    A == A
     with pytest.raises(TypeError, match="not defined"):
         bool(A.S)
     with pytest.raises(TypeError, match="not defined"):
@@ -2163,7 +2162,7 @@ def test_no_bool_or_eq(A):
     expr = A.ewise_mult(A)
     with pytest.raises(TypeError, match="not defined"):
         bool(expr)
-    with pytest.raises(TypeError, match="not defined"):
+    with pytest.raises(TypeError, match="not enabled"):
         expr == expr
     assigner = A[1, 2]()
     with pytest.raises(TypeError, match="not defined"):
@@ -2558,3 +2557,77 @@ def test_autocompute_argument_messages(A, v):
         A.ewise_mult(A & A)
     with pytest.raises(TypeError, match="autocompute"):
         A.mxv(A @ v)
+
+
+@autocompute
+def test_infix_sugar(A):
+    assert type(A + 1) is not Matrix
+    assert binary.plus(A, 1).isequal(A + 1)
+    assert binary.plus(A.T, 1).isequal(A.T + 1)
+    assert binary.plus(1, A).isequal(1 + A)
+    assert binary.minus(A, 1).isequal(A - 1)
+    assert binary.minus(1, A).isequal(1 - A)
+    assert binary.times(A, 2).isequal(A * 2)
+    assert binary.truediv(A, 2).isequal(A / 2)
+    assert binary.floordiv(A, 2).isequal(A // 2)
+    assert binary.numpy.mod(A, 2).isequal(A % 2)
+    assert binary.pow(A, 2).isequal(A ** 2)
+    assert binary.pow(2, A).isequal(2 ** A)
+    assert binary.pow(A, 2).isequal(pow(A, 2))
+    assert unary.ainv(A).isequal(-A)
+    assert binary.lt(A, 4).isequal(A < 4)
+    assert binary.le(A, 4).isequal(A <= 4)
+    assert binary.gt(A, 4).isequal(A > 4)
+    assert binary.ge(A, 4).isequal(A >= 4)
+    assert binary.eq(A, 4).isequal(A == 4)
+    assert binary.ne(A, 4).isequal(A != 4)
+    x, y = divmod(A, 3)
+    assert binary.floordiv(A, 3).isequal(x)
+    assert binary.numpy.mod(A, 3).isequal(y)
+    assert binary.eq(A & A).isequal(A == A)
+    assert binary.lt(A & A.T).isequal(A < A.T)
+
+    B = A.dup()
+    B += 1
+    assert type(B) is Matrix
+    assert binary.plus(A, 1).isequal(B)
+    B = A.dup()
+    B -= 1
+    assert type(B) is Matrix
+    assert binary.minus(A, 1).isequal(B)
+    B = A.dup()
+    B *= 2
+    assert type(B) is Matrix
+    assert binary.times(A, 2).isequal(B)
+    B = A.dup(dtype=float)
+    B /= 2
+    assert type(B) is Matrix
+    assert binary.truediv(A, 2).isequal(B)
+    B = A.dup()
+    B //= 2
+    assert type(B) is Matrix
+    assert binary.floordiv(A, 2).isequal(B)
+    B = A.dup()
+    B %= 2
+    assert type(B) is Matrix
+    assert binary.numpy.mod(A, 2).isequal(B)
+    B = A.dup()
+    B **= 2
+    assert type(B) is Matrix
+    assert binary.pow(A, 2).isequal(B)
+
+    expr = A & A
+    with pytest.raises(TypeError):
+        expr += 1
+    with pytest.raises(TypeError):
+        expr -= 1
+    with pytest.raises(TypeError):
+        expr *= 1
+    with pytest.raises(TypeError):
+        expr /= 1
+    with pytest.raises(TypeError):
+        expr //= 1
+    with pytest.raises(TypeError):
+        expr %= 1
+    with pytest.raises(TypeError):
+        expr **= 1

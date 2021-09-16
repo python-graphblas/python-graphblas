@@ -817,13 +817,42 @@ class VectorExpression(BaseExpression):
     to_values = wrapdoc(Vector.to_values)(property(_automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(_automethods.vxm))
     wait = wrapdoc(Vector.wait)(property(_automethods.wait))
+    __add__ = property(_automethods.__add__)
+    __divmod__ = property(_automethods.__divmod__)
+    __eq__ = property(_automethods.__eq__)
+    __floordiv__ = property(_automethods.__floordiv__)
+    __ge__ = property(_automethods.__ge__)
+    __gt__ = property(_automethods.__gt__)
+    __le__ = property(_automethods.__le__)
+    __lt__ = property(_automethods.__lt__)
+    __mod__ = property(_automethods.__mod__)
+    __mul__ = property(_automethods.__mul__)
+    __ne__ = property(_automethods.__ne__)
+    __neg__ = property(_automethods.__neg__)
+    __pow__ = property(_automethods.__pow__)
+    __radd__ = property(_automethods.__radd__)
+    __rdivmod__ = property(_automethods.__rdivmod__)
+    __rfloordiv__ = property(_automethods.__rfloordiv__)
+    __rmod__ = property(_automethods.__rmod__)
+    __rmul__ = property(_automethods.__rmul__)
+    __rpow__ = property(_automethods.__rpow__)
+    __rsub__ = property(_automethods.__rsub__)
+    __rtruediv__ = property(_automethods.__rtruediv__)
+    __sub__ = property(_automethods.__sub__)
+    __truediv__ = property(_automethods.__truediv__)
     # These raise exceptions
     __array__ = wrapdoc(Vector.__array__)(Vector.__array__)
     __bool__ = wrapdoc(Vector.__bool__)(Vector.__bool__)
-    __eq__ = wrapdoc(Vector.__eq__)(Vector.__eq__)
     __iand__ = wrapdoc(Vector.__iand__)(Vector.__iand__)
     __imatmul__ = wrapdoc(Vector.__imatmul__)(Vector.__imatmul__)
     __ior__ = wrapdoc(Vector.__ior__)(Vector.__ior__)
+    __iadd__ = _automethods.__iadd__
+    __ifloordiv__ = _automethods.__ifloordiv__
+    __imod__ = _automethods.__imod__
+    __imul__ = _automethods.__imul__
+    __ipow__ = _automethods.__ipow__
+    __isub__ = _automethods.__isub__
+    __itruediv__ = _automethods.__itruediv__
 
 
 class _VectorAsMatrix:

@@ -47,6 +47,30 @@ vector_matrix = {
     "ewise_mult",
     "ss",
     "to_values",
+    # infix sugar!
+    "__add__",
+    "__divmod__",
+    "__eq__",
+    "__floordiv__",
+    "__ge__",
+    "__gt__",
+    "__le__",
+    "__lt__",
+    "__mod__",
+    "__mul__",
+    "__ne__",
+    "__neg__",
+    "__pow__",
+    "__radd__",
+    "__rdivmod__",
+    "__rfloordiv__",
+    "__rmod__",
+    "__rmul__",
+    "__rpow__",
+    "__rsub__",
+    "__rtruediv__",
+    "__sub__",
+    "__truediv__",
 }
 vector = {
     "inner",
@@ -79,12 +103,45 @@ scalar_raises = {
 vector_matrix_raises = {
     "__array__",
     "__bool__",
-    "__eq__",
 }
 has_defaults = {
     "__eq__",
 }
-
+sugar = {
+    "__add__",
+    "__divmod__",
+    "__eq__",
+    "__floordiv__",
+    "__ge__",
+    "__gt__",
+    "__le__",
+    "__lt__",
+    "__mod__",
+    "__mul__",
+    "__ne__",
+    "__neg__",
+    "__pow__",
+    "__radd__",
+    "__rdivmod__",
+    "__rfloordiv__",
+    "__rmod__",
+    "__rmul__",
+    "__rpow__",
+    "__rsub__",
+    "__rtruediv__",
+    "__sub__",
+    "__truediv__",
+}
+# no inplace for expressions
+bad_sugar = {
+    "__iadd__",
+    "__ifloordiv__",
+    "__imod__",
+    "__imul__",
+    "__ipow__",
+    "__isub__",
+    "__itruediv__",
+}
 # Copy the result of this below
 for name in sorted(common | scalar | vector_matrix | vector | matrix):
     print(f"def {name}(self):")
@@ -92,6 +149,10 @@ for name in sorted(common | scalar | vector_matrix | vector | matrix):
         print(f"    return self._get_value({name!r}, default{name})\n\n")
     else:
         print(f"    return self._get_value({name!r})\n\n")
+for name in sorted(bad_sugar):
+    print(f"def {name}(self, other):")
+    print(f'    raise TypeError(f"{name!r} not supported for {{type(self).__name__}}")\n\n')
+
 
 # Copy to scalar.py and infix.py
 print("    _get_value = _automethods._get_value")
@@ -106,24 +167,33 @@ print()
 
 # Copy to vector.py and infix.py
 print("    _get_value = _automethods._get_value")
-for name in sorted(common | vector_matrix | vector):
+for name in sorted((common | vector_matrix | vector) - sugar):
     print(f"    {name} = wrapdoc(Vector.{name})(property(_automethods.{name}))")
     if name == "name":
         print("    name = name.setter(_automethods._set_name)")
+for name in sorted((common | vector_matrix | vector) & sugar):
+    print(f"    {name} = property(_automethods.{name})")
+
 print("    # These raise exceptions")
-for name in sorted(common_raises | vector_matrix_raises):
+for name in sorted((common_raises | vector_matrix_raises) - sugar):
     print(f"    {name} = wrapdoc(Vector.{name})(Vector.{name})")
+for name in sorted(bad_sugar):
+    print(f"    {name} = _automethods.{name}")
 print()
 
 # Copy to matrix.py and infix.py
 print("    _get_value = _automethods._get_value")
-for name in sorted(common | vector_matrix | matrix):
+for name in sorted((common | vector_matrix | matrix) - sugar):
     print(f"    {name} = wrapdoc(Matrix.{name})(property(_automethods.{name}))")
     if name == "name":
         print("    name = name.setter(_automethods._set_name)")
+for name in sorted((common | vector_matrix | matrix) & sugar):
+    print(f"    {name} = property(_automethods.{name})")
 print("    # These raise exceptions")
-for name in sorted(common_raises | vector_matrix_raises):
+for name in sorted((common_raises | vector_matrix_raises) - sugar):
     print(f"    {name} = wrapdoc(Matrix.{name})(Matrix.{name})")
+for name in sorted(bad_sugar):
+    print(f"    {name} = _automethods.{name}")
 
 ```
 """
@@ -174,6 +244,10 @@ def V(self):
     return self._get_value("V")
 
 
+def __add__(self):
+    return self._get_value("__add__")
+
+
 def __and__(self):
     return self._get_value("__and__")
 
@@ -194,6 +268,10 @@ def __contains__(self):
     return self._get_value("__contains__")
 
 
+def __divmod__(self):
+    return self._get_value("__divmod__")
+
+
 def __eq__(self):
     return self._get_value("__eq__", default__eq__)
 
@@ -202,8 +280,20 @@ def __float__(self):
     return self._get_value("__float__")
 
 
+def __floordiv__(self):
+    return self._get_value("__floordiv__")
+
+
+def __ge__(self):
+    return self._get_value("__ge__")
+
+
 def __getitem__(self):
     return self._get_value("__getitem__")
+
+
+def __gt__(self):
+    return self._get_value("__gt__")
 
 
 def __index__(self):
@@ -218,8 +308,28 @@ def __iter__(self):
     return self._get_value("__iter__")
 
 
+def __le__(self):
+    return self._get_value("__le__")
+
+
+def __lt__(self):
+    return self._get_value("__lt__")
+
+
 def __matmul__(self):
     return self._get_value("__matmul__")
+
+
+def __mod__(self):
+    return self._get_value("__mod__")
+
+
+def __mul__(self):
+    return self._get_value("__mul__")
+
+
+def __ne__(self):
+    return self._get_value("__ne__")
 
 
 def __neg__(self):
@@ -230,16 +340,60 @@ def __or__(self):
     return self._get_value("__or__")
 
 
+def __pow__(self):
+    return self._get_value("__pow__")
+
+
+def __radd__(self):
+    return self._get_value("__radd__")
+
+
 def __rand__(self):
     return self._get_value("__rand__")
+
+
+def __rdivmod__(self):
+    return self._get_value("__rdivmod__")
+
+
+def __rfloordiv__(self):
+    return self._get_value("__rfloordiv__")
 
 
 def __rmatmul__(self):
     return self._get_value("__rmatmul__")
 
 
+def __rmod__(self):
+    return self._get_value("__rmod__")
+
+
+def __rmul__(self):
+    return self._get_value("__rmul__")
+
+
 def __ror__(self):
     return self._get_value("__ror__")
+
+
+def __rpow__(self):
+    return self._get_value("__rpow__")
+
+
+def __rsub__(self):
+    return self._get_value("__rsub__")
+
+
+def __rtruediv__(self):
+    return self._get_value("__rtruediv__")
+
+
+def __sub__(self):
+    return self._get_value("__sub__")
+
+
+def __truediv__(self):
+    return self._get_value("__truediv__")
 
 
 def _carg(self):
@@ -348,3 +502,31 @@ def vxm(self):
 
 def wait(self):
     return self._get_value("wait")
+
+
+def __iadd__(self, other):
+    raise TypeError(f"'__iadd__' not supported for {type(self).__name__}")
+
+
+def __ifloordiv__(self, other):
+    raise TypeError(f"'__ifloordiv__' not supported for {type(self).__name__}")
+
+
+def __imod__(self, other):
+    raise TypeError(f"'__imod__' not supported for {type(self).__name__}")
+
+
+def __imul__(self, other):
+    raise TypeError(f"'__imul__' not supported for {type(self).__name__}")
+
+
+def __ipow__(self, other):
+    raise TypeError(f"'__ipow__' not supported for {type(self).__name__}")
+
+
+def __isub__(self, other):
+    raise TypeError(f"'__isub__' not supported for {type(self).__name__}")
+
+
+def __itruediv__(self, other):
+    raise TypeError(f"'__itruediv__' not supported for {type(self).__name__}")

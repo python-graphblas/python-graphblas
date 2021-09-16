@@ -290,11 +290,6 @@ class BaseType:
             "  To create an matmul expression using infix notation, do e.g. `semiring(x @ y)`."
         )
 
-    def __eq__(self, other):
-        raise TypeError(
-            f"__eq__ not defined for objects of type {type(self)}.  Use `.isequal` method instead."
-        )
-
     def __bool__(self):
         raise TypeError(
             f"__bool__ not defined for objects of type {type(self)}.  "
