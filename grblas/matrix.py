@@ -253,9 +253,9 @@ class Matrix(BaseType):
             self.clear()
         if nrows is not None or ncols is not None:
             if nrows is None:
-                nrows = self.nrows
+                nrows = self._nrows
             if ncols is None:
-                ncols = self.ncols
+                ncols = self._ncols
             self.resize(nrows, ncols)
         if n == 0:
             return
@@ -961,7 +961,7 @@ class Matrix(BaseType):
                         # C[i, J](m) << c
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Row_subassign"
-                        value_vector = Vector.new(value.dtype, size=mask.mask.size, name="v_temp")
+                        value_vector = Vector.new(value.dtype, size=mask.mask._size, name="v_temp")
                         expr_repr = "[{1}, [{3} cols]](%s) << {0.name}" % mask.name
                     else:
                         # C(m)[i, J] << c
@@ -988,7 +988,7 @@ class Matrix(BaseType):
                         # C[I, j](m) << c
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Col_subassign"
-                        value_vector = Vector.new(value.dtype, size=mask.mask.size, name="v_temp")
+                        value_vector = Vector.new(value.dtype, size=mask.mask._size, name="v_temp")
                     else:
                         # C(m)[I, j] << c
                         # C[I, j] << c

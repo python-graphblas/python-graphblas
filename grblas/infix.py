@@ -13,7 +13,7 @@ class VectorInfixExpr(InfixExprBase):
 
     def __init__(self, left, right):
         super().__init__(left, right)
-        self._size = left.size
+        self._size = left._size
 
     @property
     def size(self):
@@ -108,8 +108,8 @@ class MatrixInfixExpr(InfixExprBase):
 
     def __init__(self, left, right):
         super().__init__(left, right)
-        self._nrows = left.nrows
-        self._ncols = left.ncols
+        self._nrows = left._nrows
+        self._ncols = left._ncols
 
     @property
     def nrows(self):
@@ -344,7 +344,7 @@ def _matmul_infix_expr(left, right, *, within):
     if expr.output_type is Vector:
         return VectorMatMulExpr(left, right, method_name=method, size=expr._size)
     elif expr.output_type is Matrix:
-        return MatrixMatMulExpr(left, right, nrows=expr.nrows, ncols=expr.ncols)
+        return MatrixMatMulExpr(left, right, nrows=expr._nrows, ncols=expr._ncols)
     return ScalarMatMulExpr(left, right)
 
 

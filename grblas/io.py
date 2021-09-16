@@ -114,9 +114,9 @@ def to_scipy_sparse_matrix(m, format="csr"):
     if output_type(m) is Vector:
         indices, data = m.to_values()
         if format == "csc":
-            return ss.csc_matrix((data, indices, [0, len(data)]), shape=(m.size, 1))
+            return ss.csc_matrix((data, indices, [0, len(data)]), shape=(m._size, 1))
         else:
-            rv = ss.csr_matrix((data, indices, [0, len(data)]), shape=(1, m.size))
+            rv = ss.csr_matrix((data, indices, [0, len(data)]), shape=(1, m._size))
             if format == "csr":
                 return rv
     else:
