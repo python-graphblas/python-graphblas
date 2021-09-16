@@ -346,3 +346,6 @@ def _matmul_infix_expr(left, right, *, within):
     elif expr.output_type is Matrix:
         return MatrixMatMulExpr(left, right, nrows=expr.nrows, ncols=expr.ncols)
     return ScalarMatMulExpr(left, right)
+
+
+from . import _infixmethods  # noqa isort:skip

@@ -1343,5 +1343,3 @@ class TransposedMatrix:
 utils._output_types[Matrix] = Matrix
 utils._output_types[MatrixExpression] = Matrix
 utils._output_types[TransposedMatrix] = TransposedMatrix
-
-from . import _infixmethods  # noqa isort:skip
