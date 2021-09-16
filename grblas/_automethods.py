@@ -79,12 +79,20 @@ scalar_raises = {
 vector_matrix_raises = {
     "__array__",
     "__bool__",
-    "__eq__",
 }
 has_defaults = {
     "__eq__",
 }
-
+# no inplace math for expressions
+bad_sugar = {
+    "__iadd__",
+    "__ifloordiv__",
+    "__imod__",
+    "__imul__",
+    "__ipow__",
+    "__isub__",
+    "__itruediv__",
+}
 # Copy the result of this below
 for name in sorted(common | scalar | vector_matrix | vector | matrix):
     print(f"def {name}(self):")
@@ -92,6 +100,10 @@ for name in sorted(common | scalar | vector_matrix | vector | matrix):
         print(f"    return self._get_value({name!r}, default{name})\n\n")
     else:
         print(f"    return self._get_value({name!r})\n\n")
+for name in sorted(bad_sugar):
+    print(f"def {name}(self, other):")
+    print(f'    raise TypeError(f"{name!r} not supported for {{type(self).__name__}}")\n\n')
+
 
 # Copy to scalar.py and infix.py
 print("    _get_value = _automethods._get_value")
@@ -113,6 +125,8 @@ for name in sorted(common | vector_matrix | vector):
 print("    # These raise exceptions")
 for name in sorted(common_raises | vector_matrix_raises):
     print(f"    {name} = wrapdoc(Vector.{name})(Vector.{name})")
+for name in sorted(bad_sugar):
+    print(f"    {name} = _automethods.{name}")
 print()
 
 # Copy to matrix.py and infix.py
@@ -124,6 +138,8 @@ for name in sorted(common | vector_matrix | matrix):
 print("    # These raise exceptions")
 for name in sorted(common_raises | vector_matrix_raises):
     print(f"    {name} = wrapdoc(Matrix.{name})(Matrix.{name})")
+for name in sorted(bad_sugar):
+    print(f"    {name} = _automethods.{name}")
 
 ```
 """
@@ -348,3 +364,31 @@ def vxm(self):
 
 def wait(self):
     return self._get_value("wait")
+
+
+def __iadd__(self, other):
+    raise TypeError(f"'__iadd__' not supported for {type(self).__name__}")
+
+
+def __ifloordiv__(self, other):
+    raise TypeError(f"'__ifloordiv__' not supported for {type(self).__name__}")
+
+
+def __imod__(self, other):
+    raise TypeError(f"'__imod__' not supported for {type(self).__name__}")
+
+
+def __imul__(self, other):
+    raise TypeError(f"'__imul__' not supported for {type(self).__name__}")
+
+
+def __ipow__(self, other):
+    raise TypeError(f"'__ipow__' not supported for {type(self).__name__}")
+
+
+def __isub__(self, other):
+    raise TypeError(f"'__isub__' not supported for {type(self).__name__}")
+
+
+def __itruediv__(self, other):
+    raise TypeError(f"'__itruediv__' not supported for {type(self).__name__}")

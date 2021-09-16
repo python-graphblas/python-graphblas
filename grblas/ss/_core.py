@@ -1,9 +1,9 @@
-from ._ss.matrix import _concat_mn
-from .base import _expect_type
-from .dtypes import INT64
-from .matrix import Matrix, TransposedMatrix
-from .scalar import Scalar
-from .vector import Vector
+from .._ss.matrix import _concat_mn
+from ..base import _expect_type
+from ..dtypes import INT64
+from ..matrix import Matrix, TransposedMatrix
+from ..scalar import Scalar
+from ..vector import Vector
 
 
 class _grblas_ss:

@@ -13,7 +13,7 @@ class VectorInfixExpr(InfixExprBase):
 
     def __init__(self, left, right):
         super().__init__(left, right)
-        self._size = left.size
+        self._size = left._size
 
     @property
     def size(self):
@@ -59,10 +59,16 @@ class VectorInfixExpr(InfixExprBase):
     # These raise exceptions
     __array__ = wrapdoc(Vector.__array__)(Vector.__array__)
     __bool__ = wrapdoc(Vector.__bool__)(Vector.__bool__)
-    __eq__ = wrapdoc(Vector.__eq__)(Vector.__eq__)
     __iand__ = wrapdoc(Vector.__iand__)(Vector.__iand__)
     __imatmul__ = wrapdoc(Vector.__imatmul__)(Vector.__imatmul__)
     __ior__ = wrapdoc(Vector.__ior__)(Vector.__ior__)
+    __iadd__ = _automethods.__iadd__
+    __ifloordiv__ = _automethods.__ifloordiv__
+    __imod__ = _automethods.__imod__
+    __imul__ = _automethods.__imul__
+    __ipow__ = _automethods.__ipow__
+    __isub__ = _automethods.__isub__
+    __itruediv__ = _automethods.__itruediv__
 
 
 class VectorEwiseAddExpr(VectorInfixExpr):
@@ -102,8 +108,8 @@ class MatrixInfixExpr(InfixExprBase):
 
     def __init__(self, left, right):
         super().__init__(left, right)
-        self._nrows = left.nrows
-        self._ncols = left.ncols
+        self._nrows = left._nrows
+        self._ncols = left._ncols
 
     @property
     def nrows(self):
@@ -156,10 +162,16 @@ class MatrixInfixExpr(InfixExprBase):
     # These raise exceptions
     __array__ = wrapdoc(Matrix.__array__)(Matrix.__array__)
     __bool__ = wrapdoc(Matrix.__bool__)(Matrix.__bool__)
-    __eq__ = wrapdoc(Matrix.__eq__)(Matrix.__eq__)
     __iand__ = wrapdoc(Matrix.__iand__)(Matrix.__iand__)
     __imatmul__ = wrapdoc(Matrix.__imatmul__)(Matrix.__imatmul__)
     __ior__ = wrapdoc(Matrix.__ior__)(Matrix.__ior__)
+    __iadd__ = _automethods.__iadd__
+    __ifloordiv__ = _automethods.__ifloordiv__
+    __imod__ = _automethods.__imod__
+    __imul__ = _automethods.__imul__
+    __ipow__ = _automethods.__ipow__
+    __isub__ = _automethods.__isub__
+    __itruediv__ = _automethods.__itruediv__
 
 
 class MatrixEwiseAddExpr(MatrixInfixExpr):
@@ -332,5 +344,8 @@ def _matmul_infix_expr(left, right, *, within):
     if expr.output_type is Vector:
         return VectorMatMulExpr(left, right, method_name=method, size=expr._size)
     elif expr.output_type is Matrix:
-        return MatrixMatMulExpr(left, right, nrows=expr.nrows, ncols=expr.ncols)
+        return MatrixMatMulExpr(left, right, nrows=expr._nrows, ncols=expr._ncols)
     return ScalarMatMulExpr(left, right)
+
+
+from . import _infixmethods  # noqa isort:skip

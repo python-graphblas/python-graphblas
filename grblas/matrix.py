@@ -253,9 +253,9 @@ class Matrix(BaseType):
             self.clear()
         if nrows is not None or ncols is not None:
             if nrows is None:
-                nrows = self.nrows
+                nrows = self._nrows
             if ncols is None:
-                ncols = self.ncols
+                ncols = self._ncols
             self.resize(nrows, ncols)
         if n == 0:
             return
@@ -961,7 +961,7 @@ class Matrix(BaseType):
                         # C[i, J](m) << c
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Row_subassign"
-                        value_vector = Vector.new(value.dtype, size=mask.mask.size, name="v_temp")
+                        value_vector = Vector.new(value.dtype, size=mask.mask._size, name="v_temp")
                         expr_repr = "[{1}, [{3} cols]](%s) << {0.name}" % mask.name
                     else:
                         # C(m)[i, J] << c
@@ -988,7 +988,7 @@ class Matrix(BaseType):
                         # C[I, j](m) << c
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Col_subassign"
-                        value_vector = Vector.new(value.dtype, size=mask.mask.size, name="v_temp")
+                        value_vector = Vector.new(value.dtype, size=mask.mask._size, name="v_temp")
                     else:
                         # C(m)[I, j] << c
                         # C[I, j] << c
@@ -1214,10 +1214,16 @@ class MatrixExpression(BaseExpression):
     # These raise exceptions
     __array__ = wrapdoc(Matrix.__array__)(Matrix.__array__)
     __bool__ = wrapdoc(Matrix.__bool__)(Matrix.__bool__)
-    __eq__ = wrapdoc(Matrix.__eq__)(Matrix.__eq__)
     __iand__ = wrapdoc(Matrix.__iand__)(Matrix.__iand__)
     __imatmul__ = wrapdoc(Matrix.__imatmul__)(Matrix.__imatmul__)
     __ior__ = wrapdoc(Matrix.__ior__)(Matrix.__ior__)
+    __iadd__ = _automethods.__iadd__
+    __ifloordiv__ = _automethods.__ifloordiv__
+    __imod__ = _automethods.__imod__
+    __imul__ = _automethods.__imul__
+    __ipow__ = _automethods.__ipow__
+    __isub__ = _automethods.__isub__
+    __itruediv__ = _automethods.__itruediv__
 
 
 class TransposedMatrix:
@@ -1309,6 +1315,15 @@ class TransposedMatrix:
     __matmul__ = Matrix.__matmul__
     __rmatmul__ = Matrix.__rmatmul__
     __imatmul__ = Matrix.__imatmul__
+
+    # Bad sugar
+    __iadd__ = _automethods.__iadd__
+    __ifloordiv__ = _automethods.__ifloordiv__
+    __imod__ = _automethods.__imod__
+    __imul__ = _automethods.__imul__
+    __ipow__ = _automethods.__ipow__
+    __isub__ = _automethods.__isub__
+    __itruediv__ = _automethods.__itruediv__
 
     # Misc.
     isequal = Matrix.isequal
