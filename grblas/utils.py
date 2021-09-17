@@ -144,7 +144,7 @@ class _CArray:
                 "..., "
                 f"{', '.join(map(str, self.array[-5:]))}"
             )
-        return "(%s[]){%s}" % (self.dtype.c_type, values)
+        return f"({self.dtype.c_type}[]){{{values}}}"
 
 
 class _Pointer:
