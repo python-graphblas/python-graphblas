@@ -43,8 +43,8 @@ jobs:
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
-          flake8 grblas *.py
-          black grblas *.py --check --diff
+          flake8
+          black . --check --diff
       - name: Build extension module
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
