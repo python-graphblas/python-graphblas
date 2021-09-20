@@ -4,7 +4,14 @@ import pytest
 import grblas as gb
 from grblas import Matrix, Vector, binary, monoid
 
+try:
+    # gb.io.to_numpy currently requires scipy
+    import scipy.sparse as ss
+except ImportError:  # pragma: no cover
+    ss = None
 
+
+@pytest.mark.skipif("not ss")
 @pytest.mark.parametrize("method", ["scan_rows", "scan_columns"])
 @pytest.mark.parametrize("length", list(range(34)))
 @pytest.mark.parametrize("do_random", [False, True])
@@ -35,6 +42,7 @@ def test_scan_matrix(method, length, do_random):
         raise
 
 
+@pytest.mark.skipif("not ss")
 @pytest.mark.parametrize("length", list(range(34)))
 @pytest.mark.parametrize("do_random", [False, True])
 def test_scan_vector(length, do_random):

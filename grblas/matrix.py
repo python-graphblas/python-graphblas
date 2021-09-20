@@ -20,7 +20,7 @@ from .utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from .vector import Vector, VectorExpression
+from .vector import Vector, VectorExpression, _VectorAsMatrix
 
 ffi_new = ffi.new
 
@@ -797,18 +797,15 @@ class Matrix(BaseType):
                         # Upcast v to a Matrix and use Matrix_assign
                         rows = _CArray([rows.scalar.value])
                         rowsize = _CScalar(1)
-                        new_value = Matrix.new(
-                            value.dtype, nrows=1, ncols=value.size, name=f"{value.name}_as_matrix"
-                        )
-                        new_value[0, :] = value
                         delayed = MatrixExpression(
                             method_name,
                             "GrB_Matrix_assign",
-                            [new_value, rows, rowsize, cols, colsize],
+                            [_VectorAsMatrix(value), rows, rowsize, cols, colsize],
                             expr_repr="[[{2} rows], [{4} cols]] = {0.name}",
                             nrows=self._nrows,
                             ncols=self._ncols,
                             dtype=self.dtype,
+                            at=True,
                         )
                 else:
                     if is_submask:
@@ -845,14 +842,10 @@ class Matrix(BaseType):
                         # Upcast v to a Matrix and use Matrix_assign
                         cols = _CArray([cols.scalar.value])
                         colsize = _CScalar(1)
-                        new_value = Matrix.new(
-                            value.dtype, nrows=value.size, ncols=1, name=f"{value.name}_as_matrix"
-                        )
-                        new_value[:, 0] = value
                         delayed = MatrixExpression(
                             method_name,
                             "GrB_Matrix_assign",
-                            [new_value, rows, rowsize, cols, colsize],
+                            [_VectorAsMatrix(value), rows, rowsize, cols, colsize],
                             expr_repr="[[{2} rows], [{4} cols]] = {0.name}",
                             nrows=self._nrows,
                             ncols=self._ncols,
