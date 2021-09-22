@@ -1290,7 +1290,7 @@ def test_random(v):
     r3 = Vector.from_values([4], [2], size=v.size)
     r4 = Vector.from_values([6], [0], size=v.size)
     seen = set()
-    for i in range(1000000):
+    for i in range(1000000):  # pragma: no branch
         r = v.ss.random(1)
         if r.isequal(r1):
             seen.add("r1")

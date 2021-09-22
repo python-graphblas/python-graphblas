@@ -1152,7 +1152,7 @@ class ss:
         **THIS IS EXPERIMENTAL AND THE API IS LIKELY TO CHANGE**
         """
         info = self._parent.ss.export("sparse")
-        choices = random_choice(info["values"].size, k)
+        choices = random_choice(self._parent._nvals, k)
         newinfo = dict(info, indices=info["indices"][choices])
         if not info["is_iso"]:
             newinfo["values"] = info["values"][choices]

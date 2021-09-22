@@ -86,7 +86,7 @@ _monoid_identities = {
         "FP64": np.inf,  # or np.nan?
     },
 }
-if _supports_complex:
+if _supports_complex:  # pragma: no branch
     _monoid_identities["fmax"].update(dict.fromkeys(_complex_dtypes, complex(-np.inf, -np.inf)))
     _monoid_identities["fmin"].update(dict.fromkeys(_complex_dtypes, complex(np.inf, np.inf)))
     _monoid_identities["maximum"].update(dict.fromkeys(_complex_dtypes, complex(-np.inf, -np.inf)))
