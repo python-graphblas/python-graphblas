@@ -1308,3 +1308,9 @@ def test_random(v):
         r = v.ss.random(k)
         assert r.nvals == k
         assert monoid.any(v & r).new().nvals == k
+    # test iso
+    v(v.S) << 1
+    for k in range(1, v.nvals + 1):
+        r = v.ss.random(k)
+        assert r.nvals == k
+        assert monoid.any(v & r).new().nvals == k
