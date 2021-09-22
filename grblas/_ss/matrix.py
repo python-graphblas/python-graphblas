@@ -3554,13 +3554,152 @@ class ss:
         else:
             raise NotImplementedError(fmt)
 
+    def random_rowwise(self, k):
+        """Select k items from each row at random.
+
+        **THIS IS EXPERIMENTAL AND THE API IS LIKELY TO CHANGE**
+        """
+        return self._select_random(k, "hypercsr", "col_indices", "sorted_cols")
+
+    def random_columnwise(self, k):
+        """Select k items from each column at random.
+
+        **THIS IS EXPERIMENTAL AND THE API IS LIKELY TO CHANGE**
+        """
+        return self._select_random(k, "hypercsc", "row_indices", "sorted_rows")
+
+    def _select_random(self, k, fmt, indices, sort_axis):
+        from ..matrix import Matrix
+
+        info = self._parent.ss.export(fmt)
+        choices, indptr = choose_random(info["indptr"], k)
+        newinfo = dict(info, indptr=indptr)
+        newinfo[indices] = info[indices][choices]
+        if not info["is_iso"]:
+            newinfo["values"] = info["values"][choices]
+        if k == 1:
+            newinfo[sort_axis] = True
+        else:
+            newinfo[sort_axis] = False
+        return Matrix.ss.import_any(
+            **newinfo,
+            take_ownership=True,
+        )
+
+
+@njit(parallel=True)
+def choose_random1(indptr):  # pragma: no cover
+    choices = np.empty(indptr.size - 1, dtype=indptr.dtype)
+    new_indptr = np.arange(indptr.size, dtype=indptr.dtype)
+    for i in numba.prange(indptr.size - 1):
+        idx = np.int64(indptr[i])
+        deg = np.int64(indptr[i + 1]) - idx
+        if deg == 1:
+            choices[i] = idx
+        else:
+            choices[i] = np.random.randint(idx, idx + deg)
+    return choices, new_indptr
+
+
+# Assume we are HyperCSR or HyperCSC
+@njit(parallel=True)
+def choose_random(indptr, k):  # pragma: no cover
+    if k == 1:
+        return choose_random1(indptr)
+
+    new_indptr = np.empty(indptr.size, dtype=indptr.dtype)
+    new_indptr[0] = 0
+    prev = np.int64(indptr[0])
+    count = 0
+    for i in range(1, indptr.size):
+        idx = np.int64(indptr[i])
+        deg = idx - prev
+        prev = idx
+        if k < deg:
+            deg = k
+        count += deg
+        new_indptr[i] = count
+
+    # The results in choices don't need to be random.  In fact, it may
+    # be nice to have them sorted if convenient to do so.
+    choices = np.empty(count, dtype=indptr.dtype)
+    for i in numba.prange(indptr.size - 1):
+        idx = np.int64(indptr[i])
+        deg = np.int64(indptr[i + 1]) - idx
+        if k < deg:
+            curk = k
+        else:
+            curk = deg
+        index = np.int64(new_indptr[i])
+        # We call np.random.randint `min(curk, deg - curk)` times
+        if 2 * curk <= deg:
+            if curk == 1:
+                # Select a single edge
+                choices[index] = np.random.randint(idx, idx + deg)
+            elif curk == 2:
+                # Select two edges
+                choices[index] = np.random.randint(idx, deg + idx)
+                choices[index + 1] = np.random.randint(idx, deg + idx - 1)
+                if choices[index] <= choices[index + 1]:
+                    choices[index + 1] += 1
+            else:
+                # Move the ones we want to keep to the front of `a`
+                a = np.arange(idx, idx + deg)
+                for j in range(curk):
+                    jj = np.random.randint(j, deg)
+                    a[j], a[jj] = a[jj], a[j]
+                    choices[index + j] = a[j]
+        elif curk == deg:
+            # Select all edges
+            j = index
+            for jj in range(idx, idx + deg):
+                choices[j] = jj
+                j += 1
+        elif curk == deg - 1:
+            # Select all but one edge
+            curk = np.random.randint(idx, idx + deg)
+            j = index
+            for jj in range(idx, curk):
+                choices[j] = jj
+                j += 1
+            for jj in range(curk + 1, idx + deg):
+                choices[j] = jj
+                j += 1
+        elif curk == deg - 2:
+            # Select all but two edges
+            curk = np.random.randint(idx, idx + deg)
+            count = np.random.randint(idx, idx + deg - 1)
+            if curk <= count:
+                count += 1
+                curk, count = count, curk
+            j = index
+            for jj in range(idx, count):
+                choices[j] = jj
+                j += 1
+            for jj in range(count + 1, curk):
+                choices[j] = jj
+                j += 1
+            for jj in range(curk + 1, idx + deg):
+                choices[j] = jj
+                j += 1
+        else:
+            # Move the ones we don't want to keep to the front of `a`
+            a = np.arange(idx, idx + deg)
+            for j in range(deg - curk):
+                jj = np.random.randint(j, deg)
+                a[j], a[jj] = a[jj], a[j]
+            deg -= curk
+            for j in range(curk):
+                choices[index + j] = a[deg + j]
+    return choices, new_indptr
+
 
 # TODO: benchmark using prange and parallel=True
-@njit(locals=dict.fromkeys(["end", "i", "j", "ncols", "nrows", "offset", "start"], numba.uint64))
+@njit
 def flatten_csr(indptr, indices, nrows, ncols):  # pragma: no cover
     rv = np.empty(indices.size, indices.dtype)
-    start = 0
-    offset = 0
+    start = np.uint64(0)
+    offset = np.uint64(0)
     for i in range(1, nrows + 1):
         end = indptr[i]
         for j in range(start, end):
@@ -3585,14 +3724,10 @@ def issorted(arr):  # pragma: no cover
     return True
 
 
-@njit(
-    locals=dict.fromkeys(
-        ["end", "i", "j", "ncols", "nrows", "nvec", "offset", "row", "start"], numba.uint64
-    )
-)
+@njit
 def flatten_hypercsr(rows, indptr, indices, nrows, ncols, nvec):  # pragma: no cover
     rv = np.empty(indices.size, indices.dtype)
-    start = 0
+    start = np.uint64(0)
     for i in range(nvec):
         row = rows[i]
         offset = row * ncols
@@ -3603,11 +3738,11 @@ def flatten_hypercsr(rows, indptr, indices, nrows, ncols, nvec):  # pragma: no c
     return rv
 
 
-@njit(locals=dict.fromkeys(["i", "index", "row", "size"], numba.uint64))
+@njit
 def indices_to_indptr(indices, size):  # pragma: no cover
     """Calculate the indptr for e.g. CSR from sorted COO rows."""
     indptr = np.zeros(size, dtype=indices.dtype)
-    index = 0
+    index = np.uint64(0)
     for i in range(indices.size):
         row = indices[i]
         if row != index:
@@ -3617,11 +3752,11 @@ def indices_to_indptr(indices, size):  # pragma: no cover
     return indptr
 
 
-@njit(locals=dict.fromkeys(["end", "i", "index", "j", "start"], numba.uint64))
+@njit
 def indptr_to_indices(indptr):  # pragma: no cover
     indices = np.empty(indptr[-1], dtype=indptr.dtype)
-    index = 0
-    start = 0
+    index = np.uint64(0)
+    start = np.uint64(0)
     for i in range(1, indptr.size):
         end = indptr[i]
         for j in range(start, end):

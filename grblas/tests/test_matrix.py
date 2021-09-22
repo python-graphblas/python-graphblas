@@ -2661,3 +2661,27 @@ def test_infix_sugar(A):
         expr %= 1
     with pytest.raises(TypeError):
         expr **= 1
+
+
+def test_random(A):
+    R = A.ss.random_rowwise(1)
+    counts = R.reduce_rows(agg.count).new()
+    expected = Vector.from_values(range(A.ncols), 1)
+    assert counts.isequal(expected)
+
+    R = A.ss.random_columnwise(1)
+    counts = R.reduce_columns(agg.count).new()
+    expected = Vector.from_values(range(A.nrows), 1)
+    assert counts.isequal(expected)
+
+    R = A.ss.random_rowwise(2)
+    counts = R.reduce_rows(agg.count).new()
+    assert counts.reduce(monoid.min).new() == 1
+    assert counts.reduce(monoid.max).new() == 2
+
+    # test iso
+    A(A.S) << 1
+    R = A.ss.random_rowwise(1)
+    counts = R.reduce_rows(agg.count).new()
+    expected = Vector.from_values(range(A.ncols), 1)
+    assert counts.isequal(expected)

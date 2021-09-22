@@ -1145,3 +1145,76 @@ class ss:
             )
         else:
             raise NotImplementedError(fmt)
+
+    def random(self, k):
+        """Select k items from the Vector.
+
+        **THIS IS EXPERIMENTAL AND THE API IS LIKELY TO CHANGE**
+        """
+        info = self._parent.ss.export("sparse")
+        choices = random_choice(info["values"].size, k)
+        newinfo = dict(info, indices=info["indices"][choices])
+        if not info["is_iso"]:
+            newinfo["values"] = info["values"][choices]
+        if k == 1:
+            newinfo["sorted_index"] = True
+        else:
+            newinfo["sorted_index"] = False
+        return gb.Vector.ss.import_sparse(
+            **newinfo,
+            take_ownership=True,
+        )
+
+
+@njit
+def random_choice(n, k):  # pragma: no cover
+    if k >= n:
+        return np.arange(n, dtype=np.uint64)
+    choices = np.empty(k, dtype=np.uint64)
+    if 2 * k <= n:
+        if k == 1:
+            # Select a single edge
+            choices[0] = np.random.randint(n)
+        elif k == 2:
+            # Select two edges
+            choices[0] = np.random.randint(n)
+            choices[1] = np.random.randint(n - 1)
+            if choices[0] <= choices[1]:
+                choices[1] += 1
+        else:
+            # Move the ones we want to keep to the front of `a`
+            a = np.arange(n)
+            for i in range(k):
+                j = np.random.randint(i, n)
+                a[i], a[j] = a[j], a[i]
+                choices[i] = a[i]
+    elif k == n - 1:
+        # Select all but one edge
+        j = np.random.randint(n)
+        for i in range(j):
+            choices[i] = i
+        for i in range(j + 1, n):
+            choices[i - 1] = i
+    elif k == n - 2:
+        # Select all but two edges
+        j = np.random.randint(n)
+        k = np.random.randint(n - 1)
+        if j <= k:
+            k += 1
+            j, k = k, j
+        for i in range(k):
+            choices[i] = i
+        for i in range(k + 1, j):
+            choices[i - 1] = i
+        for i in range(j + 1, n):
+            choices[i - 2] = i
+    else:
+        # Move the ones we don't want to keep to the front of `a`
+        a = np.arange(n)
+        for i in range(n - k):
+            j = np.random.randint(i, n)
+            a[i], a[j] = a[j], a[i]
+        n -= k
+        for i in range(k):
+            choices[i] = a[n + i]
+    return choices

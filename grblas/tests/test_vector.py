@@ -1282,3 +1282,29 @@ def test_expr_is_like_vector(v):
         "_expect_op",
         "_expect_type",
     }
+
+
+def test_random(v):
+    r1 = Vector.from_values([1], [1], size=v.size)
+    r2 = Vector.from_values([3], [1], size=v.size)
+    r3 = Vector.from_values([4], [2], size=v.size)
+    r4 = Vector.from_values([6], [0], size=v.size)
+    seen = set()
+    for i in range(1000000):
+        r = v.ss.random(1)
+        if r.isequal(r1):
+            seen.add("r1")
+        elif r.isequal(r2):
+            seen.add("r2")
+        elif r.isequal(r3):
+            seen.add("r3")
+        elif r.isequal(r4):
+            seen.add("r4")
+        else:  # pragma: no cover
+            raise AssertionError()
+        if len(seen) == 4:
+            break
+    for k in range(1, v.nvals + 1):
+        r = v.ss.random(k)
+        assert r.nvals == k
+        assert monoid.any(v & r).new().nvals == k
