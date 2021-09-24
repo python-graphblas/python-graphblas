@@ -2664,24 +2664,127 @@ def test_infix_sugar(A):
 
 
 def test_random(A):
-    R = A.ss.random_rowwise(1)
+    R = A.ss.selectk_rowwise("random", 1)
     counts = R.reduce_rows(agg.count).new()
     expected = Vector.from_values(range(A.ncols), 1)
     assert counts.isequal(expected)
 
-    R = A.ss.random_columnwise(1)
+    R = A.ss.selectk_columnwise("random", 1)
     counts = R.reduce_columns(agg.count).new()
     expected = Vector.from_values(range(A.nrows), 1)
     assert counts.isequal(expected)
 
-    R = A.ss.random_rowwise(2)
+    R = A.ss.selectk_rowwise("random", 2)
     counts = R.reduce_rows(agg.count).new()
     assert counts.reduce(monoid.min).new() == 1
     assert counts.reduce(monoid.max).new() == 2
 
     # test iso
     A(A.S) << 1
-    R = A.ss.random_rowwise(1)
+    R = A.ss.selectk_rowwise("random", 1)
     counts = R.reduce_rows(agg.count).new()
     expected = Vector.from_values(range(A.ncols), 1)
     assert counts.isequal(expected)
+
+    with pytest.raises(ValueError):
+        A.ss.selectk_rowwise("bad", 1)
+    with pytest.raises(ValueError):
+        A.ss.selectk_columnwise("bad", 1)
+    with pytest.raises(ValueError):
+        A.ss.selectk_columnwise("random", -1)
+
+
+def test_firstk(A):
+    B = A.ss.selectk_rowwise("first", 1)
+    expected = Matrix.from_values(
+        [0, 1, 2, 3, 4, 5, 6],
+        [1, 4, 5, 0, 5, 2, 2],
+        [2, 8, 1, 3, 7, 1, 5],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    assert B.isequal(expected)
+
+    B = A.ss.selectk_rowwise("first", 2)
+    expected = Matrix.from_values(
+        [3, 0, 3, 5, 6, 0, 6, 1, 2, 4, 1],
+        [0, 1, 2, 2, 2, 3, 3, 4, 5, 5, 6],
+        [3, 2, 3, 1, 5, 3, 7, 8, 1, 7, 4],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    assert B.isequal(expected)
+
+    B = A.ss.selectk_rowwise("first", 3)
+    assert B.isequal(A)
+
+    B = A.ss.selectk_columnwise("first", 1)
+    expected = Matrix.from_values(
+        [3, 0, 3, 0, 1, 2, 1],
+        [0, 1, 2, 3, 4, 5, 6],
+        [3, 2, 3, 3, 8, 1, 4],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    assert B.isequal(expected)
+
+    B = A.ss.selectk_columnwise("first", 2)
+    expected = Matrix.from_values(
+        [3, 0, 3, 5, 0, 6, 1, 6, 2, 4, 1],
+        [0, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [3, 2, 3, 1, 3, 7, 8, 3, 1, 7, 4],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    assert B.isequal(expected)
+
+    B = A.ss.selectk_columnwise("first", 3)
+    assert B.isequal(A)
+
+
+def test_lastk(A):
+    B = A.ss.selectk_rowwise("last", 1)
+    expected = Matrix.from_values(
+        [0, 3, 5, 6, 2, 4, 1],
+        [3, 2, 2, 4, 5, 5, 6],
+        [3, 3, 1, 3, 1, 7, 4],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    assert B.isequal(expected)
+
+    B = A.ss.selectk_rowwise("last", 2)
+    expected = Matrix.from_values(
+        [3, 0, 3, 5, 0, 6, 1, 6, 2, 4, 1],
+        [0, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [3, 2, 3, 1, 3, 7, 8, 3, 1, 7, 4],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    assert B.isequal(expected)
+
+    B = A.ss.selectk_rowwise("last", 3)
+    assert B.isequal(A)
+
+    B = A.ss.selectk_columnwise("last", 1)
+    expected = Matrix.from_values(
+        [3, 0, 6, 6, 6, 4, 1],
+        [0, 1, 2, 3, 4, 5, 6],
+        [3, 2, 5, 7, 3, 7, 4],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    assert B.isequal(expected)
+
+    B = A.ss.selectk_columnwise("last", 2)
+    expected = Matrix.from_values(
+        [3, 0, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+        [0, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [3, 2, 1, 5, 3, 7, 8, 3, 1, 7, 4],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    assert B.isequal(expected)
+
+    B = A.ss.selectk_columnwise("last", 3)
+    assert B.isequal(A)

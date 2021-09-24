@@ -1291,7 +1291,7 @@ def test_random(v):
     r4 = Vector.from_values([6], [0], size=v.size)
     seen = set()
     for i in range(1000000):  # pragma: no branch
-        r = v.ss.random(1)
+        r = v.ss.selectk("random", 1)
         if r.isequal(r1):
             seen.add("r1")
         elif r.isequal(r2):
@@ -1305,12 +1305,70 @@ def test_random(v):
         if len(seen) == 4:
             break
     for k in range(1, v.nvals + 1):
-        r = v.ss.random(k)
+        r = v.ss.selectk("random", k)
         assert r.nvals == k
         assert monoid.any(v & r).new().nvals == k
     # test iso
     v(v.S) << 1
     for k in range(1, v.nvals + 1):
-        r = v.ss.random(k)
+        r = v.ss.selectk("random", k)
         assert r.nvals == k
         assert monoid.any(v & r).new().nvals == k
+    with pytest.raises(ValueError):
+        v.ss.selectk("bad", 1)
+
+
+def test_firstk(v):
+    data = [[1, 3, 4, 6], [1, 1, 2, 0]]
+    iso_data = [[1, 3, 4, 6], [1, 1, 1, 1]]
+    iso_v = v.dup()
+    iso_v(iso_v.S) << 1
+    for w, data in [(v, data), (iso_v, iso_data)]:
+        for k in range(w.nvals + 1):
+            x = w.ss.selectk("first", k)
+            expected = Vector.from_values(data[0][:k], data[1][:k], size=w.size)
+            assert x.isequal(expected)
+    with pytest.raises(ValueError):
+        v.ss.selectk("first", -1)
+
+
+def test_lastk(v):
+    data = [[1, 3, 4, 6], [1, 1, 2, 0]]
+    iso_data = [[1, 3, 4, 6], [1, 1, 1, 1]]
+    iso_v = v.dup()
+    iso_v(iso_v.S) << 1
+    for w, data in [(v, data), (iso_v, iso_data)]:
+        for k in range(w.nvals + 1):
+            x = w.ss.selectk("last", k)
+            expected = Vector.from_values(data[0][-k:], data[1][-k:], size=w.size)
+            assert x.isequal(expected)
+
+
+def test_largestk(v):
+    w = v.ss.selectk("largest", 1)
+    expected = Vector.from_values([4], [2], size=v.size)
+    assert w.isequal(expected)
+
+    w = v.ss.selectk("largest", 2)
+    expected1 = Vector.from_values([1, 4], [1, 2], size=v.size)
+    expected2 = Vector.from_values([3, 4], [1, 2], size=v.size)
+    assert w.isequal(expected1) or w.isequal(expected2)
+
+    w = v.ss.selectk("largest", 3)
+    expected = Vector.from_values([1, 3, 4], [1, 1, 2], size=v.size)
+    assert w.isequal(expected)
+
+
+def test_smallestk(v):
+    w = v.ss.selectk("smallest", 1)
+    expected = Vector.from_values([6], [0], size=v.size)
+    assert w.isequal(expected)
+
+    w = v.ss.selectk("smallest", 2)
+    expected1 = Vector.from_values([1, 6], [1, 0], size=v.size)
+    expected2 = Vector.from_values([3, 6], [1, 0], size=v.size)
+    assert w.isequal(expected1) or w.isequal(expected2)
+
+    w = v.ss.selectk("smallest", 3)
+    expected = Vector.from_values([1, 3, 6], [1, 1, 0], size=v.size)
+    assert w.isequal(expected)

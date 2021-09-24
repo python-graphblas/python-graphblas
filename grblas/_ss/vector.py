@@ -1146,19 +1146,47 @@ class ss:
         else:
             raise NotImplementedError(fmt)
 
-    def random(self, k):
-        """Select k items from the Vector.
+    def selectk(self, how, k):
+        """Select (up to) k elements.
 
-        **THIS IS EXPERIMENTAL AND THE API IS LIKELY TO CHANGE**
+        Parameters
+        ----------
+        how : str
+            - "random": choose k elements with equal probability
+            - "first": choose the first k elements
+            - "last": choose the last k elements
+            - "largest": choose the k largest elements.  If tied, any may be chosen.
+            - "smallest": choose the k smallest elements.  If tied, any may be chosen.
+        k : int
+            The number of elements to choose
+
+        **THIS API IS EXPERIMENTAL AND MAY CHANGE**
         """
-        info = self._parent.ss.export("sparse")
-        choices = random_choice(self._parent._nvals, k)
+        how = how.lower()
+        if k < 0:
+            raise ValueError("negative k is not allowed")
+        do_sort = how in {"first", "last"}
+        info = self._parent.ss.export("sparse", sort=do_sort)
+        if how == "random":
+            choices = random_choice(self._parent._nvals, k)
+        elif how == "first" or info["is_iso"] and how in {"largest", "smallest"}:
+            choices = slice(None, k)
+        elif how == "last":
+            choices = slice(-k, None)
+        elif how == "largest":
+            choices = np.argpartition(info["values"], -k)[-k:]  # not sorted
+        elif how == "smallest":
+            choices = np.argpartition(info["values"], k)[:k]  # not sorted
+        else:
+            raise ValueError(
+                '`how` argument must be one of: "random", "first", "last", "largest", "smallest"'
+            )
         newinfo = dict(info, indices=info["indices"][choices])
         if not info["is_iso"]:
             newinfo["values"] = info["values"][choices]
         if k == 1:
             newinfo["sorted_index"] = True
-        else:
+        elif not do_sort:
             newinfo["sorted_index"] = False
         return gb.Vector.ss.import_sparse(
             **newinfo,

@@ -2530,7 +2530,7 @@ class ss:
         Parameters
         ----------
         rows : array-like
-        cols : array-likd
+        cols : array-like
         values : array-like
         nrows : int
             The number of rows for the Matrix.
@@ -2699,7 +2699,7 @@ class ss:
         Parameters
         ----------
         rows : array-like
-        cols : array-likd
+        cols : array-like
         values : array-like
         nrows : int
             The number of rows for the Matrix.
@@ -2852,7 +2852,7 @@ class ss:
         Parameters
         ----------
         rows : array-like
-        cols : array-likd
+        cols : array-like
         values : array-like
         nrows : int
             The number of rows for the Matrix.
@@ -3554,34 +3554,88 @@ class ss:
         else:
             raise NotImplementedError(fmt)
 
-    def random_rowwise(self, k):
-        """Select k items from each row at random.
+    def selectk_rowwise(self, how, k):
+        """Select (up to) k elements from each row.
 
-        **THIS IS EXPERIMENTAL AND THE API IS LIKELY TO CHANGE**
+        Parameters
+        ----------
+        how : str
+            "random": choose k elements with equal probability
+            "first": choose the first k elements
+            "last": choose the last k elements
+        k : int
+            The number of elements to choose from each row
+
+        **THIS API IS EXPERIMENTAL AND MAY CHANGE**
         """
-        return self._select_random(k, "hypercsr", "col_indices", "sorted_cols")
+        how = how.lower()
+        fmt = "hypercsr"
+        indices = "col_indices"
+        sort_axis = "sorted_cols"
+        if how == "random":
+            choose_func = choose_random
+            is_random = True
+            do_sort = False
+        elif how == "first":
+            choose_func = choose_first
+            is_random = False
+            do_sort = True
+        elif how == "last":
+            choose_func = choose_last
+            is_random = False
+            do_sort = True
+        else:
+            raise ValueError('`how` argument must be one of: "random"')
+        return self._select_random(k, fmt, indices, sort_axis, choose_func, is_random, do_sort)
 
-    def random_columnwise(self, k):
-        """Select k items from each column at random.
+    def selectk_columnwise(self, how, k):
+        """Select (up to) k elements from each column.
 
-        **THIS IS EXPERIMENTAL AND THE API IS LIKELY TO CHANGE**
+        Parameters
+        ----------
+        how : str
+            - "random": choose elements with equal probability
+            - "first": choose the first k elements
+            - "last": choose the last k elements
+        k : int
+            The number of elements to choose from each column
+
+        **THIS API IS EXPERIMENTAL AND MAY CHANGE**
         """
-        return self._select_random(k, "hypercsc", "row_indices", "sorted_rows")
+        how = how.lower()
+        fmt = "hypercsc"
+        indices = "row_indices"
+        sort_axis = "sorted_rows"
+        if how == "random":
+            choose_func = choose_random
+            is_random = True
+            do_sort = False
+        elif how == "first":
+            choose_func = choose_first
+            is_random = False
+            do_sort = True
+        elif how == "last":
+            choose_func = choose_last
+            is_random = False
+            do_sort = True
+        else:
+            raise ValueError('`how` argument must be one of: "random", "first", "last"')
+        return self._select_random(k, fmt, indices, sort_axis, choose_func, is_random, do_sort)
 
-    def _select_random(self, k, fmt, indices, sort_axis):
-        from ..matrix import Matrix
-
-        info = self._parent.ss.export(fmt)
-        choices, indptr = choose_random(info["indptr"], k)
+    def _select_random(self, k, fmt, indices, sort_axis, choose_func, is_random, do_sort):
+        if k < 0:
+            raise ValueError("negative k is not allowed")
+        info = self._parent.ss.export(fmt, sort=do_sort)
+        choices, indptr = choose_func(info["indptr"], k)
         newinfo = dict(info, indptr=indptr)
         newinfo[indices] = info[indices][choices]
         if not info["is_iso"]:
             newinfo["values"] = info["values"][choices]
         if k == 1:
             newinfo[sort_axis] = True
-        else:
+        elif is_random:
             newinfo[sort_axis] = False
-        return Matrix.ss.import_any(
+        return gb.Matrix.ss.import_any(
             **newinfo,
             take_ownership=True,
         )
@@ -3601,12 +3655,8 @@ def choose_random1(indptr):  # pragma: no cover
     return choices, new_indptr
 
 
-# Assume we are HyperCSR or HyperCSC
-@njit(parallel=True)
-def choose_random(indptr, k):  # pragma: no cover
-    if k == 1:
-        return choose_random1(indptr)
-
+@njit
+def create_indptr(indptr, k):
     new_indptr = np.empty(indptr.size, dtype=indptr.dtype)
     new_indptr[0] = 0
     prev = np.int64(indptr[0])
@@ -3619,10 +3669,19 @@ def choose_random(indptr, k):  # pragma: no cover
             deg = k
         count += deg
         new_indptr[i] = count
+    return new_indptr
+
+
+# Assume we are HyperCSR or HyperCSC
+@njit(parallel=True)
+def choose_random(indptr, k):  # pragma: no cover
+    if k == 1:
+        return choose_random1(indptr)
 
     # The results in choices don't need to be random.  In fact, it may
     # be nice to have them sorted if convenient to do so.
-    choices = np.empty(count, dtype=indptr.dtype)
+    new_indptr = create_indptr(indptr, k)
+    choices = np.empty(new_indptr[-1], dtype=indptr.dtype)
     for i in numba.prange(indptr.size - 1):
         idx = np.int64(indptr[i])
         deg = np.int64(indptr[i + 1]) - idx
@@ -3691,6 +3750,54 @@ def choose_random(indptr, k):  # pragma: no cover
             deg -= curk
             for j in range(curk):
                 choices[index + j] = a[deg + j]
+    return choices, new_indptr
+
+
+# Assume we are HyperCSR or HyperCSC
+@njit(parallel=True)
+def choose_first(indptr, k):  # pragma: no cover
+    if k == 1:
+        choices = indptr[:-1]
+        new_indptr = np.arange(indptr.size, dtype=indptr.dtype)
+        return choices, new_indptr
+
+    new_indptr = create_indptr(indptr, k)
+    choices = np.empty(new_indptr[-1], dtype=indptr.dtype)
+    for i in numba.prange(indptr.size - 1):
+        idx = np.int64(indptr[i])
+        deg = np.int64(indptr[i + 1]) - idx
+        if k < deg:
+            curk = k
+        else:
+            curk = deg
+        j = np.int64(new_indptr[i])
+        for jj in range(idx, idx + curk):
+            choices[j] = jj
+            j += 1
+    return choices, new_indptr
+
+
+# Assume we are HyperCSR or HyperCSC
+@njit(parallel=True)
+def choose_last(indptr, k):  # pragma: no cover
+    if k == 1:
+        choices = (indptr[1:].astype(np.int64) - 1).astype(indptr.dtype)
+        new_indptr = np.arange(indptr.size, dtype=indptr.dtype)
+        return choices, new_indptr
+
+    new_indptr = create_indptr(indptr, k)
+    choices = np.empty(new_indptr[-1], dtype=indptr.dtype)
+    for i in numba.prange(indptr.size - 1):
+        idx = np.int64(indptr[i])
+        deg = np.int64(indptr[i + 1]) - idx
+        if k < deg:
+            curk = k
+        else:
+            curk = deg
+        j = np.int64(new_indptr[i])
+        for jj in range(idx + deg - curk, idx + deg):
+            choices[j] = jj
+            j += 1
     return choices, new_indptr
 
 
