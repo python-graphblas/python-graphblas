@@ -3174,12 +3174,12 @@ def test_mxv_repr_html(A, v):
 @pytest.mark.skipif("not pd")
 def test_matrix_reduce_columns_repr_html(A):
     # This is implmeneted using the transpose of A, so make sure we're oriented correctly!
-    html_printer(A.reduce_columns(), "A.reduce_columns()")
-    assert repr_html(A.reduce_columns()) == (
+    html_printer(A.reduce_columnwise(), "A.reduce_columnwise()")
+    assert repr_html(A.reduce_columnwise()) == (
         '<div><details class="gb-expr-details"><summary class="gb-expr-summary"><b><tt>grblas.VectorExpression:</tt></b><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
-        '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub>.reduce_columns(monoid.plus[INT64])</pre></td>\n'
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub>.reduce_columnwise(monoid.plus[INT64])</pre></td>\n'
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
         "  </tr>\n"

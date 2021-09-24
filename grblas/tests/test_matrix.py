@@ -1069,61 +1069,61 @@ def test_apply_binary(A):
 
 def test_reduce_row(A):
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
-    w = A.reduce_rows(monoid.plus).new()
+    w = A.reduce_rowwise(monoid.plus).new()
     assert w.isequal(result)
-    w2 = A.reduce_rows(binary.plus).new()
+    w2 = A.reduce_rowwise(binary.plus).new()
     assert w2.isequal(result)
 
 
 def test_reduce_agg(A):
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
-    w1 = A.reduce_rows(agg.sum).new()
+    w1 = A.reduce_rowwise(agg.sum).new()
     assert w1.isequal(result)
-    w2 = A.T.reduce_columns(agg.sum).new()
+    w2 = A.T.reduce_columnwise(agg.sum).new()
     assert w2.isequal(result)
 
-    counts = A.dup(dtype=bool).reduce_rows(monoid.plus[int]).new()
-    w3 = A.reduce_rows(agg.count).new()
+    counts = A.dup(dtype=bool).reduce_rowwise(monoid.plus[int]).new()
+    w3 = A.reduce_rowwise(agg.count).new()
     assert w3.isequal(counts)
-    w4 = A.T.reduce_columns(agg.count).new()
+    w4 = A.T.reduce_columnwise(agg.count).new()
     assert w4.isequal(counts)
 
     Asquared = monoid.times(A & A).new()
-    squared = Asquared.reduce_rows(monoid.plus).new()
+    squared = Asquared.reduce_rowwise(monoid.plus).new()
     expected = unary.sqrt[float](squared).new()
-    w5 = A.reduce_rows(agg.hypot).new()
+    w5 = A.reduce_rowwise(agg.hypot).new()
     assert w5.isclose(expected)
-    w6 = A.reduce_rows(monoid.numpy.hypot[float]).new()
+    w6 = A.reduce_rowwise(monoid.numpy.hypot[float]).new()
     assert w6.isclose(expected)
     w7 = Vector.new(w5.dtype, size=w5.size)
-    w7 << A.reduce_rows(agg.hypot)
+    w7 << A.reduce_rowwise(agg.hypot)
     assert w7.isclose(expected)
 
-    w8 = A.reduce_rows(agg.logaddexp).new()
-    expected = A.reduce_rows(monoid.numpy.logaddexp[float]).new()
+    w8 = A.reduce_rowwise(agg.logaddexp).new()
+    expected = A.reduce_rowwise(monoid.numpy.logaddexp[float]).new()
     assert w8.isclose(w8)
 
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 9, 10, 11, 8, 4])
-    w9 = A.reduce_columns(agg.sum).new()
+    w9 = A.reduce_columnwise(agg.sum).new()
     assert w9.isequal(result)
-    w10 = A.T.reduce_rows(agg.sum).new()
+    w10 = A.T.reduce_rowwise(agg.sum).new()
     assert w10.isequal(result)
 
-    counts = A.dup(dtype=bool).reduce_columns(monoid.plus[int]).new()
-    w11 = A.reduce_columns(agg.count).new()
+    counts = A.dup(dtype=bool).reduce_columnwise(monoid.plus[int]).new()
+    w11 = A.reduce_columnwise(agg.count).new()
     assert w11.isequal(counts)
-    w12 = A.T.reduce_rows(agg.count).new()
+    w12 = A.T.reduce_rowwise(agg.count).new()
     assert w12.isequal(counts)
 
-    w13 = A.reduce_rows(agg.mean).new()
+    w13 = A.reduce_rowwise(agg.mean).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [2.5, 6, 1, 3, 7, 1, 5])
     assert w13.isequal(expected)
-    w14 = A.reduce_columns(agg.mean).new()
+    w14 = A.reduce_columnwise(agg.mean).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 3, 5, 5.5, 4, 4])
     assert w14.isequal(expected)
 
-    w15 = A.reduce_rows(agg.exists).new()
-    w16 = A.reduce_columns(agg.exists).new()
+    w15 = A.reduce_rowwise(agg.exists).new()
+    w16 = A.reduce_columnwise(agg.exists).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [1, 1, 1, 1, 1, 1, 1])
     assert w15.isequal(expected)
     assert w16.isequal(expected)
@@ -1146,10 +1146,10 @@ def test_reduce_agg(A):
         finalize=lambda x, y: binary.times(x & y),
         types=[agg.varp],
     )
-    v1 = A.reduce_rows(agg.varp).new()
-    v2 = A.reduce_rows(agg.stdp).new()
+    v1 = A.reduce_rowwise(agg.varp).new()
+    v2 = A.reduce_rowwise(agg.stdp).new()
     assert v1.isclose(binary.times(v2 & v2).new())
-    v3 = A.reduce_rows(silly).new()
+    v3 = A.reduce_rowwise(silly).new()
     assert v3.isclose(binary.times(v1 & v2).new())
 
     s1 = A.reduce_scalar(agg.varp).new()
@@ -1160,28 +1160,28 @@ def test_reduce_agg(A):
 
 
 def test_reduce_agg_argminmax(A):
-    # reduce_rows
+    # reduce_rowwise
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [1, 6, 5, 0, 5, 2, 4])
-    w1b = A.reduce_rows(agg.argmin).new()
+    w1b = A.reduce_rowwise(agg.argmin).new()
     assert w1b.isequal(expected)
-    w1c = A.T.reduce_columns(agg.argmin).new()
+    w1c = A.T.reduce_columnwise(agg.argmin).new()
     assert w1c.isequal(expected)
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 4, 5, 0, 5, 2, 3])
-    w2b = A.reduce_rows(agg.argmax).new()
+    w2b = A.reduce_rowwise(agg.argmax).new()
     assert w2b.isequal(expected)
-    w2c = A.T.reduce_columns(agg.argmax).new()
+    w2c = A.T.reduce_columnwise(agg.argmax).new()
     assert w2c.isequal(expected)
 
     # reduce_cols
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 5, 0, 6, 2, 1])
-    w7b = A.reduce_columns(agg.argmin).new()
+    w7b = A.reduce_columnwise(agg.argmin).new()
     assert w7b.isequal(expected)
-    w7c = A.T.reduce_rows(agg.argmin).new()
+    w7c = A.T.reduce_rowwise(agg.argmin).new()
     assert w7c.isequal(expected)
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 6, 6, 1, 4, 1])
-    w8b = A.reduce_columns(agg.argmax).new()
+    w8b = A.reduce_columnwise(agg.argmax).new()
     assert w8b.isequal(expected)
-    w8c = A.T.reduce_rows(agg.argmax).new()
+    w8c = A.T.reduce_rowwise(agg.argmax).new()
     assert w8c.isequal(expected)
 
     # reduce_scalar
@@ -1196,14 +1196,14 @@ def test_reduce_agg_argminmax(A):
         finalize=lambda x, y: binary.plus(x & y),
         types=[agg.argmin],
     )
-    v1 = A.reduce_rows(agg.argmin).new()
-    v2 = A.reduce_rows(agg.argmax).new()
-    v3 = A.reduce_rows(silly).new()
+    v1 = A.reduce_rowwise(agg.argmin).new()
+    v2 = A.reduce_rowwise(agg.argmax).new()
+    v3 = A.reduce_rowwise(silly).new()
     assert v3.isequal(binary.plus(v1 & v2).new())
 
-    v1 = A.reduce_columns(agg.argmin).new()
-    v2 = A.reduce_columns(agg.argmax).new()
-    v3 = A.reduce_columns(silly).new()
+    v1 = A.reduce_columnwise(agg.argmin).new()
+    v2 = A.reduce_columnwise(agg.argmax).new()
+    v3 = A.reduce_columnwise(silly).new()
     assert v3.isequal(binary.plus(v1 & v2).new())
 
     with pytest.raises(ValueError, match="Aggregator"):
@@ -1211,28 +1211,28 @@ def test_reduce_agg_argminmax(A):
 
 
 def test_reduce_agg_firstlast(A):
-    # reduce_rows
-    w1 = A.reduce_rows(agg.first).new()
+    # reduce_rowwise
+    w1 = A.reduce_rowwise(agg.first).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [2, 8, 1, 3, 7, 1, 5])
     assert w1.isequal(expected)
-    w1b = A.T.reduce_columns(agg.first).new()
+    w1b = A.T.reduce_columnwise(agg.first).new()
     assert w1b.isequal(expected)
-    w2 = A.reduce_rows(agg.last).new()
+    w2 = A.reduce_rowwise(agg.last).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 4, 1, 3, 7, 1, 3])
     assert w2.isequal(expected)
-    w2b = A.T.reduce_columns(agg.last).new()
+    w2b = A.T.reduce_columnwise(agg.last).new()
     assert w2b.isequal(expected)
 
-    # reduce_columns
-    w3 = A.reduce_columns(agg.first).new()
+    # reduce_columnwise
+    w3 = A.reduce_columnwise(agg.first).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 3, 3, 8, 1, 4])
     assert w3.isequal(expected)
-    w3b = A.T.reduce_rows(agg.first).new()
+    w3b = A.T.reduce_rowwise(agg.first).new()
     assert w3b.isequal(expected)
-    w4 = A.reduce_columns(agg.last).new()
+    w4 = A.reduce_columnwise(agg.last).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 5, 7, 3, 7, 4])
     assert w4.isequal(expected)
-    w4b = A.T.reduce_rows(agg.last).new()
+    w4b = A.T.reduce_rowwise(agg.last).new()
     assert w4b.isequal(expected)
 
     # reduce_scalar
@@ -1243,9 +1243,9 @@ def test_reduce_agg_firstlast(A):
     B = Matrix.new(float, nrows=2, ncols=3)
     assert B.reduce_scalar(agg.first).new().is_empty
     assert B.reduce_scalar(agg.last).new().is_empty
-    w7 = B.reduce_rows(agg.first).new()
+    w7 = B.reduce_rowwise(agg.first).new()
     assert w7.isequal(Vector.new(float, size=B.nrows))
-    w8 = B.reduce_columns(agg.last).new()
+    w8 = B.reduce_columnwise(agg.last).new()
     assert w8.isequal(Vector.new(float, size=B.ncols))
 
     silly = agg.Aggregator(
@@ -1254,9 +1254,9 @@ def test_reduce_agg_firstlast(A):
         finalize=lambda x, y: binary.plus(x & y),
         types=[agg.first],
     )
-    v1 = A.reduce_rows(agg.first).new()
-    v2 = A.reduce_rows(agg.last).new()
-    v3 = A.reduce_rows(silly).new()
+    v1 = A.reduce_rowwise(agg.first).new()
+    v2 = A.reduce_rowwise(agg.last).new()
+    v3 = A.reduce_rowwise(silly).new()
     assert v3.isequal(binary.plus(v1 & v2).new())
 
     s1 = A.reduce_scalar(agg.first).new()
@@ -1266,28 +1266,28 @@ def test_reduce_agg_firstlast(A):
 
 
 def test_reduce_agg_firstlast_index(A):
-    # reduce_rows
-    w1 = A.reduce_rows(agg.first_index).new()
+    # reduce_rowwise
+    w1 = A.reduce_rowwise(agg.first_index).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [1, 4, 5, 0, 5, 2, 2])
     assert w1.isequal(expected)
-    w1b = A.T.reduce_columns(agg.first_index).new()
+    w1b = A.T.reduce_columnwise(agg.first_index).new()
     assert w1b.isequal(expected)
-    w2 = A.reduce_rows(agg.last_index).new()
+    w2 = A.reduce_rowwise(agg.last_index).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 6, 5, 2, 5, 2, 4])
     assert w2.isequal(expected)
-    w2b = A.T.reduce_columns(agg.last_index).new()
+    w2b = A.T.reduce_columnwise(agg.last_index).new()
     assert w2b.isequal(expected)
 
-    # reduce_columns
-    w3 = A.reduce_columns(agg.first_index).new()
+    # reduce_columnwise
+    w3 = A.reduce_columnwise(agg.first_index).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 3, 0, 1, 2, 1])
     assert w3.isequal(expected)
-    w3b = A.T.reduce_rows(agg.first_index).new()
+    w3b = A.T.reduce_rowwise(agg.first_index).new()
     assert w3b.isequal(expected)
-    w4 = A.reduce_columns(agg.last_index).new()
+    w4 = A.reduce_columnwise(agg.last_index).new()
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 6, 6, 6, 4, 1])
     assert w4.isequal(expected)
-    w4b = A.T.reduce_rows(agg.last_index).new()
+    w4b = A.T.reduce_rowwise(agg.last_index).new()
     assert w4b.isequal(expected)
 
     # reduce_scalar
@@ -1302,9 +1302,9 @@ def test_reduce_agg_firstlast_index(A):
         finalize=lambda x, y: binary.plus(x & y),
         types=[agg.first_index],
     )
-    v1 = A.reduce_rows(agg.first_index).new()
-    v2 = A.reduce_rows(agg.last_index).new()
-    v3 = A.reduce_rows(silly).new()
+    v1 = A.reduce_rowwise(agg.first_index).new()
+    v2 = A.reduce_rowwise(agg.last_index).new()
+    v3 = A.reduce_rowwise(silly).new()
     assert v3.isequal(binary.plus(v1 & v2).new())
 
     with pytest.raises(ValueError, match="Aggregator"):
@@ -1319,9 +1319,9 @@ def test_reduce_agg_empty():
         for attr, aggr in vars(agg).items():
             if not isinstance(aggr, agg.Aggregator):
                 continue
-            v = B.reduce_rows(aggr).new()
+            v = B.reduce_rowwise(aggr).new()
             assert ve.isequal(v)
-            w = B.reduce_columns(aggr).new()
+            w = B.reduce_columnwise(aggr).new()
             assert we.isequal(w)
             if attr not in {"argmin", "argmax", "first_index", "last_index"}:
                 s = B.reduce_scalar(aggr).new()
@@ -1333,20 +1333,20 @@ def test_reduce_row_udf(A):
     binop = grblas.operator.BinaryOp.register_anonymous(lambda x, y: x + y)
     with pytest.raises(DomainMismatch):
         # Although allowed by the spec, SuiteSparse doesn't like user-defined binarops here
-        A.reduce_rows(binop).new()
+        A.reduce_rowwise(binop).new()
     # If the user creates a monoid from the binop, then we can use the monoid instead
     monoid = grblas.operator.Monoid.register_anonymous(binop, 0)
-    w = A.reduce_rows(binop).new()
+    w = A.reduce_rowwise(binop).new()
     assert w.isequal(result)
-    w2 = A.reduce_rows(monoid).new()
+    w2 = A.reduce_rowwise(monoid).new()
     assert w2.isequal(result)
 
 
 def test_reduce_column(A):
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 9, 10, 11, 8, 4])
-    w = A.reduce_columns(monoid.plus).new()
+    w = A.reduce_columnwise(monoid.plus).new()
     assert w.isequal(result)
-    w2 = A.reduce_columns(binary.plus).new()
+    w2 = A.reduce_columnwise(binary.plus).new()
     assert w2.isequal(result)
 
 
@@ -2429,7 +2429,7 @@ def test_auto(A, v):
             assert val1.isequal(val2)
             assert val1.isequal(val3)
             assert val1.isequal(val4)
-        for method in ["reduce_rows", "reduce_columns", "reduce_scalar"]:
+        for method in ["reduce_rowwise", "reduce_columnwise", "reduce_scalar"]:
             s1 = getattr(expected, method)().new()
             s2 = getattr(expr, method)()
             assert s1.isequal(s2.new())
@@ -2665,24 +2665,24 @@ def test_infix_sugar(A):
 
 def test_random(A):
     R = A.ss.selectk_rowwise("random", 1)
-    counts = R.reduce_rows(agg.count).new()
+    counts = R.reduce_rowwise(agg.count).new()
     expected = Vector.from_values(range(A.ncols), 1)
     assert counts.isequal(expected)
 
     R = A.ss.selectk_columnwise("random", 1)
-    counts = R.reduce_columns(agg.count).new()
+    counts = R.reduce_columnwise(agg.count).new()
     expected = Vector.from_values(range(A.nrows), 1)
     assert counts.isequal(expected)
 
     R = A.ss.selectk_rowwise("random", 2)
-    counts = R.reduce_rows(agg.count).new()
+    counts = R.reduce_rowwise(agg.count).new()
     assert counts.reduce(monoid.min).new() == 1
     assert counts.reduce(monoid.max).new() == 2
 
     # test iso
     A(A.S) << 1
     R = A.ss.selectk_rowwise("random", 1)
-    counts = R.reduce_rows(agg.count).new()
+    counts = R.reduce_rowwise(agg.count).new()
     expected = Vector.from_values(range(A.ncols), 1)
     assert counts.isequal(expected)
 
@@ -2788,3 +2788,14 @@ def test_lastk(A):
 
     B = A.ss.selectk_columnwise("last", 3)
     assert B.isequal(A)
+
+
+def test_deprecated(A):
+    with pytest.warns(DeprecationWarning):
+        A.reduce_rows()
+    with pytest.warns(DeprecationWarning):
+        A.reduce_columns()
+    with pytest.warns(DeprecationWarning):
+        A.ss.scan_rows()
+    with pytest.warns(DeprecationWarning):
+        A.ss.scan_columns()

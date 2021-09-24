@@ -163,7 +163,7 @@ class TypedAggregator:
             if agg._finalize is not None:
                 step1 = expr.construct_output(dtype=semiring.return_type)
                 updater = step1(mask=updater.kwargs.get("mask"))
-            if expr.method_name == "reduce_columns":
+            if expr.method_name == "reduce_columnwise":
                 A = A.T
             size = A._ncols
             init = Vector.new(agg._initdtype, size=size)
@@ -419,8 +419,8 @@ def _argminmaxij(
 ):
     if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
         A = expr.args[0]
-        if expr.method_name == "reduce_rows":
-            step1 = A.reduce_rows(monoid).new()
+        if expr.method_name == "reduce_rowwise":
+            step1 = A.reduce_rowwise(monoid).new()
 
             # i, j = step1.to_values()
             # D = Matrix.from_values(i, i, j, nrows=A._nrows, ncols=A._nrows)
@@ -434,7 +434,7 @@ def _argminmaxij(
             if in_composite:
                 return updater.parent
         else:
-            step1 = A.reduce_columns(monoid).new()
+            step1 = A.reduce_columnwise(monoid).new()
 
             # i, j = step1.to_values()
             # D = Matrix.from_values(i, i, j, nrows=A._ncols, ncols=A._ncols)
@@ -467,7 +467,7 @@ def _argminmaxij(
 
 def _argminmax(agg, updater, expr, *, in_composite, monoid):
     if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
-        if expr.method_name == "reduce_rows":
+        if expr.method_name == "reduce_rowwise":
             return _argminmaxij(
                 agg,
                 updater,
@@ -518,7 +518,7 @@ agg.argmax = Aggregator(
 def _first_last(agg, updater, expr, *, in_composite, semiring):
     if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
         A = expr.args[0]
-        if expr.method_name == "reduce_columns":
+        if expr.method_name == "reduce_columnwise":
             A = A.T
         init = Vector.new(bool, size=A._ncols)
         init[:] = False  # O(1) dense vector in SuiteSparse 5
@@ -581,7 +581,7 @@ agg.last = Aggregator(
 def _first_last_index(agg, updater, expr, *, in_composite, semiring):
     if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
         A = expr.args[0]
-        if expr.method_name == "reduce_columns":
+        if expr.method_name == "reduce_columnwise":
             A = A.T
         init = Vector.new(bool, size=A._ncols)
         init[:] = False  # O(1) dense vector in SuiteSparse 5

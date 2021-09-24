@@ -103,8 +103,8 @@ M(mask, accum) << A.apply(binaryop, right=s)  # bind-second
 ```
 ## Reduce
 ```python
-v(mask, accum) << A.reduce_rows(op)         # reduce row-wise
-v(mask, accum) << A.reduce_columns(op)      # reduce column-wise
+v(mask, accum) << A.reduce_rowwise(op)      # reduce row-wise
+v(mask, accum) << A.reduce_columnwise(op)   # reduce column-wise
 s(accum) << A.reduce_scalar(op)
 s(accum) << v.reduce(op)
 ```

@@ -1,4 +1,5 @@
 import itertools
+import warnings
 
 import numpy as np
 
@@ -621,13 +622,13 @@ class Matrix(BaseType):
             bt=self._is_transposed,
         )
 
-    def reduce_rows(self, op=monoid.plus):
+    def reduce_rowwise(self, op=monoid.plus):
         """
         GrB_Matrix_reduce
         Reduce all values in each row, converting the matrix to a vector
         Default op is monoid.lor for boolean and monoid.plus otherwise
         """
-        method_name = "reduce_rows"
+        method_name = "reduce_rowwise"
         op = get_typed_op(op, self.dtype)
         self._expect_op(op, ("BinaryOp", "Monoid", "Aggregator"), within=method_name, argname="op")
         # Using a monoid may be more efficient, so change to one if possible.
@@ -643,13 +644,27 @@ class Matrix(BaseType):
             at=self._is_transposed,
         )
 
-    def reduce_columns(self, op=monoid.plus):
+    def reduce_rows(self, op=monoid.plus):
+        """
+        GrB_Matrix_reduce
+        Reduce all values in each row, converting the matrix to a vector
+        Default op is monoid.lor for boolean and monoid.plus otherwise
+
+        **This function is deprecated.  Please use ``Matrix.reduce_rowwise`` instead.
+        """
+        warnings.warn(
+            "`Matrix.reduce_rows` is deprecated; please use `Matrix.reduce_rowwise` instead",
+            DeprecationWarning,
+        )
+        return self.reduce_rowwise(op)
+
+    def reduce_columnwise(self, op=monoid.plus):
         """
         GrB_Matrix_reduce
         Reduce all values in each column, converting the matrix to a vector
         Default op is monoid.lor for boolean and monoid.plus otherwise
         """
-        method_name = "reduce_columns"
+        method_name = "reduce_columnwise"
         op = get_typed_op(op, self.dtype)
         self._expect_op(op, ("BinaryOp", "Monoid", "Aggregator"), within=method_name, argname="op")
         # Using a monoid may be more efficient, so change to one if possible.
@@ -664,6 +679,20 @@ class Matrix(BaseType):
             size=self._ncols,
             at=not self._is_transposed,
         )
+
+    def reduce_columns(self, op=monoid.plus):
+        """
+        GrB_Matrix_reduce
+        Reduce all values in each column, converting the matrix to a vector
+        Default op is monoid.lor for boolean and monoid.plus otherwise
+
+        **This function is deprecated.  Please use ``Matrix.reduce_columnwise`` instead.
+        """
+        warnings.warn(
+            "`Matrix.reduce_columns` is deprecated; please use `Matrix.reduce_columnwise` instead",
+            DeprecationWarning,
+        )
+        return self.reduce_columnwise(op)
 
     def reduce_scalar(self, op=monoid.plus):
         """
@@ -1198,7 +1227,9 @@ class MatrixExpression(BaseExpression):
     name = name.setter(_automethods._set_name)
     nvals = wrapdoc(Matrix.nvals)(property(_automethods.nvals))
     reduce_columns = wrapdoc(Matrix.reduce_columns)(property(_automethods.reduce_columns))
+    reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
     reduce_rows = wrapdoc(Matrix.reduce_rows)(property(_automethods.reduce_rows))
+    reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
     ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
@@ -1294,6 +1325,8 @@ class TransposedMatrix:
     mxm = Matrix.mxm
     kronecker = Matrix.kronecker
     apply = Matrix.apply
+    reduce_rowwise = Matrix.reduce_rowwise
+    reduce_columnwise = Matrix.reduce_columnwise
     reduce_rows = Matrix.reduce_rows
     reduce_columns = Matrix.reduce_columns
     reduce_scalar = Matrix.reduce_scalar

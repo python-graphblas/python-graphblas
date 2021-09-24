@@ -1,3 +1,4 @@
+import warnings
 from numbers import Integral, Number
 
 import numba
@@ -3402,7 +3403,7 @@ class ss:
     def head(self, n=10, *, sort=False, dtype=None):
         return head(self._parent, n, sort=sort, dtype=dtype)
 
-    def scan_columns(self, op=monoid.plus, *, name=None):
+    def scan_columnwise(self, op=monoid.plus, *, name=None):
         """Perform a prefix scan across columns with the given monoid.
 
         For example, use `monoid.plus` (the default) to perform a cumulative sum,
@@ -3412,9 +3413,9 @@ class ss:
         -------
         Vector
         """
-        return prefix_scan(self._parent.T, op, name=name, within="scan_columns")
+        return prefix_scan(self._parent.T, op, name=name, within="scan_columnwise")
 
-    def scan_rows(self, op=monoid.plus, *, name=None):
+    def scan_rowwise(self, op=monoid.plus, *, name=None):
         """Perform a prefix scan across rows with the given monoid.
 
         For example, use `monoid.plus` (the default) to perform a cumulative sum,
@@ -3424,7 +3425,44 @@ class ss:
         -------
         Vector
         """
-        return prefix_scan(self._parent, op, name=name, within="scan_rows")
+        return prefix_scan(self._parent, op, name=name, within="scan_rowwise")
+
+    def scan_columns(self, op=monoid.plus, *, name=None):
+        """Perform a prefix scan across columns with the given monoid.
+
+        For example, use `monoid.plus` (the default) to perform a cumulative sum,
+        and `monoid.times` for cumulative product.  Works with any monoid.
+
+        **This function is deprecated.  Use ``scan_columnwise`` instead.**
+
+        Returns
+        -------
+        Vector
+        """
+        warnings.warn(
+            "`Matrix.ss.scan_columns` is deprecated; "
+            "please use `Matrix.ss.scan_columnwise` instead",
+            DeprecationWarning,
+        )
+        return self.scan_columnwise(op, name=name)
+
+    def scan_rows(self, op=monoid.plus, *, name=None):
+        """Perform a prefix scan across rows with the given monoid.
+
+        For example, use `monoid.plus` (the default) to perform a cumulative sum,
+        and `monoid.times` for cumulative product.  Works with any monoid.
+
+        **This function is deprecated.  Use ``scan_rowwise`` instead.**
+
+        Returns
+        -------
+        Vector
+        """
+        warnings.warn(
+            "`Matrix.ss.scan_rows` is deprecated; please use `Matrix.ss.scan_rowwise` instead",
+            DeprecationWarning,
+        )
+        return self.scan_rowwise(op, name=name)
 
     def flatten(self, order="rowwise", *, name=None):
         """Return a copy of the Matrix collapsed into a Vector.
@@ -3568,6 +3606,7 @@ class ss:
 
         **THIS API IS EXPERIMENTAL AND MAY CHANGE**
         """
+        # TODO: largest, smallest, random_weighted
         how = how.lower()
         fmt = "hypercsr"
         indices = "col_indices"
