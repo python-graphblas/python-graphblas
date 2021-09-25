@@ -269,6 +269,23 @@ def test_neg():
             assert (-empty).value is None
 
 
+def test_invert():
+    for dtype in vars(dtypes).values():
+        if not isinstance(dtype, dtypes.DataType):
+            continue
+        empty = Scalar.new(dtype)
+        assert empty == ~empty
+        assert (~empty).value is None
+        not_s = Scalar.from_value(0, dtype=dtype)
+        for val in [-2, 1, 2]:
+            if val < 0 and dtype.name[0] == "U" or val != 1 and dtype == dtypes.BOOL:
+                continue
+            s = Scalar.from_value(val, dtype=dtype)
+            assert ~s == not_s
+            assert (~s).value == not_s.value
+            assert not (s.value) == not_s.value
+
+
 def test_wait(s):
     s.wait()
 

@@ -3695,7 +3695,7 @@ def choose_random1(indptr):  # pragma: no cover
 
 
 @njit
-def create_indptr(indptr, k):
+def create_indptr(indptr, k):  # pragma: no cover
     new_indptr = np.empty(indptr.size, dtype=indptr.dtype)
     new_indptr[0] = 0
     prev = np.int64(indptr[0])

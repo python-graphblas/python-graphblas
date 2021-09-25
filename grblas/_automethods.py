@@ -25,6 +25,7 @@ scalar = {
     "__float__",
     "__index__",
     "__int__",
+    "__invert__",
     "__neg__",
     "is_empty",
     "value",
@@ -230,6 +231,10 @@ def __index__(self):
 
 def __int__(self):
     return self._get_value("__int__")
+
+
+def __invert__(self):
+    return self._get_value("__invert__")
 
 
 def __iter__(self):

@@ -5733,61 +5733,6 @@ def test_autocompute_html(A, B, v):
         "    </tr>\n"
         "  </tbody>\n"
         "</table>\n"
-        "</div></details></div><hr><div>"
-        f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>Result</tt><div>\n'
-        '<table class="gb-info-table">\n'
-        "  <tr>\n"
-        '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
-        "    <td><pre>nvals</pre></td>\n"
-        "    <td><pre>nrows</pre></td>\n"
-        "    <td><pre>ncols</pre></td>\n"
-        "    <td><pre>dtype</pre></td>\n"
-        "  </tr>\n"
-        "  <tr>\n"
-        "    <td>3</td>\n"
-        "    <td>1</td>\n"
-        "    <td>5</td>\n"
-        "    <td>INT64</td>\n"
-        "  </tr>\n"
-        "</table>\n"
-        "</div>\n"
-        "</summary><div>\n"
-        "<style scoped>\n"
-        "    .dataframe tbody tr th:only-of-type {\n"
-        "        vertical-align: middle;\n"
-        "    }\n"
-        "\n"
-        "    .dataframe tbody tr th {\n"
-        "        vertical-align: top;\n"
-        "    }\n"
-        "\n"
-        "    .dataframe thead th {\n"
-        "        text-align: right;\n"
-        "    }\n"
-        "</style>\n"
-        '<table border="1" class="dataframe">\n'
-        "  <thead>\n"
-        '    <tr style="text-align: right;">\n'
-        "      <th></th>\n"
-        "      <th>0</th>\n"
-        "      <th>1</th>\n"
-        "      <th>2</th>\n"
-        "      <th>3</th>\n"
-        "      <th>4</th>\n"
-        "    </tr>\n"
-        "  </thead>\n"
-        "  <tbody>\n"
-        "    <tr>\n"
-        "      <th>0</th>\n"
-        "      <td>0</td>\n"
-        "      <td></td>\n"
-        "      <td>1</td>\n"
-        "      <td></td>\n"
-        "      <td>4</td>\n"
-        "    </tr>\n"
-        "  </tbody>\n"
-        "</table>\n"
         "</div></details></div></blockquote></details><em>Do <code>op(expr)</code> to create a <tt>MatrixExpression</tt> for <tt>ewise_mult</tt>.<br>For example: <code>times(A<sub>1</sub> & A<sub>1</sub>)</code></em></div>"
     )
     html_printer(A.ewise_add(A), "A.ewise_add(A)")
@@ -6645,23 +6590,26 @@ def test_autocompute_html(A, B, v):
         "</table>\n"
         "</div></details></div><hr><b>Result is too large to compute!</b></blockquote></details><em>Do <code>expr.new()</code> or <code>other << expr</code> to calculate the expression.</em></div>"
     )
-    html_printer(BIG | small, "BIG | small")
-    assert repr_html(BIG | small) == (
+    BIG_bool = BIG.dup(dtype=bool)
+    small_bool = small.dup(dtype=bool)
+    small_bool[0] = False
+    html_printer(BIG_bool | small_bool, "BIG_bool | small_bool")
+    assert repr_html(BIG_bool | small_bool) == (
         '<div><details class="gb-expr-details"><summary class="gb-expr-summary"><b><tt>grblas.VectorEwiseAddExpr:</tt></b><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
-        '    <td rowspan="2" class="gb-info-name-cell"><pre>v<sub>0</sub> | v<sub>1</sub></pre></td>\n'
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>v<sub>6</sub> | v<sub>7</sub></pre></td>\n'
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>left_dtype</pre></td>\n"
         "    <td><pre>right_dtype</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
-        "    <td>36028797018963968</td>\n" + "    <td>INT64</td>\n" * 2 + "  </tr>\n"
+        "    <td>36028797018963968</td>\n" + "    <td>BOOL</td>\n" * 2 + "  </tr>\n"
         "</table>\n"
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>0</sub></tt><div>\n'
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>6</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
@@ -6669,7 +6617,7 @@ def test_autocompute_html(A, B, v):
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
         "  </tr>\n"
-        "  <tr>\n" + "    <td>36028797018963968</td>\n" * 2 + "    <td>INT64</td>\n"
+        "  <tr>\n" + "    <td>36028797018963968</td>\n" * 2 + "    <td>BOOL</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6777,15 +6725,15 @@ def test_autocompute_html(A, B, v):
         "  <tbody>\n"
         "    <tr>\n"
         "      <th></th>\n"
-        + "      <td>1</td>\n" * 40
+        + "      <td>True</td>\n" * 40
         + "      <td>...</td>\n"
-        + "      <td>1</td>\n" * 40
+        + "      <td>True</td>\n" * 40
         + "    </tr>\n"
         "  </tbody>\n"
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>1</sub></tt><div>\n'
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>7</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
@@ -6796,7 +6744,7 @@ def test_autocompute_html(A, B, v):
         "  <tr>\n"
         "    <td>1</td>\n"
         "    <td>36028797018963968</td>\n"
-        "    <td>INT64</td>\n"
+        "    <td>BOOL</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6904,12 +6852,12 @@ def test_autocompute_html(A, B, v):
         "  <tbody>\n"
         "    <tr>\n"
         "      <th></th>\n"
-        "      <td>2</td>\n"
+        "      <td>False</td>\n"
         + "      <td></td>\n" * 39
         + "      <td>...</td>\n"
         + "      <td></td>\n" * 40
         + "    </tr>\n"
         "  </tbody>\n"
         "</table>\n"
-        "</div></details></div><hr><b>Result is too large to compute!</b></blockquote></details><em>Do <code>op(expr)</code> to create a <tt>VectorExpression</tt> for <tt>ewise_add</tt>.<br>For example: <code>plus(v<sub>0</sub> | v<sub>1</sub>)</code></em></div>"
+        "</div></details></div><hr><b>Result is too large to compute!</b></blockquote></details><em>Do <code>op(expr)</code> to create a <tt>VectorExpression</tt> for <tt>ewise_add</tt>.<br>For example: <code>plus(v<sub>6</sub> | v<sub>7</sub>)</code></em></div>"
     )

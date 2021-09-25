@@ -2400,8 +2400,44 @@ def test_nbytes(A):
 
 @autocompute
 def test_auto(A, v):
+    expected = binary.land(A & A).new()
+    B = A.dup(dtype=bool)
+    for expr in [(B & B), binary.land(A & A)]:
+        assert expr.dtype == expected.dtype
+        assert expr.nrows == expected.nrows
+        assert expr.ncols == expected.ncols
+        assert expr.shape == expected.shape
+        assert expr.nvals == expected.nvals
+        assert expr.isclose(expected)
+        assert expected.isclose(expr)
+        assert expr.isequal(expected)
+        assert expected.isequal(expr)
+        assert expr.mxv(v).isequal(expected.mxv(v))
+        assert expected.T.mxv(v).isequal(expr.T.mxv(v))
+        for method in [
+            # "ewise_add",
+            # "ewise_mult",
+            # "mxm",
+            # "__matmul__",
+            "__and__",
+            "__or__",
+            # "kronecker",
+        ]:
+            val1 = getattr(expected, method)(expected).new()
+            val2 = getattr(expected, method)(expr)
+            val3 = getattr(expr, method)(expected)
+            val4 = getattr(expr, method)(expr)
+            assert val1.isequal(val2)
+            assert val1.isequal(val3)
+            assert val1.isequal(val4)
+        for method in ["reduce_rowwise", "reduce_columnwise", "reduce_scalar"]:
+            s1 = getattr(expected, method)(monoid.lor).new()
+            s2 = getattr(expr, method)(monoid.lor)
+            assert s1.isequal(s2.new())
+            assert s1.isequal(s2)
+
     expected = binary.times(A & A).new()
-    for expr in [(A & A), binary.times(A & A)]:
+    for expr in [binary.times(A & A)]:
         assert expr.dtype == expected.dtype
         assert expr.nrows == expected.nrows
         assert expr.ncols == expected.ncols
@@ -2417,9 +2453,9 @@ def test_auto(A, v):
             "ewise_add",
             "ewise_mult",
             "mxm",
-            "__matmul__",
-            "__and__",
-            "__or__",
+            # "__matmul__",
+            # "__and__",
+            # "__or__",
             "kronecker",
         ]:
             val1 = getattr(expected, method)(expected).new()
@@ -2445,7 +2481,7 @@ def test_auto(A, v):
 @autocompute
 def test_auto_assign(A):
     expected = A.dup()
-    B = A[1:4, 1:4].new()
+    B = A[1:4, 1:4].new(dtype=bool)
     expr = B & B
     expected[:3, :3] = expr.new()
     A[:3, :3] = expr
@@ -2453,7 +2489,7 @@ def test_auto_assign(A):
     with pytest.raises(TypeError):
         # Not yet supported, but we could!
         A[:3, :3] = A[1:4, 1:4]
-    v = A[2:5, 5].new()
+    v = A[2:5, 5].new(dtype=bool)
     expr = v & v
     A[:3, 4] << expr
     expected[:3, 4] << expr.new()
@@ -2462,10 +2498,11 @@ def test_auto_assign(A):
 
 @autocompute
 def test_expr_is_like_matrix(A):
-    attrs = {attr for attr, val in inspect.getmembers(A)}
-    expr_attrs = {attr for attr, val in inspect.getmembers(binary.times(A & A))}
-    infix_attrs = {attr for attr, val in inspect.getmembers(A & A)}
-    transposed_attrs = {attr for attr, val in inspect.getmembers(A.T)}
+    B = A.dup(dtype=bool)
+    attrs = {attr for attr, val in inspect.getmembers(B)}
+    expr_attrs = {attr for attr, val in inspect.getmembers(binary.times(B & B))}
+    infix_attrs = {attr for attr, val in inspect.getmembers(B & B)}
+    transposed_attrs = {attr for attr, val in inspect.getmembers(B.T)}
     # Should we make any of these raise informative errors?
     expected = {
         "__call__",

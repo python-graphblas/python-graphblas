@@ -1,6 +1,7 @@
 import numpy as np
 
 from . import config, unary
+from .dtypes import BOOL
 from .exceptions import OutOfMemory
 from .matrix import Matrix, TransposedMatrix
 from .vector import Vector
@@ -546,15 +547,20 @@ def format_vector(vector, *, max_rows=None, min_rows=None, max_columns=None, mas
 def _format_infix_expression(expr, header, expr_name):
     arg_string = f"{expr.left._repr_html_()}{expr.right._repr_html_()}"
     if config.get("autocompute"):
-        try:
-            val = expr._get_value()
-        except OutOfMemory:
-            arg_string += "<hr><b>Result is too large to compute!</b>"
-        else:
-            name = val.name
-            val.name = "Result"
-            arg_string += f"<hr>{val._repr_html_()}"
-            val.name = name
+        if (
+            expr.method_name not in {"ewise_add", "ewise_mult"}
+            or expr.left.dtype == BOOL
+            and expr.right.dtype == BOOL
+        ):
+            try:
+                val = expr._get_value()
+            except OutOfMemory:
+                arg_string += "<hr><b>Result is too large to compute!</b>"
+            else:
+                name = val.name
+                val.name = "Result"
+                arg_string += f"<hr>{val._repr_html_()}"
+                val.name = name
     return (
         "<div>"
         '<details class="gb-expr-details">'

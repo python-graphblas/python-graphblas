@@ -1167,10 +1167,11 @@ def test_outer(v):
 
 @autocompute
 def test_auto(v):
-    expected = binary.times(v & v).new()
+    v = v.dup(dtype=bool)
+    expected = binary.land(v & v).new()
     assert 0 not in expected
     assert 1 in expected
-    for expr in [(v & v), binary.times(v & v)]:
+    for expr in [(v & v), binary.land(v & v)]:
         assert expr.size == expected.size
         assert expr.dtype == expected.dtype
         assert expr.shape == expected.shape
@@ -1202,14 +1203,14 @@ def test_auto(v):
         assert expr._name_html != expected._name_html
         assert expr._carg != expected._carg
         for method in [
-            "ewise_add",
-            "ewise_mult",
-            "inner",
-            "outer",
-            "__matmul__",
+            # "ewise_add",
+            # "ewise_mult",
+            # "inner",
+            # "outer",
+            # "__matmul__",
             "__and__",
             "__or__",
-            "__rmatmul__",
+            # "__rmatmul__",
             "__rand__",
             "__ror__",
         ]:
@@ -1223,12 +1224,12 @@ def test_auto(v):
             assert val1.isequal(val2.new())
             assert val1.isequal(val3.new())
             assert val1.isequal(val4.new())
-        s1 = expected.reduce().new()
-        s2 = expr.reduce()
+        s1 = expected.reduce(monoid.lor).new()
+        s2 = expr.reduce(monoid.lor)
         assert s1.isequal(s2.new())
         assert s1.isequal(s2)
         assert s1.is_empty == s2.is_empty
-        assert -s1 == -s2
+        assert ~s1 == ~s2
         assert complex(s1) == complex(s2)
         assert_array_equal(np.array([s1]), np.array([s2]))
     w = v.dup()
@@ -1240,7 +1241,7 @@ def test_auto(v):
 @autocompute
 def test_auto_assign(v):
     expected = v.dup()
-    w = v[1:4].new()
+    w = v[1:4].new(dtype=bool)
     expr = w & w
     expected[:3] = expr.new()
     v[:3] = expr
@@ -1252,9 +1253,10 @@ def test_auto_assign(v):
 
 @autocompute
 def test_expr_is_like_vector(v):
-    attrs = {attr for attr, val in inspect.getmembers(v)}
-    expr_attrs = {attr for attr, val in inspect.getmembers(binary.times(v & v))}
-    infix_attrs = {attr for attr, val in inspect.getmembers(v & v)}
+    w = v.dup(dtype=bool)
+    attrs = {attr for attr, val in inspect.getmembers(w)}
+    expr_attrs = {attr for attr, val in inspect.getmembers(binary.times(w & w))}
+    infix_attrs = {attr for attr, val in inspect.getmembers(w & w)}
     # Should we make any of these raise informative errors?
     expected = {
         "__call__",

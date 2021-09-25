@@ -33,20 +33,24 @@ def s1():
 
 @autocompute
 def test_ewise(v1, v2, A1, A2):
+    v1 = v1.dup(dtype=bool)
+    v2 = v2.dup(dtype=bool)
+    A1 = A1.dup(dtype=bool)
+    A2 = A2.dup(dtype=bool)
     for left, right in [
         (v1, v2),
         (A1, A2.T),
         (A1.T, A1.T),
         (A1, A1),
     ]:
-        expected = left.ewise_mult(right, monoid.times).new()
+        expected = left.ewise_mult(right, monoid.land).new()
         expr = left & right
         assert expr.nvals == expected.nvals
         val = expr.new(name="val")
         assert val.name == "val"
         assert expected.isequal((left & right).new(dtype=float))
-        assert expected.isequal(monoid.times(left & right).new())
-        assert expected.isequal(monoid.times[float](left & right).new())
+        assert expected.isequal(monoid.land(left & right).new())
+        assert expected.isequal(monoid.land[float](left & right).new())
         assert expected.isequal((left & right).new())  # use `left.ewise_mult` default op
         if isinstance(left, Vector):
             assert (left & right).size == left.size
@@ -57,9 +61,9 @@ def test_ewise(v1, v2, A1, A2):
             assert (left & right).ncols == left.ncols
             assert (left | right).ncols == left.ncols
 
-        expected = left.ewise_add(right, op.plus).new()
-        assert expected.isequal(op.plus(left | right).new())
-        assert expected.isequal(op.plus[float](left | right).new())
+        expected = left.ewise_add(right, op.lor).new()
+        assert expected.isequal(op.lor(left | right).new())
+        assert expected.isequal(op.lor[float](left | right).new())
         assert expected.isequal((left | right).new())  # use `left.ewise_add` default op
 
         expected = left.ewise_mult(right, op.minus).new()
@@ -157,8 +161,8 @@ def test_bad_ewise(s1, v1, A1, A2):
         op.minus(v1 | v1)
     with raises(TypeError):
         op.minus(v1 & v1, require_monoid=False)
-    # with raises(TypeError, match="Bad types when calling binary.plus"):
-    op.plus(v1 & v1, 1)  # Now okay
+    with raises(TypeError, match="Bad dtype"):
+        op.plus(v1 & v1, 1)
 
 
 def test_bad_matmul(s1, v1, A1, A2):
@@ -229,8 +233,8 @@ def test_apply_unary_bad(s1, v1):
         op.exp(s1)
     with raises(TypeError, match="Bad type when calling unary.exp"):
         op.exp(1)
-    # with raises(TypeError, match="Bad type when calling unary.exp"):
-    op.exp(v1 | v1)  # Now okay
+    with raises(TypeError, match="Bad dtype"):
+        op.exp(v1 | v1)
 
 
 def test_apply_binary(v1, A1):
