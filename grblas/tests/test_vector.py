@@ -370,6 +370,8 @@ def test_ewise_add(v):
     b2 = Vector.from_values([0, 1, 2, 3], [True, True, False, False])
     with pytest.raises(KeyError, match="plus does not work"):
         b1.ewise_add(b2).new()
+    with pytest.raises(TypeError, match="for BOOL datatype"):
+        binary.plus(b1 | b2)
 
 
 def test_extract(v):
@@ -1232,6 +1234,7 @@ def test_auto(v):
         assert ~s1 == ~s2
         assert complex(s1) == complex(s2)
         assert_array_equal(np.array([s1]), np.array([s2]))
+        assert expected.isequal(expr.new())
     w = v.dup()
     expected = v.dup()
     expected(binary.plus) << (w & w).new()

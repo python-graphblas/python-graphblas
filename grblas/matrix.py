@@ -419,7 +419,7 @@ class Matrix(BaseType):
                     "Monoid",
                     within=method_name,
                     argname="op",
-                    extra_message="A BinaryOp may be given if require_monoid keyword is False",
+                    extra_message="A BinaryOp may be given if require_monoid keyword is False.",
                 )
         else:
             self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")

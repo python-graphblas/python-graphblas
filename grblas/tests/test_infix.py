@@ -71,6 +71,8 @@ def test_ewise(v1, v2, A1, A2):
 
         expected = left.ewise_add(right, op.minus, require_monoid=False).new()
         assert expected.isequal(op.minus(left | right, require_monoid=False).new())
+        expr = left | right
+        assert expr.nvals == expr.nvals  # tests caching of ._value
 
 
 def test_matmul(v1, v2, A1, A2):
