@@ -67,6 +67,11 @@ class Scalar(BaseType):
         return rv
 
     def __invert__(self):
+        if self.dtype != BOOL:
+            raise TypeError(
+                f"The invert operator, `~`, is not supported for {self.dtype.name} dtype.  "
+                "It is only supported for BOOL dtype."
+            )
         rv = Scalar.new(BOOL, name=f"~{self.name}")
         if self.is_empty:
             return rv

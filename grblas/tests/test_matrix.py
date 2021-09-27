@@ -2617,8 +2617,13 @@ def test_infix_sugar(A):
     assert binary.pow(A, 2).isequal(pow(A, 2))
     assert unary.ainv(A).isequal(-A)
     assert unary.ainv(A.T).isequal(-A.T)
-    assert unary.lnot(A).isequal(~A)
-    assert unary.lnot(A.T).isequal(~A.T)
+    B = A.dup(dtype=bool)
+    assert unary.lnot(B).isequal(~B)
+    assert unary.lnot(B.T).isequal(~B.T)
+    with pytest.raises(TypeError):
+        assert unary.lnot(A).isequal(~A)
+    with pytest.raises(TypeError):
+        assert unary.lnot(A.T).isequal(~A.T)
     assert binary.lt(A, 4).isequal(A < 4)
     assert binary.le(A, 4).isequal(A <= 4)
     assert binary.gt(A, 4).isequal(A > 4)
@@ -2683,7 +2688,8 @@ def test_infix_sugar(A):
     expr = binary.plus(A & A)
     assert unary.abs(expr).isequal(abs(expr))
     assert unary.ainv(expr).isequal(-expr)
-    assert unary.lnot(expr).isequal(~expr)
+    with pytest.raises(TypeError):
+        assert unary.lnot(expr).isequal(~expr)
     with pytest.raises(TypeError):
         expr += 1
     with pytest.raises(TypeError):
