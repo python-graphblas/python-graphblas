@@ -101,7 +101,6 @@ def __abs__(self):
 
 
 def __invert__(self):
-    print(type(self), type(self.dtype), self.dtype)
     if self.dtype != BOOL:
         raise TypeError(
             f"The invert operator, `~`, is not supported for {self.dtype.name} dtype.  "
