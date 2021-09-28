@@ -1,3 +1,5 @@
+import itertools
+
 import numpy as np
 import pytest
 
@@ -598,6 +600,7 @@ def test_nested_names():
         UnaryOp.register_new("incrementers.plus_four", bad_will_overwrite_path)
 
 
+@pytest.mark.slow
 def test_op_namespace():
     from grblas import op
 
@@ -619,6 +622,7 @@ def test_op_namespace():
         op.numpy.bad_attr
 
 
+@pytest.mark.slow
 def test_binaryop_attributes():
     assert binary.plus[int].monoid is monoid.plus[int]
     assert binary.minus[int].monoid is None
@@ -655,6 +659,7 @@ def test_binaryop_attributes():
             assert all(val[type_].monoid is None for type_ in val.types)
 
 
+@pytest.mark.slow
 def test_monoid_attributes():
     assert monoid.plus[int].binaryop is binary.plus[int]
     assert monoid.plus[int].identity == 0
@@ -687,6 +692,7 @@ def test_monoid_attributes():
             assert x.identity is not None
 
 
+@pytest.mark.slow
 def test_semiring_attributes():
     assert semiring.min_plus[int].monoid is monoid.min[int]
     assert semiring.min_plus[int].binaryop is binary.plus[int]
@@ -747,6 +753,7 @@ def test_div_semirings():
     assert result.dtype == dtypes.INT64
 
 
+@pytest.mark.slow
 def test_get_semiring():
     sr = get_semiring(monoid.plus, binary.times)
     assert sr is semiring.plus_times
@@ -781,3 +788,17 @@ def test_get_semiring():
     sr = get_semiring(monoid.plus, binary.numpy.copysign)
     assert sr.monoid is monoid.plus
     assert sr.binaryop is binary.numpy.copysign
+
+
+def test_create_semiring():
+    # stress test / sanity check
+    monoid_names = {x for x in dir(monoid) if not x.startswith("_")}
+    binary_names = {x for x in dir(binary) if not x.startswith("_")}
+    for monoid_name, binary_name in itertools.product(monoid_names, binary_names):
+        cur_monoid = getattr(monoid, monoid_name)
+        if not isinstance(cur_monoid, Monoid):
+            continue
+        cur_binary = getattr(binary, binary_name)
+        if not isinstance(cur_binary, BinaryOp):
+            continue
+        Semiring.register_anonymous(cur_monoid, cur_binary)

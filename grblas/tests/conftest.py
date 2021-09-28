@@ -2,6 +2,7 @@ import atexit
 import functools
 import itertools
 
+import numpy as np
 import pytest
 
 import grblas
@@ -11,10 +12,15 @@ def pytest_configure(config):
     backend = config.getoption("--backend", "suitesparse")
     blocking = config.getoption("--blocking", True)
     record = config.getoption("--record", False)
+    mapnumpy = config.getoption("--mapnumpy", np.random.rand() < 0.5)  # heh
 
-    grblas.config.set(autocompute=False)
+    grblas.config.set(autocompute=False, mapnumpy=mapnumpy)
+
     grblas.init(backend, blocking=blocking)
-    print(f'Running tests with "{backend}" backend, blocking={blocking}, record={record}')
+    print(
+        f'Running tests with "{backend}" backend, blocking={blocking}, '
+        f"record={record}, mapnumpy={mapnumpy}"
+    )
     if record:
         rec = grblas.Recorder()
         rec.start()

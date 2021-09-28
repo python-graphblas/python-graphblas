@@ -28,3 +28,6 @@ def pytest_addoption(parser):
         action="store_true",
         help="Record GraphBLAS C calls and save to 'record.txt'",
     )
+    parser.addoption(
+        "--mapnumpy", action="store_true", default=None, help="may numpy ops to GraphBLAS ops"
+    )

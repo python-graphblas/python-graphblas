@@ -6,6 +6,7 @@ from grblas import binary, dtypes, monoid, operator, semiring, unary
 BOOL = frozenset({"BOOL"})
 UINT = frozenset({"UINT8", "UINT16", "UINT32", "UINT64"})
 INT = frozenset({"INT8", "INT16", "INT32", "INT64", "UINT8", "UINT16", "UINT32", "UINT64"})
+BOOLINT = frozenset(BOOL | INT)
 FP = frozenset({"FP32", "FP64"})
 FPINT = frozenset(FP | INT)
 NOFC = frozenset(BOOL | FPINT)
@@ -43,16 +44,17 @@ BINARY = {
     },
     (ALL, BOOL): {"eq", "ne"},
     (ALL, FP): {"truediv"},
-    (ALL, NOFC): {"absfirst"},
+    (ALL, NOFC): {"absfirst", "abssecond"},
     (ALL, POS): {
         "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1",
     },
+    (BOOLINT, FP): {"ldexp"},
     (INT, INT): {"band", "bclr", "bget", "bor", "bset", "bshift", "bxnor", "bxor"},
-    (NOFC, BOOL): {"ge", "gt", "land", "le", "lor", "lt", "lxnor", "lxor"},
+    (NOFC, BOOL): {"ge", "gt", "le", "lt", "lxnor"},
     (NOFC, FC): {"cmplx"},
-    (NOFC, FP): {"atan2", "copysign", "fmod", "hypot", "ldexp", "remainder"},
+    (NOFC, FP): {"atan2", "copysign", "fmod", "hypot", "remainder"},
     (NOFC, FPINT): {"floordiv"},
-    (NOFC, NOFC): {"isge", "isgt", "isle", "islt", "max", "min"},
+    (NOFC, NOFC): {"isge", "isgt", "isle", "islt", "land", "lor", "lxor", "max", "min"},
 }
 MONOID = {
     (UINT, UINT): {"band", "bor", "bxnor", "bxor"},
@@ -74,7 +76,7 @@ _SEMIRING1 = {
     ],
     (ALL, NOFC): [
         {"max"},
-        {"absfirst"},
+        {"absfirst", "abssecond"},
     ],
     (ALL, POS): [  # POS, extra->INT64
         {"any", "max", "min", "plus", "times"},
@@ -110,7 +112,7 @@ _SEMIRING1 = {
     ],
     (NOBOOL, FPINT): [
         {"plus"},
-        {"absfirst"},
+        {"absfirst", "abssecond"},
     ],
     (NOFC, FPINT): [
         {"any", "max", "min", "plus", "times"},
@@ -135,6 +137,8 @@ SEMIRING = defaultdict(set)
 for name, (ins, outs) in _SEMIRING2.items():
     SEMIRING[(frozenset(ins), frozenset(outs))].add(name)
 IGNORE = {
+    # Created by
+    "plus_copysign",
     # UDFs created during tests
     "is_positive",
     "plus_one",

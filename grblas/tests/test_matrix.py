@@ -1075,6 +1075,7 @@ def test_reduce_row(A):
     assert w2.isequal(result)
 
 
+@pytest.mark.slow
 def test_reduce_agg(A):
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
     w1 = A.reduce_rowwise(agg.sum).new()
@@ -2400,9 +2401,9 @@ def test_nbytes(A):
 
 @autocompute
 def test_auto(A, v):
-    expected = binary.land(A & A).new()
+    expected = binary.land[bool](A & A).new()
     B = A.dup(dtype=bool)
-    for expr in [(B & B), binary.land(A & A)]:
+    for expr in [(B & B), binary.land[bool](A & A)]:
         assert expr.dtype == expected.dtype
         assert expr.nrows == expected.nrows
         assert expr.ncols == expected.ncols
@@ -2706,6 +2707,7 @@ def test_infix_sugar(A):
         expr **= 1
 
 
+@pytest.mark.slow
 def test_random(A):
     R = A.ss.selectk_rowwise("random", 1)
     counts = R.reduce_rowwise(agg.count).new()

@@ -5,9 +5,11 @@ See list of numpy ufuncs supported by numpy here:
 https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operations
 
 """
-import numpy as np
+import numpy as _np
 
-from .. import operator
+from .. import config as _config
+from .. import operator as _operator
+from .. import unary as _unary
 
 _unary_names = {
     # Math operations
@@ -62,6 +64,47 @@ _unary_names = {
     "spacing",
 }
 __all__ = list(_unary_names)
+_numpy_to_graphblas = {
+    "abs": "abs",
+    "absolute": "abs",
+    "arccos": "acos",
+    "arccosh": "acosh",
+    "arcsin": "asin",
+    "arcsinh": "asinh",
+    "arctan": "atan",
+    "arctanh": "atanh",
+    "bitwise_not": "bnot",
+    "ceil": "ceil",
+    "conj": "conj",
+    "conjugate": "conj",
+    "cos": "cos",
+    "cosh": "cosh",
+    "exp": "exp",
+    "exp2": "exp2",
+    "expm1": "expm1",
+    # 'fabs': 'abs'  # should we rely on coercion?  fabs is only float
+    "floor": "floor",
+    "invert": "bnot",
+    "isfinite": "isfinite",
+    "isinf": "isinf",
+    "isnan": "isnan",
+    "log": "log",
+    "log10": "log10",
+    "log1p": "log1p",
+    "log2": "log2",
+    "logical_not": "lnot",  # should we?  result_type not the same
+    "negative": "ainv",
+    # "reciprocal": "minv",  # has differences.  We should investigate further.
+    "rint": "round",
+    # 'sign': 'signum'  # signum is float-only
+    "sin": "sin",
+    "sinh": "sinh",
+    "sqrt": "sqrt",
+    "tan": "tan",
+    "tanh": "tanh",
+    "trunc": "trunc",
+}
+# Not included: deg2rad degrees rad2deg radians signbit spacing square
 
 
 def __dir__():
@@ -71,11 +114,13 @@ def __dir__():
 def __getattr__(name):
     if name not in _unary_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    numpy_func = getattr(np, name)
-    operator.UnaryOp.register_new(f"numpy.{name}", lambda x: numpy_func(x))
-    rv = globals()[name]
-    if name == "reciprocal":
-        # numba doesn't match numpy here
-        op = operator.UnaryOp.register_anonymous(lambda x: 1 if x else 0)
-        rv._add(op["BOOL"])
-    return rv
+    if _config.get("mapnumpy") and name in _numpy_to_graphblas:
+        globals()[name] = getattr(_unary, _numpy_to_graphblas[name])
+    else:
+        numpy_func = getattr(_np, name)
+        _operator.UnaryOp.register_new(f"numpy.{name}", lambda x: numpy_func(x))
+        if name == "reciprocal":
+            # numba doesn't match numpy here
+            op = _operator.UnaryOp.register_anonymous(lambda x: 1 if x else 0)
+            globals()[name]._add(op["BOOL"])
+    return globals()[name]

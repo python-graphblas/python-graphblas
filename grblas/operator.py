@@ -175,10 +175,6 @@ class TypedBuiltinSemiring(TypedOpBase):
         monoid_name, binary_name = self.name.split("_", 1)
         binop = getattr(binary, binary_name)[self.type]
         val = getattr(monoid, monoid_name)
-        if binop.return_type not in val.types and binary_name in {"land", "lor", "lxor", "lxnor"}:
-            # e.g., with `plus_land`, `land` always returns a BOOL, but `plus` doesn't
-            # operate on BOOL, so assume the return of `land` is coerced.
-            return val[self.type]
         return val[binop.return_type]
 
 
@@ -729,15 +725,16 @@ class BinaryOp(OpBase):
                 "|SECONDI1|SECONDI|SECONDJ1|SECONDJ)"
                 "_(INT8|INT16|INT32|INT64|UINT8|UINT16|UINT32|UINT64)$"
             ),
+            # These are coerced to 0 or 1, but don't return BOOL
+            re.compile(
+                "^GxB_(LOR|LAND|LXOR|LXNOR)_"
+                "(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$"
+            ),
         ],
         "re_exprs_return_bool": [
             re.compile("^GrB_(LOR|LAND|LXOR|LXNOR)$"),
             re.compile(
                 "^GrB_(EQ|NE|GT|LT|GE|LE)_"
-                "(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$"
-            ),
-            re.compile(
-                "^GxB_(LOR|LAND|LXOR)_"
                 "(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$"
             ),
             re.compile("^GxB_(EQ|NE)_(FC32|FC64)$"),
@@ -892,10 +889,11 @@ class BinaryOp(OpBase):
             truediv._add(op)
         # Add floordiv
         # cdiv truncates towards 0, while floordiv truncates towards -inf
-        BinaryOp.register_new("floordiv", lambda x, y: x // y)
+        BinaryOp.register_new("floordiv", lambda x, y: x // y)  # cast to integer
 
         # For aggregators
         BinaryOp.register_new("absfirst", lambda x, y: abs(x))
+        BinaryOp.register_new("abssecond", lambda x, y: abs(y))
 
         def isclose(rel_tol=1e-7, abs_tol=0.0):
             def inner(x, y):
@@ -956,6 +954,9 @@ class BinaryOp(OpBase):
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
                             op.coercions[dtype] = target_type
+        # Not valid input dtypes
+        del binary.ldexp["FP32"]
+        del binary.ldexp["FP64"]
 
     def __init__(self, name, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
@@ -1156,7 +1157,10 @@ class Semiring(OpBase):
             binary_out = binary_func.return_type
             # Unfortunately, we can't have user-defined monoids over bools yet
             # because numba can't compile correctly.
-            if binary_out not in monoid.types:
+            if (
+                binary_out not in monoid.types
+                or monoid.coercions.get(binary_out, binary_out) != binary_out
+            ):
                 continue
             binary_out = lookup_dtype(binary_out)
             new_semiring = ffi_new("GrB_Semiring*")
