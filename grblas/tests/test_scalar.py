@@ -278,6 +278,9 @@ def test_invert():
     assert ~s == not_s
     assert (~s).value == not_s.value
     assert not (s.value) == not_s.value
+    bad = Scalar.new(int)
+    with pytest.raises(TypeError, match="The invert operator"):
+        ~bad
 
 
 def test_wait(s):
