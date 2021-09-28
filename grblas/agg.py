@@ -1,8 +1,8 @@
 """`grblas.agg` is an experimental module for exploring Aggregators.
 
 Aggregators may be used in reduce methods:
-    - Matrix.reduce_rows
-    - Matrix.reduce_columns
+    - Matrix.reduce_rowwise
+    - Matrix.reduce_columnwise
     - Matrix.reduce_scalar
     - Vector.reduce
 

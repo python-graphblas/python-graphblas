@@ -353,15 +353,20 @@ class InfixExprBase:
                 rv.name = name
             self._value = None
             return rv
-        # Rely on the default operator for the method
-        expr = getattr(self.left, self.method_name)(self.right)
+        expr = self._to_expr()
         return expr.new(dtype=dtype, mask=mask, name=name)
 
     dup = new
 
     def _to_expr(self):
-        # Rely on the default operator for the method
-        return getattr(self.left, self.method_name)(self.right)
+        if self._value is None:
+            # Rely on the default operator for the method
+            self._value = getattr(self.left, self.method_name)(self.right)
+        return self._value
+
+    def _get_value(self, attr=None, default=None):
+        expr = self._to_expr()
+        return expr._get_value(attr=attr, default=default)
 
     def _format_expr(self):
         return f"{self.left.name} {self._infix} {self.right.name}"

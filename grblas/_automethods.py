@@ -25,6 +25,7 @@ scalar = {
     "__float__",
     "__index__",
     "__int__",
+    "__invert__",
     "__neg__",
     "is_empty",
     "value",
@@ -61,6 +62,8 @@ matrix = {
     "mxv",
     "reduce_columns",
     "reduce_rows",
+    "reduce_columnwise",
+    "reduce_rowwise",
     "reduce_scalar",
 }
 common_raises = {
@@ -230,6 +233,10 @@ def __int__(self):
     return self._get_value("__int__")
 
 
+def __invert__(self):
+    return self._get_value("__invert__")
+
+
 def __iter__(self):
     return self._get_value("__iter__")
 
@@ -334,8 +341,16 @@ def reduce_columns(self):
     return self._get_value("reduce_columns")
 
 
+def reduce_columnwise(self):
+    return self._get_value("reduce_columnwise")
+
+
 def reduce_rows(self):
     return self._get_value("reduce_rows")
+
+
+def reduce_rowwise(self):
+    return self._get_value("reduce_rowwise")
 
 
 def reduce_scalar(self):

@@ -5,7 +5,7 @@ import numpy as np
 from . import _automethods, backend, ffi, utils
 from .base import BaseExpression, BaseType
 from .binary import isclose
-from .dtypes import _INDEX, lookup_dtype
+from .dtypes import _INDEX, BOOL, lookup_dtype
 from .operator import get_typed_op
 from .utils import output_type, wrapdoc
 
@@ -58,12 +58,24 @@ class Scalar(BaseType):
 
     def __neg__(self):
         dtype = self.dtype
-        if dtype.name[0] == "U" or dtype.name == "BOOL":
+        if dtype.name[0] == "U" or dtype == BOOL:
             raise TypeError(f"The negative operator, `-`, is not supported for {dtype.name} dtype")
         rv = Scalar.new(dtype, name=f"-{self.name}")
         if self.is_empty:
             return rv
         rv.value = -self.value
+        return rv
+
+    def __invert__(self):
+        if self.dtype != BOOL:
+            raise TypeError(
+                f"The invert operator, `~`, is not supported for {self.dtype.name} dtype.  "
+                "It is only supported for BOOL dtype."
+            )
+        rv = Scalar.new(BOOL, name=f"~{self.name}")
+        if self.is_empty:
+            return rv
+        rv.value = not self.value
         return rv
 
     __index__ = __int__
@@ -282,6 +294,7 @@ class ScalarExpression(BaseExpression):
     __float__ = wrapdoc(Scalar.__float__)(property(_automethods.__float__))
     __index__ = wrapdoc(Scalar.__index__)(property(_automethods.__index__))
     __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
+    __invert__ = wrapdoc(Scalar.__invert__)(property(_automethods.__invert__))
     __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
     _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))

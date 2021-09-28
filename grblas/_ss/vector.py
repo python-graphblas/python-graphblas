@@ -1145,3 +1145,104 @@ class ss:
             )
         else:
             raise NotImplementedError(fmt)
+
+    def selectk(self, how, k):
+        """Select (up to) k elements.
+
+        Parameters
+        ----------
+        how : str
+            - "random": choose k elements with equal probability
+            - "first": choose the first k elements
+            - "last": choose the last k elements
+            - "largest": choose the k largest elements.  If tied, any may be chosen.
+            - "smallest": choose the k smallest elements.  If tied, any may be chosen.
+        k : int
+            The number of elements to choose
+
+        **THIS API IS EXPERIMENTAL AND MAY CHANGE**
+        """
+        how = how.lower()
+        if k < 0:
+            raise ValueError("negative k is not allowed")
+        do_sort = how in {"first", "last"}
+        info = self._parent.ss.export("sparse", sort=do_sort)
+        if how == "random":
+            choices = random_choice(self._parent._nvals, k)
+        elif how == "first" or info["is_iso"] and how in {"largest", "smallest"}:
+            choices = slice(None, k)
+        elif how == "last":
+            choices = slice(-k, None)
+        elif how == "largest":
+            choices = np.argpartition(info["values"], -k)[-k:]  # not sorted
+        elif how == "smallest":
+            choices = np.argpartition(info["values"], k)[:k]  # not sorted
+        else:
+            raise ValueError(
+                '`how` argument must be one of: "random", "first", "last", "largest", "smallest"'
+            )
+        newinfo = dict(info, indices=info["indices"][choices])
+        if not info["is_iso"]:
+            newinfo["values"] = info["values"][choices]
+        if k == 1:
+            newinfo["sorted_index"] = True
+        elif not do_sort:
+            newinfo["sorted_index"] = False
+        return gb.Vector.ss.import_sparse(
+            **newinfo,
+            take_ownership=True,
+        )
+
+
+@njit
+def random_choice(n, k):  # pragma: no cover
+    if k >= n:
+        return np.arange(n, dtype=np.uint64)
+    choices = np.empty(k, dtype=np.uint64)
+    if 2 * k <= n:
+        if k == 1:
+            # Select a single edge
+            choices[0] = np.random.randint(n)
+        elif k == 2:
+            # Select two edges
+            choices[0] = np.random.randint(n)
+            choices[1] = np.random.randint(n - 1)
+            if choices[0] <= choices[1]:
+                choices[1] += 1
+        else:
+            # Move the ones we want to keep to the front of `a`
+            a = np.arange(n)
+            for i in range(k):
+                j = np.random.randint(i, n)
+                a[i], a[j] = a[j], a[i]
+                choices[i] = a[i]
+    elif k == n - 1:
+        # Select all but one edge
+        j = np.random.randint(n)
+        for i in range(j):
+            choices[i] = i
+        for i in range(j + 1, n):
+            choices[i - 1] = i
+    elif k == n - 2:
+        # Select all but two edges
+        j = np.random.randint(n)
+        k = np.random.randint(n - 1)
+        if j <= k:
+            k += 1
+            j, k = k, j
+        for i in range(k):
+            choices[i] = i
+        for i in range(k + 1, j):
+            choices[i - 1] = i
+        for i in range(j + 1, n):
+            choices[i - 2] = i
+    else:
+        # Move the ones we don't want to keep to the front of `a`
+        a = np.arange(n)
+        for i in range(n - k):
+            j = np.random.randint(i, n)
+            a[i], a[j] = a[j], a[i]
+        n -= k
+        for i in range(k):
+            choices[i] = a[n + i]
+    return choices

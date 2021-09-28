@@ -97,12 +97,12 @@ def __getattr__(name):
     if name not in _semiring_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     words = name.split("_")
-    for i in range(1, len(words)):
+    for i in range(1, len(words)):  # pragma: no branch
         monoid_name = "_".join(words[:i])
         if not hasattr(monoid.numpy, monoid_name):
             continue
         binary_name = "_".join(words[i:])
-        if hasattr(binary.numpy, binary_name):
+        if hasattr(binary.numpy, binary_name):  # pragma: no branch
             break
     operator.Semiring.register_new(
         f"numpy.{name}",

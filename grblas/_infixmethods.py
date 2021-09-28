@@ -67,6 +67,7 @@ print(
 )
 """
 from . import binary, unary
+from .dtypes import BOOL
 from .infix import MatrixInfixExpr, VectorInfixExpr
 from .matrix import Matrix, MatrixExpression, TransposedMatrix
 from .utils import output_type
@@ -100,6 +101,11 @@ def __abs__(self):
 
 
 def __invert__(self):
+    if self.dtype != BOOL:
+        raise TypeError(
+            f"The invert operator, `~`, is not supported for {self.dtype.name} dtype.  "
+            "It is only supported for BOOL dtype."
+        )
     return unary.lnot(self)
 
 

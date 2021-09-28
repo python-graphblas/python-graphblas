@@ -14,3 +14,7 @@ if __name__ == "__main__":
         match="grblas objects accessed prior to manual initialization",
     ):
         grblas.init()
+    # hack it to test this edge case
+    grblas._init_params = None
+    grblas.init(blocking=None)
+    grblas.init(blocking=None)

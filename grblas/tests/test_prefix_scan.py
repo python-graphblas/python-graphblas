@@ -12,7 +12,7 @@ except ImportError:  # pragma: no cover
 
 
 @pytest.mark.skipif("not ss")
-@pytest.mark.parametrize("method", ["scan_rows", "scan_columns"])
+@pytest.mark.parametrize("method", ["scan_rowwise", "scan_columnwise"])
 @pytest.mark.parametrize("length", list(range(34)))
 @pytest.mark.parametrize("do_random", [False, True])
 def test_scan_matrix(method, length, do_random):
@@ -28,11 +28,11 @@ def test_scan_matrix(method, length, do_random):
         M = Matrix.ss.import_fullr(values=A, name="A")
         expected = A.cumsum(axis=1)
 
-    if method == "scan_rows":
-        R = M.ss.scan_rows()
+    if method == "scan_rowwise":
+        R = M.ss.scan_rowwise()
     else:
         M = M.T.new(name="A")
-        R = M.ss.scan_columns(binary.plus).T.new()
+        R = M.ss.scan_columnwise(binary.plus).T.new()
 
     result = gb.io.to_numpy(R)
     try:

@@ -370,6 +370,8 @@ def test_ewise_add(v):
     b2 = Vector.from_values([0, 1, 2, 3], [True, True, False, False])
     with pytest.raises(KeyError, match="plus does not work"):
         b1.ewise_add(b2).new()
+    with pytest.raises(TypeError, match="for BOOL datatype"):
+        binary.plus(b1 | b2)
 
 
 def test_extract(v):
@@ -1167,10 +1169,11 @@ def test_outer(v):
 
 @autocompute
 def test_auto(v):
-    expected = binary.times(v & v).new()
+    v = v.dup(dtype=bool)
+    expected = binary.land(v & v).new()
     assert 0 not in expected
     assert 1 in expected
-    for expr in [(v & v), binary.times(v & v)]:
+    for expr in [(v & v), binary.land(v & v)]:
         assert expr.size == expected.size
         assert expr.dtype == expected.dtype
         assert expr.shape == expected.shape
@@ -1202,14 +1205,14 @@ def test_auto(v):
         assert expr._name_html != expected._name_html
         assert expr._carg != expected._carg
         for method in [
-            "ewise_add",
-            "ewise_mult",
-            "inner",
-            "outer",
-            "__matmul__",
+            # "ewise_add",
+            # "ewise_mult",
+            # "inner",
+            # "outer",
+            # "__matmul__",
             "__and__",
             "__or__",
-            "__rmatmul__",
+            # "__rmatmul__",
             "__rand__",
             "__ror__",
         ]:
@@ -1223,14 +1226,15 @@ def test_auto(v):
             assert val1.isequal(val2.new())
             assert val1.isequal(val3.new())
             assert val1.isequal(val4.new())
-        s1 = expected.reduce().new()
-        s2 = expr.reduce()
+        s1 = expected.reduce(monoid.lor).new()
+        s2 = expr.reduce(monoid.lor)
         assert s1.isequal(s2.new())
         assert s1.isequal(s2)
         assert s1.is_empty == s2.is_empty
-        assert -s1 == -s2
+        assert ~s1 == ~s2
         assert complex(s1) == complex(s2)
         assert_array_equal(np.array([s1]), np.array([s2]))
+        assert expected.isequal(expr.new())
     w = v.dup()
     expected = v.dup()
     expected(binary.plus) << (w & w).new()
@@ -1240,7 +1244,7 @@ def test_auto(v):
 @autocompute
 def test_auto_assign(v):
     expected = v.dup()
-    w = v[1:4].new()
+    w = v[1:4].new(dtype=bool)
     expr = w & w
     expected[:3] = expr.new()
     v[:3] = expr
@@ -1252,9 +1256,10 @@ def test_auto_assign(v):
 
 @autocompute
 def test_expr_is_like_vector(v):
-    attrs = {attr for attr, val in inspect.getmembers(v)}
-    expr_attrs = {attr for attr, val in inspect.getmembers(binary.times(v & v))}
-    infix_attrs = {attr for attr, val in inspect.getmembers(v & v)}
+    w = v.dup(dtype=bool)
+    attrs = {attr for attr, val in inspect.getmembers(w)}
+    expr_attrs = {attr for attr, val in inspect.getmembers(binary.times(w & w))}
+    infix_attrs = {attr for attr, val in inspect.getmembers(w & w)}
     # Should we make any of these raise informative errors?
     expected = {
         "__call__",
@@ -1282,3 +1287,93 @@ def test_expr_is_like_vector(v):
         "_expect_op",
         "_expect_type",
     }
+
+
+def test_random(v):
+    r1 = Vector.from_values([1], [1], size=v.size)
+    r2 = Vector.from_values([3], [1], size=v.size)
+    r3 = Vector.from_values([4], [2], size=v.size)
+    r4 = Vector.from_values([6], [0], size=v.size)
+    seen = set()
+    for i in range(1000000):  # pragma: no branch
+        r = v.ss.selectk("random", 1)
+        if r.isequal(r1):
+            seen.add("r1")
+        elif r.isequal(r2):
+            seen.add("r2")
+        elif r.isequal(r3):
+            seen.add("r3")
+        elif r.isequal(r4):
+            seen.add("r4")
+        else:  # pragma: no cover
+            raise AssertionError()
+        if len(seen) == 4:
+            break
+    for k in range(1, v.nvals + 1):
+        r = v.ss.selectk("random", k)
+        assert r.nvals == k
+        assert monoid.any(v & r).new().nvals == k
+    # test iso
+    v(v.S) << 1
+    for k in range(1, v.nvals + 1):
+        r = v.ss.selectk("random", k)
+        assert r.nvals == k
+        assert monoid.any(v & r).new().nvals == k
+    with pytest.raises(ValueError):
+        v.ss.selectk("bad", 1)
+
+
+def test_firstk(v):
+    data = [[1, 3, 4, 6], [1, 1, 2, 0]]
+    iso_data = [[1, 3, 4, 6], [1, 1, 1, 1]]
+    iso_v = v.dup()
+    iso_v(iso_v.S) << 1
+    for w, data in [(v, data), (iso_v, iso_data)]:
+        for k in range(w.nvals + 1):
+            x = w.ss.selectk("first", k)
+            expected = Vector.from_values(data[0][:k], data[1][:k], size=w.size)
+            assert x.isequal(expected)
+    with pytest.raises(ValueError):
+        v.ss.selectk("first", -1)
+
+
+def test_lastk(v):
+    data = [[1, 3, 4, 6], [1, 1, 2, 0]]
+    iso_data = [[1, 3, 4, 6], [1, 1, 1, 1]]
+    iso_v = v.dup()
+    iso_v(iso_v.S) << 1
+    for w, data in [(v, data), (iso_v, iso_data)]:
+        for k in range(w.nvals + 1):
+            x = w.ss.selectk("last", k)
+            expected = Vector.from_values(data[0][-k:], data[1][-k:], size=w.size)
+            assert x.isequal(expected)
+
+
+def test_largestk(v):
+    w = v.ss.selectk("largest", 1)
+    expected = Vector.from_values([4], [2], size=v.size)
+    assert w.isequal(expected)
+
+    w = v.ss.selectk("largest", 2)
+    expected1 = Vector.from_values([1, 4], [1, 2], size=v.size)
+    expected2 = Vector.from_values([3, 4], [1, 2], size=v.size)
+    assert w.isequal(expected1) or w.isequal(expected2)
+
+    w = v.ss.selectk("largest", 3)
+    expected = Vector.from_values([1, 3, 4], [1, 1, 2], size=v.size)
+    assert w.isequal(expected)
+
+
+def test_smallestk(v):
+    w = v.ss.selectk("smallest", 1)
+    expected = Vector.from_values([6], [0], size=v.size)
+    assert w.isequal(expected)
+
+    w = v.ss.selectk("smallest", 2)
+    expected1 = Vector.from_values([1, 6], [1, 0], size=v.size)
+    expected2 = Vector.from_values([3, 6], [1, 0], size=v.size)
+    assert w.isequal(expected1) or w.isequal(expected2)
+
+    w = v.ss.selectk("smallest", 3)
+    expected = Vector.from_values([1, 3, 6], [1, 1, 0], size=v.size)
+    assert w.isequal(expected)

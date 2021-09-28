@@ -130,13 +130,17 @@ def _expect_op_message(
         elif "Monoid" in values:
             special_message = f"\nYou may do `{op.name}.monoid` to get the Monoid."
     elif op.opclass == "BinaryOp" and op.monoid is None and "Monoid" in values:
-        special_message = f"\nThe BinaryOp {op.name} is not known to be part of a Monoid."
+        special_message = f"\nThe BinaryOp {op.name} is not known to be part of a Monoid"
+        if op.parent.monoid is not None:
+            special_message += f" for {op.type} datatype."
+        else:
+            special_message += "."
     if extra_message:
         extra_message = f"\n{extra_message}"
     return (
         f"Bad type {argmsg}in {type(self).__name__}.{within}(...).\n"
         f"    - Expected type: {expected}.\n"
-        f"    - Got: {op.opclass} ({op.name})."
+        f"    - Got: {op.opclass} ({op})."
         f"{extra_message}"
         f"{special_message}"
     )
@@ -508,7 +512,7 @@ class BaseExpression:
                 raise ValueError(f"No default expr_repr for len(args) == {len(args)}")
         self.expr_repr = expr_repr
         if dtype is None:
-            self.dtype = op.return_type
+            self.dtype = lookup_dtype(op.return_type)
         else:
             self.dtype = dtype
         self._value = None

@@ -269,6 +269,20 @@ def test_neg():
             assert (-empty).value is None
 
 
+def test_invert():
+    empty = Scalar.new(bool)
+    assert empty == ~empty
+    assert (~empty).value is None
+    not_s = Scalar.from_value(0, dtype=bool)
+    s = Scalar.from_value(1, dtype=bool)
+    assert ~s == not_s
+    assert (~s).value == not_s.value
+    assert not (s.value) == not_s.value
+    bad = Scalar.new(int)
+    with pytest.raises(TypeError, match="The invert operator"):
+        ~bad
+
+
 def test_wait(s):
     s.wait()
 

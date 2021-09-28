@@ -1,10 +1,41 @@
 from . import _automethods, binary, utils
+from .dtypes import BOOL
 from .expr import InfixExprBase
 from .matrix import Matrix, MatrixExpression, TransposedMatrix
+from .monoid import land, lor
 from .scalar import Scalar, ScalarExpression
 from .semiring import any_pair
 from .utils import output_type, wrapdoc
 from .vector import Vector, VectorExpression
+
+
+def _ewise_add_to_expr(self):
+    if self._value is not None:
+        return self._value
+    elif self.left.dtype == BOOL and self.right.dtype == BOOL:
+        self._value = self.left.ewise_add(self.right, lor)
+        return self._value
+    raise TypeError(
+        "Bad dtypes for `x | y`!  Automatic computation of `x | y` infix expressions is only valid "
+        f"for BOOL dtypes.  The argument dtypes are {self.left.dtype} and {self.right.dtype}.\n\n"
+        "When auto-computed for boolean dtypes, `x | y` performs ewise_add (union) using LOR.\n\n"
+        "Typical usage is to create an ewise_add expression such as `monoid.plus(x | y)`."
+    )
+
+
+def _ewise_mult_to_expr(self):
+    if self._value is not None:
+        return self._value
+    elif self.left.dtype == BOOL and self.right.dtype == BOOL:
+        self._value = self.left.ewise_mult(self.right, land)
+        return self._value
+    raise TypeError(
+        "Bad dtypes for `x & y`!  Automatic computation of `x & y` infix expressions is only valid "
+        f"for BOOL dtypes.  The argument dtypes are {self.left.dtype} and {self.right.dtype}.\n\n"
+        "When auto-computed for boolean dtypes, `x & y` performs ewise_mult (intersection) using "
+        "LAND.\n\n"
+        "Typical usage is to create an ewise_mult expression such as `monoid.times(x & y)`."
+    )
 
 
 class VectorInfixExpr(InfixExprBase):
@@ -24,7 +55,6 @@ class VectorInfixExpr(InfixExprBase):
         return (self._size,)
 
     # Paste here from _automethods.py
-    _get_value = _automethods._get_value
     S = wrapdoc(Vector.S)(property(_automethods.S))
     V = wrapdoc(Vector.V)(property(_automethods.V))
     __and__ = wrapdoc(Vector.__and__)(property(_automethods.__and__))
@@ -77,12 +107,16 @@ class VectorEwiseAddExpr(VectorInfixExpr):
     _infix = "|"
     _example_op = "plus"
 
+    _to_expr = _ewise_add_to_expr
+
 
 class VectorEwiseMultExpr(VectorInfixExpr):
     __slots__ = ()
     method_name = "ewise_mult"
     _infix = "&"
     _example_op = "times"
+
+    _to_expr = _ewise_mult_to_expr
 
 
 class VectorMatMulExpr(VectorInfixExpr):
@@ -124,7 +158,6 @@ class MatrixInfixExpr(InfixExprBase):
         return (self._nrows, self._ncols)
 
     # Paste here from _automethods.py
-    _get_value = _automethods._get_value
     S = wrapdoc(Matrix.S)(property(_automethods.S))
     T = wrapdoc(Matrix.T)(property(_automethods.T))
     V = wrapdoc(Matrix.V)(property(_automethods.V))
@@ -153,7 +186,9 @@ class MatrixInfixExpr(InfixExprBase):
     name = name.setter(_automethods._set_name)
     nvals = wrapdoc(Matrix.nvals)(property(_automethods.nvals))
     reduce_columns = wrapdoc(Matrix.reduce_columns)(property(_automethods.reduce_columns))
+    reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
     reduce_rows = wrapdoc(Matrix.reduce_rows)(property(_automethods.reduce_rows))
+    reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
     ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
@@ -180,12 +215,16 @@ class MatrixEwiseAddExpr(MatrixInfixExpr):
     _infix = "|"
     _example_op = "plus"
 
+    _to_expr = _ewise_add_to_expr
+
 
 class MatrixEwiseMultExpr(MatrixInfixExpr):
     __slots__ = ()
     method_name = "ewise_mult"
     _infix = "&"
     _example_op = "times"
+
+    _to_expr = _ewise_mult_to_expr
 
 
 class MatrixMatMulExpr(MatrixInfixExpr):
@@ -222,7 +261,6 @@ class ScalarMatMulExpr(InfixExprBase):
     dup = new
 
     # Paste here from _automethods.py
-    _get_value = _automethods._get_value
     __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
     __bool__ = wrapdoc(Scalar.__bool__)(property(_automethods.__bool__))
     __complex__ = wrapdoc(Scalar.__complex__)(property(_automethods.__complex__))
@@ -230,6 +268,7 @@ class ScalarMatMulExpr(InfixExprBase):
     __float__ = wrapdoc(Scalar.__float__)(property(_automethods.__float__))
     __index__ = wrapdoc(Scalar.__index__)(property(_automethods.__index__))
     __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
+    __invert__ = wrapdoc(Scalar.__invert__)(property(_automethods.__invert__))
     __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
     _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
