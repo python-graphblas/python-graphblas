@@ -257,6 +257,4 @@ def test_npsemiring():
             if not grblas.config["mapnumpy"] and "logical" not in name:
                 assert not hasattr(npsemiring, semiring.name), name
         else:
-            if monoid.name.startswith("numpy.") and binary.name.startswith("numpy."):
-                assert hasattr(npsemiring, semiring.name), name
-            assert hasattr(npsemiring, f"{monoid_name}_{binary_name}"), name
+            assert hasattr(npsemiring, f"{monoid_name}_{binary_name}"), (name, semiring.name)

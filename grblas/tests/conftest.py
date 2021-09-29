@@ -12,7 +12,9 @@ def pytest_configure(config):
     backend = config.getoption("--backend", "suitesparse")
     blocking = config.getoption("--blocking", True)
     record = config.getoption("--record", False)
-    mapnumpy = config.getoption("--mapnumpy", np.random.rand() < 0.5)  # heh
+    mapnumpy = config.getoption("--mapnumpy", None)
+    if mapnumpy is None:  # pragma: no branch
+        mapnumpy = np.random.rand() < 0.5  # heh
 
     grblas.config.set(autocompute=False, mapnumpy=mapnumpy)
 

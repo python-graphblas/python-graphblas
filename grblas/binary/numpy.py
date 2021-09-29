@@ -90,6 +90,37 @@ _numpy_to_graphblas = {
 # Not included: maximum, minimum, gcd, hypot, logaddexp, logaddexp2
 # lcm, left_shift, nextafter, right_shift
 
+_commutative = {
+    "add",
+    "bitwise_and",
+    "bitwise_or",
+    "bitwise_xor",
+    "equal",
+    "fmax",
+    "fmin",
+    "gcd",
+    "hypot",
+    "lcm",
+    "logaddexp",
+    "logaddexp2",
+    "logical_and",
+    "logical_or",
+    "logical_xor",
+    "maximum",
+    "minimum",
+    "multiply",
+    "not_equal",
+}
+_commutes_to = {
+    "greater": "less",
+    "greater_equal": "less_equal",
+    "less": "greater",
+    "less_equal": "greater_equal",
+}
+# Don't commute: arctan2, copysign, divide, floor_divide, fmod, ldexp, left_shift,
+# mod, nextafter, power, remainder, right_shift, subtract, true_divide.
+# If desired, we could create r-versions of these so they can commute to something.
+
 
 def __dir__():
     return __all__
@@ -103,4 +134,11 @@ def __getattr__(name):
     else:
         numpy_func = getattr(_np, name)
         _operator.BinaryOp.register_new(f"numpy.{name}", lambda x, y: numpy_func(x, y))
-    return globals()[name]
+    rv = globals()[name]
+    if name in _commutative:
+        rv.commutes_to = rv
+    elif name in _commutes_to:
+        right = getattr(_binary.numpy, _commutes_to[name])
+        rv.commutes_to = rv.commutes_to or right
+        right.commutes_to = right.commutes_to or rv
+    return rv

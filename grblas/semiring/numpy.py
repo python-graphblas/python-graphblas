@@ -100,9 +100,9 @@ def __getattr__(name):
         binary_name = "_".join(words[i:])
         if hasattr(_binary.numpy, binary_name):  # pragma: no branch
             break
-    _operator.Semiring.register_new(
-        f"numpy.{name}",
+    _operator.get_semiring(
         getattr(_monoid.numpy, monoid_name),
         getattr(_binary.numpy, binary_name),
+        name=f"numpy.{name}",
     )
     return globals()[name]
