@@ -1,3 +1,5 @@
+import itertools
+
 import numpy as np
 import pytest
 
@@ -598,6 +600,7 @@ def test_nested_names():
         UnaryOp.register_new("incrementers.plus_four", bad_will_overwrite_path)
 
 
+@pytest.mark.slow
 def test_op_namespace():
     from grblas import op
 
@@ -619,6 +622,7 @@ def test_op_namespace():
         op.numpy.bad_attr
 
 
+@pytest.mark.slow
 def test_binaryop_attributes():
     assert binary.plus[int].monoid is monoid.plus[int]
     assert binary.minus[int].monoid is None
@@ -655,6 +659,7 @@ def test_binaryop_attributes():
             assert all(val[type_].monoid is None for type_ in val.types)
 
 
+@pytest.mark.slow
 def test_monoid_attributes():
     assert monoid.plus[int].binaryop is binary.plus[int]
     assert monoid.plus[int].identity == 0
@@ -687,6 +692,7 @@ def test_monoid_attributes():
             assert x.identity is not None
 
 
+@pytest.mark.slow
 def test_semiring_attributes():
     assert semiring.min_plus[int].monoid is monoid.min[int]
     assert semiring.min_plus[int].binaryop is binary.plus[int]
@@ -747,6 +753,7 @@ def test_div_semirings():
     assert result.dtype == dtypes.INT64
 
 
+@pytest.mark.slow
 def test_get_semiring():
     sr = get_semiring(monoid.plus, binary.times)
     assert sr is semiring.plus_times
@@ -781,3 +788,78 @@ def test_get_semiring():
     sr = get_semiring(monoid.plus, binary.numpy.copysign)
     assert sr.monoid is monoid.plus
     assert sr.binaryop is binary.numpy.copysign
+
+
+def test_create_semiring():
+    # stress test / sanity check
+    monoid_names = {x for x in dir(monoid) if not x.startswith("_")}
+    binary_names = {x for x in dir(binary) if not x.startswith("_")}
+    for monoid_name, binary_name in itertools.product(monoid_names, binary_names):
+        cur_monoid = getattr(monoid, monoid_name)
+        if not isinstance(cur_monoid, Monoid):
+            continue
+        cur_binary = getattr(binary, binary_name)
+        if not isinstance(cur_binary, BinaryOp):
+            continue
+        Semiring.register_anonymous(cur_monoid, cur_binary)
+
+
+@pytest.mark.slow
+def test_commutes():
+    # Untyped
+    assert binary.plus.commutes_to is binary.plus
+    assert binary.plus.is_commutative
+    assert binary.first.commutes_to is binary.second
+    assert not binary.first.is_commutative
+    assert monoid.plus.commutes_to is monoid.plus
+    assert monoid.plus.is_commutative
+    assert binary.atan2.commutes_to is None
+    assert not binary.atan2.is_commutative
+    assert semiring.plus_times.commutes_to is semiring.plus_times
+    assert semiring.plus_times.is_commutative
+    assert semiring.any_first.commutes_to is semiring.any_second
+    assert semiring.plus_times.is_commutative
+    assert semiring.min_secondi.commutes_to is semiring.min_firstj
+    assert semiring.plus_pow.commutes_to is None
+    assert not semiring.plus_pow.is_commutative
+    assert binary.isclose.commutes_to is binary.isclose
+    assert binary.isclose.is_commutative
+    assert binary.isclose(0.1).commutes_to is binary.isclose(0.1)
+    assert binary.floordiv.commutes_to is binary.rfloordiv
+    assert not binary.floordiv.is_commutative
+    assert binary.numpy.add.commutes_to is binary.numpy.add
+    assert binary.numpy.add.is_commutative
+    assert binary.numpy.less.commutes_to is binary.numpy.greater
+    assert not binary.numpy.less.is_commutative
+
+    # Typed
+    assert binary.plus[int].commutes_to is binary.plus[int]
+    assert binary.plus[int].is_commutative
+    assert binary.first[int].commutes_to is binary.second[int]
+    assert not binary.first[int].is_commutative
+    assert monoid.plus[int].commutes_to is monoid.plus[int]
+    assert monoid.plus[int].is_commutative
+    assert binary.atan2[int].commutes_to is None
+    assert not binary.atan2[int].is_commutative
+    assert semiring.plus_times[int].commutes_to is semiring.plus_times[int]
+    assert semiring.plus_times[int].is_commutative
+    assert semiring.any_first[int].commutes_to is semiring.any_second[int]
+    assert semiring.plus_times[int].is_commutative
+    assert semiring.min_secondi[int].commutes_to is semiring.min_firstj[int]
+    assert semiring.plus_pow[int].commutes_to is None
+    assert not semiring.plus_pow[int].is_commutative
+    assert binary.isclose(0.1)[int].commutes_to is binary.isclose(0.1)[int]
+    assert binary.floordiv[int].commutes_to is binary.rfloordiv[int]
+    assert not binary.floordiv[int].is_commutative
+    assert binary.numpy.add[int].commutes_to is binary.numpy.add[int]
+    assert binary.numpy.add[int].is_commutative
+    assert binary.numpy.less[int].commutes_to is binary.numpy.greater[int]
+    assert not binary.numpy.less[int].is_commutative
+
+    # Stress test (this can create extra semirings)
+    names = dir(semiring)
+    for name in names:
+        val = getattr(semiring, name)
+        if not hasattr(val, "commutes_to"):
+            continue
+        assert val.commutes_to is None or isinstance(val.commutes_to, type(val))

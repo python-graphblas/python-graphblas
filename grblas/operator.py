@@ -8,7 +8,7 @@ from types import FunctionType, ModuleType
 import numba
 import numpy as np
 
-from . import binary, ffi, lib, monoid, op, semiring, unary
+from . import binary, config, ffi, lib, monoid, op, semiring, unary
 from .dtypes import INT8, _sample_values, _supports_complex, lookup_dtype, unify
 from .exceptions import UdfParseError, check_status_carg
 from .expr import InfixExprBase
@@ -125,10 +125,27 @@ class TypedBuiltinBinaryOp(TypedOpBase):
         if rv is not None and self.type in rv._typed_ops:
             return rv[self.type]
 
+    @property
+    def commutes_to(self):
+        commutes_to = self.parent.commutes_to
+        if commutes_to is not None and self.type in commutes_to._typed_ops:
+            return commutes_to[self.type]
+
+    @property
+    def _semiring_commutes_to(self):
+        commutes_to = self.parent._semiring_commutes_to
+        if commutes_to is not None and self.type in commutes_to._typed_ops:
+            return commutes_to[self.type]
+
+    @property
+    def is_commutative(self):
+        return self.commutes_to is self
+
 
 class TypedBuiltinMonoid(TypedOpBase):
     __slots__ = "_identity"
     opclass = "Monoid"
+    is_commutative = True
 
     def __init__(self, parent, name, type_, return_type, gb_obj, gb_name):
         super().__init__(parent, name, type_, return_type, gb_obj, gb_name)
@@ -153,6 +170,10 @@ class TypedBuiltinMonoid(TypedOpBase):
     def binaryop(self):
         return getattr(binary, self.name)[self.type]
 
+    @property
+    def commutes_to(self):
+        return self
+
 
 class TypedBuiltinSemiring(TypedOpBase):
     __slots__ = ()
@@ -175,11 +196,21 @@ class TypedBuiltinSemiring(TypedOpBase):
         monoid_name, binary_name = self.name.split("_", 1)
         binop = getattr(binary, binary_name)[self.type]
         val = getattr(monoid, monoid_name)
-        if binop.return_type not in val.types and binary_name in {"land", "lor", "lxor", "lxnor"}:
-            # e.g., with `plus_land`, `land` always returns a BOOL, but `plus` doesn't
-            # operate on BOOL, so assume the return of `land` is coerced.
-            return val[self.type]
         return val[binop.return_type]
+
+    @property
+    def commutes_to(self):
+        binop = self.binaryop
+        commutes_to = binop._semiring_commutes_to or binop.commutes_to
+        if commutes_to is None:
+            return
+        if commutes_to is binop:
+            return self
+        return get_semiring(self.monoid, commutes_to)
+
+    @property
+    def is_commutative(self):
+        return self.binaryop.is_commutative
 
 
 class TypedUserUnaryOp(TypedOpBase):
@@ -213,12 +244,16 @@ class TypedUserBinaryOp(TypedOpBase):
                 self._monoid = monoid[self.type]
         return self._monoid
 
+    commutes_to = TypedBuiltinBinaryOp.commutes_to
+    _semiring_commutes_to = TypedBuiltinBinaryOp._semiring_commutes_to
+    is_commutative = TypedBuiltinBinaryOp.is_commutative
     __call__ = TypedBuiltinBinaryOp.__call__
 
 
 class TypedUserMonoid(TypedOpBase):
     __slots__ = "binaryop", "identity"
     opclass = "Monoid"
+    is_commutative = True
 
     def __init__(self, parent, name, type_, return_type, gb_obj, binaryop, identity):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
@@ -226,6 +261,7 @@ class TypedUserMonoid(TypedOpBase):
         self.identity = identity
         binaryop._monoid = self
 
+    commutes_to = TypedBuiltinMonoid.commutes_to
     __call__ = TypedBuiltinMonoid.__call__
 
 
@@ -238,6 +274,8 @@ class TypedUserSemiring(TypedOpBase):
         self.monoid = monoid
         self.binaryop = binaryop
 
+    commutes_to = TypedBuiltinSemiring.commutes_to
+    is_commutative = TypedBuiltinSemiring.is_commutative
     __call__ = TypedBuiltinSemiring.__call__
 
 
@@ -271,7 +309,7 @@ class ParameterizedUnaryOp(ParameterizedUdf):
 
 
 class ParameterizedBinaryOp(ParameterizedUdf):
-    __slots__ = "func", "__signature__", "_monoid", "_cached_call"
+    __slots__ = "func", "__signature__", "_monoid", "_cached_call", "commutes_to"
 
     def __init__(self, name, func, *, anonymous=False):
         self.func = func
@@ -283,6 +321,7 @@ class ParameterizedBinaryOp(ParameterizedUdf):
         method = self._call_to_cache.__get__(self, type(self))
         self._cached_call = lru_cache(maxsize=1024)(method)
         self.__call__ = self._call
+        self.commutes_to = None
 
     def _call_to_cache(self, *args, **kwargs):
         binary = self.func(*args, **kwargs)
@@ -301,15 +340,21 @@ class ParameterizedBinaryOp(ParameterizedUdf):
             except Exception:
                 binop._monoid = None
             assert binop._monoid is not binop
+        if self.is_commutative:
+            binop.commutes_to = binop
+        # Don't bother yet with creating `binop.commutes_to` (but we could!)
         return binop
 
     @property
     def monoid(self):
         return self._monoid
 
+    is_commutative = TypedBuiltinBinaryOp.is_commutative
+
 
 class ParameterizedMonoid(ParameterizedUdf):
     __slots__ = "binaryop", "identity", "__signature__"
+    is_commutative = True
 
     def __init__(self, name, binaryop, identity, *, anonymous=False):
         if not type(binaryop) is ParameterizedBinaryOp:
@@ -341,6 +386,8 @@ class ParameterizedMonoid(ParameterizedUdf):
         if callable(identity):
             identity = identity(*args, **kwargs)
         return Monoid.register_anonymous(binary, identity, self.name)
+
+    commutes_to = TypedBuiltinMonoid.commutes_to
 
 
 class ParameterizedSemiring(ParameterizedUdf):
@@ -380,6 +427,9 @@ class ParameterizedSemiring(ParameterizedUdf):
         if type(binary) is ParameterizedBinaryOp:
             binary = binary(*args, **kwargs)
         return Semiring.register_anonymous(monoid, binary, self.name)
+
+    commutes_to = TypedBuiltinSemiring.commutes_to
+    is_commutative = TypedBuiltinSemiring.is_commutative
 
 
 class OpBase:
@@ -703,7 +753,7 @@ class UnaryOp(OpBase):
 
 
 class BinaryOp(OpBase):
-    __slots__ = "_monoid"
+    __slots__ = "_monoid", "commutes_to", "_semiring_commutes_to"
     _module = binary
     _modname = "binary"
     _typed_class = TypedBuiltinBinaryOp
@@ -729,6 +779,11 @@ class BinaryOp(OpBase):
                 "|SECONDI1|SECONDI|SECONDJ1|SECONDJ)"
                 "_(INT8|INT16|INT32|INT64|UINT8|UINT16|UINT32|UINT64)$"
             ),
+            # These are coerced to 0 or 1, but don't return BOOL
+            re.compile(
+                "^GxB_(LOR|LAND|LXOR|LXNOR)_"
+                "(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$"
+            ),
         ],
         "re_exprs_return_bool": [
             re.compile("^GrB_(LOR|LAND|LXOR|LXNOR)$"),
@@ -736,14 +791,60 @@ class BinaryOp(OpBase):
                 "^GrB_(EQ|NE|GT|LT|GE|LE)_"
                 "(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$"
             ),
-            re.compile(
-                "^GxB_(LOR|LAND|LXOR)_"
-                "(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$"
-            ),
             re.compile("^GxB_(EQ|NE)_(FC32|FC64)$"),
         ],
         "re_exprs_return_complex": [re.compile("^GxB_(CMPLX)_(FP32|FP64)$")],
     }
+    _commutes_to = {
+        # builtins
+        "cdiv": "rdiv",
+        "first": "second",
+        "ge": "le",
+        "gt": "lt",
+        "isge": "isle",
+        "isgt": "islt",
+        "minus": "rminus",
+        # special
+        "firsti": "secondi",
+        "firsti1": "secondi1",
+        "firstj": "secondj",
+        "firstj1": "secondj1",
+        # custom
+        "absfirst": "abssecond",
+        "floordiv": "rfloordiv",
+        "truediv": "rtruediv",
+    }
+    _commutes_to_in_semiring = {
+        "firsti": "secondj",
+        "firsti1": "secondj1",
+        "firstj": "secondi",
+        "firstj1": "secondi1",
+    }
+    _commutative = {
+        # monoids
+        "any",
+        "band",
+        "bor",
+        "bxnor",
+        "bxor",
+        "eq",
+        "land",
+        "lor",
+        "lxnor",
+        "lxor",
+        "max",
+        "min",
+        "plus",
+        "times",
+        # other
+        "hypot",
+        "isclose",
+        "iseq",
+        "isne",
+        "ne",
+        "pair",
+    }
+    # Don't commute: atan2, bclr, bget, bset, bshift, cmplx, copysign, fmod, ldexp, pow, remainder
 
     @classmethod
     def _build(cls, name, func, *, anonymous=False):
@@ -878,24 +979,28 @@ class BinaryOp(OpBase):
         # We are effectively hacking cdiv to always return floating point values
         # If the inputs are FP32, we use DIV_FP32; use DIV_FP64 for all other input dtypes
         truediv = binary.truediv = BinaryOp("truediv")
-        for dtype in binary.cdiv.types:
-            float_type = "FP32" if dtype == "FP32" else "FP64"
-            orig_op = binary.cdiv[float_type]
-            op = TypedBuiltinBinaryOp(
-                truediv,
-                "truediv",
-                dtype,
-                binary.cdiv.types[float_type],
-                orig_op.gb_obj,
-                orig_op.gb_name,
-            )
-            truediv._add(op)
+        rtruediv = binary.rtruediv = BinaryOp("rtruediv")
+        for (new_op, builtin_op) in [(truediv, binary.cdiv), (rtruediv, binary.rdiv)]:
+            for dtype in builtin_op.types:
+                float_type = "FP32" if dtype == "FP32" else "FP64"
+                orig_op = builtin_op[float_type]
+                op = TypedBuiltinBinaryOp(
+                    new_op,
+                    new_op.name,
+                    dtype,
+                    builtin_op.types[float_type],
+                    orig_op.gb_obj,
+                    orig_op.gb_name,
+                )
+                new_op._add(op)
         # Add floordiv
         # cdiv truncates towards 0, while floordiv truncates towards -inf
-        BinaryOp.register_new("floordiv", lambda x, y: x // y)
+        BinaryOp.register_new("floordiv", lambda x, y: x // y)  # cast to integer
+        BinaryOp.register_new("rfloordiv", lambda x, y: y // x)  # cast to integer
 
         # For aggregators
         BinaryOp.register_new("absfirst", lambda x, y: abs(x))
+        BinaryOp.register_new("abssecond", lambda x, y: abs(y))
 
         def isclose(rel_tol=1e-7, abs_tol=0.0):
             def inner(x, y):
@@ -956,12 +1061,32 @@ class BinaryOp(OpBase):
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
                             op.coercions[dtype] = target_type
+        # Not valid input dtypes
+        del binary.ldexp["FP32"]
+        del binary.ldexp["FP64"]
+        # Fill in commutes info
+        for left, right in cls._commutes_to.items():
+            left = getattr(binary, left)
+            right = getattr(binary, right)
+            left.commutes_to = right
+            right.commutes_to = left
+        for op in cls._commutative:
+            op = getattr(binary, op)
+            op.commutes_to = op
+        for left, right in cls._commutes_to_in_semiring.items():
+            left = getattr(binary, left)
+            right = getattr(binary, right)
+            left._semiring_commutes_to = right
+            right._semiring_commutes_to = left
 
     def __init__(self, name, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
         self._monoid = None
+        self.commutes_to = None
+        self._semiring_commutes_to = None
 
     __call__ = TypedBuiltinBinaryOp.__call__
+    is_commutative = TypedBuiltinBinaryOp.is_commutative
 
     @property
     def monoid(self):
@@ -972,6 +1097,7 @@ class BinaryOp(OpBase):
 
 class Monoid(OpBase):
     __slots__ = "_binaryop"
+    is_commutative = True
     _module = monoid
     _modname = "monoid"
     _typed_class = TypedBuiltinMonoid
@@ -1099,6 +1225,7 @@ class Monoid(OpBase):
                 cur_op.coercions[dtype] = "BOOL"
                 cur_op._typed_ops[dtype] = bool_op
 
+    commutes_to = TypedBuiltinMonoid.commutes_to
     __call__ = TypedBuiltinMonoid.__call__
 
 
@@ -1156,7 +1283,11 @@ class Semiring(OpBase):
             binary_out = binary_func.return_type
             # Unfortunately, we can't have user-defined monoids over bools yet
             # because numba can't compile correctly.
-            if binary_out not in monoid.types:
+            if (
+                binary_out not in monoid.types
+                # Are all coercions bad, or just to bool?
+                or monoid.coercions.get(binary_out, binary_out) != binary_out
+            ):
                 continue
             binary_out = lookup_dtype(binary_out)
             new_semiring = ffi_new("GrB_Semiring*")
@@ -1349,6 +1480,8 @@ class Semiring(OpBase):
         # Must be builtin
         return getattr(monoid, self.name.split("_")[0])
 
+    commutes_to = TypedBuiltinSemiring.commutes_to
+    is_commutative = TypedBuiltinSemiring.is_commutative
     __call__ = TypedBuiltinSemiring.__call__
 
 
@@ -1383,7 +1516,7 @@ def find_opclass(gb_op):
     return gb_op, opclass
 
 
-def get_semiring(monoid, binaryop):
+def get_semiring(monoid, binaryop, name=None):
     """Get or create a Semiring object from a monoid and binaryop.
 
     If either are typed, then the returned semiring will also be typed.
@@ -1424,15 +1557,45 @@ def get_semiring(monoid, binaryop):
         binary_type = binaryop.type
         binaryop = binaryop.parent
     if monoid._anonymous or binaryop._anonymous:
-        rv = Semiring.register_anonymous(monoid, binaryop)
+        rv = Semiring.register_anonymous(monoid, binaryop, name=name)
     else:
-        name = f"{monoid.name}_{binaryop.name}".replace(".", "_")
-        rv = getattr(semiring, name, None)
+        *monoid_prefix, monoid_name = monoid.name.rsplit(".", 1)
+        *binary_prefix, binary_name = binaryop.name.rsplit(".", 1)
+        if (
+            monoid_prefix
+            and binary_prefix
+            and monoid_prefix == binary_prefix
+            or config.get("mapnumpy")
+            and (
+                monoid_prefix == ["numpy"]
+                and not binary_prefix
+                or binary_prefix == ["numpy"]
+                and not monoid_prefix
+            )
+        ):
+            canonical_name = (
+                ".".join(monoid_prefix or binary_prefix) + f".{monoid_name}_{binary_name}"
+            )
+        else:
+            canonical_name = f"{monoid.name}_{binaryop.name}".replace(".", "_")
+        if name is None:
+            name = canonical_name
+
+        module, funcname = Semiring._remove_nesting(canonical_name, strict=False)
+        rv = module.__dict__.get(funcname)
+        if rv is None and name != canonical_name:
+            module, funcname = Semiring._remove_nesting(name, strict=False)
+            rv = module.__dict__.get(funcname)
         if rv is None:
-            rv = Semiring.register_new(name, monoid, binaryop)
+            rv = Semiring.register_new(canonical_name, monoid, binaryop)
         elif rv.monoid is not monoid or rv.binaryop is not binaryop:  # pragma: no cover
             # It's not the object we expect (can this happen?)
-            rv = Semiring.register_anonymous(monoid, binaryop)
+            rv = Semiring.register_anonymous(monoid, binaryop, name=name)
+        if name != canonical_name:
+            module, funcname = Semiring._remove_nesting(name, strict=False)
+            if funcname not in module.__dict__:  # pragma: no branch
+                setattr(module, funcname, rv)
+
     if binary_type is not None:
         return rv[binary_type]
     elif monoid_type is not None:

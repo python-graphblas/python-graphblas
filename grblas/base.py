@@ -55,7 +55,7 @@ def _expect_type_message(
         if type(x) in types:
             return x, None
         elif output_type(x) in types:
-            if config["autocompute"]:
+            if config.get("autocompute"):
                 return x._get_value(), None
             extra_message = extra_message or f"{extra_message}\n\n"
             extra_message += (
@@ -65,7 +65,7 @@ def _expect_type_message(
     elif type(x) is types:
         return x, None
     elif output_type(x) is types:
-        if config["autocompute"]:
+        if config.get("autocompute"):
             return x._get_value(), None
         extra_message = extra_message or f"{extra_message}\n\n"
         extra_message += (
