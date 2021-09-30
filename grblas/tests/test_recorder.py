@@ -151,6 +151,4 @@ def test_record_failed_call():
         BIG.ewise_add(small).new()
     except OutOfMemory:
         pass
-    else:
-        raise RuntimeError("Wait, how much memory does this system have?!")
     assert "ERROR: OutOfMemory" in rec.data[-1]
