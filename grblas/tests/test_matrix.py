@@ -2721,6 +2721,8 @@ def test_infix_sugar(A):
         expr %= 1
     with pytest.raises(TypeError):
         expr **= 1
+    with pytest.raises(TypeError):
+        expr ^= 1
 
 
 @pytest.mark.slow
