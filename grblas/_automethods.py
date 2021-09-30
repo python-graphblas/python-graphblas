@@ -95,6 +95,7 @@ bad_sugar = {
     "__ipow__",
     "__isub__",
     "__itruediv__",
+    "__ixor__",
 }
 # Copy the result of this below
 for name in sorted(common | scalar | vector_matrix | vector | matrix):
@@ -407,3 +408,7 @@ def __isub__(self, other):
 
 def __itruediv__(self, other):
     raise TypeError(f"'__itruediv__' not supported for {type(self).__name__}")
+
+
+def __ixor__(self, other):
+    raise TypeError(f"'__ixor__' not supported for {type(self).__name__}")
