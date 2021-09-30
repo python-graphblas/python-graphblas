@@ -1,4 +1,5 @@
 import grblas as gb
+from grblas.exceptions import OutOfMemory
 from grblas.formatting import CSS_STYLE
 
 
@@ -138,3 +139,16 @@ def test_record_repr_markdown():
         "</details>\n"
         "</div>"
     )
+
+
+def test_record_failed_call():
+    BIG = gb.Vector.new(int, size=2 ** 55)
+    small = gb.Vector.new(int, size=2 ** 55)
+    BIG[:] = 1
+    small[0] = 2
+    rec = gb.Recorder()
+    try:
+        BIG.ewise_add(small).new()
+    except OutOfMemory:
+        pass
+    assert "ERROR: OutOfMemory" in rec.data[-1]
