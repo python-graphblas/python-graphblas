@@ -896,4 +896,6 @@ def test_from_string():
     with pytest.raises(ValueError, match="Unknown binary string"):
         assert binary.from_string("badname")
     with pytest.raises(ValueError, match="Bad semiring string"):
+        assert semiring.from_string("badname")
+    with pytest.raises(ValueError, match="Bad semiring string"):
         semiring.from_string("min.plus.times")
