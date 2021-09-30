@@ -231,7 +231,7 @@ class Vector(BaseType):
         dup_op_given = dup_op is not None
         if not dup_op_given:
             dup_op = binary.plus
-        dup_op = get_typed_op(dup_op, self.dtype)
+        dup_op = get_typed_op(dup_op, self.dtype, kind="binary")
         if dup_op.opclass == "Monoid":
             dup_op = dup_op.binaryop
         else:
@@ -350,7 +350,7 @@ class Vector(BaseType):
         """
         method_name = "ewise_add"
         other = self._expect_type(other, Vector, within=method_name, argname="other")
-        op = get_typed_op(op, self.dtype, other.dtype)
+        op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
         if require_monoid:
             if op.opclass != "BinaryOp" or op.monoid is None:
@@ -382,7 +382,7 @@ class Vector(BaseType):
         """
         method_name = "ewise_mult"
         other = self._expect_type(other, Vector, within=method_name, argname="other")
-        op = get_typed_op(op, self.dtype, other.dtype)
+        op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         expr = VectorExpression(
@@ -407,7 +407,7 @@ class Vector(BaseType):
         other = self._expect_type(
             other, (Matrix, TransposedMatrix), within=method_name, argname="other"
         )
-        op = get_typed_op(op, self.dtype, other.dtype)
+        op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = VectorExpression(
             method_name,
@@ -433,7 +433,7 @@ class Vector(BaseType):
             "apply only accepts UnaryOp with no scalars or BinaryOp with `left` or `right` scalar."
         )
         if left is None and right is None:
-            op = get_typed_op(op, self.dtype)
+            op = get_typed_op(op, self.dtype, kind="unary")
             self._expect_op(
                 op,
                 "UnaryOp",
@@ -456,7 +456,7 @@ class Vector(BaseType):
                         keyword_name="left",
                         extra_message="Literal scalars also accepted.",
                     )
-            op = get_typed_op(op, self.dtype, left.dtype)
+            op = get_typed_op(op, self.dtype, left.dtype, kind="binary")
             if op.opclass == "Monoid":
                 op = op.binaryop
             else:
@@ -482,7 +482,7 @@ class Vector(BaseType):
                         keyword_name="right",
                         extra_message="Literal scalars also accepted.",
                     )
-            op = get_typed_op(op, self.dtype, right.dtype)
+            op = get_typed_op(op, self.dtype, right.dtype, kind="binary")
             if op.opclass == "Monoid":
                 op = op.binaryop
             else:
@@ -514,7 +514,7 @@ class Vector(BaseType):
         Default op is monoid.lor for boolean and monoid.plus otherwise
         """
         method_name = "reduce"
-        op = get_typed_op(op, self.dtype)
+        op = get_typed_op(op, self.dtype, kind="binary")
         if op.opclass == "BinaryOp" and op.monoid is not None:
             op = op.monoid
         else:
@@ -537,7 +537,7 @@ class Vector(BaseType):
         """
         method_name = "inner"
         other = self._expect_type(other, Vector, within=method_name, argname="other")
-        op = get_typed_op(op, self.dtype, other.dtype)
+        op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = ScalarExpression(
             method_name,
@@ -561,7 +561,7 @@ class Vector(BaseType):
 
         method_name = "outer"
         other = self._expect_type(other, Vector, within=method_name, argname="other")
-        op = get_typed_op(op, self.dtype, other.dtype)
+        op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop

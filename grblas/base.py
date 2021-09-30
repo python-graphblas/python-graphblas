@@ -234,7 +234,7 @@ class BaseType:
             accum = accum_arg
         if accum is not None:
             # Normalize accumulator
-            accum = get_typed_op(accum, self.dtype)
+            accum = get_typed_op(accum, self.dtype, kind="binary")
             if accum.opclass == "Monoid":
                 accum = accum.binaryop
             else:

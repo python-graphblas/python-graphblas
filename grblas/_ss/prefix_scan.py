@@ -36,7 +36,7 @@ def prefix_scan(A, monoid, *, name=None, within):
     from .. import Matrix, Vector
     from ..matrix import TransposedMatrix
 
-    monoid = get_typed_op(monoid, A.dtype)
+    monoid = get_typed_op(monoid, A.dtype, kind="binary")
     A._expect_op(monoid, ("BinaryOp", "Monoid"), argname="op", within=within)
     if monoid.opclass == "BinaryOp":
         if monoid.monoid is not None:
