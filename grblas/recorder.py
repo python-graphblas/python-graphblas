@@ -53,10 +53,13 @@ class Recorder:
         if start:
             self.start()
 
-    def record(self, cfunc_name, args):
+    def record(self, cfunc_name, args, *, exc=None):
         if not hasattr(lib, cfunc_name):
             cfunc_name = f"GxB_{cfunc_name[4:]}"
-        self.data.append(f'{cfunc_name}({", ".join(gbstr(x) for x in args)});')
+        val = f'{cfunc_name}({", ".join(gbstr(x) for x in args)});'
+        if exc is not None:
+            val += f" /* ERROR: {type(exc).__name__} */"
+        self.data.append(val)
         base._prev_recorder = self
 
     def record_raw(self, text):

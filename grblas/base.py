@@ -41,7 +41,14 @@ def call(cfunc_name, args):
             f" - C signature: {sig}\n"
             f" - Error: {exc}"
         )
-    rv = check_status(err_code, args)
+    try:
+        rv = check_status(err_code, args)
+    except Exception as exc:
+        # Record calls that fail for easier debugging
+        rec = _recorder.get(_prev_recorder)
+        if rec is not None:
+            rec.record(cfunc_name, args, exc=exc)
+        raise
     rec = _recorder.get(_prev_recorder)
     if rec is not None:
         rec.record(cfunc_name, args)
