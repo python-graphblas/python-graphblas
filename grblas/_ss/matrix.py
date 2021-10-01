@@ -107,7 +107,7 @@ def _head_hypercsr_rows(indptr, rows, n):  # pragma: no cover
     return rv
 
 
-def head(matrix, n=10, *, sort=False, dtype=None):
+def head(matrix, n=10, dtype=None, *, sort=False):
     """Like ``matrix.to_values()``, but only returns the first n elements.
 
     If sort is True, then the results will be sorted as appropriate for the internal format,
@@ -384,7 +384,7 @@ class ss:
         Vector.ss.diag
         """
         vector = self._parent._expect_type(vector, gb.Vector, within="ss.diag", argname="vector")
-        call("GxB_Matrix_diag", [self._parent, vector, _CScalar(k, dtype=INT64), None])
+        call("GxB_Matrix_diag", [self._parent, vector, _CScalar(k, INT64), None])
 
     def split(self, chunks, *, name=None):
         """
@@ -3400,8 +3400,8 @@ class ss:
             raise ValueError(f"Invalid format: {format}")
 
     @wrapdoc(head)
-    def head(self, n=10, *, sort=False, dtype=None):
-        return head(self._parent, n, sort=sort, dtype=dtype)
+    def head(self, n=10, dtype=None, *, sort=False):
+        return head(self._parent, n, dtype, sort=sort)
 
     def scan_columnwise(self, op=monoid.plus, *, name=None):
         """Perform a prefix scan across columns with the given monoid.

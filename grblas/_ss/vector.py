@@ -43,7 +43,7 @@ def _head_indices_vector_bitmap(bitmap, values, size, dtype, n, is_iso):  # prag
     return indices, vals
 
 
-def head(vector, n=10, *, sort=False, dtype=None):
+def head(vector, n=10, dtype=None, *, sort=False):
     """Like ``vector.to_values()``, but only returns the first n elements.
 
     If sort is True, then the results will be sorted by index, otherwise the order of the
@@ -146,7 +146,7 @@ class ss:
             # Transpose descriptor doesn't do anything, so use the parent
             k = -k
             matrix = matrix._matrix
-        call("GxB_Vector_diag", [self._parent, matrix, _CScalar(k, dtype=INT64), None])
+        call("GxB_Vector_diag", [self._parent, matrix, _CScalar(k, INT64), None])
 
     def build_scalar(self, indices, value):
         """
@@ -1033,8 +1033,8 @@ class ss:
         return vector
 
     @wrapdoc(head)
-    def head(self, n=10, *, sort=False, dtype=None):
-        return head(self._parent, n, sort=sort, dtype=dtype)
+    def head(self, n=10, dtype=None, *, sort=False):
+        return head(self._parent, n, dtype, sort=sort)
 
     def scan(self, op=monoid.plus, *, name=None):
         """Perform a prefix scan with the given monoid.

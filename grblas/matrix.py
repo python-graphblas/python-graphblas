@@ -157,7 +157,7 @@ class Matrix(BaseType):
             return False
 
         matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(
-            dtype=bool, name="M_isclose"
+            bool, name="M_isclose"
         )
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
@@ -212,7 +212,7 @@ class Matrix(BaseType):
         self._nrows = nrows.scalar.value
         self._ncols = ncols.scalar.value
 
-    def to_values(self, *, dtype=None):
+    def to_values(self, dtype=None):
         """
         GrB_Matrix_extractTuples
         Extract the rows, columns and values as a 3-tuple of numpy arrays
@@ -272,7 +272,7 @@ class Matrix(BaseType):
 
         rows = _CArray(rows)
         columns = _CArray(columns)
-        values = _CArray(values, dtype=self.dtype)
+        values = _CArray(values, self.dtype)
         call(
             f"GrB_Matrix_build_{self.dtype.name}",
             [self, rows, columns, values, _CScalar(n), dup_op],
@@ -281,7 +281,7 @@ class Matrix(BaseType):
         if not dup_op_given and self._nvals < n:
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
 
-    def dup(self, *, dtype=None, mask=None, name=None):
+    def dup(self, dtype=None, *, mask=None, name=None):
         """
         GrB_Matrix_dup
         Create a new Matrix by duplicating this one
@@ -333,11 +333,11 @@ class Matrix(BaseType):
         rows,
         columns,
         values,
+        dtype=None,
         *,
         nrows=None,
         ncols=None,
         dup_op=None,
-        dtype=None,
         name=None,
     ):
         """Create a new Matrix from the given lists of row indices, column
@@ -533,7 +533,7 @@ class Matrix(BaseType):
             bt=other._is_transposed,
         )
 
-    def apply(self, op, *, left=None, right=None):
+    def apply(self, op, right=None, *, left=None):
         """
         GrB_Matrix_apply
         Apply UnaryOp to each element of the calling Matrix
@@ -1271,7 +1271,7 @@ class TransposedMatrix:
 
         return format_matrix_html(self)
 
-    def new(self, *, dtype=None, mask=None, name=None):
+    def new(self, dtype=None, *, mask=None, name=None):
         if dtype is None:
             dtype = self.dtype
         output = Matrix.new(dtype, self._nrows, self._ncols, name=name)
@@ -1296,8 +1296,8 @@ class TransposedMatrix:
         return self._matrix.dtype
 
     @wrapdoc(Matrix.to_values)
-    def to_values(self, *, dtype=None):
-        rows, cols, vals = self._matrix.to_values(dtype=dtype)
+    def to_values(self, dtype=None):
+        rows, cols, vals = self._matrix.to_values(dtype)
         return cols, rows, vals
 
     @property
