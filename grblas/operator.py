@@ -1485,20 +1485,35 @@ class Semiring(OpBase):
     __call__ = TypedBuiltinSemiring.__call__
 
 
-def get_typed_op(op, dtype, dtype2=None):
+def get_typed_op(op, dtype, dtype2=None, *, kind=None):
     if isinstance(op, OpBase):
         if dtype2 is not None:
             dtype = unify(dtype, dtype2)
         return op[dtype]
     elif isinstance(op, ParameterizedUdf):
         op = op()  # Use default parameters of parameterized UDFs
-        return get_typed_op(op, dtype, dtype2)
+        return get_typed_op(op, dtype, dtype2, kind=kind)
     elif isinstance(op, TypedOpBase):
         return op
     elif isinstance(op, Aggregator):
         return op[dtype]
     elif isinstance(op, TypedAggregator):
         return op
+    elif isinstance(op, str):
+        if kind == "unary":
+            op = unary_from_string(op)
+        elif kind == "binary":
+            op = binary_from_string(op)
+        elif kind == "monoid":
+            op = monoid_from_string(op)
+        elif kind == "semiring":
+            op = semiring_from_string(op)
+        else:
+            raise ValueError(
+                f"Unable to get op from string {op!r}.  `kind=` argument must be provided as "
+                '"unary", "binary", "monoid", or "semiring".'
+            )
+        return get_typed_op(op, dtype, dtype2, kind=kind)
     else:
         raise TypeError(f"Unable to get typed operator from object with type {type(op)}")
 
@@ -1609,5 +1624,108 @@ UnaryOp._initialize()
 BinaryOp._initialize()
 Monoid._initialize()
 Semiring._initialize()
+
+_str_to_unary = {
+    "-": unary.ainv,
+    "~": unary.lnot,
+}
+_str_to_binary = {
+    "<": binary.lt,
+    ">": binary.gt,
+    "<=": binary.le,
+    ">=": binary.ge,
+    "!=": binary.ne,
+    "==": binary.eq,
+    "+": binary.plus,
+    "-": binary.minus,
+    "*": binary.times,
+    "/": binary.truediv,
+    "//": binary.floordiv,
+    "%": binary.numpy.mod,
+    "**": binary.pow,
+    "&": binary.land,
+    "|": binary.lor,
+    "^": binary.lxor,
+}
+_str_to_monoid = {
+    "==": monoid.eq,
+    "+": monoid.plus,
+    "*": monoid.times,
+    "&": monoid.land,
+    "|": monoid.lor,
+    "^": monoid.lxor,
+}
+
+
+def _from_string(string, module, mapping, example):
+    s = string.lower().strip()
+    base, *dtype = s.split("[")
+    if len(dtype) > 1:
+        name = module.__name__.split(".")[-1]
+        raise ValueError(
+            f'Bad {name} string: {string!r}.  Contains too many "[".  Example usage: {example!r}'
+        )
+    elif dtype:
+        dtype = dtype[0]
+        if not dtype.endswith("]"):
+            name = module.__name__.split(".")[-1]
+            raise ValueError(
+                f'Bad {name} string: {string!r}.  Datatype specification does not end with "]".  '
+                f"Example usage: {example!r}"
+            )
+        dtype = lookup_dtype(dtype[:-1])
+    if "]" in base:
+        name = module.__name__.split(".")[-1]
+        raise ValueError(
+            f'Bad {name} string: {string!r}.  "]" not matched by "[".  Example usage: {example!r}'
+        )
+    if base in mapping:
+        op = mapping[base]
+    elif hasattr(module, base):
+        op = getattr(module, base)
+    elif hasattr(module.numpy, base):
+        op = getattr(module.numpy, base)
+    else:
+        name = module.__name__.split(".")[-1]
+        raise ValueError(f"Unknown {name} string: {string!r}.  Example usage: {example!r}")
+    if dtype:
+        op = op[dtype]
+    return op
+
+
+def unary_from_string(string):
+    return _from_string(string, unary, _str_to_unary, "abs[int]")
+
+
+def binary_from_string(string):
+    return _from_string(string, binary, _str_to_binary, "+[int]")
+
+
+def monoid_from_string(string):
+    return _from_string(string, monoid, _str_to_monoid, "+[int]")
+
+
+def semiring_from_string(string):
+    split = string.split(".")
+    if len(split) == 1:
+        try:
+            return _from_string(string, semiring, {}, "min.+[int]")
+        except Exception:
+            pass
+    if len(split) != 2:
+        raise ValueError(
+            f"Bad semiring string: {string!r}.  "
+            'The monoid and binaryop should be separated by exactly one period, ".".  '
+            "Example usage: min.+[int]"
+        )
+    cur_monoid = monoid_from_string(split[0])
+    cur_binary = binary_from_string(split[1])
+    return get_semiring(cur_monoid, cur_binary)
+
+
+unary.from_string = unary_from_string
+binary.from_string = binary_from_string
+monoid.from_string = monoid_from_string
+semiring.from_string = semiring_from_string
 
 from .agg import Aggregator, TypedAggregator  # noqa isort:skip

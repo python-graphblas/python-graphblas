@@ -98,6 +98,13 @@ def test_get_typed_op():
         operator.get_typed_op(binary.bor, dtypes.FP64)
     with pytest.raises(TypeError, match="Unable to get typed operator"):
         operator.get_typed_op(object(), dtypes.INT64)
+    assert operator.get_typed_op("<", dtypes.INT64, kind="binary") is binary.lt["INT64"]
+    assert operator.get_typed_op("-", dtypes.INT64, kind="unary") is unary.ainv["INT64"]
+    assert operator.get_typed_op("+", dtypes.FP64, kind="monoid") is monoid.plus["FP64"]
+    assert operator.get_typed_op("+[int64]", dtypes.FP64, kind="monoid") is monoid.plus["INT64"]
+    assert operator.get_typed_op("+.*", dtypes.FP64, kind="semiring") is semiring.plus_times["FP64"]
+    with pytest.raises(ValueError, match="Unable to get op from string"):
+        operator.get_typed_op("+", dtypes.FP64)
 
 
 def test_unaryop_udf():
@@ -863,3 +870,32 @@ def test_commutes():
         if not hasattr(val, "commutes_to"):
             continue
         assert val.commutes_to is None or isinstance(val.commutes_to, type(val))
+
+
+def test_from_string():
+    assert unary.from_string("-") is unary.ainv
+    assert unary.from_string("abs[float]") is unary.abs[float]
+    assert binary.from_string("+") is binary.plus
+    assert binary.from_string("-[int]") is binary.minus[int]
+    assert binary.from_string("true_divide") is binary.numpy.true_divide
+    assert monoid.from_string("*[FP64]") is monoid.times["FP64"]
+    assert semiring.from_string("min.plus") is semiring.min_plus
+    assert semiring.from_string("min.+") is semiring.min_plus
+    assert semiring.from_string("min_plus") is semiring.min_plus
+
+    with pytest.raises(ValueError, match="does not end with"):
+        assert binary.from_string("plus[int")
+    with pytest.raises(ValueError, match="too many"):
+        assert binary.from_string("plus[int][float]")
+    with pytest.raises(ValueError, match="not matched by"):
+        assert binary.from_string("plus][int]")
+    with pytest.raises(ValueError, match="does not end with"):
+        assert binary.from_string("plus[int]extra")
+    with pytest.raises(ValueError, match="Unknown binary string"):
+        assert binary.from_string("")
+    with pytest.raises(ValueError, match="Unknown binary string"):
+        assert binary.from_string("badname")
+    with pytest.raises(ValueError, match="Bad semiring string"):
+        assert semiring.from_string("badname")
+    with pytest.raises(ValueError, match="Bad semiring string"):
+        semiring.from_string("min.plus.times")
