@@ -14,7 +14,7 @@ _grblas_ss.__name__ = "grblas.ss"
 _grblas_ss = _grblas_ss()
 
 
-def diag(x, k=0, *, dtype=None, name=None):
+def diag(x, k=0, dtype=None, *, name=None):
     """
     GxB_Matrix_diag, GxB_Vector_diag
 
@@ -39,7 +39,7 @@ def diag(x, k=0, *, dtype=None, name=None):
     """
     x = _expect_type(_grblas_ss, x, (Matrix, TransposedMatrix, Vector), within="diag", argname="x")
     if type(k) is not Scalar:
-        k = Scalar.from_value(k, dtype=INT64, name="")
+        k = Scalar.from_value(k, INT64, name="")
     if dtype is None:
         dtype = x.dtype
     typ = type(x)
@@ -59,7 +59,7 @@ def diag(x, k=0, *, dtype=None, name=None):
     return rv
 
 
-def concat(tiles, *, dtype=None, name=None):
+def concat(tiles, dtype=None, *, name=None):
     """
     GxB_Matrix_concat
 

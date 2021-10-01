@@ -126,7 +126,7 @@ class TypedAggregator:
             mask = updater.kwargs.get("mask")
             for cur_agg in agg._composite:
                 cur_agg = cur_agg[self.type]  # Hopefully works well enough
-                arg = expr.construct_output(dtype=cur_agg.return_type)
+                arg = expr.construct_output(cur_agg.return_type)
                 results.append(cur_agg._new(arg(mask=mask), expr, in_composite=True))
             final_expr = agg._finalize(*results)
             if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
@@ -161,7 +161,7 @@ class TypedAggregator:
             A = expr.args[0]
             orig_updater = updater
             if agg._finalize is not None:
-                step1 = expr.construct_output(dtype=semiring.return_type)
+                step1 = expr.construct_output(semiring.return_type)
                 updater = step1(mask=updater.kwargs.get("mask"))
             if expr.method_name == "reduce_columnwise":
                 A = A.T
@@ -191,7 +191,7 @@ class TypedAggregator:
                 if step1.dtype == finalize.return_type:
                     step1 << finalize(step1)
                 else:
-                    step1 = finalize(step1).new(dtype=finalize.return_type)
+                    step1 = finalize(step1).new(finalize.return_type)
             if in_composite:
                 return step1
             expr = step1.reduce(_any)
@@ -221,7 +221,7 @@ class TypedAggregator:
                 if step2.dtype == finalize.return_type:
                     step2 << finalize(step2)
                 else:
-                    step2 = finalize(step2).new(dtype=finalize.return_type)
+                    step2 = finalize(step2).new(finalize.return_type)
             if in_composite:
                 return step2
             expr = step2.reduce(_any)

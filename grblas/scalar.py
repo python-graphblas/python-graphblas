@@ -180,7 +180,7 @@ class Scalar(BaseType):
 
     _nvals = nvals
 
-    def dup(self, *, dtype=None, name=None):
+    def dup(self, dtype=None, *, name=None):
         """Create a new Scalar by duplicating this one"""
         if dtype is None:
             new_scalar = Scalar.new(self.dtype, name=name)
@@ -207,9 +207,9 @@ class Scalar(BaseType):
     def from_value(cls, value, dtype=None, *, name=None):
         """Create a new Scalar from a Python value"""
         if type(value) is Scalar:
-            return value.dup(dtype=dtype, name=name)
+            return value.dup(dtype, name=name)
         elif output_type(value) is Scalar:
-            return value.new(dtype=dtype, name=name)
+            return value.new(dtype, name=name)
         elif dtype is None:
             try:
                 dtype = lookup_dtype(type(value))
@@ -226,7 +226,7 @@ class Scalar(BaseType):
 
     @staticmethod
     def _deserialize(value, dtype, name):
-        return Scalar.from_value(value, dtype=dtype, name=name)
+        return Scalar.from_value(value, dtype, name=name)
 
     def to_pygraphblas(self):  # pragma: no cover
         """Convert to a new `pygraphblas.Scalar`
@@ -270,8 +270,8 @@ class ScalarExpression(BaseExpression):
             dtype = self.dtype
         return Scalar.new(dtype, name=name)
 
-    def new(self, *, dtype=None, name=None):
-        return super().new(dtype=dtype, name=name)
+    def new(self, dtype=None, *, name=None):
+        return super().new(dtype, name=name)
 
     dup = new
 
@@ -330,7 +330,7 @@ class _CScalar:
 
     def __init__(self, scalar, dtype=_INDEX):
         if type(scalar) is not Scalar:
-            scalar = Scalar.from_value(scalar, name="", dtype=dtype)
+            scalar = Scalar.from_value(scalar, dtype, name="")
         self.scalar = scalar
         self.dtype = scalar.dtype
 

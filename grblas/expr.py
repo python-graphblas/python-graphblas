@@ -179,7 +179,7 @@ class AmbiguousAssignOrExtract:
         scalar = self.parent._extract_element(self.resolved_indexes, name="s_extract")
         return scalar.value
 
-    def new(self, *, dtype=None, mask=None, input_mask=None, name=None):
+    def new(self, dtype=None, *, mask=None, input_mask=None, name=None):
         """
         Force extraction of the indexes into a new object
         dtype and mask are the only controllable parameters.
@@ -187,7 +187,7 @@ class AmbiguousAssignOrExtract:
         if self.resolved_indexes.is_single_element:
             if mask is not None or input_mask is not None:
                 raise TypeError("mask is not allowed for single element extraction")
-            return self.parent._extract_element(self.resolved_indexes, dtype=dtype, name=name)
+            return self.parent._extract_element(self.resolved_indexes, dtype, name=name)
         else:
             if input_mask is not None:
                 if mask is not None:
@@ -197,7 +197,7 @@ class AmbiguousAssignOrExtract:
                 _check_mask(input_mask, output=self.parent)
                 mask = self._input_mask_to_mask(input_mask)
             delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
-            return delayed_extractor.new(dtype=dtype, mask=mask, name=name)
+            return delayed_extractor.new(dtype, mask=mask, name=name)
 
     def __eq__(self, other):
         if not self.resolved_indexes.is_single_element:
@@ -342,7 +342,7 @@ class InfixExprBase:
         self.right = right
         self._value = None
 
-    def new(self, *, dtype=None, mask=None, name=None):
+    def new(self, dtype=None, *, mask=None, name=None):
         if (
             mask is None
             and self._value is not None
@@ -354,7 +354,7 @@ class InfixExprBase:
             self._value = None
             return rv
         expr = self._to_expr()
-        return expr.new(dtype=dtype, mask=mask, name=name)
+        return expr.new(dtype, mask=mask, name=name)
 
     dup = new
 

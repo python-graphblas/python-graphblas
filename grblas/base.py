@@ -327,7 +327,7 @@ class BaseType:
                             "Scalar accumulation with extract element"
                             "--such as `s(accum=accum) << v[0]`--is not supported"
                         )
-                    self.value = delayed.new(dtype=self.dtype, name="s_extract").value
+                    self.value = delayed.new(self.dtype, name="s_extract").value
                     return
 
                 # Extract (C << A[rows, cols])
@@ -524,7 +524,7 @@ class BaseExpression:
             self.dtype = dtype
         self._value = None
 
-    def new(self, *, dtype=None, mask=None, name=None):
+    def new(self, dtype=None, *, mask=None, name=None):
         if (
             mask is None
             and self._value is not None
@@ -535,7 +535,7 @@ class BaseExpression:
                 rv.name = name
             self._value = None
             return rv
-        output = self.construct_output(dtype=dtype, name=name)
+        output = self.construct_output(dtype, name=name)
         if self.op is not None and self.op.opclass == "Aggregator":
             updater = output(mask=mask)
             self.op._new(updater, self)

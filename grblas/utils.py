@@ -123,7 +123,7 @@ class class_property:
 class _CArray:
     __slots__ = "array", "_carg", "dtype", "_name"
 
-    def __init__(self, array=None, *, size=None, dtype=_INDEX, name=None):
+    def __init__(self, array=None, dtype=_INDEX, *, size=None, name=None):
         if size is not None:
             self.array = np.empty(size, dtype=dtype.np_type)
         else:
