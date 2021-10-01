@@ -32,20 +32,20 @@ custom = {
 for method, op in sorted(comparisons.items()):
     print(
         f'def __{method}__(self, other):\n'
-        f'    return comparison(self, other, binary.{op})\n\n'
+        f'    return call_op(self, other, "__{method}__", binary.{op})\n\n'
     )
 for method, op in sorted(operations.items()):
     print(
         f'def __{method}__(self, other):\n'
-        f'    return binary.{op}(self, other)\n\n'
+        f'    return call_op(self, other, "__{method}__", binary.{op}, scalar_only=True)\n\n'
     )
     print(
         f'def __r{method}__(self, other):\n'
-        f'    return binary.{op}(other, self)\n\n'
+        f'    return call_op(other, self, "__r{method}__", binary.{op}, scalar_only=True)\n\n'
     )
     print(
         f'def __i{method}__(self, other):\n'
-        f'    self << binary.{op}(self, other)\n'
+        f'    self << __{method}__(self, other)\n'
         '    return self\n\n'
     )
 methods = sorted(
@@ -77,7 +77,7 @@ from .utils import output_type
 from .vector import Vector, VectorExpression
 
 
-def comparison(self, other, op, outer=False):
+def call_op(self, other, method, op, *, scalar_only=False, outer=False):
     type1 = output_type(self)
     type2 = output_type(other)
     if (
@@ -87,7 +87,22 @@ def comparison(self, other, op, outer=False):
         or type1 is TransposedMatrix
         and type2 is Matrix
     ):
-        if outer:
+        if scalar_only:
+            raise TypeError(
+                f"Infix operator {method} between {type1.__name__} and {type2.__name__} is not "
+                "supported.  This infix operation is only allowed if one of the arguments is a "
+                "scalar.  We refuse to guess whether you intend to do ewise_mult or ewise_add."
+                "\n\nYou must indicate ewise_mult (intersection) or ewise_add (union) explicitly."
+                "\n\nFor ewise_mult:\n"
+                f"    >>> op.{op.name}(x & y)\n"
+                "or\n"
+                f"    >>> x.ewise_mult(y, op.{op.name})\n\n"
+                "For ewise_add:\n"
+                f"    >>> op.{op.name}(x | y)\n"
+                "or\n"
+                f"    >>> x.ewise_add(y, op.{op.name})\n\n"
+            )
+        elif outer:
             return op(self | other, require_monoid=False)
         else:
             return op(self & other)
@@ -95,11 +110,11 @@ def comparison(self, other, op, outer=False):
 
 
 def __divmod__(self, other):
-    return (binary.floordiv(self, other), binary.numpy.mod(self, other))
+    return (__floordiv__(self, other), __mod__(self, other))
 
 
 def __rdivmod__(self, other):
-    return (binary.floordiv(other, self), binary.numpy.mod(other, self))
+    return (__floordiv__(other, self), __mod__(other, self))
 
 
 def __abs__(self):
@@ -120,7 +135,7 @@ def __neg__(self):
 
 
 def __xor__(self, other):
-    expr = comparison(self, other, binary.lxor, outer=True)
+    expr = call_op(self, other, "__xor__", binary.lxor, outer=True)
     if expr.dtype != BOOL:
         raise TypeError(
             f"The __xor__ infix operator, `x ^ y`, is not supported for {expr.dtype.name} dtype.  "
@@ -130,7 +145,7 @@ def __xor__(self, other):
 
 
 def __rxor__(self, other):
-    expr = comparison(other, self, binary.lxor, outer=True)
+    expr = call_op(other, self, "__rxor__", binary.lxor, outer=True)
     if expr.dtype != BOOL:
         raise TypeError(
             f"The __xor__ infix operator, `x ^ y`, is not supported for {expr.dtype.name} dtype.  "
@@ -146,117 +161,117 @@ def __ixor__(self, other):
 
 # Paste here
 def __eq__(self, other):
-    return comparison(self, other, binary.eq)
+    return call_op(self, other, "__eq__", binary.eq)
 
 
 def __ge__(self, other):
-    return comparison(self, other, binary.ge)
+    return call_op(self, other, "__ge__", binary.ge)
 
 
 def __gt__(self, other):
-    return comparison(self, other, binary.gt)
+    return call_op(self, other, "__gt__", binary.gt)
 
 
 def __le__(self, other):
-    return comparison(self, other, binary.le)
+    return call_op(self, other, "__le__", binary.le)
 
 
 def __lt__(self, other):
-    return comparison(self, other, binary.lt)
+    return call_op(self, other, "__lt__", binary.lt)
 
 
 def __ne__(self, other):
-    return comparison(self, other, binary.ne)
+    return call_op(self, other, "__ne__", binary.ne)
 
 
 def __add__(self, other):
-    return binary.plus(self, other)
+    return call_op(self, other, "__add__", binary.plus, scalar_only=True)
 
 
 def __radd__(self, other):
-    return binary.plus(other, self)
+    return call_op(other, self, "__radd__", binary.plus, scalar_only=True)
 
 
 def __iadd__(self, other):
-    self << binary.plus(self, other)
+    self << __add__(self, other)
     return self
 
 
 def __floordiv__(self, other):
-    return binary.floordiv(self, other)
+    return call_op(self, other, "__floordiv__", binary.floordiv, scalar_only=True)
 
 
 def __rfloordiv__(self, other):
-    return binary.floordiv(other, self)
+    return call_op(other, self, "__rfloordiv__", binary.floordiv, scalar_only=True)
 
 
 def __ifloordiv__(self, other):
-    self << binary.floordiv(self, other)
+    self << __floordiv__(self, other)
     return self
 
 
 def __mod__(self, other):
-    return binary.numpy.mod(self, other)
+    return call_op(self, other, "__mod__", binary.numpy.mod, scalar_only=True)
 
 
 def __rmod__(self, other):
-    return binary.numpy.mod(other, self)
+    return call_op(other, self, "__rmod__", binary.numpy.mod, scalar_only=True)
 
 
 def __imod__(self, other):
-    self << binary.numpy.mod(self, other)
+    self << __mod__(self, other)
     return self
 
 
 def __mul__(self, other):
-    return binary.times(self, other)
+    return call_op(self, other, "__mul__", binary.times, scalar_only=True)
 
 
 def __rmul__(self, other):
-    return binary.times(other, self)
+    return call_op(other, self, "__rmul__", binary.times, scalar_only=True)
 
 
 def __imul__(self, other):
-    self << binary.times(self, other)
+    self << __mul__(self, other)
     return self
 
 
 def __pow__(self, other):
-    return binary.pow(self, other)
+    return call_op(self, other, "__pow__", binary.pow, scalar_only=True)
 
 
 def __rpow__(self, other):
-    return binary.pow(other, self)
+    return call_op(other, self, "__rpow__", binary.pow, scalar_only=True)
 
 
 def __ipow__(self, other):
-    self << binary.pow(self, other)
+    self << __pow__(self, other)
     return self
 
 
 def __sub__(self, other):
-    return binary.minus(self, other)
+    return call_op(self, other, "__sub__", binary.minus, scalar_only=True)
 
 
 def __rsub__(self, other):
-    return binary.minus(other, self)
+    return call_op(other, self, "__rsub__", binary.minus, scalar_only=True)
 
 
 def __isub__(self, other):
-    self << binary.minus(self, other)
+    self << __sub__(self, other)
     return self
 
 
 def __truediv__(self, other):
-    return binary.truediv(self, other)
+    return call_op(self, other, "__truediv__", binary.truediv, scalar_only=True)
 
 
 def __rtruediv__(self, other):
-    return binary.truediv(other, self)
+    return call_op(other, self, "__rtruediv__", binary.truediv, scalar_only=True)
 
 
 def __itruediv__(self, other):
-    self << binary.truediv(self, other)
+    self << __truediv__(self, other)
     return self
 
 

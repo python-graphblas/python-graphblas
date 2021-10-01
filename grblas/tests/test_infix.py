@@ -267,3 +267,8 @@ def test_apply_binary_bad(s1, v1):
         op.plus(v1, v1)
     with raises(TypeError, match="may only be used when performing an ewise_add"):
         op.plus(v1, 1, require_monoid=False)
+
+
+def test_infix_nonscalars(v1, v2):
+    with raises(TypeError, match="refuse to guess"):
+        v1 + v2
