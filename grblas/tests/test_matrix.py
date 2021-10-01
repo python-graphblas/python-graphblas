@@ -2625,6 +2625,14 @@ def test_infix_sugar(A):
         assert unary.lnot(A).isequal(~A)
     with pytest.raises(TypeError):
         assert unary.lnot(A.T).isequal(~A.T)
+    assert binary.lxor(True, B).isequal(True ^ B)
+    assert binary.lxor(B, True).isequal(B ^ True)
+    with pytest.raises(TypeError):
+        A ^ True
+    with pytest.raises(TypeError):
+        A ^ B
+    with pytest.raises(TypeError):
+        6 ^ B
     assert binary.lt(A, 4).isequal(A < 4)
     assert binary.le(A, 4).isequal(A <= 4)
     assert binary.gt(A, 4).isequal(A > 4)
@@ -2685,6 +2693,14 @@ def test_infix_sugar(A):
     B **= 2
     assert type(B) is Matrix
     assert binary.pow(A, 2).isequal(B)
+    B = A.dup(dtype=bool)
+    B ^= True
+    assert type(B) is Matrix
+    assert B.isequal(~A.dup(dtype=bool))
+    B = A.dup(dtype=bool)
+    B ^= B
+    assert type(B) is Matrix
+    assert not B.reduce_scalar(agg.any).new()
 
     expr = binary.plus(A & A)
     assert unary.abs(expr).isequal(abs(expr))
@@ -2705,6 +2721,8 @@ def test_infix_sugar(A):
         expr %= 1
     with pytest.raises(TypeError):
         expr **= 1
+    with pytest.raises(TypeError):
+        expr ^= 1
 
 
 @pytest.mark.slow

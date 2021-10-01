@@ -22,14 +22,17 @@ custom = {
     "invert",
     "neg",
     "rdivmod",
+    "xor",
+    "rxor",
+    "ixor",
 }
-# Skipped: rshift, xor, pos
+# Skipped: rshift, pos
 # Already used for syntax: lshift, and, or
 
 for method, op in sorted(comparisons.items()):
     print(
         f'def __{method}__(self, other):\n'
-        f'    return comparison(self, other, "__{method}__", binary.{op})\n\n'
+        f'    return comparison(self, other, binary.{op})\n\n'
     )
 for method, op in sorted(operations.items()):
     print(
@@ -74,7 +77,7 @@ from .utils import output_type
 from .vector import Vector, VectorExpression
 
 
-def comparison(self, other, method, op):
+def comparison(self, other, op, outer=False):
     type1 = output_type(self)
     type2 = output_type(other)
     if (
@@ -84,7 +87,10 @@ def comparison(self, other, method, op):
         or type1 is TransposedMatrix
         and type2 is Matrix
     ):
-        return op(self & other)
+        if outer:
+            return op(self | other, require_monoid=False)
+        else:
+            return op(self & other)
     return op(self, other)
 
 
@@ -113,29 +119,54 @@ def __neg__(self):
     return unary.ainv(self)
 
 
+def __xor__(self, other):
+    expr = comparison(self, other, binary.lxor, outer=True)
+    if expr.dtype != BOOL:
+        raise TypeError(
+            f"The __xor__ infix operator, `x ^ y`, is not supported for {expr.dtype.name} dtype.  "
+            "It is only supported for BOOL dtype (and it uses ewise_add--the intersection)."
+        )
+    return expr
+
+
+def __rxor__(self, other):
+    expr = comparison(other, self, binary.lxor, outer=True)
+    if expr.dtype != BOOL:
+        raise TypeError(
+            f"The __xor__ infix operator, `x ^ y`, is not supported for {expr.dtype.name} dtype.  "
+            "It is only supported for BOOL dtype (and it uses ewise_add--the intersection)."
+        )
+    return expr
+
+
+def __ixor__(self, other):
+    self << __xor__(self, other)
+    return self
+
+
 # Paste here
 def __eq__(self, other):
-    return comparison(self, other, "__eq__", binary.eq)
+    return comparison(self, other, binary.eq)
 
 
 def __ge__(self, other):
-    return comparison(self, other, "__ge__", binary.ge)
+    return comparison(self, other, binary.ge)
 
 
 def __gt__(self, other):
-    return comparison(self, other, "__gt__", binary.gt)
+    return comparison(self, other, binary.gt)
 
 
 def __le__(self, other):
-    return comparison(self, other, "__le__", binary.le)
+    return comparison(self, other, binary.le)
 
 
 def __lt__(self, other):
-    return comparison(self, other, "__lt__", binary.lt)
+    return comparison(self, other, binary.lt)
 
 
 def __ne__(self, other):
-    return comparison(self, other, "__ne__", binary.ne)
+    return comparison(self, other, binary.ne)
 
 
 def __add__(self, other):
@@ -246,6 +277,7 @@ for name in [
     "__ipow__",
     "__isub__",
     "__itruediv__",
+    "__ixor__",
     "__le__",
     "__lt__",
     "__mod__",
@@ -261,8 +293,10 @@ for name in [
     "__rpow__",
     "__rsub__",
     "__rtruediv__",
+    "__rxor__",
     "__sub__",
     "__truediv__",
+    "__xor__",
 ]:
     val = d[name]
     setattr(Vector, name, val)

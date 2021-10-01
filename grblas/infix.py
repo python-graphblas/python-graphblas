@@ -99,6 +99,7 @@ class VectorInfixExpr(InfixExprBase):
     __ipow__ = _automethods.__ipow__
     __isub__ = _automethods.__isub__
     __itruediv__ = _automethods.__itruediv__
+    __ixor__ = _automethods.__ixor__
 
 
 class VectorEwiseAddExpr(VectorInfixExpr):
@@ -207,6 +208,7 @@ class MatrixInfixExpr(InfixExprBase):
     __ipow__ = _automethods.__ipow__
     __isub__ = _automethods.__isub__
     __itruediv__ = _automethods.__itruediv__
+    __ixor__ = _automethods.__ixor__
 
 
 class MatrixEwiseAddExpr(MatrixInfixExpr):
