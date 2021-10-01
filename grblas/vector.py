@@ -820,13 +820,13 @@ class VectorExpression(BaseExpression):
     # These raise exceptions
     __array__ = wrapdoc(Vector.__array__)(Vector.__array__)
     __bool__ = wrapdoc(Vector.__bool__)(Vector.__bool__)
-    __iand__ = wrapdoc(Vector.__iand__)(Vector.__iand__)
-    __imatmul__ = wrapdoc(Vector.__imatmul__)(Vector.__imatmul__)
-    __ior__ = wrapdoc(Vector.__ior__)(Vector.__ior__)
     __iadd__ = _automethods.__iadd__
+    __iand__ = _automethods.__iand__
     __ifloordiv__ = _automethods.__ifloordiv__
+    __imatmul__ = _automethods.__imatmul__
     __imod__ = _automethods.__imod__
     __imul__ = _automethods.__imul__
+    __ior__ = _automethods.__ior__
     __ipow__ = _automethods.__ipow__
     __isub__ = _automethods.__isub__
     __itruediv__ = _automethods.__itruediv__

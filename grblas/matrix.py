@@ -1238,13 +1238,13 @@ class MatrixExpression(BaseExpression):
     # These raise exceptions
     __array__ = wrapdoc(Matrix.__array__)(Matrix.__array__)
     __bool__ = wrapdoc(Matrix.__bool__)(Matrix.__bool__)
-    __iand__ = wrapdoc(Matrix.__iand__)(Matrix.__iand__)
-    __imatmul__ = wrapdoc(Matrix.__imatmul__)(Matrix.__imatmul__)
-    __ior__ = wrapdoc(Matrix.__ior__)(Matrix.__ior__)
     __iadd__ = _automethods.__iadd__
+    __iand__ = _automethods.__iand__
     __ifloordiv__ = _automethods.__ifloordiv__
+    __imatmul__ = _automethods.__imatmul__
     __imod__ = _automethods.__imod__
     __imul__ = _automethods.__imul__
+    __ior__ = _automethods.__ior__
     __ipow__ = _automethods.__ipow__
     __isub__ = _automethods.__isub__
     __itruediv__ = _automethods.__itruediv__
@@ -1335,19 +1335,19 @@ class TransposedMatrix:
     # Operator sugar
     __or__ = Matrix.__or__
     __ror__ = Matrix.__ror__
-    __ior__ = Matrix.__ior__
     __and__ = Matrix.__and__
     __rand__ = Matrix.__rand__
-    __iand__ = Matrix.__iand__
     __matmul__ = Matrix.__matmul__
     __rmatmul__ = Matrix.__rmatmul__
-    __imatmul__ = Matrix.__imatmul__
 
     # Bad sugar
     __iadd__ = _automethods.__iadd__
+    __iand__ = _automethods.__iand__
     __ifloordiv__ = _automethods.__ifloordiv__
+    __imatmul__ = _automethods.__imatmul__
     __imod__ = _automethods.__imod__
     __imul__ = _automethods.__imul__
+    __ior__ = _automethods.__ior__
     __ipow__ = _automethods.__ipow__
     __isub__ = _automethods.__isub__
     __itruediv__ = _automethods.__itruediv__

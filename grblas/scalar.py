@@ -310,9 +310,6 @@ class ScalarExpression(BaseExpression):
     wait = wrapdoc(Scalar.wait)(property(_automethods.wait))
     # These raise exceptions
     __and__ = wrapdoc(Scalar.__and__)(Scalar.__and__)
-    __iand__ = wrapdoc(Scalar.__iand__)(Scalar.__iand__)
-    __imatmul__ = wrapdoc(Scalar.__imatmul__)(Scalar.__imatmul__)
-    __ior__ = wrapdoc(Scalar.__ior__)(Scalar.__ior__)
     __matmul__ = wrapdoc(Scalar.__matmul__)(Scalar.__matmul__)
     __or__ = wrapdoc(Scalar.__or__)(Scalar.__or__)
     __rand__ = wrapdoc(Scalar.__rand__)(Scalar.__rand__)

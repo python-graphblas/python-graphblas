@@ -150,13 +150,13 @@ def test_bad_ewise(s1, v1, A1, A2):
     with raises(TypeError):
         1 & s1
 
-    with raises(TypeError, match="Using __ior__"):
+    with raises(TypeError, match="not supported for FP64"):
         v1 |= v1
-    with raises(TypeError, match="Using __ior__"):
+    with raises(TypeError, match="not supported for FP64"):
         A1 |= A1
-    with raises(TypeError, match="Using __iand__"):
+    with raises(TypeError, match="not supported for FP64"):
         v1 &= v1
-    with raises(TypeError, match="Using __iand__"):
+    with raises(TypeError, match="not supported for FP64"):
         A1 &= A1
 
     with raises(TypeError, match="require_monoid"):
@@ -195,7 +195,7 @@ def test_bad_matmul(s1, v1, A1, A2):
         A1 @ A1
     with raises(DimensionMismatch):
         A1.T @ A1.T
-    with raises(TypeError, match="__imatmul__"):
+    with raises(DimensionMismatch):
         A1 @= A1
     with raises(TypeError):
         s1 @ 1
@@ -205,7 +205,7 @@ def test_bad_matmul(s1, v1, A1, A2):
     w = v1[:1].new()
     with raises(DimensionMismatch):
         w @ v1
-    with raises(TypeError, match="__imatmul__"):
+    with raises(DimensionMismatch):
         v1 @= v1
 
     with raises(TypeError, match="Bad type when calling semiring.plus_times"):
@@ -272,3 +272,48 @@ def test_apply_binary_bad(s1, v1):
 def test_infix_nonscalars(v1, v2):
     with raises(TypeError, match="refuse to guess"):
         v1 + v2
+
+
+@autocompute
+def test_inplace_infix(s1, v1, v2, A1, A2):
+    A = Matrix.new(float, nrows=3, ncols=3)
+    A[:, :] = 1
+    x = v1.dup()
+    x @= A
+    assert isinstance(x, Vector)
+    assert x.isequal(v1 @ A)
+    with raises(TypeError, match="not supported for FP64"):
+        v1 |= v2
+    with raises(TypeError, match="not supported for FP64"):
+        A1 &= A2.T
+
+    v1 = v1.dup(bool)
+    v2 = v2.dup(bool)
+    A1 = A1.dup(bool)
+    A2 = A2.dup(bool)
+    x = v1.dup()
+    x |= v2
+    assert isinstance(x, Vector)
+    assert x.isequal(v1 | v2)
+    x = v1.dup()
+    x &= v2
+    assert isinstance(x, Vector)
+    assert x.isequal(v1 & v2)
+    x = A1.dup()
+    x |= A2.T
+    assert isinstance(x, Matrix)
+    assert x.isequal(A1 | A2.T)
+    x = A1.dup()
+    x &= A2.T
+    assert isinstance(x, Matrix)
+    assert x.isequal(A1 & A2.T)
+
+    expr = v1 | v2
+    with raises(TypeError, match="not supported"):
+        expr |= v1
+    with raises(TypeError, match="not supported"):
+        expr &= v1
+    with raises(TypeError, match="not supported"):
+        expr @= A
+    with raises(TypeError, match="not supported"):
+        s1 @= v1
