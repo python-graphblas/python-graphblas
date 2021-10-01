@@ -389,4 +389,5 @@ def _matmul_infix_expr(left, right, *, within):
     return ScalarMatMulExpr(left, right)
 
 
+# Import _infixmethods, which has side effects
 from . import _infixmethods  # noqa isort:skip

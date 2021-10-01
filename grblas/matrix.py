@@ -1371,3 +1371,6 @@ class TransposedMatrix:
 utils._output_types[Matrix] = Matrix
 utils._output_types[MatrixExpression] = Matrix
 utils._output_types[TransposedMatrix] = TransposedMatrix
+
+# Import infix to import _infixmethods, which has side effects
+from . import infix  # noqa isort:skip

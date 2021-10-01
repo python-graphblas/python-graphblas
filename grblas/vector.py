@@ -860,3 +860,6 @@ class _VectorAsMatrix:
 
 utils._output_types[Vector] = Vector
 utils._output_types[VectorExpression] = Vector
+
+# Import matrix to import infix to import _infixmethods, which has side effects
+from . import matrix  # noqa isort:skip
