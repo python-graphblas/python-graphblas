@@ -131,6 +131,8 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
                 submatrix = submatrix[row_offset:, column_offset:].new(name="")
     rows, cols, vals = submatrix.to_values()
     df.values[rows, cols] = vals
+    nulls = np.isnan(vals)
+    df.values[rows[nulls], cols[nulls]] = "nan"
 
 
 def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
@@ -160,6 +162,7 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
             subvector = subvector[column_offset:].new(name="")
     cols, vals = subvector.to_values()
     df.values[0, cols] = vals
+    df.values[0, cols[np.isnan(vals)]] = "nan"
 
 
 def _get_max_columns():
