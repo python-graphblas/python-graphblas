@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 import grblas
@@ -7044,4 +7045,134 @@ def test_autocompute_html(A, B, v):
         "  </tbody>\n"
         "</table>\n"
         "</div></details></div></blockquote></details><em>Do <code>op(expr)</code> to create a <tt>MatrixExpression</tt> for <tt>ewise_mult</tt>.<br>For example: <code>times(M<sub>2</sub> & M<sub>2</sub>)</code></em></div>"
+    )
+
+
+@pytest.mark.skipif("not pd")
+def test_display_nan():
+    v = Vector.from_values([0, 1], [1.0, np.nan], size=3, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"            nvals  size  dtype\n'
+        "grblas.Vector      2     3   FP64\n"
+        "---------------------------------\n"
+        "    0    1 2\n"
+        "  1.0  nan  "
+    )
+    html_printer(v, "v")
+    assert repr_html(v) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>2</td>\n"
+        "    <td>3</td>\n"
+        "    <td>FP64</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>0</th>\n"
+        "      <th>1</th>\n"
+        "      <th>2</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th></th>\n"
+        "      <td>1.0</td>\n"
+        "      <td>nan</td>\n"
+        "      <td></td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
+    )
+    A = Matrix.from_values([0, 0], [0, 1], [1.0, np.nan], ncols=3, nrows=2, name="A")
+    repr_printer(A, "A")
+    assert repr(A) == (
+        '"A"            nvals  nrows  ncols  dtype\n'
+        "grblas.Matrix      2      2      3   FP64\n"
+        "-----------------------------------------\n"
+        "     0    1 2\n"
+        "0  1.0  nan  \n"
+        "1            "
+    )
+    html_printer(A, "A")
+    assert repr_html(A) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>nrows</pre></td>\n"
+        "    <td><pre>ncols</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n" + "    <td>2</td>\n" * 2 + "    <td>3</td>\n"
+        "    <td>FP64</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>0</th>\n"
+        "      <th>1</th>\n"
+        "      <th>2</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th>0</th>\n"
+        "      <td>1.0</td>\n"
+        "      <td>nan</td>\n"
+        "      <td></td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>1</th>\n" + "      <td></td>\n" * 3 + "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
     )
