@@ -66,11 +66,7 @@ matrix = {
     "reduce_rowwise",
     "reduce_scalar",
 }
-common_raises = {
-    "__ior__",
-    "__iand__",
-    "__imatmul__",
-}
+common_raises = set()
 scalar_raises = {
     "__and__",
     "__matmul__",
@@ -96,6 +92,9 @@ bad_sugar = {
     "__isub__",
     "__itruediv__",
     "__ixor__",
+    "__ior__",
+    "__iand__",
+    "__imatmul__",
 }
 # Copy the result of this below
 for name in sorted(common | scalar | vector_matrix | vector | matrix):
@@ -386,8 +385,16 @@ def __iadd__(self, other):
     raise TypeError(f"'__iadd__' not supported for {type(self).__name__}")
 
 
+def __iand__(self, other):
+    raise TypeError(f"'__iand__' not supported for {type(self).__name__}")
+
+
 def __ifloordiv__(self, other):
     raise TypeError(f"'__ifloordiv__' not supported for {type(self).__name__}")
+
+
+def __imatmul__(self, other):
+    raise TypeError(f"'__imatmul__' not supported for {type(self).__name__}")
 
 
 def __imod__(self, other):
@@ -396,6 +403,10 @@ def __imod__(self, other):
 
 def __imul__(self, other):
     raise TypeError(f"'__imul__' not supported for {type(self).__name__}")
+
+
+def __ior__(self, other):
+    raise TypeError(f"'__ior__' not supported for {type(self).__name__}")
 
 
 def __ipow__(self, other):

@@ -288,7 +288,7 @@ def test_wait(s):
 
 
 @autocompute
-def test_expr_is_like_vector(s):
+def test_expr_is_like_scalar(s):
     v = grblas.Vector.from_values([1], [2])
     attrs = {attr for attr, val in inspect.getmembers(s)}
     expr_attrs = {attr for attr, val in inspect.getmembers(v.inner(v))}
@@ -296,6 +296,7 @@ def test_expr_is_like_vector(s):
     # Should we make any of these raise informative errors?
     expected = {
         "__call__",
+        "__imatmul__",
         "__lshift__",
         "_deserialize",
         "_is_empty",

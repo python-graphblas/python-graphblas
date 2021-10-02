@@ -255,12 +255,6 @@ class BaseType:
 
         return _ewise_infix_expr(other, self, method="ewise_add", within="__ror__")
 
-    def __ior__(self, other):
-        raise TypeError(
-            f"Using __ior__ (e.g., x |= y) is not supported for type {type(self).__name__}."
-            "  To create an ewise_add expression using infix notation, do e.g. `op(x | y)`."
-        )
-
     def __and__(self, other):
         if self._is_scalar:
             return NotImplemented
@@ -274,12 +268,6 @@ class BaseType:
         from .infix import _ewise_infix_expr
 
         return _ewise_infix_expr(self, other, method="ewise_mult", within="__rand__")
-
-    def __iand__(self, other):
-        raise TypeError(
-            f"Using __iand__ (e.g., x &= y) is not supported for type {type(self).__name__}."
-            "  To create an ewise_mult expression using infix notation, do e.g. `op(x & y)`."
-        )
 
     def __matmul__(self, other):
         if self._is_scalar:
@@ -296,10 +284,10 @@ class BaseType:
         return _matmul_infix_expr(other, self, within="__rmatmul__")
 
     def __imatmul__(self, other):
-        raise TypeError(
-            f"Using __imatmul__ (e.g., x @= y) is not supported for type {type(self).__name__}."
-            "  To create an matmul expression using infix notation, do e.g. `semiring(x @ y)`."
-        )
+        if self._is_scalar:
+            raise TypeError("'__imatmul__' not supported for Scalar")
+        self << self @ other
+        return self
 
     def __bool__(self):
         raise TypeError(

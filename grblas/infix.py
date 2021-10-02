@@ -89,13 +89,13 @@ class VectorInfixExpr(InfixExprBase):
     # These raise exceptions
     __array__ = wrapdoc(Vector.__array__)(Vector.__array__)
     __bool__ = wrapdoc(Vector.__bool__)(Vector.__bool__)
-    __iand__ = wrapdoc(Vector.__iand__)(Vector.__iand__)
-    __imatmul__ = wrapdoc(Vector.__imatmul__)(Vector.__imatmul__)
-    __ior__ = wrapdoc(Vector.__ior__)(Vector.__ior__)
     __iadd__ = _automethods.__iadd__
+    __iand__ = _automethods.__iand__
     __ifloordiv__ = _automethods.__ifloordiv__
+    __imatmul__ = _automethods.__imatmul__
     __imod__ = _automethods.__imod__
     __imul__ = _automethods.__imul__
+    __ior__ = _automethods.__ior__
     __ipow__ = _automethods.__ipow__
     __isub__ = _automethods.__isub__
     __itruediv__ = _automethods.__itruediv__
@@ -198,13 +198,13 @@ class MatrixInfixExpr(InfixExprBase):
     # These raise exceptions
     __array__ = wrapdoc(Matrix.__array__)(Matrix.__array__)
     __bool__ = wrapdoc(Matrix.__bool__)(Matrix.__bool__)
-    __iand__ = wrapdoc(Matrix.__iand__)(Matrix.__iand__)
-    __imatmul__ = wrapdoc(Matrix.__imatmul__)(Matrix.__imatmul__)
-    __ior__ = wrapdoc(Matrix.__ior__)(Matrix.__ior__)
     __iadd__ = _automethods.__iadd__
+    __iand__ = _automethods.__iand__
     __ifloordiv__ = _automethods.__ifloordiv__
+    __imatmul__ = _automethods.__imatmul__
     __imod__ = _automethods.__imod__
     __imul__ = _automethods.__imul__
+    __ior__ = _automethods.__ior__
     __ipow__ = _automethods.__ipow__
     __isub__ = _automethods.__isub__
     __itruediv__ = _automethods.__itruediv__
@@ -286,9 +286,6 @@ class ScalarMatMulExpr(InfixExprBase):
     wait = wrapdoc(Scalar.wait)(property(_automethods.wait))
     # These raise exceptions
     __and__ = wrapdoc(Scalar.__and__)(Scalar.__and__)
-    __iand__ = wrapdoc(Scalar.__iand__)(Scalar.__iand__)
-    __imatmul__ = wrapdoc(Scalar.__imatmul__)(Scalar.__imatmul__)
-    __ior__ = wrapdoc(Scalar.__ior__)(Scalar.__ior__)
     __matmul__ = wrapdoc(Scalar.__matmul__)(Scalar.__matmul__)
     __or__ = wrapdoc(Scalar.__or__)(Scalar.__or__)
     __rand__ = wrapdoc(Scalar.__rand__)(Scalar.__rand__)
