@@ -254,7 +254,7 @@ class Vector(BaseType):
             if dtype is None:
                 dtype = self.dtype
             rv = Vector.new(dtype, size=self._size, name=name)
-            rv(mask=mask)[:] << self
+            rv(mask=mask)[...] = self
         else:
             new_vec = ffi_new("GrB_Vector*")
             rv = Vector(new_vec, self.dtype, name=name)

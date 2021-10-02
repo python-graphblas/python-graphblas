@@ -290,7 +290,7 @@ class Matrix(BaseType):
             if dtype is None:
                 dtype = self.dtype
             rv = Matrix.new(dtype, nrows=self._nrows, ncols=self._ncols, name=name)
-            rv(mask=mask)[:, :] << self
+            rv(mask=mask)[...] = self
         else:
             new_mat = ffi_new("GrB_Matrix*")
             rv = Matrix(new_mat, self.dtype, name=name)

@@ -8,7 +8,6 @@ from .exceptions import check_status
 from .expr import AmbiguousAssignOrExtract, Updater
 from .mask import Mask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_typed_op
-from .unary import identity
 from .utils import _Pointer, libget, output_type
 
 NULL = ffi.NULL
@@ -349,7 +348,11 @@ class BaseType:
                     self.value = delayed.value
                     return
 
-                delayed = delayed.apply(identity)
+                # Two choices here: apply identity `delayed = delayed.apply(identity)`, or assign.
+                # Choose assign for now, since it works better for iso-valued objects.
+                # Perhaps we should benchmark to see which is faster and has less Python overhead.
+                self(mask=mask, accum=accum, replace=replace, input_mask=input_mask)[...] = delayed
+                return
             elif self._is_scalar:
                 if accum is not None:
                     raise TypeError(
@@ -403,9 +406,9 @@ class BaseType:
                                 "If you do wish to make a dense matrix, then please be explicit:"
                                 "\n\n    M[:, :] = s"
                             )
-                        updater[:, :] = scalar
+                        updater[...] = scalar
                     else:  # Vector
-                        updater[:] = scalar
+                        updater[...] = scalar
                     return
 
         if input_mask is not None:

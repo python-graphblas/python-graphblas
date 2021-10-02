@@ -20,7 +20,19 @@ class IndexerResolver:
 
     def __init__(self, obj, indices):
         self.obj = obj
-        self.indices = self.parse_indices(indices, obj.shape)
+        if indices is Ellipsis:
+            from .scalar import _CScalar
+            from .vector import Vector
+
+            if type(obj) is Vector:
+                self.indices = [(_ALL_INDICES, _CScalar(obj._size))]
+            else:
+                self.indices = [
+                    (_ALL_INDICES, _CScalar(obj._nrows)),
+                    (_ALL_INDICES, _CScalar(obj._ncols)),
+                ]
+        else:
+            self.indices = self.parse_indices(indices, obj.shape)
 
     @property
     def is_single_element(self):
@@ -66,7 +78,11 @@ class IndexerResolver:
         if typ is list:
             pass
         elif typ is slice:
-            if index == slice(None) or index == slice(0, None):
+            if (
+                (index.start is None or index.start == 0)
+                and (index.stop is None or index.stop >= size)
+                and (index.step is None or index.step == 1)
+            ):
                 # [:] means all indices; use special GrB_ALL indicator
                 return _ALL_INDICES, _CScalar(size)
             index = list(range(size)[index])
