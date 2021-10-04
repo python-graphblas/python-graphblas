@@ -167,7 +167,7 @@ class TypedAggregator:
                 A = A.T
             size = A._ncols
             init = Vector.new(agg._initdtype, size=size)
-            init[:] = agg._initval  # O(1) dense vector in SuiteSparse 5
+            init[...] = agg._initval  # O(1) dense vector in SuiteSparse 5
             if agg._switch:
                 updater << semiring(init @ A.T)
             else:
@@ -181,7 +181,7 @@ class TypedAggregator:
             v = expr.args[0]
             step1 = Vector.new(semiring.return_type, size=1)
             init = Matrix.new(agg._initdtype, nrows=v._size, ncols=1)
-            init[:, :] = agg._initval  # O(1) dense column vector in SuiteSparse 5
+            init[...] = agg._initval  # O(1) dense column vector in SuiteSparse 5
             if agg._switch:
                 step1 << semiring(init.T @ v)
             else:
@@ -205,14 +205,14 @@ class TypedAggregator:
             # This has not been benchmarked or optimized.
             # We may be able to intelligently choose the faster path.
             init1 = Vector.new(agg._initdtype, size=A._ncols)
-            init1[:] = agg._initval  # O(1) dense vector in SuiteSparse 5
+            init1[...] = agg._initval  # O(1) dense vector in SuiteSparse 5
             step1 = Vector.new(semiring.return_type, size=A._nrows)
             if agg._switch:
                 step1 << semiring(init1 @ A.T)
             else:
                 step1 << semiring(A @ init1)
             init2 = Matrix.new(agg._initdtype, nrows=A._nrows, ncols=1)
-            init2[:, :] = agg._initval  # O(1) dense vector in SuiteSparse 5
+            init2[...] = agg._initval  # O(1) dense vector in SuiteSparse 5
             semiring2 = agg._semiring2[semiring.return_type]
             step2 = Vector.new(semiring2.return_type, size=1)
             step2 << semiring2(step1 @ init2)
@@ -429,7 +429,7 @@ def _argminmaxij(
             masked = semiring.any_eq(D @ A).new()
             masked(mask=masked.V, replace=True) << masked  # Could use select
             init = Vector.new(bool, size=A._ncols)
-            init[:] = False  # O(1) dense vector in SuiteSparse 5
+            init[...] = False  # O(1) dense vector in SuiteSparse 5
             updater << row_semiring(masked @ init)
             if in_composite:
                 return updater.parent
@@ -443,7 +443,7 @@ def _argminmaxij(
             masked = semiring.any_eq(A @ D).new()
             masked(mask=masked.V, replace=True) << masked  # Could use select
             init = Vector.new(bool, size=A._nrows)
-            init[:] = False  # O(1) dense vector in SuiteSparse 5
+            init[...] = False  # O(1) dense vector in SuiteSparse 5
             updater << col_semiring(init @ masked)
             if in_composite:
                 return updater.parent
@@ -453,7 +453,7 @@ def _argminmaxij(
         masked = binary.eq(v, step1).new()
         masked(mask=masked.V, replace=True) << masked  # Could use select
         init = Matrix.new(bool, nrows=v._size, ncols=1)
-        init[:, :] = False  # O(1) dense column vector in SuiteSparse 5
+        init[...] = False  # O(1) dense column vector in SuiteSparse 5
         step2 = col_semiring(masked @ init).new()
         if in_composite:
             return step2
@@ -521,7 +521,7 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
         if expr.method_name == "reduce_columnwise":
             A = A.T
         init = Vector.new(bool, size=A._ncols)
-        init[:] = False  # O(1) dense vector in SuiteSparse 5
+        init[...] = False  # O(1) dense vector in SuiteSparse 5
         step1 = semiring(A @ init).new()
         Is, Js = step1.to_values()
         # TODO: perform these loops in e.g. Cython
@@ -540,7 +540,7 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
     elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
         v = expr.args[0]
         init = Matrix.new(bool, nrows=v._size, ncols=1)
-        init[:, :] = False  # O(1) dense matrix in SuiteSparse 5
+        init[...] = False  # O(1) dense matrix in SuiteSparse 5
         step1 = semiring(v @ init).new()
         index = step1[0].value
         if index is None:
@@ -551,10 +551,10 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
     else:  # GrB_Matrix_reduce
         A = expr.args[0]
         init1 = Matrix.new(bool, nrows=A._ncols, ncols=1)
-        init1[:, :] = False  # O(1) dense matrix in SuiteSparse 5
+        init1[...] = False  # O(1) dense matrix in SuiteSparse 5
         step1 = semiring(A @ init1).new()
         init2 = Vector.new(bool, size=A._nrows)
-        init2[:] = False  # O(1) dense vector in SuiteSparse 5
+        init2[...] = False  # O(1) dense vector in SuiteSparse 5
         step2 = semiring(step1.T @ init2).new()
         i = step2[0].value
         if i is None:
@@ -584,7 +584,7 @@ def _first_last_index(agg, updater, expr, *, in_composite, semiring):
         if expr.method_name == "reduce_columnwise":
             A = A.T
         init = Vector.new(bool, size=A._ncols)
-        init[:] = False  # O(1) dense vector in SuiteSparse 5
+        init[...] = False  # O(1) dense vector in SuiteSparse 5
         expr = semiring(A @ init)
         updater << expr
         if in_composite:
@@ -592,7 +592,7 @@ def _first_last_index(agg, updater, expr, *, in_composite, semiring):
     elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
         v = expr.args[0]
         init = Matrix.new(bool, nrows=v._size, ncols=1)
-        init[:, :] = False  # O(1) dense matrix in SuiteSparse 5
+        init[...] = False  # O(1) dense matrix in SuiteSparse 5
         step1 = semiring(v @ init).new()
         if in_composite:
             return step1

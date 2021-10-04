@@ -1,6 +1,6 @@
 import numpy as np
 
-from . import config, unary
+from . import config, monoid, unary
 from .dtypes import BOOL
 from .exceptions import OutOfMemory
 from .matrix import Matrix, TransposedMatrix
@@ -97,10 +97,10 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
         else:
             submatrix = Matrix.new("UINT8", matrix._nrows, matrix._ncols, name="")
             if mask.structure:
-                submatrix(matrix.S)[:, :] = 0 if mask.complement else 1
+                submatrix(matrix.S)[...] = 0 if mask.complement else 1
             else:
-                submatrix(matrix.S)[:, :] = 1 if mask.complement else 0
-                submatrix(matrix.V)[:, :] = 0 if mask.complement else 1
+                submatrix(matrix.S)[...] = 1 if mask.complement else 0
+                submatrix(matrix.V)[...] = 0 if mask.complement else 1
     else:
         if rows is None:
             rows = slice(None)
@@ -109,17 +109,20 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
         if type(matrix) is TransposedMatrix:
             parent = matrix._matrix
             submatrix = Matrix.new(parent.dtype, parent._nrows, parent._ncols, name="")
-            submatrix(parent.S)[columns, rows] = 0
-            submatrix(submatrix.S) << parent
+            # Get val to support iso-valued matrices
+            val = parent.reduce_scalar(monoid.any).new(name="")
+            submatrix(parent.S)[columns, rows] = val
+            submatrix(submatrix.S)[...] = parent
             if row_offset is not None or column_offset is not None:
                 submatrix = submatrix[column_offset:, row_offset:].new(name="")
             submatrix = submatrix.T
         else:
             if mask is None:
-                # XXX: very large iso-valued Matrix objects break here from OutOfMemory.
                 submatrix = Matrix.new(matrix.dtype, matrix._nrows, matrix._ncols, name="")
-                submatrix(matrix.S)[rows, columns] = 0
-                submatrix(submatrix.S) << matrix
+                # Get val to support iso-valued matrices
+                val = matrix.reduce_scalar(monoid.any).new(name="")
+                submatrix(matrix.S)[rows, columns] = val
+                submatrix(submatrix.S)[...] = matrix
             else:
                 submatrix = Matrix.new("UINT8", matrix._nrows, matrix._ncols, name="")
                 if mask.structure:
@@ -142,15 +145,17 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
         else:
             subvector = Vector.new("UINT8", vector._size, name="")
             if mask.structure:
-                subvector(vector.S)[:] = 0 if mask.complement else 1
+                subvector(vector.S)[...] = 0 if mask.complement else 1
             else:
-                subvector(vector.S)[:] = 1 if mask.complement else 0
-                subvector(vector.V)[:] = 0 if mask.complement else 1
+                subvector(vector.S)[...] = 1 if mask.complement else 0
+                subvector(vector.V)[...] = 0 if mask.complement else 1
     else:
         if mask is None:
             subvector = Vector.new(vector.dtype, vector._size, name="")
-            subvector(vector.S)[columns] = 0
-            subvector(subvector.S) << vector
+            # Get val to support iso-valued vectors
+            val = vector.reduce(monoid.any).new(name="")
+            subvector(vector.S)[columns] = val
+            subvector(subvector.S)[...] = vector
         else:
             subvector = Vector.new("UINT8", vector._size, name="")
             if mask.structure:
