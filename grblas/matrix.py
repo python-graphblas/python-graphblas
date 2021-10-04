@@ -318,10 +318,8 @@ class Matrix(BaseType):
         new_matrix = ffi_new("GrB_Matrix*")
         dtype = lookup_dtype(dtype)
         rv = cls(new_matrix, dtype, name=name)
-        if type(nrows) is not _CScalar:
-            nrows = _CScalar(nrows)
-        if type(ncols) is not _CScalar:
-            ncols = _CScalar(ncols)
+        nrows = _CScalar(nrows)
+        ncols = _CScalar(ncols)
         call("GrB_Matrix_new", [_Pointer(rv), dtype, nrows, ncols])
         rv._nrows = nrows.scalar.value
         rv._ncols = ncols.scalar.value

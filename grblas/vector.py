@@ -281,8 +281,7 @@ class Vector(BaseType):
         new_vector = ffi_new("GrB_Vector*")
         dtype = lookup_dtype(dtype)
         rv = cls(new_vector, dtype, name=name)
-        if type(size) is not _CScalar:
-            size = _CScalar(size)
+        size = _CScalar(size)
         call("GrB_Vector_new", [_Pointer(rv), dtype, size])
         rv._size = size.scalar.value
         return rv
