@@ -146,16 +146,23 @@ def test_npbinary():
                 else:
                     np_result = getattr(np, binary_name)(np_left, np_right)
                     compare_op = npbinary.equal
+
             np_result = grblas.Vector.from_values(
-                list(range(np_left.size)), list(np_result), dtype=gb_result.dtype
+                np.arange(np_left.size), np_result, dtype=gb_result.dtype
             )
+
             assert gb_result.nvals == np_result.size
             match = gb_result.ewise_mult(np_result, compare_op).new()
             if gb_result.dtype.name.startswith("F"):
                 match(accum=grblas.binary.lor) << gb_result.apply(npunary.isnan)
+            if gb_result.dtype.name.startswith("FC"):
+                # Divide by 0j sometimes result in different behavior, such as `nan` or `(inf+0j)`
+                match(accum=grblas.binary.lor) << gb_result.apply(npunary.isinf)
             compare = match.reduce(grblas.monoid.land).new()
             if not compare:  # pragma: no cover
-                print(binary_name, gb_left.dtype)
+                print(binary_name)
+                print(gb_left)
+                print(gb_right)
                 print(gb_result)
                 print(np_result)
             assert compare
@@ -216,7 +223,7 @@ def test_npmonoid():
                 gb_result = gb_left.ewise_mult(gb_right, op).new()
                 np_result = getattr(np, binary_name)(np_left, np_right)
             np_result = grblas.Vector.from_values(
-                list(range(np_left.size)), list(np_result), dtype=gb_result.dtype
+                np.arange(np_left.size), np_result, dtype=gb_result.dtype
             )
             assert gb_result.nvals == np_result.size
             match = gb_result.ewise_mult(np_result, npbinary.equal).new()

@@ -585,28 +585,28 @@ class Vector(BaseType):
             dtype = self.dtype
         else:
             dtype = lookup_dtype(dtype)
-        index, _ = resolved_indexes.indices[0]
+        idx = resolved_indexes.indices[0]
         result = Scalar.new(dtype, name=name)
         if (
-            call(f"GrB_Vector_extractElement_{dtype}", [_Pointer(result), self, index])
+            call(f"GrB_Vector_extractElement_{dtype}", [_Pointer(result), self, idx.index])
             is not NoValue
         ):
             result._is_empty = False
         return result
 
     def _prep_for_extract(self, resolved_indexes, mask=None, is_submask=False):
-        index, isize = resolved_indexes.indices[0]
+        size, index, cscalar = resolved_indexes.indices[0]
         return VectorExpression(
             "__getitem__",
             "GrB_Vector_extract",
-            [self, index, isize],
+            [self, index, cscalar],
             expr_repr="{0.name}[[{2} elements]]",
-            size=isize,
+            size=size,
             dtype=self.dtype,
         )
 
     def _assign_element(self, resolved_indexes, value):
-        index, _ = resolved_indexes.indices[0]
+        idx = resolved_indexes.indices[0]
         if type(value) is not Scalar:
             try:
                 value = Scalar.from_value(value, name="")
@@ -619,11 +619,11 @@ class Vector(BaseType):
                     extra_message="Literal scalars also accepted.",
                 )
         # should we cast?
-        call(f"GrB_Vector_setElement_{value.dtype}", [self, _CScalar(value), index])
+        call(f"GrB_Vector_setElement_{value.dtype}", [self, _CScalar(value), idx.index])
 
     def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
-        index, isize = resolved_indexes.indices[0]
+        size, index, cscalar = resolved_indexes.indices[0]
 
         if output_type(value) is Vector:
             if type(value) is not Vector:
@@ -633,7 +633,7 @@ class Vector(BaseType):
                     within=method_name,
                 )
             if is_submask:
-                if isize is None:
+                if size is None:
                     # v[i](m) << w
                     raise TypeError("Single element assign does not accept a submask")
                 # v[I](m) << w
@@ -658,7 +658,7 @@ class Vector(BaseType):
                     )
             value = _CScalar(value)
             if is_submask:
-                if isize is None:
+                if size is None:
                     # v[i](m) << c
                     raise TypeError("Single element assign does not accept a submask")
                 # v[I](m) << c
@@ -667,23 +667,23 @@ class Vector(BaseType):
             else:
                 # v(m)[I] << c
                 # v[I] << c
-                if isize is None:
+                if size is None:
                     index = _CArray([index.scalar.value])
-                    isize = _CScalar(1)
+                    cscalar = _CScalar(1)
                 cfunc_name = f"GrB_Vector_assign_{value.dtype}"
                 expr_repr = "[[{2} elements]] = {0}"
         return VectorExpression(
             method_name,
             cfunc_name,
-            [value, index, isize],
+            [value, index, cscalar],
             expr_repr=expr_repr,
             size=self._size,
             dtype=self.dtype,
         )
 
     def _delete_element(self, resolved_indexes):
-        index, _ = resolved_indexes.indices[0]
-        call("GrB_Vector_removeElement", [self, index])
+        idx = resolved_indexes.indices[0]
+        call("GrB_Vector_removeElement", [self, idx.index])
 
     def to_pygraphblas(self):  # pragma: no cover
         """Convert to a new `pygraphblas.Vector`

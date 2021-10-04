@@ -1,3 +1,5 @@
+from collections import namedtuple
+
 import numpy as np
 
 from . import lib, utils
@@ -14,6 +16,9 @@ class _AllIndices:
 
 _ALL_INDICES = _AllIndices()
 
+# We may want this as a class eventually (different repr, etc.)
+AxisIndex = namedtuple("AxisIndex", ["size", "index", "cscalar"])
+
 
 class IndexerResolver:
     __slots__ = "obj", "indices", "__weakref__"
@@ -25,19 +30,19 @@ class IndexerResolver:
             from .vector import Vector
 
             if type(obj) is Vector:
-                self.indices = [(_ALL_INDICES, _CScalar(obj._size))]
+                self.indices = [AxisIndex(obj._size, _ALL_INDICES, _CScalar(obj._size))]
             else:
                 self.indices = [
-                    (_ALL_INDICES, _CScalar(obj._nrows)),
-                    (_ALL_INDICES, _CScalar(obj._ncols)),
+                    AxisIndex(obj._nrows, _ALL_INDICES, _CScalar(obj._nrows)),
+                    AxisIndex(obj._ncols, _ALL_INDICES, _CScalar(obj._ncols)),
                 ]
         else:
             self.indices = self.parse_indices(indices, obj.shape)
 
     @property
     def is_single_element(self):
-        for idx, size in self.indices:
-            if size is not None:
+        for idx in self.indices:
+            if idx.size is not None:
                 return False
         return True
 
@@ -74,31 +79,27 @@ class IndexerResolver:
         if np.issubdtype(typ, np.integer):
             if index >= size:
                 raise IndexError(f"Index out of range: index={index}, size={size}")
-            return _CScalar(int(index)), None
+            return AxisIndex(None, _CScalar(int(index)), None)
         if typ is list:
             pass
         elif typ is slice:
-            if (
-                (index.start is None or index.start == 0)
-                and (index.stop is None or index.stop >= size)
-                and (index.step is None or index.step == 1)
-            ):
-                # [:] means all indices; use special GrB_ALL indicator
-                return _ALL_INDICES, _CScalar(size)
-            index = list(range(size)[index])
+            from ._slice import slice_to_index
+
+            return slice_to_index(index, size)
+
         elif typ is np.ndarray:
             if len(index.shape) != 1:
                 raise TypeError(f"Invalid number of dimensions for index: {len(index.shape)}")
             if not np.issubdtype(index.dtype, np.integer):
                 raise TypeError(f"Invalid dtype for index: {index.dtype}")
-            return _CArray(index), _CScalar(len(index))
+            return AxisIndex(len(index), _CArray(index), _CScalar(len(index)))
         else:
             from .scalar import Scalar
 
             if typ is Scalar:
                 if index.dtype.name.startswith("F"):
                     raise TypeError(f"An integer is required for indexing.  Got: {index.dtype}")
-                return _CScalar(index), None
+                return AxisIndex(None, _CScalar(index), None)
 
             from .matrix import Matrix, TransposedMatrix
             from .vector import Vector
@@ -127,7 +128,7 @@ class IndexerResolver:
                         f"`x(mask={index.name}) << value`."
                     )
                 raise TypeError(f"Invalid type for index: {typ}; unable to convert to list")
-        return _CArray(index), _CScalar(len(index))
+        return AxisIndex(len(index), _CArray(index), _CScalar(len(index)))
 
     def get_index(self, dim):
         """Return a new IndexerResolver with index for the selected dimension"""
@@ -248,8 +249,8 @@ class AmbiguousAssignOrExtract:
         from .vector import Vector
 
         if type(input_mask.mask) is Vector and type(self.parent) is not Vector:
-            (_, rowsize), (_, colsize) = self.resolved_indexes.indices
-            if rowsize is None:
+            rowidx, colidx = self.resolved_indexes.indices
+            if rowidx.size is None:
                 if self.parent._ncols != input_mask.mask._size:
                     raise ValueError(
                         "Size of `input_mask` Vector does not match ncols of Matrix:\n"
@@ -257,7 +258,7 @@ class AmbiguousAssignOrExtract:
                         f"{self.parent._ncols} != {input_mask.mask._size}"
                     )
                 mask_expr = input_mask.mask._prep_for_extract(self.resolved_indexes.get_index(1))
-            elif colsize is None:
+            elif colidx.size is None:
                 if self.parent._nrows != input_mask.mask._size:
                     raise ValueError(
                         "Size of `input_mask` Vector does not match nrows of Matrix:\n"

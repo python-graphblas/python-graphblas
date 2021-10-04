@@ -43,7 +43,7 @@ BINARY = {
         "rminus", "second", "times",
     },
     (ALL, BOOL): {"eq", "ne"},
-    (ALL, FP): {"truediv", "rtruediv"},
+    (ALL, FCFP): {"truediv", "rtruediv"},
     (ALL, NOFC): {"absfirst", "abssecond"},
     (ALL, POS): {
         "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1",
@@ -70,8 +70,8 @@ _SEMIRING1 = {
         {"any"},
         {"first", "pair", "second"},
     ],
-    (ALL, FP): [
-        {"any", "max", "min", "plus", "times"},
+    (ALL, FCFP): [
+        {"any", "plus", "times"},
         {"truediv"},
     ],
     (ALL, NOFC): [
@@ -90,6 +90,10 @@ _SEMIRING1 = {
         # BOOL `*_ne` uses `*_lxor`
         {"any", "eq", "land", "lor", "lxnor", "lxor"},
         {"eq", "land", "lor", "lxor", "ne", "ge", "gt", "le", "lt"},
+    ],
+    (NOFC, FP): [
+        {"max", "min"},
+        {"truediv"},
     ],
     (FPINT, FPINT): [
         # Some of these are superseded by (ALL, ALL)
