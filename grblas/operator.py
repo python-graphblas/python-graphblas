@@ -980,13 +980,16 @@ class BinaryOp(OpBase):
         rtruediv = binary.rtruediv = BinaryOp("rtruediv")
         for (new_op, builtin_op) in [(truediv, binary.cdiv), (rtruediv, binary.rdiv)]:
             for dtype in builtin_op.types:
-                float_type = "FP32" if dtype == "FP32" else "FP64"
-                orig_op = builtin_op[float_type]
+                if dtype in {"FP32", "FC32", "FC64"}:
+                    orig_dtype = dtype
+                else:
+                    orig_dtype = "FP64"
+                orig_op = builtin_op[orig_dtype]
                 op = TypedBuiltinBinaryOp(
                     new_op,
                     new_op.name,
                     dtype,
-                    builtin_op.types[float_type],
+                    builtin_op.types[orig_dtype],
                     orig_op.gb_obj,
                     orig_op.gb_name,
                 )

@@ -1377,3 +1377,17 @@ def test_smallestk(v):
     w = v.ss.selectk("smallest", 3)
     expected = Vector.from_values([1, 3, 6], [1, 1, 0], size=v.size)
     assert w.isequal(expected)
+
+
+def test_slice():
+    v = Vector.from_values(np.arange(5), np.arange(5))
+    w = v[0:0].new()
+    assert w.size == 0
+    w = v[2:0].new()
+    assert w.size == 0
+    w = v[::-1].new()
+    expected = Vector.from_values(np.arange(5), np.arange(5)[::-1])
+    assert w.isequal(expected)
+    w = v[4:-3:-1].new()
+    expected = Vector.from_values(np.arange(2), np.arange(5)[4:-3:-1])
+    assert w.isequal(expected)

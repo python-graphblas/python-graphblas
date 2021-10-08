@@ -318,10 +318,8 @@ class Matrix(BaseType):
         new_matrix = ffi_new("GrB_Matrix*")
         dtype = lookup_dtype(dtype)
         rv = cls(new_matrix, dtype, name=name)
-        if type(nrows) is not _CScalar:
-            nrows = _CScalar(nrows)
-        if type(ncols) is not _CScalar:
-            ncols = _CScalar(ncols)
+        nrows = _CScalar(nrows)
+        ncols = _CScalar(ncols)
         call("GrB_Matrix_new", [_Pointer(rv), dtype, nrows, ncols])
         rv._nrows = nrows.scalar.value
         rv._ncols = ncols.scalar.value
@@ -728,13 +726,15 @@ class Matrix(BaseType):
             dtype = self.dtype
         else:
             dtype = lookup_dtype(dtype)
-        row, _ = resolved_indexes.indices[0]
-        col, _ = resolved_indexes.indices[1]
+        rowidx, colidx = resolved_indexes.indices
         if self._is_transposed:
-            row, col = col, row
+            rowidx, colidx = colidx, rowidx
         result = Scalar.new(dtype, name=name)
         if (
-            call(f"GrB_Matrix_extractElement_{dtype}", [_Pointer(result), self, row, col])
+            call(
+                f"GrB_Matrix_extractElement_{dtype}",
+                [_Pointer(result), self, rowidx.index, colidx.index],
+            )
             is not NoValue
         ):
             result._is_empty = False
@@ -742,15 +742,13 @@ class Matrix(BaseType):
 
     def _prep_for_extract(self, resolved_indexes):
         method_name = "__getitem__"
-        rows, rowsize = resolved_indexes.indices[0]
-        cols, colsize = resolved_indexes.indices[1]
+        (rowsize, rows, rowscalar), (colsize, cols, colscalar) = resolved_indexes.indices
         if rowsize is None:
             # Row-only selection; GraphBLAS doesn't have this method, so we hack it using transpose
-            row_index = rows
             return VectorExpression(
                 method_name,
                 "GrB_Col_extract",
-                [self, cols, colsize, row_index],
+                [self, cols, colscalar, rows],
                 expr_repr="{0.name}[{3}, [{2} cols]]",
                 size=colsize,
                 dtype=self.dtype,
@@ -758,11 +756,10 @@ class Matrix(BaseType):
             )
         elif colsize is None:
             # Column-only selection
-            col_index = cols
             return VectorExpression(
                 method_name,
                 "GrB_Col_extract",
-                [self, rows, rowsize, col_index],
+                [self, rows, rowscalar, cols],
                 expr_repr="{0.name}[[{2} rows], {3}]",
                 size=rowsize,
                 dtype=self.dtype,
@@ -772,7 +769,7 @@ class Matrix(BaseType):
             return MatrixExpression(
                 method_name,
                 "GrB_Matrix_extract",
-                [self, rows, rowsize, cols, colsize],
+                [self, rows, rowscalar, cols, colscalar],
                 expr_repr="{0.name}[[{2} rows], [{4} cols]]",
                 nrows=rowsize,
                 ncols=colsize,
@@ -781,8 +778,7 @@ class Matrix(BaseType):
             )
 
     def _assign_element(self, resolved_indexes, value):
-        row, _ = resolved_indexes.indices[0]
-        col, _ = resolved_indexes.indices[1]
+        rowidx, colidx = resolved_indexes.indices
         if type(value) is not Scalar:
             try:
                 value = Scalar.from_value(value, name="")
@@ -795,12 +791,14 @@ class Matrix(BaseType):
                     extra_message="Literal scalars also accepted.",
                 )
         # should we cast?
-        call(f"GrB_Matrix_setElement_{value.dtype}", [self, _CScalar(value), row, col])
+        call(
+            f"GrB_Matrix_setElement_{value.dtype}",
+            [self, _CScalar(value), rowidx.index, colidx.index],
+        )
 
     def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
-        rows, rowsize = resolved_indexes.indices[0]
-        cols, colsize = resolved_indexes.indices[1]
+        (rowsize, rows, rowscalar), (colsize, cols, colscalar) = resolved_indexes.indices
         extra_message = "Literal scalars also accepted."
 
         value_type = output_type(value)
@@ -813,7 +811,6 @@ class Matrix(BaseType):
                 )
             if rowsize is None and colsize is not None:
                 # Row-only selection
-                row_index = rows
                 if mask is not None and type(mask.mask) is Matrix:
                     if is_submask:
                         # C[i, J](M) << v
@@ -825,11 +822,11 @@ class Matrix(BaseType):
                         # C(M)[i, J] << v
                         # Upcast v to a Matrix and use Matrix_assign
                         rows = _CArray([rows.scalar.value])
-                        rowsize = _CScalar(1)
+                        rowscalar = _CScalar(1)
                         delayed = MatrixExpression(
                             method_name,
                             "GrB_Matrix_assign",
-                            [_VectorAsMatrix(value), rows, rowsize, cols, colsize],
+                            [_VectorAsMatrix(value), rows, rowscalar, cols, colscalar],
                             expr_repr="[[{2} rows], [{4} cols]] = {0.name}",
                             nrows=self._nrows,
                             ncols=self._ncols,
@@ -850,7 +847,7 @@ class Matrix(BaseType):
                     delayed = MatrixExpression(
                         method_name,
                         cfunc_name,
-                        [value, row_index, cols, colsize],
+                        [value, rows, cols, colscalar],
                         expr_repr=expr_repr,
                         nrows=self._nrows,
                         ncols=self._ncols,
@@ -858,7 +855,6 @@ class Matrix(BaseType):
                     )
             elif colsize is None and rowsize is not None:
                 # Column-only selection
-                col_index = cols
                 if mask is not None and type(mask.mask) is Matrix:
                     if is_submask:
                         # C[I, j](M) << v
@@ -870,11 +866,11 @@ class Matrix(BaseType):
                         # C(M)[I, j] << v
                         # Upcast v to a Matrix and use Matrix_assign
                         cols = _CArray([cols.scalar.value])
-                        colsize = _CScalar(1)
+                        colscalar = _CScalar(1)
                         delayed = MatrixExpression(
                             method_name,
                             "GrB_Matrix_assign",
-                            [_VectorAsMatrix(value), rows, rowsize, cols, colsize],
+                            [_VectorAsMatrix(value), rows, rowscalar, cols, colscalar],
                             expr_repr="[[{2} rows], [{4} cols]] = {0.name}",
                             nrows=self._nrows,
                             ncols=self._ncols,
@@ -894,7 +890,7 @@ class Matrix(BaseType):
                     delayed = MatrixExpression(
                         method_name,
                         cfunc_name,
-                        [value, rows, rowsize, col_index],
+                        [value, rows, rowscalar, cols],
                         expr_repr=expr_repr,
                         nrows=self._nrows,
                         ncols=self._ncols,
@@ -954,7 +950,7 @@ class Matrix(BaseType):
             delayed = MatrixExpression(
                 method_name,
                 cfunc_name,
-                [value, rows, rowsize, cols, colsize],
+                [value, rows, rowscalar, cols, colscalar],
                 expr_repr=expr_repr,
                 nrows=self._nrows,
                 ncols=self._ncols,
@@ -995,11 +991,10 @@ class Matrix(BaseType):
                     value_vector << value
 
                     # Row-only selection
-                    row_index = rows
                     delayed = MatrixExpression(
                         method_name,
                         cfunc_name,
-                        [value_vector, row_index, cols, colsize],
+                        [value_vector, rows, cols, colscalar],
                         expr_repr=expr_repr,
                         nrows=self._nrows,
                         ncols=self._ncols,
@@ -1020,11 +1015,10 @@ class Matrix(BaseType):
                     value_vector << value
 
                     # Column-only selection
-                    col_index = cols
                     delayed = MatrixExpression(
                         method_name,
                         cfunc_name,
-                        [value_vector, rows, rowsize, col_index],
+                        [value_vector, rows, rowscalar, cols],
                         expr_repr="[[{2} rows], {3}] = {0.name}",
                         nrows=self._nrows,
                         ncols=self._ncols,
@@ -1066,16 +1060,16 @@ class Matrix(BaseType):
                     # C(M)[i, j] << c
                     if rowsize is None:
                         rows = _CArray([rows.scalar.value])
-                        rowsize = _CScalar(1)
+                        rowscalar = _CScalar(1)
                     if colsize is None:
                         cols = _CArray([cols.scalar.value])
-                        colsize = _CScalar(1)
+                        colscalar = _CScalar(1)
                     cfunc_name = f"GrB_Matrix_assign_{value.dtype}"
                     expr_repr = "[[{2} rows], [{4} cols]] = {0}"
                 delayed = MatrixExpression(
                     method_name,
                     cfunc_name,
-                    [_CScalar(value), rows, rowsize, cols, colsize],
+                    [_CScalar(value), rows, rowscalar, cols, colscalar],
                     expr_repr=expr_repr,
                     nrows=self._nrows,
                     ncols=self._ncols,
@@ -1084,9 +1078,8 @@ class Matrix(BaseType):
         return delayed
 
     def _delete_element(self, resolved_indexes):
-        row, _ = resolved_indexes.indices[0]
-        col, _ = resolved_indexes.indices[1]
-        call("GrB_Matrix_removeElement", [self, row, col])
+        rowidx, colidx = resolved_indexes.indices
+        call("GrB_Matrix_removeElement", [self, rowidx.index, colidx.index])
 
     def to_pygraphblas(self):  # pragma: no cover
         """Convert to a new `pygraphblas.Matrix`
