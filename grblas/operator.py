@@ -1486,14 +1486,23 @@ class Semiring(OpBase):
     __call__ = TypedBuiltinSemiring.__call__
 
 
-def get_typed_op(op, dtype, dtype2=None, *, kind=None):
+def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scalar=False, kind=None):
     if isinstance(op, OpBase):
         if dtype2 is not None:
-            dtype = unify(dtype, dtype2)
+            dtype = unify(
+                dtype, dtype2, is_left_scalar=is_left_scalar, is_right_scalar=is_right_scalar
+            )
         return op[dtype]
     elif isinstance(op, ParameterizedUdf):
         op = op()  # Use default parameters of parameterized UDFs
-        return get_typed_op(op, dtype, dtype2, kind=kind)
+        return get_typed_op(
+            op,
+            dtype,
+            dtype2,
+            is_left_scalar=is_left_scalar,
+            is_right_scalar=is_right_scalar,
+            kind=kind,
+        )
     elif isinstance(op, TypedOpBase):
         return op
     elif isinstance(op, Aggregator):
@@ -1514,7 +1523,14 @@ def get_typed_op(op, dtype, dtype2=None, *, kind=None):
                 f"Unable to get op from string {op!r}.  `kind=` argument must be provided as "
                 '"unary", "binary", "monoid", or "semiring".'
             )
-        return get_typed_op(op, dtype, dtype2, kind=kind)
+        return get_typed_op(
+            op,
+            dtype,
+            dtype2,
+            is_left_scalar=is_left_scalar,
+            is_right_scalar=is_right_scalar,
+            kind=kind,
+        )
     else:
         raise TypeError(f"Unable to get typed operator from object with type {type(op)}")
 

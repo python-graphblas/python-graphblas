@@ -1,5 +1,6 @@
 import numba
 import numpy as np
+from numpy import find_common_type, promote_types
 
 from . import lib
 
@@ -162,7 +163,7 @@ def lookup_dtype(key):
     raise ValueError(f"Unknown dtype: {key}")
 
 
-def unify(type1, type2):
+def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
     """
     Returns a type that can hold both type1 and type2
 
@@ -172,43 +173,19 @@ def unify(type1, type2):
     unify(BOOL, UINT16) -> UINT16
     unify(FP32, INT32) -> FP64
     """
-    if type1 == type2:
+    if type1 is type2:
         return type1
-    # Bools fit anywhere
-    if type1 == BOOL:
-        return type2
-    if type2 == BOOL:
-        return type1
-    # Compute bit numbers for comparison
-    num1 = 8 if type1.name[-1] == "8" else int(type1.name[-2:])
-    num2 = 8 if type2.name[-1] == "8" else int(type2.name[-2:])
-
-    # Same type with different numbers is easy: choose the larger one
-    if type1.name[1] == type2.name[1]:
-        return type2 if num2 > num1 else type1
-    # One FC, one FP
-    if type1.name[0] == "F" and type2.name[0] == "F":
-        return lookup_dtype(f"FC{max(num1, num2)}")
-    # Float or complex with int
-    if type1.name[0] == "F":
-        maxnum = min(64, max(num1, 2 * num2))
-        if type1.name[1] == "C":
-            return lookup_dtype(f"FC{maxnum}")
-        return lookup_dtype(f"FP{maxnum}")
-    # Int with float or complex
-    if type2.name[0] == "F":
-        maxnum = min(64, max(2 * num1, num2))
-        if type2.name[1] == "C":
-            return lookup_dtype(f"FC{maxnum}")
-        return lookup_dtype(f"FP{maxnum}")
-    # Mixed int/uint is a little harder
-    # Need to double the uint bit number to safely store as int
-    # Beyond 64, we have to move to float
-    if type1.name[0] == "U":
-        num1 *= 2
-    else:  # type2 is unsigned
-        num2 *= 2
-    maxnum = max(num1, num2)
-    if maxnum > 64:
-        return FP64
-    return lookup_dtype(f"INT{maxnum}")
+    if is_left_scalar:
+        scalar_types = [type1.np_type]
+        array_types = []
+    elif not is_right_scalar:
+        # Using `promote_types` is faster than `find_common_type`
+        return lookup_dtype(promote_types(type1.np_type, type2.np_type))
+    else:
+        scalar_types = []
+        array_types = [type1.np_type]
+    if is_right_scalar:
+        scalar_types.append(type2.np_type)
+    else:
+        array_types.append(type2.np_type)
+    return lookup_dtype(find_common_type(array_types, scalar_types))

@@ -566,7 +566,7 @@ class Matrix(BaseType):
                         keyword_name="left",
                         extra_message="Literal scalars also accepted.",
                     )
-            op = get_typed_op(op, self.dtype, left.dtype, kind="binary")
+            op = get_typed_op(op, left.dtype, self.dtype, is_left_scalar=True, kind="binary")
             if op.opclass == "Monoid":
                 op = op.binaryop
             else:
@@ -592,7 +592,7 @@ class Matrix(BaseType):
                         keyword_name="right",
                         extra_message="Literal scalars also accepted.",
                     )
-            op = get_typed_op(op, self.dtype, right.dtype, kind="binary")
+            op = get_typed_op(op, self.dtype, right.dtype, is_right_scalar=True, kind="binary")
             if op.opclass == "Monoid":
                 op = op.binaryop
             else:

@@ -144,7 +144,14 @@ class Scalar(BaseType):
             return self.is_empty is other.is_empty
         # We can't yet call a UDF on a scalar as part of the spec, so let's do it ourselves
         isclose_func = isclose(rel_tol, abs_tol)
-        isclose_func = get_typed_op(isclose_func, self.dtype, other.dtype, kind="binary")
+        isclose_func = get_typed_op(
+            isclose_func,
+            self.dtype,
+            other.dtype,
+            is_left_scalar=True,
+            is_right_scalar=True,
+            kind="binary",
+        )
         return isclose_func.numba_func(self.value, other.value)
 
     def clear(self):
