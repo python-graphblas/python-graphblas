@@ -628,6 +628,37 @@ def test_op_namespace():
     ):
         op.numpy.bad_attr
 
+    opnames = {
+        key
+        for key, val in vars(op).items()
+        if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
+    }
+    unarynames = {
+        key
+        for key, val in vars(unary).items()
+        if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
+    }
+    binarynames = {
+        key
+        for key, val in vars(binary).items()
+        if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
+    }
+    monoidnames = {
+        key
+        for key, val in vars(monoid).items()
+        if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
+    }
+    semiringnames = {
+        key
+        for key, val in vars(semiring).items()
+        if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
+    }
+    assert len(unarynames - opnames) == 0
+    assert len(binarynames - opnames) == 0
+    assert len(monoidnames - opnames) == 0
+    assert len(semiringnames - opnames) == 0
+    assert len(opnames - (unarynames | binarynames | monoidnames | semiringnames)) == 0
+
 
 @pytest.mark.slow
 def test_binaryop_attributes():
