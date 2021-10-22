@@ -965,19 +965,20 @@ class BinaryOp(OpBase):
     def _initialize(cls):
         super()._initialize()
         # Rename div to cdiv
-        cdiv = binary.cdiv = BinaryOp("cdiv")
+        cdiv = binary.cdiv = op.cdiv = BinaryOp("cdiv")
         for dtype, ret_type in binary.div.types.items():
             orig_op = binary.div[dtype]
-            op = TypedBuiltinBinaryOp(
+            cur_op = TypedBuiltinBinaryOp(
                 cdiv, "cdiv", dtype, ret_type, orig_op.gb_obj, orig_op.gb_name
             )
-            cdiv._add(op)
+            cdiv._add(cur_op)
         del binary.div
+        del op.div
         # Add truediv which always points to floating point cdiv
         # We are effectively hacking cdiv to always return floating point values
         # If the inputs are FP32, we use DIV_FP32; use DIV_FP64 for all other input dtypes
-        truediv = binary.truediv = BinaryOp("truediv")
-        rtruediv = binary.rtruediv = BinaryOp("rtruediv")
+        truediv = binary.truediv = op.truediv = BinaryOp("truediv")
+        rtruediv = binary.rtruediv = op.rtruediv = BinaryOp("rtruediv")
         for (new_op, builtin_op) in [(truediv, binary.cdiv), (rtruediv, binary.rdiv)]:
             for dtype in builtin_op.types:
                 if dtype in {"FP32", "FC32", "FC64"}:
@@ -985,7 +986,7 @@ class BinaryOp(OpBase):
                 else:
                     orig_dtype = "FP64"
                 orig_op = builtin_op[orig_dtype]
-                op = TypedBuiltinBinaryOp(
+                cur_op = TypedBuiltinBinaryOp(
                     new_op,
                     new_op.name,
                     dtype,
@@ -993,7 +994,7 @@ class BinaryOp(OpBase):
                     orig_op.gb_obj,
                     orig_op.gb_name,
                 )
-                new_op._add(op)
+                new_op._add(cur_op)
         # Add floordiv
         # cdiv truncates towards 0, while floordiv truncates towards -inf
         BinaryOp.register_new("floordiv", lambda x, y: x // y)  # cast to integer
@@ -1053,15 +1054,15 @@ class BinaryOp(OpBase):
             )
         for names, *types in name_types:
             for name in names:
-                op = getattr(binary, name)
+                cur_op = getattr(binary, name)
                 for input_types, target_type in types:
-                    typed_op = op._typed_ops[target_type]
-                    output_type = op.types[target_type]
+                    typed_op = cur_op._typed_ops[target_type]
+                    output_type = cur_op.types[target_type]
                     for dtype in input_types:
-                        if dtype not in op.types:  # pragma: no branch
-                            op.types[dtype] = output_type
-                            op._typed_ops[dtype] = typed_op
-                            op.coercions[dtype] = target_type
+                        if dtype not in cur_op.types:  # pragma: no branch
+                            cur_op.types[dtype] = output_type
+                            cur_op._typed_ops[dtype] = typed_op
+                            cur_op.coercions[dtype] = target_type
         # Not valid input dtypes
         del binary.ldexp["FP32"]
         del binary.ldexp["FP64"]
@@ -1071,9 +1072,9 @@ class BinaryOp(OpBase):
             right = getattr(binary, right)
             left.commutes_to = right
             right.commutes_to = left
-        for op in cls._commutative:
-            op = getattr(binary, op)
-            op.commutes_to = op
+        for cur_op in cls._commutative:
+            cur_op = getattr(binary, cur_op)
+            cur_op.commutes_to = cur_op
         for left, right in cls._commutes_to_in_semiring.items():
             left = getattr(binary, left)
             right = getattr(binary, right)
@@ -1343,7 +1344,9 @@ class Semiring(OpBase):
             name = f"{orig_name[:-3]}cdiv"
             cdiv_semiring = Semiring(name)
             setattr(semiring, name, cdiv_semiring)
+            setattr(op, name, cdiv_semiring)
             delattr(semiring, orig_name)
+            delattr(op, orig_name)
             for dtype, ret_type in orig.types.items():
                 orig_semiring = orig[dtype]
                 new_semiring = TypedBuiltinSemiring(
@@ -1431,15 +1434,15 @@ class Semiring(OpBase):
                 name = f"{left}_{right}"
                 if not hasattr(semiring, name):
                     continue
-                op = getattr(semiring, name)
+                cur_op = getattr(semiring, name)
                 for input_types, target_type in types:
-                    typed_op = op._typed_ops[target_type]
-                    output_type = op.types[target_type]
+                    typed_op = cur_op._typed_ops[target_type]
+                    output_type = cur_op.types[target_type]
                     for dtype in input_types:
-                        if dtype not in op.types:
-                            op.types[dtype] = output_type
-                            op._typed_ops[dtype] = typed_op
-                            op.coercions[dtype] = target_type
+                        if dtype not in cur_op.types:
+                            cur_op.types[dtype] = output_type
+                            cur_op._typed_ops[dtype] = typed_op
+                            cur_op.coercions[dtype] = target_type
 
         # Handle a few boolean cases
         for opname, targetname in (
@@ -1454,13 +1457,13 @@ class Semiring(OpBase):
             ("min_lor", "land_lor"),
             ("min_lxor", "land_lxor"),
         ):
-            op = getattr(semiring, opname)
+            cur_op = getattr(semiring, opname)
             target = getattr(semiring, targetname)
-            if "BOOL" in op.types or "BOOL" not in target.types:  # pragma: no cover
+            if "BOOL" in cur_op.types or "BOOL" not in target.types:  # pragma: no cover
                 continue
-            op.types["BOOL"] = target.types["BOOL"]
-            op._typed_ops["BOOL"] = target._typed_ops["BOOL"]
-            op.coercions["BOOL"] = "BOOL"
+            cur_op.types["BOOL"] = target.types["BOOL"]
+            cur_op._typed_ops["BOOL"] = target._typed_ops["BOOL"]
+            cur_op.coercions["BOOL"] = "BOOL"
 
     def __init__(self, name, monoid=None, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
