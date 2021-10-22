@@ -263,15 +263,18 @@ def normalize_chunks(chunks, shape):
 
 def _concat_mn(tiles):
     """Argument checking for `Matrix.ss.concat` and returns number of tiles in each dimension"""
-    from ..matrix import Matrix
+    from ..matrix import Matrix, TransposedMatrix
 
+    valid_types = (Matrix, TransposedMatrix)
     if not isinstance(tiles, (list, tuple)):
         raise TypeError(f"tiles argument must be list or tuple; got: {type(tiles)}")
     if not tiles:
         raise ValueError("tiles argument must not be empty")
+    dummy = Matrix.__new__(Matrix)
     m = len(tiles)
     n = None
-    for row_tiles in tiles:
+    new_tiles = []
+    for i, row_tiles in enumerate(tiles):
         if not isinstance(row_tiles, (list, tuple)):
             raise TypeError(f"tiles must be lists or tuples; got: {type(row_tiles)}")
         if n is None:
@@ -283,12 +286,19 @@ def _concat_mn(tiles):
                 f"tiles must all be the same length; got tiles of length {n} and "
                 f"{len(row_tiles)}"
             )
-        for tile in row_tiles:
-            if type(tile) is not Matrix:
-                raise TypeError(
-                    f"Bad tile type in concat.  Each tile must be a Matrix; got {type(tile)}"
+        new_tiles.append(
+            [
+                dummy._expect_type(
+                    tile,
+                    valid_types,
+                    within="ss.concat",
+                    argname="tiles",
+                    extra_message=f"Bad tile type for concat at position [{i}, {j}]",
                 )
-    return m, n
+                for j, tile in enumerate(row_tiles)
+            ]
+        )
+    return new_tiles, m, n
 
 
 class MatrixArray:
@@ -449,10 +459,14 @@ class ss:
         return rv
 
     def _concat(self, tiles, m, n):
+        from ..matrix import TransposedMatrix
+
         ctiles = ffi.new("GrB_Matrix[]", m * n)
         index = 0
         for row_tiles in tiles:
-            for tile in row_tiles:
+            for j, tile in enumerate(row_tiles):
+                if type(tile) is TransposedMatrix:
+                    tile = row_tiles[j] = tile.new()
                 ctiles[index] = tile.gb_obj[0]
                 index += 1
         call(
@@ -481,7 +495,7 @@ class ss:
         Matrix.ss.split
         grblas.ss.concat
         """
-        m, n = _concat_mn(tiles)
+        tiles, m, n = _concat_mn(tiles)
         self._concat(tiles, m, n)
 
     def build_scalar(self, rows, columns, value):
