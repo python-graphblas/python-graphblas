@@ -2382,8 +2382,8 @@ def test_concat(A):
 
     with pytest.raises(TypeError, match="tiles argument must be list or tuple"):
         grblas.ss.concat(1)
-    with pytest.raises(TypeError, match="Each tile must be a Matrix"):
-        grblas.ss.concat([[A.T]])
+    # with pytest.raises(TypeError, match="Each tile must be a Matrix"):
+    assert grblas.ss.concat([[A.T]]).isequal(A.T)
     with pytest.raises(TypeError, match="tiles must be lists or tuples"):
         grblas.ss.concat([A])
 

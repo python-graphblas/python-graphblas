@@ -74,7 +74,7 @@ def concat(tiles, dtype=None, *, name=None):
     Matrix.ss.concat
 
     """
-    m, n = _concat_mn(tiles)
+    tiles, m, n = _concat_mn(tiles)
     if dtype is None:
         dtype = tiles[0][0].dtype
     nrows = sum(row_tiles[0]._nrows for row_tiles in tiles)
