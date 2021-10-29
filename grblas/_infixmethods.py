@@ -9,12 +9,15 @@ comparisons = {
 }
 operations = {
     "add": "plus",
-    "sub": "minus",
     "mul": "times",
     "truediv": "truediv",
     "floordiv": "floordiv",
     "mod": "numpy.mod",
     "pow": "pow",
+}
+# monoids with 0 identity use outer (ewise_add): + | ^
+outer = {
+    "add",
 }
 custom = {
     "abs",
@@ -27,6 +30,9 @@ custom = {
     "ixor",
     "ior",
     "iand",
+    "sub",
+    "isub",
+    "rsub",
 }
 # Skipped: rshift, pos
 # Already used for syntax: lshift, and, or
@@ -37,13 +43,14 @@ for method, op in sorted(comparisons.items()):
         f'    return call_op(self, other, "__{method}__", binary.{op})\n\n'
     )
 for method, op in sorted(operations.items()):
+    out = ", outer=True" if method in outer else ""
     print(
         f'def __{method}__(self, other):\n'
-        f'    return call_op(self, other, "__{method}__", binary.{op}, scalar_only=True)\n\n'
+        f'    return call_op(self, other, "__{method}__", binary.{op}{out})\n\n'
     )
     print(
         f'def __r{method}__(self, other):\n'
-        f'    return call_op(other, self, "__r{method}__", binary.{op}, scalar_only=True)\n\n'
+        f'    return call_op(other, self, "__r{method}__", binary.{op}{out})\n\n'
     )
     print(
         f'def __i{method}__(self, other):\n'
@@ -183,6 +190,21 @@ def __iand__(self, other):
     return self
 
 
+def __sub__(self, other):
+    # TODO: use GxB Union
+    return call_op(self, other, "__sub__", binary.minus, scalar_only=True)
+
+
+def __rsub__(self, other):
+    # TODO: use GxB Union
+    return call_op(other, self, "__rsub__", binary.minus, scalar_only=True)
+
+
+def __isub__(self, other):
+    self << __sub__(self, other)
+    return self
+
+
 # Paste here
 def __eq__(self, other):
     return call_op(self, other, "__eq__", binary.eq)
@@ -209,11 +231,11 @@ def __ne__(self, other):
 
 
 def __add__(self, other):
-    return call_op(self, other, "__add__", binary.plus, scalar_only=True)
+    return call_op(self, other, "__add__", binary.plus, outer=True)
 
 
 def __radd__(self, other):
-    return call_op(other, self, "__radd__", binary.plus, scalar_only=True)
+    return call_op(other, self, "__radd__", binary.plus, outer=True)
 
 
 def __iadd__(self, other):
@@ -222,11 +244,11 @@ def __iadd__(self, other):
 
 
 def __floordiv__(self, other):
-    return call_op(self, other, "__floordiv__", binary.floordiv, scalar_only=True)
+    return call_op(self, other, "__floordiv__", binary.floordiv)
 
 
 def __rfloordiv__(self, other):
-    return call_op(other, self, "__rfloordiv__", binary.floordiv, scalar_only=True)
+    return call_op(other, self, "__rfloordiv__", binary.floordiv)
 
 
 def __ifloordiv__(self, other):
@@ -235,11 +257,11 @@ def __ifloordiv__(self, other):
 
 
 def __mod__(self, other):
-    return call_op(self, other, "__mod__", binary.numpy.mod, scalar_only=True)
+    return call_op(self, other, "__mod__", binary.numpy.mod)
 
 
 def __rmod__(self, other):
-    return call_op(other, self, "__rmod__", binary.numpy.mod, scalar_only=True)
+    return call_op(other, self, "__rmod__", binary.numpy.mod)
 
 
 def __imod__(self, other):
@@ -248,11 +270,11 @@ def __imod__(self, other):
 
 
 def __mul__(self, other):
-    return call_op(self, other, "__mul__", binary.times, scalar_only=True)
+    return call_op(self, other, "__mul__", binary.times)
 
 
 def __rmul__(self, other):
-    return call_op(other, self, "__rmul__", binary.times, scalar_only=True)
+    return call_op(other, self, "__rmul__", binary.times)
 
 
 def __imul__(self, other):
@@ -261,11 +283,11 @@ def __imul__(self, other):
 
 
 def __pow__(self, other):
-    return call_op(self, other, "__pow__", binary.pow, scalar_only=True)
+    return call_op(self, other, "__pow__", binary.pow)
 
 
 def __rpow__(self, other):
-    return call_op(other, self, "__rpow__", binary.pow, scalar_only=True)
+    return call_op(other, self, "__rpow__", binary.pow)
 
 
 def __ipow__(self, other):
@@ -273,25 +295,12 @@ def __ipow__(self, other):
     return self
 
 
-def __sub__(self, other):
-    return call_op(self, other, "__sub__", binary.minus, scalar_only=True)
-
-
-def __rsub__(self, other):
-    return call_op(other, self, "__rsub__", binary.minus, scalar_only=True)
-
-
-def __isub__(self, other):
-    self << __sub__(self, other)
-    return self
-
-
 def __truediv__(self, other):
-    return call_op(self, other, "__truediv__", binary.truediv, scalar_only=True)
+    return call_op(self, other, "__truediv__", binary.truediv)
 
 
 def __rtruediv__(self, other):
-    return call_op(other, self, "__rtruediv__", binary.truediv, scalar_only=True)
+    return call_op(other, self, "__rtruediv__", binary.truediv)
 
 
 def __itruediv__(self, other):
