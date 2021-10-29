@@ -270,8 +270,10 @@ def test_apply_binary_bad(s1, v1):
 
 
 def test_infix_nonscalars(v1, v2):
+    # with raises(TypeError, match="refuse to guess"):
+    assert (v1 + v2).new().isequal(op.plus(v1 | v2).new())
     with raises(TypeError, match="refuse to guess"):
-        v1 + v2
+        v1 - v2  # Not handled yet
 
 
 @autocompute

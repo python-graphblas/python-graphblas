@@ -377,7 +377,7 @@ class InfixExprBase:
 
     def _to_expr(self):
         if self._value is None:
-            # Rely on the default operator for the method
+            # Rely on the default operator for `x @ y`
             self._value = getattr(self.left, self.method_name)(self.right)
         return self._value
 
