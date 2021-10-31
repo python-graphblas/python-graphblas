@@ -34,7 +34,7 @@ class Scalar(BaseType):
 
         return format_scalar(self)
 
-    def _repr_html_(self):
+    def _repr_html_(self, collapse=False):
         from .formatting import format_scalar_html
 
         return format_scalar_html(self)
@@ -341,7 +341,7 @@ class _CScalar:
     def __repr__(self):
         return repr(self.scalar.value)
 
-    def _repr_html_(self):
+    def _repr_html_(self, collapse=False):
         return self.scalar._repr_html_()
 
     @property

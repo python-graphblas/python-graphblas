@@ -54,12 +54,12 @@ class Vector(BaseType):
         with skip_record:
             return format_vector(self, mask=mask)
 
-    def _repr_html_(self, mask=None):
+    def _repr_html_(self, mask=None, collapse=False):
         from .formatting import format_vector_html
         from .recorder import skip_record
 
         with skip_record:
-            return format_vector_html(self, mask=mask)
+            return format_vector_html(self, mask=mask, collapse=collapse)
 
     def __reduce__(self):
         # SS, SuiteSparse-specific: export
