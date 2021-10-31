@@ -472,6 +472,15 @@ def format_matrix_expression_html(expr):
     return _format_expression(expr, header)
 
 
+def get_result_string(expr):
+    if config.get("autocompute"):
+        arg_string = get_expr_result(expr)
+        arg_string += "\n\n"
+    else:
+        arg_string = ""
+    return arg_string
+
+
 def format_matrix_expression(expr):
     expr_repr = expr._format_expr()
     name = f"grblas.{type(expr).__name__}"
@@ -482,11 +491,7 @@ def format_matrix_expression(expr):
         name=name,
         quote=False,
     )
-    if config.get("autocompute"):
-        arg_string = get_expr_result(expr)
-        arg_string += "\n\n"
-    else:
-        arg_string = ""
+    arg_string = get_result_string(expr)
     return (
         f"{header}\n\n"
         f"{arg_string}"
@@ -506,11 +511,7 @@ def format_vector_expression(expr):
     header = create_header(
         expr_repr, ["size", "dtype"], [expr._size, expr.dtype], name=name, quote=False
     )
-    if config.get("autocompute"):
-        arg_string = get_expr_result(expr)
-        arg_string += "\n\n"
-    else:
-        arg_string = ""
+    arg_string = get_result_string(expr)
     return (
         f"{header}\n\n"
         f"{arg_string}"
@@ -528,11 +529,7 @@ def format_scalar_expression(expr):
     expr_repr = expr._format_expr()
     name = f"grblas.{type(expr).__name__}"
     header = create_header(expr_repr, ["dtype"], [expr.dtype], name=name, quote=False)
-    if config.get("autocompute"):
-        arg_string = get_expr_result(expr)
-        arg_string += "\n\n"
-    else:
-        arg_string = ""
+    arg_string = get_result_string(expr)
     return (
         f"{header}\n\n"
         f"{arg_string}"
@@ -639,11 +636,7 @@ def format_scalar_infix_expression(expr):
         name=name,
         quote=False,
     )
-    if config.get("autocompute"):
-        arg_string = get_expr_result(expr)
-        arg_string += "\n\n"
-    else:
-        arg_string = ""
+    arg_string = get_result_string(expr)
     return (
         f"{header}\n\n"
         f"{arg_string}"
@@ -662,6 +655,18 @@ def format_scalar_infix_expression_html(expr):
     return _format_infix_expression(expr, header, expr_html)
 
 
+def get_infix_result_string(expr):
+    if (
+        expr.method_name not in {"ewise_add", "ewise_mult"}
+        or expr.left.dtype == BOOL
+        and expr.right.dtype == BOOL
+    ):
+        arg_string = get_result_string(expr)
+    else:
+        arg_string = ""
+    return arg_string
+
+
 def format_vector_infix_expression(expr):
     expr_repr = expr._format_expr()
     name = f"grblas.{type(expr).__name__}"
@@ -672,15 +677,7 @@ def format_vector_infix_expression(expr):
         name=name,
         quote=False,
     )
-    if config.get("autocompute") and (
-        expr.method_name not in {"ewise_add", "ewise_mult"}
-        or expr.left.dtype == BOOL
-        and expr.right.dtype == BOOL
-    ):
-        arg_string = get_expr_result(expr)
-        arg_string += "\n\n"
-    else:
-        arg_string = ""
+    arg_string = get_infix_result_string(expr)
     return (
         f"{header}\n\n"
         f"{arg_string}"
@@ -709,15 +706,7 @@ def format_matrix_infix_expression(expr):
         name=name,
         quote=False,
     )
-    if config.get("autocompute") and (
-        expr.method_name not in {"ewise_add", "ewise_mult"}
-        or expr.left.dtype == BOOL
-        and expr.right.dtype == BOOL
-    ):
-        arg_string = get_expr_result(expr)
-        arg_string += "\n\n"
-    else:
-        arg_string = ""
+    arg_string = get_infix_result_string(expr)
     return (
         f"{header}\n\n"
         f"{arg_string}"

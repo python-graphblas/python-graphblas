@@ -5728,6 +5728,88 @@ def test_inner_outer_repr(v):
 
 
 @autocompute
+def test_autocompute(A, B, v):
+    if not pd:  # pragma: no cover
+        return
+    repr_printer(A & A, "A & A")
+    assert repr(A & A) == (
+        "grblas.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
+        "A_1 & A_1                       1      5       INT64        INT64\n"
+        "\n"
+        "Do op(expr) to create a MatrixExpression for ewise_mult.\n"
+        "For example: times(A_1 & A_1)"
+    )
+    repr_printer(A.ewise_add(A), "A.ewise_add(A)")
+    assert repr(A.ewise_add(A)) == (
+        "grblas.MatrixExpression                    nrows  ncols  dtype\n"
+        "A_1.ewise_add(A_1, op=monoid.plus[INT64])      1      5  INT64\n"
+        "\n"
+        '"Result"       nvals  nrows  ncols  dtype   format\n'
+        "grblas.Matrix      3      1      5  INT64  bitmapr\n"
+        "--------------------------------------------------\n"
+        "   0 1  2 3  4\n"
+        "0  0    2    4\n"
+        "\n"
+        "Do expr.new() or other << expr to calculate the expression."
+    )
+
+    BIG = Vector.new(int, size=2 ** 55)
+    small = Vector.new(int, size=2 ** 55)
+    BIG[:] = 1
+    small[0] = 2
+    repr_printer(BIG.ewise_mult(small), "BIG.ewise_mult(small)")
+    assert repr(BIG.ewise_mult(small)) == (
+        "grblas.VectorExpression                                   size  dtype\n"
+        "v_0.ewise_mult(v_1, op=binary.times[INT64])  36028797018963968  INT64\n"
+        "\n"
+        '"Result"       nvals               size  dtype  format\n'
+        "grblas.Vector      1  36028797018963968  INT64  sparse\n"
+        "------------------------------------------------------\n"
+        " 0                 1                  ... 36028797018963966 36028797018963967\n"
+        "                 2                    ...                                    \n"
+        "\n"
+        "Do expr.new() or other << expr to calculate the expression."
+    )
+    repr_printer(BIG.ewise_add(small), "BIG.ewise_add(small)")
+    assert repr(BIG.ewise_add(small)) == (
+        "grblas.VectorExpression                                 size  dtype\n"
+        "v_0.ewise_add(v_1, op=monoid.plus[INT64])  36028797018963968  INT64\n"
+        "\n"
+        "Result is too large to compute!\n"
+        "\n"
+        "Do expr.new() or other << expr to calculate the expression."
+    )
+    BIG_bool = BIG.dup(dtype=bool)
+    small_bool = small.dup(dtype=bool)
+    small_bool[0] = False
+    repr_printer(BIG_bool | small_bool, "BIG_bool | small_bool")
+    assert repr(BIG_bool | small_bool) == (
+        "grblas.VectorEwiseAddExpr               size  left_dtype  right_dtype\n"
+        "v_4 | v_5                  36028797018963968        BOOL         BOOL\n"
+        "\n"
+        "Result is too large to compute!\n"
+        "\n"
+        "Do op(expr) to create a VectorExpression for ewise_add.\n"
+        "For example: plus(v_4 | v_5)"
+    )
+    C = A.dup(dtype=bool)
+    repr_printer(C & C, "C & C")
+    assert repr(C & C) == (
+        "grblas.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
+        "M_1 & M_1                       1      5        BOOL         BOOL\n"
+        "\n"
+        '"Result"       nvals  nrows  ncols  dtype   format\n'
+        "grblas.Matrix      3      1      5   BOOL  bitmapr\n"
+        "--------------------------------------------------\n"
+        "       0 1     2 3     4\n"
+        "0  False    True    True\n"
+        "\n"
+        "Do op(expr) to create a MatrixExpression for ewise_mult.\n"
+        "For example: times(M_1 & M_1)"
+    )
+
+
+@autocompute
 def test_autocompute_html(A, B, v):
     if not pd:  # pragma: no cover
         return
