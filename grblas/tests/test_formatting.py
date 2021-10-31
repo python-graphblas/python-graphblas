@@ -5785,18 +5785,18 @@ def test_autocompute(A, B, v):
     repr_printer(BIG_bool | small_bool, "BIG_bool | small_bool")
     assert repr(BIG_bool | small_bool) == (
         "grblas.VectorEwiseAddExpr               size  left_dtype  right_dtype\n"
-        "v_4 | v_5                  36028797018963968        BOOL         BOOL\n"
+        "v_6 | v_7                  36028797018963968        BOOL         BOOL\n"
         "\n"
         "Result is too large to compute!\n"
         "\n"
         "Do op(expr) to create a VectorExpression for ewise_add.\n"
-        "For example: plus(v_4 | v_5)"
+        "For example: plus(v_6 | v_7)"
     )
     C = A.dup(dtype=bool)
     repr_printer(C & C, "C & C")
     assert repr(C & C) == (
         "grblas.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
-        "M_1 & M_1                       1      5        BOOL         BOOL\n"
+        "M_2 & M_2                       1      5        BOOL         BOOL\n"
         "\n"
         '"Result"       nvals  nrows  ncols  dtype   format\n'
         "grblas.Matrix      3      1      5   BOOL  bitmapr\n"
@@ -5805,7 +5805,7 @@ def test_autocompute(A, B, v):
         "0  False    True    True\n"
         "\n"
         "Do op(expr) to create a MatrixExpression for ewise_mult.\n"
-        "For example: times(M_1 & M_1)"
+        "For example: times(M_2 & M_2)"
     )
 
 
