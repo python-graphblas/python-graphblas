@@ -406,7 +406,11 @@ class Matrix(BaseType):
         """
         method_name = "ewise_add"
         other = self._expect_type(
-            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+            other,
+            (Matrix, TransposedMatrix),
+            within=method_name,
+            argname="other",
+            op=op,
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
@@ -442,7 +446,7 @@ class Matrix(BaseType):
         """
         method_name = "ewise_mult"
         other = self._expect_type(
-            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other", op=op
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
@@ -466,7 +470,7 @@ class Matrix(BaseType):
         Default op is semiring.plus_times
         """
         method_name = "mxv"
-        other = self._expect_type(other, Vector, within=method_name, argname="other")
+        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
         op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = VectorExpression(
@@ -489,7 +493,7 @@ class Matrix(BaseType):
         """
         method_name = "mxm"
         other = self._expect_type(
-            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other", op=op
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
@@ -515,7 +519,7 @@ class Matrix(BaseType):
         """
         method_name = "kronecker"
         other = self._expect_type(
-            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other", op=op
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
@@ -565,6 +569,7 @@ class Matrix(BaseType):
                         within=method_name,
                         keyword_name="left",
                         extra_message="Literal scalars also accepted.",
+                        op=op,
                     )
             op = get_typed_op(op, left.dtype, self.dtype, is_left_scalar=True, kind="binary")
             if op.opclass == "Monoid":
@@ -591,6 +596,7 @@ class Matrix(BaseType):
                         within=method_name,
                         keyword_name="right",
                         extra_message="Literal scalars also accepted.",
+                        op=op,
                     )
             op = get_typed_op(op, self.dtype, right.dtype, is_right_scalar=True, kind="binary")
             if op.opclass == "Monoid":

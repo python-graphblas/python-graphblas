@@ -55,7 +55,7 @@ def call(cfunc_name, args):
 
 
 def _expect_type_message(
-    self, x, types, *, within, argname=None, keyword_name=None, extra_message=""
+    self, x, types, *, within, argname=None, keyword_name=None, op=None, extra_message=""
 ):
     if type(types) is tuple:
         if type(x) in types:
@@ -90,8 +90,13 @@ def _expect_type_message(
         expected = types.__name__
     if extra_message:
         extra_message = f"\n{extra_message}"
+    op, opclass = find_opclass(op)
+    if opclass == UNKNOWN_OPCLASS:
+        argstr = "..."
+    else:
+        argstr = f"op={op}"
     return x, (
-        f"Bad type {argmsg}in {type(self).__name__}.{within}(...).\n"
+        f"Bad type {argmsg}in {type(self).__name__}.{within}({argstr}).\n"
         f"    - Expected type: {expected}.\n"
         f"    - Got: {type(x)}."
         f"{extra_message}"

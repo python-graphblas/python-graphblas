@@ -348,7 +348,7 @@ class Vector(BaseType):
         For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
         method_name = "ewise_add"
-        other = self._expect_type(other, Vector, within=method_name, argname="other")
+        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
         if require_monoid:
@@ -380,7 +380,7 @@ class Vector(BaseType):
         Default op is binary.times
         """
         method_name = "ewise_mult"
-        other = self._expect_type(other, Vector, within=method_name, argname="other")
+        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
@@ -404,7 +404,7 @@ class Vector(BaseType):
 
         method_name = "vxm"
         other = self._expect_type(
-            other, (Matrix, TransposedMatrix), within=method_name, argname="other"
+            other, (Matrix, TransposedMatrix), within=method_name, argname="other", op=op
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
@@ -454,6 +454,7 @@ class Vector(BaseType):
                         within=method_name,
                         keyword_name="left",
                         extra_message="Literal scalars also accepted.",
+                        op=op,
                     )
             op = get_typed_op(op, left.dtype, self.dtype, is_left_scalar=True, kind="binary")
             if op.opclass == "Monoid":
@@ -480,6 +481,7 @@ class Vector(BaseType):
                         within=method_name,
                         keyword_name="right",
                         extra_message="Literal scalars also accepted.",
+                        op=op,
                     )
             op = get_typed_op(op, self.dtype, right.dtype, is_right_scalar=True, kind="binary")
             if op.opclass == "Monoid":
@@ -535,7 +537,7 @@ class Vector(BaseType):
         *This is not a standard GraphBLAS function*
         """
         method_name = "inner"
-        other = self._expect_type(other, Vector, within=method_name, argname="other")
+        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
         op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         expr = ScalarExpression(
@@ -559,7 +561,7 @@ class Vector(BaseType):
         from .matrix import MatrixExpression
 
         method_name = "outer"
-        other = self._expect_type(other, Vector, within=method_name, argname="other")
+        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
