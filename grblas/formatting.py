@@ -302,6 +302,16 @@ def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None)
     return df.where(pd.notnull(df), "")
 
 
+def get_format(x, is_transposed=False):
+    # SS, SuiteSparse-specific: format (ends with "r" or "c"), and is_iso
+    fmt = x.ss.format
+    if is_transposed:
+        fmt = fmt[:-1] + ("c" if fmt[-1] == "r" else "r")
+    if x.ss.is_iso:
+        return f"{fmt} (iso)"
+    return fmt
+
+
 def matrix_info(matrix, *, mask=None, for_html=True):
     if mask is not None:
         if for_html:
@@ -312,13 +322,10 @@ def matrix_info(matrix, *, mask=None, for_html=True):
         name = f"grblas.{type(matrix).__name__}"
     keys = ["nvals", "nrows", "ncols", "dtype", "format"]
     vals = [matrix._nvals, matrix._nrows, matrix._ncols, matrix.dtype.name]
-    # SS, SuiteSparse-specific: format (ends with "r" or "c")
     if type(matrix) is Matrix:
-        vals.append(matrix.ss.format)
+        vals.append(get_format(matrix))
     else:  # TransposedMatrix
-        fmt = matrix._matrix.ss.format
-        fmt = fmt[:-1] + ("c" if fmt[-1] == "r" else "r")
-        vals.append(fmt)
+        vals.append(get_format(matrix._matrix, is_transposed=True))
     return name, keys, vals
 
 
@@ -332,7 +339,7 @@ def vector_info(vector, *, mask=None, for_html=True):
         name = f"grblas.{type(vector).__name__}"
     # SS, SuiteSparse-specific: format
     keys = ["nvals", "size", "dtype", "format"]
-    vals = [vector._nvals, vector._size, vector.dtype.name, vector.ss.format]
+    vals = [vector._nvals, vector._size, vector.dtype.name, get_format(vector)]
     return name, keys, vals
 
 

@@ -5762,9 +5762,9 @@ def test_autocompute(A, B, v):
         "grblas.VectorExpression                                   size  dtype\n"
         "v_0.ewise_mult(v_1, op=binary.times[INT64])  36028797018963968  INT64\n"
         "\n"
-        '"Result"       nvals               size  dtype  format\n'
-        "grblas.Vector      1  36028797018963968  INT64  sparse\n"
-        "------------------------------------------------------\n"
+        '"Result"       nvals               size  dtype        format\n'
+        "grblas.Vector      1  36028797018963968  INT64  sparse (iso)\n"
+        "------------------------------------------------------------\n"
         " 0                 1                  ... 36028797018963966 36028797018963967\n"
         "                 2                    ...                                    \n"
         "\n"
@@ -6167,7 +6167,7 @@ def test_autocompute_html(A, B, v):
         "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n" + "    <td>36028797018963968</td>\n" * 2 + "    <td>INT64</td>\n"
-        "    <td>full</td>\n"
+        "    <td>full (iso)</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6296,7 +6296,7 @@ def test_autocompute_html(A, B, v):
         "    <td>1</td>\n"
         "    <td>36028797018963968</td>\n"
         "    <td>INT64</td>\n"
-        "    <td>sparse</td>\n"
+        "    <td>sparse (iso)</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6426,7 +6426,7 @@ def test_autocompute_html(A, B, v):
         "    <td>1</td>\n"
         "    <td>36028797018963968</td>\n"
         "    <td>INT64</td>\n"
-        "    <td>sparse</td>\n"
+        "    <td>sparse (iso)</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6570,7 +6570,7 @@ def test_autocompute_html(A, B, v):
         "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n" + "    <td>36028797018963968</td>\n" * 2 + "    <td>INT64</td>\n"
-        "    <td>full</td>\n"
+        "    <td>full (iso)</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6699,7 +6699,7 @@ def test_autocompute_html(A, B, v):
         "    <td>1</td>\n"
         "    <td>36028797018963968</td>\n"
         "    <td>INT64</td>\n"
-        "    <td>sparse</td>\n"
+        "    <td>sparse (iso)</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6845,7 +6845,7 @@ def test_autocompute_html(A, B, v):
         "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n" + "    <td>36028797018963968</td>\n" * 2 + "    <td>BOOL</td>\n"
-        "    <td>full</td>\n"
+        "    <td>full (iso)</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -7423,9 +7423,9 @@ def test_large_iso():
     A[:, :] << 1
     repr_printer(A, "A")
     assert repr(A) == (
-        '"M_0"                        nvals                nrows                ncols  dtype  format\n'
-        "grblas.Matrix  9223372036854775807  1152921504606846976  1152921504606846976  INT64   fullr\n"
-        "-------------------------------------------------------------------------------------------\n"
+        '"M_0"                        nvals                nrows                ncols  dtype       format\n'
+        "grblas.Matrix  9223372036854775807  1152921504606846976  1152921504606846976  INT64  fullr (iso)\n"
+        "------------------------------------------------------------------------------------------------\n"
         "                    0                    ... 1152921504606846975\n"
         "0                                     1  ...                   1\n"
         "1                                     1  ...                   1\n"
@@ -7441,9 +7441,9 @@ def test_large_iso():
     )
     repr_printer(A.T, "A.T")
     assert repr(A.T) == (
-        '"M_0.T"                                nvals                nrows                ncols  dtype  format\n'
-        "grblas.TransposedMatrix  9223372036854775807  1152921504606846976  1152921504606846976  INT64   fullc\n"
-        "-----------------------------------------------------------------------------------------------------\n"
+        '"M_0.T"                                nvals                nrows                ncols  dtype       format\n'
+        "grblas.TransposedMatrix  9223372036854775807  1152921504606846976  1152921504606846976  INT64  fullc (iso)\n"
+        "----------------------------------------------------------------------------------------------------------\n"
         "                    0                    ... 1152921504606846975\n"
         "0                                     1  ...                   1\n"
         "1                                     1  ...                   1\n"
@@ -7459,10 +7459,10 @@ def test_large_iso():
     )
     repr_printer(A.S, "A.S")
     assert repr(A.S) == (
-        '"M_0.S"                         nvals                nrows                ncols  dtype  format\n'
+        '"M_0.S"                         nvals                nrows                ncols  dtype       format\n'
         "StructuralMask  \n"
-        "of grblas.Matrix  9223372036854775807  1152921504606846976  1152921504606846976  INT64   fullr\n"
-        "----------------------------------------------------------------------------------------------\n"
+        "of grblas.Matrix  9223372036854775807  1152921504606846976  1152921504606846976  INT64  fullr (iso)\n"
+        "---------------------------------------------------------------------------------------------------\n"
         "                    0                    ... 1152921504606846975\n"
         "0                                     1  ...                   1\n"
         "1                                     1  ...                   1\n"
@@ -7480,18 +7480,18 @@ def test_large_iso():
     v[:] = 1
     repr_printer(v, "v")
     assert repr(v) == (
-        '"v_0"                        nvals                 size  dtype  format\n'
-        "grblas.Vector  1152921504606846976  1152921504606846976  INT64    full\n"
-        "----------------------------------------------------------------------\n"
+        '"v_0"                        nvals                 size  dtype      format\n'
+        "grblas.Vector  1152921504606846976  1152921504606846976  INT64  full (iso)\n"
+        "--------------------------------------------------------------------------\n"
         " 0                    ... 1152921504606846975\n"
         "                   1  ...                   1"
     )
     repr_printer(v.S, "v.S")
     assert repr(v.S) == (
-        '"v_0.S"                         nvals                 size  dtype  format\n'
+        '"v_0.S"                         nvals                 size  dtype      format\n'
         "StructuralMask  \n"
-        "of grblas.Vector  1152921504606846976  1152921504606846976  INT64    full\n"
-        "-------------------------------------------------------------------------\n"
+        "of grblas.Vector  1152921504606846976  1152921504606846976  INT64  full (iso)\n"
+        "-----------------------------------------------------------------------------\n"
         " 0                    ... 1152921504606846975\n"
         "                   1  ...                   1"
     )
