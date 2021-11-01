@@ -302,6 +302,16 @@ def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None)
     return df.where(pd.notnull(df), "")
 
 
+def get_format(x, is_transposed=False):
+    # SS, SuiteSparse-specific: format (ends with "r" or "c"), and is_iso
+    fmt = x.ss.format
+    if is_transposed:
+        fmt = fmt[:-1] + ("c" if fmt[-1] == "r" else "r")
+    if x.ss.is_iso:
+        return f"{fmt} (iso)"
+    return fmt
+
+
 def matrix_info(matrix, *, mask=None, for_html=True):
     if mask is not None:
         if for_html:
@@ -310,8 +320,12 @@ def matrix_info(matrix, *, mask=None, for_html=True):
             name = [f"{type(mask).__name__}", f"of grblas.{type(matrix).__name__}"]
     else:
         name = f"grblas.{type(matrix).__name__}"
-    keys = ["nvals", "nrows", "ncols", "dtype"]
+    keys = ["nvals", "nrows", "ncols", "dtype", "format"]
     vals = [matrix._nvals, matrix._nrows, matrix._ncols, matrix.dtype.name]
+    if type(matrix) is Matrix:
+        vals.append(get_format(matrix))
+    else:  # TransposedMatrix
+        vals.append(get_format(matrix._matrix, is_transposed=True))
     return name, keys, vals
 
 
@@ -323,8 +337,9 @@ def vector_info(vector, *, mask=None, for_html=True):
             name = [f"{type(mask).__name__}", f"of grblas.{type(vector).__name__}"]
     else:
         name = f"grblas.{type(vector).__name__}"
-    keys = ["nvals", "size", "dtype"]
-    vals = [vector._nvals, vector._size, vector.dtype.name]
+    # SS, SuiteSparse-specific: format
+    keys = ["nvals", "size", "dtype", "format"]
+    vals = [vector._nvals, vector._size, vector.dtype.name, get_format(vector)]
     return name, keys, vals
 
 
@@ -351,9 +366,9 @@ def vector_header_html(vector, *, mask=None):
     return create_header_html(name, keys, vals)
 
 
-def _format_html(name, header, df):
+def _format_html(name, header, df, collapse):
     if has_pandas:
-        state = " open"
+        state = "" if collapse else " open"
         with pd.option_context("display.show_dimensions", False, "display.large_repr", "truncate"):
             details = df._repr_html_()
     else:
@@ -372,24 +387,28 @@ def _format_html(name, header, df):
     )
 
 
-def format_matrix_html(matrix, *, max_rows=None, min_rows=None, max_columns=None, mask=None):
+def format_matrix_html(
+    matrix, *, max_rows=None, min_rows=None, max_columns=None, mask=None, collapse=False
+):
     header = matrix_header_html(matrix, mask=mask)
     df = _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, mask=mask)
     if mask is None:
         name = matrix._name_html
     else:
         name = mask._name_html
-    return _format_html(name, header, df)
+    return _format_html(name, header, df, collapse)
 
 
-def format_vector_html(vector, *, max_rows=None, min_rows=None, max_columns=None, mask=None):
+def format_vector_html(
+    vector, *, max_rows=None, min_rows=None, max_columns=None, mask=None, collapse=False
+):
     header = vector_header_html(vector, mask=mask)
     df = _get_vector_dataframe(vector, max_rows, min_rows, max_columns, mask=mask)
     if mask is None:
         name = vector._name_html
     else:
         name = mask._name_html
-    return _format_html(name, header, df)
+    return _format_html(name, header, df, collapse)
 
 
 def format_scalar_html(scalar):
@@ -406,6 +425,24 @@ def format_scalar(scalar):
     )
 
 
+def get_expr_result(expr, html=False):
+    try:
+        val = expr._get_value()
+    except OutOfMemory:
+        arg_string = "Result is too large to compute!"
+        if html:
+            arg_string = f"<hr><b>{arg_string}</b>"
+    else:
+        name = val.name
+        val.name = "Result"
+        if html:
+            arg_string = f"<hr>{val._repr_html_()}"
+        else:
+            arg_string = f"{val}"
+        val.name = name
+    return arg_string
+
+
 def _format_expression(expr, header):
     pos_to_arg = {}
     for i, arg in enumerate(expr.args):
@@ -413,17 +450,9 @@ def _format_expression(expr, header):
         if pos >= 0:  # pragma: no branch
             pos_to_arg[pos] = arg
     args = [pos_to_arg[pos] for pos in sorted(pos_to_arg)]
-    arg_string = "".join(x._repr_html_() for x in args if hasattr(x, "_repr_html_"))
+    arg_string = "".join(x._repr_html_(collapse=True) for x in args if hasattr(x, "_repr_html_"))
     if config.get("autocompute"):
-        try:
-            val = expr._get_value()
-        except OutOfMemory:
-            arg_string += "<hr><b>Result is too large to compute!</b>"
-        else:
-            name = val.name
-            val.name = "Result"
-            arg_string += f"<hr>{val._repr_html_()}"
-            val.name = name
+        arg_string += get_expr_result(expr, html=True)
     return (
         "<div>"
         '<details class="gb-expr-details">'
@@ -450,6 +479,15 @@ def format_matrix_expression_html(expr):
     return _format_expression(expr, header)
 
 
+def get_result_string(expr):
+    if config.get("autocompute"):
+        arg_string = get_expr_result(expr)
+        arg_string += "\n\n"
+    else:
+        arg_string = ""
+    return arg_string
+
+
 def format_matrix_expression(expr):
     expr_repr = expr._format_expr()
     name = f"grblas.{type(expr).__name__}"
@@ -460,7 +498,12 @@ def format_matrix_expression(expr):
         name=name,
         quote=False,
     )
-    return f"{header}\n\nDo expr.new() or other << expr to calculate the expression."
+    arg_string = get_result_string(expr)
+    return (
+        f"{header}\n\n"
+        f"{arg_string}"
+        "Do expr.new() or other << expr to calculate the expression."
+    )
 
 
 def format_vector_expression_html(expr):
@@ -475,7 +518,12 @@ def format_vector_expression(expr):
     header = create_header(
         expr_repr, ["size", "dtype"], [expr._size, expr.dtype], name=name, quote=False
     )
-    return f"{header}\n\nDo expr.new() or other << expr to calculate the expression."
+    arg_string = get_result_string(expr)
+    return (
+        f"{header}\n\n"
+        f"{arg_string}"
+        "Do expr.new() or other << expr to calculate the expression."
+    )
 
 
 def format_scalar_expression_html(expr):
@@ -488,7 +536,12 @@ def format_scalar_expression(expr):
     expr_repr = expr._format_expr()
     name = f"grblas.{type(expr).__name__}"
     header = create_header(expr_repr, ["dtype"], [expr.dtype], name=name, quote=False)
-    return f"{header}\n\nDo expr.new() or other << expr to calculate the expression."
+    arg_string = get_result_string(expr)
+    return (
+        f"{header}\n\n"
+        f"{arg_string}"
+        "Do expr.new() or other << expr to calculate the expression."
+    )
 
 
 def create_header(type_name, keys, vals, *, lower_border=False, name="", quote=True):
@@ -553,22 +606,13 @@ def format_vector(vector, *, max_rows=None, min_rows=None, max_columns=None, mas
 
 
 def _format_infix_expression(expr, header, expr_name):
-    arg_string = f"{expr.left._repr_html_()}{expr.right._repr_html_()}"
-    if config.get("autocompute"):
-        if (
-            expr.method_name not in {"ewise_add", "ewise_mult"}
-            or expr.left.dtype == BOOL
-            and expr.right.dtype == BOOL
-        ):
-            try:
-                val = expr._get_value()
-            except OutOfMemory:
-                arg_string += "<hr><b>Result is too large to compute!</b>"
-            else:
-                name = val.name
-                val.name = "Result"
-                arg_string += f"<hr>{val._repr_html_()}"
-                val.name = name
+    arg_string = f"{expr.left._repr_html_(collapse=True)}{expr.right._repr_html_(collapse=True)}"
+    if config.get("autocompute") and (
+        expr.method_name not in {"ewise_add", "ewise_mult"}
+        or expr.left.dtype == BOOL
+        and expr.right.dtype == BOOL
+    ):
+        arg_string += get_expr_result(expr, html=True)
     return (
         "<div>"
         '<details class="gb-expr-details">'
@@ -599,8 +643,10 @@ def format_scalar_infix_expression(expr):
         name=name,
         quote=False,
     )
+    arg_string = get_result_string(expr)
     return (
         f"{header}\n\n"
+        f"{arg_string}"
         f"Do op(expr) to create a {expr.output_type.__name__} for {expr.method_name}.\n"
         f"For example: {expr._example_op}({expr_repr})"
     )
@@ -616,6 +662,18 @@ def format_scalar_infix_expression_html(expr):
     return _format_infix_expression(expr, header, expr_html)
 
 
+def get_infix_result_string(expr):
+    if (
+        expr.method_name not in {"ewise_add", "ewise_mult"}
+        or expr.left.dtype == BOOL
+        and expr.right.dtype == BOOL
+    ):
+        arg_string = get_result_string(expr)
+    else:
+        arg_string = ""
+    return arg_string
+
+
 def format_vector_infix_expression(expr):
     expr_repr = expr._format_expr()
     name = f"grblas.{type(expr).__name__}"
@@ -626,8 +684,10 @@ def format_vector_infix_expression(expr):
         name=name,
         quote=False,
     )
+    arg_string = get_infix_result_string(expr)
     return (
         f"{header}\n\n"
+        f"{arg_string}"
         f"Do op(expr) to create a {expr.output_type.__name__} for {expr.method_name}.\n"
         f"For example: {expr._example_op}({expr_repr})"
     )
@@ -653,8 +713,10 @@ def format_matrix_infix_expression(expr):
         name=name,
         quote=False,
     )
+    arg_string = get_infix_result_string(expr)
     return (
         f"{header}\n\n"
+        f"{arg_string}"
         f"Do op(expr) to create a {expr.output_type.__name__} for {expr.method_name}.\n"
         f"For example: {expr._example_op}({expr_repr})"
     )

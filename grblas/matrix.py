@@ -58,12 +58,12 @@ class Matrix(BaseType):
         with skip_record:
             return format_matrix(self, mask=mask)
 
-    def _repr_html_(self, mask=None):
+    def _repr_html_(self, mask=None, collapse=False):
         from .formatting import format_matrix_html
         from .recorder import skip_record
 
         with skip_record:
-            return format_matrix_html(self, mask=mask)
+            return format_matrix_html(self, mask=mask, collapse=collapse)
 
     def __reduce__(self):
         # SS, SuiteSparse-specific: export
@@ -1265,10 +1265,10 @@ class TransposedMatrix:
 
         return format_matrix(self)
 
-    def _repr_html_(self):
+    def _repr_html_(self, collapse=False):
         from .formatting import format_matrix_html
 
-        return format_matrix_html(self)
+        return format_matrix_html(self, collapse=collapse)
 
     def new(self, dtype=None, *, mask=None, name=None):
         if dtype is None:

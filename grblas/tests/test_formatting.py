@@ -136,29 +136,30 @@ def test_no_pandas_repr(A, C, v, w):
     try:
         repr_printer(A, "A", indent=8)
         assert repr(A) == (
-            '"A_1"          nvals  nrows  ncols  dtype\n'
-            "grblas.Matrix      3      1      5  INT64"
+            '"A_1"          nvals  nrows  ncols  dtype   format\n'
+            "grblas.Matrix      3      1      5  INT64  bitmapr"
         )
         repr_printer(A.T, "A.T", indent=8)
         assert repr(A.T) == (
-            '"A_1.T"                  nvals  nrows  ncols  dtype\n'
-            "grblas.TransposedMatrix      3      5      1  INT64"
+            '"A_1.T"                  nvals  nrows  ncols  dtype   format\n'
+            "grblas.TransposedMatrix      3      5      1  INT64  bitmapc"
         )
         repr_printer(C.S, "C.S", indent=8)
         assert repr(C.S) == (
-            '"C.S"             nvals  nrows  ncols  dtype\n'
+            '"C.S"             nvals  nrows  ncols  dtype    format\n'
             "StructuralMask  \n"
-            "of grblas.Matrix      8     70     77  INT64"
+            "of grblas.Matrix      8     70     77  INT64  hypercsr"
         )
         repr_printer(v, "v", indent=8)
         assert repr(v) == (
-            '"v"            nvals  size  dtype\n' "grblas.Vector      3     5   FP64"
+            '"v"            nvals  size  dtype  format\n'
+            "grblas.Vector      3     5   FP64  bitmap"
         )
         repr_printer(~w.V, "~w.V", indent=8)
         assert repr(~w.V) == (
-            '"~w.V"                 nvals  size  dtype\n'
+            '"~w.V"                 nvals  size  dtype  format\n'
             "ComplementedValueMask\n"
-            "of grblas.Vector           4    77  INT64"
+            "of grblas.Vector           4    77  INT64  bitmap"
         )
     finally:
         formatting.has_pandas = has_pandas_prev
@@ -168,17 +169,17 @@ def test_no_pandas_repr(A, C, v, w):
 def test_matrix_repr_small(A, B):
     repr_printer(A, "A")
     assert repr(A) == (
-        '"A_1"          nvals  nrows  ncols  dtype\n'
-        "grblas.Matrix      3      1      5  INT64\n"
-        "-----------------------------------------\n"
+        '"A_1"          nvals  nrows  ncols  dtype   format\n'
+        "grblas.Matrix      3      1      5  INT64  bitmapr\n"
+        "--------------------------------------------------\n"
         "   0 1  2 3  4\n"
         "0  0    1    2"
     )
     repr_printer(B, "B")
     assert repr(B) == (
-        '"B_1"          nvals  nrows  ncols  dtype\n'
-        "grblas.Matrix      3      5      1  INT64\n"
-        "-----------------------------------------\n"
+        '"B_1"          nvals  nrows  ncols  dtype   format\n'
+        "grblas.Matrix      3      5      1  INT64  bitmapr\n"
+        "--------------------------------------------------\n"
         "    0\n"
         "0  10\n"
         "1    \n"
@@ -188,9 +189,9 @@ def test_matrix_repr_small(A, B):
     )
     repr_printer(B.T, "B.T")
     assert repr(B.T) == (
-        '"B_1.T"                  nvals  nrows  ncols  dtype\n'
-        "grblas.TransposedMatrix      3      1      5  INT64\n"
-        "---------------------------------------------------\n"
+        '"B_1.T"                  nvals  nrows  ncols  dtype   format\n'
+        "grblas.TransposedMatrix      3      1      5  INT64  bitmapc\n"
+        "------------------------------------------------------------\n"
         "    0 1   2 3   4\n"
         "0  10    20    30"
     )
@@ -200,37 +201,37 @@ def test_matrix_repr_small(A, B):
 def test_matrix_mask_repr_small(A):
     repr_printer(A.S, "A.S")
     assert repr(A.S) == (
-        '"A_1.S"           nvals  nrows  ncols  dtype\n'
+        '"A_1.S"           nvals  nrows  ncols  dtype   format\n'
         "StructuralMask  \n"
-        "of grblas.Matrix      3      1      5  INT64\n"
-        "--------------------------------------------\n"
+        "of grblas.Matrix      3      1      5  INT64  bitmapr\n"
+        "-----------------------------------------------------\n"
         "   0 1  2 3  4\n"
         "0  1    1    1"
     )
     repr_printer(A.V, "A.V")
     assert repr(A.V) == (
-        '"A_1.V"           nvals  nrows  ncols  dtype\n'
+        '"A_1.V"           nvals  nrows  ncols  dtype   format\n'
         "ValueMask       \n"
-        "of grblas.Matrix      3      1      5  INT64\n"
-        "--------------------------------------------\n"
+        "of grblas.Matrix      3      1      5  INT64  bitmapr\n"
+        "-----------------------------------------------------\n"
         "   0 1  2 3  4\n"
         "0  0    1    1"
     )
     repr_printer(~A.S, "~A.S")
     assert repr(~A.S) == (
-        '"~A_1.S"                    nvals  nrows  ncols  dtype\n'
+        '"~A_1.S"                    nvals  nrows  ncols  dtype   format\n'
         "ComplementedStructuralMask\n"
-        "of grblas.Matrix                3      1      5  INT64\n"
-        "------------------------------------------------------\n"
+        "of grblas.Matrix                3      1      5  INT64  bitmapr\n"
+        "---------------------------------------------------------------\n"
         "   0 1  2 3  4\n"
         "0  0    0    0"
     )
     repr_printer(~A.V, "~A.V")
     assert repr(~A.V) == (
-        '"~A_1.V"               nvals  nrows  ncols  dtype\n'
+        '"~A_1.V"               nvals  nrows  ncols  dtype   format\n'
         "ComplementedValueMask\n"
-        "of grblas.Matrix           3      1      5  INT64\n"
-        "-------------------------------------------------\n"
+        "of grblas.Matrix           3      1      5  INT64  bitmapr\n"
+        "----------------------------------------------------------\n"
         "   0 1  2 3  4\n"
         "0  1    0    0"
     )
@@ -241,9 +242,9 @@ def test_matrix_repr_large(C, D):
     with pd.option_context("display.max_columns", 24, "display.width", 100):
         repr_printer(C, "C", indent=8)
         assert repr(C) == (
-            '"C"            nvals  nrows  ncols  dtype\n'
-            "grblas.Matrix      8     70     77  INT64\n"
-            "-----------------------------------------\n"
+            '"C"            nvals  nrows  ncols  dtype    format\n'
+            "grblas.Matrix      8     70     77  INT64  hypercsr\n"
+            "---------------------------------------------------\n"
             "   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "0               0                       ...                       5            \n"
             "1                                       ...                                    \n"
@@ -259,9 +260,9 @@ def test_matrix_repr_large(C, D):
         )
         repr_printer(C.T, "C.T", indent=8)
         assert repr(C.T) == (
-            '"C.T"                    nvals  nrows  ncols  dtype\n'
-            "grblas.TransposedMatrix      8     77     70  INT64\n"
-            "---------------------------------------------------\n"
+            '"C.T"                    nvals  nrows  ncols  dtype    format\n'
+            "grblas.TransposedMatrix      8     77     70  INT64  hypercsc\n"
+            "-------------------------------------------------------------\n"
             "   0  1  2  3  4  5  6  7  8  9  10 11  ... 58 59 60 61 62 63 64 65 66 67 68 69\n"
             "0                                       ...                                    \n"
             "1                                       ...                                    \n"
@@ -277,9 +278,9 @@ def test_matrix_repr_large(C, D):
         )
         repr_printer(D, "D", indent=8)
         assert repr(D) == (
-            '"D_skinny_in_one_dim"  nvals  nrows  ncols  dtype\n'
-            "grblas.Matrix              4     70      5   BOOL\n"
-            "-------------------------------------------------\n"
+            '"D_skinny_in_one_dim"  nvals  nrows  ncols  dtype    format\n'
+            "grblas.Matrix              4     70      5   BOOL  hypercsr\n"
+            "-----------------------------------------------------------\n"
             "   0  1  2  3       4\n"
             "0                True\n"
             "1                    \n"
@@ -295,9 +296,9 @@ def test_matrix_repr_large(C, D):
         )
         repr_printer(D.T, "D.T", indent=8)
         assert repr(D.T) == (
-            '"D_skinny_in_one_dim.T"  nvals  nrows  ncols  dtype\n'
-            "grblas.TransposedMatrix      4      5     70   BOOL\n"
-            "---------------------------------------------------\n"
+            '"D_skinny_in_one_dim.T"  nvals  nrows  ncols  dtype    format\n'
+            "grblas.TransposedMatrix      4      5     70   BOOL  hypercsc\n"
+            "-------------------------------------------------------------\n"
             "     0  1  2  3  4  5  6  7  8      9  10 11  ... 58 59    60 61 62 63 64 65 66 67 68     69\n"
             "0                                             ...                                           \n"
             "1                                             ...                                           \n"
@@ -312,10 +313,10 @@ def test_matrix_mask_repr_large(C):
     with pd.option_context("display.max_columns", 24, "display.width", 100):
         repr_printer(C.S, "C.S", indent=8)
         assert repr(C.S) == (
-            '"C.S"             nvals  nrows  ncols  dtype\n'
+            '"C.S"             nvals  nrows  ncols  dtype    format\n'
             "StructuralMask  \n"
-            "of grblas.Matrix      8     70     77  INT64\n"
-            "--------------------------------------------\n"
+            "of grblas.Matrix      8     70     77  INT64  hypercsr\n"
+            "------------------------------------------------------\n"
             "   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "0               1                       ...                       1            \n"
             "1                                       ...                                    \n"
@@ -331,10 +332,10 @@ def test_matrix_mask_repr_large(C):
         )
         repr_printer(C.V, "C.V", indent=8)
         assert repr(C.V) == (
-            '"C.V"             nvals  nrows  ncols  dtype\n'
+            '"C.V"             nvals  nrows  ncols  dtype    format\n'
             "ValueMask       \n"
-            "of grblas.Matrix      8     70     77  INT64\n"
-            "--------------------------------------------\n"
+            "of grblas.Matrix      8     70     77  INT64  hypercsr\n"
+            "------------------------------------------------------\n"
             "   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "0               0                       ...                       1            \n"
             "1                                       ...                                    \n"
@@ -350,10 +351,10 @@ def test_matrix_mask_repr_large(C):
         )
         repr_printer(~C.S, "~C.S", indent=8)
         assert repr(~C.S) == (
-            '"~C.S"                      nvals  nrows  ncols  dtype\n'
+            '"~C.S"                      nvals  nrows  ncols  dtype    format\n'
             "ComplementedStructuralMask\n"
-            "of grblas.Matrix                8     70     77  INT64\n"
-            "------------------------------------------------------\n"
+            "of grblas.Matrix                8     70     77  INT64  hypercsr\n"
+            "----------------------------------------------------------------\n"
             "   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "0               0                       ...                       0            \n"
             "1                                       ...                                    \n"
@@ -369,10 +370,10 @@ def test_matrix_mask_repr_large(C):
         )
         repr_printer(~C.V, "~C.V", indent=8)
         assert repr(~C.V) == (
-            '"~C.V"                 nvals  nrows  ncols  dtype\n'
+            '"~C.V"                 nvals  nrows  ncols  dtype    format\n'
             "ComplementedValueMask\n"
-            "of grblas.Matrix           8     70     77  INT64\n"
-            "-------------------------------------------------\n"
+            "of grblas.Matrix           8     70     77  INT64  hypercsr\n"
+            "-----------------------------------------------------------\n"
             "   0  1  2  3  4  5  6  7  8  9  10 11  ... 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "0               1                       ...                       0            \n"
             "1                                       ...                                    \n"
@@ -392,9 +393,9 @@ def test_matrix_mask_repr_large(C):
 def test_vector_repr_small(v):
     repr_printer(v, "v")
     assert repr(v) == (
-        '"v"            nvals  size  dtype\n'
-        "grblas.Vector      3     5   FP64\n"
-        "---------------------------------\n"
+        '"v"            nvals  size  dtype  format\n'
+        "grblas.Vector      3     5   FP64  bitmap\n"
+        "-----------------------------------------\n"
         "    0 1    2 3    4\n"
         "  0.0    1.1    2.2"
     )
@@ -405,9 +406,9 @@ def test_vector_repr_large(w):
     with pd.option_context("display.max_columns", 26, "display.width", 100):
         repr_printer(w, "w", indent=8)
         assert repr(w) == (
-            '"w"            nvals  size  dtype\n'
-            "grblas.Vector      4    77  INT64\n"
-            "---------------------------------\n"
+            '"w"            nvals  size  dtype  format\n'
+            "grblas.Vector      4    77  INT64  bitmap\n"
+            "-----------------------------------------\n"
             " 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "  1              2                       ...  3              4                     "
         )
@@ -417,37 +418,37 @@ def test_vector_repr_large(w):
 def test_vector_mask_repr_small(v):
     repr_printer(v.S, "v.S")
     assert repr(v.S) == (
-        '"v.S"             nvals  size  dtype\n'
+        '"v.S"             nvals  size  dtype  format\n'
         "StructuralMask  \n"
-        "of grblas.Vector      3     5   FP64\n"
-        "------------------------------------\n"
+        "of grblas.Vector      3     5   FP64  bitmap\n"
+        "--------------------------------------------\n"
         "  0 1  2 3  4\n"
         "  1    1    1"
     )
     repr_printer(v.V, "v.V")
     assert repr(v.V) == (
-        '"v.V"             nvals  size  dtype\n'
+        '"v.V"             nvals  size  dtype  format\n'
         "ValueMask       \n"
-        "of grblas.Vector      3     5   FP64\n"
-        "------------------------------------\n"
+        "of grblas.Vector      3     5   FP64  bitmap\n"
+        "--------------------------------------------\n"
         "  0 1  2 3  4\n"
         "  0    1    1"
     )
     repr_printer(~v.S, "~v.S")
     assert repr(~v.S) == (
-        '"~v.S"                      nvals  size  dtype\n'
+        '"~v.S"                      nvals  size  dtype  format\n'
         "ComplementedStructuralMask\n"
-        "of grblas.Vector                3     5   FP64\n"
-        "----------------------------------------------\n"
+        "of grblas.Vector                3     5   FP64  bitmap\n"
+        "------------------------------------------------------\n"
         "  0 1  2 3  4\n"
         "  0    0    0"
     )
     repr_printer(~v.V, "~v.V")
     assert repr(~v.V) == (
-        '"~v.V"                 nvals  size  dtype\n'
+        '"~v.V"                 nvals  size  dtype  format\n'
         "ComplementedValueMask\n"
-        "of grblas.Vector           3     5   FP64\n"
-        "-----------------------------------------\n"
+        "of grblas.Vector           3     5   FP64  bitmap\n"
+        "-------------------------------------------------\n"
         "  0 1  2 3  4\n"
         "  1    0    0"
     )
@@ -458,37 +459,37 @@ def test_vector_mask_repr_large(w):
     with pd.option_context("display.max_columns", 26, "display.width", 100):
         repr_printer(w.S, "w.S", indent=8)
         assert repr(w.S) == (
-            '"w.S"             nvals  size  dtype\n'
+            '"w.S"             nvals  size  dtype  format\n'
             "StructuralMask  \n"
-            "of grblas.Vector      4    77  INT64\n"
-            "------------------------------------\n"
+            "of grblas.Vector      4    77  INT64  bitmap\n"
+            "--------------------------------------------\n"
             " 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "  1              1                       ...  1              1                     "
         )
         repr_printer(w.V, "w.V", indent=8)
         assert repr(w.V) == (
-            '"w.V"             nvals  size  dtype\n'
+            '"w.V"             nvals  size  dtype  format\n'
             "ValueMask       \n"
-            "of grblas.Vector      4    77  INT64\n"
-            "------------------------------------\n"
+            "of grblas.Vector      4    77  INT64  bitmap\n"
+            "--------------------------------------------\n"
             " 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "  1              1                       ...  1              1                     "
         )
         repr_printer(~w.S, "~w.S", indent=8)
         assert repr(~w.S) == (
-            '"~w.S"                      nvals  size  dtype\n'
+            '"~w.S"                      nvals  size  dtype  format\n'
             "ComplementedStructuralMask\n"
-            "of grblas.Vector                4    77  INT64\n"
-            "----------------------------------------------\n"
+            "of grblas.Vector                4    77  INT64  bitmap\n"
+            "------------------------------------------------------\n"
             " 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "  0              0                       ...  0              0                     "
         )
         repr_printer(~w.V, "~w.V", indent=8)
         assert repr(~w.V) == (
-            '"~w.V"                 nvals  size  dtype\n'
+            '"~w.V"                 nvals  size  dtype  format\n'
             "ComplementedValueMask\n"
-            "of grblas.Vector           4    77  INT64\n"
-            "-----------------------------------------\n"
+            "of grblas.Vector           4    77  INT64  bitmap\n"
+            "-------------------------------------------------\n"
             " 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "  0              0                       ...  0              0                     "
         )
@@ -517,12 +518,14 @@ def test_no_pandas_repr_html(A, C, v, w):
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>3</td>\n"
             "    <td>1</td>\n"
             "    <td>5</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>bitmapr</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -540,12 +543,14 @@ def test_no_pandas_repr_html(A, C, v, w):
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>3</td>\n"
             "    <td>5</td>\n"
             "    <td>1</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>bitmapc</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -565,12 +570,14 @@ def test_no_pandas_repr_html(A, C, v, w):
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>8</td>\n"
             "    <td>70</td>\n"
             "    <td>77</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>hypercsr</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -587,11 +594,13 @@ def test_no_pandas_repr_html(A, C, v, w):
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>size</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>3</td>\n"
             "    <td>5</td>\n"
             "    <td>FP64</td>\n"
+            "    <td>bitmap</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -610,11 +619,13 @@ def test_no_pandas_repr_html(A, C, v, w):
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>size</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>4</td>\n"
             "    <td>77</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>bitmap</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -638,12 +649,14 @@ def test_matrix_repr_html_small(A, B):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -697,12 +710,14 @@ def test_matrix_repr_html_small(A, B):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>1</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -764,12 +779,14 @@ def test_matrix_repr_html_small(A, B):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapc</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -829,12 +846,14 @@ def test_matrix_mask_repr_html_small(A):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -890,12 +909,14 @@ def test_matrix_mask_repr_html_small(A):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -951,12 +972,14 @@ def test_matrix_mask_repr_html_small(A):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -1012,12 +1035,14 @@ def test_matrix_mask_repr_html_small(A):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -1076,12 +1101,14 @@ def test_matrix_repr_html_large(C, D):
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>8</td>\n"
             "    <td>70</td>\n"
             "    <td>77</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>hypercsr</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -1213,12 +1240,14 @@ def test_matrix_repr_html_large(C, D):
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>8</td>\n"
             "    <td>77</td>\n"
             "    <td>70</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>hypercsc</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -1342,12 +1371,14 @@ def test_matrix_repr_html_large(C, D):
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>4</td>\n"
             "    <td>70</td>\n"
             "    <td>5</td>\n"
             "    <td>BOOL</td>\n"
+            "    <td>hypercsr</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -1417,12 +1448,14 @@ def test_matrix_repr_html_large(C, D):
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>4</td>\n"
             "    <td>5</td>\n"
             "    <td>70</td>\n"
             "    <td>BOOL</td>\n"
+            "    <td>hypercsc</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -1521,12 +1554,14 @@ def test_matrix_mask_repr_html_large(C):
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>8</td>\n"
             "    <td>70</td>\n"
             "    <td>77</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>hypercsr</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -1660,12 +1695,14 @@ def test_matrix_mask_repr_html_large(C):
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>8</td>\n"
             "    <td>70</td>\n"
             "    <td>77</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>hypercsr</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -1799,12 +1836,14 @@ def test_matrix_mask_repr_html_large(C):
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>8</td>\n"
             "    <td>70</td>\n"
             "    <td>77</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>hypercsr</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -1938,12 +1977,14 @@ def test_matrix_mask_repr_html_large(C):
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>8</td>\n"
             "    <td>70</td>\n"
             "    <td>77</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>hypercsr</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -2078,11 +2119,13 @@ def test_vector_repr_html_small(v):
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -2140,11 +2183,13 @@ def test_vector_repr_html_large(w):
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>size</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>4</td>\n"
             "    <td>77</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>bitmap</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -2222,11 +2267,13 @@ def test_vector_mask_repr_html_small(v):
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -2281,11 +2328,13 @@ def test_vector_mask_repr_html_small(v):
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -2340,11 +2389,13 @@ def test_vector_mask_repr_html_small(v):
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -2399,11 +2450,13 @@ def test_vector_mask_repr_html_small(v):
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -2463,11 +2516,13 @@ def test_vector_mask_repr_html_large(w):
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>size</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>4</td>\n"
             "    <td>77</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>bitmap</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -2541,11 +2596,13 @@ def test_vector_mask_repr_html_large(w):
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>size</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>4</td>\n"
             "    <td>77</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>bitmap</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -2619,11 +2676,13 @@ def test_vector_mask_repr_html_large(w):
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>size</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>4</td>\n"
             "    <td>77</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>bitmap</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -2697,11 +2756,13 @@ def test_vector_mask_repr_html_large(w):
             "    <td><pre>nvals</pre></td>\n"
             "    <td><pre>size</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>4</td>\n"
             "    <td>77</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>bitmap</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -2830,18 +2891,20 @@ def test_apply_repr_html(v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -2913,7 +2976,7 @@ def test_mxm_repr_html(A, B):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -2921,12 +2984,14 @@ def test_mxm_repr_html(A, B):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -2968,7 +3033,7 @@ def test_mxm_repr_html(A, B):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>B<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>B<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -2976,12 +3041,14 @@ def test_mxm_repr_html(A, B):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>1</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -3062,7 +3129,7 @@ def test_mxv_repr_html(A, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -3070,12 +3137,14 @@ def test_mxv_repr_html(A, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -3117,18 +3186,20 @@ def test_mxv_repr_html(A, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -3192,7 +3263,7 @@ def test_matrix_reduce_columns_repr_html(A):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -3200,12 +3271,14 @@ def test_matrix_reduce_columns_repr_html(A):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -3277,7 +3350,7 @@ def test_matrix_reduce_repr_html(C, v):
             "</div>\n"
             '</summary><blockquote class="gb-expr-blockquote"><div>'
             f"{CSS_STYLE}"
-            '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>C</tt><div>\n'
+            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>C</tt><div>\n'
             '<table class="gb-info-table">\n'
             "  <tr>\n"
             '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -3285,12 +3358,14 @@ def test_matrix_reduce_repr_html(C, v):
             "    <td><pre>nrows</pre></td>\n"
             "    <td><pre>ncols</pre></td>\n"
             "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
             "  </tr>\n"
             "  <tr>\n"
             "    <td>8</td>\n"
             "    <td>70</td>\n"
             "    <td>77</td>\n"
             "    <td>INT64</td>\n"
+            "    <td>hypercsr</td>\n"
             "  </tr>\n"
             "</table>\n"
             "</div>\n"
@@ -3417,9 +3492,9 @@ def test_matrix_huge():
     M = Matrix.new(int, nrows=2 ** 60, ncols=2 ** 60, name="M")
     repr_printer(M, "M")
     assert repr(M) == (
-        '"M"            nvals                nrows                ncols  dtype\n'
-        "grblas.Matrix      0  1152921504606846976  1152921504606846976  INT64\n"
-        "---------------------------------------------------------------------\n"
+        '"M"            nvals                nrows                ncols  dtype    format\n'
+        "grblas.Matrix      0  1152921504606846976  1152921504606846976  INT64  hypercsr\n"
+        "-------------------------------------------------------------------------------\n"
         "                    0                    ... 1152921504606846975\n"
         "0                                        ...                    \n"
         "1                                        ...                    \n"
@@ -3453,9 +3528,11 @@ def test_matrix_huge_html():
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>0</td>\n" + "    <td>1152921504606846976</td>\n" * 2 + "    <td>INT64</td>\n"
+        "    <td>hypercsr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -3634,9 +3711,9 @@ def test_vector_huge():
     v = Vector.new(int, size=2 ** 60)
     repr_printer(v, "v")
     assert repr(v) == (
-        '"v_0"          nvals                 size  dtype\n'
-        "grblas.Vector      0  1152921504606846976  INT64\n"
-        "------------------------------------------------\n"
+        '"v_0"          nvals                 size  dtype  format\n'
+        "grblas.Vector      0  1152921504606846976  INT64  sparse\n"
+        "--------------------------------------------------------\n"
         " 0                    ... 1152921504606846975\n"
         "                      ...                    "
     )
@@ -3658,11 +3735,13 @@ def test_vector_huge_html():
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>0</td>\n"
         "    <td>1152921504606846976</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>sparse</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -3785,9 +3864,9 @@ def test_sparse_vector_repr():
     v = Vector.from_values([100 * i for i in range(100)], [10 * i for i in range(100)], name="v")
     repr_printer(v, "v")
     assert repr(v) == (
-        '"v"            nvals  size  dtype\n'
-        "grblas.Vector    100  9901  INT64\n"
-        "---------------------------------\n"
+        '"v"            nvals  size  dtype  format\n'
+        "grblas.Vector    100  9901  INT64  sparse\n"
+        "-----------------------------------------\n"
         "    index  val\n"
         "0       0    0\n"
         "1     100   10\n"
@@ -3803,10 +3882,10 @@ def test_sparse_vector_repr():
     )
     repr_printer(v.S, "v.S")
     assert repr(v.S) == (
-        '"v.S"             nvals  size  dtype\n'
+        '"v.S"             nvals  size  dtype  format\n'
         "StructuralMask  \n"
-        "of grblas.Vector    100  9901  INT64\n"
-        "------------------------------------\n"
+        "of grblas.Vector    100  9901  INT64  sparse\n"
+        "--------------------------------------------\n"
         "    index  val\n"
         "0       0    1\n"
         "1     100    1\n"
@@ -3822,10 +3901,10 @@ def test_sparse_vector_repr():
     )
     repr_printer(~v.S, "~v.S")
     assert repr(~v.S) == (
-        '"~v.S"                      nvals  size  dtype\n'
+        '"~v.S"                      nvals  size  dtype  format\n'
         "ComplementedStructuralMask\n"
-        "of grblas.Vector              100  9901  INT64\n"
-        "----------------------------------------------\n"
+        "of grblas.Vector              100  9901  INT64  sparse\n"
+        "------------------------------------------------------\n"
         "    index  val\n"
         "0       0    0\n"
         "1     100    0\n"
@@ -3841,10 +3920,10 @@ def test_sparse_vector_repr():
     )
     repr_printer(v.V, "v.V")
     assert repr(v.V) == (
-        '"v.V"             nvals  size  dtype\n'
+        '"v.V"             nvals  size  dtype  format\n'
         "ValueMask       \n"
-        "of grblas.Vector    100  9901  INT64\n"
-        "------------------------------------\n"
+        "of grblas.Vector    100  9901  INT64  sparse\n"
+        "--------------------------------------------\n"
         "    index  val\n"
         "0     100    1\n"
         "1     200    1\n"
@@ -3860,10 +3939,10 @@ def test_sparse_vector_repr():
     )
     repr_printer(~v.V, "~v.V")
     assert repr(~v.V) == (
-        '"~v.V"                 nvals  size  dtype\n'
+        '"~v.V"                 nvals  size  dtype  format\n'
         "ComplementedValueMask\n"
-        "of grblas.Vector         100  9901  INT64\n"
-        "-----------------------------------------\n"
+        "of grblas.Vector         100  9901  INT64  sparse\n"
+        "-------------------------------------------------\n"
         "    index  val\n"
         "0     100    0\n"
         "1     200    0\n"
@@ -3880,9 +3959,9 @@ def test_sparse_vector_repr():
     v2 = v[:2000].new(name="v2")
     repr_printer(v2, "v2")
     assert repr(v2) == (
-        '"v2"           nvals  size  dtype\n'
-        "grblas.Vector     20  2000  INT64\n"
-        "---------------------------------\n"
+        '"v2"           nvals  size  dtype  format\n'
+        "grblas.Vector     20  2000  INT64  sparse\n"
+        "-----------------------------------------\n"
         "    index  val\n"
         "0       0    0\n"
         "1     100   10\n"
@@ -3907,10 +3986,10 @@ def test_sparse_vector_repr():
     )
     repr_printer(v2.V, "v2.V")
     assert repr(v2.V) == (
-        '"v2.V"            nvals  size  dtype\n'
+        '"v2.V"            nvals  size  dtype  format\n'
         "ValueMask       \n"
-        "of grblas.Vector     20  2000  INT64\n"
-        "------------------------------------\n"
+        "of grblas.Vector     20  2000  INT64  sparse\n"
+        "--------------------------------------------\n"
         "    index  val\n"
         "0     100    1\n"
         "1     200    1\n"
@@ -3941,9 +4020,9 @@ def test_sparse_matrix_repr():
     )
     repr_printer(A, "A")
     assert repr(A) == (
-        '"A"            nvals  nrows  ncols  dtype\n'
-        "grblas.Matrix    100   9901    991  INT64\n"
-        "-----------------------------------------\n"
+        '"A"            nvals  nrows  ncols  dtype    format\n'
+        "grblas.Matrix    100   9901    991  INT64  hypercsr\n"
+        "---------------------------------------------------\n"
         "     row  col  val\n"
         "0      0    0    0\n"
         "1    100   10    1\n"
@@ -3959,9 +4038,9 @@ def test_sparse_matrix_repr():
     )
     repr_printer(A.T, "A.T")
     assert repr(A.T) == (
-        '"A.T"                    nvals  nrows  ncols  dtype\n'
-        "grblas.TransposedMatrix    100    991   9901  INT64\n"
-        "---------------------------------------------------\n"
+        '"A.T"                    nvals  nrows  ncols  dtype    format\n'
+        "grblas.TransposedMatrix    100    991   9901  INT64  hypercsc\n"
+        "-------------------------------------------------------------\n"
         "     row  col  val\n"
         "0      0    0    0\n"
         "1     10  100    1\n"
@@ -3977,10 +4056,10 @@ def test_sparse_matrix_repr():
     )
     repr_printer(A.S, "A.S")
     assert repr(A.S) == (
-        '"A.S"             nvals  nrows  ncols  dtype\n'
+        '"A.S"             nvals  nrows  ncols  dtype    format\n'
         "StructuralMask  \n"
-        "of grblas.Matrix    100   9901    991  INT64\n"
-        "--------------------------------------------\n"
+        "of grblas.Matrix    100   9901    991  INT64  hypercsr\n"
+        "------------------------------------------------------\n"
         "     row  col  val\n"
         "0      0    0    1\n"
         "1    100   10    1\n"
@@ -3996,10 +4075,10 @@ def test_sparse_matrix_repr():
     )
     repr_printer(~A.S, "~A.S")
     assert repr(~A.S) == (
-        '"~A.S"                      nvals  nrows  ncols  dtype\n'
+        '"~A.S"                      nvals  nrows  ncols  dtype    format\n'
         "ComplementedStructuralMask\n"
-        "of grblas.Matrix              100   9901    991  INT64\n"
-        "------------------------------------------------------\n"
+        "of grblas.Matrix              100   9901    991  INT64  hypercsr\n"
+        "----------------------------------------------------------------\n"
         "     row  col  val\n"
         "0      0    0    0\n"
         "1    100   10    0\n"
@@ -4015,10 +4094,10 @@ def test_sparse_matrix_repr():
     )
     repr_printer(A.V, "A.V")
     assert repr(A.V) == (
-        '"A.V"             nvals  nrows  ncols  dtype\n'
+        '"A.V"             nvals  nrows  ncols  dtype    format\n'
         "ValueMask       \n"
-        "of grblas.Matrix    100   9901    991  INT64\n"
-        "--------------------------------------------\n"
+        "of grblas.Matrix    100   9901    991  INT64  hypercsr\n"
+        "------------------------------------------------------\n"
         "      row  col  val\n"
         "0     100   10    1\n"
         "1     200   20    1\n"
@@ -4034,10 +4113,10 @@ def test_sparse_matrix_repr():
     )
     repr_printer(~A.V, "~A.V")
     assert repr(~A.V) == (
-        '"~A.V"                 nvals  nrows  ncols  dtype\n'
+        '"~A.V"                 nvals  nrows  ncols  dtype    format\n'
         "ComplementedValueMask\n"
-        "of grblas.Matrix         100   9901    991  INT64\n"
-        "-------------------------------------------------\n"
+        "of grblas.Matrix         100   9901    991  INT64  hypercsr\n"
+        "-----------------------------------------------------------\n"
         "      row  col  val\n"
         "0     100   10    0\n"
         "1     200   20    0\n"
@@ -4054,9 +4133,9 @@ def test_sparse_matrix_repr():
     A2 = A[:2000, :].new(name="A2")
     repr_printer(A2, "A2")
     assert repr(A2) == (
-        '"A2"           nvals  nrows  ncols  dtype\n'
-        "grblas.Matrix     20   2000    991  INT64\n"
-        "-----------------------------------------\n"
+        '"A2"           nvals  nrows  ncols  dtype    format\n'
+        "grblas.Matrix     20   2000    991  INT64  hypercsr\n"
+        "---------------------------------------------------\n"
         "     row  col  val\n"
         "0      0    0    0\n"
         "1    100   10    1\n"
@@ -4081,10 +4160,10 @@ def test_sparse_matrix_repr():
     )
     repr_printer(A2.V, "A2.V")
     assert repr(A2.V) == (
-        '"A2.V"            nvals  nrows  ncols  dtype\n'
+        '"A2.V"            nvals  nrows  ncols  dtype    format\n'
         "ValueMask       \n"
-        "of grblas.Matrix     20   2000    991  INT64\n"
-        "--------------------------------------------\n"
+        "of grblas.Matrix     20   2000    991  INT64  hypercsr\n"
+        "------------------------------------------------------\n"
         "     row  col  val\n"
         "0    100   10    1\n"
         "1    200   20    1\n"
@@ -4126,18 +4205,20 @@ def test_infix_expr_repr_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4179,18 +4260,20 @@ def test_infix_expr_repr_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4248,18 +4331,20 @@ def test_infix_expr_repr_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4301,18 +4386,20 @@ def test_infix_expr_repr_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4373,7 +4460,7 @@ def test_infix_expr_repr_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -4381,12 +4468,14 @@ def test_infix_expr_repr_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4428,18 +4517,20 @@ def test_infix_expr_repr_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4500,18 +4591,20 @@ def test_infix_expr_repr_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4553,7 +4646,7 @@ def test_infix_expr_repr_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub>.T</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub>.T</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.TransposedMatrix</pre></td>\n'
@@ -4561,12 +4654,14 @@ def test_infix_expr_repr_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>1</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapc</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4634,7 +4729,7 @@ def test_infix_expr_repr_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -4642,12 +4737,14 @@ def test_infix_expr_repr_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4689,7 +4786,7 @@ def test_infix_expr_repr_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>B<sub>1</sub>.T</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>B<sub>1</sub>.T</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.TransposedMatrix</pre></td>\n'
@@ -4697,12 +4794,14 @@ def test_infix_expr_repr_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapc</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4762,7 +4861,7 @@ def test_infix_expr_repr_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -4770,12 +4869,14 @@ def test_infix_expr_repr_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4817,7 +4918,7 @@ def test_infix_expr_repr_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -4825,12 +4926,14 @@ def test_infix_expr_repr_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4888,7 +4991,7 @@ def test_infix_expr_repr_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -4896,12 +4999,14 @@ def test_infix_expr_repr_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4943,7 +5048,7 @@ def test_infix_expr_repr_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>B<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>B<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -4951,12 +5056,14 @@ def test_infix_expr_repr_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>1</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5022,7 +5129,7 @@ def test_infix_expr_repr_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub>.T</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub>.T</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.TransposedMatrix</pre></td>\n'
@@ -5030,12 +5137,14 @@ def test_infix_expr_repr_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>1</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapc</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5085,7 +5194,7 @@ def test_infix_expr_repr_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>B<sub>1</sub>.T</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>B<sub>1</sub>.T</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.TransposedMatrix</pre></td>\n'
@@ -5093,12 +5202,14 @@ def test_infix_expr_repr_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapc</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5154,18 +5265,20 @@ def test_infix_expr_repr_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5207,18 +5320,20 @@ def test_infix_expr_repr_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5355,18 +5470,20 @@ def test_inner_outer_repr_html(v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5408,18 +5525,20 @@ def test_inner_outer_repr_html(v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5477,18 +5596,20 @@ def test_inner_outer_repr_html(v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5530,18 +5651,20 @@ def test_inner_outer_repr_html(v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>5</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5605,6 +5728,88 @@ def test_inner_outer_repr(v):
 
 
 @autocompute
+def test_autocompute(A, B, v):
+    if not pd:  # pragma: no cover
+        return
+    repr_printer(A & A, "A & A")
+    assert repr(A & A) == (
+        "grblas.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
+        "A_1 & A_1                       1      5       INT64        INT64\n"
+        "\n"
+        "Do op(expr) to create a MatrixExpression for ewise_mult.\n"
+        "For example: times(A_1 & A_1)"
+    )
+    repr_printer(A.ewise_add(A), "A.ewise_add(A)")
+    assert repr(A.ewise_add(A)) == (
+        "grblas.MatrixExpression                    nrows  ncols  dtype\n"
+        "A_1.ewise_add(A_1, op=monoid.plus[INT64])      1      5  INT64\n"
+        "\n"
+        '"Result"       nvals  nrows  ncols  dtype   format\n'
+        "grblas.Matrix      3      1      5  INT64  bitmapr\n"
+        "--------------------------------------------------\n"
+        "   0 1  2 3  4\n"
+        "0  0    2    4\n"
+        "\n"
+        "Do expr.new() or other << expr to calculate the expression."
+    )
+
+    BIG = Vector.new(int, size=2 ** 55)
+    small = Vector.new(int, size=2 ** 55)
+    BIG[:] = 1
+    small[0] = 2
+    repr_printer(BIG.ewise_mult(small), "BIG.ewise_mult(small)")
+    assert repr(BIG.ewise_mult(small)) == (
+        "grblas.VectorExpression                                   size  dtype\n"
+        "v_0.ewise_mult(v_1, op=binary.times[INT64])  36028797018963968  INT64\n"
+        "\n"
+        '"Result"       nvals               size  dtype        format\n'
+        "grblas.Vector      1  36028797018963968  INT64  sparse (iso)\n"
+        "------------------------------------------------------------\n"
+        " 0                 1                  ... 36028797018963966 36028797018963967\n"
+        "                 2                    ...                                    \n"
+        "\n"
+        "Do expr.new() or other << expr to calculate the expression."
+    )
+    repr_printer(BIG.ewise_add(small), "BIG.ewise_add(small)")
+    assert repr(BIG.ewise_add(small)) == (
+        "grblas.VectorExpression                                 size  dtype\n"
+        "v_0.ewise_add(v_1, op=monoid.plus[INT64])  36028797018963968  INT64\n"
+        "\n"
+        "Result is too large to compute!\n"
+        "\n"
+        "Do expr.new() or other << expr to calculate the expression."
+    )
+    BIG_bool = BIG.dup(dtype=bool)
+    small_bool = small.dup(dtype=bool)
+    small_bool[0] = False
+    repr_printer(BIG_bool | small_bool, "BIG_bool | small_bool")
+    assert repr(BIG_bool | small_bool) == (
+        "grblas.VectorEwiseAddExpr               size  left_dtype  right_dtype\n"
+        "v_6 | v_7                  36028797018963968        BOOL         BOOL\n"
+        "\n"
+        "Result is too large to compute!\n"
+        "\n"
+        "Do op(expr) to create a VectorExpression for ewise_add.\n"
+        "For example: plus(v_6 | v_7)"
+    )
+    C = A.dup(dtype=bool)
+    repr_printer(C & C, "C & C")
+    assert repr(C & C) == (
+        "grblas.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
+        "M_2 & M_2                       1      5        BOOL         BOOL\n"
+        "\n"
+        '"Result"       nvals  nrows  ncols  dtype   format\n'
+        "grblas.Matrix      3      1      5   BOOL  bitmapr\n"
+        "--------------------------------------------------\n"
+        "       0 1     2 3     4\n"
+        "0  False    True    True\n"
+        "\n"
+        "Do op(expr) to create a MatrixExpression for ewise_mult.\n"
+        "For example: times(M_2 & M_2)"
+    )
+
+
+@autocompute
 def test_autocompute_html(A, B, v):
     if not pd:  # pragma: no cover
         return
@@ -5626,7 +5831,7 @@ def test_autocompute_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -5634,12 +5839,14 @@ def test_autocompute_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5681,7 +5888,7 @@ def test_autocompute_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -5689,12 +5896,14 @@ def test_autocompute_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5755,7 +5964,7 @@ def test_autocompute_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -5763,12 +5972,14 @@ def test_autocompute_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5810,7 +6021,7 @@ def test_autocompute_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -5818,12 +6029,14 @@ def test_autocompute_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5873,12 +6086,14 @@ def test_autocompute_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5942,15 +6157,17 @@ def test_autocompute_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>0</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>0</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n" + "    <td>36028797018963968</td>\n" * 2 + "    <td>INT64</td>\n"
+        "    <td>full (iso)</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6066,18 +6283,20 @@ def test_autocompute_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>1</td>\n"
         "    <td>36028797018963968</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>sparse (iso)</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6201,11 +6420,13 @@ def test_autocompute_html(A, B, v):
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>1</td>\n"
         "    <td>36028797018963968</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>sparse (iso)</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6339,15 +6560,17 @@ def test_autocompute_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>0</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>0</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n" + "    <td>36028797018963968</td>\n" * 2 + "    <td>INT64</td>\n"
+        "    <td>full (iso)</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6463,18 +6686,20 @@ def test_autocompute_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>1</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>1</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>1</td>\n"
         "    <td>36028797018963968</td>\n"
         "    <td>INT64</td>\n"
+        "    <td>sparse (iso)</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6610,15 +6835,17 @@ def test_autocompute_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>6</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>6</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n" + "    <td>36028797018963968</td>\n" * 2 + "    <td>BOOL</td>\n"
+        "    <td>full (iso)</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6734,18 +6961,20 @@ def test_autocompute_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>7</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>7</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>1</td>\n"
         "    <td>36028797018963968</td>\n"
         "    <td>BOOL</td>\n"
+        "    <td>sparse</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6881,7 +7110,7 @@ def test_autocompute_html(A, B, v):
         "</div>\n"
         '</summary><blockquote class="gb-expr-blockquote"><div>'
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>M<sub>2</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>M<sub>2</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -6889,12 +7118,14 @@ def test_autocompute_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>BOOL</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6936,7 +7167,7 @@ def test_autocompute_html(A, B, v):
         "</table>\n"
         "</div></details></div><div>"
         f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>M<sub>2</sub></tt><div>\n'
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>M<sub>2</sub></tt><div>\n'
         '<table class="gb-info-table">\n'
         "  <tr>\n"
         '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
@@ -6944,12 +7175,14 @@ def test_autocompute_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>BOOL</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -6999,12 +7232,14 @@ def test_autocompute_html(A, B, v):
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>3</td>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>BOOL</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -7053,9 +7288,9 @@ def test_display_nan():
     v = Vector.from_values([0, 1], [1.0, np.nan], size=3, name="v")
     repr_printer(v, "v")
     assert repr(v) == (
-        '"v"            nvals  size  dtype\n'
-        "grblas.Vector      2     3   FP64\n"
-        "---------------------------------\n"
+        '"v"            nvals  size  dtype  format\n'
+        "grblas.Vector      2     3   FP64  bitmap\n"
+        "-----------------------------------------\n"
         "    0    1 2\n"
         "  1.0  nan  "
     )
@@ -7070,11 +7305,13 @@ def test_display_nan():
         "    <td><pre>nvals</pre></td>\n"
         "    <td><pre>size</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>2</td>\n"
         "    <td>3</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -7115,9 +7352,9 @@ def test_display_nan():
     A = Matrix.from_values([0, 0], [0, 1], [1.0, np.nan], ncols=3, nrows=2, name="A")
     repr_printer(A, "A")
     assert repr(A) == (
-        '"A"            nvals  nrows  ncols  dtype\n'
-        "grblas.Matrix      2      2      3   FP64\n"
-        "-----------------------------------------\n"
+        '"A"            nvals  nrows  ncols  dtype   format\n'
+        "grblas.Matrix      2      2      3   FP64  bitmapr\n"
+        "--------------------------------------------------\n"
         "     0    1 2\n"
         "0  1.0  nan  \n"
         "1            "
@@ -7134,9 +7371,11 @@ def test_display_nan():
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
         "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n" + "    <td>2</td>\n" * 2 + "    <td>3</td>\n"
         "    <td>FP64</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -7184,9 +7423,9 @@ def test_large_iso():
     A[:, :] << 1
     repr_printer(A, "A")
     assert repr(A) == (
-        '"M_0"                        nvals                nrows                ncols  dtype\n'
-        "grblas.Matrix  9223372036854775807  1152921504606846976  1152921504606846976  INT64\n"
-        "-----------------------------------------------------------------------------------\n"
+        '"M_0"                        nvals                nrows                ncols  dtype       format\n'
+        "grblas.Matrix  9223372036854775807  1152921504606846976  1152921504606846976  INT64  fullr (iso)\n"
+        "------------------------------------------------------------------------------------------------\n"
         "                    0                    ... 1152921504606846975\n"
         "0                                     1  ...                   1\n"
         "1                                     1  ...                   1\n"
@@ -7202,9 +7441,9 @@ def test_large_iso():
     )
     repr_printer(A.T, "A.T")
     assert repr(A.T) == (
-        '"M_0.T"                                nvals                nrows                ncols  dtype\n'
-        "grblas.TransposedMatrix  9223372036854775807  1152921504606846976  1152921504606846976  INT64\n"
-        "---------------------------------------------------------------------------------------------\n"
+        '"M_0.T"                                nvals                nrows                ncols  dtype       format\n'
+        "grblas.TransposedMatrix  9223372036854775807  1152921504606846976  1152921504606846976  INT64  fullc (iso)\n"
+        "----------------------------------------------------------------------------------------------------------\n"
         "                    0                    ... 1152921504606846975\n"
         "0                                     1  ...                   1\n"
         "1                                     1  ...                   1\n"
@@ -7220,10 +7459,10 @@ def test_large_iso():
     )
     repr_printer(A.S, "A.S")
     assert repr(A.S) == (
-        '"M_0.S"                         nvals                nrows                ncols  dtype\n'
+        '"M_0.S"                         nvals                nrows                ncols  dtype       format\n'
         "StructuralMask  \n"
-        "of grblas.Matrix  9223372036854775807  1152921504606846976  1152921504606846976  INT64\n"
-        "--------------------------------------------------------------------------------------\n"
+        "of grblas.Matrix  9223372036854775807  1152921504606846976  1152921504606846976  INT64  fullr (iso)\n"
+        "---------------------------------------------------------------------------------------------------\n"
         "                    0                    ... 1152921504606846975\n"
         "0                                     1  ...                   1\n"
         "1                                     1  ...                   1\n"
@@ -7241,18 +7480,18 @@ def test_large_iso():
     v[:] = 1
     repr_printer(v, "v")
     assert repr(v) == (
-        '"v_0"                        nvals                 size  dtype\n'
-        "grblas.Vector  1152921504606846976  1152921504606846976  INT64\n"
-        "--------------------------------------------------------------\n"
+        '"v_0"                        nvals                 size  dtype      format\n'
+        "grblas.Vector  1152921504606846976  1152921504606846976  INT64  full (iso)\n"
+        "--------------------------------------------------------------------------\n"
         " 0                    ... 1152921504606846975\n"
         "                   1  ...                   1"
     )
     repr_printer(v.S, "v.S")
     assert repr(v.S) == (
-        '"v_0.S"                         nvals                 size  dtype\n'
+        '"v_0.S"                         nvals                 size  dtype      format\n'
         "StructuralMask  \n"
-        "of grblas.Vector  1152921504606846976  1152921504606846976  INT64\n"
-        "-----------------------------------------------------------------\n"
+        "of grblas.Vector  1152921504606846976  1152921504606846976  INT64  full (iso)\n"
+        "-----------------------------------------------------------------------------\n"
         " 0                    ... 1152921504606846975\n"
         "                   1  ...                   1"
     )
