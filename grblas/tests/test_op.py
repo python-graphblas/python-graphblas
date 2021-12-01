@@ -653,11 +653,11 @@ def test_op_namespace():
         for key, val in vars(semiring).items()
         if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
     }
-    assert len(unarynames - opnames) == 0
-    assert len(binarynames - opnames) == 0
-    assert len(monoidnames - opnames) == 0
-    assert len(semiringnames - opnames) == 0
-    assert len(opnames - (unarynames | binarynames | monoidnames | semiringnames)) == 0
+    assert not unarynames - opnames, unarynames - opnames
+    assert not binarynames - opnames, binarynames - opnames
+    assert not monoidnames - opnames, monoidnames - opnames
+    assert not semiringnames - opnames, semiringnames - opnames
+    assert not opnames - (unarynames | binarynames | monoidnames | semiringnames)
 
 
 @pytest.mark.slow
@@ -770,8 +770,8 @@ def test_binaryop_superset_monoids():
     monoid_names = {x for x in dir(monoid) if not x.startswith("_")}
     binary_names = {x for x in dir(binary) if not x.startswith("_")}
     diff = monoid_names - binary_names
-    assert len(diff) == 0
-    assert len(set(dir(monoid.numpy)) - set(dir(binary.numpy))) == 0
+    assert not diff
+    assert not set(dir(monoid.numpy)) - set(dir(binary.numpy))
 
 
 def test_div_semirings():
@@ -909,6 +909,8 @@ def test_from_string():
     assert binary.from_string("+") is binary.plus
     assert binary.from_string("-[int]") is binary.minus[int]
     assert binary.from_string("true_divide") is binary.numpy.true_divide
+    assert binary.from_string("//") is binary.floordiv
+    assert binary.from_string("%") is binary.numpy.mod
     assert monoid.from_string("*[FP64]") is monoid.times["FP64"]
     assert semiring.from_string("min.plus") is semiring.min_plus
     assert semiring.from_string("min.+") is semiring.min_plus

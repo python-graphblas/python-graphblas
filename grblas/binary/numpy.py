@@ -11,6 +11,7 @@ from .. import binary as _binary
 from .. import config as _config
 from .. import operator as _operator
 
+_delayed = {}
 _binary_names = {
     # Math operations
     "add",
@@ -123,10 +124,15 @@ _commutes_to = {
 
 
 def __dir__():
-    return __all__
+    return __all__ + list(_delayed)
 
 
 def __getattr__(name):
+    if name in _delayed:
+        func, kwargs = _delayed.pop(name)
+        rv = func(**kwargs)
+        globals()[name] = rv
+        return rv
     if name not in _binary_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:

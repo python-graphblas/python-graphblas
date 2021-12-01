@@ -22,10 +22,22 @@ def _normalize_type(type_):
     return lookup_dtype(type_).name
 
 
+def _hasop(module, name):
+    return name in module.__dict__ or name in module._delayed
+
+
 class OpPath:
     def __init__(self, parent, name):
         self._parent = parent
         self._name = name
+        self._delayed = {}
+        self._delayed_commutes_to = {}
+
+    def __getattr__(self, key):
+        if key in self._delayed:
+            func, kwargs = self._delayed.pop(key)
+            return func(**kwargs)
+        self.__getattribute__(key)  # raises
 
 
 def _call_op(op, left, right=None, **kwargs):
@@ -430,6 +442,9 @@ class ParameterizedSemiring(ParameterizedUdf):
     is_commutative = TypedBuiltinSemiring.is_commutative
 
 
+_VARNAMES = tuple(x for x in dir(lib) if x[0] != "_")
+
+
 class OpBase:
     __slots__ = "name", "_typed_ops", "types", "coercions", "_anonymous", "__weakref__"
     _parse_config = None
@@ -485,8 +500,7 @@ class OpBase:
                     raise AttributeError(
                         f"{modname} is already defined. Cannot use as a nested path."
                     )
-            # Can't use `hasattr` here, b/c we use `__getattr__` in numpy namespaces
-            if strict and funcname in module.__dict__:
+            if strict and _hasop(module, funcname):
                 raise AttributeError(f"{path}.{funcname} is already defined")
         return module, funcname
 
@@ -508,7 +522,6 @@ class OpBase:
         delete_exact = cls._parse_config.get("delete_exact", None)
         num_underscores = cls._parse_config["num_underscores"]
 
-        varnames = tuple(x for x in dir(lib) if x[0] != "_")
         for re_str, return_prefix in (
             ("re_exprs", None),
             ("re_exprs_return_bool", "BOOL"),
@@ -520,7 +533,7 @@ class OpBase:
             if "complex" in re_str and not _supports_complex:  # pragma: no cover
                 continue
             for r in reversed(cls._parse_config[re_str]):
-                for varname in varnames:
+                for varname in _VARNAMES:
                     m = r.match(varname)
                     if m:
                         # Parse function into name and datatype
@@ -695,18 +708,28 @@ class UnaryOp(OpBase):
         return cls._build(name, func, anonymous=True)
 
     @classmethod
-    def register_new(cls, name, func, *, parameterized=False):
+    def register_new(cls, name, func, *, parameterized=False, lazy=False):
         module, funcname = cls._remove_nesting(name)
-        if parameterized:
+        if lazy:
+            module._delayed[funcname] = (
+                cls.register_new,
+                {"name": name, "func": func, "parameterized": parameterized},
+            )
+        elif parameterized:
             unary_op = ParameterizedUnaryOp(name, func)
+            setattr(module, funcname, unary_op)
         else:
             unary_op = cls._build(name, func)
-        setattr(module, funcname, unary_op)
-        # Also save it to `grblas.op` if not yet defined
-        module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
-        if not hasattr(module, funcname):
             setattr(module, funcname, unary_op)
-        return unary_op
+        # Also save it to `grblas.op` if not yet defined
+        opmodule, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
+        if not _hasop(opmodule, funcname):
+            if lazy:
+                opmodule._delayed[funcname] = module
+            else:
+                setattr(opmodule, funcname, unary_op)
+        if not lazy:
+            return unary_op
 
     @classmethod
     def _initialize(cls):
@@ -808,8 +831,8 @@ class BinaryOp(OpBase):
         "firstj": "secondj",
         "firstj1": "secondj1",
         # custom
-        "absfirst": "abssecond",
-        "floordiv": "rfloordiv",
+        # "absfirst": "abssecond",  # handled in grblas.binary
+        # "floordiv": "rfloordiv",
         "truediv": "rtruediv",
     }
     _commutes_to_in_semiring = {
@@ -948,18 +971,28 @@ class BinaryOp(OpBase):
         return cls._build(name, func, anonymous=True)
 
     @classmethod
-    def register_new(cls, name, func, *, parameterized=False):
+    def register_new(cls, name, func, *, parameterized=False, lazy=False):
         module, funcname = cls._remove_nesting(name)
-        if parameterized:
+        if lazy:
+            module._delayed[funcname] = (
+                cls.register_new,
+                {"name": name, "func": func, "parameterized": parameterized},
+            )
+        elif parameterized:
             binary_op = ParameterizedBinaryOp(name, func)
+            setattr(module, funcname, binary_op)
         else:
             binary_op = cls._build(name, func)
-        setattr(module, funcname, binary_op)
-        # Also save it to `grblas.op` if not yet defined
-        module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
-        if not hasattr(module, funcname):
             setattr(module, funcname, binary_op)
-        return binary_op
+        # Also save it to `grblas.op` if not yet defined
+        opmodule, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
+        if not _hasop(opmodule, funcname):
+            if lazy:
+                opmodule._delayed[funcname] = module
+            else:
+                setattr(opmodule, funcname, binary_op)
+        if not lazy:
+            return binary_op
 
     @classmethod
     def _initialize(cls):
@@ -997,12 +1030,12 @@ class BinaryOp(OpBase):
                 new_op._add(cur_op)
         # Add floordiv
         # cdiv truncates towards 0, while floordiv truncates towards -inf
-        BinaryOp.register_new("floordiv", lambda x, y: x // y)  # cast to integer
-        BinaryOp.register_new("rfloordiv", lambda x, y: y // x)  # cast to integer
+        BinaryOp.register_new("floordiv", lambda x, y: x // y, lazy=True)  # cast to integer
+        BinaryOp.register_new("rfloordiv", lambda x, y: y // x, lazy=True)  # cast to integer
 
         # For aggregators
-        BinaryOp.register_new("absfirst", lambda x, y: abs(x))
-        BinaryOp.register_new("abssecond", lambda x, y: abs(y))
+        BinaryOp.register_new("absfirst", lambda x, y: abs(x), lazy=True)
+        BinaryOp.register_new("abssecond", lambda x, y: abs(y), lazy=True)
 
         def isclose(rel_tol=1e-7, abs_tol=0.0):
             def inner(x, y):
@@ -1161,18 +1194,28 @@ class Monoid(OpBase):
         return cls._build(name, binaryop, identity, anonymous=True)
 
     @classmethod
-    def register_new(cls, name, binaryop, identity):
+    def register_new(cls, name, binaryop, identity, *, lazy=False):
         module, funcname = cls._remove_nesting(name)
-        if type(binaryop) is ParameterizedBinaryOp:
+        if lazy:
+            module._delayed[funcname] = (
+                cls.register_new,
+                {"name": name, "binaryop": binaryop, "identity": identity},
+            )
+        elif type(binaryop) is ParameterizedBinaryOp:
             monoid = ParameterizedMonoid(name, binaryop, identity)
+            setattr(module, funcname, monoid)
         else:
             monoid = cls._build(name, binaryop, identity)
-        setattr(module, funcname, monoid)
-        # Also save it to `grblas.op` if not yet defined
-        module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
-        if not hasattr(module, funcname):
             setattr(module, funcname, monoid)
-        return monoid
+        # Also save it to `grblas.op` if not yet defined
+        opmodule, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
+        if not _hasop(opmodule, funcname):
+            if lazy:
+                opmodule._delayed[funcname] = module
+            else:
+                setattr(opmodule, funcname, monoid)
+        if not lazy:
+            return monoid
 
     def __init__(self, name, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
@@ -1318,18 +1361,28 @@ class Semiring(OpBase):
         return cls._build(name, monoid, binaryop, anonymous=True)
 
     @classmethod
-    def register_new(cls, name, monoid, binaryop):
+    def register_new(cls, name, monoid, binaryop, *, lazy=False):
         module, funcname = cls._remove_nesting(name)
-        if type(monoid) is ParameterizedMonoid or type(binaryop) is ParameterizedBinaryOp:
+        if lazy:
+            module._delayed[funcname] = (
+                cls.register_new,
+                {"name": name, "monoid": monoid, "binaryop": binaryop},
+            )
+        elif type(monoid) is ParameterizedMonoid or type(binaryop) is ParameterizedBinaryOp:
             semiring = ParameterizedSemiring(name, monoid, binaryop)
+            setattr(module, funcname, semiring)
         else:
             semiring = cls._build(name, monoid, binaryop)
-        setattr(module, funcname, semiring)
-        # Also save it to `grblas.op` if not yet defined
-        module, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
-        if not hasattr(module, funcname):
             setattr(module, funcname, semiring)
-        return semiring
+        # Also save it to `grblas.op` if not yet defined
+        opmodule, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
+        if not _hasop(opmodule, funcname):
+            if lazy:
+                opmodule._delayed[funcname] = module
+            else:
+                setattr(opmodule, funcname, semiring)
+        if not lazy:
+            return semiring
 
     @classmethod
     def _initialize(cls):
@@ -1361,11 +1414,11 @@ class Semiring(OpBase):
         # Also add truediv (always floating point) and floordiv (truncate towards -inf)
         for orig_name, orig in div_semirings.items():
             cls.register_new(f"{orig_name[:-3]}truediv", orig.monoid, binary.truediv)
-            cls.register_new(f"{orig_name[:-3]}floordiv", orig.monoid, binary.floordiv)
+            cls.register_new(f"{orig_name[:-3]}floordiv", orig.monoid, "floordiv", lazy=True)
         # For aggregators
         cls.register_new("plus_pow", monoid.plus, binary.pow)
-        cls.register_new("plus_absfirst", monoid.plus, binary.absfirst)
-        cls.register_new("max_absfirst", monoid.max, binary.absfirst)
+        cls.register_new("plus_absfirst", monoid.plus, "absfirst", lazy=True)
+        cls.register_new("max_absfirst", monoid.max, "absfirst", lazy=True)
 
         # Update type information with sane coercion
         for lname in ("any", "eq", "land", "lor", "lxnor", "lxor"):
@@ -1617,6 +1670,7 @@ def get_semiring(monoid, binaryop, name=None):
             name = canonical_name
 
         module, funcname = Semiring._remove_nesting(canonical_name, strict=False)
+        # TODO: check module._delayed?
         rv = module.__dict__.get(funcname)
         if rv is None and name != canonical_name:
             module, funcname = Semiring._remove_nesting(name, strict=False)
@@ -1628,7 +1682,7 @@ def get_semiring(monoid, binaryop, name=None):
             rv = Semiring.register_anonymous(monoid, binaryop, name=name)
         if name != canonical_name:
             module, funcname = Semiring._remove_nesting(name, strict=False)
-            if funcname not in module.__dict__:  # pragma: no branch
+            if not _hasop(module, funcname):  # pragma: no branch
                 setattr(module, funcname, rv)
 
     if binary_type is not None:
@@ -1640,10 +1694,17 @@ def get_semiring(monoid, binaryop, name=None):
 
 
 # Now initialize all the things!
-UnaryOp._initialize()
-BinaryOp._initialize()
-Monoid._initialize()
-Semiring._initialize()
+try:
+    UnaryOp._initialize()
+    BinaryOp._initialize()
+    Monoid._initialize()
+    Semiring._initialize()
+except Exception:
+    # Exceptions here can often get ignored by Python
+    import traceback
+
+    traceback.print_exc()
+    raise
 
 _str_to_unary = {
     "-": unary.ainv,
@@ -1660,8 +1721,8 @@ _str_to_binary = {
     "-": binary.minus,
     "*": binary.times,
     "/": binary.truediv,
-    "//": binary.floordiv,
-    "%": binary.numpy.mod,
+    "//": "floordiv",
+    "%": "numpy.mod",
     "**": binary.pow,
     "&": binary.land,
     "|": binary.lor,
@@ -1701,13 +1762,25 @@ def _from_string(string, module, mapping, example):
         )
     if base in mapping:
         op = mapping[base]
+        if type(op) is str:
+            op = mapping[base] = module.from_string(op)
     elif hasattr(module, base):
         op = getattr(module, base)
     elif hasattr(module.numpy, base):
         op = getattr(module.numpy, base)
     else:
-        name = module.__name__.split(".")[-1]
-        raise ValueError(f"Unknown {name} string: {string!r}.  Example usage: {example!r}")
+        *paths, attr = base.split(".")
+        op = None
+        cur = module
+        for path in paths:
+            cur = getattr(cur, path, None)
+            if not isinstance(module, (OpPath, ModuleType)):
+                cur = None
+                break
+        op = getattr(cur, attr, None)
+        if op is None:
+            name = module.__name__.split(".")[-1]
+            raise ValueError(f"Unknown {name} string: {string!r}.  Example usage: {example!r}")
     if dtype:
         op = op[dtype]
     return op
@@ -1743,9 +1816,24 @@ def semiring_from_string(string):
     return get_semiring(cur_monoid, cur_binary)
 
 
+def op_from_string(string):
+    for func in [
+        unary_from_string,
+        binary_from_string,
+        monoid_from_string,
+        semiring_from_string,
+    ]:
+        try:
+            return func(string)
+        except Exception:
+            pass
+    unary_from_string(string)
+
+
 unary.from_string = unary_from_string
 binary.from_string = binary_from_string
 monoid.from_string = monoid_from_string
 semiring.from_string = semiring_from_string
+op.from_string = op_from_string
 
 from .agg import Aggregator, TypedAggregator  # noqa isort:skip

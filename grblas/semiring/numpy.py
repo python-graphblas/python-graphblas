@@ -13,6 +13,7 @@ from .. import operator as _operator
 from ..binary.numpy import _binary_names
 from ..monoid.numpy import _monoid_identities
 
+_delayed = {}
 _semiring_names = {
     f"{monoid_name}_{binary_name}"
     for monoid_name, binary_name in _itertools.product(_monoid_identities, _binary_names)
@@ -86,10 +87,15 @@ __all__ = list(_semiring_names)
 
 
 def __dir__():
-    return __all__
+    return __all__ + list(_delayed)
 
 
 def __getattr__(name):
+    if name in _delayed:
+        func, kwargs = _delayed.pop(name)
+        rv = func(**kwargs)
+        globals()[name] = rv
+        return rv
     if name not in _semiring_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     words = name.split("_")

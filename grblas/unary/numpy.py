@@ -11,6 +11,7 @@ from .. import config as _config
 from .. import operator as _operator
 from .. import unary as _unary
 
+_delayed = {}
 _unary_names = {
     # Math operations
     "negative",
@@ -108,10 +109,15 @@ _numpy_to_graphblas = {
 
 
 def __dir__():
-    return __all__
+    return __all__ + list(_delayed)
 
 
 def __getattr__(name):
+    if name in _delayed:
+        func, kwargs = _delayed.pop(name)
+        rv = func(**kwargs)
+        globals()[name] = rv
+        return rv
     if name not in _unary_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:

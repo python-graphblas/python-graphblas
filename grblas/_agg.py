@@ -48,6 +48,7 @@ class Aggregator:
         types=None,
     ):
         self.name = name
+        self._initval_orig = initval
         self._initval = False if initval is None else initval
         self._initdtype = lookup_dtype(type(self._initval))
         self._monoid = monoid
@@ -67,8 +68,21 @@ class Aggregator:
                 initval = self._initval
             else:  # pragma: no cover
                 raise TypeError("types must be provided for composite and custom aggregators")
-        self.types = _get_types(types, None if initval is None else self._initdtype)
+        self._types_orig = types
+        self._types = None
         self._typed_ops = {}
+
+    @property
+    def types(self):
+        if self._types is None:
+            if type(self._semiring) is str:
+                self._semiring = semiring.from_string(self._semiring)
+                if type(self._types_orig[0]) is str:  # pragma: no branch
+                    self._types_orig[0] = semiring.from_string(self._types_orig[0])
+            self._types = _get_types(
+                self._types_orig, None if self._initval_orig is None else self._initdtype
+            )
+        return self._types
 
     def __getitem__(self, dtype):
         dtype = _normalize_type(dtype)
@@ -294,9 +308,9 @@ agg.logaddexp2 = Aggregator(
 # hypot = Aggregator('hypot', monoid=semiring.numpy.hypot)
 
 agg.L0norm = agg.count_nonzero
-agg.L1norm = Aggregator("L1norm", semiring=semiring.plus_absfirst, semiring2=semiring.plus_first)
+agg.L1norm = Aggregator("L1norm", semiring="plus_absfirst", semiring2=semiring.plus_first)
 agg.L2norm = agg.hypot
-agg.Linfnorm = Aggregator("Linfnorm", semiring=semiring.max_absfirst, semiring2=semiring.max_first)
+agg.Linfnorm = Aggregator("Linfnorm", semiring="max_absfirst", semiring2=semiring.max_first)
 
 
 # Composite

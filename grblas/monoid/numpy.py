@@ -13,6 +13,7 @@ from .. import monoid as _monoid
 from .. import operator as _operator
 from ..dtypes import _supports_complex
 
+_delayed = {}
 _complex_dtypes = {"FC32", "FC64"}
 _float_dtypes = {"FP32", "FP64"}
 _int_dtypes = {"INT8", "UINT8", "INT16", "UINT16", "INT32", "UINT32", "INT64", "UINT64"}
@@ -115,10 +116,15 @@ _numpy_to_graphblas = {
 
 
 def __dir__():
-    return __all__
+    return __all__ + list(_delayed)
 
 
 def __getattr__(name):
+    if name in _delayed:
+        func, kwargs = _delayed.pop(name)
+        rv = func(**kwargs)
+        globals()[name] = rv
+        return rv
     if name not in _monoid_identities:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
