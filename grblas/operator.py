@@ -1670,11 +1670,18 @@ def get_semiring(monoid, binaryop, name=None):
             name = canonical_name
 
         module, funcname = Semiring._remove_nesting(canonical_name, strict=False)
-        # TODO: check module._delayed?
-        rv = module.__dict__.get(funcname)
+        rv = (
+            getattr(module, funcname)
+            if funcname in module.__dict__ or funcname in module._delayed
+            else None
+        )
         if rv is None and name != canonical_name:
             module, funcname = Semiring._remove_nesting(name, strict=False)
-            rv = module.__dict__.get(funcname)
+            rv = (
+                getattr(module, funcname)
+                if funcname in module.__dict__ or funcname in module._delayed
+                else None
+            )
         if rv is None:
             rv = Semiring.register_new(canonical_name, monoid, binaryop)
         elif rv.monoid is not monoid or rv.binaryop is not binaryop:  # pragma: no cover

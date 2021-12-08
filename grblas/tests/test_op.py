@@ -967,6 +967,7 @@ def test_lazy_op():
     assert isinstance(monoid.numpy.lazy, Monoid)
     assert isinstance(binary.numpy.lazy, BinaryOp)
     Monoid.register_new("numpy.lazy2", binary.numpy.lazy, 0, lazy=True)
+    assert isinstance(operator.get_semiring(monoid.numpy.lazy2, binary.numpy.lazy), Semiring)
     assert isinstance(op.numpy.lazy2, Monoid)
     assert isinstance(monoid.numpy.lazy2, Monoid)
     Semiring.register_new("numpy.lazy", "numpy.lazy", "numpy.lazy", lazy=True)
