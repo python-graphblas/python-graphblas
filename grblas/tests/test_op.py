@@ -13,6 +13,7 @@ from grblas import (
     exceptions,
     lib,
     monoid,
+    op,
     operator,
     semiring,
     unary,
@@ -628,6 +629,9 @@ def test_op_namespace():
     ):
         op.numpy.bad_attr
 
+    for key in list(op._delayed):
+        getattr(op, key)
+
     opnames = {
         key
         for key, val in vars(op).items()
@@ -932,3 +936,46 @@ def test_from_string():
         assert semiring.from_string("badname")
     with pytest.raises(ValueError, match="Bad semiring string"):
         semiring.from_string("min.plus.times")
+
+    assert op.from_string("-") is unary.ainv
+    assert op.from_string("+") is binary.plus
+    assert op.from_string("min.plus") is semiring.min_plus
+    with pytest.raises(ValueError, match="Unknown op string"):
+        op.from_string("min.plus.times")
+
+
+def test_lazy_op():
+    UnaryOp.register_new("lazy", lambda x: x, lazy=True)
+    assert isinstance(unary.lazy, UnaryOp)
+    BinaryOp.register_new("lazy", lambda x, y: x + y, lazy=True)
+    Monoid.register_new("lazy", "lazy", 0, lazy=True)
+    assert isinstance(monoid.lazy, Monoid)
+    assert isinstance(binary.lazy, BinaryOp)
+    Monoid.register_new("lazy2", binary.lazy, 0, lazy=True)
+    assert isinstance(monoid.lazy2, Monoid)
+    Semiring.register_new("lazy", "lazy", "lazy", lazy=True)
+    assert isinstance(semiring.lazy, Semiring)
+    Semiring.register_new("lazy_lazy", monoid.lazy, binary.lazy, lazy=True)
+    assert isinstance(semiring.lazy_lazy, Semiring)
+    # numpy
+    UnaryOp.register_new("numpy.lazy", lambda x: x, lazy=True)
+    assert isinstance(unary.numpy.lazy, UnaryOp)
+    BinaryOp.register_new("numpy.lazy", lambda x, y: x + y, lazy=True)
+    Monoid.register_new("numpy.lazy", "numpy.lazy", 0, lazy=True)
+    assert isinstance(monoid.numpy.lazy, Monoid)
+    assert isinstance(binary.numpy.lazy, BinaryOp)
+    Monoid.register_new("numpy.lazy2", binary.numpy.lazy, 0, lazy=True)
+    assert isinstance(monoid.numpy.lazy2, Monoid)
+    Semiring.register_new("numpy.lazy", "numpy.lazy", "numpy.lazy", lazy=True)
+    assert isinstance(semiring.numpy.lazy, Semiring)
+    Semiring.register_new("numpy.lazy_lazy", monoid.numpy.lazy, binary.numpy.lazy, lazy=True)
+    assert isinstance(semiring.numpy.lazy_lazy, Semiring)
+    # misc
+    UnaryOp.register_new("misc.lazy", lambda x: x, lazy=True)
+    assert isinstance(unary.misc.lazy, UnaryOp)
+    with pytest.raises(AttributeError):
+        unary.misc.bad
+    with pytest.raises(ValueError):
+        unary.from_string("misc.lazy.badpath")
+    assert op.from_string("lazy") is unary.lazy
+    assert op.from_string("numpy.lazy") is unary.numpy.lazy

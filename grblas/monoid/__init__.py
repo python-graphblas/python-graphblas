@@ -10,6 +10,10 @@ del operator
 def __getattr__(key):
     if key in _delayed:
         func, kwargs = _delayed.pop(key)
+        if type(kwargs["binaryop"]) is str:
+            from ..binary import from_string
+
+            kwargs["binaryop"] = from_string(kwargs["binaryop"])
         rv = func(**kwargs)
         globals()[key] = rv
         return rv

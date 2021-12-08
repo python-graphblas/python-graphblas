@@ -1699,7 +1699,7 @@ try:
     BinaryOp._initialize()
     Monoid._initialize()
     Semiring._initialize()
-except Exception:
+except Exception:  # pragma: no cover
     # Exceptions here can often get ignored by Python
     import traceback
 
@@ -1774,7 +1774,7 @@ def _from_string(string, module, mapping, example):
         cur = module
         for path in paths:
             cur = getattr(cur, path, None)
-            if not isinstance(module, (OpPath, ModuleType)):
+            if not isinstance(cur, (OpPath, ModuleType)):
                 cur = None
                 break
         op = getattr(cur, attr, None)
@@ -1827,7 +1827,7 @@ def op_from_string(string):
             return func(string)
         except Exception:
             pass
-    unary_from_string(string)
+    raise ValueError(f"Unknown op string: {string!r}.  Example usage: 'abs[int]'")
 
 
 unary.from_string = unary_from_string

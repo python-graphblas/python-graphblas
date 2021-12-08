@@ -93,6 +93,14 @@ def __dir__():
 def __getattr__(name):
     if name in _delayed:
         func, kwargs = _delayed.pop(name)
+        if type(kwargs["binaryop"]) is str:
+            from ..binary import from_string
+
+            kwargs["binaryop"] = from_string(kwargs["binaryop"])
+        if type(kwargs["monoid"]) is str:
+            from ..monoid import from_string
+
+            kwargs["monoid"] = from_string(kwargs["monoid"])
         rv = func(**kwargs)
         globals()[name] = rv
         return rv
