@@ -143,6 +143,9 @@ for name, (ins, outs) in _SEMIRING2.items():
 IGNORE = {
     # Created by
     "plus_copysign",
+    "lazy",
+    "lazy2",
+    "lazy_lazy",
     # UDFs created during tests
     "is_positive",
     "plus_one",

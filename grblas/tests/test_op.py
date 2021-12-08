@@ -13,6 +13,7 @@ from grblas import (
     exceptions,
     lib,
     monoid,
+    op,
     operator,
     semiring,
     unary,
@@ -628,6 +629,9 @@ def test_op_namespace():
     ):
         op.numpy.bad_attr
 
+    # Make sure all have been initialized so `vars` below works
+    for key in list(op._delayed):  # pragma: no cover
+        getattr(op, key)
     opnames = {
         key
         for key, val in vars(op).items()
@@ -653,11 +657,11 @@ def test_op_namespace():
         for key, val in vars(semiring).items()
         if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
     }
-    assert len(unarynames - opnames) == 0
-    assert len(binarynames - opnames) == 0
-    assert len(monoidnames - opnames) == 0
-    assert len(semiringnames - opnames) == 0
-    assert len(opnames - (unarynames | binarynames | monoidnames | semiringnames)) == 0
+    assert not unarynames - opnames, unarynames - opnames
+    assert not binarynames - opnames, binarynames - opnames
+    assert not monoidnames - opnames, monoidnames - opnames
+    assert not semiringnames - opnames, semiringnames - opnames
+    assert not opnames - (unarynames | binarynames | monoidnames | semiringnames)
 
 
 @pytest.mark.slow
@@ -770,8 +774,8 @@ def test_binaryop_superset_monoids():
     monoid_names = {x for x in dir(monoid) if not x.startswith("_")}
     binary_names = {x for x in dir(binary) if not x.startswith("_")}
     diff = monoid_names - binary_names
-    assert len(diff) == 0
-    assert len(set(dir(monoid.numpy)) - set(dir(binary.numpy))) == 0
+    assert not diff
+    assert not set(dir(monoid.numpy)) - set(dir(binary.numpy))
 
 
 def test_div_semirings():
@@ -909,6 +913,8 @@ def test_from_string():
     assert binary.from_string("+") is binary.plus
     assert binary.from_string("-[int]") is binary.minus[int]
     assert binary.from_string("true_divide") is binary.numpy.true_divide
+    assert binary.from_string("//") is binary.floordiv
+    assert binary.from_string("%") is binary.numpy.mod
     assert monoid.from_string("*[FP64]") is monoid.times["FP64"]
     assert semiring.from_string("min.plus") is semiring.min_plus
     assert semiring.from_string("min.+") is semiring.min_plus
@@ -930,3 +936,50 @@ def test_from_string():
         assert semiring.from_string("badname")
     with pytest.raises(ValueError, match="Bad semiring string"):
         semiring.from_string("min.plus.times")
+
+    assert op.from_string("-") is unary.ainv
+    assert op.from_string("+") is binary.plus
+    assert op.from_string("min.plus") is semiring.min_plus
+    with pytest.raises(ValueError, match="Unknown op string"):
+        op.from_string("min.plus.times")
+
+
+def test_lazy_op():
+    UnaryOp.register_new("lazy", lambda x: x, lazy=True)
+    assert isinstance(op.lazy, UnaryOp)
+    assert isinstance(unary.lazy, UnaryOp)
+    BinaryOp.register_new("lazy", lambda x, y: x + y, lazy=True)
+    Monoid.register_new("lazy", "lazy", 0, lazy=True)
+    assert isinstance(monoid.lazy, Monoid)
+    assert isinstance(binary.lazy, BinaryOp)
+    Monoid.register_new("lazy2", binary.lazy, 0, lazy=True)
+    assert isinstance(op.lazy2, Monoid)
+    assert isinstance(monoid.lazy2, Monoid)
+    Semiring.register_new("lazy", "lazy", "lazy", lazy=True)
+    assert isinstance(semiring.lazy, Semiring)
+    Semiring.register_new("lazy_lazy", monoid.lazy, binary.lazy, lazy=True)
+    assert isinstance(semiring.lazy_lazy, Semiring)
+    # numpy
+    UnaryOp.register_new("numpy.lazy", lambda x: x, lazy=True)
+    assert isinstance(unary.numpy.lazy, UnaryOp)
+    BinaryOp.register_new("numpy.lazy", lambda x, y: x + y, lazy=True)
+    Monoid.register_new("numpy.lazy", "numpy.lazy", 0, lazy=True)
+    assert isinstance(monoid.numpy.lazy, Monoid)
+    assert isinstance(binary.numpy.lazy, BinaryOp)
+    Monoid.register_new("numpy.lazy2", binary.numpy.lazy, 0, lazy=True)
+    assert isinstance(operator.get_semiring(monoid.numpy.lazy2, binary.numpy.lazy), Semiring)
+    assert isinstance(op.numpy.lazy2, Monoid)
+    assert isinstance(monoid.numpy.lazy2, Monoid)
+    Semiring.register_new("numpy.lazy", "numpy.lazy", "numpy.lazy", lazy=True)
+    assert isinstance(semiring.numpy.lazy, Semiring)
+    Semiring.register_new("numpy.lazy_lazy", monoid.numpy.lazy, binary.numpy.lazy, lazy=True)
+    assert isinstance(semiring.numpy.lazy_lazy, Semiring)
+    # misc
+    UnaryOp.register_new("misc.lazy", lambda x: x, lazy=True)
+    assert isinstance(unary.misc.lazy, UnaryOp)
+    with pytest.raises(AttributeError):
+        unary.misc.bad
+    with pytest.raises(ValueError):
+        unary.from_string("misc.lazy.badpath")
+    assert op.from_string("lazy") is unary.lazy
+    assert op.from_string("numpy.lazy") is unary.numpy.lazy

@@ -5,7 +5,7 @@ import itertools
 import numpy as np
 import pytest
 
-import grblas
+import grblas as gb
 
 
 def pytest_configure(config):
@@ -16,15 +16,15 @@ def pytest_configure(config):
     if mapnumpy is None:  # pragma: no branch
         mapnumpy = np.random.rand() < 0.5  # heh
 
-    grblas.config.set(autocompute=False, mapnumpy=mapnumpy)
+    gb.config.set(autocompute=False, mapnumpy=mapnumpy)
 
-    grblas.init(backend, blocking=blocking)
+    gb.init(backend, blocking=blocking)
     print(
         f'Running tests with "{backend}" backend, blocking={blocking}, '
         f"record={record}, mapnumpy={mapnumpy}"
     )
     if record:
-        rec = grblas.Recorder()
+        rec = gb.Recorder()
         rec.start()
 
         def save_records():
@@ -33,6 +33,9 @@ def pytest_configure(config):
 
         # I'm sure there's a `pytest` way to do this...
         atexit.register(save_records)
+    for mod in [gb.unary, gb.binary, gb.monoid, gb.semiring, gb.op]:
+        for name in list(mod._delayed):
+            getattr(mod, name)
 
 
 def pytest_runtest_setup(item):
@@ -43,15 +46,15 @@ def pytest_runtest_setup(item):
 @pytest.fixture(autouse=True, scope="function")
 def reset_name_counters():
     """Reset automatic names for each test for easier comparison of record.txt"""
-    grblas.Matrix._name_counter = itertools.count()
-    grblas.Vector._name_counter = itertools.count()
-    grblas.Scalar._name_counter = itertools.count()
+    gb.Matrix._name_counter = itertools.count()
+    gb.Vector._name_counter = itertools.count()
+    gb.Scalar._name_counter = itertools.count()
 
 
 def autocompute(func):
     @functools.wraps(func)
     def inner(*args, **kwargs):
-        with grblas.config.set(autocompute=True):
+        with gb.config.set(autocompute=True):
             return func(*args, **kwargs)
 
     return inner
