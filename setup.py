@@ -25,7 +25,7 @@ setup(
     packages=find_packages(exclude=["grblas.backends.python"]),
     setup_requires=["pytest-runner"],
     python_requires=">=3.7",
-    install_requires=["suitesparse-graphblas >=5.1.3, <5.2", "numba", "donfig", "pyyaml"],
+    install_requires=["suitesparse-graphblas >=6.0, <6.1", "numba", "donfig", "pyyaml"],
     tests_require=["pytest", "pandas"],
     extras_require=extras_require,
     include_package_data=True,
