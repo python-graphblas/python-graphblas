@@ -178,7 +178,7 @@ def test_matrix_repr_small(A, B):
     repr_printer(B, "B")
     assert repr(B) == (
         '"B_1"          nvals  nrows  ncols  dtype   format\n'
-        "grblas.Matrix      3      5      1  INT64  bitmapr\n"
+        "grblas.Matrix      3      5      1  INT64  bitmapc\n"
         "--------------------------------------------------\n"
         "    0\n"
         "0  10\n"
@@ -190,7 +190,7 @@ def test_matrix_repr_small(A, B):
     repr_printer(B.T, "B.T")
     assert repr(B.T) == (
         '"B_1.T"                  nvals  nrows  ncols  dtype   format\n'
-        "grblas.TransposedMatrix      3      1      5  INT64  bitmapc\n"
+        "grblas.TransposedMatrix      3      1      5  INT64  bitmapr\n"
         "------------------------------------------------------------\n"
         "    0 1   2 3   4\n"
         "0  10    20    30"
@@ -717,7 +717,7 @@ def test_matrix_repr_html_small(A, B):
         "    <td>5</td>\n"
         "    <td>1</td>\n"
         "    <td>INT64</td>\n"
-        "    <td>bitmapr</td>\n"
+        "    <td>bitmapc</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -786,7 +786,7 @@ def test_matrix_repr_html_small(A, B):
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
-        "    <td>bitmapc</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -3048,7 +3048,7 @@ def test_mxm_repr_html(A, B):
         "    <td>5</td>\n"
         "    <td>1</td>\n"
         "    <td>INT64</td>\n"
-        "    <td>bitmapr</td>\n"
+        "    <td>bitmapc</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4801,7 +4801,7 @@ def test_infix_expr_repr_html(A, B, v):
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
-        "    <td>bitmapc</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5063,7 +5063,7 @@ def test_infix_expr_repr_html(A, B, v):
         "    <td>5</td>\n"
         "    <td>1</td>\n"
         "    <td>INT64</td>\n"
-        "    <td>bitmapr</td>\n"
+        "    <td>bitmapc</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -5209,7 +5209,7 @@ def test_infix_expr_repr_html(A, B, v):
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
-        "    <td>bitmapc</td>\n"
+        "    <td>bitmapr</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"

@@ -58,6 +58,14 @@ class Panic(GrblasException):
     pass
 
 
+class EmptyObject(GrblasException):
+    pass
+
+
+class NotImplementedException(GrblasException):
+    pass
+
+
 # Our errors
 class UdfParseError(GrblasException):
     pass
@@ -75,11 +83,13 @@ _error_code_lookup = {
     lib.GrB_DOMAIN_MISMATCH: DomainMismatch,
     lib.GrB_DIMENSION_MISMATCH: DimensionMismatch,
     lib.GrB_OUTPUT_NOT_EMPTY: OutputNotEmpty,
+    lib.GrB_EMPTY_OBJECT: EmptyObject,
     # Execution Errors
     lib.GrB_OUT_OF_MEMORY: OutOfMemory,
     lib.GrB_INSUFFICIENT_SPACE: InsufficientSpace,
     lib.GrB_INDEX_OUT_OF_BOUNDS: IndexOutOfBound,
     lib.GrB_PANIC: Panic,
+    lib.GrB_NOT_IMPLEMENTED: NotImplementedException,
 }
 GrB_SUCCESS = lib.GrB_SUCCESS
 GrB_NO_VALUE = lib.GrB_NO_VALUE

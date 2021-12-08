@@ -270,7 +270,11 @@ class Vector(BaseType):
         to use by multiple threads.  Use wait to force completion of a Vector
         and make it safe to use as input parameters on multiple threads.
         """
-        call("GrB_Vector_wait", [_Pointer(self)])
+        # TODO: expose COMPLETE or MATERIALIZE options to the user
+        call(
+            "GrB_Vector_wait",
+            [self, Scalar.from_value(lib.GrB_MATERIALIZE, name="GrB_MATERIALIZE")],
+        )
 
     @classmethod
     def new(cls, dtype, size=0, *, name=None):
