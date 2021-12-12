@@ -175,6 +175,26 @@ class _GrblasModuleFinder(_importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path, target=None):
         if fullname in _NEEDS_OPERATOR and "operator" not in globals():
             _load("operator")
+            name = fullname[7:]  # Trim "grblas."
+            if name in globals():
+                # Make sure we execute the module only once
+                module = globals()[name]
+                spec = module.__spec__
+                spec.loader = _SkipLoad(module, spec.loader)
+                return spec
+
+
+class _SkipLoad(_importlib.abc.Loader):
+    def __init__(self, module, orig_loader):
+        self.module = module
+        self.orig_loader = orig_loader
+
+    def create_module(self, spec):
+        return self.module
+
+    def exec_module(self, module):
+        # Don't execute the module, but restore the original loader
+        module.__spec__.loader = self.orig_loader
 
 
 _sys.meta_path.insert(0, _GrblasModuleFinder())
