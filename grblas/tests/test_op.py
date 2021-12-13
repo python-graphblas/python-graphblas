@@ -25,6 +25,13 @@ def orig_types(op):
     return op.types.keys() - op.coercions.keys()
 
 
+def test_operator_initialized():
+    assert operator.UnaryOp._initialized
+    assert operator.BinaryOp._initialized
+    assert operator.Monoid._initialized
+    assert operator.Semiring._initialized
+
+
 def test_op_repr():
     assert repr(unary.ainv) == "unary.ainv"
     assert repr(binary.plus) == "binary.plus"

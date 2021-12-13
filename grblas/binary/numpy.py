@@ -56,6 +56,7 @@ _binary_names = {
     "nextafter",
     "ldexp",
 }
+_operator._STANDARD_OPERATOR_NAMES.update(f"binary.numpy.{name}" for name in _binary_names)
 __all__ = list(_binary_names)
 _numpy_to_graphblas = {
     # Monoids

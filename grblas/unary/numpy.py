@@ -64,6 +64,7 @@ _unary_names = {
     "trunc",
     "spacing",
 }
+_operator._STANDARD_OPERATOR_NAMES.update(f"unary.numpy.{name}" for name in _unary_names)
 __all__ = list(_unary_names)
 _numpy_to_graphblas = {
     "abs": "abs",

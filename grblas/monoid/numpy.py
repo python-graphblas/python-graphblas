@@ -98,6 +98,7 @@ if _supports_complex:  # pragma: no branch
     )
     _monoid_identities["minimum"].update(dict.fromkeys(_complex_dtypes, complex(_np.inf, _np.inf)))
 
+_operator._STANDARD_OPERATOR_NAMES.update(f"monoid.numpy.{name}" for name in _monoid_identities)
 __all__ = list(_monoid_identities)
 _numpy_to_graphblas = {
     "add": "plus",
