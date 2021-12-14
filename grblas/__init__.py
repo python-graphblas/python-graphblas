@@ -15,6 +15,9 @@ class replace:
     def __repr__(self):
         return "replace"
 
+    def __reduce__(self):
+        return "replace"
+
 
 replace = replace()
 

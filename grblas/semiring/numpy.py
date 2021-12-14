@@ -83,6 +83,7 @@ _semiring_names -= {
         },
     )
 }
+_operator._STANDARD_OPERATOR_NAMES.update(f"semiring.numpy.{name}" for name in _semiring_names)
 __all__ = list(_semiring_names)
 
 

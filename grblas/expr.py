@@ -13,6 +13,9 @@ class _AllIndices:
         self._carg = lib.GrB_ALL
         self.name = "GrB_ALL"
 
+    def __reduce__(self):
+        return "_ALL_INDICES"
+
 
 _ALL_INDICES = _AllIndices()
 

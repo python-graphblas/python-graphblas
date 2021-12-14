@@ -61,8 +61,10 @@ jobs:
               # I can't get pip install from git to work, so git clone instead.
               # pip install git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
               conda install -c conda-forge cython
-              git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
+              # git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
+              git clone https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
               pushd ssgb
+              git checkout 7f3aa18b14f678650dcef98cdebf41bb7e62f47b  # wait until we support v6.0.2
               python setup.py install
               popd
           elif [[ ${{ matrix.sourcetype }} == "conda-forge" ]]; then
