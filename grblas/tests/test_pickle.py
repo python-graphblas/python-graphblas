@@ -37,7 +37,9 @@ def test_serialize():
     # unary_pickle = gb.operator.UnaryOp.register_new('unary_pickle', unarypickle)
     # binary_pickle = gb.operator.BinaryOp.register_new('binary_pickle', binarypickle)
     # monoid_pickle = gb.operator.Monoid.register_new('monoid_pickle', binary_pickle, 0)
-    # semiring_pickle = gb.operator.Semiring.register_new('semiring_pickle', monoid_pickle, binary_pickle)
+    # semiring_pickle = gb.operator.Semiring.register_new(
+    #     'semiring_pickle', monoid_pickle, binary_pickle
+    # )
 
     unary_anon = gb.operator.UnaryOp.register_anonymous(unaryanon)
     binary_anon = gb.operator.BinaryOp.register_anonymous(binaryanon)
@@ -107,13 +109,13 @@ def check_values(d):
     assert d["matrix"].isequal(gb.Matrix.from_values([2], [3], 4), check_dtype=True)
     assert d["matrix.T"].isequal(gb.Matrix.from_values([3], [4], 5).T, check_dtype=True)
 
-    assert type(d["vector.S"]) is type(v.S)
+    assert type(d["vector.S"]) is gb.mask.StructuralMask
     assert d["vector.S"].mask.isequal(v, check_dtype=True)
-    assert type(d["vector.V"]) is type(v.V)
+    assert type(d["vector.V"]) is gb.mask.ValueMask
     assert d["vector.V"].mask.isequal(v, check_dtype=True)
-    assert type(d["~vector.S"]) is type(~v.S)
+    assert type(d["~vector.S"]) is gb.mask.ComplementedStructuralMask
     assert d["~vector.S"].mask.isequal(v, check_dtype=True)
-    assert type(d["~vector.V"]) is type(~v.V)
+    assert type(d["~vector.V"]) is gb.mask.ComplementedValueMask
     assert d["~vector.V"].mask.isequal(v, check_dtype=True)
 
     assert d["unary.abs"] is gb.unary.abs
