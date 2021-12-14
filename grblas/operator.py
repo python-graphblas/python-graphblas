@@ -803,7 +803,7 @@ class UnaryOp(OpBase):
                 opmodule._delayed[funcname] = module
             else:
                 setattr(opmodule, funcname, unary_op)
-        if not cls._initialized:
+        if not cls._initialized:  # pragma: no cover
             _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{name}")
         if not lazy:
             return unary_op
@@ -1333,7 +1333,7 @@ class Monoid(OpBase):
                 opmodule._delayed[funcname] = module
             else:
                 setattr(opmodule, funcname, monoid)
-        if not cls._initialized:
+        if not cls._initialized:  # pragma: no cover
             _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{name}")
         if not lazy:
             return monoid
