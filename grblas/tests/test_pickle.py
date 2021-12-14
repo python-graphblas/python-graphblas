@@ -93,7 +93,15 @@ def test_serialize():
         "all_indices": gb.expr._ALL_INDICES,
         "replace": gb.replace,
     }
-    pkl = pickle.dumps(d)
+    try:
+        pkl = pickle.dumps(d)
+    except Exception:  # pragma: no cover
+        for key, val in d.items():
+            try:
+                pickle.dumps(val)
+            except Exception:
+                print('Pickle error:', key)
+        raise
     d2 = pickle.loads(pkl)
 
     check_values(d)
