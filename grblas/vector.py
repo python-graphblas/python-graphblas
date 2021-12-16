@@ -286,6 +286,12 @@ class Vector(BaseType):
         rv._size = size.scalar.value
         return rv
 
+    def empty_like(self, dtype, *, name=None):
+        """
+        Create a new empty Vector from the given type and the same size as this one
+        """
+        return Vector.new(dtype, size=self.size, name=name)
+
     @classmethod
     def from_values(cls, indices, values, dtype=None, *, size=None, dup_op=None, name=None):
         """Create a new Vector from the given lists of indices and values.  If

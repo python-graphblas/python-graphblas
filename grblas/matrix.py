@@ -325,6 +325,12 @@ class Matrix(BaseType):
         rv._ncols = ncols.scalar.value
         return rv
 
+    def empty_like(self, dtype, *, name=None):
+        """
+        Create a new empty Matrix from the given type and the same shape as this one
+        """
+        return Matrix.new(dtype, nrows=self.nrows, ncols=self.ncols, name=name)
+
     @classmethod
     def from_values(
         cls,

@@ -280,6 +280,12 @@ class ScalarExpression(BaseExpression):
     def new(self, dtype=None, *, name=None):
         return super().new(dtype, name=name)
 
+    def empty_like(self, dtype, *, name=None):
+        """
+        Create a new empty Scalar from the given type like this one
+        """
+        return self.new(dtype, name=name)
+
     dup = new
 
     def __repr__(self):
