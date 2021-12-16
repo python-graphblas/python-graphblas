@@ -297,6 +297,10 @@ class TypedUserSemiring(TypedOpBase):
     __call__ = TypedBuiltinSemiring.__call__
 
 
+def _deserialize_parameterized(parameterized_op, args, kwargs):
+    return parameterized_op(*args, **kwargs)
+
+
 class ParameterizedUdf:
     __slots__ = "name", "__call__", "_anonymous", "__weakref__"
 
@@ -323,13 +327,14 @@ class ParameterizedUnaryOp(ParameterizedUdf):
 
     def _call(self, *args, **kwargs):
         unary = self.func(*args, **kwargs)
+        unary._parameterized_info = (self, args, kwargs)
         return UnaryOp.register_anonymous(unary, self.name)
 
     def __reduce__(self):
         name = f"unary.{self.name}"
-        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
+        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:  # pragma: no cover
             return name
-        return (self._deserialize, (self.name, self._func, self._anonymous))
+        return (self._deserialize, (self.name, self.func, self._anonymous))
 
     @staticmethod
     def _deserialize(name, func, anonymous):
@@ -358,6 +363,7 @@ class ParameterizedBinaryOp(ParameterizedUdf):
 
     def _call_to_cache(self, *args, **kwargs):
         binary = self.func(*args, **kwargs)
+        binary._parameterized_info = (self, args, kwargs)
         return BinaryOp.register_anonymous(binary, self.name)
 
     def _call(self, *args, **kwargs):
@@ -388,7 +394,7 @@ class ParameterizedBinaryOp(ParameterizedUdf):
         name = f"binary.{self.name}"
         if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
             return name
-        return (self._deserialize, (self.name, self._func, self._anonymous))
+        return (self._deserialize, (self.name, self.func, self._anonymous))
 
     @staticmethod
     def _deserialize(name, func, anonymous):
@@ -439,18 +445,18 @@ class ParameterizedMonoid(ParameterizedUdf):
 
     def __reduce__(self):
         name = f"monoid.{self.name}"
-        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
+        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:  # pragma: no cover
             return name
         return (self._deserialize, (self.name, self.binaryop, self.identity, self._anonymous))
 
     @staticmethod
     def _deserialize(name, binaryop, identity, anonymous):
         if anonymous:
-            return Monoid.register_anonymous(binaryop, identity, name, parameterized=True)
+            return Monoid.register_anonymous(binaryop, identity, name)
         rv = Monoid._find(name)
         if rv is not None:
             return rv
-        return Monoid.register_new(name, binaryop, identity, parameterized=True)
+        return Monoid.register_new(name, binaryop, identity)
 
 
 class ParameterizedSemiring(ParameterizedUdf):
@@ -496,18 +502,18 @@ class ParameterizedSemiring(ParameterizedUdf):
 
     def __reduce__(self):
         name = f"semiring.{self.name}"
-        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
+        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:  # pragma: no cover
             return name
         return (self._deserialize, (self.name, self.monoid, self.binaryop, self._anonymous))
 
     @staticmethod
     def _deserialize(name, monoid, binaryop, anonymous):
         if anonymous:
-            return Semiring.register_anonymous(monoid, binaryop, name, parameterized=True)
-        rv = monoid._find(name)
+            return Semiring.register_anonymous(monoid, binaryop, name)
+        rv = Semiring._find(name)
         if rv is not None:
             return rv
-        return Semiring.register_new(name, monoid, binaryop, parameterized=True)
+        return Semiring.register_new(name, monoid, binaryop)
 
 
 _VARNAMES = tuple(x for x in dir(lib) if x[0] != "_")
@@ -854,6 +860,8 @@ class UnaryOp(OpBase):
 
     def __reduce__(self):
         if self._anonymous:
+            if hasattr(self._func, "_parameterized_info"):
+                return (_deserialize_parameterized, self._func._parameterized_info)
             return (self.register_anonymous, (self._func, self.name))
         name = f"unary.{self.name}"
         if name in _STANDARD_OPERATOR_NAMES:
@@ -1233,6 +1241,8 @@ class BinaryOp(OpBase):
 
     def __reduce__(self):
         if self._anonymous:
+            if hasattr(self._func, "_parameterized_info"):
+                return (_deserialize_parameterized, self._func._parameterized_info)
             return (self.register_anonymous, (self._func, self.name))
         name = f"binary.{self.name}"
         if name in _STANDARD_OPERATOR_NAMES:

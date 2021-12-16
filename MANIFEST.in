@@ -6,4 +6,4 @@ include MANIFEST.in
 include versioneer.py
 include grblas/_version.py
 include grblas/grblas.yaml
-include grblas/tests/pickle1.pkl
+include grblas/tests/pickle*.pkl
