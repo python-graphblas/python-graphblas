@@ -16,6 +16,7 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
+from .matrix import MatrixArray, _concat_mn
 from .prefix_scan import prefix_scan
 from .scalar import gxb_scalar
 from .utils import get_order
@@ -147,6 +148,39 @@ class ss:
             k = -k
             matrix = matrix._matrix
         call("GxB_Vector_diag", [self._parent, matrix, _CScalar(k, INT64), None])
+
+    def _concat(self, tiles, m):
+        ctiles = ffi.new("GrB_Matrix[]", m)
+        for i, tile in enumerate(tiles):
+            ctiles[i] = tile.gb_obj[0]
+        call(
+            "GxB_Matrix_concat",
+            [
+                self._parent._as_matrix(),
+                MatrixArray(ctiles, name="tiles"),
+                _CScalar(m),
+                _CScalar(1),
+                None,
+            ],
+        )
+
+    def concat(self, tiles):
+        """
+        GxB_Matrix_concat
+
+        Concatenate a 1D list of Vector objects into the current Vector.
+        Any existing values in the current Vector will be discarded.
+        To concatenate into a new Vector, use `grblas.ss.concat`.
+
+        This performs the opposite operation as ``split`` (TODO).
+
+        See Also
+        --------
+        Vector.ss.split
+        grblas.ss.concat
+        """
+        tiles, m, n, is_matrix = _concat_mn(tiles, is_matrix=False)
+        self._concat(tiles, m)
 
     def build_scalar(self, indices, value):
         """

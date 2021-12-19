@@ -21,7 +21,7 @@ from .utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from .vector import Vector, VectorExpression, _VectorAsMatrix
+from .vector import Vector, VectorExpression
 
 ffi_new = ffi.new
 
@@ -32,11 +32,11 @@ class Matrix(BaseType):
     High-level wrapper around GrB_Matrix type
     """
 
-    __slots__ = "_nrows", "_ncols", "ss"
+    __slots__ = "_nrows", "_ncols", "_parent", "ss"
     _is_transposed = False
     _name_counter = itertools.count()
 
-    def __init__(self, gb_obj, dtype, *, name=None):
+    def __init__(self, gb_obj, dtype, *, parent=None, name=None):
         if name is None:
             name = f"M_{next(Matrix._name_counter)}"
         self._nrows = None
@@ -44,8 +44,12 @@ class Matrix(BaseType):
         super().__init__(gb_obj, dtype, name)
         # Add ss extension methods
         self.ss = ss(self)
+        self._parent = parent
 
     def __del__(self):
+        parent = getattr(self, "_parent", None)
+        if parent is not None:
+            return
         gb_obj = getattr(self, "gb_obj", None)
         if gb_obj is not None:
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
@@ -59,11 +63,19 @@ class Matrix(BaseType):
             return format_matrix(self, mask=mask)
 
     def _repr_html_(self, mask=None, collapse=False):
+        if self._parent is not None:
+            return self._parent._repr_html_(mask=mask, collapse=collapse)
         from .formatting import format_matrix_html
         from .recorder import skip_record
 
         with skip_record:
             return format_matrix_html(self, mask=mask, collapse=collapse)
+
+    @property
+    def _name_html(self):
+        if self._parent is not None:
+            return self._parent._name_html
+        return super()._name_html
 
     def __reduce__(self):
         # SS, SuiteSparse-specific: export
@@ -832,7 +844,7 @@ class Matrix(BaseType):
                         delayed = MatrixExpression(
                             method_name,
                             "GrB_Matrix_assign",
-                            [_VectorAsMatrix(value), rows, rowscalar, cols, colscalar],
+                            [value._as_matrix(), rows, rowscalar, cols, colscalar],
                             expr_repr="[[{2} rows], [{4} cols]] = {0.name}",
                             nrows=self._nrows,
                             ncols=self._ncols,
@@ -876,7 +888,7 @@ class Matrix(BaseType):
                         delayed = MatrixExpression(
                             method_name,
                             "GrB_Matrix_assign",
-                            [_VectorAsMatrix(value), rows, rowscalar, cols, colscalar],
+                            [value._as_matrix(), rows, rowscalar, cols, colscalar],
                             expr_repr="[[{2} rows], [{4} cols]] = {0.name}",
                             nrows=self._nrows,
                             ncols=self._ncols,

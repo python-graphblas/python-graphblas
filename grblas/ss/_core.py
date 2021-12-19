@@ -74,11 +74,18 @@ def concat(tiles, dtype=None, *, name=None):
     Matrix.ss.concat
 
     """
-    tiles, m, n = _concat_mn(tiles)
-    if dtype is None:
-        dtype = tiles[0][0].dtype
-    nrows = sum(row_tiles[0]._nrows for row_tiles in tiles)
-    ncols = sum(tile._ncols for tile in tiles[0])
-    rv = Matrix.new(dtype, nrows=nrows, ncols=ncols, name=name)
-    rv.ss._concat(tiles, m, n)
+    tiles, m, n, is_matrix = _concat_mn(tiles)
+    if is_matrix:
+        if dtype is None:
+            dtype = tiles[0][0].dtype
+        nrows = sum(row_tiles[0]._nrows for row_tiles in tiles)
+        ncols = sum(tile._ncols for tile in tiles[0])
+        rv = Matrix.new(dtype, nrows=nrows, ncols=ncols, name=name)
+        rv.ss._concat(tiles, m, n)
+    else:
+        if dtype is None:
+            dtype = tiles[0].dtype
+        size = sum(tile._nrows for tile in tiles)
+        rv = Vector.new(dtype, size=size, name=name)
+        rv.ss._concat(tiles, m)
     return rv
