@@ -1267,6 +1267,7 @@ def test_expr_is_like_vector(v):
         "__delitem__",
         "__lshift__",
         "__setitem__",
+        "_as_matrix",
         "_assign_element",
         "_delete_element",
         "_deserialize",
@@ -1391,3 +1392,29 @@ def test_slice():
     w = v[4:-3:-1].new()
     expected = Vector.from_values(np.arange(2), np.arange(5)[4:-3:-1])
     assert w.isequal(expected)
+
+
+def test_concat(v):
+    expected = Vector.new(v.dtype, size=2 * v.size)
+    expected[: v.size] = v
+    expected[v.size :] = v
+    w1 = grblas.ss.concat([v, v])
+    assert w1.isequal(expected)
+    w2 = Vector.new(v.dtype, size=2 * v.size)
+    w2.ss.concat([v, v])
+    assert w2.isequal(expected)
+    with pytest.raises(TypeError):
+        w2.ss.concat([[v, v]])
+
+
+def test_split(v):
+    w1, w2 = v.ss.split(4)
+    expected1 = Vector.from_values([1, 3], 1)
+    expected2 = Vector.from_values([0, 2], [2, 0])
+    assert w1.isequal(expected1)
+    assert w2.isequal(expected2)
+    x1, x2 = v.ss.split([4, 3], name="split")
+    assert x1.isequal(expected1)
+    assert x2.isequal(expected2)
+    assert x1.name == "split_0"
+    assert x2.name == "split_1"

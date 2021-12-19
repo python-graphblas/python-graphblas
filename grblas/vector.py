@@ -47,6 +47,24 @@ class Vector(BaseType):
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Vector_free(gb_obj), self)
 
+    def _as_matrix(self):
+        """Cast this Vector to a Matrix (such as a column vector).
+
+        This is SuiteSparse-specific and may change in the future.
+        This does not copy the vector.
+        """
+        from .matrix import Matrix
+
+        rv = Matrix(
+            ffi.cast("GrB_Matrix*", self.gb_obj),
+            self.dtype,
+            parent=self,
+            name=f"(GrB_Matrix){self.name}",
+        )
+        rv._nrows = self._size
+        rv._ncols = 1
+        return rv
+
     def __repr__(self, mask=None):
         from .formatting import format_vector
         from .recorder import skip_record
@@ -543,7 +561,7 @@ class Vector(BaseType):
         expr = ScalarExpression(
             method_name,
             "GrB_vxm",
-            [self, _VectorAsMatrix(other)],
+            [self, other._as_matrix()],
             op=op,
         )
         if self._size != other._size:
@@ -570,7 +588,7 @@ class Vector(BaseType):
         expr = MatrixExpression(
             method_name,
             "GrB_mxm",
-            [_VectorAsMatrix(self), _VectorAsMatrix(other)],
+            [self._as_matrix(), other._as_matrix()],
             op=op,
             nrows=self._size,
             ncols=other._size,
@@ -832,31 +850,6 @@ class VectorExpression(BaseExpression):
     __isub__ = _automethods.__isub__
     __itruediv__ = _automethods.__itruediv__
     __ixor__ = _automethods.__ixor__
-
-
-class _VectorAsMatrix:
-    __slots__ = "vector"
-
-    def __init__(self, vector):
-        self.vector = vector
-
-    @property
-    def _carg(self):
-        # SS, SuiteSparse-specific: casting Vector to Matrix
-        return ffi.cast("GrB_Matrix*", self.vector.gb_obj)[0]
-
-    @property
-    def name(self):
-        # Showing `(GrB_Matrix)` is good for the recorder, but not for the html repr
-        return f"(GrB_Matrix){self.vector.name}"
-
-    @property
-    def _name_html(self):
-        return self.vector._name_html
-
-    @property
-    def _repr_html_(self):
-        return self.vector._repr_html_
 
 
 utils._output_types[Vector] = Vector

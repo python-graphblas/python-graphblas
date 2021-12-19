@@ -2361,7 +2361,7 @@ def test_split(A):
         A.ss.split([[5, 5], 3])
 
 
-def test_concat(A):
+def test_concat(A, v):
     B1 = grblas.ss.concat([[A, A]], dtype=float)
     assert B1.dtype == "FP64"
     expected = Matrix.new(A.dtype, nrows=A.nrows, ncols=2 * A.ncols)
@@ -2393,6 +2393,30 @@ def test_concat(A):
         grblas.ss.concat([[]])
     with pytest.raises(ValueError, match="tiles must all be the same length"):
         grblas.ss.concat([[A], [A, A]])
+
+    # Treat vectors like Nx1 matrices
+    B3 = grblas.ss.concat([[v, v]])
+    expected = Matrix.new(v.dtype, nrows=v.size, ncols=2)
+    expected[:, 0] = v
+    expected[:, 1] = v
+    assert B3.isequal(expected)
+
+    B4 = grblas.ss.concat([[v], [v]])
+    expected = Matrix.new(v.dtype, nrows=2 * v.size, ncols=1)
+    expected[: v.size, 0] = v
+    expected[v.size :, 0] = v
+    assert B4.isequal(expected)
+
+    B5 = grblas.ss.concat([[A, v]])
+    expected = Matrix.new(v.dtype, nrows=v.size, ncols=A.ncols + 1)
+    expected[:, : A.ncols] = A
+    expected[:, A.ncols] = v
+    assert B5.isequal(expected)
+
+    with pytest.raises(TypeError, match=""):
+        grblas.ss.concat([v, [v]])
+    with pytest.raises(TypeError):
+        grblas.ss.concat([[v], v])
 
 
 def test_nbytes(A):
@@ -2516,6 +2540,7 @@ def test_expr_is_like_matrix(A):
         "_deserialize",
         "_extract_element",
         "_name_counter",
+        "_parent",
         "_prep_for_assign",
         "_prep_for_extract",
         "_update",

@@ -19,6 +19,7 @@ from ..utils import (
     get_shape,
     ints_to_numpy_buffer,
     libget,
+    output_type,
     values_to_numpy_buffer,
     wrapdoc,
 )
@@ -192,15 +193,18 @@ def normalize_chunks(chunks, shape):
     if isinstance(chunks, (list, tuple)):
         pass
     elif isinstance(chunks, Number):
-        chunks = (chunks, chunks)
+        chunks = (chunks,) * len(shape)
     elif isinstance(chunks, np.ndarray):
         chunks = chunks.tolist()
     else:
         raise TypeError(
             f"chunks argument must be a list, tuple, or numpy array; got: {type(chunks)}"
         )
-    if len(chunks) != 2:
-        raise ValueError("chunks argument must be of length 2 (one for each dimension of a Matrix)")
+    if len(chunks) != len(shape):
+        typ = "Vector" if len(shape) == 1 else "Matrix"
+        raise ValueError(
+            f"chunks argument must be of length {len(shape)} (one for each dimension of a {typ})"
+        )
     chunksizes = []
     for size, chunk in zip(shape, chunks):
         if chunk is None:
@@ -261,11 +265,12 @@ def normalize_chunks(chunks, shape):
     return chunksizes
 
 
-def _concat_mn(tiles):
+def _concat_mn(tiles, *, is_matrix=None):
     """Argument checking for `Matrix.ss.concat` and returns number of tiles in each dimension"""
     from ..matrix import Matrix, TransposedMatrix
+    from ..vector import Vector
 
-    valid_types = (Matrix, TransposedMatrix)
+    valid_types = (Matrix, TransposedMatrix, Vector)
     if not isinstance(tiles, (list, tuple)):
         raise TypeError(f"tiles argument must be list or tuple; got: {type(tiles)}")
     if not tiles:
@@ -276,7 +281,18 @@ def _concat_mn(tiles):
     new_tiles = []
     for i, row_tiles in enumerate(tiles):
         if not isinstance(row_tiles, (list, tuple)):
+            if not is_matrix and output_type(row_tiles) is Vector:
+                new_tiles.append(
+                    dummy._expect_type(
+                        row_tiles, Vector, within="ss.concat", argname="tiles"
+                    )._as_matrix()
+                )
+                is_matrix = False
+                n = 1
+                continue
             raise TypeError(f"tiles must be lists or tuples; got: {type(row_tiles)}")
+        if is_matrix is False:
+            raise TypeError(f"Bad tile type for concat at position {i}")
         if n is None:
             n = len(row_tiles)
             if n == 0:
@@ -288,17 +304,24 @@ def _concat_mn(tiles):
             )
         new_tiles.append(
             [
-                dummy._expect_type(
-                    tile,
-                    valid_types,
-                    within="ss.concat",
-                    argname="tiles",
-                    extra_message=f"Bad tile type for concat at position [{i}, {j}]",
+                _as_matrix(
+                    dummy._expect_type(
+                        tile,
+                        valid_types,
+                        within="ss.concat",
+                        argname="tiles",
+                        extra_message=f"Bad tile type for concat at position [{i}, {j}]",
+                    )
                 )
                 for j, tile in enumerate(row_tiles)
             ]
         )
-    return new_tiles, m, n
+        is_matrix = True
+    return new_tiles, m, n, is_matrix
+
+
+def _as_matrix(x):
+    return x._as_matrix() if type(x) is gb.Vector else x
 
 
 class MatrixArray:
@@ -488,6 +511,8 @@ class ss:
         Any existing values in the current Matrix will be discarded.
         To concatenate into a new Matrix, use `grblas.ss.concat`.
 
+        Vectors may be used as `Nx1` Matrix objects.
+
         This performs the opposite operation as ``split``.
 
         See Also
@@ -495,7 +520,7 @@ class ss:
         Matrix.ss.split
         grblas.ss.concat
         """
-        tiles, m, n = _concat_mn(tiles)
+        tiles, m, n, is_matrix = _concat_mn(tiles, is_matrix=True)
         self._concat(tiles, m, n)
 
     def build_scalar(self, rows, columns, value):
