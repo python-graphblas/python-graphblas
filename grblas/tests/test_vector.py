@@ -1405,3 +1405,16 @@ def test_concat(v):
     assert w2.isequal(expected)
     with pytest.raises(TypeError):
         w2.ss.concat([[v, v]])
+
+
+def test_split(v):
+    w1, w2 = v.ss.split(4)
+    expected1 = Vector.from_values([1, 3], 1)
+    expected2 = Vector.from_values([0, 2], [2, 0])
+    assert w1.isequal(expected1)
+    assert w2.isequal(expected2)
+    x1, x2 = v.ss.split([4, 3], name="split")
+    assert x1.isequal(expected1)
+    assert x2.isequal(expected2)
+    assert x1.name == "split_0"
+    assert x2.name == "split_1"

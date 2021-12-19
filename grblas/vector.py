@@ -852,31 +852,6 @@ class VectorExpression(BaseExpression):
     __ixor__ = _automethods.__ixor__
 
 
-class _VectorAsMatrix:
-    __slots__ = "vector"
-
-    def __init__(self, vector):
-        self.vector = vector
-
-    @property
-    def _carg(self):
-        # SS, SuiteSparse-specific: casting Vector to Matrix
-        return ffi.cast("GrB_Matrix*", self.vector.gb_obj)[0]
-
-    @property
-    def name(self):
-        # Showing `(GrB_Matrix)` is good for the recorder, but not for the html repr
-        return f"(GrB_Matrix){self.vector.name}"
-
-    @property
-    def _name_html(self):
-        return self.vector._name_html
-
-    @property
-    def _repr_html_(self):
-        return self.vector._repr_html_
-
-
 utils._output_types[Vector] = Vector
 utils._output_types[VectorExpression] = Vector
 

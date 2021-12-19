@@ -193,15 +193,18 @@ def normalize_chunks(chunks, shape):
     if isinstance(chunks, (list, tuple)):
         pass
     elif isinstance(chunks, Number):
-        chunks = (chunks, chunks)
+        chunks = (chunks,) * len(shape)
     elif isinstance(chunks, np.ndarray):
         chunks = chunks.tolist()
     else:
         raise TypeError(
             f"chunks argument must be a list, tuple, or numpy array; got: {type(chunks)}"
         )
-    if len(chunks) != 2:
-        raise ValueError("chunks argument must be of length 2 (one for each dimension of a Matrix)")
+    if len(chunks) != len(shape):
+        typ = "Vector" if len(shape) == 1 else "Matrix"
+        raise ValueError(
+            f"chunks argument must be of length {len(shape)} (one for each dimension of a {typ})"
+        )
     chunksizes = []
     for size, chunk in zip(shape, chunks):
         if chunk is None:
@@ -507,6 +510,8 @@ class ss:
         Concatenate a 2D list of Matrix objects into the current Matrix.
         Any existing values in the current Matrix will be discarded.
         To concatenate into a new Matrix, use `grblas.ss.concat`.
+
+        Vectors may be used as `Nx1` Matrix objects.
 
         This performs the opposite operation as ``split``.
 

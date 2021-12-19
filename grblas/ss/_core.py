@@ -63,8 +63,11 @@ def concat(tiles, dtype=None, *, name=None):
     """
     GxB_Matrix_concat
 
-    Concatenate a 2D list of Matrix objects into a new Matrix.
-    To concatenate into an existing Matrix, use ``Matrix.ss.concat``.
+    Concatenate a 2D list of Matrix objects into a new Matrix, or a 1D list of
+    Vector objects into a new Vector.  To concatenate into existing objects,
+    use ``Matrix.ss.concat`` or `Vector.ss.concat`.
+
+    Vectors may be used as `Nx1` Matrix objects when creating a new Matrix.
 
     This performs the opposite operation as ``split``.
 
@@ -72,6 +75,8 @@ def concat(tiles, dtype=None, *, name=None):
     --------
     Matrix.ss.split
     Matrix.ss.concat
+    Vector.ss.split
+    Vector.ss.concat
 
     """
     tiles, m, n, is_matrix = _concat_mn(tiles)
