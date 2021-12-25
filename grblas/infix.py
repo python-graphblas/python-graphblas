@@ -40,6 +40,7 @@ def _ewise_mult_to_expr(self):
 
 class VectorInfixExpr(InfixExprBase):
     __slots__ = "_size"
+    ndim = 1
     output_type = VectorExpression
 
     def __init__(self, left, right):
@@ -105,8 +106,8 @@ class VectorInfixExpr(InfixExprBase):
 class VectorEwiseAddExpr(VectorInfixExpr):
     __slots__ = ()
     method_name = "ewise_add"
-    _infix = "|"
     _example_op = "plus"
+    _infix = "|"
 
     _to_expr = _ewise_add_to_expr
 
@@ -114,16 +115,16 @@ class VectorEwiseAddExpr(VectorInfixExpr):
 class VectorEwiseMultExpr(VectorInfixExpr):
     __slots__ = ()
     method_name = "ewise_mult"
-    _infix = "&"
     _example_op = "times"
+    _infix = "&"
 
     _to_expr = _ewise_mult_to_expr
 
 
 class VectorMatMulExpr(VectorInfixExpr):
     __slots__ = "method_name"
-    _infix = "@"
     _example_op = "plus_times"
+    _infix = "@"
 
     def __init__(self, left, right, *, method_name, size):
         InfixExprBase.__init__(self, left, right)
@@ -138,6 +139,7 @@ utils._output_types[VectorMatMulExpr] = Vector
 
 class MatrixInfixExpr(InfixExprBase):
     __slots__ = "_nrows", "_ncols"
+    ndim = 2
     output_type = MatrixExpression
     _is_transposed = False
 
@@ -214,8 +216,8 @@ class MatrixInfixExpr(InfixExprBase):
 class MatrixEwiseAddExpr(MatrixInfixExpr):
     __slots__ = ()
     method_name = "ewise_add"
-    _infix = "|"
     _example_op = "plus"
+    _infix = "|"
 
     _to_expr = _ewise_add_to_expr
 
@@ -223,8 +225,8 @@ class MatrixEwiseAddExpr(MatrixInfixExpr):
 class MatrixEwiseMultExpr(MatrixInfixExpr):
     __slots__ = ()
     method_name = "ewise_mult"
-    _infix = "&"
     _example_op = "times"
+    _infix = "&"
 
     _to_expr = _ewise_mult_to_expr
 
@@ -232,8 +234,8 @@ class MatrixEwiseMultExpr(MatrixInfixExpr):
 class MatrixMatMulExpr(MatrixInfixExpr):
     __slots__ = ()
     method_name = "mxm"
-    _infix = "@"
     _example_op = "plus_times"
+    _infix = "@"
 
     def __init__(self, left, right, *, nrows, ncols):
         super().__init__(left, right)
@@ -249,10 +251,11 @@ utils._output_types[MatrixMatMulExpr] = Matrix
 class ScalarMatMulExpr(InfixExprBase):
     __slots__ = ()
     method_name = "inner"
+    ndim = 0
     output_type = ScalarExpression
-    _infix = "@"
-    _example_op = "plus_times"
     shape = ()
+    _example_op = "plus_times"
+    _infix = "@"
     _is_scalar = True
 
     def new(self, dtype=None, *, name=None):

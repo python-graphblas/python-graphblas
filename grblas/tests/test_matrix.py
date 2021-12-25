@@ -2887,3 +2887,10 @@ def test_deprecated(A):
         A.ss.scan_rows()
     with pytest.warns(DeprecationWarning):
         A.ss.scan_columns()
+
+
+def test_ndim(A):
+    assert A.ndim == 2
+    assert A.ewise_mult(A).ndim == 2
+    assert (A & A).ndim == 2
+    assert (A @ A).ndim == 2

@@ -1418,3 +1418,10 @@ def test_split(v):
     assert x2.isequal(expected2)
     assert x1.name == "split_0"
     assert x2.name == "split_1"
+
+
+def test_ndim(A, v):
+    assert v.ndim == 1
+    assert v.ewise_mult(v).ndim == 1
+    assert (v & v).ndim == 1
+    assert (A @ v).ndim == 1
