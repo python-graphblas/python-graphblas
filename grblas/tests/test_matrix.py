@@ -8,7 +8,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import grblas
-from grblas import Matrix, Scalar, Vector, agg, binary, dtypes, monoid, semiring, unary
+from grblas import agg, binary, dtypes, monoid, semiring, unary
 from grblas.exceptions import (
     DimensionMismatch,
     DomainMismatch,
@@ -17,7 +17,9 @@ from grblas.exceptions import (
     OutputNotEmpty,
 )
 
-from .conftest import autocompute
+from .conftest import autocompute, compute
+
+from grblas import Matrix, Scalar, Vector  # isort:skip
 
 
 @pytest.fixture
@@ -162,7 +164,7 @@ def test_resize(A):
     assert A.nrows == 10
     assert A.ncols == 11
     assert A.nvals == 12
-    assert A[9, 9].value is None
+    assert compute(A[9, 9].value) is None
     A.resize(4, 1)
     assert A.nrows == 4
     assert A.ncols == 1
@@ -240,7 +242,7 @@ def test_extract_element(A):
     assert A[1, 6].value == 4
     assert A.T[6, 1].value == 4
     s = A[0, 0].new()
-    assert s.value is None
+    assert compute(s.value) is None
     assert s.dtype == "INT64"
     s = A[1, 6].new(dtype=float)
     assert s.value == 4.0
@@ -248,7 +250,7 @@ def test_extract_element(A):
 
 
 def test_set_element(A):
-    assert A[1, 1].value is None
+    assert compute(A[1, 1].value) is None
     assert A[3, 0].value == 3
     A[1, 1].update(21)
     A[3, 0] << -5
@@ -259,7 +261,7 @@ def test_set_element(A):
 def test_remove_element(A):
     assert A[3, 0].value == 3
     del A[3, 0]
-    assert A[3, 0].value is None
+    assert compute(A[3, 0].value) is None
     assert A[6, 3].value == 7
     with pytest.raises(TypeError, match="Remove Element only supports"):
         del A[3:5, 3]
@@ -1326,7 +1328,7 @@ def test_reduce_agg_empty():
             assert we.isequal(w)
             if attr not in {"argmin", "argmax", "first_index", "last_index"}:
                 s = B.reduce_scalar(aggr).new()
-                assert s.value is None
+                assert compute(s.value) is None
 
 
 def test_reduce_row_udf(A):

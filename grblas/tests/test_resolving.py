@@ -1,8 +1,9 @@
 import pytest
 
-import grblas
-from grblas import Matrix, Vector, binary, dtypes, unary
+from grblas import binary, dtypes, replace, unary
 from grblas.expr import Updater
+
+from grblas import Matrix, Scalar, Vector  # isort:skip
 
 
 def test_from_values_dtype_resolving():
@@ -62,7 +63,7 @@ def test_order_of_updater_params_does_not_matter():
     assert v.isequal(result)
     # replace, mask=, accum=
     v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
-    v(grblas.replace, mask=mask.V, accum=accum) << u.ewise_mult(u, binary.times)
+    v(replace, mask=mask.V, accum=accum) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
 
 
@@ -75,12 +76,12 @@ def test_updater_replace_no_mask():
     with pytest.raises(
         TypeError, match="'replace' argument may only be True if a mask is provided"
     ):
-        u(grblas.replace)
+        u(replace)
 
 
 def test_replace_repr():
-    assert repr(grblas.replace) == "replace"
-    assert str(grblas.replace) == "replace"
+    assert repr(replace) == "replace"
+    assert str(replace) == "replace"
 
 
 def test_updater_repeat_argument_types():
@@ -167,7 +168,7 @@ def test_bad_extract_with_updater():
         u << u()[[1, 2]]
     with pytest.raises(TypeError, match="mask is not allowed for single element extraction"):
         u[0].new(mask=u.S)
-    s = grblas.Scalar.from_value(10)
+    s = Scalar.from_value(10)
     with pytest.raises(TypeError, match="Indexing not supported for Scalars"):
         del s()[0]
     with pytest.raises(TypeError, match="Indexing not supported for Scalars"):

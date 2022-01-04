@@ -102,8 +102,8 @@ class Matrix(BaseType):
         resolved_indexes = IndexerResolver(self, keys)
         return AmbiguousAssignOrExtract(self, resolved_indexes)
 
-    def __setitem__(self, keys, delayed):
-        Updater(self)[keys] = delayed
+    def __setitem__(self, keys, expr):
+        Updater(self)[keys] = expr
 
     def __contains__(self, index):
         extractor = self[index]
@@ -841,7 +841,7 @@ class Matrix(BaseType):
                         # Upcast v to a Matrix and use Matrix_assign
                         rows = _CArray([rows.scalar.value])
                         rowscalar = _CScalar(1)
-                        delayed = MatrixExpression(
+                        expr = MatrixExpression(
                             method_name,
                             "GrB_Matrix_assign",
                             [value._as_matrix(), rows, rowscalar, cols, colscalar],
@@ -862,7 +862,7 @@ class Matrix(BaseType):
                         # C[i, J] << v
                         cfunc_name = "GrB_Row_assign"
                         expr_repr = "[{1}, [{3} cols]] = {0.name}"
-                    delayed = MatrixExpression(
+                    expr = MatrixExpression(
                         method_name,
                         cfunc_name,
                         [value, rows, cols, colscalar],
@@ -885,7 +885,7 @@ class Matrix(BaseType):
                         # Upcast v to a Matrix and use Matrix_assign
                         cols = _CArray([cols.scalar.value])
                         colscalar = _CScalar(1)
-                        delayed = MatrixExpression(
+                        expr = MatrixExpression(
                             method_name,
                             "GrB_Matrix_assign",
                             [value._as_matrix(), rows, rowscalar, cols, colscalar],
@@ -905,7 +905,7 @@ class Matrix(BaseType):
                         # C[I, j] << v
                         cfunc_name = "GrB_Col_assign"
                         expr_repr = "[{1}, [{3} cols]] = {0.name}"
-                    delayed = MatrixExpression(
+                    expr = MatrixExpression(
                         method_name,
                         cfunc_name,
                         [value, rows, rowscalar, cols],
@@ -965,7 +965,7 @@ class Matrix(BaseType):
                 # C(M)[I, J] << A
                 cfunc_name = "GrB_Matrix_assign"
                 expr_repr = "[[{2} rows], [{4} cols]] = {0.name}"
-            delayed = MatrixExpression(
+            expr = MatrixExpression(
                 method_name,
                 cfunc_name,
                 [value, rows, rowscalar, cols, colscalar],
@@ -1009,7 +1009,7 @@ class Matrix(BaseType):
                     value_vector << value
 
                     # Row-only selection
-                    delayed = MatrixExpression(
+                    expr = MatrixExpression(
                         method_name,
                         cfunc_name,
                         [value_vector, rows, cols, colscalar],
@@ -1033,7 +1033,7 @@ class Matrix(BaseType):
                     value_vector << value
 
                     # Column-only selection
-                    delayed = MatrixExpression(
+                    expr = MatrixExpression(
                         method_name,
                         cfunc_name,
                         [value_vector, rows, rowscalar, cols],
@@ -1084,7 +1084,7 @@ class Matrix(BaseType):
                         colscalar = _CScalar(1)
                     cfunc_name = f"GrB_Matrix_assign_{value.dtype}"
                     expr_repr = "[[{2} rows], [{4} cols]] = {0}"
-                delayed = MatrixExpression(
+                expr = MatrixExpression(
                     method_name,
                     cfunc_name,
                     [_CScalar(value), rows, rowscalar, cols, colscalar],
@@ -1093,7 +1093,7 @@ class Matrix(BaseType):
                     ncols=self._ncols,
                     dtype=self.dtype,
                 )
-        return delayed
+        return expr
 
     def _delete_element(self, resolved_indexes):
         rowidx, colidx = resolved_indexes.indices

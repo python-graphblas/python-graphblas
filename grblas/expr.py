@@ -311,16 +311,16 @@ class Updater:
         return Assigner(self, resolved_indexes, is_submask=False)
 
     def _setitem(self, resolved_indexes, obj, *, is_submask):
-        # Occurs when user calls C(params)[index] = delayed
+        # Occurs when user calls C(params)[index] = expr
         if resolved_indexes.is_single_element and not self.kwargs:
             # Fast path using assignElement
             self.parent._assign_element(resolved_indexes, obj)
         else:
             mask = self.kwargs.get("mask")
-            delayed = self.parent._prep_for_assign(
+            expr = self.parent._prep_for_assign(
                 resolved_indexes, obj, mask=mask, is_submask=is_submask
             )
-            self.update(delayed)
+            self.update(expr)
 
     def __setitem__(self, keys, obj):
         if self.parent._is_scalar:
@@ -338,13 +338,13 @@ class Updater:
         else:
             raise TypeError("Remove Element only supports a single index")
 
-    def __lshift__(self, delayed):
-        # Occurs when user calls `C(params) << delayed`
-        self.parent._update(delayed, **self.kwargs)
+    def __lshift__(self, expr):
+        # Occurs when user calls `C(params) << expr`
+        self.parent._update(expr, **self.kwargs)
 
-    def update(self, delayed):
-        # Occurs when user calls `C(params).update(delayed)`
-        self.parent._update(delayed, **self.kwargs)
+    def update(self, expr):
+        # Occurs when user calls `C(params).update(expr)`
+        self.parent._update(expr, **self.kwargs)
 
     def __eq__(self, other):
         raise TypeError(f"__eq__ not defined for objects of type {type(self)}.")
