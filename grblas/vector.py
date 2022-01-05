@@ -31,6 +31,7 @@ class Vector(BaseType):
     """
 
     __slots__ = "_size", "ss"
+    ndim = 1
     _name_counter = itertools.count()
 
     def __init__(self, gb_obj, dtype, *, name=None):
@@ -751,6 +752,7 @@ Vector.ss = class_property(Vector.ss, ss)
 
 class VectorExpression(BaseExpression):
     __slots__ = "_size"
+    ndim = 1
     output_type = Vector
 
     def __init__(

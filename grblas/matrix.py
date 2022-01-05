@@ -33,6 +33,7 @@ class Matrix(BaseType):
     """
 
     __slots__ = "_nrows", "_ncols", "_parent", "ss"
+    ndim = 2
     _is_transposed = False
     _name_counter = itertools.count()
 
@@ -1147,6 +1148,7 @@ Matrix.ss = class_property(Matrix.ss, ss)
 
 class MatrixExpression(BaseExpression):
     __slots__ = "_ncols", "_nrows"
+    ndim = 2
     output_type = Matrix
     _is_transposed = False
 
@@ -1264,6 +1266,7 @@ class MatrixExpression(BaseExpression):
 
 class TransposedMatrix:
     __slots__ = "_matrix", "_ncols", "_nrows", "__weakref__"
+    ndim = 2
     _is_scalar = False
     _is_transposed = True
 
