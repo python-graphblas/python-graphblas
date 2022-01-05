@@ -58,3 +58,7 @@ def autocompute(func):
             return func(*args, **kwargs)
 
     return inner
+
+
+def compute(x):
+    return x

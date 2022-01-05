@@ -10,6 +10,7 @@ import grblas.binary.numpy as npbinary
 import grblas.monoid.numpy as npmonoid
 import grblas.semiring.numpy as npsemiring
 import grblas.unary.numpy as npunary
+from grblas import Vector
 from grblas.dtypes import _supports_complex
 
 
@@ -22,8 +23,8 @@ def test_numpyops_dir():
 
 @pytest.mark.slow
 def test_bool_doesnt_get_too_large():
-    a = grblas.Vector.from_values([0, 1, 2, 3], [True, False, True, False])
-    b = grblas.Vector.from_values([0, 1, 2, 3], [True, True, False, False])
+    a = Vector.from_values([0, 1, 2, 3], [True, False, True, False])
+    b = Vector.from_values([0, 1, 2, 3], [True, True, False, False])
     if grblas.config["mapnumpy"]:
         with pytest.raises(KeyError, match="plus does not work with BOOL"):
             z = a.ewise_mult(b, grblas.monoid.numpy.add).new()
@@ -42,13 +43,13 @@ def test_bool_doesnt_get_too_large():
 def test_npunary():
     L = list(range(5))
     data = [
-        [grblas.Vector.from_values([0, 1], [True, False]), np.array([True, False])],
-        [grblas.Vector.from_values(L, L), np.array(L, dtype=np.int64)],
-        [grblas.Vector.from_values(L, L, dtype="float64"), np.array(L, dtype=np.float64)],
+        [Vector.from_values([0, 1], [True, False]), np.array([True, False])],
+        [Vector.from_values(L, L), np.array(L, dtype=np.int64)],
+        [Vector.from_values(L, L, dtype="float64"), np.array(L, dtype=np.float64)],
     ]
     if _supports_complex:  # pragma: no branch
         data.append(
-            [grblas.Vector.from_values(L, L, dtype="FC64"), np.array(L, dtype=np.complex128)],
+            [Vector.from_values(L, L, dtype="FC64"), np.array(L, dtype=np.complex128)],
         )
     blacklist = {"BOOL": {"negative"}, "FC64": {"ceil", "floor", "trunc"}}
     isclose = grblas.binary.isclose(1e-7, 0)
@@ -76,7 +77,7 @@ def test_npunary():
                         compare_op = isclose
                     else:
                         compare_op = npbinary.equal
-            np_result = grblas.Vector.from_values(
+            np_result = Vector.from_values(
                 list(range(np_input.size)), list(np_result), dtype=gb_result.dtype
             )
             assert gb_result.nvals == np_result.size
@@ -98,20 +99,20 @@ def test_npbinary():
     index = list(range(len(values1)))
     data = [
         [
-            [grblas.Vector.from_values(index, values1), grblas.Vector.from_values(index, values2)],
+            [Vector.from_values(index, values1), Vector.from_values(index, values2)],
             [np.array(values1, dtype=np.int64), np.array(values2, dtype=np.int64)],
         ],
         [
             [
-                grblas.Vector.from_values(index, values1, dtype="float64"),
-                grblas.Vector.from_values(index, values2, dtype="float64"),
+                Vector.from_values(index, values1, dtype="float64"),
+                Vector.from_values(index, values2, dtype="float64"),
             ],
             [np.array(values1, dtype=np.float64), np.array(values2, dtype=np.float64)],
         ],
         [
             [
-                grblas.Vector.from_values([0, 1, 2, 3], [True, False, True, False]),
-                grblas.Vector.from_values([0, 1, 2, 3], [True, True, False, False]),
+                Vector.from_values([0, 1, 2, 3], [True, False, True, False]),
+                Vector.from_values([0, 1, 2, 3], [True, True, False, False]),
             ],
             [np.array([True, False, True, False]), np.array([True, True, False, False])],
         ],
@@ -120,8 +121,8 @@ def test_npbinary():
         data.append(
             [
                 [
-                    grblas.Vector.from_values(index, values1, dtype="FC64"),
-                    grblas.Vector.from_values(index, values2, dtype="FC64"),
+                    Vector.from_values(index, values1, dtype="FC64"),
+                    Vector.from_values(index, values2, dtype="FC64"),
                 ],
                 [np.array(values1, dtype=np.complex128), np.array(values2, dtype=np.complex128)],
             ],
@@ -147,7 +148,7 @@ def test_npbinary():
                     np_result = getattr(np, binary_name)(np_left, np_right)
                     compare_op = npbinary.equal
 
-            np_result = grblas.Vector.from_values(
+            np_result = Vector.from_values(
                 np.arange(np_left.size), np_result, dtype=gb_result.dtype
             )
 
@@ -175,20 +176,20 @@ def test_npmonoid():
     index = list(range(len(values1)))
     data = [
         [
-            [grblas.Vector.from_values(index, values1), grblas.Vector.from_values(index, values2)],
+            [Vector.from_values(index, values1), Vector.from_values(index, values2)],
             [np.array(values1, dtype=int), np.array(values2, dtype=int)],
         ],
         [
             [
-                grblas.Vector.from_values(index, values1, dtype="float64"),
-                grblas.Vector.from_values(index, values2, dtype="float64"),
+                Vector.from_values(index, values1, dtype="float64"),
+                Vector.from_values(index, values2, dtype="float64"),
             ],
             [np.array(values1, dtype=np.float64), np.array(values2, dtype=np.float64)],
         ],
         [
             [
-                grblas.Vector.from_values([0, 1, 2, 3], [True, False, True, False]),
-                grblas.Vector.from_values([0, 1, 2, 3], [True, True, False, False]),
+                Vector.from_values([0, 1, 2, 3], [True, False, True, False]),
+                Vector.from_values([0, 1, 2, 3], [True, True, False, False]),
             ],
             [np.array([True, False, True, False]), np.array([True, True, False, False])],
         ],
@@ -198,8 +199,8 @@ def test_npmonoid():
     #     data.append(
     #         [
     #             [
-    #                 grblas.Vector.from_values(index, values1, dtype="FC64"),
-    #                 grblas.Vector.from_values(index, values2, dtype="FC64"),
+    #                 Vector.from_values(index, values1, dtype="FC64"),
+    #                 Vector.from_values(index, values2, dtype="FC64"),
     #             ],
     #             [
     #                 np.array(values1, dtype=np.complex128),
@@ -222,7 +223,7 @@ def test_npmonoid():
             with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
                 gb_result = gb_left.ewise_mult(gb_right, op).new()
                 np_result = getattr(np, binary_name)(np_left, np_right)
-            np_result = grblas.Vector.from_values(
+            np_result = Vector.from_values(
                 np.arange(np_left.size), np_result, dtype=gb_result.dtype
             )
             assert gb_result.nvals == np_result.size

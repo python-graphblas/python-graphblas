@@ -1,9 +1,11 @@
 from pytest import fixture, raises
 
-from grblas import Matrix, Scalar, Vector, monoid, op
+from grblas import monoid, op
 from grblas.exceptions import DimensionMismatch
 
 from .conftest import autocompute
+
+from grblas import Matrix, Scalar, Vector  # isort:skip
 
 
 @fixture

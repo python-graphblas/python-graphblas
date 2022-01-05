@@ -105,8 +105,8 @@ class Vector(BaseType):
         resolved_indexes = IndexerResolver(self, keys)
         return AmbiguousAssignOrExtract(self, resolved_indexes)
 
-    def __setitem__(self, keys, delayed):
-        Updater(self)[keys] = delayed
+    def __setitem__(self, keys, expr):
+        Updater(self)[keys] = expr
 
     def __contains__(self, index):
         extractor = self[index]

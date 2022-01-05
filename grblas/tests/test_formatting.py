@@ -2,10 +2,13 @@ import numpy as np
 import pytest
 
 import grblas
-from grblas import Matrix, Scalar, Vector, formatting, unary
+from grblas import formatting, unary
 from grblas.formatting import CSS_STYLE
 
 from .conftest import autocompute
+
+from grblas import Matrix, Scalar, Vector  # isort:skip
+
 
 try:
     import pandas as pd
