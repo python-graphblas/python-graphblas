@@ -299,38 +299,38 @@ class BaseType:
             "Perhaps use .nvals attribute instead."
         )
 
-    def __lshift__(self, delayed):
-        return self._update(delayed)
+    def __lshift__(self, expr):
+        return self._update(expr)
 
-    def update(self, delayed):
+    def update(self, expr):
         """
         Convenience function when no output arguments (mask, accum, replace) are used
         """
-        return self._update(delayed)
+        return self._update(expr)
 
-    def _update(self, delayed, mask=None, accum=None, replace=False, input_mask=None):
+    def _update(self, expr, mask=None, accum=None, replace=False, input_mask=None):
         # TODO: check expected output type (now included in Expression object)
-        if not isinstance(delayed, BaseExpression):
-            if type(delayed) is AmbiguousAssignOrExtract:
-                if delayed.resolved_indexes.is_single_element and self._is_scalar:
+        if not isinstance(expr, BaseExpression):
+            if type(expr) is AmbiguousAssignOrExtract:
+                if expr.resolved_indexes.is_single_element and self._is_scalar:
                     # Extract element (s << v[1])
                     if accum is not None:
                         raise TypeError(
                             "Scalar accumulation with extract element"
                             "--such as `s(accum=accum) << v[0]`--is not supported"
                         )
-                    self.value = delayed.new(self.dtype, name="s_extract").value
+                    self.value = expr.new(self.dtype, name="s_extract").value
                     return
 
                 # Extract (C << A[rows, cols])
                 if input_mask is not None:
                     if mask is not None:  # pragma: no cover (can this be covered?)
                         raise TypeError("mask and input_mask arguments cannot both be given")
-                    _check_mask(input_mask, output=delayed.parent)
-                    mask = delayed._input_mask_to_mask(input_mask)
+                    _check_mask(input_mask, output=expr.parent)
+                    mask = expr._input_mask_to_mask(input_mask)
                     input_mask = None
-                delayed = delayed._extract_delayed()
-            elif type(delayed) is type(self):
+                expr = expr._extract_delayed()
+            elif type(expr) is type(self):
                 # Simple assignment (w << v)
                 if self._is_scalar:
                     if accum is not None:
@@ -338,13 +338,13 @@ class BaseType:
                             "Scalar update with accumulation--such as `s(accum=accum) << t`"
                             "--is not supported"
                         )
-                    self.value = delayed.value
+                    self.value = expr.value
                     return
 
-                # Two choices here: apply identity `delayed = delayed.apply(identity)`, or assign.
+                # Two choices here: apply identity `expr = expr.apply(identity)`, or assign.
                 # Choose assign for now, since it works better for iso-valued objects.
                 # Perhaps we should benchmark to see which is faster and has less Python overhead.
-                self(mask=mask, accum=accum, replace=replace, input_mask=input_mask)[...] = delayed
+                self(mask=mask, accum=accum, replace=replace, input_mask=input_mask)[...] = expr
                 return
             elif self._is_scalar:
                 if accum is not None:
@@ -352,39 +352,39 @@ class BaseType:
                         "Scalar update with accumulation--such as `s(accum=accum) << t`"
                         "--is not supported"
                     )
-                self.value = delayed
+                self.value = expr
                 return
 
             else:
                 from .infix import InfixExprBase
                 from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
-                if type(delayed) is TransposedMatrix and type(self) is Matrix:
+                if type(expr) is TransposedMatrix and type(self) is Matrix:
                     # Transpose (C << A.T)
-                    delayed = MatrixExpression(
+                    expr = MatrixExpression(
                         "transpose",
                         "GrB_transpose",
-                        [delayed],
+                        [expr],
                         expr_repr="{0}",
-                        dtype=delayed.dtype,
-                        nrows=delayed._nrows,
-                        ncols=delayed._ncols,
+                        dtype=expr.dtype,
+                        nrows=expr._nrows,
+                        ncols=expr._ncols,
                     )
-                elif isinstance(delayed, InfixExprBase):
+                elif isinstance(expr, InfixExprBase):
                     # w << (v & v)
-                    delayed = delayed._to_expr()
+                    expr = expr._to_expr()
                 else:
                     from .scalar import Scalar
 
-                    if type(delayed) is Scalar:
-                        scalar = delayed
+                    if type(expr) is Scalar:
+                        scalar = expr
                     else:
                         try:
-                            scalar = Scalar.from_value(delayed, name="")
+                            scalar = Scalar.from_value(expr, name="")
                         except TypeError:
                             raise TypeError(
                                 "Assignment value must be a valid expression type, not "
-                                f"{type(delayed)}.\n\nValid expression types include "
+                                f"{type(expr)}.\n\nValid expression types include "
                                 f"{type(self).__name__}, {type(self).__name__}Expression, "
                                 "AmbiguousAssignOrExtract, and scalars."
                             )
@@ -406,9 +406,9 @@ class BaseType:
 
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
-        if delayed.op is not None and delayed.op.opclass == "Aggregator":
+        if expr.op is not None and expr.op.opclass == "Aggregator":
             updater = self(mask=mask, accum=accum, replace=replace)
-            delayed.op._new(updater, delayed)
+            expr.op._new(updater, expr)
             return
 
         # Normalize mask and separate out complement and structural flags
@@ -422,29 +422,29 @@ class BaseType:
 
         # Get descriptor based on flags
         desc = descriptor_lookup(
-            transpose_first=delayed.at,
-            transpose_second=delayed.bt,
+            transpose_first=expr.at,
+            transpose_second=expr.bt,
             mask_complement=complement,
             mask_structure=structure,
             output_replace=replace,
         )
         if self._is_scalar:
-            is_fake_scalar = delayed.method_name == "inner"
+            is_fake_scalar = expr.method_name == "inner"
             if is_fake_scalar:
                 from .vector import Vector
 
                 fake_self = Vector.new(self.dtype, size=1)
                 args = [fake_self, mask, accum]
-                cfunc_name = delayed.cfunc_name
+                cfunc_name = expr.cfunc_name
             else:
                 args = [_Pointer(self), accum]
-                cfunc_name = delayed.cfunc_name.format(output_dtype=self.dtype)
+                cfunc_name = expr.cfunc_name.format(output_dtype=self.dtype)
         else:
             args = [self, mask, accum]
-            cfunc_name = delayed.cfunc_name
-        if delayed.op is not None:
-            args.append(delayed.op)
-        args.extend(delayed.args)
+            cfunc_name = expr.cfunc_name
+        if expr.op is not None:
+            args.append(expr.op)
+        args.extend(expr.args)
         args.append(desc)
         # Make the GraphBLAS call
         call(cfunc_name, args)

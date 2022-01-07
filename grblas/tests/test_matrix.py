@@ -8,7 +8,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import grblas
-from grblas import Matrix, Scalar, Vector, agg, binary, dtypes, monoid, semiring, unary
+from grblas import agg, binary, dtypes, monoid, semiring, unary
 from grblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
@@ -18,7 +18,9 @@ from grblas.exceptions import (
     OutputNotEmpty,
 )
 
-from .conftest import autocompute
+from .conftest import autocompute, compute
+
+from grblas import Matrix, Scalar, Vector  # isort:skip
 
 
 @pytest.fixture
@@ -163,7 +165,7 @@ def test_resize(A):
     assert A.nrows == 10
     assert A.ncols == 11
     assert A.nvals == 12
-    assert A[9, 9].value is None
+    assert compute(A[9, 9].value) is None
     A.resize(4, 1)
     assert A.nrows == 4
     assert A.ncols == 1
@@ -241,7 +243,7 @@ def test_extract_element(A):
     assert A[1, 6].value == 4
     assert A.T[6, 1].value == 4
     s = A[0, 0].new()
-    assert s.value is None
+    assert compute(s.value) is None
     assert s.dtype == "INT64"
     s = A[1, 6].new(dtype=float)
     assert s.value == 4.0
@@ -249,7 +251,7 @@ def test_extract_element(A):
 
 
 def test_set_element(A):
-    assert A[1, 1].value is None
+    assert compute(A[1, 1].value) is None
     assert A[3, 0].value == 3
     A[1, 1].update(21)
     A[3, 0] << -5
@@ -260,7 +262,7 @@ def test_set_element(A):
 def test_remove_element(A):
     assert A[3, 0].value == 3
     del A[3, 0]
-    assert A[3, 0].value is None
+    assert compute(A[3, 0].value) is None
     assert A[6, 3].value == 7
     with pytest.raises(TypeError, match="Remove Element only supports"):
         del A[3:5, 3]
@@ -1327,7 +1329,7 @@ def test_reduce_agg_empty():
             assert we.isequal(w)
             if attr not in {"argmin", "argmax", "first_index", "last_index"}:
                 s = B.reduce_scalar(aggr).new()
-                assert s.value is None
+                assert compute(s.value) is None
 
 
 def test_reduce_row_udf(A):
@@ -2362,7 +2364,7 @@ def test_split(A):
         A.ss.split([[5, 5], 3])
 
 
-def test_concat(A):
+def test_concat(A, v):
     B1 = grblas.ss.concat([[A, A]], dtype=float)
     assert B1.dtype == "FP64"
     expected = Matrix.new(A.dtype, nrows=A.nrows, ncols=2 * A.ncols)
@@ -2394,6 +2396,30 @@ def test_concat(A):
         grblas.ss.concat([[]])
     with pytest.raises(ValueError, match="tiles must all be the same length"):
         grblas.ss.concat([[A], [A, A]])
+
+    # Treat vectors like Nx1 matrices
+    B3 = grblas.ss.concat([[v, v]])
+    expected = Matrix.new(v.dtype, nrows=v.size, ncols=2)
+    expected[:, 0] = v
+    expected[:, 1] = v
+    assert B3.isequal(expected)
+
+    B4 = grblas.ss.concat([[v], [v]])
+    expected = Matrix.new(v.dtype, nrows=2 * v.size, ncols=1)
+    expected[: v.size, 0] = v
+    expected[v.size :, 0] = v
+    assert B4.isequal(expected)
+
+    B5 = grblas.ss.concat([[A, v]])
+    expected = Matrix.new(v.dtype, nrows=v.size, ncols=A.ncols + 1)
+    expected[:, : A.ncols] = A
+    expected[:, A.ncols] = v
+    assert B5.isequal(expected)
+
+    with pytest.raises(TypeError, match=""):
+        grblas.ss.concat([v, [v]])
+    with pytest.raises(TypeError):
+        grblas.ss.concat([[v], v])
 
 
 def test_nbytes(A):
@@ -2517,6 +2543,7 @@ def test_expr_is_like_matrix(A):
         "_deserialize",
         "_extract_element",
         "_name_counter",
+        "_parent",
         "_prep_for_assign",
         "_prep_for_extract",
         "_update",
@@ -2863,3 +2890,10 @@ def test_deprecated(A):
         A.ss.scan_rows()
     with pytest.warns(DeprecationWarning):
         A.ss.scan_columns()
+
+
+def test_ndim(A):
+    assert A.ndim == 2
+    assert A.ewise_mult(A).ndim == 2
+    assert (A & A).ndim == 2
+    assert (A @ A).ndim == 2

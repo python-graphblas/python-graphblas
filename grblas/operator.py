@@ -3,16 +3,21 @@ import itertools
 import re
 from collections.abc import Mapping
 from functools import lru_cache
+from operator import getitem
 from types import FunctionType, ModuleType
 
 import numba
 import numpy as np
 
-from . import binary, config, ffi, lib, monoid, op, semiring, unary
+from . import config, ffi, lib
 from .dtypes import INT8, _sample_values, _supports_complex, lookup_dtype, unify
 from .exceptions import UdfParseError, check_status_carg
 from .expr import InfixExprBase
 from .utils import libget, output_type
+
+_STANDARD_OPERATOR_NAMES = set()
+
+from . import binary, monoid, op, semiring, unary  # noqa isort:skip
 
 ffi_new = ffi.new
 UNKNOWN_OPCLASS = "UnknownOpClass"
@@ -95,6 +100,9 @@ class TypedOpBase:
     @property
     def _carg(self):
         return self.gb_obj
+
+    def __reduce__(self):
+        return (getitem, (self.parent, self.type))
 
 
 class TypedBuiltinUnaryOp(TypedOpBase):
@@ -289,6 +297,10 @@ class TypedUserSemiring(TypedOpBase):
     __call__ = TypedBuiltinSemiring.__call__
 
 
+def _deserialize_parameterized(parameterized_op, args, kwargs):
+    return parameterized_op(*args, **kwargs)
+
+
 class ParameterizedUdf:
     __slots__ = "name", "__call__", "_anonymous", "__weakref__"
 
@@ -315,7 +327,23 @@ class ParameterizedUnaryOp(ParameterizedUdf):
 
     def _call(self, *args, **kwargs):
         unary = self.func(*args, **kwargs)
+        unary._parameterized_info = (self, args, kwargs)
         return UnaryOp.register_anonymous(unary, self.name)
+
+    def __reduce__(self):
+        name = f"unary.{self.name}"
+        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:  # pragma: no cover
+            return name
+        return (self._deserialize, (self.name, self.func, self._anonymous))
+
+    @staticmethod
+    def _deserialize(name, func, anonymous):
+        if anonymous:
+            return UnaryOp.register_anonymous(func, name, parameterized=True)
+        rv = UnaryOp._find(name)
+        if rv is not None:
+            return rv
+        return UnaryOp.register_new(name, func, parameterized=True)
 
 
 class ParameterizedBinaryOp(ParameterizedUdf):
@@ -335,6 +363,7 @@ class ParameterizedBinaryOp(ParameterizedUdf):
 
     def _call_to_cache(self, *args, **kwargs):
         binary = self.func(*args, **kwargs)
+        binary._parameterized_info = (self, args, kwargs)
         return BinaryOp.register_anonymous(binary, self.name)
 
     def _call(self, *args, **kwargs):
@@ -360,6 +389,21 @@ class ParameterizedBinaryOp(ParameterizedUdf):
         return self._monoid
 
     is_commutative = TypedBuiltinBinaryOp.is_commutative
+
+    def __reduce__(self):
+        name = f"binary.{self.name}"
+        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
+            return name
+        return (self._deserialize, (self.name, self.func, self._anonymous))
+
+    @staticmethod
+    def _deserialize(name, func, anonymous):
+        if anonymous:
+            return BinaryOp.register_anonymous(func, name, parameterized=True)
+        rv = BinaryOp._find(name)
+        if rv is not None:
+            return rv
+        return BinaryOp.register_new(name, func, parameterized=True)
 
 
 class ParameterizedMonoid(ParameterizedUdf):
@@ -398,6 +442,21 @@ class ParameterizedMonoid(ParameterizedUdf):
         return Monoid.register_anonymous(binary, identity, self.name)
 
     commutes_to = TypedBuiltinMonoid.commutes_to
+
+    def __reduce__(self):
+        name = f"monoid.{self.name}"
+        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:  # pragma: no cover
+            return name
+        return (self._deserialize, (self.name, self.binaryop, self.identity, self._anonymous))
+
+    @staticmethod
+    def _deserialize(name, binaryop, identity, anonymous):
+        if anonymous:
+            return Monoid.register_anonymous(binaryop, identity, name)
+        rv = Monoid._find(name)
+        if rv is not None:
+            return rv
+        return Monoid.register_new(name, binaryop, identity)
 
 
 class ParameterizedSemiring(ParameterizedUdf):
@@ -440,6 +499,21 @@ class ParameterizedSemiring(ParameterizedUdf):
 
     commutes_to = TypedBuiltinSemiring.commutes_to
     is_commutative = TypedBuiltinSemiring.is_commutative
+
+    def __reduce__(self):
+        name = f"semiring.{self.name}"
+        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:  # pragma: no cover
+            return name
+        return (self._deserialize, (self.name, self.monoid, self.binaryop, self._anonymous))
+
+    @staticmethod
+    def _deserialize(name, monoid, binaryop, anonymous):
+        if anonymous:
+            return Semiring.register_anonymous(monoid, binaryop, name)
+        rv = Semiring._find(name)
+        if rv is not None:
+            return rv
+        return Semiring.register_new(name, monoid, binaryop)
 
 
 _VARNAMES = tuple(x for x in dir(lib) if x[0] != "_")
@@ -550,6 +624,7 @@ class OpBase:
                         if not hasattr(cls._module, name):
                             obj = cls(name)
                             setattr(cls._module, name, obj)
+                            _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{name}")
                             if not hasattr(op, name):
                                 setattr(op, name, obj)
                         else:
@@ -575,11 +650,17 @@ class OpBase:
                             obj, name, type_, return_type, gb_obj, gb_name
                         )
                         obj._add(builtin_op)
-        cls._initialized = True
+
+    @classmethod
+    def _deserialize(cls, name, *args):
+        rv = cls._find(name)
+        if rv is not None:
+            return rv  # Should we verify this is what the user expects?
+        return cls.register_new(name, *args)
 
 
 class UnaryOp(OpBase):
-    __slots__ = ()
+    __slots__ = "_func"
     _module = unary
     _modname = "unary"
     _typed_class = TypedBuiltinUnaryOp
@@ -617,7 +698,7 @@ class UnaryOp(OpBase):
         if name is None:
             name = getattr(func, "__name__", "<anonymous_unary>")
         success = False
-        new_type_obj = cls(name, anonymous=anonymous)
+        new_type_obj = cls(name, func, anonymous=anonymous)
         return_types = {}
         nt = numba.types
         for type_, sample_val in _sample_values.items():
@@ -728,6 +809,8 @@ class UnaryOp(OpBase):
                 opmodule._delayed[funcname] = module
             else:
                 setattr(opmodule, funcname, unary_op)
+        if not cls._initialized:  # pragma: no cover
+            _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{name}")
         if not lazy:
             return unary_op
 
@@ -769,12 +852,50 @@ class UnaryOp(OpBase):
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
                             op.coercions[dtype] = target_type
+        cls._initialized = True
+
+    def __init__(self, name, func=None, *, anonymous=False):
+        super().__init__(name, anonymous=anonymous)
+        self._func = func
+
+    def __reduce__(self):
+        if self._anonymous:
+            if hasattr(self._func, "_parameterized_info"):
+                return (_deserialize_parameterized, self._func._parameterized_info)
+            return (self.register_anonymous, (self._func, self.name))
+        name = f"unary.{self.name}"
+        if name in _STANDARD_OPERATOR_NAMES:
+            return name
+        return (self._deserialize, (self.name, self._func))
 
     __call__ = TypedBuiltinUnaryOp.__call__
 
 
+def _floordiv(x, y):
+    return x // y  # cast to integer
+
+
+def _rfloordiv(x, y):
+    return y // x  # cast to integer
+
+
+def _absfirst(x, y):
+    return abs(x)
+
+
+def _abssecond(x, y):
+    return abs(y)
+
+
+def _isclose(rel_tol=1e-7, abs_tol=0.0):
+    def inner(x, y):
+        return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+
+    return inner
+
+
 class BinaryOp(OpBase):
-    __slots__ = "_monoid", "commutes_to", "_semiring_commutes_to"
+    __slots__ = "_monoid", "commutes_to", "_semiring_commutes_to", "_func"
     _module = binary
     _modname = "binary"
     _typed_class = TypedBuiltinBinaryOp
@@ -874,7 +995,7 @@ class BinaryOp(OpBase):
         if name is None:
             name = getattr(func, "__name__", "<anonymous_binary>")
         success = False
-        new_type_obj = cls(name, anonymous=anonymous)
+        new_type_obj = cls(name, func, anonymous=anonymous)
         return_types = {}
         nt = numba.types
         for type_, sample_val in _sample_values.items():
@@ -991,6 +1112,8 @@ class BinaryOp(OpBase):
                 opmodule._delayed[funcname] = module
             else:
                 setattr(opmodule, funcname, binary_op)
+        if not cls._initialized:
+            _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{name}")
         if not lazy:
             return binary_op
 
@@ -1030,20 +1153,14 @@ class BinaryOp(OpBase):
                 new_op._add(cur_op)
         # Add floordiv
         # cdiv truncates towards 0, while floordiv truncates towards -inf
-        BinaryOp.register_new("floordiv", lambda x, y: x // y, lazy=True)  # cast to integer
-        BinaryOp.register_new("rfloordiv", lambda x, y: y // x, lazy=True)  # cast to integer
+        BinaryOp.register_new("floordiv", _floordiv, lazy=True)  # cast to integer
+        BinaryOp.register_new("rfloordiv", _rfloordiv, lazy=True)  # cast to integer
 
         # For aggregators
-        BinaryOp.register_new("absfirst", lambda x, y: abs(x), lazy=True)
-        BinaryOp.register_new("abssecond", lambda x, y: abs(y), lazy=True)
+        BinaryOp.register_new("absfirst", _absfirst, lazy=True)
+        BinaryOp.register_new("abssecond", _abssecond, lazy=True)
 
-        def isclose(rel_tol=1e-7, abs_tol=0.0):
-            def inner(x, y):
-                return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
-
-            return inner
-
-        BinaryOp.register_new("isclose", isclose, parameterized=True)
+        BinaryOp.register_new("isclose", _isclose, parameterized=True)
 
         # Update type information with sane coercion
         name_types = [
@@ -1113,12 +1230,24 @@ class BinaryOp(OpBase):
             right = getattr(binary, right)
             left._semiring_commutes_to = right
             right._semiring_commutes_to = left
+        cls._initialized = True
 
-    def __init__(self, name, *, anonymous=False):
+    def __init__(self, name, func=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
         self._monoid = None
         self.commutes_to = None
         self._semiring_commutes_to = None
+        self._func = func
+
+    def __reduce__(self):
+        if self._anonymous:
+            if hasattr(self._func, "_parameterized_info"):
+                return (_deserialize_parameterized, self._func._parameterized_info)
+            return (self.register_anonymous, (self._func, self.name))
+        name = f"binary.{self.name}"
+        if name in _STANDARD_OPERATOR_NAMES:
+            return name
+        return (self._deserialize, (self.name, self._func))
 
     __call__ = TypedBuiltinBinaryOp.__call__
     is_commutative = TypedBuiltinBinaryOp.is_commutative
@@ -1131,7 +1260,7 @@ class BinaryOp(OpBase):
 
 
 class Monoid(OpBase):
-    __slots__ = "_binaryop"
+    __slots__ = "_binaryop", "_identity"
     is_commutative = True
     _module = monoid
     _modname = "monoid"
@@ -1160,7 +1289,7 @@ class Monoid(OpBase):
             raise TypeError(f"binaryop must be a BinaryOp, not {type(binaryop)}")
         if name is None:
             name = binaryop.name
-        new_type_obj = cls(name, binaryop, anonymous=anonymous)
+        new_type_obj = cls(name, binaryop, identity, anonymous=anonymous)
         if not isinstance(identity, Mapping):
             identities = dict.fromkeys(binaryop.types, identity)
             explicit_identities = False
@@ -1214,14 +1343,25 @@ class Monoid(OpBase):
                 opmodule._delayed[funcname] = module
             else:
                 setattr(opmodule, funcname, monoid)
+        if not cls._initialized:  # pragma: no cover
+            _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{name}")
         if not lazy:
             return monoid
 
-    def __init__(self, name, binaryop=None, *, anonymous=False):
+    def __init__(self, name, binaryop=None, identity=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
         self._binaryop = binaryop
+        self._identity = identity
         if binaryop is not None:
             binaryop._monoid = self
+
+    def __reduce__(self):
+        if self._anonymous:
+            return (self.register_anonymous, (self._binaryop, self._identity, self.name))
+        name = f"monoid.{self.name}"
+        if name in _STANDARD_OPERATOR_NAMES:
+            return name
+        return (self._deserialize, (self.name, self._binaryop, self._identity))
 
     @property
     def binaryop(self):
@@ -1269,6 +1409,7 @@ class Monoid(OpBase):
                 cur_op.types[dtype] = "BOOL"
                 cur_op.coercions[dtype] = "BOOL"
                 cur_op._typed_ops[dtype] = bool_op
+        cls._initialized = True
 
     commutes_to = TypedBuiltinMonoid.commutes_to
     __call__ = TypedBuiltinMonoid.__call__
@@ -1381,6 +1522,8 @@ class Semiring(OpBase):
                 opmodule._delayed[funcname] = module
             else:
                 setattr(opmodule, funcname, semiring)
+        if not cls._initialized:
+            _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{name}")
         if not lazy:
             return semiring
 
@@ -1517,11 +1660,20 @@ class Semiring(OpBase):
             cur_op.types["BOOL"] = target.types["BOOL"]
             cur_op._typed_ops["BOOL"] = target._typed_ops["BOOL"]
             cur_op.coercions["BOOL"] = "BOOL"
+        cls._initialized = True
 
     def __init__(self, name, monoid=None, binaryop=None, *, anonymous=False):
         super().__init__(name, anonymous=anonymous)
         self._monoid = monoid
         self._binaryop = binaryop
+
+    def __reduce__(self):
+        if self._anonymous:
+            return (self.register_anonymous, (self._monoid, self._binaryop, self.name))
+        name = f"semiring.{self.name}"
+        if name in _STANDARD_OPERATOR_NAMES:
+            return name
+        return (self._deserialize, (self.name, self._monoid, self._binaryop))
 
     @property
     def binaryop(self):

@@ -8,7 +8,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import grblas
-from grblas import Matrix, Scalar, Vector, agg, binary, dtypes, monoid, semiring, unary
+from grblas import agg, binary, dtypes, monoid, semiring, unary
 from grblas.exceptions import (
     DimensionMismatch,
     IndexOutOfBound,
@@ -16,7 +16,9 @@ from grblas.exceptions import (
     OutputNotEmpty,
 )
 
-from .conftest import autocompute
+from .conftest import autocompute, compute
+
+from grblas import Matrix, Scalar, Vector  # isort:skip
 
 
 @pytest.fixture
@@ -121,14 +123,16 @@ def test_from_values_scalar():
     assert u.size == 4
     assert u.nvals == 3
     assert u.dtype == dtypes.INT64
-    assert u.ss.is_iso
+    if hasattr(u, "ss"):  # pragma: no branch
+        assert u.ss.is_iso
     assert u.reduce(monoid.any).new() == 7
 
     # ignore duplicate indices; iso trumps duplicates!
     u = Vector.from_values([0, 1, 1, 3], 7)
     assert u.size == 4
     assert u.nvals == 3
-    assert u.ss.is_iso
+    if hasattr(u, "ss"):  # pragma: no branch
+        assert u.ss.is_iso
     assert u.reduce(monoid.any).new() == 7
     with pytest.raises(ValueError, match="dup_op must be None"):
         Vector.from_values([0, 1, 1, 3], 7, dup_op=binary.plus)
@@ -146,7 +150,7 @@ def test_resize(v):
     v.resize(20)
     assert v.size == 20
     assert v.nvals == 4
-    assert v[19].value is None
+    assert compute(v[19].value) is None
     v.resize(4)
     assert v.size == 4
     assert v.nvals == 2
@@ -234,7 +238,7 @@ def test_extract_element(v):
 
 
 def test_set_element(v):
-    assert v[0].value is None
+    assert compute(v[0].value) is None
     assert v[1].value == 1
     v[0] = 12
     v[1] << 9
@@ -245,7 +249,7 @@ def test_set_element(v):
 def test_remove_element(v):
     assert v[1].value == 1
     del v[1]
-    assert v[1].value is None
+    assert compute(v[1].value) is None
     assert v[4].value == 2
     with pytest.raises(TypeError, match="Remove Element only supports"):
         del v[1:3]
@@ -716,7 +720,7 @@ def test_reduce_agg_empty():
         if not isinstance(aggr, agg.Aggregator):
             continue
         s = v.reduce(aggr).new()
-        assert s.value is None
+        assert compute(s.value) is None
 
 
 def test_reduce_coerce_dtype(v):
@@ -1267,6 +1271,7 @@ def test_expr_is_like_vector(v):
         "__delitem__",
         "__lshift__",
         "__setitem__",
+        "_as_matrix",
         "_assign_element",
         "_delete_element",
         "_deserialize",
@@ -1391,3 +1396,36 @@ def test_slice():
     w = v[4:-3:-1].new()
     expected = Vector.from_values(np.arange(2), np.arange(5)[4:-3:-1])
     assert w.isequal(expected)
+
+
+def test_concat(v):
+    expected = Vector.new(v.dtype, size=2 * v.size)
+    expected[: v.size] = v
+    expected[v.size :] = v
+    w1 = grblas.ss.concat([v, v])
+    assert w1.isequal(expected)
+    w2 = Vector.new(v.dtype, size=2 * v.size)
+    w2.ss.concat([v, v])
+    assert w2.isequal(expected)
+    with pytest.raises(TypeError):
+        w2.ss.concat([[v, v]])
+
+
+def test_split(v):
+    w1, w2 = v.ss.split(4)
+    expected1 = Vector.from_values([1, 3], 1)
+    expected2 = Vector.from_values([0, 2], [2, 0])
+    assert w1.isequal(expected1)
+    assert w2.isequal(expected2)
+    x1, x2 = v.ss.split([4, 3], name="split")
+    assert x1.isequal(expected1)
+    assert x2.isequal(expected2)
+    assert x1.name == "split_0"
+    assert x2.name == "split_1"
+
+
+def test_ndim(A, v):
+    assert v.ndim == 1
+    assert v.ewise_mult(v).ndim == 1
+    assert (v & v).ndim == 1
+    assert (A @ v).ndim == 1

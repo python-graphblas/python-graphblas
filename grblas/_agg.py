@@ -1,4 +1,5 @@
 from functools import partial
+from operator import getitem
 
 import numpy as np
 
@@ -97,6 +98,9 @@ class Aggregator:
         return dtype in self.types
 
     def __repr__(self):
+        return f"agg.{self.name}"
+
+    def __reduce__(self):
         return f"agg.{self.name}"
 
 
@@ -244,6 +248,9 @@ class TypedAggregator:
             updater << expr
         else:
             raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
+
+    def __reduce__(self):
+        return (getitem, (self.parent, self.type))
 
 
 # Monoid-only

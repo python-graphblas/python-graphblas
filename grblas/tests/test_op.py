@@ -3,26 +3,23 @@ import itertools
 import numpy as np
 import pytest
 
-import grblas
-from grblas import (
-    Matrix,
-    Vector,
-    agg,
-    binary,
-    dtypes,
-    exceptions,
-    lib,
-    monoid,
-    op,
-    operator,
-    semiring,
-    unary,
-)
+import grblas as gb
+from grblas import agg, binary, dtypes, lib, monoid, op, operator, semiring, unary
+from grblas.exceptions import DomainMismatch, UdfParseError
 from grblas.operator import BinaryOp, Monoid, Semiring, UnaryOp, get_semiring
+
+from grblas import Matrix, Vector  # isort:skip
 
 
 def orig_types(op):
     return op.types.keys() - op.coercions.keys()
+
+
+def test_operator_initialized():
+    assert operator.UnaryOp._initialized
+    assert operator.BinaryOp._initialized
+    assert operator.Monoid._initialized
+    assert operator.Semiring._initialized
 
 
 def test_op_repr():
@@ -142,7 +139,7 @@ def test_unaryop_udf():
     with pytest.raises(TypeError, match="UDF argument must be a function"):
         UnaryOp.register_new("bad", object())
     assert not hasattr(unary, "bad")
-    with pytest.raises(exceptions.UdfParseError, match="Unable to parse function using Numba"):
+    with pytest.raises(UdfParseError, match="Unable to parse function using Numba"):
         UnaryOp.register_new("bad", lambda x: v)
 
 
@@ -216,7 +213,7 @@ def test_binaryop_parameterized():
     with pytest.raises(TypeError, match="UDF argument must be a function"):
         BinaryOp.register_new("bad", object())
     assert not hasattr(binary, "bad")
-    with pytest.raises(exceptions.UdfParseError, match="Unable to parse function using Numba"):
+    with pytest.raises(UdfParseError, match="Unable to parse function using Numba"):
         BinaryOp.register_new("bad", lambda x, y: v)
 
     def my_add(x, y):
@@ -286,7 +283,7 @@ def test_monoid_parameterized():
     fv = v.apply(unary.identity).new(dtype=dtypes.FP64)
     bin_op = BinaryOp.register_anonymous(logaddexp, parameterized=True)
     Monoid.register_new("_user_defined_monoid", bin_op, -np.inf)
-    monoid = grblas.monoid._user_defined_monoid
+    monoid = gb.monoid._user_defined_monoid
     fv2 = fv.ewise_mult(fv, monoid(2)).new()
     plus1 = UnaryOp.register_anonymous(lambda x: x + 1)
     expected = fv.apply(plus1).new()
@@ -518,9 +515,9 @@ def test_monoid_udf():
     result = Vector.from_values([0, 1, 2, 3], [4, 2, 3, 4], dtype=dtypes.INT32)
     assert w.isequal(result)
 
-    with pytest.raises(exceptions.DomainMismatch):
+    with pytest.raises(DomainMismatch):
         Monoid.register_anonymous(binary.plus_plus_one, {"BOOL": True})
-    with pytest.raises(exceptions.DomainMismatch):
+    with pytest.raises(DomainMismatch):
         Monoid.register_anonymous(binary.plus_plus_one, {"BOOL": -1})
 
 
@@ -592,7 +589,7 @@ def test_nested_names():
 
     UnaryOp.register_new("incrementers.plus_four", plus_four)
     assert hasattr(unary.incrementers, "plus_four")
-    assert hasattr(grblas.op.incrementers, "plus_four")  # Also save it to `grblas.op`!
+    assert hasattr(op.incrementers, "plus_four")  # Also save it to `grblas.op`!
     v << v.apply(unary.incrementers.plus_four)  # this is in addition to the plus_three earlier
     result2 = Vector.from_values([0, 1, 3], [8, 9, 3], dtype=dtypes.INT32)
     assert v.isequal(result2), v
@@ -610,8 +607,6 @@ def test_nested_names():
 
 @pytest.mark.slow
 def test_op_namespace():
-    from grblas import op
-
     assert op.abs is unary.abs
     assert op.minus is binary.minus
     assert op.plus is binary.plus

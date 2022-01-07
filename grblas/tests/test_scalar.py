@@ -5,11 +5,12 @@ import weakref
 import numpy as np
 import pytest
 
-import grblas
-from grblas import Scalar, binary, dtypes
+from grblas import binary, dtypes, replace
 from grblas.scalar import _CScalar
 
-from .conftest import autocompute
+from .conftest import autocompute, compute
+
+from grblas import Scalar, Vector  # isort:skip
 
 
 @pytest.fixture
@@ -20,15 +21,15 @@ def s():
 def test_new():
     s = Scalar.new(dtypes.INT8)
     assert s.dtype == "INT8"
-    assert s.value is None
+    assert compute(s.value) is None
     s.value = 0
-    assert s.is_empty is False
+    assert compute(s.is_empty) is False
     s2 = Scalar.new(bool)
     assert s2.dtype == "BOOL"
-    assert s2.value is None
+    assert compute(s2.value) is None
     assert bool(s2) is False
     s2.value = False
-    assert s2.is_empty is False
+    assert compute(s2.is_empty) is False
 
 
 def test_dup(s):
@@ -57,16 +58,16 @@ def test_dup(s):
         assert s5.dtype == dtype and s5.value == val
         s6 = s_empty.dup(dtype=dtype)
         assert s6.is_empty
-        assert s6.value is None
+        assert compute(s6.value) is None
         s7 = s_unempty.dup(dtype=dtype)
         assert not s7.is_empty
-        assert s7.value is not None
+        assert compute(s7.value) is not None
 
 
 def test_from_value():
     s = Scalar.from_value(False)
     assert s.dtype == bool
-    assert s.value is False
+    assert compute(s.value) is False
     s2 = Scalar.from_value(-1.1)
     assert s2.dtype == "FP64"
     assert s2.value == -1.1
@@ -79,13 +80,13 @@ def test_clear(s):
     assert s.value == 5
     assert not s.is_empty
     s.clear()
-    assert s.value is None
+    assert compute(s.value) is None
     assert s.is_empty
     s2 = Scalar.from_value(True)
-    assert s2.value is True
+    assert compute(s2.value) is True
     assert not s2.is_empty
     s2.clear()
-    assert s2.value is None
+    assert compute(s2.value) is None
     assert s2.is_empty
 
 
@@ -203,7 +204,7 @@ def test_update(s):
     with pytest.raises(TypeError, match="'replace' argument may not be True for Scalar"):
         s(replace=True)
     with pytest.raises(TypeError, match="'replace' argument may not be True for Scalar"):
-        s(grblas.replace)
+        s(replace)
 
 
 def test_not_hashable(s):
@@ -266,13 +267,13 @@ def test_neg():
             assert s == -minus_s
             assert (-s).value == minus_s.value
             assert empty == -empty
-            assert (-empty).value is None
+            assert compute((-empty).value) is None
 
 
 def test_invert():
     empty = Scalar.new(bool)
     assert empty == ~empty
-    assert (~empty).value is None
+    assert compute((~empty).value) is None
     not_s = Scalar.from_value(0, dtype=bool)
     s = Scalar.from_value(1, dtype=bool)
     assert ~s == not_s
@@ -289,7 +290,7 @@ def test_wait(s):
 
 @autocompute
 def test_expr_is_like_scalar(s):
-    v = grblas.Vector.from_values([1], [2])
+    v = Vector.from_values([1], [2])
     attrs = {attr for attr, val in inspect.getmembers(s)}
     expr_attrs = {attr for attr, val in inspect.getmembers(v.inner(v))}
     infix_attrs = {attr for attr, val in inspect.getmembers(v @ v)}
@@ -312,3 +313,10 @@ def test_expr_is_like_scalar(s):
         "_expect_op",
         "_expect_type",
     }
+
+
+def test_ndim(s):
+    assert s.ndim == 0
+    v = grblas.Vector.from_values([1], [2])
+    assert v.inner(v).ndim == 0
+    assert (v @ v).ndim == 0

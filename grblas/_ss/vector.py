@@ -16,6 +16,7 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
+from .matrix import MatrixArray, _concat_mn, normalize_chunks
 from .prefix_scan import prefix_scan
 from .scalar import gxb_scalar
 from .utils import get_order
@@ -147,6 +148,91 @@ class ss:
             k = -k
             matrix = matrix._matrix
         call("GxB_Vector_diag", [self._parent, matrix, _CScalar(k, INT64), None])
+
+    def split(self, chunks, *, name=None):
+        """
+        GxB_Matrix_split
+
+        Split a Vector into a 1D array of sub-vectors according to `chunks`.
+
+        This performs the opposite operation as ``concat``.
+
+        `chunks` is short for "chunksizes" and indicates the chunk sizes.
+        `chunks` may be a single integer, or a tuple or list.  Example chunks:
+
+        - ``chunks=10``
+            - Split vector into chunks of size 10 (the last chunk may be smaller).
+        - ``chunks=[5, 10]``
+            - Split vector into two chunks of size 5 and 10.
+
+        See Also
+        --------
+        Vector.ss.concat
+        grblas.ss.concat
+        """
+        from ..vector import Vector
+
+        tile_nrows, _ = normalize_chunks([chunks, None], (self._parent._size, 1))
+        m = len(tile_nrows)
+        tiles = ffi.new("GrB_Matrix[]", m)
+        parent = self._parent._as_matrix()
+        call(
+            "GxB_Matrix_split",
+            [
+                MatrixArray(tiles, parent, name="tiles"),
+                _CScalar(m),
+                _CScalar(1),
+                _CArray(tile_nrows),
+                _CArray([1]),
+                parent,
+                None,
+            ],
+        )
+        rv = []
+        dtype = self._parent.dtype
+        if name is None:
+            name = self._parent.name
+        for i, size in enumerate(tile_nrows):
+            # Copy to a new handle so we can free `tiles`
+            new_vector = ffi.new("GrB_Vector*")
+            new_vector[0] = ffi.cast("GrB_Vector", tiles[i])
+            tile = Vector(new_vector, dtype, name=f"{name}_{i}")
+            tile._size = size
+            rv.append(tile)
+        return rv
+
+    def _concat(self, tiles, m):
+        ctiles = ffi.new("GrB_Matrix[]", m)
+        for i, tile in enumerate(tiles):
+            ctiles[i] = tile.gb_obj[0]
+        call(
+            "GxB_Matrix_concat",
+            [
+                self._parent._as_matrix(),
+                MatrixArray(ctiles, name="tiles"),
+                _CScalar(m),
+                _CScalar(1),
+                None,
+            ],
+        )
+
+    def concat(self, tiles):
+        """
+        GxB_Matrix_concat
+
+        Concatenate a 1D list of Vector objects into the current Vector.
+        Any existing values in the current Vector will be discarded.
+        To concatenate into a new Vector, use `grblas.ss.concat`.
+
+        This performs the opposite operation as ``split``.
+
+        See Also
+        --------
+        Vector.ss.split
+        grblas.ss.concat
+        """
+        tiles, m, n, is_matrix = _concat_mn(tiles, is_matrix=False)
+        self._concat(tiles, m)
 
     def build_scalar(self, indices, value):
         """

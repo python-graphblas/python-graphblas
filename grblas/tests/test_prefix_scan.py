@@ -2,7 +2,9 @@ import numpy as np
 import pytest
 
 import grblas as gb
-from grblas import Matrix, Vector, binary, monoid
+from grblas import binary, monoid
+
+from grblas import Matrix, Vector  # isort:skip
 
 try:
     # gb.io.to_numpy currently requires scipy

@@ -19,6 +19,7 @@ class Scalar(BaseType):
     """
 
     __slots__ = "_is_empty"
+    ndim = 0
     shape = ()
     _is_scalar = True
     _name_counter = itertools.count()
@@ -269,6 +270,7 @@ class Scalar(BaseType):
 class ScalarExpression(BaseExpression):
     __slots__ = ()
     output_type = Scalar
+    ndim = 0
     shape = ()
     _is_scalar = True
 
