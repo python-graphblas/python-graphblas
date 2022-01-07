@@ -317,6 +317,6 @@ def test_expr_is_like_scalar(s):
 
 def test_ndim(s):
     assert s.ndim == 0
-    v = grblas.Vector.from_values([1], [2])
+    v = Vector.from_values([1], [2])
     assert v.inner(v).ndim == 0
     assert (v @ v).ndim == 0
