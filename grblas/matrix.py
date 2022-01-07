@@ -320,7 +320,11 @@ class Matrix(BaseType):
         to use by multiple threads.  Use wait to force completion of a Matrix
         and make it safe to use as input parameters on multiple threads.
         """
-        call("GrB_Matrix_wait", [_Pointer(self)])
+        # TODO: expose COMPLETE or MATERIALIZE options to the user
+        call(
+            "GrB_Matrix_wait",
+            [self, Scalar.from_value(lib.GrB_MATERIALIZE, name="GrB_MATERIALIZE")],
+        )
 
     @classmethod
     def new(cls, dtype, nrows=0, ncols=0, *, name=None):
