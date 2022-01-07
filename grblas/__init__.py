@@ -1,5 +1,7 @@
-import importlib as _importlib
 import sys as _sys
+from importlib import import_module as _import_module
+from importlib.abc import Loader as _Loader
+from importlib.abc import MetaPathFinder as _MetaPathFinder
 
 from . import backends, mask  # noqa
 from ._version import get_versions  # noqa
@@ -170,11 +172,11 @@ def _load(name):
         globals()[name] = val
     else:
         # Everything else is a module
-        module = _importlib.import_module(f".{name}", __name__)
+        module = _import_module(f".{name}", __name__)
         globals()[name] = module
 
 
-class _GrblasModuleFinder(_importlib.abc.MetaPathFinder):
+class _GrblasModuleFinder(_MetaPathFinder):
     def find_spec(self, fullname, path, target=None):
         if fullname in _NEEDS_OPERATOR and "operator" not in globals():
             _load("operator")
@@ -187,7 +189,7 @@ class _GrblasModuleFinder(_importlib.abc.MetaPathFinder):
                 return spec
 
 
-class _SkipLoad(_importlib.abc.Loader):
+class _SkipLoad(_Loader):
     def __init__(self, module, orig_loader):
         self.module = module
         self.orig_loader = orig_loader
