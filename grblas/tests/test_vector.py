@@ -434,6 +434,21 @@ def test_extract_fancy_scalars(v):
         t(accum=binary.plus) << v[0]
 
 
+def test_extract_negative_indices(v):
+    assert v[-1].value == 0
+    assert compute(v[-v.size].value) is None
+    assert v[[-v.size]].new().nvals == 0
+    assert v[Scalar.from_value(-4)].value == 1
+    w = v[[-1, -3]].new()
+    assert w.isequal(Vector.from_values([0, 1], [0, 2]))
+    with pytest.raises(IndexError):
+        v[-v.size - 1]
+    with pytest.raises(IndexError):
+        v[Scalar.from_value(-v.size - 1)]
+    with pytest.raises(IndexError):
+        v[[-v.size - 1]]
+
+
 def test_assign(v):
     u = Vector.from_values([0, 2], [9, 8])
     result = Vector.from_values([0, 1, 3, 4, 6], [9, 1, 1, 8, 0])
@@ -1116,13 +1131,13 @@ def test_not_to_array(v):
 def test_vector_index_with_scalar():
     v = Vector.from_values([0, 1, 2], [10, 20, 30])
     expected = Vector.from_values([0, 1], [20, 10])
-    for dtype in ["bool", "int8", "uint8", "int16", "uint16", "int32", "uint32"]:
+    for dtype in ["int8", "uint8", "int16", "uint16", "int32", "uint32"]:
         s1 = Scalar.from_value(1, dtype=dtype)
         assert v[s1] == 20
         s0 = Scalar.from_value(0, dtype=dtype)
         w = v[[s1, s0]].new()
         assert w.isequal(expected)
-    for dtype in ["fp32", "fp64", "fc32", "fc64"]:
+    for dtype in ["bool", "fp32", "fp64", "fc32", "fc64"]:
         s = Scalar.from_value(1, dtype=dtype)
         with pytest.raises(TypeError, match="An integer is required for indexing"):
             v[s]

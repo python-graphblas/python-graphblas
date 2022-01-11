@@ -109,6 +109,10 @@ class IndexerResolver:
         if np.issubdtype(typ, np.integer):
             if index >= size:
                 raise IndexError(f"Index out of range: index={index}, size={size}")
+            if np.issubdtype(typ, np.signedinteger) and index < 0:
+                index = index + size
+                if index < 0:
+                    raise IndexError(f"Index out of range: index={index - size}, size={size}")
             return AxisIndex(None, _CScalar(int(index)), None)
         if typ is list:
             pass
@@ -122,13 +126,24 @@ class IndexerResolver:
                 raise TypeError(f"Invalid number of dimensions for index: {len(index.shape)}")
             if not np.issubdtype(index.dtype, np.integer):
                 raise TypeError(f"Invalid dtype for index: {index.dtype}")
+            if np.issubdtype(index.dtype, np.signedinteger):
+                is_negative = index < 0
+                if is_negative.any():
+                    index = np.where(is_negative, index + size, index)
+                    if (index < 0).any():
+                        bad_index = index[index < 0][0] - size
+                        raise IndexError(f"Index out of range: index={bad_index}, size={size}")
             return AxisIndex(len(index), _CArray(index), _CScalar(len(index)))
         else:
             from .scalar import Scalar
 
             if typ is Scalar:
-                if index.dtype.name.startswith("F"):
+                if not np.issubdtype(index.dtype.np_type, np.integer):
                     raise TypeError(f"An integer is required for indexing.  Got: {index.dtype}")
+                if np.issubdtype(index.dtype.np_type, np.signedinteger) and index.value < 0:
+                    index = index.value + size
+                    if index < 0:
+                        raise IndexError(f"Index out of range: index={index - size}, size={size}")
                 return AxisIndex(None, _CScalar(index), None)
 
             from .matrix import Matrix, TransposedMatrix
@@ -158,7 +173,7 @@ class IndexerResolver:
                         f"`x(mask={index.name}) << value`."
                     )
                 raise TypeError(f"Invalid type for index: {typ}; unable to convert to list")
-        return AxisIndex(len(index), _CArray(index), _CScalar(len(index)))
+        return self.parse_index(np.array(index), np.ndarray, size)
 
     def get_index(self, dim):
         """Return a new IndexerResolver with index for the selected dimension"""
