@@ -49,6 +49,33 @@ class IndexerResolver:
                 return False
         return True
 
+    @property
+    def py_indices(self):
+        if self.obj.ndim > 1:
+            return tuple(self._py_index(idx) for idx in range(self.obj.ndim))
+        return self._py_index(0)
+
+    def _py_index(self, idx):
+        """Convert resolved index for the given dimension back into a valid Python index"""
+        index = self.indices[idx]
+        if index.size is None:
+            return index.index.scalar.value
+        if index.index is _ALL_INDICES:
+            return slice(None)
+        from ._slice import gxb_backwards, gxb_range, gxb_stride
+
+        if index.cscalar is gxb_backwards:
+            start, stop, step = index.index.array.tolist()
+            size = self.obj.shape[idx]
+            return slice(start, -size + stop - 1, -step)
+        if index.cscalar is gxb_range:
+            start, stop = index.index.array.tolist()
+            return slice(start, stop + 1)
+        if index.cscalar is gxb_stride:
+            start, stop, step = index.index.array.tolist()
+            return slice(start, stop + 1, step)
+        return index.index.array
+
     def parse_indices(self, indices, shape):
         """
         Returns
