@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from grblas import binary, dtypes, replace, unary
@@ -185,3 +186,50 @@ def test_updater_on_rhs():
         u << u()
     with pytest.raises(TypeError, match="Bad type for argument `value`"):
         u[:] << u()
+
+
+def test_py_indices():
+    v = Vector.from_values(np.arange(5), np.arange(5))
+
+    idx = v[:].resolved_indexes.py_indices
+    assert idx == slice(None)
+    w = v[idx].new()
+    assert w.isequal(v)
+
+    idx = v[3].resolved_indexes.py_indices
+    assert idx == 3
+
+    idx = v[[0, 2]].resolved_indexes.py_indices
+    np.testing.assert_array_equal(idx, [0, 2])
+
+    idx = v[0:0].resolved_indexes.py_indices
+    assert idx == slice(1, 1)  # strange, but expected
+    w = v[idx].new()
+    assert w.size == 0
+
+    idx = v[2:0].resolved_indexes.py_indices
+    assert idx == slice(2, 1)  # strange, but expected
+    w = v[idx].new()
+    assert w.size == 0
+
+    idx = v[::-1].resolved_indexes.py_indices
+    assert idx == slice(v.size - 1, -v.size - 1, -1)
+    w = v[idx].new()
+    expected = Vector.from_values(np.arange(5), np.arange(5)[::-1])
+    assert w.isequal(expected)
+
+    idx = v[4:-3:-1].resolved_indexes.py_indices
+    assert idx == slice(4, -v.size - 1 + 3, -1)
+    w = v[idx].new()
+    expected = Vector.from_values(np.arange(2), np.arange(5)[4:-3:-1])
+    assert w.isequal(expected)
+
+    idx = v[1::2].resolved_indexes.py_indices
+    assert idx == slice(1, 5, 2)
+    w = v[idx].new()
+    expected = Vector.from_values(np.arange(2), np.arange(5)[1::2])
+    assert w.isequal(expected)
+
+    A = Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, 3], nrows=10, ncols=10)
+    idx = A[1:6, 8:-8:-2].resolved_indexes.py_indices
+    assert idx == (slice(1, 6), slice(8, -8, -2))
