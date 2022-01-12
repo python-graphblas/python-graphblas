@@ -119,6 +119,7 @@ class Vector(BaseType):
         return not scalar.is_empty
 
     def __iter__(self):
+        self.wait()  # sort in SS
         indices, values = self.to_values()
         return indices.flat
 

@@ -1232,7 +1232,7 @@ class ss:
         else:
             raise NotImplementedError(fmt)
 
-    def selectk(self, how, k):
+    def selectk(self, how, k, *, name=None):
         """Select (up to) k elements.
 
         Parameters
@@ -1277,6 +1277,22 @@ class ss:
         return gb.Vector.ss.import_sparse(
             **newinfo,
             take_ownership=True,
+            name=name,
+        )
+
+    def compactify(self, *, size=None, name=None):
+        info = self.export("sparse", sort=True)
+        N = len(info["indices"])
+        if size is None:
+            size = N
+        elif size < N:
+            1 / 0  # TODO
+            N = size
+        indices = np.arange(N, dtype=np.uint64)
+        newinfo = dict(info, indices=indices, size=N)
+        return gb.Vector.ss.import_sparse(
+            **newinfo,
+            name=name,
         )
 
 

@@ -2561,7 +2561,7 @@ def test_expr_is_like_matrix(A):
     }
     # TransposedMatrix is used differently than other expressions,
     # so maybe it shouldn't support everything.
-    assert attrs - transposed_attrs == (expected | {"S", "V", "ss", "to_pygraphblas", "wait"}) - {
+    assert attrs - transposed_attrs == (expected | {"S", "V", "ss", "to_pygraphblas"}) - {
         "_prep_for_extract",
         "_extract_element",
     }

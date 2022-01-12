@@ -117,6 +117,7 @@ class Matrix(BaseType):
         return not scalar.is_empty
 
     def __iter__(self):
+        self.wait()  # sort in SS
         rows, columns, values = self.to_values()
         return zip(rows.flat, columns.flat)
 
@@ -1374,6 +1375,7 @@ class TransposedMatrix:
     # Misc.
     isequal = Matrix.isequal
     isclose = Matrix.isclose
+    wait = Matrix.wait
     _extract_element = Matrix._extract_element
     _prep_for_extract = Matrix._prep_for_extract
     __eq__ = Matrix.__eq__

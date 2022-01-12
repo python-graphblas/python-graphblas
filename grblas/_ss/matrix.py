@@ -23,7 +23,6 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from .prefix_scan import prefix_scan
 from .scalar import gxb_scalar
 from .utils import get_order
 
@@ -3452,6 +3451,8 @@ class ss:
         -------
         Vector
         """
+        from .prefix_scan import prefix_scan
+
         return prefix_scan(self._parent.T, op, name=name, within="scan_columnwise")
 
     def scan_rowwise(self, op=monoid.plus, *, name=None):
@@ -3464,6 +3465,8 @@ class ss:
         -------
         Vector
         """
+        from .prefix_scan import prefix_scan
+
         return prefix_scan(self._parent, op, name=name, within="scan_rowwise")
 
     def scan_columns(self, op=monoid.plus, *, name=None):
@@ -3631,7 +3634,7 @@ class ss:
         else:
             raise NotImplementedError(fmt)
 
-    def selectk_rowwise(self, how, k):
+    def selectk_rowwise(self, how, k, *, name=None):
         """Select (up to) k elements from each row.
 
         Parameters
@@ -3664,9 +3667,11 @@ class ss:
             do_sort = True
         else:
             raise ValueError('`how` argument must be one of: "random"')
-        return self._select_random(k, fmt, indices, sort_axis, choose_func, is_random, do_sort)
+        return self._select_random(
+            k, fmt, indices, sort_axis, choose_func, is_random, do_sort, name
+        )
 
-    def selectk_columnwise(self, how, k):
+    def selectk_columnwise(self, how, k, *, name=None):
         """Select (up to) k elements from each column.
 
         Parameters
@@ -3698,9 +3703,11 @@ class ss:
             do_sort = True
         else:
             raise ValueError('`how` argument must be one of: "random", "first", "last"')
-        return self._select_random(k, fmt, indices, sort_axis, choose_func, is_random, do_sort)
+        return self._select_random(
+            k, fmt, indices, sort_axis, choose_func, is_random, do_sort, name
+        )
 
-    def _select_random(self, k, fmt, indices, sort_axis, choose_func, is_random, do_sort):
+    def _select_random(self, k, fmt, indices, sort_axis, choose_func, is_random, do_sort, name):
         if k < 0:
             raise ValueError("negative k is not allowed")
         info = self._parent.ss.export(fmt, sort=do_sort)
@@ -3713,10 +3720,158 @@ class ss:
             newinfo[sort_axis] = True
         elif is_random:
             newinfo[sort_axis] = False
-        return gb.Matrix.ss.import_any(
+        return self.import_any(
             **newinfo,
             take_ownership=True,
+            name=name,
         )
+
+    def compactify_rowwise(
+        self, how="first", *, reverse=False, asindex=False, ncols=None, name=None
+    ):
+        """Shift all values to the left so all values in a row are contiguous.
+
+        This returns a new Matrix.
+
+        Parameters
+        ----------
+        how : {"first", "last", "smallest", "largest"}, optional
+
+        reverse : bool, default False
+
+        asindex : bool, default False
+
+        ncols : int, optional
+            The number of columns of the returned Matrix.  If not specified, then
+            the Matrix will be "compacted" to the smallest ncols that doesn't lose
+            values.
+
+        **THIS API IS EXPERIMENTAL AND MAY CHANGE**
+
+        """
+        # TODO: sort argument?  how=random -> unweighted and weighted, with and w/o replacement
+        # first/last - leftmost/rightmost - topmost/bottommost ?
+        return self._compactify(
+            how, reverse, asindex, "ncols", ncols, "hypercsr", "col_indices", name
+        )
+
+    def compactify_columnwise(
+        self, how="first", *, reverse=False, asindex=False, nrows=None, name=None
+    ):
+        return self._compactify(
+            how, reverse, asindex, "nrows", nrows, "hypercsc", "row_indices", name
+        )
+
+    def _compactify(self, how, reverse, asindex, nkey, nval, fmt, indices_name, name):
+        how = how.lower()
+        info = self.export(fmt, sort=True)
+        values = info["values"]
+        orig_indptr = info["indptr"]
+        new_indptr, new_indices, N = compact_indices(orig_indptr, nval)
+        values_need_trimmed = nval is not None and new_indices.size < info[indices_name].size
+        if how not in {"first", "last", "nsmallest", "nlargest"}:
+            raise ValueError(
+                '`how` argument must be one of: "first", "last", "nsmallest", "nlargest"'
+            )
+        if info["is_iso"]:
+            if how in {"nsmallest", "nlargest"}:
+                # order of nsmallest/nlargest doesn't matter
+                how = "first"
+                reverse = False
+            if not asindex:
+                how = "finished"
+                reverse = False
+            else:
+                del info["is_iso"]
+
+        if how in {"first", "last"}:
+            if asindex:
+                values = info[indices_name]
+            if how == "last" and values_need_trimmed:
+                # Optimization opportunity: don't call `reverse_values` twice when reverse is False
+                values = reverse_values(orig_indptr, values)
+                reverse = not reverse
+        elif how in {"nsmallest", "nlargest"}:
+            if asindex:
+                values = argsort_values(orig_indptr, info[indices_name], values)
+            else:
+                values = sort_values(orig_indptr, values)
+            if how == "nlargest":
+                if values_need_trimmed:
+                    values = reverse_values(orig_indptr, values)
+                else:
+                    reverse = not reverse
+        if nval is None:
+            nval = N
+        elif values_need_trimmed:
+            values = compact_values(orig_indptr, new_indptr, values)
+        if reverse:
+            values = reverse_values(new_indptr, values)
+        newinfo = dict(info, indptr=new_indptr, values=values)
+        newinfo[indices_name] = new_indices
+        newinfo[nkey] = nval
+        return self.import_any(
+            **newinfo,
+            name=name,
+        )
+
+
+@numba.njit(parallel=True)
+def argsort_values(indptr, indices, values):  # pragma: no cover
+    rv = np.empty(indptr[-1], dtype=np.uint64)
+    for i in numba.prange(indptr.size - 1):
+        rv[indptr[i] : indptr[i + 1]] = indices[
+            np.int64(indptr[i]) + np.argsort(values[indptr[i] : indptr[i + 1]])
+        ]
+    return rv
+
+
+@numba.njit(parallel=True)
+def sort_values(indptr, values):  # pragma: no cover
+    rv = np.empty(indptr[-1], dtype=values.dtype)
+    for i in numba.prange(indptr.size - 1):
+        rv[indptr[i] : indptr[i + 1]] = np.sort(values[indptr[i] : indptr[i + 1]])
+    return rv
+
+
+@numba.njit(parallel=True)
+def compact_values(old_indptr, new_indptr, values):  # pragma: no cover
+    rv = np.empty(new_indptr[-1], dtype=values.dtype)
+    for i in numba.prange(new_indptr.size - 1):
+        start = np.int64(new_indptr[i])
+        offset = np.int64(old_indptr[i]) - start
+        for j in range(start, new_indptr[i + 1]):
+            rv[j] = values[j + offset]
+    return rv
+
+
+@numba.njit(parallel=True)
+def reverse_values(indptr, values):  # pragma: no cover
+    rv = np.empty(indptr[-1], dtype=values.dtype)
+    for i in numba.prange(indptr.size - 1):
+        offset = np.int64(indptr[i]) + np.int64(indptr[i + 1]) - 1
+        for j in range(indptr[i], indptr[i + 1]):
+            rv[j] = values[offset - j]
+    return rv
+
+
+@numba.njit(parallel=True)
+def compact_indices(indptr, k):  # pragma: no cover
+    """Given indptr from hypercsr, create a new col_indices array that is compact.
+
+    That is, for each row with degree N, the column indices will be 0..N-1.
+    """
+    if k is not None:
+        indptr = create_indptr(indptr, k)
+    col_indices = np.empty(indptr[-1], dtype=np.uint64)
+    N = np.int64(0)
+    for i in numba.prange(indptr.size - 1):
+        start = np.int64(indptr[i])
+        deg = np.int64(indptr[i + 1]) - start
+        N = max(N, deg)
+        for j in range(deg):
+            col_indices[start + j] = j
+    return indptr, col_indices, N
 
 
 @njit(parallel=True)
@@ -3879,18 +4034,13 @@ def choose_last(indptr, k):  # pragma: no cover
     return choices, new_indptr
 
 
-# TODO: benchmark using prange and parallel=True
-@njit
+@njit(parallel=True)
 def flatten_csr(indptr, indices, nrows, ncols):  # pragma: no cover
     rv = np.empty(indices.size, indices.dtype)
-    start = np.uint64(0)
-    offset = np.uint64(0)
-    for i in range(1, nrows + 1):
-        end = indptr[i]
-        for j in range(start, end):
+    for i in numba.prange(nrows):
+        offset = i * ncols
+        for j in range(indptr[i], indptr[i + 1]):
             rv[j] = indices[j] + offset
-        start = end
-        offset += ncols
     return rv
 
 
@@ -3909,17 +4059,14 @@ def issorted(arr):  # pragma: no cover
     return True
 
 
-@njit
+@njit(parallel=True)
 def flatten_hypercsr(rows, indptr, indices, nrows, ncols, nvec):  # pragma: no cover
     rv = np.empty(indices.size, indices.dtype)
-    start = np.uint64(0)
-    for i in range(nvec):
+    for i in numba.prange(nvec):
         row = rows[i]
         offset = row * ncols
-        end = indptr[i + 1]
-        for j in range(start, end):
+        for j in range(indptr[i], indptr[i + 1]):
             rv[j] = indices[j] + offset
-        start = end
     return rv
 
 
@@ -3937,15 +4084,10 @@ def indices_to_indptr(indices, size):  # pragma: no cover
     return indptr
 
 
-@njit
+@njit(parallel=True)
 def indptr_to_indices(indptr):  # pragma: no cover
     indices = np.empty(indptr[-1], dtype=indptr.dtype)
-    index = np.uint64(0)
-    start = np.uint64(0)
-    for i in range(1, indptr.size):
-        end = indptr[i]
-        for j in range(start, end):
-            indices[j] = index
-        index += 1
-        start = end
+    for i in numba.prange(indptr.size - 1):
+        for j in range(indptr[i], indptr[i + 1]):
+            indices[j] = i
     return indices
