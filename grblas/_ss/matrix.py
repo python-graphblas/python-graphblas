@@ -3735,7 +3735,7 @@ class ss:
 
         Parameters
         ----------
-        how : {"first", "last", "smallest", "largest"}, optional
+        how : {"first", "last", "smallest", "largest", "random"}, optional
 
         reverse : bool, default False
 
@@ -3764,17 +3764,19 @@ class ss:
 
     def _compactify(self, how, reverse, asindex, nkey, nval, fmt, indices_name, name):
         how = how.lower()
+        if how not in {"first", "last", "nsmallest", "nlargest", "random"}:
+            raise ValueError(
+                '`how` argument must be one of: "first", "last", "nsmallest", "nlargest", "random"'
+            )
         info = self.export(fmt, sort=True)
         values = info["values"]
         orig_indptr = info["indptr"]
         new_indptr, new_indices, N = compact_indices(orig_indptr, nval)
         values_need_trimmed = nval is not None and new_indices.size < info[indices_name].size
-        if how not in {"first", "last", "nsmallest", "nlargest"}:
-            raise ValueError(
-                '`how` argument must be one of: "first", "last", "nsmallest", "nlargest"'
-            )
+        if nval is None:
+            nval = N
         if info["is_iso"]:
-            if how in {"nsmallest", "nlargest"}:
+            if how in {"nsmallest", "nlargest"} or how == "random" and not asindex:
                 # order of nsmallest/nlargest doesn't matter
                 how = "first"
                 reverse = False
@@ -3784,7 +3786,17 @@ class ss:
             else:
                 del info["is_iso"]
 
-        if how in {"first", "last"}:
+        if how == "random":
+            # Random without replacement
+            reverse = False
+            values_need_trimmed = False
+            # This recalculates new_indptr unnecessarily
+            choices, new_indptr = choose_random(orig_indptr, nval)
+            if asindex:
+                values = info[indices_name][choices]
+            else:
+                values = values[choices]
+        elif how in {"first", "last"}:
             if asindex:
                 values = info[indices_name]
             if how == "last" and values_need_trimmed:
@@ -3801,9 +3813,7 @@ class ss:
                     values = reverse_values(orig_indptr, values)
                 else:
                     reverse = not reverse
-        if nval is None:
-            nval = N
-        elif values_need_trimmed:
+        if values_need_trimmed:
             values = compact_values(orig_indptr, new_indptr, values)
         if reverse:
             values = reverse_values(new_indptr, values)
