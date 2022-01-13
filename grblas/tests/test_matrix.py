@@ -2881,7 +2881,11 @@ def test_lastk(A):
     assert B.isequal(A)
 
 
-def test_compactify(A):
+@pytest.mark.parametrize("do_iso", [False, True])
+def test_compactify(A, do_iso):
+    if do_iso:
+        r, c, v = A.to_values()
+        A = Matrix.from_values(r, c, 1)
     rows = [0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6]
     new_cols = [0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 2]
     orig_cols = [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]
@@ -2910,7 +2914,7 @@ def test_compactify(A):
     expected = Matrix.from_values(
         rows,
         new_cols,
-        [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3],
+        1 if do_iso else [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3],
         nrows=A.nrows,
         ncols=3,
     )
@@ -2934,7 +2938,7 @@ def test_compactify(A):
     expected = Matrix.from_values(
         rows,
         new_cols,
-        [2, 3, 4, 8, 1, 3, 3, 7, 1, 3, 5, 7],
+        1 if do_iso else [2, 3, 4, 8, 1, 3, 3, 7, 1, 3, 5, 7],
         nrows=A.nrows,
         ncols=3,
     )
@@ -2943,17 +2947,18 @@ def test_compactify(A):
     check(A, reverse(expected), "largest")
     check_reverse(A, reverse(expected), "largest")
 
-    expected = Matrix.from_values(
-        rows,
-        new_cols,
-        [1, 3, 6, 4, 5, 0, 2, 5, 2, 4, 2, 3],
-        nrows=A.nrows,
-        ncols=3,
-    )
-    check(A, expected, "smallest", asindex=True, stop=2)
-    check_reverse(A, expected, "smallest", asindex=True, stop=2)
-    check(A, reverse(expected), "largest", asindex=True, stop=2)
-    check_reverse(A, reverse(expected), "largest", asindex=True, stop=2)
+    if not do_iso:
+        expected = Matrix.from_values(
+            rows,
+            new_cols,
+            [1, 3, 6, 4, 5, 0, 2, 5, 2, 4, 2, 3],
+            nrows=A.nrows,
+            ncols=3,
+        )
+        check(A, expected, "smallest", asindex=True, stop=2)
+        check_reverse(A, expected, "smallest", asindex=True, stop=2)
+        check(A, reverse(expected), "largest", asindex=True, stop=2)
+        check_reverse(A, reverse(expected), "largest", asindex=True, stop=2)
 
     def compare(A, expected, isequal=True, **kwargs):
         for _ in range(100):
@@ -2975,7 +2980,7 @@ def test_compactify(A):
             A.ss.compactify_rowwise("first", 2, asindex=asindex),
             ncols=2,
             asindex=asindex,
-            isequal=False,
+            isequal=do_iso,
         )
         compare(A, A.ss.compactify_rowwise("first", 1, asindex=asindex), ncols=1, asindex=asindex)
         compare(
@@ -2983,7 +2988,7 @@ def test_compactify(A):
             A.ss.compactify_rowwise("first", 1, asindex=asindex),
             ncols=1,
             asindex=asindex,
-            isequal=False,
+            isequal=do_iso,
         )
         compare(A, A.ss.compactify_rowwise("last", 1, asindex=asindex), ncols=1, asindex=asindex)
         compare(
@@ -2996,7 +3001,7 @@ def test_compactify(A):
     expected = Matrix.from_values(
         [0, 0, 0, 0, 0, 0, 0],
         [0, 1, 2, 3, 4, 5, 6],
-        [3, 2, 3, 3, 8, 1, 4],
+        1 if do_iso else [3, 2, 3, 3, 8, 1, 4],
     )
     assert B.isequal(expected)
     B = A.ss.compactify_columnwise("last", nrows=1, asindex=True)
@@ -3006,6 +3011,8 @@ def test_compactify(A):
         [3, 0, 6, 6, 6, 4, 1],
     )
     assert B.isequal(expected)
+    with pytest.raises(ValueError):
+        A.ss.compactify_rowwise("bad_how")
 
 
 def test_deprecated(A):

@@ -3782,9 +3782,10 @@ class ss:
                 reverse = False
             if not asindex:
                 how = "finished"
+                values_need_trimmed = False
                 reverse = False
             else:
-                del info["is_iso"]
+                info["is_iso"] = False
 
         if how == "random":
             # Random without replacement
