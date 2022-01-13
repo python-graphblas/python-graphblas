@@ -19,6 +19,8 @@ def slice_to_index(index, size):
     # For non-SuiteSparse, do: index = list(range(size)[index])
     # SuiteSparse indexing is inclusive for both start and stop, and unsigned.
     if step < 0:
+        if start < 0:
+            start = stop = 0  # Must be empty
         return AxisIndex(length, _CArray([start, stop + 1, -step]), gxb_backwards)
     if stop > 0:
         stop -= 1

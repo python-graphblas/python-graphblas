@@ -3727,7 +3727,7 @@ class ss:
         )
 
     def compactify_rowwise(
-        self, how="first", *, reverse=False, asindex=False, ncols=None, name=None
+        self, how="first", ncols=None, *, reverse=False, asindex=False, name=None
     ):
         """Shift all values to the left so all values in a row are contiguous.
 
@@ -3756,7 +3756,7 @@ class ss:
         )
 
     def compactify_columnwise(
-        self, how="first", *, reverse=False, asindex=False, nrows=None, name=None
+        self, how="first", nrows=None, *, reverse=False, asindex=False, name=None
     ):
         return self._compactify(
             how, reverse, asindex, "nrows", nrows, "hypercsc", "row_indices", name
@@ -3764,9 +3764,9 @@ class ss:
 
     def _compactify(self, how, reverse, asindex, nkey, nval, fmt, indices_name, name):
         how = how.lower()
-        if how not in {"first", "last", "nsmallest", "nlargest", "random"}:
+        if how not in {"first", "last", "smallest", "largest", "random"}:
             raise ValueError(
-                '`how` argument must be one of: "first", "last", "nsmallest", "nlargest", "random"'
+                '`how` argument must be one of: "first", "last", "smallest", "largest", "random"'
             )
         info = self.export(fmt, sort=True)
         values = info["values"]
@@ -3776,8 +3776,8 @@ class ss:
         if nval is None:
             nval = N
         if info["is_iso"]:
-            if how in {"nsmallest", "nlargest"} or how == "random" and not asindex:
-                # order of nsmallest/nlargest doesn't matter
+            if how in {"smallest", "largest"} or how == "random" and not asindex:
+                # order of smallest/largest doesn't matter
                 how = "first"
                 reverse = False
             if not asindex:
@@ -3789,6 +3789,7 @@ class ss:
         if how == "random":
             # Random without replacement
             reverse = False
+            # Should we shuffle the values if values_need_trimmed is True?
             values_need_trimmed = False
             # This recalculates new_indptr unnecessarily
             choices, new_indptr = choose_random(orig_indptr, nval)
@@ -3799,16 +3800,18 @@ class ss:
         elif how in {"first", "last"}:
             if asindex:
                 values = info[indices_name]
-            if how == "last" and values_need_trimmed:
-                # Optimization opportunity: don't call `reverse_values` twice when reverse is False
-                values = reverse_values(orig_indptr, values)
-                reverse = not reverse
-        elif how in {"nsmallest", "nlargest"}:
+            if how == "last":
+                if values_need_trimmed:
+                    # Optimization: don't call `reverse_values` twice when reverse is True
+                    values = reverse_values(orig_indptr, values)
+                else:
+                    reverse = not reverse
+        elif how in {"smallest", "largest"}:
             if asindex:
                 values = argsort_values(orig_indptr, info[indices_name], values)
             else:
                 values = sort_values(orig_indptr, values)
-            if how == "nlargest":
+            if how == "largest":
                 if values_need_trimmed:
                     values = reverse_values(orig_indptr, values)
                 else:
@@ -3822,6 +3825,7 @@ class ss:
         newinfo[nkey] = nval
         return self.import_any(
             **newinfo,
+            take_ownership=True,
             name=name,
         )
 

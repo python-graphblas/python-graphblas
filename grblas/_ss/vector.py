@@ -1280,18 +1280,74 @@ class ss:
             name=name,
         )
 
-    def compactify(self, *, size=None, name=None):
-        info = self.export("sparse", sort=True)
-        N = len(info["indices"])
+    def compactify(self, how="first", size=None, *, reverse=False, asindex=False, name=None):
+        how = how.lower()
+        if how not in {"first", "last", "smallest", "largest", "random"}:
+            raise ValueError(
+                '`how` argument must be one of: "first", "last", "smallest", "largest", "random"'
+            )
+        do_sort = how in {"first", "last"}
+        info = self._parent.ss.export("sparse", sort=do_sort)
         if size is None:
-            size = N
-        elif size < N:
-            1 / 0  # TODO
-            N = size
-        indices = np.arange(N, dtype=np.uint64)
-        newinfo = dict(info, indices=indices, size=N)
+            size = info["indices"].size
+        # if size == 0: ...
+        if info["is_iso"]:
+            if how in {"smallest", "largest"} or how == "random" and not asindex:
+                # order of smallest/largest doesn't matter
+                how = "first"
+                reverse = False
+            if not asindex:
+                how = "finished"
+                reverse = False
+            else:
+                del info["is_iso"]
+
+        if how == "random":
+            choices = random_choice(self._parent._nvals, size)
+        elif how == "first":
+            if reverse:
+                choices = slice(size - 1, None, -1)
+                reverse = False
+            else:
+                choices = slice(None, size)
+        elif how == "last":
+            if reverse:
+                choices = slice(-size, None)
+                reverse = False
+            else:
+                choices = slice(None, -size - 1, -1)
+        elif how == "largest":
+            if asindex:
+                values = np.argpartition(info["values"], -size)[-size:]
+            else:
+                values = np.partition(info["values"], -size)[-size:]
+            values.sort()
+            reverse = not reverse
+        elif how == "smallest":
+            if asindex:
+                values = np.argpartition(info["values"], size)[:size]
+            else:
+                values = np.partition(info["values"], size)[:size]
+            values.sort()
+        else:
+            choices = slice(None)
+        if how not in {"largest", "smallest"}:
+            if asindex:
+                values = info["indices"][choices]
+            else:
+                values = info["values"][choices]
+        if reverse:
+            values = values[::-1]
+        newinfo = dict(
+            info,
+            values=values,
+            indices=np.arange(size, dtype=np.uint64),
+            sorted_index=True,
+            size=size,
+        )
         return gb.Vector.ss.import_sparse(
             **newinfo,
+            take_ownership=True,
             name=name,
         )
 
