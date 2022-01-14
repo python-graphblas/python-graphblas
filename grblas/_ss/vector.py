@@ -6,7 +6,7 @@ import grblas as gb
 
 from .. import ffi, lib, monoid
 from ..base import call
-from ..dtypes import INT64, lookup_dtype
+from ..dtypes import INT64, UINT64, lookup_dtype
 from ..exceptions import check_status, check_status_carg
 from ..scalar import _CScalar
 from ..utils import (
@@ -1286,21 +1286,25 @@ class ss:
             raise ValueError(
                 '`how` argument must be one of: "first", "last", "smallest", "largest", "random"'
             )
+        if size is None and self._parent._nvals == 0 or size == 0:
+            if asindex:
+                return gb.Vector.new(UINT64, size=0, name=name)
+            else:
+                return gb.Vector.new(self._parent.dtype, size=0, name=name)
         do_sort = how in {"first", "last"}
         info = self._parent.ss.export("sparse", sort=do_sort)
         if size is None:
             size = info["indices"].size
-        # if size == 0: ...
         if info["is_iso"]:
             if how in {"smallest", "largest"} or how == "random" and not asindex:
-                # order of smallest/largest doesn't matter
+                # order of smallest/largest/random doesn't matter
                 how = "first"
                 reverse = False
             if not asindex:
                 how = "finished"
                 reverse = False
             else:
-                del info["is_iso"]
+                info["is_iso"] = False
 
         if how == "random":
             choices = random_choice(self._parent._nvals, size)
@@ -1316,19 +1320,26 @@ class ss:
                 reverse = False
             else:
                 choices = slice(None, -size - 1, -1)
-        elif how == "largest":
-            if asindex:
-                values = np.argpartition(info["values"], -size)[-size:]
+        elif how in {"largest", "smallest"}:
+            values = info["values"]
+            if how == "largest":
+                slc = slice(-size, None)
+                stop = -size
+                reverse = not reverse
             else:
-                values = np.partition(info["values"], -size)[-size:]
-            values.sort()
-            reverse = not reverse
-        elif how == "smallest":
+                slc = slice(size)
+                stop = size
             if asindex:
-                values = np.argpartition(info["values"], size)[:size]
+                if size < values.size:
+                    idx = np.argpartition(values, stop)[slc]
+                    choices = idx[np.argsort(values[idx])]
+                else:
+                    choices = np.argsort(values)
+                values = info["indices"][choices]
             else:
-                values = np.partition(info["values"], size)[:size]
-            values.sort()
+                if size < values.size:
+                    values = np.partition(values, stop)[slc]
+                values.sort()
         else:
             choices = slice(None)
         if how not in {"largest", "smallest"}:

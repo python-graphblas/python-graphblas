@@ -2882,6 +2882,7 @@ def test_lastk(A):
 
 
 @pytest.mark.parametrize("do_iso", [False, True])
+@pytest.mark.slow
 def test_compactify(A, do_iso):
     if do_iso:
         r, c, v = A.to_values()
@@ -2904,7 +2905,6 @@ def test_compactify(A, do_iso):
     def check_reverse(A, expected, *args, stop=0, **kwargs):
         B = A.ss.compactify_rowwise(*args, reverse=True, **kwargs)
         C = reverse(expected)
-
         assert B.isequal(C)
         for n in reversed(range(stop, 4)):
             C = reverse(expected[:, :n].new())
@@ -2961,7 +2961,7 @@ def test_compactify(A, do_iso):
         check_reverse(A, reverse(expected), "largest", asindex=True, stop=2)
 
     def compare(A, expected, isequal=True, **kwargs):
-        for _ in range(100):
+        for _ in range(1000):
             B = A.ss.compactify_rowwise("random", **kwargs)
             if B.isequal(expected) == isequal:
                 break

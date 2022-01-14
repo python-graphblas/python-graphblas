@@ -1399,6 +1399,99 @@ def test_smallestk(v):
     assert w.isequal(expected)
 
 
+@pytest.mark.parametrize("do_iso", [False, True])
+def test_compactify(do_iso):
+    orig_indices = [1, 3, 4, 6]
+    new_indices = [0, 1, 2, 3]
+    if do_iso:
+        v = Vector.from_values(orig_indices, 1)
+    else:
+        v = Vector.from_values(orig_indices, [1, 4, 2, 0])
+
+    def check(v, expected, *args, stop=0, **kwargs):
+        w = v.ss.compactify(*args, **kwargs)
+        assert w.isequal(expected)
+        for n in reversed(range(stop, 5)):
+            expected = expected[:n].new()
+            w = v.ss.compactify(*args, size=n, **kwargs)
+            assert w.isequal(expected)
+
+    def reverse(v):
+        return v[::-1].new().ss.compactify("first", v.size)
+
+    def check_reverse(v, expected, *args, stop=0, **kwargs):
+        w = v.ss.compactify(*args, reverse=True, **kwargs)
+        x = reverse(expected)
+        assert w.isequal(x)
+        for n in reversed(range(stop, 5)):
+            x = reverse(expected[:n].new())
+            w = v.ss.compactify(*args, size=n, reverse=True, **kwargs)
+            assert w.isequal(x)
+
+    expected = Vector.from_values(
+        new_indices,
+        1 if do_iso else [1, 4, 2, 0],
+        size=4,
+    )
+    check(v, expected, "first")
+    check_reverse(v, expected, "first")
+    check(v, reverse(expected), "last")
+    check_reverse(v, reverse(expected), "last")
+
+    expected = Vector.from_values(
+        new_indices,
+        orig_indices,
+        size=4,
+    )
+    check(v, expected, "first", asindex=True)
+    check_reverse(v, expected, "first", asindex=True)
+    check(v, reverse(expected), "last", asindex=True)
+    check_reverse(v, reverse(expected), "last", asindex=True)
+
+    expected = Vector.from_values(
+        new_indices,
+        1 if do_iso else [0, 1, 2, 4],
+        size=4,
+    )
+    check(v, expected, "smallest")
+    check_reverse(v, expected, "smallest")
+    check(v, reverse(expected), "largest")
+    check_reverse(v, reverse(expected), "largest")
+
+    if not do_iso:
+        expected = Vector.from_values(
+            new_indices,
+            [6, 1, 4, 3],
+            size=4,
+        )
+        check(v, expected, "smallest", asindex=True, stop=3)
+        check_reverse(v, expected, "smallest", asindex=True, stop=3)
+        check(v, reverse(expected), "largest", asindex=True, stop=3)
+        check_reverse(v, reverse(expected), "largest", asindex=True, stop=3)
+
+    def compare(v, expected, isequal=True, **kwargs):
+        for _ in range(1000):
+            w = v.ss.compactify("random", **kwargs)
+            if w.isequal(expected) == isequal:
+                break
+        else:
+            raise AssertionError("random failed")
+
+    with pytest.raises(AssertionError):
+        compare(v, v[::-1].new())
+    for asindex in [False, True]:
+        compare(v, v.ss.compactify("first", asindex=asindex), asindex=asindex)
+        compare(v, v.ss.compactify("first", 0, asindex=asindex), size=0, asindex=asindex)
+        for i in range(1, 4):
+            for how in ["first", "last", "smallest", "largest"]:
+                w = v.ss.compactify("first", i, asindex=asindex)
+                compare(v, w, size=i, asindex=asindex)
+                if not do_iso:
+                    compare(v, w, size=i, asindex=asindex, isequal=True)
+    with pytest.raises(ValueError):
+        v.ss.compactify("bad_how")
+
+
 def test_slice():
     v = Vector.from_values(np.arange(5), np.arange(5))
     w = v[0:0].new()
