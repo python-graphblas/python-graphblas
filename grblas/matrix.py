@@ -120,6 +120,12 @@ class Matrix(BaseType):
         rows, columns, values = self.to_values()
         return zip(rows.flat, columns.flat)
 
+    def __sizeof__(self):
+        size = ffi_new("size_t*")
+        scalar = Scalar(size, _INDEX, name="s_size", empty=True)
+        call("GxB_Matrix_memoryUsage", [_Pointer(scalar), self])
+        return size[0] + object.__sizeof__(self)
+
     def isequal(self, other, *, check_dtype=False):
         """
         Check for exact equality (same size, same empty values)
