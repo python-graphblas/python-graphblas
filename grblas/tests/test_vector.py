@@ -1,6 +1,7 @@
 import inspect
 import itertools
 import pickle
+import sys
 import weakref
 
 import numpy as np
@@ -1537,3 +1538,7 @@ def test_ndim(A, v):
     assert v.ewise_mult(v).ndim == 1
     assert (v & v).ndim == 1
     assert (A @ v).ndim == 1
+
+
+def test_sizeof(v):
+    assert sys.getsizeof(v) > v.nvals * 16
