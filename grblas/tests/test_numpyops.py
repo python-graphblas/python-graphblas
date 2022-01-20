@@ -13,6 +13,8 @@ import grblas.unary.numpy as npunary
 from grblas import Vector
 from grblas.dtypes import _supports_complex
 
+from .conftest import compute
+
 
 def test_numpyops_dir():
     assert "exp2" in dir(npunary)
@@ -87,7 +89,7 @@ def test_npunary():
             compare = match.reduce(grblas.monoid.land).new()
             if not compare:  # pragma: no cover
                 print(unary_name, gb_input.dtype)
-                print(gb_result)
+                print(compute(gb_result))
                 print(np_result)
             assert compare
 
@@ -162,9 +164,9 @@ def test_npbinary():
             compare = match.reduce(grblas.monoid.land).new()
             if not compare:  # pragma: no cover
                 print(binary_name)
-                print(gb_left)
-                print(gb_right)
-                print(gb_result)
+                print(compute(gb_left))
+                print(compute(gb_right))
+                print(compute(gb_result))
                 print(np_result)
             assert compare
 
@@ -233,7 +235,7 @@ def test_npmonoid():
             compare = match.reduce(grblas.monoid.land).new()
             if not compare:  # pragma: no cover
                 print(binary_name, gb_left.dtype)
-                print(gb_result)
+                print(compute(gb_result))
                 print(np_result)
             assert compare
 

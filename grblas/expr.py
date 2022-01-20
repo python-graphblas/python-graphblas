@@ -140,11 +140,12 @@ class IndexerResolver:
             if typ is Scalar:
                 if not np.issubdtype(index.dtype.np_type, np.integer):
                     raise TypeError(f"An integer is required for indexing.  Got: {index.dtype}")
-                if np.issubdtype(index.dtype.np_type, np.signedinteger) and index.value < 0:
-                    index = index.value + size
-                    if index < 0:
-                        raise IndexError(f"Index out of range: index={index - size}, size={size}")
-                return AxisIndex(None, _CScalar(index), None)
+                value = int(index)
+                if np.issubdtype(index.dtype.np_type, np.signedinteger) and value < 0:
+                    value = value + size
+                    if value < 0:
+                        raise IndexError(f"Index out of range: index={value - size}, size={size}")
+                return AxisIndex(None, _CScalar(value), None)
 
             from .matrix import Matrix, TransposedMatrix
             from .vector import Vector
