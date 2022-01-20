@@ -3736,11 +3736,17 @@ class ss:
         Parameters
         ----------
         how : {"first", "last", "smallest", "largest", "random"}, optional
-
+            How to compress the values:
+            - first : take the values furthest to the left
+            - last : take the values furthest to the right
+            - smallest : take the smallest values (if tied, may take any)
+            - largest : take the largest values (if tied, may take any)
+            - random : take values randomly with equal probability and without replacement
         reverse : bool, default False
-
+            Reverse the values in each row when True
         asindex : bool, default False
-
+            Return the column index of the value when True.  If there are ties for
+            "smallest" and "largest", then any valid index may be returned.
         ncols : int, optional
             The number of columns of the returned Matrix.  If not specified, then
             the Matrix will be "compacted" to the smallest ncols that doesn't lose
@@ -3749,8 +3755,6 @@ class ss:
         **THIS API IS EXPERIMENTAL AND MAY CHANGE**
 
         """
-        # TODO: sort argument?  how=random -> unweighted and weighted, with and w/o replacement
-        # first/last - leftmost/rightmost - topmost/bottommost ?
         return self._compactify(
             how, reverse, asindex, "ncols", ncols, "hypercsr", "col_indices", name
         )
@@ -3758,6 +3762,32 @@ class ss:
     def compactify_columnwise(
         self, how="first", nrows=None, *, reverse=False, asindex=False, name=None
     ):
+        """Shift all values to the top so all values in a column are contiguous.
+
+        This returns a new Matrix.
+
+        Parameters
+        ----------
+        how : {"first", "last", "smallest", "largest", "random"}, optional
+            How to compress the values:
+            - first : take the values furthest to the top
+            - last : take the values furthest to the bottom
+            - smallest : take the smallest values (if tied, may take any)
+            - largest : take the largest values (if tied, may take any)
+            - random : take values randomly with equal probability and without replacement
+        reverse : bool, default False
+            Reverse the values in each column when True
+        asindex : bool, default False
+            Return the row index of the value when True.  If there are ties for
+            "smallest" and "largest", then any valid index may be returned.
+        nrows : int, optional
+            The number of rows of the returned Matrix.  If not specified, then
+            the Matrix will be "compacted" to the smallest nrows that doesn't lose
+            values.
+
+        **THIS API IS EXPERIMENTAL AND MAY CHANGE**
+
+        """
         return self._compactify(
             how, reverse, asindex, "nrows", nrows, "hypercsc", "row_indices", name
         )

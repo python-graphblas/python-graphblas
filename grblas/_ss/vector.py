@@ -1281,6 +1281,31 @@ class ss:
         )
 
     def compactify(self, how="first", size=None, *, reverse=False, asindex=False, name=None):
+        """Shift all values to the beginning so all values are contiguous.
+
+        This returns a new Vector.
+
+        Parameters
+        ----------
+        how : {"first", "last", "smallest", "largest", "random"}, optional
+            How to compress the values:
+            - first : take the values nearest the beginning
+            - last : take the values nearest the end
+            - smallest : take the smallest values (if tied, may take any)
+            - largest : take the largest values (if tied, may take any)
+            - random : take values randomly with equal probability and without replacement
+        reverse : bool, default False
+            Reverse the values when True
+        asindex : bool, default False
+            Return the index of the value when True.  If there are ties for
+            "smallest" and "largest", then any valid index may be returned.
+        size : int, optional
+            The size of the returned Vector.  If not specified, then the Vector
+            will be "compacted" to the smallest size that doesn't lose values.
+
+        **THIS API IS EXPERIMENTAL AND MAY CHANGE**
+
+        """
         how = how.lower()
         if how not in {"first", "last", "smallest", "largest", "random"}:
             raise ValueError(
