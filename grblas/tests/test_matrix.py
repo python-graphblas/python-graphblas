@@ -2562,7 +2562,7 @@ def test_expr_is_like_matrix(A):
     }
     # TransposedMatrix is used differently than other expressions,
     # so maybe it shouldn't support everything.
-    assert attrs - transposed_attrs == (expected | {"S", "V", "ss", "to_pygraphblas", "wait"}) - {
+    assert attrs - transposed_attrs == (expected | {"S", "V", "ss", "to_pygraphblas"}) - {
         "_prep_for_extract",
         "_extract_element",
     }
@@ -2880,6 +2880,140 @@ def test_lastk(A):
 
     B = A.ss.selectk_columnwise("last", 3)
     assert B.isequal(A)
+
+
+@pytest.mark.parametrize("do_iso", [False, True])
+@pytest.mark.slow
+def test_compactify(A, do_iso):
+    if do_iso:
+        r, c, v = A.to_values()
+        A = Matrix.from_values(r, c, 1)
+    rows = [0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6]
+    new_cols = [0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 2]
+    orig_cols = [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]
+
+    def check(A, expected, *args, stop=0, **kwargs):
+        B = A.ss.compactify_rowwise(*args, **kwargs)
+        assert B.isequal(expected)
+        for n in reversed(range(stop, 4)):
+            expected = expected[:, :n].new()
+            B = A.ss.compactify_rowwise(*args, ncols=n, **kwargs)
+            assert B.isequal(expected)
+
+    def reverse(A):
+        return A[:, ::-1].new().ss.compactify_rowwise("first", A.ncols)
+
+    def check_reverse(A, expected, *args, stop=0, **kwargs):
+        B = A.ss.compactify_rowwise(*args, reverse=True, **kwargs)
+        C = reverse(expected)
+        assert B.isequal(C)
+        for n in reversed(range(stop, 4)):
+            C = reverse(expected[:, :n].new())
+            B = A.ss.compactify_rowwise(*args, ncols=n, reverse=True, **kwargs)
+            assert B.isequal(C)
+
+    expected = Matrix.from_values(
+        rows,
+        new_cols,
+        1 if do_iso else [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3],
+        nrows=A.nrows,
+        ncols=3,
+    )
+    check(A, expected, "first")
+    check_reverse(A, expected, "first")
+    check(A, reverse(expected), "last")
+    check_reverse(A, reverse(expected), "last")
+
+    expected = Matrix.from_values(
+        rows,
+        new_cols,
+        orig_cols,
+        nrows=A.nrows,
+        ncols=3,
+    )
+    check(A, expected, "first", asindex=True)
+    check_reverse(A, expected, "first", asindex=True)
+    check(A, reverse(expected), "last", asindex=True)
+    check_reverse(A, reverse(expected), "last", asindex=True)
+
+    expected = Matrix.from_values(
+        rows,
+        new_cols,
+        1 if do_iso else [2, 3, 4, 8, 1, 3, 3, 7, 1, 3, 5, 7],
+        nrows=A.nrows,
+        ncols=3,
+    )
+    check(A, expected, "smallest")
+    check_reverse(A, expected, "smallest")
+    check(A, reverse(expected), "largest")
+    check_reverse(A, reverse(expected), "largest")
+
+    if not do_iso:
+        expected = Matrix.from_values(
+            rows,
+            new_cols,
+            [1, 3, 6, 4, 5, 0, 2, 5, 2, 4, 2, 3],
+            nrows=A.nrows,
+            ncols=3,
+        )
+        check(A, expected, "smallest", asindex=True, stop=2)
+        check_reverse(A, expected, "smallest", asindex=True, stop=2)
+        check(A, reverse(expected), "largest", asindex=True, stop=2)
+        check_reverse(A, reverse(expected), "largest", asindex=True, stop=2)
+
+    def compare(A, expected, isequal=True, **kwargs):
+        for _ in range(1000):
+            B = A.ss.compactify_rowwise("random", **kwargs)
+            if B.isequal(expected) == isequal:
+                break
+        else:
+            raise AssertionError("random failed")
+
+    with pytest.raises(AssertionError):
+        compare(A, A[:, ::-1].new())
+
+    for asindex in [False, True]:
+        compare(A, A.ss.compactify_rowwise("first", asindex=asindex), asindex=asindex)
+        compare(A, A.ss.compactify_rowwise("first", 3, asindex=asindex), ncols=3, asindex=asindex)
+        compare(A, A.ss.compactify_rowwise("first", 2, asindex=asindex), ncols=2, asindex=asindex)
+        compare(
+            A,
+            A.ss.compactify_rowwise("first", 2, asindex=asindex),
+            ncols=2,
+            asindex=asindex,
+            isequal=do_iso,
+        )
+        compare(A, A.ss.compactify_rowwise("first", 1, asindex=asindex), ncols=1, asindex=asindex)
+        compare(
+            A,
+            A.ss.compactify_rowwise("first", 1, asindex=asindex),
+            ncols=1,
+            asindex=asindex,
+            isequal=do_iso,
+        )
+        compare(A, A.ss.compactify_rowwise("last", 1, asindex=asindex), ncols=1, asindex=asindex)
+        compare(
+            A, A.ss.compactify_rowwise("smallest", 1, asindex=asindex), ncols=1, asindex=asindex
+        )
+        compare(A, A.ss.compactify_rowwise("largest", 1, asindex=asindex), ncols=1, asindex=asindex)
+        compare(A, A.ss.compactify_rowwise("first", 0, asindex=asindex), ncols=0, asindex=asindex)
+
+    B = A.ss.compactify_columnwise("first", nrows=1)
+    expected = Matrix.from_values(
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 2, 3, 4, 5, 6],
+        1 if do_iso else [3, 2, 3, 3, 8, 1, 4],
+    )
+    assert B.isequal(expected)
+    B = A.ss.compactify_columnwise("last", nrows=1, asindex=True)
+    expected = Matrix.from_values(
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 2, 3, 4, 5, 6],
+        [3, 0, 6, 6, 6, 4, 1],
+    )
+    assert B.isequal(expected)
+    with pytest.raises(ValueError):
+        A.ss.compactify_rowwise("bad_how")
 
 
 def test_deprecated(A):

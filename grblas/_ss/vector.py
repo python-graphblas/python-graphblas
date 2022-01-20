@@ -6,7 +6,7 @@ import grblas as gb
 
 from .. import ffi, lib, monoid
 from ..base import call
-from ..dtypes import INT64, lookup_dtype
+from ..dtypes import INT64, UINT64, lookup_dtype
 from ..exceptions import check_status, check_status_carg
 from ..scalar import _CScalar
 from ..utils import (
@@ -1232,7 +1232,7 @@ class ss:
         else:
             raise NotImplementedError(fmt)
 
-    def selectk(self, how, k):
+    def selectk(self, how, k, *, name=None):
         """Select (up to) k elements.
 
         Parameters
@@ -1277,6 +1277,114 @@ class ss:
         return gb.Vector.ss.import_sparse(
             **newinfo,
             take_ownership=True,
+            name=name,
+        )
+
+    def compactify(self, how="first", size=None, *, reverse=False, asindex=False, name=None):
+        """Shift all values to the beginning so all values are contiguous.
+
+        This returns a new Vector.
+
+        Parameters
+        ----------
+        how : {"first", "last", "smallest", "largest", "random"}, optional
+            How to compress the values:
+            - first : take the values nearest the beginning
+            - last : take the values nearest the end
+            - smallest : take the smallest values (if tied, may take any)
+            - largest : take the largest values (if tied, may take any)
+            - random : take values randomly with equal probability and without replacement
+        reverse : bool, default False
+            Reverse the values when True
+        asindex : bool, default False
+            Return the index of the value when True.  If there are ties for
+            "smallest" and "largest", then any valid index may be returned.
+        size : int, optional
+            The size of the returned Vector.  If not specified, then the Vector
+            will be "compacted" to the smallest size that doesn't lose values.
+
+        **THIS API IS EXPERIMENTAL AND MAY CHANGE**
+
+        """
+        how = how.lower()
+        if how not in {"first", "last", "smallest", "largest", "random"}:
+            raise ValueError(
+                '`how` argument must be one of: "first", "last", "smallest", "largest", "random"'
+            )
+        if size is None and self._parent._nvals == 0 or size == 0:
+            if asindex:
+                return gb.Vector.new(UINT64, size=0, name=name)
+            else:
+                return gb.Vector.new(self._parent.dtype, size=0, name=name)
+        do_sort = how in {"first", "last"}
+        info = self._parent.ss.export("sparse", sort=do_sort)
+        if size is None:
+            size = info["indices"].size
+        if info["is_iso"]:
+            if how in {"smallest", "largest"} or how == "random" and not asindex:
+                # order of smallest/largest/random doesn't matter
+                how = "first"
+                reverse = False
+            if not asindex:
+                how = "finished"
+                reverse = False
+            else:
+                info["is_iso"] = False
+
+        if how == "random":
+            choices = random_choice(self._parent._nvals, size)
+        elif how == "first":
+            if reverse:
+                choices = slice(size - 1, None, -1)
+                reverse = False
+            else:
+                choices = slice(None, size)
+        elif how == "last":
+            if reverse:
+                choices = slice(-size, None)
+                reverse = False
+            else:
+                choices = slice(None, -size - 1, -1)
+        elif how in {"largest", "smallest"}:
+            values = info["values"]
+            if how == "largest":
+                slc = slice(-size, None)
+                stop = -size
+                reverse = not reverse
+            else:
+                slc = slice(size)
+                stop = size
+            if asindex:
+                if size < values.size:
+                    idx = np.argpartition(values, stop)[slc]
+                    choices = idx[np.argsort(values[idx])]
+                else:
+                    choices = np.argsort(values)
+                values = info["indices"][choices]
+            else:
+                if size < values.size:
+                    values = np.partition(values, stop)[slc]
+                values.sort()
+        else:
+            choices = slice(None)
+        if how not in {"largest", "smallest"}:
+            if asindex:
+                values = info["indices"][choices]
+            else:
+                values = info["values"][choices]
+        if reverse:
+            values = values[::-1]
+        newinfo = dict(
+            info,
+            values=values,
+            indices=np.arange(size, dtype=np.uint64),
+            sorted_index=True,
+            size=size,
+        )
+        return gb.Vector.ss.import_sparse(
+            **newinfo,
+            take_ownership=True,
+            name=name,
         )
 
 

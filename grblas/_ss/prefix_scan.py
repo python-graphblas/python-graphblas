@@ -1,33 +1,12 @@
 from math import ceil, log2
 
-import numba
 import numpy as np
 
 import grblas as gb
 
 from .. import binary
 from ..operator import get_semiring, get_typed_op
-
-
-@numba.njit
-def compact_indices(indptr, size):  # pragma: no cover
-    """Given indptr from hypercsr, create a new col_indices array that is compact.
-
-    That is, for each row with degree N, the column indices will be 0..N-1.
-    """
-    indptr = indptr.view(np.int64)  # so `diff` below is an integer
-    col_indices = np.empty(size, dtype=np.uint64)
-    start = 0
-    ncols = 0
-    for i in range(1, indptr.size):
-        end = indptr[i]
-        diff = end - start
-        if diff > ncols:
-            ncols = diff
-        for j in range(diff):
-            col_indices[start + j] = j
-        start = end
-    return col_indices, ncols
+from .matrix import compact_indices
 
 
 # By default, scans on matrices are done along rows.
@@ -61,7 +40,7 @@ def prefix_scan(A, monoid, *, name=None, within):
         compact_info = dict(info, indices=np.arange(N_cols, dtype=np.uint64), size=N_cols)
     elif is_transposed:
         info = A.T.ss.export("hypercsc", sort=True)
-        row_indices, N_cols = compact_indices(info["indptr"], info["row_indices"].size)
+        _, row_indices, N_cols = compact_indices(info["indptr"], None)
         compact_info = dict(
             info,
             col_indices=row_indices,
@@ -76,7 +55,7 @@ def prefix_scan(A, monoid, *, name=None, within):
         del compact_info["sorted_rows"]
     else:
         info = A.ss.export("hypercsr", sort=True)
-        col_indices, N_cols = compact_indices(info["indptr"], info["col_indices"].size)
+        _, col_indices, N_cols = compact_indices(info["indptr"], None)
         compact_info = dict(info, col_indices=col_indices, ncols=N_cols)
 
     if N_cols < 2:
