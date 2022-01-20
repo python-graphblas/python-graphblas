@@ -214,17 +214,16 @@ class Scalar(BaseType):
     @classmethod
     def from_value(cls, value, dtype=None, *, name=None):
         """Create a new Scalar from a Python value"""
-        if type(value) is Scalar:
-            return value.dup(dtype, name=name)
-        elif output_type(value) is Scalar:
-            return value.new(dtype, name=name)
-        elif dtype is None:
-            try:
-                dtype = lookup_dtype(type(value))
-            except ValueError:
-                raise TypeError(
-                    f"Argument of from_value must be a known scalar type, not {type(value)}"
-                )
+        if dtype is None:
+            if output_type(value) is Scalar:
+                dtype = value.dtype
+            else:
+                try:
+                    dtype = lookup_dtype(type(value))
+                except ValueError:
+                    raise TypeError(
+                        f"Argument of from_value must be a known scalar type, not {type(value)}"
+                    )
         new_scalar = cls.new(dtype, name=name)
         new_scalar.value = value
         return new_scalar
