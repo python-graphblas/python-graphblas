@@ -46,13 +46,13 @@ def test_new():
 
 
 def test_large_vector():
-    u = Vector.from_values([0, 2 ** 59], [0, 1])
-    assert u.size == 2 ** 59 + 1
-    assert u[2 ** 59].value == 1
+    u = Vector.from_values([0, 2**59], [0, 1])
+    assert u.size == 2**59 + 1
+    assert u[2**59].value == 1
     with pytest.raises(InvalidValue):
-        Vector.from_values([0, 2 ** 64 - 2], [0, 1])
+        Vector.from_values([0, 2**64 - 2], [0, 1])
     with pytest.raises(OverflowError):
-        Vector.from_values([0, 2 ** 64], [0, 1])
+        Vector.from_values([0, 2**64], [0, 1])
 
 
 def test_dup(v):
@@ -653,22 +653,22 @@ def test_reduce_agg(v):
     assert v.reduce(agg.count_nonzero).new() == 3
     assert v.reduce(agg.count_zero).new() == 1
     assert v.reduce(agg.sum_of_squares).new() == 6
-    assert v.reduce(agg.hypot).new().isclose(6 ** 0.5)
-    assert v.reduce(agg.logaddexp).new().isclose(np.log(1 + 2 * np.e + np.e ** 2))
+    assert v.reduce(agg.hypot).new().isclose(6**0.5)
+    assert v.reduce(agg.logaddexp).new().isclose(np.log(1 + 2 * np.e + np.e**2))
     assert v.reduce(agg.logaddexp2).new().isclose(np.log2(9))
     assert v.reduce(agg.mean).new() == 1
     assert v.reduce(agg.peak_to_peak).new() == 2
     assert v.reduce(agg.varp).new().isclose(0.5)
     assert v.reduce(agg.vars).new().isclose(2 / 3)
-    assert v.reduce(agg.stdp).new().isclose(0.5 ** 0.5)
+    assert v.reduce(agg.stdp).new().isclose(0.5**0.5)
     assert v.reduce(agg.stds).new().isclose((2 / 3) ** 0.5)
     assert v.reduce(agg.L0norm).new() == 3
     assert v.reduce(agg.L1norm).new() == 4
-    assert v.reduce(agg.L2norm).new().isclose(6 ** 0.5)
+    assert v.reduce(agg.L2norm).new().isclose(6**0.5)
     assert v.reduce(agg.Linfnorm).new() == 2
     assert v.reduce(agg.exists).new() == 1
     w = binary.plus(v, 1).new()
-    assert w.reduce(agg.geometric_mean).new().isclose(12 ** 0.25)
+    assert w.reduce(agg.geometric_mean).new().isclose(12**0.25)
     assert w.reduce(agg.harmonic_mean).new().isclose(12 / 7)
 
     silly = agg.Aggregator(
@@ -678,7 +678,7 @@ def test_reduce_agg(v):
         types=[agg.varp],
     )
     s = v.reduce(silly).new()
-    assert s.isclose(0.5 ** 1.5)
+    assert s.isclose(0.5**1.5)
 
     s = Vector.new(int, size=5).reduce(silly).new()
     assert s.is_empty

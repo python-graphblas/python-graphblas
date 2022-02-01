@@ -236,7 +236,7 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
                 vals = np.ones(vals.size, dtype=np.uint8)
         df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
         if num_rows < matrix._nvals:
-            df = df.append(pd.Series(["..."] * 3, index=df.columns, name="..."))
+            df.loc["..."] = ["..."] * 3
         return df
     if mask is not None and not mask.structure and df.shape != matrix.shape:
         # This performs more calculation and uses more memory than I would prefer.
@@ -251,7 +251,7 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
                 vals[:] = 0
             df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
             if num_rows < nonzero._nvals:
-                df = df.append(pd.Series(["..."] * 3, index=df.columns, name="..."))
+                df.loc["..."] = ["..."] * 3
             return df
     return df.where(pd.notnull(df), "")
 
@@ -286,7 +286,7 @@ def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None)
                 vals = np.ones(vals.size, dtype=np.uint8)
         df = pd.DataFrame({"index": indices, "val": vals})
         if num_rows < vector._nvals:
-            df = df.append(pd.Series(["..."] * 2, index=df.columns, name="..."))
+            df.loc["..."] = ["..."] * 2
         return df
     if mask is not None and not mask.structure and df.size != vector._size:
         # This performs more calculation and uses more memory than I would prefer.
@@ -301,7 +301,7 @@ def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None)
                 vals[:] = 0
             df = pd.DataFrame({"index": indices, "val": vals})
             if num_rows < nonzero._nvals:
-                df = df.append(pd.Series(["..."] * 2, index=df.columns, name="..."))
+                df.loc["..."] = ["..."] * 2
             return df
     return df.where(pd.notnull(df), "")
 
