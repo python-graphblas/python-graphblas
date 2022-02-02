@@ -1371,6 +1371,7 @@ class TransposedMatrix:
     # Delayed methods
     ewise_add = Matrix.ewise_add
     ewise_mult = Matrix.ewise_mult
+    ewise_union = Matrix.ewise_union
     mxv = Matrix.mxv
     mxm = Matrix.mxm
     kronecker = Matrix.kronecker

@@ -6,7 +6,7 @@ from .utils import output_type
 from .vector import Vector, VectorExpression
 
 
-def call_op(self, other, method, op, *, scalar_only=False, outer=False, union=False):
+def call_op(self, other, method, op, *, outer=False, union=False):
     type1 = output_type(self)
     type2 = output_type(other)
     if (
@@ -16,22 +16,7 @@ def call_op(self, other, method, op, *, scalar_only=False, outer=False, union=Fa
         or type1 is TransposedMatrix
         and type2 is Matrix
     ):
-        if scalar_only:
-            raise TypeError(
-                f"Infix operator {method} between {type1.__name__} and {type2.__name__} is not "
-                "supported.  This infix operation is only allowed if one of the arguments is a "
-                "scalar.  We refuse to guess whether you intend to do ewise_mult or ewise_add."
-                "\n\nYou must indicate ewise_mult (intersection) or ewise_add (union) explicitly."
-                "\n\nFor ewise_mult:\n"
-                f"    >>> op.{op.name}(x & y)\n"
-                "or\n"
-                f"    >>> x.ewise_mult(y, op.{op.name})\n\n"
-                "For ewise_add:\n"
-                f"    >>> op.{op.name}(x | y)\n"
-                "or\n"
-                f"    >>> x.ewise_add(y, op.{op.name})\n\n"
-            )
-        elif outer:
+        if outer:
             return op(self | other, require_monoid=False)
         elif union:
             return self.ewise_union(other, op, False, False)
