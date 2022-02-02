@@ -1,83 +1,3 @@
-"""
-comparisons = {
-    "lt": "lt",
-    "le": "le",
-    "gt": "gt",
-    "ge": "ge",
-    "eq": "eq",
-    "ne": "ne",
-}
-operations = {
-    "add": "plus",
-    "mul": "times",
-    "truediv": "truediv",
-    "floordiv": "floordiv",
-    "mod": "numpy.mod",
-    "pow": "pow",
-}
-# monoids with 0 identity use outer (ewise_add): + | ^
-outer = {
-    "add",
-}
-custom = {
-    "abs",
-    "divmod",
-    "invert",
-    "neg",
-    "rdivmod",
-    "xor",
-    "rxor",
-    "ixor",
-    "ior",
-    "iand",
-    "sub",
-    "isub",
-    "rsub",
-}
-# Skipped: rshift, pos
-# Already used for syntax: lshift, and, or
-
-for method, op in sorted(comparisons.items()):
-    print(
-        f'def __{method}__(self, other):\n'
-        f'    return call_op(self, other, "__{method}__", binary.{op})\n\n'
-    )
-for method, op in sorted(operations.items()):
-    out = ", outer=True" if method in outer else ""
-    print(
-        f'def __{method}__(self, other):\n'
-        f'    return call_op(self, other, "__{method}__", binary.{op}{out})\n\n'
-    )
-    print(
-        f'def __r{method}__(self, other):\n'
-        f'    return call_op(other, self, "__r{method}__", binary.{op}{out})\n\n'
-    )
-    print(
-        f'def __i{method}__(self, other):\n'
-        f'    self << __{method}__(self, other)\n'
-        '    return self\n\n'
-    )
-methods = sorted(
-    {f"__{x}__" for x in custom}
-    | {f"__{x}__" for x in comparisons}
-    | {f"__{x}__" for x in operations}
-    | {f"__r{x}__" for x in operations}
-    | {f"__i{x}__" for x in operations}
-)
-print(
-    "d = globals()\n"
-    f"for name in {methods}:\n"
-    "    val = d[name]\n"
-    "    setattr(Vector, name, val)\n"
-    "    setattr(Matrix, name, val)\n"
-    "    if not name.startswith('__i') or name == '__invert__':\n"
-    "        setattr(TransposedMatrix, name, val)\n"
-    "        setattr(VectorExpression, name, val)\n"
-    "        setattr(MatrixExpression, name, val)\n"
-    "        setattr(VectorInfixExpr, name, val)\n"
-    "        setattr(MatrixInfixExpr, name, val)\n"
-)
-"""
 from . import binary, unary
 from .dtypes import BOOL
 from .infix import MatrixInfixExpr, VectorInfixExpr
@@ -205,7 +125,7 @@ def __isub__(self, other):
     return self
 
 
-# Paste here
+# Begin auto-generated code
 def __eq__(self, other):
     return call_op(self, other, "__eq__", binary.eq)
 
@@ -357,3 +277,89 @@ for name in [
         setattr(MatrixExpression, name, val)
         setattr(VectorInfixExpr, name, val)
         setattr(MatrixInfixExpr, name, val)
+# End auto-generated code
+
+if __name__ == "__main__":
+    # Run via `python -m grblas._infixmethods`
+    comparisons = {
+        "lt": "lt",
+        "le": "le",
+        "gt": "gt",
+        "ge": "ge",
+        "eq": "eq",
+        "ne": "ne",
+    }
+    operations = {
+        "add": "plus",
+        "mul": "times",
+        "truediv": "truediv",
+        "floordiv": "floordiv",
+        "mod": "numpy.mod",
+        "pow": "pow",
+    }
+    # monoids with 0 identity use outer (ewise_add): + | ^
+    outer = {
+        "add",
+    }
+    custom = {
+        "abs",
+        "divmod",
+        "invert",
+        "neg",
+        "rdivmod",
+        "xor",
+        "rxor",
+        "ixor",
+        "ior",
+        "iand",
+        "sub",
+        "isub",
+        "rsub",
+    }
+    # Skipped: rshift, pos
+    # Already used for syntax: lshift, and, or
+
+    lines = []
+    for method, op in sorted(comparisons.items()):
+        lines.append(
+            f"def __{method}__(self, other):\n"
+            f'    return call_op(self, other, "__{method}__", binary.{op})\n\n'
+        )
+    for method, op in sorted(operations.items()):
+        out = ", outer=True" if method in outer else ""
+        lines.append(
+            f"def __{method}__(self, other):\n"
+            f'    return call_op(self, other, "__{method}__", binary.{op}{out})\n\n'
+        )
+        lines.append(
+            f"def __r{method}__(self, other):\n"
+            f'    return call_op(other, self, "__r{method}__", binary.{op}{out})\n\n'
+        )
+        lines.append(
+            f"def __i{method}__(self, other):\n"
+            f"    self << __{method}__(self, other)\n"
+            "    return self\n\n"
+        )
+    methods = sorted(
+        {f"__{x}__" for x in custom}
+        | {f"__{x}__" for x in comparisons}
+        | {f"__{x}__" for x in operations}
+        | {f"__r{x}__" for x in operations}
+        | {f"__i{x}__" for x in operations}
+    )
+    lines.append(
+        "d = globals()\n"
+        f"for name in {methods}:\n"
+        "    val = d[name]\n"
+        "    setattr(Vector, name, val)\n"
+        "    setattr(Matrix, name, val)\n"
+        "    if not name.startswith('__i') or name == '__invert__':\n"
+        "        setattr(TransposedMatrix, name, val)\n"
+        "        setattr(VectorExpression, name, val)\n"
+        "        setattr(MatrixExpression, name, val)\n"
+        "        setattr(VectorInfixExpr, name, val)\n"
+        "        setattr(MatrixInfixExpr, name, val)\n"
+    )
+    from .utils import _autogenerate_code
+
+    _autogenerate_code(__file__, "\n".join(lines))

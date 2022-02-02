@@ -55,7 +55,7 @@ class VectorInfixExpr(InfixExprBase):
     def shape(self):
         return (self._size,)
 
-    # Paste here from _automethods.py
+    # Begin auto-generated code: Vector
     S = wrapdoc(Vector.S)(property(_automethods.S))
     V = wrapdoc(Vector.V)(property(_automethods.V))
     __and__ = wrapdoc(Vector.__and__)(property(_automethods.__and__))
@@ -101,6 +101,7 @@ class VectorInfixExpr(InfixExprBase):
     __isub__ = _automethods.__isub__
     __itruediv__ = _automethods.__itruediv__
     __ixor__ = _automethods.__ixor__
+    # End auto-generated code: Vector
 
 
 class VectorEwiseAddExpr(VectorInfixExpr):
@@ -160,7 +161,7 @@ class MatrixInfixExpr(InfixExprBase):
     def shape(self):
         return (self._nrows, self._ncols)
 
-    # Paste here from _automethods.py
+    # Begin auto-generated code: Matrix
     S = wrapdoc(Matrix.S)(property(_automethods.S))
     T = wrapdoc(Matrix.T)(property(_automethods.T))
     V = wrapdoc(Matrix.V)(property(_automethods.V))
@@ -211,6 +212,7 @@ class MatrixInfixExpr(InfixExprBase):
     __isub__ = _automethods.__isub__
     __itruediv__ = _automethods.__itruediv__
     __ixor__ = _automethods.__ixor__
+    # End auto-generated code: Matrix
 
 
 class MatrixEwiseAddExpr(MatrixInfixExpr):
@@ -265,7 +267,7 @@ class ScalarMatMulExpr(InfixExprBase):
 
     dup = new
 
-    # Paste here from _automethods.py
+    # Begin auto-generated code: Scalar
     __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
     __bool__ = wrapdoc(Scalar.__bool__)(property(_automethods.__bool__))
     __complex__ = wrapdoc(Scalar.__complex__)(property(_automethods.__complex__))
@@ -294,6 +296,7 @@ class ScalarMatMulExpr(InfixExprBase):
     __rand__ = wrapdoc(Scalar.__rand__)(Scalar.__rand__)
     __rmatmul__ = wrapdoc(Scalar.__rmatmul__)(Scalar.__rmatmul__)
     __ror__ = wrapdoc(Scalar.__ror__)(Scalar.__ror__)
+    # End auto-generated code: Scalar
 
 
 utils._output_types[ScalarMatMulExpr] = Scalar

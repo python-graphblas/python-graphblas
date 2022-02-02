@@ -1221,7 +1221,7 @@ class MatrixExpression(BaseExpression):
     def shape(self):
         return (self._nrows, self._ncols)
 
-    # Paste here from _automethods.py
+    # Begin auto-generated code: Matrix
     _get_value = _automethods._get_value
     S = wrapdoc(Matrix.S)(property(_automethods.S))
     T = wrapdoc(Matrix.T)(property(_automethods.T))
@@ -1273,6 +1273,7 @@ class MatrixExpression(BaseExpression):
     __isub__ = _automethods.__isub__
     __itruediv__ = _automethods.__itruediv__
     __ixor__ = _automethods.__ixor__
+    # End auto-generated code: Matrix
 
 
 class TransposedMatrix:
