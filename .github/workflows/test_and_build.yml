@@ -101,6 +101,13 @@ jobs:
           # Test (and cover) automatic initialization
           coverage run -a --branch grblas/tests/test_auto_init.py
           coverage run -a --branch grblas/tests/test_external_init.py
+      - name: Auto-generated code check
+        run: |
+          source "$CONDA/etc/profile.d/conda.sh"
+          conda activate grblas
+          coverage run -a --branch -m grblas._automethods
+          coverage run -a --branch -m grblas._infixmethods
+          git diff --exit-code
       - name: Coverage
         # if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
         env:
@@ -119,13 +126,6 @@ jobs:
           conda activate grblas
           conda install -c conda-forge matplotlib nbconvert jupyter 'ipython>=7'
           jupyter nbconvert --to notebook --execute notebooks/*ipynb
-      - name: Auto-generated code check
-        run: |
-          source "$CONDA/etc/profile.d/conda.sh"
-          conda activate grblas
-          python -m grblas._automethods
-          python -m grblas._infixmethods
-          git diff --exit-code
 
   finish:
     needs: build_and_test
