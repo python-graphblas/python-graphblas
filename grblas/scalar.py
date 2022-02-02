@@ -383,7 +383,7 @@ class _GrBScalar:
         self.gb_obj = ffi_new("GrB_Scalar*")
         self.dtype = cscalar.dtype
         self.name = cscalar.name
-        call("GrB_Scalar_new", [_Pointer(self), dtype])
+        call("GrB_Scalar_new", [_Pointer(self), self.dtype])
         if not cscalar.scalar._is_empty:
             call(f"GrB_Scalar_setElement_{self.dtype.name}", [self, cscalar])
 

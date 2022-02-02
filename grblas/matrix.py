@@ -11,7 +11,7 @@ from .exceptions import NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_typed_op
-from .scalar import Scalar, ScalarExpression, _CScalar
+from .scalar import Scalar, ScalarExpression, _CScalar, _GrBScalar
 from .utils import (
     _CArray,
     _Pointer,
@@ -482,6 +482,28 @@ class Matrix(BaseType):
             op=op,
             at=self._is_transposed,
             bt=other._is_transposed,
+        )
+        if self.shape != other.shape:
+            expr.new(name="")  # incompatible shape; raise now
+        return expr
+
+    def ewise_union(self, other, op, left_default, right_default):
+        """
+        GxB_Matrix_eWiseUnion
+        """
+        # SS, SuiteSparse-specific: eWiseUnion
+        method_name = "ewise_union"
+        other = self._expect_type(other, Matrix, within=method_name, argname="other", op=op)
+        op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
+        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if op.opclass == "Monoid":
+            op = op.binaryop
+        expr = MatrixExpression(
+            method_name,
+            "GxB_Matrix_eWiseUnion",
+            [self, _GrBScalar(left_default), other, _GrBScalar(right_default)],
+            op=op,
+            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1.name}, {3.name})",
         )
         if self.shape != other.shape:
             expr.new(name="")  # incompatible shape; raise now
@@ -1241,6 +1263,7 @@ class MatrixExpression(BaseExpression):
     apply = wrapdoc(Matrix.apply)(property(_automethods.apply))
     ewise_add = wrapdoc(Matrix.ewise_add)(property(_automethods.ewise_add))
     ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
+    ewise_union = wrapdoc(Matrix.ewise_union)(property(_automethods.ewise_union))
     gb_obj = wrapdoc(Matrix.gb_obj)(property(_automethods.gb_obj))
     isclose = wrapdoc(Matrix.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Matrix.isequal)(property(_automethods.isequal))
