@@ -12,7 +12,7 @@ from .. import ffi, lib, monoid
 from ..base import call, record_raw
 from ..dtypes import _INDEX, INT64, lookup_dtype
 from ..exceptions import check_status, check_status_carg
-from ..scalar import Scalar, _CScalar
+from ..scalar import Scalar, _CScalar, _GrBScalar
 from ..utils import (
     _CArray,
     _Pointer,
@@ -23,7 +23,6 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from .scalar import gxb_scalar
 from .utils import get_order
 
 ffi_new = ffi.new
@@ -539,11 +538,11 @@ class ss:
             raise ValueError(
                 f"`rows` and `columns` lengths must match: {rows.size}, {columns.size}"
             )
-        scalar = gxb_scalar(self._parent.dtype, value)
-        status = lib.GxB_Matrix_build_Scalar(
-            self._parent._carg, _CArray(rows)._carg, _CArray(columns)._carg, scalar[0], rows.size
+        scalar = _GrBScalar(value, self._parent.dtype)
+        call(
+            "GxB_Matrix_build_Scalar",
+            [self._parent, _CArray(rows), _CArray(columns), scalar, _CScalar(rows.size)],
         )
-        check_status(status, self._parent)
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
         """

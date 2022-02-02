@@ -2,12 +2,13 @@ import itertools
 
 import numpy as np
 
-from . import _automethods, backend, ffi, utils
-from .base import BaseExpression, BaseType
+from . import _automethods, backend, ffi, lib, utils
+from .base import BaseExpression, BaseType, call
 from .binary import isclose
 from .dtypes import _INDEX, BOOL, lookup_dtype
+from .exceptions import check_status
 from .operator import get_typed_op
-from .utils import output_type, wrapdoc
+from .utils import _Pointer, output_type, wrapdoc
 
 ffi_new = ffi.new
 
@@ -370,6 +371,31 @@ class _CScalar:
         if type(other) is _CScalar:
             return self.scalar == other.scalar
         return self.scalar == other
+
+
+class _GrBScalar:
+    """Wrap scalars as GrB_Scalars for calling into C"""
+
+    __slots__ = "gb_obj", "dtype", "name"
+
+    def __init__(self, scalar, dtype=None):
+        cscalar = _CScalar(scalar, dtype)
+        self.gb_obj = ffi_new("GrB_Scalar*")
+        self.dtype = cscalar.dtype
+        self.name = cscalar.name
+        call("GrB_Scalar_new", [_Pointer(self), dtype])
+        if not cscalar.scalar._is_empty:
+            call(f"GrB_Scalar_setElement_{self.dtype.name}", [self, cscalar])
+
+    def __del__(self):
+        gb_obj = getattr(self, "gb_obj", None)
+        if gb_obj is not None:
+            # it's difficult/dangerous to record the call, b/c `self.name` may not exist
+            check_status(lib.GrB_Scalar_free(gb_obj), self)
+
+    @property
+    def _carg(self):
+        return self.gb_obj[0]
 
 
 utils._output_types[Scalar] = Scalar

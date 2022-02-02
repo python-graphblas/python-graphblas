@@ -8,7 +8,7 @@ from .. import ffi, lib, monoid
 from ..base import call
 from ..dtypes import INT64, UINT64, lookup_dtype
 from ..exceptions import check_status, check_status_carg
-from ..scalar import _CScalar
+from ..scalar import _CScalar, _GrBScalar
 from ..utils import (
     _CArray,
     ints_to_numpy_buffer,
@@ -18,7 +18,6 @@ from ..utils import (
 )
 from .matrix import MatrixArray, _concat_mn, normalize_chunks
 from .prefix_scan import prefix_scan
-from .scalar import gxb_scalar
 from .utils import get_order
 
 ffi_new = ffi.new
@@ -246,11 +245,11 @@ class ss:
         Vector.from_values
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
-        scalar = gxb_scalar(self._parent.dtype, value)
-        status = lib.GxB_Vector_build_Scalar(
-            self._parent._carg, _CArray(indices)._carg, scalar[0], indices.size
+        scalar = _GrBScalar(value, self._parent.dtype)
+        call(
+            "GxB_Vector_build_Scalar",
+            [self._parent, _CArray(indices), scalar, _CScalar(indices.size)],
         )
-        check_status(status, self._parent)
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
         """
