@@ -276,7 +276,7 @@ def test_monoid_parameterized():
     # identity may be a value
     def logaddexp(base):
         def inner(x, y):
-            return np.log(base ** x + base ** y) / np.log(base)
+            return np.log(base**x + base**y) / np.log(base)
 
         return inner
 

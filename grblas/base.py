@@ -553,3 +553,30 @@ class BaseExpression:
 
     _expect_type = _expect_type
     _expect_op = _expect_op
+
+    def _new_scalar(self, dtype, *, name=None):
+        """Create a new empty Scalar.
+
+        This is useful for supporting other grblas-compatible APIs in recipes.
+        """
+        from .scalar import Scalar
+
+        return Scalar.new(dtype, name=name)
+
+    def _new_vector(self, dtype, size=0, *, name=None):
+        """Create a new empty Vector.
+
+        This is useful for supporting other grblas-compatible APIs in recipes.
+        """
+        from .vector import Vector
+
+        return Vector.new(dtype, size, name=name)
+
+    def _new_matrix(self, dtype, nrows=0, ncols=0, *, name=None):
+        """Create a new empty Matrix.
+
+        This is useful for supporting other grblas-compatible APIs in recipes.
+        """
+        from .matrix import Matrix
+
+        return Matrix.new(dtype, nrows, ncols, name=name)

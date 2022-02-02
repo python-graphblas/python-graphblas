@@ -265,6 +265,18 @@ class Scalar(BaseType):
         dtype = lookup_dtype(scalar.gb_type)
         return cls.from_value(scalar[0], dtype)
 
+    def _as_vector(self):
+        """Copy this Scalar to a Vector
+
+        In the future, we may _cast_ instead of _copy_ when using SuiteSparse.
+        """
+        from .vector import Vector
+
+        rv = Vector.new(self.dtype, size=1)
+        if not self._is_empty:
+            rv[0] = self
+        return rv
+
 
 class ScalarExpression(BaseExpression):
     __slots__ = ()

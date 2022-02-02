@@ -1139,7 +1139,7 @@ def test_reduce_agg(A):
     assert A.reduce_scalar(agg.count_nonzero).new() == 12
     assert A.reduce_scalar(agg.count_zero).new() == 0
     assert A.reduce_scalar(agg.sum_of_squares).new() == 245
-    assert A.reduce_scalar(agg.hypot).new().isclose(245 ** 0.5)
+    assert A.reduce_scalar(agg.hypot).new().isclose(245**0.5)
     assert A.reduce_scalar(agg.logaddexp).new().isclose(8.6071076)
     assert A.reduce_scalar(agg.logaddexp2).new().isclose(9.2288187)
     assert A.reduce_scalar(agg.mean).new().isclose(47 / 12)
@@ -2642,8 +2642,8 @@ def test_infix_sugar(A):
     assert binary.floordiv(5, A).isequal(5 // A)
     assert binary.numpy.mod(A, 2).isequal(A % 2)
     assert binary.numpy.mod(5, A).isequal(5 % A)
-    assert binary.pow(A, 2).isequal(A ** 2)
-    assert binary.pow(2, A).isequal(2 ** A)
+    assert binary.pow(A, 2).isequal(A**2)
+    assert binary.pow(2, A).isequal(2**A)
     assert binary.pow(A, 2).isequal(pow(A, 2))
     assert unary.ainv(A).isequal(-A)
     assert unary.ainv(A.T).isequal(-A.T)

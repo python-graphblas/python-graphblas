@@ -97,8 +97,8 @@ def test_matrix_to_from_networkx():
 def test_mmread_mmwrite():
     from scipy.io.tests import test_mmio
 
-    p31 = 2 ** 31
-    p63 = 2 ** 63
+    p31 = 2**31
+    p63 = 2**63
     m31 = -p31
     m63 = -p63
     p311 = p31 - 1
