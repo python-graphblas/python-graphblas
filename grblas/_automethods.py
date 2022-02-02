@@ -4,147 +4,8 @@ These will automatically compute the value and avoid the need for `.new()`.
 
 To automatically create the functions, run:
 
-```python
+$ python -m grblas._automethods
 
-common = {
-    "_name_html",
-    "_nvals",
-    "gb_obj",
-    "isclose",
-    "isequal",
-    "name",
-    "nvals",
-    "to_pygraphblas",
-    "wait",
-}
-scalar = {
-    "__array__",
-    "__bool__",
-    "__complex__",
-    "__eq__",
-    "__float__",
-    "__index__",
-    "__int__",
-    "__invert__",
-    "__neg__",
-    "is_empty",
-    "value",
-}
-vector_matrix = {
-    "S",
-    "V",
-    "__and__",
-    "__contains__",
-    "__getitem__",
-    "__iter__",
-    "__matmul__",
-    "__or__",
-    "__rand__",
-    "__rmatmul__",
-    "__ror__",
-    "_carg",
-    "apply",
-    "ewise_add",
-    "ewise_mult",
-    "ss",
-    "to_values",
-}
-vector = {
-    "inner",
-    "outer",
-    "reduce",
-    "vxm",
-}
-matrix = {
-    "T",
-    "kronecker",
-    "mxm",
-    "mxv",
-    "reduce_columns",
-    "reduce_rows",
-    "reduce_columnwise",
-    "reduce_rowwise",
-    "reduce_scalar",
-}
-common_raises = set()
-scalar_raises = {
-    "__and__",
-    "__matmul__",
-    "__or__",
-    "__rand__",
-    "__rmatmul__",
-    "__ror__",
-}
-vector_matrix_raises = {
-    "__array__",
-    "__bool__",
-}
-has_defaults = {
-    "__eq__",
-}
-# no inplace math for expressions
-bad_sugar = {
-    "__iadd__",
-    "__ifloordiv__",
-    "__imod__",
-    "__imul__",
-    "__ipow__",
-    "__isub__",
-    "__itruediv__",
-    "__ixor__",
-    "__ior__",
-    "__iand__",
-    "__imatmul__",
-}
-# Copy the result of this below
-for name in sorted(common | scalar | vector_matrix | vector | matrix):
-    print(f"def {name}(self):")
-    if name in has_defaults:
-        print(f"    return self._get_value({name!r}, default{name})\n\n")
-    else:
-        print(f"    return self._get_value({name!r})\n\n")
-for name in sorted(bad_sugar):
-    print(f"def {name}(self, other):")
-    print(f'    raise TypeError(f"{name!r} not supported for {{type(self).__name__}}")\n\n')
-
-
-# Copy to scalar.py and infix.py
-print("    _get_value = _automethods._get_value")
-for name in sorted(common | scalar):
-    print(f"    {name} = wrapdoc(Scalar.{name})(property(_automethods.{name}))")
-    if name == "name":
-        print("    name = name.setter(_automethods._set_name)")
-print("    # These raise exceptions")
-for name in sorted(common_raises | scalar_raises):
-    print(f"    {name} = wrapdoc(Scalar.{name})(Scalar.{name})")
-print()
-
-# Copy to vector.py and infix.py
-print("    _get_value = _automethods._get_value")
-for name in sorted(common | vector_matrix | vector):
-    print(f"    {name} = wrapdoc(Vector.{name})(property(_automethods.{name}))")
-    if name == "name":
-        print("    name = name.setter(_automethods._set_name)")
-print("    # These raise exceptions")
-for name in sorted(common_raises | vector_matrix_raises):
-    print(f"    {name} = wrapdoc(Vector.{name})(Vector.{name})")
-for name in sorted(bad_sugar):
-    print(f"    {name} = _automethods.{name}")
-print()
-
-# Copy to matrix.py and infix.py
-print("    _get_value = _automethods._get_value")
-for name in sorted(common | vector_matrix | matrix):
-    print(f"    {name} = wrapdoc(Matrix.{name})(property(_automethods.{name}))")
-    if name == "name":
-        print("    name = name.setter(_automethods._set_name)")
-print("    # These raise exceptions")
-for name in sorted(common_raises | vector_matrix_raises):
-    print(f"    {name} = wrapdoc(Matrix.{name})(Matrix.{name})")
-for name in sorted(bad_sugar):
-    print(f"    {name} = _automethods.{name}")
-
-```
 """
 from . import config
 
@@ -180,7 +41,7 @@ def default__eq__(self, other):
     )
 
 
-# Paste here
+# Begin auto-generated code
 def S(self):
     return self._get_value("S")
 
@@ -423,3 +284,174 @@ def __itruediv__(self, other):
 
 def __ixor__(self, other):
     raise TypeError(f"'__ixor__' not supported for {type(self).__name__}")
+
+
+# End auto-generated code
+if __name__ == "__main__":
+    import os
+
+    from .utils import _autogenerate_code
+
+    common = {
+        "_name_html",
+        "_nvals",
+        "gb_obj",
+        "isclose",
+        "isequal",
+        "name",
+        "nvals",
+        "to_pygraphblas",
+        "wait",
+    }
+    scalar = {
+        "__array__",
+        "__bool__",
+        "__complex__",
+        "__eq__",
+        "__float__",
+        "__index__",
+        "__int__",
+        "__invert__",
+        "__neg__",
+        "is_empty",
+        "value",
+    }
+    vector_matrix = {
+        "S",
+        "V",
+        "__and__",
+        "__contains__",
+        "__getitem__",
+        "__iter__",
+        "__matmul__",
+        "__or__",
+        "__rand__",
+        "__rmatmul__",
+        "__ror__",
+        "_carg",
+        "apply",
+        "ewise_add",
+        "ewise_mult",
+        "ss",
+        "to_values",
+    }
+    vector = {
+        "inner",
+        "outer",
+        "reduce",
+        "vxm",
+    }
+    matrix = {
+        "T",
+        "kronecker",
+        "mxm",
+        "mxv",
+        "reduce_columns",
+        "reduce_rows",
+        "reduce_columnwise",
+        "reduce_rowwise",
+        "reduce_scalar",
+    }
+    common_raises = set()
+    scalar_raises = {
+        "__and__",
+        "__matmul__",
+        "__or__",
+        "__rand__",
+        "__rmatmul__",
+        "__ror__",
+    }
+    vector_matrix_raises = {
+        "__array__",
+        "__bool__",
+    }
+    has_defaults = {
+        "__eq__",
+    }
+    # no inplace math for expressions
+    bad_sugar = {
+        "__iadd__",
+        "__ifloordiv__",
+        "__imod__",
+        "__imul__",
+        "__ipow__",
+        "__isub__",
+        "__itruediv__",
+        "__ixor__",
+        "__ior__",
+        "__iand__",
+        "__imatmul__",
+    }
+    # Copy the result of this above
+    lines = []
+    for name in sorted(common | scalar | vector_matrix | vector | matrix):  # noqa
+        lines.append(f"def {name}(self):")
+        if name in has_defaults:
+            lines.append(f"    return self._get_value({name!r}, default{name})\n\n")
+        else:
+            lines.append(f"    return self._get_value({name!r})\n\n")
+    for name in sorted(bad_sugar):
+        lines.append(f"def {name}(self, other):")
+        lines.append(
+            f'    raise TypeError(f"{name!r} not supported for {{type(self).__name__}}")\n\n'
+        )
+
+    _autogenerate_code(__file__, "\n".join(lines))
+
+    # Copy to scalar.py and infix.py
+    lines = []
+    lines.append("    _get_value = _automethods._get_value")
+    for name in sorted(common | scalar):
+        lines.append(f"    {name} = wrapdoc(Scalar.{name})(property(_automethods.{name}))")
+        if name == "name":
+            lines.append("    name = name.setter(_automethods._set_name)")
+    lines.append("    # These raise exceptions")
+    for name in sorted(common_raises | scalar_raises):
+        lines.append(f"    {name} = wrapdoc(Scalar.{name})(Scalar.{name})")
+
+    thisdir = os.path.dirname(__file__)
+    infix_exclude = {"_get_value"}
+
+    def get_name(line):
+        return line.strip().split(" ", 1)[0]
+
+    text = "\n".join(lines) + "\n    "
+    _autogenerate_code(os.path.join(thisdir, "scalar.py"), text, "Scalar")
+    text = "\n".join(line for line in lines if get_name(line) not in infix_exclude) + "\n    "
+    _autogenerate_code(os.path.join(thisdir, "infix.py"), text, "Scalar")
+
+    # Copy to vector.py and infix.py
+    lines = []
+    lines.append("    _get_value = _automethods._get_value")
+    for name in sorted(common | vector_matrix | vector):
+        lines.append(f"    {name} = wrapdoc(Vector.{name})(property(_automethods.{name}))")
+        if name == "name":
+            lines.append("    name = name.setter(_automethods._set_name)")
+    lines.append("    # These raise exceptions")
+    for name in sorted(common_raises | vector_matrix_raises):
+        lines.append(f"    {name} = wrapdoc(Vector.{name})(Vector.{name})")
+    for name in sorted(bad_sugar):
+        lines.append(f"    {name} = _automethods.{name}")
+
+    text = "\n".join(lines) + "\n    "
+    _autogenerate_code(os.path.join(thisdir, "vector.py"), text, "Vector")
+    text = "\n".join(line for line in lines if get_name(line) not in infix_exclude) + "\n    "
+    _autogenerate_code(os.path.join(thisdir, "infix.py"), text, "Vector")
+
+    # Copy to matrix.py and infix.py
+    lines = []
+    lines.append("    _get_value = _automethods._get_value")
+    for name in sorted(common | vector_matrix | matrix):
+        lines.append(f"    {name} = wrapdoc(Matrix.{name})(property(_automethods.{name}))")
+        if name == "name":
+            lines.append("    name = name.setter(_automethods._set_name)")
+    lines.append("    # These raise exceptions")
+    for name in sorted(common_raises | vector_matrix_raises):
+        lines.append(f"    {name} = wrapdoc(Matrix.{name})(Matrix.{name})")
+    for name in sorted(bad_sugar):
+        lines.append(f"    {name} = _automethods.{name}")
+
+    text = "\n".join(lines) + "\n    "
+    _autogenerate_code(os.path.join(thisdir, "matrix.py"), text, "Matrix")
+    text = "\n".join(line for line in lines if get_name(line) not in infix_exclude) + "\n    "
+    _autogenerate_code(os.path.join(thisdir, "infix.py"), text, "Matrix")

@@ -163,3 +163,28 @@ class _Pointer:
         if not name:
             name = f"temp_{type(self.val).__name__.lower()}"
         return f"&{name}"
+
+
+def _autogenerate_code(
+    filename,
+    text,
+    specializer=None,
+    begin="# Begin auto-generated code",
+    end="# End auto-generated code",
+):
+    """Super low-tech auto-code generation used by _automethods.py and _infixmethods.py"""
+    with open(filename) as f:
+        orig_text = f.read()
+    if specializer:
+        begin = f"{begin}: {specializer}"
+        end = f"{end}: {specializer}"
+    begin += "\n"
+    end += "\n"
+    start = orig_text.index(begin)
+    stop = orig_text.index(end)
+    new_text = f"{orig_text[:start]}{begin}{text}{orig_text[stop:]}"
+    with open(filename, "w") as f:
+        f.write(new_text)
+    import subprocess
+
+    subprocess.check_call(["black", filename])

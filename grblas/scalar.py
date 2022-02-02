@@ -305,7 +305,7 @@ class ScalarExpression(BaseExpression):
 
         return format_scalar_expression_html(self)
 
-    # Paste here from _automethods.py
+    # Begin auto-generated code: Scalar
     _get_value = _automethods._get_value
     __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
     __bool__ = wrapdoc(Scalar.__bool__)(property(_automethods.__bool__))
@@ -335,6 +335,7 @@ class ScalarExpression(BaseExpression):
     __rand__ = wrapdoc(Scalar.__rand__)(Scalar.__rand__)
     __rmatmul__ = wrapdoc(Scalar.__rmatmul__)(Scalar.__rmatmul__)
     __ror__ = wrapdoc(Scalar.__ror__)(Scalar.__ror__)
+    # End auto-generated code: Scalar
 
 
 class _CScalar:

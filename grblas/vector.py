@@ -816,7 +816,7 @@ class VectorExpression(BaseExpression):
     def shape(self):
         return (self._size,)
 
-    # Paste here from _automethods.py
+    # Begin auto-generated code: Vector
     _get_value = _automethods._get_value
     S = wrapdoc(Vector.S)(property(_automethods.S))
     V = wrapdoc(Vector.V)(property(_automethods.V))
@@ -863,6 +863,7 @@ class VectorExpression(BaseExpression):
     __isub__ = _automethods.__isub__
     __itruediv__ = _automethods.__itruediv__
     __ixor__ = _automethods.__ixor__
+    # End auto-generated code: Vector
 
 
 utils._output_types[Vector] = Vector
