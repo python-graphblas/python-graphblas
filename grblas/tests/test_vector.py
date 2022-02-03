@@ -641,6 +641,17 @@ def test_reduce(v):
         b1.reduce()
 
 
+def test_reduce_empty():
+    w = Vector.new(int, 5)
+    s = Scalar.from_value(16)
+    s(accum=binary.times) << w.reduce(monoid.plus, allow_empty=True)
+    assert s == 16
+    s(accum=binary.times) << w.reduce(monoid.plus)
+    assert s == 0
+    assert w.reduce(monoid.plus, allow_empty=True).new().is_empty
+    assert w.reduce(monoid.plus, allow_empty=False).new() == 0
+
+
 def test_reduce_agg(v):
     s = v.reduce(agg.sum).new()
     assert s.dtype == "INT64"

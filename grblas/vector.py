@@ -538,11 +538,14 @@ class Vector(BaseType):
             size=self._size,
         )
 
-    def reduce(self, op=monoid.plus):
+    def reduce(self, op=monoid.plus, *, allow_empty=False):
         """
         GrB_Vector_reduce
         Reduce all values into a scalar
         Default op is monoid.lor for boolean and monoid.plus otherwise
+
+        For empty Vector objects, the result will be the monoid identity if
+        `allow_empty` is False or empty Scalar if `allow_empty` is True.
         """
         method_name = "reduce"
         op = get_typed_op(op, self.dtype, kind="binary")
@@ -555,6 +558,7 @@ class Vector(BaseType):
             "GrB_Vector_reduce_{output_dtype}",
             [self],
             op=op,  # to be determined later
+            is_empty=allow_empty and self._nvals == 0,
         )
 
     # Unofficial methods

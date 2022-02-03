@@ -118,11 +118,10 @@ class TypedAggregator:
         agg = self.parent
         if agg._monoid is not None:
             x = expr.args[0]
-            expr = getattr(x, expr.method_name)(agg._monoid[self.type])
-            if expr.output_type is Scalar and x._nvals == 0:
-                # Don't set scalar output to monoid identity if empty
-                # Can we do this without checking nvals?  This is inefficient for dask-grblas
-                expr = expr._new_scalar(expr.dtype)
+            if expr.output_type is Scalar:
+                expr = getattr(x, expr.method_name)(agg._monoid[self.type], allow_empty=True)
+            else:
+                expr = getattr(x, expr.method_name)(agg._monoid[self.type])
             updater << expr
             if in_composite:
                 parent = updater.parent
