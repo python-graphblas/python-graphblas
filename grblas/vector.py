@@ -431,14 +431,19 @@ class Vector(BaseType):
         # SS, SuiteSparse-specific: eWiseUnion
         method_name = "ewise_union"
         other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
-        op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
+        left = _GrBScalar(left_default)
+        right = _GrBScalar(right_default)
+        scalar_dtype = unify(left.dtype, right.dtype)
+        nonscalar_dtype = unify(self.dtype, other.dtype)
+        dtype = unify(scalar_dtype, nonscalar_dtype, is_left_scalar=True)
+        op = get_typed_op(op, dtype, kind="binary")
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
         expr = VectorExpression(
             method_name,
             "GxB_Vector_eWiseUnion",
-            [self, _GrBScalar(left_default), other, _GrBScalar(right_default)],
+            [self, left, other, right],
             op=op,
             expr_repr="{0.name}.{method_name}({2.name}, {op}, {1.name}, {3.name})",
         )
