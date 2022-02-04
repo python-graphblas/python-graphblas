@@ -443,8 +443,7 @@ class Vector(BaseType):
         right = _GrBScalar(right_default)
         scalar_dtype = unify(left.dtype, right.dtype)
         nonscalar_dtype = unify(self.dtype, other.dtype)
-        dtype = unify(scalar_dtype, nonscalar_dtype, is_left_scalar=True)
-        op = get_typed_op(op, dtype, kind="binary")
+        op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
