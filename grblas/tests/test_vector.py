@@ -646,10 +646,15 @@ def test_reduce_empty():
     s = Scalar.from_value(16)
     s(accum=binary.times) << w.reduce(monoid.plus, allow_empty=True)
     assert s == 16
-    s(accum=binary.times) << w.reduce(monoid.plus)
+    s(accum=binary.times) << w.reduce(monoid.plus, allow_empty=False)
     assert s == 0
     assert w.reduce(monoid.plus, allow_empty=True).new().is_empty
     assert w.reduce(monoid.plus, allow_empty=False).new() == 0
+    assert w.reduce(agg.sum, allow_empty=True).new().is_empty
+    assert w.reduce(agg.sum, allow_empty=False).new() == 0
+    assert w.reduce(agg.mean, allow_empty=True).new().is_empty
+    with pytest.raises(ValueError):
+        w.reduce(agg.mean, allow_empty=False)
 
 
 def test_reduce_agg(v):

@@ -109,10 +109,11 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
         if type(matrix) is TransposedMatrix:
             parent = matrix._matrix
             submatrix = Matrix.new(parent.dtype, parent._nrows, parent._ncols, name="")
-            # Get val to support iso-valued matrices
-            val = parent.reduce_scalar(monoid.any).new(name="")
-            submatrix(parent.S)[columns, rows] = val
-            submatrix(submatrix.S)[...] = parent
+            if parent._nvals > 0:
+                # Get val to support iso-valued matrices
+                val = parent.reduce_scalar(monoid.any, allow_empty=False).new(name="")
+                submatrix(parent.S)[columns, rows] = val
+                submatrix(submatrix.S)[...] = parent
             if row_offset is not None or column_offset is not None:
                 submatrix = submatrix[column_offset:, row_offset:].new(name="")
             submatrix = submatrix.T
@@ -120,9 +121,10 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
             if mask is None:
                 submatrix = Matrix.new(matrix.dtype, matrix._nrows, matrix._ncols, name="")
                 # Get val to support iso-valued matrices
-                val = matrix.reduce_scalar(monoid.any).new(name="")
-                submatrix(matrix.S)[rows, columns] = val
-                submatrix(submatrix.S)[...] = matrix
+                if matrix._nvals > 0:
+                    val = matrix.reduce_scalar(monoid.any).new(name="")
+                    submatrix(matrix.S)[rows, columns] = val
+                    submatrix(submatrix.S)[...] = matrix
             else:
                 submatrix = Matrix.new("UINT8", matrix._nrows, matrix._ncols, name="")
                 if mask.structure:
@@ -153,9 +155,10 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
         if mask is None:
             subvector = Vector.new(vector.dtype, vector._size, name="")
             # Get val to support iso-valued vectors
-            val = vector.reduce(monoid.any).new(name="")
-            subvector(vector.S)[columns] = val
-            subvector(subvector.S)[...] = vector
+            if vector._nvals > 0:
+                val = vector.reduce(monoid.any).new(name="")
+                subvector(vector.S)[columns] = val
+                subvector(subvector.S)[...] = vector
         else:
             subvector = Vector.new("UINT8", vector._size, name="")
             if mask.structure:

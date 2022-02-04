@@ -1163,6 +1163,13 @@ def test_reduce_agg(A):
     s3 = A.reduce_scalar(silly).new()
     assert s3.isclose(s1.value * s2.value)
 
+    B = Matrix.new(int, nrows=4, ncols=5)
+    assert B.reduce_scalar(agg.sum, allow_empty=True).new().is_empty
+    assert B.reduce_scalar(agg.sum, allow_empty=False).new() == 0
+    assert B.reduce_scalar(agg.vars, allow_empty=True).new().is_empty
+    with pytest.raises(ValueError):
+        B.reduce_scalar(agg.vars, allow_empty=False)
+
 
 def test_reduce_agg_argminmax(A):
     # reduce_rowwise

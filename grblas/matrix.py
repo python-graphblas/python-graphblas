@@ -156,7 +156,7 @@ class Matrix(BaseType):
             return False
 
         # Check if all results are True
-        return matches.reduce_scalar(monoid.land).new().value
+        return matches.reduce_scalar(monoid.land, allow_empty=False).new().value
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """
@@ -184,7 +184,7 @@ class Matrix(BaseType):
             return False
 
         # Check if all results are True
-        return matches.reduce_scalar(monoid.land).new().value
+        return matches.reduce_scalar(monoid.land, allow_empty=False).new().value
 
     @property
     def nrows(self):
@@ -722,7 +722,7 @@ class Matrix(BaseType):
         )
         return self.reduce_columnwise(op)
 
-    def reduce_scalar(self, op=monoid.plus, *, allow_empty=False):
+    def reduce_scalar(self, op=monoid.plus, *, allow_empty=True):
         """
         GrB_Matrix_reduce
         Reduce all values into a scalar
@@ -737,13 +737,12 @@ class Matrix(BaseType):
             op = op.monoid
         else:
             self._expect_op(op, ("Monoid", "Aggregator"), within=method_name, argname="op")
-        if op.opclass == "Aggregator" and op.name in {
-            "argmin",
-            "argmax",
-            "first_index",
-            "last_index",
-        }:
-            raise ValueError(f"Aggregator {op.name} may not be used with Matrix.reduce_scalar.")
+        if op.opclass == "Aggregator":
+            if op.name in {"argmin", "argmax", "first_index", "last_index"}:
+                raise ValueError(f"Aggregator {op.name} may not be used with Matrix.reduce_scalar.")
+            if not allow_empty and op.parent._monoid is None:
+                # But we still kindly allow it if it's a monoid-only aggregator such as sum
+                raise ValueError("allow_empty=False not allowed when using Aggregators")
         return ScalarExpression(
             method_name,
             "GrB_Matrix_reduce_{output_dtype}",
