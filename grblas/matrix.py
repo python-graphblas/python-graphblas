@@ -490,6 +490,14 @@ class Matrix(BaseType):
     def ewise_union(self, other, op, left_default, right_default):
         """
         GxB_Matrix_eWiseUnion
+
+        This is similar to `ewise_add` in that result will contain the union of
+        indices from both Matrices.  Unlike `ewise_add`, this will use
+        ``left_default`` for the left value when there is a value on the right
+        but not the left, and ``right_default`` for the right value when there
+        is a value on the left but not the right.
+
+        ``op`` should be a BinaryOp or Monoid.
         """
         # SS, SuiteSparse-specific: eWiseUnion
         method_name = "ewise_union"

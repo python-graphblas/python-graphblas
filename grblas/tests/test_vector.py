@@ -1542,3 +1542,25 @@ def test_ndim(A, v):
 
 def test_sizeof(v):
     assert sys.getsizeof(v) > v.nvals * 16
+
+
+def test_ewise_union():
+    v1 = Vector.from_values([0], [1], size=3)
+    v2 = Vector.from_values([1], [2], size=3)
+    result = v1.ewise_union(v2, binary.plus, 10, 20).new()
+    expected = Vector.from_values([0, 1], [21, 12], size=3)
+    assert result.isequal(expected)
+    # Upcast if scalars are floats
+    result = v1.ewise_union(v2, monoid.plus, 10.1, 20.2).new()
+    expected = Vector.from_values([0, 1], [21.2, 12.1], size=3)
+    assert result.isclose(expected)
+
+    result = v1.ewise_union(v2, binary.minus, 0, 0).new()
+    expected = Vector.from_values([0, 1], [1, -2], size=3)
+    assert result.isequal(expected)
+    result = (v1 - v2).new()
+    assert result.isequal(expected)
+
+    bad = Vector.new(int, size=1)
+    with pytest.raises(DimensionMismatch):
+        v1.ewise_union(bad, binary.plus, 0, 0)
