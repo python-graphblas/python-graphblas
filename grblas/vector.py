@@ -10,7 +10,7 @@ from .exceptions import NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_semiring, get_typed_op
-from .scalar import Scalar, ScalarExpression, _CScalar
+from .scalar import Scalar, ScalarExpression, _CScalar, _GrBScalar
 from .utils import (
     _CArray,
     _Pointer,
@@ -419,6 +419,40 @@ class Vector(BaseType):
             f"GrB_Vector_eWiseMult_{op.opclass}",
             [self, other],
             op=op,
+        )
+        if self._size != other._size:
+            expr.new(name="")  # incompatible shape; raise now
+        return expr
+
+    def ewise_union(self, other, op, left_default, right_default):
+        """
+        GxB_Vector_eWiseUnion
+
+        This is similar to `ewise_add` in that result will contain the union of
+        indices from both Vectors.  Unlike `ewise_add`, this will use
+        ``left_default`` for the left value when there is a value on the right
+        but not the left, and ``right_default`` for the right value when there
+        is a value on the left but not the right.
+
+        ``op`` should be a BinaryOp or Monoid.
+        """
+        # SS, SuiteSparse-specific: eWiseUnion
+        method_name = "ewise_union"
+        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
+        left = _GrBScalar(left_default)
+        right = _GrBScalar(right_default)
+        scalar_dtype = unify(left.dtype, right.dtype)
+        nonscalar_dtype = unify(self.dtype, other.dtype)
+        op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
+        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if op.opclass == "Monoid":
+            op = op.binaryop
+        expr = VectorExpression(
+            method_name,
+            "GxB_Vector_eWiseUnion",
+            [self, left, other, right],
+            op=op,
+            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1.name}, {3.name})",
         )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
@@ -842,6 +876,7 @@ class VectorExpression(BaseExpression):
     apply = wrapdoc(Vector.apply)(property(_automethods.apply))
     ewise_add = wrapdoc(Vector.ewise_add)(property(_automethods.ewise_add))
     ewise_mult = wrapdoc(Vector.ewise_mult)(property(_automethods.ewise_mult))
+    ewise_union = wrapdoc(Vector.ewise_union)(property(_automethods.ewise_union))
     gb_obj = wrapdoc(Vector.gb_obj)(property(_automethods.gb_obj))
     inner = wrapdoc(Vector.inner)(property(_automethods.inner))
     isclose = wrapdoc(Vector.isclose)(property(_automethods.isclose))

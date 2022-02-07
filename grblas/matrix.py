@@ -11,7 +11,7 @@ from .exceptions import NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_typed_op
-from .scalar import Scalar, ScalarExpression, _CScalar
+from .scalar import Scalar, ScalarExpression, _CScalar, _GrBScalar
 from .utils import (
     _CArray,
     _Pointer,
@@ -482,6 +482,40 @@ class Matrix(BaseType):
             op=op,
             at=self._is_transposed,
             bt=other._is_transposed,
+        )
+        if self.shape != other.shape:
+            expr.new(name="")  # incompatible shape; raise now
+        return expr
+
+    def ewise_union(self, other, op, left_default, right_default):
+        """
+        GxB_Matrix_eWiseUnion
+
+        This is similar to `ewise_add` in that result will contain the union of
+        indices from both Matrices.  Unlike `ewise_add`, this will use
+        ``left_default`` for the left value when there is a value on the right
+        but not the left, and ``right_default`` for the right value when there
+        is a value on the left but not the right.
+
+        ``op`` should be a BinaryOp or Monoid.
+        """
+        # SS, SuiteSparse-specific: eWiseUnion
+        method_name = "ewise_union"
+        other = self._expect_type(other, Matrix, within=method_name, argname="other", op=op)
+        left = _GrBScalar(left_default)
+        right = _GrBScalar(right_default)
+        scalar_dtype = unify(left.dtype, right.dtype)
+        nonscalar_dtype = unify(self.dtype, other.dtype)
+        op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
+        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if op.opclass == "Monoid":
+            op = op.binaryop
+        expr = MatrixExpression(
+            method_name,
+            "GxB_Matrix_eWiseUnion",
+            [self, left, other, right],
+            op=op,
+            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1.name}, {3.name})",
         )
         if self.shape != other.shape:
             expr.new(name="")  # incompatible shape; raise now
@@ -1244,6 +1278,7 @@ class MatrixExpression(BaseExpression):
     apply = wrapdoc(Matrix.apply)(property(_automethods.apply))
     ewise_add = wrapdoc(Matrix.ewise_add)(property(_automethods.ewise_add))
     ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
+    ewise_union = wrapdoc(Matrix.ewise_union)(property(_automethods.ewise_union))
     gb_obj = wrapdoc(Matrix.gb_obj)(property(_automethods.gb_obj))
     isclose = wrapdoc(Matrix.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Matrix.isequal)(property(_automethods.isequal))
@@ -1351,6 +1386,7 @@ class TransposedMatrix:
     # Delayed methods
     ewise_add = Matrix.ewise_add
     ewise_mult = Matrix.ewise_mult
+    ewise_union = Matrix.ewise_union
     mxv = Matrix.mxv
     mxm = Matrix.mxm
     kronecker = Matrix.kronecker

@@ -150,6 +150,10 @@ def ewise_mult(self):
     return self._get_value("ewise_mult")
 
 
+def ewise_union(self):
+    return self._get_value("ewise_union")
+
+
 def gb_obj(self):
     return self._get_value("gb_obj")
 
@@ -332,6 +336,7 @@ if __name__ == "__main__":
         "apply",
         "ewise_add",
         "ewise_mult",
+        "ewise_union",
         "ss",
         "to_values",
     }

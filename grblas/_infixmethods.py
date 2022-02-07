@@ -6,7 +6,7 @@ from .utils import output_type
 from .vector import Vector, VectorExpression
 
 
-def call_op(self, other, method, op, *, scalar_only=False, outer=False):
+def call_op(self, other, method, op, *, outer=False, union=False):
     type1 = output_type(self)
     type2 = output_type(other)
     if (
@@ -16,23 +16,10 @@ def call_op(self, other, method, op, *, scalar_only=False, outer=False):
         or type1 is TransposedMatrix
         and type2 is Matrix
     ):
-        if scalar_only:
-            raise TypeError(
-                f"Infix operator {method} between {type1.__name__} and {type2.__name__} is not "
-                "supported.  This infix operation is only allowed if one of the arguments is a "
-                "scalar.  We refuse to guess whether you intend to do ewise_mult or ewise_add."
-                "\n\nYou must indicate ewise_mult (intersection) or ewise_add (union) explicitly."
-                "\n\nFor ewise_mult:\n"
-                f"    >>> op.{op.name}(x & y)\n"
-                "or\n"
-                f"    >>> x.ewise_mult(y, op.{op.name})\n\n"
-                "For ewise_add:\n"
-                f"    >>> op.{op.name}(x | y)\n"
-                "or\n"
-                f"    >>> x.ewise_add(y, op.{op.name})\n\n"
-            )
-        elif outer:
+        if outer:
             return op(self | other, require_monoid=False)
+        elif union:
+            return self.ewise_union(other, op, False, False)
         else:
             return op(self & other)
     return op(self, other)
@@ -107,21 +94,6 @@ def __iand__(self, other):
             "  It is only supported for BOOL dtype (and it uses ewise_mult--the intersection)."
         )
     self << expr
-    return self
-
-
-def __sub__(self, other):
-    # TODO: use GxB Union
-    return call_op(self, other, "__sub__", binary.minus, scalar_only=True)
-
-
-def __rsub__(self, other):
-    # TODO: use GxB Union
-    return call_op(other, self, "__rsub__", binary.minus, scalar_only=True)
-
-
-def __isub__(self, other):
-    self << __sub__(self, other)
     return self
 
 
@@ -215,6 +187,19 @@ def __ipow__(self, other):
     return self
 
 
+def __sub__(self, other):
+    return call_op(self, other, "__sub__", binary.minus, union=True)
+
+
+def __rsub__(self, other):
+    return call_op(other, self, "__rsub__", binary.minus, union=True)
+
+
+def __isub__(self, other):
+    self << __sub__(self, other)
+    return self
+
+
 def __truediv__(self, other):
     return call_op(self, other, "__truediv__", binary.truediv)
 
@@ -296,10 +281,14 @@ if __name__ == "__main__":
         "floordiv": "floordiv",
         "mod": "numpy.mod",
         "pow": "pow",
+        "sub": "minus",
     }
     # monoids with 0 identity use outer (ewise_add): + | ^
     outer = {
         "add",
+    }
+    union = {
+        "sub",
     }
     custom = {
         "abs",
@@ -312,9 +301,6 @@ if __name__ == "__main__":
         "ixor",
         "ior",
         "iand",
-        "sub",
-        "isub",
-        "rsub",
     }
     # Skipped: rshift, pos
     # Already used for syntax: lshift, and, or
@@ -326,7 +312,12 @@ if __name__ == "__main__":
             f'    return call_op(self, other, "__{method}__", binary.{op})\n\n'
         )
     for method, op in sorted(operations.items()):
-        out = ", outer=True" if method in outer else ""
+        if method in outer:
+            out = ", outer=True"
+        elif method in union:
+            out = ", union=True"
+        else:
+            out = ""
         lines.append(
             f"def __{method}__(self, other):\n"
             f'    return call_op(self, other, "__{method}__", binary.{op}{out})\n\n'

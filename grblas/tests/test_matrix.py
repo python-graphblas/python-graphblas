@@ -3043,3 +3043,25 @@ def test_ndim(A):
 
 def test_sizeof(A):
     assert sys.getsizeof(A) > A.nvals * 16
+
+
+def test_ewise_union():
+    A1 = Matrix.from_values([0], [0], [1], nrows=1, ncols=3)
+    A2 = Matrix.from_values([0], [1], [2], nrows=1, ncols=3)
+    result = A1.ewise_union(A2, binary.plus, 10, 20).new()
+    expected = Matrix.from_values([0, 0], [0, 1], [21, 12], nrows=1, ncols=3)
+    assert result.isequal(expected)
+    # Upcast if scalars are floats
+    result = A1.ewise_union(A2, monoid.plus, 10.1, 20.2).new()
+    expected = Matrix.from_values([0, 0], [0, 1], [21.2, 12.1], nrows=1, ncols=3)
+    assert result.isclose(expected)
+
+    result = A1.ewise_union(A2, binary.minus, 0, 0).new()
+    expected = Matrix.from_values([0, 0], [0, 1], [1, -2], nrows=1, ncols=3)
+    assert result.isequal(expected)
+    result = (A1 - A2).new()
+    assert result.isequal(expected)
+
+    bad = Matrix.new(int, nrows=1, ncols=1)
+    with pytest.raises(DimensionMismatch):
+        A1.ewise_union(bad, binary.plus, 0, 0)

@@ -7,7 +7,7 @@ from .dtypes import lookup_dtype
 from .exceptions import check_status
 from .expr import AmbiguousAssignOrExtract, Updater
 from .mask import Mask
-from .operator import UNKNOWN_OPCLASS, find_opclass, get_typed_op
+from .operator import UNKNOWN_OPCLASS, binary_from_string, find_opclass, get_typed_op
 from .utils import _Pointer, libget, output_type
 
 NULL = ffi.NULL
@@ -207,7 +207,10 @@ class BaseType:
                     raise TypeError("Got multiple values for argument 'accum'")
                 accum_arg, opclass = find_opclass(arg)
                 if opclass == UNKNOWN_OPCLASS:
-                    raise TypeError(f"Invalid item found in output params: {type(arg)}")
+                    if isinstance(accum_arg, str):
+                        accum_arg = binary_from_string(accum_arg)
+                    else:
+                        raise TypeError(f"Invalid item found in output params: {type(arg)}")
         # Merge positional and keyword arguments
         if mask_arg is not None and mask is not None:
             raise TypeError("Got multiple values for argument 'mask'")
