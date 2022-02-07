@@ -310,6 +310,8 @@ def test_expr_is_like_scalar(s):
         "from_value",
         "update",
     }
+    if s.is_cscalar:
+        expected.add("_empty")
     assert attrs - expr_attrs == expected
     assert attrs - infix_attrs == expected | {
         "_expect_op",

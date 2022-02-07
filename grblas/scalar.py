@@ -266,7 +266,9 @@ class Scalar(BaseType):
             is_cscalar = self._is_cscalar
         if not is_cscalar and not self._is_scalar and (dtype is None or dtype == self.dtype):
             scalar = ffi_new("GrB_Scalar*")
-            new_scalar = Scalar(scalar, self.dtype, is_cscalar=False, name=name)
+            new_scalar = Scalar(
+                scalar, self.dtype, is_cscalar=False, name=name  # pragma: is_grbscalar
+            )
             call("GrB_Scalar_dup", [_Pointer(new_scalar), self])
         elif dtype is None:
             new_scalar = Scalar.new(self.dtype, is_cscalar=is_cscalar, name=name)

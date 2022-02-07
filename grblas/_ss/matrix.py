@@ -538,7 +538,7 @@ class ss:
             raise ValueError(
                 f"`rows` and `columns` lengths must match: {rows.size}, {columns.size}"
             )
-        scalar = _as_scalar(value, self._parent.dtype, is_cscalar=False)
+        scalar = _as_scalar(value, self._parent.dtype, is_cscalar=False)  # pragma: is_grbscalar
         call(
             "GxB_Matrix_build_Scalar",
             [

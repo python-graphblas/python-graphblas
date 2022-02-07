@@ -245,7 +245,7 @@ class ss:
         Vector.from_values
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
-        scalar = _as_scalar(value, self._parent.dtype, is_cscalar=False)
+        scalar = _as_scalar(value, self._parent.dtype, is_cscalar=False)  # pragma: is_grbscalar
         call(
             "GxB_Vector_build_Scalar",
             [

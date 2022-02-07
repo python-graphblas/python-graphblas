@@ -454,8 +454,8 @@ class Vector(BaseType):
         # SS, SuiteSparse-specific: eWiseUnion
         method_name = "ewise_union"
         other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
-        left = _as_scalar(left_default, is_cscalar=False)
-        right = _as_scalar(right_default, is_cscalar=False)
+        left = _as_scalar(left_default, is_cscalar=False)  # pragma: is_grbscalar
+        right = _as_scalar(right_default, is_cscalar=False)  # pragma: is_grbscalar
         scalar_dtype = unify(left.dtype, right.dtype)
         nonscalar_dtype = unify(self.dtype, other.dtype)
         op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")

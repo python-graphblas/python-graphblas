@@ -448,7 +448,7 @@ class BaseType:
             else:
                 is_temp_scalar = expr._is_cscalar != self._is_cscalar
                 if is_temp_scalar:
-                    temp_scalar = expr.construct_output(name="s_temp")
+                    temp_scalar = expr.construct_output(self.dtype, name="s_temp")
                     if accum is not None and not self._is_empty:
                         temp_scalar.value = self.value
                 else:
