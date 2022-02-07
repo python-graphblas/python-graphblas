@@ -155,7 +155,7 @@ class Vector(BaseType):
             return False
 
         # Check if all results are True
-        return matches.reduce(monoid.land).new().value
+        return matches.reduce(monoid.land, allow_empty=False).new().value
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """
@@ -179,7 +179,7 @@ class Vector(BaseType):
             return False
 
         # Check if all results are True
-        return matches.reduce(monoid.land).new().value
+        return matches.reduce(monoid.land, allow_empty=False).new().value
 
     @property
     def size(self):
@@ -572,11 +572,14 @@ class Vector(BaseType):
             size=self._size,
         )
 
-    def reduce(self, op=monoid.plus):
+    def reduce(self, op=monoid.plus, *, allow_empty=True):
         """
         GrB_Vector_reduce
         Reduce all values into a scalar
         Default op is monoid.lor for boolean and monoid.plus otherwise
+
+        For empty Vector objects, the result will be the monoid identity if
+        `allow_empty` is False or empty Scalar if `allow_empty` is True.
         """
         method_name = "reduce"
         op = get_typed_op(op, self.dtype, kind="binary")
@@ -584,11 +587,15 @@ class Vector(BaseType):
             op = op.monoid
         else:
             self._expect_op(op, ("Monoid", "Aggregator"), within=method_name, argname="op")
+        if not allow_empty and op.opclass == "Aggregator" and op.parent._monoid is None:
+            # But we still kindly allow it if it's a monoid-only aggregator such as sum
+            raise ValueError("allow_empty=False not allowed when using Aggregators")
         return ScalarExpression(
             method_name,
             "GrB_Vector_reduce_{output_dtype}",
             [self],
             op=op,  # to be determined later
+            is_empty=allow_empty and self._nvals == 0,
         )
 
     # Unofficial methods

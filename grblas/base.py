@@ -432,6 +432,8 @@ class BaseType:
             output_replace=replace,
         )
         if self._is_scalar:
+            if expr._is_empty:
+                return
             is_fake_scalar = expr.method_name == "inner"
             if is_fake_scalar:
                 from .vector import Vector

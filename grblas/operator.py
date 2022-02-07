@@ -101,6 +101,10 @@ class TypedOpBase:
     def _carg(self):
         return self.gb_obj
 
+    @property
+    def is_positional(self):
+        return self.parent.is_positional
+
     def __reduce__(self):
         return (getitem, (self.parent, self.type))
 
@@ -181,7 +185,12 @@ class TypedBuiltinMonoid(TypedOpBase):
             from .vector import Vector
 
             with skip_record:
-                self._identity = Vector.new(self.type, size=1, name="").reduce(self).new().value
+                self._identity = (
+                    Vector.new(self.type, size=1, name="")
+                    .reduce(self, allow_empty=False)
+                    .new()
+                    .value
+                )
         return self._identity
 
     @property
@@ -524,6 +533,7 @@ class OpBase:
     _parse_config = None
     _initialized = False
     _module = None
+    _positional = None
 
     def __init__(self, name, *, anonymous=False):
         self.name = name
@@ -622,7 +632,10 @@ class OpBase:
                         name = "_".join(splitname).lower()
                         # Create object for name unless it already exists
                         if not hasattr(cls._module, name):
-                            obj = cls(name)
+                            if cls._positional is None:
+                                obj = cls(name)
+                            else:
+                                obj = cls(name, is_positional=name in cls._positional)
                             setattr(cls._module, name, obj)
                             _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{name}")
                             if not hasattr(op, name):
@@ -660,7 +673,7 @@ class OpBase:
 
 
 class UnaryOp(OpBase):
-    __slots__ = "_func"
+    __slots__ = "_func", "is_positional"
     _module = unary
     _modname = "unary"
     _typed_class = TypedBuiltinUnaryOp
@@ -690,6 +703,7 @@ class UnaryOp(OpBase):
         ],
         "re_exprs_return_float": [re.compile("^GxB_(CREAL|CIMAG|CARG|ABS)_(FC32|FC64)$")],
     }
+    _positional = {"positioni", "positioni1", "positionj", "positionj1"}
 
     @classmethod
     def _build(cls, name, func, *, anonymous=False):
@@ -854,9 +868,10 @@ class UnaryOp(OpBase):
                             op.coercions[dtype] = target_type
         cls._initialized = True
 
-    def __init__(self, name, func=None, *, anonymous=False):
+    def __init__(self, name, func=None, *, anonymous=False, is_positional=False):
         super().__init__(name, anonymous=anonymous)
         self._func = func
+        self.is_positional = is_positional
 
     def __reduce__(self):
         if self._anonymous:
@@ -895,7 +910,7 @@ def _isclose(rel_tol=1e-7, abs_tol=0.0):
 
 
 class BinaryOp(OpBase):
-    __slots__ = "_monoid", "commutes_to", "_semiring_commutes_to", "_func"
+    __slots__ = "_monoid", "commutes_to", "_semiring_commutes_to", "_func", "is_positional"
     _module = binary
     _modname = "binary"
     _typed_class = TypedBuiltinBinaryOp
@@ -987,6 +1002,16 @@ class BinaryOp(OpBase):
         "pair",
     }
     # Don't commute: atan2, bclr, bget, bset, bshift, cmplx, copysign, fmod, ldexp, pow, remainder
+    _positional = {
+        "firsti",
+        "firsti1",
+        "firstj",
+        "firstj1",
+        "secondi",
+        "secondi1",
+        "secondj",
+        "secondj1",
+    }
 
     @classmethod
     def _build(cls, name, func, *, anonymous=False):
@@ -1232,12 +1257,13 @@ class BinaryOp(OpBase):
             right._semiring_commutes_to = left
         cls._initialized = True
 
-    def __init__(self, name, func=None, *, anonymous=False):
+    def __init__(self, name, func=None, *, anonymous=False, is_positional=False):
         super().__init__(name, anonymous=anonymous)
         self._monoid = None
         self.commutes_to = None
         self._semiring_commutes_to = None
         self._func = func
+        self.is_positional = is_positional
 
     def __reduce__(self):
         if self._anonymous:
@@ -1262,6 +1288,7 @@ class BinaryOp(OpBase):
 class Monoid(OpBase):
     __slots__ = "_binaryop", "_identity"
     is_commutative = True
+    is_positional = False
     _module = monoid
     _modname = "monoid"
     _typed_class = TypedBuiltinMonoid
@@ -1688,6 +1715,10 @@ class Semiring(OpBase):
             return self._monoid
         # Must be builtin
         return getattr(monoid, self.name.split("_")[0])
+
+    @property
+    def is_positional(self):
+        return self.binaryop.is_positional
 
     commutes_to = TypedBuiltinSemiring.commutes_to
     is_commutative = TypedBuiltinSemiring.is_commutative

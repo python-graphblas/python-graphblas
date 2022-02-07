@@ -280,11 +280,17 @@ class Scalar(BaseType):
 
 
 class ScalarExpression(BaseExpression):
-    __slots__ = ()
+    __slots__ = "_is_empty"
     output_type = Scalar
     ndim = 0
     shape = ()
     _is_scalar = True
+
+    def __init__(self, *args, is_empty=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        # The result may still be empty even if `_is_empty` is False.
+        # We set this to True when we need to coerce the result to be empty.
+        self._is_empty = is_empty
 
     def construct_output(self, dtype=None, *, name=None):
         if dtype is None:
@@ -292,6 +298,8 @@ class ScalarExpression(BaseExpression):
         return Scalar.new(dtype, name=name)
 
     def new(self, dtype=None, *, name=None):
+        if self._is_empty:
+            return self.construct_output(dtype, name=name)
         return super().new(dtype, name=name)
 
     dup = new
