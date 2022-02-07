@@ -118,11 +118,11 @@ class TypedAggregator:
         agg = self.parent
         if agg._monoid is not None:
             x = expr.args[0]
-            expr = getattr(x, expr.method_name)(agg._monoid[self.type])
-            if expr.output_type is Scalar and x._nvals == 0:
-                # Don't set scalar output to monoid identity if empty
-                # Can we do this without checking nvals?  This is inefficient for dask-grblas
-                expr = expr._new_scalar(expr.dtype)
+            method = getattr(x, expr.method_name)
+            if expr.output_type is Scalar:
+                expr = method(agg._monoid[self.type], allow_empty=expr._is_empty)
+            else:
+                expr = method(agg._monoid[self.type])
             updater << expr
             if in_composite:
                 parent = updater.parent
@@ -454,7 +454,7 @@ def _argminmaxij(
                 return updater.parent
     elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
         v = expr.args[0]
-        step1 = v.reduce(monoid).new()
+        step1 = v.reduce(monoid, allow_empty=False).new()
         masked = binary.eq(v, step1).new()
         masked(mask=masked.V, replace=True) << masked  # Could use select
         init = expr._new_matrix(bool, nrows=v._size, ncols=1)
