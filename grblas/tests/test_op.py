@@ -978,3 +978,25 @@ def test_lazy_op():
         unary.from_string("misc.lazy.badpath")
     assert op.from_string("lazy") is unary.lazy
     assert op.from_string("numpy.lazy") is unary.numpy.lazy
+
+
+def test_positional():
+    assert unary.positioni.is_positional
+    assert unary.positioni1[int].is_positional
+    assert unary.positionj1.is_positional
+    assert unary.positionj[float].is_positional
+    assert not unary.exp.is_positional
+    assert not unary.abs[bool].is_positional
+
+    assert binary.firsti.is_positional
+    assert binary.secondj1[int].is_positional
+    assert not binary.plus.is_positional
+    assert not binary.minus[float].is_positional
+
+    assert not monoid.plus.is_positional
+    assert not monoid.plus[int].is_positional
+
+    assert semiring.any_firsti.is_positional
+    assert semiring.any_secondj[int].is_positional
+    assert not semiring.any_first.is_positional
+    assert not semiring.any_second[int].is_positional
