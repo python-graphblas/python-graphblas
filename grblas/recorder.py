@@ -6,6 +6,7 @@ from .dtypes import DataType
 from .mask import Mask
 from .matrix import TransposedMatrix
 from .operator import TypedOpBase
+from .scalar import Scalar
 
 
 def gbstr(arg):
@@ -23,7 +24,11 @@ def gbstr(arg):
     else:
         name = arg.name
     if not name:
-        return f"temp_{type(arg).__name__.lower()}"
+        if type(arg) is Scalar:
+            with skip_record:
+                return repr(arg.value)
+        else:
+            return f"temp_{type(arg).__name__.lower()}"
     return name
 
 

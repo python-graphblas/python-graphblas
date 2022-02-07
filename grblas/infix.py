@@ -89,8 +89,8 @@ class VectorInfixExpr(InfixExprBase):
     vxm = wrapdoc(Vector.vxm)(property(_automethods.vxm))
     wait = wrapdoc(Vector.wait)(property(_automethods.wait))
     # These raise exceptions
-    __array__ = wrapdoc(Vector.__array__)(Vector.__array__)
-    __bool__ = wrapdoc(Vector.__bool__)(Vector.__bool__)
+    __array__ = Vector.__array__
+    __bool__ = Vector.__bool__
     __iadd__ = _automethods.__iadd__
     __iand__ = _automethods.__iand__
     __ifloordiv__ = _automethods.__ifloordiv__
@@ -201,8 +201,8 @@ class MatrixInfixExpr(InfixExprBase):
     to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(_automethods.wait))
     # These raise exceptions
-    __array__ = wrapdoc(Matrix.__array__)(Matrix.__array__)
-    __bool__ = wrapdoc(Matrix.__bool__)(Matrix.__bool__)
+    __array__ = Matrix.__array__
+    __bool__ = Matrix.__bool__
     __iadd__ = _automethods.__iadd__
     __iand__ = _automethods.__iand__
     __ifloordiv__ = _automethods.__ifloordiv__
@@ -262,12 +262,24 @@ class ScalarMatMulExpr(InfixExprBase):
     _infix = "@"
     _is_scalar = True
 
-    def new(self, dtype=None, *, name=None):
+    def new(self, dtype=None, *, is_cscalar=None, name=None):
         # Rely on the default operator for the method
         expr = getattr(self.left, self.method_name)(self.right)
-        return expr.new(dtype, name=name)
+        return expr.new(dtype, is_cscalar=is_cscalar, name=name)
 
     dup = new
+
+    @property
+    def is_cscalar(self):
+        if self._value is not None:
+            return self._value.is_cscalar
+        return self._to_expr().is_cscalar
+
+    @property
+    def is_grbscalar(self):
+        if self._value is not None:
+            return self._value.is_grbscalar
+        return self._to_expr().is_grbscalar
 
     # Begin auto-generated code: Scalar
     __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
@@ -279,6 +291,7 @@ class ScalarMatMulExpr(InfixExprBase):
     __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
     __invert__ = wrapdoc(Scalar.__invert__)(property(_automethods.__invert__))
     __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
+    _is_empty = wrapdoc(Scalar._is_empty)(property(_automethods._is_empty))
     _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
     gb_obj = wrapdoc(Scalar.gb_obj)(property(_automethods.gb_obj))
@@ -292,12 +305,12 @@ class ScalarMatMulExpr(InfixExprBase):
     value = wrapdoc(Scalar.value)(property(_automethods.value))
     wait = wrapdoc(Scalar.wait)(property(_automethods.wait))
     # These raise exceptions
-    __and__ = wrapdoc(Scalar.__and__)(Scalar.__and__)
-    __matmul__ = wrapdoc(Scalar.__matmul__)(Scalar.__matmul__)
-    __or__ = wrapdoc(Scalar.__or__)(Scalar.__or__)
-    __rand__ = wrapdoc(Scalar.__rand__)(Scalar.__rand__)
-    __rmatmul__ = wrapdoc(Scalar.__rmatmul__)(Scalar.__rmatmul__)
-    __ror__ = wrapdoc(Scalar.__ror__)(Scalar.__ror__)
+    __and__ = Scalar.__and__
+    __matmul__ = Scalar.__matmul__
+    __or__ = Scalar.__or__
+    __rand__ = Scalar.__rand__
+    __rmatmul__ = Scalar.__rmatmul__
+    __ror__ = Scalar.__ror__
     # End auto-generated code: Scalar
 
 

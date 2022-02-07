@@ -19,17 +19,33 @@ class Scalar(BaseType):
     Pseudo-object for GraphBLAS functions which accumlate into a scalar type
     """
 
-    __slots__ = "_is_empty"
+    __slots__ = "_empty", "_is_cscalar"
     ndim = 0
     shape = ()
     _is_scalar = True
     _name_counter = itertools.count()
 
-    def __init__(self, gb_obj, dtype, *, empty=False, name=None):
+    def __init__(self, gb_obj, dtype, *, empty=False, is_cscalar=False, name=None):
         if name is None:
             name = f"s_{next(Scalar._name_counter)}"
         super().__init__(gb_obj, dtype, name)
-        self._is_empty = empty
+        self._is_cscalar = is_cscalar
+        if is_cscalar:
+            self._empty = empty
+
+    def __del__(self):
+        gb_obj = getattr(self, "gb_obj", None)
+        if gb_obj is not None and "GB_Scalar_opaque" in str(gb_obj):
+            # it's difficult/dangerous to record the call, b/c `self.name` may not exist
+            check_status(lib.GrB_Scalar_free(gb_obj), self)
+
+    @property
+    def is_cscalar(self):
+        return self._is_cscalar
+
+    @property
+    def is_grbscalar(self):
+        return not self._is_cscalar
 
     def __repr__(self):
         from .formatting import format_scalar
@@ -45,7 +61,7 @@ class Scalar(BaseType):
         return self.isequal(other)
 
     def __bool__(self):
-        if self.is_empty:
+        if self._is_empty:
             return False
         return bool(self.value)
 
@@ -62,8 +78,8 @@ class Scalar(BaseType):
         dtype = self.dtype
         if dtype.name[0] == "U" or dtype == BOOL:
             raise TypeError(f"The negative operator, `-`, is not supported for {dtype.name} dtype")
-        rv = Scalar.new(dtype, name=f"-{self.name}")
-        if self.is_empty:
+        rv = Scalar.new(dtype, is_cscalar=self._is_cscalar, name=f"-{self.name}")
+        if self._is_empty:
             return rv
         rv.value = -self.value
         return rv
@@ -74,8 +90,8 @@ class Scalar(BaseType):
                 f"The invert operator, `~`, is not supported for {self.dtype.name} dtype.  "
                 "It is only supported for BOOL dtype."
             )
-        rv = Scalar.new(BOOL, name=f"~{self.name}")
-        if self.is_empty:
+        rv = Scalar.new(BOOL, is_cscalar=self._is_cscalar, name=f"~{self.name}")
+        if self._is_empty:
             return rv
         rv.value = not self.value
         return rv
@@ -96,9 +112,9 @@ class Scalar(BaseType):
         """
         if type(other) is not Scalar:
             if other is None:
-                return self.is_empty
+                return self._is_empty
             try:
-                other = Scalar.from_value(other, name="s_isequal")
+                other = Scalar.from_value(other, is_cscalar=False, name="s_isequal")
             except TypeError:
                 other = self._expect_type(
                     other,
@@ -111,11 +127,9 @@ class Scalar(BaseType):
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:
             return False
-        if self.is_empty or other.is_empty:
-            return self.is_empty is other.is_empty
+        if self._is_empty or other._is_empty:
+            return self._is_empty is other._is_empty
         # For now, compare values in Python.  We can get more sophisticated
-        # if there is a need by converting both scalars to 1-d Vectors.
-        # Hopefully scalar types will be added to the GraphBLAS spec.
         return self.value == other.value
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
@@ -127,9 +141,9 @@ class Scalar(BaseType):
         """
         if type(other) is not Scalar:
             if other is None:
-                return self.is_empty
+                return self._is_empty
             try:
-                other = Scalar.from_value(other, name="s_isclose")
+                other = Scalar.from_value(other, is_cscalar=False, name="s_isclose")
             except TypeError:
                 other = self._expect_type(
                     other,
@@ -142,8 +156,8 @@ class Scalar(BaseType):
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:
             return False
-        if self.is_empty or other.is_empty:
-            return self.is_empty is other.is_empty
+        if self._is_empty or other._is_empty:
+            return self._is_empty is other._is_empty
         # We can't yet call a UDF on a scalar as part of the spec, so let's do it ourselves
         isclose_func = isclose(rel_tol, abs_tol)
         isclose_func = get_typed_op(
@@ -157,46 +171,109 @@ class Scalar(BaseType):
         return isclose_func.numba_func(self.value, other.value)
 
     def clear(self):
-        if self.dtype == bool:
-            self.value = False
+        if self._is_empty:
+            return
+        if self._is_cscalar:
+            if self.dtype == bool:
+                self.value = False
+            else:
+                self.value = 0
+            self._empty = True
         else:
-            self.value = 0
-        self._is_empty = True
+            call("GrB_Scalar_clear", [self])
 
     @property
     def is_empty(self):
-        return self._is_empty
+        if self._is_cscalar:
+            return self._empty
+        return self.nvals == 0
+
+    @property
+    def _is_empty(self):
+        """Like is_empty, but doesn't record calls"""
+        if self._is_cscalar:
+            return self._empty
+        return self._nvals == 0
 
     @property
     def value(self):
-        if self.is_empty:
+        if self._is_empty:
             return None
-        return self.gb_obj[0]
+        if self._is_cscalar:
+            return self.gb_obj[0]
+        else:
+            scalar = Scalar.new(self.dtype, is_cscalar=True)
+            if not self.name:
+                # Empty name plays havoc on the recorder, so give it a placeholder name
+                name = self.name
+                self.name = "scalar"
+                try:
+                    call(f"GrB_Scalar_extractElement_{self.dtype.name}", [_Pointer(scalar), self])
+                finally:
+                    self.name = name
+            else:
+                call(f"GrB_Scalar_extractElement_{self.dtype.name}", [_Pointer(scalar), self])
+            return scalar.gb_obj[0]
 
     @value.setter
     def value(self, val):
         if val is None:
             self.clear()
+        elif self._is_cscalar:
+            if type(val) is Scalar and val._is_empty:
+                self.clear()
+            else:
+                self.gb_obj[0] = val
+                self._empty = False
         else:
-            self.gb_obj[0] = val
-            self._is_empty = False
+            val = _as_scalar(val, is_cscalar=True)  # XXX: set dtype to self.dtype?
+            if val._is_empty:
+                self.clear()
+            else:
+                call(f"GrB_Scalar_setElement_{val.dtype}", [self, val])
 
     @property
     def nvals(self):
-        if self.is_empty:
-            return 0
-        return 1
+        if self._is_cscalar:
+            if self._empty:
+                return 0
+            return 1
+        n = ffi_new("GrB_Index*")
+        scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
+        call("GrB_Scalar_nvals", [_Pointer(scalar), self])
+        return n[0]
 
-    _nvals = nvals
+    @property
+    def _nvals(self):
+        """Like nvals, but doesn't record calls"""
+        if self._is_cscalar:
+            if self._empty:
+                return 0
+            return 1
+        n = ffi_new("GrB_Index*")
+        check_status(lib.GrB_Scalar_nvals(n, self.gb_obj[0]), self)
+        return n[0]
 
-    def dup(self, dtype=None, *, name=None):
+    @property
+    def _carg(self):
+        # i.e., return None if we are empty and a C scalar
+        if not self._is_cscalar or not self._is_empty:
+            return self.gb_obj[0]
+
+    def dup(self, dtype=None, *, is_cscalar=None, name=None):
         """Create a new Scalar by duplicating this one"""
-        if dtype is None:
-            new_scalar = Scalar.new(self.dtype, name=name)
+        if is_cscalar is None:
+            is_cscalar = self._is_cscalar
+        if not is_cscalar and not self._is_scalar and (dtype is None or dtype == self.dtype):
+            scalar = ffi_new("GrB_Scalar*")
+            new_scalar = Scalar(scalar, self.dtype, is_cscalar=False, name=name)
+            call("GrB_Scalar_dup", [_Pointer(new_scalar), self])
+        elif dtype is None:
+            new_scalar = Scalar.new(self.dtype, is_cscalar=is_cscalar, name=name)
             new_scalar.value = self.value
         else:
-            new_scalar = Scalar.new(dtype, name=name)
-            if not self.is_empty:
+            new_scalar = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+            if not self._is_empty:
                 new_scalar.value = new_scalar.dtype.np_type(self.value)
         return new_scalar
 
@@ -204,16 +281,22 @@ class Scalar(BaseType):
         pass
 
     @classmethod
-    def new(cls, dtype, *, name=None):
+    def new(cls, dtype, *, is_cscalar=False, name=None):
         """
         Create a new empty Scalar from the given type
         """
         dtype = lookup_dtype(dtype)
-        new_scalar_pointer = ffi_new(f"{dtype.c_type}*")
-        return cls(new_scalar_pointer, dtype, name=name, empty=True)
+        if is_cscalar:
+            new_scalar = ffi_new(f"{dtype.c_type}*")
+        else:
+            new_scalar = ffi_new("GrB_Scalar*")
+        rv = cls(new_scalar, dtype, name=name, empty=True, is_cscalar=is_cscalar)
+        if not is_cscalar:
+            call("GrB_Scalar_new", [_Pointer(rv), dtype])
+        return rv
 
     @classmethod
-    def from_value(cls, value, dtype=None, *, name=None):
+    def from_value(cls, value, dtype=None, *, is_cscalar=False, name=None):
         """Create a new Scalar from a Python value"""
         if dtype is None:
             if output_type(value) is Scalar:
@@ -225,16 +308,16 @@ class Scalar(BaseType):
                     raise TypeError(
                         f"Argument of from_value must be a known scalar type, not {type(value)}"
                     )
-        new_scalar = cls.new(dtype, name=name)
+        new_scalar = cls.new(dtype, is_cscalar=is_cscalar, name=name)
         new_scalar.value = value
         return new_scalar
 
     def __reduce__(self):
-        return Scalar._deserialize, (self.value, self.dtype, self.name)
+        return Scalar._deserialize, (self.value, self.dtype, self._is_cscalar, self.name)
 
     @staticmethod
-    def _deserialize(value, dtype, name):
-        return Scalar.from_value(value, dtype, name=name)
+    def _deserialize(value, dtype, is_cscalar, name):
+        return Scalar.from_value(value, dtype, is_cscalar=is_cscalar, name=name)
 
     def to_pygraphblas(self):  # pragma: no cover
         """Convert to a new `pygraphblas.Scalar`
@@ -273,34 +356,42 @@ class Scalar(BaseType):
         """
         from .vector import Vector
 
-        rv = Vector.new(self.dtype, size=1)
-        if not self._is_empty:
-            rv[0] = self
+        if self._is_cscalar:
+            rv = Vector.new(self.dtype, size=1)
+            if not self._is_empty:
+                rv[0] = self
+        else:
+            rv = Vector(
+                ffi.cast("GrB_Vector*", self.gb_obj),
+                self.dtype,
+                parent=self,
+            )
+            rv._size = 1
         return rv
 
 
 class ScalarExpression(BaseExpression):
-    __slots__ = "_is_empty"
+    __slots__ = "_is_cscalar"
     output_type = Scalar
     ndim = 0
     shape = ()
     _is_scalar = True
 
-    def __init__(self, *args, is_empty=False, **kwargs):
+    def __init__(self, *args, is_cscalar, **kwargs):
         super().__init__(*args, **kwargs)
-        # The result may still be empty even if `_is_empty` is False.
-        # We set this to True when we need to coerce the result to be empty.
-        self._is_empty = is_empty
+        self._is_cscalar = is_cscalar
 
-    def construct_output(self, dtype=None, *, name=None):
+    def construct_output(self, dtype=None, *, is_cscalar=None, name=None):
         if dtype is None:
             dtype = self.dtype
-        return Scalar.new(dtype, name=name)
+        if is_cscalar is None:
+            is_cscalar = self._is_cscalar
+        return Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
 
-    def new(self, dtype=None, *, name=None):
-        if self._is_empty:
-            return self.construct_output(dtype, name=name)
-        return super().new(dtype, name=name)
+    def new(self, dtype=None, *, is_cscalar=None, name=None):
+        if is_cscalar is None:
+            is_cscalar = self._is_cscalar
+        return super()._new(dtype, None, name, is_cscalar=is_cscalar)
 
     dup = new
 
@@ -314,6 +405,9 @@ class ScalarExpression(BaseExpression):
 
         return format_scalar_expression_html(self)
 
+    is_cscalar = Scalar.is_cscalar
+    is_grbscalar = Scalar.is_grbscalar
+
     # Begin auto-generated code: Scalar
     _get_value = _automethods._get_value
     __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
@@ -325,6 +419,7 @@ class ScalarExpression(BaseExpression):
     __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
     __invert__ = wrapdoc(Scalar.__invert__)(property(_automethods.__invert__))
     __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
+    _is_empty = wrapdoc(Scalar._is_empty)(property(_automethods._is_empty))
     _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
     gb_obj = wrapdoc(Scalar.gb_obj)(property(_automethods.gb_obj))
@@ -338,72 +433,22 @@ class ScalarExpression(BaseExpression):
     value = wrapdoc(Scalar.value)(property(_automethods.value))
     wait = wrapdoc(Scalar.wait)(property(_automethods.wait))
     # These raise exceptions
-    __and__ = wrapdoc(Scalar.__and__)(Scalar.__and__)
-    __matmul__ = wrapdoc(Scalar.__matmul__)(Scalar.__matmul__)
-    __or__ = wrapdoc(Scalar.__or__)(Scalar.__or__)
-    __rand__ = wrapdoc(Scalar.__rand__)(Scalar.__rand__)
-    __rmatmul__ = wrapdoc(Scalar.__rmatmul__)(Scalar.__rmatmul__)
-    __ror__ = wrapdoc(Scalar.__ror__)(Scalar.__ror__)
+    __and__ = Scalar.__and__
+    __matmul__ = Scalar.__matmul__
+    __or__ = Scalar.__or__
+    __rand__ = Scalar.__rand__
+    __rmatmul__ = Scalar.__rmatmul__
+    __ror__ = Scalar.__ror__
     # End auto-generated code: Scalar
 
 
-class _CScalar:
-    """Wrap scalars for calling into C.
-
-    If a Scalar is not provided, then a datatype of GrB_Index is assumed.
-    """
-
-    __slots__ = "scalar", "dtype"
-
-    def __init__(self, scalar, dtype=_INDEX):
-        if type(scalar) is not Scalar:
-            scalar = Scalar.from_value(scalar, dtype, name="")
-        self.scalar = scalar
-        self.dtype = scalar.dtype
-
-    def __repr__(self):
-        return repr(self.scalar.value)
-
-    def _repr_html_(self, collapse=False):
-        return self.scalar._repr_html_()
-
-    @property
-    def _carg(self):
-        return self.scalar.value
-
-    @property
-    def name(self):
-        return self.scalar.name or repr(self.scalar.value)
-
-    def __eq__(self, other):
-        if type(other) is _CScalar:
-            return self.scalar == other.scalar
-        return self.scalar == other
-
-
-class _GrBScalar:
-    """Wrap scalars as GrB_Scalars for calling into C"""
-
-    __slots__ = "gb_obj", "dtype", "name"
-
-    def __init__(self, scalar, dtype=None):
-        cscalar = _CScalar(scalar, dtype)
-        self.gb_obj = ffi_new("GrB_Scalar*")
-        self.dtype = cscalar.dtype
-        self.name = cscalar.name
-        call("GrB_Scalar_new", [_Pointer(self), self.dtype])
-        if not cscalar.scalar._is_empty:
-            call(f"GrB_Scalar_setElement_{self.dtype.name}", [self, cscalar])
-
-    def __del__(self):
-        gb_obj = getattr(self, "gb_obj", None)
-        if gb_obj is not None:
-            # it's difficult/dangerous to record the call, b/c `self.name` may not exist
-            check_status(lib.GrB_Scalar_free(gb_obj), self)
-
-    @property
-    def _carg(self):
-        return self.gb_obj[0]
+def _as_scalar(scalar, dtype=None, *, is_cscalar):
+    if type(scalar) is not Scalar:
+        return Scalar.from_value(scalar, dtype, is_cscalar=is_cscalar, name="")
+    elif scalar._is_cscalar != is_cscalar or dtype is not None and scalar.dtype != dtype:
+        return scalar.dup(dtype, is_cscalar=is_cscalar, name=scalar.name)
+    else:
+        return scalar
 
 
 utils._output_types[Scalar] = Scalar

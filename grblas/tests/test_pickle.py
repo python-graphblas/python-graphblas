@@ -1,6 +1,5 @@
 import os
 import pickle
-import sys
 
 import pytest
 
@@ -51,10 +50,6 @@ def test_deserialize():
 
 @pytest.mark.slow
 def test_serialize():
-    if sys.version_info.major == 3 and sys.version_info.minor <= 7:
-        # We'll be dropping Python 3.7 soon anyway, so don't bother
-        return
-
     v = gb.Vector.from_values([1], 2)
 
     # unary_pickle = gb.operator.UnaryOp.register_new("unary_pickle", unarypickle)
@@ -219,10 +214,6 @@ def identity_par(z):
 
 @pytest.mark.slow
 def test_serialize_parameterized():
-    if sys.version_info.major == 3 and sys.version_info.minor <= 7:
-        # We'll be dropping Python 3.7 soon anyway, so don't bother
-        return
-
     # unary_pickle = gb.operator.UnaryOp.register_new(
     #     "unary_pickle_par", unarypickle_par, parameterized=True
     # )

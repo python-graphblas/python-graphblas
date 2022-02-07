@@ -1,12 +1,14 @@
 from . import lib
 from .dtypes import _INDEX
 from .expr import _ALL_INDICES, AxisIndex
-from .scalar import Scalar, _CScalar
+from .scalar import Scalar, _as_scalar
 from .utils import _CArray
 
-gxb_range = _CScalar(Scalar.from_value(lib.GxB_RANGE, dtype=_INDEX, name="GxB_RANGE"))
-gxb_stride = _CScalar(Scalar.from_value(lib.GxB_STRIDE, dtype=_INDEX, name="GxB_STRIDE"))
-gxb_backwards = _CScalar(Scalar.from_value(lib.GxB_BACKWARDS, dtype=_INDEX, name="GxB_BACKWARDS"))
+gxb_range = Scalar.from_value(lib.GxB_RANGE, dtype=_INDEX, name="GxB_RANGE", is_cscalar=True)
+gxb_stride = Scalar.from_value(lib.GxB_STRIDE, dtype=_INDEX, name="GxB_STRIDE", is_cscalar=True)
+gxb_backwards = Scalar.from_value(
+    lib.GxB_BACKWARDS, dtype=_INDEX, name="GxB_BACKWARDS", is_cscalar=True
+)
 
 
 def slice_to_index(index, size):
@@ -14,7 +16,7 @@ def slice_to_index(index, size):
     length = len(range(start, stop, step))
     if length == size and step == 1:
         # [:] means all indices; use special GrB_ALL indicator
-        return AxisIndex(size, _ALL_INDICES, _CScalar(size))
+        return AxisIndex(size, _ALL_INDICES, _as_scalar(size, _INDEX, is_cscalar=True))
     # SS, SuiteSparse-specific: slicing.
     # For non-SuiteSparse, do: index = list(range(size)[index])
     # SuiteSparse indexing is inclusive for both start and stop, and unsigned.

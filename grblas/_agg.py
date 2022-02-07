@@ -120,7 +120,7 @@ class TypedAggregator:
             x = expr.args[0]
             method = getattr(x, expr.method_name)
             if expr.output_type is Scalar:
-                expr = method(agg._monoid[self.type], allow_empty=expr._is_empty)
+                expr = method(agg._monoid[self.type], allow_empty=not expr._is_cscalar)
             else:
                 expr = method(agg._monoid[self.type])
             updater << expr

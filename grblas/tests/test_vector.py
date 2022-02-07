@@ -1189,6 +1189,20 @@ def test_inner(v):
     expected = R.mxm(C).new()[0, 0].new()
     assert expected.isequal(v.inner(v).new())
     assert expected.isequal((v @ v).new())
+    s = Scalar.new(v.dtype)
+    s << v.inner(v)
+    assert s == 6
+    s(binary.plus) << v.inner(v)
+    assert s == 12
+
+
+@autocompute
+def test_inner_infix(v):
+    s = Scalar.new(v.dtype)
+    s << v @ v
+    assert s == 6
+    s(binary.plus) << v @ v
+    assert s == 12
 
 
 def test_outer(v):
@@ -1309,6 +1323,7 @@ def test_expr_is_like_vector(v):
         "_deserialize",
         "_extract_element",
         "_name_counter",
+        "_parent",
         "_prep_for_assign",
         "_prep_for_extract",
         "_update",
