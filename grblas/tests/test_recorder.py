@@ -1,6 +1,13 @@
+import pytest
+
 import grblas as gb
 from grblas.exceptions import OutOfMemory
 from grblas.formatting import CSS_STYLE
+
+
+@pytest.fixture
+def switch():
+    return gb.Scalar.from_value(5)._is_cscalar
 
 
 def test_recorder():
@@ -30,74 +37,130 @@ def test_recorder():
     assert list(rec) == []
 
 
-def test_record_novalue():
-    return  # XXX
+def test_record_novalue(switch):
     A = gb.Matrix.new(int, 3, 3, name="A")
     rec = gb.Recorder(start=True)
     A[0, 0].new(name="c")
-    assert rec.data == ["GrB_Matrix_extractElement_INT64(&c, A, 0, 0);"]
+    if switch:
+        assert rec.data == ["GrB_Matrix_extractElement_INT64(&c, A, 0, 0);"]
+    else:
+        assert rec.data == [
+            "GrB_Scalar_new(&c, GrB_INT64);",
+            "GrB_Matrix_extractElement_Scalar(c, A, 0, 0);",
+        ]
     rec.stop()
 
 
-def test_record_scalars():
-    return  # XXX
+def test_record_scalars(switch):
     A = gb.Matrix.new(int, 3, 3, name="A")
     with gb.Recorder() as rec:
         A[0, 0] = 5
         A.apply(gb.binary.lt, right=10).new(name="B")
-    assert list(rec) == [
-        "GrB_Matrix_setElement_INT64(A, 5, 0, 0);",
-        "GrB_Matrix_new(&B, GrB_BOOL, 3, 3);",
-        "GrB_Matrix_apply_BinaryOp2nd_INT64(B, NULL, NULL, GrB_LT_INT64, A, 10, NULL);",
-    ]
+    if switch:
+        assert list(rec) == [
+            # assign
+            "GrB_Scalar_new(&s_temp, GrB_INT64);",
+            "GrB_Scalar_setElement_INT64(s_temp, 5);",
+            "GrB_Matrix_setElement_Scalar(A, s_temp, 0, 0);",
+            # apply
+            "GrB_Scalar_new(&s_temp, GrB_INT64);",
+            "GrB_Scalar_setElement_INT64(s_temp, 10);",
+            "GrB_Matrix_new(&B, GrB_BOOL, 3, 3);",
+            "GrB_Matrix_apply_BinaryOp2nd_Scalar(B, NULL, NULL, GrB_LT_INT64, A, s_temp, NULL);",
+        ]
+    else:
+        assert list(rec) == [
+            "GrB_Matrix_setElement_INT64(A, 5, 0, 0);",
+            "GrB_Matrix_new(&B, GrB_BOOL, 3, 3);",
+            "GrB_Matrix_apply_BinaryOp2nd_INT64(B, NULL, NULL, GrB_LT_INT64, A, 10, NULL);",
+        ]
 
 
-def test_record_repr():
-    return  # XXX
+def test_record_repr(switch):
     A = gb.Matrix.new(int, 3, 3, name="A")
     rec = gb.Recorder(start=True)
     A[0, 0].new(name="c0")
-    assert repr(rec) == (
-        "grblas.Recorder (recording)\n"
-        "---------------------------\n"
-        "  GrB_Matrix_extractElement_INT64(&c0, A, 0, 0);"
-    )
+    if switch:
+        assert repr(rec) == (
+            "grblas.Recorder (recording)\n"
+            "---------------------------\n"
+            "  GrB_Matrix_extractElement_INT64(&c0, A, 0, 0);"
+        )
+    else:
+        assert repr(rec) == (
+            "grblas.Recorder (recording)\n"
+            "---------------------------\n"
+            "  GrB_Scalar_new(&c0, GrB_INT64);\n"
+            "  GrB_Matrix_extractElement_Scalar(c0, A, 0, 0);"
+        )
     rec.stop()
-    assert repr(rec) == (
-        "grblas.Recorder (not recording)\n"
-        "-------------------------------\n"
-        "  GrB_Matrix_extractElement_INT64(&c0, A, 0, 0);"
-    )
+    if switch:
+        assert repr(rec) == (
+            "grblas.Recorder (not recording)\n"
+            "-------------------------------\n"
+            "  GrB_Matrix_extractElement_INT64(&c0, A, 0, 0);"
+        )
+    else:
+        assert repr(rec) == (
+            "grblas.Recorder (not recording)\n"
+            "-------------------------------\n"
+            "  GrB_Scalar_new(&c0, GrB_INT64);\n"
+            "  GrB_Matrix_extractElement_Scalar(c0, A, 0, 0);"
+        )
     rec.start()
     rec.max_rows = 10
     for i in range(1, 20):
         A[0, 0].new(name=f"c{i}")
-    assert repr(rec) == (
-        "grblas.Recorder (recording)\n"
-        "---------------------------\n"
-        "  GrB_Matrix_extractElement_INT64(&c0, A, 0, 0);\n"
-        "  GrB_Matrix_extractElement_INT64(&c1, A, 0, 0);\n"
-        "  GrB_Matrix_extractElement_INT64(&c2, A, 0, 0);\n"
-        "  GrB_Matrix_extractElement_INT64(&c3, A, 0, 0);\n"
-        "  GrB_Matrix_extractElement_INT64(&c4, A, 0, 0);\n"
-        "\n"
-        "  ... (10 rows not shown)\n"
-        "\n"
-        "  GrB_Matrix_extractElement_INT64(&c15, A, 0, 0);\n"
-        "  GrB_Matrix_extractElement_INT64(&c16, A, 0, 0);\n"
-        "  GrB_Matrix_extractElement_INT64(&c17, A, 0, 0);\n"
-        "  GrB_Matrix_extractElement_INT64(&c18, A, 0, 0);\n"
-        "  GrB_Matrix_extractElement_INT64(&c19, A, 0, 0);"
-    )
+    if switch:
+        assert repr(rec) == (
+            "grblas.Recorder (recording)\n"
+            "---------------------------\n"
+            "  GrB_Matrix_extractElement_INT64(&c0, A, 0, 0);\n"
+            "  GrB_Matrix_extractElement_INT64(&c1, A, 0, 0);\n"
+            "  GrB_Matrix_extractElement_INT64(&c2, A, 0, 0);\n"
+            "  GrB_Matrix_extractElement_INT64(&c3, A, 0, 0);\n"
+            "  GrB_Matrix_extractElement_INT64(&c4, A, 0, 0);\n"
+            "\n"
+            "  ... (10 rows not shown)\n"
+            "\n"
+            "  GrB_Matrix_extractElement_INT64(&c15, A, 0, 0);\n"
+            "  GrB_Matrix_extractElement_INT64(&c16, A, 0, 0);\n"
+            "  GrB_Matrix_extractElement_INT64(&c17, A, 0, 0);\n"
+            "  GrB_Matrix_extractElement_INT64(&c18, A, 0, 0);\n"
+            "  GrB_Matrix_extractElement_INT64(&c19, A, 0, 0);"
+        )
+    else:
+        assert repr(rec) == (
+            "grblas.Recorder (recording)\n"
+            "---------------------------\n"
+            "  GrB_Scalar_new(&c0, GrB_INT64);\n"
+            "  GrB_Matrix_extractElement_Scalar(c0, A, 0, 0);\n"
+            "  GrB_Scalar_new(&c1, GrB_INT64);\n"
+            "  GrB_Matrix_extractElement_Scalar(c1, A, 0, 0);\n"
+            "  GrB_Scalar_new(&c2, GrB_INT64);\n"
+            "\n"
+            "  ... (30 rows not shown)\n"
+            "\n"
+            "  GrB_Matrix_extractElement_Scalar(c17, A, 0, 0);\n"
+            "  GrB_Scalar_new(&c18, GrB_INT64);\n"
+            "  GrB_Matrix_extractElement_Scalar(c18, A, 0, 0);\n"
+            "  GrB_Scalar_new(&c19, GrB_INT64);\n"
+            "  GrB_Matrix_extractElement_Scalar(c19, A, 0, 0);"
+        )
     rec.stop()
 
 
-def test_record_repr_markdown():
-    return  # XXX
+def test_record_repr_markdown(switch):
     A = gb.Matrix.new(int, 3, 3, name="A")
     rec = gb.Recorder()
     rec.start()
     A[0, 0].new(name="c")
+    if switch:
+        text = "  GrB_Matrix_extractElement_INT64(&c, A, 0, 0);\n"
+    else:
+        text = (
+            "  GrB_Scalar_new(&c, GrB_INT64);\n" "  GrB_Matrix_extractElement_Scalar(c, A, 0, 0);\n"
+        )
     assert rec._repr_markdown_() == (
         "<div>\n"
         f"{CSS_STYLE}\n"
@@ -114,13 +177,19 @@ def test_record_repr_markdown():
         '<blockquote class="gb-expr-blockquote" style="margin-left: -8px;">\n'
         "\n"
         "```C\n"
-        "  GrB_Matrix_extractElement_INT64(&c, A, 0, 0);\n"
+        f"{text}"
         "```\n"
         "</blockquote>\n"
         "</details>\n"
         "</div>"
     )
     rec.stop()
+    if switch:
+        text = "  GrB_Matrix_extractElement_INT64(&c, A, 0, 0);\n"
+    else:
+        text = (
+            "  GrB_Scalar_new(&c, GrB_INT64);\n" "  GrB_Matrix_extractElement_Scalar(c, A, 0, 0);\n"
+        )
     assert rec._repr_markdown_() == (
         "<div>\n"
         f"{CSS_STYLE}\n"
@@ -137,7 +206,7 @@ def test_record_repr_markdown():
         '<blockquote class="gb-expr-blockquote" style="margin-left: -8px;">\n'
         "\n"
         "```C\n"
-        "  GrB_Matrix_extractElement_INT64(&c, A, 0, 0);\n"
+        f"{text}"
         "```\n"
         "</blockquote>\n"
         "</details>\n"

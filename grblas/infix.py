@@ -272,14 +272,14 @@ class ScalarMatMulExpr(InfixExprBase):
     @property
     def is_cscalar(self):
         if self._value is not None:
-            return self._value.is_cscalar
-        return self._to_expr().is_cscalar
+            return self._value._is_cscalar
+        return self._to_expr()._is_cscalar
 
     @property
     def is_grbscalar(self):
         if self._value is not None:
-            return self._value.is_grbscalar
-        return self._to_expr().is_grbscalar
+            return not self._value._is_cscalar
+        return not self._to_expr()._is_cscalar
 
     # Begin auto-generated code: Scalar
     __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))

@@ -391,7 +391,9 @@ class BaseType:
                         scalar = expr
                     else:
                         try:
-                            scalar = Scalar.from_value(expr, is_cscalar=False, name="")
+                            scalar = Scalar.from_value(
+                                expr, is_cscalar=True, name=""  # pragma: to_grb
+                            )
                         except TypeError:
                             raise TypeError(
                                 "Assignment value must be a valid expression type, not "

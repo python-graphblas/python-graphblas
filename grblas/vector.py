@@ -525,7 +525,7 @@ class Vector(BaseType):
         elif right is None:
             if type(left) is not Scalar:
                 try:
-                    left = Scalar.from_value(left, is_cscalar=False, name="")
+                    left = Scalar.from_value(left, is_cscalar=True, name="")  # pragma: to_grb
                 except TypeError:
                     left = self._expect_type(
                         left,
@@ -555,7 +555,7 @@ class Vector(BaseType):
         elif left is None:
             if type(right) is not Scalar:
                 try:
-                    right = Scalar.from_value(right, is_cscalar=False, name="")
+                    right = Scalar.from_value(right, is_cscalar=True, name="")  # pragma: to_grb
                 except TypeError:
                     right = self._expect_type(
                         right,
@@ -710,7 +710,7 @@ class Vector(BaseType):
         idx = resolved_indexes.indices[0]
         if type(value) is not Scalar:
             try:
-                value = Scalar.from_value(value, is_cscalar=False, name="")
+                value = Scalar.from_value(value, is_cscalar=True, name="")  # pragma: to_grb
             except TypeError:
                 value = self._expect_type(
                     value,
@@ -752,7 +752,7 @@ class Vector(BaseType):
         else:
             if type(value) is not Scalar:
                 try:
-                    value = Scalar.from_value(value, is_cscalar=False, name="")
+                    value = Scalar.from_value(value, is_cscalar=True, name="")  # pragma: to_grb
                 except TypeError:
                     value = self._expect_type(
                         value,

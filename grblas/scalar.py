@@ -114,7 +114,9 @@ class Scalar(BaseType):
             if other is None:
                 return self._is_empty
             try:
-                other = Scalar.from_value(other, is_cscalar=False, name="s_isequal")
+                other = Scalar.from_value(
+                    other, is_cscalar=True, name="s_isequal"  # pragma: to_grb
+                )
             except TypeError:
                 other = self._expect_type(
                     other,
@@ -143,7 +145,9 @@ class Scalar(BaseType):
             if other is None:
                 return self._is_empty
             try:
-                other = Scalar.from_value(other, is_cscalar=False, name="s_isclose")
+                other = Scalar.from_value(
+                    other, is_cscalar=True, name="s_isclose"  # pragma: to_grb
+                )
             except TypeError:
                 other = self._expect_type(
                     other,

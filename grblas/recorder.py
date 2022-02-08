@@ -24,11 +24,10 @@ def gbstr(arg):
     else:
         name = arg.name
     if not name:
-        if type(arg) is Scalar:
-            with skip_record:
-                return repr(arg.value)
+        if type(arg) is Scalar and arg._is_cscalar:
+            return repr(arg.value)
         else:
-            return f"temp_{type(arg).__name__.lower()}"
+            return f"{type(arg).__name__[0].lower()}_temp"
     return name
 
 

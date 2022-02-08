@@ -359,3 +359,12 @@ def test_scalar_complex(dtype):
     assert s.dtype == dtype
     assert s == 2 + 3j
     assert s.value == 2 + 3j
+
+
+def test_scalar_expr(s):
+    v = Vector.from_values([1], [2])
+    expr = v.inner(v)
+    t = expr._new_scalar(s.dtype)
+    assert t.is_cscalar is s.is_cscalar
+    assert (v @ v).is_cscalar is s.is_cscalar
+    assert (v @ v).is_grbscalar is s.is_grbscalar

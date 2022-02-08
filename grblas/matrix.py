@@ -114,7 +114,7 @@ class Matrix(BaseType):
                 "Doing `(i, j) in my_matrix` checks whether a value is present at that index."
             )
         scalar = extractor.new(name="s_contains")
-        return not scalar.is_empty
+        return not scalar._is_empty
 
     def __iter__(self):
         self.wait()  # sort in SS
@@ -619,7 +619,7 @@ class Matrix(BaseType):
         elif right is None:
             if type(left) is not Scalar:
                 try:
-                    left = Scalar.from_value(left, is_cscalar=False, name="")
+                    left = Scalar.from_value(left, is_cscalar=True, name="")  # pragma: to_grb
                 except TypeError:
                     left = self._expect_type(
                         left,
@@ -649,7 +649,7 @@ class Matrix(BaseType):
         elif left is None:
             if type(right) is not Scalar:
                 try:
-                    right = Scalar.from_value(right, is_cscalar=False, name="")
+                    right = Scalar.from_value(right, is_cscalar=True, name="")  # pragma: to_grb
                 except TypeError:
                     right = self._expect_type(
                         right,
@@ -861,7 +861,7 @@ class Matrix(BaseType):
         rowidx, colidx = resolved_indexes.indices
         if type(value) is not Scalar:
             try:
-                value = Scalar.from_value(value, is_cscalar=False, name="")
+                value = Scalar.from_value(value, is_cscalar=True, name="")  # pragma: to_grb
             except TypeError:
                 value = self._expect_type(
                     value,
@@ -1041,7 +1041,7 @@ class Matrix(BaseType):
         else:
             if type(value) is not Scalar:
                 try:
-                    value = Scalar.from_value(value, is_cscalar=False, name="")
+                    value = Scalar.from_value(value, is_cscalar=True, name="")  # pragma: to_grb
                 except TypeError:
                     if rowsize is None or colsize is None:
                         types = (Scalar, Vector)

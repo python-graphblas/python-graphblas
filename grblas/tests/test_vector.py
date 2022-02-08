@@ -319,6 +319,13 @@ def test_vxm_accum(v, A):
     w3 = v.dup()
     w3(accum=monoid.plus) << v.vxm(A, semiring.plus_times)
     assert w3.isequal(result)
+    # allow strings for accum
+    w4 = v.dup()
+    w4("+") << v.vxm(A, semiring.plus_times)
+    assert w4.isequal(result)
+    w5 = v.dup()
+    w5(accum="plus") << v.vxm(A, semiring.plus_times)
+    assert w5.isequal(result)
 
 
 def test_ewise_mult(v):
@@ -1543,12 +1550,15 @@ def test_concat(v):
     expected[: v.size] = v
     expected[v.size :] = v
     w1 = grblas.ss.concat([v, v])
-    assert w1.isequal(expected)
+    assert w1.isequal(expected, check_dtype=True)
     w2 = Vector.new(v.dtype, size=2 * v.size)
     w2.ss.concat([v, v])
-    assert w2.isequal(expected)
+    assert w2.isequal(expected, check_dtype=True)
     with pytest.raises(TypeError):
         w2.ss.concat([[v, v]])
+    w3 = grblas.ss.concat([v, v], dtype=float)
+    assert w3.isequal(expected)
+    assert w3.dtype == float
 
 
 def test_split(v):
