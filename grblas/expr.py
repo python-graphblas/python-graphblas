@@ -251,7 +251,7 @@ class AmbiguousAssignOrExtract:
         if not self.resolved_indexes.is_single_element:
             raise AttributeError("Only Scalars have `.value` attribute")
         scalar = self.parent._extract_element(
-            self.resolved_indexes, is_cscalar=False, name="s_extract"
+            self.resolved_indexes, is_cscalar=True, name="s_extract"  # pragma: to_grb
         )
         return scalar.value
 
@@ -264,6 +264,8 @@ class AmbiguousAssignOrExtract:
         if self.resolved_indexes.is_single_element:
             if mask is not None or input_mask is not None:
                 raise TypeError("mask is not allowed for single element extraction")
+            if is_cscalar is None:
+                is_cscalar = False
             return self.parent._extract_element(
                 self.resolved_indexes, dtype, is_cscalar=is_cscalar, name=name
             )

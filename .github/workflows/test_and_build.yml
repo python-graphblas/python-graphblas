@@ -95,12 +95,18 @@ jobs:
               echo "skipping coverage"
               pytest ${{ matrix.testopts }}
               # Run tests again with Scalars being C scalars by default
-              find grblas -type f -name "*.py" -print0 | xargs -0 sed -i -s '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g'
+              find grblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
+                -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
+                -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
+                -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g'
               pytest ${{ matrix.testopts }}
           else
               coverage run --branch -m pytest ${{ matrix.testopts }}
               # Run tests again with Scalars being C scalars by default
-              find grblas -type f -name "*.py" -print0 | xargs -0 sed -i -s '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g'
+              find grblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
+                -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
+                -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
+                -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g'
               coverage run -a --branch -m pytest ${{ matrix.testopts }}
           fi
           git checkout .  # Undo changes to scalar default
