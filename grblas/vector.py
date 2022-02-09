@@ -678,13 +678,14 @@ class Vector(BaseType):
     ##################################
     # Extract and Assign index methods
     ##################################
-    def _extract_element(self, resolved_indexes, dtype=None, *, is_cscalar, name):
+    def _extract_element(self, resolved_indexes, dtype=None, *, is_cscalar, name=None, result=None):
         if dtype is None:
             dtype = self.dtype
         else:
             dtype = lookup_dtype(dtype)
         idx = resolved_indexes.indices[0]
-        result = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+        if result is None:
+            result = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
         if is_cscalar:
             if (
                 call(f"GrB_Vector_extractElement_{dtype}", [_Pointer(result), self, idx.index])

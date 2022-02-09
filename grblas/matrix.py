@@ -798,7 +798,7 @@ class Matrix(BaseType):
     ##################################
     # Extract and Assign index methods
     ##################################
-    def _extract_element(self, resolved_indexes, dtype=None, *, is_cscalar, name):
+    def _extract_element(self, resolved_indexes, dtype=None, *, is_cscalar, name=None, result=None):
         if dtype is None:
             dtype = self.dtype
         else:
@@ -806,7 +806,8 @@ class Matrix(BaseType):
         rowidx, colidx = resolved_indexes.indices
         if self._is_transposed:
             rowidx, colidx = colidx, rowidx
-        result = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+        if result is None:
+            result = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
         if is_cscalar:
             if (
                 call(

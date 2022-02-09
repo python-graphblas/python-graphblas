@@ -324,8 +324,9 @@ class BaseType:
                             "Scalar accumulation with extract element"
                             "--such as `s(accum=accum) << v[0]`--is not supported"
                         )
-                    # XXX: can we use self here instead of making a new scalar first?
-                    self.value = expr.new(self.dtype, name="s_extract").value
+                    expr.parent._extract_element(
+                        expr.resolved_indexes, self.dtype, is_cscalar=self._is_cscalar, result=self
+                    )
                     return
 
                 # Extract (C << A[rows, cols])
@@ -344,7 +345,7 @@ class BaseType:
                             "Scalar update with accumulation--such as `s(accum=accum) << t`"
                             "--is not supported"
                         )
-                    self.value = expr.value
+                    self.value = expr
                     return
 
                 # Two choices here: apply identity `expr = expr.apply(identity)`, or assign.
@@ -452,7 +453,7 @@ class BaseType:
                 if is_temp_scalar:
                     temp_scalar = expr.construct_output(self.dtype, name="s_temp")
                     if accum is not None and not self._is_empty:
-                        temp_scalar.value = self.value
+                        temp_scalar.value = self
                 else:
                     temp_scalar = self
                 if expr._is_cscalar:
@@ -473,10 +474,10 @@ class BaseType:
         if self._is_scalar:
             if scalar_as_vector:
                 if self._is_cscalar:
-                    self.value = fake_self[0].value
+                    self.value = fake_self[0].new(is_cscalar=True, name="")
                 # SS: this assumes GrB_Scalar was cast to Vector
             elif is_temp_scalar:
-                self.value = temp_scalar.value
+                self.value = temp_scalar
             elif self._is_cscalar:
                 self._empty = False
 

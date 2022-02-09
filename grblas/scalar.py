@@ -129,10 +129,13 @@ class Scalar(BaseType):
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:
             return False
-        if self._is_empty or other._is_empty:
-            return self._is_empty is other._is_empty
-        # For now, compare values in Python.  We can get more sophisticated
-        return self.value == other.value
+        elif self._is_empty:
+            return other._is_empty
+        elif other._is_empty:
+            return False
+        else:
+            # For now, compare values in Python
+            return self.value == other.value
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """
@@ -160,8 +163,10 @@ class Scalar(BaseType):
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:
             return False
-        if self._is_empty or other._is_empty:
-            return self._is_empty is other._is_empty
+        elif self._is_empty:
+            return other._is_empty
+        elif other._is_empty:
+            return False
         # We can't yet call a UDF on a scalar as part of the spec, so let's do it ourselves
         isclose_func = isclose(rel_tol, abs_tol)
         isclose_func = get_typed_op(
@@ -206,42 +211,25 @@ class Scalar(BaseType):
         if self._is_cscalar:
             return self.gb_obj[0]
         else:
-            scalar = Scalar.new(self.dtype, is_cscalar=True)
-            if not self.name:
-                # Empty name plays havoc on the recorder, so give it a placeholder name
-                name = self.name
-                self.name = "scalar"
-                try:
-                    call(f"GrB_Scalar_extractElement_{self.dtype.name}", [_Pointer(scalar), self])
-                finally:
-                    self.name = name
-            else:
-                call(f"GrB_Scalar_extractElement_{self.dtype.name}", [_Pointer(scalar), self])
+            scalar = Scalar.new(self.dtype, is_cscalar=True, name="s_temp")
+            call(f"GrB_Scalar_extractElement_{self.dtype.name}", [_Pointer(scalar), self])
             return scalar.gb_obj[0]
 
     @value.setter
     def value(self, val):
-        if val is None:
+        if val is None or output_type(val) is Scalar and val._is_empty:
             self.clear()
         elif self._is_cscalar:
-            if type(val) is Scalar and val._is_empty:
-                self.clear()
-            else:
-                self.gb_obj[0] = val
-                self._empty = False
+            self.gb_obj[0] = val
+            self._empty = False
         else:
-            val = _as_scalar(val, is_cscalar=True)  # XXX: set dtype to self.dtype?
-            if val._is_empty:
-                self.clear()
-            else:
-                call(f"GrB_Scalar_setElement_{val.dtype}", [self, val])
+            val = _as_scalar(val, is_cscalar=True)
+            call(f"GrB_Scalar_setElement_{val.dtype}", [self, val])
 
     @property
     def nvals(self):
         if self._is_cscalar:
-            if self._empty:
-                return 0
-            return 1
+            return 0 if self._empty else 1
         n = ffi_new("GrB_Index*")
         scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
         call("GrB_Scalar_nvals", [_Pointer(scalar), self])
@@ -251,9 +239,7 @@ class Scalar(BaseType):
     def _nvals(self):
         """Like nvals, but doesn't record calls"""
         if self._is_cscalar:
-            if self._empty:
-                return 0
-            return 1
+            return 0 if self._empty else 1
         n = ffi_new("GrB_Index*")
         check_status(lib.GrB_Scalar_nvals(n, self.gb_obj[0]), self)
         return n[0]
@@ -268,7 +254,7 @@ class Scalar(BaseType):
         """Create a new Scalar by duplicating this one"""
         if is_cscalar is None:
             is_cscalar = self._is_cscalar
-        if not is_cscalar and not self._is_scalar and (dtype is None or dtype == self.dtype):
+        if not is_cscalar and not self._is_cscalar and (dtype is None or dtype == self.dtype):
             scalar = ffi_new("GrB_Scalar*")
             new_scalar = Scalar(
                 scalar, self.dtype, is_cscalar=False, name=name  # pragma: is_grbscalar
@@ -276,7 +262,7 @@ class Scalar(BaseType):
             call("GrB_Scalar_dup", [_Pointer(new_scalar), self])
         elif dtype is None:
             new_scalar = Scalar.new(self.dtype, is_cscalar=is_cscalar, name=name)
-            new_scalar.value = self.value
+            new_scalar.value = self
         else:
             new_scalar = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
             if not self._is_empty:
@@ -371,6 +357,7 @@ class Scalar(BaseType):
                 ffi.cast("GrB_Vector*", self.gb_obj),
                 self.dtype,
                 parent=self,
+                name=f"(GrB_Vector){self.name}",
             )
             rv._size = 1
         return rv

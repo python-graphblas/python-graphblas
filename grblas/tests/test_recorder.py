@@ -225,3 +225,26 @@ def test_record_failed_call():
     except OutOfMemory:
         pass
     assert "ERROR: OutOfMemory" in rec.data[-1]
+
+
+def test_record_inner(switch):
+    v = gb.Vector.from_values([0, 1, 2], 1, size=3)
+    with gb.Recorder() as rec:
+        (v @ v).new(name="s_0")
+    if switch:
+        assert repr(rec) == (
+            "grblas.Recorder (not recording)\n"
+            "-------------------------------\n"
+            "  GrB_Vector_new(&v_1, GrB_INT64, 1);\n"
+            "  GrB_vxm(v_1, NULL, NULL, GrB_PLUS_TIMES_SEMIRING_INT64, v_0, "
+            "(GrB_Matrix)v_0, NULL);\n"
+            "  GrB_Vector_extractElement_INT64(&s_extract, v_1, 0);"
+        )
+    else:
+        assert repr(rec) == (
+            "grblas.Recorder (not recording)\n"
+            "-------------------------------\n"
+            "  GrB_Scalar_new(&s_0, GrB_INT64);\n"
+            "  GrB_vxm((GrB_Vector)s_0, NULL, NULL, GrB_PLUS_TIMES_SEMIRING_INT64, v_0, "
+            "(GrB_Matrix)v_0, NULL);"
+        )
