@@ -872,7 +872,9 @@ class Matrix(BaseType):
                     extra_message="Literal scalars also accepted.",
                 )
         if value._is_cscalar:
-            # should we cast?
+            if value._empty:
+                call("GrB_Matrix_removeElement", [self, rowidx.index, colidx.index])
+                return
             cfunc_name = f"GrB_Matrix_setElement_{value.dtype}"
         else:
             cfunc_name = "GrB_Matrix_setElement_Scalar"

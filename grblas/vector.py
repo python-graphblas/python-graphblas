@@ -721,7 +721,9 @@ class Vector(BaseType):
                     extra_message="Literal scalars also accepted.",
                 )
         if value._is_cscalar:
-            # should we cast?
+            if value._empty:
+                call("GrB_Vector_removeElement", [self, idx.index])
+                return
             cfunc_name = f"GrB_Vector_setElement_{value.dtype}"
         else:
             cfunc_name = "GrB_Vector_setElement_Scalar"

@@ -1002,6 +1002,10 @@ def test_assign_scalar(A):
     C = A.dup()
     C[1::2, 2] = 0
     assert C.isequal(result_column)
+    B = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], 1)
+    B[1, 1] = Scalar.new(B.dtype)
+    expected = Matrix.from_values([0, 0, 1], [0, 1, 0], 1)
+    assert B.isequal(expected)
 
 
 def test_assign_bad(A):

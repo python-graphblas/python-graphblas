@@ -158,7 +158,7 @@ def test_isclose():
         s.isclose(object())
     assert not s.isclose(Scalar.from_value(5), check_dtype=True)
     assert not s.isclose(Scalar.from_value(None, dtype=s.dtype))
-    assert Scalar.from_value(None, dtype="FP64").isequal(Scalar.from_value(None, dtype="FP32"))
+    assert Scalar.from_value(None, dtype="FP64").isclose(Scalar.from_value(None, dtype="FP32"))
 
 
 def test_nvals(s):

@@ -492,6 +492,8 @@ def test_assign_scalar(v):
         w[1] = object()
     w << 2
     assert w.isequal(Vector.from_values([0, 1, 2], [2, 2, 2]))
+    w[0] = Scalar.new(int)
+    assert w.isequal(Vector.from_values([1, 2], [2, 2]))
 
 
 def test_assign_scalar_mask(v):
