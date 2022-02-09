@@ -220,6 +220,8 @@ class Scalar(BaseType):
         if val is None or output_type(val) is Scalar and val._is_empty:
             self.clear()
         elif self._is_cscalar:
+            if output_type(val) is Scalar:
+                val = val.value  # raise below if wrong type (as determined by cffi)
             self.gb_obj[0] = val
             self._empty = False
         else:

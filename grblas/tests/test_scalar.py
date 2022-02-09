@@ -369,6 +369,6 @@ def test_scalar_expr(s):
     assert (v @ v).is_cscalar is s.is_cscalar
     assert (v @ v).is_grbscalar is s.is_grbscalar
     assert (v @ v).new(is_cscalar=True).is_cscalar is True
-    assert (v @ v).new(is_cscalar=False).is_cscalar is False
+    assert (v @ v).new(is_cscalar=False).is_cscalar is False  # pragma: is_grbscalar
     assert v[1].new(is_cscalar=True).is_cscalar is True
-    assert v[1].new(is_cscalar=False).is_cscalar is False
+    assert v[1].new(is_cscalar=False).is_cscalar is False  # pragma: is_grbscalar

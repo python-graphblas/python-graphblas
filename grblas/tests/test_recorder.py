@@ -238,7 +238,7 @@ def test_record_inner(switch):
             "  GrB_Vector_new(&v_1, GrB_INT64, 1);\n"
             "  GrB_vxm(v_1, NULL, NULL, GrB_PLUS_TIMES_SEMIRING_INT64, v_0, "
             "(GrB_Matrix)v_0, NULL);\n"
-            "  GrB_Vector_extractElement_INT64(&s_extract, v_1, 0);"
+            "  GrB_Vector_extractElement_INT64(&s_temp, v_1, 0);"
         )
     else:
         assert repr(rec) == (
