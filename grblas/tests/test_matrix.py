@@ -265,8 +265,8 @@ def test_remove_element(A):
     del A[3, 0]
     assert compute(A[3, 0].value) is None
     assert A[6, 3].value == 7
-    with pytest.raises(TypeError, match="Remove Element only supports"):
-        del A[3:5, 3]
+    # with pytest.raises(TypeError, match="Remove Element only supports"):
+    del A[3:5, 3]  # Now okay
 
 
 def test_mxm(A):
@@ -3069,3 +3069,15 @@ def test_ewise_union():
     bad = Matrix.new(int, nrows=1, ncols=1)
     with pytest.raises(DimensionMismatch):
         A1.ewise_union(bad, binary.plus, 0, 0)
+
+
+def test_delete_via_scalar(A):
+    nvals = A.nvals
+    del A[0, [1, 3]]
+    assert A.nvals == nvals - 2
+    assert A[0, :].new().nvals == 0
+    del A[:, 0]
+    assert A.nvals == nvals - 3
+    assert A[:, 0].new().nvals == 0
+    del A[:, :]
+    assert A.nvals == 0

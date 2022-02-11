@@ -256,8 +256,8 @@ def test_remove_element(v):
     del v[1]
     assert compute(v[1].value) is None
     assert v[4].value == 2
-    with pytest.raises(TypeError, match="Remove Element only supports"):
-        del v[1:3]
+    # with pytest.raises(TypeError, match="Remove Element only supports"):
+    del v[1:3]  # Now okay
 
 
 def test_vxm(v, A):
@@ -1617,3 +1617,10 @@ def test_ewise_union():
     bad = Vector.new(int, size=1)
     with pytest.raises(DimensionMismatch):
         v1.ewise_union(bad, binary.plus, 0, 0)
+
+
+def test_delete_via_scalar(v):
+    del v[[1, 3]]
+    assert v.isequal(Vector.from_values([4, 6], [2, 0]))
+    del v[:]
+    assert v.nvals == 0

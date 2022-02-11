@@ -397,7 +397,13 @@ class Updater:
         if resolved_indexes.is_single_element:
             self.parent._delete_element(resolved_indexes)
         else:
-            raise TypeError("Remove Element only supports a single index")
+            # Delete selection by assigning an empty scalar
+            from .scalar import Scalar
+
+            scalar = Scalar.new(
+                self.parent.dtype, is_cscalar=False, name="s_empty"  # pragma: is_grbscalar
+            )
+            self._setitem(resolved_indexes, scalar, is_submask=False)
 
     def __lshift__(self, expr):
         # Occurs when user calls `C(params) << expr`
