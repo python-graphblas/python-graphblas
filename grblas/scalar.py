@@ -6,7 +6,7 @@ from . import _automethods, backend, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
 from .binary import isclose
 from .dtypes import _INDEX, BOOL, lookup_dtype
-from .exceptions import check_status
+from .exceptions import EmptyObject, check_status
 from .operator import get_typed_op
 from .utils import _Pointer, output_type, wrapdoc
 
@@ -103,6 +103,16 @@ class Scalar(BaseType):
             dtype = self.dtype.np_type
         return np.array(self.value, dtype=dtype)
 
+    def __sizeof__(self):
+        base = object.__sizeof__(self)
+        if self._is_cscalar:
+            return base + self.gb_obj.__sizeof__() + ffi.sizeof(self.dtype.c_type)
+        else:
+            size = ffi_new("size_t*")
+            scalar = Scalar(size, _INDEX, name="s_size", is_cscalar=True, empty=True)
+            call("GxB_Scalar_memoryUsage", [_Pointer(scalar), self])
+            return base + size[0]
+
     def isequal(self, other, *, check_dtype=False):
         """
         Check for exact equality
@@ -183,10 +193,6 @@ class Scalar(BaseType):
         if self._is_empty:
             return
         if self._is_cscalar:
-            if self.dtype == bool:
-                self.value = False
-            else:
-                self.value = 0
             self._empty = True
         else:
             call("GrB_Scalar_clear", [self])
@@ -248,9 +254,12 @@ class Scalar(BaseType):
 
     @property
     def _carg(self):
-        # i.e., return None if we are empty and a C scalar
         if not self._is_cscalar or not self._is_empty:
             return self.gb_obj[0]
+        raise EmptyObject(
+            "Empty C scalar is invalid when when passed as value (not pointer) to C functions.  "
+            "Perhaps use GrB_Scalar instead (e.g., `my_scalar.dup(is_cscalar=False)`)"
+        )
 
     def dup(self, dtype=None, *, is_cscalar=None, name=None):
         """Create a new Scalar by duplicating this one"""

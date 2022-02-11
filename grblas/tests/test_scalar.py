@@ -1,5 +1,6 @@
 import inspect
 import pickle
+import sys
 import weakref
 
 import numpy as np
@@ -372,3 +373,7 @@ def test_scalar_expr(s):
     assert (v @ v).new(is_cscalar=False).is_cscalar is False  # pragma: is_grbscalar
     assert v[1].new(is_cscalar=True).is_cscalar is True
     assert v[1].new(is_cscalar=False).is_cscalar is False  # pragma: is_grbscalar
+
+
+def test_sizeof(s):
+    assert 1 < sys.getsizeof(s) < 1000

@@ -12,6 +12,7 @@ import grblas
 from grblas import agg, binary, dtypes, monoid, semiring, unary
 from grblas.exceptions import (
     DimensionMismatch,
+    EmptyObject,
     IndexOutOfBound,
     InvalidValue,
     OutputNotEmpty,
@@ -236,6 +237,9 @@ def test_extract_element(v):
         v[object()]
     with pytest.raises(IndexError):
         v[100]
+    s = Scalar.new(int)
+    s << v[1]
+    assert s == 1
 
 
 def test_set_element(v):
@@ -628,6 +632,12 @@ def test_apply_binary(v):
     w3 = v.apply(monoid.plus, right=1).new()
     assert w1.isequal(w2)
     assert w1.isequal(w3)
+
+
+def test_apply_empty(v):
+    s = Scalar.new(int, is_cscalar=True)
+    with pytest.raises(EmptyObject):
+        v.apply(binary.plus, s).new()
 
 
 def test_reduce(v):

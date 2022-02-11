@@ -49,7 +49,7 @@ jobs:
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate grblas
-          conda install -c conda-forge pandas numba scipy networkx cffi donfig
+          conda install -c conda-forge pandas numba scipy networkx cffi donfig pyyaml
           if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then
               pip install suitesparse-graphblas
           else
