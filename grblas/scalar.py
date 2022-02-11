@@ -281,7 +281,16 @@ class Scalar(BaseType):
         return new_scalar
 
     def wait(self):
-        pass
+        """
+        GrB_Scalar_wait
+
+        In non-blocking mode with GrB_Scalars, the computations may be delayed
+        and not yet safe to use by multiple threads.  Use wait to force completion
+        of a Scalar and make it safe to use as input parameters on multiple threads.
+        """
+        # TODO: expose COMPLETE or MATERIALIZE options to the user
+        if not self._is_cscalar:
+            call("GrB_Scalar_wait", [self, _MATERIALIZE])
 
     @classmethod
     def new(cls, dtype, *, is_cscalar=False, name=None):
@@ -454,6 +463,8 @@ def _as_scalar(scalar, dtype=None, *, is_cscalar):
     else:
         return scalar
 
+
+_MATERIALIZE = Scalar.from_value(lib.GrB_MATERIALIZE, is_cscalar=True, name="GrB_MATERIALIZE")
 
 utils._output_types[Scalar] = Scalar
 utils._output_types[ScalarExpression] = Scalar

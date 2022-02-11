@@ -10,7 +10,7 @@ from .exceptions import NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_semiring, get_typed_op
-from .scalar import Scalar, ScalarExpression, _as_scalar
+from .scalar import _MATERIALIZE, Scalar, ScalarExpression, _as_scalar
 from .utils import (
     _CArray,
     _Pointer,
@@ -312,10 +312,7 @@ class Vector(BaseType):
         and make it safe to use as input parameters on multiple threads.
         """
         # TODO: expose COMPLETE or MATERIALIZE options to the user
-        call(
-            "GrB_Vector_wait",
-            [self, Scalar.from_value(lib.GrB_MATERIALIZE, is_cscalar=True, name="GrB_MATERIALIZE")],
-        )
+        call("GrB_Vector_wait", [self, _MATERIALIZE])
 
     @classmethod
     def new(cls, dtype, size=0, *, name=None):
