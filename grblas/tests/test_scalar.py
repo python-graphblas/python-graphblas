@@ -362,6 +362,7 @@ def test_scalar_complex(dtype):
     assert s.value == 2 + 3j
 
 
+@autocompute
 def test_scalar_expr(s):
     v = Vector.from_values([1], [2])
     expr = v.inner(v)
@@ -373,6 +374,11 @@ def test_scalar_expr(s):
     assert (v @ v).new(is_cscalar=False).is_cscalar is False  # pragma: is_grbscalar
     assert v[1].new(is_cscalar=True).is_cscalar is True
     assert v[1].new(is_cscalar=False).is_cscalar is False  # pragma: is_grbscalar
+    expr = v.reduce()
+    assert expr == 2  # Autocompute and cache value
+    assert expr.new().is_cscalar is False  # b/c default reduce is to allow empty
+    assert expr == 2  # Autocompute and cache value
+    assert expr.new(is_cscalar=True).is_cscalar is True  # We should respect keyword
 
 
 def test_sizeof(s):

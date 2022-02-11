@@ -557,7 +557,8 @@ class BaseExpression:
             and self._value is not None
             and (dtype is None or self._value.dtype == dtype)
         ):
-            # TODO: handle cscalar vs grbscalar output types
+            if self._is_scalar and self._value._is_cscalar != kwargs["is_cscalar"]:
+                return self._value.dup(is_cscalar=kwargs["is_cscalar"], name=name)
             rv = self._value
             if name is not None:
                 rv.name = name
