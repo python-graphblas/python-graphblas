@@ -29,9 +29,11 @@ class Scalar(BaseType):
         if name is None:
             name = f"s_{next(Scalar._name_counter)}"
         super().__init__(gb_obj, dtype, name)
-        self._is_cscalar = is_cscalar
         if is_cscalar:
+            self._is_cscalar = True
             self._empty = empty
+        else:
+            self._is_cscalar = False  # pragma: is_grbscalar
 
     def __del__(self):
         gb_obj = getattr(self, "gb_obj", None)
@@ -78,7 +80,7 @@ class Scalar(BaseType):
         dtype = self.dtype
         if dtype.name[0] == "U" or dtype == BOOL:
             raise TypeError(f"The negative operator, `-`, is not supported for {dtype.name} dtype")
-        rv = Scalar.new(dtype, is_cscalar=self._is_cscalar, name=f"-{self.name}")
+        rv = Scalar.new(dtype, is_cscalar=self._is_cscalar, name=f"-{self.name or 's_temp'}")
         if self._is_empty:
             return rv
         rv.value = -self.value
@@ -90,7 +92,7 @@ class Scalar(BaseType):
                 f"The invert operator, `~`, is not supported for {self.dtype.name} dtype.  "
                 "It is only supported for BOOL dtype."
             )
-        rv = Scalar.new(BOOL, is_cscalar=self._is_cscalar, name=f"~{self.name}")
+        rv = Scalar.new(BOOL, is_cscalar=self._is_cscalar, name=f"~{self.name or 's_temp'}")
         if self._is_empty:
             return rv
         rv.value = not self.value
@@ -124,9 +126,7 @@ class Scalar(BaseType):
             if other is None:
                 return self._is_empty
             try:
-                other = Scalar.from_value(
-                    other, is_cscalar=True, name="s_isequal"  # pragma: to_grb
-                )
+                other = Scalar.from_value(other, is_cscalar=None, name="s_isequal")
             except TypeError:
                 other = self._expect_type(
                     other,
@@ -158,9 +158,7 @@ class Scalar(BaseType):
             if other is None:
                 return self._is_empty
             try:
-                other = Scalar.from_value(
-                    other, is_cscalar=True, name="s_isclose"  # pragma: to_grb
-                )
+                other = Scalar.from_value(other, is_cscalar=None, name="s_isclose")
             except TypeError:
                 other = self._expect_type(
                     other,
@@ -298,6 +296,10 @@ class Scalar(BaseType):
         Create a new empty Scalar from the given type
         """
         dtype = lookup_dtype(dtype)
+        if is_cscalar is None:
+            # Internally, we sometimes use `is_cscalar=None` to either defer to `expr.is_cscalar`
+            # or to create a C scalar from a Python scalar.  For example, see Matrix.apply.
+            is_cscalar = True  # pragma: to_grb
         if is_cscalar:
             new_scalar = ffi_new(f"{dtype.c_type}*")
         else:
@@ -310,8 +312,9 @@ class Scalar(BaseType):
     @classmethod
     def from_value(cls, value, dtype=None, *, is_cscalar=False, name=None):
         """Create a new Scalar from a Python value"""
+        typ = output_type(value)
         if dtype is None:
-            if output_type(value) is Scalar:
+            if typ is Scalar:
                 dtype = value.dtype
             else:
                 try:
@@ -320,6 +323,8 @@ class Scalar(BaseType):
                     raise TypeError(
                         f"Argument of from_value must be a known scalar type, not {type(value)}"
                     )
+        if typ is Scalar and type(value) is not Scalar:
+            return value.new(dtype=dtype, is_cscalar=is_cscalar, name=name)
         new_scalar = cls.new(dtype, is_cscalar=is_cscalar, name=name)
         new_scalar.value = value
         return new_scalar
@@ -377,7 +382,7 @@ class Scalar(BaseType):
                 ffi.cast("GrB_Vector*", self.gb_obj),
                 self.dtype,
                 parent=self,
-                name=f"(GrB_Vector){self.name}",
+                name=f"(GrB_Vector){self.name or 's_temp'}",
             )
             rv._size = 1
         return rv

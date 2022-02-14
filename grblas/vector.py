@@ -451,8 +451,38 @@ class Vector(BaseType):
         # SS, SuiteSparse-specific: eWiseUnion
         method_name = "ewise_union"
         other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
-        left = _as_scalar(left_default, is_cscalar=False)  # pragma: is_grbscalar
-        right = _as_scalar(right_default, is_cscalar=False)  # pragma: is_grbscalar
+        if type(left_default) is not Scalar:
+            try:
+                left = Scalar.from_value(
+                    left_default, is_cscalar=False, name=""  # pragma: is_grbscalar
+                )
+            except TypeError:
+                left = self._expect_type(
+                    left_default,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="left_default",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        else:
+            left = _as_scalar(left_default, is_cscalar=False)  # pragma: is_grbscalar
+        if type(right_default) is not Scalar:
+            try:
+                right = Scalar.from_value(
+                    right_default, is_cscalar=False, name=""  # pragma: is_grbscalar
+                )
+            except TypeError:
+                right = self._expect_type(
+                    right_default,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="right_default",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        else:
+            right = _as_scalar(right_default, is_cscalar=False)  # pragma: is_grbscalar
         scalar_dtype = unify(left.dtype, right.dtype)
         nonscalar_dtype = unify(self.dtype, other.dtype)
         op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
@@ -522,7 +552,7 @@ class Vector(BaseType):
         elif right is None:
             if type(left) is not Scalar:
                 try:
-                    left = Scalar.from_value(left, is_cscalar=True, name="")  # pragma: to_grb
+                    left = Scalar.from_value(left, is_cscalar=None, name="")
                 except TypeError:
                     left = self._expect_type(
                         left,
@@ -552,7 +582,7 @@ class Vector(BaseType):
         elif left is None:
             if type(right) is not Scalar:
                 try:
-                    right = Scalar.from_value(right, is_cscalar=True, name="")  # pragma: to_grb
+                    right = Scalar.from_value(right, is_cscalar=None, name="")
                 except TypeError:
                     right = self._expect_type(
                         right,
@@ -708,7 +738,7 @@ class Vector(BaseType):
         idx = resolved_indexes.indices[0]
         if type(value) is not Scalar:
             try:
-                value = Scalar.from_value(value, is_cscalar=True, name="")  # pragma: to_grb
+                value = Scalar.from_value(value, is_cscalar=None, name="")
             except TypeError:
                 value = self._expect_type(
                     value,
@@ -752,7 +782,7 @@ class Vector(BaseType):
         else:
             if type(value) is not Scalar:
                 try:
-                    value = Scalar.from_value(value, is_cscalar=True, name="")  # pragma: to_grb
+                    value = Scalar.from_value(value, is_cscalar=None, name="")
                 except TypeError:
                     value = self._expect_type(
                         value,

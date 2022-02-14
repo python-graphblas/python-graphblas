@@ -1603,6 +1603,9 @@ def test_ewise_union():
     result = v1.ewise_union(v2, binary.plus, 10, 20).new()
     expected = Vector.from_values([0, 1], [21, 12], size=3)
     assert result.isequal(expected)
+    # Handle Scalars
+    result = v1.ewise_union(v2, binary.plus, Scalar.from_value(10), Scalar.from_value(20)).new()
+    assert result.isequal(expected)
     # Upcast if scalars are floats
     result = v1.ewise_union(v2, monoid.plus, 10.1, 20.2).new()
     expected = Vector.from_values([0, 1], [21.2, 12.1], size=3)
@@ -1617,6 +1620,10 @@ def test_ewise_union():
     bad = Vector.new(int, size=1)
     with pytest.raises(DimensionMismatch):
         v1.ewise_union(bad, binary.plus, 0, 0)
+    with pytest.raises(TypeError, match="Literal scalars"):
+        v1.ewise_union(v2, binary.plus, v2, 20)
+    with pytest.raises(TypeError, match="Literal scalars"):
+        v1.ewise_union(v2, binary.plus, 10, v2)
 
 
 def test_delete_via_scalar(v):

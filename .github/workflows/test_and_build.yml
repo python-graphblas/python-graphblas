@@ -99,6 +99,7 @@ jobs:
                 -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
                 -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
                 -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g'
+                -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
               pytest ${{ matrix.testopts }}
           else
               coverage run --branch -m pytest ${{ matrix.testopts }}
@@ -107,6 +108,7 @@ jobs:
                 -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
                 -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
                 -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g'
+                -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
               coverage run -a --branch -m pytest ${{ matrix.testopts }}
           fi
           git checkout .  # Undo changes to scalar default
