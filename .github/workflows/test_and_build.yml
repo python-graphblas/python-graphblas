@@ -98,7 +98,7 @@ jobs:
               find grblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
                 -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
                 -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
-                -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g'
+                -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
                 -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
               pytest ${{ matrix.testopts }}
           else
@@ -107,7 +107,7 @@ jobs:
               find grblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
                 -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
                 -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
-                -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g'
+                -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
                 -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
               coverage run -a --branch -m pytest ${{ matrix.testopts }}
           fi
