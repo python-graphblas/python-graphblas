@@ -39,7 +39,7 @@ def diag(x, k=0, dtype=None, *, name=None):
     """
     x = _expect_type(_grblas_ss, x, (Matrix, TransposedMatrix, Vector), within="diag", argname="x")
     if type(k) is not Scalar:
-        k = Scalar.from_value(k, INT64, name="")
+        k = Scalar.from_value(k, INT64, is_cscalar=True, name="")
     if dtype is None:
         dtype = x.dtype
     typ = type(x)

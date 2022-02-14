@@ -130,6 +130,10 @@ def _carg(self):
     return self._get_value("_carg")
 
 
+def _is_empty(self):
+    return self._get_value("_is_empty")
+
+
 def _name_html(self):
     return self._get_value("_name_html")
 
@@ -317,6 +321,7 @@ if __name__ == "__main__":
         "__int__",
         "__invert__",
         "__neg__",
+        "_is_empty",
         "is_empty",
         "value",
     }
@@ -412,7 +417,7 @@ if __name__ == "__main__":
             lines.append("    name = name.setter(_automethods._set_name)")
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | scalar_raises):
-        lines.append(f"    {name} = wrapdoc(Scalar.{name})(Scalar.{name})")
+        lines.append(f"    {name} = Scalar.{name}")
 
     thisdir = os.path.dirname(__file__)
     infix_exclude = {"_get_value"}
@@ -434,7 +439,7 @@ if __name__ == "__main__":
             lines.append("    name = name.setter(_automethods._set_name)")
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | vector_matrix_raises):
-        lines.append(f"    {name} = wrapdoc(Vector.{name})(Vector.{name})")
+        lines.append(f"    {name} = Vector.{name}")
     for name in sorted(bad_sugar):
         lines.append(f"    {name} = _automethods.{name}")
 
@@ -452,7 +457,7 @@ if __name__ == "__main__":
             lines.append("    name = name.setter(_automethods._set_name)")
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | vector_matrix_raises):
-        lines.append(f"    {name} = wrapdoc(Matrix.{name})(Matrix.{name})")
+        lines.append(f"    {name} = Matrix.{name}")
     for name in sorted(bad_sugar):
         lines.append(f"    {name} = _automethods.{name}")
 

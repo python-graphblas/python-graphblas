@@ -12,7 +12,7 @@ from .. import ffi, lib, monoid
 from ..base import call, record_raw
 from ..dtypes import _INDEX, INT64, lookup_dtype
 from ..exceptions import check_status, check_status_carg
-from ..scalar import Scalar, _CScalar, _GrBScalar
+from ..scalar import Scalar, _as_scalar
 from ..utils import (
     _CArray,
     _Pointer,
@@ -415,7 +415,7 @@ class ss:
         Vector.ss.diag
         """
         vector = self._parent._expect_type(vector, gb.Vector, within="ss.diag", argname="vector")
-        call("GxB_Matrix_diag", [self._parent, vector, _CScalar(k, INT64), None])
+        call("GxB_Matrix_diag", [self._parent, vector, _as_scalar(k, INT64, is_cscalar=True), None])
 
     def split(self, chunks, *, name=None):
         """
@@ -452,8 +452,8 @@ class ss:
             "GxB_Matrix_split",
             [
                 MatrixArray(tiles, self._parent, name="tiles"),
-                _CScalar(m),
-                _CScalar(n),
+                _as_scalar(m, _INDEX, is_cscalar=True),
+                _as_scalar(n, _INDEX, is_cscalar=True),
                 _CArray(tile_nrows),
                 _CArray(tile_ncols),
                 self._parent,
@@ -495,8 +495,8 @@ class ss:
             [
                 self._parent,
                 MatrixArray(ctiles, name="tiles"),
-                _CScalar(m),
-                _CScalar(n),
+                _as_scalar(m, _INDEX, is_cscalar=True),
+                _as_scalar(n, _INDEX, is_cscalar=True),
                 None,
             ],
         )
@@ -538,10 +538,16 @@ class ss:
             raise ValueError(
                 f"`rows` and `columns` lengths must match: {rows.size}, {columns.size}"
             )
-        scalar = _GrBScalar(value, self._parent.dtype)
+        scalar = _as_scalar(value, self._parent.dtype, is_cscalar=False)  # pragma: is_grbscalar
         call(
             "GxB_Matrix_build_Scalar",
-            [self._parent, _CArray(rows), _CArray(columns), scalar, _CScalar(rows.size)],
+            [
+                self._parent,
+                _CArray(rows),
+                _CArray(columns),
+                scalar,
+                _as_scalar(rows.size, _INDEX, is_cscalar=True),
+            ],
         )
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
@@ -775,7 +781,7 @@ class ss:
                     rows = _CArray(size=nvals, name="&rows_array")
                     columns = _CArray(size=nvals, name="&columns_array")
                     n = ffi_new("GrB_Index*")
-                    scalar = Scalar(n, _INDEX, name="s_nvals", empty=True)
+                    scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
                     scalar.value = nvals
                     call(
                         f"GrB_Matrix_extractTuples_{parent.dtype.name}",

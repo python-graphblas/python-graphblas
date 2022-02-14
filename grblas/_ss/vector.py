@@ -6,9 +6,9 @@ import grblas as gb
 
 from .. import ffi, lib, monoid
 from ..base import call
-from ..dtypes import INT64, UINT64, lookup_dtype
+from ..dtypes import _INDEX, INT64, UINT64, lookup_dtype
 from ..exceptions import check_status, check_status_carg
-from ..scalar import _CScalar, _GrBScalar
+from ..scalar import _as_scalar
 from ..utils import (
     _CArray,
     ints_to_numpy_buffer,
@@ -146,7 +146,7 @@ class ss:
             # Transpose descriptor doesn't do anything, so use the parent
             k = -k
             matrix = matrix._matrix
-        call("GxB_Vector_diag", [self._parent, matrix, _CScalar(k, INT64), None])
+        call("GxB_Vector_diag", [self._parent, matrix, _as_scalar(k, INT64, is_cscalar=True), None])
 
     def split(self, chunks, *, name=None):
         """
@@ -179,8 +179,8 @@ class ss:
             "GxB_Matrix_split",
             [
                 MatrixArray(tiles, parent, name="tiles"),
-                _CScalar(m),
-                _CScalar(1),
+                _as_scalar(m, _INDEX, is_cscalar=True),
+                _as_scalar(1, _INDEX, is_cscalar=True),
                 _CArray(tile_nrows),
                 _CArray([1]),
                 parent,
@@ -209,8 +209,8 @@ class ss:
             [
                 self._parent._as_matrix(),
                 MatrixArray(ctiles, name="tiles"),
-                _CScalar(m),
-                _CScalar(1),
+                _as_scalar(m, _INDEX, is_cscalar=True),
+                _as_scalar(1, _INDEX, is_cscalar=True),
                 None,
             ],
         )
@@ -245,10 +245,15 @@ class ss:
         Vector.from_values
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
-        scalar = _GrBScalar(value, self._parent.dtype)
+        scalar = _as_scalar(value, self._parent.dtype, is_cscalar=False)  # pragma: is_grbscalar
         call(
             "GxB_Vector_build_Scalar",
-            [self._parent, _CArray(indices), scalar, _CScalar(indices.size)],
+            [
+                self._parent,
+                _CArray(indices),
+                scalar,
+                _as_scalar(indices.size, _INDEX, is_cscalar=True),
+            ],
         )
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False):

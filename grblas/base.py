@@ -32,11 +32,13 @@ def call(cfunc_name, args):
         from .recorder import gbstr
 
         callstr = f'{cfunc.__name__}({", ".join(gbstr(x) for x in args)})'
+        # calltypes = f'{cfunc.__name__}({", ".join(str(x) for x in call_args)})'
         lines = cfunc.__doc__.splitlines()
         sig = lines[0] if lines else ""
         raise TypeError(
             f"Error calling {cfunc.__name__}:\n"
             f" - Call objects: {callstr}\n"
+            # f" - Call types: {calltypes}\n"  # Useful during development
             f" - C signature: {sig}\n"
             f" - Error: {exc}"
         )
@@ -322,7 +324,9 @@ class BaseType:
                             "Scalar accumulation with extract element"
                             "--such as `s(accum=accum) << v[0]`--is not supported"
                         )
-                    self.value = expr.new(self.dtype, name="s_extract").value
+                    expr.parent._extract_element(
+                        expr.resolved_indexes, self.dtype, is_cscalar=self._is_cscalar, result=self
+                    )
                     return
 
                 # Extract (C << A[rows, cols])
@@ -341,7 +345,7 @@ class BaseType:
                             "Scalar update with accumulation--such as `s(accum=accum) << t`"
                             "--is not supported"
                         )
-                    self.value = expr.value
+                    self.value = expr
                     return
 
                 # Two choices here: apply identity `expr = expr.apply(identity)`, or assign.
@@ -350,14 +354,19 @@ class BaseType:
                 self(mask=mask, accum=accum, replace=replace, input_mask=input_mask)[...] = expr
                 return
             elif self._is_scalar:
-                if accum is not None:
+                from .infix import InfixExprBase
+
+                if isinstance(expr, InfixExprBase):
+                    # s << (v @ v)
+                    expr = expr._to_expr()
+                elif accum is not None:
                     raise TypeError(
                         "Scalar update with accumulation--such as `s(accum=accum) << t`"
                         "--is not supported"
                     )
-                self.value = expr
-                return
-
+                else:
+                    self.value = expr
+                    return
             else:
                 from .infix import InfixExprBase
                 from .matrix import Matrix, MatrixExpression, TransposedMatrix
@@ -383,7 +392,7 @@ class BaseType:
                         scalar = expr
                     else:
                         try:
-                            scalar = Scalar.from_value(expr, name="")
+                            scalar = Scalar.from_value(expr, is_cscalar=None, name="")
                         except TypeError:
                             raise TypeError(
                                 "Assignment value must be a valid expression type, not "
@@ -432,18 +441,25 @@ class BaseType:
             output_replace=replace,
         )
         if self._is_scalar:
-            if expr._is_empty:
-                return
-            is_fake_scalar = expr.method_name == "inner"
-            if is_fake_scalar:
-                from .vector import Vector
-
-                fake_self = Vector.new(self.dtype, size=1)
-                args = [fake_self, mask, accum]
+            scalar_as_vector = expr.method_name == "inner"
+            if scalar_as_vector:
+                fake_self = self._as_vector()
                 cfunc_name = expr.cfunc_name
+                args = [fake_self, mask, accum]
             else:
-                args = [_Pointer(self), accum]
-                cfunc_name = expr.cfunc_name.format(output_dtype=self.dtype)
+                is_temp_scalar = expr._is_cscalar != self._is_cscalar
+                if is_temp_scalar:
+                    temp_scalar = expr.construct_output(self.dtype, name="s_temp")
+                    if accum is not None and not self._is_empty:
+                        temp_scalar.value = self
+                else:
+                    temp_scalar = self
+                if expr._is_cscalar:
+                    cfunc_name = expr.cfunc_name.format(output_dtype=self.dtype)
+                    args = [_Pointer(temp_scalar), accum]
+                else:
+                    cfunc_name = expr.cfunc_name
+                    args = [temp_scalar, accum]
         else:
             args = [self, mask, accum]
             cfunc_name = expr.cfunc_name
@@ -454,9 +470,14 @@ class BaseType:
         # Make the GraphBLAS call
         call(cfunc_name, args)
         if self._is_scalar:
-            if is_fake_scalar:
-                self.value = fake_self[0].value
-            self._is_empty = False
+            if scalar_as_vector:
+                if self._is_cscalar:
+                    self.value = fake_self[0].new(is_cscalar=True, name="")
+                # SS: this assumes GrB_Scalar was cast to Vector
+            elif is_temp_scalar:
+                self.value = temp_scalar
+            elif self._is_cscalar:
+                self._empty = False
 
     @property
     def _name_html(self):
@@ -526,17 +547,22 @@ class BaseExpression:
         self._value = None
 
     def new(self, dtype=None, *, mask=None, name=None):
+        return self._new(dtype, mask, name)
+
+    def _new(self, dtype, mask, name, **kwargs):
         if (
             mask is None
             and self._value is not None
             and (dtype is None or self._value.dtype == dtype)
         ):
+            if self._is_scalar and self._value._is_cscalar != kwargs["is_cscalar"]:
+                return self._value.dup(is_cscalar=kwargs["is_cscalar"], name=name)
             rv = self._value
             if name is not None:
                 rv.name = name
             self._value = None
             return rv
-        output = self.construct_output(dtype, name=name)
+        output = self.construct_output(dtype, name=name, **kwargs)
         if self.op is not None and self.op.opclass == "Aggregator":
             updater = output(mask=mask)
             self.op._new(updater, self)
@@ -559,14 +585,14 @@ class BaseExpression:
     _expect_type = _expect_type
     _expect_op = _expect_op
 
-    def _new_scalar(self, dtype, *, name=None):
+    def _new_scalar(self, dtype, *, is_cscalar=False, name=None):
         """Create a new empty Scalar.
 
         This is useful for supporting other grblas-compatible APIs in recipes.
         """
         from .scalar import Scalar
 
-        return Scalar.new(dtype, name=name)
+        return Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
 
     def _new_vector(self, dtype, size=0, *, name=None):
         """Create a new empty Vector.

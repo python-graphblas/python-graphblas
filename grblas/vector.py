@@ -10,7 +10,7 @@ from .exceptions import NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_semiring, get_typed_op
-from .scalar import Scalar, ScalarExpression, _CScalar, _GrBScalar
+from .scalar import _MATERIALIZE, Scalar, ScalarExpression, _as_scalar
 from .utils import (
     _CArray,
     _Pointer,
@@ -30,19 +30,23 @@ class Vector(BaseType):
     High-level wrapper around GrB_Vector type
     """
 
-    __slots__ = "_size", "ss"
+    __slots__ = "_size", "_parent", "ss"
     ndim = 1
     _name_counter = itertools.count()
 
-    def __init__(self, gb_obj, dtype, *, name=None):
+    def __init__(self, gb_obj, dtype, *, parent=None, name=None):
         if name is None:
             name = f"v_{next(Vector._name_counter)}"
         self._size = None
         super().__init__(gb_obj, dtype, name)
         # Add ss extension methods
         self.ss = ss(self)
+        self._parent = parent
 
     def __del__(self):
+        parent = getattr(self, "_parent", None)
+        if parent is not None:
+            return
         gb_obj = getattr(self, "gb_obj", None)
         if gb_obj is not None:
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
@@ -74,11 +78,19 @@ class Vector(BaseType):
             return format_vector(self, mask=mask)
 
     def _repr_html_(self, mask=None, collapse=False):
+        if self._parent is not None:
+            return self._parent._repr_html_(mask=mask, collapse=collapse)
         from .formatting import format_vector_html
         from .recorder import skip_record
 
         with skip_record:
             return format_vector_html(self, mask=mask, collapse=collapse)
+
+    @property
+    def _name_html(self):
+        if self._parent is not None:
+            return self._parent._name_html
+        return super()._name_html
 
     def __reduce__(self):
         # SS, SuiteSparse-specific: export
@@ -116,7 +128,7 @@ class Vector(BaseType):
                 "Doing `index in my_vector` checks whether a value is present at that index."
             )
         scalar = extractor.new(name="s_contains")
-        return not scalar.is_empty
+        return not scalar._is_empty
 
     def __iter__(self):
         self.wait()  # sort in SS
@@ -125,7 +137,7 @@ class Vector(BaseType):
 
     def __sizeof__(self):
         size = ffi_new("size_t*")
-        scalar = Scalar(size, _INDEX, name="s_size", empty=True)
+        scalar = Scalar(size, _INDEX, name="s_size", is_cscalar=True, empty=True)
         call("GxB_Vector_memoryUsage", [_Pointer(scalar), self])
         return size[0] + object.__sizeof__(self)
 
@@ -184,7 +196,7 @@ class Vector(BaseType):
     @property
     def size(self):
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_size", empty=True)
+        scalar = Scalar(n, _INDEX, name="s_size", is_cscalar=True, empty=True)
         call("GrB_Vector_size", [_Pointer(scalar), self])
         return n[0]
 
@@ -195,7 +207,7 @@ class Vector(BaseType):
     @property
     def nvals(self):
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_nvals", empty=True)
+        scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
         call("GrB_Vector_nvals", [_Pointer(scalar), self])
         return n[0]
 
@@ -210,9 +222,9 @@ class Vector(BaseType):
         call("GrB_Vector_clear", [self])
 
     def resize(self, size):
-        size = _CScalar(size)
+        size = _as_scalar(size, _INDEX, is_cscalar=True)
         call("GrB_Vector_resize", [self, size])
-        self._size = size.scalar.value
+        self._size = size.value
 
     def to_values(self, dtype=None):
         """
@@ -223,7 +235,7 @@ class Vector(BaseType):
         indices = _CArray(size=nvals, name="&index_array")
         values = _CArray(size=nvals, dtype=self.dtype, name="&values_array")
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_nvals", empty=True)
+        scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
         scalar.value = nvals
         call(
             f"GrB_Vector_extractTuples_{self.dtype.name}", [indices, values, _Pointer(scalar), self]
@@ -265,7 +277,10 @@ class Vector(BaseType):
 
         indices = _CArray(indices)
         values = _CArray(values, self.dtype)
-        call(f"GrB_Vector_build_{self.dtype.name}", [self, indices, values, _CScalar(n), dup_op])
+        call(
+            f"GrB_Vector_build_{self.dtype.name}",
+            [self, indices, values, _as_scalar(n, _INDEX, is_cscalar=True), dup_op],
+        )
 
         # Check for duplicates when dup_op was not provided
         if not dup_op_given and self._nvals < n:
@@ -297,10 +312,7 @@ class Vector(BaseType):
         and make it safe to use as input parameters on multiple threads.
         """
         # TODO: expose COMPLETE or MATERIALIZE options to the user
-        call(
-            "GrB_Vector_wait",
-            [self, Scalar.from_value(lib.GrB_MATERIALIZE, name="GrB_MATERIALIZE")],
-        )
+        call("GrB_Vector_wait", [self, _MATERIALIZE])
 
     @classmethod
     def new(cls, dtype, size=0, *, name=None):
@@ -311,9 +323,9 @@ class Vector(BaseType):
         new_vector = ffi_new("GrB_Vector*")
         dtype = lookup_dtype(dtype)
         rv = cls(new_vector, dtype, name=name)
-        size = _CScalar(size)
+        size = _as_scalar(size, _INDEX, is_cscalar=True)
         call("GrB_Vector_new", [_Pointer(rv), dtype, size])
-        rv._size = size.scalar.value
+        rv._size = size.value
         return rv
 
     @classmethod
@@ -439,8 +451,38 @@ class Vector(BaseType):
         # SS, SuiteSparse-specific: eWiseUnion
         method_name = "ewise_union"
         other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
-        left = _GrBScalar(left_default)
-        right = _GrBScalar(right_default)
+        if type(left_default) is not Scalar:
+            try:
+                left = Scalar.from_value(
+                    left_default, is_cscalar=False, name=""  # pragma: is_grbscalar
+                )
+            except TypeError:
+                left = self._expect_type(
+                    left_default,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="left_default",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        else:
+            left = _as_scalar(left_default, is_cscalar=False)  # pragma: is_grbscalar
+        if type(right_default) is not Scalar:
+            try:
+                right = Scalar.from_value(
+                    right_default, is_cscalar=False, name=""  # pragma: is_grbscalar
+                )
+            except TypeError:
+                right = self._expect_type(
+                    right_default,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="right_default",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        else:
+            right = _as_scalar(right_default, is_cscalar=False)  # pragma: is_grbscalar
         scalar_dtype = unify(left.dtype, right.dtype)
         nonscalar_dtype = unify(self.dtype, other.dtype)
         op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
@@ -510,7 +552,7 @@ class Vector(BaseType):
         elif right is None:
             if type(left) is not Scalar:
                 try:
-                    left = Scalar.from_value(left, name="")
+                    left = Scalar.from_value(left, is_cscalar=None, name="")
                 except TypeError:
                     left = self._expect_type(
                         left,
@@ -531,13 +573,16 @@ class Vector(BaseType):
                     argname="op",
                     extra_message=extra_message,
                 )
-            cfunc_name = f"GrB_Vector_apply_BinaryOp1st_{left.dtype}"
-            args = [_CScalar(left), self]
+            if left._is_cscalar:
+                cfunc_name = f"GrB_Vector_apply_BinaryOp1st_{left.dtype}"
+            else:
+                cfunc_name = "GrB_Vector_apply_BinaryOp1st_Scalar"
+            args = [left, self]
             expr_repr = "{1.name}.apply({op}, left={0})"
         elif left is None:
             if type(right) is not Scalar:
                 try:
-                    right = Scalar.from_value(right, name="")
+                    right = Scalar.from_value(right, is_cscalar=None, name="")
                 except TypeError:
                     right = self._expect_type(
                         right,
@@ -558,8 +603,11 @@ class Vector(BaseType):
                     argname="op",
                     extra_message=extra_message,
                 )
-            cfunc_name = f"GrB_Vector_apply_BinaryOp2nd_{right.dtype}"
-            args = [self, _CScalar(right)]
+            if right._is_cscalar:
+                cfunc_name = f"GrB_Vector_apply_BinaryOp2nd_{right.dtype}"
+            else:
+                cfunc_name = "GrB_Vector_apply_BinaryOp2nd_Scalar"
+            args = [self, right]
             expr_repr = "{0.name}.apply({op}, right={1})"
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
@@ -590,12 +638,16 @@ class Vector(BaseType):
         if not allow_empty and op.opclass == "Aggregator" and op.parent._monoid is None:
             # But we still kindly allow it if it's a monoid-only aggregator such as sum
             raise ValueError("allow_empty=False not allowed when using Aggregators")
+        if allow_empty:
+            cfunc_name = "GrB_Vector_reduce_Monoid_Scalar"
+        else:
+            cfunc_name = "GrB_Vector_reduce_{output_dtype}"
         return ScalarExpression(
             method_name,
-            "GrB_Vector_reduce_{output_dtype}",
+            cfunc_name,
             [self],
             op=op,  # to be determined later
-            is_empty=allow_empty and self._nvals == 0,
+            is_cscalar=not allow_empty,
         )
 
     # Unofficial methods
@@ -616,6 +668,7 @@ class Vector(BaseType):
             "GrB_vxm",
             [self, other._as_matrix()],
             op=op,
+            is_cscalar=False,
         )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
@@ -652,18 +705,22 @@ class Vector(BaseType):
     ##################################
     # Extract and Assign index methods
     ##################################
-    def _extract_element(self, resolved_indexes, dtype=None, name="s_extract"):
+    def _extract_element(self, resolved_indexes, dtype=None, *, is_cscalar, name=None, result=None):
         if dtype is None:
             dtype = self.dtype
         else:
             dtype = lookup_dtype(dtype)
         idx = resolved_indexes.indices[0]
-        result = Scalar.new(dtype, name=name)
-        if (
-            call(f"GrB_Vector_extractElement_{dtype}", [_Pointer(result), self, idx.index])
-            is not NoValue
-        ):
-            result._is_empty = False
+        if result is None:
+            result = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+        if is_cscalar:
+            if (
+                call(f"GrB_Vector_extractElement_{dtype}", [_Pointer(result), self, idx.index])
+                is not NoValue
+            ):
+                result._empty = False
+        else:
+            call("GrB_Vector_extractElement_Scalar", [result, self, idx.index])
         return result
 
     def _prep_for_extract(self, resolved_indexes, mask=None, is_submask=False):
@@ -681,7 +738,7 @@ class Vector(BaseType):
         idx = resolved_indexes.indices[0]
         if type(value) is not Scalar:
             try:
-                value = Scalar.from_value(value, name="")
+                value = Scalar.from_value(value, is_cscalar=None, name="")
             except TypeError:
                 value = self._expect_type(
                     value,
@@ -690,8 +747,14 @@ class Vector(BaseType):
                     argname="value",
                     extra_message="Literal scalars also accepted.",
                 )
-        # should we cast?
-        call(f"GrB_Vector_setElement_{value.dtype}", [self, _CScalar(value), idx.index])
+        if value._is_cscalar:
+            if value._empty:
+                call("GrB_Vector_removeElement", [self, idx.index])
+                return
+            cfunc_name = f"GrB_Vector_setElement_{value.dtype}"
+        else:
+            cfunc_name = "GrB_Vector_setElement_Scalar"
+        call(cfunc_name, [self, value, idx.index])
 
     def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
@@ -719,7 +782,7 @@ class Vector(BaseType):
         else:
             if type(value) is not Scalar:
                 try:
-                    value = Scalar.from_value(value, name="")
+                    value = Scalar.from_value(value, is_cscalar=None, name="")
                 except TypeError:
                     value = self._expect_type(
                         value,
@@ -728,21 +791,26 @@ class Vector(BaseType):
                         argname="value",
                         extra_message="Literal scalars also accepted.",
                     )
-            value = _CScalar(value)
             if is_submask:
                 if size is None:
                     # v[i](m) << c
                     raise TypeError("Single element assign does not accept a submask")
                 # v[I](m) << c
-                cfunc_name = f"GrB_Vector_subassign_{value.dtype}"
+                if value._is_cscalar:
+                    cfunc_name = f"GrB_Vector_subassign_{value.dtype}"
+                else:
+                    cfunc_name = "GrB_Vector_subassign_Scalar"
                 expr_repr = "[[{2} elements]](%s) = {0}" % mask.name
             else:
                 # v(m)[I] << c
                 # v[I] << c
                 if size is None:
-                    index = _CArray([index.scalar.value])
-                    cscalar = _CScalar(1)
-                cfunc_name = f"GrB_Vector_assign_{value.dtype}"
+                    index = _CArray([index.value])
+                    cscalar = _as_scalar(1, _INDEX, is_cscalar=True)
+                if value._is_cscalar:
+                    cfunc_name = f"GrB_Vector_assign_{value.dtype}"
+                else:
+                    cfunc_name = "GrB_Vector_assign_Scalar"
                 expr_repr = "[[{2} elements]] = {0}"
         return VectorExpression(
             method_name,
@@ -892,8 +960,8 @@ class VectorExpression(BaseExpression):
     vxm = wrapdoc(Vector.vxm)(property(_automethods.vxm))
     wait = wrapdoc(Vector.wait)(property(_automethods.wait))
     # These raise exceptions
-    __array__ = wrapdoc(Vector.__array__)(Vector.__array__)
-    __bool__ = wrapdoc(Vector.__bool__)(Vector.__bool__)
+    __array__ = Vector.__array__
+    __bool__ = Vector.__bool__
     __iadd__ = _automethods.__iadd__
     __iand__ = _automethods.__iand__
     __ifloordiv__ = _automethods.__ifloordiv__

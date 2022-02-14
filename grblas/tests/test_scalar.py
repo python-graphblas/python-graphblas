@@ -1,12 +1,12 @@
 import inspect
 import pickle
+import sys
 import weakref
 
 import numpy as np
 import pytest
 
 from grblas import binary, dtypes, replace
-from grblas.scalar import _CScalar
 
 from .conftest import autocompute, compute
 
@@ -124,8 +124,12 @@ def test_set_value(s):
     assert s.value == 5
     s.value = 12
     assert s.value == 12
-    with pytest.raises(TypeError):
+    if s._is_cscalar:
+        with pytest.raises(TypeError):
+            s.value = 12.5
+    else:
         s.value = 12.5
+        assert s == 12
 
 
 def test_isequal(s):
@@ -155,7 +159,7 @@ def test_isclose():
         s.isclose(object())
     assert not s.isclose(Scalar.from_value(5), check_dtype=True)
     assert not s.isclose(Scalar.from_value(None, dtype=s.dtype))
-    assert Scalar.from_value(None, dtype="FP64").isequal(Scalar.from_value(None, dtype="FP32"))
+    assert Scalar.from_value(None, dtype="FP64").isclose(Scalar.from_value(None, dtype="FP32"))
 
 
 def test_nvals(s):
@@ -191,8 +195,12 @@ def test_update(s):
     assert s == 2
     s << Scalar.from_value(3)
     assert s == 3
-    with pytest.raises(TypeError, match="an integer is required"):
+    if s._is_cscalar:
+        with pytest.raises(TypeError, match="an integer is required"):
+            s << Scalar.from_value(4.4)
+    else:
         s << Scalar.from_value(4.4)
+        assert s == 4
     s() << 5
     assert s == 5
     with pytest.raises(TypeError, match="is not supported"):
@@ -212,16 +220,6 @@ def test_not_hashable(s):
         {s}
     with pytest.raises(TypeError, match="unhashable type"):
         hash(s)
-
-
-def test_cscalar():
-    c1 = _CScalar(Scalar.from_value(5))
-    assert c1 == _CScalar(Scalar.from_value(5))
-    assert c1 == 5
-    assert c1 != _CScalar(Scalar.from_value(6))
-    assert c1 != 6
-    assert repr(c1) == "5"
-    assert c1._repr_html_() == c1.scalar._repr_html_()
 
 
 def test_pickle(s):
@@ -252,9 +250,11 @@ def test_scalar_to_numpy(s):
 
 
 def test_neg():
-    for dtype in vars(dtypes).values():
-        if not isinstance(dtype, dtypes.DataType):
-            continue
+    for dtype in sorted(
+        (dtype for dtype in vars(dtypes).values() if isinstance(dtype, dtypes.DataType)),
+        key=lambda x: x.name,
+        reverse=True,  # XXX: segfault when False!!!
+    ):
         s = Scalar.from_value(1, dtype=dtype)
         empty = Scalar.new(dtype)
         if dtype.name == "BOOL" or dtype.name.startswith("U"):
@@ -297,12 +297,13 @@ def test_expr_is_like_scalar(s):
     # Should we make any of these raise informative errors?
     expected = {
         "__call__",
+        "__del__",
         "__imatmul__",
         "__lshift__",
         # "_as_matrix",
         "_as_vector",
+        "_carg",
         "_deserialize",
-        "_is_empty",
         "_name_counter",
         "_update",
         "clear",
@@ -310,10 +311,13 @@ def test_expr_is_like_scalar(s):
         "from_value",
         "update",
     }
-    assert attrs - expr_attrs == expected - {"_is_empty"}
+    if s.is_cscalar:
+        expected.add("_empty")
+    assert attrs - expr_attrs == expected
     assert attrs - infix_attrs == expected | {
         "_expect_op",
         "_expect_type",
+        "_is_cscalar",
     }
 
 
@@ -322,3 +326,60 @@ def test_ndim(s):
     v = Vector.from_values([1], [2])
     assert v.inner(v).ndim == 0
     assert (v @ v).ndim == 0
+
+
+@pytest.mark.skipif("not dtypes._supports_complex")
+# @pytest.mark.parametrize("dtype", ["FC32", "FC64"])  # This segfaults
+@pytest.mark.parametrize("dtype", ["FC64", "FC32"])
+def test_scalar_complex(dtype):
+    s = Scalar.new(dtype)
+    assert s.is_empty
+    s.value = 1
+    assert s == 1
+    assert s.value == 1
+    s.value = 2j  # segfault here!!!
+    assert s == 2j
+    assert s.value == 2j
+    s << 3
+    assert s == 3
+    assert s.value == 3
+    s << 4j
+    assert s == 4j
+    assert s.value == 4j
+    s << 5 + 6j
+    assert s == 5 + 6j
+    assert s.value == 5 + 6j
+    s.value = 7 + 8j
+    assert s == 7 + 8j
+    assert s.value == 7 + 8j
+    s = Scalar.from_value(1j, dtype)
+    assert s.dtype == dtype
+    assert s == 1j
+    assert s.value == 1j
+    s = Scalar.from_value(2 + 3j, dtype)
+    assert s.dtype == dtype
+    assert s == 2 + 3j
+    assert s.value == 2 + 3j
+
+
+@autocompute
+def test_scalar_expr(s):
+    v = Vector.from_values([1], [2])
+    expr = v.inner(v)
+    t = expr._new_scalar(s.dtype)
+    assert t.is_cscalar is s.is_cscalar
+    assert (v @ v).is_cscalar is s.is_cscalar
+    assert (v @ v).is_grbscalar is s.is_grbscalar
+    assert (v @ v).new(is_cscalar=True).is_cscalar is True
+    assert (v @ v).new(is_cscalar=False).is_cscalar is False  # pragma: is_grbscalar
+    assert v[1].new(is_cscalar=True).is_cscalar is True
+    assert v[1].new(is_cscalar=False).is_cscalar is False  # pragma: is_grbscalar
+    expr = v.reduce()
+    assert expr == 2  # Autocompute and cache value
+    assert expr.new().is_cscalar is False  # b/c default reduce is to allow empty
+    assert expr == 2  # Autocompute and cache value
+    assert expr.new(is_cscalar=True).is_cscalar is True  # We should respect keyword
+
+
+def test_sizeof(s):
+    assert 1 < sys.getsizeof(s) < 1000

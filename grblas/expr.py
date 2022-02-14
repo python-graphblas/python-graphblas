@@ -3,6 +3,7 @@ from collections import namedtuple
 import numpy as np
 
 from . import lib, utils
+from .dtypes import _INDEX
 from .utils import _CArray, output_type
 
 
@@ -29,15 +30,23 @@ class IndexerResolver:
     def __init__(self, obj, indices):
         self.obj = obj
         if indices is Ellipsis:
-            from .scalar import _CScalar
+            from .scalar import _as_scalar
             from .vector import Vector
 
             if type(obj) is Vector:
-                self.indices = [AxisIndex(obj._size, _ALL_INDICES, _CScalar(obj._size))]
+                self.indices = [
+                    AxisIndex(
+                        obj._size, _ALL_INDICES, _as_scalar(obj._size, _INDEX, is_cscalar=True)
+                    )
+                ]
             else:
                 self.indices = [
-                    AxisIndex(obj._nrows, _ALL_INDICES, _CScalar(obj._nrows)),
-                    AxisIndex(obj._ncols, _ALL_INDICES, _CScalar(obj._ncols)),
+                    AxisIndex(
+                        obj._nrows, _ALL_INDICES, _as_scalar(obj._nrows, _INDEX, is_cscalar=True)
+                    ),
+                    AxisIndex(
+                        obj._ncols, _ALL_INDICES, _as_scalar(obj._ncols, _INDEX, is_cscalar=True)
+                    ),
                 ]
         else:
             self.indices = self.parse_indices(indices, obj.shape)
@@ -59,7 +68,7 @@ class IndexerResolver:
         """Convert resolved index for the given dimension back into a valid Python index"""
         index = self.indices[idx]
         if index.size is None:
-            return index.index.scalar.value
+            return index.index.value
         if index.index is _ALL_INDICES:
             return slice(None)
         from ._slice import gxb_backwards, gxb_range, gxb_stride
@@ -104,7 +113,7 @@ class IndexerResolver:
         return out
 
     def parse_index(self, index, typ, size):
-        from .scalar import _CScalar
+        from .scalar import _as_scalar
 
         if np.issubdtype(typ, np.integer):
             if index >= size:
@@ -113,7 +122,7 @@ class IndexerResolver:
                 index = index + size
                 if index < 0:
                     raise IndexError(f"Index out of range: index={index - size}, size={size}")
-            return AxisIndex(None, _CScalar(int(index)), None)
+            return AxisIndex(None, _as_scalar(int(index), _INDEX, is_cscalar=True), None)
         if typ is list:
             pass
         elif typ is slice:
@@ -133,7 +142,9 @@ class IndexerResolver:
                     if (index < 0).any():
                         bad_index = index[index < 0][0] - size
                         raise IndexError(f"Index out of range: index={bad_index}, size={size}")
-            return AxisIndex(len(index), _CArray(index), _CScalar(len(index)))
+            return AxisIndex(
+                len(index), _CArray(index), _as_scalar(len(index), _INDEX, is_cscalar=True)
+            )
         else:
             from .scalar import Scalar
 
@@ -145,7 +156,7 @@ class IndexerResolver:
                     value = value + size
                     if value < 0:
                         raise IndexError(f"Index out of range: index={value - size}, size={size}")
-                return AxisIndex(None, _CScalar(value), None)
+                return AxisIndex(None, _as_scalar(value, _INDEX, is_cscalar=True), None)
 
             from .matrix import Matrix, TransposedMatrix
             from .vector import Vector
@@ -239,18 +250,25 @@ class AmbiguousAssignOrExtract:
     def value(self):
         if not self.resolved_indexes.is_single_element:
             raise AttributeError("Only Scalars have `.value` attribute")
-        scalar = self.parent._extract_element(self.resolved_indexes, name="s_extract")
+        scalar = self.parent._extract_element(
+            self.resolved_indexes, is_cscalar=True, name="s_extract"  # pragma: to_grb
+        )
         return scalar.value
 
-    def new(self, dtype=None, *, mask=None, input_mask=None, name=None):
+    def new(self, dtype=None, *, mask=None, input_mask=None, is_cscalar=None, name=None):
         """
         Force extraction of the indexes into a new object
         dtype and mask are the only controllable parameters.
         """
+        # TODO: don't have `is_cscalar` argument if the output is not a scalar
         if self.resolved_indexes.is_single_element:
             if mask is not None or input_mask is not None:
                 raise TypeError("mask is not allowed for single element extraction")
-            return self.parent._extract_element(self.resolved_indexes, dtype, name=name)
+            if is_cscalar is None:
+                is_cscalar = False
+            return self.parent._extract_element(
+                self.resolved_indexes, dtype, is_cscalar=is_cscalar, name=name
+            )
         else:
             if input_mask is not None:
                 if mask is not None:
@@ -379,7 +397,13 @@ class Updater:
         if resolved_indexes.is_single_element:
             self.parent._delete_element(resolved_indexes)
         else:
-            raise TypeError("Remove Element only supports a single index")
+            # Delete selection by assigning an empty scalar
+            from .scalar import Scalar
+
+            scalar = Scalar.new(
+                self.parent.dtype, is_cscalar=False, name="s_empty"  # pragma: is_grbscalar
+            )
+            self._setitem(resolved_indexes, scalar, is_submask=False)
 
     def __lshift__(self, expr):
         # Occurs when user calls `C(params) << expr`

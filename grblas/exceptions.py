@@ -109,8 +109,6 @@ def check_status(response_code, args):
     if type(arg) is _Pointer:
         arg = arg.val
     type_name = type(arg).__name__
-    if type_name == "_GrBScalar":
-        type_name = "Scalar"
     carg = arg._carg
     return check_status_carg(response_code, type_name, carg)
 

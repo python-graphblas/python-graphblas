@@ -265,8 +265,8 @@ def test_remove_element(A):
     del A[3, 0]
     assert compute(A[3, 0].value) is None
     assert A[6, 3].value == 7
-    with pytest.raises(TypeError, match="Remove Element only supports"):
-        del A[3:5, 3]
+    # with pytest.raises(TypeError, match="Remove Element only supports"):
+    del A[3:5, 3]  # Now okay
 
 
 def test_mxm(A):
@@ -1002,6 +1002,10 @@ def test_assign_scalar(A):
     C = A.dup()
     C[1::2, 2] = 0
     assert C.isequal(result_column)
+    B = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], 1)
+    B[1, 1] = Scalar.new(B.dtype)
+    expected = Matrix.from_values([0, 0, 1], [0, 1, 0], 1)
+    assert B.isequal(expected)
 
 
 def test_assign_bad(A):
@@ -3051,6 +3055,9 @@ def test_ewise_union():
     result = A1.ewise_union(A2, binary.plus, 10, 20).new()
     expected = Matrix.from_values([0, 0], [0, 1], [21, 12], nrows=1, ncols=3)
     assert result.isequal(expected)
+    # Handle Scalars
+    result = A1.ewise_union(A2, binary.plus, Scalar.from_value(10), Scalar.from_value(20)).new()
+    assert result.isequal(expected)
     # Upcast if scalars are floats
     result = A1.ewise_union(A2, monoid.plus, 10.1, 20.2).new()
     expected = Matrix.from_values([0, 0], [0, 1], [21.2, 12.1], nrows=1, ncols=3)
@@ -3065,3 +3072,19 @@ def test_ewise_union():
     bad = Matrix.new(int, nrows=1, ncols=1)
     with pytest.raises(DimensionMismatch):
         A1.ewise_union(bad, binary.plus, 0, 0)
+    with pytest.raises(TypeError, match="Literal scalars"):
+        A1.ewise_union(A2, binary.plus, A2, 20)
+    with pytest.raises(TypeError, match="Literal scalars"):
+        A1.ewise_union(A2, binary.plus, 10, A2)
+
+
+def test_delete_via_scalar(A):
+    nvals = A.nvals
+    del A[0, [1, 3]]
+    assert A.nvals == nvals - 2
+    assert A[0, :].new().nvals == 0
+    del A[:, 0]
+    assert A.nvals == nvals - 3
+    assert A[:, 0].new().nvals == 0
+    del A[:, :]
+    assert A.nvals == 0

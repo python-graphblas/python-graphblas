@@ -11,7 +11,7 @@ from .exceptions import NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_typed_op
-from .scalar import Scalar, ScalarExpression, _CScalar, _GrBScalar
+from .scalar import _MATERIALIZE, Scalar, ScalarExpression, _as_scalar
 from .utils import (
     _CArray,
     _Pointer,
@@ -114,7 +114,7 @@ class Matrix(BaseType):
                 "Doing `(i, j) in my_matrix` checks whether a value is present at that index."
             )
         scalar = extractor.new(name="s_contains")
-        return not scalar.is_empty
+        return not scalar._is_empty
 
     def __iter__(self):
         self.wait()  # sort in SS
@@ -123,7 +123,7 @@ class Matrix(BaseType):
 
     def __sizeof__(self):
         size = ffi_new("size_t*")
-        scalar = Scalar(size, _INDEX, name="s_size", empty=True)
+        scalar = Scalar(size, _INDEX, name="s_size", is_cscalar=True, empty=True)
         call("GxB_Matrix_memoryUsage", [_Pointer(scalar), self])
         return size[0] + object.__sizeof__(self)
 
@@ -189,14 +189,14 @@ class Matrix(BaseType):
     @property
     def nrows(self):
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_nrows", empty=True)
+        scalar = Scalar(n, _INDEX, name="s_nrows", is_cscalar=True, empty=True)
         call("GrB_Matrix_nrows", [_Pointer(scalar), self])
         return n[0]
 
     @property
     def ncols(self):
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_ncols", empty=True)
+        scalar = Scalar(n, _INDEX, name="s_ncols", is_cscalar=True, empty=True)
         call("GrB_Matrix_ncols", [_Pointer(scalar), self])
         return n[0]
 
@@ -207,7 +207,7 @@ class Matrix(BaseType):
     @property
     def nvals(self):
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_nvals", empty=True)
+        scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
         call("GrB_Matrix_nvals", [_Pointer(scalar), self])
         return n[0]
 
@@ -226,11 +226,11 @@ class Matrix(BaseType):
         call("GrB_Matrix_clear", [self])
 
     def resize(self, nrows, ncols):
-        nrows = _CScalar(nrows)
-        ncols = _CScalar(ncols)
+        nrows = _as_scalar(nrows, _INDEX, is_cscalar=True)
+        ncols = _as_scalar(ncols, _INDEX, is_cscalar=True)
         call("GrB_Matrix_resize", [self, nrows, ncols])
-        self._nrows = nrows.scalar.value
-        self._ncols = ncols.scalar.value
+        self._nrows = nrows.value
+        self._ncols = ncols.value
 
     def to_values(self, dtype=None):
         """
@@ -242,7 +242,7 @@ class Matrix(BaseType):
         columns = _CArray(size=nvals, name="&columns_array")
         values = _CArray(size=nvals, dtype=self.dtype, name="&values_array")
         n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_nvals", empty=True)
+        scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
         scalar.value = nvals
         call(
             f"GrB_Matrix_extractTuples_{self.dtype.name}",
@@ -295,7 +295,7 @@ class Matrix(BaseType):
         values = _CArray(values, self.dtype)
         call(
             f"GrB_Matrix_build_{self.dtype.name}",
-            [self, rows, columns, values, _CScalar(n), dup_op],
+            [self, rows, columns, values, _as_scalar(n, _INDEX, is_cscalar=True), dup_op],
         )
         # Check for duplicates when dup_op was not provided
         if not dup_op_given and self._nvals < n:
@@ -328,10 +328,7 @@ class Matrix(BaseType):
         and make it safe to use as input parameters on multiple threads.
         """
         # TODO: expose COMPLETE or MATERIALIZE options to the user
-        call(
-            "GrB_Matrix_wait",
-            [self, Scalar.from_value(lib.GrB_MATERIALIZE, name="GrB_MATERIALIZE")],
-        )
+        call("GrB_Matrix_wait", [self, _MATERIALIZE])
 
     @classmethod
     def new(cls, dtype, nrows=0, ncols=0, *, name=None):
@@ -342,11 +339,11 @@ class Matrix(BaseType):
         new_matrix = ffi_new("GrB_Matrix*")
         dtype = lookup_dtype(dtype)
         rv = cls(new_matrix, dtype, name=name)
-        nrows = _CScalar(nrows)
-        ncols = _CScalar(ncols)
+        nrows = _as_scalar(nrows, _INDEX, is_cscalar=True)
+        ncols = _as_scalar(ncols, _INDEX, is_cscalar=True)
         call("GrB_Matrix_new", [_Pointer(rv), dtype, nrows, ncols])
-        rv._nrows = nrows.scalar.value
-        rv._ncols = ncols.scalar.value
+        rv._nrows = nrows.value
+        rv._ncols = ncols.value
         return rv
 
     @classmethod
@@ -502,8 +499,38 @@ class Matrix(BaseType):
         # SS, SuiteSparse-specific: eWiseUnion
         method_name = "ewise_union"
         other = self._expect_type(other, Matrix, within=method_name, argname="other", op=op)
-        left = _GrBScalar(left_default)
-        right = _GrBScalar(right_default)
+        if type(left_default) is not Scalar:
+            try:
+                left = Scalar.from_value(
+                    left_default, is_cscalar=False, name=""  # pragma: is_grbscalar
+                )
+            except TypeError:
+                left = self._expect_type(
+                    left_default,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="left_default",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        else:
+            left = _as_scalar(left_default, is_cscalar=False)  # pragma: is_grbscalar
+        if type(right_default) is not Scalar:
+            try:
+                right = Scalar.from_value(
+                    right_default, is_cscalar=False, name=""  # pragma: is_grbscalar
+                )
+            except TypeError:
+                right = self._expect_type(
+                    right_default,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="right_default",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        else:
+            right = _as_scalar(right_default, is_cscalar=False)  # pragma: is_grbscalar
         scalar_dtype = unify(left.dtype, right.dtype)
         nonscalar_dtype = unify(self.dtype, other.dtype)
         op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
@@ -619,7 +646,7 @@ class Matrix(BaseType):
         elif right is None:
             if type(left) is not Scalar:
                 try:
-                    left = Scalar.from_value(left, name="")
+                    left = Scalar.from_value(left, is_cscalar=None, name="")
                 except TypeError:
                     left = self._expect_type(
                         left,
@@ -640,13 +667,16 @@ class Matrix(BaseType):
                     argname="op",
                     extra_message=extra_message,
                 )
-            cfunc_name = f"GrB_Matrix_apply_BinaryOp1st_{left.dtype}"
-            args = [_CScalar(left), self]
+            if left._is_cscalar:
+                cfunc_name = f"GrB_Matrix_apply_BinaryOp1st_{left.dtype}"
+            else:
+                cfunc_name = "GrB_Matrix_apply_BinaryOp1st_Scalar"
+            args = [left, self]
             expr_repr = "{1.name}.apply({op}, left={0})"
         elif left is None:
             if type(right) is not Scalar:
                 try:
-                    right = Scalar.from_value(right, name="")
+                    right = Scalar.from_value(right, is_cscalar=None, name="")
                 except TypeError:
                     right = self._expect_type(
                         right,
@@ -667,8 +697,11 @@ class Matrix(BaseType):
                     argname="op",
                     extra_message=extra_message,
                 )
-            cfunc_name = f"GrB_Matrix_apply_BinaryOp2nd_{right.dtype}"
-            args = [self, _CScalar(right)]
+            if right._is_cscalar:
+                cfunc_name = f"GrB_Matrix_apply_BinaryOp2nd_{right.dtype}"
+            else:
+                cfunc_name = "GrB_Matrix_apply_BinaryOp2nd_Scalar"
+            args = [self, right]
             expr_repr = "{0.name}.apply({op}, right={1})"
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
@@ -777,18 +810,22 @@ class Matrix(BaseType):
             if not allow_empty and op.parent._monoid is None:
                 # But we still kindly allow it if it's a monoid-only aggregator such as sum
                 raise ValueError("allow_empty=False not allowed when using Aggregators")
+        if allow_empty:
+            cfunc_name = "GrB_Matrix_reduce_Monoid_Scalar"
+        else:
+            cfunc_name = "GrB_Matrix_reduce_{output_dtype}"
         return ScalarExpression(
             method_name,
-            "GrB_Matrix_reduce_{output_dtype}",
+            cfunc_name,
             [self],
             op=op,  # to be determined later
-            is_empty=allow_empty and self._nvals == 0,
+            is_cscalar=not allow_empty,
         )
 
     ##################################
     # Extract and Assign index methods
     ##################################
-    def _extract_element(self, resolved_indexes, dtype=None, name="s_extract"):
+    def _extract_element(self, resolved_indexes, dtype=None, *, is_cscalar, name=None, result=None):
         if dtype is None:
             dtype = self.dtype
         else:
@@ -796,15 +833,19 @@ class Matrix(BaseType):
         rowidx, colidx = resolved_indexes.indices
         if self._is_transposed:
             rowidx, colidx = colidx, rowidx
-        result = Scalar.new(dtype, name=name)
-        if (
-            call(
-                f"GrB_Matrix_extractElement_{dtype}",
-                [_Pointer(result), self, rowidx.index, colidx.index],
-            )
-            is not NoValue
-        ):
-            result._is_empty = False
+        if result is None:
+            result = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+        if is_cscalar:
+            if (
+                call(
+                    f"GrB_Matrix_extractElement_{dtype}",
+                    [_Pointer(result), self, rowidx.index, colidx.index],
+                )
+                is not NoValue
+            ):
+                result._empty = False
+        else:
+            call("GrB_Matrix_extractElement_Scalar", [result, self, rowidx.index, colidx.index])
         return result
 
     def _prep_for_extract(self, resolved_indexes):
@@ -848,7 +889,7 @@ class Matrix(BaseType):
         rowidx, colidx = resolved_indexes.indices
         if type(value) is not Scalar:
             try:
-                value = Scalar.from_value(value, name="")
+                value = Scalar.from_value(value, is_cscalar=None, name="")
             except TypeError:
                 value = self._expect_type(
                     value,
@@ -857,11 +898,14 @@ class Matrix(BaseType):
                     argname="value",
                     extra_message="Literal scalars also accepted.",
                 )
-        # should we cast?
-        call(
-            f"GrB_Matrix_setElement_{value.dtype}",
-            [self, _CScalar(value), rowidx.index, colidx.index],
-        )
+        if value._is_cscalar:
+            if value._empty:
+                call("GrB_Matrix_removeElement", [self, rowidx.index, colidx.index])
+                return
+            cfunc_name = f"GrB_Matrix_setElement_{value.dtype}"
+        else:
+            cfunc_name = "GrB_Matrix_setElement_Scalar"
+        call(cfunc_name, [self, value, rowidx.index, colidx.index])
 
     def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
@@ -888,8 +932,8 @@ class Matrix(BaseType):
                     else:
                         # C(M)[i, J] << v
                         # Upcast v to a Matrix and use Matrix_assign
-                        rows = _CArray([rows.scalar.value])
-                        rowscalar = _CScalar(1)
+                        rows = _CArray([rows.value])
+                        rowscalar = _as_scalar(1, _INDEX, is_cscalar=True)
                         expr = MatrixExpression(
                             method_name,
                             "GrB_Matrix_assign",
@@ -932,8 +976,8 @@ class Matrix(BaseType):
                     else:
                         # C(M)[I, j] << v
                         # Upcast v to a Matrix and use Matrix_assign
-                        cols = _CArray([cols.scalar.value])
-                        colscalar = _CScalar(1)
+                        cols = _CArray([cols.value])
+                        colscalar = _as_scalar(1, _INDEX, is_cscalar=True)
                         expr = MatrixExpression(
                             method_name,
                             "GrB_Matrix_assign",
@@ -1027,7 +1071,7 @@ class Matrix(BaseType):
         else:
             if type(value) is not Scalar:
                 try:
-                    value = Scalar.from_value(value, name="")
+                    value = Scalar.from_value(value, is_cscalar=None, name="")
                 except TypeError:
                     if rowsize is None or colsize is None:
                         types = (Scalar, Vector)
@@ -1118,7 +1162,10 @@ class Matrix(BaseType):
                             )
                     # C[I, J](M) << c
                     # SS, SuiteSparse-specific: subassign
-                    cfunc_name = f"GrB_Matrix_subassign_{value.dtype}"
+                    if value._is_cscalar:
+                        cfunc_name = f"GrB_Matrix_subassign_{value.dtype}"
+                    else:
+                        cfunc_name = "GrB_Matrix_subassign_Scalar"
                     expr_repr = "[[{2} rows], [{4} cols]](%s) = {0}" % mask.name
                 else:
                     # C(M)[I, J] << c
@@ -1126,17 +1173,20 @@ class Matrix(BaseType):
                     # C(M)[I, j] << c
                     # C(M)[i, j] << c
                     if rowsize is None:
-                        rows = _CArray([rows.scalar.value])
-                        rowscalar = _CScalar(1)
+                        rows = _CArray([rows.value])
+                        rowscalar = _as_scalar(1, _INDEX, is_cscalar=True)
                     if colsize is None:
-                        cols = _CArray([cols.scalar.value])
-                        colscalar = _CScalar(1)
-                    cfunc_name = f"GrB_Matrix_assign_{value.dtype}"
+                        cols = _CArray([cols.value])
+                        colscalar = _as_scalar(1, _INDEX, is_cscalar=True)
+                    if value._is_cscalar:
+                        cfunc_name = f"GrB_Matrix_assign_{value.dtype}"
+                    else:
+                        cfunc_name = "GrB_Matrix_assign_Scalar"
                     expr_repr = "[[{2} rows], [{4} cols]] = {0}"
                 expr = MatrixExpression(
                     method_name,
                     cfunc_name,
-                    [_CScalar(value), rows, rowscalar, cols, colscalar],
+                    [value, rows, rowscalar, cols, colscalar],
                     expr_repr=expr_repr,
                     nrows=self._nrows,
                     ncols=self._ncols,
@@ -1298,8 +1348,8 @@ class MatrixExpression(BaseExpression):
     to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(_automethods.wait))
     # These raise exceptions
-    __array__ = wrapdoc(Matrix.__array__)(Matrix.__array__)
-    __bool__ = wrapdoc(Matrix.__bool__)(Matrix.__bool__)
+    __array__ = Matrix.__array__
+    __bool__ = Matrix.__bool__
     __iadd__ = _automethods.__iadd__
     __iand__ = _automethods.__iand__
     __ifloordiv__ = _automethods.__ifloordiv__

@@ -12,6 +12,7 @@ import grblas
 from grblas import agg, binary, dtypes, monoid, semiring, unary
 from grblas.exceptions import (
     DimensionMismatch,
+    EmptyObject,
     IndexOutOfBound,
     InvalidValue,
     OutputNotEmpty,
@@ -236,6 +237,9 @@ def test_extract_element(v):
         v[object()]
     with pytest.raises(IndexError):
         v[100]
+    s = Scalar.new(int)
+    s << v[1]
+    assert s == 1
 
 
 def test_set_element(v):
@@ -252,8 +256,8 @@ def test_remove_element(v):
     del v[1]
     assert compute(v[1].value) is None
     assert v[4].value == 2
-    with pytest.raises(TypeError, match="Remove Element only supports"):
-        del v[1:3]
+    # with pytest.raises(TypeError, match="Remove Element only supports"):
+    del v[1:3]  # Now okay
 
 
 def test_vxm(v, A):
@@ -319,6 +323,13 @@ def test_vxm_accum(v, A):
     w3 = v.dup()
     w3(accum=monoid.plus) << v.vxm(A, semiring.plus_times)
     assert w3.isequal(result)
+    # allow strings for accum
+    w4 = v.dup()
+    w4("+") << v.vxm(A, semiring.plus_times)
+    assert w4.isequal(result)
+    w5 = v.dup()
+    w5(accum="plus") << v.vxm(A, semiring.plus_times)
+    assert w5.isequal(result)
 
 
 def test_ewise_mult(v):
@@ -485,6 +496,8 @@ def test_assign_scalar(v):
         w[1] = object()
     w << 2
     assert w.isequal(Vector.from_values([0, 1, 2], [2, 2, 2]))
+    w[0] = Scalar.new(int)
+    assert w.isequal(Vector.from_values([1, 2], [2, 2]))
 
 
 def test_assign_scalar_mask(v):
@@ -619,6 +632,12 @@ def test_apply_binary(v):
     w3 = v.apply(monoid.plus, right=1).new()
     assert w1.isequal(w2)
     assert w1.isequal(w3)
+
+
+def test_apply_empty(v):
+    s = Scalar.new(int, is_cscalar=True)
+    with pytest.raises(EmptyObject):
+        v.apply(binary.plus, s).new()
 
 
 def test_reduce(v):
@@ -1189,6 +1208,20 @@ def test_inner(v):
     expected = R.mxm(C).new()[0, 0].new()
     assert expected.isequal(v.inner(v).new())
     assert expected.isequal((v @ v).new())
+    s = Scalar.new(v.dtype)
+    s << v.inner(v)
+    assert s == 6
+    s(binary.plus) << v.inner(v)
+    assert s == 12
+
+
+@autocompute
+def test_inner_infix(v):
+    s = Scalar.new(v.dtype)
+    s << v @ v
+    assert s == 6
+    s(binary.plus) << v @ v
+    assert s == 12
 
 
 def test_outer(v):
@@ -1309,6 +1342,7 @@ def test_expr_is_like_vector(v):
         "_deserialize",
         "_extract_element",
         "_name_counter",
+        "_parent",
         "_prep_for_assign",
         "_prep_for_extract",
         "_update",
@@ -1528,12 +1562,15 @@ def test_concat(v):
     expected[: v.size] = v
     expected[v.size :] = v
     w1 = grblas.ss.concat([v, v])
-    assert w1.isequal(expected)
+    assert w1.isequal(expected, check_dtype=True)
     w2 = Vector.new(v.dtype, size=2 * v.size)
     w2.ss.concat([v, v])
-    assert w2.isequal(expected)
+    assert w2.isequal(expected, check_dtype=True)
     with pytest.raises(TypeError):
         w2.ss.concat([[v, v]])
+    w3 = grblas.ss.concat([v, v], dtype=float)
+    assert w3.isequal(expected)
+    assert w3.dtype == float
 
 
 def test_split(v):
@@ -1566,6 +1603,9 @@ def test_ewise_union():
     result = v1.ewise_union(v2, binary.plus, 10, 20).new()
     expected = Vector.from_values([0, 1], [21, 12], size=3)
     assert result.isequal(expected)
+    # Handle Scalars
+    result = v1.ewise_union(v2, binary.plus, Scalar.from_value(10), Scalar.from_value(20)).new()
+    assert result.isequal(expected)
     # Upcast if scalars are floats
     result = v1.ewise_union(v2, monoid.plus, 10.1, 20.2).new()
     expected = Vector.from_values([0, 1], [21.2, 12.1], size=3)
@@ -1580,3 +1620,14 @@ def test_ewise_union():
     bad = Vector.new(int, size=1)
     with pytest.raises(DimensionMismatch):
         v1.ewise_union(bad, binary.plus, 0, 0)
+    with pytest.raises(TypeError, match="Literal scalars"):
+        v1.ewise_union(v2, binary.plus, v2, 20)
+    with pytest.raises(TypeError, match="Literal scalars"):
+        v1.ewise_union(v2, binary.plus, 10, v2)
+
+
+def test_delete_via_scalar(v):
+    del v[[1, 3]]
+    assert v.isequal(Vector.from_values([4, 6], [2, 0]))
+    del v[:]
+    assert v.nvals == 0

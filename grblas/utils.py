@@ -161,7 +161,7 @@ class _Pointer:
     def name(self):
         name = self.val.name
         if not name:
-            name = f"temp_{type(self.val).__name__.lower()}"
+            name = f"{type(self.val).__name__[0].lower()}_temp"
         return f"&{name}"
 
 

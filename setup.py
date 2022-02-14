@@ -23,7 +23,6 @@ setup(
     author_email="erik.n.welch@gmail.com,jim22k@gmail.com",
     url="https://github.com/metagraph-dev/grblas",
     packages=find_packages(exclude=["grblas.backends.python"]),
-    setup_requires=["pytest-runner"],
     python_requires=">=3.8",
     install_requires=["suitesparse-graphblas >=6.0, <6.2", "numba", "donfig", "pyyaml"],
     tests_require=["pytest", "pandas"],
