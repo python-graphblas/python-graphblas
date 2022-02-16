@@ -165,6 +165,10 @@ def _expect_op(self, op, values, **kwargs):
         raise TypeError(message) from None
 
 
+AmbiguousAssignOrExtract._expect_op = _expect_op
+AmbiguousAssignOrExtract._expect_type = _expect_type
+
+
 def _check_mask(mask, output=None):
     if not isinstance(mask, Mask):
         if isinstance(mask, BaseType):

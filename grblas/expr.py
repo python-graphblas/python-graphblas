@@ -263,6 +263,8 @@ class AmbiguousAssignOrExtract:
         delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
         return delayed_extractor.new(dtype, mask=mask, name=name)
 
+    dup = new
+
     def _extract_delayed(self):
         """Return an Expression object, treating this as an extract call"""
         return self.parent._prep_for_extract(self.resolved_indexes)

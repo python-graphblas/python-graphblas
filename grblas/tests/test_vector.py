@@ -1339,7 +1339,6 @@ def test_expr_is_like_vector(v):
         "__delitem__",
         "__lshift__",
         "__setitem__",
-        "_as_matrix",
         "_assign_element",
         "_delete_element",
         "_deserialize",
@@ -1357,10 +1356,35 @@ def test_expr_is_like_vector(v):
         "update",
     }
     assert attrs - expr_attrs == expected
-    assert attrs - infix_attrs == expected | {
-        "_expect_op",
-        "_expect_type",
+    assert attrs - infix_attrs == expected
+
+
+@autocompute
+def test_index_expr_is_like_vector(v):
+    w = v.dup(dtype=bool)
+    attrs = {attr for attr, val in inspect.getmembers(w)}
+    expr_attrs = {attr for attr, val in inspect.getmembers(w[[0, 1]])}
+    expected = {
+        "__del__",
+        "__delitem__",
+        "__setitem__",
+        "_assign_element",
+        "_delete_element",
+        "_deserialize",
+        "_extract_element",
+        "_name_counter",
+        "_parent",
+        "_prep_for_assign",
+        "_prep_for_extract",
+        "_repr_html_",  # TODO
+        "_update",
+        "build",
+        "clear",
+        "from_pygraphblas",
+        "from_values",
+        "resize",
     }
+    assert attrs - expr_attrs == expected
 
 
 def test_random(v):

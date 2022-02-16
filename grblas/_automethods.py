@@ -126,6 +126,14 @@ def __ror__(self):
     return self._get_value("__ror__")
 
 
+def _as_matrix(self):
+    return self._get_value("_as_matrix")
+
+
+def _as_vector(self):
+    return self._get_value("_as_vector")
+
+
 def _carg(self):
     return self._get_value("_carg")
 
@@ -321,6 +329,8 @@ if __name__ == "__main__":
         "__int__",
         "__invert__",
         "__neg__",
+        "_as_matrix",
+        "_as_vector",
         "_is_empty",
         "is_empty",
         "value",
@@ -346,6 +356,7 @@ if __name__ == "__main__":
         "to_values",
     }
     vector = {
+        "_as_matrix",
         "inner",
         "outer",
         "reduce",

@@ -500,7 +500,7 @@ class Vector(BaseType):
             "GxB_Vector_eWiseUnion",
             [self, left, other, right],
             op=op,
-            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1.name}, {3.name})",
+            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1._name}, {3._name})",
         )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
@@ -584,7 +584,7 @@ class Vector(BaseType):
             else:
                 cfunc_name = "GrB_Vector_apply_BinaryOp1st_Scalar"
             args = [left, self]
-            expr_repr = "{1.name}.apply({op}, left={0})"
+            expr_repr = "{1.name}.apply({op}, left={0._name})"
         elif left is None:
             if type(right) is not Scalar:
                 try:
@@ -614,7 +614,7 @@ class Vector(BaseType):
             else:
                 cfunc_name = "GrB_Vector_apply_BinaryOp2nd_Scalar"
             args = [self, right]
-            expr_repr = "{0.name}.apply({op}, right={1})"
+            expr_repr = "{0.name}.apply({op}, right={1._name})"
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
         return VectorExpression(
@@ -735,7 +735,7 @@ class Vector(BaseType):
             "__getitem__",
             "GrB_Vector_extract",
             [self, index, cscalar],
-            expr_repr="{0.name}[[{2} elements]]",
+            expr_repr="{0.name}[[{2._name} elements]]",
             size=size,
             dtype=self.dtype,
         )
@@ -779,12 +779,12 @@ class Vector(BaseType):
                     raise TypeError("Single element assign does not accept a submask")
                 # v[I](m) << w
                 cfunc_name = "GrB_Vector_subassign"
-                expr_repr = "[[{2} elements]](%s) = {0.name}" % mask.name
+                expr_repr = "[[{2._name} elements]](%s) = {0.name}" % mask.name
             else:
                 # v(m)[I] << w
                 # v[I] << w
                 cfunc_name = "GrB_Vector_assign"
-                expr_repr = "[[{2} elements]] = {0.name}"
+                expr_repr = "[[{2._name} elements]] = {0.name}"
         else:
             if type(value) is not Scalar:
                 try:
@@ -806,7 +806,7 @@ class Vector(BaseType):
                     cfunc_name = f"GrB_Vector_subassign_{value.dtype}"
                 else:
                     cfunc_name = "GrB_Vector_subassign_Scalar"
-                expr_repr = "[[{2} elements]](%s) = {0}" % mask.name
+                expr_repr = "[[{2._name} elements]](%s) = {0._name}" % mask.name
             else:
                 # v(m)[I] << c
                 # v[I] << c
@@ -817,7 +817,7 @@ class Vector(BaseType):
                     cfunc_name = f"GrB_Vector_assign_{value.dtype}"
                 else:
                     cfunc_name = "GrB_Vector_assign_Scalar"
-                expr_repr = "[[{2} elements]] = {0}"
+                expr_repr = "[[{2._name} elements]] = {0._name}"
         return VectorExpression(
             method_name,
             cfunc_name,
@@ -944,6 +944,7 @@ class VectorExpression(BaseExpression):
     __rand__ = wrapdoc(Vector.__rand__)(property(_automethods.__rand__))
     __rmatmul__ = wrapdoc(Vector.__rmatmul__)(property(_automethods.__rmatmul__))
     __ror__ = wrapdoc(Vector.__ror__)(property(_automethods.__ror__))
+    _as_matrix = wrapdoc(Vector._as_matrix)(property(_automethods._as_matrix))
     _carg = wrapdoc(Vector._carg)(property(_automethods._carg))
     _name_html = wrapdoc(Vector._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Vector._nvals)(property(_automethods._nvals))
@@ -1012,6 +1013,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     __rand__ = wrapdoc(Vector.__rand__)(property(_automethods.__rand__))
     __rmatmul__ = wrapdoc(Vector.__rmatmul__)(property(_automethods.__rmatmul__))
     __ror__ = wrapdoc(Vector.__ror__)(property(_automethods.__ror__))
+    _as_matrix = wrapdoc(Vector._as_matrix)(property(_automethods._as_matrix))
     _carg = wrapdoc(Vector._carg)(property(_automethods._carg))
     _name_html = wrapdoc(Vector._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Vector._nvals)(property(_automethods._nvals))

@@ -50,6 +50,12 @@ class Scalar(BaseType):
     def is_grbscalar(self):
         return not self._is_cscalar
 
+    @property
+    def _name(self):
+        """The name used in the text for expressions"""
+        # Always using `repr(self.value)` may also be reasonable
+        return self.name or repr(self.value)
+
     def __repr__(self):
         from .formatting import format_scalar
 
@@ -368,9 +374,9 @@ class Scalar(BaseType):
         return cls.from_value(scalar[0], dtype)
 
     def _as_vector(self):
-        """Copy this Scalar to a Vector
+        """Copy or cast this Scalar to a Vector
 
-        In the future, we may _cast_ instead of _copy_ when using SuiteSparse.
+        This casts to a Vector when using GrB_Scalar from SuiteSparse.
         """
         from .vector import Vector
 
@@ -386,6 +392,28 @@ class Scalar(BaseType):
                 name=f"(GrB_Vector){self.name or 's_temp'}",
             )
             rv._size = 1
+        return rv
+
+    def _as_matrix(self):
+        """Copy or cast this Scalar to a Matrix
+
+        This casts to a Matrix when using GrB_Scalar from SuiteSparse.
+        """
+        from .matrix import Matrix
+
+        if self._is_cscalar:
+            rv = Matrix.new(self.dtype, ncols=1, nrows=1)
+            if not self._is_empty:
+                rv[0] = self
+        else:
+            rv = Matrix(
+                ffi.cast("GrB_Matrix*", self.gb_obj),
+                self.dtype,
+                parent=self,
+                name=f"(GrB_Matrix){self.name or 's_temp'}",
+            )
+            rv._nrows = 1
+            rv._ncols = 1
         return rv
 
 
@@ -438,6 +466,8 @@ class ScalarExpression(BaseExpression):
     __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
     __invert__ = wrapdoc(Scalar.__invert__)(property(_automethods.__invert__))
     __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
+    _as_matrix = wrapdoc(Scalar._as_matrix)(property(_automethods._as_matrix))
+    _as_vector = wrapdoc(Scalar._as_vector)(property(_automethods._as_vector))
     _is_empty = wrapdoc(Scalar._is_empty)(property(_automethods._is_empty))
     _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
@@ -474,6 +504,8 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
             self.resolved_indexes, dtype, is_cscalar=is_cscalar, name=name
         )
 
+    dup = new
+
     # Begin auto-generated code: Scalar
     _get_value = _automethods._get_value
     __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
@@ -485,6 +517,8 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
     __invert__ = wrapdoc(Scalar.__invert__)(property(_automethods.__invert__))
     __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
+    _as_matrix = wrapdoc(Scalar._as_matrix)(property(_automethods._as_matrix))
+    _as_vector = wrapdoc(Scalar._as_vector)(property(_automethods._as_vector))
     _is_empty = wrapdoc(Scalar._is_empty)(property(_automethods._is_empty))
     _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
