@@ -404,7 +404,7 @@ class Scalar(BaseType):
         if self._is_cscalar:
             rv = Matrix.new(self.dtype, ncols=1, nrows=1)
             if not self._is_empty:
-                rv[0] = self
+                rv[0, 0] = self
         else:
             rv = Matrix(
                 ffi.cast("GrB_Matrix*", self.gb_obj),
