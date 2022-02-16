@@ -150,16 +150,16 @@ def test_updater_only_once():
         u[[0, 1]]()[0]
     with pytest.raises(TypeError, match="is not subscriptable"):
         u()[[0, 1]][0]
-    with pytest.raises(TypeError, match="is not subscriptable"):
+    with pytest.raises(TypeError, match="autocompute"):
         u[[0, 1]][0]
 
 
 def test_bad_extract_with_updater():
     u = Vector.from_values([0, 1, 3], [1, 2, 3])
-    assert u[0].value == 1
+    assert u[0].new() == 1
     with pytest.raises(AttributeError, match="'Assigner' object has no attribute 'value'"):
         u(mask=u.S)[0].value
-    with pytest.raises(AttributeError, match="Only Scalars"):
+    with pytest.raises(AttributeError, match="has no attribute"):
         u[[0, 1]].value
     with pytest.raises(AttributeError, match="'Assigner' object has no attribute 'new'"):
         u(mask=u.S)[0].new()
@@ -167,7 +167,7 @@ def test_bad_extract_with_updater():
         u << u(mask=u.S)[[1, 2]]
     with pytest.raises(TypeError, match="Assignment value must be a valid expression"):
         u << u()[[1, 2]]
-    with pytest.raises(TypeError, match="mask is not allowed for single element extraction"):
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
         u[0].new(mask=u.S)
     s = Scalar.from_value(10)
     with pytest.raises(TypeError, match="Indexing not supported for Scalars"):

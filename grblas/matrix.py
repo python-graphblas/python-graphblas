@@ -101,14 +101,24 @@ class Matrix(BaseType):
 
     def __getitem__(self, keys):
         resolved_indexes = IndexerResolver(self, keys)
-        return AmbiguousAssignOrExtract(self, resolved_indexes)
+        shape = resolved_indexes.shape
+        if not shape:
+            from .scalar import ScalarIndexExpr
+
+            return ScalarIndexExpr(self, resolved_indexes)
+        elif len(shape) == 1:
+            from .vector import VectorIndexExpr
+
+            return VectorIndexExpr(self, resolved_indexes, *shape)
+        else:
+            return MatrixIndexExpr(self, resolved_indexes, *shape)
 
     def __setitem__(self, keys, expr):
         Updater(self)[keys] = expr
 
     def __contains__(self, index):
         extractor = self[index]
-        if not extractor.resolved_indexes.is_single_element:
+        if not extractor._is_scalar:
             raise TypeError(
                 f"Invalid index to Matrix contains: {index!r}.  A 2-tuple of ints is expected.  "
                 "Doing `(i, j) in my_matrix` checks whether a value is present at that index."
@@ -1364,6 +1374,85 @@ class MatrixExpression(BaseExpression):
     # End auto-generated code: Matrix
 
 
+class MatrixIndexExpr(AmbiguousAssignOrExtract):
+    __slots__ = "_ncols", "_nrows"
+    ndim = 2
+    output_type = Matrix
+    _is_transposed = False
+
+    def __init__(self, parent, resolved_indexes, nrows, ncols):
+        super().__init__(parent, resolved_indexes)
+        self._nrows = nrows
+        self._ncols = ncols
+
+    @property
+    def ncols(self):
+        return self._ncols
+
+    @property
+    def nrows(self):
+        return self._nrows
+
+    @property
+    def shape(self):
+        return (self._nrows, self._ncols)
+
+    # Begin auto-generated code: Matrix
+    _get_value = _automethods._get_value
+    S = wrapdoc(Matrix.S)(property(_automethods.S))
+    T = wrapdoc(Matrix.T)(property(_automethods.T))
+    V = wrapdoc(Matrix.V)(property(_automethods.V))
+    __and__ = wrapdoc(Matrix.__and__)(property(_automethods.__and__))
+    __contains__ = wrapdoc(Matrix.__contains__)(property(_automethods.__contains__))
+    __getitem__ = wrapdoc(Matrix.__getitem__)(property(_automethods.__getitem__))
+    __iter__ = wrapdoc(Matrix.__iter__)(property(_automethods.__iter__))
+    __matmul__ = wrapdoc(Matrix.__matmul__)(property(_automethods.__matmul__))
+    __or__ = wrapdoc(Matrix.__or__)(property(_automethods.__or__))
+    __rand__ = wrapdoc(Matrix.__rand__)(property(_automethods.__rand__))
+    __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(_automethods.__rmatmul__))
+    __ror__ = wrapdoc(Matrix.__ror__)(property(_automethods.__ror__))
+    _carg = wrapdoc(Matrix._carg)(property(_automethods._carg))
+    _name_html = wrapdoc(Matrix._name_html)(property(_automethods._name_html))
+    _nvals = wrapdoc(Matrix._nvals)(property(_automethods._nvals))
+    apply = wrapdoc(Matrix.apply)(property(_automethods.apply))
+    ewise_add = wrapdoc(Matrix.ewise_add)(property(_automethods.ewise_add))
+    ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
+    ewise_union = wrapdoc(Matrix.ewise_union)(property(_automethods.ewise_union))
+    gb_obj = wrapdoc(Matrix.gb_obj)(property(_automethods.gb_obj))
+    isclose = wrapdoc(Matrix.isclose)(property(_automethods.isclose))
+    isequal = wrapdoc(Matrix.isequal)(property(_automethods.isequal))
+    kronecker = wrapdoc(Matrix.kronecker)(property(_automethods.kronecker))
+    mxm = wrapdoc(Matrix.mxm)(property(_automethods.mxm))
+    mxv = wrapdoc(Matrix.mxv)(property(_automethods.mxv))
+    name = wrapdoc(Matrix.name)(property(_automethods.name))
+    name = name.setter(_automethods._set_name)
+    nvals = wrapdoc(Matrix.nvals)(property(_automethods.nvals))
+    reduce_columns = wrapdoc(Matrix.reduce_columns)(property(_automethods.reduce_columns))
+    reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
+    reduce_rows = wrapdoc(Matrix.reduce_rows)(property(_automethods.reduce_rows))
+    reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
+    reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
+    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
+    to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
+    wait = wrapdoc(Matrix.wait)(property(_automethods.wait))
+    # These raise exceptions
+    __array__ = Matrix.__array__
+    __bool__ = Matrix.__bool__
+    __iadd__ = _automethods.__iadd__
+    __iand__ = _automethods.__iand__
+    __ifloordiv__ = _automethods.__ifloordiv__
+    __imatmul__ = _automethods.__imatmul__
+    __imod__ = _automethods.__imod__
+    __imul__ = _automethods.__imul__
+    __ior__ = _automethods.__ior__
+    __ipow__ = _automethods.__ipow__
+    __isub__ = _automethods.__isub__
+    __itruediv__ = _automethods.__itruediv__
+    __ixor__ = _automethods.__ixor__
+    # End auto-generated code: Matrix
+
+
 class TransposedMatrix:
     __slots__ = "_matrix", "_ncols", "_nrows", "__weakref__"
     ndim = 2
@@ -1485,6 +1574,7 @@ class TransposedMatrix:
 
 
 utils._output_types[Matrix] = Matrix
+utils._output_types[MatrixIndexExpr] = Matrix
 utils._output_types[MatrixExpression] = Matrix
 utils._output_types[TransposedMatrix] = TransposedMatrix
 

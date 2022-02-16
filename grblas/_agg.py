@@ -530,11 +530,11 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
         # Populate numpy array
         vals = np.empty(Is.size, dtype=A.dtype.np_type)
         for index, (i, j) in enumerate(zip(Is, Js)):
-            vals[index] = A[i, j].value
+            vals[index] = A[i, j].new().value
         # or Vector
         # v = expr._new_vector(A.dtype, size=A._nrows)
         # for i, j in zip(Is, Js):
-        #     v[i] = A[i, j].value
+        #     v[i] = A[i, j].new().value
         result = Vector.from_values(Is, vals, size=A._nrows)
         updater << result
         if in_composite:
@@ -544,7 +544,7 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
         init = expr._new_matrix(bool, nrows=v._size, ncols=1)
         init[...] = False  # O(1) dense matrix in SuiteSparse 5
         step1 = semiring(v @ init).new()
-        index = step1[0].value
+        index = step1[0].new().value
         if index is None:
             index = 0
         if in_composite:
@@ -558,11 +558,11 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
         init2 = expr._new_vector(bool, size=A._nrows)
         init2[...] = False  # O(1) dense vector in SuiteSparse 5
         step2 = semiring(step1.T @ init2).new()
-        i = step2[0].value
+        i = step2[0].new().value
         if i is None:
             i = j = 0
         else:
-            j = step1[i, 0].value
+            j = step1[i, 0].new().value
         if in_composite:
             return A[i, [j]].new()
         updater << A[i, j]

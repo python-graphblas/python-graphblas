@@ -25,7 +25,7 @@ AxisIndex = namedtuple("AxisIndex", ["size", "index", "cscalar"])
 
 
 class IndexerResolver:
-    __slots__ = "obj", "indices", "__weakref__"
+    __slots__ = "obj", "indices", "shape", "__weakref__"
 
     def __init__(self, obj, indices):
         self.obj = obj
@@ -39,6 +39,7 @@ class IndexerResolver:
                         obj._size, _ALL_INDICES, _as_scalar(obj._size, _INDEX, is_cscalar=True)
                     )
                 ]
+                self.shape = (obj._size,)
             else:
                 self.indices = [
                     AxisIndex(
@@ -48,15 +49,14 @@ class IndexerResolver:
                         obj._ncols, _ALL_INDICES, _as_scalar(obj._ncols, _INDEX, is_cscalar=True)
                     ),
                 ]
+                self.shape = (obj._nrows, obj._ncols)
         else:
             self.indices = self.parse_indices(indices, obj.shape)
+            self.shape = tuple(size for size, _, _ in self.indices if size is not None)
 
     @property
     def is_single_element(self):
-        for idx in self.indices:
-            if idx.size is not None:
-                return False
-        return True
+        return not self.shape
 
     @property
     def py_indices(self):
@@ -223,11 +223,13 @@ class Assigner:
 
 
 class AmbiguousAssignOrExtract:
-    __slots__ = "parent", "resolved_indexes", "__weakref__"
+    __slots__ = "parent", "resolved_indexes", "_value", "__weakref__"
+    _is_scalar = False
 
     def __init__(self, parent, resolved_indexes):
         self.parent = parent
         self.resolved_indexes = resolved_indexes
+        self._value = None
 
     def __call__(self, *args, **kwargs):
         # Occurs when user calls `C[index](params)`
@@ -246,64 +248,20 @@ class AmbiguousAssignOrExtract:
             raise TypeError("'TransposedMatrix' object does not support item assignment")
         Updater(self.parent)._setitem(self.resolved_indexes, obj, is_submask=False)
 
-    @property
-    def value(self):
-        if not self.resolved_indexes.is_single_element:
-            raise AttributeError("Only Scalars have `.value` attribute")
-        scalar = self.parent._extract_element(
-            self.resolved_indexes, is_cscalar=True, name="s_extract"  # pragma: to_grb
-        )
-        return scalar.value
-
-    def new(self, dtype=None, *, mask=None, input_mask=None, is_cscalar=None, name=None):
+    def new(self, dtype=None, *, mask=None, input_mask=None, name=None):
         """
         Force extraction of the indexes into a new object
         dtype and mask are the only controllable parameters.
         """
-        # TODO: don't have `is_cscalar` argument if the output is not a scalar
-        if self.resolved_indexes.is_single_element:
-            if mask is not None or input_mask is not None:
-                raise TypeError("mask is not allowed for single element extraction")
-            if is_cscalar is None:
-                is_cscalar = False
-            return self.parent._extract_element(
-                self.resolved_indexes, dtype, is_cscalar=is_cscalar, name=name
-            )
-        else:
-            if input_mask is not None:
-                if mask is not None:
-                    raise TypeError("mask and input_mask arguments cannot both be given")
-                from .base import _check_mask
+        if input_mask is not None:
+            if mask is not None:
+                raise TypeError("mask and input_mask arguments cannot both be given")
+            from .base import _check_mask
 
-                _check_mask(input_mask, output=self.parent)
-                mask = self._input_mask_to_mask(input_mask)
-            delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
-            return delayed_extractor.new(dtype, mask=mask, name=name)
-
-    def __eq__(self, other):
-        if not self.resolved_indexes.is_single_element:
-            raise TypeError(
-                f"__eq__ not defined for objects of type {type(self)}.  "
-                f"Use `.new()` to create a new object, then use `.isequal` method."
-            )
-        return self.value == other
-
-    def __bool__(self):
-        if not self.resolved_indexes.is_single_element:
-            raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
-        return bool(self.value)
-
-    def __float__(self):
-        if not self.resolved_indexes.is_single_element:
-            raise TypeError(f"__float__ not defined for objects of type {type(self)}.")
-        return float(self.value)
-
-    def __int__(self):
-        if not self.resolved_indexes.is_single_element:
-            raise TypeError(f"__int__ not defined for objects of type {type(self)}.")
-        return int(self.value)
-
-    __index__ = __int__
+            _check_mask(input_mask, output=self.parent)
+            mask = self._input_mask_to_mask(input_mask)
+        delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
+        return delayed_extractor.new(dtype, mask=mask, name=name)
 
     def _extract_delayed(self):
         """Return an Expression object, treating this as an extract call"""
@@ -354,6 +312,10 @@ class AmbiguousAssignOrExtract:
             mask_expr = input_mask.mask._prep_for_extract(self.resolved_indexes)
         mask_value = mask_expr.new(name="mask_temp")
         return type(input_mask)(mask_value)
+
+    @property
+    def dtype(self):
+        return self.parent.dtype
 
 
 class Updater:

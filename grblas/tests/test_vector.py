@@ -49,7 +49,7 @@ def test_new():
 def test_large_vector():
     u = Vector.from_values([0, 2**59], [0, 1])
     assert u.size == 2**59 + 1
-    assert u[2**59].value == 1
+    assert u[2**59].new() == 1
     with pytest.raises(InvalidValue):
         Vector.from_values([0, 2**64 - 2], [0, 1])
     with pytest.raises(OverflowError):
@@ -64,7 +64,7 @@ def test_dup(v):
     assert u.size == v.size
     # Ensure they are not the same backend object
     v[0] = 1000
-    assert u[0].value != 1000
+    assert u[0].new() != 1000
     # extended functionality
     w = Vector.from_values([0, 1], [0, 2.5], dtype=dtypes.FP64)
     x = w.dup(dtype=dtypes.INT64)
@@ -88,7 +88,7 @@ def test_from_values():
     assert u3.size == 10
     assert u3.nvals == 2  # duplicates were combined
     assert u3.dtype == int
-    assert u3[1].value == 6  # 2*3
+    assert u3[1].new() == 6  # 2*3
     with pytest.raises(ValueError, match="Duplicate indices found"):
         # Duplicate indices requires a dup_op
         Vector.from_values([0, 1, 1], [True, True, True])
@@ -152,7 +152,7 @@ def test_resize(v):
     v.resize(20)
     assert v.size == 20
     assert v.nvals == 4
-    assert compute(v[19].value) is None
+    assert compute(v[19].new().value) is None
     v.resize(4)
     assert v.size == 4
     assert v.nvals == 2
@@ -231,7 +231,9 @@ def test_extract_input_mask():
 
 
 def test_extract_element(v):
-    assert v[1].value == 1
+    assert v[1].new() == 1
+    with pytest.raises(TypeError, match="enable automatic"):
+        v[1].value
     assert v[6].new() == 0
     with pytest.raises(TypeError, match="Invalid type for index"):
         v[object()]
@@ -243,19 +245,19 @@ def test_extract_element(v):
 
 
 def test_set_element(v):
-    assert compute(v[0].value) is None
-    assert v[1].value == 1
+    assert compute(v[0].new().value) is None
+    assert v[1].new() == 1
     v[0] = 12
     v[1] << 9
-    assert v[0].value == 12
+    assert v[0].new() == 12
     assert v[1].new() == 9
 
 
 def test_remove_element(v):
-    assert v[1].value == 1
+    assert v[1].new() == 1
     del v[1]
-    assert compute(v[1].value) is None
-    assert v[4].value == 2
+    assert compute(v[1].new().value) is None
+    assert v[4].new() == 2
     # with pytest.raises(TypeError, match="Remove Element only supports"):
     del v[1:3]  # Now okay
 
@@ -447,10 +449,10 @@ def test_extract_fancy_scalars(v):
 
 
 def test_extract_negative_indices(v):
-    assert v[-1].value == 0
-    assert compute(v[-v.size].value) is None
+    assert v[-1].new() == 0
+    assert compute(v[-v.size].new().value) is None
     assert v[[-v.size]].new().nvals == 0
-    assert v[Scalar.from_value(-4)].value == 1
+    assert v[Scalar.from_value(-4)].new() == 1
     w = v[[-1, -3]].new()
     assert w.isequal(Vector.from_values([0, 1], [0, 2]))
     with pytest.raises(IndexError):
@@ -1169,7 +1171,7 @@ def test_vector_index_with_scalar():
     expected = Vector.from_values([0, 1], [20, 10])
     for dtype in ["int8", "uint8", "int16", "uint16", "int32", "uint32"]:
         s1 = Scalar.from_value(1, dtype=dtype)
-        assert v[s1] == 20
+        assert v[s1].new() == 20
         s0 = Scalar.from_value(0, dtype=dtype)
         w = v[[s1, s0]].new()
         assert w.isequal(expected)
@@ -1318,9 +1320,10 @@ def test_auto_assign(v):
     expected[:3] = expr.new()
     v[:3] = expr
     assert expected.isequal(v)
-    with pytest.raises(TypeError):
-        # Not yet supported, but we could!
-        v[:3] = v[1:4]
+    v[:3] = v[1:4]
+    del expected[0]
+    expected[1] = 1
+    assert expected.isequal(v)
 
 
 @autocompute

@@ -7,6 +7,7 @@ from .base import BaseExpression, BaseType, call
 from .binary import isclose
 from .dtypes import _INDEX, BOOL, lookup_dtype
 from .exceptions import EmptyObject, check_status
+from .expr import AmbiguousAssignOrExtract
 from .operator import get_typed_op
 from .utils import _Pointer, output_type, wrapdoc
 
@@ -460,6 +461,53 @@ class ScalarExpression(BaseExpression):
     # End auto-generated code: Scalar
 
 
+class ScalarIndexExpr(AmbiguousAssignOrExtract):
+    output_type = Scalar
+    ndim = 0
+    shape = ()
+    _is_scalar = True
+
+    def new(self, dtype=None, *, is_cscalar=None, name=None):
+        if is_cscalar is None:
+            is_cscalar = False
+        return self.parent._extract_element(
+            self.resolved_indexes, dtype, is_cscalar=is_cscalar, name=name
+        )
+
+    # Begin auto-generated code: Scalar
+    _get_value = _automethods._get_value
+    __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
+    __bool__ = wrapdoc(Scalar.__bool__)(property(_automethods.__bool__))
+    __complex__ = wrapdoc(Scalar.__complex__)(property(_automethods.__complex__))
+    __eq__ = wrapdoc(Scalar.__eq__)(property(_automethods.__eq__))
+    __float__ = wrapdoc(Scalar.__float__)(property(_automethods.__float__))
+    __index__ = wrapdoc(Scalar.__index__)(property(_automethods.__index__))
+    __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
+    __invert__ = wrapdoc(Scalar.__invert__)(property(_automethods.__invert__))
+    __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
+    _is_empty = wrapdoc(Scalar._is_empty)(property(_automethods._is_empty))
+    _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
+    _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
+    gb_obj = wrapdoc(Scalar.gb_obj)(property(_automethods.gb_obj))
+    is_empty = wrapdoc(Scalar.is_empty)(property(_automethods.is_empty))
+    isclose = wrapdoc(Scalar.isclose)(property(_automethods.isclose))
+    isequal = wrapdoc(Scalar.isequal)(property(_automethods.isequal))
+    name = wrapdoc(Scalar.name)(property(_automethods.name))
+    name = name.setter(_automethods._set_name)
+    nvals = wrapdoc(Scalar.nvals)(property(_automethods.nvals))
+    to_pygraphblas = wrapdoc(Scalar.to_pygraphblas)(property(_automethods.to_pygraphblas))
+    value = wrapdoc(Scalar.value)(property(_automethods.value))
+    wait = wrapdoc(Scalar.wait)(property(_automethods.wait))
+    # These raise exceptions
+    __and__ = Scalar.__and__
+    __matmul__ = Scalar.__matmul__
+    __or__ = Scalar.__or__
+    __rand__ = Scalar.__rand__
+    __rmatmul__ = Scalar.__rmatmul__
+    __ror__ = Scalar.__ror__
+    # End auto-generated code: Scalar
+
+
 def _as_scalar(scalar, dtype=None, *, is_cscalar):
     if type(scalar) is not Scalar:
         return Scalar.from_value(scalar, dtype, is_cscalar=is_cscalar, name="")
@@ -472,4 +520,5 @@ def _as_scalar(scalar, dtype=None, *, is_cscalar):
 _MATERIALIZE = Scalar.from_value(lib.GrB_MATERIALIZE, is_cscalar=True, name="GrB_MATERIALIZE")
 
 utils._output_types[Scalar] = Scalar
+utils._output_types[ScalarIndexExpr] = Scalar
 utils._output_types[ScalarExpression] = Scalar

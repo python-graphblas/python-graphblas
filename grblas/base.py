@@ -316,8 +316,8 @@ class BaseType:
     def _update(self, expr, mask=None, accum=None, replace=False, input_mask=None):
         # TODO: check expected output type (now included in Expression object)
         if not isinstance(expr, BaseExpression):
-            if type(expr) is AmbiguousAssignOrExtract:
-                if expr.resolved_indexes.is_single_element and self._is_scalar:
+            if isinstance(expr, AmbiguousAssignOrExtract):
+                if expr._is_scalar and self._is_scalar:
                     # Extract element (s << v[1])
                     if accum is not None:
                         raise TypeError(

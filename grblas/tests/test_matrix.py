@@ -65,7 +65,7 @@ def test_dup(A):
     assert C.ncols == A.ncols
     # Ensure they are not the same backend object
     A[0, 0] = 1000
-    assert C[0, 0].value != 1000
+    assert C[0, 0].new() != 1000
     # extended functionality
     D = Matrix.from_values([0, 1], [0, 1], [0, 2.5], dtype=dtypes.FP64)
     E = D.dup(dtype=dtypes.INT64)
@@ -94,7 +94,7 @@ def test_from_values():
     assert C3.ncols == 3
     assert C3.nvals == 2  # duplicates were combined
     assert C3.dtype == int
-    assert C3[1, 1].value == 6  # 2*3
+    assert C3[1, 1].new() == 6  # 2*3
     C3monoid = Matrix.from_values([0, 1, 1], [2, 1, 1], [1, 2, 3], nrows=10, dup_op=monoid.times)
     assert C3.isequal(C3monoid)
 
@@ -166,7 +166,7 @@ def test_resize(A):
     assert A.nrows == 10
     assert A.ncols == 11
     assert A.nvals == 12
-    assert compute(A[9, 9].value) is None
+    assert compute(A[9, 9].new().value) is None
     A.resize(4, 1)
     assert A.nrows == 4
     assert A.ncols == 1
@@ -241,8 +241,10 @@ def test_extract_values(A):
 
 def test_extract_element(A):
     assert A[3, 0].new() == 3
-    assert A[1, 6].value == 4
-    assert A.T[6, 1].value == 4
+    assert A[1, 6].new() == 4
+    with pytest.raises(TypeError, match="enable automatic"):
+        A[1, 6].value
+    assert A.T[6, 1].new() == 4
     s = A[0, 0].new()
     assert compute(s.value) is None
     assert s.dtype == "INT64"
@@ -252,19 +254,19 @@ def test_extract_element(A):
 
 
 def test_set_element(A):
-    assert compute(A[1, 1].value) is None
-    assert A[3, 0].value == 3
+    assert compute(A[1, 1].new().value) is None
+    assert A[3, 0].new() == 3
     A[1, 1].update(21)
     A[3, 0] << -5
-    assert A[1, 1].value == 21
+    assert A[1, 1].new() == 21
     assert A[3, 0].new() == -5
 
 
 def test_remove_element(A):
-    assert A[3, 0].value == 3
+    assert A[3, 0].new() == 3
     del A[3, 0]
-    assert compute(A[3, 0].value) is None
-    assert A[6, 3].value == 7
+    assert compute(A[3, 0].new().value) is None
+    assert A[6, 3].new() == 7
     # with pytest.raises(TypeError, match="Remove Element only supports"):
     del A[3:5, 3]  # Now okay
 
@@ -302,7 +304,7 @@ def test_mxm_nonsquare():
     B = Matrix.from_values([0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1)
     C = Matrix.new(A.dtype, nrows=1, ncols=1)
     C << A.mxm(B, semiring.max_plus)
-    assert C[0, 0].value == 33
+    assert C[0, 0].new() == 33
     C1 = A.mxm(B, semiring.max_plus).new()
     assert C1.isequal(C)
     C2 = A.T.mxm(B.T, semiring.max_plus).new()
@@ -511,7 +513,7 @@ def test_extract_input_mask():
         TypeError, match="Got Vector `input_mask` when extracting a submatrix from a Matrix"
     ):
         A(input_mask=expected.S) << A[[0], [0]]
-    with pytest.raises(TypeError, match="mask is not allowed for single element extraction"):
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
         A[0, 0].new(input_mask=M.S)
     with pytest.raises(TypeError, match="mask and input_mask arguments cannot both be given"):
         A[0, [0, 1]].new(input_mask=M.S, mask=expected.S)
@@ -1444,7 +1446,7 @@ def test_assign_transpose(A):
         C.T << A
     with pytest.raises(TypeError, match="does not support item assignment"):
         C.T[:, :] << A
-    with pytest.raises(AttributeError):
+    with pytest.raises(TypeError, match="autocompute"):
         C[:, :].T << A
 
     C = Matrix.new(A.dtype, A.ncols + 1, A.nrows + 1)
@@ -2209,15 +2211,15 @@ def test_bool_eq_on_scalar_expressions(A):
     assert range(expr) == range(2)
 
     expr = A[0, [1, 1]]
-    with pytest.raises(TypeError, match="not defined"):
-        expr == expr
+    # with pytest.raises(TypeError, match="not defined"):
+    expr == expr  # Now okay
     with pytest.raises(TypeError, match="not defined"):
         bool(expr)
-    with pytest.raises(TypeError, match="not defined"):
+    with pytest.raises(TypeError):
         int(expr)
-    with pytest.raises(TypeError, match="not defined"):
+    with pytest.raises(TypeError):
         float(expr)
-    with pytest.raises(TypeError, match="not defined"):
+    with pytest.raises(TypeError):
         range(expr)
 
 
@@ -2526,14 +2528,14 @@ def test_auto_assign(A):
     expected[:3, :3] = expr.new()
     A[:3, :3] = expr
     assert expected.isequal(A)
-    with pytest.raises(TypeError):
-        # Not yet supported, but we could!
-        A[:3, :3] = A[1:4, 1:4]
     v = A[2:5, 5].new(dtype=bool)
     expr = v & v
     A[:3, 4] << expr
     expected[:3, 4] << expr.new()
     assert expected.isequal(A)
+    C = A[1:4, 1:4].new()
+    A[:3, :3] = A[1:4, 1:4]
+    assert A[:3, :3].isequal(C)
 
 
 @autocompute

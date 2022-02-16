@@ -9,13 +9,7 @@ from ..base import call
 from ..dtypes import _INDEX, INT64, UINT64, lookup_dtype
 from ..exceptions import check_status, check_status_carg
 from ..scalar import _as_scalar
-from ..utils import (
-    _CArray,
-    ints_to_numpy_buffer,
-    libget,
-    values_to_numpy_buffer,
-    wrapdoc,
-)
+from ..utils import _CArray, ints_to_numpy_buffer, libget, values_to_numpy_buffer, wrapdoc
 from .matrix import MatrixArray, _concat_mn, normalize_chunks
 from .prefix_scan import prefix_scan
 from .utils import get_order
