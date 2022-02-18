@@ -27,7 +27,8 @@ def gbstr(arg):
         if type(arg) is Scalar and arg._is_cscalar:
             return repr(arg.value)
         else:
-            return f"{type(arg).__name__[0].lower()}_temp"
+            c = type(arg).__name__[0]
+            return f"{'M' if c == 'M' else c.lower()}_temp"
     return name
 
 

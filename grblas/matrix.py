@@ -860,26 +860,27 @@ class Matrix(BaseType):
 
     def _prep_for_extract(self, resolved_indexes):
         method_name = "__getitem__"
-        (rowsize, rows, rowscalar), (colsize, cols, colscalar) = resolved_indexes.indices
-        if rowsize is None:
+        rowidx, colidx = resolved_indexes.indices
+
+        if rowidx.size is None:
             # Row-only selection; GraphBLAS doesn't have this method, so we hack it using transpose
             return VectorExpression(
                 method_name,
                 "GrB_Col_extract",
-                [self, cols, colscalar, rows],
-                expr_repr="{0.name}[{3._name}, [{2._name} cols]]",
-                size=colsize,
+                [self, colidx, colidx.cscalar, rowidx],
+                expr_repr="{0.name}[{3._expr_name}, {1._expr_name}]",
+                size=colidx.size,
                 dtype=self.dtype,
                 at=not self._is_transposed,
             )
-        elif colsize is None:
+        elif colidx.size is None:
             # Column-only selection
             return VectorExpression(
                 method_name,
                 "GrB_Col_extract",
-                [self, rows, rowscalar, cols],
-                expr_repr="{0.name}[[{2._name} rows], {3._name}]",
-                size=rowsize,
+                [self, rowidx, rowidx.cscalar, colidx],
+                expr_repr="{0.name}[{1._expr_name}, {3._expr_name}]",
+                size=rowidx.size,
                 dtype=self.dtype,
                 at=self._is_transposed,
             )
@@ -887,10 +888,10 @@ class Matrix(BaseType):
             return MatrixExpression(
                 method_name,
                 "GrB_Matrix_extract",
-                [self, rows, rowscalar, cols, colscalar],
-                expr_repr="{0.name}[[{2._name} rows], [{4._name} cols]]",
-                nrows=rowsize,
-                ncols=colsize,
+                [self, rowidx, rowidx.cscalar, colidx, colidx.cscalar],
+                expr_repr="{0.name}[{1._expr_name}, {3._expr_name}]",
+                nrows=rowidx.size,
+                ncols=colidx.size,
                 dtype=self.dtype,
                 at=self._is_transposed,
             )
@@ -919,7 +920,14 @@ class Matrix(BaseType):
 
     def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
-        (rowsize, rows, rowscalar), (colsize, cols, colscalar) = resolved_indexes.indices
+        rowidx, colidx = resolved_indexes.indices
+        rowsize = rowidx.size
+        rows = rowidx.index
+        rowscalar = rowidx.cscalar
+        colsize = colidx.size
+        cols = colidx.index
+        colscalar = colidx.cscalar
+
         extra_message = "Literal scalars also accepted."
 
         value_type = output_type(value)

@@ -730,13 +730,13 @@ class Vector(BaseType):
         return result
 
     def _prep_for_extract(self, resolved_indexes, mask=None, is_submask=False):
-        size, index, cscalar = resolved_indexes.indices[0]
+        index = resolved_indexes.indices[0]
         return VectorExpression(
             "__getitem__",
             "GrB_Vector_extract",
-            [self, index, cscalar],
-            expr_repr="{0.name}[[{2._name} elements]]",
-            size=size,
+            [self, index, index.cscalar],
+            expr_repr="{0.name}[{1._expr_name}]",
+            size=index.size,
             dtype=self.dtype,
         )
 
@@ -764,7 +764,10 @@ class Vector(BaseType):
 
     def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
-        size, index, cscalar = resolved_indexes.indices[0]
+        idx = resolved_indexes.indices[0]
+        size = idx.size
+        cscalar = idx.cscalar
+        index = idx.index
 
         if output_type(value) is Vector:
             if type(value) is not Vector:

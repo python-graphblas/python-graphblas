@@ -213,19 +213,19 @@ def test_py_indices():
     assert w.size == 0
 
     idx = v[::-1].resolved_indexes.py_indices
-    assert idx == slice(v.size - 1, -v.size - 1, -1)
+    assert idx == slice(None, None, -1)
     w = v[idx].new()
     expected = Vector.from_values(np.arange(5), np.arange(5)[::-1])
     assert w.isequal(expected)
 
     idx = v[4:-3:-1].resolved_indexes.py_indices
-    assert idx == slice(4, -v.size - 1 + 3, -1)
+    assert idx == slice(None, -v.size - 1 + 3, -1)
     w = v[idx].new()
     expected = Vector.from_values(np.arange(2), np.arange(5)[4:-3:-1])
     assert w.isequal(expected)
 
     idx = v[1::2].resolved_indexes.py_indices
-    assert idx == slice(1, 5, 2)
+    assert idx == slice(1, None, 2)
     w = v[idx].new()
     expected = Vector.from_values(np.arange(2), np.arange(5)[1::2])
     assert w.isequal(expected)
@@ -233,3 +233,16 @@ def test_py_indices():
     A = Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, 3], nrows=10, ncols=10)
     idx = A[1:6, 8:-8:-2].resolved_indexes.py_indices
     assert idx == (slice(1, 6), slice(8, -8, -2))
+
+    # start=0 -> None
+    idx = v[0:2].resolved_indexes.py_indices
+    assert idx == slice(None, 2)
+    # stop=size -> None
+    idx = v[1 : v.size].resolved_indexes.py_indices
+    assert idx == slice(1, None)
+    # step=1 -> None
+    idx = v[1:3:1].resolved_indexes.py_indices
+    assert idx == slice(1, 3)
+    # All together now!
+    idx = v[0 : v.size : 1].resolved_indexes.py_indices
+    assert idx == slice(None)

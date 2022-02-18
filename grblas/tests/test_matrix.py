@@ -2596,7 +2596,6 @@ def test_index_expr_is_like_matrix(A):
         "_parent",
         "_prep_for_assign",
         "_prep_for_extract",
-        "_repr_html_",  # TODO
         "_update",
         "build",
         "clear",

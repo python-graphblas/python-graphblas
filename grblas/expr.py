@@ -1,5 +1,3 @@
-from collections import namedtuple
-
 import numpy as np
 
 from . import lib, utils
@@ -8,11 +6,12 @@ from .utils import _CArray, output_type
 
 
 class _AllIndices:
-    __slots__ = "_carg", "name"
+    __slots__ = "_carg", "name", "_expr_name"
 
     def __init__(self):
         self._carg = lib.GrB_ALL
         self.name = "GrB_ALL"
+        self._expr_name = ":"
 
     def __reduce__(self):
         return "_ALL_INDICES"
@@ -20,8 +19,78 @@ class _AllIndices:
 
 _ALL_INDICES = _AllIndices()
 
-# We may want this as a class eventually (different repr, etc.)
-AxisIndex = namedtuple("AxisIndex", ["size", "index", "cscalar"])
+
+class AxisIndex:
+    __slots__ = "size", "index", "cscalar", "dimsize"
+
+    def __init__(self, size, index, cscalar, dimsize):
+        self.size = size
+        self.index = index
+        self.cscalar = cscalar
+        self.dimsize = dimsize
+
+    @property
+    def _carg(self):
+        return self.index._carg
+
+    @property
+    def name(self):
+        return self.index.name
+
+    @property
+    def _expr_name(self):
+        if self.size is None:
+            return f"{self.index.value}"
+        idx = self._py_index()
+        if type(idx) is slice:
+            rv = f"{'' if idx.start is None else idx.start}:{'' if idx.stop is None else idx.stop}"
+            if idx.step is not None:
+                return f"{rv}:{idx.step}"
+            return rv
+        if idx.size < 6:
+            return f"[{', '.join(map(str, idx))}]"
+        else:
+            return f"[{', '.join(map(str, idx[:3]))}, ...]"
+
+    def _py_index(self):
+        """Convert resolved index back into a valid Python index"""
+        if self.size is None:
+            return self.index.value
+        if self.index is _ALL_INDICES:
+            return slice(None)
+        from ._slice import gxb_backwards, gxb_range, gxb_stride
+
+        if self.cscalar is gxb_backwards:
+            start, stop, step = self.index.array.tolist()
+            size = self.dimsize
+            stop -= size + 1
+            step = -step
+        elif self.cscalar is gxb_range:
+            start, stop = self.index.array.tolist()
+            step = None
+            stop += 1
+        elif self.cscalar is gxb_stride:
+            start, stop, step = self.index.array.tolist()
+            stop += 1
+        else:
+            return self.index.array
+        if (
+            start == 0
+            and (step is None or step > 0)
+            or start == self.dimsize - 1
+            and step is not None
+            and step < 0
+        ):
+            start = None
+        if (
+            stop == self.dimsize
+            and (step is None or step > 0)
+            or stop == -self.dimsize - 1
+            and step is not None
+            and step < 0
+        ):
+            stop = None
+        return slice(start, stop, step)
 
 
 class IndexerResolver:
@@ -36,23 +105,32 @@ class IndexerResolver:
             if type(obj) is Vector:
                 self.indices = [
                     AxisIndex(
-                        obj._size, _ALL_INDICES, _as_scalar(obj._size, _INDEX, is_cscalar=True)
+                        obj._size,
+                        _ALL_INDICES,
+                        _as_scalar(obj._size, _INDEX, is_cscalar=True),
+                        obj._size,
                     )
                 ]
                 self.shape = (obj._size,)
             else:
                 self.indices = [
                     AxisIndex(
-                        obj._nrows, _ALL_INDICES, _as_scalar(obj._nrows, _INDEX, is_cscalar=True)
+                        obj._nrows,
+                        _ALL_INDICES,
+                        _as_scalar(obj._nrows, _INDEX, is_cscalar=True),
+                        obj._nrows,
                     ),
                     AxisIndex(
-                        obj._ncols, _ALL_INDICES, _as_scalar(obj._ncols, _INDEX, is_cscalar=True)
+                        obj._ncols,
+                        _ALL_INDICES,
+                        _as_scalar(obj._ncols, _INDEX, is_cscalar=True),
+                        obj._ncols,
                     ),
                 ]
                 self.shape = (obj._nrows, obj._ncols)
         else:
             self.indices = self.parse_indices(indices, obj.shape)
-            self.shape = tuple(size for size, _, _ in self.indices if size is not None)
+            self.shape = tuple(index.size for index in self.indices if index.size is not None)
 
     @property
     def is_single_element(self):
@@ -61,29 +139,8 @@ class IndexerResolver:
     @property
     def py_indices(self):
         if self.obj.ndim > 1:
-            return tuple(self._py_index(idx) for idx in range(self.obj.ndim))
-        return self._py_index(0)
-
-    def _py_index(self, idx):
-        """Convert resolved index for the given dimension back into a valid Python index"""
-        index = self.indices[idx]
-        if index.size is None:
-            return index.index.value
-        if index.index is _ALL_INDICES:
-            return slice(None)
-        from ._slice import gxb_backwards, gxb_range, gxb_stride
-
-        if index.cscalar is gxb_backwards:
-            start, stop, step = index.index.array.tolist()
-            size = self.obj.shape[idx]
-            return slice(start, -size + stop - 1, -step)
-        if index.cscalar is gxb_range:
-            start, stop = index.index.array.tolist()
-            return slice(start, stop + 1)
-        if index.cscalar is gxb_stride:
-            start, stop, step = index.index.array.tolist()
-            return slice(start, stop + 1, step)
-        return index.index.array
+            return tuple(index._py_index() for index in self.indices)
+        return self.indices[0]._py_index()
 
     def parse_indices(self, indices, shape):
         """
@@ -122,7 +179,7 @@ class IndexerResolver:
                 index = index + size
                 if index < 0:
                     raise IndexError(f"Index out of range: index={index - size}, size={size}")
-            return AxisIndex(None, _as_scalar(int(index), _INDEX, is_cscalar=True), None)
+            return AxisIndex(None, _as_scalar(int(index), _INDEX, is_cscalar=True), None, size)
         if typ is list:
             pass
         elif typ is slice:
@@ -143,7 +200,7 @@ class IndexerResolver:
                         bad_index = index[index < 0][0] - size
                         raise IndexError(f"Index out of range: index={bad_index}, size={size}")
             return AxisIndex(
-                len(index), _CArray(index), _as_scalar(len(index), _INDEX, is_cscalar=True)
+                len(index), _CArray(index), _as_scalar(len(index), _INDEX, is_cscalar=True), size
             )
         else:
             from .scalar import Scalar
@@ -156,7 +213,7 @@ class IndexerResolver:
                     value = value + size
                     if value < 0:
                         raise IndexError(f"Index out of range: index={value - size}, size={size}")
-                return AxisIndex(None, _as_scalar(value, _INDEX, is_cscalar=True), None)
+                return AxisIndex(None, _as_scalar(value, _INDEX, is_cscalar=True), None, size)
 
             from .matrix import Matrix, TransposedMatrix
             from .vector import Vector
@@ -314,6 +371,16 @@ class AmbiguousAssignOrExtract:
             mask_expr = input_mask.mask._prep_for_extract(self.resolved_indexes)
         mask_value = mask_expr.new(name="mask_temp")
         return type(input_mask)(mask_value)
+
+    def _repr_html_(self):
+        from . import formatting
+
+        return formatting.format_index_expression_html(self)
+
+    def __repr__(self):
+        from . import formatting
+
+        return formatting.format_index_expression(self)
 
     @property
     def dtype(self):

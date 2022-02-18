@@ -737,3 +737,78 @@ def format_matrix_infix_expression_html(expr):
         [expr._nrows, expr._ncols, expr.left.dtype, expr.right.dtype],
     )
     return _format_infix_expression(expr, header, expr_html)
+
+
+def format_index_expression(expr):
+    name = f"grblas.{type(expr).__name__}"
+    indices = ", ".join(index._expr_name for index in expr.resolved_indexes.indices)
+    expr_repr = f"{expr.parent.name}[{indices}]"
+    keys = []
+    values = []
+    if expr.output_type is Vector:
+        keys.append("size")
+        values.append(expr._size)
+    elif expr.output_type is Matrix:
+        keys.extend(["nrows", "ncols"])
+        values.extend([expr._nrows, expr._ncols])
+    keys.append("dtype")
+    values.append(expr.dtype)
+    header = create_header(
+        expr_repr,
+        keys,
+        values,
+        name=name,
+        quote=False,
+    )
+    arg_string = get_result_string(expr)
+    c = expr.output_type.__name__[0]
+    return (
+        f"{header}\n\n"
+        f"{arg_string}"
+        f"This expression may be used to extract or assign a {expr.output_type.__name__}.\n"
+        f"Example extract: {expr_repr}.new()\n"
+        f"Example assign: {expr_repr} << {'M' if c == 'M' else c.lower()}"
+    )
+
+
+def format_index_expression_html(expr):
+    indices = ", ".join(index._expr_name for index in expr.resolved_indexes.indices)
+    expr_repr = f"{expr.parent._name_html}[{indices}]"
+    keys = []
+    values = []
+    if expr.output_type is Vector:
+        keys.append("size")
+        values.append(expr._size)
+    elif expr.output_type is Matrix:
+        keys.extend(["nrows", "ncols"])
+        values.extend([expr._nrows, expr._ncols])
+    keys.append("dtype")
+    values.append(expr.dtype)
+    header = create_header_html(
+        expr_repr,
+        keys,
+        values,
+    )
+    arg_string = expr.parent._repr_html_(collapse=True)
+    if config.get("autocompute"):
+        arg_string += get_expr_result(expr, html=True)
+    c = expr.output_type.__name__[0]
+    c = "M" if c == "M" else c.lower()
+    return (
+        "<div>"
+        '<details class="gb-expr-details">'
+        '<summary class="gb-expr-summary">'
+        f"<b><tt>grblas.{type(expr).__name__}:</tt></b>"
+        f"{header}"
+        "</summary>"
+        '<blockquote class="gb-expr-blockquote">'
+        f"{arg_string}"
+        "</blockquote>"
+        "</details>"
+        "<em>"
+        f"This expression may be used to extract or assign a <tt>{expr.output_type.__name__}</tt>."
+        f"<br>Example extract: <code>{expr_repr}.new()</code>"
+        f"<br>Example assign: <code>{expr_repr} << {'M' if c == 'M' else c.lower()}</code>"
+        "</em>"
+        "</div>"
+    )
