@@ -303,7 +303,8 @@ def test_expr_is_like_scalar(s):
         "__lshift__",
         "_carg",
         "_deserialize",
-        "_name",
+        "_expr_name",
+        "_expr_name_html",
         "_name_counter",
         "_update",
         "clear",
@@ -315,6 +316,30 @@ def test_expr_is_like_scalar(s):
         expected.add("_empty")
     assert attrs - expr_attrs == expected
     assert attrs - infix_attrs == expected
+
+
+@autocompute
+def test_index_expr_is_like_scalar(s):
+    v = Vector.from_values([1], [2])
+    attrs = {attr for attr, val in inspect.getmembers(s)}
+    expr_attrs = {attr for attr, val in inspect.getmembers(v[0])}
+    # Should we make any of these raise informative errors?
+    expected = {
+        "__del__",
+        "__imatmul__",
+        "_carg",
+        "_deserialize",
+        "_expr_name",
+        "_expr_name_html",
+        "_name_counter",
+        "_update",
+        "clear",
+        "from_pygraphblas",
+        "from_value",
+    }
+    if s.is_cscalar:
+        expected.add("_empty")
+    assert attrs - expr_attrs == expected
 
 
 def test_ndim(s):

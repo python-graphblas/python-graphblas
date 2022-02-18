@@ -583,7 +583,9 @@ class BaseExpression:
         return self.expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
 
     def _format_expr_html(self):
-        expr_repr = self.expr_repr.replace(".name", "._name_html")
+        expr_repr = self.expr_repr.replace(".name", "._name_html").replace(
+            "._expr_name", "._expr_name_html"
+        )
         return expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
 
     _expect_type = _expect_type

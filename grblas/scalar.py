@@ -51,10 +51,15 @@ class Scalar(BaseType):
         return not self._is_cscalar
 
     @property
-    def _name(self):
+    def _expr_name(self):
         """The name used in the text for expressions"""
         # Always using `repr(self.value)` may also be reasonable
         return self.name or repr(self.value)
+
+    @property
+    def _expr_name_html(self):
+        """The name used in the text for expressions in HTML formatting"""
+        return self._name_html or repr(self.value)
 
     def __repr__(self):
         from .formatting import format_scalar
@@ -496,6 +501,7 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     ndim = 0
     shape = ()
     _is_scalar = True
+    _is_cscalar = False
 
     def new(self, dtype=None, *, is_cscalar=None, name=None):
         if is_cscalar is None:
@@ -505,6 +511,14 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
         )
 
     dup = new
+
+    @property
+    def is_cscalar(self):
+        return self._is_cscalar
+
+    @property
+    def is_grbscalar(self):
+        return not self._is_cscalar
 
     # Begin auto-generated code: Scalar
     _get_value = _automethods._get_value

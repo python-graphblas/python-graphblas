@@ -552,7 +552,7 @@ class Matrix(BaseType):
             "GxB_Matrix_eWiseUnion",
             [self, left, other, right],
             op=op,
-            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1._name}, {3._name})",
+            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})",
         )
         if self.shape != other.shape:
             expr.new(name="")  # incompatible shape; raise now
@@ -682,7 +682,7 @@ class Matrix(BaseType):
             else:
                 cfunc_name = "GrB_Matrix_apply_BinaryOp1st_Scalar"
             args = [left, self]
-            expr_repr = "{1.name}.apply({op}, left={0._name})"
+            expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
                 try:
@@ -712,7 +712,7 @@ class Matrix(BaseType):
             else:
                 cfunc_name = "GrB_Matrix_apply_BinaryOp2nd_Scalar"
             args = [self, right]
-            expr_repr = "{0.name}.apply({op}, right={1._name})"
+            expr_repr = "{0.name}.apply({op}, right={1._expr_name})"
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
         return MatrixExpression(
@@ -956,7 +956,7 @@ class Matrix(BaseType):
                             method_name,
                             "GrB_Matrix_assign",
                             [value._as_matrix(), rows, rowscalar, cols, colscalar],
-                            expr_repr="[[{2._name} rows], [{4._name} cols]] = {0.name}",
+                            expr_repr="[[{2._expr_name} rows], [{4._expr_name} cols]] = {0.name}",
                             nrows=self._nrows,
                             ncols=self._ncols,
                             dtype=self.dtype,
@@ -967,12 +967,14 @@ class Matrix(BaseType):
                         # C[i, J](m) << v
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Row_subassign"
-                        expr_repr = "[{1._name}, [{3._name} cols]](%s) << {0.name}" % mask.name
+                        expr_repr = (
+                            "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
+                        )
                     else:
                         # C(m)[i, J] << v
                         # C[i, J] << v
                         cfunc_name = "GrB_Row_assign"
-                        expr_repr = "[{1._name}, [{3._name} cols]] = {0.name}"
+                        expr_repr = "[{1._expr_name}, [{3._expr_name} cols]] = {0.name}"
                     expr = MatrixExpression(
                         method_name,
                         cfunc_name,
@@ -1000,7 +1002,7 @@ class Matrix(BaseType):
                             method_name,
                             "GrB_Matrix_assign",
                             [value._as_matrix(), rows, rowscalar, cols, colscalar],
-                            expr_repr="[[{2._name} rows], [{._name4} cols]] = {0.name}",
+                            expr_repr="[[{2._expr_name} rows], [{4._expr_name} cols]] = {0.name}",
                             nrows=self._nrows,
                             ncols=self._ncols,
                             dtype=self.dtype,
@@ -1010,12 +1012,14 @@ class Matrix(BaseType):
                         # C[I, j](m) << v
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Col_subassign"
-                        expr_repr = "[{1._name}, [{3._name} cols]](%s) << {0.name}" % mask.name
+                        expr_repr = (
+                            "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
+                        )
                     else:
                         # C(m)[I, j] << v
                         # C[I, j] << v
                         cfunc_name = "GrB_Col_assign"
-                        expr_repr = "[{1._name}, [{3._name} cols]] = {0.name}"
+                        expr_repr = "[{1._expr_name}, [{3._expr_name} cols]] = {0.name}"
                     expr = MatrixExpression(
                         method_name,
                         cfunc_name,
@@ -1070,12 +1074,14 @@ class Matrix(BaseType):
                 # C[I, J](M) << A
                 # SS, SuiteSparse-specific: subassign
                 cfunc_name = "GrB_Matrix_subassign"
-                expr_repr = "[[{2._name} rows], [{4._name} cols]](%s) << {0.name}" % mask.name
+                expr_repr = (
+                    "[[{2._expr_name} rows], [{4._expr_name} cols]](%s) << {0.name}" % mask.name
+                )
             else:
                 # C[I, J] << A
                 # C(M)[I, J] << A
                 cfunc_name = "GrB_Matrix_assign"
-                expr_repr = "[[{2._name} rows], [{4._name} cols]] = {0.name}"
+                expr_repr = "[[{2._expr_name} rows], [{4._expr_name} cols]] = {0.name}"
             expr = MatrixExpression(
                 method_name,
                 cfunc_name,
@@ -1109,13 +1115,15 @@ class Matrix(BaseType):
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Row_subassign"
                         value_vector = Vector.new(value.dtype, size=mask.mask._size, name="v_temp")
-                        expr_repr = "[{1._name}, [{3._name} cols]](%s) << {0.name}" % mask.name
+                        expr_repr = (
+                            "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
+                        )
                     else:
                         # C(m)[i, J] << c
                         # C[i, J] << c
                         cfunc_name = "GrB_Row_assign"
                         value_vector = Vector.new(value.dtype, size=colsize, name="v_temp")
-                        expr_repr = "[{1._name}, [{3._name} cols]] = {0.name}"
+                        expr_repr = "[{1._expr_name}, [{3._expr_name} cols]] = {0.name}"
                     # SS, SuiteSparse-specific: assume efficient vector with single scalar
                     value_vector << value
 
@@ -1148,7 +1156,7 @@ class Matrix(BaseType):
                         method_name,
                         cfunc_name,
                         [value_vector, rows, rowscalar, cols],
-                        expr_repr="[[{2._name} rows], {3._name}] = {0.name}",
+                        expr_repr="[[{2._expr_name} rows], {3._expr_name}] = {0.name}",
                         nrows=self._nrows,
                         ncols=self._ncols,
                         dtype=self.dtype,
@@ -1184,7 +1192,10 @@ class Matrix(BaseType):
                         cfunc_name = f"GrB_Matrix_subassign_{value.dtype}"
                     else:
                         cfunc_name = "GrB_Matrix_subassign_Scalar"
-                    expr_repr = "[[{2._name} rows], [{4._name} cols]](%s) = {0._name}" % mask.name
+                    expr_repr = (
+                        "[[{2._expr_name} rows], [{4._expr_name} cols]](%s) = {0._expr_name}"
+                        % mask.name
+                    )
                 else:
                     # C(M)[I, J] << c
                     # C(M)[i, J] << c
@@ -1200,7 +1211,7 @@ class Matrix(BaseType):
                         cfunc_name = f"GrB_Matrix_assign_{value.dtype}"
                     else:
                         cfunc_name = "GrB_Matrix_assign_Scalar"
-                    expr_repr = "[[{2._name} rows], [{4._name} cols]] = {0._name}"
+                    expr_repr = "[[{2._expr_name} rows], [{4._expr_name} cols]] = {0._expr_name}"
                 expr = MatrixExpression(
                     method_name,
                     cfunc_name,

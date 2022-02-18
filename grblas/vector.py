@@ -500,7 +500,7 @@ class Vector(BaseType):
             "GxB_Vector_eWiseUnion",
             [self, left, other, right],
             op=op,
-            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1._name}, {3._name})",
+            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})",
         )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
@@ -584,7 +584,7 @@ class Vector(BaseType):
             else:
                 cfunc_name = "GrB_Vector_apply_BinaryOp1st_Scalar"
             args = [left, self]
-            expr_repr = "{1.name}.apply({op}, left={0._name})"
+            expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
                 try:
@@ -614,7 +614,7 @@ class Vector(BaseType):
             else:
                 cfunc_name = "GrB_Vector_apply_BinaryOp2nd_Scalar"
             args = [self, right]
-            expr_repr = "{0.name}.apply({op}, right={1._name})"
+            expr_repr = "{0.name}.apply({op}, right={1._expr_name})"
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
         return VectorExpression(
@@ -782,12 +782,12 @@ class Vector(BaseType):
                     raise TypeError("Single element assign does not accept a submask")
                 # v[I](m) << w
                 cfunc_name = "GrB_Vector_subassign"
-                expr_repr = "[[{2._name} elements]](%s) = {0.name}" % mask.name
+                expr_repr = "[[{2._expr_name} elements]](%s) = {0.name}" % mask.name
             else:
                 # v(m)[I] << w
                 # v[I] << w
                 cfunc_name = "GrB_Vector_assign"
-                expr_repr = "[[{2._name} elements]] = {0.name}"
+                expr_repr = "[[{2._expr_name} elements]] = {0.name}"
         else:
             if type(value) is not Scalar:
                 try:
@@ -809,7 +809,7 @@ class Vector(BaseType):
                     cfunc_name = f"GrB_Vector_subassign_{value.dtype}"
                 else:
                     cfunc_name = "GrB_Vector_subassign_Scalar"
-                expr_repr = "[[{2._name} elements]](%s) = {0._name}" % mask.name
+                expr_repr = "[[{2._expr_name} elements]](%s) = {0._expr_name}" % mask.name
             else:
                 # v(m)[I] << c
                 # v[I] << c
@@ -820,7 +820,7 @@ class Vector(BaseType):
                     cfunc_name = f"GrB_Vector_assign_{value.dtype}"
                 else:
                     cfunc_name = "GrB_Vector_assign_Scalar"
-                expr_repr = "[[{2._name} elements]] = {0._name}"
+                expr_repr = "[[{2._expr_name} elements]] = {0._expr_name}"
         return VectorExpression(
             method_name,
             cfunc_name,
