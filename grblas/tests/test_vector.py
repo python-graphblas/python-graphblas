@@ -660,6 +660,10 @@ def test_reduce(v):
     with pytest.raises(KeyError, match="plus does not work"):
         # KeyError here is kind of weird
         b1.reduce()
+    # v is not empty, so it shouldn't matter how we reduce
+    for allow_empty, is_cscalar in itertools.product([True, False], [True, False]):
+        t = v.reduce(allow_empty=allow_empty).new(is_cscalar=is_cscalar)
+        assert t == 4
 
 
 def test_reduce_empty():

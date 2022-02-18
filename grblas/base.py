@@ -479,6 +479,8 @@ class BaseType:
                     self.value = fake_self[0].new(is_cscalar=True, name="")
                 # SS: this assumes GrB_Scalar was cast to Vector
             elif is_temp_scalar:
+                if temp_scalar._is_cscalar:
+                    temp_scalar._empty = False
                 self.value = temp_scalar
             elif self._is_cscalar:
                 self._empty = False
