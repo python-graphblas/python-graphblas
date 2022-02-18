@@ -78,8 +78,9 @@ class Vector(BaseType):
             return format_vector(self, mask=mask)
 
     def _repr_html_(self, mask=None, collapse=False):
-        if self._parent is not None:
-            return self._parent._repr_html_(mask=mask, collapse=collapse)
+        if self._parent is not None and mask is None:
+            # Scalars repr can't handle mask
+            return self._parent._repr_html_(collapse=collapse)
         from .formatting import format_vector_html
         from .recorder import skip_record
 
