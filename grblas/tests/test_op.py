@@ -778,15 +778,15 @@ def test_div_semirings():
     A1 = Matrix.from_values([0, 1], [0, 0], [-1, -3])
     A2 = Matrix.from_values([0, 1], [0, 0], [2, 2])
     result = A1.T.mxm(A2, semiring.plus_cdiv).new()
-    assert result[0, 0].value == -1
+    assert result[0, 0].new() == -1
     assert result.dtype == dtypes.INT64
 
     result = A1.T.mxm(A2, semiring.plus_truediv).new()
-    assert result[0, 0].value == -2
+    assert result[0, 0].new() == -2
     assert result.dtype == dtypes.FP64
 
     result = A1.T.mxm(A2, semiring.plus_floordiv).new()
-    assert result[0, 0].value == -3
+    assert result[0, 0].new() == -3
     assert result.dtype == dtypes.INT64
 
 

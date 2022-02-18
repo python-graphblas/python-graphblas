@@ -1,9 +1,9 @@
 from . import binary, unary
 from .dtypes import BOOL
 from .infix import MatrixInfixExpr, VectorInfixExpr
-from .matrix import Matrix, MatrixExpression, TransposedMatrix
+from .matrix import Matrix, MatrixExpression, MatrixIndexExpr, TransposedMatrix
 from .utils import output_type
-from .vector import Vector, VectorExpression
+from .vector import Vector, VectorExpression, VectorIndexExpr
 
 
 def call_op(self, other, method, op, *, outer=False, union=False):
@@ -262,6 +262,8 @@ for name in [
         setattr(MatrixExpression, name, val)
         setattr(VectorInfixExpr, name, val)
         setattr(MatrixInfixExpr, name, val)
+        setattr(VectorIndexExpr, name, val)
+        setattr(MatrixIndexExpr, name, val)
 # End auto-generated code
 
 if __name__ == "__main__":
@@ -350,6 +352,8 @@ if __name__ == "__main__":
         "        setattr(MatrixExpression, name, val)\n"
         "        setattr(VectorInfixExpr, name, val)\n"
         "        setattr(MatrixInfixExpr, name, val)\n"
+        "        setattr(VectorIndexExpr, name, val)\n"
+        "        setattr(MatrixIndexExpr, name, val)\n"
     )
     from .utils import _autogenerate_code
 

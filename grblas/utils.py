@@ -161,7 +161,8 @@ class _Pointer:
     def name(self):
         name = self.val.name
         if not name:
-            name = f"{type(self.val).__name__[0].lower()}_temp"
+            c = type(self.val).__name__[0]
+            name = f"{'M' if c == 'M' else c.lower()}_temp"
         return f"&{name}"
 
 
@@ -180,9 +181,19 @@ def _autogenerate_code(
         end = f"{end}: {specializer}"
     begin += "\n"
     end += "\n"
-    start = orig_text.index(begin)
-    stop = orig_text.index(end)
-    new_text = f"{orig_text[:start]}{begin}{text}{orig_text[stop:]}"
+
+    boundaries = []
+    stop = 0
+    while True:
+        try:
+            start = orig_text.index(begin, stop)
+            stop = orig_text.index(end, start)
+        except ValueError:
+            break
+        boundaries.append((start, stop))
+    new_text = orig_text
+    for start, stop in reversed(boundaries):
+        new_text = f"{new_text[:start]}{begin}{text}{new_text[stop:]}"
     with open(filename, "w") as f:
         f.write(new_text)
     import subprocess

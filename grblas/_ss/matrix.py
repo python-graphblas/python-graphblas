@@ -266,9 +266,10 @@ def normalize_chunks(chunks, shape):
 def _concat_mn(tiles, *, is_matrix=None):
     """Argument checking for `Matrix.ss.concat` and returns number of tiles in each dimension"""
     from ..matrix import Matrix, TransposedMatrix
+    from ..scalar import Scalar
     from ..vector import Vector
 
-    valid_types = (Matrix, TransposedMatrix, Vector)
+    valid_types = (Matrix, TransposedMatrix, Vector, Scalar)
     if not isinstance(tiles, (list, tuple)):
         raise TypeError(f"tiles argument must be list or tuple; got: {type(tiles)}")
     if not tiles:
@@ -279,10 +280,10 @@ def _concat_mn(tiles, *, is_matrix=None):
     new_tiles = []
     for i, row_tiles in enumerate(tiles):
         if not isinstance(row_tiles, (list, tuple)):
-            if not is_matrix and output_type(row_tiles) is Vector:
+            if not is_matrix and output_type(row_tiles) in {Vector, Scalar}:
                 new_tiles.append(
                     dummy._expect_type(
-                        row_tiles, Vector, within="ss.concat", argname="tiles"
+                        row_tiles, (Vector, Scalar), within="ss.concat", argname="tiles"
                     )._as_matrix()
                 )
                 is_matrix = False
@@ -319,7 +320,7 @@ def _concat_mn(tiles, *, is_matrix=None):
 
 
 def _as_matrix(x):
-    return x._as_matrix() if type(x) is gb.Vector else x
+    return x._as_matrix() if hasattr(x, "_as_matrix") else x
 
 
 class MatrixArray:

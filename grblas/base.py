@@ -165,6 +165,10 @@ def _expect_op(self, op, values, **kwargs):
         raise TypeError(message) from None
 
 
+AmbiguousAssignOrExtract._expect_op = _expect_op
+AmbiguousAssignOrExtract._expect_type = _expect_type
+
+
 def _check_mask(mask, output=None):
     if not isinstance(mask, Mask):
         if isinstance(mask, BaseType):
@@ -316,8 +320,8 @@ class BaseType:
     def _update(self, expr, mask=None, accum=None, replace=False, input_mask=None):
         # TODO: check expected output type (now included in Expression object)
         if not isinstance(expr, BaseExpression):
-            if type(expr) is AmbiguousAssignOrExtract:
-                if expr.resolved_indexes.is_single_element and self._is_scalar:
+            if isinstance(expr, AmbiguousAssignOrExtract):
+                if expr._is_scalar and self._is_scalar:
                     # Extract element (s << v[1])
                     if accum is not None:
                         raise TypeError(
@@ -475,6 +479,8 @@ class BaseType:
                     self.value = fake_self[0].new(is_cscalar=True, name="")
                 # SS: this assumes GrB_Scalar was cast to Vector
             elif is_temp_scalar:
+                if temp_scalar._is_cscalar:
+                    temp_scalar._empty = False
                 self.value = temp_scalar
             elif self._is_cscalar:
                 self._empty = False
@@ -579,7 +585,9 @@ class BaseExpression:
         return self.expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
 
     def _format_expr_html(self):
-        expr_repr = self.expr_repr.replace(".name", "._name_html")
+        expr_repr = self.expr_repr.replace(".name", "._name_html").replace(
+            "._expr_name", "._expr_name_html"
+        )
         return expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
 
     _expect_type = _expect_type

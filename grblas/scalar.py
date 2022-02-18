@@ -7,6 +7,7 @@ from .base import BaseExpression, BaseType, call
 from .binary import isclose
 from .dtypes import _INDEX, BOOL, lookup_dtype
 from .exceptions import EmptyObject, check_status
+from .expr import AmbiguousAssignOrExtract
 from .operator import get_typed_op
 from .utils import _Pointer, output_type, wrapdoc
 
@@ -48,6 +49,17 @@ class Scalar(BaseType):
     @property
     def is_grbscalar(self):
         return not self._is_cscalar
+
+    @property
+    def _expr_name(self):
+        """The name used in the text for expressions"""
+        # Always using `repr(self.value)` may also be reasonable
+        return self.name or repr(self.value)
+
+    @property
+    def _expr_name_html(self):
+        """The name used in the text for expressions in HTML formatting"""
+        return self._name_html or repr(self.value)
 
     def __repr__(self):
         from .formatting import format_scalar
@@ -367,9 +379,9 @@ class Scalar(BaseType):
         return cls.from_value(scalar[0], dtype)
 
     def _as_vector(self):
-        """Copy this Scalar to a Vector
+        """Copy or cast this Scalar to a Vector
 
-        In the future, we may _cast_ instead of _copy_ when using SuiteSparse.
+        This casts to a Vector when using GrB_Scalar from SuiteSparse.
         """
         from .vector import Vector
 
@@ -385,6 +397,28 @@ class Scalar(BaseType):
                 name=f"(GrB_Vector){self.name or 's_temp'}",
             )
             rv._size = 1
+        return rv
+
+    def _as_matrix(self):
+        """Copy or cast this Scalar to a Matrix
+
+        This casts to a Matrix when using GrB_Scalar from SuiteSparse.
+        """
+        from .matrix import Matrix
+
+        if self._is_cscalar:
+            rv = Matrix.new(self.dtype, ncols=1, nrows=1)
+            if not self._is_empty:
+                rv[0, 0] = self
+        else:
+            rv = Matrix(
+                ffi.cast("GrB_Matrix*", self.gb_obj),
+                self.dtype,
+                parent=self,
+                name=f"(GrB_Matrix){self.name or 's_temp'}",
+            )
+            rv._nrows = 1
+            rv._ncols = 1
         return rv
 
 
@@ -437,6 +471,68 @@ class ScalarExpression(BaseExpression):
     __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
     __invert__ = wrapdoc(Scalar.__invert__)(property(_automethods.__invert__))
     __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
+    _as_matrix = wrapdoc(Scalar._as_matrix)(property(_automethods._as_matrix))
+    _as_vector = wrapdoc(Scalar._as_vector)(property(_automethods._as_vector))
+    _is_empty = wrapdoc(Scalar._is_empty)(property(_automethods._is_empty))
+    _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
+    _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
+    gb_obj = wrapdoc(Scalar.gb_obj)(property(_automethods.gb_obj))
+    is_empty = wrapdoc(Scalar.is_empty)(property(_automethods.is_empty))
+    isclose = wrapdoc(Scalar.isclose)(property(_automethods.isclose))
+    isequal = wrapdoc(Scalar.isequal)(property(_automethods.isequal))
+    name = wrapdoc(Scalar.name)(property(_automethods.name))
+    name = name.setter(_automethods._set_name)
+    nvals = wrapdoc(Scalar.nvals)(property(_automethods.nvals))
+    to_pygraphblas = wrapdoc(Scalar.to_pygraphblas)(property(_automethods.to_pygraphblas))
+    value = wrapdoc(Scalar.value)(property(_automethods.value))
+    wait = wrapdoc(Scalar.wait)(property(_automethods.wait))
+    # These raise exceptions
+    __and__ = Scalar.__and__
+    __matmul__ = Scalar.__matmul__
+    __or__ = Scalar.__or__
+    __rand__ = Scalar.__rand__
+    __rmatmul__ = Scalar.__rmatmul__
+    __ror__ = Scalar.__ror__
+    # End auto-generated code: Scalar
+
+
+class ScalarIndexExpr(AmbiguousAssignOrExtract):
+    output_type = Scalar
+    ndim = 0
+    shape = ()
+    _is_scalar = True
+    _is_cscalar = False
+
+    def new(self, dtype=None, *, is_cscalar=None, name=None):
+        if is_cscalar is None:
+            is_cscalar = False
+        return self.parent._extract_element(
+            self.resolved_indexes, dtype, is_cscalar=is_cscalar, name=name
+        )
+
+    dup = new
+
+    @property
+    def is_cscalar(self):
+        return self._is_cscalar
+
+    @property
+    def is_grbscalar(self):
+        return not self._is_cscalar
+
+    # Begin auto-generated code: Scalar
+    _get_value = _automethods._get_value
+    __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
+    __bool__ = wrapdoc(Scalar.__bool__)(property(_automethods.__bool__))
+    __complex__ = wrapdoc(Scalar.__complex__)(property(_automethods.__complex__))
+    __eq__ = wrapdoc(Scalar.__eq__)(property(_automethods.__eq__))
+    __float__ = wrapdoc(Scalar.__float__)(property(_automethods.__float__))
+    __index__ = wrapdoc(Scalar.__index__)(property(_automethods.__index__))
+    __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
+    __invert__ = wrapdoc(Scalar.__invert__)(property(_automethods.__invert__))
+    __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
+    _as_matrix = wrapdoc(Scalar._as_matrix)(property(_automethods._as_matrix))
+    _as_vector = wrapdoc(Scalar._as_vector)(property(_automethods._as_vector))
     _is_empty = wrapdoc(Scalar._is_empty)(property(_automethods._is_empty))
     _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
@@ -472,4 +568,5 @@ def _as_scalar(scalar, dtype=None, *, is_cscalar):
 _MATERIALIZE = Scalar.from_value(lib.GrB_MATERIALIZE, is_cscalar=True, name="GrB_MATERIALIZE")
 
 utils._output_types[Scalar] = Scalar
+utils._output_types[ScalarIndexExpr] = Scalar
 utils._output_types[ScalarExpression] = Scalar

@@ -1,4 +1,5 @@
 from . import _automethods, binary, utils
+from .base import _expect_op, _expect_type
 from .dtypes import BOOL
 from .expr import InfixExprBase
 from .matrix import Matrix, MatrixExpression, TransposedMatrix
@@ -7,6 +8,9 @@ from .scalar import Scalar, ScalarExpression
 from .semiring import any_pair
 from .utils import output_type, wrapdoc
 from .vector import Vector, VectorExpression
+
+InfixExprBase._expect_op = _expect_op
+InfixExprBase._expect_type = _expect_type
 
 
 def _ewise_add_to_expr(self):
@@ -67,6 +71,7 @@ class VectorInfixExpr(InfixExprBase):
     __rand__ = wrapdoc(Vector.__rand__)(property(_automethods.__rand__))
     __rmatmul__ = wrapdoc(Vector.__rmatmul__)(property(_automethods.__rmatmul__))
     __ror__ = wrapdoc(Vector.__ror__)(property(_automethods.__ror__))
+    _as_matrix = wrapdoc(Vector._as_matrix)(property(_automethods._as_matrix))
     _carg = wrapdoc(Vector._carg)(property(_automethods._carg))
     _name_html = wrapdoc(Vector._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Vector._nvals)(property(_automethods._nvals))
@@ -275,6 +280,8 @@ class ScalarMatMulExpr(InfixExprBase):
             return self._value._is_cscalar
         return self._to_expr()._is_cscalar
 
+    _is_cscalar = is_cscalar
+
     @property
     def is_grbscalar(self):
         if self._value is not None:
@@ -291,6 +298,8 @@ class ScalarMatMulExpr(InfixExprBase):
     __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
     __invert__ = wrapdoc(Scalar.__invert__)(property(_automethods.__invert__))
     __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
+    _as_matrix = wrapdoc(Scalar._as_matrix)(property(_automethods._as_matrix))
+    _as_vector = wrapdoc(Scalar._as_vector)(property(_automethods._as_vector))
     _is_empty = wrapdoc(Scalar._is_empty)(property(_automethods._is_empty))
     _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))

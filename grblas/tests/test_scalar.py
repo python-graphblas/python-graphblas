@@ -6,11 +6,12 @@ import weakref
 import numpy as np
 import pytest
 
+import grblas as gb
 from grblas import binary, dtypes, replace
 
 from .conftest import autocompute, compute
 
-from grblas import Scalar, Vector  # isort:skip
+from grblas import Matrix, Scalar, Vector  # isort:skip
 
 
 @pytest.fixture
@@ -300,10 +301,10 @@ def test_expr_is_like_scalar(s):
         "__del__",
         "__imatmul__",
         "__lshift__",
-        # "_as_matrix",
-        "_as_vector",
         "_carg",
         "_deserialize",
+        "_expr_name",
+        "_expr_name_html",
         "_name_counter",
         "_update",
         "clear",
@@ -314,11 +315,31 @@ def test_expr_is_like_scalar(s):
     if s.is_cscalar:
         expected.add("_empty")
     assert attrs - expr_attrs == expected
-    assert attrs - infix_attrs == expected | {
-        "_expect_op",
-        "_expect_type",
-        "_is_cscalar",
+    assert attrs - infix_attrs == expected
+
+
+@autocompute
+def test_index_expr_is_like_scalar(s):
+    v = Vector.from_values([1], [2])
+    attrs = {attr for attr, val in inspect.getmembers(s)}
+    expr_attrs = {attr for attr, val in inspect.getmembers(v[0])}
+    # Should we make any of these raise informative errors?
+    expected = {
+        "__del__",
+        "__imatmul__",
+        "_carg",
+        "_deserialize",
+        "_expr_name",
+        "_expr_name_html",
+        "_name_counter",
+        "_update",
+        "clear",
+        "from_pygraphblas",
+        "from_value",
     }
+    if s.is_cscalar:
+        expected.add("_empty")
+    assert attrs - expr_attrs == expected
 
 
 def test_ndim(s):
@@ -383,3 +404,16 @@ def test_scalar_expr(s):
 
 def test_sizeof(s):
     assert 1 < sys.getsizeof(s) < 1000
+
+
+def test_concat(s):
+    empty = Scalar.new(int)
+    v = gb.ss.concat([s, s, empty])
+    expected = Vector.from_values([0, 1], 5, size=3)
+    assert v.isequal(expected)
+    A = gb.ss.concat([[s, s, empty]])
+    expected = Matrix.from_values([0, 0], [0, 1], 5, nrows=1, ncols=3)
+    assert A.isequal(expected)
+    A = gb.ss.concat([[s], [s], [empty]])
+    expected = Matrix.from_values([0, 1], [0, 0], 5, nrows=3, ncols=1)
+    assert A.isequal(expected)

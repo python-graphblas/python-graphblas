@@ -101,14 +101,24 @@ class Matrix(BaseType):
 
     def __getitem__(self, keys):
         resolved_indexes = IndexerResolver(self, keys)
-        return AmbiguousAssignOrExtract(self, resolved_indexes)
+        shape = resolved_indexes.shape
+        if not shape:
+            from .scalar import ScalarIndexExpr
+
+            return ScalarIndexExpr(self, resolved_indexes)
+        elif len(shape) == 1:
+            from .vector import VectorIndexExpr
+
+            return VectorIndexExpr(self, resolved_indexes, *shape)
+        else:
+            return MatrixIndexExpr(self, resolved_indexes, *shape)
 
     def __setitem__(self, keys, expr):
         Updater(self)[keys] = expr
 
     def __contains__(self, index):
         extractor = self[index]
-        if not extractor.resolved_indexes.is_single_element:
+        if not extractor._is_scalar:
             raise TypeError(
                 f"Invalid index to Matrix contains: {index!r}.  A 2-tuple of ints is expected.  "
                 "Doing `(i, j) in my_matrix` checks whether a value is present at that index."
@@ -542,7 +552,7 @@ class Matrix(BaseType):
             "GxB_Matrix_eWiseUnion",
             [self, left, other, right],
             op=op,
-            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1.name}, {3.name})",
+            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})",
         )
         if self.shape != other.shape:
             expr.new(name="")  # incompatible shape; raise now
@@ -672,7 +682,7 @@ class Matrix(BaseType):
             else:
                 cfunc_name = "GrB_Matrix_apply_BinaryOp1st_Scalar"
             args = [left, self]
-            expr_repr = "{1.name}.apply({op}, left={0})"
+            expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
                 try:
@@ -702,7 +712,7 @@ class Matrix(BaseType):
             else:
                 cfunc_name = "GrB_Matrix_apply_BinaryOp2nd_Scalar"
             args = [self, right]
-            expr_repr = "{0.name}.apply({op}, right={1})"
+            expr_repr = "{0.name}.apply({op}, right={1._expr_name})"
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
         return MatrixExpression(
@@ -850,26 +860,27 @@ class Matrix(BaseType):
 
     def _prep_for_extract(self, resolved_indexes):
         method_name = "__getitem__"
-        (rowsize, rows, rowscalar), (colsize, cols, colscalar) = resolved_indexes.indices
-        if rowsize is None:
+        rowidx, colidx = resolved_indexes.indices
+
+        if rowidx.size is None:
             # Row-only selection; GraphBLAS doesn't have this method, so we hack it using transpose
             return VectorExpression(
                 method_name,
                 "GrB_Col_extract",
-                [self, cols, colscalar, rows],
-                expr_repr="{0.name}[{3}, [{2} cols]]",
-                size=colsize,
+                [self, colidx, colidx.cscalar, rowidx],
+                expr_repr="{0.name}[{3._expr_name}, {1._expr_name}]",
+                size=colidx.size,
                 dtype=self.dtype,
                 at=not self._is_transposed,
             )
-        elif colsize is None:
+        elif colidx.size is None:
             # Column-only selection
             return VectorExpression(
                 method_name,
                 "GrB_Col_extract",
-                [self, rows, rowscalar, cols],
-                expr_repr="{0.name}[[{2} rows], {3}]",
-                size=rowsize,
+                [self, rowidx, rowidx.cscalar, colidx],
+                expr_repr="{0.name}[{1._expr_name}, {3._expr_name}]",
+                size=rowidx.size,
                 dtype=self.dtype,
                 at=self._is_transposed,
             )
@@ -877,10 +888,10 @@ class Matrix(BaseType):
             return MatrixExpression(
                 method_name,
                 "GrB_Matrix_extract",
-                [self, rows, rowscalar, cols, colscalar],
-                expr_repr="{0.name}[[{2} rows], [{4} cols]]",
-                nrows=rowsize,
-                ncols=colsize,
+                [self, rowidx, rowidx.cscalar, colidx, colidx.cscalar],
+                expr_repr="{0.name}[{1._expr_name}, {3._expr_name}]",
+                nrows=rowidx.size,
+                ncols=colidx.size,
                 dtype=self.dtype,
                 at=self._is_transposed,
             )
@@ -909,7 +920,14 @@ class Matrix(BaseType):
 
     def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
-        (rowsize, rows, rowscalar), (colsize, cols, colscalar) = resolved_indexes.indices
+        rowidx, colidx = resolved_indexes.indices
+        rowsize = rowidx.size
+        rows = rowidx.index
+        rowscalar = rowidx.cscalar
+        colsize = colidx.size
+        cols = colidx.index
+        colscalar = colidx.cscalar
+
         extra_message = "Literal scalars also accepted."
 
         value_type = output_type(value)
@@ -938,7 +956,7 @@ class Matrix(BaseType):
                             method_name,
                             "GrB_Matrix_assign",
                             [value._as_matrix(), rows, rowscalar, cols, colscalar],
-                            expr_repr="[[{2} rows], [{4} cols]] = {0.name}",
+                            expr_repr="[[{2._expr_name} rows], [{4._expr_name} cols]] = {0.name}",
                             nrows=self._nrows,
                             ncols=self._ncols,
                             dtype=self.dtype,
@@ -949,12 +967,14 @@ class Matrix(BaseType):
                         # C[i, J](m) << v
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Row_subassign"
-                        expr_repr = "[{1}, [{3} cols]](%s) << {0.name}" % mask.name
+                        expr_repr = (
+                            "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
+                        )
                     else:
                         # C(m)[i, J] << v
                         # C[i, J] << v
                         cfunc_name = "GrB_Row_assign"
-                        expr_repr = "[{1}, [{3} cols]] = {0.name}"
+                        expr_repr = "[{1._expr_name}, [{3._expr_name} cols]] = {0.name}"
                     expr = MatrixExpression(
                         method_name,
                         cfunc_name,
@@ -982,7 +1002,7 @@ class Matrix(BaseType):
                             method_name,
                             "GrB_Matrix_assign",
                             [value._as_matrix(), rows, rowscalar, cols, colscalar],
-                            expr_repr="[[{2} rows], [{4} cols]] = {0.name}",
+                            expr_repr="[[{2._expr_name} rows], [{4._expr_name} cols]] = {0.name}",
                             nrows=self._nrows,
                             ncols=self._ncols,
                             dtype=self.dtype,
@@ -992,12 +1012,14 @@ class Matrix(BaseType):
                         # C[I, j](m) << v
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Col_subassign"
-                        expr_repr = "[{1}, [{3} cols]](%s) << {0.name}" % mask.name
+                        expr_repr = (
+                            "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
+                        )
                     else:
                         # C(m)[I, j] << v
                         # C[I, j] << v
                         cfunc_name = "GrB_Col_assign"
-                        expr_repr = "[{1}, [{3} cols]] = {0.name}"
+                        expr_repr = "[{1._expr_name}, [{3._expr_name} cols]] = {0.name}"
                     expr = MatrixExpression(
                         method_name,
                         cfunc_name,
@@ -1052,12 +1074,14 @@ class Matrix(BaseType):
                 # C[I, J](M) << A
                 # SS, SuiteSparse-specific: subassign
                 cfunc_name = "GrB_Matrix_subassign"
-                expr_repr = "[[{2} rows], [{4} cols]](%s) << {0.name}" % mask.name
+                expr_repr = (
+                    "[[{2._expr_name} rows], [{4._expr_name} cols]](%s) << {0.name}" % mask.name
+                )
             else:
                 # C[I, J] << A
                 # C(M)[I, J] << A
                 cfunc_name = "GrB_Matrix_assign"
-                expr_repr = "[[{2} rows], [{4} cols]] = {0.name}"
+                expr_repr = "[[{2._expr_name} rows], [{4._expr_name} cols]] = {0.name}"
             expr = MatrixExpression(
                 method_name,
                 cfunc_name,
@@ -1091,13 +1115,15 @@ class Matrix(BaseType):
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Row_subassign"
                         value_vector = Vector.new(value.dtype, size=mask.mask._size, name="v_temp")
-                        expr_repr = "[{1}, [{3} cols]](%s) << {0.name}" % mask.name
+                        expr_repr = (
+                            "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
+                        )
                     else:
                         # C(m)[i, J] << c
                         # C[i, J] << c
                         cfunc_name = "GrB_Row_assign"
                         value_vector = Vector.new(value.dtype, size=colsize, name="v_temp")
-                        expr_repr = "[{1}, [{3} cols]] = {0.name}"
+                        expr_repr = "[{1._expr_name}, [{3._expr_name} cols]] = {0.name}"
                     # SS, SuiteSparse-specific: assume efficient vector with single scalar
                     value_vector << value
 
@@ -1130,7 +1156,7 @@ class Matrix(BaseType):
                         method_name,
                         cfunc_name,
                         [value_vector, rows, rowscalar, cols],
-                        expr_repr="[[{2} rows], {3}] = {0.name}",
+                        expr_repr="[[{2._expr_name} rows], {3._expr_name}] = {0.name}",
                         nrows=self._nrows,
                         ncols=self._ncols,
                         dtype=self.dtype,
@@ -1166,7 +1192,10 @@ class Matrix(BaseType):
                         cfunc_name = f"GrB_Matrix_subassign_{value.dtype}"
                     else:
                         cfunc_name = "GrB_Matrix_subassign_Scalar"
-                    expr_repr = "[[{2} rows], [{4} cols]](%s) = {0}" % mask.name
+                    expr_repr = (
+                        "[[{2._expr_name} rows], [{4._expr_name} cols]](%s) = {0._expr_name}"
+                        % mask.name
+                    )
                 else:
                     # C(M)[I, J] << c
                     # C(M)[i, J] << c
@@ -1182,7 +1211,7 @@ class Matrix(BaseType):
                         cfunc_name = f"GrB_Matrix_assign_{value.dtype}"
                     else:
                         cfunc_name = "GrB_Matrix_assign_Scalar"
-                    expr_repr = "[[{2} rows], [{4} cols]] = {0}"
+                    expr_repr = "[[{2._expr_name} rows], [{4._expr_name} cols]] = {0._expr_name}"
                 expr = MatrixExpression(
                     method_name,
                     cfunc_name,
@@ -1295,6 +1324,85 @@ class MatrixExpression(BaseExpression):
         from .formatting import format_matrix_expression_html
 
         return format_matrix_expression_html(self)
+
+    @property
+    def ncols(self):
+        return self._ncols
+
+    @property
+    def nrows(self):
+        return self._nrows
+
+    @property
+    def shape(self):
+        return (self._nrows, self._ncols)
+
+    # Begin auto-generated code: Matrix
+    _get_value = _automethods._get_value
+    S = wrapdoc(Matrix.S)(property(_automethods.S))
+    T = wrapdoc(Matrix.T)(property(_automethods.T))
+    V = wrapdoc(Matrix.V)(property(_automethods.V))
+    __and__ = wrapdoc(Matrix.__and__)(property(_automethods.__and__))
+    __contains__ = wrapdoc(Matrix.__contains__)(property(_automethods.__contains__))
+    __getitem__ = wrapdoc(Matrix.__getitem__)(property(_automethods.__getitem__))
+    __iter__ = wrapdoc(Matrix.__iter__)(property(_automethods.__iter__))
+    __matmul__ = wrapdoc(Matrix.__matmul__)(property(_automethods.__matmul__))
+    __or__ = wrapdoc(Matrix.__or__)(property(_automethods.__or__))
+    __rand__ = wrapdoc(Matrix.__rand__)(property(_automethods.__rand__))
+    __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(_automethods.__rmatmul__))
+    __ror__ = wrapdoc(Matrix.__ror__)(property(_automethods.__ror__))
+    _carg = wrapdoc(Matrix._carg)(property(_automethods._carg))
+    _name_html = wrapdoc(Matrix._name_html)(property(_automethods._name_html))
+    _nvals = wrapdoc(Matrix._nvals)(property(_automethods._nvals))
+    apply = wrapdoc(Matrix.apply)(property(_automethods.apply))
+    ewise_add = wrapdoc(Matrix.ewise_add)(property(_automethods.ewise_add))
+    ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
+    ewise_union = wrapdoc(Matrix.ewise_union)(property(_automethods.ewise_union))
+    gb_obj = wrapdoc(Matrix.gb_obj)(property(_automethods.gb_obj))
+    isclose = wrapdoc(Matrix.isclose)(property(_automethods.isclose))
+    isequal = wrapdoc(Matrix.isequal)(property(_automethods.isequal))
+    kronecker = wrapdoc(Matrix.kronecker)(property(_automethods.kronecker))
+    mxm = wrapdoc(Matrix.mxm)(property(_automethods.mxm))
+    mxv = wrapdoc(Matrix.mxv)(property(_automethods.mxv))
+    name = wrapdoc(Matrix.name)(property(_automethods.name))
+    name = name.setter(_automethods._set_name)
+    nvals = wrapdoc(Matrix.nvals)(property(_automethods.nvals))
+    reduce_columns = wrapdoc(Matrix.reduce_columns)(property(_automethods.reduce_columns))
+    reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
+    reduce_rows = wrapdoc(Matrix.reduce_rows)(property(_automethods.reduce_rows))
+    reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
+    reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
+    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
+    to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
+    wait = wrapdoc(Matrix.wait)(property(_automethods.wait))
+    # These raise exceptions
+    __array__ = Matrix.__array__
+    __bool__ = Matrix.__bool__
+    __iadd__ = _automethods.__iadd__
+    __iand__ = _automethods.__iand__
+    __ifloordiv__ = _automethods.__ifloordiv__
+    __imatmul__ = _automethods.__imatmul__
+    __imod__ = _automethods.__imod__
+    __imul__ = _automethods.__imul__
+    __ior__ = _automethods.__ior__
+    __ipow__ = _automethods.__ipow__
+    __isub__ = _automethods.__isub__
+    __itruediv__ = _automethods.__itruediv__
+    __ixor__ = _automethods.__ixor__
+    # End auto-generated code: Matrix
+
+
+class MatrixIndexExpr(AmbiguousAssignOrExtract):
+    __slots__ = "_ncols", "_nrows"
+    ndim = 2
+    output_type = Matrix
+    _is_transposed = False
+
+    def __init__(self, parent, resolved_indexes, nrows, ncols):
+        super().__init__(parent, resolved_indexes)
+        self._nrows = nrows
+        self._ncols = ncols
 
     @property
     def ncols(self):
@@ -1485,6 +1593,7 @@ class TransposedMatrix:
 
 
 utils._output_types[Matrix] = Matrix
+utils._output_types[MatrixIndexExpr] = Matrix
 utils._output_types[MatrixExpression] = Matrix
 utils._output_types[TransposedMatrix] = TransposedMatrix
 

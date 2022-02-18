@@ -7498,3 +7498,559 @@ def test_large_iso():
         " 0                    ... 1152921504606846975\n"
         "                   1  ...                   1"
     )
+
+
+def test_index_expr_vector(v):
+    repr_printer(v[0], "v[0]")
+    assert repr(v[0]) == (
+        "grblas.ScalarIndexExpr  dtype\n"
+        "v[0]                     FP64\n"
+        "\n"
+        "This expression may be used to extract or assign a Scalar.\n"
+        "Example extract: v[0].new()\n"
+        "Example assign: v[0] << s"
+    )
+    repr_printer(v[[0, 1]], "v[[0, 1]]")
+    assert repr(v[[0, 1]]) == (
+        "grblas.VectorIndexExpr  size  dtype\n"
+        "v[[0, 1]]                  2   FP64\n"
+        "\n"
+        "This expression may be used to extract or assign a Vector.\n"
+        "Example extract: v[[0, 1]].new()\n"
+        "Example assign: v[[0, 1]] << v"
+    )
+    repr_printer(v[1:3], "v[1:3]")
+    assert repr(v[1:3]) == (
+        "grblas.VectorIndexExpr  size  dtype\n"
+        "v[1:3]                     2   FP64\n"
+        "\n"
+        "This expression may be used to extract or assign a Vector.\n"
+        "Example extract: v[1:3].new()\n"
+        "Example assign: v[1:3] << v"
+    )
+    repr_printer(v[::2], "v[::2]")
+    assert repr(v[::2]) == (
+        "grblas.VectorIndexExpr  size  dtype\n"
+        "v[::2]                     3   FP64\n"
+        "\n"
+        "This expression may be used to extract or assign a Vector.\n"
+        "Example extract: v[::2].new()\n"
+        "Example assign: v[::2] << v"
+    )
+    repr_printer(v[[0] * 50], "v[[0] * 50]")
+    assert repr(v[[0] * 50]) == (
+        "grblas.VectorIndexExpr  size  dtype\n"
+        "v[[0, 0, 0, ...]]         50   FP64\n"
+        "\n"
+        "This expression may be used to extract or assign a Vector.\n"
+        "Example extract: v[[0, 0, 0, ...]].new()\n"
+        "Example assign: v[[0, 0, 0, ...]] << v"
+    )
+
+
+def test_index_expr_vector_html(v):
+    html_printer(v[0], "v[0]")
+    assert repr_html(v[0]) == (
+        '<div><details class="gb-expr-details"><summary class="gb-expr-summary"><b><tt>grblas.ScalarIndexExpr:</tt></b><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>v[0]</pre></td>\n'
+        "    <td><pre>dtype</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>FP64</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        '</summary><blockquote class="gb-expr-blockquote"><div>'
+        f"{CSS_STYLE}"
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>3</td>\n"
+        "    <td>5</td>\n"
+        "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>0</th>\n"
+        "      <th>1</th>\n"
+        "      <th>2</th>\n"
+        "      <th>3</th>\n"
+        "      <th>4</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th></th>\n"
+        "      <td>0.0</td>\n"
+        "      <td></td>\n"
+        "      <td>1.1</td>\n"
+        "      <td></td>\n"
+        "      <td>2.2</td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div></blockquote></details><em>This expression may be used to extract or assign a <tt>Scalar</tt>.<br>Example extract: <code>v[0].new()</code><br>Example assign: <code>v[0] << s</code></em></div>"
+    )
+    html_printer(v[[0, 1]], "v[[0, 1]]")
+    assert repr_html(v[[0, 1]]) == (
+        '<div><details class="gb-expr-details"><summary class="gb-expr-summary"><b><tt>grblas.VectorIndexExpr:</tt></b><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>v[[0, 1]]</pre></td>\n'
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>2</td>\n"
+        "    <td>FP64</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        '</summary><blockquote class="gb-expr-blockquote"><div>'
+        f"{CSS_STYLE}"
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>3</td>\n"
+        "    <td>5</td>\n"
+        "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>0</th>\n"
+        "      <th>1</th>\n"
+        "      <th>2</th>\n"
+        "      <th>3</th>\n"
+        "      <th>4</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th></th>\n"
+        "      <td>0.0</td>\n"
+        "      <td></td>\n"
+        "      <td>1.1</td>\n"
+        "      <td></td>\n"
+        "      <td>2.2</td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div></blockquote></details><em>This expression may be used to extract or assign a <tt>Vector</tt>.<br>Example extract: <code>v[[0, 1]].new()</code><br>Example assign: <code>v[[0, 1]] << v</code></em></div>"
+    )
+
+
+def test_index_expr_matrix(A):
+    repr_printer(A[0, 1], "A[0, 1]")
+    assert repr(A[0, 1]) == (
+        "grblas.ScalarIndexExpr  dtype\n"
+        "A_1[0, 1]               INT64\n"
+        "\n"
+        "This expression may be used to extract or assign a Scalar.\n"
+        "Example extract: A_1[0, 1].new()\n"
+        "Example assign: A_1[0, 1] << s"
+    )
+    repr_printer(A[:2, [1, 2]], "A[:2, [1, 2]]")
+    assert repr(A[:2, [1, 2]]) == (
+        "grblas.MatrixIndexExpr  nrows  ncols  dtype\n"
+        "A_1[:, [1, 2]]              1      2  INT64\n"
+        "\n"
+        "This expression may be used to extract or assign a Matrix.\n"
+        "Example extract: A_1[:, [1, 2]].new()\n"
+        "Example assign: A_1[:, [1, 2]] << M"
+    )
+
+
+def test_index_expr_matrix_html(A):
+    html_printer(A[0, 1], "A[0, 1]")
+    assert repr_html(A[0, 1]) == (
+        '<div><details class="gb-expr-details"><summary class="gb-expr-summary"><b><tt>grblas.ScalarIndexExpr:</tt></b><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub>[0, 1]</pre></td>\n'
+        "    <td><pre>dtype</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>INT64</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        '</summary><blockquote class="gb-expr-blockquote"><div>'
+        f"{CSS_STYLE}"
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>nrows</pre></td>\n"
+        "    <td><pre>ncols</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>3</td>\n"
+        "    <td>1</td>\n"
+        "    <td>5</td>\n"
+        "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>0</th>\n"
+        "      <th>1</th>\n"
+        "      <th>2</th>\n"
+        "      <th>3</th>\n"
+        "      <th>4</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th>0</th>\n"
+        "      <td>0</td>\n"
+        "      <td></td>\n"
+        "      <td>1</td>\n"
+        "      <td></td>\n"
+        "      <td>2</td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div></blockquote></details><em>This expression may be used to extract or assign a <tt>Scalar</tt>.<br>Example extract: <code>A<sub>1</sub>[0, 1].new()</code><br>Example assign: <code>A<sub>1</sub>[0, 1] << s</code></em></div>"
+    )
+    html_printer(A[:2, [1, 2]], "A[:2, [1, 2]]")
+    assert repr_html(A[:2, [1, 2]]) == (
+        '<div><details class="gb-expr-details"><summary class="gb-expr-summary"><b><tt>grblas.MatrixIndexExpr:</tt></b><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub>[:, [1, 2]]</pre></td>\n'
+        "    <td><pre>nrows</pre></td>\n"
+        "    <td><pre>ncols</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>1</td>\n"
+        "    <td>2</td>\n"
+        "    <td>INT64</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        '</summary><blockquote class="gb-expr-blockquote"><div>'
+        f"{CSS_STYLE}"
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Matrix</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>nrows</pre></td>\n"
+        "    <td><pre>ncols</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>3</td>\n"
+        "    <td>1</td>\n"
+        "    <td>5</td>\n"
+        "    <td>INT64</td>\n"
+        "    <td>bitmapr</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>0</th>\n"
+        "      <th>1</th>\n"
+        "      <th>2</th>\n"
+        "      <th>3</th>\n"
+        "      <th>4</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th>0</th>\n"
+        "      <td>0</td>\n"
+        "      <td></td>\n"
+        "      <td>1</td>\n"
+        "      <td></td>\n"
+        "      <td>2</td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div></blockquote></details><em>This expression may be used to extract or assign a <tt>Matrix</tt>.<br>Example extract: <code>A<sub>1</sub>[:, [1, 2]].new()</code><br>Example assign: <code>A<sub>1</sub>[:, [1, 2]] << M</code></em></div>"
+    )
+
+
+def test_scalar_as_vector():
+    s = Scalar.from_value(5, is_cscalar=False)  # pragma: is_grbscalar
+    v = s._as_vector()
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"(GrB_Vector)s_0"  nvals  size  dtype      format\n'
+        "grblas.Vector          1     1  INT64  full (iso)\n"
+        "-------------------------------------------------\n"
+        "  0\n"
+        "  5"
+    )
+    expr = v.reduce()
+    repr_printer(expr, "expr")
+    assert repr(expr) == (
+        "grblas.ScalarExpression                     dtype\n"
+        "(GrB_Vector)s_0.reduce(monoid.plus[INT64])  INT64\n"
+        "\n"
+        "Do expr.new() or other << expr to calculate the expression."
+    )
+    html_printer(v, "v")
+    assert repr_html(v) == (
+        '<div class="gb-scalar"><tt>s<sub>0</sub></tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Scalar</pre></td>\n'
+        "    <td><pre>value</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>5</td>\n"
+        "    <td>INT64</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</div>"
+    )
+    html_printer(expr, "expr")
+    assert repr_html(expr) == (
+        '<div><details class="gb-expr-details"><summary class="gb-expr-summary"><b><tt>grblas.ScalarExpression:</tt></b><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>s<sub>0</sub>.reduce(monoid.plus[INT64])</pre></td>\n'
+        "    <td><pre>dtype</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>INT64</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        '</summary><blockquote class="gb-expr-blockquote"><div class="gb-scalar"><tt>s<sub>0</sub></tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Scalar</pre></td>\n'
+        "    <td><pre>value</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>5</td>\n"
+        "    <td>INT64</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</div></blockquote></details><em>Do <code>expr.new()</code> or <code>other << expr</code> to calculate the expression.</em></div>"
+    )
+
+
+@autocompute
+def test_index_expr_autocompute(v):
+    html_printer(v[[0, 1]], "v[[0, 1]]")
+    assert repr_html(v[[0, 1]]) == (
+        '<div><details class="gb-expr-details"><summary class="gb-expr-summary"><b><tt>grblas.VectorIndexExpr:</tt></b><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>v[[0, 1]]</pre></td>\n'
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>2</td>\n"
+        "    <td>FP64</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        '</summary><blockquote class="gb-expr-blockquote"><div>'
+        f"{CSS_STYLE}"
+        '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>3</td>\n"
+        "    <td>5</td>\n"
+        "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>0</th>\n"
+        "      <th>1</th>\n"
+        "      <th>2</th>\n"
+        "      <th>3</th>\n"
+        "      <th>4</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th></th>\n"
+        "      <td>0.0</td>\n"
+        "      <td></td>\n"
+        "      <td>1.1</td>\n"
+        "      <td></td>\n"
+        "      <td>2.2</td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div><hr><div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>Result</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>grblas.Vector</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>1</td>\n"
+        "    <td>2</td>\n"
+        "    <td>FP64</td>\n"
+        "    <td>bitmap</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>0</th>\n"
+        "      <th>1</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th></th>\n"
+        "      <td>0.0</td>\n"
+        "      <td></td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div></blockquote></details><em>This expression may be used to extract or assign a <tt>Vector</tt>.<br>Example extract: <code>v[[0, 1]].new()</code><br>Example assign: <code>v[[0, 1]] << v</code></em></div>"
+    )

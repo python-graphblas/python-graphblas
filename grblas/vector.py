@@ -78,8 +78,9 @@ class Vector(BaseType):
             return format_vector(self, mask=mask)
 
     def _repr_html_(self, mask=None, collapse=False):
-        if self._parent is not None:
-            return self._parent._repr_html_(mask=mask, collapse=collapse)
+        if self._parent is not None and mask is None:
+            # Scalars repr can't handle mask
+            return self._parent._repr_html_(collapse=collapse)
         from .formatting import format_vector_html
         from .recorder import skip_record
 
@@ -115,14 +116,20 @@ class Vector(BaseType):
 
     def __getitem__(self, keys):
         resolved_indexes = IndexerResolver(self, keys)
-        return AmbiguousAssignOrExtract(self, resolved_indexes)
+        shape = resolved_indexes.shape
+        if not shape:
+            from .scalar import ScalarIndexExpr
+
+            return ScalarIndexExpr(self, resolved_indexes)
+        else:
+            return VectorIndexExpr(self, resolved_indexes, *shape)
 
     def __setitem__(self, keys, expr):
         Updater(self)[keys] = expr
 
     def __contains__(self, index):
         extractor = self[index]
-        if not extractor.resolved_indexes.is_single_element:
+        if not extractor._is_scalar:
             raise TypeError(
                 f"Invalid index to Vector contains: {index!r}.  An integer is expected.  "
                 "Doing `index in my_vector` checks whether a value is present at that index."
@@ -494,7 +501,7 @@ class Vector(BaseType):
             "GxB_Vector_eWiseUnion",
             [self, left, other, right],
             op=op,
-            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1.name}, {3.name})",
+            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})",
         )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
@@ -578,7 +585,7 @@ class Vector(BaseType):
             else:
                 cfunc_name = "GrB_Vector_apply_BinaryOp1st_Scalar"
             args = [left, self]
-            expr_repr = "{1.name}.apply({op}, left={0})"
+            expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
                 try:
@@ -608,7 +615,7 @@ class Vector(BaseType):
             else:
                 cfunc_name = "GrB_Vector_apply_BinaryOp2nd_Scalar"
             args = [self, right]
-            expr_repr = "{0.name}.apply({op}, right={1})"
+            expr_repr = "{0.name}.apply({op}, right={1._expr_name})"
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
         return VectorExpression(
@@ -724,13 +731,13 @@ class Vector(BaseType):
         return result
 
     def _prep_for_extract(self, resolved_indexes, mask=None, is_submask=False):
-        size, index, cscalar = resolved_indexes.indices[0]
+        index = resolved_indexes.indices[0]
         return VectorExpression(
             "__getitem__",
             "GrB_Vector_extract",
-            [self, index, cscalar],
-            expr_repr="{0.name}[[{2} elements]]",
-            size=size,
+            [self, index, index.cscalar],
+            expr_repr="{0.name}[{1._expr_name}]",
+            size=index.size,
             dtype=self.dtype,
         )
 
@@ -758,7 +765,10 @@ class Vector(BaseType):
 
     def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
         method_name = "__setitem__"
-        size, index, cscalar = resolved_indexes.indices[0]
+        idx = resolved_indexes.indices[0]
+        size = idx.size
+        cscalar = idx.cscalar
+        index = idx.index
 
         if output_type(value) is Vector:
             if type(value) is not Vector:
@@ -773,12 +783,12 @@ class Vector(BaseType):
                     raise TypeError("Single element assign does not accept a submask")
                 # v[I](m) << w
                 cfunc_name = "GrB_Vector_subassign"
-                expr_repr = "[[{2} elements]](%s) = {0.name}" % mask.name
+                expr_repr = "[[{2._expr_name} elements]](%s) = {0.name}" % mask.name
             else:
                 # v(m)[I] << w
                 # v[I] << w
                 cfunc_name = "GrB_Vector_assign"
-                expr_repr = "[[{2} elements]] = {0.name}"
+                expr_repr = "[[{2._expr_name} elements]] = {0.name}"
         else:
             if type(value) is not Scalar:
                 try:
@@ -800,7 +810,7 @@ class Vector(BaseType):
                     cfunc_name = f"GrB_Vector_subassign_{value.dtype}"
                 else:
                     cfunc_name = "GrB_Vector_subassign_Scalar"
-                expr_repr = "[[{2} elements]](%s) = {0}" % mask.name
+                expr_repr = "[[{2._expr_name} elements]](%s) = {0._expr_name}" % mask.name
             else:
                 # v(m)[I] << c
                 # v[I] << c
@@ -811,7 +821,7 @@ class Vector(BaseType):
                     cfunc_name = f"GrB_Vector_assign_{value.dtype}"
                 else:
                     cfunc_name = "GrB_Vector_assign_Scalar"
-                expr_repr = "[[{2} elements]] = {0}"
+                expr_repr = "[[{2._expr_name} elements]] = {0._expr_name}"
         return VectorExpression(
             method_name,
             cfunc_name,
@@ -938,6 +948,76 @@ class VectorExpression(BaseExpression):
     __rand__ = wrapdoc(Vector.__rand__)(property(_automethods.__rand__))
     __rmatmul__ = wrapdoc(Vector.__rmatmul__)(property(_automethods.__rmatmul__))
     __ror__ = wrapdoc(Vector.__ror__)(property(_automethods.__ror__))
+    _as_matrix = wrapdoc(Vector._as_matrix)(property(_automethods._as_matrix))
+    _carg = wrapdoc(Vector._carg)(property(_automethods._carg))
+    _name_html = wrapdoc(Vector._name_html)(property(_automethods._name_html))
+    _nvals = wrapdoc(Vector._nvals)(property(_automethods._nvals))
+    apply = wrapdoc(Vector.apply)(property(_automethods.apply))
+    ewise_add = wrapdoc(Vector.ewise_add)(property(_automethods.ewise_add))
+    ewise_mult = wrapdoc(Vector.ewise_mult)(property(_automethods.ewise_mult))
+    ewise_union = wrapdoc(Vector.ewise_union)(property(_automethods.ewise_union))
+    gb_obj = wrapdoc(Vector.gb_obj)(property(_automethods.gb_obj))
+    inner = wrapdoc(Vector.inner)(property(_automethods.inner))
+    isclose = wrapdoc(Vector.isclose)(property(_automethods.isclose))
+    isequal = wrapdoc(Vector.isequal)(property(_automethods.isequal))
+    name = wrapdoc(Vector.name)(property(_automethods.name))
+    name = name.setter(_automethods._set_name)
+    nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
+    outer = wrapdoc(Vector.outer)(property(_automethods.outer))
+    reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
+    ss = wrapdoc(Vector.ss)(property(_automethods.ss))
+    to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))
+    to_values = wrapdoc(Vector.to_values)(property(_automethods.to_values))
+    vxm = wrapdoc(Vector.vxm)(property(_automethods.vxm))
+    wait = wrapdoc(Vector.wait)(property(_automethods.wait))
+    # These raise exceptions
+    __array__ = Vector.__array__
+    __bool__ = Vector.__bool__
+    __iadd__ = _automethods.__iadd__
+    __iand__ = _automethods.__iand__
+    __ifloordiv__ = _automethods.__ifloordiv__
+    __imatmul__ = _automethods.__imatmul__
+    __imod__ = _automethods.__imod__
+    __imul__ = _automethods.__imul__
+    __ior__ = _automethods.__ior__
+    __ipow__ = _automethods.__ipow__
+    __isub__ = _automethods.__isub__
+    __itruediv__ = _automethods.__itruediv__
+    __ixor__ = _automethods.__ixor__
+    # End auto-generated code: Vector
+
+
+class VectorIndexExpr(AmbiguousAssignOrExtract):
+    __slots__ = "_size"
+    ndim = 1
+    output_type = Vector
+
+    def __init__(self, parent, resolved_indexes, size):
+        super().__init__(parent, resolved_indexes)
+        self._size = size
+
+    @property
+    def size(self):
+        return self._size
+
+    @property
+    def shape(self):
+        return (self._size,)
+
+    # Begin auto-generated code: Vector
+    _get_value = _automethods._get_value
+    S = wrapdoc(Vector.S)(property(_automethods.S))
+    V = wrapdoc(Vector.V)(property(_automethods.V))
+    __and__ = wrapdoc(Vector.__and__)(property(_automethods.__and__))
+    __contains__ = wrapdoc(Vector.__contains__)(property(_automethods.__contains__))
+    __getitem__ = wrapdoc(Vector.__getitem__)(property(_automethods.__getitem__))
+    __iter__ = wrapdoc(Vector.__iter__)(property(_automethods.__iter__))
+    __matmul__ = wrapdoc(Vector.__matmul__)(property(_automethods.__matmul__))
+    __or__ = wrapdoc(Vector.__or__)(property(_automethods.__or__))
+    __rand__ = wrapdoc(Vector.__rand__)(property(_automethods.__rand__))
+    __rmatmul__ = wrapdoc(Vector.__rmatmul__)(property(_automethods.__rmatmul__))
+    __ror__ = wrapdoc(Vector.__ror__)(property(_automethods.__ror__))
+    _as_matrix = wrapdoc(Vector._as_matrix)(property(_automethods._as_matrix))
     _carg = wrapdoc(Vector._carg)(property(_automethods._carg))
     _name_html = wrapdoc(Vector._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Vector._nvals)(property(_automethods._nvals))
@@ -977,6 +1057,7 @@ class VectorExpression(BaseExpression):
 
 
 utils._output_types[Vector] = Vector
+utils._output_types[VectorIndexExpr] = Vector
 utils._output_types[VectorExpression] = Vector
 
 # Import matrix to import infix to import _infixmethods, which has side effects
