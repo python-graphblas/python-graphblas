@@ -1,5 +1,5 @@
 {% set name = "grblas" %}
-{% set version = "1.3.9" %}
+{% set version = "2022.3.0" %}
 
 package:
   name: "{{ name|lower }}"
@@ -21,7 +21,7 @@ requirements:
   run:
     - python
     - numba
-    - python-suitesparse-graphblas >=6.0,<6.2
+    - python-suitesparse-graphblas >=6.0,<6.3
     - pytest-runner
 
 about:
