@@ -14,13 +14,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pyver: ["3.8", "3.9"]
+        pyver: ["3.8", "3.9", "3.10"]
         testopts:
           - "--blocking"
           - "--non-blocking --record --runslow"
         sourcetype:
-          - "wheel"
-          - "source"
+          # - "wheel"
+          # - "source"
           - "upstream"
           - "conda-forge"
         exclude:
