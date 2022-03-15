@@ -48,7 +48,7 @@ class Vector(BaseType):
         if parent is not None:
             return
         gb_obj = getattr(self, "gb_obj", None)
-        if gb_obj is not None:
+        if gb_obj is not None and lib is not None:
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Vector_free(gb_obj), self)
 
@@ -244,9 +244,8 @@ class Vector(BaseType):
         n = ffi_new("GrB_Index*")
         scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
         scalar.value = nvals
-        call(
-            f"GrB_Vector_extractTuples_{self.dtype.name}", [indices, values, _Pointer(scalar), self]
-        )
+        dtype_name = "UDT" if self.dtype._is_udt else self.dtype.name
+        call(f"GrB_Vector_extractTuples_{dtype_name}", [indices, values, _Pointer(scalar), self])
         values = values.array
         if dtype is not None:
             dtype = lookup_dtype(dtype)
@@ -274,18 +273,22 @@ class Vector(BaseType):
             return
 
         dup_op_given = dup_op is not None
-        if not dup_op_given:
-            dup_op = binary.plus
-        dup_op = get_typed_op(dup_op, self.dtype, kind="binary")
-        if dup_op.opclass == "Monoid":
-            dup_op = dup_op.binaryop
+        if self.dtype._is_udt:  # XXX
+            dup_op = None
         else:
-            self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
+            if not dup_op_given:
+                dup_op = binary.plus
+            dup_op = get_typed_op(dup_op, self.dtype, kind="binary")
+            if dup_op.opclass == "Monoid":
+                dup_op = dup_op.binaryop
+            else:
+                self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
 
         indices = _CArray(indices)
         values = _CArray(values, self.dtype)
+        dtype_name = "UDT" if self.dtype._is_udt else self.dtype.name
         call(
-            f"GrB_Vector_build_{self.dtype.name}",
+            f"GrB_Vector_build_{dtype_name}",
             [self, indices, values, _as_scalar(n, _INDEX, is_cscalar=True), dup_op],
         )
 
@@ -458,10 +461,11 @@ class Vector(BaseType):
         # SS, SuiteSparse-specific: eWiseUnion
         method_name = "ewise_union"
         other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
+        dtype = self.dtype if self.dtype._is_udt else None
         if type(left_default) is not Scalar:
             try:
                 left = Scalar.from_value(
-                    left_default, is_cscalar=False, name=""  # pragma: is_grbscalar
+                    left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
                 )
             except TypeError:
                 left = self._expect_type(
@@ -473,11 +477,11 @@ class Vector(BaseType):
                     op=op,
                 )
         else:
-            left = _as_scalar(left_default, is_cscalar=False)  # pragma: is_grbscalar
+            left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
         if type(right_default) is not Scalar:
             try:
                 right = Scalar.from_value(
-                    right_default, is_cscalar=False, name=""  # pragma: is_grbscalar
+                    right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
                 )
             except TypeError:
                 right = self._expect_type(
@@ -489,7 +493,7 @@ class Vector(BaseType):
                     op=op,
                 )
         else:
-            right = _as_scalar(right_default, is_cscalar=False)  # pragma: is_grbscalar
+            right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
         scalar_dtype = unify(left.dtype, right.dtype)
         nonscalar_dtype = unify(self.dtype, other.dtype)
         op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
@@ -558,8 +562,9 @@ class Vector(BaseType):
             expr_repr = None
         elif right is None:
             if type(left) is not Scalar:
+                dtype = self.dtype if self.dtype._is_udt else None
                 try:
-                    left = Scalar.from_value(left, is_cscalar=None, name="")
+                    left = Scalar.from_value(left, dtype, is_cscalar=None, name="")
                 except TypeError:
                     left = self._expect_type(
                         left,
@@ -581,15 +586,17 @@ class Vector(BaseType):
                     extra_message=extra_message,
                 )
             if left._is_cscalar:
-                cfunc_name = f"GrB_Vector_apply_BinaryOp1st_{left.dtype}"
+                dtype_name = "UDT" if left.dtype._is_udt else left.dtype.name
+                cfunc_name = f"GrB_Vector_apply_BinaryOp1st_{dtype_name}"
             else:
                 cfunc_name = "GrB_Vector_apply_BinaryOp1st_Scalar"
             args = [left, self]
             expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
+                dtype = self.dtype if self.dtype._is_udt else None
                 try:
-                    right = Scalar.from_value(right, is_cscalar=None, name="")
+                    right = Scalar.from_value(right, dtype, is_cscalar=None, name="")
                 except TypeError:
                     right = self._expect_type(
                         right,
@@ -611,7 +618,8 @@ class Vector(BaseType):
                     extra_message=extra_message,
                 )
             if right._is_cscalar:
-                cfunc_name = f"GrB_Vector_apply_BinaryOp2nd_{right.dtype}"
+                dtype_name = "UDT" if right.dtype._is_udt else right.dtype.name
+                cfunc_name = f"GrB_Vector_apply_BinaryOp2nd_{dtype_name}"
             else:
                 cfunc_name = "GrB_Vector_apply_BinaryOp2nd_Scalar"
             args = [self, right]
@@ -721,8 +729,9 @@ class Vector(BaseType):
         if result is None:
             result = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
         if is_cscalar:
+            dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (
-                call(f"GrB_Vector_extractElement_{dtype}", [_Pointer(result), self, idx.index])
+                call(f"GrB_Vector_extractElement_{dtype_name}", [_Pointer(result), self, idx.index])
                 is not NoValue
             ):
                 result._empty = False
@@ -744,8 +753,9 @@ class Vector(BaseType):
     def _assign_element(self, resolved_indexes, value):
         idx = resolved_indexes.indices[0]
         if type(value) is not Scalar:
+            dtype = self.dtype if self.dtype._is_udt else None
             try:
-                value = Scalar.from_value(value, is_cscalar=None, name="")
+                value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
             except TypeError:
                 value = self._expect_type(
                     value,
@@ -758,7 +768,12 @@ class Vector(BaseType):
             if value._empty:
                 call("GrB_Vector_removeElement", [self, idx.index])
                 return
-            cfunc_name = f"GrB_Vector_setElement_{value.dtype}"
+            if value.dtype._is_udt:
+                dtype_name = "UDT"
+                value = _Pointer(value)
+            else:
+                dtype_name = value.dtype.name
+            cfunc_name = f"GrB_Vector_setElement_{dtype_name}"
         else:
             cfunc_name = "GrB_Vector_setElement_Scalar"
         call(cfunc_name, [self, value, idx.index])
@@ -791,8 +806,9 @@ class Vector(BaseType):
                 expr_repr = "[[{2._expr_name} elements]] = {0.name}"
         else:
             if type(value) is not Scalar:
+                dtype = self.dtype if self.dtype._is_udt else None
                 try:
-                    value = Scalar.from_value(value, is_cscalar=None, name="")
+                    value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
                 except TypeError:
                     value = self._expect_type(
                         value,
@@ -807,7 +823,12 @@ class Vector(BaseType):
                     raise TypeError("Single element assign does not accept a submask")
                 # v[I](m) << c
                 if value._is_cscalar:
-                    cfunc_name = f"GrB_Vector_subassign_{value.dtype}"
+                    if value.dtype._is_udt:
+                        dtype_name = "UDT"
+                        value = _Pointer(value)
+                    else:
+                        dtype_name = value.dtype.name
+                    cfunc_name = f"GrB_Vector_subassign_{dtype_name}"
                 else:
                     cfunc_name = "GrB_Vector_subassign_Scalar"
                 expr_repr = "[[{2._expr_name} elements]](%s) = {0._expr_name}" % mask.name
@@ -818,7 +839,12 @@ class Vector(BaseType):
                     index = _CArray([index.value])
                     cscalar = _as_scalar(1, _INDEX, is_cscalar=True)
                 if value._is_cscalar:
-                    cfunc_name = f"GrB_Vector_assign_{value.dtype}"
+                    if value.dtype._is_udt:
+                        dtype_name = "UDT"
+                        value = _Pointer(value)
+                    else:
+                        dtype_name = value.dtype.name
+                    cfunc_name = f"GrB_Vector_assign_{dtype_name}"
                 else:
                     cfunc_name = "GrB_Vector_assign_Scalar"
                 expr_repr = "[[{2._expr_name} elements]] = {0._expr_name}"

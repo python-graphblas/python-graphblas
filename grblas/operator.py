@@ -241,25 +241,29 @@ class TypedBuiltinSemiring(TypedOpBase):
 
 
 class TypedUserUnaryOp(TypedOpBase):
-    __slots__ = "orig_func", "numba_func"
+    __slots__ = ()
     opclass = "UnaryOp"
 
-    def __init__(self, parent, name, type_, return_type, gb_obj, orig_func, numba_func):
+    def __init__(self, parent, name, type_, return_type, gb_obj):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
-        self.orig_func = orig_func
-        self.numba_func = numba_func
+
+    @property
+    def orig_func(self):
+        return self.parent._func
+
+    @property
+    def numba_func(self):
+        return self.parent._numba_func
 
     __call__ = TypedBuiltinUnaryOp.__call__
 
 
 class TypedUserBinaryOp(TypedOpBase):
-    __slots__ = "orig_func", "numba_func", "_monoid"
+    __slots__ = "_monoid"
     opclass = "BinaryOp"
 
-    def __init__(self, parent, name, type_, return_type, gb_obj, orig_func, numba_func):
+    def __init__(self, parent, name, type_, return_type, gb_obj):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
-        self.orig_func = orig_func
-        self.numba_func = numba_func
         self._monoid = None
 
     @property
@@ -275,6 +279,8 @@ class TypedUserBinaryOp(TypedOpBase):
     _semiring_commutes_to = TypedBuiltinBinaryOp._semiring_commutes_to
     is_commutative = TypedBuiltinBinaryOp.is_commutative
     __call__ = TypedBuiltinBinaryOp.__call__
+    orig_func = TypedUserUnaryOp.orig_func
+    numba_func = TypedUserUnaryOp.numba_func
 
 
 class TypedUserMonoid(TypedOpBase):
@@ -325,11 +331,12 @@ class ParameterizedUdf:
 
 
 class ParameterizedUnaryOp(ParameterizedUdf):
-    __slots__ = "func", "__signature__"
+    __slots__ = "func", "__signature__", "_is_udt"
 
-    def __init__(self, name, func, *, anonymous=False):
+    def __init__(self, name, func, *, anonymous=False, is_udt=False):
         self.func = func
         self.__signature__ = inspect.signature(func)
+        self._is_udt = is_udt
         if name is None:
             name = getattr(func, "__name__", name)
         super().__init__(name, anonymous)
@@ -337,7 +344,7 @@ class ParameterizedUnaryOp(ParameterizedUdf):
     def _call(self, *args, **kwargs):
         unary = self.func(*args, **kwargs)
         unary._parameterized_info = (self, args, kwargs)
-        return UnaryOp.register_anonymous(unary, self.name)
+        return UnaryOp.register_anonymous(unary, self.name, is_udt=self._is_udt)
 
     def __reduce__(self):
         name = f"unary.{self.name}"
@@ -356,12 +363,13 @@ class ParameterizedUnaryOp(ParameterizedUdf):
 
 
 class ParameterizedBinaryOp(ParameterizedUdf):
-    __slots__ = "func", "__signature__", "_monoid", "_cached_call", "commutes_to"
+    __slots__ = "func", "__signature__", "_monoid", "_cached_call", "commutes_to", "_is_udt"
 
-    def __init__(self, name, func, *, anonymous=False):
+    def __init__(self, name, func, *, anonymous=False, is_udt=False):
         self.func = func
         self.__signature__ = inspect.signature(func)
         self._monoid = None
+        self._is_udt = is_udt
         if name is None:
             name = getattr(func, "__name__", name)
         super().__init__(name, anonymous)
@@ -373,7 +381,7 @@ class ParameterizedBinaryOp(ParameterizedUdf):
     def _call_to_cache(self, *args, **kwargs):
         binary = self.func(*args, **kwargs)
         binary._parameterized_info = (self, args, kwargs)
-        return BinaryOp.register_anonymous(binary, self.name)
+        return BinaryOp.register_anonymous(binary, self.name, is_udt=self._is_udt)
 
     def _call(self, *args, **kwargs):
         binop = self._cached_call(*args, **kwargs)
@@ -673,7 +681,7 @@ class OpBase:
 
 
 class UnaryOp(OpBase):
-    __slots__ = "_func", "is_positional"
+    __slots__ = "_func", "is_positional", "_is_udt", "_udt_types", "_udt_ops", "_numba_func"
     _module = unary
     _modname = "unary"
     _typed_class = TypedBuiltinUnaryOp
@@ -706,13 +714,14 @@ class UnaryOp(OpBase):
     _positional = {"positioni", "positioni1", "positionj", "positionj1"}
 
     @classmethod
-    def _build(cls, name, func, *, anonymous=False):
+    def _build(cls, name, func, *, anonymous=False, is_udt=False):
         if type(func) is not FunctionType:
             raise TypeError(f"UDF argument must be a function, not {type(func)}")
         if name is None:
             name = getattr(func, "__name__", "<anonymous_unary>")
         success = False
-        new_type_obj = cls(name, func, anonymous=anonymous)
+        unary_udf = numba.njit(func)
+        new_type_obj = cls(name, func, anonymous=anonymous, is_udt=is_udt, numba_func=unary_udf)
         return_types = {}
         nt = numba.types
         for type_, sample_val in _sample_values.items():
@@ -721,7 +730,7 @@ class UnaryOp(OpBase):
             try:
                 with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
                     ret = func(sample_val)
-                ret_type = lookup_dtype(type(ret))
+                ret_type = lookup_dtype(type(ret), ret)
                 if ret_type != type_ and (
                     ("INT" in ret_type.name and "INT" in type_.name)
                     or ("FP" in ret_type.name and "FP" in type_.name)
@@ -745,8 +754,6 @@ class UnaryOp(OpBase):
                 input_type = INT8 if type_ == "BOOL" else type_
                 return_type = INT8 if ret_type == "BOOL" else ret_type
 
-                # JIT the func so it can be used from a cfunc
-                unary_udf = numba.njit(func)
                 # Build wrapper because GraphBLAS wants pointers and void return
                 wrapper_sig = nt.void(
                     nt.CPointer(return_type.numba_type),
@@ -783,27 +790,83 @@ class UnaryOp(OpBase):
                     "UnaryOp",
                     new_unary,
                 )
-                op = TypedUserUnaryOp(
-                    new_type_obj, name, type_.name, ret_type.name, new_unary[0], func, unary_udf
-                )
+                op = TypedUserUnaryOp(new_type_obj, name, type_.name, ret_type.name, new_unary[0])
                 new_type_obj._add(op)
                 success = True
                 return_types[type_.name] = ret_type.name
             except Exception:
                 continue
-        if success:
+        if success or is_udt:
             return new_type_obj
         else:
             raise UdfParseError("Unable to parse function using Numba")
 
-    @classmethod
-    def register_anonymous(cls, func, name=None, *, parameterized=False):
-        if parameterized:
-            return ParameterizedUnaryOp(name, func, anonymous=True)
-        return cls._build(name, func, anonymous=True)
+    def _getitem_udt(self, dtype, dtype2):
+        assert dtype2 is None  # ignore dtype2
+        np_type = dtype.np_type
+        if np_type in self._udt_types:
+            return self._udt_ops[np_type]
+
+        sample_val = np.zeros(1, dtype=np_type)[0]
+        # if not np.issubdtype(np_type, np.flexible):
+        #    # dtypes such as `np.dtype('S5')` are complicated
+        #    sample_val = sample_val[0]
+        with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
+            ret = self._func(sample_val)
+        try:
+            ret_type = lookup_dtype(type(ret), ret)
+        except Exception:
+            if np.issubdtype(getattr(ret_type, "dtype", np_type), np.flexible):
+                ret_type = dtype  # Guess for now
+            else:
+                raise
+
+        # Numba is unable to handle BOOL correctly right now, but we have a workaround
+        # See: https://github.com/numba/numba/issues/5395
+        # We're relying on coercion behaving correctly here
+        return_type = INT8 if ret_type == "BOOL" else ret_type
+
+        # Build wrapper because GraphBLAS wants pointers and void return
+        nt = numba.types
+        wrapper_sig = nt.void(
+            nt.CPointer(return_type.numba_type),
+            nt.CPointer(dtype.numba_type),
+        )
+        numba_func = self._numba_func
+        if ret_type == "BOOL":
+
+            def unary_wrapper(z_ptr, x_ptr):
+                z = numba.carray(z_ptr, 1)
+                x = numba.carray(x_ptr, 1)
+                z[0] = bool(numba_func(x[0]))  # pragma: no cover
+
+        else:
+
+            def unary_wrapper(z_ptr, x_ptr):
+                z = numba.carray(z_ptr, 1)
+                x = numba.carray(x_ptr, 1)
+                z[0] = numba_func(x[0])  # pragma: no cover
+
+        unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
+        new_unary = ffi_new("GrB_UnaryOp*")
+        check_status_carg(
+            lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi, ret_type._carg, dtype._carg),
+            "UnaryOp",
+            new_unary,
+        )
+        op = TypedUserUnaryOp(self, self.name, dtype.name, ret_type.name, new_unary[0])
+        self._udt_types[np_type] = ret_type
+        self._udt_ops[np_type] = op
+        return op
 
     @classmethod
-    def register_new(cls, name, func, *, parameterized=False, lazy=False):
+    def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
+        if parameterized:
+            return ParameterizedUnaryOp(name, func, anonymous=True, is_udt=is_udt)
+        return cls._build(name, func, anonymous=True, is_udt=is_udt)
+
+    @classmethod
+    def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
@@ -811,10 +874,10 @@ class UnaryOp(OpBase):
                 {"name": name, "func": func, "parameterized": parameterized},
             )
         elif parameterized:
-            unary_op = ParameterizedUnaryOp(name, func)
+            unary_op = ParameterizedUnaryOp(name, func, is_udt=is_udt)
             setattr(module, funcname, unary_op)
         else:
-            unary_op = cls._build(name, func)
+            unary_op = cls._build(name, func, is_udt=is_udt)
             setattr(module, funcname, unary_op)
         # Also save it to `grblas.op` if not yet defined
         opmodule, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
@@ -868,10 +931,24 @@ class UnaryOp(OpBase):
                             op.coercions[dtype] = target_type
         cls._initialized = True
 
-    def __init__(self, name, func=None, *, anonymous=False, is_positional=False):
+    def __init__(
+        self,
+        name,
+        func=None,
+        *,
+        anonymous=False,
+        is_positional=False,
+        is_udt=False,
+        numba_func=None,
+    ):
         super().__init__(name, anonymous=anonymous)
         self._func = func
+        self._numba_func = numba_func
         self.is_positional = is_positional
+        self._is_udt = is_udt
+        if is_udt:
+            self._udt_types = {}  # {np_type: DataType}
+            self._udt_ops = {}  # {np_type: TypedUserUnaryOp}
 
     def __reduce__(self):
         if self._anonymous:
@@ -910,7 +987,17 @@ def _isclose(rel_tol=1e-7, abs_tol=0.0):
 
 
 class BinaryOp(OpBase):
-    __slots__ = "_monoid", "commutes_to", "_semiring_commutes_to", "_func", "is_positional"
+    __slots__ = (
+        "_monoid",
+        "commutes_to",
+        "_semiring_commutes_to",
+        "_func",
+        "is_positional",
+        "_is_udt",
+        "_udt_types",
+        "_udt_ops",
+        "_numba_func",
+    )
     _module = binary
     _modname = "binary"
     _typed_class = TypedBuiltinBinaryOp
@@ -1014,13 +1101,14 @@ class BinaryOp(OpBase):
     }
 
     @classmethod
-    def _build(cls, name, func, *, anonymous=False):
+    def _build(cls, name, func, *, is_udt=False, anonymous=False):
         if not isinstance(func, FunctionType):
             raise TypeError(f"UDF argument must be a function, not {type(func)}")
         if name is None:
             name = getattr(func, "__name__", "<anonymous_binary>")
         success = False
-        new_type_obj = cls(name, func, anonymous=anonymous)
+        binary_udf = numba.njit(func)
+        new_type_obj = cls(name, func, anonymous=anonymous, is_udt=is_udt, numba_func=binary_udf)
         return_types = {}
         nt = numba.types
         for type_, sample_val in _sample_values.items():
@@ -1029,7 +1117,7 @@ class BinaryOp(OpBase):
             try:
                 with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
                     ret = func(sample_val, sample_val)
-                ret_type = lookup_dtype(type(ret))
+                ret_type = lookup_dtype(type(ret), ret)
                 if ret_type != type_ and (
                     ("INT" in ret_type.name and "INT" in type_.name)
                     or ("FP" in ret_type.name and "FP" in type_.name)
@@ -1052,9 +1140,6 @@ class BinaryOp(OpBase):
                 # We're relying on coercion behaving correctly here
                 input_type = INT8 if type_ == "BOOL" else type_
                 return_type = INT8 if ret_type == "BOOL" else ret_type
-
-                # JIT the func so it can be used from a cfunc
-                binary_udf = numba.njit(func)
 
                 # Build wrapper because GraphBLAS wants pointers and void return
                 wrapper_sig = nt.void(
@@ -1097,27 +1182,25 @@ class BinaryOp(OpBase):
                     "BinaryOp",
                     new_binary,
                 )
-                op = TypedUserBinaryOp(
-                    new_type_obj, name, type_.name, ret_type.name, new_binary[0], func, binary_udf
-                )
+                op = TypedUserBinaryOp(new_type_obj, name, type_.name, ret_type.name, new_binary[0])
                 new_type_obj._add(op)
                 success = True
                 return_types[type_.name] = ret_type.name
             except Exception:
                 continue
-        if success:
+        if success or is_udt:
             return new_type_obj
         else:
             raise UdfParseError("Unable to parse function using Numba")
 
     @classmethod
-    def register_anonymous(cls, func, name=None, *, parameterized=False):
+    def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
         if parameterized:
-            return ParameterizedBinaryOp(name, func, anonymous=True)
-        return cls._build(name, func, anonymous=True)
+            return ParameterizedBinaryOp(name, func, anonymous=True, is_udt=is_udt)
+        return cls._build(name, func, anonymous=True, is_udt=is_udt)
 
     @classmethod
-    def register_new(cls, name, func, *, parameterized=False, lazy=False):
+    def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
@@ -1125,10 +1208,10 @@ class BinaryOp(OpBase):
                 {"name": name, "func": func, "parameterized": parameterized},
             )
         elif parameterized:
-            binary_op = ParameterizedBinaryOp(name, func)
+            binary_op = ParameterizedBinaryOp(name, func, is_udt=is_udt)
             setattr(module, funcname, binary_op)
         else:
-            binary_op = cls._build(name, func)
+            binary_op = cls._build(name, func, is_udt=is_udt)
             setattr(module, funcname, binary_op)
         # Also save it to `grblas.op` if not yet defined
         opmodule, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
@@ -1257,12 +1340,23 @@ class BinaryOp(OpBase):
             right._semiring_commutes_to = left
         cls._initialized = True
 
-    def __init__(self, name, func=None, *, anonymous=False, is_positional=False):
+    def __init__(
+        self,
+        name,
+        func=None,
+        *,
+        anonymous=False,
+        is_positional=False,
+        is_udt=False,
+        numba_func=None,
+    ):
         super().__init__(name, anonymous=anonymous)
         self._monoid = None
         self.commutes_to = None
         self._semiring_commutes_to = None
         self._func = func
+        self._numba_func = numba_func
+        self._is_udt = is_udt
         self.is_positional = is_positional
 
     def __reduce__(self):
@@ -1400,6 +1494,10 @@ class Monoid(OpBase):
     @property
     def identities(self):
         return {dtype: val.identity for dtype, val in self._typed_ops.items()}
+
+    @property
+    def _is_udt(self):
+        return self._binaryop is not None and self._binaryop._is_udt
 
     @classmethod
     def _initialize(cls):
@@ -1720,6 +1818,10 @@ class Semiring(OpBase):
     def is_positional(self):
         return self.binaryop.is_positional
 
+    @property
+    def _is_udt(self):
+        return self._binaryop is not None and self._binaryop._is_udt
+
     commutes_to = TypedBuiltinSemiring.commutes_to
     is_commutative = TypedBuiltinSemiring.is_commutative
     __call__ = TypedBuiltinSemiring.__call__
@@ -1727,6 +1829,8 @@ class Semiring(OpBase):
 
 def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scalar=False, kind=None):
     if isinstance(op, OpBase):
+        if op._is_udt:
+            return op._getitem_udt(dtype, dtype2)
         if dtype2 is not None:
             dtype = unify(
                 dtype, dtype2, is_left_scalar=is_left_scalar, is_right_scalar=is_right_scalar

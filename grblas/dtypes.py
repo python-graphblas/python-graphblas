@@ -2,7 +2,7 @@ import numba
 import numpy as np
 from numpy import find_common_type, promote_types
 
-from . import lib
+from . import ffi, lib
 
 # Default assumption unless FC32/FC64 are found in lib
 _supports_complex = hasattr(lib, "GrB_FC64") or hasattr(lib, "GxB_FC64")
@@ -24,23 +24,77 @@ class DataType:
 
     def __eq__(self, other):
         if type(other) is DataType:
-            return self.gb_obj == other.gb_obj
+            return self.np_type == other.np_type
         else:
             # Attempt to use `other` as a lookup key
             try:
                 other = lookup_dtype(other)
-                return self == other
+                return self.np_type == other.np_type
             except ValueError:
                 raise TypeError(f"Invalid or unknown datatype: {other}")
 
     def __reduce__(self):
+        if self._is_udt:
+            return (self._deserialize, (self.name, self.np_type, self._is_anonymous))
         if self.gb_name == "GrB_Index":
             return "_INDEX"
         return self.name
 
     @property
     def _carg(self):
-        return self.gb_obj
+        return self.gb_obj[0] if self.gb_name is None else self.gb_obj
+
+    @property
+    def _is_anonymous(self):
+        return self.gb_obj in _registry
+
+    @property
+    def _is_udt(self):
+        return self.gb_name is None
+
+    @staticmethod
+    def _deserialize(name, dtype, is_anonymous):
+        if is_anonymous:
+            return register_anonymous(dtype, name)
+        if name in _registry:
+            return _registry[name]
+        return register_new(name, dtype)
+
+
+def register_new(name, dtype):
+    if not name.isidentifier():
+        raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
+    if name in _registry or name in globals():
+        raise ValueError(f"{name!r} name for dtype is unavailable")
+    rv = register_anonymous(dtype, name)
+    _registry[name] = rv
+    _registry[dtype] = rv
+    _registry[rv.gb_obj] = rv
+    _registry[rv.numba_type] = rv
+    _registry[rv.numba_type.name] = rv
+    globals()[name] = rv
+    return rv
+
+
+def register_anonymous(dtype, name=None):
+    from .exceptions import check_status_carg
+
+    dtype = np.dtype(dtype)
+    if dtype.hasobject:
+        raise ValueError("dtype must not allow Python objects")
+    if dtype.isbuiltin != 0:
+        raise ValueError("dtype must not be a builtin type")
+    if name is None:
+        name = repr(dtype)
+    numba_type = numba.typeof(dtype)
+    if type(numba_type) is numba.types.DType:
+        numba_type = numba_type.dtype
+    gb_obj = ffi.new("GrB_Type*")
+    status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
+    check_status_carg(status, "Type", gb_obj[0])
+    # For now, let's use "opaque" unsigned bytes for the c type.
+    # grb_name probably isn't useful, right?
+    return DataType(name, gb_obj, None, f"uint8_t[{dtype.itemsize}]", numba_type, dtype)
 
 
 BOOL = DataType("BOOL", lib.GrB_BOOL, "GrB_BOOL", "_Bool", numba.types.bool_, np.bool_)
@@ -143,7 +197,7 @@ if _supports_complex:  # pragma: no branch
     _registry["complex"] = FC64
 
 
-def lookup_dtype(key):
+def lookup_dtype(key, value=None):
     # Check for silly lookup where key is already a DataType
     if type(key) is DataType:
         return key
@@ -156,6 +210,8 @@ def lookup_dtype(key):
             return _registry[key.name]
         except KeyError:
             pass
+    if value is not None and hasattr(value, "dtype") and value.dtype in _registry:
+        return _registry[value.dtype]
     try:
         return lookup_dtype(np.dtype(key))
     except Exception:

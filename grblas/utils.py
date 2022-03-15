@@ -74,7 +74,7 @@ def values_to_numpy_buffer(array, dtype=None, *, copy=False, ownable=False, orde
     else:
         is_input_np = isinstance(array, np.ndarray)
         array = np.array(array, copy=copy, order=order)
-        if array.dtype == object:
+        if array.dtype.hasobject:
             raise ValueError("object dtype for values is not allowed")
         if not is_input_np and array.dtype == np.int32:  # pragma: no cover
             # fix for win64 numpy handling of ints
@@ -128,7 +128,8 @@ class _CArray:
             self.array = np.empty(size, dtype=dtype.np_type)
         else:
             self.array = np.array(array, dtype=dtype.np_type, copy=False, order="C")
-        self._carg = ffi.cast(f"{dtype.c_type}*", ffi.from_buffer(self.array))
+        c_type = dtype.c_type if dtype._is_udt else f"{dtype.c_type}*"
+        self._carg = ffi.cast(c_type, ffi.from_buffer(self.array))
         self.dtype = dtype
         self._name = name
 

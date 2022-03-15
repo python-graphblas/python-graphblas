@@ -52,7 +52,7 @@ class Matrix(BaseType):
         if parent is not None:
             return
         gb_obj = getattr(self, "gb_obj", None)
-        if gb_obj is not None:
+        if gb_obj is not None and lib is not None:
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Matrix_free(gb_obj), self)
 
@@ -254,8 +254,9 @@ class Matrix(BaseType):
         n = ffi_new("GrB_Index*")
         scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
         scalar.value = nvals
+        dtype_name = "UDT" if self.dtype._is_udt else self.dtype.name
         call(
-            f"GrB_Matrix_extractTuples_{self.dtype.name}",
+            f"GrB_Matrix_extractTuples_{dtype_name}",
             [rows, columns, values, _Pointer(scalar), self],
         )
         values = values.array
@@ -292,19 +293,23 @@ class Matrix(BaseType):
             return
 
         dup_op_given = dup_op is not None
-        if not dup_op_given:
-            dup_op = binary.plus
-        dup_op = get_typed_op(dup_op, self.dtype, kind="binary")
-        if dup_op.opclass == "Monoid":
-            dup_op = dup_op.binaryop
+        if self.dtype._is_udt:  # XXX
+            dup_op = None
         else:
-            self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
+            if not dup_op_given:
+                dup_op = binary.plus
+            dup_op = get_typed_op(dup_op, self.dtype, kind="binary")
+            if dup_op.opclass == "Monoid":
+                dup_op = dup_op.binaryop
+            else:
+                self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
 
         rows = _CArray(rows)
         columns = _CArray(columns)
         values = _CArray(values, self.dtype)
+        dtype_name = "UDT" if self.dtype._is_udt else self.dtype.name
         call(
-            f"GrB_Matrix_build_{self.dtype.name}",
+            f"GrB_Matrix_build_{dtype_name}",
             [self, rows, columns, values, _as_scalar(n, _INDEX, is_cscalar=True), dup_op],
         )
         # Check for duplicates when dup_op was not provided
@@ -509,10 +514,11 @@ class Matrix(BaseType):
         # SS, SuiteSparse-specific: eWiseUnion
         method_name = "ewise_union"
         other = self._expect_type(other, Matrix, within=method_name, argname="other", op=op)
+        dtype = self.dtype if self.dtype._is_udt else None
         if type(left_default) is not Scalar:
             try:
                 left = Scalar.from_value(
-                    left_default, is_cscalar=False, name=""  # pragma: is_grbscalar
+                    left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
                 )
             except TypeError:
                 left = self._expect_type(
@@ -524,11 +530,11 @@ class Matrix(BaseType):
                     op=op,
                 )
         else:
-            left = _as_scalar(left_default, is_cscalar=False)  # pragma: is_grbscalar
+            left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
         if type(right_default) is not Scalar:
             try:
                 right = Scalar.from_value(
-                    right_default, is_cscalar=False, name=""  # pragma: is_grbscalar
+                    right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
                 )
             except TypeError:
                 right = self._expect_type(
@@ -540,7 +546,7 @@ class Matrix(BaseType):
                     op=op,
                 )
         else:
-            right = _as_scalar(right_default, is_cscalar=False)  # pragma: is_grbscalar
+            right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
         scalar_dtype = unify(left.dtype, right.dtype)
         nonscalar_dtype = unify(self.dtype, other.dtype)
         op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
@@ -655,8 +661,9 @@ class Matrix(BaseType):
             expr_repr = None
         elif right is None:
             if type(left) is not Scalar:
+                dtype = self.dtype if self.dtype._is_udt else None
                 try:
-                    left = Scalar.from_value(left, is_cscalar=None, name="")
+                    left = Scalar.from_value(left, dtype, is_cscalar=None, name="")
                 except TypeError:
                     left = self._expect_type(
                         left,
@@ -678,13 +685,15 @@ class Matrix(BaseType):
                     extra_message=extra_message,
                 )
             if left._is_cscalar:
-                cfunc_name = f"GrB_Matrix_apply_BinaryOp1st_{left.dtype}"
+                dtype_name = "UDT" if left.dtype._is_udt else left.dtype.name
+                cfunc_name = f"GrB_Matrix_apply_BinaryOp1st_{dtype_name}"
             else:
                 cfunc_name = "GrB_Matrix_apply_BinaryOp1st_Scalar"
             args = [left, self]
             expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
+                dtype = self.dtype if self.dtype._is_udt else None
                 try:
                     right = Scalar.from_value(right, is_cscalar=None, name="")
                 except TypeError:
@@ -708,7 +717,8 @@ class Matrix(BaseType):
                     extra_message=extra_message,
                 )
             if right._is_cscalar:
-                cfunc_name = f"GrB_Matrix_apply_BinaryOp2nd_{right.dtype}"
+                dtype_name = "UDT" if right.dtype._is_udt else right.dtype.name
+                cfunc_name = f"GrB_Matrix_apply_BinaryOp2nd_{dtype_name}"
             else:
                 cfunc_name = "GrB_Matrix_apply_BinaryOp2nd_Scalar"
             args = [self, right]
@@ -846,9 +856,10 @@ class Matrix(BaseType):
         if result is None:
             result = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
         if is_cscalar:
+            dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (
                 call(
-                    f"GrB_Matrix_extractElement_{dtype}",
+                    f"GrB_Matrix_extractElement_{dtype_name}",
                     [_Pointer(result), self, rowidx.index, colidx.index],
                 )
                 is not NoValue
@@ -899,8 +910,9 @@ class Matrix(BaseType):
     def _assign_element(self, resolved_indexes, value):
         rowidx, colidx = resolved_indexes.indices
         if type(value) is not Scalar:
+            dtype = self.dtype if self.dtype._is_udt else None
             try:
-                value = Scalar.from_value(value, is_cscalar=None, name="")
+                value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
             except TypeError:
                 value = self._expect_type(
                     value,
@@ -913,7 +925,12 @@ class Matrix(BaseType):
             if value._empty:
                 call("GrB_Matrix_removeElement", [self, rowidx.index, colidx.index])
                 return
-            cfunc_name = f"GrB_Matrix_setElement_{value.dtype}"
+            if value.dtype._is_udt:
+                dtype_name = "UDT"
+                value = _Pointer(value)
+            else:
+                dtype_name = value.dtype.name
+            cfunc_name = f"GrB_Matrix_setElement_{dtype_name}"
         else:
             cfunc_name = "GrB_Matrix_setElement_Scalar"
         call(cfunc_name, [self, value, rowidx.index, colidx.index])
@@ -1094,8 +1111,9 @@ class Matrix(BaseType):
             )
         else:
             if type(value) is not Scalar:
+                dtype = self.dtype if self.dtype._is_udt else None
                 try:
-                    value = Scalar.from_value(value, is_cscalar=None, name="")
+                    value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
                 except TypeError:
                     if rowsize is None or colsize is None:
                         types = (Scalar, Vector)
@@ -1189,7 +1207,12 @@ class Matrix(BaseType):
                     # C[I, J](M) << c
                     # SS, SuiteSparse-specific: subassign
                     if value._is_cscalar:
-                        cfunc_name = f"GrB_Matrix_subassign_{value.dtype}"
+                        if value.dtype._is_udt:
+                            dtype_name = "UDT"
+                            value = _Pointer(value)
+                        else:
+                            dtype_name = value.dtype.name
+                        cfunc_name = f"GrB_Matrix_subassign_{dtype_name}"
                     else:
                         cfunc_name = "GrB_Matrix_subassign_Scalar"
                     expr_repr = (
@@ -1208,7 +1231,12 @@ class Matrix(BaseType):
                         cols = _CArray([cols.value])
                         colscalar = _as_scalar(1, _INDEX, is_cscalar=True)
                     if value._is_cscalar:
-                        cfunc_name = f"GrB_Matrix_assign_{value.dtype}"
+                        if value.dtype._is_udt:
+                            dtype_name = "UDT"
+                            value = _Pointer(value)
+                        else:
+                            dtype_name = value.dtype.name
+                        cfunc_name = f"GrB_Matrix_assign_{dtype_name}"
                     else:
                         cfunc_name = "GrB_Matrix_assign_Scalar"
                     expr_repr = "[[{2._expr_name} rows], [{4._expr_name} cols]] = {0._expr_name}"
