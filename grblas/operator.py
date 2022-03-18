@@ -537,7 +537,16 @@ _VARNAMES = tuple(x for x in dir(lib) if x[0] != "_")
 
 
 class OpBase:
-    __slots__ = "name", "_typed_ops", "types", "coercions", "_anonymous", "__weakref__"
+    __slots__ = (
+        "name",
+        "_typed_ops",
+        "types",
+        "coercions",
+        "_anonymous",
+        "_udt_types",
+        "_udt_ops",
+        "__weakref__",
+    )
     _parse_config = None
     _initialized = False
     _module = None
@@ -554,6 +563,14 @@ class OpBase:
         return f"{self._modname}.{self.name}"
 
     def __getitem__(self, type_):
+        if self._is_udt:
+            if type(type_) is tuple:
+                dtype1, dtype2 = type_
+                dtype1 = lookup_dtype(dtype1)
+                dtype2 = lookup_dtype(dtype2)
+            else:
+                dtype1 = dtype2 = lookup_dtype(type_)
+            return self._getitem_udt(dtype1, dtype2)
         type_ = _normalize_type(type_)
         if type_ not in self._typed_ops:
             raise KeyError(f"{self.name} does not work with {type_}")
@@ -681,7 +698,7 @@ class OpBase:
 
 
 class UnaryOp(OpBase):
-    __slots__ = "_func", "is_positional", "_is_udt", "_udt_types", "_udt_ops", "_numba_func"
+    __slots__ = "_func", "is_positional", "_is_udt", "_numba_func"
     _module = unary
     _modname = "unary"
     _typed_class = TypedBuiltinUnaryOp
@@ -724,13 +741,15 @@ class UnaryOp(OpBase):
         new_type_obj = cls(name, func, anonymous=anonymous, is_udt=is_udt, numba_func=unary_udf)
         return_types = {}
         nt = numba.types
-        for type_, sample_val in _sample_values.items():
-            type_ = lookup_dtype(type_)
-            # Check if func can handle this data type
-            try:
-                with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
-                    ret = func(sample_val)
-                ret_type = lookup_dtype(type(ret), ret)
+        if not is_udt:
+            for type_, sample_val in _sample_values.items():
+                type_ = lookup_dtype(type_)
+                sig = (type_.numba_type,)
+                try:
+                    unary_udf.compile(sig)
+                except numba.TypingError:
+                    continue
+                ret_type = lookup_dtype(unary_udf.overloads[sig].signature.return_type)
                 if ret_type != type_ and (
                     ("INT" in ret_type.name and "INT" in type_.name)
                     or ("FP" in ret_type.name and "FP" in type_.name)
@@ -794,32 +813,23 @@ class UnaryOp(OpBase):
                 new_type_obj._add(op)
                 success = True
                 return_types[type_.name] = ret_type.name
-            except Exception:
-                continue
         if success or is_udt:
             return new_type_obj
         else:
             raise UdfParseError("Unable to parse function using Numba")
 
     def _getitem_udt(self, dtype, dtype2):
-        assert dtype2 is None  # ignore dtype2
         np_type = dtype.np_type
         if np_type in self._udt_types:
             return self._udt_ops[np_type]
 
-        sample_val = np.zeros(1, dtype=np_type)[0]
-        # if not np.issubdtype(np_type, np.flexible):
-        #    # dtypes such as `np.dtype('S5')` are complicated
-        #    sample_val = sample_val[0]
-        with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
-            ret = self._func(sample_val)
+        numba_func = self._numba_func
+        sig = (dtype.numba_type,)
         try:
-            ret_type = lookup_dtype(type(ret), ret)
-        except Exception:
-            if np.issubdtype(getattr(ret_type, "dtype", np_type), np.flexible):
-                ret_type = dtype  # Guess for now
-            else:
-                raise
+            numba_func.compile(sig)
+        except numba.TypingError:
+            raise TypeError("TODO")
+        ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
 
         # Numba is unable to handle BOOL correctly right now, but we have a workaround
         # See: https://github.com/numba/numba/issues/5395
@@ -832,7 +842,6 @@ class UnaryOp(OpBase):
             nt.CPointer(return_type.numba_type),
             nt.CPointer(dtype.numba_type),
         )
-        numba_func = self._numba_func
         if ret_type == "BOOL":
 
             def unary_wrapper(z_ptr, x_ptr):
@@ -972,11 +981,11 @@ def _rfloordiv(x, y):
 
 
 def _absfirst(x, y):
-    return abs(x)
+    return np.abs(x)
 
 
 def _abssecond(x, y):
-    return abs(y)
+    return np.abs(y)
 
 
 def _isclose(rel_tol=1e-7, abs_tol=0.0):
@@ -994,8 +1003,6 @@ class BinaryOp(OpBase):
         "_func",
         "is_positional",
         "_is_udt",
-        "_udt_types",
-        "_udt_ops",
         "_numba_func",
     )
     _module = binary
@@ -1111,13 +1118,15 @@ class BinaryOp(OpBase):
         new_type_obj = cls(name, func, anonymous=anonymous, is_udt=is_udt, numba_func=binary_udf)
         return_types = {}
         nt = numba.types
-        for type_, sample_val in _sample_values.items():
-            type_ = lookup_dtype(type_)
-            # Check if func can handle this data type
-            try:
-                with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
-                    ret = func(sample_val, sample_val)
-                ret_type = lookup_dtype(type(ret), ret)
+        if not is_udt:
+            for type_, sample_val in _sample_values.items():
+                type_ = lookup_dtype(type_)
+                sig = (type_.numba_type, type_.numba_type)
+                try:
+                    binary_udf.compile(sig)
+                except numba.TypingError:
+                    continue
+                ret_type = lookup_dtype(binary_udf.overloads[sig].signature.return_type)
                 if ret_type != type_ and (
                     ("INT" in ret_type.name and "INT" in type_.name)
                     or ("FP" in ret_type.name and "FP" in type_.name)
@@ -1186,12 +1195,73 @@ class BinaryOp(OpBase):
                 new_type_obj._add(op)
                 success = True
                 return_types[type_.name] = ret_type.name
-            except Exception:
-                continue
         if success or is_udt:
             return new_type_obj
         else:
             raise UdfParseError("Unable to parse function using Numba")
+
+    def _getitem_udt(self, dtype, dtype2):
+        if dtype2 is None:
+            dtype2 = dtype
+        np_types = (dtype.np_type, dtype2.np_type)
+        if np_types in self._udt_types:
+            return self._udt_ops[np_types]
+
+        numba_func = self._numba_func
+        sig = (dtype.numba_type, dtype2.numba_type)
+        try:
+            numba_func.compile(sig)
+        except numba.TypingError:
+            raise TypeError("TODO")
+        ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
+
+        # Numba is unable to handle BOOL correctly right now, but we have a workaround
+        # See: https://github.com/numba/numba/issues/5395
+        # We're relying on coercion behaving correctly here
+        return_type = INT8 if ret_type == "BOOL" else ret_type
+
+        # Build wrapper because GraphBLAS wants pointers and void return
+        nt = numba.types
+        wrapper_sig = nt.void(
+            nt.CPointer(return_type.numba_type),
+            nt.CPointer(dtype.numba_type),
+            nt.CPointer(dtype2.numba_type),
+        )
+        if ret_type == "BOOL":
+
+            def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                z = numba.carray(z_ptr, 1)
+                x = numba.carray(x_ptr, 1)
+                y = numba.carray(y_ptr, 1)
+                z[0] = bool(numba_func(x[0], y[0]))  # pragma: no cover
+
+        else:
+
+            def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                z = numba.carray(z_ptr, 1)
+                x = numba.carray(x_ptr, 1)
+                y = numba.carray(y_ptr, 1)
+                z[0] = numba_func(x[0], y[0])  # pragma: no cover
+
+        binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
+        new_binary = ffi_new("GrB_BinaryOp*")
+        check_status_carg(
+            lib.GrB_BinaryOp_new(
+                new_binary, binary_wrapper.cffi, ret_type._carg, dtype._carg, dtype2._carg
+            ),
+            "BinaryOp",
+            new_binary,
+        )
+        op = TypedUserBinaryOp(
+            self,
+            self.name,
+            dtype.name,  # Should we do a tuple for both inputs?
+            ret_type.name,
+            new_binary[0],
+        )
+        self._udt_types[np_types] = ret_type
+        self._udt_ops[np_types] = op
+        return op
 
     @classmethod
     def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
@@ -1358,6 +1428,9 @@ class BinaryOp(OpBase):
         self._numba_func = numba_func
         self._is_udt = is_udt
         self.is_positional = is_positional
+        if is_udt:
+            self._udt_types = {}  # {(np_type, np_type): DataType}
+            self._udt_ops = {}  # {(np_type, np_type): TypedUserBinaryOp}
 
     def __reduce__(self):
         if self._anonymous:
@@ -1411,31 +1484,66 @@ class Monoid(OpBase):
         if name is None:
             name = binaryop.name
         new_type_obj = cls(name, binaryop, identity, anonymous=anonymous)
-        if not isinstance(identity, Mapping):
-            identities = dict.fromkeys(binaryop.types, identity)
-            explicit_identities = False
-        else:
-            identities = identity
-            explicit_identities = True
-        for type_, identity in identities.items():
-            type_ = lookup_dtype(type_)
-            ret_type = binaryop[type_].return_type
-            # If there is a domain mismatch, then DomainMismatch will be raised
-            # below if identities were explicitly given.
-            # Skip complex dtypes for now, because they segfault!
-            if type_ != ret_type and not explicit_identities or "FC" in type_.name:
-                continue
-            new_monoid = ffi_new("GrB_Monoid*")
-            func = libget(f"GrB_Monoid_new_{type_.name}")
-            zcast = ffi.cast(type_.c_type, identity)
-            check_status_carg(
-                func(new_monoid, binaryop[type_].gb_obj, zcast), "Monoid", new_monoid[0]
-            )
-            op = TypedUserMonoid(
-                new_type_obj, name, type_.name, ret_type, new_monoid[0], binaryop[type_], identity
-            )
-            new_type_obj._add(op)
+        if not binaryop._is_udt:
+            if not isinstance(identity, Mapping):
+                identities = dict.fromkeys(binaryop.types, identity)
+                explicit_identities = False
+            else:
+                identities = identity
+                explicit_identities = True
+            for type_, identity in identities.items():
+                type_ = lookup_dtype(type_)
+                ret_type = binaryop[type_].return_type
+                # If there is a domain mismatch, then DomainMismatch will be raised
+                # below if identities were explicitly given.
+                # Skip complex dtypes for now, because they segfault!
+                if type_ != ret_type and not explicit_identities or "FC" in type_.name:
+                    continue
+                new_monoid = ffi_new("GrB_Monoid*")
+                func = libget(f"GrB_Monoid_new_{type_.name}")
+                zcast = ffi.cast(type_.c_type, identity)
+                check_status_carg(
+                    func(new_monoid, binaryop[type_].gb_obj, zcast), "Monoid", new_monoid[0]
+                )
+                op = TypedUserMonoid(
+                    new_type_obj,
+                    name,
+                    type_.name,
+                    ret_type,
+                    new_monoid[0],
+                    binaryop[type_],
+                    identity,
+                )
+                new_type_obj._add(op)
         return new_type_obj
+
+    def _getitem_udt(self, dtype, dtype2):
+        if dtype2 is None:
+            dtype2 = dtype
+        elif dtype != dtype2:
+            raise TypeError("TODO")
+        np_type = dtype.np_type
+        if np_type in self._udt_types:
+            return self._udt_ops[np_type]
+        binaryop = self._binaryop._getitem_udt(dtype, dtype2)
+        from .scalar import Scalar
+
+        identity = Scalar.from_value(self._identity, dtype=dtype, is_cscalar=True)
+        new_monoid = ffi_new("GrB_Monoid*")
+        status = lib.GrB_Monoid_new_UDT(new_monoid, binaryop.gb_obj, identity.gb_obj)
+        check_status_carg(status, "Monoid", new_monoid[0])
+        op = TypedUserMonoid(
+            new_monoid,
+            self.name,
+            dtype.name,
+            dtype.name,
+            new_monoid[0],
+            binaryop,
+            identity,
+        )
+        self._udt_types[np_type] = dtype
+        self._udt_ops[np_type] = op
+        return op
 
     @classmethod
     def register_anonymous(cls, binaryop, identity, name=None):
@@ -1475,6 +1583,9 @@ class Monoid(OpBase):
         self._identity = identity
         if binaryop is not None:
             binaryop._monoid = self
+            if binaryop._is_udt:
+                self._udt_types = {}  # {np_type: DataType}
+                self._udt_ops = {}  # {np_type: TypedUserMonoid}
 
     def __reduce__(self):
         if self._anonymous:
@@ -1590,6 +1701,8 @@ class Semiring(OpBase):
         if name is None:
             name = f"{monoid.name}_{binaryop.name}".replace(".", "_")
         new_type_obj = cls(name, monoid, binaryop, anonymous=anonymous)
+        if binaryop._is_udt:
+            return new_type_obj
         for binary_in, binary_func in binaryop._typed_ops.items():
             binary_out = binary_func.return_type
             # Unfortunately, we can't have user-defined monoids over bools yet
@@ -1619,6 +1732,31 @@ class Semiring(OpBase):
             )
             new_type_obj._add(op)
         return new_type_obj
+
+    def _getitem_udt(self, dtype, dtype2):
+        if dtype2 is None:
+            dtype2 = dtype
+        np_types = (dtype.np_type, dtype2.np_type)
+        if np_types in self._udt_types:
+            return self._udt_ops[np_types]
+        binaryop = self._binaryop._getitem_udt(dtype, dtype2)
+        monoid = self._monoid[binaryop.return_type]
+        ret_type = monoid.return_type
+        new_semiring = ffi_new("GrB_Semiring*")
+        status = lib.GrB_Semiring_new(new_semiring, monoid.gb_obj, binaryop.gb_obj)
+        check_status_carg(status, "Semiring", new_semiring)
+        op = TypedUserSemiring(
+            new_semiring,
+            self.name,
+            dtype.name,  # Should we do a tuple for both inputs?
+            ret_type,
+            new_semiring[0],
+            monoid,
+            binaryop,
+        )
+        self._udt_types[np_types] = dtype
+        self._udt_ops[np_types] = op
+        return op
 
     @classmethod
     def register_anonymous(cls, monoid, binaryop, name=None):
@@ -1791,6 +1929,9 @@ class Semiring(OpBase):
         super().__init__(name, anonymous=anonymous)
         self._monoid = monoid
         self._binaryop = binaryop
+        if binaryop is not None and binaryop._is_udt:
+            self._udt_types = {}  # {(np_type, np_type): DataType}
+            self._udt_ops = {}  # {(np_type, np_type): TypedUserSemiring}
 
     def __reduce__(self):
         if self._anonymous:

@@ -86,9 +86,7 @@ def register_anonymous(dtype, name=None):
         raise ValueError("dtype must not be a builtin type")
     if name is None:
         name = repr(dtype)
-    numba_type = numba.typeof(dtype)
-    if type(numba_type) is numba.types.DType:
-        numba_type = numba_type.dtype
+    numba_type = numba.typeof(dtype).dtype
     gb_obj = ffi.new("GrB_Type*")
     status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
     check_status_carg(status, "Type", gb_obj[0])

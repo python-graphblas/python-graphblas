@@ -469,6 +469,7 @@ def test_binaryop_udf():
     BinaryOp.register_new("bin_test_func", times_minus_sum)
     assert hasattr(binary, "bin_test_func")
     comp_set = {
+        "BOOL",  # goes to INT64
         "INT8",
         "INT16",
         "INT32",
