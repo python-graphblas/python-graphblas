@@ -3,7 +3,7 @@
 [![conda-forge](https://img.shields.io/conda/vn/conda-forge/grblas.svg)](https://anaconda.org/conda-forge/grblas)
 [![pypi](https://img.shields.io/pypi/v/grblas.svg)](https://pypi.python.org/pypi/grblas/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/metagraph-dev/grblas/blob/main/LICENSE)
-[![Tests](https://github.com/metagraph-dev/grblas/workflows/Tests/badge.svg)](https://github.com/metagraph-dev/grblas/actions)
+[![Tests](https://github.com/metagraph-dev/grblas/workflows/Tests/badge.svg?branch=main)](https://github.com/metagraph-dev/grblas/actions)
 [![Docs](https://readthedocs.org/projects/grblas/badge/?version=latest)](https://grblas.readthedocs.io/en/latest/)
 [![Coverage](https://coveralls.io/repos/metagraph-dev/grblas/badge.svg?branch=main)](https://coveralls.io/r/metagraph-dev/grblas)
 [![Code style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
