@@ -1,4 +1,4 @@
-name: Build and Test
+name: Tests
 
 on:
   # Run this workflow every time a PR is opened or a new commit is pushed to the PR

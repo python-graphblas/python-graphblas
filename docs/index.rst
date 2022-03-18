@@ -6,7 +6,7 @@
 grblas - A Python Wrapper for GraphBLAS
 =======================================
 
-To install, ``conda install -c conda-forge grblas``. This will also install the SuiteSparse ``graphblas`` compiled C library.
+To install, ``conda install -c conda-forge grblas`` or ``pip install grblas``. This will also install the SuiteSparse ``graphblas`` compiled C library.
 
 Currently works with `SuiteSparse:GraphBLAS <https://github.com/DrTimothyAldenDavis/GraphBLAS>`_, but the goal is to make it work with all implementations of the GraphBLAS spec.
 

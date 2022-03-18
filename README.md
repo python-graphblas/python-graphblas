@@ -1,16 +1,17 @@
 # grblas
 
-[![Conda Version](https://img.shields.io/conda/vn/conda-forge/grblas.svg)](https://anaconda.org/conda-forge/grblas)
-[![Conda Platforms](https://img.shields.io/conda/pn/conda-forge/grblas.svg)](https://anaconda.org/conda-forge/grblas)
+[![conda-forge](https://img.shields.io/conda/vn/conda-forge/grblas.svg)](https://anaconda.org/conda-forge/grblas)
+[![pypi](https://img.shields.io/pypi/v/grblas.svg)](https://pypi.python.org/pypi/grblas/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/metagraph-dev/grblas/blob/main/LICENSE)
-[![Build Status](https://github.com/metagraph-dev/grblas/workflows/Build%20and%20Test/badge.svg)](https://github.com/metagraph-dev/grblas/actions)
-[![Coverage Status](https://coveralls.io/repos/metagraph-dev/grblas/badge.svg?branch=main)](https://coveralls.io/r/metagraph-dev/grblas)
+[![Tests](https://github.com/metagraph-dev/grblas/workflows/Tests/badge.svg?branch=main)](https://github.com/metagraph-dev/grblas/actions)
+[![Docs](https://readthedocs.org/projects/grblas/badge/?version=latest)](https://grblas.readthedocs.io/en/latest/)
+[![Coverage](https://coveralls.io/repos/metagraph-dev/grblas/badge.svg?branch=main)](https://coveralls.io/r/metagraph-dev/grblas)
 [![Code style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/metagraph-dev/grblas/HEAD?filepath=notebooks%2FIntro%20to%20GraphBLAS%20%2B%20SSSP%20example.ipynb)
 
 Python wrapper around GraphBLAS
 
-To install, `conda install -c conda-forge grblas`. This will also install the SuiteSparse `graphblas` compiled C library.
+To install, `conda install -c conda-forge grblas` or `pip install grblas`. This will also install the SuiteSparse `graphblas` compiled C library.
 
 Currently works with [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS), but the goal is to make it work with all implementations of the GraphBLAS spec.
 
