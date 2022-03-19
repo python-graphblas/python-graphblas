@@ -238,11 +238,11 @@ def test_weakref(s):
 
 def test_scalar_to_numpy(s):
     for a, b in [
-        (np.array(s), np.array(5)),
+        (np.array(s), np.array(5, dtype=np.int64)),
         (np.array(s, dtype=float), np.array(5.0)),
-        (np.array([s]), np.array([5])),
+        (np.array([s]), np.array([5], dtype=np.int64)),
         (np.array([s], dtype=float), np.array([5.0])),
-        (np.array([s, s]), np.array([5, 5])),
+        (np.array([s, s]), np.array([5, 5], dtype=np.int64)),
         (np.array([s, s], dtype=float), np.array([5.0, 5.0])),
     ]:
         np.testing.assert_array_equal(a, b)
