@@ -41,7 +41,7 @@ def call(cfunc_name, args):
             # f" - Call types: {calltypes}\n"  # Useful during development
             f" - C signature: {sig}\n"
             f" - Error: {exc}"
-        )
+        ) from None
     try:
         rv = check_status(err_code, args)
     except Exception as exc:
@@ -403,7 +403,7 @@ class BaseType:
                                 f"{type(expr)}.\n\nValid expression types include "
                                 f"{type(self).__name__}, {type(self).__name__}Expression, "
                                 "AmbiguousAssignOrExtract, and scalars."
-                            )
+                            ) from None
                     updater = self(mask=mask, accum=accum, replace=replace, input_mask=input_mask)
                     if type(self) is Matrix:
                         if mask is None:

@@ -31,7 +31,7 @@ class DataType:
                 other = lookup_dtype(other)
                 return self == other
             except ValueError:
-                raise TypeError(f"Invalid or unknown datatype: {other}")
+                raise TypeError(f"Invalid or unknown datatype: {other}") from None
 
     def __reduce__(self):
         if self.gb_name == "GrB_Index":

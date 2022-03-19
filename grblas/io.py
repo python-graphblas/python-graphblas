@@ -56,7 +56,7 @@ def from_numpy(m):
     try:
         from scipy.sparse import coo_matrix, csr_matrix
     except ImportError:  # pragma: no cover
-        raise ImportError("scipy is required to import from numpy")
+        raise ImportError("scipy is required to import from numpy") from None
 
     if m.ndim == 1:
         ss = csr_matrix(m)
@@ -96,7 +96,7 @@ def to_numpy(m):
     try:
         import scipy  # noqa
     except ImportError:  # pragma: no cover
-        raise ImportError("scipy is required to export to numpy")
+        raise ImportError("scipy is required to export to numpy") from None
     if output_type(m) is Vector:
         return to_scipy_sparse_matrix(m).toarray()[0]
     else:
@@ -142,7 +142,7 @@ def mmread(source, *, dup_op=None, name=None):
         from scipy.io import mmread  # noqa
         from scipy.sparse import coo_matrix  # noqa
     except ImportError:  # pragma: no cover
-        raise ImportError("scipy is required to read Matrix Market files")
+        raise ImportError("scipy is required to read Matrix Market files") from None
     array = mmread(source)
     if isinstance(array, coo_matrix):
         nrows, ncols = array.shape
@@ -162,7 +162,7 @@ def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=
     try:
         from scipy.io import mmwrite  # noqa
     except ImportError:  # pragma: no cover
-        raise ImportError("scipy is required to write Matrix Market files")
+        raise ImportError("scipy is required to write Matrix Market files") from None
 
     # Note: it would be preferable to write the data in full format if it is indeed full.
     #       However, there may be a bug: https://github.com/scipy/scipy/issues/13634

@@ -240,8 +240,10 @@ class IndexerResolver:
                         f"`x.dup(mask={index.name})`.\n"
                         f"If you want to assign with a mask, perhaps do something like "
                         f"`x(mask={index.name}) << value`."
-                    )
-                raise TypeError(f"Invalid type for index: {typ}; unable to convert to list")
+                    ) from None
+                raise TypeError(
+                    f"Invalid type for index: {typ}; unable to convert to list"
+                ) from None
         return self.parse_index(np.array(index), np.ndarray, size)
 
     def get_index(self, dim):
