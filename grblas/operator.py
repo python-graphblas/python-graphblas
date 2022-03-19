@@ -614,7 +614,7 @@ class OpBase:
         ):
             if re_str not in cls._parse_config:
                 continue
-            if "complex" in re_str and not _supports_complex:  # pragma: no cover
+            if "complex" in re_str and not _supports_complex:
                 continue
             for r in reversed(cls._parse_config[re_str]):
                 for varname in _VARNAMES:
@@ -1221,7 +1221,7 @@ class BinaryOp(OpBase):
             ),
             # fmt: on
         ]
-        if _supports_complex:  # pragma: no branch
+        if _supports_complex:
             name_types.append(
                 (
                     ["cmplx"],

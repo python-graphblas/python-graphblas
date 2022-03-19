@@ -10,6 +10,7 @@ import numpy as _np
 from .. import config as _config
 from .. import operator as _operator
 from .. import unary as _unary
+from ..dtypes import _supports_complex
 
 _delayed = {}
 _unary_names = {
@@ -20,7 +21,6 @@ _unary_names = {
     "fabs",
     "rint",
     "sign",
-    "conj",
     "exp",
     "exp2",
     "log",
@@ -31,7 +31,6 @@ _unary_names = {
     "sqrt",
     "square",
     "reciprocal",
-    "conjugate",
     # Trigonometric functions
     "sin",
     "cos",
@@ -64,8 +63,6 @@ _unary_names = {
     "trunc",
     "spacing",
 }
-_operator._STANDARD_OPERATOR_NAMES.update(f"unary.numpy.{name}" for name in _unary_names)
-__all__ = list(_unary_names)
 _numpy_to_graphblas = {
     "abs": "abs",
     "absolute": "abs",
@@ -77,8 +74,6 @@ _numpy_to_graphblas = {
     "arctanh": "atanh",
     "bitwise_not": "bnot",
     "ceil": "ceil",
-    "conj": "conj",
-    "conjugate": "conj",
     "cos": "cos",
     "cosh": "cosh",
     "exp": "exp",
@@ -107,6 +102,13 @@ _numpy_to_graphblas = {
     "trunc": "trunc",
 }
 # Not included: deg2rad degrees rad2deg radians signbit spacing square
+if _supports_complex:
+    _unary_names.update({"conj", "conjugate"})
+    _numpy_to_graphblas["conj"] = "conj"
+    _numpy_to_graphblas["conjugate"] = "conj"
+
+_operator._STANDARD_OPERATOR_NAMES.update(f"unary.numpy.{name}" for name in _unary_names)
+__all__ = list(_unary_names)
 
 
 def __dir__():

@@ -57,7 +57,7 @@ UINT64 = DataType("UINT64", lib.GrB_UINT64, "GrB_UINT64", "uint64_t", numba.type
 FP32 = DataType("FP32", lib.GrB_FP32, "GrB_FP32", "float", numba.types.float32, np.float32)
 FP64 = DataType("FP64", lib.GrB_FP64, "GrB_FP64", "double", numba.types.float64, np.float64)
 
-if _supports_complex and hasattr(lib, "GxB_FC32"):  # pragma: no branch
+if _supports_complex and hasattr(lib, "GxB_FC32"):
     FC32 = DataType(
         "FC32", lib.GxB_FC32, "GxB_FC32", "float _Complex", numba.types.complex64, np.complex64
     )
@@ -65,7 +65,7 @@ if _supports_complex and hasattr(lib, "GrB_FC32"):  # pragma: no coverage
     FC32 = DataType(
         "FC32", lib.GrB_FC32, "GrB_FC32", "float _Complex", numba.types.complex64, np.complex64
     )
-if _supports_complex and hasattr(lib, "GxB_FC64"):  # pragma: no branch
+if _supports_complex and hasattr(lib, "GxB_FC64"):
     FC64 = DataType(
         "FC64", lib.GxB_FC64, "GxB_FC64", "double _Complex", numba.types.complex128, np.complex128
     )
@@ -88,7 +88,7 @@ _sample_values = {
     FP64.name: np.float64(0.5),
     BOOL.name: np.bool_(True),
 }
-if _supports_complex:  # pragma: no branch
+if _supports_complex:
     _sample_values.update(
         {
             FC32.name: np.complex64(complex(0, 0.5)),
@@ -111,7 +111,7 @@ _dtypes_to_register = [
     FP32,
     FP64,
 ]
-if _supports_complex:  # pragma: no branch
+if _supports_complex:
     _dtypes_to_register.extend([FC32, FC64])
 
 for dtype in _dtypes_to_register:
@@ -138,7 +138,7 @@ _registry[float] = FP64
 _registry["bool"] = BOOL
 _registry["int"] = INT64
 _registry["float"] = FP64  # Choose 'float' to match numpy/Python; c_type 'float' would be FP32
-if _supports_complex:  # pragma: no branch
+if _supports_complex:
     _registry[complex] = FC64
     _registry["complex"] = FC64
 

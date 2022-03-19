@@ -49,7 +49,7 @@ def test_npunary():
         [Vector.from_values(L, L), np.array(L, dtype=np.int64)],
         [Vector.from_values(L, L, dtype="float64"), np.array(L, dtype=np.float64)],
     ]
-    if _supports_complex:  # pragma: no branch
+    if _supports_complex:
         data.append(
             [Vector.from_values(L, L, dtype="FC64"), np.array(L, dtype=np.complex128)],
         )
@@ -119,7 +119,7 @@ def test_npbinary():
             [np.array([True, False, True, False]), np.array([True, True, False, False])],
         ],
     ]
-    if _supports_complex:  # pragma: no branch
+    if _supports_complex:
         data.append(
             [
                 [
@@ -143,12 +143,16 @@ def test_npbinary():
                 continue
             with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
                 gb_result = gb_left.ewise_mult(gb_right, op).new()
-                if gb_left.dtype == "BOOL" and gb_result.dtype == "FP32":
-                    np_result = getattr(np, binary_name)(np_left, np_right, dtype="float32")
-                    compare_op = isclose
-                else:
-                    np_result = getattr(np, binary_name)(np_left, np_right)
-                    compare_op = npbinary.equal
+                try:
+                    if gb_left.dtype == "BOOL" and gb_result.dtype == "FP32":
+                        np_result = getattr(np, binary_name)(np_left, np_right, dtype="float32")
+                        compare_op = isclose
+                    else:
+                        np_result = getattr(np, binary_name)(np_left, np_right)
+                        compare_op = npbinary.equal
+                except Exception:
+                    print(binary_name, np_left, np_right)
+                    raise
 
             np_result = Vector.from_values(
                 np.arange(np_left.size), np_result, dtype=gb_result.dtype

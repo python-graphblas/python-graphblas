@@ -20,7 +20,7 @@ all_dtypes = [
     dtypes.FP32,
     dtypes.FP64,
 ]
-if dtypes._supports_complex:  # pragma: no branch
+if dtypes._supports_complex:
     all_dtypes.append(dtypes.FC32)
     all_dtypes.append(dtypes.FC64)
 
