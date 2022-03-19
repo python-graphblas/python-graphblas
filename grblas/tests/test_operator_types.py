@@ -274,8 +274,9 @@ def _run_test(module, typ, expected):
         d = defaultdict(set)
         for (k1, k2), val in expected.items():
             key = (k1 - FC, k2 - FC)
+            if not key[0] or not key[1]:
+                continue
             d[key] |= val
-        del d[(frozenset(), frozenset())]
         expected = d
     seen = defaultdict(set)
     for name, val in vars(module).items():

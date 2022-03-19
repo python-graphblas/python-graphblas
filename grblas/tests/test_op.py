@@ -838,7 +838,6 @@ def test_create_semiring():
         cur_binary = getattr(binary, binary_name)
         if not isinstance(cur_binary, BinaryOp):
             continue
-        print(cur_monoid, cur_binary)
         Semiring.register_anonymous(cur_monoid, cur_binary)
 
 
