@@ -246,7 +246,7 @@ def test_scalar_to_numpy(s):
         (np.array([s, s], dtype=float), np.array([5.0, 5.0])),
     ]:
         np.testing.assert_array_equal(a, b)
-        assert a.dtype == b.dtype
+        assert a.dtype == b.dtype, (a, b)
         assert a.shape == b.shape
 
 

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import grblas as gb
-from grblas import Matrix
+from grblas import Matrix, dtypes
 
 try:
     import networkx as nx
@@ -143,14 +143,6 @@ def test_mmread_mmwrite():
                 [1, 6, 10.5, 0.015, 250.5, -280, 33.32, 12],
             ),
         ),
-        "_hermitian_example": (
-            False,
-            Matrix.from_values(
-                [0, 1, 1, 2, 3, 3, 3, 4, 4],
-                [0, 1, 3, 2, 1, 3, 4, 3, 4],
-                [1, 10.5, 250.5 - 22.22j, 0.015, 250.5 + 22.22j, -280, -33.32j, 33.32j, 12],
-            ),
-        ),
         "_skew_example": (
             False,
             Matrix.from_values(
@@ -184,6 +176,15 @@ def test_mmread_mmwrite():
             ),
         ),
     }
+    if dtypes._supports_complex:
+        examples["_hermitian_example"] = (
+            False,
+            Matrix.from_values(
+                [0, 1, 1, 2, 3, 3, 3, 4, 4],
+                [0, 1, 3, 2, 1, 3, 4, 3, 4],
+                [1, 10.5, 250.5 - 22.22j, 0.015, 250.5 + 22.22j, -280, -33.32j, 33.32j, 12],
+            ),
+        )
     success = 0
     for example, (over64, expected) in examples.items():
         if not hasattr(test_mmio, example):  # pragma: no cover
