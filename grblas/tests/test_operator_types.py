@@ -10,10 +10,7 @@ BOOLINT = frozenset(BOOL | INT)
 FP = frozenset({"FP32", "FP64"})
 FPINT = frozenset(FP | INT)
 NOFC = frozenset(BOOL | FPINT)
-if dtypes._supports_complex:
-    FC = frozenset({"FC32", "FC64"})
-else:  # pragma: no cover
-    FC = frozenset()
+FC = frozenset({"FC32", "FC64"})
 FCFP = frozenset(FC | FP)
 ALL = frozenset(NOFC | FC)
 POS = frozenset({"INT32", "INT64"})
@@ -273,6 +270,13 @@ IGNORE = {
 
 
 def _run_test(module, typ, expected):
+    if not dtypes._supports_complex:
+        d = defaultdict(set)
+        for (k1, k2), val in expected.items():
+            key = (k1 - FC, k2 - FC)
+            d[key] |= val
+        del d[(frozenset(), frozenset())]
+        expected = d
     seen = defaultdict(set)
     for name, val in vars(module).items():
         if not isinstance(val, typ) or name in IGNORE:

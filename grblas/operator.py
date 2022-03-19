@@ -862,7 +862,9 @@ class UnaryOp(OpBase):
                     typed_op = op._typed_ops[target_type]
                     output_type = op.types[target_type]
                     for dtype in input_types:
-                        if dtype not in op.types:
+                        if dtype not in op.types and (
+                            _supports_complex or dtype not in {"FC32", "FC64"}
+                        ):
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
                             op.coercions[dtype] = target_type
@@ -1234,7 +1236,9 @@ class BinaryOp(OpBase):
                     typed_op = cur_op._typed_ops[target_type]
                     output_type = cur_op.types[target_type]
                     for dtype in input_types:
-                        if dtype not in cur_op.types:  # pragma: no branch
+                        if dtype not in cur_op.types and (
+                            _supports_complex or dtype not in {"FC32", "FC64"}
+                        ):
                             cur_op.types[dtype] = output_type
                             cur_op._typed_ops[dtype] = typed_op
                             cur_op.coercions[dtype] = target_type
@@ -1662,7 +1666,9 @@ class Semiring(OpBase):
                     typed_op = cur_op._typed_ops[target_type]
                     output_type = cur_op.types[target_type]
                     for dtype in input_types:
-                        if dtype not in cur_op.types:
+                        if dtype not in cur_op.types and (
+                            _supports_complex or dtype not in {"FC32", "FC64"}
+                        ):
                             cur_op.types[dtype] = output_type
                             cur_op._typed_ops[dtype] = typed_op
                             cur_op.coercions[dtype] = target_type

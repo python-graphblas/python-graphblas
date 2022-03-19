@@ -25,7 +25,7 @@ jobs:
           - "-vv --non-blocking --record --runslow"
         sourcetype:
           # - "wheel"
-          - "source"
+          # - "source"
           - "upstream"
           - "conda-forge"
         exclude:
