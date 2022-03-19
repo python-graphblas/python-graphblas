@@ -44,7 +44,7 @@ jobs:
           python-version: ${{ matrix.pyver }}
       - name: Update env
         run: |
-          conda update -c conda-forge pytest-runner coverage 'black>=20.8b1' flake8 coveralls
+          conda install -c conda-forge pytest-runner coverage 'black>=20.8b1' flake8 coveralls
       - name: Style Checks
         run: |
           flake8
@@ -125,15 +125,11 @@ jobs:
           COVERALLS_FLAG_NAME: ${{ matrix.pyver}}/${{ matrix.testopts }}
           COVERALLS_PARALLEL: true
         run: |
-          source "$CONDA/etc/profile.d/conda.sh"
-          conda activate grblas
           coverage report --show-missing
           coveralls --service=github
       - name: Notebooks Execution check
         # if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
         run: |
-          source "$CONDA/etc/profile.d/conda.sh"
-          conda activate grblas
           conda install -c conda-forge matplotlib nbconvert jupyter 'ipython>=7'
           jupyter nbconvert --to notebook --execute notebooks/*ipynb
 
