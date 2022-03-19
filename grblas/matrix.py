@@ -832,6 +832,8 @@ class Matrix(BaseType):
                 raise ValueError("allow_empty=False not allowed when using Aggregators")
         if allow_empty:
             cfunc_name = "GrB_Matrix_reduce_Monoid_Scalar"
+        elif self.dtype._is_udt:
+            cfunc_name = "GrB_Matrix_reduce_UDT"
         else:
             cfunc_name = "GrB_Matrix_reduce_{output_dtype}"
         return ScalarExpression(

@@ -10,7 +10,7 @@ import numba
 import numpy as np
 
 from . import config, ffi, lib
-from .dtypes import INT8, _sample_values, _supports_complex, lookup_dtype, unify
+from .dtypes import BOOL, INT8, UINT8, _sample_values, _supports_complex, lookup_dtype, unify
 from .exceptions import UdfParseError, check_status_carg
 from .expr import InfixExprBase
 from .utils import libget, output_type
@@ -154,12 +154,14 @@ class TypedBuiltinBinaryOp(TypedOpBase):
         commutes_to = self.parent.commutes_to
         if commutes_to is not None and self.type in commutes_to._typed_ops:
             return commutes_to[self.type]
+        # TODO: what about UDTs and `gb.binary.any`?
 
     @property
     def _semiring_commutes_to(self):
         commutes_to = self.parent._semiring_commutes_to
         if commutes_to is not None and self.type in commutes_to._typed_ops:
             return commutes_to[self.type]
+        # TODO: what about UDTs and `gb.binary.any`?
 
     @property
     def is_commutative(self):
@@ -268,10 +270,9 @@ class TypedUserBinaryOp(TypedOpBase):
 
     @property
     def monoid(self):
-        if self._monoid is None and not self.parent._anonymous:
-            monoid = Monoid._find(self.name)
-            if monoid is not None and self.type in monoid._typed_ops:  # pragma: no cover
-                # This may be used by grblas.binary.numpy objects
+        if self._monoid is None:
+            monoid = self.parent.monoid
+            if monoid is not None and self.type in monoid:
                 self._monoid = monoid[self.type]
         return self._monoid
 
@@ -558,23 +559,28 @@ class OpBase:
         self.types = {}
         self.coercions = {}
         self._anonymous = anonymous
+        self._udt_types = None
+        self._udt_ops = None
 
     def __repr__(self):
         return f"{self._modname}.{self.name}"
 
     def __getitem__(self, type_):
-        if self._is_udt:
-            if type(type_) is tuple:
-                dtype1, dtype2 = type_
-                dtype1 = lookup_dtype(dtype1)
-                dtype2 = lookup_dtype(dtype2)
+        if not self._is_udt:
+            type_ = _normalize_type(type_)
+            if type_ not in self._typed_ops:
+                if self._udt_types is None:
+                    raise KeyError(f"{self.name} does not work with {type_}")
             else:
-                dtype1 = dtype2 = lookup_dtype(type_)
-            return self._getitem_udt(dtype1, dtype2)
-        type_ = _normalize_type(type_)
-        if type_ not in self._typed_ops:
-            raise KeyError(f"{self.name} does not work with {type_}")
-        return self._typed_ops[type_]
+                return self._typed_ops[type_]
+        # This is a UDT or is able to operate on UDTs such as `first` any `any`
+        if type(type_) is tuple:
+            dtype1, dtype2 = type_
+            dtype1 = lookup_dtype(dtype1)
+            dtype2 = lookup_dtype(dtype2)
+        else:
+            dtype1 = dtype2 = lookup_dtype(type_)
+        return self._getitem_udt(dtype1, dtype2)
 
     def _add(self, op):
         self._typed_ops[op.type] = op
@@ -586,8 +592,24 @@ class OpBase:
         del self.types[type_]
 
     def __contains__(self, type_):
-        type_ = _normalize_type(type_)
-        return type_ in self._typed_ops
+        if not self._is_udt:
+            type_ = _normalize_type(type_)
+            if type_ in self._typed_ops:
+                return True
+            elif self._udt_types is None:
+                return False
+        if type(type_) is tuple:
+            dtype1, dtype2 = type_
+            dtype1 = lookup_dtype(dtype1)
+            dtype2 = lookup_dtype(dtype2)
+        else:
+            dtype1 = dtype2 = lookup_dtype(type_)
+        try:
+            self._getitem_udt(dtype1, dtype2)
+        except TypeError:
+            return False
+        else:
+            return True
 
     @classmethod
     def _remove_nesting(cls, funcname, *, module=None, modname=None, strict=True):
@@ -995,6 +1017,18 @@ def _isclose(rel_tol=1e-7, abs_tol=0.0):
     return inner
 
 
+def _first(x, y):
+    return x
+
+
+def _second(x, y):
+    return y
+
+
+def _pair(x, y):
+    return 1
+
+
 class BinaryOp(OpBase):
     __slots__ = (
         "_monoid",
@@ -1207,41 +1241,72 @@ class BinaryOp(OpBase):
         if np_types in self._udt_types:
             return self._udt_ops[np_types]
 
-        numba_func = self._numba_func
-        sig = (dtype.numba_type, dtype2.numba_type)
-        try:
-            numba_func.compile(sig)
-        except numba.TypingError:
-            raise TypeError("TODO")
-        ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
-
-        # Numba is unable to handle BOOL correctly right now, but we have a workaround
-        # See: https://github.com/numba/numba/issues/5395
-        # We're relying on coercion behaving correctly here
-        return_type = INT8 if ret_type == "BOOL" else ret_type
-
-        # Build wrapper because GraphBLAS wants pointers and void return
         nt = numba.types
-        wrapper_sig = nt.void(
-            nt.CPointer(return_type.numba_type),
-            nt.CPointer(dtype.numba_type),
-            nt.CPointer(dtype2.numba_type),
-        )
-        if ret_type == "BOOL":
+        if self.name == "eq":
+            assert dtype == dtype2  # XXX: must be same size?
+            itemsize = dtype.np_type.itemsize
+            ret_type = BOOL
+            wrapper_sig = nt.void(
+                nt.CPointer(INT8.numba_type),
+                nt.CPointer(UINT8.numba_type),
+                nt.CPointer(UINT8.numba_type),
+            )
 
             def binary_wrapper(z_ptr, x_ptr, y_ptr):
-                z = numba.carray(z_ptr, 1)
-                x = numba.carray(x_ptr, 1)
-                y = numba.carray(y_ptr, 1)
-                z[0] = bool(numba_func(x[0], y[0]))  # pragma: no cover
+                x = numba.carray(x_ptr, itemsize)
+                y = numba.carray(y_ptr, itemsize)
+                z_ptr[0] = (x == y).all()
+
+        elif self.name == "ne":
+            assert dtype == dtype2  # XXX: must be same size?
+            itemsize = dtype.np_type.itemsize
+            ret_type = BOOL
+            wrapper_sig = nt.void(
+                nt.CPointer(INT8.numba_type),
+                nt.CPointer(UINT8.numba_type),
+                nt.CPointer(UINT8.numba_type),
+            )
+
+            def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                x = numba.carray(x_ptr, itemsize)
+                y = numba.carray(y_ptr, itemsize)
+                z_ptr[0] = (x != y).all()
 
         else:
+            numba_func = self._numba_func
+            sig = (dtype.numba_type, dtype2.numba_type)
+            try:
+                numba_func.compile(sig)
+            except numba.TypingError:
+                raise TypeError("TODO")
+            ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
 
-            def binary_wrapper(z_ptr, x_ptr, y_ptr):
-                z = numba.carray(z_ptr, 1)
-                x = numba.carray(x_ptr, 1)
-                y = numba.carray(y_ptr, 1)
-                z[0] = numba_func(x[0], y[0])  # pragma: no cover
+            # Numba is unable to handle BOOL correctly right now, but we have a workaround
+            # See: https://github.com/numba/numba/issues/5395
+            # We're relying on coercion behaving correctly here
+            return_type = INT8 if ret_type == "BOOL" else ret_type
+
+            # Build wrapper because GraphBLAS wants pointers and void return
+            wrapper_sig = nt.void(
+                nt.CPointer(return_type.numba_type),
+                nt.CPointer(dtype.numba_type),
+                nt.CPointer(dtype2.numba_type),
+            )
+            if ret_type == "BOOL":
+
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                    z = numba.carray(z_ptr, 1)
+                    x = numba.carray(x_ptr, 1)
+                    y = numba.carray(y_ptr, 1)
+                    z[0] = bool(numba_func(x[0], y[0]))  # pragma: no cover
+
+            else:
+
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                    z = numba.carray(z_ptr, 1)
+                    x = numba.carray(x_ptr, 1)
+                    y = numba.carray(y_ptr, 1)
+                    z[0] = numba_func(x[0], y[0])  # pragma: no cover
 
         binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
         new_binary = ffi_new("GrB_BinaryOp*")
@@ -1408,6 +1473,20 @@ class BinaryOp(OpBase):
             right = getattr(binary, right)
             left._semiring_commutes_to = right
             right._semiring_commutes_to = left
+        # Allow some functions to work on UDTs
+        for (binop, func) in [
+            (binary.first, _first),
+            (binary.second, _second),
+            (binary.pair, _pair),
+            (binary.any, _first),
+        ]:
+            binop._func = func
+            binop._numba_func = numba.njit(func)
+            binop._udt_types = {}
+            binop._udt_ops = {}
+        binary.any._numba_func = binary.first._numba_func
+        binary.eq._udt_types = {}
+        binary.eq._udt_ops = {}
         cls._initialized = True
 
     def __init__(
@@ -1525,7 +1604,7 @@ class Monoid(OpBase):
         np_type = dtype.np_type
         if np_type in self._udt_types:
             return self._udt_ops[np_type]
-        binaryop = self._binaryop._getitem_udt(dtype, dtype2)
+        binaryop = self.binaryop._getitem_udt(dtype, dtype2)
         from .scalar import Scalar
 
         identity = Scalar.from_value(self._identity, dtype=dtype, is_cscalar=True)
@@ -1645,6 +1724,11 @@ class Monoid(OpBase):
                 cur_op.types[dtype] = "BOOL"
                 cur_op.coercions[dtype] = "BOOL"
                 cur_op._typed_ops[dtype] = bool_op
+        # Allow some functions to work on UDTs
+        any_ = monoid.any
+        any_._identity = 0
+        any_._udt_types = {}
+        any_._udt_ops = {}
         cls._initialized = True
 
     commutes_to = TypedBuiltinMonoid.commutes_to
@@ -1739,8 +1823,8 @@ class Semiring(OpBase):
         np_types = (dtype.np_type, dtype2.np_type)
         if np_types in self._udt_types:
             return self._udt_ops[np_types]
-        binaryop = self._binaryop._getitem_udt(dtype, dtype2)
-        monoid = self._monoid[binaryop.return_type]
+        binaryop = self.binaryop._getitem_udt(dtype, dtype2)
+        monoid = self.monoid[binaryop.return_type]
         ret_type = monoid.return_type
         new_semiring = ffi_new("GrB_Semiring*")
         status = lib.GrB_Semiring_new(new_semiring, monoid.gb_obj, binaryop.gb_obj)

@@ -586,7 +586,11 @@ class Vector(BaseType):
                     extra_message=extra_message,
                 )
             if left._is_cscalar:
-                dtype_name = "UDT" if left.dtype._is_udt else left.dtype.name
+                if left.dtype._is_udt:
+                    dtype_name = "UDT"
+                    left = _Pointer(left)
+                else:
+                    dtype_name = left.dtype.name
                 cfunc_name = f"GrB_Vector_apply_BinaryOp1st_{dtype_name}"
             else:
                 cfunc_name = "GrB_Vector_apply_BinaryOp1st_Scalar"
@@ -618,7 +622,11 @@ class Vector(BaseType):
                     extra_message=extra_message,
                 )
             if right._is_cscalar:
-                dtype_name = "UDT" if right.dtype._is_udt else right.dtype.name
+                if right.dtype._is_udt:
+                    dtype_name = "UDT"
+                    right = _Pointer(right)
+                else:
+                    dtype_name = right.dtype.name
                 cfunc_name = f"GrB_Vector_apply_BinaryOp2nd_{dtype_name}"
             else:
                 cfunc_name = "GrB_Vector_apply_BinaryOp2nd_Scalar"
@@ -655,6 +663,8 @@ class Vector(BaseType):
             raise ValueError("allow_empty=False not allowed when using Aggregators")
         if allow_empty:
             cfunc_name = "GrB_Vector_reduce_Monoid_Scalar"
+        elif self.dtype._is_udt:
+            cfunc_name = "GrB_Vector_reduce_UDT"
         else:
             cfunc_name = "GrB_Vector_reduce_{output_dtype}"
         return ScalarExpression(
