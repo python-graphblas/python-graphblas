@@ -134,6 +134,12 @@ def test_npbinary():
         "BOOL": {"subtract"},  # not supported by numpy
     }
     isclose = grblas.binary.isclose(1e-7, 0)
+    # XXX: Temporary to test ldexp on Windows
+    print(np.ldexp.types)
+    a = np.array([2], dtype=np.int64)
+    np.ldexp(a, a)
+    np.ldexp(a[0], a[0])
+
     for (gb_left, gb_right), (np_left, np_right) in data:
         for binary_name in sorted(npbinary._binary_names):
             op = getattr(npbinary, binary_name)
@@ -145,11 +151,9 @@ def test_npbinary():
                 gb_result = gb_left.ewise_mult(gb_right, op).new()
                 try:
                     if gb_left.dtype == "BOOL" and gb_result.dtype == "FP32":
-                        print("A")
                         np_result = getattr(np, binary_name)(np_left, np_right, dtype="float32")
                         compare_op = isclose
                     else:
-                        print("B")
                         np_result = getattr(np, binary_name)(np_left, np_right)
                         compare_op = npbinary.equal
                 except Exception:
