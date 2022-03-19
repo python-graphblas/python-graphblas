@@ -134,12 +134,6 @@ def test_npbinary():
         "BOOL": {"subtract"},  # not supported by numpy
     }
     isclose = grblas.binary.isclose(1e-7, 0)
-    # XXX: Temporary to test ldexp on Windows
-    print(np.ldexp.types)
-    a = np.array([2], dtype=np.int64)
-    np.ldexp(a, a)
-    np.ldexp(a[0], a[0])
-
     for (gb_left, gb_right), (np_left, np_right) in data:
         for binary_name in sorted(npbinary._binary_names):
             op = getattr(npbinary, binary_name)
@@ -147,18 +141,17 @@ def test_npbinary():
                 gb_left.dtype.name, ()
             ):
                 continue
+            if not _supports_complex and binary_name == "ldexp":
+                # On Windows, the first argument to ldexp must be a floating point type
+                np_left = np_left.astype("float64")
             with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
                 gb_result = gb_left.ewise_mult(gb_right, op).new()
-                try:
-                    if gb_left.dtype == "BOOL" and gb_result.dtype == "FP32":
-                        np_result = getattr(np, binary_name)(np_left, np_right, dtype="float32")
-                        compare_op = isclose
-                    else:
-                        np_result = getattr(np, binary_name)(np_left, np_right)
-                        compare_op = npbinary.equal
-                except Exception:
-                    print(binary_name, np_left, np_right, np_left.dtype, np_right.dtype)
-                    raise
+                if gb_left.dtype == "BOOL" and gb_result.dtype == "FP32":
+                    np_result = getattr(np, binary_name)(np_left, np_right, dtype="float32")
+                    compare_op = isclose
+                else:
+                    np_result = getattr(np, binary_name)(np_left, np_right)
+                    compare_op = npbinary.equal
 
             np_result = Vector.from_values(
                 np.arange(np_left.size), np_result, dtype=gb_result.dtype
