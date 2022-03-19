@@ -271,6 +271,7 @@ IGNORE = {
 
 def _run_test(module, typ, expected):
     if not dtypes._supports_complex:
+        # Merge keys with FC types removed
         d = defaultdict(set)
         for (k1, k2), val in expected.items():
             key = (k1 - FC, k2 - FC)
