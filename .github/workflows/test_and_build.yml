@@ -10,7 +10,7 @@ on:
 
 jobs:
   build_and_test:
-    runs-on: {{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     # runs-on: ubuntu-latest
     strategy:
       fail-fast: false
