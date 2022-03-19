@@ -145,11 +145,11 @@ def test_npbinary():
                 gb_result = gb_left.ewise_mult(gb_right, op).new()
                 try:
                     if gb_left.dtype == "BOOL" and gb_result.dtype == "FP32":
-                        print('A')
+                        print("A")
                         np_result = getattr(np, binary_name)(np_left, np_right, dtype="float32")
                         compare_op = isclose
                     else:
-                        print('B')
+                        print("B")
                         np_result = getattr(np, binary_name)(np_left, np_right)
                         compare_op = npbinary.equal
                 except Exception:
