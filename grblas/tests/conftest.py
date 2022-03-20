@@ -9,19 +9,28 @@ import grblas as gb
 
 
 def pytest_configure(config):
+    randomly = config.getoption("--randomly", False)
     backend = config.getoption("--backend", "suitesparse")
-    blocking = config.getoption("--blocking", True)
-    record = config.getoption("--record", False)
-    mapnumpy = config.getoption("--mapnumpy", None)
+    blocking = config.getoption("--blocking", None if randomly else True)
+    if blocking is None:  # pragma: no branch
+        blocking = np.random.rand() < 0.5
+    record = config.getoption("--record", None if randomly else False)
+    if record is None:  # pragma: no branch
+        record = np.random.rand() < 0.5
+    mapnumpy = config.getoption("--mapnumpy", None if randomly else True)
     if mapnumpy is None:  # pragma: no branch
-        mapnumpy = np.random.rand() < 0.5  # heh
+        mapnumpy = np.random.rand() < 0.5
+    runslow = config.getoption("--runslow", None if randomly else True)
+    if runslow is None:  # pragma: no branch
+        runslow = np.random.rand() < 0.5
+    config.runslow = runslow
 
     gb.config.set(autocompute=False, mapnumpy=mapnumpy)
 
     gb.init(backend, blocking=blocking)
     print(
         f'Running tests with "{backend}" backend, blocking={blocking}, '
-        f"record={record}, mapnumpy={mapnumpy}"
+        f"record={record}, mapnumpy={mapnumpy}, runslow={runslow}"
     )
     if record:
         rec = gb.Recorder()
@@ -39,7 +48,7 @@ def pytest_configure(config):
 
 
 def pytest_runtest_setup(item):
-    if "slow" in item.keywords and not item.config.getoption("--runslow", True):  # pragma: no cover
+    if "slow" in item.keywords and not item.config.runslow:  # pragma: no cover
         pytest.skip("need --runslow option to run")
 
 

@@ -5,11 +5,11 @@ def pytest_addoption(parser):
         default="suitesparse",
         help="name of a backend in grblas.backends",
     )
-    parser.addoption("--runslow", action="store_true", help="run slow tests")
+    parser.addoption("--runslow", default=None, action="store_true", help="run slow tests")
     parser.addoption(
         "--blocking",
         dest="blocking",
-        default=True,
+        default=None,
         action="store_true",
         help="run in blocking mode",
     )
@@ -24,10 +24,11 @@ def pytest_addoption(parser):
     parser.addoption(
         "--record",
         dest="record",
-        default=False,
+        default=None,
         action="store_true",
         help="Record GraphBLAS C calls and save to 'record.txt'",
     )
     parser.addoption(
         "--mapnumpy", action="store_true", default=None, help="may numpy ops to GraphBLAS ops"
     )
+    parser.addoption("--randomly", action="store_true", help="run random test config")

@@ -21,8 +21,7 @@ jobs:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
         # os: ["windows-latest"]
         testopts:
-          - "--blocking"
-          - "--non-blocking --record --runslow"
+          - "--randomly"
         sourcetype:
           # - "wheel"
           # - "source"
@@ -141,13 +140,6 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Setup conda
-        uses: conda-incubator/setup-miniconda@v2
-        with:
-          auto-update-conda: true
-          python-version: "3.9"
-          channels: conda-forge
-          activate-environment: finish_coveralls
       - name: Finish coveralls
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
