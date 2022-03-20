@@ -67,7 +67,8 @@ jobs:
               conda install -c conda-forge cython
               git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
               pushd ssgb
-              pip install .
+              python setup.py install  # deprecated?
+              # pip install .  # doesn't work
               popd
           elif [[ ${{ matrix.sourcetype }} == "conda-forge" ]]; then
               conda install -c conda-forge python-suitesparse-graphblas
@@ -140,12 +141,16 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Setup conda env
+      - name: Setup conda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-update-conda: true
+          python-version: "3.9"
+          channels: conda-forge
+          activate-environment: coveralls
+      - name: Update env
         run: |
-          source "$CONDA/etc/profile.d/conda.sh"
-          conda config --set always_yes yes --set changeps1 no
-          conda update -q conda
-          conda create -n coveralls_final -c conda-forge python=3.9 coveralls
+          conda install -c conda-forge coveralls
       - name: Coveralls Finished
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
