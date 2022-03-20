@@ -26,7 +26,7 @@ jobs:
         sourcetype:
           # - "wheel"
           # - "source"
-          - "upstream"
+          # - "upstream"
           - "conda-forge"
         exclude:
           - sourcetype: "upstream"
@@ -155,6 +155,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          source "$CONDA/etc/profile.d/conda.sh"
-          conda activate coveralls_final
           coveralls --finish
