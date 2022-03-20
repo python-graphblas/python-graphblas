@@ -142,9 +142,8 @@ def test_npbinary():
             ):
                 continue
             if not _supports_complex and binary_name == "ldexp":
-                # On Windows, the first argument to ldexp must be a floating point type.
-                # But, let's just skip it!
-                continue
+                # On Windows, the second argument must be int32 or less (I'm not sure why)
+                np_right = np_right.astype(np.int32)
             with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
                 gb_result = gb_left.ewise_mult(gb_right, op).new()
                 if gb_left.dtype == "BOOL" and gb_result.dtype == "FP32":

@@ -23,13 +23,10 @@ jobs:
         testopts:
           - "--randomly"
         sourcetype:
-          # - "wheel"
-          # - "source"
-          # - "upstream"
+          - "wheel"
+          - "source"
+          - "upstream"
           - "conda-forge"
-        exclude:
-          - sourcetype: "upstream"
-            testopts: "--non-blocking --record --runslow"
 
     steps:
       - name: Checkout
@@ -89,27 +86,14 @@ jobs:
       - name: Unit tests
         # if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
         run: |
-          if [[ ${{ matrix.pyver }} == "3.8" && "${{ matrix.testopts }}" == "--blocking" ]] ; then
-              # segfault if we run coverage, so don't run coverage ;)
-              echo "skipping coverage"
-              pytest ${{ matrix.testopts }}
-              # Run tests again with Scalars being C scalars by default
-              find grblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
-                -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
-                -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
-                -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
-                -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
-              pytest ${{ matrix.testopts }}
-          else
-              coverage run --branch -m pytest ${{ matrix.testopts }}
-              # Run tests again with Scalars being C scalars by default
-              find grblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
-                -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
-                -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
-                -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
-                -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
-              coverage run -a --branch -m pytest ${{ matrix.testopts }}
-          fi
+          coverage run --branch -m pytest ${{ matrix.testopts }}
+          # Run tests again with Scalars being C scalars by default
+          find grblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
+            -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
+            -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
+            -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
+            -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
+          coverage run -a --branch -m pytest ${{ matrix.testopts }}
           git checkout .  # Undo changes to scalar default
 
           # Test (and cover) automatic initialization
@@ -140,9 +124,16 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Finish coveralls
+      - name: Setup conda env
+        run: |
+          source "$CONDA/etc/profile.d/conda.sh"
+          conda config --set always_yes yes --set changeps1 no
+          conda update -q conda
+          conda create -n coveralls_final -c conda-forge python=3.9 coveralls
+      - name: Coveralls Finished
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          conda install -c conda-forge coveralls
+          source "$CONDA/etc/profile.d/conda.sh"
+          conda activate coveralls_final
           coveralls --finish
