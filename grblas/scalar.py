@@ -334,7 +334,7 @@ class Scalar(BaseType):
                 except ValueError:
                     raise TypeError(
                         f"Argument of from_value must be a known scalar type, not {type(value)}"
-                    )
+                    ) from None
         if typ is Scalar and type(value) is not Scalar:
             return value.new(dtype=dtype, is_cscalar=is_cscalar, name=name)
         new_scalar = cls.new(dtype, is_cscalar=is_cscalar, name=name)

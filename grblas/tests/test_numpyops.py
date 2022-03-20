@@ -49,7 +49,7 @@ def test_npunary():
         [Vector.from_values(L, L), np.array(L, dtype=np.int64)],
         [Vector.from_values(L, L, dtype="float64"), np.array(L, dtype=np.float64)],
     ]
-    if _supports_complex:  # pragma: no branch
+    if _supports_complex:
         data.append(
             [Vector.from_values(L, L, dtype="FC64"), np.array(L, dtype=np.complex128)],
         )
@@ -119,7 +119,7 @@ def test_npbinary():
             [np.array([True, False, True, False]), np.array([True, True, False, False])],
         ],
     ]
-    if _supports_complex:  # pragma: no branch
+    if _supports_complex:
         data.append(
             [
                 [
@@ -141,6 +141,9 @@ def test_npbinary():
                 gb_left.dtype.name, ()
             ):
                 continue
+            if not _supports_complex and binary_name == "ldexp":
+                # On Windows, the second argument must be int32 or less (I'm not sure why)
+                np_right = np_right.astype(np.int32)
             with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
                 gb_result = gb_left.ewise_mult(gb_right, op).new()
                 if gb_left.dtype == "BOOL" and gb_result.dtype == "FP32":

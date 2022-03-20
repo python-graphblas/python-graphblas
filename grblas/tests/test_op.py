@@ -124,7 +124,7 @@ def test_unaryop_udf():
         "FP64",
         "BOOL",
     }
-    if dtypes._supports_complex:  # pragma: no branch
+    if dtypes._supports_complex:
         comp_set.update({"FC32", "FC64"})
     assert set(unary.plus_one.types) == comp_set
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
@@ -480,7 +480,7 @@ def test_binaryop_udf():
         "FP32",
         "FP64",
     }
-    if dtypes._supports_complex:  # pragma: no branch
+    if dtypes._supports_complex:
         comp_set.update({"FC32", "FC64"})
     assert set(binary.bin_test_func.types) == comp_set
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
@@ -575,7 +575,7 @@ def test_nested_names():
         "FP64",
         "BOOL",
     }
-    if dtypes._supports_complex:  # pragma: no branch
+    if dtypes._supports_complex:
         comp_set.update({"FC32", "FC64"})
     assert set(unary.incrementers.plus_three.types) == comp_set
 
