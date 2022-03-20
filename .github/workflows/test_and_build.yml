@@ -10,23 +10,35 @@ on:
 
 jobs:
   build_and_test:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.cfg.os }}
     defaults:
       run:
         shell: bash -l {0}
     strategy:
       fail-fast: false
       matrix:
-        pyver: ["3.8", "3.9", "3.10"]
-        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
-        # os: ["windows-latest"]
-        testopts:
-          - "--randomly"
-        sourcetype:
-          - "wheel"
-          - "source"
-          - "upstream"
-          - "conda-forge"
+        cfg:
+          # Begin with fast, vanilla test
+          - { pyver: "3.10", os: "ubuntu-latest", testops: "", sourcetype: "conda-forge" }
+          # Test ubuntu with conda-forge
+          - { pyver: "3.8", os: "ubuntu-latest", testops: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.9", os: "ubuntu-latest", testops: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.10", os: "ubuntu-latest", testops: "--randomly", sourcetype: "conda-forge" }
+          # Test macos with conda-forge
+          - { pyver: "3.8", os: "macos-latest", testops: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.9", os: "macos-latest", testops: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.10", os: "macos-latest", testops: "--randomly", sourcetype: "conda-forge" }
+          # Test windows with conda-forge
+          - { pyver: "3.8", os: "windows-latest", testops: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.9", os: "windows-latest", testops: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.10", os: "windows-latest", testops: "--randomly", sourcetype: "conda-forge" }
+          # Test ubuntu with alternative methods to install dependencies
+          - { pyver: "3.10", os: "ubuntu-latest", testops: "--randomly", sourcetype: "wheel" }
+          - { pyver: "3.10", os: "ubuntu-latest", testops: "--randomly", sourcetype: "source" }
+          - { pyver: "3.10", os: "ubuntu-latest", testops: "--randomly", sourcetype: "upstream" }
+          # Test misc
+          - { pyver: "3.8", os: "macos-latest", testops: "--randomly", sourcetype: "upstream" }
+          - { pyver: "3.9", os: "windows-latest", testops: "--randomly", sourcetype: "upstream" }
 
     steps:
       - name: Checkout
@@ -37,7 +49,7 @@ jobs:
         uses: conda-incubator/setup-miniconda@v2
         with:
           auto-update-conda: true
-          python-version: ${{ matrix.pyver }}
+          python-version: ${{ matrix.cfg.pyver }}
           channels: conda-forge
           activate-environment: grblas
       - name: Update env
@@ -50,14 +62,14 @@ jobs:
       - name: Build extension module
         run: |
           conda install -c conda-forge pandas numba scipy networkx cffi donfig pyyaml
-          if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then
+          if [[ ${{ matrix.cfg.sourcetype }} == "wheel" ]]; then
               pip install suitesparse-graphblas
           else
               conda install -c conda-forge "graphblas>=6"
           fi
-          if [[ ${{ matrix.sourcetype }} == "source" ]]; then
+          if [[ ${{ matrix.cfg.sourcetype }} == "source" ]]; then
               pip install --no-binary=all suitesparse-graphblas
-          elif [[ ${{ matrix.sourcetype }} == "upstream" ]]; then
+          elif [[ ${{ matrix.cfg.sourcetype }} == "upstream" ]]; then
               # I can't get pip install from git to work, so git clone instead.
               # pip install git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
               conda install -c conda-forge cython
@@ -66,12 +78,12 @@ jobs:
               python setup.py install  # deprecated?
               # pip install .  # doesn't work
               popd
-          elif [[ ${{ matrix.sourcetype }} == "conda-forge" ]]; then
+          elif [[ ${{ matrix.cfg.sourcetype }} == "conda-forge" ]]; then
               conda install -c conda-forge python-suitesparse-graphblas
           fi
           python setup.py develop --no-deps
       # - name: Optional pygraphblas
-      #   if: contains(matrix.testopts, 'pygraphblas') && (matrix.pyver != 3.9)
+      #   if: contains(matrix.cfg.testopts, 'pygraphblas') && (matrix.cfg.pyver != 3.9)
       #   run: |
       #     source "$CONDA/etc/profile.d/conda.sh"
       #     conda activate grblas
@@ -84,16 +96,16 @@ jobs:
           ( for attr in Matrix Scalar Vector Recorder _agg agg backends base binary descriptor dtypes exceptions expr ffi formatting infix init io lib mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
           ( for attr in _agg agg backends base binary descriptor dtypes exceptions expr formatting infix io mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"import grblas.$attr\" ; if ! python -c "import grblas.$attr" ; then exit 1 ; fi ; done )
       - name: Unit tests
-        # if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
+        # if: (! contains(matrix.cfg.testopts, 'pygraphblas')) || (matrix.cfg.pyver != 3.9)
         run: |
-          coverage run --branch -m pytest ${{ matrix.testopts }}
+          coverage run --branch -m pytest ${{ matrix.cfg.testopts }}
           # Run tests again with Scalars being C scalars by default
           find grblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
             -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
             -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
             -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
             -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
-          coverage run -a --branch -m pytest ${{ matrix.testopts }}
+          coverage run -a --branch -m pytest ${{ matrix.cfg.testopts }}
           git checkout .  # Undo changes to scalar default
 
           # Test (and cover) automatic initialization
@@ -105,16 +117,16 @@ jobs:
           coverage run -a --branch -m grblas._infixmethods
           git diff --exit-code
       - name: Coverage
-        # if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
+        # if: (! contains(matrix.cfg.testopts, 'pygraphblas')) || (matrix.cfg.pyver != 3.9)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COVERALLS_FLAG_NAME: ${{ matrix.pyver}}/${{ matrix.testopts }}
+          COVERALLS_FLAG_NAME: ${{ matrix.cfg.pyver}}/${{ matrix.cfg.testopts }}
           COVERALLS_PARALLEL: true
         run: |
           coverage report --show-missing
           coveralls --service=github
       - name: Notebooks Execution check
-        # if: (! contains(matrix.testopts, 'pygraphblas')) || (matrix.pyver != 3.9)
+        # if: (! contains(matrix.cfg.testopts, 'pygraphblas')) || (matrix.cfg.pyver != 3.9)
         run: |
           conda install -c conda-forge matplotlib nbconvert jupyter 'ipython>=7'
           jupyter nbconvert --to notebook --execute notebooks/*ipynb

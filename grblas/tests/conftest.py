@@ -12,16 +12,16 @@ def pytest_configure(config):
     randomly = config.getoption("--randomly", False)
     backend = config.getoption("--backend", "suitesparse")
     blocking = config.getoption("--blocking", None if randomly else True)
-    if blocking is None:  # pragma: no branch
+    if blocking is None:
         blocking = np.random.rand() < 0.5
     record = config.getoption("--record", None if randomly else False)
-    if record is None:  # pragma: no branch
+    if record is None:
         record = np.random.rand() < 0.5
     mapnumpy = config.getoption("--mapnumpy", None if randomly else True)
-    if mapnumpy is None:  # pragma: no branch
+    if mapnumpy is None:
         mapnumpy = np.random.rand() < 0.5
     runslow = config.getoption("--runslow", None if randomly else True)
-    if runslow is None:  # pragma: no branch
+    if runslow is None:
         runslow = np.random.rand() < 0.5
     config.runslow = runslow
 
@@ -48,7 +48,7 @@ def pytest_configure(config):
 
 
 def pytest_runtest_setup(item):
-    if "slow" in item.keywords and not item.config.runslow:  # pragma: no cover
+    if "slow" in item.keywords and not item.config.runslow:
         pytest.skip("need --runslow option to run")
 
 
