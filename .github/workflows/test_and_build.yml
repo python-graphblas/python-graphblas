@@ -147,12 +147,10 @@ jobs:
           auto-update-conda: true
           python-version: "3.9"
           channels: conda-forge
-          activate-environment: coveralls
-      - name: Update env
-        run: |
-          conda install -c conda-forge coveralls
-      - name: Coveralls Finished
+          activate-environment: finish_coveralls
+      - name: Finish coveralls
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          conda install -c conda-forge coveralls
           coveralls --finish
