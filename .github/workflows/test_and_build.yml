@@ -67,7 +67,7 @@ jobs:
               conda install -c conda-forge cython
               git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
               pushd ssgb
-              python setup.py install
+              pip install .
               popd
           elif [[ ${{ matrix.sourcetype }} == "conda-forge" ]]; then
               conda install -c conda-forge python-suitesparse-graphblas
