@@ -7,7 +7,6 @@ from . import agg, binary, monoid, semiring, unary
 from .dtypes import lookup_dtype, unify
 from .operator import _normalize_type
 from .scalar import Scalar
-from .ss import diag
 from .vector import Vector
 
 
@@ -427,9 +426,7 @@ def _argminmaxij(
         if expr.method_name == "reduce_rowwise":
             step1 = A.reduce_rowwise(monoid).new()
 
-            # i, j = step1.to_values()
-            # D = Matrix.from_values(i, i, j, nrows=A._nrows, ncols=A._nrows)
-            D = diag(step1)
+            D = step1.diag()
 
             masked = semiring.any_eq(D @ A).new()
             masked(mask=masked.V, replace=True) << masked  # Could use select
@@ -441,9 +438,7 @@ def _argminmaxij(
         else:
             step1 = A.reduce_columnwise(monoid).new()
 
-            # i, j = step1.to_values()
-            # D = Matrix.from_values(i, i, j, nrows=A._ncols, ncols=A._ncols)
-            D = diag(step1)
+            D = step1.diag()
 
             masked = semiring.any_eq(A @ D).new()
             masked(mask=masked.V, replace=True) << masked  # Could use select

@@ -2314,10 +2314,14 @@ def test_diag(A, params):
     expected = Vector.from_values(indices, values, dtype=A.dtype, size=max(0, A.nrows - abs(k)))
     v = grblas.ss.diag(A, k=k)
     assert expected.isequal(v)
+    v = A.diag(k=k)
+    assert expected.isequal(v)
     v[:] = 0
     v.ss.diag(A, k=k)
     assert expected.isequal(v)
     v = grblas.ss.diag(A.T, k=-k)
+    assert expected.isequal(v)
+    v = A.T.diag(k=-k)
     assert expected.isequal(v)
     v[:] = 0
     v.ss.diag(A.T, -k)
