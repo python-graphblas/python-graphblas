@@ -330,13 +330,13 @@ class Matrix(BaseType):
         return rv
 
     def diag(self, k=0, dtype=None, *, name=None):
-        """
-        GrB_diag
-        Extract the kth diagonal of this Matrix as a Vector
-        """
-        from .ss._core import diag
-
-        return diag(self, k=k, dtype=dtype, name=name)
+        raise TypeError(
+            "For `X.diag(...), `X` must be of Vector type."
+            "To extract the diagonal of a Matrix `A`, use "
+            "`grblas.ss.diag(A, k, ...)` or "
+            "`u.ss.diag(A, k, ...)` where `u` is the output "
+            "Vector to contain the diagonal."
+        )
 
     def wait(self):
         """

@@ -1202,14 +1202,8 @@ def test_diag(v):
         w = grblas.ss.diag(A, Scalar.from_value(k))
         assert v.isequal(w)
         assert w.dtype == "INT64"
-        w = A.diag(Scalar.from_value(k))
-        assert v.isequal(w)
-        assert w.dtype == "INT64"
 
         w = grblas.ss.diag(A.T, -k, dtype=float)
-        assert v.isequal(w)
-        assert w.dtype == "FP64"
-        w = A.T.diag(-k, dtype=float)
         assert v.isequal(w)
         assert w.dtype == "FP64"
 
