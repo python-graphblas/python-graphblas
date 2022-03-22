@@ -103,6 +103,14 @@ def test_get_typed_op():
     assert operator.get_typed_op("+.*", dtypes.FP64, kind="semiring") is semiring.plus_times["FP64"]
     with pytest.raises(ValueError, match="Unable to get op from string"):
         operator.get_typed_op("+", dtypes.FP64)
+    assert (
+        operator.get_typed_op("+", dtypes.INT64, kind="binary|aggregator") is binary.plus["INT64"]
+    )
+    assert (
+        operator.get_typed_op("count", dtypes.INT64, kind="binary|aggregator") is agg.count["INT64"]
+    )
+    with pytest.raises(ValueError, match="Unknown binary or aggregator"):
+        operator.get_typed_op("bad_op_name", dtypes.INT64, kind="binary|aggregator")
 
 
 def test_unaryop_udf():
@@ -124,7 +132,7 @@ def test_unaryop_udf():
         "FP64",
         "BOOL",
     }
-    if dtypes._supports_complex:  # pragma: no branch
+    if dtypes._supports_complex:
         comp_set.update({"FC32", "FC64"})
     assert set(unary.plus_one.types) == comp_set
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
@@ -481,7 +489,7 @@ def test_binaryop_udf():
         "FP32",
         "FP64",
     }
-    if dtypes._supports_complex:  # pragma: no branch
+    if dtypes._supports_complex:
         comp_set.update({"FC32", "FC64"})
     assert set(binary.bin_test_func.types) == comp_set
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
@@ -576,7 +584,7 @@ def test_nested_names():
         "FP64",
         "BOOL",
     }
-    if dtypes._supports_complex:  # pragma: no branch
+    if dtypes._supports_complex:
         comp_set.update({"FC32", "FC64"})
     assert set(unary.incrementers.plus_three.types) == comp_set
 
@@ -938,6 +946,12 @@ def test_from_string():
     assert op.from_string("min.plus") is semiring.min_plus
     with pytest.raises(ValueError, match="Unknown op string"):
         op.from_string("min.plus.times")
+
+    assert agg.from_string("count") is agg.count
+    assert agg.from_string("|") is agg.any
+    assert agg.from_string("+[int]") is agg.sum[int]
+    with pytest.raises(ValueError, match="Unknown agg string"):
+        agg.from_string("bad_agg")
 
 
 def test_lazy_op():
