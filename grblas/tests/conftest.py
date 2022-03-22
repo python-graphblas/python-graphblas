@@ -11,18 +11,18 @@ import grblas as gb
 def pytest_configure(config):
     randomly = config.getoption("--randomly", False)
     backend = config.getoption("--backend", "suitesparse")
-    blocking = config.getoption("--blocking", None if randomly else True)
+    blocking = config.getoption("--blocking", True)
     if blocking is None:
-        blocking = np.random.rand() < 0.5
-    record = config.getoption("--record", None if randomly else False)
+        blocking = np.random.rand() < 0.5 if randomly else True
+    record = config.getoption("--record", False)
     if record is None:
-        record = np.random.rand() < 0.5
-    mapnumpy = config.getoption("--mapnumpy", None if randomly else True)
+        record = np.random.rand() < 0.5 if randomly else False
+    mapnumpy = config.getoption("--mapnumpy", True)
     if mapnumpy is None:
-        mapnumpy = np.random.rand() < 0.5
-    runslow = config.getoption("--runslow", None if randomly else True)
+        mapnumpy = np.random.rand() < 0.5 if randomly else True
+    runslow = config.getoption("--runslow", False)
     if runslow is None:
-        runslow = np.random.rand() < 0.5
+        runslow = np.random.rand() < 0.5 if randomly else False
     config.runslow = runslow
 
     gb.config.set(autocompute=False, mapnumpy=mapnumpy)

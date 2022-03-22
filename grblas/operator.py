@@ -1763,10 +1763,20 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             op = monoid_from_string(op)
         elif kind == "semiring":
             op = semiring_from_string(op)
+        elif kind == "binary|aggregator":
+            try:
+                op = binary_from_string(op)
+            except ValueError:
+                try:
+                    op = aggregator_from_string(op)
+                except ValueError:
+                    raise ValueError(
+                        f"Unknown binary or aggregator string: {op!r}.  Example usage: '+[int]'"
+                    ) from None
         else:
             raise ValueError(
                 f"Unable to get op from string {op!r}.  `kind=` argument must be provided as "
-                '"unary", "binary", "monoid", or "semiring".'
+                '"unary", "binary", "monoid", "semiring", or "binary|aggregator".'
             )
         return get_typed_op(
             op,
@@ -1962,7 +1972,7 @@ def _from_string(string, module, mapping, example):
             op = mapping[base] = module.from_string(op)
     elif hasattr(module, base):
         op = getattr(module, base)
-    elif hasattr(module.numpy, base):
+    elif hasattr(module, "numpy") and hasattr(module.numpy, base):
         op = getattr(module.numpy, base)
     else:
         *paths, attr = base.split(".")
@@ -2032,4 +2042,19 @@ monoid.from_string = monoid_from_string
 semiring.from_string = semiring_from_string
 op.from_string = op_from_string
 
+from . import agg  # noqa isort:skip
 from .agg import Aggregator, TypedAggregator  # noqa isort:skip
+
+_str_to_agg = {
+    "+": agg.sum,
+    "*": agg.prod,
+    "&": agg.all,
+    "|": agg.any,
+}
+
+
+def aggregator_from_string(string):
+    return _from_string(string, agg, _str_to_agg, "sum[int]")
+
+
+agg.from_string = aggregator_from_string

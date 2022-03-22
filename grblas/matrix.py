@@ -734,7 +734,7 @@ class Matrix(BaseType):
         Default op is monoid.lor for boolean and monoid.plus otherwise
         """
         method_name = "reduce_rowwise"
-        op = get_typed_op(op, self.dtype, kind="binary")
+        op = get_typed_op(op, self.dtype, kind="binary|aggregator")
         self._expect_op(op, ("BinaryOp", "Monoid", "Aggregator"), within=method_name, argname="op")
         # Using a monoid may be more efficient, so change to one if possible.
         # Also, SuiteSparse doesn't like user-defined binarops here.
@@ -770,7 +770,7 @@ class Matrix(BaseType):
         Default op is monoid.lor for boolean and monoid.plus otherwise
         """
         method_name = "reduce_columnwise"
-        op = get_typed_op(op, self.dtype, kind="binary")
+        op = get_typed_op(op, self.dtype, kind="binary|aggregator")
         self._expect_op(op, ("BinaryOp", "Monoid", "Aggregator"), within=method_name, argname="op")
         # Using a monoid may be more efficient, so change to one if possible.
         # Also, SuiteSparse doesn't like user-defined binarops here.
@@ -809,7 +809,7 @@ class Matrix(BaseType):
         `allow_empty` is False or empty Scalar if `allow_empty` is True.
         """
         method_name = "reduce_scalar"
-        op = get_typed_op(op, self.dtype, kind="binary")
+        op = get_typed_op(op, self.dtype, kind="binary|aggregator")
         if op.opclass == "BinaryOp" and op.monoid is not None:
             op = op.monoid
         else:
