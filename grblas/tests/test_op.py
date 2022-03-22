@@ -103,6 +103,14 @@ def test_get_typed_op():
     assert operator.get_typed_op("+.*", dtypes.FP64, kind="semiring") is semiring.plus_times["FP64"]
     with pytest.raises(ValueError, match="Unable to get op from string"):
         operator.get_typed_op("+", dtypes.FP64)
+    assert (
+        operator.get_typed_op("+", dtypes.INT64, kind="binary|aggregator") is binary.plus["INT64"]
+    )
+    assert (
+        operator.get_typed_op("count", dtypes.INT64, kind="binary|aggregator") is agg.count["INT64"]
+    )
+    with pytest.raises(ValueError, match="Bad binary or aggregator"):
+        operator.get_typed_op("bad_op_name", dtypes.INT64, kind="binary|aggregator")
 
 
 def test_unaryop_udf():
@@ -937,6 +945,12 @@ def test_from_string():
     assert op.from_string("min.plus") is semiring.min_plus
     with pytest.raises(ValueError, match="Unknown op string"):
         op.from_string("min.plus.times")
+
+    assert agg.from_string("count") is agg.count
+    assert agg.from_string("|") is agg.any
+    assert agg.from_string("+[int]") is agg.sum[int]
+    with pytest.raises(ValueError, match="Unknown agg string"):
+        agg.from_string("bad_agg")
 
 
 def test_lazy_op():

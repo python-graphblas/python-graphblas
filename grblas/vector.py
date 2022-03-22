@@ -637,7 +637,7 @@ class Vector(BaseType):
         `allow_empty` is False or empty Scalar if `allow_empty` is True.
         """
         method_name = "reduce"
-        op = get_typed_op(op, self.dtype, kind="binary")
+        op = get_typed_op(op, self.dtype, kind="binary|aggregator")
         if op.opclass == "BinaryOp" and op.monoid is not None:
             op = op.monoid
         else:
