@@ -109,7 +109,7 @@ def test_get_typed_op():
     assert (
         operator.get_typed_op("count", dtypes.INT64, kind="binary|aggregator") is agg.count["INT64"]
     )
-    with pytest.raises(ValueError, match="Bad binary or aggregator"):
+    with pytest.raises(ValueError, match="Unknown binary or aggregator"):
         operator.get_typed_op("bad_op_name", dtypes.INT64, kind="binary|aggregator")
 
 
