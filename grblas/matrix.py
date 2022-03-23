@@ -330,6 +330,9 @@ class Matrix(BaseType):
         return rv
 
     def diag(self, k=0, dtype=None, *, name=None):
+        from .ss._core import diag
+
+        return diag(self, k=k, dtype=dtype, name=name)
         raise TypeError(
             "For `X.diag(...), `X` must be of Vector type."
             "To extract the diagonal of a Matrix `A`, use "

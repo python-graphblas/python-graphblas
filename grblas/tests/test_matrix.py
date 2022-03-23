@@ -2317,15 +2317,15 @@ def test_diag(A, params):
     v[:] = 0
     v.ss.diag(A, k=k)
     assert expected.isequal(v)
+    v = A.diag(k)
+    assert expected.isequal(v)
     v = grblas.ss.diag(A.T, k=-k)
     assert expected.isequal(v)
     v[:] = 0
     v.ss.diag(A.T, -k)
     assert expected.isequal(v)
-    with pytest.raises(TypeError, match="must be of Vector type."):
-        A.diag(k)
-    with pytest.raises(TypeError, match="must be of Vector type."):
-        A.T.diag(k)
+    v = A.T.diag(-k)
+    assert expected.isequal(v)
 
 
 def test_normalize_chunks():
