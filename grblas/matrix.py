@@ -333,13 +333,6 @@ class Matrix(BaseType):
         from .ss._core import diag
 
         return diag(self, k=k, dtype=dtype, name=name)
-        raise TypeError(
-            "For `X.diag(...), `X` must be of Vector type."
-            "To extract the diagonal of a Matrix `A`, use "
-            "`grblas.ss.diag(A, k, ...)` or "
-            "`u.ss.diag(A, k, ...)` where `u` is the output "
-            "Vector to contain the diagonal."
-        )
 
     def wait(self):
         """
