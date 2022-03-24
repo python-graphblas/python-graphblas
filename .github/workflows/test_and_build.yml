@@ -19,26 +19,26 @@ jobs:
       matrix:
         cfg:
           # Begin with fast, vanilla test
-          - { pyver: "3.10", os: "ubuntu-latest", testops: "", sourcetype: "conda-forge" }
+          - { pyver: "3.10", os: "ubuntu-latest", testopts: "", sourcetype: "conda-forge" }
           # Test ubuntu with conda-forge
-          - { pyver: "3.8", os: "ubuntu-latest", testops: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.9", os: "ubuntu-latest", testops: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.10", os: "ubuntu-latest", testops: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.8", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.9", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.10", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "conda-forge" }
           # Test macos with conda-forge
-          - { pyver: "3.8", os: "macos-latest", testops: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.9", os: "macos-latest", testops: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.10", os: "macos-latest", testops: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.8", os: "macos-latest", testopts: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.9", os: "macos-latest", testopts: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.10", os: "macos-latest", testopts: "--randomly", sourcetype: "conda-forge" }
           # Test windows with conda-forge
-          - { pyver: "3.8", os: "windows-latest", testops: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.9", os: "windows-latest", testops: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.10", os: "windows-latest", testops: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.8", os: "windows-latest", testopts: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.9", os: "windows-latest", testopts: "--randomly", sourcetype: "conda-forge" }
+          - { pyver: "3.10", os: "windows-latest", testopts: "--randomly", sourcetype: "conda-forge" }
           # Test ubuntu with alternative methods to install dependencies
-          - { pyver: "3.10", os: "ubuntu-latest", testops: "--randomly", sourcetype: "wheel" }
-          - { pyver: "3.10", os: "ubuntu-latest", testops: "--randomly", sourcetype: "source" }
-          - { pyver: "3.10", os: "ubuntu-latest", testops: "--randomly", sourcetype: "upstream" }
+          - { pyver: "3.10", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "wheel" }
+          - { pyver: "3.10", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "source" }
+          - { pyver: "3.10", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "upstream" }
           # Test misc
-          - { pyver: "3.8", os: "macos-latest", testops: "--randomly", sourcetype: "upstream" }
-          - { pyver: "3.9", os: "windows-latest", testops: "--randomly", sourcetype: "upstream" }
+          - { pyver: "3.8", os: "macos-latest", testopts: "--randomly", sourcetype: "upstream" }
+          - { pyver: "3.9", os: "windows-latest", testopts: "--randomly", sourcetype: "upstream" }
 
     steps:
       - name: Checkout
