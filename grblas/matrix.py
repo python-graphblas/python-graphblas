@@ -329,6 +329,11 @@ class Matrix(BaseType):
         rv._ncols = self._ncols
         return rv
 
+    def diag(self, k=0, dtype=None, *, name=None):
+        from .ss._core import diag
+
+        return diag(self, k=k, dtype=dtype, name=name)
+
     def wait(self):
         """
         GrB_Matrix_wait
@@ -1355,6 +1360,7 @@ class MatrixExpression(BaseExpression):
     _name_html = wrapdoc(Matrix._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Matrix._nvals)(property(_automethods._nvals))
     apply = wrapdoc(Matrix.apply)(property(_automethods.apply))
+    diag = wrapdoc(Matrix.diag)(property(_automethods.diag))
     ewise_add = wrapdoc(Matrix.ewise_add)(property(_automethods.ewise_add))
     ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
     ewise_union = wrapdoc(Matrix.ewise_union)(property(_automethods.ewise_union))
@@ -1434,6 +1440,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     _name_html = wrapdoc(Matrix._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Matrix._nvals)(property(_automethods._nvals))
     apply = wrapdoc(Matrix.apply)(property(_automethods.apply))
+    diag = wrapdoc(Matrix.diag)(property(_automethods.diag))
     ewise_add = wrapdoc(Matrix.ewise_add)(property(_automethods.ewise_add))
     ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
     ewise_union = wrapdoc(Matrix.ewise_union)(property(_automethods.ewise_union))
@@ -1577,6 +1584,7 @@ class TransposedMatrix:
     __ixor__ = _automethods.__ixor__
 
     # Misc.
+    diag = Matrix.diag
     isequal = Matrix.isequal
     isclose = Matrix.isclose
     wait = Matrix.wait

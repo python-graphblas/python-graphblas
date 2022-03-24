@@ -310,6 +310,15 @@ class Vector(BaseType):
         rv._size = self._size
         return rv
 
+    def diag(self, k=0, dtype=None, *, name=None):
+        """
+        GrB_diag
+        Create a Matrix whose kth diagonal is this Vector
+        """
+        from .ss._core import diag
+
+        return diag(self, k=k, dtype=dtype, name=name)
+
     def wait(self):
         """
         GrB_Vector_wait
@@ -953,6 +962,7 @@ class VectorExpression(BaseExpression):
     _name_html = wrapdoc(Vector._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Vector._nvals)(property(_automethods._nvals))
     apply = wrapdoc(Vector.apply)(property(_automethods.apply))
+    diag = wrapdoc(Vector.diag)(property(_automethods.diag))
     ewise_add = wrapdoc(Vector.ewise_add)(property(_automethods.ewise_add))
     ewise_mult = wrapdoc(Vector.ewise_mult)(property(_automethods.ewise_mult))
     ewise_union = wrapdoc(Vector.ewise_union)(property(_automethods.ewise_union))
@@ -1022,6 +1032,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     _name_html = wrapdoc(Vector._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Vector._nvals)(property(_automethods._nvals))
     apply = wrapdoc(Vector.apply)(property(_automethods.apply))
+    diag = wrapdoc(Vector.diag)(property(_automethods.diag))
     ewise_add = wrapdoc(Vector.ewise_add)(property(_automethods.ewise_add))
     ewise_mult = wrapdoc(Vector.ewise_mult)(property(_automethods.ewise_mult))
     ewise_union = wrapdoc(Vector.ewise_union)(property(_automethods.ewise_union))

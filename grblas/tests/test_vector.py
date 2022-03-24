@@ -1188,15 +1188,21 @@ def test_vector_index_with_scalar():
 def test_diag(v):
     indices, values = v.to_values()
     for k in range(-5, 5):
+        # Construct diagonal matrix A
         A = grblas.ss.diag(v, k=k)
         size = v.size + abs(k)
         rows = indices + max(0, -k)
         cols = indices + max(0, k)
         expected = Matrix.from_values(rows, cols, values, nrows=size, ncols=size, dtype=v.dtype)
         assert expected.isequal(A)
+        A = v.diag(k)
+        assert expected.isequal(A)
+
+        # Extract diagonal from A
         w = grblas.ss.diag(A, Scalar.from_value(k))
         assert v.isequal(w)
         assert w.dtype == "INT64"
+
         w = grblas.ss.diag(A.T, -k, dtype=float)
         assert v.isequal(w)
         assert w.dtype == "FP64"

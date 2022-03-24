@@ -154,6 +154,10 @@ def apply(self):
     return self._get_value("apply")
 
 
+def diag(self):
+    return self._get_value("diag")
+
+
 def ewise_add(self):
     return self._get_value("ewise_add")
 
@@ -349,6 +353,7 @@ if __name__ == "__main__":
         "__ror__",
         "_carg",
         "apply",
+        "diag",
         "ewise_add",
         "ewise_mult",
         "ewise_union",
