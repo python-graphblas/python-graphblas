@@ -7,8 +7,6 @@ from . import agg, binary, monoid, semiring, unary
 from .dtypes import lookup_dtype, unify
 from .operator import _normalize_type
 from .scalar import Scalar
-from .ss import diag
-from .vector import Vector
 
 
 def _get_types(ops, initdtype):
@@ -427,9 +425,7 @@ def _argminmaxij(
         if expr.method_name == "reduce_rowwise":
             step1 = A.reduce_rowwise(monoid).new()
 
-            # i, j = step1.to_values()
-            # D = Matrix.from_values(i, i, j, nrows=A._nrows, ncols=A._nrows)
-            D = diag(step1)
+            D = step1.diag()
 
             masked = semiring.any_eq(D @ A).new()
             masked(mask=masked.V, replace=True) << masked  # Could use select
@@ -441,9 +437,7 @@ def _argminmaxij(
         else:
             step1 = A.reduce_columnwise(monoid).new()
 
-            # i, j = step1.to_values()
-            # D = Matrix.from_values(i, i, j, nrows=A._ncols, ncols=A._ncols)
-            D = diag(step1)
+            D = step1.diag()
 
             masked = semiring.any_eq(A @ D).new()
             masked(mask=masked.V, replace=True) << masked  # Could use select
@@ -517,25 +511,21 @@ agg.argmax = Aggregator(
 )
 
 
-def _first_last(agg, updater, expr, *, in_composite, semiring):
+def _first_last(agg, updater, expr, *, in_composite, semiring_):
     if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
         A = expr.args[0]
         if expr.method_name == "reduce_columnwise":
             A = A.T
         init = expr._new_vector(bool, size=A._ncols)
         init[...] = False  # O(1) dense vector in SuiteSparse 5
-        step1 = semiring(A @ init).new()
+        step1 = semiring_(A @ init).new()
         Is, Js = step1.to_values()
-        # TODO: perform these loops in e.g. Cython
-        # Populate numpy array
-        vals = np.empty(Is.size, dtype=A.dtype.np_type)
-        for index, (i, j) in enumerate(zip(Is, Js)):
-            vals[index] = A[i, j].new().value
-        # or Vector
-        # v = expr._new_vector(A.dtype, size=A._nrows)
-        # for i, j in zip(Is, Js):
-        #     v[i] = A[i, j].new().value
-        result = Vector.from_values(Is, vals, size=A._nrows)
+
+        Matrix_ = type(expr._new_matrix(bool))
+        P = Matrix_.from_values(Js, Is, 1, nrows=A._ncols, ncols=A._nrows)
+        mask = Matrix_.from_values(Is, Is, True, nrows=A._nrows, ncols=A._nrows)
+        result = semiring.any_first(A @ P).new(mask=mask.S).diag()
+
         updater << result
         if in_composite:
             return updater.parent
@@ -543,9 +533,10 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
         v = expr.args[0]
         init = expr._new_matrix(bool, nrows=v._size, ncols=1)
         init[...] = False  # O(1) dense matrix in SuiteSparse 5
-        step1 = semiring(v @ init).new()
+        step1 = semiring_(v @ init).new()
         index = step1[0].new().value
-        if index is None:
+        # `==` instead of `is` automatically triggers index.compute() in dask-grblas:
+        if index == None:  # noqa
             index = 0
         if in_composite:
             return v[[index]].new()
@@ -554,12 +545,13 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
         A = expr.args[0]
         init1 = expr._new_matrix(bool, nrows=A._ncols, ncols=1)
         init1[...] = False  # O(1) dense matrix in SuiteSparse 5
-        step1 = semiring(A @ init1).new()
+        step1 = semiring_(A @ init1).new()
         init2 = expr._new_vector(bool, size=A._nrows)
         init2[...] = False  # O(1) dense vector in SuiteSparse 5
-        step2 = semiring(step1.T @ init2).new()
+        step2 = semiring_(step1.T @ init2).new()
         i = step2[0].new().value
-        if i is None:
+        # `==` instead of `is` automatically triggers i.compute() in dask-grblas:
+        if i == None:  # noqa
             i = j = 0
         else:
             j = step1[i, 0].new().value
@@ -570,12 +562,12 @@ def _first_last(agg, updater, expr, *, in_composite, semiring):
 
 agg.first = Aggregator(
     "first",
-    custom=partial(_first_last, semiring=semiring.min_secondi),
+    custom=partial(_first_last, semiring_=semiring.min_secondi),
     types=[binary.first],
 )
 agg.last = Aggregator(
     "last",
-    custom=partial(_first_last, semiring=semiring.max_secondi),
+    custom=partial(_first_last, semiring_=semiring.max_secondi),
     types=[binary.second],
 )
 
