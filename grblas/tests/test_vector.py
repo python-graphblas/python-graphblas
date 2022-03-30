@@ -1672,6 +1672,7 @@ def test_delete_via_scalar(v):
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "VectorUDT")
+    assert udt._is_anonymous
     v = Vector.new(udt, size=3)
     a = np.zeros(1, dtype=record_dtype)
     v[0] = a[0]
@@ -1713,10 +1714,13 @@ def test_udt():
     assert v[:].new().isequal(v)
     indices, values = v.to_values()
     assert v.isequal(Vector.from_values(indices, values))
-
-    # result = unary.positioni(v).new()
-    # expected = Vector.from_values([0, 1, 2], [0, 1, 2])
-    # assert result.isequal(expected)
+    result = unary.positioni(v).new()
+    expected = Vector.from_values([0, 1, 2], [0, 1, 2])
+    assert result.isequal(expected)
+    result = binary.firsti(v & v).new()
+    assert result.isequal(expected)
+    result = semiring.min_firsti(v @ v).new()
+    assert result == 0
 
     # assert v.reduce(agg.any_value).new() == s
     # assert v.reduce(agg.first).new() == s

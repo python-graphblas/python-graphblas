@@ -7,19 +7,19 @@ import grblas as gb
 
 
 def unarypickle(x):
-    return x + 1
+    return x + 1  # pragma: no cover
 
 
 def binarypickle(x, y):
-    return x + y
+    return x + y  # pragma: no cover
 
 
 def unaryanon(x):
-    return x + 2
+    return x + 2  # pragma: no cover
 
 
 def binaryanon(x, y):
-    return x + y
+    return x + y  # pragma: no cover
 
 
 @pytest.mark.slow
@@ -182,28 +182,28 @@ def check_values(d):
 
 def unarypickle_par(x):
     def inner(y):
-        return x + y
+        return x + y  # pragma: no cover
 
     return inner
 
 
 def binarypickle_par(z):
     def inner(x, y):
-        return x + y + z
+        return x + y + z  # pragma: no cover
 
     return inner
 
 
 def unaryanon_par(x):
     def inner(y):
-        return y + x
+        return y + x  # pragma: no cover
 
     return inner
 
 
 def binaryanon_par(z):
     def inner(x, y):
-        return x + y + z
+        return x + y + z  # pragma: no cover
 
     return inner
 

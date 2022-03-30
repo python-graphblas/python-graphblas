@@ -119,7 +119,7 @@ def test_get_typed_op():
 
 def test_unaryop_udf():
     def plus_one(x):
-        return x + 1
+        return x + 1  # pragma: no cover
 
     UnaryOp.register_new("plus_one", plus_one)
     assert hasattr(unary, "plus_one")
@@ -159,7 +159,7 @@ def test_unaryop_udf():
 def test_unaryop_parameterized():
     def plus_x(x=0):
         def inner(val):
-            return val + x
+            return val + x  # pragma: no cover
 
         return inner
 
@@ -183,7 +183,7 @@ def test_unaryop_parameterized():
 def test_binaryop_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
-            return left + right + x
+            return left + right + x  # pragma: no cover
 
         return inner
 
@@ -229,7 +229,7 @@ def test_binaryop_parameterized():
         BinaryOp.register_new("bad", lambda x, y: v)
 
     def my_add(x, y):
-        return x + y
+        return x + y  # pragma: no cover
 
     op = BinaryOp.register_anonymous(my_add)
     assert op.name == "my_add"
@@ -239,7 +239,7 @@ def test_binaryop_parameterized():
 def test_monoid_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
-            return left + right + x
+            return left + right + x  # pragma: no cover
 
         return inner
 
@@ -288,7 +288,7 @@ def test_monoid_parameterized():
     # identity may be a value
     def logaddexp(base):
         def inner(x, y):
-            return np.log(base**x + base**y) / np.log(base)
+            return np.log(base**x + base**y) / np.log(base)  # pragma: no cover
 
         return inner
 
@@ -305,7 +305,7 @@ def test_monoid_parameterized():
 
     def plus_times_x(x=0):
         def inner(left, right):
-            return (left + right) * x
+            return (left + right) * x  # pragma: no cover
 
         return inner
 
@@ -324,7 +324,7 @@ def test_monoid_parameterized():
 def test_semiring_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
-            return left + right + x
+            return left + right + x  # pragma: no cover
 
         return inner
 
@@ -424,7 +424,7 @@ def test_semiring_parameterized():
 
     def plus_x(x=0):
         def inner(y):
-            return x + y
+            return x + y  # pragma: no cover
 
         return inner
 
@@ -451,7 +451,7 @@ def test_semiring_parameterized():
 def test_unaryop_udf_bool_result():
     # numba has trouble compiling this, but we have a work-around
     def is_positive(x):
-        return x > 0
+        return x > 0  # pragma: no cover
 
     UnaryOp.register_new("is_positive", is_positive)
     assert hasattr(unary, "is_positive")
@@ -476,7 +476,7 @@ def test_unaryop_udf_bool_result():
 
 def test_binaryop_udf():
     def times_minus_sum(x, y):
-        return x * y - (x + y)
+        return x * y - (x + y)  # pragma: no cover
 
     BinaryOp.register_new("bin_test_func", times_minus_sum)
     assert hasattr(binary, "bin_test_func")
@@ -505,7 +505,7 @@ def test_binaryop_udf():
 
 def test_monoid_udf():
     def plus_plus_one(x, y):
-        return x + y + 1
+        return x + y + 1  # pragma: no cover
 
     BinaryOp.register_new("plus_plus_one", plus_plus_one)
     Monoid.register_new("plus_plus_one", binary.plus_plus_one, -1)
@@ -536,7 +536,7 @@ def test_monoid_udf():
 
 def test_semiring_udf():
     def plus_plus_two(x, y):
-        return x + y + 2
+        return x + y + 2  # pragma: no cover
 
     BinaryOp.register_new("plus_plus_two", plus_plus_two)
     Semiring.register_new("extra_twos", monoid.plus, binary.plus_plus_two)
@@ -569,7 +569,7 @@ def test_binary_updates():
 @pytest.mark.slow
 def test_nested_names():
     def plus_three(x):
-        return x + 3
+        return x + 3  # pragma: no cover
 
     UnaryOp.register_new("incrementers.plus_three", plus_three)
     assert hasattr(unary, "incrementers")
@@ -598,7 +598,7 @@ def test_nested_names():
     assert v.isequal(result), v
 
     def plus_four(x):
-        return x + 4
+        return x + 4  # pragma: no cover
 
     UnaryOp.register_new("incrementers.plus_four", plus_four)
     assert hasattr(unary.incrementers, "plus_four")
@@ -684,7 +684,10 @@ def test_binaryop_attributes():
     assert binary.numpy.add.monoid is monoid.numpy.add
     assert binary.numpy.subtract.monoid is None
 
-    op = BinaryOp.register_anonymous(lambda x, y: x + y, name="plus")
+    def plus(x, y):
+        return x + y  # pragma: no cover
+
+    op = BinaryOp.register_anonymous(plus, name="plus")
     assert op.monoid is None
     assert op[int].monoid is None
 
@@ -754,7 +757,10 @@ def test_semiring_attributes():
     assert semiring.numpy.add_subtract.monoid is monoid.numpy.add
     assert semiring.numpy.add_subtract.binaryop is binary.numpy.subtract
 
-    binop = BinaryOp.register_anonymous(lambda x, y: x + y, name="plus")
+    def plus(x, y):
+        return x + y  # pragma: no cover
+
+    binop = BinaryOp.register_anonymous(plus, name="plus")
     mymonoid = Monoid.register_anonymous(binop, 0, name="plus")
     op = Semiring.register_anonymous(mymonoid, binop, name="plus_plus")
     assert op.binaryop is binop
@@ -817,7 +823,7 @@ def test_get_semiring():
         get_semiring(binary.plus, monoid.times)
 
     def myplus(x, y):
-        return x + y
+        return x + y  # pragma: no cover
 
     binop = BinaryOp.register_anonymous(myplus, name="myplus")
     st = get_semiring(monoid.plus, binop)
@@ -959,10 +965,10 @@ def test_from_string():
 
 
 def test_lazy_op():
-    UnaryOp.register_new("lazy", lambda x: x, lazy=True)
+    UnaryOp.register_new("lazy", lambda x: x, lazy=True)  # pragma: no branch
     assert isinstance(op.lazy, UnaryOp)
     assert isinstance(unary.lazy, UnaryOp)
-    BinaryOp.register_new("lazy", lambda x, y: x + y, lazy=True)
+    BinaryOp.register_new("lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch
     Monoid.register_new("lazy", "lazy", 0, lazy=True)
     assert isinstance(monoid.lazy, Monoid)
     assert isinstance(binary.lazy, BinaryOp)
@@ -974,9 +980,9 @@ def test_lazy_op():
     Semiring.register_new("lazy_lazy", monoid.lazy, binary.lazy, lazy=True)
     assert isinstance(semiring.lazy_lazy, Semiring)
     # numpy
-    UnaryOp.register_new("numpy.lazy", lambda x: x, lazy=True)
+    UnaryOp.register_new("numpy.lazy", lambda x: x, lazy=True)  # pragma: no branch
     assert isinstance(unary.numpy.lazy, UnaryOp)
-    BinaryOp.register_new("numpy.lazy", lambda x, y: x + y, lazy=True)
+    BinaryOp.register_new("numpy.lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch
     Monoid.register_new("numpy.lazy", "numpy.lazy", 0, lazy=True)
     assert isinstance(monoid.numpy.lazy, Monoid)
     assert isinstance(binary.numpy.lazy, BinaryOp)
@@ -989,7 +995,7 @@ def test_lazy_op():
     Semiring.register_new("numpy.lazy_lazy", monoid.numpy.lazy, binary.numpy.lazy, lazy=True)
     assert isinstance(semiring.numpy.lazy_lazy, Semiring)
     # misc
-    UnaryOp.register_new("misc.lazy", lambda x: x, lazy=True)
+    UnaryOp.register_new("misc.lazy", lambda x: x, lazy=True)  # pragma: no branch
     assert isinstance(unary.misc.lazy, UnaryOp)
     with pytest.raises(AttributeError):
         unary.misc.bad
@@ -1024,13 +1030,14 @@ def test_positional():
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
     udt = dtypes.register_new("TestUDT", record_dtype)
+    assert not udt._is_anonymous
     v = Vector.new(udt, size=3)
     w = Vector.new(udt, size=3)
     v[:] = 0
     w[:] = 1
 
     def _udt_identity(val):
-        return val
+        return val  # pragma: no cover
 
     udt_identity = UnaryOp.register_new("udt_identity", _udt_identity, is_udt=True)
     assert udt in udt_identity
@@ -1039,7 +1046,7 @@ def test_udt():
     assert result.isequal(v)
 
     def _udt_getx(val):
-        return val["x"]
+        return val["x"]  # pragma: no cover
 
     udt_getx = UnaryOp.register_anonymous(_udt_getx, "udt_getx", is_udt=True)
     assert udt in udt_getx
@@ -1048,7 +1055,7 @@ def test_udt():
     assert result.isequal(expected)
 
     def _udt_first(x, y):
-        return x
+        return x  # pragma: no cover
 
     udt_first = BinaryOp.register_anonymous(_udt_first, "udt_first", is_udt=True)
     assert udt in udt_first

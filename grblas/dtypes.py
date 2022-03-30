@@ -24,11 +24,11 @@ class DataType:
 
     def __eq__(self, other):
         if type(other) is DataType:
-            return self.gb_obj is other.gb_obj
+            return self is other
         # Attempt to use `other` as a lookup key
         try:
             other = lookup_dtype(other)
-            return self.gb_obj is other.gb_obj
+            return self is other
         except ValueError:
             raise TypeError(f"Invalid or unknown datatype: {other}") from None
 
@@ -59,7 +59,7 @@ class DataType:
 
     @property
     def _is_anonymous(self):
-        return self.gb_obj in _registry
+        return globals().get(self.name) is not self
 
     @property
     def _is_udt(self):
@@ -98,8 +98,7 @@ def register_anonymous(dtype, name=None):
     numba_type = numba.typeof(dtype).dtype
 
     if dtype in _registry:
-        other = _registry[dtype]
-        gb_obj = other.gb_obj
+        gb_obj = _registry[dtype].gb_obj
     else:
         gb_obj = ffi.new("GrB_Type*")
         status = lib.GrB_Type_new(gb_obj, dtype.itemsize)

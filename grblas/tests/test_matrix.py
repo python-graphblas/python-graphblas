@@ -3175,9 +3175,7 @@ def test_udt():
     assert A.reduce_rowwise(monoid.any).new().isequal(expected)
     rows, cols, values = A.to_values()
     assert A.isequal(Matrix.from_values(rows, cols, values))
-
-    # result = unary.positioni(A).new()
-    # expected = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 0, 1, 1])
-    # assert result.isequal(expected)
-
+    result = unary.positioni(A).new()
+    expected = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 0, 1, 1])
+    assert result.isequal(expected)
     # agg: any_value, first, last, first_index, last_index, count

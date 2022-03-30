@@ -58,10 +58,10 @@ def test_npunary():
     for gb_input, np_input in data:
         for unary_name in sorted(npunary._unary_names):
             op = getattr(npunary, unary_name)
-            if gb_input.dtype.name not in op.types or unary_name in blocklist.get(
+            if gb_input.dtype not in op.types or unary_name in blocklist.get(
                 gb_input.dtype.name, ()
             ):
-                continue  # pragma: no cover
+                continue
             if gb_input.dtype.name.startswith("FC"):
                 # There are some nasty branch cuts as 1
                 gb_input = gb_input.dup()
@@ -137,7 +137,7 @@ def test_npbinary():
     for (gb_left, gb_right), (np_left, np_right) in data:
         for binary_name in sorted(npbinary._binary_names):
             op = getattr(npbinary, binary_name)
-            if gb_left.dtype.name not in op.types or binary_name in blocklist.get(
+            if gb_left.dtype not in op.types or binary_name in blocklist.get(
                 gb_left.dtype.name, ()
             ):
                 continue
@@ -221,10 +221,10 @@ def test_npmonoid():
         for binary_name in sorted(npmonoid._monoid_identities):
             op = getattr(npmonoid, binary_name)
             assert len(op.types) > 0, op.name
-            if gb_left.dtype.name not in op.types or binary_name in blocklist.get(
+            if gb_left.dtype not in op.types or binary_name in blocklist.get(
                 gb_left.dtype.name, ()
             ):
-                continue  # pragma: no cover
+                continue
             with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
                 gb_result = gb_left.ewise_mult(gb_right, op).new()
                 np_result = getattr(np, binary_name)(np_left, np_right)

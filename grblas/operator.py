@@ -103,6 +103,7 @@ def _udt_mask(dtype):
     if dtype in _udt_mask_cache:
         return _udt_mask_cache[dtype]
     if dtype.subdtype is not None:
+        1 / 0
         mask = _udt_mask(dtype.subdtype[0])
         N = reduce(mul, dtype.subdtype[1])
         rv = np.concatenate([mask] * N)
@@ -295,6 +296,7 @@ class TypedUserUnaryOp(TypedOpBase):
 
     @property
     def orig_func(self):
+        1 / 0
         return self.parent._func
 
     @property
@@ -614,11 +616,14 @@ class OpBase:
             type_ = lookup_dtype(type_)
             if type_ not in self._typed_ops:
                 if self._udt_types is None:
+                    if self.is_positional:
+                        return self._typed_ops[UINT64]
                     raise KeyError(f"{self.name} does not work with {type_}")
             else:
                 return self._typed_ops[type_]
         # This is a UDT or is able to operate on UDTs such as `first` any `any`
         if type(type_) is tuple:
+            1 / 0
             dtype1, dtype2 = type_
             dtype1 = lookup_dtype(dtype1)
             dtype2 = lookup_dtype(dtype2)
@@ -638,11 +643,12 @@ class OpBase:
     def __contains__(self, type_):
         if not self._is_udt:
             type_ = lookup_dtype(type_)
-            if type_ in self._typed_ops:
+            if type_ in self._typed_ops or self.is_positional:
                 return True
             elif self._udt_types is None:
                 return False
         if type(type_) is tuple:
+            1 / 0
             dtype1, dtype2 = type_
             dtype1 = lookup_dtype(dtype1)
             dtype2 = lookup_dtype(dtype2)
@@ -651,6 +657,7 @@ class OpBase:
         try:
             self._getitem_udt(dtype1, dtype2)
         except TypeError:
+            1 / 0
             return False
         else:
             return True
@@ -889,8 +896,11 @@ class UnaryOp(OpBase):
         try:
             numba_func.compile(sig)
         except numba.TypingError:
+            1 / 0
             raise TypeError("TODO")
         ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
+        if ret_type is not dtype and ret_type.gb_obj is dtype.gb_obj:
+            ret_type = dtype
 
         # Numba is unable to handle BOOL correctly right now, but we have a workaround
         # See: https://github.com/numba/numba/issues/5395
@@ -905,17 +915,17 @@ class UnaryOp(OpBase):
         )
         if ret_type == BOOL:
 
-            def unary_wrapper(z_ptr, x_ptr):
+            def unary_wrapper(z_ptr, x_ptr):  # pragma: no cover
                 z = numba.carray(z_ptr, 1)
                 x = numba.carray(x_ptr, 1)
-                z[0] = bool(numba_func(x[0]))  # pragma: no cover
+                z[0] = bool(numba_func(x[0]))
 
         else:
 
-            def unary_wrapper(z_ptr, x_ptr):
+            def unary_wrapper(z_ptr, x_ptr):  # pragma: no cover
                 z = numba.carray(z_ptr, 1)
                 x = numba.carray(x_ptr, 1)
-                z[0] = numba_func(x[0])  # pragma: no cover
+                z[0] = numba_func(x[0])
 
         unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
         new_unary = ffi_new("GrB_UnaryOp*")
@@ -1044,38 +1054,38 @@ class UnaryOp(OpBase):
 
 
 def _floordiv(x, y):
-    return x // y  # cast to integer
+    return x // y  # pragma: no cover
 
 
 def _rfloordiv(x, y):
-    return y // x  # cast to integer
+    return y // x  # pragma: no cover
 
 
 def _absfirst(x, y):
-    return np.abs(x)
+    return np.abs(x)  # pragma: no cover
 
 
 def _abssecond(x, y):
-    return np.abs(y)
+    return np.abs(y)  # pragma: no cover
 
 
 def _isclose(rel_tol=1e-7, abs_tol=0.0):
-    def inner(x, y):
+    def inner(x, y):  # pragma: no cover
         return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
 
     return inner
 
 
 def _first(x, y):
-    return x
+    return x  # pragma: no cover
 
 
 def _second(x, y):
-    return y
+    return y  # pragma: no cover
 
 
 def _pair(x, y):
-    return 1
+    return 1  # pragma: no cover
 
 
 class BinaryOp(OpBase):
@@ -1281,6 +1291,7 @@ class BinaryOp(OpBase):
 
     def _getitem_udt(self, dtype, dtype2):
         if dtype2 is None:
+            1 / 0
             dtype2 = dtype
         dtypes = (dtype, dtype2)
         if dtypes in self._udt_types:
@@ -1300,7 +1311,7 @@ class BinaryOp(OpBase):
             # PERF: we can probably make this faster
             if mask.all():
 
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
                     x = numba.carray(x_ptr, itemsize)
                     y = numba.carray(y_ptr, itemsize)
                     # for i in range(itemsize):
@@ -1313,7 +1324,7 @@ class BinaryOp(OpBase):
 
             else:
 
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
                     x = numba.carray(x_ptr, itemsize)
                     y = numba.carray(y_ptr, itemsize)
                     # for i in range(itemsize):
@@ -1337,7 +1348,7 @@ class BinaryOp(OpBase):
 
             if mask.all():
 
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
                     x = numba.carray(x_ptr, itemsize)
                     y = numba.carray(y_ptr, itemsize)
                     # for i in range(itemsize):
@@ -1350,7 +1361,7 @@ class BinaryOp(OpBase):
 
             else:
 
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
                     x = numba.carray(x_ptr, itemsize)
                     y = numba.carray(y_ptr, itemsize)
                     # for i in range(itemsize):
@@ -1367,8 +1378,17 @@ class BinaryOp(OpBase):
             try:
                 numba_func.compile(sig)
             except numba.TypingError:
+                1 / 0
                 raise TypeError("TODO")
             ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
+            if ret_type is not dtype and ret_type is not dtype2:
+                if ret_type.gb_obj is dtype.gb_obj:
+                    ret_type = dtype
+                elif ret_type.gb_obj is dtype2.gb_obj:
+                    ret_type = dtype2
+                    1 / 0
+                else:
+                    1 / 0
 
             # Numba is unable to handle BOOL correctly right now, but we have a workaround
             # See: https://github.com/numba/numba/issues/5395
@@ -1383,19 +1403,19 @@ class BinaryOp(OpBase):
             )
             if ret_type == "BOOL":
 
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
                     z = numba.carray(z_ptr, 1)
                     x = numba.carray(x_ptr, 1)
                     y = numba.carray(y_ptr, 1)
-                    z[0] = bool(numba_func(x[0], y[0]))  # pragma: no cover
+                    z[0] = bool(numba_func(x[0], y[0]))
 
             else:
 
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
                     z = numba.carray(z_ptr, 1)
                     x = numba.carray(x_ptr, 1)
                     y = numba.carray(y_ptr, 1)
-                    z[0] = numba_func(x[0], y[0])  # pragma: no cover
+                    z[0] = numba_func(x[0], y[0])
 
         binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
         new_binary = ffi_new("GrB_BinaryOp*")
@@ -1697,8 +1717,10 @@ class Monoid(OpBase):
 
     def _getitem_udt(self, dtype, dtype2):
         if dtype2 is None:
+            1 / 0
             dtype2 = dtype
         elif dtype != dtype2:
+            1 / 0
             raise TypeError("TODO")
         if dtype in self._udt_types:
             return self._udt_ops[dtype]
@@ -1918,6 +1940,7 @@ class Semiring(OpBase):
 
     def _getitem_udt(self, dtype, dtype2):
         if dtype2 is None:
+            1 / 0
             dtype2 = dtype
         dtypes = (dtype, dtype2)
         if dtypes in self._udt_types:
