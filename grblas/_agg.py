@@ -4,7 +4,7 @@ from operator import getitem
 import numpy as np
 
 from . import agg, binary, monoid, semiring, unary
-from .dtypes import INT64, lookup_dtype, unify
+from .dtypes import INT64, lookup_dtype
 from .operator import get_typed_op
 from .scalar import Scalar
 
@@ -14,8 +14,8 @@ def _get_types(ops, initdtype):
     if initdtype is None:
         prev = dict(ops[0].types)
     else:
-        initdtype = lookup_dtype(initdtype)
-        prev = {key: unify(lookup_dtype(val), initdtype) for key, val in ops[0].types.items()}
+        op = ops[0]
+        prev = {key: get_typed_op(op, key, initdtype).return_type for key in op.types}
     for op in ops[1:]:
         cur = {}
         types = op.types

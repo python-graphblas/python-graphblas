@@ -131,8 +131,8 @@ class TypedOpBase:
     def __init__(self, parent, name, type_, return_type, gb_obj, gb_name):
         self.parent = parent
         self.name = name
-        self.type = lookup_dtype(type_)
-        self.return_type = lookup_dtype(return_type)
+        self.type = type_
+        self.return_type = return_type
         self.gb_obj = gb_obj
         self.gb_name = gb_name
 
@@ -743,9 +743,9 @@ class OpBase:
                         gb_obj = getattr(lib, varname)
                         # Determine return type
                         if return_prefix == "BOOL":
-                            return_type = "BOOL"
+                            return_type = BOOL
                             if type_ is None:
-                                type_ = "BOOL"
+                                type_ = BOOL
                         else:
                             if type_ is None:  # pragma: no cover
                                 raise TypeError(f"Unable to determine return type for {varname}")
@@ -758,7 +758,12 @@ class OpBase:
                                     raise TypeError(f"Unexpected number of bits: {num_bits}")
                                 return_type = f"{return_prefix}{num_bits}"
                         builtin_op = cls._typed_class(
-                            obj, name, type_, return_type, gb_obj, gb_name
+                            obj,
+                            name,
+                            lookup_dtype(type_),
+                            lookup_dtype(return_type),
+                            gb_obj,
+                            gb_name,
                         )
                         obj._add(builtin_op)
 
@@ -816,7 +821,6 @@ class UnaryOp(OpBase):
         nt = numba.types
         if not is_udt:
             for type_, sample_val in _sample_values.items():
-                type_ = lookup_dtype(type_)
                 sig = (type_.numba_type,)
                 try:
                     unary_udf.compile(sig)
@@ -1213,7 +1217,6 @@ class BinaryOp(OpBase):
         nt = numba.types
         if not is_udt:
             for type_, sample_val in _sample_values.items():
-                type_ = lookup_dtype(type_)
                 sig = (type_.numba_type, type_.numba_type)
                 try:
                     binary_udf.compile(sig)
@@ -1686,10 +1689,9 @@ class Monoid(OpBase):
                 identities = dict.fromkeys(binaryop.types, identity)
                 explicit_identities = False
             else:
-                identities = identity
+                identities = {lookup_dtype(key): val for key, val in identity.items()}
                 explicit_identities = True
             for type_, identity in identities.items():
-                type_ = lookup_dtype(type_)
                 ret_type = binaryop[type_].return_type
                 # If there is a domain mismatch, then DomainMismatch will be raised
                 # below if identities were explicitly given.
@@ -1917,7 +1919,6 @@ class Semiring(OpBase):
                 or monoid.coercions.get(binary_out, binary_out) != binary_out
             ):
                 continue
-            binary_out = lookup_dtype(binary_out)
             new_semiring = ffi_new("GrB_Semiring*")
             check_status_carg(
                 lib.GrB_Semiring_new(new_semiring, monoid[binary_out].gb_obj, binary_func.gb_obj),

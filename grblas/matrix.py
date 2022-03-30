@@ -154,12 +154,12 @@ class Matrix(BaseType):
         if self._nvals != other._nvals:
             return False
         if check_dtype:
-            common_dtype = self.dtype
+            op = binary.eq[self.dtype]
         else:
-            common_dtype = unify(self.dtype, other.dtype)
+            op = get_typed_op(binary.eq, self.dtype, other.dtype, kind="binary")
 
         matches = Matrix.new(bool, self._nrows, self._ncols, name="M_isequal")
-        matches << self.ewise_mult(other, binary.eq[common_dtype])
+        matches << self.ewise_mult(other, op)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
             return False

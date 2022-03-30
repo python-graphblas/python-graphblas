@@ -163,12 +163,12 @@ class Vector(BaseType):
             return False
         if check_dtype:
             # dtypes are equivalent, so not need to unify
-            common_dtype = self.dtype
+            op = binary.eq[self.dtype]
         else:
-            common_dtype = unify(self.dtype, other.dtype)
+            op = get_typed_op(binary.eq, self.dtype, other.dtype, kind="binary")
 
         matches = Vector.new(bool, self._size, name="v_isequal")
-        matches << self.ewise_mult(other, binary.eq[common_dtype])
+        matches << self.ewise_mult(other, op)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
             return False

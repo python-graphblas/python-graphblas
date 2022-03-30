@@ -155,23 +155,23 @@ if _supports_complex and hasattr(lib, "GrB_FC64"):  # pragma: no coverage
 
 # Used for testing user-defined functions
 _sample_values = {
-    INT8.name: np.int8(1),
-    UINT8.name: np.uint8(1),
-    INT16.name: np.int16(1),
-    UINT16.name: np.uint16(1),
-    INT32.name: np.int32(1),
-    UINT32.name: np.uint32(1),
-    INT64.name: np.int64(1),
-    UINT64.name: np.uint64(1),
-    FP32.name: np.float32(0.5),
-    FP64.name: np.float64(0.5),
-    BOOL.name: np.bool_(True),
+    INT8: np.int8(1),
+    UINT8: np.uint8(1),
+    INT16: np.int16(1),
+    UINT16: np.uint16(1),
+    INT32: np.int32(1),
+    UINT32: np.uint32(1),
+    INT64: np.int64(1),
+    UINT64: np.uint64(1),
+    FP32: np.float32(0.5),
+    FP64: np.float64(0.5),
+    BOOL: np.bool_(True),
 }
 if _supports_complex:
     _sample_values.update(
         {
-            FC32.name: np.complex64(complex(0, 0.5)),
-            FC64.name: np.complex128(complex(0, 0.5)),
+            FC32: np.complex64(complex(0, 0.5)),
+            FC64: np.complex128(complex(0, 0.5)),
         }
     )
 
@@ -203,7 +203,7 @@ for dtype in _dtypes_to_register:
     _registry[dtype.c_type.upper()] = dtype
     _registry[dtype.numba_type] = dtype
     _registry[dtype.numba_type.name] = dtype
-    val = _sample_values[dtype.name]
+    val = _sample_values[dtype]
     _registry[val.dtype] = dtype
     _registry[val.dtype.name] = dtype
 # Upcast numpy float16 to float32
