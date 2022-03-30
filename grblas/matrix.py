@@ -690,7 +690,11 @@ class Matrix(BaseType):
                     extra_message=extra_message,
                 )
             if left._is_cscalar:
-                dtype_name = "UDT" if left.dtype._is_udt else left.dtype.name
+                if left.dtype._is_udt:
+                    dtype_name = "UDT"
+                    left = _Pointer(left)
+                else:
+                    dtype_name = left.dtype.name
                 cfunc_name = f"GrB_Matrix_apply_BinaryOp1st_{dtype_name}"
             else:
                 cfunc_name = "GrB_Matrix_apply_BinaryOp1st_Scalar"
@@ -700,7 +704,7 @@ class Matrix(BaseType):
             if type(right) is not Scalar:
                 dtype = self.dtype if self.dtype._is_udt else None
                 try:
-                    right = Scalar.from_value(right, is_cscalar=None, name="")
+                    right = Scalar.from_value(right, dtype, is_cscalar=None, name="")
                 except TypeError:
                     right = self._expect_type(
                         right,
@@ -722,7 +726,11 @@ class Matrix(BaseType):
                     extra_message=extra_message,
                 )
             if right._is_cscalar:
-                dtype_name = "UDT" if right.dtype._is_udt else right.dtype.name
+                if right.dtype._is_udt:
+                    dtype_name = "UDT"
+                    right = _Pointer(right)
+                else:
+                    dtype_name = right.dtype.name
                 cfunc_name = f"GrB_Matrix_apply_BinaryOp2nd_{dtype_name}"
             else:
                 cfunc_name = "GrB_Matrix_apply_BinaryOp2nd_Scalar"

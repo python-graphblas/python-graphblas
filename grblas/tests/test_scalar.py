@@ -258,7 +258,7 @@ def test_neg():
     ):
         s = Scalar.from_value(1, dtype=dtype)
         empty = Scalar.new(dtype)
-        if dtype.name == "BOOL" or dtype.name.startswith("U"):
+        if dtype.name == "BOOL" or dtype.name.startswith("U") or dtype._is_udt:
             with pytest.raises(TypeError, match="The negative operator, `-`, is not supported"):
                 -s
             with pytest.raises(TypeError, match="The negative operator, `-`, is not supported"):

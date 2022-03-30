@@ -5,7 +5,6 @@ import numpy as np
 
 from . import agg, binary, monoid, semiring, unary
 from .dtypes import lookup_dtype, unify
-from .operator import _normalize_type
 from .scalar import Scalar
 
 
@@ -15,7 +14,7 @@ def _get_types(ops, initdtype):
         prev = dict(ops[0].types)
     else:
         initdtype = lookup_dtype(initdtype)
-        prev = {key: unify(lookup_dtype(val), initdtype).name for key, val in ops[0].types.items()}
+        prev = {key: unify(lookup_dtype(val), initdtype) for key, val in ops[0].types.items()}
     for op in ops[1:]:
         cur = {}
         types = op.types
@@ -47,7 +46,7 @@ class Aggregator:
         self.name = name
         self._initval_orig = initval
         self._initval = False if initval is None else initval
-        self._initdtype = lookup_dtype(type(self._initval))
+        self._initdtype = lookup_dtype(type(self._initval), self._initval)
         self._monoid = monoid
         self._semiring = semiring
         self._semiring2 = semiring2
@@ -82,7 +81,7 @@ class Aggregator:
         return self._types
 
     def __getitem__(self, dtype):
-        dtype = _normalize_type(dtype)
+        dtype = lookup_dtype(dtype)
         if dtype not in self.types:
             raise KeyError(f"{self.name} does not work with {dtype}")
         if dtype not in self._typed_ops:
@@ -90,7 +89,7 @@ class Aggregator:
         return self._typed_ops[dtype]
 
     def __contains__(self, dtype):
-        dtype = _normalize_type(dtype)
+        dtype = lookup_dtype(dtype)
         return dtype in self.types
 
     def __repr__(self):

@@ -24,14 +24,27 @@ class DataType:
 
     def __eq__(self, other):
         if type(other) is DataType:
-            return self.np_type == other.np_type
-        else:
-            # Attempt to use `other` as a lookup key
-            try:
-                other = lookup_dtype(other)
-                return self.np_type == other.np_type
-            except ValueError:
-                raise TypeError(f"Invalid or unknown datatype: {other}") from None
+            return self.gb_obj is other.gb_obj
+        # Attempt to use `other` as a lookup key
+        try:
+            other = lookup_dtype(other)
+            return self.gb_obj is other.gb_obj
+        except ValueError:
+            raise TypeError(f"Invalid or unknown datatype: {other}") from None
+
+    def __hash__(self):
+        return hash(self.gb_obj)
+
+    def __lt__(self, other):
+        # Let us sort for prettier error reporting
+        if type(other) is DataType:
+            return str(self.np_type) < str(other.np_type)
+        # Attempt to use `other` as a lookup key
+        try:
+            other = lookup_dtype(other)
+            return str(self.np_type) < str(other.np_type)
+        except ValueError:
+            raise TypeError(f"Invalid or unknown datatype: {other}") from None
 
     def __reduce__(self):
         if self._is_udt:
@@ -68,10 +81,6 @@ def register_new(name, dtype):
         raise ValueError(f"{name!r} name for dtype is unavailable")
     rv = register_anonymous(dtype, name)
     _registry[name] = rv
-    _registry[dtype] = rv
-    _registry[rv.gb_obj] = rv
-    _registry[rv.numba_type] = rv
-    _registry[rv.numba_type.name] = rv
     globals()[name] = rv
     return rv
 
@@ -87,12 +96,23 @@ def register_anonymous(dtype, name=None):
     if name is None:
         name = repr(dtype)
     numba_type = numba.typeof(dtype).dtype
-    gb_obj = ffi.new("GrB_Type*")
-    status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
-    check_status_carg(status, "Type", gb_obj[0])
+
+    if dtype in _registry:
+        other = _registry[dtype]
+        gb_obj = other.gb_obj
+    else:
+        gb_obj = ffi.new("GrB_Type*")
+        status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
+        check_status_carg(status, "Type", gb_obj[0])
     # For now, let's use "opaque" unsigned bytes for the c type.
     # grb_name probably isn't useful, right?
-    return DataType(name, gb_obj, None, f"uint8_t[{dtype.itemsize}]", numba_type, dtype)
+    rv = DataType(name, gb_obj, None, f"uint8_t[{dtype.itemsize}]", numba_type, dtype)
+    if dtype not in _registry:
+        _registry[gb_obj] = rv
+        _registry[dtype] = rv
+        _registry[numba_type] = rv
+        _registry[numba_type.name] = rv
+    return rv
 
 
 BOOL = DataType("BOOL", lib.GrB_BOOL, "GrB_BOOL", "_Bool", numba.types.bool_, np.bool_)

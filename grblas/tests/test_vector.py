@@ -1667,3 +1667,60 @@ def test_delete_via_scalar(v):
     assert v.isequal(Vector.from_values([4, 6], [2, 0]))
     del v[:]
     assert v.nvals == 0
+
+
+def test_udt():
+    record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
+    udt = dtypes.register_anonymous(record_dtype, "VectorUDT")
+    v = Vector.new(udt, size=3)
+    a = np.zeros(1, dtype=record_dtype)
+    v[0] = a[0]
+    expected = Vector.from_values([0], a, size=3, dtype=udt)
+    assert v.isequal(expected)
+    v[1] = (1, 2)
+    expected = Vector.from_values(
+        [0, 1], np.array([(0, 0), (1, 2)], dtype=record_dtype), size=3, dtype=udt
+    )
+    assert v.isequal(expected)
+    v[:] = 0
+    zeros = Vector.from_values([0, 1, 2], np.zeros(3, dtype=record_dtype), dtype=udt)
+    assert v.isequal(zeros)
+    v(v.S)[:] = 1
+    ones = Vector.from_values([0, 1, 2], np.ones(3, dtype=record_dtype), dtype=udt)
+    assert v.isequal(ones)
+    v[:](v.S) << 0
+    assert v.isequal(zeros)
+    s = Scalar.new(udt)
+    s.value = (1, 1)
+    v(v.S)[:] << s
+    assert v.isequal(ones)
+    s.value = 0
+    v[:](v.S) << s
+    assert v.isequal(zeros)
+    t = v.reduce(monoid.any, allow_empty=True).new()
+    assert s == t
+    t = v.reduce(monoid.any, allow_empty=False).new()
+    assert s == t
+    v << binary.first(1, v)
+    assert v.isequal(ones)
+    v << binary.first(s, v)
+    assert v.isequal(zeros)
+    v << binary.second(v, (1, 1))
+    assert v.isequal(ones)
+    v << binary.second(v, s)
+    assert v.isequal(zeros)
+    assert v[0].new() == s
+    assert v[:].new().isequal(v)
+    indices, values = v.to_values()
+    assert v.isequal(Vector.from_values(indices, values))
+
+    # result = unary.positioni(v).new()
+    # expected = Vector.from_values([0, 1, 2], [0, 1, 2])
+    # assert result.isequal(expected)
+
+    # assert v.reduce(agg.any_value).new() == s
+    # assert v.reduce(agg.first).new() == s
+    # assert v.reduce(agg.last).new() == s
+    # assert v.reduce(agg.first_index).new() == 0
+    # assert v.reduce(agg.last_index).new() == 2
+    # assert v.reduce(agg.count).new() == 3

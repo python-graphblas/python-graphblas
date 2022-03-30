@@ -90,7 +90,7 @@ class Scalar(BaseType):
 
     def __neg__(self):
         dtype = self.dtype
-        if dtype.name[0] == "U" or dtype == BOOL:
+        if dtype.name[0] == "U" or dtype == BOOL or dtype._is_udt:
             raise TypeError(f"The negative operator, `-`, is not supported for {dtype.name} dtype")
         rv = Scalar.new(dtype, is_cscalar=self._is_cscalar, name=f"-{self.name or 's_temp'}")
         if self._is_empty:
@@ -138,7 +138,8 @@ class Scalar(BaseType):
             if other is None:
                 return self._is_empty
             try:
-                other = Scalar.from_value(other, is_cscalar=None, name="s_isequal")
+                dtype = self.dtype if self.dtype._is_udt else None
+                other = Scalar.from_value(other, dtype, is_cscalar=None, name="s_isequal")
             except TypeError:
                 other = self._expect_type(
                     other,

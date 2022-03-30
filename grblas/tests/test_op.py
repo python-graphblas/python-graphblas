@@ -5,8 +5,12 @@ import pytest
 
 import grblas as gb
 from grblas import agg, binary, dtypes, lib, monoid, op, operator, semiring, unary
+from grblas.dtypes import BOOL, FP32, FP64, INT8, INT16, INT32, INT64, UINT8, UINT16, UINT32, UINT64
 from grblas.exceptions import DomainMismatch, UdfParseError
 from grblas.operator import BinaryOp, Monoid, Semiring, UnaryOp, get_semiring
+
+if dtypes._supports_complex:
+    from grblas.dtypes import FC32, FC64
 
 from grblas import Matrix, Vector  # isort:skip
 
@@ -32,15 +36,15 @@ def test_op_repr():
 def test_unaryop():
     assert unary.ainv["INT32"].gb_obj == lib.GrB_AINV_INT32
     assert unary.ainv[dtypes.UINT16].gb_obj == lib.GrB_AINV_UINT16
-    assert orig_types(unary.positioni) == {"INT32", "INT64"}
-    assert orig_types(unary.positionj1) == {"INT32", "INT64"}
+    assert orig_types(unary.positioni) == {INT32, INT64}
+    assert orig_types(unary.positionj1) == {INT32, INT64}
 
 
 def test_binaryop():
     assert binary.plus["INT32"].gb_obj == lib.GrB_PLUS_INT32
     assert binary.plus[dtypes.UINT16].gb_obj == lib.GrB_PLUS_UINT16
-    assert orig_types(binary.firsti) == {"INT32", "INT64"}
-    assert orig_types(binary.secondj1) == {"INT32", "INT64"}
+    assert orig_types(binary.firsti) == {INT32, INT64}
+    assert orig_types(binary.secondj1) == {INT32, INT64}
 
 
 def test_monoid():
@@ -51,14 +55,14 @@ def test_monoid():
 def test_semiring():
     assert semiring.min_plus["INT32"].gb_obj == lib.GrB_MIN_PLUS_SEMIRING_INT32
     assert semiring.min_plus[dtypes.UINT16].gb_obj == lib.GrB_MIN_PLUS_SEMIRING_UINT16
-    assert orig_types(semiring.min_firsti) == {"INT32", "INT64"}
+    assert orig_types(semiring.min_firsti) == {INT32, INT64}
 
 
 def test_agg():
     assert repr(agg.count) == "agg.count"
     assert repr(agg.count["INT32"]) == "agg.count[INT32]"
     assert "INT64" in agg.sum_of_inverses
-    assert agg.sum_of_inverses["INT64"].return_type == "FP64"
+    assert agg.sum_of_inverses["INT64"].return_type == FP64
     assert "BOOL" not in agg.sum_of_inverses
     with pytest.raises(KeyError, match="BOOL"):
         agg.sum_of_inverses["BOOL"]
@@ -120,30 +124,30 @@ def test_unaryop_udf():
     UnaryOp.register_new("plus_one", plus_one)
     assert hasattr(unary, "plus_one")
     comp_set = {
-        "INT8",
-        "INT16",
-        "INT32",
-        "INT64",
-        "UINT8",
-        "UINT16",
-        "UINT32",
-        "UINT64",
-        "FP32",
-        "FP64",
-        "BOOL",
+        INT8,
+        INT16,
+        INT32,
+        INT64,
+        UINT8,
+        UINT16,
+        UINT32,
+        UINT64,
+        FP32,
+        FP64,
+        BOOL,
     }
     if dtypes._supports_complex:
-        comp_set.update({"FC32", "FC64"})
+        comp_set.update({FC32, FC64})
     assert set(unary.plus_one.types) == comp_set
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.plus_one)
     result = Vector.from_values([0, 1, 3], [2, 3, -3], dtype=dtypes.INT32)
     assert v.isequal(result)
     assert "INT8" in unary.plus_one
-    assert "INT8" in unary.plus_one.types
+    assert INT8 in unary.plus_one.types
     del unary.plus_one["INT8"]
     assert "INT8" not in unary.plus_one
-    assert "INT8" not in unary.plus_one.types
+    assert INT8 not in unary.plus_one.types
     with pytest.raises(TypeError, match="UDF argument must be a function"):
         UnaryOp.register_new("bad", object())
     assert not hasattr(unary, "bad")
@@ -452,17 +456,17 @@ def test_unaryop_udf_bool_result():
     UnaryOp.register_new("is_positive", is_positive)
     assert hasattr(unary, "is_positive")
     assert set(unary.is_positive.types) == {
-        "INT8",
-        "INT16",
-        "INT32",
-        "INT64",
-        "UINT8",
-        "UINT16",
-        "UINT32",
-        "UINT64",
-        "FP32",
-        "FP64",
-        "BOOL",
+        INT8,
+        INT16,
+        INT32,
+        INT64,
+        UINT8,
+        UINT16,
+        UINT32,
+        UINT64,
+        FP32,
+        FP64,
+        BOOL,
     }
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     w = v.apply(unary.is_positive).new()
@@ -477,20 +481,20 @@ def test_binaryop_udf():
     BinaryOp.register_new("bin_test_func", times_minus_sum)
     assert hasattr(binary, "bin_test_func")
     comp_set = {
-        "BOOL",  # goes to INT64
-        "INT8",
-        "INT16",
-        "INT32",
-        "INT64",
-        "UINT8",
-        "UINT16",
-        "UINT32",
-        "UINT64",
-        "FP32",
-        "FP64",
+        BOOL,  # goes to INT64
+        INT8,
+        INT16,
+        INT32,
+        INT64,
+        UINT8,
+        UINT16,
+        UINT32,
+        UINT64,
+        FP32,
+        FP64,
     }
     if dtypes._supports_complex:
-        comp_set.update({"FC32", "FC64"})
+        comp_set.update({FC32, FC64})
     assert set(binary.bin_test_func.types) == comp_set
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
@@ -507,16 +511,16 @@ def test_monoid_udf():
     Monoid.register_new("plus_plus_one", binary.plus_plus_one, -1)
     assert hasattr(monoid, "plus_plus_one")
     assert set(monoid.plus_plus_one.types) == {
-        "INT8",
-        "INT16",
-        "INT32",
-        "INT64",
-        "UINT8",
-        "UINT16",
-        "UINT32",
-        "UINT64",
-        "FP32",
-        "FP64",
+        INT8,
+        INT16,
+        INT32,
+        INT64,
+        UINT8,
+        UINT16,
+        UINT32,
+        UINT64,
+        FP32,
+        FP64,
     }
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
@@ -572,20 +576,20 @@ def test_nested_names():
     assert type(unary.incrementers) is operator.OpPath
     assert hasattr(unary.incrementers, "plus_three")
     comp_set = {
-        "INT8",
-        "INT16",
-        "INT32",
-        "INT64",
-        "UINT8",
-        "UINT16",
-        "UINT32",
-        "UINT64",
-        "FP32",
-        "FP64",
-        "BOOL",
+        INT8,
+        INT16,
+        INT32,
+        INT64,
+        UINT8,
+        UINT16,
+        UINT32,
+        UINT64,
+        FP32,
+        FP64,
+        BOOL,
     }
     if dtypes._supports_complex:
-        comp_set.update({"FC32", "FC64"})
+        comp_set.update({FC32, FC64})
     assert set(unary.incrementers.plus_three.types) == comp_set
 
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
@@ -1015,3 +1019,46 @@ def test_positional():
     assert semiring.any_secondj[int].is_positional
     assert not semiring.any_first.is_positional
     assert not semiring.any_second[int].is_positional
+
+
+def test_udt():
+    record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
+    udt = dtypes.register_new("TestUDT", record_dtype)
+    v = Vector.new(udt, size=3)
+    w = Vector.new(udt, size=3)
+    v[:] = 0
+    w[:] = 1
+
+    def _udt_identity(val):
+        return val
+
+    udt_identity = UnaryOp.register_new("udt_identity", _udt_identity, is_udt=True)
+    assert udt in udt_identity
+    assert udt in binary.eq
+    result = v.apply(udt_identity).new()
+    assert result.isequal(v)
+
+    def _udt_getx(val):
+        return val["x"]
+
+    udt_getx = UnaryOp.register_anonymous(_udt_getx, "udt_getx", is_udt=True)
+    assert udt in udt_getx
+    result = v.apply(udt_getx).new()
+    expected = Vector.from_values([0, 1, 2], 0)
+    assert result.isequal(expected)
+
+    def _udt_first(x, y):
+        return x
+
+    udt_first = BinaryOp.register_anonymous(_udt_first, "udt_first", is_udt=True)
+    assert udt in udt_first
+    assert udt_first(v & w).new().isequal(v)
+    assert udt_first(v, 1).new().isequal(v)
+
+    udt_any = Monoid.register_new("udt_any", udt_first, (0, 0))
+    assert udt in udt_any
+    assert udt_any(v | w).new().isequal(v)
+
+    udt_semiring = Semiring.register_new("udt_semiring", udt_any, udt_first)
+    assert udt in udt_semiring
+    assert udt_semiring(v @ v).new() == (0, 0)

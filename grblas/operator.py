@@ -2,18 +2,37 @@ import inspect
 import itertools
 import re
 from collections.abc import Mapping
-from functools import lru_cache
-from operator import getitem
+from functools import lru_cache, reduce
+from operator import getitem, mul
 from types import FunctionType, ModuleType
 
 import numba
 import numpy as np
 
 from . import config, ffi, lib
-from .dtypes import BOOL, INT8, UINT8, _sample_values, _supports_complex, lookup_dtype, unify
+from .dtypes import (
+    BOOL,
+    FP32,
+    FP64,
+    INT8,
+    INT16,
+    INT32,
+    INT64,
+    UINT8,
+    UINT16,
+    UINT32,
+    UINT64,
+    _sample_values,
+    _supports_complex,
+    lookup_dtype,
+    unify,
+)
 from .exceptions import UdfParseError, check_status_carg
 from .expr import InfixExprBase
 from .utils import libget, output_type
+
+if _supports_complex:
+    from .dtypes import FC32, FC64
 
 _STANDARD_OPERATOR_NAMES = set()
 
@@ -21,10 +40,6 @@ from . import binary, monoid, op, semiring, unary  # noqa isort:skip
 
 ffi_new = ffi.new
 UNKNOWN_OPCLASS = "UnknownOpClass"
-
-
-def _normalize_type(type_):
-    return lookup_dtype(type_).name
 
 
 def _hasop(module, name):
@@ -80,14 +95,43 @@ def _call_op(op, left, right=None, **kwargs):
     )
 
 
+_udt_mask_cache = {}
+
+
+def _udt_mask(dtype):
+    """Create mask to determine which bytes of UDTs to use for equality check"""
+    if dtype in _udt_mask_cache:
+        return _udt_mask_cache[dtype]
+    if dtype.subdtype is not None:
+        mask = _udt_mask(dtype.subdtype[0])
+        N = reduce(mul, dtype.subdtype[1])
+        rv = np.concatenate([mask] * N)
+    elif dtype.names is not None:
+        prev_offset = mask = None
+        masks = []
+        for name in dtype.names:
+            dtype2, offset = dtype.fields[name]
+            if mask is not None:
+                masks.append(np.pad(mask, (0, offset - prev_offset - mask.size)))
+            mask = _udt_mask(dtype2)
+            prev_offset = offset
+        masks.append(np.pad(mask, (0, dtype.itemsize - prev_offset - mask.size)))
+        rv = np.concatenate(masks)
+    else:
+        rv = np.ones(dtype.itemsize, dtype=bool)
+    # assert rv.size == dtype.itemsize, (rv.size, dtype.itemsize)
+    _udt_mask_cache[dtype] = rv
+    return rv
+
+
 class TypedOpBase:
     __slots__ = "parent", "name", "type", "return_type", "gb_obj", "gb_name", "__weakref__"
 
     def __init__(self, parent, name, type_, return_type, gb_obj, gb_name):
         self.parent = parent
         self.name = name
-        self.type = _normalize_type(type_)
-        self.return_type = _normalize_type(return_type)
+        self.type = lookup_dtype(type_)
+        self.return_type = lookup_dtype(return_type)
         self.gb_obj = gb_obj
         self.gb_name = gb_name
 
@@ -567,7 +611,7 @@ class OpBase:
 
     def __getitem__(self, type_):
         if not self._is_udt:
-            type_ = _normalize_type(type_)
+            type_ = lookup_dtype(type_)
             if type_ not in self._typed_ops:
                 if self._udt_types is None:
                     raise KeyError(f"{self.name} does not work with {type_}")
@@ -587,13 +631,13 @@ class OpBase:
         self.types[op.type] = op.return_type
 
     def __delitem__(self, type_):
-        type_ = _normalize_type(type_)
+        type_ = lookup_dtype(type_)
         del self._typed_ops[type_]
         del self.types[type_]
 
     def __contains__(self, type_):
         if not self._is_udt:
-            type_ = _normalize_type(type_)
+            type_ = lookup_dtype(type_)
             if type_ in self._typed_ops:
                 return True
             elif self._udt_types is None:
@@ -776,24 +820,20 @@ class UnaryOp(OpBase):
                     ("INT" in ret_type.name and "INT" in type_.name)
                     or ("FP" in ret_type.name and "FP" in type_.name)
                     or ("FC" in ret_type.name and "FC" in type_.name)
-                    or (
-                        type_ == "UINT64"
-                        and ret_type == "FP64"
-                        and return_types.get("INT64") == "INT64"
-                    )
+                    or (type_ == UINT64 and ret_type == FP64 and return_types.get(INT64) == INT64)
                 ):
                     # Downcast `ret_type` to `type_`.
                     # This is what users want most of the time, but we can't make a perfect rule.
                     # There should be a way for users to be explicit.
                     ret_type = type_
-                elif type_ == "BOOL" and ret_type == "INT64" and return_types.get("INT8") == "INT8":
+                elif type_ == BOOL and ret_type == INT64 and return_types.get(INT8) == INT8:
                     ret_type = INT8
 
                 # Numba is unable to handle BOOL correctly right now, but we have a workaround
                 # See: https://github.com/numba/numba/issues/5395
                 # We're relying on coercion behaving correctly here
-                input_type = INT8 if type_ == "BOOL" else type_
-                return_type = INT8 if ret_type == "BOOL" else ret_type
+                input_type = INT8 if type_ == BOOL else type_
+                return_type = INT8 if ret_type == BOOL else ret_type
 
                 # Build wrapper because GraphBLAS wants pointers and void return
                 wrapper_sig = nt.void(
@@ -801,8 +841,8 @@ class UnaryOp(OpBase):
                     nt.CPointer(input_type.numba_type),
                 )
 
-                if type_ == "BOOL":
-                    if ret_type == "BOOL":
+                if type_ == BOOL:
+                    if ret_type == BOOL:
 
                         def unary_wrapper(z, x):
                             z[0] = bool(unary_udf(bool(x[0])))  # pragma: no cover
@@ -812,7 +852,7 @@ class UnaryOp(OpBase):
                         def unary_wrapper(z, x):
                             z[0] = unary_udf(bool(x[0]))  # pragma: no cover
 
-                elif ret_type == "BOOL":
+                elif ret_type == BOOL:
 
                     def unary_wrapper(z, x):
                         z[0] = bool(unary_udf(x[0]))  # pragma: no cover
@@ -831,19 +871,18 @@ class UnaryOp(OpBase):
                     "UnaryOp",
                     new_unary,
                 )
-                op = TypedUserUnaryOp(new_type_obj, name, type_.name, ret_type.name, new_unary[0])
+                op = TypedUserUnaryOp(new_type_obj, name, type_, ret_type, new_unary[0])
                 new_type_obj._add(op)
                 success = True
-                return_types[type_.name] = ret_type.name
+                return_types[type_] = ret_type
         if success or is_udt:
             return new_type_obj
         else:
             raise UdfParseError("Unable to parse function using Numba")
 
     def _getitem_udt(self, dtype, dtype2):
-        np_type = dtype.np_type
-        if np_type in self._udt_types:
-            return self._udt_ops[np_type]
+        if dtype in self._udt_types:
+            return self._udt_ops[dtype]
 
         numba_func = self._numba_func
         sig = (dtype.numba_type,)
@@ -856,7 +895,7 @@ class UnaryOp(OpBase):
         # Numba is unable to handle BOOL correctly right now, but we have a workaround
         # See: https://github.com/numba/numba/issues/5395
         # We're relying on coercion behaving correctly here
-        return_type = INT8 if ret_type == "BOOL" else ret_type
+        return_type = INT8 if ret_type == BOOL else ret_type
 
         # Build wrapper because GraphBLAS wants pointers and void return
         nt = numba.types
@@ -864,7 +903,7 @@ class UnaryOp(OpBase):
             nt.CPointer(return_type.numba_type),
             nt.CPointer(dtype.numba_type),
         )
-        if ret_type == "BOOL":
+        if ret_type == BOOL:
 
             def unary_wrapper(z_ptr, x_ptr):
                 z = numba.carray(z_ptr, 1)
@@ -885,9 +924,9 @@ class UnaryOp(OpBase):
             "UnaryOp",
             new_unary,
         )
-        op = TypedUserUnaryOp(self, self.name, dtype.name, ret_type.name, new_unary[0])
-        self._udt_types[np_type] = ret_type
-        self._udt_ops[np_type] = op
+        op = TypedUserUnaryOp(self, self.name, dtype, ret_type, new_unary[0])
+        self._udt_types[dtype] = ret_type
+        self._udt_ops[dtype] = op
         return op
 
     @classmethod
@@ -926,6 +965,19 @@ class UnaryOp(OpBase):
     def _initialize(cls):
         super()._initialize()
         # Update type information with sane coercion
+        position_dtypes = [
+            BOOL,
+            FP32,
+            FP64,
+            INT8,
+            INT16,
+            UINT8,
+            UINT16,
+            UINT32,
+            UINT64,
+        ]
+        if _supports_complex:
+            position_dtypes.extend([FC32, FC64])
         for names, *types in (
             # fmt: off
             (
@@ -935,17 +987,14 @@ class UnaryOp(OpBase):
                     "log", "log10", "log1p", "log2", "round", "signum", "sin", "sinh", "sqrt",
                     "tan", "tanh", "trunc",
                 ),
-                (("BOOL", "INT8", "INT16", "UINT8", "UINT16"), "FP32"),
-                (("INT32", "INT64", "UINT32", "UINT64"), "FP64"),
+                ((BOOL, INT8, INT16, UINT8, UINT16), FP32),
+                ((INT32, INT64, UINT32, UINT64), FP64),
             ),
             (
                 ("positioni", "positioni1", "positionj", "positionj1"),
                 (
-                    (
-                        "BOOL", "FC32", "FC64", "FP32", "FP64", "INT8", "INT16",
-                        "UINT8", "UINT16", "UINT32", "UINT64",
-                    ),
-                    "INT64",
+                    position_dtypes,
+                    INT64,
                 ),
             ),
             # fmt: on
@@ -956,9 +1005,7 @@ class UnaryOp(OpBase):
                     typed_op = op._typed_ops[target_type]
                     output_type = op.types[target_type]
                     for dtype in input_types:
-                        if dtype not in op.types and (
-                            _supports_complex or dtype not in {"FC32", "FC64"}
-                        ):
+                        if dtype not in op.types:
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
                             op.coercions[dtype] = target_type
@@ -980,8 +1027,8 @@ class UnaryOp(OpBase):
         self.is_positional = is_positional
         self._is_udt = is_udt
         if is_udt:
-            self._udt_types = {}  # {np_type: DataType}
-            self._udt_ops = {}  # {np_type: TypedUserUnaryOp}
+            self._udt_types = {}  # {dtype: DataType}
+            self._udt_ops = {}  # {dtype: TypedUserUnaryOp}
 
     def __reduce__(self):
         if self._anonymous:
@@ -1167,24 +1214,20 @@ class BinaryOp(OpBase):
                     ("INT" in ret_type.name and "INT" in type_.name)
                     or ("FP" in ret_type.name and "FP" in type_.name)
                     or ("FC" in ret_type.name and "FC" in type_.name)
-                    or (
-                        type_ == "UINT64"
-                        and ret_type == "FP64"
-                        and return_types.get("INT64") == "INT64"
-                    )
+                    or (type_ == UINT64 and ret_type == FP64 and return_types.get(INT64) == INT64)
                 ):
                     # Downcast `ret_type` to `type_`.
                     # This is what users want most of the time, but we can't make a perfect rule.
                     # There should be a way for users to be explicit.
                     ret_type = type_
-                elif type_ == "BOOL" and ret_type == "INT64" and return_types.get("INT8") == "INT8":
+                elif type_ == BOOL and ret_type == INT64 and return_types.get(INT8) == INT8:
                     ret_type = INT8
 
                 # Numba is unable to handle BOOL correctly right now, but we have a workaround
                 # See: https://github.com/numba/numba/issues/5395
                 # We're relying on coercion behaving correctly here
-                input_type = INT8 if type_ == "BOOL" else type_
-                return_type = INT8 if ret_type == "BOOL" else ret_type
+                input_type = INT8 if type_ == BOOL else type_
+                return_type = INT8 if ret_type == BOOL else ret_type
 
                 # Build wrapper because GraphBLAS wants pointers and void return
                 wrapper_sig = nt.void(
@@ -1193,8 +1236,8 @@ class BinaryOp(OpBase):
                     nt.CPointer(input_type.numba_type),
                 )
 
-                if type_ == "BOOL":
-                    if ret_type == "BOOL":
+                if type_ == BOOL:
+                    if ret_type == BOOL:
 
                         def binary_wrapper(z, x, y):
                             z[0] = bool(binary_udf(bool(x[0]), bool(y[0])))  # pragma: no cover
@@ -1204,7 +1247,7 @@ class BinaryOp(OpBase):
                         def binary_wrapper(z, x, y):
                             z[0] = binary_udf(bool(x[0]), bool(y[0]))  # pragma: no cover
 
-                elif ret_type == "BOOL":
+                elif ret_type == BOOL:
 
                     def binary_wrapper(z, x, y):
                         z[0] = bool(binary_udf(x[0], y[0]))  # pragma: no cover
@@ -1227,10 +1270,10 @@ class BinaryOp(OpBase):
                     "BinaryOp",
                     new_binary,
                 )
-                op = TypedUserBinaryOp(new_type_obj, name, type_.name, ret_type.name, new_binary[0])
+                op = TypedUserBinaryOp(new_type_obj, name, type_, ret_type, new_binary[0])
                 new_type_obj._add(op)
                 success = True
-                return_types[type_.name] = ret_type.name
+                return_types[type_] = ret_type
         if success or is_udt:
             return new_type_obj
         else:
@@ -1239,14 +1282,52 @@ class BinaryOp(OpBase):
     def _getitem_udt(self, dtype, dtype2):
         if dtype2 is None:
             dtype2 = dtype
-        np_types = (dtype.np_type, dtype2.np_type)
-        if np_types in self._udt_types:
-            return self._udt_ops[np_types]
+        dtypes = (dtype, dtype2)
+        if dtypes in self._udt_types:
+            return self._udt_ops[dtypes]
 
         nt = numba.types
-        if self.name == "eq":
+        if self.name == "eq" and not self._anonymous:
             assert dtype == dtype2  # XXX: must be same size?
             itemsize = dtype.np_type.itemsize
+            mask = _udt_mask(dtype.np_type)
+            ret_type = BOOL
+            wrapper_sig = nt.void(
+                nt.CPointer(INT8.numba_type),
+                nt.CPointer(UINT8.numba_type),
+                nt.CPointer(UINT8.numba_type),
+            )
+            # PERF: we can probably make this faster
+            if mask.all():
+
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                    x = numba.carray(x_ptr, itemsize)
+                    y = numba.carray(y_ptr, itemsize)
+                    # for i in range(itemsize):
+                    #     if x[i] != y[i]:
+                    #         z_ptr[0] = False
+                    #         break
+                    # else:
+                    #     z_ptr[0] = True
+                    z_ptr[0] = (x == y).all()
+
+            else:
+
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                    x = numba.carray(x_ptr, itemsize)
+                    y = numba.carray(y_ptr, itemsize)
+                    # for i in range(itemsize):
+                    #     if mask[i] and x[i] != y[i]:
+                    #         z_ptr[0] = False
+                    #         break
+                    # else:
+                    #     z_ptr[0] = True
+                    z_ptr[0] = (x[mask] == y[mask]).all()
+
+        elif self.name == "ne" and not self._anonymous:
+            assert dtype == dtype2  # XXX: must be same size?
+            itemsize = dtype.np_type.itemsize
+            mask = _udt_mask(dtype.np_type)
             ret_type = BOOL
             wrapper_sig = nt.void(
                 nt.CPointer(INT8.numba_type),
@@ -1254,25 +1335,31 @@ class BinaryOp(OpBase):
                 nt.CPointer(UINT8.numba_type),
             )
 
-            def binary_wrapper(z_ptr, x_ptr, y_ptr):
-                x = numba.carray(x_ptr, itemsize)
-                y = numba.carray(y_ptr, itemsize)
-                z_ptr[0] = (x == y).all()
+            if mask.all():
 
-        elif self.name == "ne":
-            assert dtype == dtype2  # XXX: must be same size?
-            itemsize = dtype.np_type.itemsize
-            ret_type = BOOL
-            wrapper_sig = nt.void(
-                nt.CPointer(INT8.numba_type),
-                nt.CPointer(UINT8.numba_type),
-                nt.CPointer(UINT8.numba_type),
-            )
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                    x = numba.carray(x_ptr, itemsize)
+                    y = numba.carray(y_ptr, itemsize)
+                    # for i in range(itemsize):
+                    #     if x[i] != y[i]:
+                    #         z_ptr[0] = True
+                    #         break
+                    # else:
+                    #     z_ptr[0] = False
+                    z_ptr[0] = (x != y).any()
 
-            def binary_wrapper(z_ptr, x_ptr, y_ptr):
-                x = numba.carray(x_ptr, itemsize)
-                y = numba.carray(y_ptr, itemsize)
-                z_ptr[0] = (x != y).all()
+            else:
+
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):
+                    x = numba.carray(x_ptr, itemsize)
+                    y = numba.carray(y_ptr, itemsize)
+                    # for i in range(itemsize):
+                    #     if mask[i] and x[i] != y[i]:
+                    #         z_ptr[0] = True
+                    #         break
+                    # else:
+                    #     z_ptr[0] = False
+                    z_ptr[0] = (x[mask] != y[mask]).any()
 
         else:
             numba_func = self._numba_func
@@ -1322,12 +1409,12 @@ class BinaryOp(OpBase):
         op = TypedUserBinaryOp(
             self,
             self.name,
-            dtype.name,  # Should we do a tuple for both inputs?
-            ret_type.name,
+            dtype,  # Should we do a tuple for both inputs?
+            ret_type,
             new_binary[0],
         )
-        self._udt_types[np_types] = ret_type
-        self._udt_ops[np_types] = op
+        self._udt_types[dtypes] = ret_type
+        self._udt_ops[dtypes] = op
         return op
 
     @classmethod
@@ -1382,10 +1469,10 @@ class BinaryOp(OpBase):
         rtruediv = binary.rtruediv = op.rtruediv = BinaryOp("rtruediv")
         for (new_op, builtin_op) in [(truediv, binary.cdiv), (rtruediv, binary.rdiv)]:
             for dtype in builtin_op.types:
-                if dtype in {"FP32", "FC32", "FC64"}:
+                if dtype.name in {"FP32", "FC32", "FC64"}:
                     orig_dtype = dtype
                 else:
-                    orig_dtype = "FP64"
+                    orig_dtype = FP64
                 orig_op = builtin_op[orig_dtype]
                 cur_op = TypedBuiltinBinaryOp(
                     new_op,
@@ -1408,33 +1495,43 @@ class BinaryOp(OpBase):
         BinaryOp.register_new("isclose", _isclose, parameterized=True)
 
         # Update type information with sane coercion
+        position_dtypes = [
+            BOOL,
+            FP32,
+            FP64,
+            INT8,
+            INT16,
+            UINT8,
+            UINT16,
+            UINT32,
+            UINT64,
+        ]
+        if _supports_complex:
+            position_dtypes.extend([FC32, FC64])
         name_types = [
             # fmt: off
             (
                 ("atan2", "copysign", "fmod", "hypot", "ldexp", "remainder"),
-                (("BOOL", "INT8", "INT16", "UINT8", "UINT16"), "FP32"),
-                (("INT32", "INT64", "UINT32", "UINT64"), "FP64"),
+                ((BOOL, INT8, INT16, UINT8, UINT16), FP32),
+                ((INT32, INT64, UINT32, UINT64), FP64),
             ),
             (
                 (
                     "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1",
                     "secondj", "secondj1",),
                 (
-                    (
-                        "BOOL", "FC32", "FC64", "FP32", "FP64", "INT8", "INT16",
-                        "UINT8", "UINT16", "UINT32", "UINT64",
-                    ),
-                    "INT64",
+                    position_dtypes,
+                    INT64,
                 ),
             ),
             (
                 ["lxnor"],
                 (
                     (
-                        "FP32", "FP64", "INT8", "INT16", "INT32", "INT64",
-                        "UINT8", "UINT16", "UINT32", "UINT64",
+                        FP32, FP64, INT8, INT16, INT32, INT64,
+                        UINT8, UINT16, UINT32, UINT64,
                     ),
-                    "BOOL",
+                    BOOL,
                 ),
             ),
             # fmt: on
@@ -1443,8 +1540,8 @@ class BinaryOp(OpBase):
             name_types.append(
                 (
                     ["cmplx"],
-                    (("BOOL", "INT8", "INT16", "UINT8", "UINT16"), "FP32"),
-                    (("INT32", "INT64", "UINT32", "UINT64"), "FP64"),
+                    ((BOOL, INT8, INT16, UINT8, UINT16), FP32),
+                    ((INT32, INT64, UINT32, UINT64), FP64),
                 )
             )
         for names, *types in name_types:
@@ -1454,15 +1551,13 @@ class BinaryOp(OpBase):
                     typed_op = cur_op._typed_ops[target_type]
                     output_type = cur_op.types[target_type]
                     for dtype in input_types:
-                        if dtype not in cur_op.types and (
-                            _supports_complex or dtype not in {"FC32", "FC64"}
-                        ):
+                        if dtype not in cur_op.types:
                             cur_op.types[dtype] = output_type
                             cur_op._typed_ops[dtype] = typed_op
                             cur_op.coercions[dtype] = target_type
         # Not valid input dtypes
-        del binary.ldexp["FP32"]
-        del binary.ldexp["FP64"]
+        del binary.ldexp[FP32]
+        del binary.ldexp[FP64]
         # Fill in commutes info
         for left, right in cls._commutes_to.items():
             left = getattr(binary, left)
@@ -1512,8 +1607,8 @@ class BinaryOp(OpBase):
         self._is_udt = is_udt
         self.is_positional = is_positional
         if is_udt:
-            self._udt_types = {}  # {(np_type, np_type): DataType}
-            self._udt_ops = {}  # {(np_type, np_type): TypedUserBinaryOp}
+            self._udt_types = {}  # {(dtype, dtype): DataType}
+            self._udt_ops = {}  # {(dtype, dtype): TypedUserBinaryOp}
 
     def __reduce__(self):
         if self._anonymous:
@@ -1591,7 +1686,7 @@ class Monoid(OpBase):
                 op = TypedUserMonoid(
                     new_type_obj,
                     name,
-                    type_.name,
+                    type_,
                     ret_type,
                     new_monoid[0],
                     binaryop[type_],
@@ -1605,27 +1700,27 @@ class Monoid(OpBase):
             dtype2 = dtype
         elif dtype != dtype2:
             raise TypeError("TODO")
-        np_type = dtype.np_type
-        if np_type in self._udt_types:
-            return self._udt_ops[np_type]
+        if dtype in self._udt_types:
+            return self._udt_ops[dtype]
         binaryop = self.binaryop._getitem_udt(dtype, dtype2)
         from .scalar import Scalar
 
-        identity = Scalar.from_value(self._identity, dtype=dtype, is_cscalar=True)
+        ret_type = binaryop.return_type
+        identity = Scalar.from_value(self._identity, dtype=ret_type, is_cscalar=True)
         new_monoid = ffi_new("GrB_Monoid*")
         status = lib.GrB_Monoid_new_UDT(new_monoid, binaryop.gb_obj, identity.gb_obj)
         check_status_carg(status, "Monoid", new_monoid[0])
         op = TypedUserMonoid(
             new_monoid,
             self.name,
-            dtype.name,
-            dtype.name,
+            dtype,
+            ret_type,
             new_monoid[0],
             binaryop,
             identity,
         )
-        self._udt_types[np_type] = dtype
-        self._udt_ops[np_type] = op
+        self._udt_types[dtype] = dtype
+        self._udt_ops[dtype] = op
         return op
 
     @classmethod
@@ -1667,8 +1762,8 @@ class Monoid(OpBase):
         if binaryop is not None:
             binaryop._monoid = self
             if binaryop._is_udt:
-                self._udt_types = {}  # {np_type: DataType}
-                self._udt_ops = {}  # {np_type: TypedUserMonoid}
+                self._udt_types = {}  # {dtype: DataType}
+                self._udt_ops = {}  # {dtype: TypedUserMonoid}
 
     def __reduce__(self):
         if self._anonymous:
@@ -1696,37 +1791,37 @@ class Monoid(OpBase):
     @classmethod
     def _initialize(cls):
         super()._initialize()
-        lor = monoid.lor._typed_ops["BOOL"]
-        land = monoid.land._typed_ops["BOOL"]
+        lor = monoid.lor._typed_ops[BOOL]
+        land = monoid.land._typed_ops[BOOL]
         for cur_op, typed_op in [
             (monoid.max, lor),
             (monoid.min, land),
             # (monoid.plus, lor),  # two choices: lor, or plus[int]
             (monoid.times, land),
         ]:
-            if "BOOL" not in cur_op.types:  # pragma: no branch
-                cur_op.types["BOOL"] = "BOOL"
-                cur_op.coercions["BOOL"] = "BOOL"
-                cur_op._typed_ops["BOOL"] = typed_op
+            if BOOL not in cur_op.types:  # pragma: no branch
+                cur_op.types[BOOL] = BOOL
+                cur_op.coercions[BOOL] = BOOL
+                cur_op._typed_ops[BOOL] = typed_op
 
         for cur_op in (monoid.lor, monoid.land, monoid.lxnor, monoid.lxor):
-            bool_op = cur_op._typed_ops["BOOL"]
+            bool_op = cur_op._typed_ops[BOOL]
             for dtype in (
-                "FP32",
-                "FP64",
-                "INT8",
-                "INT16",
-                "INT32",
-                "INT64",
-                "UINT8",
-                "UINT16",
-                "UINT32",
-                "UINT64",
+                FP32,
+                FP64,
+                INT8,
+                INT16,
+                INT32,
+                INT64,
+                UINT8,
+                UINT16,
+                UINT32,
+                UINT64,
             ):
                 if dtype in cur_op.types:  # pragma: no cover
                     continue
-                cur_op.types[dtype] = "BOOL"
-                cur_op.coercions[dtype] = "BOOL"
+                cur_op.types[dtype] = BOOL
+                cur_op.coercions[dtype] = BOOL
                 cur_op._typed_ops[dtype] = bool_op
         # Allow some functions to work on UDTs
         any_ = monoid.any
@@ -1824,9 +1919,9 @@ class Semiring(OpBase):
     def _getitem_udt(self, dtype, dtype2):
         if dtype2 is None:
             dtype2 = dtype
-        np_types = (dtype.np_type, dtype2.np_type)
-        if np_types in self._udt_types:
-            return self._udt_ops[np_types]
+        dtypes = (dtype, dtype2)
+        if dtypes in self._udt_types:
+            return self._udt_ops[dtypes]
         binaryop = self.binaryop._getitem_udt(dtype, dtype2)
         monoid = self.monoid[binaryop.return_type]
         ret_type = monoid.return_type
@@ -1836,14 +1931,14 @@ class Semiring(OpBase):
         op = TypedUserSemiring(
             new_semiring,
             self.name,
-            dtype.name,  # Should we do a tuple for both inputs?
+            dtype,  # Should we do a tuple for both inputs?
             ret_type,
             new_semiring[0],
             monoid,
             binaryop,
         )
-        self._udt_types[np_types] = dtype
-        self._udt_ops[np_types] = op
+        self._udt_types[dtypes] = dtype
+        self._udt_ops[dtypes] = op
         return op
 
     @classmethod
@@ -1921,13 +2016,39 @@ class Semiring(OpBase):
             if not hasattr(semiring, target_name):
                 continue
             target_op = getattr(semiring, target_name)
-            if "BOOL" not in target_op.types:  # pragma: no branch
+            if BOOL not in target_op.types:  # pragma: no branch
                 source_op = getattr(semiring, source_name)
-                typed_op = source_op._typed_ops["BOOL"]
-                target_op.types["BOOL"] = "BOOL"
-                target_op._typed_ops["BOOL"] = typed_op
-                target_op.coercions[dtype] = "BOOL"
+                typed_op = source_op._typed_ops[BOOL]
+                target_op.types[BOOL] = BOOL
+                target_op._typed_ops[BOOL] = typed_op
+                target_op.coercions[dtype] = BOOL
 
+        position_dtypes = [
+            BOOL,
+            FP32,
+            FP64,
+            INT8,
+            INT16,
+            UINT8,
+            UINT16,
+            UINT32,
+            UINT64,
+        ]
+        notbool_dtypes = [
+            FP32,
+            FP64,
+            INT8,
+            INT16,
+            INT32,
+            INT64,
+            UINT8,
+            UINT16,
+            UINT32,
+            UINT64,
+        ]
+        if _supports_complex:
+            position_dtypes.extend([FC32, FC64])
+            notbool_dtypes.extend([FC32, FC64])
         for lnames, rnames, *types in (
             # fmt: off
             (
@@ -1937,11 +2058,8 @@ class Semiring(OpBase):
                     "secondi", "secondi1", "secondj", "secondj1",
                 ),
                 (
-                    (
-                        "BOOL", "FC32", "FC64", "FP32", "FP64", "INT8", "INT16",
-                        "UINT8", "UINT16", "UINT32", "UINT64",
-                    ),
-                    "INT64",
+                    position_dtypes,
+                    INT64,
                 ),
             ),
             (
@@ -1949,30 +2067,27 @@ class Semiring(OpBase):
                 ("first", "pair", "second"),
                 # TODO: check if FC coercion works here
                 (
-                    (
-                        "FC32", "FC64", "FP32", "FP64", "INT8", "INT16", "INT32", "INT64",
-                        "UINT8", "UINT16", "UINT32", "UINT64",
-                    ),
-                    "BOOL",
+                    notbool_dtypes,
+                    BOOL,
                 ),
             ),
             (
                 ("band", "bor", "bxnor", "bxor"),
                 ("band", "bor", "bxnor", "bxor"),
-                (["INT8"], "UINT16"),
-                (["INT16"], "UINT32"),
-                (["INT32"], "UINT64"),
-                (["INT64"], "UINT64"),
+                ([INT8], UINT16),
+                ([INT16], UINT32),
+                ([INT32], UINT64),
+                ([INT64], UINT64),
             ),
             (
                 ("any", "eq", "land", "lor", "lxnor", "lxor"),
                 ("eq", "land", "lor", "lxnor", "lxor", "ne"),
                 (
                     (
-                        "FP32", "FP64", "INT8", "INT16", "INT32", "INT64",
-                        "UINT8", "UINT16", "UINT32", "UINT64",
+                        FP32, FP64, INT8, INT16, INT32, INT64,
+                        UINT8, UINT16, UINT32, UINT64,
                     ),
-                    "BOOL",
+                    BOOL,
                 ),
             ),
             # fmt: on
@@ -1986,9 +2101,7 @@ class Semiring(OpBase):
                     typed_op = cur_op._typed_ops[target_type]
                     output_type = cur_op.types[target_type]
                     for dtype in input_types:
-                        if dtype not in cur_op.types and (
-                            _supports_complex or dtype not in {"FC32", "FC64"}
-                        ):
+                        if dtype not in cur_op.types:
                             cur_op.types[dtype] = output_type
                             cur_op._typed_ops[dtype] = typed_op
                             cur_op.coercions[dtype] = target_type
@@ -2008,11 +2121,11 @@ class Semiring(OpBase):
         ):
             cur_op = getattr(semiring, opname)
             target = getattr(semiring, targetname)
-            if "BOOL" in cur_op.types or "BOOL" not in target.types:  # pragma: no cover
+            if BOOL in cur_op.types or BOOL not in target.types:  # pragma: no cover
                 continue
-            cur_op.types["BOOL"] = target.types["BOOL"]
-            cur_op._typed_ops["BOOL"] = target._typed_ops["BOOL"]
-            cur_op.coercions["BOOL"] = "BOOL"
+            cur_op.types[BOOL] = target.types[BOOL]
+            cur_op._typed_ops[BOOL] = target._typed_ops[BOOL]
+            cur_op.coercions[BOOL] = BOOL
         cls._initialized = True
 
     def __init__(self, name, monoid=None, binaryop=None, *, anonymous=False):
@@ -2020,8 +2133,8 @@ class Semiring(OpBase):
         self._monoid = monoid
         self._binaryop = binaryop
         if binaryop is not None and binaryop._is_udt:
-            self._udt_types = {}  # {(np_type, np_type): DataType}
-            self._udt_ops = {}  # {(np_type, np_type): TypedUserSemiring}
+            self._udt_types = {}  # {(dtype, dtype): DataType}
+            self._udt_ops = {}  # {(dtype, dtype): TypedUserSemiring}
 
     def __reduce__(self):
         if self._anonymous:
