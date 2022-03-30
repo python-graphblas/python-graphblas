@@ -218,16 +218,8 @@ def reduce(self):
     return self._get_value("reduce")
 
 
-def reduce_columns(self):
-    return self._get_value("reduce_columns")
-
-
 def reduce_columnwise(self):
     return self._get_value("reduce_columnwise")
-
-
-def reduce_rows(self):
-    return self._get_value("reduce_rows")
 
 
 def reduce_rowwise(self):
@@ -372,8 +364,6 @@ if __name__ == "__main__":
         "kronecker",
         "mxm",
         "mxv",
-        "reduce_columns",
-        "reduce_rows",
         "reduce_columnwise",
         "reduce_rowwise",
         "reduce_scalar",

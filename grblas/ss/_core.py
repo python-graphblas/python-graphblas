@@ -33,8 +33,10 @@ def diag(x, k=0, dtype=None, *, name=None):
 
     See Also
     --------
-    Vector.ss.diag
-    Matrix.ss.diag
+    Vector.diag
+    Matrix.diag
+    Vector.ss.build_diag
+    Matrix.ss.build_diag
 
     """
     x = _expect_type(_grblas_ss, x, (Matrix, TransposedMatrix, Vector), within="diag", argname="x")
@@ -46,7 +48,7 @@ def diag(x, k=0, dtype=None, *, name=None):
     if typ is Vector:
         size = x._size + abs(k.value)
         rv = Matrix.new(dtype, nrows=size, ncols=size, name=name)
-        rv.ss.diag(x, k)
+        rv.ss.build_diag(x, k)
     else:
         if k.value < 0:
             size = min(x._nrows + k.value, x._ncols)
@@ -55,7 +57,7 @@ def diag(x, k=0, dtype=None, *, name=None):
         if size < 0:
             size = 0
         rv = Vector.new(dtype, size=size, name=name)
-        rv.ss.diag(x, k)
+        rv.ss.build_diag(x, k)
     return rv
 
 

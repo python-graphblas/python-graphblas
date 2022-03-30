@@ -2,8 +2,6 @@ from math import ceil, log2
 
 import numpy as np
 
-import grblas as gb
-
 from .. import binary
 from ..operator import get_semiring, get_typed_op
 from .matrix import compact_indices
@@ -170,7 +168,7 @@ def prefix_scan(A, monoid, *, name=None, within):
         take_ownership=True,
         name="d",
     )
-    D = gb.ss.diag(d, name="D")
+    D = d.diag(name="D")
     RV(binaryop) << semiring(A @ D)
     # De-compactify into final result
     if is_vector:
