@@ -3,7 +3,7 @@ from importlib import import_module as _import_module
 from importlib.abc import Loader as _Loader
 from importlib.abc import MetaPathFinder as _MetaPathFinder
 
-from . import backends, mask  # noqa
+from . import mask  # noqa
 from ._version import get_versions  # noqa
 
 

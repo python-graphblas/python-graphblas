@@ -2315,14 +2315,14 @@ def test_diag(A, params):
     v = grblas.ss.diag(A, k=k)
     assert expected.isequal(v)
     v[:] = 0
-    v.ss.diag(A, k=k)
+    v.ss.build_diag(A, k=k)
     assert expected.isequal(v)
     v = A.diag(k)
     assert expected.isequal(v)
     v = grblas.ss.diag(A.T, k=-k)
     assert expected.isequal(v)
     v[:] = 0
-    v.ss.diag(A.T, -k)
+    v.ss.build_diag(A.T, -k)
     assert expected.isequal(v)
     v = A.T.diag(-k)
     assert expected.isequal(v)
@@ -3059,14 +3059,11 @@ def test_compactify(A, do_iso):
 
 
 def test_deprecated(A):
+    v = A.diag()
     with pytest.warns(DeprecationWarning):
-        A.reduce_rows()
+        A.ss.diag(v)
     with pytest.warns(DeprecationWarning):
-        A.reduce_columns()
-    with pytest.warns(DeprecationWarning):
-        A.ss.scan_rows()
-    with pytest.warns(DeprecationWarning):
-        A.ss.scan_columns()
+        v.ss.diag(A)
 
 
 def test_ndim(A):
