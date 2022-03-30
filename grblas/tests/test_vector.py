@@ -1721,10 +1721,10 @@ def test_udt():
     assert result.isequal(expected)
     result = semiring.min_firsti(v @ v).new()
     assert result == 0
-
-    # assert v.reduce(agg.any_value).new() == s
-    # assert v.reduce(agg.first).new() == s
-    # assert v.reduce(agg.last).new() == s
-    # assert v.reduce(agg.first_index).new() == 0
-    # assert v.reduce(agg.last_index).new() == 2
-    # assert v.reduce(agg.count).new() == 3
+    assert v.reduce(agg.any_value).new() == s
+    assert v.reduce(agg.first).new() == s
+    assert v.reduce(agg.last).new() == s
+    assert v.reduce(agg.exists).new() == 1
+    assert v.reduce(agg.first_index).new() == 0
+    assert v.reduce(agg.last_index).new() == 2
+    assert v.reduce(agg.count).new() == 3

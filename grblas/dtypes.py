@@ -36,6 +36,7 @@ class DataType:
         return hash(self.gb_obj)
 
     def __lt__(self, other):
+        1 / 0
         # Let us sort for prettier error reporting
         if type(other) is DataType:
             return str(self.np_type) < str(other.np_type)
@@ -48,6 +49,7 @@ class DataType:
 
     def __reduce__(self):
         if self._is_udt:
+            1 / 0
             return (self._deserialize, (self.name, self.np_type, self._is_anonymous))
         if self.gb_name == "GrB_Index":
             return "_INDEX"
@@ -67,6 +69,7 @@ class DataType:
 
     @staticmethod
     def _deserialize(name, dtype, is_anonymous):
+        1 / 0
         if is_anonymous:
             return register_anonymous(dtype, name)
         if name in _registry:
@@ -76,8 +79,10 @@ class DataType:
 
 def register_new(name, dtype):
     if not name.isidentifier():
+        1 / 0
         raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
     if name in _registry or name in globals():
+        1 / 0
         raise ValueError(f"{name!r} name for dtype is unavailable")
     rv = register_anonymous(dtype, name)
     _registry[name] = rv
@@ -90,10 +95,13 @@ def register_anonymous(dtype, name=None):
 
     dtype = np.dtype(dtype)
     if dtype.hasobject:
+        1 / 0
         raise ValueError("dtype must not allow Python objects")
     if dtype.isbuiltin != 0:
+        1 / 0
         raise ValueError("dtype must not be a builtin type")
     if name is None:
+        1 / 0
         name = repr(dtype)
     numba_type = numba.typeof(dtype).dtype
 
@@ -233,7 +241,11 @@ def lookup_dtype(key, value=None):
         return lookup_dtype(np.dtype(key))
     except Exception:
         pass
-    raise ValueError(f"Unknown dtype: {key}")
+    try:
+        return lookup_dtype(key.literal_type)  # For numba dtype inference
+    except Exception:
+        pass
+    raise ValueError(f"Unknown dtype: {key}", type(key))
 
 
 def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):

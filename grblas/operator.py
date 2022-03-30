@@ -1336,6 +1336,7 @@ class BinaryOp(OpBase):
                     z_ptr[0] = (x[mask] == y[mask]).all()
 
         elif self.name == "ne" and not self._anonymous:
+            1 / 0
             assert dtype == dtype2  # XXX: must be same size?
             itemsize = dtype.np_type.itemsize
             mask = _udt_mask(dtype.np_type)
@@ -1386,8 +1387,6 @@ class BinaryOp(OpBase):
                     ret_type = dtype
                 elif ret_type.gb_obj is dtype2.gb_obj:
                     ret_type = dtype2
-                    1 / 0
-                else:
                     1 / 0
 
             # Numba is unable to handle BOOL correctly right now, but we have a workaround
@@ -1571,7 +1570,7 @@ class BinaryOp(OpBase):
                     typed_op = cur_op._typed_ops[target_type]
                     output_type = cur_op.types[target_type]
                     for dtype in input_types:
-                        if dtype not in cur_op.types:
+                        if dtype not in cur_op.types:  # pragma: no branch
                             cur_op.types[dtype] = output_type
                             cur_op._typed_ops[dtype] = typed_op
                             cur_op.coercions[dtype] = target_type
@@ -2155,9 +2154,13 @@ class Semiring(OpBase):
         super().__init__(name, anonymous=anonymous)
         self._monoid = monoid
         self._binaryop = binaryop
-        if binaryop is not None and binaryop._is_udt:
-            self._udt_types = {}  # {(dtype, dtype): DataType}
-            self._udt_ops = {}  # {(dtype, dtype): TypedUserSemiring}
+        try:
+            if self.binaryop._udt_types is not None:
+                self._udt_types = {}  # {(dtype, dtype): DataType}
+                self._udt_ops = {}  # {(dtype, dtype): TypedUserSemiring}
+        except AttributeError:
+            # `*_div` semirings raise here, but don't need `_udt_types`
+            pass
 
     def __reduce__(self):
         if self._anonymous:
@@ -2199,9 +2202,16 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
         if op._is_udt:
             return op._getitem_udt(dtype, dtype2)
         if dtype2 is not None:
-            dtype = unify(
-                dtype, dtype2, is_left_scalar=is_left_scalar, is_right_scalar=is_right_scalar
-            )
+            try:
+                dtype = unify(
+                    dtype, dtype2, is_left_scalar=is_left_scalar, is_right_scalar=is_right_scalar
+                )
+            except TypeError:
+                if op.is_positional:
+                    return op[UINT64]
+                if op._udt_types is None:
+                    raise
+                return op._getitem_udt(dtype, dtype2)
         return op[dtype]
     elif isinstance(op, ParameterizedUdf):
         op = op()  # Use default parameters of parameterized UDFs
