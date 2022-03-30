@@ -399,6 +399,20 @@ class ss:
         """
         GxB_Matrix_diag
 
+        **This function is deprecated.  Use ``Vector.diag`` or ``Matrix.ss.build_diag`` instead.**
+
+        """
+        warnings.warn(
+            "`Matrix.ss.diag` is deprecated; "
+            "please use `Vector.diag` or `Matrix.ss.build_diag` instead",
+            DeprecationWarning,
+        )
+        self.build_diag(vector, k)
+
+    def build_diag(self, vector, k=0):
+        """
+        GxB_Matrix_diag
+
         Construct a diagonal Matrix from the given vector.
         Existing entries in the Matrix are discarded.
 
@@ -412,10 +426,13 @@ class ss:
 
         See Also
         --------
-        grblas.ss.diag
-        Vector.ss.diag
+        Matrix.diag
+        Vector.diag
+
         """
-        vector = self._parent._expect_type(vector, gb.Vector, within="ss.diag", argname="vector")
+        vector = self._parent._expect_type(
+            vector, gb.Vector, within="ss.build_diag", argname="vector"
+        )
         call("GxB_Matrix_diag", [self._parent, vector, _as_scalar(k, INT64, is_cscalar=True), None])
 
     def split(self, chunks, *, name=None):
@@ -3474,43 +3491,6 @@ class ss:
         from .prefix_scan import prefix_scan
 
         return prefix_scan(self._parent, op, name=name, within="scan_rowwise")
-
-    def scan_columns(self, op=monoid.plus, *, name=None):
-        """Perform a prefix scan across columns with the given monoid.
-
-        For example, use `monoid.plus` (the default) to perform a cumulative sum,
-        and `monoid.times` for cumulative product.  Works with any monoid.
-
-        **This function is deprecated.  Use ``scan_columnwise`` instead.**
-
-        Returns
-        -------
-        Vector
-        """
-        warnings.warn(
-            "`Matrix.ss.scan_columns` is deprecated; "
-            "please use `Matrix.ss.scan_columnwise` instead",
-            DeprecationWarning,
-        )
-        return self.scan_columnwise(op, name=name)
-
-    def scan_rows(self, op=monoid.plus, *, name=None):
-        """Perform a prefix scan across rows with the given monoid.
-
-        For example, use `monoid.plus` (the default) to perform a cumulative sum,
-        and `monoid.times` for cumulative product.  Works with any monoid.
-
-        **This function is deprecated.  Use ``scan_rowwise`` instead.**
-
-        Returns
-        -------
-        Vector
-        """
-        warnings.warn(
-            "`Matrix.ss.scan_rows` is deprecated; please use `Matrix.ss.scan_rowwise` instead",
-            DeprecationWarning,
-        )
-        return self.scan_rowwise(op, name=name)
 
     def flatten(self, order="rowwise", *, name=None):
         """Return a copy of the Matrix collapsed into a Vector.

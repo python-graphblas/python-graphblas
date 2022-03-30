@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 from numba import njit
 from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
@@ -116,6 +118,20 @@ class ss:
         """
         GxB_Vector_diag
 
+        **This function is deprecated.  Use ``Matrix.diag`` or ``Vector.ss.build_diag`` instead.**
+
+        """
+        warnings.warn(
+            "`Matrix.ss.diag` is deprecated; "
+            "please use `Matrix.diag` or `Vector.ss.build_diag` instead",
+            DeprecationWarning,
+        )
+        self.build_diag(matrix, k)
+
+    def build_diag(self, matrix, k=0):
+        """
+        GxB_Vector_diag
+
         Extract a diagonal from a Matrix or TransposedMatrix into a Vector.
         Existing entries in the Vector are discarded.
 
@@ -129,12 +145,15 @@ class ss:
 
         See Also
         --------
-        grblas.ss.diag
-        Matrix.ss.diag
+        Matrix.diag
+        Vector.diag
 
         """
         matrix = self._parent._expect_type(
-            matrix, (gb.Matrix, gb.matrix.TransposedMatrix), within="ss.diag", argname="matrix"
+            matrix,
+            (gb.Matrix, gb.matrix.TransposedMatrix),
+            within="ss.build_diag",
+            argname="matrix",
         )
         if type(matrix) is gb.matrix.TransposedMatrix:
             # Transpose descriptor doesn't do anything, so use the parent
