@@ -1225,6 +1225,10 @@ def test_inner(v):
     assert s == 6
     s(binary.plus) << v.inner(v)
     assert s == 12
+    with pytest.raises(TypeError, match="autocompute"):
+        v << v.inner(v)
+    with pytest.raises(TypeError, match="autocompute"):
+        v(v.S) << v.inner(v)
 
 
 @autocompute
@@ -1234,6 +1238,20 @@ def test_inner_infix(v):
     assert s == 6
     s(binary.plus) << v @ v
     assert s == 12
+    # These autocompute to a scalar on the right!
+    v << v @ v
+    expected = Vector.new(v.dtype, v.size)
+    expected[:] = 6
+    assert v.isequal(expected)
+    v(v.S) << v @ v
+    expected[:] = 6 * 6 * 7
+    assert v.isequal(expected)
+    v[:] = 6
+    v << v.inner(v)
+    assert v.isequal(expected)
+    v[:] = 6
+    v[:] = v @ v
+    assert v.isequal(expected)
 
 
 def test_outer(v):
