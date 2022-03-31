@@ -6,11 +6,23 @@ _delayed_commutes_to = {
     "abssecond": "absfirst",
     "floordiv": "rfloordiv",
     "rfloordiv": "floordiv",
+    "rpow": "pow",
 }
 from grblas import operator  # noqa isort:skip
 from . import numpy  # noqa isort:skip
 
 del operator
+
+
+def __dir__():
+    from grblas.operator import BinaryOp, ParameterizedBinaryOp
+
+    keys = set(_delayed)
+    keys.add("numpy")
+    keys.update(
+        key for key, val in globals().items() if isinstance(val, (BinaryOp, ParameterizedBinaryOp))
+    )
+    return keys
 
 
 def __getattr__(key):

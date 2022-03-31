@@ -904,6 +904,10 @@ def _abssecond(x, y):
     return abs(y)
 
 
+def _rpow(x, y):
+    return y**x
+
+
 def _isclose(rel_tol=1e-7, abs_tol=0.0):
     def inner(x, y):
         return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
@@ -963,6 +967,7 @@ class BinaryOp(OpBase):
         "isge": "isle",
         "isgt": "islt",
         "minus": "rminus",
+        "pow": "rpow",
         # special
         "firsti": "secondi",
         "firsti1": "secondi1",
@@ -1003,7 +1008,7 @@ class BinaryOp(OpBase):
         "ne",
         "pair",
     }
-    # Don't commute: atan2, bclr, bget, bset, bshift, cmplx, copysign, fmod, ldexp, pow, remainder
+    # Don't commute: atan2, bclr, bget, bset, bshift, cmplx, copysign, fmod, ldexp, remainder
     _positional = {
         "firsti",
         "firsti1",
@@ -1186,6 +1191,7 @@ class BinaryOp(OpBase):
         # For aggregators
         BinaryOp.register_new("absfirst", _absfirst, lazy=True)
         BinaryOp.register_new("abssecond", _abssecond, lazy=True)
+        BinaryOp.register_new("rpow", _rpow)
 
         BinaryOp.register_new("isclose", _isclose, parameterized=True)
 
@@ -1588,11 +1594,16 @@ class Semiring(OpBase):
         # Also add truediv (always floating point) and floordiv (truncate towards -inf)
         for orig_name, orig in div_semirings.items():
             cls.register_new(f"{orig_name[:-3]}truediv", orig.monoid, binary.truediv)
+            cls.register_new(f"{orig_name[:-3]}rtruediv", orig.monoid, binary.rtruediv)
             cls.register_new(f"{orig_name[:-3]}floordiv", orig.monoid, "floordiv", lazy=True)
+            cls.register_new(f"{orig_name[:-3]}rfloordiv", orig.monoid, "rfloordiv", lazy=True)
         # For aggregators
         cls.register_new("plus_pow", monoid.plus, binary.pow)
+        cls.register_new("plus_rpow", monoid.plus, "rpow", lazy=True)
         cls.register_new("plus_absfirst", monoid.plus, "absfirst", lazy=True)
         cls.register_new("max_absfirst", monoid.max, "absfirst", lazy=True)
+        cls.register_new("plus_abssecond", monoid.plus, "abssecond", lazy=True)
+        cls.register_new("max_abssecond", monoid.max, "abssecond", lazy=True)
 
         # Update type information with sane coercion
         for lname in ("any", "eq", "land", "lor", "lxnor", "lxor"):
