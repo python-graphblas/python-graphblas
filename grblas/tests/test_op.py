@@ -1030,7 +1030,7 @@ def test_semiring_commute_exists():
     for key in orig_semirings:
         val = getattr(semiring, key)
         commutes_to = val.commutes_to
-        if commutes_to is not None and commutes_to not in vals:
+        if commutes_to is not None and commutes_to not in vals:  # pragma: no cover
             missing.add(commutes_to.name)
     if missing:
         raise AssertionError("Missing semirings: " + ", ".join(sorted(missing)))
@@ -1044,7 +1044,7 @@ def test_binaryop_commute_exists():
     for key in orig_binaryops:
         val = getattr(binary, key)
         commutes_to = val.commutes_to
-        if commutes_to is not None and commutes_to not in vals:
+        if commutes_to is not None and commutes_to not in vals:  # pragma: no cover
             missing.add(commutes_to.name)
     if missing:
         raise AssertionError("Missing binaryops: " + ", ".join(sorted(missing)))
