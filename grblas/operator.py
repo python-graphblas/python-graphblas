@@ -356,7 +356,7 @@ class ParameterizedUnaryOp(ParameterizedUdf):
 
 
 class ParameterizedBinaryOp(ParameterizedUdf):
-    __slots__ = "func", "__signature__", "_monoid", "_cached_call", "commutes_to"
+    __slots__ = "func", "__signature__", "_monoid", "_cached_call", "_commutes_to"
 
     def __init__(self, name, func, *, anonymous=False):
         self.func = func
@@ -368,7 +368,7 @@ class ParameterizedBinaryOp(ParameterizedUdf):
         method = self._call_to_cache.__get__(self, type(self))
         self._cached_call = lru_cache(maxsize=1024)(method)
         self.__call__ = self._call
-        self.commutes_to = None
+        self._commutes_to = None
 
     def _call_to_cache(self, *args, **kwargs):
         binary = self.func(*args, **kwargs)
@@ -389,13 +389,19 @@ class ParameterizedBinaryOp(ParameterizedUdf):
                 binop._monoid = None
             assert binop._monoid is not binop
         if self.is_commutative:
-            binop.commutes_to = binop
+            binop._commutes_to = binop
         # Don't bother yet with creating `binop.commutes_to` (but we could!)
         return binop
 
     @property
     def monoid(self):
         return self._monoid
+
+    @property
+    def commutes_to(self):
+        if type(self._commutes_to) is str:
+            self._commutes_to = BinaryOp._find(self._commutes_to)
+        return self._commutes_to
 
     is_commutative = TypedBuiltinBinaryOp.is_commutative
 
@@ -904,6 +910,10 @@ def _abssecond(x, y):
     return abs(y)
 
 
+def _rpow(x, y):
+    return y**x
+
+
 def _isclose(rel_tol=1e-7, abs_tol=0.0):
     def inner(x, y):
         return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
@@ -912,7 +922,7 @@ def _isclose(rel_tol=1e-7, abs_tol=0.0):
 
 
 class BinaryOp(OpBase):
-    __slots__ = "_monoid", "commutes_to", "_semiring_commutes_to", "_func", "is_positional"
+    __slots__ = "_monoid", "_commutes_to", "_semiring_commutes_to", "_func", "is_positional"
     _module = binary
     _modname = "binary"
     _typed_class = TypedBuiltinBinaryOp
@@ -954,7 +964,7 @@ class BinaryOp(OpBase):
         ],
         "re_exprs_return_complex": [re.compile("^GxB_(CMPLX)_(FP32|FP64)$")],
     }
-    _commutes_to = {
+    _commutes = {
         # builtins
         "cdiv": "rdiv",
         "first": "second",
@@ -963,6 +973,7 @@ class BinaryOp(OpBase):
         "isge": "isle",
         "isgt": "islt",
         "minus": "rminus",
+        "pow": "rpow",
         # special
         "firsti": "secondi",
         "firsti1": "secondi1",
@@ -1003,7 +1014,7 @@ class BinaryOp(OpBase):
         "ne",
         "pair",
     }
-    # Don't commute: atan2, bclr, bget, bset, bshift, cmplx, copysign, fmod, ldexp, pow, remainder
+    # Don't commute: atan2, bclr, bget, bset, bshift, cmplx, copysign, fmod, ldexp, remainder
     _positional = {
         "firsti",
         "firsti1",
@@ -1186,6 +1197,7 @@ class BinaryOp(OpBase):
         # For aggregators
         BinaryOp.register_new("absfirst", _absfirst, lazy=True)
         BinaryOp.register_new("abssecond", _abssecond, lazy=True)
+        BinaryOp.register_new("rpow", _rpow, lazy=True)
 
         BinaryOp.register_new("isclose", _isclose, parameterized=True)
 
@@ -1246,14 +1258,15 @@ class BinaryOp(OpBase):
         del binary.ldexp["FP32"]
         del binary.ldexp["FP64"]
         # Fill in commutes info
-        for left, right in cls._commutes_to.items():
-            left = getattr(binary, left)
-            right = getattr(binary, right)
-            left.commutes_to = right
-            right.commutes_to = left
-        for cur_op in cls._commutative:
-            cur_op = getattr(binary, cur_op)
-            cur_op.commutes_to = cur_op
+        for left_name, right_name in cls._commutes.items():
+            left = getattr(binary, left_name)
+            left._commutes_to = right_name
+            if right_name not in binary._delayed:
+                right = getattr(binary, right_name)
+                right._commutes_to = left_name
+        for name in cls._commutative:
+            cur_op = getattr(binary, name)
+            cur_op._commutes_to = name
         for left, right in cls._commutes_to_in_semiring.items():
             left = getattr(binary, left)
             right = getattr(binary, right)
@@ -1264,7 +1277,7 @@ class BinaryOp(OpBase):
     def __init__(self, name, func=None, *, anonymous=False, is_positional=False):
         super().__init__(name, anonymous=anonymous)
         self._monoid = None
-        self.commutes_to = None
+        self._commutes_to = None
         self._semiring_commutes_to = None
         self._func = func
         self.is_positional = is_positional
@@ -1281,6 +1294,7 @@ class BinaryOp(OpBase):
 
     __call__ = TypedBuiltinBinaryOp.__call__
     is_commutative = TypedBuiltinBinaryOp.is_commutative
+    commutes_to = ParameterizedBinaryOp.commutes_to
 
     @property
     def monoid(self):
@@ -1587,12 +1601,17 @@ class Semiring(OpBase):
                 cdiv_semiring._add(new_semiring)
         # Also add truediv (always floating point) and floordiv (truncate towards -inf)
         for orig_name, orig in div_semirings.items():
-            cls.register_new(f"{orig_name[:-3]}truediv", orig.monoid, binary.truediv)
+            cls.register_new(f"{orig_name[:-3]}truediv", orig.monoid, binary.truediv, lazy=True)
+            cls.register_new(f"{orig_name[:-3]}rtruediv", orig.monoid, "rtruediv", lazy=True)
             cls.register_new(f"{orig_name[:-3]}floordiv", orig.monoid, "floordiv", lazy=True)
+            cls.register_new(f"{orig_name[:-3]}rfloordiv", orig.monoid, "rfloordiv", lazy=True)
         # For aggregators
         cls.register_new("plus_pow", monoid.plus, binary.pow)
+        cls.register_new("plus_rpow", monoid.plus, "rpow", lazy=True)
         cls.register_new("plus_absfirst", monoid.plus, "absfirst", lazy=True)
         cls.register_new("max_absfirst", monoid.max, "absfirst", lazy=True)
+        cls.register_new("plus_abssecond", monoid.plus, "abssecond", lazy=True)
+        cls.register_new("max_abssecond", monoid.max, "abssecond", lazy=True)
 
         # Update type information with sane coercion
         for lname in ("any", "eq", "land", "lor", "lxnor", "lxor"):

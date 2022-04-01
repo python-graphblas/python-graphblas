@@ -29,6 +29,6 @@ def pytest_addoption(parser):
         help="Record GraphBLAS C calls and save to 'record.txt'",
     )
     parser.addoption(
-        "--mapnumpy", action="store_true", default=None, help="may numpy ops to GraphBLAS ops"
+        "--mapnumpy", action="store_true", default=None, help="map numpy ops to GraphBLAS ops"
     )
     parser.addoption("--randomly", action="store_true", help="run random test config")

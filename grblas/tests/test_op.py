@@ -778,7 +778,8 @@ def test_binaryop_superset_monoids():
     binary_names = {x for x in dir(binary) if not x.startswith("_")}
     diff = monoid_names - binary_names
     assert not diff
-    assert not set(dir(monoid.numpy)) - set(dir(binary.numpy))
+    extras = {x for x in set(dir(monoid.numpy)) - set(dir(binary.numpy)) if not x.startswith("_")}
+    assert not extras, ", ".join(sorted(extras))
 
 
 def test_div_semirings():
@@ -865,7 +866,7 @@ def test_commutes():
     assert semiring.any_first.commutes_to is semiring.any_second
     assert semiring.plus_times.is_commutative
     assert semiring.min_secondi.commutes_to is semiring.min_firstj
-    assert semiring.plus_pow.commutes_to is None
+    assert semiring.plus_pow.commutes_to is semiring.plus_rpow
     assert not semiring.plus_pow.is_commutative
     assert binary.isclose.commutes_to is binary.isclose
     assert binary.isclose.is_commutative
@@ -891,7 +892,7 @@ def test_commutes():
     assert semiring.any_first[int].commutes_to is semiring.any_second[int]
     assert semiring.plus_times[int].is_commutative
     assert semiring.min_secondi[int].commutes_to is semiring.min_firstj[int]
-    assert semiring.plus_pow[int].commutes_to is None
+    assert semiring.plus_pow[int].commutes_to is semiring.plus_rpow[int]
     assert not semiring.plus_pow[int].is_commutative
     assert binary.isclose(0.1)[int].commutes_to is binary.isclose(0.1)[int]
     assert binary.floordiv[int].commutes_to is binary.rfloordiv[int]
@@ -953,6 +954,7 @@ def test_from_string():
         agg.from_string("bad_agg")
 
 
+@pytest.mark.slow
 def test_lazy_op():
     UnaryOp.register_new("lazy", lambda x: x, lazy=True)
     assert isinstance(op.lazy, UnaryOp)
@@ -1014,3 +1016,36 @@ def test_positional():
     assert semiring.any_secondj[int].is_positional
     assert not semiring.any_first.is_positional
     assert not semiring.any_second[int].is_positional
+
+
+def test_dir():
+    for mod in [unary, binary, monoid, semiring, op]:
+        assert not set(mod._delayed) - set(dir(mod))
+
+
+def test_semiring_commute_exists():
+    from .conftest import orig_semirings
+
+    vals = {getattr(semiring, key) for key in orig_semirings}
+    missing = set()
+    for key in orig_semirings:
+        val = getattr(semiring, key)
+        commutes_to = val.commutes_to
+        if commutes_to is not None and commutes_to not in vals:  # pragma: no cover
+            missing.add(commutes_to.name)
+    if missing:
+        raise AssertionError("Missing semirings: " + ", ".join(sorted(missing)))
+
+
+def test_binaryop_commute_exists():
+    from .conftest import orig_binaryops
+
+    vals = {getattr(binary, key) for key in orig_binaryops}
+    missing = set()
+    for key in orig_binaryops:
+        val = getattr(binary, key)
+        commutes_to = val.commutes_to
+        if commutes_to is not None and commutes_to not in vals:  # pragma: no cover
+            missing.add(commutes_to.name)
+    if missing:
+        raise AssertionError("Missing binaryops: " + ", ".join(sorted(missing)))

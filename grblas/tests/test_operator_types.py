@@ -41,6 +41,7 @@ BINARY = {
     },
     (ALL, BOOL): {"eq", "ne"},
     (ALL, FCFP): {"truediv", "rtruediv"},
+    (ALL, NOBOOL): {"rpow"},  # different for pow, b/c rpow is a UDF
     (ALL, NOFC): {"absfirst", "abssecond"},
     (ALL, POS): {
         "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1",
@@ -69,7 +70,11 @@ _SEMIRING1 = {
     ],
     (ALL, FCFP): [
         {"any", "plus", "times"},
-        {"truediv"},
+        {"truediv", "rtruediv"},
+    ],
+    (ALL, NOBOOL): [
+        {"any", "plus", "times"},
+        {"rpow"},
     ],
     (ALL, NOFC): [
         {"max"},
@@ -90,7 +95,7 @@ _SEMIRING1 = {
     ],
     (NOFC, FP): [
         {"max", "min"},
-        {"truediv"},
+        {"truediv", "rtruediv"},
     ],
     (FPINT, FPINT): [
         # Some of these are superseded by (ALL, ALL)
@@ -117,7 +122,7 @@ _SEMIRING1 = {
     ],
     (NOFC, FPINT): [
         {"any", "max", "min", "plus", "times"},
-        {"floordiv"},
+        {"floordiv", "rfloordiv"},
     ],
     (NOFC, NOFC): [
         {"any", "min", "max"},
@@ -153,19 +158,6 @@ IGNORE = {
     "myplus",
     "plus_myplus",
     "plus_numpy_copysign",
-    # Semirings created by commutation
-    "any_rfloordiv",
-    "any_rtruediv",
-    "max_abssecond",
-    "max_rfloordiv",
-    "max_rtruediv",
-    "min_rfloordiv",
-    "min_rtruediv",
-    "plus_abssecond",
-    "plus_rfloordiv",
-    "plus_rtruediv",
-    "times_rfloordiv",
-    "times_rtruediv",
     # numpy-graphblas commutation (can we clean this up?)
     "band_land",
     "band_lor",
@@ -175,6 +167,7 @@ IGNORE = {
     "band_minus",
     "band_plus",
     "band_pow",
+    "band_rpow",
     "band_times",
     "bor_land",
     "bor_lor",
@@ -184,6 +177,7 @@ IGNORE = {
     "bor_minus",
     "bor_plus",
     "bor_pow",
+    "bor_rpow",
     "bor_times",
     "bxor_land",
     "bxor_lor",
@@ -193,6 +187,7 @@ IGNORE = {
     "bxor_minus",
     "bxor_plus",
     "bxor_pow",
+    "bxor_rpow",
     "bxor_times",
     "eq_max",
     "eq_min",
@@ -203,18 +198,21 @@ IGNORE = {
     "land_minus",
     "land_plus",
     "land_pow",
+    "land_rpow",
     "land_times",
     "lor_max",
     "lor_min",
     "lor_minus",
     "lor_plus",
     "lor_pow",
+    "lor_rpow",
     "lor_times",
     "lxor_max",
     "lxor_min",
     "lxor_minus",
     "lxor_plus",
     "lxor_pow",
+    "lxor_rpow",
     "lxor_times",
     "max_atan2",
     "max_band",
@@ -229,6 +227,7 @@ IGNORE = {
     "max_lt",
     "max_ne",
     "max_pow",
+    "max_rpow",
     "min_atan2",
     "min_band",
     "min_bor",
@@ -242,6 +241,7 @@ IGNORE = {
     "min_lt",
     "min_ne",
     "min_pow",
+    "min_rpow",
     "plus_atan2",
     "plus_band",
     "plus_bor",
@@ -260,6 +260,7 @@ IGNORE = {
     "times_lt",
     "times_ne",
     "times_pow",
+    "times_rpow",
     "band_rminus",
     "bor_rminus",
     "bxor_rminus",
@@ -280,7 +281,8 @@ def _run_test(module, typ, expected):
             d[key] |= val
         expected = d
     seen = defaultdict(set)
-    for name, val in vars(module).items():
+    for name in dir(module):
+        val = getattr(module, name)
         if not isinstance(val, typ) or name in IGNORE:
             continue
         key = (frozenset(val.types.keys()), frozenset(val.types.values()))
