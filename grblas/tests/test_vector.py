@@ -1685,3 +1685,28 @@ def test_delete_via_scalar(v):
     assert v.isequal(Vector.from_values([4, 6], [2, 0]))
     del v[:]
     assert v.nvals == 0
+
+
+def test_infix_outer():
+    v = Vector.new(int, 2)
+    v += 1
+    assert v.nvals == 0
+    v[:] = 1
+    v += 1
+    assert v.reduce().new() == 4
+    v += v
+    assert v.reduce().new() == 8
+    v += v + v
+    assert v.reduce().new() == 24
+    with pytest.raises(TypeError, match="autocompute"):
+        v += v @ v
+    with pytest.raises(TypeError, match="only supported for BOOL"):
+        v ^= v
+    with pytest.raises(TypeError, match="only supported for BOOL"):
+        v |= True
+    w = Vector.new(bool, 2)
+    w |= True
+    assert w.nvals == 0
+    w[:] = False
+    w |= True
+    assert w.reduce(binary.plus[int]).new() == 2

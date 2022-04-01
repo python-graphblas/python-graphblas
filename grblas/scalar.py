@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from . import _automethods, backend, ffi, lib, utils
+from . import _automethods, backend, config, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
 from .binary import isclose
 from .dtypes import _INDEX, BOOL, lookup_dtype
@@ -336,7 +336,15 @@ class Scalar(BaseType):
                         f"Argument of from_value must be a known scalar type, not {type(value)}"
                     ) from None
         if typ is Scalar and type(value) is not Scalar:
-            return value.new(dtype=dtype, is_cscalar=is_cscalar, name=name)
+            if config.get("autocompute"):
+                return value.new(dtype=dtype, is_cscalar=is_cscalar, name=name)
+            cls._expect_type(
+                value,
+                Scalar,
+                within="from_value",
+                argname="value",
+                extra_message="Literal scalars expected.",
+            )
         new_scalar = cls.new(dtype, is_cscalar=is_cscalar, name=name)
         new_scalar.value = value
         return new_scalar
