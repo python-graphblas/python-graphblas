@@ -20,9 +20,9 @@ def pytest_configure(config):
     record = config.getoption("--record", False)
     if record is None:
         record = np.random.rand() < 0.5 if randomly else False
-    mapnumpy = config.getoption("--mapnumpy", True)
+    mapnumpy = config.getoption("--mapnumpy", False)
     if mapnumpy is None:
-        mapnumpy = np.random.rand() < 0.5 if randomly else True
+        mapnumpy = np.random.rand() < 0.5 if randomly else False
     runslow = config.getoption("--runslow", False)
     if runslow is None:
         runslow = np.random.rand() < 0.5 if randomly else False

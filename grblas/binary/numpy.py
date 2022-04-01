@@ -143,9 +143,7 @@ def __getattr__(name):
         _operator.BinaryOp.register_new(f"numpy.{name}", lambda x, y: numpy_func(x, y))
     rv = globals()[name]
     if name in _commutative:
-        rv.commutes_to = rv
-    elif name in _commutes_to:
-        right = getattr(_binary.numpy, _commutes_to[name])
-        rv.commutes_to = rv.commutes_to or right
-        right.commutes_to = right.commutes_to or rv
+        rv._commutes_to = rv
+    elif name in _commutes_to and rv._commutes_to is None:
+        rv._commutes_to = f"numpy.{_commutes_to[name]}"
     return rv
