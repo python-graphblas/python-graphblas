@@ -420,6 +420,16 @@ class BaseType:
                         updater[...] = scalar
                     return
 
+        if type(self) is not expr.output_type:
+            if expr.output_type._is_scalar and config.get("autocompute"):
+                self._update(expr._get_value(), mask, accum, replace, input_mask)
+                return
+            from .scalar import Scalar
+
+            valid = (Scalar, type(self), type(type(self).__name__ + "Expression", (), {}))
+            valid = valid[1:] if self._is_scalar else valid
+            self._expect_type(expr, valid, within="update")
+
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
         if expr.op is not None and expr.op.opclass == "Aggregator":

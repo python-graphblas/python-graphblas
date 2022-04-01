@@ -207,7 +207,7 @@ def test_bad_matmul(s1, v1, A1, A2):
     w = v1[:1].new()
     with raises(DimensionMismatch):
         w @ v1
-    with raises(DimensionMismatch):
+    with raises(TypeError):
         v1 @= v1
 
     with raises(TypeError, match="Bad type when calling semiring.plus_times"):
