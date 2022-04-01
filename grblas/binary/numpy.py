@@ -125,7 +125,7 @@ _commutes_to = {
 
 
 def __dir__():
-    return __all__ + list(_delayed)
+    return globals().keys() | _delayed.keys() | _binary_names
 
 
 def __getattr__(name):

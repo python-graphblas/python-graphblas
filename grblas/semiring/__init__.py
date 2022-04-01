@@ -8,14 +8,7 @@ del operator
 
 
 def __dir__():
-    from grblas.operator import ParameterizedSemiring, Semiring
-
-    keys = set(_delayed)
-    keys.add("numpy")
-    keys.update(
-        key for key, val in globals().items() if isinstance(val, (Semiring, ParameterizedSemiring))
-    )
-    return keys
+    return globals().keys() | _delayed.keys()
 
 
 def __getattr__(key):

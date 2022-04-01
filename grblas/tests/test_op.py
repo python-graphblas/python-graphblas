@@ -778,7 +778,8 @@ def test_binaryop_superset_monoids():
     binary_names = {x for x in dir(binary) if not x.startswith("_")}
     diff = monoid_names - binary_names
     assert not diff
-    assert not set(dir(monoid.numpy)) - set(dir(binary.numpy))
+    extras = {x for x in set(dir(monoid.numpy)) - set(dir(binary.numpy)) if not x.startswith("_")}
+    assert not extras, ", ".join(sorted(extras))
 
 
 def test_div_semirings():
