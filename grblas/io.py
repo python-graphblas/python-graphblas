@@ -1,4 +1,4 @@
-from . import Matrix, Vector
+from . import Matrix, Vector, backend
 from .dtypes import FP64, lookup_dtype
 from .exceptions import GrblasException
 from .matrix import TransposedMatrix
@@ -29,17 +29,30 @@ def draw(m):  # pragma: no cover
     plt.show()
 
 
-def from_networkx(g, dtype=FP64):
+def from_networkx(G, nodelist=None, dtype=FP64, weight="weight", name=None):
     """
     Returns a Matrix
     """
     import networkx as nx
 
-    ss = nx.convert_matrix.to_scipy_sparse_matrix(g)
-    nrows, ncols = ss.shape
-    rows, cols = ss.nonzero()
-    m = Matrix.from_values(rows, cols, ss.data, nrows=nrows, ncols=ncols, dtype=dtype)
-    return m
+    dtype = dtype if dtype is None else lookup_dtype(dtype).np_type
+    A = nx.to_scipy_sparse_array(G, nodelist=nodelist, dtype=dtype, weight=weight)
+    nrows, ncols = A.shape
+    if backend == "suitesparse":
+        M = Matrix.ss.import_csr(
+            nrows=nrows,
+            ncols=ncols,
+            indptr=A.indptr,
+            col_indices=A.indices,
+            values=A.data,
+            sorted_cols=getattr(A, "_has_sorted_indices", False),
+            take_ownership=True,
+            name=name,
+        )
+    else:  # pragma: no cover
+        rows, cols = A.nonzero()
+        M = Matrix.from_values(rows, cols, A.data, nrows=nrows, ncols=ncols, name=name)
+    return M
 
 
 # TODO: add parameter to indicate empty value (default is 0 and NaN)
