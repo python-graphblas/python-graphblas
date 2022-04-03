@@ -38,20 +38,27 @@ def from_networkx(G, nodelist=None, dtype=FP64, weight="weight", name=None):
     dtype = dtype if dtype is None else lookup_dtype(dtype).np_type
     A = nx.to_scipy_sparse_array(G, nodelist=nodelist, dtype=dtype, weight=weight)
     nrows, ncols = A.shape
+    data = A.data
+    if data.size == 0:
+        return Matrix.new(A.dtype, nrows=nrows, ncols=ncols, name=name)
     if backend == "suitesparse":
+        is_iso = (data[[0]] == data).all()
+        if is_iso:
+            data = data[[0]]
         M = Matrix.ss.import_csr(
             nrows=nrows,
             ncols=ncols,
             indptr=A.indptr,
             col_indices=A.indices,
-            values=A.data,
+            values=data,
+            is_iso=is_iso,
             sorted_cols=getattr(A, "_has_sorted_indices", False),
             take_ownership=True,
             name=name,
         )
     else:  # pragma: no cover
         rows, cols = A.nonzero()
-        M = Matrix.from_values(rows, cols, A.data, nrows=nrows, ncols=ncols, name=name)
+        M = Matrix.from_values(rows, cols, data, nrows=nrows, ncols=ncols, name=name)
     return M
 
 
