@@ -352,6 +352,12 @@ class ss:
         return is_iso[0]
 
     @property
+    def iso_value(self):
+        if self.is_iso:
+            return self._parent.reduce_scalar(monoid.any).new(name="")
+        raise ValueError("Matrix is not iso-valued")
+
+    @property
     def format(self):
         # Determine current format
         parent = self._parent

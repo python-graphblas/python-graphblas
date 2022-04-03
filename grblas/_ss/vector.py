@@ -96,6 +96,12 @@ class ss:
         return is_iso[0]
 
     @property
+    def iso_value(self):
+        if self.is_iso:
+            return self._parent.reduce(monoid.any).new(name="")
+        raise ValueError("Vector is not iso-valued")
+
+    @property
     def format(self):
         parent = self._parent
         sparsity_ptr = ffi_new("GxB_Option_Field*")
