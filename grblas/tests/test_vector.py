@@ -127,6 +127,7 @@ def test_from_values_scalar():
     assert u.dtype == dtypes.INT64
     if hasattr(u, "ss"):  # pragma: no branch
         assert u.ss.is_iso
+        assert u.ss.iso_value == 7
     assert u.reduce(monoid.any).new() == 7
 
     # ignore duplicate indices; iso trumps duplicates!
@@ -135,9 +136,13 @@ def test_from_values_scalar():
     assert u.nvals == 3
     if hasattr(u, "ss"):  # pragma: no branch
         assert u.ss.is_iso
+        assert u.ss.iso_value == 7
     assert u.reduce(monoid.any).new() == 7
     with pytest.raises(ValueError, match="dup_op must be None"):
         Vector.from_values([0, 1, 1, 3], 7, dup_op=binary.plus)
+    u[0] = 0
+    with pytest.raises(ValueError, match="not iso"):
+        u.ss.iso_value
 
 
 def test_clear(v):
