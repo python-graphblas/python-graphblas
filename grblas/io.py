@@ -1,5 +1,5 @@
 from . import Matrix, Vector, backend
-from .dtypes import FP64, lookup_dtype
+from .dtypes import lookup_dtype
 from .exceptions import GrblasException
 from .matrix import TransposedMatrix
 from .utils import output_type
@@ -29,7 +29,7 @@ def draw(m):  # pragma: no cover
     plt.show()
 
 
-def from_networkx(G, nodelist=None, dtype=FP64, weight="weight", name=None):
+def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     """
     Returns a Matrix
     """
