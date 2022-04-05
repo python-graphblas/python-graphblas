@@ -90,6 +90,8 @@ _error_code_lookup = {
     lib.GrB_INDEX_OUT_OF_BOUNDS: IndexOutOfBound,
     lib.GrB_PANIC: Panic,
     lib.GrB_NOT_IMPLEMENTED: NotImplementedException,
+    # GxB Errors
+    lib.GxB_EXHAUSTED: StopIteration,
 }
 GrB_SUCCESS = lib.GrB_SUCCESS
 GrB_NO_VALUE = lib.GrB_NO_VALUE

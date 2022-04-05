@@ -3121,3 +3121,14 @@ def test_delete_via_scalar(A):
     assert A[:, 0].new().nvals == 0
     del A[:, :]
     assert A.nvals == 0
+
+
+def test_iteration(A):
+    B = Matrix.new(int, 2, 2)
+    assert list(B.ss.iterkeys()) == []
+    assert list(B.ss.itervalues()) == []
+    assert list(B.ss.iteritems()) == []
+    rows, columns, values = A.to_values()
+    assert sorted(zip(rows, columns)) == sorted(A.ss.iterkeys())
+    assert sorted(values) == sorted(A.ss.itervalues())
+    assert sorted(zip(rows, columns, values)) == sorted(A.ss.iteritems())

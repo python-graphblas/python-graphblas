@@ -1715,3 +1715,25 @@ def test_infix_outer():
     w[:] = False
     w |= True
     assert w.reduce(binary.plus[int]).new() == 2
+
+
+def test_iteration(v):
+    w = Vector.new(int, 2)
+    assert list(w.ss.iterkeys()) == []
+    assert list(w.ss.itervalues()) == []
+    assert list(w.ss.iteritems()) == []
+
+    indices, values = v.to_values()
+    # This is what I would expect
+    with pytest.raises(Exception):
+        assert sorted(indices) == sorted(v.ss.iterkeys())
+    with pytest.raises(Exception):
+        assert sorted(values) == sorted(v.ss.itervalues())
+    with pytest.raises(Exception):
+        assert sorted(zip(indices, values)) == sorted(v.ss.iteritems())
+
+    # But apparently bitmap give us everything (?)
+    # See https://github.com/DrTimothyAldenDavis/GraphBLAS/issues/129
+    assert len(indices) < len(list(v.ss.iterkeys()))
+    assert len(values) < len(list(v.ss.itervalues()))
+    assert len(values) < len(list(v.ss.iteritems()))
