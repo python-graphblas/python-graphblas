@@ -65,7 +65,7 @@ def _expect_type_message(
         elif output_type(x) in types:
             if config.get("autocompute"):
                 return x._get_value(), None
-            extra_message = extra_message or f"{extra_message}\n\n"
+            extra_message = f"{extra_message}\n\n" if extra_message else ""
             extra_message += (
                 "Hint: use `grblas.config.set(autocompute=True)` to automatically "
                 "compute arguments that are expressions."
@@ -75,7 +75,7 @@ def _expect_type_message(
     elif output_type(x) is types:
         if config.get("autocompute"):
             return x._get_value(), None
-        extra_message = extra_message or f"{extra_message}\n\n"
+        extra_message = f"{extra_message}\n\n" if extra_message else ""
         extra_message += (
             "Hint: use `grblas.config.set(autocompute=True)` to automatically "
             "compute arguments that are expressions."
@@ -419,6 +419,16 @@ class BaseType:
                     else:  # Vector
                         updater[...] = scalar
                     return
+
+        if type(self) is not expr.output_type:
+            if expr.output_type._is_scalar and config.get("autocompute"):
+                self._update(expr._get_value(), mask, accum, replace, input_mask)
+                return
+            from .scalar import Scalar
+
+            valid = (Scalar, type(self), type(type(self).__name__ + "Expression", (), {}))
+            valid = valid[1:] if self._is_scalar else valid
+            self._expect_type(expr, valid, within="update")
 
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")

@@ -88,7 +88,7 @@ __all__ = list(_semiring_names)
 
 
 def __dir__():
-    return __all__ + list(_delayed)
+    return globals().keys() | _delayed.keys() | _semiring_names
 
 
 def __getattr__(name):

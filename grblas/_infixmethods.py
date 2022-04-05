@@ -71,18 +71,34 @@ def __rxor__(self, other):
 
 
 def __ixor__(self, other):
-    self << __xor__(self, other)
+    if output_type(other) in {Vector, Matrix, TransposedMatrix}:
+        if other.dtype != BOOL:
+            raise TypeError(
+                f"The __ixor__ infix operator, `x ^= y`, is not supported for {other.dtype.name} "
+                "dtype.  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
+            )
+        self(binary.lxor) << other
+    else:
+        self << __xor__(self, other)
     return self
 
 
 def __ior__(self, other):
-    expr = call_op(self, other, "__ior__", binary.lor, outer=True)
-    if expr.dtype != BOOL:
-        raise TypeError(
-            f"The __ior__ infix operator, `x |= y`, is not supported for {expr.dtype.name} dtype."
-            "  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
-        )
-    self << expr
+    if output_type(other) in {Vector, Matrix, TransposedMatrix}:
+        if other.dtype != BOOL:
+            raise TypeError(
+                f"The __ior__ infix operator, `x |= y`, is not supported for {other.dtype.name} "
+                "dtype.  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
+            )
+        self(binary.lor) << other
+    else:
+        expr = call_op(self, other, "__ior__", binary.lor, outer=True)
+        if expr.dtype != BOOL:
+            raise TypeError(
+                f"The __ior__ infix operator, `x |= y`, is not supported for {expr.dtype.name} "
+                "dtype.  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
+            )
+        self << expr
     return self
 
 
@@ -131,7 +147,10 @@ def __radd__(self, other):
 
 
 def __iadd__(self, other):
-    self << __add__(self, other)
+    if output_type(other) in {Vector, Matrix, TransposedMatrix}:
+        self(binary.plus) << other
+    else:
+        self << __add__(self, other)
     return self
 
 
@@ -328,11 +347,17 @@ if __name__ == "__main__":
             f"def __r{method}__(self, other):\n"
             f'    return call_op(other, self, "__r{method}__", binary.{op}{out})\n\n'
         )
-        lines.append(
-            f"def __i{method}__(self, other):\n"
-            f"    self << __{method}__(self, other)\n"
-            "    return self\n\n"
-        )
+        lines.append(f"def __i{method}__(self, other):")
+        if method in outer:
+            lines.append(
+                "    if output_type(other) in {Vector, Matrix, TransposedMatrix}:\n"
+                f"        self(binary.{op}) << other\n"
+                f"    else:\n"
+                f"        self << __{method}__(self, other)"
+            )
+        else:
+            lines.append(f"    self << __{method}__(self, other)")
+        lines.append("    return self\n\n")
     methods = sorted(
         {f"__{x}__" for x in custom}
         | {f"__{x}__" for x in comparisons}

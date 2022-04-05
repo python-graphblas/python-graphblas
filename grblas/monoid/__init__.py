@@ -7,6 +7,10 @@ from . import numpy  # noqa isort:skip
 del operator
 
 
+def __dir__():
+    return globals().keys() | _delayed.keys()
+
+
 def __getattr__(key):
     if key in _delayed:
         func, kwargs = _delayed.pop(key)

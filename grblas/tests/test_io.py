@@ -91,6 +91,36 @@ def test_matrix_to_from_networkx():
 
     M2 = gb.io.from_networkx(G, dtype=int)
     assert M.isequal(M2, check_dtype=True)
+    # Check iso-value
+    G = nx.DiGraph()
+    edges = [
+        (1, 2),
+        (1, 3),
+        # 2 is a dangling node
+        (3, 1),
+        (3, 2),
+        (3, 5),
+        (4, 5),
+        (4, 6),
+        (5, 4),
+        (5, 6),
+        (6, 4),
+    ]
+    G.add_edges_from(edges)
+    G.add_node(0)
+    M = gb.io.from_networkx(G, nodelist=range(7))
+    assert M.ss.is_iso
+    rows, cols = zip(*edges)
+    expected = gb.Matrix.from_values(rows, cols, 1)
+    assert expected.isequal(M)
+    # Test empty
+    G = nx.DiGraph()
+    with pytest.raises(nx.NetworkXError):
+        gb.io.from_networkx(G)
+    G.add_node(0)
+    M = gb.io.from_networkx(G)
+    assert M.nvals == 0
+    assert M.shape == (1, 1)
 
 
 @pytest.mark.skipif("not ss")

@@ -7,6 +7,9 @@ import pytest
 
 import grblas as gb
 
+orig_binaryops = set()
+orig_semirings = set()
+
 
 def pytest_configure(config):
     randomly = config.getoption("--randomly", False)
@@ -17,9 +20,9 @@ def pytest_configure(config):
     record = config.getoption("--record", False)
     if record is None:
         record = np.random.rand() < 0.5 if randomly else False
-    mapnumpy = config.getoption("--mapnumpy", True)
+    mapnumpy = config.getoption("--mapnumpy", False)
     if mapnumpy is None:
-        mapnumpy = np.random.rand() < 0.5 if randomly else True
+        mapnumpy = np.random.rand() < 0.5 if randomly else False
     runslow = config.getoption("--runslow", False)
     if runslow is None:
         runslow = np.random.rand() < 0.5 if randomly else False
@@ -42,6 +45,20 @@ def pytest_configure(config):
 
         # I'm sure there's a `pytest` way to do this...
         atexit.register(save_records)
+    orig_semirings.update(
+        key
+        for key in dir(gb.semiring)
+        if isinstance(
+            getattr(gb.semiring, key), (gb.operator.Semiring, gb.operator.ParameterizedSemiring)
+        )
+    )
+    orig_binaryops.update(
+        key
+        for key in dir(gb.binary)
+        if isinstance(
+            getattr(gb.binary, key), (gb.operator.BinaryOp, gb.operator.ParameterizedBinaryOp)
+        )
+    )
     for mod in [gb.unary, gb.binary, gb.monoid, gb.semiring, gb.op]:
         for name in list(mod._delayed):
             getattr(mod, name)

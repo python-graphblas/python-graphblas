@@ -10,7 +10,7 @@ __all__ = list(_op_to_mod)
 
 
 def __dir__():
-    return __all__ + list(_delayed)
+    return globals().keys() | _delayed.keys() | _op_to_mod.keys()
 
 
 def __getattr__(name):

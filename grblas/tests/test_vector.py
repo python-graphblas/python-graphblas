@@ -127,6 +127,7 @@ def test_from_values_scalar():
     assert u.dtype == dtypes.INT64
     if hasattr(u, "ss"):  # pragma: no branch
         assert u.ss.is_iso
+        assert u.ss.iso_value == 7
     assert u.reduce(monoid.any).new() == 7
 
     # ignore duplicate indices; iso trumps duplicates!
@@ -135,9 +136,13 @@ def test_from_values_scalar():
     assert u.nvals == 3
     if hasattr(u, "ss"):  # pragma: no branch
         assert u.ss.is_iso
+        assert u.ss.iso_value == 7
     assert u.reduce(monoid.any).new() == 7
     with pytest.raises(ValueError, match="dup_op must be None"):
         Vector.from_values([0, 1, 1, 3], 7, dup_op=binary.plus)
+    u[0] = 0
+    with pytest.raises(ValueError, match="not iso"):
+        u.ss.iso_value
 
 
 def test_clear(v):
@@ -1225,6 +1230,10 @@ def test_inner(v):
     assert s == 6
     s(binary.plus) << v.inner(v)
     assert s == 12
+    with pytest.raises(TypeError, match="autocompute"):
+        v << v.inner(v)
+    with pytest.raises(TypeError, match="autocompute"):
+        v(v.S) << v.inner(v)
 
 
 @autocompute
@@ -1234,6 +1243,20 @@ def test_inner_infix(v):
     assert s == 6
     s(binary.plus) << v @ v
     assert s == 12
+    # These autocompute to a scalar on the right!
+    v << v @ v
+    expected = Vector.new(v.dtype, v.size)
+    expected[:] = 6
+    assert v.isequal(expected)
+    v(v.S) << v @ v
+    expected[:] = 6 * 6 * 7
+    assert v.isequal(expected)
+    v[:] = 6
+    v << v.inner(v)
+    assert v.isequal(expected)
+    v[:] = 6
+    v[:] = v @ v
+    assert v.isequal(expected)
 
 
 def test_outer(v):
@@ -1728,3 +1751,28 @@ def test_udt():
     assert v.reduce(agg.first_index).new() == 0
     assert v.reduce(agg.last_index).new() == 2
     assert v.reduce(agg.count).new() == 3
+
+
+def test_infix_outer():
+    v = Vector.new(int, 2)
+    v += 1
+    assert v.nvals == 0
+    v[:] = 1
+    v += 1
+    assert v.reduce().new() == 4
+    v += v
+    assert v.reduce().new() == 8
+    v += v + v
+    assert v.reduce().new() == 24
+    with pytest.raises(TypeError, match="autocompute"):
+        v += v @ v
+    with pytest.raises(TypeError, match="only supported for BOOL"):
+        v ^= v
+    with pytest.raises(TypeError, match="only supported for BOOL"):
+        v |= True
+    w = Vector.new(bool, 2)
+    w |= True
+    assert w.nvals == 0
+    w[:] = False
+    w |= True
+    assert w.reduce(binary.plus[int]).new() == 2
