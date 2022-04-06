@@ -22,7 +22,7 @@ def call_op(self, other, method, op, *, outer=False, union=False):
         elif union:
             return self.ewise_union(other, op, False, False)
         else:
-            return self.ewise_mul(other, op)
+            return self.ewise_mult(other, op)
     return _call_op(op, self, other, broadcast=False)
 
 

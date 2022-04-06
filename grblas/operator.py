@@ -71,7 +71,7 @@ def _call_op(op, left, right=None, broadcast=True, **kwargs):
     right_type = output_type(right)
     if left_type is Matrix or left_type is TransposedMatrix:
         if right_type is Vector:
-            # Broadcast vector
+            # Broadcast vector rowwise
             if not broadcast:
                 raise TypeError("TODO")
             op, opclass = find_opclass(op)
@@ -81,7 +81,7 @@ def _call_op(op, left, right=None, broadcast=True, **kwargs):
         return left.apply(op, right=right, **kwargs)
     elif left_type is Vector:
         if right_type is Matrix or right_type is TransposedMatrix:
-            # Broadcast vector
+            # Broadcast vector columnwise
             if not broadcast:
                 raise TypeError("TODO")
             op, opclass = find_opclass(op)

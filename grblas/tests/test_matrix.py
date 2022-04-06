@@ -3150,3 +3150,5 @@ def test_broadcast_vector(A, v):
         binary.plus(A, A)
     with pytest.raises(TypeError):
         binary.plus(v, v)
+    with pytest.raises(TypeError):
+        A += v
