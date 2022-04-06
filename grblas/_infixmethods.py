@@ -2,6 +2,7 @@ from . import binary, unary
 from .dtypes import BOOL
 from .infix import MatrixInfixExpr, VectorInfixExpr
 from .matrix import Matrix, MatrixExpression, MatrixIndexExpr, TransposedMatrix
+from .operator import _call_op
 from .utils import output_type
 from .vector import Vector, VectorExpression, VectorIndexExpr
 
@@ -17,12 +18,12 @@ def call_op(self, other, method, op, *, outer=False, union=False):
         and type2 is Matrix
     ):
         if outer:
-            return op(self | other, require_monoid=False)
+            return self.ewise_add(other, op, require_monoid=False)
         elif union:
             return self.ewise_union(other, op, False, False)
         else:
-            return op(self & other)
-    return op(self, other)
+            return self.ewise_mul(other, op)
+    return _call_op(op, self, other, broadcast=False)
 
 
 def __divmod__(self, other):

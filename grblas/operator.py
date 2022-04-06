@@ -45,7 +45,7 @@ class OpPath:
         self.__getattribute__(key)  # raises
 
 
-def _call_op(op, left, right=None, **kwargs):
+def _call_op(op, left, right=None, broadcast=True, **kwargs):
     if right is None:
         if isinstance(left, InfixExprBase):
             # op(A & B), op(A | B), op(A @ B)
@@ -67,9 +67,29 @@ def _call_op(op, left, right=None, **kwargs):
     from .matrix import Matrix, TransposedMatrix
     from .vector import Vector
 
-    if output_type(left) in {Vector, Matrix, TransposedMatrix}:
+    left_type = output_type(left)
+    right_type = output_type(right)
+    if left_type is Matrix or left_type is TransposedMatrix:
+        if right_type is Vector:
+            # Broadcast vector
+            if not broadcast:
+                raise TypeError("TODO")
+            op, opclass = find_opclass(op)
+            if opclass != "Semiring":
+                op = get_semiring(monoid.any, op)
+            return left.mxm(right.diag(), op, **kwargs)
         return left.apply(op, right=right, **kwargs)
-    elif output_type(right) in {Vector, Matrix, TransposedMatrix}:
+    elif left_type is Vector:
+        if right_type is Matrix or right_type is TransposedMatrix:
+            # Broadcast vector
+            if not broadcast:
+                raise TypeError("TODO")
+            op, opclass = find_opclass(op)
+            if opclass != "Semiring":
+                op = get_semiring(monoid.any, op)
+            return left.diag().mxm(right, op, **kwargs)
+        return left.apply(op, right=right, **kwargs)
+    elif right_type in {Vector, Matrix, TransposedMatrix}:
         return right.apply(op, left=left, **kwargs)
     raise TypeError(
         f"Bad types when calling {op!r}.  Got types: {type(left)}, {type(right)}.\n"

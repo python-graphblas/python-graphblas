@@ -3121,3 +3121,32 @@ def test_delete_via_scalar(A):
     assert A[:, 0].new().nvals == 0
     del A[:, :]
     assert A.nvals == 0
+
+
+def test_broadcast_vector(A, v):
+    result = binary.plus(A, v).new()
+    expected = semiring.any_plus(A @ v.diag()).new()
+    assert result.isequal(expected)
+
+    result = binary.plus(v, A).new()
+    expected = semiring.any_plus(v.diag() @ A).new()
+    assert result.isequal(expected)
+
+    with pytest.raises(TypeError):
+        result = semiring.max_plus(A, v).new()
+    # expected = semiring.max_plus(A @ v.diag()).new()
+    # assert result.isequal(expected)
+
+    with pytest.raises(TypeError):
+        result = semiring.max_plus(v, A).new()
+    # expected = semiring.max_plus(v.diag() @ A).new()
+    # assert result.isequal(expected)
+
+    with pytest.raises(TypeError):
+        (A + v).new()
+    with pytest.raises(TypeError):
+        (v + A).new()
+    with pytest.raises(TypeError):
+        binary.plus(A, A)
+    with pytest.raises(TypeError):
+        binary.plus(v, v)
