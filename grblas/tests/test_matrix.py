@@ -3133,15 +3133,9 @@ def test_broadcast_vector(A, v):
     assert result.isequal(expected)
 
     with pytest.raises(TypeError):
-        result = semiring.max_plus(A, v).new()
-    # expected = semiring.max_plus(A @ v.diag()).new()
-    # assert result.isequal(expected)
-
+        semiring.max_plus(A, v).new()
     with pytest.raises(TypeError):
-        result = semiring.max_plus(v, A).new()
-    # expected = semiring.max_plus(v.diag() @ A).new()
-    # assert result.isequal(expected)
-
+        semiring.max_plus(v, A).new()
     with pytest.raises(TypeError):
         (A + v).new()
     with pytest.raises(TypeError):

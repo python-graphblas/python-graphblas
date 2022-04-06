@@ -74,9 +74,7 @@ def _call_op(op, left, right=None, broadcast=True, **kwargs):
             # Broadcast vector rowwise
             if not broadcast:
                 raise TypeError("TODO")
-            op, opclass = find_opclass(op)
-            if opclass != "Semiring":
-                op = get_semiring(monoid.any, op)
+            op = get_semiring(monoid.any, op)
             return left.mxm(right.diag(), op, **kwargs)
         return left.apply(op, right=right, **kwargs)
     elif left_type is Vector:
@@ -84,9 +82,7 @@ def _call_op(op, left, right=None, broadcast=True, **kwargs):
             # Broadcast vector columnwise
             if not broadcast:
                 raise TypeError("TODO")
-            op, opclass = find_opclass(op)
-            if opclass != "Semiring":
-                op = get_semiring(monoid.any, op)
+            op = get_semiring(monoid.any, op)
             return left.diag().mxm(right, op, **kwargs)
         return left.apply(op, right=right, **kwargs)
     elif right_type in {Vector, Matrix, TransposedMatrix}:
