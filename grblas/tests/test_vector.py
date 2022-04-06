@@ -1715,3 +1715,51 @@ def test_infix_outer():
     w[:] = False
     w |= True
     assert w.reduce(binary.plus[int]).new() == 2
+
+
+def test_broadcasting(A, v):
+    # Vector on left
+    expected = A.dup()
+    for i in range(A.ncols):
+        expected(binary.plus)[:, i] = v
+    result = (v + A).new()
+    assert result.isequal(expected)
+    result = v.ewise_add(A, monoid.plus).new()
+    assert result.isequal(expected)
+    result = v.ewise_union(A, monoid.plus, 0, 0).new()
+    assert result.isequal(expected)
+    result = binary.plus(v | A).new()
+    assert result.isequal(expected)
+
+    expected = semiring.any_plus(v.diag() @ A).new()
+    result = v.ewise_mult(A, monoid.plus).new()
+    assert result.isequal(expected)
+    result = binary.plus(v & A).new()
+    assert result.isequal(expected)
+
+    # Vector on right
+    expected = A.dup()
+    for i in range(A.nrows):
+        expected(binary.plus)[i, :] = v
+    result = (A + v).new()
+    assert result.isequal(expected)
+    result = A.ewise_add(v, monoid.plus).new()
+    assert result.isequal(expected)
+    result = A.ewise_union(v, monoid.plus, 0, 0).new()
+    assert result.isequal(expected)
+    result = binary.plus(A | v).new()
+    assert result.isequal(expected)
+    result = A.dup()
+    result += v
+    assert result.isequal(expected)
+
+    expected = semiring.any_plus(A @ v.diag()).new()
+    result = A.ewise_mult(v, monoid.plus).new()
+    assert result.isequal(expected)
+    result = binary.plus(A & v).new()
+    assert result.isequal(expected)
+    with pytest.raises(TypeError, match="Bad dtype"):
+        (A & v).new()
+    (A.dup(bool) & v.dup(bool)).new()  # okay
+    with pytest.raises(TypeError):
+        v += A

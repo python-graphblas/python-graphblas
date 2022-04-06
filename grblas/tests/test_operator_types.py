@@ -158,6 +158,7 @@ IGNORE = {
     "myplus",
     "plus_myplus",
     "plus_numpy_copysign",
+    "any_any",
     # numpy-graphblas commutation (can we clean this up?)
     "band_land",
     "band_lor",
