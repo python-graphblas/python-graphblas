@@ -437,7 +437,7 @@ class Vector(BaseType):
             full = Vector.new(self.dtype, other._ncols)
             full[:] = 0
             temp = self.outer(full, binary.first).new(name="M_temp")
-            return temp.ewise_add(other, op)
+            return temp.ewise_add(other, op, require_monoid=False)
         expr = VectorExpression(
             method_name,
             f"GrB_Vector_eWiseAdd_{op.opclass}",

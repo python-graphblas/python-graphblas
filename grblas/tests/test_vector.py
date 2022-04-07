@@ -1763,6 +1763,9 @@ def test_broadcasting(A, v):
     (A.dup(bool) & v.dup(bool)).new()  # okay
     with pytest.raises(TypeError):
         v += A
+    with pytest.raises(TypeError):
+        binary.minus(v | A)
+    binary.minus(v | A, require_monoid=False)
 
 
 def test_ewise_union_infix():
