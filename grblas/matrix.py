@@ -6,10 +6,10 @@ from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
 from ._ss.matrix import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, lookup_dtype, unify
-from .exceptions import NoValue, check_status
+from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
-from .operator import get_typed_op
+from .operator import get_semiring, get_typed_op
 from .scalar import _MATERIALIZE, Scalar, ScalarExpression, _as_scalar
 from .utils import (
     _CArray,
@@ -442,7 +442,7 @@ class Matrix(BaseType):
         method_name = "ewise_add"
         other = self._expect_type(
             other,
-            (Matrix, TransposedMatrix),
+            (Matrix, TransposedMatrix, Vector),
             within=method_name,
             argname="other",
             op=op,
@@ -460,6 +460,19 @@ class Matrix(BaseType):
                 )
         else:
             self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if other.ndim == 1:
+            # Broadcast rowwise from the right
+            # Can we do `C(M.S) << plus(A | v)` -> `C(M.S) << plus(any_second(M @ v.diag()) | A)`?
+            if self._ncols != other._size:
+                # Check this before we compute a possibly large matrix below
+                raise DimensionMismatch(
+                    "Dimensions not compatible for broadcasting Vector from the right "
+                    f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
+                    f"must equal Vector.size (={other._size})."
+                )
+            full = Vector.new(other.dtype, self._nrows, name="v_full")
+            full[:] = 0
+            other = full.outer(other, binary.second).new(name="M_temp")
         expr = MatrixExpression(
             method_name,
             f"GrB_Matrix_eWiseAdd_{op.opclass}",
@@ -481,11 +494,13 @@ class Matrix(BaseType):
         """
         method_name = "ewise_mult"
         other = self._expect_type(
-            other, (Matrix, TransposedMatrix), within=method_name, argname="other", op=op
+            other, (Matrix, TransposedMatrix, Vector), within=method_name, argname="other", op=op
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if other.ndim == 1:
+            return self.mxm(other.diag(name="M_temp"), get_semiring(monoid.any, op))
         expr = MatrixExpression(
             method_name,
             f"GrB_Matrix_eWiseMult_{op.opclass}",
@@ -512,7 +527,9 @@ class Matrix(BaseType):
         """
         # SS, SuiteSparse-specific: eWiseUnion
         method_name = "ewise_union"
-        other = self._expect_type(other, Matrix, within=method_name, argname="other", op=op)
+        other = self._expect_type(
+            other, (Matrix, TransposedMatrix, Vector), within=method_name, argname="other", op=op
+        )
         if type(left_default) is not Scalar:
             try:
                 left = Scalar.from_value(
@@ -551,11 +568,26 @@ class Matrix(BaseType):
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
+        if other.ndim == 1:
+            # Broadcast rowwise from the right
+            # Can we do `C(M.S) << plus(A | v)` -> `C(M.S) << plus(any_second(M @ v.diag()) | A)`?
+            if self._ncols != other._size:
+                # Check this before we compute a possibly large matrix below
+                raise DimensionMismatch(
+                    "Dimensions not compatible for broadcasting Vector from the right "
+                    f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
+                    f"must equal Vector.size (={other._size})."
+                )
+            full = Vector.new(other.dtype, self._nrows, name="v_full")
+            full[:] = 0
+            other = full.outer(other, binary.second).new(name="M_temp")
         expr = MatrixExpression(
             method_name,
             "GxB_Matrix_eWiseUnion",
             [self, left, other, right],
             op=op,
+            at=self._is_transposed,
+            bt=other._is_transposed,
             expr_repr="{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})",
         )
         if self.shape != other.shape:

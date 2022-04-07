@@ -132,7 +132,26 @@ class TypedBuiltinBinaryOp(TypedOpBase):
     __slots__ = ()
     opclass = "BinaryOp"
 
-    def __call__(self, left, right=None, *, require_monoid=None):
+    def __call__(
+        self, left, right=None, *, require_monoid=None, left_default=None, right_default=None
+    ):
+        if left_default is not None or right_default is not None:
+            if (
+                left_default is None
+                or right_default is None
+                or require_monoid is not None
+                or right is not None
+                or not isinstance(left, InfixExprBase)
+                or left.method_name != "ewise_add"
+            ):
+                raise TypeError(
+                    "Specifying `left_default` or `right_default` keyword arguments implies "
+                    "performing `ewise_union` operation with infix notation.\n"
+                    "There is only one valid way to do this:\n\n"
+                    f">>> {self}(x | y, left_default=0, right_default=0)\n\nwhere x and y "
+                    "are Vectors or Matrices, and left_default and right_default are scalars."
+                )
+            return left.left.ewise_union(left.right, self, left_default, right_default)
         if require_monoid is not None:
             if right is not None:
                 raise TypeError(
@@ -175,7 +194,23 @@ class TypedBuiltinMonoid(TypedOpBase):
         super().__init__(parent, name, type_, return_type, gb_obj, gb_name)
         self._identity = None
 
-    def __call__(self, left, right=None):
+    def __call__(self, left, right=None, *, left_default=None, right_default=None):
+        if left_default is not None or right_default is not None:
+            if (
+                left_default is None
+                or right_default is None
+                or right is not None
+                or not isinstance(left, InfixExprBase)
+                or left.method_name != "ewise_add"
+            ):
+                raise TypeError(
+                    "Specifying `left_default` or `right_default` keyword arguments implies "
+                    "performing `ewise_union` operation with infix notation.\n"
+                    "There is only one valid way to do this:\n\n"
+                    f">>> {self}(x | y, left_default=0, right_default=0)\n\nwhere x and y "
+                    "are Vectors or Matrices, and left_default and right_default are scalars."
+                )
+            return left.left.ewise_union(left.right, self, left_default, right_default)
         return _call_op(self, left, right)
 
     @property

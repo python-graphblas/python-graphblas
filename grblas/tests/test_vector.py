@@ -1715,3 +1715,85 @@ def test_infix_outer():
     w[:] = False
     w |= True
     assert w.reduce(binary.plus[int]).new() == 2
+
+
+def test_broadcasting(A, v):
+    # Vector on left
+    expected = A.dup()
+    for i in range(A.ncols):
+        expected(binary.plus)[:, i] = v
+    result = (v + A).new()
+    assert result.isequal(expected)
+    result = v.ewise_add(A, monoid.plus).new()
+    assert result.isequal(expected)
+    result = v.ewise_union(A, monoid.plus, 0, 0).new()
+    assert result.isequal(expected)
+    result = binary.plus(v | A).new()
+    assert result.isequal(expected)
+
+    expected = semiring.any_plus(v.diag() @ A).new()
+    result = v.ewise_mult(A, monoid.plus).new()
+    assert result.isequal(expected)
+    result = binary.plus(v & A).new()
+    assert result.isequal(expected)
+
+    # Vector on right
+    expected = A.dup()
+    for i in range(A.nrows):
+        expected(binary.plus)[i, :] = v
+    result = (A + v).new()
+    assert result.isequal(expected)
+    result = A.ewise_add(v, monoid.plus).new()
+    assert result.isequal(expected)
+    result = A.ewise_union(v, monoid.plus, 0, 0).new()
+    assert result.isequal(expected)
+    result = binary.plus(A | v).new()
+    assert result.isequal(expected)
+    result = A.dup()
+    result += v
+    assert result.isequal(expected)
+
+    expected = semiring.any_plus(A @ v.diag()).new()
+    result = A.ewise_mult(v, monoid.plus).new()
+    assert result.isequal(expected)
+    result = binary.plus(A & v).new()
+    assert result.isequal(expected)
+    with pytest.raises(TypeError, match="Bad dtype"):
+        (A & v).new()
+    (A.dup(bool) & v.dup(bool)).new()  # okay
+    with pytest.raises(TypeError):
+        v += A
+    with pytest.raises(TypeError):
+        binary.minus(v | A)
+    binary.minus(v | A, require_monoid=False)
+
+
+def test_ewise_union_infix():
+    v = Vector.new(int, 3)
+    w = Vector.new(int, 3)
+    v[0] = 1
+    w[1] = 2
+    result = binary.plus(v | w, left_default=10, right_default=20).new()
+    expected = Vector.from_values([0, 1], [21, 12], size=3)
+    assert expected.isequal(result)
+    result = monoid.plus(v | w, left_default=10, right_default=20).new()
+    assert expected.isequal(result)
+    for op in [binary.plus, monoid.plus]:
+        with pytest.raises(TypeError):
+            op(v & w, left_default=10, right_default=20)
+        with pytest.raises(TypeError):
+            op(v @ w, left_default=10, right_default=20)
+        with pytest.raises(TypeError):
+            op(v | w, right_default=20)
+        with pytest.raises(TypeError):
+            op(v | w, left_default=20)
+        with pytest.raises(TypeError):
+            op(v | w, left_default=10, right_default=20, require_monoid=True)
+        with pytest.raises(TypeError):
+            op(v | w, left_default=10, right_default=20, require_monoid=False)
+        with pytest.raises(TypeError):
+            op(v | w, right_default=20, require_monoid=True)
+        with pytest.raises(TypeError):
+            op(v & w, 5, left_default=10, right_default=20)
+        with pytest.raises(TypeError):
+            op(v, w, left_default=10, right_default=20)
