@@ -1763,3 +1763,34 @@ def test_broadcasting(A, v):
     (A.dup(bool) & v.dup(bool)).new()  # okay
     with pytest.raises(TypeError):
         v += A
+
+
+def test_ewise_union_infix():
+    v = Vector.new(int, 3)
+    w = Vector.new(int, 3)
+    v[0] = 1
+    w[1] = 2
+    result = binary.plus(v | w, left_default=10, right_default=20).new()
+    expected = Vector.from_values([0, 1], [21, 12], size=3)
+    assert expected.isequal(result)
+    result = monoid.plus(v | w, left_default=10, right_default=20).new()
+    assert expected.isequal(result)
+    for op in [binary.plus, monoid.plus]:
+        with pytest.raises(TypeError):
+            op(v & w, left_default=10, right_default=20)
+        with pytest.raises(TypeError):
+            op(v @ w, left_default=10, right_default=20)
+        with pytest.raises(TypeError):
+            op(v | w, right_default=20)
+        with pytest.raises(TypeError):
+            op(v | w, left_default=20)
+        with pytest.raises(TypeError):
+            op(v | w, left_default=10, right_default=20, require_monoid=True)
+        with pytest.raises(TypeError):
+            op(v | w, left_default=10, right_default=20, require_monoid=False)
+        with pytest.raises(TypeError):
+            op(v | w, right_default=20, require_monoid=True)
+        with pytest.raises(TypeError):
+            op(v & w, 5, left_default=10, right_default=20)
+        with pytest.raises(TypeError):
+            op(v, w, left_default=10, right_default=20)
