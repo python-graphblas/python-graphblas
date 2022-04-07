@@ -153,8 +153,12 @@ class MatrixInfixExpr(InfixExprBase):
 
     def __init__(self, left, right):
         super().__init__(left, right)
-        self._nrows = left._nrows
-        self._ncols = left._ncols
+        if left.ndim == 1:
+            self._nrows = right._nrows
+            self._ncols = right._ncols
+        else:
+            self._nrows = left._nrows
+            self._ncols = left._ncols
 
     @property
     def nrows(self):
@@ -330,34 +334,23 @@ def _ewise_infix_expr(left, right, *, method, within):
     left_type = output_type(left)
     right_type = output_type(right)
 
-    if left_type in {Vector, Matrix, TransposedMatrix}:
-        if not (
-            left_type is right_type
-            or (left_type is Matrix and right_type is TransposedMatrix)
-            or (left_type is TransposedMatrix and right_type is Matrix)
-        ):
-            if left_type is Vector:
-                right = left._expect_type(right, Vector, within=within, argname="right")
-            else:
-                right = left._expect_type(
-                    right, (Matrix, TransposedMatrix), within=within, argname="right"
-                )
-    elif right_type is Vector:
-        left = right._expect_type(left, Vector, within=within, argname="left")
-    elif right_type is Matrix or right_type is TransposedMatrix:
-        left = right._expect_type(left, (Matrix, TransposedMatrix), within=within, argname="left")
+    types = {Vector, Matrix, TransposedMatrix}
+    if left_type in types and right_type in types:
+        # Create dummy expression to check compatibility of dimensions, etc.
+        expr = getattr(left, method)(right, binary.any)
+        if expr.output_type is Vector:
+            if method == "ewise_mult":
+                return VectorEwiseMultExpr(left, right)
+            return VectorEwiseAddExpr(left, right)
+        elif method == "ewise_mult":
+            return MatrixEwiseMultExpr(left, right)
+        return MatrixEwiseAddExpr(left, right)
+    if left_type in types:
+        left._expect_type(right, tuple(types), within=within, argname="right")
+    elif right_type in types:
+        right._expect_type(left, tuple(types), within=within, argname="left")
     else:  # pragma: no cover
         raise TypeError(f"Bad types for ewise infix: {type(left).__name__}, {type(right).__name__}")
-
-    # Create dummy expression to check compatibility of dimensions, etc.
-    expr = getattr(left, method)(right, binary.any)
-    if expr.output_type is Vector:
-        if method == "ewise_mult":
-            return VectorEwiseMultExpr(left, right)
-        return VectorEwiseAddExpr(left, right)
-    elif method == "ewise_mult":
-        return MatrixEwiseMultExpr(left, right)
-    return MatrixEwiseAddExpr(left, right)
 
 
 def _matmul_infix_expr(left, right, *, within):

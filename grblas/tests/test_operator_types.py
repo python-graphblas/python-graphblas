@@ -168,6 +168,7 @@ IGNORE = {
     "udt_identity",
     "udt_any",
     "udt_semiring",
+    "any_any",
     # numpy-graphblas commutation (can we clean this up?)
     "band_land",
     "band_lor",

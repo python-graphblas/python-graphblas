@@ -6,7 +6,7 @@ from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
 from ._ss.vector import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, lookup_dtype, unify
-from .exceptions import NoValue, check_status
+from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_semiring, get_typed_op
@@ -408,8 +408,12 @@ class Vector(BaseType):
         performing any operation. In the case of `gt`, the non-empty value is cast to a boolean.
         For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
+        from .matrix import Matrix, TransposedMatrix
+
         method_name = "ewise_add"
-        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
+        other = self._expect_type(
+            other, (Vector, Matrix, TransposedMatrix), within=method_name, argname="other", op=op
+        )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
         if require_monoid:
@@ -423,6 +427,20 @@ class Vector(BaseType):
                 )
         else:
             self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if other.ndim == 2:
+            # Broadcast columnwise from the left
+            # Can we do `C(M.S) << plus(v | A)` -> `C(M.S) << plus(any_first(v.diag() @ M) | A)`?
+            if other._nrows != self._size:
+                # Check this before we compute a possibly large matrix below
+                raise DimensionMismatch(
+                    "Dimensions not compatible for broadcasting Vector from the left "
+                    f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
+                    f"must equal Vector.size (={self._size})."
+                )
+            full = Vector.new(self.dtype, other._ncols, name="v_full")
+            full[:] = 0
+            temp = self.outer(full, binary.first).new(name="M_temp")
+            return temp.ewise_add(other, op, require_monoid=False)
         expr = VectorExpression(
             method_name,
             f"GrB_Vector_eWiseAdd_{op.opclass}",
@@ -440,11 +458,17 @@ class Vector(BaseType):
         Result will contain the intersection of indices from both Vectors
         Default op is binary.times
         """
+        from .matrix import Matrix, TransposedMatrix
+
         method_name = "ewise_mult"
-        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
+        other = self._expect_type(
+            other, (Vector, Matrix, TransposedMatrix), within=method_name, argname="other", op=op
+        )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if other.ndim == 2:
+            return self.diag(name="M_temp").mxm(other, get_semiring(monoid.any, op))
         expr = VectorExpression(
             method_name,
             f"GrB_Vector_eWiseMult_{op.opclass}",
@@ -468,8 +492,12 @@ class Vector(BaseType):
         ``op`` should be a BinaryOp or Monoid.
         """
         # SS, SuiteSparse-specific: eWiseUnion
+        from .matrix import Matrix, TransposedMatrix
+
         method_name = "ewise_union"
-        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
+        other = self._expect_type(
+            other, (Vector, Matrix, TransposedMatrix), within=method_name, argname="other", op=op
+        )
         dtype = self.dtype if self.dtype._is_udt else None
         if type(left_default) is not Scalar:
             try:
@@ -509,6 +537,20 @@ class Vector(BaseType):
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
+        if other.ndim == 2:
+            # Broadcast columnwise from the left
+            # Can we do `C(M.S) << plus(v | A)` -> `C(M.S) << plus(any_first(v.diag() @ M) | A)`?
+            if other._nrows != self._size:
+                # Check this before we compute a possibly large matrix below
+                raise DimensionMismatch(
+                    "Dimensions not compatible for broadcasting Vector from the left "
+                    f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
+                    f"must equal Vector.size (={self._size})."
+                )
+            full = Vector.new(self.dtype, other._ncols, name="v_full")
+            full[:] = 0
+            temp = self.outer(full, binary.first).new(name="M_temp")
+            return temp.ewise_union(other, op, left_default, right_default)
         expr = VectorExpression(
             method_name,
             "GxB_Vector_eWiseUnion",

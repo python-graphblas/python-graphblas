@@ -3088,6 +3088,14 @@ def test_ewise_union():
     result = A1.ewise_union(A2, binary.plus, 10, 20).new()
     expected = Matrix.from_values([0, 0], [0, 1], [21, 12], nrows=1, ncols=3)
     assert result.isequal(expected)
+
+    # Test transposed
+    A2transposed = A2.T.new()
+    result = A1.ewise_union(A2transposed.T, binary.plus, 10, 20).new()
+    assert result.isequal(expected)
+    result = A1.T.ewise_union(A2transposed, binary.plus, 10, 20).new()
+    assert result.isequal(expected.T.new())
+
     # Handle Scalars
     result = A1.ewise_union(A2, binary.plus, Scalar.from_value(10), Scalar.from_value(20)).new()
     assert result.isequal(expected)

@@ -113,10 +113,6 @@ def test_bad_ewise(s1, v1, A1, A2):
         (s1, v1),
         (v1, 1),
         (1, v1),
-        (v1, A1),
-        (A1, v1),
-        (v1, A1.T),
-        (A1.T, v1),
         (A1, s1),
         (s1, A1),
         (A1.T, s1),
@@ -128,6 +124,31 @@ def test_bad_ewise(s1, v1, A1, A2):
             left | right
         with raises(TypeError, match="Bad type for argument"):
             left & right
+    # These are okay now
+    for left, right in [
+        (A1, v1),
+        (v1, A1.T),
+    ]:
+        left.ewise_add(right)
+        left | right
+        left.ewise_mult(right)
+        left & right
+        left.ewise_union(right, op.plus, 0, 0)
+    # Wrong dimension; can't broadcast
+    for left, right in [
+        (v1, A1),
+        (A1.T, v1),
+    ]:
+        with raises(DimensionMismatch):
+            left | right
+        with raises(DimensionMismatch):
+            left & right
+        with raises(DimensionMismatch):
+            left.ewise_add(right)
+        with raises(DimensionMismatch):
+            left.ewise_mult(right)
+        with raises(DimensionMismatch):
+            left.ewise_union(right, op.plus, 0, 0)
 
     w = v1[: v1.size - 1].new()
     with raises(DimensionMismatch):
