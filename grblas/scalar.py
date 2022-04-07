@@ -198,7 +198,7 @@ class Scalar(BaseType):
             is_right_scalar=True,
             kind="binary",
         )
-        return isclose_func.numba_func(self.value, other.value)
+        return isclose_func._numba_func(self.value, other.value)
 
     def clear(self):
         if self._is_empty:
@@ -246,9 +246,13 @@ class Scalar(BaseType):
             if output_type(val) is Scalar:
                 val = val.value  # raise below if wrong type (as determined by cffi)
             if self.dtype._is_udt:
-                self.gb_obj[0 : self.dtype.np_type.itemsize] = np.array(
-                    [val], dtype=self.dtype.np_type
-                ).view(np.uint8)
+                np_type = self.dtype.np_type
+                if np_type.subdtype is None:
+                    arr = np.empty(1, dtype=np_type)
+                else:
+                    arr = np.empty(np_type.subdtype[1], dtype=np_type.subdtype[0])
+                arr[:] = val
+                self.gb_obj[0 : self.dtype.np_type.itemsize] = arr.view(np.uint8)
                 # self.gb_obj[0:self.dtype.np_type.itemsize] = bytes(val)
             else:
                 self.gb_obj[0] = val
@@ -261,7 +265,6 @@ class Scalar(BaseType):
                 val = _as_scalar(val, is_cscalar=True)
                 dtype_name = val.dtype.name
             call(f"GrB_Scalar_setElement_{dtype_name}", [self, val])
-            # call(f"GrB_Scalar_setElement_{val.dtype}", [self, val])
 
     @property
     def nvals(self):
@@ -306,7 +309,8 @@ class Scalar(BaseType):
         else:
             new_scalar = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
             if not self._is_empty:
-                new_scalar.value = new_scalar.dtype.np_type(self.value)
+                new_scalar.value = self.value
+                # new_scalar.value = new_scalar.dtype.np_type(self.value)
         return new_scalar
 
     def wait(self):

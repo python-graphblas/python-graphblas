@@ -17,7 +17,7 @@ class DataType:
         self.gb_name = gb_name
         self.c_type = c_type
         self.numba_type = numba_type
-        self.np_type = np_type
+        self.np_type = np.dtype(np_type)
 
     def __repr__(self):
         return self.name
@@ -36,14 +36,14 @@ class DataType:
         return hash(self.gb_obj)
 
     def __lt__(self, other):
-        1 / 0
         # Let us sort for prettier error reporting
         if type(other) is DataType:
-            return str(self.np_type) < str(other.np_type)
+            t1 = self.np_type
+            t2 = other.np_type
+            return (t1.kind, t1.itemsize, t1.name) < (t2.kind, t2.itemsize, t2.name)
         # Attempt to use `other` as a lookup key
         try:
-            other = lookup_dtype(other)
-            return str(self.np_type) < str(other.np_type)
+            return self < lookup_dtype(other)
         except ValueError:
             raise TypeError(f"Invalid or unknown datatype: {other}") from None
 
@@ -79,10 +79,8 @@ class DataType:
 
 def register_new(name, dtype):
     if not name.isidentifier():
-        1 / 0
         raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
     if name in _registry or name in globals():
-        1 / 0
         raise ValueError(f"{name!r} name for dtype is unavailable")
     rv = register_anonymous(dtype, name)
     _registry[name] = rv
@@ -95,13 +93,10 @@ def register_anonymous(dtype, name=None):
 
     dtype = np.dtype(dtype)
     if dtype.hasobject:
-        1 / 0
         raise ValueError("dtype must not allow Python objects")
     if dtype.isbuiltin != 0:
-        1 / 0
         raise ValueError("dtype must not be a builtin type")
     if name is None:
-        1 / 0
         name = repr(dtype)
     numba_type = numba.typeof(dtype).dtype
 

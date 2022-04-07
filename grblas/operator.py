@@ -103,7 +103,6 @@ def _udt_mask(dtype):
     if dtype in _udt_mask_cache:
         return _udt_mask_cache[dtype]
     if dtype.subdtype is not None:
-        1 / 0
         mask = _udt_mask(dtype.subdtype[0])
         N = reduce(mul, dtype.subdtype[1])
         rv = np.concatenate([mask] * N)
@@ -296,11 +295,10 @@ class TypedUserUnaryOp(TypedOpBase):
 
     @property
     def orig_func(self):
-        1 / 0
-        return self.parent._func
+        return self.parent.orig_func
 
     @property
-    def numba_func(self):
+    def _numba_func(self):
         return self.parent._numba_func
 
     __call__ = TypedBuiltinUnaryOp.__call__
@@ -327,7 +325,7 @@ class TypedUserBinaryOp(TypedOpBase):
     is_commutative = TypedBuiltinBinaryOp.is_commutative
     __call__ = TypedBuiltinBinaryOp.__call__
     orig_func = TypedUserUnaryOp.orig_func
-    numba_func = TypedUserUnaryOp.numba_func
+    _numba_func = TypedUserUnaryOp._numba_func
 
 
 class TypedUserMonoid(TypedOpBase):
@@ -782,7 +780,7 @@ class OpBase:
 
 
 class UnaryOp(OpBase):
-    __slots__ = "_func", "is_positional", "_is_udt", "_numba_func"
+    __slots__ = "orig_func", "is_positional", "_is_udt", "_numba_func"
     _module = unary
     _modname = "unary"
     _typed_class = TypedBuiltinUnaryOp
@@ -1042,7 +1040,7 @@ class UnaryOp(OpBase):
         numba_func=None,
     ):
         super().__init__(name, anonymous=anonymous)
-        self._func = func
+        self.orig_func = func
         self._numba_func = numba_func
         self.is_positional = is_positional
         self._is_udt = is_udt
@@ -1052,13 +1050,13 @@ class UnaryOp(OpBase):
 
     def __reduce__(self):
         if self._anonymous:
-            if hasattr(self._func, "_parameterized_info"):
-                return (_deserialize_parameterized, self._func._parameterized_info)
-            return (self.register_anonymous, (self._func, self.name))
+            if hasattr(self.orig_func, "_parameterized_info"):
+                return (_deserialize_parameterized, self.orig_func._parameterized_info)
+            return (self.register_anonymous, (self.orig_func, self.name))
         name = f"unary.{self.name}"
         if name in _STANDARD_OPERATOR_NAMES:
             return name
-        return (self._deserialize, (self.name, self._func))
+        return (self._deserialize, (self.name, self.orig_func))
 
     __call__ = TypedBuiltinUnaryOp.__call__
 
@@ -1107,7 +1105,7 @@ class BinaryOp(OpBase):
         "_monoid",
         "_commutes_to",
         "_semiring_commutes_to",
-        "_func",
+        "orig_func",
         "is_positional",
         "_is_udt",
         "_numba_func",
@@ -1414,6 +1412,7 @@ class BinaryOp(OpBase):
                 nt.CPointer(dtype.numba_type),
                 nt.CPointer(dtype2.numba_type),
             )
+
             if ret_type == "BOOL":
 
                 def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
@@ -1614,7 +1613,7 @@ class BinaryOp(OpBase):
             (binary.pair, _pair),
             (binary.any, _first),
         ]:
-            binop._func = func
+            binop.orig_func = func
             binop._numba_func = numba.njit(func)
             binop._udt_types = {}
             binop._udt_ops = {}
@@ -1637,7 +1636,7 @@ class BinaryOp(OpBase):
         self._monoid = None
         self._commutes_to = None
         self._semiring_commutes_to = None
-        self._func = func
+        self.orig_func = func
         self._numba_func = numba_func
         self._is_udt = is_udt
         self.is_positional = is_positional
@@ -1647,13 +1646,13 @@ class BinaryOp(OpBase):
 
     def __reduce__(self):
         if self._anonymous:
-            if hasattr(self._func, "_parameterized_info"):
-                return (_deserialize_parameterized, self._func._parameterized_info)
-            return (self.register_anonymous, (self._func, self.name))
+            if hasattr(self.orig_func, "_parameterized_info"):
+                return (_deserialize_parameterized, self.orig_func._parameterized_info)
+            return (self.register_anonymous, (self.orig_func, self.name))
         name = f"binary.{self.name}"
         if name in _STANDARD_OPERATOR_NAMES:
             return name
-        return (self._deserialize, (self.name, self._func))
+        return (self._deserialize, (self.name, self.orig_func))
 
     __call__ = TypedBuiltinBinaryOp.__call__
     is_commutative = TypedBuiltinBinaryOp.is_commutative

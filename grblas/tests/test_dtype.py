@@ -140,5 +140,45 @@ def test_pickle():
 def test_unify_matches_numpy():
     for type1, type2 in itertools.product(all_dtypes, all_dtypes):
         gb_type = dtypes.unify(type1, type2)
-        np_type = type(type1.np_type(0) + type2.np_type(0))
+        np_type = type(type1.np_type.type(0) + type2.np_type.type(0))
         assert gb_type is lookup_dtype(np_type), f"({type1}, {type2}) -> {gb_type}"
+
+
+def test_lt_dtypes():
+    expected = [
+        dtypes.BOOL,
+        dtypes.FP32,
+        dtypes.FP64,
+        dtypes.INT8,
+        dtypes.INT16,
+        dtypes.INT32,
+        dtypes.INT64,
+        dtypes.UINT8,
+        dtypes.UINT16,
+        dtypes.UINT32,
+        dtypes.UINT64,
+    ]
+    if dtypes._supports_complex:
+        expected.insert(1, dtypes.FC32)
+        expected.insert(2, dtypes.FC64)
+    assert sorted(all_dtypes) == expected
+    assert dtypes.BOOL < "FP32"
+    with pytest.raises(TypeError):
+        dtypes.BOOL < 5
+
+
+def test_bad_register():
+    record_dtype = np.dtype([("x", np.object_), ("y", np.float64)], align=True)
+    with pytest.raises(ValueError, match="Python object"):
+        dtypes.register_new("has_object", record_dtype)
+    record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
+    with pytest.raises(ValueError, match="identifier"):
+        dtypes.register_new("$", record_dtype)
+    with pytest.raises(ValueError, match="builtin"):
+        dtypes.register_new("is_builtin", np.int8)
+    udt = dtypes.register_anonymous(record_dtype)
+    assert udt.name is not None
+    with pytest.raises(ValueError, match="name"):
+        dtypes.register_new("register_new", record_dtype)
+    with pytest.raises(ValueError, match="name"):
+        dtypes.register_new("UINT8", record_dtype)

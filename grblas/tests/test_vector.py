@@ -1752,6 +1752,32 @@ def test_udt():
     assert v.reduce(agg.last_index).new() == 2
     assert v.reduce(agg.count).new() == 3
 
+    # arrays as dtypes!
+    np_dtype = np.dtype("(3,)uint16")
+    udt = dtypes.register_anonymous(np_dtype, "has_subdtype")
+    s = Scalar.new(udt)
+    s.value = [0, 0, 0]
+
+    v = Vector.new(udt, size=2)
+    v[0] = 0
+    w = Vector.new(udt, size=2)
+    w[0] = (0, 0, 0)
+    assert v.isequal(w)
+    w[0] = np.array([0, 0, 1], dtype=np.uint8)
+    assert not v.isequal(w)
+    v[:] = 1
+    w[:] = np.array([1, 1, 1], dtype=np.uint8)
+    assert v.isequal(w)
+
+    indices, values = v.to_values()
+    assert_array_equal(values, np.ones((2, 3), dtype=np.uint16))
+
+    binary.eq[v.dtype]
+    # binary.ne[v.dtype]
+    # binary.any[v.dtype]
+    # monoid.any[v.dtype]
+    # binary.eq(v & w).new()
+
 
 def test_infix_outer():
     v = Vector.new(int, 2)

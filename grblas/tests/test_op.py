@@ -123,6 +123,8 @@ def test_unaryop_udf():
 
     UnaryOp.register_new("plus_one", plus_one)
     assert hasattr(unary, "plus_one")
+    assert unary.plus_one.orig_func is plus_one
+    assert unary.plus_one[int].orig_func is plus_one
     comp_set = {
         INT8,
         INT16,
