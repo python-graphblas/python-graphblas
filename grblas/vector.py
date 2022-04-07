@@ -434,7 +434,7 @@ class Vector(BaseType):
                     f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
                     f"must equal Vector.size (={self._size})."
                 )
-            full = Vector.new(self.dtype, other._ncols)
+            full = Vector.new(self.dtype, other._ncols, name="v_full")
             full[:] = 0
             temp = self.outer(full, binary.first).new(name="M_temp")
             return temp.ewise_add(other, op, require_monoid=False)
@@ -543,7 +543,7 @@ class Vector(BaseType):
                     f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
                     f"must equal Vector.size (={self._size})."
                 )
-            full = Vector.new(self.dtype, other._ncols)
+            full = Vector.new(self.dtype, other._ncols, name="v_full")
             full[:] = 0
             temp = self.outer(full, binary.first).new(name="M_temp")
             return temp.ewise_union(other, op, left_default, right_default)

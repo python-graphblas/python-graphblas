@@ -470,7 +470,7 @@ class Matrix(BaseType):
                     f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                     f"must equal Vector.size (={other._size})."
                 )
-            full = Vector.new(other.dtype, self._nrows)
+            full = Vector.new(other.dtype, self._nrows, name="v_full")
             full[:] = 0
             other = full.outer(other, binary.second).new(name="M_temp")
         expr = MatrixExpression(
@@ -578,7 +578,7 @@ class Matrix(BaseType):
                     f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                     f"must equal Vector.size (={other._size})."
                 )
-            full = Vector.new(other.dtype, self._nrows)
+            full = Vector.new(other.dtype, self._nrows, name="v_full")
             full[:] = 0
             other = full.outer(other, binary.second).new(name="M_temp")
         expr = MatrixExpression(
