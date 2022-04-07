@@ -44,28 +44,35 @@ def test_dup(s):
     s4 = Scalar.from_value(-2.5, dtype=dtypes.FP64)
     s_empty = Scalar.new(dtypes.FP64)
     s_unempty = Scalar.from_value(0.0)
+    if s_empty.is_cscalar:
+        # NumPy wraps around
+        uint_data = [
+            ("UINT8", 2**8 - 2),
+            ("UINT16", 2**16 - 2),
+            ("UINT32", 2**32 - 2),
+            ("UINT64", 2**64 - 2),
+        ]
+    else:
+        # SuiteSparse clips
+        uint_data = [
+            ("UINT8", 0),
+            ("UINT16", 0),
+            ("UINT32", 0),
+            ("UINT64", 0),
+        ]
     for dtype, val in [
         ("INT8", -2),
         ("INT16", -2),
         ("INT32", -2),
-        # Do we want these to wrap or be clipped?  Why does it clip?
-        # ("UINT8", 2**8 - 2),
-        # ("UINT16", 2**16 - 2),
-        # ("UINT32", 2**32 - 2),
-        # ("UINT64", 2**64 - 2),
-        ("UINT8", 0),
-        ("UINT16", 0),
-        ("UINT32", 0),
-        ("UINT64", 0),
         ("BOOL", True),
         ("FP32", -2.5),
-    ]:
-        s5 = s4.dup(dtype=dtype)
+    ] + uint_data:
+        s5 = s4.dup(dtype=dtype, name="s5")
         assert s5.dtype == dtype and s5.value == val
-        s6 = s_empty.dup(dtype=dtype)
+        s6 = s_empty.dup(dtype=dtype, name="s6")
         assert s6.is_empty
         assert compute(s6.value) is None
-        s7 = s_unempty.dup(dtype=dtype)
+        s7 = s_unempty.dup(dtype=dtype, name="s7")
         assert not s7.is_empty
         assert compute(s7.value) is not None
 

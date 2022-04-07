@@ -309,8 +309,11 @@ class Scalar(BaseType):
         else:
             new_scalar = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
             if not self._is_empty:
-                new_scalar.value = self.value
-                # new_scalar.value = new_scalar.dtype.np_type(self.value)
+                if new_scalar.is_cscalar and not new_scalar.dtype._is_udt:
+                    # Cast value so we don't raise given explicit dup with dtype
+                    new_scalar.value = new_scalar.dtype.np_type.type(self.value)
+                else:
+                    new_scalar.value = self.value
         return new_scalar
 
     def wait(self):
