@@ -234,7 +234,11 @@ class Scalar(BaseType):
             call(f"GrB_Scalar_extractElement_{dtype_name}", [_Pointer(scalar), self])
         if is_udt:
             np_type = self.dtype.np_type
-            return np.array(ffi.buffer(scalar.gb_obj[0 : np_type.itemsize])).view(np_type)[0]
+            rv = np.array(ffi.buffer(scalar.gb_obj[0 : np_type.itemsize]))
+            if np_type.subdtype is None:
+                return rv.view(np_type)[0]
+            else:
+                return rv.view(np_type.subdtype[0]).reshape(np_type.subdtype[1])
         else:
             return scalar.gb_obj[0]
 

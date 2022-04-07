@@ -1135,6 +1135,71 @@ def _pair(x, y):
     return 1  # pragma: no cover
 
 
+def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None):
+    ztype = INT8 if return_type == BOOL else return_type
+    xtype = INT8 if dtype == BOOL else dtype
+    nt = numba.types
+    if dtype2 is not None:
+        ytype = INT8 if dtype2 == BOOL else dtype2
+        wrapper_sig = nt.void(
+            nt.CPointer(ztype.numba_type),
+            nt.CPointer(xtype.numba_type),
+            nt.CPointer(ytype.numba_type),
+        )
+    else:
+        wrapper_sig = nt.void(
+            nt.CPointer(ztype.numba_type),
+            nt.CPointer(xtype.numba_type),
+        )
+
+    zarray = xarray = yarray = BL = BR = yarg = yname = ""
+    if return_type._is_udt:
+        if return_type.np_type.subdtype is None:
+            zarray = "    z = numba.carray(z_ptr, 1)\n"
+            zname = "z[0]"
+        else:
+            zname = "z_ptr[0]"
+            BR = "[0]"
+    else:
+        zname = "z_ptr[0]"
+        if return_type == BOOL:
+            BL = "bool("
+            BR = ")"
+
+    if dtype._is_udt:
+        if dtype.np_type.subdtype is None:
+            xarray = "    x = numba.carray(x_ptr, 1)\n"
+            xname = "x[0]"
+        else:
+            xname = "x_ptr"
+    elif dtype == BOOL:
+        xname = "bool(x_ptr[0])"  # is this still necessary?
+    else:
+        xname = "x_ptr[0]"
+
+    if dtype2 is not None:
+        yarg = ", y_ptr"
+        if dtype2._is_udt:
+            if dtype2.np_type.subdtype is None:
+                yarray = "    y = numba.carray(y_ptr, 1)\n"
+                yname = ", y[0]"
+            else:
+                yname = ", y_ptr"
+        elif dtype2 == BOOL:
+            yname = ", bool(y_ptr[0])"  # is this still necessary?
+        else:
+            yname = ", y_ptr[0]"
+
+    d = {"numba": numba, "numba_func": numba_func}
+    text = (
+        f"def wrapper(z_ptr, x_ptr{yarg}):\n"
+        f"{zarray}{xarray}{yarray}"
+        f"    {zname} = {BL}numba_func({xname}{yname}){BR}\n"
+    )
+    exec(text, d)
+    return d["wrapper"], wrapper_sig
+
+
 class BinaryOp(OpBase):
     __slots__ = (
         "_monoid",
@@ -1383,7 +1448,6 @@ class BinaryOp(OpBase):
                     z_ptr[0] = (x[mask] == y[mask]).all()
 
         elif self.name == "ne" and not self._anonymous:
-            1 / 0
             assert dtype == dtype2  # XXX: must be same size?
             itemsize = dtype.np_type.itemsize
             mask = _udt_mask(dtype.np_type)
@@ -1435,34 +1499,7 @@ class BinaryOp(OpBase):
                 elif ret_type.gb_obj is dtype2.gb_obj:
                     ret_type = dtype2
                     1 / 0
-
-            # Numba is unable to handle BOOL correctly right now, but we have a workaround
-            # See: https://github.com/numba/numba/issues/5395
-            # We're relying on coercion behaving correctly here
-            return_type = INT8 if ret_type == "BOOL" else ret_type
-
-            # Build wrapper because GraphBLAS wants pointers and void return
-            wrapper_sig = nt.void(
-                nt.CPointer(return_type.numba_type),
-                nt.CPointer(dtype.numba_type),
-                nt.CPointer(dtype2.numba_type),
-            )
-
-            if ret_type == "BOOL":
-
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
-                    z = numba.carray(z_ptr, 1)
-                    x = numba.carray(x_ptr, 1)
-                    y = numba.carray(y_ptr, 1)
-                    z[0] = bool(numba_func(x[0], y[0]))
-
-            else:
-
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
-                    z = numba.carray(z_ptr, 1)
-                    x = numba.carray(x_ptr, 1)
-                    y = numba.carray(y_ptr, 1)
-                    z[0] = numba_func(x[0], y[0])
+            binary_wrapper, wrapper_sig = _get_udt_wrapper(numba_func, ret_type, dtype, dtype2)
 
         binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
         new_binary = ffi_new("GrB_BinaryOp*")
@@ -1655,6 +1692,8 @@ class BinaryOp(OpBase):
         binary.any._numba_func = binary.first._numba_func
         binary.eq._udt_types = {}
         binary.eq._udt_ops = {}
+        binary.ne._udt_types = {}
+        binary.ne._udt_ops = {}
         cls._initialized = True
 
     def __init__(

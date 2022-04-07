@@ -1763,8 +1763,13 @@ def test_udt():
     w = Vector.new(udt, size=2)
     w[0] = (0, 0, 0)
     assert v.isequal(w)
+    assert v.ewise_mult(w, binary.eq).new().reduce(monoid.land).new()
+    assert not v.ewise_mult(w, binary.ne).new().reduce(monoid.land).new()
+
     w[0] = np.array([0, 0, 1], dtype=np.uint8)
     assert not v.isequal(w)
+    assert not v.ewise_mult(w, binary.eq).new().reduce(monoid.land).new()
+    assert v.ewise_mult(w, binary.ne).new().reduce(monoid.land).new()
     v[:] = 1
     w[:] = np.array([1, 1, 1], dtype=np.uint8)
     assert v.isequal(w)
@@ -1772,11 +1777,10 @@ def test_udt():
     indices, values = v.to_values()
     assert_array_equal(values, np.ones((2, 3), dtype=np.uint16))
 
-    binary.eq[v.dtype]
-    # binary.ne[v.dtype]
-    # binary.any[v.dtype]
-    # monoid.any[v.dtype]
-    # binary.eq(v & w).new()
+    s = v.reduce(monoid.any).new()
+    assert (s.value == [1, 1, 1]).all()
+    assert (s.value == 1).all()
+    # print(s == 1)  # TODO: decide what to do with scalars with array dtypes
 
 
 def test_infix_outer():
