@@ -137,7 +137,6 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
     rows, cols, vals = submatrix.to_values()
     np_type = submatrix.dtype.np_type
     if submatrix.dtype._is_udt and np_type.subdtype is not None:
-        1 / 0
         vals = vals.tolist()
     df.values[rows, cols] = vals
     if np.issubdtype(np_type, np.inexact):
@@ -176,7 +175,6 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
     cols, vals = subvector.to_values()
     np_type = subvector.dtype.np_type
     if subvector.dtype._is_udt and np_type.subdtype is not None:
-        1 / 0
         vals = vals.tolist()
     df.values[0, cols] = vals
     if np.issubdtype(np_type, np.inexact):

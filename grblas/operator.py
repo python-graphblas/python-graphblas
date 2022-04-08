@@ -662,7 +662,6 @@ class OpBase:
                 return self._typed_ops[type_]
         # This is a UDT or is able to operate on UDTs such as `first` any `any`
         if type(type_) is tuple:
-            1 / 0
             dtype1, dtype2 = type_
             dtype1 = lookup_dtype(dtype1)
             dtype2 = lookup_dtype(dtype2)
@@ -686,17 +685,9 @@ class OpBase:
                 return True
             elif self._udt_types is None:
                 return False
-        if type(type_) is tuple:
-            1 / 0
-            dtype1, dtype2 = type_
-            dtype1 = lookup_dtype(dtype1)
-            dtype2 = lookup_dtype(dtype2)
-        else:
-            dtype1 = dtype2 = lookup_dtype(type_)
         try:
-            self._getitem_udt(dtype1, dtype2)
-        except TypeError:
-            1 / 0
+            self[type_]
+        except (TypeError, KeyError):
             return False
         else:
             return True
@@ -812,6 +803,14 @@ class OpBase:
         if rv is not None:
             return rv  # Should we verify this is what the user expects?
         return cls.register_new(name, *args)
+
+
+def _identity(x):
+    return x
+
+
+def _one(x):
+    return 1
 
 
 class UnaryOp(OpBase):
@@ -939,7 +938,6 @@ class UnaryOp(OpBase):
         try:
             numba_func.compile(sig)
         except numba.TypingError:
-            1 / 0
             raise TypeError("TODO")
         ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
         if ret_type is not dtype and ret_type.gb_obj is dtype.gb_obj:
@@ -1062,6 +1060,15 @@ class UnaryOp(OpBase):
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
                             op.coercions[dtype] = target_type
+        # Allow some functions to work on UDTs
+        for (unop, func) in [
+            (unary.identity, _identity),
+            (unary.one, _one),
+        ]:
+            unop.orig_func = func
+            unop._numba_func = numba.njit(func)
+            unop._udt_types = {}
+            unop._udt_ops = {}
         cls._initialized = True
 
     def __init__(
@@ -1403,7 +1410,6 @@ class BinaryOp(OpBase):
 
     def _getitem_udt(self, dtype, dtype2):
         if dtype2 is None:
-            1 / 0
             dtype2 = dtype
         dtypes = (dtype, dtype2)
         if dtypes in self._udt_types:
@@ -1490,7 +1496,6 @@ class BinaryOp(OpBase):
             try:
                 numba_func.compile(sig)
             except numba.TypingError:
-                1 / 0
                 raise TypeError("TODO")
             ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
             if ret_type is not dtype and ret_type is not dtype2:
@@ -1805,10 +1810,8 @@ class Monoid(OpBase):
 
     def _getitem_udt(self, dtype, dtype2):
         if dtype2 is None:
-            1 / 0
             dtype2 = dtype
         elif dtype != dtype2:
-            1 / 0
             raise TypeError("TODO")
         if dtype in self._udt_types:
             return self._udt_ops[dtype]
@@ -2027,7 +2030,6 @@ class Semiring(OpBase):
 
     def _getitem_udt(self, dtype, dtype2):
         if dtype2 is None:
-            1 / 0
             dtype2 = dtype
         dtypes = (dtype, dtype2)
         if dtypes in self._udt_types:

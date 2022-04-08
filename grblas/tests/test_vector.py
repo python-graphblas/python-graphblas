@@ -1780,7 +1780,14 @@ def test_udt():
     s = v.reduce(monoid.any).new()
     assert (s.value == [1, 1, 1]).all()
     assert (s.value == 1).all()
-    # print(s == 1)  # TODO: decide what to do with scalars with array dtypes
+    assert s == 1
+    assert s != 0
+    assert s == (1, 1, 1)
+    assert s == [1, 1, 1]
+    assert s == s
+    t = Scalar.from_value(1)
+    assert s == t
+    assert t == s
 
 
 def test_infix_outer():

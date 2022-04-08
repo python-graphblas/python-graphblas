@@ -1048,6 +1048,14 @@ def test_udt():
     assert udt in binary.eq
     result = v.apply(udt_identity).new()
     assert result.isequal(v)
+    assert dtypes.UINT8 in udt_identity
+    assert udt in udt_identity
+    assert int in udt_identity
+    assert operator.get_typed_op(udt_identity, udt) is udt_identity[udt]
+    with pytest.raises(ValueError):
+        "badname" in binary.eq
+    with pytest.raises(ValueError):
+        "badname" in udt_identity
 
     def _udt_getx(val):
         return val["x"]  # pragma: no cover
@@ -1063,16 +1071,51 @@ def test_udt():
 
     udt_first = BinaryOp.register_anonymous(_udt_first, "udt_first", is_udt=True)
     assert udt in udt_first
+    assert operator.get_typed_op(udt_first, udt) is udt_first[udt]
     assert udt_first(v & w).new().isequal(v)
     assert udt_first(v, 1).new().isequal(v)
+    assert udt_first[udt, dtypes.INT64].return_type == udt
+    assert udt_first[dtypes.INT64, udt].return_type == dtypes.INT64
 
     udt_any = Monoid.register_new("udt_any", udt_first, (0, 0))
     assert udt in udt_any
+    assert (udt, udt) in udt_any
+    assert (udt, dtypes.INT8) not in udt_any
+    assert operator.get_typed_op(udt_any, udt) is udt_any[udt]
     assert udt_any(v | w).new().isequal(v)
 
     udt_semiring = Semiring.register_new("udt_semiring", udt_any, udt_first)
     assert udt in udt_semiring
+    assert operator.get_typed_op(udt_semiring, udt) is udt_semiring[udt]
     assert udt_semiring(v @ v).new() == (0, 0)
+
+    result = v.apply(gb.unary.identity).new()
+    assert result.isequal(v)
+    result = v.apply(gb.unary.one).new()
+    assert result.dtype == dtypes.INT64
+    expected = Vector.new(int, size=v.size)
+    expected(result.S) << 1
+    assert result.isequal(expected)
+    result = v.apply(gb.unary.positioni).new()
+    expected = expected.apply(gb.unary.positioni).new()
+    assert result.isequal(expected)
+
+    class BreakCompile:
+        pass
+
+    def badfunc(x):
+        return BreakCompile(x)
+
+    badunary = UnaryOp.register_anonymous(badfunc, is_udt=True)
+    assert udt not in badunary
+    assert int not in badunary
+
+    def badfunc(x, y):
+        return BreakCompile(x)
+
+    badbinary = BinaryOp.register_anonymous(badfunc, is_udt=True)
+    assert udt not in badbinary
+    assert int not in badbinary
 
 
 def test_dir():

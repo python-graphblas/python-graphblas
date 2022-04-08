@@ -158,7 +158,11 @@ class Scalar(BaseType):
             return False
         else:
             # For now, compare values in Python
-            return self.value == other.value
+            rv = self.value == other.value
+            try:
+                return bool(rv)
+            except ValueError:
+                return bool(rv.all())
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """
