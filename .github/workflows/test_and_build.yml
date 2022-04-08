@@ -51,7 +51,7 @@ jobs:
           auto-update-conda: true
           python-version: ${{ matrix.cfg.pyver }}
           channels: conda-forge
-          activate-environment: grblas
+          activate-environment: graphblas
       - name: Update env
         run: |
           conda install -c conda-forge pytest-runner coverage 'black>=20.8b1' flake8 coveralls
@@ -86,21 +86,21 @@ jobs:
       #   if: contains(matrix.cfg.testopts, 'pygraphblas') && (matrix.cfg.pyver != 3.9)
       #   run: |
       #     source "$CONDA/etc/profile.d/conda.sh"
-      #     conda activate grblas
+      #     conda activate graphblas
       #     conda install -c conda-forge pygraphblas
       - name: Verify build
         run: |
-          # Make sure `from grblas import *` works as expected
-          python -c "from grblas import * ; Matrix"
+          # Make sure `from graphblas import *` works as expected
+          python -c "from graphblas import * ; Matrix"
           # Make sure all top-level imports work
-          ( for attr in Matrix Scalar Vector Recorder _agg agg base binary descriptor dtypes exceptions expr ffi formatting infix init io lib mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
-          ( for attr in _agg agg base binary descriptor dtypes exceptions expr formatting infix io mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"import grblas.$attr\" ; if ! python -c "import grblas.$attr" ; then exit 1 ; fi ; done )
+          ( for attr in Matrix Scalar Vector Recorder _agg agg base binary descriptor dtypes exceptions expr ffi formatting infix init io lib mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"from graphblas import $attr\" ; if ! python -c "from graphblas import $attr" ; then exit 1 ; fi ; done )
+          ( for attr in _agg agg base binary descriptor dtypes exceptions expr formatting infix io mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"import graphblas.$attr\" ; if ! python -c "import graphblas.$attr" ; then exit 1 ; fi ; done )
       - name: Unit tests
         # if: (! contains(matrix.cfg.testopts, 'pygraphblas')) || (matrix.cfg.pyver != 3.9)
         run: |
           coverage run --branch -m pytest ${{ matrix.cfg.testopts }}
           # Run tests again with Scalars being C scalars by default
-          find grblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
+          find graphblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
             -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
             -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
             -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
@@ -109,12 +109,12 @@ jobs:
           git checkout .  # Undo changes to scalar default
 
           # Test (and cover) automatic initialization
-          coverage run -a --branch grblas/tests/test_auto_init.py
-          coverage run -a --branch grblas/tests/test_external_init.py
+          coverage run -a --branch graphblas/tests/test_auto_init.py
+          coverage run -a --branch graphblas/tests/test_external_init.py
       - name: Auto-generated code check
         run: |
-          coverage run -a --branch -m grblas._automethods
-          coverage run -a --branch -m grblas._infixmethods
+          coverage run -a --branch -m graphblas._automethods
+          coverage run -a --branch -m graphblas._infixmethods
           git diff --exit-code
       - name: Coverage
         # if: (! contains(matrix.cfg.testopts, 'pygraphblas')) || (matrix.cfg.pyver != 3.9)

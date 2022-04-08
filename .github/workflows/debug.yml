@@ -34,11 +34,11 @@ jobs:
           conda config --set always_yes yes --set changeps1 no
           conda update -q conda
           conda info -a
-          conda create -n grblas -c conda-forge python=${{ matrix.pyver }} pytest-runner coverage 'black>=20.8b1' flake8 coveralls
+          conda create -n graphblas -c conda-forge python=${{ matrix.pyver }} pytest-runner coverage 'black>=20.8b1' flake8 coveralls
       - name: Build extension module
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
-          conda activate grblas
+          conda activate graphblas
           conda install -c conda-forge pandas numba scipy networkx cffi
           if [[ ${{ matrix.sourcetype }} == "wheel" ]]; then
               pip install suitesparse-graphblas
@@ -62,11 +62,11 @@ jobs:
       - name: Verify build
         run: |
           source "$CONDA/etc/profile.d/conda.sh"
-          conda activate grblas
-          # Make sure `from grblas import *` works as expected
-          python -c "from grblas import * ; Matrix"
+          conda activate graphblas
+          # Make sure `from graphblas import *` works as expected
+          python -c "from graphblas import * ; Matrix"
           # Make sure all top-level imports work
-          ( for attr in Matrix Scalar Vector Recorder _agg agg base binary descriptor dtypes exceptions expr ffi formatting infix init io lib mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"from grblas import $attr\" ; if ! python -c "from grblas import $attr" ; then exit 1 ; fi ; done )
+          ( for attr in Matrix Scalar Vector Recorder _agg agg base binary descriptor dtypes exceptions expr ffi formatting infix init io lib mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"from graphblas import $attr\" ; if ! python -c "from graphblas import $attr" ; then exit 1 ; fi ; done )
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3

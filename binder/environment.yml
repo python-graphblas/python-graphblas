@@ -1,9 +1,9 @@
-name: grblas-dev
+name: graphblas-dev
 channels:
     - conda-forge
 dependencies:
     - python=3.8
-    - grblas
+    - graphblas
     - matplotlib
     - networkx
     - pandas
