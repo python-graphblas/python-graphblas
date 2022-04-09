@@ -1133,6 +1133,12 @@ def test_udt():
     assert semiring.any_firsti[int].commutes_to is semiring.any_secondj[int]
     assert semiring.any_firsti[udt].commutes_to is semiring.any_secondj[udt]
 
+    assert binary.second[udt].type is udt
+    assert binary.second[udt].type2 is udt
+    assert binary.second[udt, dtypes.INT8].type is udt
+    assert binary.second[udt, dtypes.INT8].type2 is dtypes.INT8
+    assert monoid.any[udt].type2 is udt
+
 
 def test_dir():
     for mod in [unary, binary, monoid, semiring, op]:

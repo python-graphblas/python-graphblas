@@ -309,3 +309,7 @@ def test_udt():
     expected[0, 0] = (1, 2)
     expected[0, 1] = (3, 4)
     assert expected.isequal(A)
+
+    any_udt = d["any[udt]"]
+    assert any_udt is gb.binary.any[udt3]
+    assert pickle.loads(pickle.dumps(gb.binary.first[udt, int])) is gb.binary.first[udt, int]

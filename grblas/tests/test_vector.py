@@ -1754,6 +1754,8 @@ def test_udt():
     info = v.ss.export()
     result = Vector.ss.import_any(**info)
     assert result.isequal(v)
+    for aggop in [agg.any_value, agg.first, agg.last, agg.count, agg.first_index, agg.last_index]:
+        v.reduce(aggop).new()
 
     # arrays as dtypes!
     np_dtype = np.dtype("(3,)uint16")
@@ -1796,6 +1798,9 @@ def test_udt():
     t = Scalar.from_value(1)
     assert s == t
     assert t == s
+    # Just make sure these work
+    for aggop in [agg.any_value, agg.first, agg.last, agg.count, agg.first_index, agg.last_index]:
+        v.reduce(aggop).new()
 
 
 def test_infix_outer():

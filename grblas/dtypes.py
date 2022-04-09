@@ -104,7 +104,6 @@ def register_anonymous(dtype, name=None):
         status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
         check_status_carg(status, "Type", gb_obj[0])
     # For now, let's use "opaque" unsigned bytes for the c type.
-    # grb_name probably isn't useful, right?
     rv = DataType(name, gb_obj, None, f"uint8_t[{dtype.itemsize}]", numba_type, dtype)
     if dtype not in _registry:
         _registry[gb_obj] = rv

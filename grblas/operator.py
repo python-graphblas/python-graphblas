@@ -125,21 +125,32 @@ def _udt_mask(dtype):
 
 
 class TypedOpBase:
-    __slots__ = "parent", "name", "type", "return_type", "gb_obj", "gb_name", "__weakref__"
+    __slots__ = (
+        "parent",
+        "name",
+        "type",
+        "return_type",
+        "gb_obj",
+        "gb_name",
+        "_type2",
+        "__weakref__",
+    )
 
-    def __init__(self, parent, name, type_, return_type, gb_obj, gb_name):
+    def __init__(self, parent, name, type_, return_type, gb_obj, gb_name, dtype2=None):
         self.parent = parent
         self.name = name
         self.type = type_
         self.return_type = return_type
         self.gb_obj = gb_obj
         self.gb_name = gb_name
+        self._type2 = dtype2
 
     def __repr__(self):
         classname = self.opclass.lower()
         if classname.endswith("op"):
             classname = classname[:-2]
-        return f"{classname}.{self.name}[{self.type}]"
+        dtype2 = "" if self._type2 is None else f", {self._type2.name}"
+        return f"{classname}.{self.name}[{self.type.name}{dtype2}]"
 
     @property
     def _carg(self):
@@ -150,7 +161,10 @@ class TypedOpBase:
         return self.parent.is_positional
 
     def __reduce__(self):
-        return (getitem, (self.parent, self.type))
+        if self._type2 is None or self.type == self._type2:
+            return (getitem, (self.parent, self.type))
+        else:
+            return (getitem, (self.parent, (self.type, self._type2)))
 
 
 class TypedBuiltinUnaryOp(TypedOpBase):
@@ -228,6 +242,10 @@ class TypedBuiltinBinaryOp(TypedOpBase):
     def is_commutative(self):
         return self.commutes_to is self
 
+    @property
+    def type2(self):
+        return self.type if self._type2 is None else self._type2
+
 
 class TypedBuiltinMonoid(TypedOpBase):
     __slots__ = "_identity"
@@ -280,6 +298,10 @@ class TypedBuiltinMonoid(TypedOpBase):
     def commutes_to(self):
         return self
 
+    @property
+    def type2(self):
+        return self.type
+
 
 class TypedBuiltinSemiring(TypedOpBase):
     __slots__ = ()
@@ -318,6 +340,8 @@ class TypedBuiltinSemiring(TypedOpBase):
     def is_commutative(self):
         return self.binaryop.is_commutative
 
+    type2 = TypedBuiltinBinaryOp.type2
+
 
 class TypedUserUnaryOp(TypedOpBase):
     __slots__ = ()
@@ -341,8 +365,8 @@ class TypedUserBinaryOp(TypedOpBase):
     __slots__ = "_monoid"
     opclass = "BinaryOp"
 
-    def __init__(self, parent, name, type_, return_type, gb_obj):
-        super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
+    def __init__(self, parent, name, type_, return_type, gb_obj, dtype2=None):
+        super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
         self._monoid = None
 
     @property
@@ -356,9 +380,10 @@ class TypedUserBinaryOp(TypedOpBase):
     commutes_to = TypedBuiltinBinaryOp.commutes_to
     _semiring_commutes_to = TypedBuiltinBinaryOp._semiring_commutes_to
     is_commutative = TypedBuiltinBinaryOp.is_commutative
-    __call__ = TypedBuiltinBinaryOp.__call__
     orig_func = TypedUserUnaryOp.orig_func
     _numba_func = TypedUserUnaryOp._numba_func
+    type2 = TypedBuiltinBinaryOp.type2
+    __call__ = TypedBuiltinBinaryOp.__call__
 
 
 class TypedUserMonoid(TypedOpBase):
@@ -373,6 +398,7 @@ class TypedUserMonoid(TypedOpBase):
         binaryop._monoid = self
 
     commutes_to = TypedBuiltinMonoid.commutes_to
+    type2 = TypedBuiltinMonoid.type2
     __call__ = TypedBuiltinMonoid.__call__
 
 
@@ -380,13 +406,14 @@ class TypedUserSemiring(TypedOpBase):
     __slots__ = "monoid", "binaryop"
     opclass = "Semiring"
 
-    def __init__(self, parent, name, type_, return_type, gb_obj, monoid, binaryop):
-        super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
+    def __init__(self, parent, name, type_, return_type, gb_obj, monoid, binaryop, dtype2=None):
+        super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
         self.monoid = monoid
         self.binaryop = binaryop
 
     commutes_to = TypedBuiltinSemiring.commutes_to
     is_commutative = TypedBuiltinSemiring.is_commutative
+    type2 = TypedBuiltinBinaryOp.type2
     __call__ = TypedBuiltinSemiring.__call__
 
 
@@ -649,7 +676,12 @@ class OpBase:
         return f"{self._modname}.{self.name}"
 
     def __getitem__(self, type_):
-        if not self._is_udt:
+        if type(type_) is tuple:
+            dtype1, dtype2 = type_
+            dtype1 = lookup_dtype(dtype1)
+            dtype2 = lookup_dtype(dtype2)
+            return get_typed_op(self, dtype1, dtype2)
+        elif not self._is_udt:
             type_ = lookup_dtype(type_)
             if type_ not in self._typed_ops:
                 if self._udt_types is None:
@@ -659,13 +691,8 @@ class OpBase:
             else:
                 return self._typed_ops[type_]
         # This is a UDT or is able to operate on UDTs such as `first` any `any`
-        if type(type_) is tuple:
-            dtype1, dtype2 = type_
-            dtype1 = lookup_dtype(dtype1)
-            dtype2 = lookup_dtype(dtype2)
-        else:
-            dtype1 = dtype2 = lookup_dtype(type_)
-        return self._getitem_udt(dtype1, dtype2)
+        dtype = lookup_dtype(type_)
+        return self._compile_udt(dtype, dtype)
 
     def _add(self, op):
         self._typed_ops[op.type] = op
@@ -677,12 +704,6 @@ class OpBase:
         del self.types[type_]
 
     def __contains__(self, type_):
-        if not self._is_udt:
-            type_ = lookup_dtype(type_)
-            if type_ in self._typed_ops or self.is_positional:
-                return True
-            elif self._udt_types is None:
-                return False
         try:
             self[type_]
         except (TypeError, KeyError, numba.NumbaError):
@@ -927,7 +948,7 @@ class UnaryOp(OpBase):
         else:
             raise UdfParseError("Unable to parse function using Numba")
 
-    def _getitem_udt(self, dtype, dtype2):
+    def _compile_udt(self, dtype, dtype2):
         if dtype in self._udt_types:
             return self._udt_ops[dtype]
 
@@ -1379,7 +1400,7 @@ class BinaryOp(OpBase):
         else:
             raise UdfParseError("Unable to parse function using Numba")
 
-    def _getitem_udt(self, dtype, dtype2):
+    def _compile_udt(self, dtype, dtype2):
         if dtype2 is None:
             dtype2 = dtype
         dtypes = (dtype, dtype2)
@@ -1434,7 +1455,6 @@ class BinaryOp(OpBase):
                 nt.CPointer(UINT8.numba_type),
                 nt.CPointer(UINT8.numba_type),
             )
-
             if mask.all():
 
                 def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
@@ -1485,9 +1505,10 @@ class BinaryOp(OpBase):
         op = TypedUserBinaryOp(
             self,
             self.name,
-            dtype,  # Should we do a tuple for both inputs?
+            dtype,
             ret_type,
             new_binary[0],
+            dtype2=dtype2,
         )
         self._udt_types[dtypes] = ret_type
         self._udt_ops[dtypes] = op
@@ -1775,7 +1796,7 @@ class Monoid(OpBase):
                 new_type_obj._add(op)
         return new_type_obj
 
-    def _getitem_udt(self, dtype, dtype2):
+    def _compile_udt(self, dtype, dtype2):
         if dtype2 is None:
             dtype2 = dtype
         elif dtype != dtype2:
@@ -1785,7 +1806,7 @@ class Monoid(OpBase):
             )
         if dtype in self._udt_types:
             return self._udt_ops[dtype]
-        binaryop = self.binaryop._getitem_udt(dtype, dtype2)
+        binaryop = self.binaryop._compile_udt(dtype, dtype2)
         from .scalar import Scalar
 
         ret_type = binaryop.return_type
@@ -1998,13 +2019,13 @@ class Semiring(OpBase):
             new_type_obj._add(op)
         return new_type_obj
 
-    def _getitem_udt(self, dtype, dtype2):
+    def _compile_udt(self, dtype, dtype2):
         if dtype2 is None:
             dtype2 = dtype
         dtypes = (dtype, dtype2)
         if dtypes in self._udt_types:
             return self._udt_ops[dtypes]
-        binaryop = self.binaryop._getitem_udt(dtype, dtype2)
+        binaryop = self.binaryop._compile_udt(dtype, dtype2)
         monoid = self.monoid[binaryop.return_type]
         ret_type = monoid.return_type
         new_semiring = ffi_new("GrB_Semiring*")
@@ -2013,11 +2034,12 @@ class Semiring(OpBase):
         op = TypedUserSemiring(
             new_semiring,
             self.name,
-            dtype,  # Should we do a tuple for both inputs?
+            dtype,
             ret_type,
             new_semiring[0],
             monoid,
             binaryop,
+            dtype2=dtype2,
         )
         self._udt_types[dtypes] = dtype
         self._udt_ops[dtypes] = op
@@ -2265,7 +2287,7 @@ class Semiring(OpBase):
 def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scalar=False, kind=None):
     if isinstance(op, OpBase):
         if op._is_udt:
-            return op._getitem_udt(dtype, dtype2)
+            return op._compile_udt(dtype, dtype2)
         if dtype2 is not None:
             try:
                 dtype = unify(
@@ -2276,7 +2298,7 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
                     return op[UINT64]
                 if op._udt_types is None:
                     raise
-                return op._getitem_udt(dtype, dtype2)
+                return op._compile_udt(dtype, dtype2)
         return op[dtype]
     elif isinstance(op, ParameterizedUdf):
         op = op()  # Use default parameters of parameterized UDFs

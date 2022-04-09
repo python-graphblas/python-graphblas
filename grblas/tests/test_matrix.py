@@ -3195,7 +3195,15 @@ def test_udt():
     result = unary.positioni(A).new()
     expected = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 0, 1, 1])
     assert result.isequal(expected)
-    # agg: any_value, first, last, first_index, last_index, count
+
+    # Just make sure these work
+    for aggop in [agg.any_value, agg.first, agg.last, agg.count]:
+        A.reduce_rowwise(aggop).new()
+        A.reduce_columnwise(aggop).new()
+        A.reduce_scalar(aggop).new()
+    for aggop in [agg.first_index, agg.last_index]:
+        A.reduce_rowwise(aggop).new()
+        A.reduce_columnwise(aggop).new()
 
     np_dtype = np.dtype("(3,)uint16")
     udt = dtypes.register_anonymous(np_dtype, "has_subdtype")

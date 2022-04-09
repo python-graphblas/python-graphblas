@@ -292,16 +292,17 @@ class Matrix(BaseType):
             return
 
         dup_op_given = dup_op is not None
-        if self.dtype._is_udt:  # XXX
-            dup_op = None
-        else:
-            if not dup_op_given:
+        if not dup_op_given:
+            if not self.dtype._is_udt:
                 dup_op = binary.plus
-            dup_op = get_typed_op(dup_op, self.dtype, kind="binary")
-            if dup_op.opclass == "Monoid":
-                dup_op = dup_op.binaryop
             else:
-                self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
+                dup_op = binary.any
+        # SS:SuiteSparse-specific: we could use NULL for dup_op
+        dup_op = get_typed_op(dup_op, self.dtype, kind="binary")
+        if dup_op.opclass == "Monoid":
+            dup_op = dup_op.binaryop
+        else:
+            self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
 
         rows = _CArray(rows)
         columns = _CArray(columns)
