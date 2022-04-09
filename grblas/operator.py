@@ -119,7 +119,7 @@ def _udt_mask(dtype):
         rv = np.concatenate(masks)
     else:
         rv = np.ones(dtype.itemsize, dtype=bool)
-    # assert rv.size == dtype.itemsize, (rv.size, dtype.itemsize)
+    # assert rv.size == dtype.itemsize
     _udt_mask_cache[dtype] = rv
     return rv
 
@@ -215,16 +215,14 @@ class TypedBuiltinBinaryOp(TypedOpBase):
     @property
     def commutes_to(self):
         commutes_to = self.parent.commutes_to
-        if commutes_to is not None and self.type in commutes_to._typed_ops:
+        if commutes_to is not None and (self.type in commutes_to._typed_ops or self.type._is_udt):
             return commutes_to[self.type]
-        # TODO: what about UDTs and `gb.binary.any`?
 
     @property
     def _semiring_commutes_to(self):
         commutes_to = self.parent._semiring_commutes_to
-        if commutes_to is not None and self.type in commutes_to._typed_ops:
+        if commutes_to is not None and (self.type in commutes_to._typed_ops or self.type._is_udt):
             return commutes_to[self.type]
-        # TODO: what about UDTs and `gb.binary.any`?
 
     @property
     def is_commutative(self):
@@ -475,7 +473,7 @@ class ParameterizedBinaryOp(ParameterizedUdf):
                 self._monoid(*args, **kwargs)
             except Exception:
                 binop._monoid = None
-            assert binop._monoid is not binop
+            # assert binop._monoid is not binop
         if self.is_commutative:
             binop._commutes_to = binop
         # Don't bother yet with creating `binop.commutes_to` (but we could!)
@@ -806,11 +804,11 @@ class OpBase:
 
 
 def _identity(x):
-    return x
+    return x  # pragma: no cover
 
 
 def _one(x):
-    return 1
+    return 1  # pragma: no cover
 
 
 class UnaryOp(OpBase):
@@ -940,31 +938,7 @@ class UnaryOp(OpBase):
         if ret_type is not dtype and ret_type.gb_obj is dtype.gb_obj:
             ret_type = dtype
 
-        # Numba is unable to handle BOOL correctly right now, but we have a workaround
-        # See: https://github.com/numba/numba/issues/5395
-        # We're relying on coercion behaving correctly here
-        return_type = INT8 if ret_type == BOOL else ret_type
-
-        # Build wrapper because GraphBLAS wants pointers and void return
-        nt = numba.types
-        wrapper_sig = nt.void(
-            nt.CPointer(return_type.numba_type),
-            nt.CPointer(dtype.numba_type),
-        )
-        if ret_type == BOOL:
-
-            def unary_wrapper(z_ptr, x_ptr):  # pragma: no cover
-                z = numba.carray(z_ptr, 1)
-                x = numba.carray(x_ptr, 1)
-                z[0] = bool(numba_func(x[0]))
-
-        else:
-
-            def unary_wrapper(z_ptr, x_ptr):  # pragma: no cover
-                z = numba.carray(z_ptr, 1)
-                x = numba.carray(x_ptr, 1)
-                z[0] = numba_func(x[0])
-
+        unary_wrapper, wrapper_sig = _get_udt_wrapper(numba_func, ret_type, dtype)
         unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
         new_unary = ffi_new("GrB_UnaryOp*")
         check_status_carg(
@@ -1117,7 +1091,7 @@ def _abssecond(x, y):
 
 
 def _rpow(x, y):
-    return y**x
+    return y**x  # pragma: no cover
 
 
 def _isclose(rel_tol=1e-7, abs_tol=0.0):
@@ -1177,7 +1151,7 @@ def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None):
         else:
             xname = "x_ptr"
     elif dtype == BOOL:
-        xname = "bool(x_ptr[0])"  # is this still necessary?
+        xname = "bool(x_ptr[0])"
     else:
         xname = "x_ptr[0]"
 
@@ -1190,7 +1164,7 @@ def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None):
             else:
                 yname = ", y_ptr"
         elif dtype2 == BOOL:
-            yname = ", bool(y_ptr[0])"  # is this still necessary?
+            yname = ", bool(y_ptr[0])"
         else:
             yname = ", y_ptr[0]"
 
@@ -1414,7 +1388,7 @@ class BinaryOp(OpBase):
 
         nt = numba.types
         if self.name == "eq" and not self._anonymous:
-            assert dtype == dtype2  # XXX: must be same size?
+            # assert dtype.np_type == dtype2.np_type
             itemsize = dtype.np_type.itemsize
             mask = _udt_mask(dtype.np_type)
             ret_type = BOOL
@@ -1451,7 +1425,7 @@ class BinaryOp(OpBase):
                     z_ptr[0] = (x[mask] == y[mask]).all()
 
         elif self.name == "ne" and not self._anonymous:
-            assert dtype == dtype2  # XXX: must be same size?
+            # assert dtype.np_type == dtype2.np_type
             itemsize = dtype.np_type.itemsize
             mask = _udt_mask(dtype.np_type)
             ret_type = BOOL
@@ -1497,7 +1471,6 @@ class BinaryOp(OpBase):
                     ret_type = dtype
                 elif ret_type.gb_obj is dtype2.gb_obj:
                     ret_type = dtype2
-                    1 / 0
             binary_wrapper, wrapper_sig = _get_udt_wrapper(numba_func, ret_type, dtype, dtype2)
 
         binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
@@ -2298,7 +2271,7 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
                 dtype = unify(
                     dtype, dtype2, is_left_scalar=is_left_scalar, is_right_scalar=is_right_scalar
                 )
-            except TypeError:
+            except (TypeError, AttributeError):
                 if op.is_positional:
                     return op[UINT64]
                 if op._udt_types is None:

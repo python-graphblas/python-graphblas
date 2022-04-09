@@ -115,6 +115,9 @@ def test_get_typed_op():
     )
     with pytest.raises(ValueError, match="Unknown binary or aggregator"):
         operator.get_typed_op("bad_op_name", dtypes.INT64, kind="binary|aggregator")
+    with pytest.raises(Exception):
+        # get_typed_op expects dtypes to already be dtypes
+        operator.get_typed_op(binary.plus, dtypes.INT64, "bad dtype")
 
 
 def test_unaryop_udf():
@@ -726,7 +729,10 @@ def test_monoid_attributes():
     assert monoid.numpy.add.binaryop is binary.numpy.add
     assert monoid.numpy.add.identities == {typ: 0 for typ in monoid.numpy.add.types}
 
-    binop = BinaryOp.register_anonymous(lambda x, y: x + y, name="plus")
+    def plus(x, y):  # pragma: no cover
+        return x + y
+
+    binop = BinaryOp.register_anonymous(plus, name="plus")
     op = Monoid.register_anonymous(binop, 0, name="plus")
     assert op.binaryop is binop
     assert op[int].binaryop is binop[int]
@@ -1076,6 +1082,11 @@ def test_udt():
     assert udt_first(v, 1).new().isequal(v)
     assert udt_first[udt, dtypes.INT64].return_type == udt
     assert udt_first[dtypes.INT64, udt].return_type == dtypes.INT64
+    assert udt_first[udt, dtypes.BOOL].return_type == udt
+    assert udt_first[dtypes.BOOL, udt].return_type == dtypes.BOOL
+    udt_dup = dtypes.register_anonymous(record_dtype)
+    assert udt_first[udt, udt_dup].return_type == udt
+    # assert udt_first[udt_dup, udt].return_type == udt ?
 
     udt_any = Monoid.register_new("udt_any", udt_first, (0, 0))
     assert udt in udt_any
@@ -1103,19 +1114,24 @@ def test_udt():
     class BreakCompile:
         pass
 
-    def badfunc(x):
+    def badfunc(x):  # pragma: no cover
         return BreakCompile(x)
 
     badunary = UnaryOp.register_anonymous(badfunc, is_udt=True)
     assert udt not in badunary
     assert int not in badunary
 
-    def badfunc(x, y):
+    def badfunc(x, y):  # pragma: no cover
         return BreakCompile(x)
 
     badbinary = BinaryOp.register_anonymous(badfunc, is_udt=True)
     assert udt not in badbinary
     assert int not in badbinary
+
+    assert binary.first[udt].return_type is udt
+    assert binary.first[udt].commutes_to is binary.second[udt]
+    assert semiring.any_firsti[int].commutes_to is semiring.any_secondj[int]
+    assert semiring.any_firsti[udt].commutes_to is semiring.any_secondj[udt]
 
 
 def test_dir():

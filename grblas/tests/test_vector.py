@@ -1751,16 +1751,19 @@ def test_udt():
     assert v.reduce(agg.first_index).new() == 0
     assert v.reduce(agg.last_index).new() == 2
     assert v.reduce(agg.count).new() == 3
+    info = v.ss.export()
+    result = Vector.ss.import_any(**info)
+    assert result.isequal(v)
 
     # arrays as dtypes!
     np_dtype = np.dtype("(3,)uint16")
-    udt = dtypes.register_anonymous(np_dtype, "has_subdtype")
-    s = Scalar.new(udt)
+    udt2 = dtypes.register_anonymous(np_dtype, "has_subdtype")
+    s = Scalar.new(udt2)
     s.value = [0, 0, 0]
 
-    v = Vector.new(udt, size=2)
+    v = Vector.new(udt2, size=2)
     v[0] = 0
-    w = Vector.new(udt, size=2)
+    w = Vector.new(udt2, size=2)
     w[0] = (0, 0, 0)
     assert v.isequal(w)
     assert v.ewise_mult(w, binary.eq).new().reduce(monoid.land).new()
@@ -1778,6 +1781,9 @@ def test_udt():
     assert_array_equal(values, np.ones((2, 3), dtype=np.uint16))
     assert v.isequal(Vector.from_values(indices, values, dtype=v.dtype))
     assert v.isequal(Vector.from_values(indices, values))
+    info = v.ss.export()
+    result = Vector.ss.import_any(**info)
+    assert result.isequal(v)
 
     s = v.reduce(monoid.any).new()
     assert (s.value == [1, 1, 1]).all()
