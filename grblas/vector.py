@@ -260,7 +260,7 @@ class Vector(BaseType):
         # TODO: accept `dtype` keyword to match the dtype of `values`?
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         values, dtype = values_to_numpy_buffer(values, self.dtype)
-        n = values.size
+        n = values.shape[0]
         if indices.size != n:
             raise ValueError(
                 f"`indices` and `values` lengths must match: {indices.size} != {values.size}"
@@ -355,14 +355,17 @@ class Vector(BaseType):
         values may be a scalar, in which case duplicate indices are ignored.
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
-        values, dtype = values_to_numpy_buffer(values, dtype)
+        values, new_dtype = values_to_numpy_buffer(values, dtype)
         # Compute size if not provided
         if size is None:
             if indices.size == 0:
                 raise ValueError("No indices provided. Unable to infer size.")
             size = int(indices.max()) + 1
+        if dtype is None and values.ndim > 1:
+            # Array-subtdype
+            new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
         # Create the new vector
-        w = cls.new(dtype, size, name=name)
+        w = cls.new(new_dtype, size, name=name)
         if values.ndim == 0:
             if dup_op is not None:
                 raise ValueError(

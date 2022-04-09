@@ -67,10 +67,16 @@ def ints_to_numpy_buffer(array, dtype, *, name="array", copy=False, ownable=Fals
     return array
 
 
+def _get_subdtype(dtype):
+    while dtype.subdtype is not None:
+        dtype = dtype.subdtype[0]
+    return dtype
+
+
 def values_to_numpy_buffer(array, dtype=None, *, copy=False, ownable=False, order="C"):
     if dtype is not None:
         dtype = lookup_dtype(dtype)
-        array = np.array(array, dtype.np_type, copy=copy, order=order)
+        array = np.array(array, _get_subdtype(dtype.np_type), copy=copy, order=order)
     else:
         is_input_np = isinstance(array, np.ndarray)
         array = np.array(array, copy=copy, order=order)
@@ -127,7 +133,7 @@ class _CArray:
         if size is not None:
             self.array = np.empty(size, dtype=dtype.np_type)
         else:
-            self.array = np.array(array, dtype=dtype.np_type, copy=False, order="C")
+            self.array = np.array(array, dtype=_get_subdtype(dtype.np_type), copy=False, order="C")
         c_type = dtype.c_type if dtype._is_udt else f"{dtype.c_type}*"
         self._carg = ffi.cast(c_type, ffi.from_buffer(self.array))
         self.dtype = dtype

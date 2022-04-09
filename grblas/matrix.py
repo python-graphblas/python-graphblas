@@ -274,7 +274,7 @@ class Matrix(BaseType):
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
         values, dtype = values_to_numpy_buffer(values, self.dtype)
-        n = values.size
+        n = values.shape[0]
         if rows.size != n or columns.size != n:
             raise ValueError(
                 f"`rows` and `columns` and `values` lengths must match: "
@@ -386,7 +386,7 @@ class Matrix(BaseType):
         """
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
-        values, dtype = values_to_numpy_buffer(values, dtype)
+        values, new_dtype = values_to_numpy_buffer(values, dtype)
         # Compute nrows and ncols if not provided
         if nrows is None:
             if rows.size == 0:
@@ -396,8 +396,11 @@ class Matrix(BaseType):
             if columns.size == 0:
                 raise ValueError("No column indices provided. Unable to infer ncols.")
             ncols = int(columns.max()) + 1
+        if dtype is None and values.ndim > 1:
+            # Look for array-subtdype
+            new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
         # Create the new matrix
-        C = cls.new(dtype, nrows, ncols, name=name)
+        C = cls.new(new_dtype, nrows, ncols, name=name)
         if values.ndim == 0:
             if dup_op is not None:
                 raise ValueError(

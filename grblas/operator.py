@@ -687,7 +687,7 @@ class OpBase:
                 return False
         try:
             self[type_]
-        except (TypeError, KeyError):
+        except (TypeError, KeyError, numba.NumbaError):
             return False
         else:
             return True
@@ -935,10 +935,7 @@ class UnaryOp(OpBase):
 
         numba_func = self._numba_func
         sig = (dtype.numba_type,)
-        try:
-            numba_func.compile(sig)
-        except numba.TypingError:
-            raise TypeError("TODO")
+        numba_func.compile(sig)  # Should we catch and give additional error message?
         ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
         if ret_type is not dtype and ret_type.gb_obj is dtype.gb_obj:
             ret_type = dtype
@@ -1493,10 +1490,7 @@ class BinaryOp(OpBase):
         else:
             numba_func = self._numba_func
             sig = (dtype.numba_type, dtype2.numba_type)
-            try:
-                numba_func.compile(sig)
-            except numba.TypingError:
-                raise TypeError("TODO")
+            numba_func.compile(sig)  # Should we catch and give additional error message?
             ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
             if ret_type is not dtype and ret_type is not dtype2:
                 if ret_type.gb_obj is dtype.gb_obj:
@@ -1812,7 +1806,10 @@ class Monoid(OpBase):
         if dtype2 is None:
             dtype2 = dtype
         elif dtype != dtype2:
-            raise TypeError("TODO")
+            raise TypeError(
+                "Monoid inputs must be the same dtype (got {dtype} and {dtype2}); "
+                "unable to coerce when using UDTs."
+            )
         if dtype in self._udt_types:
             return self._udt_ops[dtype]
         binaryop = self.binaryop._getitem_udt(dtype, dtype2)

@@ -1776,6 +1776,8 @@ def test_udt():
 
     indices, values = v.to_values()
     assert_array_equal(values, np.ones((2, 3), dtype=np.uint16))
+    assert v.isequal(Vector.from_values(indices, values, dtype=v.dtype))
+    assert v.isequal(Vector.from_values(indices, values))
 
     s = v.reduce(monoid.any).new()
     assert (s.value == [1, 1, 1]).all()

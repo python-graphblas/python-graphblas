@@ -27,8 +27,7 @@ class DataType:
             return self is other
         # Attempt to use `other` as a lookup key
         try:
-            other = lookup_dtype(other)
-            return self is other
+            return self is lookup_dtype(other)
         except ValueError:
             raise TypeError(f"Invalid or unknown datatype: {other}") from None
 
@@ -49,7 +48,6 @@ class DataType:
 
     def __reduce__(self):
         if self._is_udt:
-            1 / 0
             return (self._deserialize, (self.name, self.np_type, self._is_anonymous))
         if self.gb_name == "GrB_Index":
             return "_INDEX"
@@ -69,7 +67,6 @@ class DataType:
 
     @staticmethod
     def _deserialize(name, dtype, is_anonymous):
-        1 / 0
         if is_anonymous:
             return register_anonymous(dtype, name)
         if name in _registry:

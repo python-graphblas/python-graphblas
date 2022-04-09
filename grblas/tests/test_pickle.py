@@ -1,6 +1,7 @@
 import os
 import pickle
 
+import numpy as np
 import pytest
 
 import grblas as gb
@@ -273,3 +274,38 @@ def test_deserialize_parameterized():
     # Again!
     with open(os.path.join(thisdir, "pickle2.pkl"), "rb") as f:
         pickle.load(f)  # TODO: check results
+
+
+def test_udt():
+    record_dtype = np.dtype([("x", np.bool_), ("y", np.int64)], align=True)
+    udt = gb.dtypes.register_new("PickleUDT", record_dtype)
+    assert not udt._is_anonymous
+    assert pickle.loads(pickle.dumps(udt)) is udt
+
+    np_dtype = np.dtype("(3,)uint16")
+    udt2 = gb.dtypes.register_anonymous(np_dtype, "pickling")
+    assert udt2._is_anonymous
+    assert pickle.loads(pickle.dumps(udt2)).np_type == udt2.np_type
+
+    thisdir = os.path.dirname(__file__)
+    with open(os.path.join(thisdir, "pickle3.pkl"), "rb") as f:
+        d = pickle.load(f)
+    udt3 = d["PickledUDT"]
+    v = d["v"]
+    assert udt3.name == "PickledUDT"
+    assert udt3 is gb.dtypes.PickledUDT
+    assert v.dtype == udt3
+    expected = gb.Vector.new(udt3, size=2)
+    expected[0] = (False, 1)
+    expected[1] = (True, 3)
+    assert expected.isequal(v)
+
+    udt4 = d["pickled_subdtype"]
+    A = d["A"]
+    assert udt4.name == "pickled_subdtype"
+    assert not hasattr(gb.dtypes, udt4.name)
+    assert A.dtype == udt4
+    expected = gb.Matrix.new(udt4, nrows=1, ncols=2)
+    expected[0, 0] = (1, 2)
+    expected[0, 1] = (3, 4)
+    assert expected.isequal(A)
