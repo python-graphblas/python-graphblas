@@ -135,9 +135,13 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
             if row_offset is not None or column_offset is not None:
                 submatrix = submatrix[row_offset:, column_offset:].new(name="")
     rows, cols, vals = submatrix.to_values()
+    np_type = submatrix.dtype.np_type
+    if submatrix.dtype._is_udt and np_type.subdtype is not None:
+        vals = vals.tolist()
     df.values[rows, cols] = vals
-    nulls = np.isnan(vals)
-    df.values[rows[nulls], cols[nulls]] = "nan"
+    if np.issubdtype(np_type, np.inexact):
+        nulls = np.isnan(vals)
+        df.values[rows[nulls], cols[nulls]] = "nan"
 
 
 def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
@@ -169,8 +173,12 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
         if column_offset is not None:
             subvector = subvector[column_offset:].new(name="")
     cols, vals = subvector.to_values()
+    np_type = subvector.dtype.np_type
+    if subvector.dtype._is_udt and np_type.subdtype is not None:
+        vals = vals.tolist()
     df.values[0, cols] = vals
-    df.values[0, cols[np.isnan(vals)]] = "nan"
+    if np.issubdtype(np_type, np.inexact):
+        df.values[0, cols[np.isnan(vals)]] = "nan"
 
 
 def _get_max_columns():

@@ -106,6 +106,7 @@ if _supports_complex:
     _unary_names.update({"conj", "conjugate"})
     _numpy_to_graphblas["conj"] = "conj"
     _numpy_to_graphblas["conjugate"] = "conj"
+# _graphblas_to_numpy = {val: key for key, val in _numpy_to_graphblas.items()}  # Soon...
 
 _operator._STANDARD_OPERATOR_NAMES.update(f"unary.numpy.{name}" for name in _unary_names)
 __all__ = list(_unary_names)

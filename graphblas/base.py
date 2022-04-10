@@ -318,7 +318,6 @@ class BaseType:
         return self._update(expr)
 
     def _update(self, expr, mask=None, accum=None, replace=False, input_mask=None):
-        # TODO: check expected output type (now included in Expression object)
         if not isinstance(expr, BaseExpression):
             if isinstance(expr, AmbiguousAssignOrExtract):
                 if expr._is_scalar and self._is_scalar:
@@ -557,7 +556,7 @@ class BaseExpression:
                 raise ValueError(f"No default expr_repr for len(args) == {len(args)}")
         self.expr_repr = expr_repr
         if dtype is None:
-            self.dtype = lookup_dtype(op.return_type)
+            self.dtype = op.return_type
         else:
             self.dtype = dtype
         self._value = None

@@ -4,8 +4,8 @@ from operator import getitem
 import numpy as np
 
 from . import agg, binary, monoid, semiring, unary
-from .dtypes import lookup_dtype, unify
-from .operator import _normalize_type
+from .dtypes import INT64, lookup_dtype
+from .operator import get_typed_op
 from .scalar import Scalar
 
 
@@ -14,8 +14,8 @@ def _get_types(ops, initdtype):
     if initdtype is None:
         prev = dict(ops[0].types)
     else:
-        initdtype = lookup_dtype(initdtype)
-        prev = {key: unify(lookup_dtype(val), initdtype).name for key, val in ops[0].types.items()}
+        op = ops[0]
+        prev = {key: get_typed_op(op, key, initdtype).return_type for key in op.types}
     for op in ops[1:]:
         cur = {}
         types = op.types
@@ -43,11 +43,12 @@ class Aggregator:
         composite=None,
         custom=None,
         types=None,
+        any_dtype=None,
     ):
         self.name = name
         self._initval_orig = initval
         self._initval = False if initval is None else initval
-        self._initdtype = lookup_dtype(type(self._initval))
+        self._initdtype = lookup_dtype(type(self._initval), self._initval)
         self._monoid = monoid
         self._semiring = semiring
         self._semiring2 = semiring2
@@ -68,6 +69,7 @@ class Aggregator:
         self._types_orig = types
         self._types = None
         self._typed_ops = {}
+        self._any_dtype = any_dtype
 
     @property
     def types(self):
@@ -82,16 +84,16 @@ class Aggregator:
         return self._types
 
     def __getitem__(self, dtype):
-        dtype = _normalize_type(dtype)
-        if dtype not in self.types:
+        dtype = lookup_dtype(dtype)
+        if not self._any_dtype and dtype not in self.types:
             raise KeyError(f"{self.name} does not work with {dtype}")
         if dtype not in self._typed_ops:
             self._typed_ops[dtype] = TypedAggregator(self, dtype)
         return self._typed_ops[dtype]
 
     def __contains__(self, dtype):
-        dtype = _normalize_type(dtype)
-        return dtype in self.types
+        dtype = lookup_dtype(dtype)
+        return self._any_dtype or dtype in self.types
 
     def __repr__(self):
         return f"agg.{self.name}"
@@ -107,7 +109,12 @@ class TypedAggregator:
         self.name = agg.name
         self.parent = agg
         self.type = dtype
-        self.return_type = agg.types[dtype]
+        if dtype in agg.types:
+            self.return_type = agg.types[dtype]
+        elif agg._any_dtype is True:
+            self.return_type = dtype
+        else:
+            self.return_type = agg._any_dtype
 
     def __repr__(self):
         return f"agg.{self.name}[{self.type}]"
@@ -160,8 +167,7 @@ class TypedAggregator:
         if agg._custom is not None:
             return agg._custom(self, updater, expr, in_composite=in_composite)
 
-        dtype = unify(lookup_dtype(self.type), lookup_dtype(agg._initdtype))
-        semiring = agg._semiring[dtype]
+        semiring = get_typed_op(agg._semiring, self.type, agg._initdtype)
         if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
             # Matrix -> Vector
             A = expr.args[0]
@@ -242,13 +248,15 @@ agg.all = Aggregator("all", monoid=monoid.land)
 agg.any = Aggregator("any", monoid=monoid.lor)
 agg.min = Aggregator("min", monoid=monoid.min)
 agg.max = Aggregator("max", monoid=monoid.max)
-agg.any_value = Aggregator("any_value", monoid=monoid.any)
+agg.any_value = Aggregator("any_value", monoid=monoid.any, any_dtype=True)
 agg.bitwise_all = Aggregator("bitwise_all", monoid=monoid.band)
 agg.bitwise_any = Aggregator("bitwise_any", monoid=monoid.bor)
 # Other monoids: bxnor bxor eq lxnor lxor
 
 # Semiring-only
-agg.count = Aggregator("count", semiring=semiring.plus_pair, semiring2=semiring.plus_first)
+agg.count = Aggregator(
+    "count", semiring=semiring.plus_pair, semiring2=semiring.plus_first, any_dtype=INT64
+)
 agg.count_nonzero = Aggregator(
     "count_nonzero", semiring=semiring.plus_isne, semiring2=semiring.plus_first
 )
@@ -264,7 +272,9 @@ agg.sum_of_inverses = Aggregator(
     semiring=semiring.plus_pow,
     semiring2=semiring.plus_first,
 )
-agg.exists = Aggregator("exists", semiring=semiring.any_pair, semiring2=semiring.any_pair)
+agg.exists = Aggregator(
+    "exists", semiring=semiring.any_pair, semiring2=semiring.any_pair, any_dtype=INT64
+)
 
 # Semiring and finalize
 agg.hypot = Aggregator(
@@ -564,11 +574,13 @@ agg.first = Aggregator(
     "first",
     custom=partial(_first_last, semiring_=semiring.min_secondi),
     types=[binary.first],
+    any_dtype=True,
 )
 agg.last = Aggregator(
     "last",
     custom=partial(_first_last, semiring_=semiring.max_secondi),
     types=[binary.second],
+    any_dtype=True,
 )
 
 
@@ -601,9 +613,11 @@ agg.first_index = Aggregator(
     "first_index",
     custom=partial(_first_last_index, semiring=semiring.min_secondi),
     types=[semiring.min_secondi],
+    any_dtype=INT64,
 )
 agg.last_index = Aggregator(
     "last_index",
     custom=partial(_first_last_index, semiring=semiring.max_secondi),
     types=[semiring.min_secondi],
+    any_dtype=INT64,
 )

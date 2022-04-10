@@ -219,14 +219,6 @@ Import/Export connectors to the Python ecosystem
     A = gb.io.from_networkx(g)
     g = gb.io.to_networkx(A)
 
-Attribution
------------
-
-This library borrows some great ideas from `pygraphblas <https://github.com/michelp/pygraphblas>`_,
-especially around parsing operator names from SuiteSparse and the concept of a Scalar which the backend
-implementation doesn't need to know about.
-
-
 Indices and tables
 ==================
 

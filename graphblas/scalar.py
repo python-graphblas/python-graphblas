@@ -38,7 +38,7 @@ class Scalar(BaseType):
 
     def __del__(self):
         gb_obj = getattr(self, "gb_obj", None)
-        if gb_obj is not None and "GB_Scalar_opaque" in str(gb_obj):
+        if gb_obj is not None and lib is not None and "GB_Scalar_opaque" in str(gb_obj):
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Scalar_free(gb_obj), self)
 
@@ -90,7 +90,7 @@ class Scalar(BaseType):
 
     def __neg__(self):
         dtype = self.dtype
-        if dtype.name[0] == "U" or dtype == BOOL:
+        if dtype.name[0] == "U" or dtype == BOOL or dtype._is_udt:
             raise TypeError(f"The negative operator, `-`, is not supported for {dtype.name} dtype")
         rv = Scalar.new(dtype, is_cscalar=self._is_cscalar, name=f"-{self.name or 's_temp'}")
         if self._is_empty:
@@ -138,7 +138,8 @@ class Scalar(BaseType):
             if other is None:
                 return self._is_empty
             try:
-                other = Scalar.from_value(other, is_cscalar=None, name="s_isequal")
+                dtype = self.dtype if self.dtype._is_udt else None
+                other = Scalar.from_value(other, dtype, is_cscalar=None, name="s_isequal")
             except TypeError:
                 other = self._expect_type(
                     other,
@@ -157,7 +158,11 @@ class Scalar(BaseType):
             return False
         else:
             # For now, compare values in Python
-            return self.value == other.value
+            rv = self.value == other.value
+            try:
+                return bool(rv)
+            except ValueError:
+                return bool(rv.all())
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """
@@ -197,7 +202,7 @@ class Scalar(BaseType):
             is_right_scalar=True,
             kind="binary",
         )
-        return isclose_func.numba_func(self.value, other.value)
+        return isclose_func._numba_func(self.value, other.value)
 
     def clear(self):
         if self._is_empty:
@@ -224,11 +229,21 @@ class Scalar(BaseType):
     def value(self):
         if self._is_empty:
             return None
+        is_udt = self.dtype._is_udt
         if self._is_cscalar:
-            return self.gb_obj[0]
+            scalar = self
         else:
             scalar = Scalar.new(self.dtype, is_cscalar=True, name="s_temp")
-            call(f"GrB_Scalar_extractElement_{self.dtype.name}", [_Pointer(scalar), self])
+            dtype_name = "UDT" if is_udt else self.dtype.name
+            call(f"GrB_Scalar_extractElement_{dtype_name}", [_Pointer(scalar), self])
+        if is_udt:
+            np_type = self.dtype.np_type
+            rv = np.array(ffi.buffer(scalar.gb_obj[0 : np_type.itemsize]))
+            if np_type.subdtype is None:
+                return rv.view(np_type)[0]
+            else:
+                return rv.view(np_type.subdtype[0]).reshape(np_type.subdtype[1])
+        else:
             return scalar.gb_obj[0]
 
     @value.setter
@@ -238,11 +253,26 @@ class Scalar(BaseType):
         elif self._is_cscalar:
             if output_type(val) is Scalar:
                 val = val.value  # raise below if wrong type (as determined by cffi)
-            self.gb_obj[0] = val
+            if self.dtype._is_udt:
+                np_type = self.dtype.np_type
+                if np_type.subdtype is None:
+                    arr = np.empty(1, dtype=np_type)
+                else:
+                    arr = np.empty(np_type.subdtype[1], dtype=np_type.subdtype[0])
+                arr[:] = val
+                self.gb_obj[0 : self.dtype.np_type.itemsize] = arr.view(np.uint8)
+                # self.gb_obj[0:self.dtype.np_type.itemsize] = bytes(val)
+            else:
+                self.gb_obj[0] = val
             self._empty = False
         else:
-            val = _as_scalar(val, is_cscalar=True)
-            call(f"GrB_Scalar_setElement_{val.dtype}", [self, val])
+            if self.dtype._is_udt:
+                val = _Pointer(_as_scalar(val, self.dtype, is_cscalar=True))
+                dtype_name = "UDT"
+            else:
+                val = _as_scalar(val, is_cscalar=True)
+                dtype_name = val.dtype.name
+            call(f"GrB_Scalar_setElement_{dtype_name}", [self, val])
 
     @property
     def nvals(self):
@@ -287,7 +317,11 @@ class Scalar(BaseType):
         else:
             new_scalar = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
             if not self._is_empty:
-                new_scalar.value = new_scalar.dtype.np_type(self.value)
+                if new_scalar.is_cscalar and not new_scalar.dtype._is_udt:
+                    # Cast value so we don't raise given explicit dup with dtype
+                    new_scalar.value = new_scalar.dtype.np_type.type(self.value)
+                else:
+                    new_scalar.value = self.value
         return new_scalar
 
     def wait(self):
@@ -313,7 +347,10 @@ class Scalar(BaseType):
             # or to create a C scalar from a Python scalar.  For example, see Matrix.apply.
             is_cscalar = True  # pragma: to_grb
         if is_cscalar:
-            new_scalar = ffi_new(f"{dtype.c_type}*")
+            if dtype._is_udt:
+                new_scalar = ffi_new(dtype.c_type)
+            else:
+                new_scalar = ffi_new(f"{dtype.c_type}*")
         else:
             new_scalar = ffi_new("GrB_Scalar*")
         rv = cls(new_scalar, dtype, name=name, empty=True, is_cscalar=is_cscalar)
@@ -330,7 +367,7 @@ class Scalar(BaseType):
                 dtype = value.dtype
             else:
                 try:
-                    dtype = lookup_dtype(type(value))
+                    dtype = lookup_dtype(type(value), value)
                 except ValueError:
                     raise TypeError(
                         f"Argument of from_value must be a known scalar type, not {type(value)}"

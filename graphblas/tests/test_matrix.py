@@ -3129,3 +3129,96 @@ def test_delete_via_scalar(A):
     assert A[:, 0].new().nvals == 0
     del A[:, :]
     assert A.nvals == 0
+
+
+def test_udt():
+    record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
+    udt = dtypes.register_anonymous(record_dtype, "MatrixUDT")
+    A = Matrix.new(udt, nrows=2, ncols=2)
+    a = np.zeros(1, dtype=record_dtype)
+    A[0, 0] = a[0]
+    expected = Matrix.from_values([0], [0], a, nrows=2, ncols=2, dtype=udt)
+    assert A.isequal(expected)
+    A[0, 1] = (1, 2)
+    expected = Matrix.from_values(
+        [0, 0], [0, 1], np.array([(0, 0), (1, 2)], dtype=record_dtype), nrows=2, ncols=2, dtype=udt
+    )
+    assert A.isequal(expected)
+    A[:, :] = 0
+    zeros = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], 0, dtype=udt)
+    assert A.isequal(zeros)
+    A(A.S)[:, :] = 1
+    ones = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 1, 1, 1], dtype=udt)
+    assert A.isequal(ones)
+    A[:, :](A.S) << 0
+    assert A.isequal(zeros)
+    s = Scalar.new(udt)
+    s.value = (1, 1)
+    A(A.S)[:, :] = s
+    assert A.isequal(ones)
+    s.value = 0
+    A[:, :](A.S) << s
+    assert A.isequal(zeros)
+    A[0, :] = 1
+    A[[1], :] = 1
+    assert A.isequal(ones)
+    A[:, [0]] = s
+    A[:, 1] = s
+    A[0, 0] = s
+    assert A.isequal(zeros)
+    t = A.reduce_scalar(monoid.any, allow_empty=True).new()
+    assert s == t
+    t = A.reduce_scalar(monoid.any, allow_empty=False).new()
+    assert s == t
+    A << binary.first(1, A)
+    assert A.isequal(ones)
+    A << binary.first(s, A)
+    assert A.isequal(zeros)
+    A << binary.second(A, 1)
+    assert A.isequal(ones)
+    A << binary.second(A, s)
+    assert A.isequal(zeros)
+    assert A[0, 0].new() == s
+    assert A[:, :].new().isequal(A)
+    expected = Vector.from_values([0, 1], s)
+    assert A[0, :].new().isequal(expected)
+    assert A.reduce_rowwise(monoid.any).new().isequal(expected)
+    rows, cols, values = A.to_values()
+    assert A.isequal(Matrix.from_values(rows, cols, values))
+    assert A.isequal(Matrix.from_values(rows, cols, values, dtype=A.dtype))
+    info = A.ss.export()
+    result = A.ss.import_any(**info)
+    assert result.isequal(A)
+    info = A.ss.export("cooc")
+    result = A.ss.import_any(**info)
+    assert result.isequal(A)
+    result = unary.positioni(A).new()
+    expected = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 0, 1, 1])
+    assert result.isequal(expected)
+
+    # Just make sure these work
+    for aggop in [agg.any_value, agg.first, agg.last, agg.count]:
+        A.reduce_rowwise(aggop).new()
+        A.reduce_columnwise(aggop).new()
+        A.reduce_scalar(aggop).new()
+    for aggop in [agg.first_index, agg.last_index]:
+        A.reduce_rowwise(aggop).new()
+        A.reduce_columnwise(aggop).new()
+
+    np_dtype = np.dtype("(3,)uint16")
+    udt = dtypes.register_anonymous(np_dtype, "has_subdtype")
+    A = Matrix.new(udt, nrows=2, ncols=2)
+    A[:, :] = (1, 2, 3)
+    rows, cols, values = A.to_values()
+    assert_array_equal(values, np.array([[1, 2, 3]] * 4))
+    result = Matrix.from_values(rows, cols, values)
+    assert A.isequal(result)
+    assert result.isequal(A)
+    result = Matrix.from_values(rows, cols, values, dtype=udt)
+    assert result.isequal(A)
+    info = A.ss.export()
+    result = A.ss.import_any(**info)
+    assert result.isequal(A)
+    info = A.ss.export("coor")
+    result = A.ss.import_any(**info)
+    assert result.isequal(A)

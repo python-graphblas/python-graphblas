@@ -786,7 +786,7 @@ class ss:
             parent = self._parent
         else:
             parent = self._parent.dup(name=f"M_{method}")
-        dtype = np.dtype(parent.dtype.np_type)
+        dtype = parent.dtype.np_type
         index_dtype = np.dtype(np.uint64)
 
         nrows = parent._nrows
@@ -847,25 +847,27 @@ class ss:
                         parent.gb_obj = ffi.NULL
                     else:
                         parent.clear()
-                return rv
             elif format == "coor":
-                info = self._export(
+                rv = self._export(
                     "csr", sort=sort, give_ownership=give_ownership, raw=False, method=method
                 )
-                info["rows"] = indptr_to_indices(info.pop("indptr"))
-                info["cols"] = info.pop("col_indices")
-                info["sorted_rows"] = True
-                info["format"] = "coor"
-                return info
+                rv["rows"] = indptr_to_indices(rv.pop("indptr"))
+                rv["cols"] = rv.pop("col_indices")
+                rv["sorted_rows"] = True
+                rv["format"] = "coor"
             elif format == "cooc":
-                info = self._export(
+                rv = self._export(
                     "csc", sort=sort, give_ownership=give_ownership, raw=False, method=method
                 )
-                info["cols"] = indptr_to_indices(info.pop("indptr"))
-                info["rows"] = info.pop("row_indices")
-                info["sorted_cols"] = True
-                info["format"] = "cooc"
-                return info
+                rv["cols"] = indptr_to_indices(rv.pop("indptr"))
+                rv["rows"] = rv.pop("row_indices")
+                rv["sorted_cols"] = True
+                rv["format"] = "cooc"
+            else:
+                raise ValueError(f"Invalid format: {format}")
+            if parent.dtype._is_udt:
+                rv["dtype"] = parent.dtype
+            return rv
 
         if method == "export":
             mhandle = ffi_new("GrB_Matrix*", parent._carg)
@@ -1175,6 +1177,8 @@ class ss:
         rv["values"] = values
         if method == "export":
             parent.gb_obj = ffi.NULL
+        if parent.dtype._is_udt:
+            rv["dtype"] = parent.dtype
         return rv
 
     @classmethod
