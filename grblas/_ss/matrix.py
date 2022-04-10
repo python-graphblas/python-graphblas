@@ -355,6 +355,7 @@ class ss:
     @property
     def iso_value(self):
         if self.is_iso:
+            # This may not be thread-safe if the parent is being modified in another thread
             return next(self.itervalues())
         raise ValueError("Matrix is not iso-valued")
 

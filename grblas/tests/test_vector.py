@@ -1836,18 +1836,9 @@ def test_iteration(v):
 
     indices, values = v.to_values()
     # This is what I would expect
-    with pytest.raises(Exception):
-        assert sorted(indices) == sorted(v.ss.iterkeys())
-    with pytest.raises(Exception):
-        assert sorted(values) == sorted(v.ss.itervalues())
-    with pytest.raises(Exception):
-        assert sorted(zip(indices, values)) == sorted(v.ss.iteritems())
-
-    # But apparently bitmap give us everything (?)
-    # See https://github.com/DrTimothyAldenDavis/GraphBLAS/issues/129
-    assert len(indices) < len(list(v.ss.iterkeys()))
-    assert len(values) < len(list(v.ss.itervalues()))
-    assert len(values) < len(list(v.ss.iteritems()))
+    assert sorted(indices) == sorted(v.ss.iterkeys())
+    assert sorted(values) == sorted(v.ss.itervalues())
+    assert sorted(zip(indices, values)) == sorted(v.ss.iteritems())
 
 
 def test_broadcasting(A, v):
