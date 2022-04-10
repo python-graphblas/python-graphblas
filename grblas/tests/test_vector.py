@@ -1692,6 +1692,117 @@ def test_delete_via_scalar(v):
     assert v.nvals == 0
 
 
+def test_udt():
+    record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
+    udt = dtypes.register_anonymous(record_dtype, "VectorUDT")
+    assert udt._is_anonymous
+    v = Vector.new(udt, size=3)
+    a = np.zeros(1, dtype=record_dtype)
+    v[0] = a[0]
+    expected = Vector.from_values([0], a, size=3, dtype=udt)
+    assert v.isequal(expected)
+    v[1] = (1, 2)
+    expected = Vector.from_values(
+        [0, 1], np.array([(0, 0), (1, 2)], dtype=record_dtype), size=3, dtype=udt
+    )
+    assert v.isequal(expected)
+    v[:] = 0
+    zeros = Vector.from_values([0, 1, 2], np.zeros(3, dtype=record_dtype), dtype=udt)
+    assert v.isequal(zeros)
+    v(v.S)[:] = 1
+    ones = Vector.from_values([0, 1, 2], np.ones(3, dtype=record_dtype), dtype=udt)
+    assert v.isequal(ones)
+    v[:](v.S) << 0
+    assert v.isequal(zeros)
+    s = Scalar.new(udt)
+    s.value = (1, 1)
+    v(v.S)[:] << s
+    assert v.isequal(ones)
+    s.value = 0
+    v[:](v.S) << s
+    assert v.isequal(zeros)
+    t = v.reduce(monoid.any, allow_empty=True).new()
+    assert s == t
+    t = v.reduce(monoid.any, allow_empty=False).new()
+    assert s == t
+    v << binary.first(1, v)
+    assert v.isequal(ones)
+    v << binary.first(s, v)
+    assert v.isequal(zeros)
+    v << binary.second(v, (1, 1))
+    assert v.isequal(ones)
+    v << binary.second(v, s)
+    assert v.isequal(zeros)
+    assert v[0].new() == s
+    assert v[:].new().isequal(v)
+    indices, values = v.to_values()
+    assert v.isequal(Vector.from_values(indices, values))
+    result = unary.positioni(v).new()
+    expected = Vector.from_values([0, 1, 2], [0, 1, 2])
+    assert result.isequal(expected)
+    result = binary.firsti(v & v).new()
+    assert result.isequal(expected)
+    result = semiring.min_firsti(v @ v).new()
+    assert result == 0
+    assert v.reduce(agg.any_value).new() == s
+    assert v.reduce(agg.first).new() == s
+    assert v.reduce(agg.last).new() == s
+    assert v.reduce(agg.exists).new() == 1
+    assert v.reduce(agg.first_index).new() == 0
+    assert v.reduce(agg.last_index).new() == 2
+    assert v.reduce(agg.count).new() == 3
+    info = v.ss.export()
+    result = Vector.ss.import_any(**info)
+    assert result.isequal(v)
+    for aggop in [agg.any_value, agg.first, agg.last, agg.count, agg.first_index, agg.last_index]:
+        v.reduce(aggop).new()
+
+    # arrays as dtypes!
+    np_dtype = np.dtype("(3,)uint16")
+    udt2 = dtypes.register_anonymous(np_dtype, "has_subdtype")
+    s = Scalar.new(udt2)
+    s.value = [0, 0, 0]
+
+    v = Vector.new(udt2, size=2)
+    v[0] = 0
+    w = Vector.new(udt2, size=2)
+    w[0] = (0, 0, 0)
+    assert v.isequal(w)
+    assert v.ewise_mult(w, binary.eq).new().reduce(monoid.land).new()
+    assert not v.ewise_mult(w, binary.ne).new().reduce(monoid.land).new()
+
+    w[0] = np.array([0, 0, 1], dtype=np.uint8)
+    assert not v.isequal(w)
+    assert not v.ewise_mult(w, binary.eq).new().reduce(monoid.land).new()
+    assert v.ewise_mult(w, binary.ne).new().reduce(monoid.land).new()
+    v[:] = 1
+    w[:] = np.array([1, 1, 1], dtype=np.uint8)
+    assert v.isequal(w)
+
+    indices, values = v.to_values()
+    assert_array_equal(values, np.ones((2, 3), dtype=np.uint16))
+    assert v.isequal(Vector.from_values(indices, values, dtype=v.dtype))
+    assert v.isequal(Vector.from_values(indices, values))
+    info = v.ss.export()
+    result = Vector.ss.import_any(**info)
+    assert result.isequal(v)
+
+    s = v.reduce(monoid.any).new()
+    assert (s.value == [1, 1, 1]).all()
+    assert (s.value == 1).all()
+    assert s == 1
+    assert s != 0
+    assert s == (1, 1, 1)
+    assert s == [1, 1, 1]
+    assert s == s
+    t = Scalar.from_value(1)
+    assert s == t
+    assert t == s
+    # Just make sure these work
+    for aggop in [agg.any_value, agg.first, agg.last, agg.count, agg.first_index, agg.last_index]:
+        v.reduce(aggop).new()
+
+
 def test_infix_outer():
     v = Vector.new(int, 2)
     v += 1

@@ -2,18 +2,25 @@ import itertools
 from collections import defaultdict
 
 from grblas import binary, dtypes, monoid, operator, semiring, unary
+from grblas.dtypes import BOOL, FP32, FP64, INT8, INT16, INT32, INT64, UINT8, UINT16, UINT32, UINT64
 
-BOOL = frozenset({"BOOL"})
-UINT = frozenset({"UINT8", "UINT16", "UINT32", "UINT64"})
-INT = frozenset({"INT8", "INT16", "INT32", "INT64", "UINT8", "UINT16", "UINT32", "UINT64"})
+if dtypes._supports_complex:
+    from grblas.dtypes import FC32, FC64
+else:
+    FC32 = "FC32"
+    FC64 = "FC64"
+
+BOOL = frozenset({BOOL})
+UINT = frozenset({UINT8, UINT16, UINT32, UINT64})
+INT = frozenset({INT8, INT16, INT32, INT64, UINT8, UINT16, UINT32, UINT64})
 BOOLINT = frozenset(BOOL | INT)
-FP = frozenset({"FP32", "FP64"})
+FP = frozenset({FP32, FP64})
 FPINT = frozenset(FP | INT)
 NOFC = frozenset(BOOL | FPINT)
-FC = frozenset({"FC32", "FC64"})
+FC = frozenset({FC32, FC64})
 FCFP = frozenset(FC | FP)
 ALL = frozenset(NOFC | FC)
-POS = frozenset({"INT32", "INT64"})
+POS = frozenset({INT32, INT64})
 NOBOOL = frozenset(ALL - BOOL)
 
 # fmt: off
@@ -158,6 +165,9 @@ IGNORE = {
     "myplus",
     "plus_myplus",
     "plus_numpy_copysign",
+    "udt_identity",
+    "udt_any",
+    "udt_semiring",
     "any_any",
     # numpy-graphblas commutation (can we clean this up?)
     "band_land",

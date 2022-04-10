@@ -53,15 +53,15 @@ def test_npunary():
         data.append(
             [Vector.from_values(L, L, dtype="FC64"), np.array(L, dtype=np.complex128)],
         )
-    blacklist = {"BOOL": {"negative"}, "FC64": {"ceil", "floor", "trunc"}}
+    blocklist = {"BOOL": {"negative", "sign"}, "FC64": {"ceil", "floor", "trunc"}}
     isclose = grblas.binary.isclose(1e-7, 0)
     for gb_input, np_input in data:
         for unary_name in sorted(npunary._unary_names):
             op = getattr(npunary, unary_name)
-            if gb_input.dtype.name not in op.types or unary_name in blacklist.get(
+            if gb_input.dtype not in op.types or unary_name in blocklist.get(
                 gb_input.dtype.name, ()
             ):
-                continue  # pragma: no cover
+                continue
             if gb_input.dtype.name.startswith("FC"):
                 # There are some nasty branch cuts as 1
                 gb_input = gb_input.dup()
@@ -129,15 +129,15 @@ def test_npbinary():
                 [np.array(values1, dtype=np.complex128), np.array(values2, dtype=np.complex128)],
             ],
         )
-    blacklist = {
+    blocklist = {
         "FP64": {"floor_divide"},  # numba/numpy difference for 1.0 / 0.0
-        "BOOL": {"subtract"},  # not supported by numpy
+        "BOOL": {"gcd", "lcm", "subtract"},  # not supported by numpy
     }
     isclose = grblas.binary.isclose(1e-7, 0)
     for (gb_left, gb_right), (np_left, np_right) in data:
         for binary_name in sorted(npbinary._binary_names):
             op = getattr(npbinary, binary_name)
-            if gb_left.dtype.name not in op.types or binary_name in blacklist.get(
+            if gb_left.dtype not in op.types or binary_name in blocklist.get(
                 gb_left.dtype.name, ()
             ):
                 continue
@@ -213,18 +213,18 @@ def test_npmonoid():
     #             ],
     #         ]
     #     )
-    blacklist = {}
-    reduction_blacklist = {
+    blocklist = {}
+    reduction_blocklist = {
         "BOOL": {"add"},
     }
     for (gb_left, gb_right), (np_left, np_right) in data:
         for binary_name in sorted(npmonoid._monoid_identities):
             op = getattr(npmonoid, binary_name)
             assert len(op.types) > 0, op.name
-            if gb_left.dtype.name not in op.types or binary_name in blacklist.get(
+            if gb_left.dtype not in op.types or binary_name in blocklist.get(
                 gb_left.dtype.name, ()
             ):
-                continue  # pragma: no cover
+                continue
             with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
                 gb_result = gb_left.ewise_mult(gb_right, op).new()
                 np_result = getattr(np, binary_name)(np_left, np_right)
@@ -243,7 +243,7 @@ def test_npmonoid():
             assert compare
 
             # numpy reductions don't have dtype-dependent identities, so results sometimes differ
-            if binary_name in reduction_blacklist.get(gb_left.dtype.name, ()):
+            if binary_name in reduction_blocklist.get(gb_left.dtype.name, ()):
                 continue
 
             gb_result = gb_left.reduce(op).new()
