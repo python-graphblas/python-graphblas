@@ -180,9 +180,3 @@ m = gb.io.to_scipy_sparse_matrix(m, format='csr')
 A = gb.io.from_networkx(g)
 g = gb.io.to_networkx(A)
 ```
-
-## Attribution
-This library borrows some great ideas from [pygraphblas](https://github.com/michelp/pygraphblas),
-especially around parsing operator names from SuiteSparse and the concept of a Scalar which the backend
-implementation doesn't need to know about.
-

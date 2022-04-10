@@ -6,7 +6,7 @@ from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
 from ._ss.vector import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, lookup_dtype, unify
-from .exceptions import NoValue, check_status
+from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_semiring, get_typed_op
@@ -48,7 +48,7 @@ class Vector(BaseType):
         if parent is not None:
             return
         gb_obj = getattr(self, "gb_obj", None)
-        if gb_obj is not None:
+        if gb_obj is not None and lib is not None:
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Vector_free(gb_obj), self)
 
@@ -163,12 +163,12 @@ class Vector(BaseType):
             return False
         if check_dtype:
             # dtypes are equivalent, so not need to unify
-            common_dtype = self.dtype
+            op = binary.eq[self.dtype]
         else:
-            common_dtype = unify(self.dtype, other.dtype)
+            op = get_typed_op(binary.eq, self.dtype, other.dtype, kind="binary")
 
         matches = Vector.new(bool, self._size, name="v_isequal")
-        matches << self.ewise_mult(other, binary.eq[common_dtype])
+        matches << self.ewise_mult(other, op)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
             return False
@@ -244,9 +244,8 @@ class Vector(BaseType):
         n = ffi_new("GrB_Index*")
         scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
         scalar.value = nvals
-        call(
-            f"GrB_Vector_extractTuples_{self.dtype.name}", [indices, values, _Pointer(scalar), self]
-        )
+        dtype_name = "UDT" if self.dtype._is_udt else self.dtype.name
+        call(f"GrB_Vector_extractTuples_{dtype_name}", [indices, values, _Pointer(scalar), self])
         values = values.array
         if dtype is not None:
             dtype = lookup_dtype(dtype)
@@ -261,7 +260,7 @@ class Vector(BaseType):
         # TODO: accept `dtype` keyword to match the dtype of `values`?
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         values, dtype = values_to_numpy_buffer(values, self.dtype)
-        n = values.size
+        n = values.shape[0]
         if indices.size != n:
             raise ValueError(
                 f"`indices` and `values` lengths must match: {indices.size} != {values.size}"
@@ -275,7 +274,11 @@ class Vector(BaseType):
 
         dup_op_given = dup_op is not None
         if not dup_op_given:
-            dup_op = binary.plus
+            if not self.dtype._is_udt:
+                dup_op = binary.plus
+            else:
+                dup_op = binary.any
+        # SS:SuiteSparse-specific: we could use NULL for dup_op
         dup_op = get_typed_op(dup_op, self.dtype, kind="binary")
         if dup_op.opclass == "Monoid":
             dup_op = dup_op.binaryop
@@ -284,8 +287,9 @@ class Vector(BaseType):
 
         indices = _CArray(indices)
         values = _CArray(values, self.dtype)
+        dtype_name = "UDT" if self.dtype._is_udt else self.dtype.name
         call(
-            f"GrB_Vector_build_{self.dtype.name}",
+            f"GrB_Vector_build_{dtype_name}",
             [self, indices, values, _as_scalar(n, _INDEX, is_cscalar=True), dup_op],
         )
 
@@ -352,14 +356,17 @@ class Vector(BaseType):
         values may be a scalar, in which case duplicate indices are ignored.
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
-        values, dtype = values_to_numpy_buffer(values, dtype)
+        values, new_dtype = values_to_numpy_buffer(values, dtype)
         # Compute size if not provided
         if size is None:
             if indices.size == 0:
                 raise ValueError("No indices provided. Unable to infer size.")
             size = int(indices.max()) + 1
+        if dtype is None and values.ndim > 1:
+            # Look for array-subtdype
+            new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
         # Create the new vector
-        w = cls.new(dtype, size, name=name)
+        w = cls.new(new_dtype, size, name=name)
         if values.ndim == 0:
             if dup_op is not None:
                 raise ValueError(
@@ -405,8 +412,12 @@ class Vector(BaseType):
         performing any operation. In the case of `gt`, the non-empty value is cast to a boolean.
         For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
+        from .matrix import Matrix, TransposedMatrix
+
         method_name = "ewise_add"
-        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
+        other = self._expect_type(
+            other, (Vector, Matrix, TransposedMatrix), within=method_name, argname="other", op=op
+        )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
         if require_monoid:
@@ -420,6 +431,20 @@ class Vector(BaseType):
                 )
         else:
             self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if other.ndim == 2:
+            # Broadcast columnwise from the left
+            # Can we do `C(M.S) << plus(v | A)` -> `C(M.S) << plus(any_first(v.diag() @ M) | A)`?
+            if other._nrows != self._size:
+                # Check this before we compute a possibly large matrix below
+                raise DimensionMismatch(
+                    "Dimensions not compatible for broadcasting Vector from the left "
+                    f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
+                    f"must equal Vector.size (={self._size})."
+                )
+            full = Vector.new(self.dtype, other._ncols, name="v_full")
+            full[:] = 0
+            temp = self.outer(full, binary.first).new(name="M_temp")
+            return temp.ewise_add(other, op, require_monoid=False)
         expr = VectorExpression(
             method_name,
             f"GrB_Vector_eWiseAdd_{op.opclass}",
@@ -437,11 +462,17 @@ class Vector(BaseType):
         Result will contain the intersection of indices from both Vectors
         Default op is binary.times
         """
+        from .matrix import Matrix, TransposedMatrix
+
         method_name = "ewise_mult"
-        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
+        other = self._expect_type(
+            other, (Vector, Matrix, TransposedMatrix), within=method_name, argname="other", op=op
+        )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if other.ndim == 2:
+            return self.diag(name="M_temp").mxm(other, get_semiring(monoid.any, op))
         expr = VectorExpression(
             method_name,
             f"GrB_Vector_eWiseMult_{op.opclass}",
@@ -465,12 +496,17 @@ class Vector(BaseType):
         ``op`` should be a BinaryOp or Monoid.
         """
         # SS, SuiteSparse-specific: eWiseUnion
+        from .matrix import Matrix, TransposedMatrix
+
         method_name = "ewise_union"
-        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
+        other = self._expect_type(
+            other, (Vector, Matrix, TransposedMatrix), within=method_name, argname="other", op=op
+        )
+        dtype = self.dtype if self.dtype._is_udt else None
         if type(left_default) is not Scalar:
             try:
                 left = Scalar.from_value(
-                    left_default, is_cscalar=False, name=""  # pragma: is_grbscalar
+                    left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
                 )
             except TypeError:
                 left = self._expect_type(
@@ -482,11 +518,11 @@ class Vector(BaseType):
                     op=op,
                 )
         else:
-            left = _as_scalar(left_default, is_cscalar=False)  # pragma: is_grbscalar
+            left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
         if type(right_default) is not Scalar:
             try:
                 right = Scalar.from_value(
-                    right_default, is_cscalar=False, name=""  # pragma: is_grbscalar
+                    right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
                 )
             except TypeError:
                 right = self._expect_type(
@@ -498,13 +534,27 @@ class Vector(BaseType):
                     op=op,
                 )
         else:
-            right = _as_scalar(right_default, is_cscalar=False)  # pragma: is_grbscalar
+            right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
         scalar_dtype = unify(left.dtype, right.dtype)
         nonscalar_dtype = unify(self.dtype, other.dtype)
         op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
+        if other.ndim == 2:
+            # Broadcast columnwise from the left
+            # Can we do `C(M.S) << plus(v | A)` -> `C(M.S) << plus(any_first(v.diag() @ M) | A)`?
+            if other._nrows != self._size:
+                # Check this before we compute a possibly large matrix below
+                raise DimensionMismatch(
+                    "Dimensions not compatible for broadcasting Vector from the left "
+                    f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
+                    f"must equal Vector.size (={self._size})."
+                )
+            full = Vector.new(self.dtype, other._ncols, name="v_full")
+            full[:] = 0
+            temp = self.outer(full, binary.first).new(name="M_temp")
+            return temp.ewise_union(other, op, left_default, right_default)
         expr = VectorExpression(
             method_name,
             "GxB_Vector_eWiseUnion",
@@ -567,8 +617,9 @@ class Vector(BaseType):
             expr_repr = None
         elif right is None:
             if type(left) is not Scalar:
+                dtype = self.dtype if self.dtype._is_udt else None
                 try:
-                    left = Scalar.from_value(left, is_cscalar=None, name="")
+                    left = Scalar.from_value(left, dtype, is_cscalar=None, name="")
                 except TypeError:
                     left = self._expect_type(
                         left,
@@ -590,15 +641,21 @@ class Vector(BaseType):
                     extra_message=extra_message,
                 )
             if left._is_cscalar:
-                cfunc_name = f"GrB_Vector_apply_BinaryOp1st_{left.dtype}"
+                if left.dtype._is_udt:
+                    dtype_name = "UDT"
+                    left = _Pointer(left)
+                else:
+                    dtype_name = left.dtype.name
+                cfunc_name = f"GrB_Vector_apply_BinaryOp1st_{dtype_name}"
             else:
                 cfunc_name = "GrB_Vector_apply_BinaryOp1st_Scalar"
             args = [left, self]
             expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
+                dtype = self.dtype if self.dtype._is_udt else None
                 try:
-                    right = Scalar.from_value(right, is_cscalar=None, name="")
+                    right = Scalar.from_value(right, dtype, is_cscalar=None, name="")
                 except TypeError:
                     right = self._expect_type(
                         right,
@@ -620,7 +677,12 @@ class Vector(BaseType):
                     extra_message=extra_message,
                 )
             if right._is_cscalar:
-                cfunc_name = f"GrB_Vector_apply_BinaryOp2nd_{right.dtype}"
+                if right.dtype._is_udt:
+                    dtype_name = "UDT"
+                    right = _Pointer(right)
+                else:
+                    dtype_name = right.dtype.name
+                cfunc_name = f"GrB_Vector_apply_BinaryOp2nd_{dtype_name}"
             else:
                 cfunc_name = "GrB_Vector_apply_BinaryOp2nd_Scalar"
             args = [self, right]
@@ -656,6 +718,8 @@ class Vector(BaseType):
             raise ValueError("allow_empty=False not allowed when using Aggregators")
         if allow_empty:
             cfunc_name = "GrB_Vector_reduce_Monoid_Scalar"
+        elif self.dtype._is_udt:
+            cfunc_name = "GrB_Vector_reduce_UDT"
         else:
             cfunc_name = "GrB_Vector_reduce_{output_dtype}"
         return ScalarExpression(
@@ -730,8 +794,9 @@ class Vector(BaseType):
         if result is None:
             result = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
         if is_cscalar:
+            dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (
-                call(f"GrB_Vector_extractElement_{dtype}", [_Pointer(result), self, idx.index])
+                call(f"GrB_Vector_extractElement_{dtype_name}", [_Pointer(result), self, idx.index])
                 is not NoValue
             ):
                 result._empty = False
@@ -753,8 +818,9 @@ class Vector(BaseType):
     def _assign_element(self, resolved_indexes, value):
         idx = resolved_indexes.indices[0]
         if type(value) is not Scalar:
+            dtype = self.dtype if self.dtype._is_udt else None
             try:
-                value = Scalar.from_value(value, is_cscalar=None, name="")
+                value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
             except TypeError:
                 value = self._expect_type(
                     value,
@@ -767,7 +833,12 @@ class Vector(BaseType):
             if value._empty:
                 call("GrB_Vector_removeElement", [self, idx.index])
                 return
-            cfunc_name = f"GrB_Vector_setElement_{value.dtype}"
+            if value.dtype._is_udt:
+                dtype_name = "UDT"
+                value = _Pointer(value)
+            else:
+                dtype_name = value.dtype.name
+            cfunc_name = f"GrB_Vector_setElement_{dtype_name}"
         else:
             cfunc_name = "GrB_Vector_setElement_Scalar"
         call(cfunc_name, [self, value, idx.index])
@@ -800,8 +871,9 @@ class Vector(BaseType):
                 expr_repr = "[[{2._expr_name} elements]] = {0.name}"
         else:
             if type(value) is not Scalar:
+                dtype = self.dtype if self.dtype._is_udt else None
                 try:
-                    value = Scalar.from_value(value, is_cscalar=None, name="")
+                    value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
                 except TypeError:
                     value = self._expect_type(
                         value,
@@ -816,7 +888,12 @@ class Vector(BaseType):
                     raise TypeError("Single element assign does not accept a submask")
                 # v[I](m) << c
                 if value._is_cscalar:
-                    cfunc_name = f"GrB_Vector_subassign_{value.dtype}"
+                    if value.dtype._is_udt:
+                        dtype_name = "UDT"
+                        value = _Pointer(value)
+                    else:
+                        dtype_name = value.dtype.name
+                    cfunc_name = f"GrB_Vector_subassign_{dtype_name}"
                 else:
                     cfunc_name = "GrB_Vector_subassign_Scalar"
                 expr_repr = "[[{2._expr_name} elements]](%s) = {0._expr_name}" % mask.name
@@ -827,7 +904,12 @@ class Vector(BaseType):
                     index = _CArray([index.value])
                     cscalar = _as_scalar(1, _INDEX, is_cscalar=True)
                 if value._is_cscalar:
-                    cfunc_name = f"GrB_Vector_assign_{value.dtype}"
+                    if value.dtype._is_udt:
+                        dtype_name = "UDT"
+                        value = _Pointer(value)
+                    else:
+                        dtype_name = value.dtype.name
+                    cfunc_name = f"GrB_Vector_assign_{dtype_name}"
                 else:
                     cfunc_name = "GrB_Vector_assign_Scalar"
                 expr_repr = "[[{2._expr_name} elements]] = {0._expr_name}"

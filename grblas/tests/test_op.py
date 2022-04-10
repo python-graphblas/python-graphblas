@@ -5,8 +5,12 @@ import pytest
 
 import grblas as gb
 from grblas import agg, binary, dtypes, lib, monoid, op, operator, semiring, unary
+from grblas.dtypes import BOOL, FP32, FP64, INT8, INT16, INT32, INT64, UINT8, UINT16, UINT32, UINT64
 from grblas.exceptions import DomainMismatch, UdfParseError
 from grblas.operator import BinaryOp, Monoid, Semiring, UnaryOp, get_semiring
+
+if dtypes._supports_complex:
+    from grblas.dtypes import FC32, FC64
 
 from grblas import Matrix, Vector  # isort:skip
 
@@ -32,15 +36,15 @@ def test_op_repr():
 def test_unaryop():
     assert unary.ainv["INT32"].gb_obj == lib.GrB_AINV_INT32
     assert unary.ainv[dtypes.UINT16].gb_obj == lib.GrB_AINV_UINT16
-    assert orig_types(unary.positioni) == {"INT32", "INT64"}
-    assert orig_types(unary.positionj1) == {"INT32", "INT64"}
+    assert orig_types(unary.positioni) == {INT32, INT64}
+    assert orig_types(unary.positionj1) == {INT32, INT64}
 
 
 def test_binaryop():
     assert binary.plus["INT32"].gb_obj == lib.GrB_PLUS_INT32
     assert binary.plus[dtypes.UINT16].gb_obj == lib.GrB_PLUS_UINT16
-    assert orig_types(binary.firsti) == {"INT32", "INT64"}
-    assert orig_types(binary.secondj1) == {"INT32", "INT64"}
+    assert orig_types(binary.firsti) == {INT32, INT64}
+    assert orig_types(binary.secondj1) == {INT32, INT64}
 
 
 def test_monoid():
@@ -51,14 +55,14 @@ def test_monoid():
 def test_semiring():
     assert semiring.min_plus["INT32"].gb_obj == lib.GrB_MIN_PLUS_SEMIRING_INT32
     assert semiring.min_plus[dtypes.UINT16].gb_obj == lib.GrB_MIN_PLUS_SEMIRING_UINT16
-    assert orig_types(semiring.min_firsti) == {"INT32", "INT64"}
+    assert orig_types(semiring.min_firsti) == {INT32, INT64}
 
 
 def test_agg():
     assert repr(agg.count) == "agg.count"
     assert repr(agg.count["INT32"]) == "agg.count[INT32]"
     assert "INT64" in agg.sum_of_inverses
-    assert agg.sum_of_inverses["INT64"].return_type == "FP64"
+    assert agg.sum_of_inverses["INT64"].return_type == FP64
     assert "BOOL" not in agg.sum_of_inverses
     with pytest.raises(KeyError, match="BOOL"):
         agg.sum_of_inverses["BOOL"]
@@ -111,39 +115,44 @@ def test_get_typed_op():
     )
     with pytest.raises(ValueError, match="Unknown binary or aggregator"):
         operator.get_typed_op("bad_op_name", dtypes.INT64, kind="binary|aggregator")
+    with pytest.raises(Exception):
+        # get_typed_op expects dtypes to already be dtypes
+        operator.get_typed_op(binary.plus, dtypes.INT64, "bad dtype")
 
 
 def test_unaryop_udf():
     def plus_one(x):
-        return x + 1
+        return x + 1  # pragma: no cover
 
     UnaryOp.register_new("plus_one", plus_one)
     assert hasattr(unary, "plus_one")
+    assert unary.plus_one.orig_func is plus_one
+    assert unary.plus_one[int].orig_func is plus_one
     comp_set = {
-        "INT8",
-        "INT16",
-        "INT32",
-        "INT64",
-        "UINT8",
-        "UINT16",
-        "UINT32",
-        "UINT64",
-        "FP32",
-        "FP64",
-        "BOOL",
+        INT8,
+        INT16,
+        INT32,
+        INT64,
+        UINT8,
+        UINT16,
+        UINT32,
+        UINT64,
+        FP32,
+        FP64,
+        BOOL,
     }
     if dtypes._supports_complex:
-        comp_set.update({"FC32", "FC64"})
+        comp_set.update({FC32, FC64})
     assert set(unary.plus_one.types) == comp_set
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.plus_one)
     result = Vector.from_values([0, 1, 3], [2, 3, -3], dtype=dtypes.INT32)
     assert v.isequal(result)
     assert "INT8" in unary.plus_one
-    assert "INT8" in unary.plus_one.types
+    assert INT8 in unary.plus_one.types
     del unary.plus_one["INT8"]
     assert "INT8" not in unary.plus_one
-    assert "INT8" not in unary.plus_one.types
+    assert INT8 not in unary.plus_one.types
     with pytest.raises(TypeError, match="UDF argument must be a function"):
         UnaryOp.register_new("bad", object())
     assert not hasattr(unary, "bad")
@@ -155,7 +164,7 @@ def test_unaryop_udf():
 def test_unaryop_parameterized():
     def plus_x(x=0):
         def inner(val):
-            return val + x
+            return val + x  # pragma: no cover
 
         return inner
 
@@ -179,7 +188,7 @@ def test_unaryop_parameterized():
 def test_binaryop_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
-            return left + right + x
+            return left + right + x  # pragma: no cover
 
         return inner
 
@@ -225,7 +234,7 @@ def test_binaryop_parameterized():
         BinaryOp.register_new("bad", lambda x, y: v)
 
     def my_add(x, y):
-        return x + y
+        return x + y  # pragma: no cover
 
     op = BinaryOp.register_anonymous(my_add)
     assert op.name == "my_add"
@@ -235,7 +244,7 @@ def test_binaryop_parameterized():
 def test_monoid_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
-            return left + right + x
+            return left + right + x  # pragma: no cover
 
         return inner
 
@@ -284,7 +293,7 @@ def test_monoid_parameterized():
     # identity may be a value
     def logaddexp(base):
         def inner(x, y):
-            return np.log(base**x + base**y) / np.log(base)
+            return np.log(base**x + base**y) / np.log(base)  # pragma: no cover
 
         return inner
 
@@ -301,7 +310,7 @@ def test_monoid_parameterized():
 
     def plus_times_x(x=0):
         def inner(left, right):
-            return (left + right) * x
+            return (left + right) * x  # pragma: no cover
 
         return inner
 
@@ -320,7 +329,7 @@ def test_monoid_parameterized():
 def test_semiring_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
-            return left + right + x
+            return left + right + x  # pragma: no cover
 
         return inner
 
@@ -420,7 +429,7 @@ def test_semiring_parameterized():
 
     def plus_x(x=0):
         def inner(y):
-            return x + y
+            return x + y  # pragma: no cover
 
         return inner
 
@@ -447,22 +456,22 @@ def test_semiring_parameterized():
 def test_unaryop_udf_bool_result():
     # numba has trouble compiling this, but we have a work-around
     def is_positive(x):
-        return x > 0
+        return x > 0  # pragma: no cover
 
     UnaryOp.register_new("is_positive", is_positive)
     assert hasattr(unary, "is_positive")
     assert set(unary.is_positive.types) == {
-        "INT8",
-        "INT16",
-        "INT32",
-        "INT64",
-        "UINT8",
-        "UINT16",
-        "UINT32",
-        "UINT64",
-        "FP32",
-        "FP64",
-        "BOOL",
+        INT8,
+        INT16,
+        INT32,
+        INT64,
+        UINT8,
+        UINT16,
+        UINT32,
+        UINT64,
+        FP32,
+        FP64,
+        BOOL,
     }
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     w = v.apply(unary.is_positive).new()
@@ -472,24 +481,25 @@ def test_unaryop_udf_bool_result():
 
 def test_binaryop_udf():
     def times_minus_sum(x, y):
-        return x * y - (x + y)
+        return x * y - (x + y)  # pragma: no cover
 
     BinaryOp.register_new("bin_test_func", times_minus_sum)
     assert hasattr(binary, "bin_test_func")
     comp_set = {
-        "INT8",
-        "INT16",
-        "INT32",
-        "INT64",
-        "UINT8",
-        "UINT16",
-        "UINT32",
-        "UINT64",
-        "FP32",
-        "FP64",
+        BOOL,  # goes to INT64
+        INT8,
+        INT16,
+        INT32,
+        INT64,
+        UINT8,
+        UINT16,
+        UINT32,
+        UINT64,
+        FP32,
+        FP64,
     }
     if dtypes._supports_complex:
-        comp_set.update({"FC32", "FC64"})
+        comp_set.update({FC32, FC64})
     assert set(binary.bin_test_func.types) == comp_set
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
@@ -500,22 +510,22 @@ def test_binaryop_udf():
 
 def test_monoid_udf():
     def plus_plus_one(x, y):
-        return x + y + 1
+        return x + y + 1  # pragma: no cover
 
     BinaryOp.register_new("plus_plus_one", plus_plus_one)
     Monoid.register_new("plus_plus_one", binary.plus_plus_one, -1)
     assert hasattr(monoid, "plus_plus_one")
     assert set(monoid.plus_plus_one.types) == {
-        "INT8",
-        "INT16",
-        "INT32",
-        "INT64",
-        "UINT8",
-        "UINT16",
-        "UINT32",
-        "UINT64",
-        "FP32",
-        "FP64",
+        INT8,
+        INT16,
+        INT32,
+        INT64,
+        UINT8,
+        UINT16,
+        UINT32,
+        UINT64,
+        FP32,
+        FP64,
     }
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
@@ -531,7 +541,7 @@ def test_monoid_udf():
 
 def test_semiring_udf():
     def plus_plus_two(x, y):
-        return x + y + 2
+        return x + y + 2  # pragma: no cover
 
     BinaryOp.register_new("plus_plus_two", plus_plus_two)
     Semiring.register_new("extra_twos", monoid.plus, binary.plus_plus_two)
@@ -564,27 +574,27 @@ def test_binary_updates():
 @pytest.mark.slow
 def test_nested_names():
     def plus_three(x):
-        return x + 3
+        return x + 3  # pragma: no cover
 
     UnaryOp.register_new("incrementers.plus_three", plus_three)
     assert hasattr(unary, "incrementers")
     assert type(unary.incrementers) is operator.OpPath
     assert hasattr(unary.incrementers, "plus_three")
     comp_set = {
-        "INT8",
-        "INT16",
-        "INT32",
-        "INT64",
-        "UINT8",
-        "UINT16",
-        "UINT32",
-        "UINT64",
-        "FP32",
-        "FP64",
-        "BOOL",
+        INT8,
+        INT16,
+        INT32,
+        INT64,
+        UINT8,
+        UINT16,
+        UINT32,
+        UINT64,
+        FP32,
+        FP64,
+        BOOL,
     }
     if dtypes._supports_complex:
-        comp_set.update({"FC32", "FC64"})
+        comp_set.update({FC32, FC64})
     assert set(unary.incrementers.plus_three.types) == comp_set
 
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
@@ -593,7 +603,7 @@ def test_nested_names():
     assert v.isequal(result), v
 
     def plus_four(x):
-        return x + 4
+        return x + 4  # pragma: no cover
 
     UnaryOp.register_new("incrementers.plus_four", plus_four)
     assert hasattr(unary.incrementers, "plus_four")
@@ -679,7 +689,10 @@ def test_binaryop_attributes():
     assert binary.numpy.add.monoid is monoid.numpy.add
     assert binary.numpy.subtract.monoid is None
 
-    op = BinaryOp.register_anonymous(lambda x, y: x + y, name="plus")
+    def plus(x, y):
+        return x + y  # pragma: no cover
+
+    op = BinaryOp.register_anonymous(plus, name="plus")
     assert op.monoid is None
     assert op[int].monoid is None
 
@@ -716,7 +729,10 @@ def test_monoid_attributes():
     assert monoid.numpy.add.binaryop is binary.numpy.add
     assert monoid.numpy.add.identities == {typ: 0 for typ in monoid.numpy.add.types}
 
-    binop = BinaryOp.register_anonymous(lambda x, y: x + y, name="plus")
+    def plus(x, y):  # pragma: no cover
+        return x + y
+
+    binop = BinaryOp.register_anonymous(plus, name="plus")
     op = Monoid.register_anonymous(binop, 0, name="plus")
     assert op.binaryop is binop
     assert op[int].binaryop is binop[int]
@@ -749,7 +765,10 @@ def test_semiring_attributes():
     assert semiring.numpy.add_subtract.monoid is monoid.numpy.add
     assert semiring.numpy.add_subtract.binaryop is binary.numpy.subtract
 
-    binop = BinaryOp.register_anonymous(lambda x, y: x + y, name="plus")
+    def plus(x, y):
+        return x + y  # pragma: no cover
+
+    binop = BinaryOp.register_anonymous(plus, name="plus")
     mymonoid = Monoid.register_anonymous(binop, 0, name="plus")
     op = Semiring.register_anonymous(mymonoid, binop, name="plus_plus")
     assert op.binaryop is binop
@@ -813,7 +832,7 @@ def test_get_semiring():
         get_semiring(binary.plus, monoid.times)
 
     def myplus(x, y):
-        return x + y
+        return x + y  # pragma: no cover
 
     binop = BinaryOp.register_anonymous(myplus, name="myplus")
     st = get_semiring(monoid.plus, binop)
@@ -956,10 +975,10 @@ def test_from_string():
 
 @pytest.mark.slow
 def test_lazy_op():
-    UnaryOp.register_new("lazy", lambda x: x, lazy=True)
+    UnaryOp.register_new("lazy", lambda x: x, lazy=True)  # pragma: no branch
     assert isinstance(op.lazy, UnaryOp)
     assert isinstance(unary.lazy, UnaryOp)
-    BinaryOp.register_new("lazy", lambda x, y: x + y, lazy=True)
+    BinaryOp.register_new("lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch
     Monoid.register_new("lazy", "lazy", 0, lazy=True)
     assert isinstance(monoid.lazy, Monoid)
     assert isinstance(binary.lazy, BinaryOp)
@@ -971,9 +990,9 @@ def test_lazy_op():
     Semiring.register_new("lazy_lazy", monoid.lazy, binary.lazy, lazy=True)
     assert isinstance(semiring.lazy_lazy, Semiring)
     # numpy
-    UnaryOp.register_new("numpy.lazy", lambda x: x, lazy=True)
+    UnaryOp.register_new("numpy.lazy", lambda x: x, lazy=True)  # pragma: no branch
     assert isinstance(unary.numpy.lazy, UnaryOp)
-    BinaryOp.register_new("numpy.lazy", lambda x, y: x + y, lazy=True)
+    BinaryOp.register_new("numpy.lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch
     Monoid.register_new("numpy.lazy", "numpy.lazy", 0, lazy=True)
     assert isinstance(monoid.numpy.lazy, Monoid)
     assert isinstance(binary.numpy.lazy, BinaryOp)
@@ -986,7 +1005,7 @@ def test_lazy_op():
     Semiring.register_new("numpy.lazy_lazy", monoid.numpy.lazy, binary.numpy.lazy, lazy=True)
     assert isinstance(semiring.numpy.lazy_lazy, Semiring)
     # misc
-    UnaryOp.register_new("misc.lazy", lambda x: x, lazy=True)
+    UnaryOp.register_new("misc.lazy", lambda x: x, lazy=True)  # pragma: no branch
     assert isinstance(unary.misc.lazy, UnaryOp)
     with pytest.raises(AttributeError):
         unary.misc.bad
@@ -1016,6 +1035,109 @@ def test_positional():
     assert semiring.any_secondj[int].is_positional
     assert not semiring.any_first.is_positional
     assert not semiring.any_second[int].is_positional
+
+
+def test_udt():
+    record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
+    udt = dtypes.register_new("TestUDT", record_dtype)
+    assert not udt._is_anonymous
+    v = Vector.new(udt, size=3)
+    w = Vector.new(udt, size=3)
+    v[:] = 0
+    w[:] = 1
+
+    def _udt_identity(val):
+        return val  # pragma: no cover
+
+    udt_identity = UnaryOp.register_new("udt_identity", _udt_identity, is_udt=True)
+    assert udt in udt_identity
+    assert udt in binary.eq
+    result = v.apply(udt_identity).new()
+    assert result.isequal(v)
+    assert dtypes.UINT8 in udt_identity
+    assert udt in udt_identity
+    assert int in udt_identity
+    assert operator.get_typed_op(udt_identity, udt) is udt_identity[udt]
+    with pytest.raises(ValueError):
+        "badname" in binary.eq
+    with pytest.raises(ValueError):
+        "badname" in udt_identity
+
+    def _udt_getx(val):
+        return val["x"]  # pragma: no cover
+
+    udt_getx = UnaryOp.register_anonymous(_udt_getx, "udt_getx", is_udt=True)
+    assert udt in udt_getx
+    result = v.apply(udt_getx).new()
+    expected = Vector.from_values([0, 1, 2], 0)
+    assert result.isequal(expected)
+
+    def _udt_first(x, y):
+        return x  # pragma: no cover
+
+    udt_first = BinaryOp.register_anonymous(_udt_first, "udt_first", is_udt=True)
+    assert udt in udt_first
+    assert operator.get_typed_op(udt_first, udt) is udt_first[udt]
+    assert udt_first(v & w).new().isequal(v)
+    assert udt_first(v, 1).new().isequal(v)
+    assert udt_first[udt, dtypes.INT64].return_type == udt
+    assert udt_first[dtypes.INT64, udt].return_type == dtypes.INT64
+    assert udt_first[udt, dtypes.BOOL].return_type == udt
+    assert udt_first[dtypes.BOOL, udt].return_type == dtypes.BOOL
+    udt_dup = dtypes.register_anonymous(record_dtype)
+    assert udt_first[udt, udt_dup].return_type == udt
+    # assert udt_first[udt_dup, udt].return_type == udt ?
+
+    udt_any = Monoid.register_new("udt_any", udt_first, (0, 0))
+    assert udt in udt_any
+    assert (udt, udt) in udt_any
+    assert (udt, dtypes.INT8) not in udt_any
+    assert operator.get_typed_op(udt_any, udt) is udt_any[udt]
+    assert udt_any(v | w).new().isequal(v)
+
+    udt_semiring = Semiring.register_new("udt_semiring", udt_any, udt_first)
+    assert udt in udt_semiring
+    assert operator.get_typed_op(udt_semiring, udt) is udt_semiring[udt]
+    assert udt_semiring(v @ v).new() == (0, 0)
+
+    result = v.apply(gb.unary.identity).new()
+    assert result.isequal(v)
+    result = v.apply(gb.unary.one).new()
+    assert result.dtype == dtypes.INT64
+    expected = Vector.new(int, size=v.size)
+    expected(result.S) << 1
+    assert result.isequal(expected)
+    result = v.apply(gb.unary.positioni).new()
+    expected = expected.apply(gb.unary.positioni).new()
+    assert result.isequal(expected)
+
+    class BreakCompile:
+        pass
+
+    def badfunc(x):  # pragma: no cover
+        return BreakCompile(x)
+
+    badunary = UnaryOp.register_anonymous(badfunc, is_udt=True)
+    assert udt not in badunary
+    assert int not in badunary
+
+    def badfunc(x, y):  # pragma: no cover
+        return BreakCompile(x)
+
+    badbinary = BinaryOp.register_anonymous(badfunc, is_udt=True)
+    assert udt not in badbinary
+    assert int not in badbinary
+
+    assert binary.first[udt].return_type is udt
+    assert binary.first[udt].commutes_to is binary.second[udt]
+    assert semiring.any_firsti[int].commutes_to is semiring.any_secondj[int]
+    assert semiring.any_firsti[udt].commutes_to is semiring.any_secondj[udt]
+
+    assert binary.second[udt].type is udt
+    assert binary.second[udt].type2 is udt
+    assert binary.second[udt, dtypes.INT8].type is udt
+    assert binary.second[udt, dtypes.INT8].type2 is dtypes.INT8
+    assert monoid.any[udt].type2 is udt
 
 
 def test_dir():
