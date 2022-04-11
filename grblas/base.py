@@ -601,7 +601,7 @@ class BaseExpression:
         """
         from .scalar import Scalar
 
-        return Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+        return Scalar(dtype, is_cscalar=is_cscalar, name=name)
 
     def _new_vector(self, dtype, size=0, *, name=None):
         """Create a new empty Vector.
@@ -610,7 +610,7 @@ class BaseExpression:
         """
         from .vector import Vector
 
-        return Vector.new(dtype, size, name=name)
+        return Vector(dtype, size, name=name)
 
     def _new_matrix(self, dtype, nrows=0, ncols=0, *, name=None):
         """Create a new empty Matrix.
@@ -619,4 +619,4 @@ class BaseExpression:
         """
         from .matrix import Matrix
 
-        return Matrix.new(dtype, nrows, ncols, name=name)
+        return Matrix(dtype, nrows, ncols, name=name)

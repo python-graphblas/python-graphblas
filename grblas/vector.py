@@ -1,4 +1,5 @@
 import itertools
+import warnings
 
 import numpy as np
 
@@ -179,7 +180,7 @@ class Vector(BaseType):
         else:
             op = get_typed_op(binary.eq, self.dtype, other.dtype, kind="binary")
 
-        matches = Vector.new(bool, self._size, name="v_isequal")
+        matches = Vector(bool, self._size, name="v_isequal")
         matches << self.ewise_mult(other, op)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
@@ -314,7 +315,7 @@ class Vector(BaseType):
         if dtype is not None or mask is not None:
             if dtype is None:
                 dtype = self.dtype
-            rv = Vector.new(dtype, size=self._size, name=name)
+            rv = Vector(dtype, size=self._size, name=name)
             rv(mask=mask)[...] = self
         else:
             new_vec = ffi_new("GrB_Vector*")
@@ -348,6 +349,10 @@ class Vector(BaseType):
         GrB_Vector_new
         Create a new empty Vector from the given type and size
         """
+        warnings.warn(
+            "`Vector.new(...)` is deprecated; please use `Vector(...)` instead.",
+            DeprecationWarning,
+        )
         return Vector(dtype, size, name=name)
 
     @classmethod
@@ -368,7 +373,7 @@ class Vector(BaseType):
             # Look for array-subtdype
             new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
         # Create the new vector
-        w = cls.new(new_dtype, size, name=name)
+        w = cls(new_dtype, size, name=name)
         if values.ndim == 0:
             if dup_op is not None:
                 raise ValueError(
@@ -443,7 +448,7 @@ class Vector(BaseType):
                     f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
                     f"must equal Vector.size (={self._size})."
                 )
-            full = Vector.new(self.dtype, other._ncols, name="v_full")
+            full = Vector(self.dtype, other._ncols, name="v_full")
             full[:] = 0
             temp = self.outer(full, binary.first).new(name="M_temp")
             return temp.ewise_add(other, op, require_monoid=False)
@@ -553,7 +558,7 @@ class Vector(BaseType):
                     f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
                     f"must equal Vector.size (={self._size})."
                 )
-            full = Vector.new(self.dtype, other._ncols, name="v_full")
+            full = Vector(self.dtype, other._ncols, name="v_full")
             full[:] = 0
             temp = self.outer(full, binary.first).new(name="M_temp")
             return temp.ewise_union(other, op, left_default, right_default)
@@ -794,7 +799,7 @@ class Vector(BaseType):
             dtype = lookup_dtype(dtype)
         idx = resolved_indexes.indices[0]
         if result is None:
-            result = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+            result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (
@@ -1008,7 +1013,7 @@ class VectorExpression(BaseExpression):
     def construct_output(self, dtype=None, *, name=None):
         if dtype is None:
             dtype = self.dtype
-        return Vector.new(dtype, self._size, name=name)
+        return Vector(dtype, self._size, name=name)
 
     def __repr__(self):
         from .formatting import format_vector_expression

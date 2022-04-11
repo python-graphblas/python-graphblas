@@ -1041,8 +1041,8 @@ def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
     udt = dtypes.register_new("TestUDT", record_dtype)
     assert not udt._is_anonymous
-    v = Vector.new(udt, size=3)
-    w = Vector.new(udt, size=3)
+    v = Vector(udt, size=3)
+    w = Vector(udt, size=3)
     v[:] = 0
     w[:] = 1
 
@@ -1104,7 +1104,7 @@ def test_udt():
     assert result.isequal(v)
     result = v.apply(gb.unary.one).new()
     assert result.dtype == dtypes.INT64
-    expected = Vector.new(int, size=v.size)
+    expected = Vector(int, size=v.size)
     expected(result.S) << 1
     assert result.isequal(expected)
     result = v.apply(gb.unary.positioni).new()

@@ -7,7 +7,7 @@ from grblas import Matrix, Vector
 
 @pytest.mark.parametrize("do_iso", [False, True])
 def test_vector_head(do_iso):
-    v0 = Vector.new(int, 5)
+    v0 = Vector(int, 5)
     if do_iso:
         values1 = values2 = values3 = [1, 1, 1]
     else:
@@ -53,7 +53,7 @@ def test_vector_head(do_iso):
 
 @pytest.mark.parametrize("do_iso", [False, True])
 def test_matrix_head(do_iso):
-    A0 = Matrix.new(int, 5, 5)
+    A0 = Matrix(int, 5, 5)
     if do_iso:
         values1 = [1, 1, 1, 1]
         values2 = values3 = values4 = [1, 1, 1]

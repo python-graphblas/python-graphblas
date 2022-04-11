@@ -433,7 +433,7 @@ class Updater:
             # Delete selection by assigning an empty scalar
             from .scalar import Scalar
 
-            scalar = Scalar.new(
+            scalar = Scalar(
                 self.parent.dtype, is_cscalar=False, name="s_empty"  # pragma: is_grbscalar
             )
             self._setitem(resolved_indexes, scalar, is_submask=False)

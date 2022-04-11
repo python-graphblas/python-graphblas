@@ -2718,7 +2718,7 @@ class ss:
             dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype)
         if method == "import":
-            matrix = gb.Matrix.new(dtype, nrows=nrows, ncols=ncols, name=name)
+            matrix = gb.Matrix(dtype, nrows=nrows, ncols=ncols, name=name)
         if is_iso:
             matrix.ss.build_scalar(rows, cols, values[0])
         else:

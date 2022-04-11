@@ -129,7 +129,7 @@ def s():
 
 @pytest.fixture
 def t():
-    return Scalar.new(int, name="t")
+    return Scalar(int, name="t")
 
 
 def test_no_pandas_repr(A, C, v, w):
@@ -3492,7 +3492,7 @@ def test_matrix_reduce_repr_html(C, v):
 
 @pytest.mark.skipif("not pd")
 def test_matrix_huge():
-    M = Matrix.new(int, nrows=2**60, ncols=2**60, name="M")
+    M = Matrix(int, nrows=2**60, ncols=2**60, name="M")
     repr_printer(M, "M")
     assert repr(M) == (
         '"M"            nvals                nrows                ncols  dtype    format\n'
@@ -3518,7 +3518,7 @@ def test_matrix_huge():
 
 @pytest.mark.skipif("not pd")
 def test_matrix_huge_html():
-    M = Matrix.new(int, nrows=2**60, ncols=2**60, name="M")
+    M = Matrix(int, nrows=2**60, ncols=2**60, name="M")
     html_printer(M, "M")
     assert repr_html(M) == (
         "<div>"
@@ -3711,7 +3711,7 @@ def test_matrix_huge_html():
 
 @pytest.mark.skipif("not pd")
 def test_vector_huge():
-    v = Vector.new(int, size=2**60)
+    v = Vector(int, size=2**60)
     repr_printer(v, "v")
     assert repr(v) == (
         '"v_0"          nvals                 size  dtype  format\n'
@@ -3726,7 +3726,7 @@ def test_vector_huge():
 
 @pytest.mark.skipif("not pd")
 def test_vector_huge_html():
-    v = Vector.new(int, size=2**60)
+    v = Vector(int, size=2**60)
     html_printer(v, "v")
     assert repr_html(v) == (
         "<div>"
@@ -5756,8 +5756,8 @@ def test_autocompute(A, B, v):
         "Do expr.new() or other << expr to calculate the expression."
     )
 
-    BIG = Vector.new(int, size=2**55)
-    small = Vector.new(int, size=2**55)
+    BIG = Vector(int, size=2**55)
+    small = Vector(int, size=2**55)
     BIG[:] = 1
     small[0] = 2
     repr_printer(BIG.ewise_mult(small), "BIG.ewise_mult(small)")
@@ -6139,8 +6139,8 @@ def test_autocompute_html(A, B, v):
         "</div></details></div></blockquote></details><em>Do <code>expr.new()</code> or <code>other << expr</code> to calculate the expression.</em></div>"
     )
 
-    BIG = Vector.new(int, size=2**55)
-    small = Vector.new(int, size=2**55)
+    BIG = Vector(int, size=2**55)
+    small = Vector(int, size=2**55)
     BIG[:] = 1
     small[0] = 2
     html_printer(BIG.ewise_mult(small), "BIG.ewise_mult(small)")
@@ -7422,7 +7422,7 @@ def test_display_nan():
 
 @pytest.mark.skipif("not pd")
 def test_large_iso():
-    A = Matrix.new(int, nrows=2**60, ncols=2**60)
+    A = Matrix(int, nrows=2**60, ncols=2**60)
     A[:, :] << 1
     repr_printer(A, "A")
     assert repr(A) == (
@@ -7479,7 +7479,7 @@ def test_large_iso():
         "1152921504606846974                   1  ...                   1\n"
         "1152921504606846975                   1  ...                   1"
     )
-    v = Vector.new(int, size=2**60)
+    v = Vector(int, size=2**60)
     v[:] = 1
     repr_printer(v, "v")
     assert repr(v) == (
@@ -8059,7 +8059,7 @@ def test_index_expr_autocompute(v):
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.int64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "record_dtype")
-    v = Vector.new(udt, size=2)
+    v = Vector(udt, size=2)
     v[:] = (False, 2)
     v[1] = (True, 3)
     repr_printer(v, "v")
@@ -8070,7 +8070,7 @@ def test_udt():
         "           0          1\n"
         "  (False, 2)  (True, 3)"
     )
-    A = Matrix.new(udt, nrows=1, ncols=3)
+    A = Matrix(udt, nrows=1, ncols=3)
     A[:, :2] = 0
     repr_printer(A, "A")
     assert repr(A) == (
@@ -8082,7 +8082,7 @@ def test_udt():
     )
     np_dtype = np.dtype("(3,)uint16")
     udt2 = dtypes.register_anonymous(np_dtype, "has_subdtype")
-    v = Vector.new(udt2, size=2)
+    v = Vector(udt2, size=2)
     v[:] = (1, 2, 3)
     v[1] = (3, 2, 1)
     repr_printer(v, "v")
@@ -8093,7 +8093,7 @@ def test_udt():
         "          0          1\n"
         "  [1, 2, 3]  [3, 2, 1]"
     )
-    A = Matrix.new(udt2, nrows=1, ncols=3)
+    A = Matrix(udt2, nrows=1, ncols=3)
     A[:, :2] = 1
     repr_printer(A, "A")
     assert repr(A) == (

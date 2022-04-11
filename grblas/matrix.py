@@ -1,4 +1,5 @@
 import itertools
+import warnings
 
 import numpy as np
 
@@ -173,7 +174,7 @@ class Matrix(BaseType):
         else:
             op = get_typed_op(binary.eq, self.dtype, other.dtype, kind="binary")
 
-        matches = Matrix.new(bool, self._nrows, self._ncols, name="M_isequal")
+        matches = Matrix(bool, self._nrows, self._ncols, name="M_isequal")
         matches << self.ewise_mult(other, op)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
@@ -335,7 +336,7 @@ class Matrix(BaseType):
         if dtype is not None or mask is not None:
             if dtype is None:
                 dtype = self.dtype
-            rv = Matrix.new(dtype, nrows=self._nrows, ncols=self._ncols, name=name)
+            rv = Matrix(dtype, nrows=self._nrows, ncols=self._ncols, name=name)
             rv(mask=mask)[...] = self
         else:
             new_mat = ffi_new("GrB_Matrix*")
@@ -365,6 +366,10 @@ class Matrix(BaseType):
         GrB_Matrix_new
         Create a new empty Matrix from the given type, number of rows, and number of columns
         """
+        warnings.warn(
+            "`Matrix.new(...)` is deprecated; please use `Matrix(...)` instead.",
+            DeprecationWarning,
+        )
         return Matrix(dtype, nrows, ncols, name=name)
 
     @classmethod
@@ -402,7 +407,7 @@ class Matrix(BaseType):
             # Look for array-subtdype
             new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
         # Create the new matrix
-        C = cls.new(new_dtype, nrows, ncols, name=name)
+        C = cls(new_dtype, nrows, ncols, name=name)
         if values.ndim == 0:
             if dup_op is not None:
                 raise ValueError(
@@ -480,7 +485,7 @@ class Matrix(BaseType):
                     f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                     f"must equal Vector.size (={other._size})."
                 )
-            full = Vector.new(other.dtype, self._nrows, name="v_full")
+            full = Vector(other.dtype, self._nrows, name="v_full")
             full[:] = 0
             other = full.outer(other, binary.second).new(name="M_temp")
         expr = MatrixExpression(
@@ -589,7 +594,7 @@ class Matrix(BaseType):
                     f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                     f"must equal Vector.size (={other._size})."
                 )
-            full = Vector.new(other.dtype, self._nrows, name="v_full")
+            full = Vector(other.dtype, self._nrows, name="v_full")
             full[:] = 0
             other = full.outer(other, binary.second).new(name="M_temp")
         expr = MatrixExpression(
@@ -877,7 +882,7 @@ class Matrix(BaseType):
         if self._is_transposed:
             rowidx, colidx = colidx, rowidx
         if result is None:
-            result = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+            result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (
@@ -1155,7 +1160,7 @@ class Matrix(BaseType):
                         # C[i, J](m) << c
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Row_subassign"
-                        value_vector = Vector.new(value.dtype, size=mask.mask._size, name="v_temp")
+                        value_vector = Vector(value.dtype, size=mask.mask._size, name="v_temp")
                         expr_repr = (
                             "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
                         )
@@ -1163,7 +1168,7 @@ class Matrix(BaseType):
                         # C(m)[i, J] << c
                         # C[i, J] << c
                         cfunc_name = "GrB_Row_assign"
-                        value_vector = Vector.new(value.dtype, size=colsize, name="v_temp")
+                        value_vector = Vector(value.dtype, size=colsize, name="v_temp")
                         expr_repr = "[{1._expr_name}, [{3._expr_name} cols]] = {0.name}"
                     # SS, SuiteSparse-specific: assume efficient vector with single scalar
                     value_vector << value
@@ -1183,12 +1188,12 @@ class Matrix(BaseType):
                         # C[I, j](m) << c
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Col_subassign"
-                        value_vector = Vector.new(value.dtype, size=mask.mask._size, name="v_temp")
+                        value_vector = Vector(value.dtype, size=mask.mask._size, name="v_temp")
                     else:
                         # C(m)[I, j] << c
                         # C[I, j] << c
                         cfunc_name = "GrB_Col_assign"
-                        value_vector = Vector.new(value.dtype, size=rowsize, name="v_temp")
+                        value_vector = Vector(value.dtype, size=rowsize, name="v_temp")
                     # SS, SuiteSparse-specific: assume efficient vector with single scalar
                     value_vector << value
 
@@ -1364,7 +1369,7 @@ class MatrixExpression(BaseExpression):
     def construct_output(self, dtype=None, *, name=None):
         if dtype is None:
             dtype = self.dtype
-        return Matrix.new(dtype, self._nrows, self._ncols, name=name)
+        return Matrix(dtype, self._nrows, self._ncols, name=name)
 
     def __repr__(self):
         from .formatting import format_matrix_expression
@@ -1545,7 +1550,7 @@ class TransposedMatrix:
     def new(self, dtype=None, *, mask=None, name=None):
         if dtype is None:
             dtype = self.dtype
-        output = Matrix.new(dtype, self._nrows, self._ncols, name=name)
+        output = Matrix(dtype, self._nrows, self._ncols, name=name)
         if mask is None:
             output.update(self)
         else:

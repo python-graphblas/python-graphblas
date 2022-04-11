@@ -1,4 +1,5 @@
 import itertools
+import warnings
 
 import numpy as np
 
@@ -113,7 +114,7 @@ class Scalar(BaseType):
         dtype = self.dtype
         if dtype.name[0] == "U" or dtype == BOOL or dtype._is_udt:
             raise TypeError(f"The negative operator, `-`, is not supported for {dtype.name} dtype")
-        rv = Scalar.new(dtype, is_cscalar=self._is_cscalar, name=f"-{self.name or 's_temp'}")
+        rv = Scalar(dtype, is_cscalar=self._is_cscalar, name=f"-{self.name or 's_temp'}")
         if self._is_empty:
             return rv
         rv.value = -self.value
@@ -125,7 +126,7 @@ class Scalar(BaseType):
                 f"The invert operator, `~`, is not supported for {self.dtype.name} dtype.  "
                 "It is only supported for BOOL dtype."
             )
-        rv = Scalar.new(BOOL, is_cscalar=self._is_cscalar, name=f"~{self.name or 's_temp'}")
+        rv = Scalar(BOOL, is_cscalar=self._is_cscalar, name=f"~{self.name or 's_temp'}")
         if self._is_empty:
             return rv
         rv.value = not self.value
@@ -253,7 +254,7 @@ class Scalar(BaseType):
         if self._is_cscalar:
             scalar = self
         else:
-            scalar = Scalar.new(self.dtype, is_cscalar=True, name="s_temp")
+            scalar = Scalar(self.dtype, is_cscalar=True, name="s_temp")
             dtype_name = "UDT" if is_udt else self.dtype.name
             call(f"GrB_Scalar_extractElement_{dtype_name}", [_Pointer(scalar), self])
         if is_udt:
@@ -328,10 +329,10 @@ class Scalar(BaseType):
             new_scalar = Scalar(self.dtype, is_cscalar=False, name=name)  # pragma: is_grbscalar
             call("GrB_Scalar_dup", [_Pointer(new_scalar), self])
         elif dtype is None:
-            new_scalar = Scalar.new(self.dtype, is_cscalar=is_cscalar, name=name)
+            new_scalar = Scalar(self.dtype, is_cscalar=is_cscalar, name=name)
             new_scalar.value = self
         else:
-            new_scalar = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+            new_scalar = Scalar(dtype, is_cscalar=is_cscalar, name=name)
             if not self._is_empty:
                 if new_scalar.is_cscalar and not new_scalar.dtype._is_udt:
                     # Cast value so we don't raise given explicit dup with dtype
@@ -357,6 +358,10 @@ class Scalar(BaseType):
         """
         Create a new empty Scalar from the given type
         """
+        warnings.warn(
+            "`Scalar.new(...)` is deprecated; please use `Scalar(...)` instead.",
+            DeprecationWarning,
+        )
         return Scalar(dtype, is_cscalar=is_cscalar, name=name)
 
     @classmethod
@@ -383,7 +388,7 @@ class Scalar(BaseType):
                 argname="value",
                 extra_message="Literal scalars expected.",
             )
-        new_scalar = cls.new(dtype, is_cscalar=is_cscalar, name=name)
+        new_scalar = cls(dtype, is_cscalar=is_cscalar, name=name)
         new_scalar.value = value
         return new_scalar
 
@@ -432,7 +437,7 @@ class Scalar(BaseType):
         from .vector import Vector
 
         if self._is_cscalar:
-            rv = Vector.new(self.dtype, size=1)
+            rv = Vector(self.dtype, size=1)
             if not self._is_empty:
                 rv[0] = self
             return rv
@@ -453,7 +458,7 @@ class Scalar(BaseType):
         from .matrix import Matrix
 
         if self._is_cscalar:
-            rv = Matrix.new(self.dtype, ncols=1, nrows=1)
+            rv = Matrix(self.dtype, ncols=1, nrows=1)
             if not self._is_empty:
                 rv[0, 0] = self
             return rv
@@ -484,7 +489,7 @@ class ScalarExpression(BaseExpression):
             dtype = self.dtype
         if is_cscalar is None:
             is_cscalar = self._is_cscalar
-        return Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+        return Scalar(dtype, is_cscalar=is_cscalar, name=name)
 
     def new(self, dtype=None, *, is_cscalar=None, name=None):
         if is_cscalar is None:

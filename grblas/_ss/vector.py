@@ -1334,9 +1334,9 @@ class ss:
             )
         if size is None and self._parent._nvals == 0 or size == 0:
             if asindex:
-                return gb.Vector.new(UINT64, size=0, name=name)
+                return gb.Vector(UINT64, size=0, name=name)
             else:
-                return gb.Vector.new(self._parent.dtype, size=0, name=name)
+                return gb.Vector(self._parent.dtype, size=0, name=name)
         do_sort = how in {"first", "last"}
         info = self._parent.ss.export("sparse", sort=do_sort)
         if size is None:
