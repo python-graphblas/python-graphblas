@@ -731,6 +731,39 @@ class Matrix(BaseType):
             bt=self._is_transposed,
         )
 
+    def select(self, op, thunk=0):
+        """
+        GrB_Matrix_select
+        Compute IndexUnaryOp at each element of the calling Matrix, keeping
+        elements which return True.
+        """
+        method_name = "select"
+        op = get_typed_op(op, self.dtype, kind="indexunary")
+        self._expect_op(op, "IndexUnaryOp", within=method_name, argname="op")
+        if type(thunk) is not Scalar:
+            try:
+                thunk = Scalar.from_value(thunk, is_cscalar=None, name="")
+            except TypeError:
+                thunk = self._expect_type(
+                    thunk,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="thunk",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        cfunc_name = f"GrB_Matrix_select_{self.dtype}"
+        return MatrixExpression(
+            method_name,
+            cfunc_name,
+            [self, thunk],
+            op=op,
+            expr_repr="{0.name}.select({op}, thunk={1._expr_name})",
+            nrows=self._nrows,
+            ncols=self._ncols,
+            dtype=self.dtype,
+        )
+
     def reduce_rowwise(self, op=monoid.plus):
         """
         GrB_Matrix_reduce
@@ -1347,6 +1380,7 @@ class MatrixExpression(BaseExpression):
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    select = wrapdoc(Matrix.select)(property(_automethods.select))
     ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
@@ -1425,6 +1459,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    select = wrapdoc(Matrix.select)(property(_automethods.select))
     ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
@@ -1527,6 +1562,7 @@ class TransposedMatrix:
     mxm = Matrix.mxm
     kronecker = Matrix.kronecker
     apply = Matrix.apply
+    select = Matrix.select
     reduce_rowwise = Matrix.reduce_rowwise
     reduce_columnwise = Matrix.reduce_columnwise
     reduce_scalar = Matrix.reduce_scalar

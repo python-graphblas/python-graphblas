@@ -636,6 +636,38 @@ class Vector(BaseType):
             size=self._size,
         )
 
+    def select(self, op, thunk=0):
+        """
+        GrB_Vector_select
+        Compute IndexUnaryOp at each element of the calling Vector, keeping
+        elements which return True.
+        """
+        method_name = "select"
+        op = get_typed_op(op, self.dtype, kind="indexunary")
+        self._expect_op(op, "IndexUnaryOp", within=method_name, argname="op")
+        if type(thunk) is not Scalar:
+            try:
+                thunk = Scalar.from_value(thunk, is_cscalar=None, name="")
+            except TypeError:
+                thunk = self._expect_type(
+                    thunk,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="thunk",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        cfunc_name = f"GrB_Vector_select_{self.dtype}"
+        return VectorExpression(
+            method_name,
+            cfunc_name,
+            [self, thunk],
+            op=op,
+            expr_repr="{0.name}.select({op}, thunk={1._expr_name})",
+            size=self._size,
+            dtype=self.dtype,
+        )
+
     def reduce(self, op=monoid.plus, *, allow_empty=True):
         """
         GrB_Vector_reduce
@@ -975,6 +1007,7 @@ class VectorExpression(BaseExpression):
     nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(_automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
+    select = wrapdoc(Vector.select)(property(_automethods.select))
     ss = wrapdoc(Vector.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(_automethods.to_values))
@@ -1045,6 +1078,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(_automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
+    select = wrapdoc(Vector.select)(property(_automethods.select))
     ss = wrapdoc(Vector.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(_automethods.to_values))

@@ -230,6 +230,10 @@ def reduce_scalar(self):
     return self._get_value("reduce_scalar")
 
 
+def select(self):
+    return self._get_value("select")
+
+
 def ss(self):
     return self._get_value("ss")
 
