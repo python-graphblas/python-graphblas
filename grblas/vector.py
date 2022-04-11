@@ -6,7 +6,7 @@ import numpy as np
 from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
 from ._ss.vector import ss
 from .base import BaseExpression, BaseType, call
-from .dtypes import _INDEX, FP64, lookup_dtype, unify
+from .dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
@@ -318,19 +318,22 @@ class Vector(BaseType):
             rv = Vector(dtype, size=self._size, name=name)
             rv(mask=mask)[...] = self
         else:
-            new_vec = ffi_new("GrB_Vector*")
-            rv = Vector._from_obj(new_vec, self.dtype, self._size, name=name)
+            rv = Vector._from_obj(ffi_new("GrB_Vector*"), self.dtype, self._size, name=name)
             call("GrB_Vector_dup", [_Pointer(rv), self])
         return rv
 
-    def diag(self, k=0, dtype=None, *, name=None):
+    def diag(self, k=0, *, name=None):
         """
-        GrB_diag
+        GrB_Matrix_diag
         Create a Matrix whose kth diagonal is this Vector
         """
-        from .ss._core import diag
+        from .matrix import Matrix
 
-        return diag(self, k=k, dtype=dtype, name=name)
+        k = _as_scalar(k, INT64, is_cscalar=True)
+        n = self._size + abs(k.value)
+        rv = Matrix._from_obj(ffi_new("GrB_Matrix*"), self.dtype, n, n, name=name)
+        call("GrB_Matrix_diag", [_Pointer(rv), self, k])
+        return rv
 
     def wait(self):
         """
