@@ -9,7 +9,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import grblas
-from grblas import agg, binary, dtypes, monoid, semiring, unary, select
+from grblas import agg, binary, dtypes, monoid, select, semiring, unary
 from grblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
