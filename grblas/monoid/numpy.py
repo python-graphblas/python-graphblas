@@ -113,6 +113,7 @@ _numpy_to_graphblas = {
     "logical_xor": "lxor",
     "multiply": "times",
 }
+# _graphblas_to_numpy = {val: key for key, val in _numpy_to_graphblas.items()}  # Soon...
 # Not included: maximum, minimum, gcd, hypot, logaddexp, logaddexp2
 
 

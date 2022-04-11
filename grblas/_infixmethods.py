@@ -9,19 +9,14 @@ from .vector import Vector, VectorExpression, VectorIndexExpr
 def call_op(self, other, method, op, *, outer=False, union=False):
     type1 = output_type(self)
     type2 = output_type(other)
-    if (
-        type1 is type2
-        or type1 is Matrix
-        and type2 is TransposedMatrix
-        or type1 is TransposedMatrix
-        and type2 is Matrix
-    ):
+    types = {Matrix, TransposedMatrix, Vector}
+    if type1 in types and type2 in types:
         if outer:
-            return op(self | other, require_monoid=False)
+            return self.ewise_add(other, op, require_monoid=False)
         elif union:
             return self.ewise_union(other, op, False, False)
         else:
-            return op(self & other)
+            return self.ewise_mult(other, op)
     return op(self, other)
 
 
@@ -71,27 +66,30 @@ def __rxor__(self, other):
 
 
 def __ixor__(self, other):
-    if output_type(other) in {Vector, Matrix, TransposedMatrix}:
-        if other.dtype != BOOL:
-            raise TypeError(
-                f"The __ixor__ infix operator, `x ^= y`, is not supported for {other.dtype.name} "
-                "dtype.  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
-            )
-        self(binary.lxor) << other
-    else:
+    other_type = output_type(other)
+    if (
+        other_type is Vector
+        and self.ndim == 2
+        or other_type not in {Vector, Matrix, TransposedMatrix}
+    ):
         self << __xor__(self, other)
+    elif other.dtype != BOOL:
+        raise TypeError(
+            f"The __ixor__ infix operator, `x ^= y`, is not supported for {other.dtype.name} "
+            "dtype.  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
+        )
+    else:
+        self(binary.lxor) << other
     return self
 
 
 def __ior__(self, other):
-    if output_type(other) in {Vector, Matrix, TransposedMatrix}:
-        if other.dtype != BOOL:
-            raise TypeError(
-                f"The __ior__ infix operator, `x |= y`, is not supported for {other.dtype.name} "
-                "dtype.  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
-            )
-        self(binary.lor) << other
-    else:
+    other_type = output_type(other)
+    if (
+        other_type is Vector
+        and self.ndim == 2
+        or other_type not in {Vector, Matrix, TransposedMatrix}
+    ):
         expr = call_op(self, other, "__ior__", binary.lor, outer=True)
         if expr.dtype != BOOL:
             raise TypeError(
@@ -99,6 +97,13 @@ def __ior__(self, other):
                 "dtype.  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
             )
         self << expr
+    elif other.dtype != BOOL:
+        raise TypeError(
+            f"The __ior__ infix operator, `x |= y`, is not supported for {other.dtype.name} "
+            "dtype.  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
+        )
+    else:
+        self(binary.lor) << other
     return self
 
 
@@ -147,10 +152,15 @@ def __radd__(self, other):
 
 
 def __iadd__(self, other):
-    if output_type(other) in {Vector, Matrix, TransposedMatrix}:
-        self(binary.plus) << other
-    else:
+    other_type = output_type(other)
+    if (
+        other_type is Vector
+        and self.ndim == 2
+        or other_type not in {Vector, Matrix, TransposedMatrix}
+    ):
         self << __add__(self, other)
+    else:
+        self(binary.plus) << other
     return self
 
 
@@ -350,10 +360,15 @@ if __name__ == "__main__":
         lines.append(f"def __i{method}__(self, other):")
         if method in outer:
             lines.append(
-                "    if output_type(other) in {Vector, Matrix, TransposedMatrix}:\n"
-                f"        self(binary.{op}) << other\n"
-                f"    else:\n"
-                f"        self << __{method}__(self, other)"
+                "    other_type = output_type(other)\n"
+                "    if (\n"
+                "        other_type is Vector\n"
+                "        and self.ndim == 2\n"
+                "        or other_type not in {Vector, Matrix, TransposedMatrix}\n"
+                "    ):\n"
+                f"        self << __{method}__(self, other)\n"
+                "    else:\n"
+                f"        self(binary.{op}) << other"
             )
         else:
             lines.append(f"    self << __{method}__(self, other)")

@@ -2,7 +2,7 @@ import numba
 import numpy as np
 from numpy import find_common_type, promote_types
 
-from . import lib
+from . import ffi, lib
 
 # Default assumption unless FC32/FC64 are found in lib
 _supports_complex = hasattr(lib, "GrB_FC64") or hasattr(lib, "GxB_FC64")
@@ -17,30 +17,100 @@ class DataType:
         self.gb_name = gb_name
         self.c_type = c_type
         self.numba_type = numba_type
-        self.np_type = np_type
+        self.np_type = np.dtype(np_type)
 
     def __repr__(self):
         return self.name
 
     def __eq__(self, other):
         if type(other) is DataType:
-            return self.gb_obj == other.gb_obj
-        else:
-            # Attempt to use `other` as a lookup key
-            try:
-                other = lookup_dtype(other)
-                return self == other
-            except ValueError:
-                raise TypeError(f"Invalid or unknown datatype: {other}") from None
+            return self is other
+        # Attempt to use `other` as a lookup key
+        try:
+            return self is lookup_dtype(other)
+        except ValueError:
+            raise TypeError(f"Invalid or unknown datatype: {other}") from None
+
+    def __hash__(self):
+        return hash(self.gb_obj)
+
+    def __lt__(self, other):
+        # Let us sort for prettier error reporting
+        if type(other) is DataType:
+            t1 = self.np_type
+            t2 = other.np_type
+            return (t1.kind, t1.itemsize, t1.name) < (t2.kind, t2.itemsize, t2.name)
+        # Attempt to use `other` as a lookup key
+        try:
+            return self < lookup_dtype(other)
+        except ValueError:
+            raise TypeError(f"Invalid or unknown datatype: {other}") from None
 
     def __reduce__(self):
+        if self._is_udt:
+            return (self._deserialize, (self.name, self.np_type, self._is_anonymous))
         if self.gb_name == "GrB_Index":
             return "_INDEX"
         return self.name
 
     @property
     def _carg(self):
-        return self.gb_obj
+        return self.gb_obj[0] if self.gb_name is None else self.gb_obj
+
+    @property
+    def _is_anonymous(self):
+        return globals().get(self.name) is not self
+
+    @property
+    def _is_udt(self):
+        return self.gb_name is None
+
+    @staticmethod
+    def _deserialize(name, dtype, is_anonymous):
+        if is_anonymous:
+            return register_anonymous(dtype, name)
+        if name in _registry:
+            return _registry[name]
+        return register_new(name, dtype)
+
+
+def register_new(name, dtype):
+    if not name.isidentifier():
+        raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
+    if name in _registry or name in globals():
+        raise ValueError(f"{name!r} name for dtype is unavailable")
+    rv = register_anonymous(dtype, name)
+    _registry[name] = rv
+    globals()[name] = rv
+    return rv
+
+
+def register_anonymous(dtype, name=None):
+    from .exceptions import check_status_carg
+
+    dtype = np.dtype(dtype)
+    if dtype.hasobject:
+        raise ValueError("dtype must not allow Python objects")
+    if dtype.isbuiltin != 0:
+        raise ValueError("dtype must not be a builtin type")
+    if name is None:
+        name = repr(dtype)
+    numba_type = numba.typeof(dtype).dtype
+
+    if dtype in _registry:
+        gb_obj = _registry[dtype].gb_obj
+    else:
+        gb_obj = ffi.new("GrB_Type*")
+        status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
+        check_status_carg(status, "Type", gb_obj[0])
+    # For now, let's use "opaque" unsigned bytes for the c type.
+    rv = DataType(name, gb_obj, None, f"uint8_t[{dtype.itemsize}]", numba_type, dtype)
+    if dtype not in _registry:
+        _registry[gb_obj] = rv
+        _registry[dtype] = rv
+        _registry[numba_type] = rv
+        _registry[numba_type.name] = rv
+    return rv
 
 
 BOOL = DataType("BOOL", lib.GrB_BOOL, "GrB_BOOL", "_Bool", numba.types.bool_, np.bool_)
@@ -76,23 +146,23 @@ if _supports_complex and hasattr(lib, "GrB_FC64"):  # pragma: no coverage
 
 # Used for testing user-defined functions
 _sample_values = {
-    INT8.name: np.int8(1),
-    UINT8.name: np.uint8(1),
-    INT16.name: np.int16(1),
-    UINT16.name: np.uint16(1),
-    INT32.name: np.int32(1),
-    UINT32.name: np.uint32(1),
-    INT64.name: np.int64(1),
-    UINT64.name: np.uint64(1),
-    FP32.name: np.float32(0.5),
-    FP64.name: np.float64(0.5),
-    BOOL.name: np.bool_(True),
+    INT8: np.int8(1),
+    UINT8: np.uint8(1),
+    INT16: np.int16(1),
+    UINT16: np.uint16(1),
+    INT32: np.int32(1),
+    UINT32: np.uint32(1),
+    INT64: np.int64(1),
+    UINT64: np.uint64(1),
+    FP32: np.float32(0.5),
+    FP64: np.float64(0.5),
+    BOOL: np.bool_(True),
 }
 if _supports_complex:
     _sample_values.update(
         {
-            FC32.name: np.complex64(complex(0, 0.5)),
-            FC64.name: np.complex128(complex(0, 0.5)),
+            FC32: np.complex64(complex(0, 0.5)),
+            FC64: np.complex128(complex(0, 0.5)),
         }
     )
 
@@ -124,7 +194,7 @@ for dtype in _dtypes_to_register:
     _registry[dtype.c_type.upper()] = dtype
     _registry[dtype.numba_type] = dtype
     _registry[dtype.numba_type.name] = dtype
-    val = _sample_values[dtype.name]
+    val = _sample_values[dtype]
     _registry[val.dtype] = dtype
     _registry[val.dtype.name] = dtype
 # Upcast numpy float16 to float32
@@ -143,7 +213,7 @@ if _supports_complex:
     _registry["complex"] = FC64
 
 
-def lookup_dtype(key):
+def lookup_dtype(key, value=None):
     # Check for silly lookup where key is already a DataType
     if type(key) is DataType:
         return key
@@ -156,11 +226,17 @@ def lookup_dtype(key):
             return _registry[key.name]
         except KeyError:
             pass
+    if value is not None and hasattr(value, "dtype") and value.dtype in _registry:
+        return _registry[value.dtype]
     try:
         return lookup_dtype(np.dtype(key))
     except Exception:
         pass
-    raise ValueError(f"Unknown dtype: {key}")
+    try:
+        return lookup_dtype(key.literal_type)  # For numba dtype inference
+    except Exception:
+        pass
+    raise ValueError(f"Unknown dtype: {key}", type(key))
 
 
 def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):

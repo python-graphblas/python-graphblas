@@ -89,6 +89,7 @@ _numpy_to_graphblas = {
     "subtract": "minus",
     "true_divide": "truediv",
 }
+# _graphblas_to_numpy = {val: key for key, val in _numpy_to_graphblas.items()}  # Soon...
 # Not included: maximum, minimum, gcd, hypot, logaddexp, logaddexp2
 # lcm, left_shift, nextafter, right_shift
 

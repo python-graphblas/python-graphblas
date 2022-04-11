@@ -362,7 +362,7 @@ class ss:
             parent = self._parent
         else:
             parent = self._parent.dup(name=f"v_{method}")
-        dtype = np.dtype(parent.dtype.np_type)
+        dtype = parent.dtype.np_type
         index_dtype = np.dtype(np.uint64)
 
         if format is None:
@@ -481,6 +481,8 @@ class ss:
         )
         if method == "export":
             parent.gb_obj = ffi.NULL
+        if parent.dtype._is_udt:
+            rv["dtype"] = parent.dtype
         return rv
 
     @classmethod

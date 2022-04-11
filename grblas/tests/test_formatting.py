@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 import grblas
-from grblas import formatting, unary
+from grblas import dtypes, formatting, unary
 from grblas.formatting import CSS_STYLE
 
 from .conftest import autocompute
@@ -8053,4 +8053,53 @@ def test_index_expr_autocompute(v):
         "  </tbody>\n"
         "</table>\n"
         "</div></details></div></blockquote></details><em>This expression may be used to extract or assign a <tt>Vector</tt>.<br>Example extract: <code>v[[0, 1]].new()</code><br>Example assign: <code>v[[0, 1]] << v</code></em></div>"
+    )
+
+
+def test_udt():
+    record_dtype = np.dtype([("x", np.bool_), ("y", np.int64)], align=True)
+    udt = dtypes.register_anonymous(record_dtype, "record_dtype")
+    v = Vector.new(udt, size=2)
+    v[:] = (False, 2)
+    v[1] = (True, 3)
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v_0"          nvals  size         dtype  format\n'
+        "grblas.Vector      2     2  record_dtype    full\n"
+        "------------------------------------------------\n"
+        "           0          1\n"
+        "  (False, 2)  (True, 3)"
+    )
+    A = Matrix.new(udt, nrows=1, ncols=3)
+    A[:, :2] = 0
+    repr_printer(A, "A")
+    assert repr(A) == (
+        '"M_0"          nvals  nrows  ncols         dtype         format\n'
+        "grblas.Matrix      2      1      3  record_dtype  bitmapr (iso)\n"
+        "---------------------------------------------------------------\n"
+        "            0           1 2\n"
+        "0  (False, 0)  (False, 0)  "
+    )
+    np_dtype = np.dtype("(3,)uint16")
+    udt2 = dtypes.register_anonymous(np_dtype, "has_subdtype")
+    v = Vector.new(udt2, size=2)
+    v[:] = (1, 2, 3)
+    v[1] = (3, 2, 1)
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v_1"          nvals  size         dtype  format\n'
+        "grblas.Vector      2     2  has_subdtype    full\n"
+        "------------------------------------------------\n"
+        "          0          1\n"
+        "  [1, 2, 3]  [3, 2, 1]"
+    )
+    A = Matrix.new(udt2, nrows=1, ncols=3)
+    A[:, :2] = 1
+    repr_printer(A, "A")
+    assert repr(A) == (
+        '"M_1"          nvals  nrows  ncols         dtype         format\n'
+        "grblas.Matrix      2      1      3  has_subdtype  bitmapr (iso)\n"
+        "---------------------------------------------------------------\n"
+        "           0          1 2\n"
+        "0  [1, 1, 1]  [1, 1, 1]  "
     )
