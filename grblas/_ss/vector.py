@@ -214,8 +214,7 @@ class ss:
             # Copy to a new handle so we can free `tiles`
             new_vector = ffi.new("GrB_Vector*")
             new_vector[0] = ffi.cast("GrB_Vector", tiles[i])
-            tile = Vector(new_vector, dtype, name=f"{name}_{i}")
-            tile._size = size
+            tile = Vector._from_obj(new_vector, dtype, size, name=f"{name}_{i}")
             rv.append(tile)
         return rv
 
@@ -825,8 +824,7 @@ class ss:
                 "Vector",
                 vhandle[0],
             )
-            vector = gb.Vector(vhandle, dtype, name=name)
-            vector._size = size
+            vector = gb.Vector._from_obj(vhandle, dtype, size, name=name)
         else:
             check_status(status, vector)
         unclaim_buffer(indices)
@@ -995,8 +993,7 @@ class ss:
                 "Vector",
                 vhandle[0],
             )
-            vector = gb.Vector(vhandle, dtype, name=name)
-            vector._size = size
+            vector = gb.Vector._from_obj(vhandle, dtype, size, name=name)
         else:
             check_status(status, vector)
         unclaim_buffer(bitmap)
@@ -1136,8 +1133,7 @@ class ss:
                 "Vector",
                 vhandle[0],
             )
-            vector = gb.Vector(vhandle, dtype, name=name)
-            vector._size = size
+            vector = gb.Vector._from_obj(vhandle, dtype, size, name=name)
         else:
             check_status(status, vector)
         unclaim_buffer(values)

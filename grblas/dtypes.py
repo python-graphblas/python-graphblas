@@ -228,6 +228,9 @@ def lookup_dtype(key, value=None):
             pass
     if value is not None and hasattr(value, "dtype") and value.dtype in _registry:
         return _registry[value.dtype]
+    # np.dtype(x) accepts some weird values; we may want to guard against some
+    if key is None:
+        raise TypeError("Bad dtype: None.  A valid dtype must be provided.")
     try:
         return lookup_dtype(np.dtype(key))
     except Exception:

@@ -12,7 +12,7 @@ from .. import ffi, lib, monoid
 from ..base import call, record_raw
 from ..dtypes import _INDEX, INT64, lookup_dtype
 from ..exceptions import check_status, check_status_carg
-from ..scalar import Scalar, _as_scalar
+from ..scalar import Scalar, _as_scalar, _scalar_index
 from ..utils import (
     _CArray,
     _Pointer,
@@ -266,7 +266,6 @@ def normalize_chunks(chunks, shape):
 def _concat_mn(tiles, *, is_matrix=None):
     """Argument checking for `Matrix.ss.concat` and returns number of tiles in each dimension"""
     from ..matrix import Matrix, TransposedMatrix
-    from ..scalar import Scalar
     from ..vector import Vector
 
     valid_types = (Matrix, TransposedMatrix, Vector, Scalar)
@@ -495,9 +494,7 @@ class ss:
                 # Copy to a new handle so we can free `tiles`
                 new_matrix = ffi.new("GrB_Matrix*")
                 new_matrix[0] = tiles[index]
-                tile = Matrix(new_matrix, dtype, name=f"{name}_{i}x{j}")
-                tile._nrows = nrows
-                tile._ncols = ncols
+                tile = Matrix._from_obj(new_matrix, dtype, nrows, ncols, name=f"{name}_{i}x{j}")
                 cur.append(tile)
                 index += 1
             rv.append(cur)
@@ -804,8 +801,7 @@ class ss:
                     nvals = parent._nvals
                     rows = _CArray(size=nvals, name="&rows_array")
                     columns = _CArray(size=nvals, name="&columns_array")
-                    n = ffi_new("GrB_Index*")
-                    scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
+                    scalar = _scalar_index("s_nvals")
                     scalar.value = nvals
                     call(
                         f"GrB_Matrix_extractTuples_{parent.dtype.name}",
@@ -1346,9 +1342,7 @@ class ss:
                 "Matrix",
                 mhandle[0],
             )
-            matrix = gb.Matrix(mhandle, dtype, name=name)
-            matrix._nrows = nrows
-            matrix._ncols = ncols
+            matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
         unclaim_buffer(indptr)
@@ -1521,9 +1515,7 @@ class ss:
                 "Matrix",
                 mhandle[0],
             )
-            matrix = gb.Matrix(mhandle, dtype, name=name)
-            matrix._nrows = nrows
-            matrix._ncols = ncols
+            matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
         unclaim_buffer(indptr)
@@ -1717,9 +1709,7 @@ class ss:
                 "Matrix",
                 mhandle[0],
             )
-            matrix = gb.Matrix(mhandle, dtype, name=name)
-            matrix._nrows = nrows
-            matrix._ncols = ncols
+            matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
         unclaim_buffer(indptr)
@@ -1913,9 +1903,7 @@ class ss:
                 "Matrix",
                 mhandle[0],
             )
-            matrix = gb.Matrix(mhandle, dtype, name=name)
-            matrix._nrows = nrows
-            matrix._ncols = ncols
+            matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
         unclaim_buffer(indptr)
@@ -2093,9 +2081,7 @@ class ss:
                 "Matrix",
                 mhandle[0],
             )
-            matrix = gb.Matrix(mhandle, dtype, name=name)
-            matrix._nrows = nrows
-            matrix._ncols = ncols
+            matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
         unclaim_buffer(bitmap)
@@ -2271,9 +2257,7 @@ class ss:
                 "Matrix",
                 mhandle[0],
             )
-            matrix = gb.Matrix(mhandle, dtype, name=name)
-            matrix._nrows = nrows
-            matrix._ncols = ncols
+            matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
         unclaim_buffer(bitmap)
@@ -2421,9 +2405,7 @@ class ss:
                 "Matrix",
                 mhandle[0],
             )
-            matrix = gb.Matrix(mhandle, dtype, name=name)
-            matrix._nrows = nrows
-            matrix._ncols = ncols
+            matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
         unclaim_buffer(values)
@@ -2569,9 +2551,7 @@ class ss:
                 "Matrix",
                 mhandle[0],
             )
-            matrix = gb.Matrix(mhandle, dtype, name=name)
-            matrix._nrows = nrows
-            matrix._ncols = ncols
+            matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
         unclaim_buffer(values)

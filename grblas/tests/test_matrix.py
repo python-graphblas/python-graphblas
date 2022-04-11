@@ -1580,7 +1580,7 @@ def test_nested_matrix_operations():
 
 
 def test_bad_init():
-    with pytest.raises(TypeError, match="CData"):
+    with pytest.raises(TypeError, match="Bad dtype"):
         Matrix(None, float, name="bad_matrix")
 
 
@@ -2565,6 +2565,7 @@ def test_expr_is_like_matrix(A):
         "_delete_element",
         "_deserialize",
         "_extract_element",
+        "_from_obj",
         "_name_counter",
         "_parent",
         "_prep_for_assign",
@@ -2601,6 +2602,7 @@ def test_index_expr_is_like_matrix(A):
         "_delete_element",
         "_deserialize",
         "_extract_element",
+        "_from_obj",
         "_name_counter",
         "_parent",
         "_prep_for_assign",
