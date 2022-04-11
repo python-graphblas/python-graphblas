@@ -1828,6 +1828,34 @@ def test_infix_outer():
     assert w.reduce(binary.plus[int]).new() == 2
 
 
+def test_iteration(v):
+    w = Vector.new(int, 2)
+    assert list(w.ss.iterkeys()) == []
+    assert list(w.ss.itervalues()) == []
+    assert list(w.ss.iteritems()) == []
+
+    indices, values = v.to_values()
+    # This is what I would expect
+    assert sorted(indices) == sorted(v.ss.iterkeys())
+    assert sorted(values) == sorted(v.ss.itervalues())
+    assert sorted(zip(indices, values)) == sorted(v.ss.iteritems())
+
+    N = indices.size
+    v = Vector.ss.import_bitmap(**v.ss.export("bitmap"))
+    assert v.ss.format == "bitmap"
+    assert len(list(v.ss.iterkeys(4))) == 2
+    assert len(list(v.ss.itervalues(-3))) == 2
+    assert len(list(v.ss.iteritems(-v.size))) == N
+    assert len(list(v.ss.itervalues(-v.size - 1))) == N
+    assert len(list(v.ss.iterkeys(v.size + 1))) == 0
+
+    v = Vector.ss.import_sparse(**v.ss.export("sparse"))
+    assert v.ss.format == "sparse"
+    assert len(list(v.ss.iterkeys(2))) == 2
+    assert len(list(v.ss.itervalues(N))) == 0
+    assert len(list(v.ss.iteritems(N + 1))) == 0
+
+
 def test_broadcasting(A, v):
     # Vector on left
     expected = A.dup()

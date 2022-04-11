@@ -11,7 +11,7 @@ import grblas as gb
 from .. import ffi, lib, monoid
 from ..base import call, record_raw
 from ..dtypes import _INDEX, INT64, lookup_dtype
-from ..exceptions import check_status, check_status_carg
+from ..exceptions import _error_code_lookup, check_status, check_status_carg
 from ..scalar import Scalar, _as_scalar
 from ..utils import (
     _CArray,
@@ -26,6 +26,7 @@ from ..utils import (
 from .utils import get_order
 
 ffi_new = ffi.new
+NULL = ffi.NULL
 
 
 @njit
@@ -354,7 +355,8 @@ class ss:
     @property
     def iso_value(self):
         if self.is_iso:
-            return self._parent.reduce_scalar(monoid.any).new(name="")
+            # This may not be thread-safe if the parent is being modified in another thread
+            return Scalar.from_value(next(self.itervalues()), dtype=self._parent.dtype, name="")
         raise ValueError("Matrix is not iso-valued")
 
     @property
@@ -573,6 +575,120 @@ class ss:
                 _as_scalar(rows.size, _INDEX, is_cscalar=True),
             ],
         )
+
+    def _begin_iter(self, seek):
+        it_ptr = ffi.new("GxB_Iterator*")
+        info = lib.GxB_Iterator_new(it_ptr)
+        it = it_ptr[0]
+        success = lib.GrB_SUCCESS
+        info = lib.GxB_Matrix_Iterator_attach(it, self._parent._carg, NULL)
+        if info != success:  # pragma: no cover
+            lib.GxB_Iterator_free(it_ptr)
+            raise _error_code_lookup[info]("Matrix iterator failed to attach")
+        if seek < 0:
+            p = lib.GxB_Matrix_Iterator_getpmax(it)
+            seek += p
+            if seek < 0:
+                seek = 0
+        info = lib.GxB_Matrix_Iterator_seek(it, seek)
+        if info != success:
+            lib.GxB_Iterator_free(it_ptr)
+            raise _error_code_lookup[info]("Matrix iterator failed to seek")
+        return it_ptr
+
+    def iterkeys(self, seek=0):
+        """Iterate over all the row and column indices of a Matrix.
+
+        Parameters
+        ----------
+        seek : int, default 0
+            Index of entry to seek to.  May be negative to seek backwards from the end.
+            Matrix objects in bitmap format seek as if it's full format (i.e., it
+            ignores the bitmap mask).
+
+        The Matrix should not be modified during iteration; doing so will
+        result in undefined behavior.
+
+        """
+        try:
+            it_ptr = self._begin_iter(seek)
+        except StopIteration:
+            return
+        it = it_ptr[0]
+        info = success = lib.GrB_SUCCESS
+        key_func = lib.GxB_Matrix_Iterator_getIndex
+        next_func = lib.GxB_Matrix_Iterator_next
+        row_ptr = ffi_new("GrB_Index*")
+        col_ptr = ffi_new("GrB_Index*")
+        while info == success:
+            key_func(it, row_ptr, col_ptr)
+            yield (row_ptr[0], col_ptr[0])
+            info = next_func(it)
+        lib.GxB_Iterator_free(it_ptr)
+        if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+            raise _error_code_lookup[info]("Matrix iterator failed")
+
+    def itervalues(self, seek=0):
+        """Iterate over all the values of a Matrix.
+
+        Parameters
+        ----------
+        seek : int, default 0
+            Index of entry to seek to.  May be negative to seek backwards from the end.
+            Matrix objects in bitmap format seek as if it's full format (i.e., it
+            ignores the bitmap mask).
+
+        The Matrix should not be modified during iteration; doing so will
+        result in undefined behavior.
+
+        """
+        try:
+            it_ptr = self._begin_iter(seek)
+        except StopIteration:
+            return
+        it = it_ptr[0]
+        info = success = lib.GrB_SUCCESS
+        val_func = getattr(lib, f"GxB_Iterator_get_{self._parent.dtype.name}")
+        next_func = lib.GxB_Matrix_Iterator_next
+        while info == success:
+            yield val_func(it)
+            info = next_func(it)
+        lib.GxB_Iterator_free(it_ptr)
+        if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+            raise _error_code_lookup[info]("Matrix iterator failed")
+
+    def iteritems(self, seek=0):
+        """Iterate over all the row, column, and value triples of a Matrix.
+
+        Parameters
+        ----------
+        seek : int, default 0
+            Index of entry to seek to.  May be negative to seek backwards from the end.
+            Matrix objects in bitmap format seek as if it's full format (i.e., it
+            ignores the bitmap mask).
+
+        The Matrix should not be modified during iteration; doing so will
+        result in undefined behavior.
+
+        """
+        try:
+            it_ptr = self._begin_iter(seek)
+        except StopIteration:
+            return
+        it = it_ptr[0]
+        info = success = lib.GrB_SUCCESS
+        key_func = lib.GxB_Matrix_Iterator_getIndex
+        val_func = getattr(lib, f"GxB_Iterator_get_{self._parent.dtype.name}")
+        next_func = lib.GxB_Matrix_Iterator_next
+        row_ptr = ffi_new("GrB_Index*")
+        col_ptr = ffi_new("GrB_Index*")
+        while info == success:
+            key_func(it, row_ptr, col_ptr)
+            yield (row_ptr[0], col_ptr[0], val_func(it))
+            info = next_func(it)
+        lib.GxB_Iterator_free(it_ptr)
+        if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+            raise _error_code_lookup[info]("Matrix iterator failed")
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
         """
@@ -844,7 +960,7 @@ class ss:
                 if give_ownership:
                     if method == "export":
                         parent.__del__()
-                        parent.gb_obj = ffi.NULL
+                        parent.gb_obj = NULL
                     else:
                         parent.clear()
             elif format == "coor":
@@ -883,7 +999,7 @@ class ss:
         Ap_size = ffi_new("GrB_Index*")
         Ax_size = ffi_new("GrB_Index*")
         if sort:
-            jumbled = ffi.NULL
+            jumbled = NULL
         else:
             jumbled = ffi_new("bool*")
         is_iso = ffi_new("bool*")
@@ -903,7 +1019,7 @@ class ss:
                     Ax_size,
                     is_iso,
                     jumbled,
-                    ffi.NULL,
+                    NULL,
                 ),
                 parent,
             )
@@ -945,7 +1061,7 @@ class ss:
                     Ax_size,
                     is_iso,
                     jumbled,
-                    ffi.NULL,
+                    NULL,
                 ),
                 parent,
             )
@@ -993,7 +1109,7 @@ class ss:
                     is_iso,
                     nvec,
                     jumbled,
-                    ffi.NULL,
+                    NULL,
                 ),
                 parent,
             )
@@ -1048,7 +1164,7 @@ class ss:
                     is_iso,
                     nvec,
                     jumbled,
-                    ffi.NULL,
+                    NULL,
                 ),
                 parent,
             )
@@ -1100,7 +1216,7 @@ class ss:
                     Ax_size,
                     is_iso,
                     nvals_,
-                    ffi.NULL,
+                    NULL,
                 ),
                 parent,
             )
@@ -1150,7 +1266,7 @@ class ss:
                     Ax,
                     Ax_size,
                     is_iso,
-                    ffi.NULL,
+                    NULL,
                 ),
                 parent,
             )
@@ -1176,7 +1292,7 @@ class ss:
         rv["format"] = format
         rv["values"] = values
         if method == "export":
-            parent.gb_obj = ffi.NULL
+            parent.gb_obj = NULL
         if parent.dtype._is_udt:
             rv["dtype"] = parent.dtype
         return rv
@@ -1338,7 +1454,7 @@ class ss:
             values.nbytes,
             is_iso,
             not sorted_cols,
-            ffi.NULL,
+            NULL,
         )
         if method == "import":
             check_status_carg(
@@ -1513,7 +1629,7 @@ class ss:
             values.nbytes,
             is_iso,
             not sorted_rows,
-            ffi.NULL,
+            NULL,
         )
         if method == "import":
             check_status_carg(
@@ -1709,7 +1825,7 @@ class ss:
             is_iso,
             nvec,
             not sorted_cols,
-            ffi.NULL,
+            NULL,
         )
         if method == "import":
             check_status_carg(
@@ -1905,7 +2021,7 @@ class ss:
             is_iso,
             nvec,
             not sorted_rows,
-            ffi.NULL,
+            NULL,
         )
         if method == "import":
             check_status_carg(
@@ -2085,7 +2201,7 @@ class ss:
             values.nbytes,
             is_iso,
             nvals,
-            ffi.NULL,
+            NULL,
         )
         if method == "import":
             check_status_carg(
@@ -2263,7 +2379,7 @@ class ss:
             values.nbytes,
             is_iso,
             nvals,
-            ffi.NULL,
+            NULL,
         )
         if method == "import":
             check_status_carg(
@@ -2413,7 +2529,7 @@ class ss:
             Ax,
             values.nbytes,
             is_iso,
-            ffi.NULL,
+            NULL,
         )
         if method == "import":
             check_status_carg(
@@ -2561,7 +2677,7 @@ class ss:
             Ax,
             values.nbytes,
             is_iso,
-            ffi.NULL,
+            NULL,
         )
         if method == "import":
             check_status_carg(

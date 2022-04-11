@@ -3131,6 +3131,33 @@ def test_delete_via_scalar(A):
     assert A.nvals == 0
 
 
+def test_iteration(A):
+    B = Matrix.new(int, 2, 2)
+    assert list(B.ss.iterkeys()) == []
+    assert list(B.ss.itervalues()) == []
+    assert list(B.ss.iteritems()) == []
+    rows, columns, values = A.to_values()
+    assert sorted(zip(rows, columns)) == sorted(A.ss.iterkeys())
+    assert sorted(values) == sorted(A.ss.itervalues())
+    assert sorted(zip(rows, columns, values)) == sorted(A.ss.iteritems())
+    N = rows.size
+
+    A = Matrix.ss.import_bitmapr(**A.ss.export("bitmapr"))
+    assert A.ss.format == "bitmapr"
+    assert len(list(A.ss.iterkeys(3))) == N - A[0, :3].new().nvals
+    assert len(list(A.ss.iterkeys(-3))) == A[-1, -3:].new().nvals
+
+    A = Matrix.ss.import_csr(**A.ss.export("csr"))
+    assert A.ss.format == "csr"
+    assert len(list(A.ss.iterkeys(3))) == N - 3
+    assert len(list(A.ss.iterkeys(-3))) == 3
+    assert len(list(A.ss.itervalues(N))) == 0
+    assert len(list(A.ss.iteritems(N + 1))) == 0
+    assert len(list(A.ss.iterkeys(N + 2))) == 0
+    assert len(list(A.ss.iterkeys(-N))) == N
+    assert len(list(A.ss.itervalues(-N - 1))) == N
+
+
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "MatrixUDT")

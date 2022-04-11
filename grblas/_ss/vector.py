@@ -9,14 +9,15 @@ import grblas as gb
 from .. import ffi, lib, monoid
 from ..base import call
 from ..dtypes import _INDEX, INT64, UINT64, lookup_dtype
-from ..exceptions import check_status, check_status_carg
-from ..scalar import _as_scalar
+from ..exceptions import _error_code_lookup, check_status, check_status_carg
+from ..scalar import Scalar, _as_scalar
 from ..utils import _CArray, ints_to_numpy_buffer, libget, values_to_numpy_buffer, wrapdoc
 from .matrix import MatrixArray, _concat_mn, normalize_chunks
 from .prefix_scan import prefix_scan
 from .utils import get_order
 
 ffi_new = ffi.new
+NULL = ffi.NULL
 
 
 @njit
@@ -98,7 +99,8 @@ class ss:
     @property
     def iso_value(self):
         if self.is_iso:
-            return self._parent.reduce(monoid.any).new(name="")
+            # This may not be thread-safe if the parent is being modified in another thread
+            return Scalar.from_value(next(self.itervalues()), dtype=self._parent.dtype, name="")
         raise ValueError("Vector is not iso-valued")
 
     @property
@@ -275,6 +277,114 @@ class ss:
             ],
         )
 
+    def _begin_iter(self, seek):
+        it_ptr = ffi.new("GxB_Iterator*")
+        info = lib.GxB_Iterator_new(it_ptr)
+        it = it_ptr[0]
+        success = lib.GrB_SUCCESS
+        info = lib.GxB_Vector_Iterator_attach(it, self._parent._carg, NULL)
+        if info != success:  # pragma: no cover
+            lib.GxB_Iterator_free(it_ptr)
+            raise _error_code_lookup[info]("Vector iterator failed to attach")
+        if seek < 0:
+            p = lib.GxB_Vector_Iterator_getpmax(it)
+            seek += p
+            if seek < 0:
+                seek = 0
+        info = lib.GxB_Vector_Iterator_seek(it, seek)
+        if info != success:
+            lib.GxB_Iterator_free(it_ptr)
+            raise _error_code_lookup[info]("Vector iterator failed to seek")
+        return it_ptr
+
+    def iterkeys(self, seek=0):
+        """Iterate over all the indices of a Vector.
+
+        Parameters
+        ----------
+        seek : int, default 0
+            Index of entry to seek to.  May be negative to seek backwards from the end.
+            Vector objects in bitmap format seek as if it's full format (i.e., it
+            ignores the bitmap mask).
+
+        The Vector should not be modified during iteration; doing so will
+        result in undefined behavior.
+
+        """
+        try:
+            it_ptr = self._begin_iter(seek)
+        except StopIteration:
+            return
+        it = it_ptr[0]
+        info = success = lib.GrB_SUCCESS
+        key_func = lib.GxB_Vector_Iterator_getIndex
+        next_func = lib.GxB_Vector_Iterator_next
+        while info == success:
+            yield key_func(it)
+            info = next_func(it)
+        lib.GxB_Iterator_free(it_ptr)
+        if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+            raise _error_code_lookup[info]("Vector iterator failed")
+
+    def itervalues(self, seek=0):
+        """Iterate over all the values of a Vector.
+
+        Parameters
+        ----------
+        seek : int, default 0
+            Index of entry to seek to.  May be negative to seek backwards from the end.
+            Vector objects in bitmap format seek as if it's full format (i.e., it
+            ignores the bitmap mask).
+
+        The Vector should not be modified during iteration; doing so will
+        result in undefined behavior.
+
+        """
+        try:
+            it_ptr = self._begin_iter(seek)
+        except StopIteration:
+            return
+        it = it_ptr[0]
+        info = success = lib.GrB_SUCCESS
+        val_func = getattr(lib, f"GxB_Iterator_get_{self._parent.dtype.name}")
+        next_func = lib.GxB_Vector_Iterator_next
+        while info == success:
+            yield val_func(it)
+            info = next_func(it)
+        lib.GxB_Iterator_free(it_ptr)
+        if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+            raise _error_code_lookup[info]("Vector iterator failed")
+
+    def iteritems(self, seek=0):
+        """Iterate over all the indices and values of a Vector.
+
+        Parameters
+        ----------
+        seek : int, default 0
+            Index of entry to seek to.  May be negative to seek backwards from the end.
+            Vector objects in bitmap format seek as if it's full format (i.e., it
+            ignores the bitmap mask).
+
+        The Vector should not be modified during iteration; doing so will
+        result in undefined behavior.
+
+        """
+        try:
+            it_ptr = self._begin_iter(seek)
+        except StopIteration:
+            return
+        it = it_ptr[0]
+        info = success = lib.GrB_SUCCESS
+        key_func = lib.GxB_Vector_Iterator_getIndex
+        val_func = getattr(lib, f"GxB_Iterator_get_{self._parent.dtype.name}")
+        next_func = lib.GxB_Vector_Iterator_next
+        while info == success:
+            yield (key_func(it), val_func(it))
+            info = next_func(it)
+        lib.GxB_Iterator_free(it_ptr)
+        if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+            raise _error_code_lookup[info]("Vector iterator failed")
+
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
         """
         GxB_Vextor_export_xxx
@@ -382,7 +492,7 @@ class ss:
         vx = ffi_new("void**")
         vx_size = ffi_new("GrB_Index*")
         if sort:
-            jumbled = ffi.NULL
+            jumbled = NULL
         else:
             jumbled = ffi_new("bool*")
         is_iso = ffi_new("bool*")
@@ -401,7 +511,7 @@ class ss:
                     is_iso,
                     nvals,
                     jumbled,
-                    ffi.NULL,
+                    NULL,
                 ),
                 parent,
             )
@@ -431,7 +541,7 @@ class ss:
             nvals = ffi_new("GrB_Index*")
             check_status(
                 libget(f"GxB_Vector_{method}_Bitmap")(
-                    vhandle, *args, vb, vx, vb_size, vx_size, is_iso, nvals, ffi.NULL
+                    vhandle, *args, vb, vx, vb_size, vx_size, is_iso, nvals, NULL
                 ),
                 parent,
             )
@@ -456,7 +566,7 @@ class ss:
                 rv["size"] = size
         elif format == "full":
             check_status(
-                libget(f"GxB_Vector_{method}_Full")(vhandle, *args, vx, vx_size, is_iso, ffi.NULL),
+                libget(f"GxB_Vector_{method}_Full")(vhandle, *args, vx, vx_size, is_iso, NULL),
                 parent,
             )
             is_iso = is_iso[0]
@@ -480,7 +590,7 @@ class ss:
             values=values,
         )
         if method == "export":
-            parent.gb_obj = ffi.NULL
+            parent.gb_obj = NULL
         if parent.dtype._is_udt:
             rv["dtype"] = parent.dtype
         return rv
@@ -817,7 +927,7 @@ class ss:
             is_iso,
             nvals,
             not sorted_index,
-            ffi.NULL,
+            NULL,
         )
         if method == "import":
             check_status_carg(
@@ -987,7 +1097,7 @@ class ss:
             values.nbytes,
             is_iso,
             nvals,
-            ffi.NULL,
+            NULL,
         )
         if method == "import":
             check_status_carg(
@@ -1128,7 +1238,7 @@ class ss:
             vx,
             values.nbytes,
             is_iso,
-            ffi.NULL,
+            NULL,
         )
         if method == "import":
             check_status_carg(
