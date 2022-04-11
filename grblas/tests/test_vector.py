@@ -1846,6 +1846,7 @@ def test_iteration(v):
     assert len(list(v.ss.iterkeys(4))) == 2
     assert len(list(v.ss.itervalues(-3))) == 2
     assert len(list(v.ss.iteritems(-v.size))) == N
+    assert len(list(v.ss.itervalues(-v.size - 1))) == N
     assert len(list(v.ss.iterkeys(v.size + 1))) == 0
 
     v = Vector.ss.import_sparse(**v.ss.export("sparse"))

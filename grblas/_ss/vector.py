@@ -10,7 +10,7 @@ from .. import ffi, lib, monoid
 from ..base import call
 from ..dtypes import _INDEX, INT64, UINT64, lookup_dtype
 from ..exceptions import _error_code_lookup, check_status, check_status_carg
-from ..scalar import _as_scalar
+from ..scalar import Scalar, _as_scalar
 from ..utils import _CArray, ints_to_numpy_buffer, libget, values_to_numpy_buffer, wrapdoc
 from .matrix import MatrixArray, _concat_mn, normalize_chunks
 from .prefix_scan import prefix_scan
@@ -100,7 +100,7 @@ class ss:
     def iso_value(self):
         if self.is_iso:
             # This may not be thread-safe if the parent is being modified in another thread
-            return next(self.itervalues())
+            return Scalar.from_value(next(self.itervalues()), dtype=self._parent.dtype, name="")
         raise ValueError("Vector is not iso-valued")
 
     @property

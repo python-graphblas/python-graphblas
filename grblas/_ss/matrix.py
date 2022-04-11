@@ -356,7 +356,7 @@ class ss:
     def iso_value(self):
         if self.is_iso:
             # This may not be thread-safe if the parent is being modified in another thread
-            return next(self.itervalues())
+            return Scalar.from_value(next(self.itervalues()), dtype=self._parent.dtype, name="")
         raise ValueError("Matrix is not iso-valued")
 
     @property
