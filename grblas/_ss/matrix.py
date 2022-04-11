@@ -576,7 +576,7 @@ class ss:
             ],
         )
 
-    def _begin_iter(self):
+    def _begin_iter(self, seek):
         it_ptr = ffi.new("GxB_Iterator*")
         info = lib.GxB_Iterator_new(it_ptr)
         it = it_ptr[0]
@@ -585,16 +585,35 @@ class ss:
         if info != success:  # pragma: no cover
             lib.GxB_Iterator_free(it_ptr)
             raise _error_code_lookup[info]("Matrix iterator failed to attach")
-        info = lib.GxB_Matrix_Iterator_seek(it, 0)
-        if info != success:  # pragma: no cover
+        if seek < 0:
+            p = lib.GxB_Matrix_Iterator_getpmax(it)
+            seek += p
+            if seek < 0:
+                seek = 0
+        info = lib.GxB_Matrix_Iterator_seek(it, seek)
+        if info != success:
             lib.GxB_Iterator_free(it_ptr)
             raise _error_code_lookup[info]("Matrix iterator failed to seek")
         return it_ptr
 
-    def iterkeys(self):
-        if self._parent._nvals == 0:
+    def iterkeys(self, seek=0):
+        """Iterate over all the row and column indices of a Matrix.
+
+        Parameters
+        ----------
+        seek : int, default 0
+            Index of entry to seek to.  May be negative to seek backwards from the end.
+            Matrix objects in bitmap format seek as if it's full format (i.e., it
+            ignores the bitmap mask).
+
+        The Matrix should not be modified during iteration; doing so will
+        result in undefined behavior.
+
+        """
+        try:
+            it_ptr = self._begin_iter(seek)
+        except StopIteration:
             return
-        it_ptr = self._begin_iter()
         it = it_ptr[0]
         info = success = lib.GrB_SUCCESS
         key_func = lib.GxB_Matrix_Iterator_getIndex
@@ -609,10 +628,24 @@ class ss:
         if info != lib.GxB_EXHAUSTED:  # pragma: no cover
             raise _error_code_lookup[info]("Matrix iterator failed")
 
-    def itervalues(self):
-        if self._parent._nvals == 0:
+    def itervalues(self, seek=0):
+        """Iterate over all the values of a Matrix.
+
+        Parameters
+        ----------
+        seek : int, default 0
+            Index of entry to seek to.  May be negative to seek backwards from the end.
+            Matrix objects in bitmap format seek as if it's full format (i.e., it
+            ignores the bitmap mask).
+
+        The Matrix should not be modified during iteration; doing so will
+        result in undefined behavior.
+
+        """
+        try:
+            it_ptr = self._begin_iter(seek)
+        except StopIteration:
             return
-        it_ptr = self._begin_iter()
         it = it_ptr[0]
         info = success = lib.GrB_SUCCESS
         val_func = getattr(lib, f"GxB_Iterator_get_{self._parent.dtype.name}")
@@ -624,10 +657,24 @@ class ss:
         if info != lib.GxB_EXHAUSTED:  # pragma: no cover
             raise _error_code_lookup[info]("Matrix iterator failed")
 
-    def iteritems(self):
-        if self._parent._nvals == 0:
+    def iteritems(self, seek=0):
+        """Iterate over all the row, column, and value triples of a Matrix.
+
+        Parameters
+        ----------
+        seek : int, default 0
+            Index of entry to seek to.  May be negative to seek backwards from the end.
+            Matrix objects in bitmap format seek as if it's full format (i.e., it
+            ignores the bitmap mask).
+
+        The Matrix should not be modified during iteration; doing so will
+        result in undefined behavior.
+
+        """
+        try:
+            it_ptr = self._begin_iter(seek)
+        except StopIteration:
             return
-        it_ptr = self._begin_iter()
         it = it_ptr[0]
         info = success = lib.GrB_SUCCESS
         key_func = lib.GxB_Matrix_Iterator_getIndex
