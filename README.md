@@ -1,17 +1,17 @@
-# grblas
+# Python-graphblas
 
-[![conda-forge](https://img.shields.io/conda/vn/conda-forge/grblas.svg)](https://anaconda.org/conda-forge/grblas)
-[![pypi](https://img.shields.io/pypi/v/grblas.svg)](https://pypi.python.org/pypi/grblas/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/metagraph-dev/grblas/blob/main/LICENSE)
-[![Tests](https://github.com/metagraph-dev/grblas/workflows/Tests/badge.svg?branch=main)](https://github.com/metagraph-dev/grblas/actions)
-[![Docs](https://readthedocs.org/projects/grblas/badge/?version=latest)](https://grblas.readthedocs.io/en/latest/)
-[![Coverage](https://coveralls.io/repos/metagraph-dev/grblas/badge.svg?branch=main)](https://coveralls.io/r/metagraph-dev/grblas)
+[![conda-forge](https://img.shields.io/conda/vn/conda-forge/python-graphblas.svg)](https://anaconda.org/conda-forge/python-graphblas)
+[![pypi](https://img.shields.io/pypi/v/python-graphblas.svg)](https://pypi.python.org/pypi/python-graphblas/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/metagraph-dev/python-graphblas/blob/main/LICENSE)
+[![Tests](https://github.com/metagraph-dev/python-graphblas/workflows/Tests/badge.svg?branch=main)](https://github.com/metagraph-dev/python-graphblas/actions)
+[![Docs](https://readthedocs.org/projects/python-graphblas/badge/?version=latest)](https://python-graphblas.readthedocs.io/en/latest/)
+[![Coverage](https://coveralls.io/repos/metagraph-dev/python-graphblas/badge.svg?branch=main)](https://coveralls.io/r/metagraph-dev/python-graphblas)
 [![Code style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/metagraph-dev/grblas/HEAD?filepath=notebooks%2FIntro%20to%20GraphBLAS%20%2B%20SSSP%20example.ipynb)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/metagraph-dev/python-graphblas/HEAD?filepath=notebooks%2FIntro%20to%20GraphBLAS%20%2B%20SSSP%20example.ipynb)
 
 Python wrapper around GraphBLAS
 
-To install, `conda install -c conda-forge grblas` or `pip install grblas`. This will also install the SuiteSparse `graphblas` compiled C library.
+To install, `conda install -c conda-forge python-graphblas` or `pip install python-graphblas`. This will also install the SuiteSparse `graphblas` compiled C library.
 
 Currently works with [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS), but the goal is to make it work with all implementations of the GraphBLAS spec.
 
@@ -129,25 +129,25 @@ nvals = M.nvals                             # nvals
 rindices, cindices, vals = M.to_values()    # extractTuples
 ```
 ## Initialization
-There is a mechanism to initialize `grblas` with a context prior to use. This allows for setting the backend to
+There is a mechanism to initialize `graphblas` with a context prior to use. This allows for setting the backend to
 use as well as the blocking/non-blocking mode. If the context is not initialized, a default initialization will
 be performed automatically.
 ```python
-import grblas as gb
+import graphblas as gb
 # Context initialization must happen before any other imports
 gb.init('suitesparse', blocking=True)
 
-# Now we can import other items from grblas
-from grblas import binary, semiring
-from grblas import Matrix, Vector, Scalar
+# Now we can import other items from graphblas
+from graphblas import binary, semiring
+from graphblas import Matrix, Vector, Scalar
 ```
 ## Performant User Defined Functions
-`grblas` requires `numba` which enables compiling user-defined Python functions to native C for use in GraphBLAS.
+Python-graphblas requires `numba` which enables compiling user-defined Python functions to native C for use in GraphBLAS.
 
 Example customized UnaryOp:
 ```python
-from grblas import unary
-from grblas.operator import UnaryOp
+from graphblas import unary
+from graphblas.operator import UnaryOp
 
 def force_odd_func(x):
     if x % 2 == 0:
@@ -163,9 +163,9 @@ w  # indexes=[0, 1, 3], values=[1, 3, 3]
 Similar methods exist for BinaryOp, Monoid, and Semiring.
 
 ## Import/Export connectors to the Python ecosystem
-`grblas.io` contains functions for converting to and from:
+`graphblas.io` contains functions for converting to and from:
 ```python
-import grblas as gb
+import graphblas as gb
 
 # numpy arrays
 # 1-D array becomes Vector, 2-D array becomes Matrix
