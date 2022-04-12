@@ -283,10 +283,7 @@ class TypedBuiltinMonoid(TypedOpBase):
 
             with skip_record:
                 self._identity = (
-                    Vector.new(self.type, size=1, name="")
-                    .reduce(self, allow_empty=False)
-                    .new()
-                    .value
+                    Vector(self.type, size=1, name="").reduce(self, allow_empty=False).new().value
                 )
         return self._identity
 

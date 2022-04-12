@@ -1,16 +1,17 @@
 import itertools
+import warnings
 
 import numpy as np
 
 from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
 from ._ss.vector import ss
 from .base import BaseExpression, BaseType, call
-from .dtypes import _INDEX, lookup_dtype, unify
+from .dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_semiring, get_typed_op
-from .scalar import _MATERIALIZE, Scalar, ScalarExpression, _as_scalar
+from .scalar import _MATERIALIZE, Scalar, ScalarExpression, _as_scalar, _scalar_index
 from .utils import (
     _CArray,
     _Pointer,
@@ -34,14 +35,28 @@ class Vector(BaseType):
     ndim = 1
     _name_counter = itertools.count()
 
-    def __init__(self, gb_obj, dtype, *, parent=None, name=None):
-        if name is None:
-            name = f"v_{next(Vector._name_counter)}"
-        self._size = None
-        super().__init__(gb_obj, dtype, name)
-        # Add ss extension methods
+    def __new__(cls, dtype=FP64, size=0, *, name=None):
+        self = object.__new__(cls)
+        self.dtype = lookup_dtype(dtype)
+        size = _as_scalar(size, _INDEX, is_cscalar=True)
+        self.name = f"v_{next(Vector._name_counter)}" if name is None else name
+        self.gb_obj = ffi_new("GrB_Vector*")
+        call("GrB_Vector_new", [_Pointer(self), self.dtype, size])
+        self._size = size.value
+        self._parent = None
         self.ss = ss(self)
+        return self
+
+    @classmethod
+    def _from_obj(cls, gb_obj, dtype, size, *, parent=None, name=None):
+        self = object.__new__(cls)
+        self.name = f"v_{next(Vector._name_counter)}" if name is None else name
+        self.gb_obj = gb_obj
+        self.dtype = dtype
+        self._size = size
         self._parent = parent
+        self.ss = ss(self)
+        return self
 
     def __del__(self):
         parent = getattr(self, "_parent", None)
@@ -60,15 +75,14 @@ class Vector(BaseType):
         """
         from .matrix import Matrix
 
-        rv = Matrix(
+        return Matrix._from_obj(
             ffi.cast("GrB_Matrix*", self.gb_obj),
             self.dtype,
+            self._size,
+            1,
             parent=self,
             name=f"(GrB_Matrix){self.name}",
         )
-        rv._nrows = self._size
-        rv._ncols = 1
-        return rv
 
     def __repr__(self, mask=None):
         from .formatting import format_vector
@@ -144,8 +158,7 @@ class Vector(BaseType):
 
     def __sizeof__(self):
         size = ffi_new("size_t*")
-        scalar = Scalar(size, _INDEX, name="s_size", is_cscalar=True, empty=True)
-        call("GxB_Vector_memoryUsage", [_Pointer(scalar), self])
+        check_status(lib.GxB_Vector_memoryUsage(size, self.gb_obj[0]), self)
         return size[0] + object.__sizeof__(self)
 
     def isequal(self, other, *, check_dtype=False):
@@ -167,7 +180,7 @@ class Vector(BaseType):
         else:
             op = get_typed_op(binary.eq, self.dtype, other.dtype, kind="binary")
 
-        matches = Vector.new(bool, self._size, name="v_isequal")
+        matches = Vector(bool, self._size, name="v_isequal")
         matches << self.ewise_mult(other, op)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
@@ -202,10 +215,9 @@ class Vector(BaseType):
 
     @property
     def size(self):
-        n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_size", is_cscalar=True, empty=True)
+        scalar = _scalar_index("s_size")
         call("GrB_Vector_size", [_Pointer(scalar), self])
-        return n[0]
+        return scalar.gb_obj[0]
 
     @property
     def shape(self):
@@ -213,10 +225,9 @@ class Vector(BaseType):
 
     @property
     def nvals(self):
-        n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
+        scalar = _scalar_index("s_nvals")
         call("GrB_Vector_nvals", [_Pointer(scalar), self])
-        return n[0]
+        return scalar.gb_obj[0]
 
     @property
     def _nvals(self):
@@ -241,8 +252,7 @@ class Vector(BaseType):
         nvals = self._nvals
         indices = _CArray(size=nvals, name="&index_array")
         values = _CArray(size=nvals, dtype=self.dtype, name="&values_array")
-        n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
+        scalar = _scalar_index("s_nvals")
         scalar.value = nvals
         dtype_name = "UDT" if self.dtype._is_udt else self.dtype.name
         call(f"GrB_Vector_extractTuples_{dtype_name}", [indices, values, _Pointer(scalar), self])
@@ -305,23 +315,25 @@ class Vector(BaseType):
         if dtype is not None or mask is not None:
             if dtype is None:
                 dtype = self.dtype
-            rv = Vector.new(dtype, size=self._size, name=name)
+            rv = Vector(dtype, size=self._size, name=name)
             rv(mask=mask)[...] = self
         else:
-            new_vec = ffi_new("GrB_Vector*")
-            rv = Vector(new_vec, self.dtype, name=name)
+            rv = Vector._from_obj(ffi_new("GrB_Vector*"), self.dtype, self._size, name=name)
             call("GrB_Vector_dup", [_Pointer(rv), self])
-        rv._size = self._size
         return rv
 
-    def diag(self, k=0, dtype=None, *, name=None):
+    def diag(self, k=0, *, name=None):
         """
-        GrB_diag
+        GrB_Matrix_diag
         Create a Matrix whose kth diagonal is this Vector
         """
-        from .ss._core import diag
+        from .matrix import Matrix
 
-        return diag(self, k=k, dtype=dtype, name=name)
+        k = _as_scalar(k, INT64, is_cscalar=True)
+        n = self._size + abs(k.value)
+        rv = Matrix._from_obj(ffi_new("GrB_Matrix*"), self.dtype, n, n, name=name)
+        call("GrB_Matrix_diag", [_Pointer(rv), self, k])
+        return rv
 
     def wait(self):
         """
@@ -340,13 +352,11 @@ class Vector(BaseType):
         GrB_Vector_new
         Create a new empty Vector from the given type and size
         """
-        new_vector = ffi_new("GrB_Vector*")
-        dtype = lookup_dtype(dtype)
-        rv = cls(new_vector, dtype, name=name)
-        size = _as_scalar(size, _INDEX, is_cscalar=True)
-        call("GrB_Vector_new", [_Pointer(rv), dtype, size])
-        rv._size = size.value
-        return rv
+        warnings.warn(
+            "`Vector.new(...)` is deprecated; please use `Vector(...)` instead.",
+            DeprecationWarning,
+        )
+        return Vector(dtype, size, name=name)
 
     @classmethod
     def from_values(cls, indices, values, dtype=None, *, size=None, dup_op=None, name=None):
@@ -366,7 +376,7 @@ class Vector(BaseType):
             # Look for array-subtdype
             new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
         # Create the new vector
-        w = cls.new(new_dtype, size, name=name)
+        w = cls(new_dtype, size, name=name)
         if values.ndim == 0:
             if dup_op is not None:
                 raise ValueError(
@@ -441,7 +451,7 @@ class Vector(BaseType):
                     f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
                     f"must equal Vector.size (={self._size})."
                 )
-            full = Vector.new(self.dtype, other._ncols, name="v_full")
+            full = Vector(self.dtype, other._ncols, name="v_full")
             full[:] = 0
             temp = self.outer(full, binary.first).new(name="M_temp")
             return temp.ewise_add(other, op, require_monoid=False)
@@ -551,7 +561,7 @@ class Vector(BaseType):
                     f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
                     f"must equal Vector.size (={self._size})."
                 )
-            full = Vector.new(self.dtype, other._ncols, name="v_full")
+            full = Vector(self.dtype, other._ncols, name="v_full")
             full[:] = 0
             temp = self.outer(full, binary.first).new(name="M_temp")
             return temp.ewise_union(other, op, left_default, right_default)
@@ -792,7 +802,7 @@ class Vector(BaseType):
             dtype = lookup_dtype(dtype)
         idx = resolved_indexes.indices[0]
         if result is None:
-            result = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+            result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (
@@ -1006,7 +1016,7 @@ class VectorExpression(BaseExpression):
     def construct_output(self, dtype=None, *, name=None):
         if dtype is None:
             dtype = self.dtype
-        return Vector.new(dtype, self._size, name=name)
+        return Vector(dtype, self._size, name=name)
 
     def __repr__(self):
         from .formatting import format_vector_expression

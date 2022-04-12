@@ -90,6 +90,8 @@ def test_lookup_by_dtype():
     assert lookup_dtype(bool) == dtypes.BOOL
     assert lookup_dtype(int) == dtypes.INT64
     assert lookup_dtype(float) == dtypes.FP64
+    with pytest.raises(TypeError, match="Bad dtype"):
+        lookup_dtype(None)
 
 
 def test_unify_dtypes():

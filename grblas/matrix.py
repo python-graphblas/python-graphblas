@@ -1,16 +1,17 @@
 import itertools
+import warnings
 
 import numpy as np
 
 from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
 from ._ss.matrix import ss
 from .base import BaseExpression, BaseType, call
-from .dtypes import _INDEX, lookup_dtype, unify
+from .dtypes import _INDEX, FP64, lookup_dtype, unify
 from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_semiring, get_typed_op
-from .scalar import _MATERIALIZE, Scalar, ScalarExpression, _as_scalar
+from .scalar import _MATERIALIZE, Scalar, ScalarExpression, _as_scalar, _scalar_index
 from .utils import (
     _CArray,
     _Pointer,
@@ -36,15 +37,31 @@ class Matrix(BaseType):
     _is_transposed = False
     _name_counter = itertools.count()
 
-    def __init__(self, gb_obj, dtype, *, parent=None, name=None):
-        if name is None:
-            name = f"M_{next(Matrix._name_counter)}"
-        self._nrows = None
-        self._ncols = None
-        super().__init__(gb_obj, dtype, name)
-        # Add ss extension methods
+    def __new__(cls, dtype=FP64, nrows=0, ncols=0, *, name=None):
+        self = object.__new__(cls)
+        self.dtype = lookup_dtype(dtype)
+        nrows = _as_scalar(nrows, _INDEX, is_cscalar=True)
+        ncols = _as_scalar(ncols, _INDEX, is_cscalar=True)
+        self.name = f"M_{next(Matrix._name_counter)}" if name is None else name
+        self.gb_obj = ffi_new("GrB_Matrix*")
+        call("GrB_Matrix_new", [_Pointer(self), self.dtype, nrows, ncols])
+        self._nrows = nrows.value
+        self._ncols = ncols.value
+        self._parent = None
         self.ss = ss(self)
+        return self
+
+    @classmethod
+    def _from_obj(cls, gb_obj, dtype, nrows, ncols, *, parent=None, name=None):
+        self = object.__new__(cls)
+        self.gb_obj = gb_obj
+        self.dtype = dtype
+        self.name = f"M_{next(Matrix._name_counter)}" if name is None else name
+        self._nrows = nrows
+        self._ncols = ncols
         self._parent = parent
+        self.ss = ss(self)
+        return self
 
     def __del__(self):
         parent = getattr(self, "_parent", None)
@@ -132,8 +149,7 @@ class Matrix(BaseType):
 
     def __sizeof__(self):
         size = ffi_new("size_t*")
-        scalar = Scalar(size, _INDEX, name="s_size", is_cscalar=True, empty=True)
-        call("GxB_Matrix_memoryUsage", [_Pointer(scalar), self])
+        check_status(lib.GxB_Matrix_memoryUsage(size, self.gb_obj[0]), self)
         return size[0] + object.__sizeof__(self)
 
     def isequal(self, other, *, check_dtype=False):
@@ -158,7 +174,7 @@ class Matrix(BaseType):
         else:
             op = get_typed_op(binary.eq, self.dtype, other.dtype, kind="binary")
 
-        matches = Matrix.new(bool, self._nrows, self._ncols, name="M_isequal")
+        matches = Matrix(bool, self._nrows, self._ncols, name="M_isequal")
         matches << self.ewise_mult(other, op)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
@@ -197,17 +213,15 @@ class Matrix(BaseType):
 
     @property
     def nrows(self):
-        n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_nrows", is_cscalar=True, empty=True)
+        scalar = _scalar_index("s_nrows")
         call("GrB_Matrix_nrows", [_Pointer(scalar), self])
-        return n[0]
+        return scalar.gb_obj[0]
 
     @property
     def ncols(self):
-        n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_ncols", is_cscalar=True, empty=True)
+        scalar = _scalar_index("s_ncols")
         call("GrB_Matrix_ncols", [_Pointer(scalar), self])
-        return n[0]
+        return scalar.gb_obj[0]
 
     @property
     def shape(self):
@@ -215,10 +229,9 @@ class Matrix(BaseType):
 
     @property
     def nvals(self):
-        n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
+        scalar = _scalar_index("s_nvals")
         call("GrB_Matrix_nvals", [_Pointer(scalar), self])
-        return n[0]
+        return scalar.gb_obj[0]
 
     @property
     def _nvals(self):
@@ -250,8 +263,7 @@ class Matrix(BaseType):
         rows = _CArray(size=nvals, name="&rows_array")
         columns = _CArray(size=nvals, name="&columns_array")
         values = _CArray(size=nvals, dtype=self.dtype, name="&values_array")
-        n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
+        scalar = _scalar_index("s_nvals")
         scalar.value = nvals
         dtype_name = "UDT" if self.dtype._is_udt else self.dtype.name
         call(
@@ -324,14 +336,12 @@ class Matrix(BaseType):
         if dtype is not None or mask is not None:
             if dtype is None:
                 dtype = self.dtype
-            rv = Matrix.new(dtype, nrows=self._nrows, ncols=self._ncols, name=name)
+            rv = Matrix(dtype, nrows=self._nrows, ncols=self._ncols, name=name)
             rv(mask=mask)[...] = self
         else:
             new_mat = ffi_new("GrB_Matrix*")
-            rv = Matrix(new_mat, self.dtype, name=name)
+            rv = Matrix._from_obj(new_mat, self.dtype, self._nrows, self._ncols, name=name)
             call("GrB_Matrix_dup", [_Pointer(rv), self])
-        rv._nrows = self._nrows
-        rv._ncols = self._ncols
         return rv
 
     def diag(self, k=0, dtype=None, *, name=None):
@@ -356,15 +366,11 @@ class Matrix(BaseType):
         GrB_Matrix_new
         Create a new empty Matrix from the given type, number of rows, and number of columns
         """
-        new_matrix = ffi_new("GrB_Matrix*")
-        dtype = lookup_dtype(dtype)
-        rv = cls(new_matrix, dtype, name=name)
-        nrows = _as_scalar(nrows, _INDEX, is_cscalar=True)
-        ncols = _as_scalar(ncols, _INDEX, is_cscalar=True)
-        call("GrB_Matrix_new", [_Pointer(rv), dtype, nrows, ncols])
-        rv._nrows = nrows.value
-        rv._ncols = ncols.value
-        return rv
+        warnings.warn(
+            "`Matrix.new(...)` is deprecated; please use `Matrix(...)` instead.",
+            DeprecationWarning,
+        )
+        return Matrix(dtype, nrows, ncols, name=name)
 
     @classmethod
     def from_values(
@@ -401,7 +407,7 @@ class Matrix(BaseType):
             # Look for array-subtdype
             new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
         # Create the new matrix
-        C = cls.new(new_dtype, nrows, ncols, name=name)
+        C = cls(new_dtype, nrows, ncols, name=name)
         if values.ndim == 0:
             if dup_op is not None:
                 raise ValueError(
@@ -479,7 +485,7 @@ class Matrix(BaseType):
                     f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                     f"must equal Vector.size (={other._size})."
                 )
-            full = Vector.new(other.dtype, self._nrows, name="v_full")
+            full = Vector(other.dtype, self._nrows, name="v_full")
             full[:] = 0
             other = full.outer(other, binary.second).new(name="M_temp")
         expr = MatrixExpression(
@@ -588,7 +594,7 @@ class Matrix(BaseType):
                     f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                     f"must equal Vector.size (={other._size})."
                 )
-            full = Vector.new(other.dtype, self._nrows, name="v_full")
+            full = Vector(other.dtype, self._nrows, name="v_full")
             full[:] = 0
             other = full.outer(other, binary.second).new(name="M_temp")
         expr = MatrixExpression(
@@ -876,7 +882,7 @@ class Matrix(BaseType):
         if self._is_transposed:
             rowidx, colidx = colidx, rowidx
         if result is None:
-            result = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+            result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (
@@ -1154,7 +1160,7 @@ class Matrix(BaseType):
                         # C[i, J](m) << c
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Row_subassign"
-                        value_vector = Vector.new(value.dtype, size=mask.mask._size, name="v_temp")
+                        value_vector = Vector(value.dtype, size=mask.mask._size, name="v_temp")
                         expr_repr = (
                             "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
                         )
@@ -1162,7 +1168,7 @@ class Matrix(BaseType):
                         # C(m)[i, J] << c
                         # C[i, J] << c
                         cfunc_name = "GrB_Row_assign"
-                        value_vector = Vector.new(value.dtype, size=colsize, name="v_temp")
+                        value_vector = Vector(value.dtype, size=colsize, name="v_temp")
                         expr_repr = "[{1._expr_name}, [{3._expr_name} cols]] = {0.name}"
                     # SS, SuiteSparse-specific: assume efficient vector with single scalar
                     value_vector << value
@@ -1182,12 +1188,12 @@ class Matrix(BaseType):
                         # C[I, j](m) << c
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Col_subassign"
-                        value_vector = Vector.new(value.dtype, size=mask.mask._size, name="v_temp")
+                        value_vector = Vector(value.dtype, size=mask.mask._size, name="v_temp")
                     else:
                         # C(m)[I, j] << c
                         # C[I, j] << c
                         cfunc_name = "GrB_Col_assign"
-                        value_vector = Vector.new(value.dtype, size=rowsize, name="v_temp")
+                        value_vector = Vector(value.dtype, size=rowsize, name="v_temp")
                     # SS, SuiteSparse-specific: assume efficient vector with single scalar
                     value_vector << value
 
@@ -1363,7 +1369,7 @@ class MatrixExpression(BaseExpression):
     def construct_output(self, dtype=None, *, name=None):
         if dtype is None:
             dtype = self.dtype
-        return Matrix.new(dtype, self._nrows, self._ncols, name=name)
+        return Matrix(dtype, self._nrows, self._ncols, name=name)
 
     def __repr__(self):
         from .formatting import format_matrix_expression
@@ -1544,7 +1550,7 @@ class TransposedMatrix:
     def new(self, dtype=None, *, mask=None, name=None):
         if dtype is None:
             dtype = self.dtype
-        output = Matrix.new(dtype, self._nrows, self._ncols, name=name)
+        output = Matrix(dtype, self._nrows, self._ncols, name=name)
         if mask is None:
             output.update(self)
         else:

@@ -1,17 +1,29 @@
 import itertools
+import warnings
 
 import numpy as np
 
 from . import _automethods, backend, config, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
 from .binary import isclose
-from .dtypes import _INDEX, BOOL, lookup_dtype
+from .dtypes import _INDEX, BOOL, FP64, lookup_dtype
 from .exceptions import EmptyObject, check_status
 from .expr import AmbiguousAssignOrExtract
 from .operator import get_typed_op
 from .utils import _Pointer, output_type, wrapdoc
 
 ffi_new = ffi.new
+
+
+def _scalar_index(name):
+    """Fast way to create scalars with GrB_Index type; used internally."""
+    self = object.__new__(Scalar)
+    self.name = name
+    self.dtype = _INDEX
+    self.gb_obj = ffi_new("GrB_Index*")
+    self._is_cscalar = True
+    self._empty = True
+    return self
 
 
 class Scalar(BaseType):
@@ -26,15 +38,25 @@ class Scalar(BaseType):
     _is_scalar = True
     _name_counter = itertools.count()
 
-    def __init__(self, gb_obj, dtype, *, empty=False, is_cscalar=False, name=None):
-        if name is None:
-            name = f"s_{next(Scalar._name_counter)}"
-        super().__init__(gb_obj, dtype, name)
+    def __new__(cls, dtype=FP64, *, is_cscalar=False, name=None):
+        self = object.__new__(cls)
+        dtype = self.dtype = lookup_dtype(dtype)
+        self.name = f"s_{next(Scalar._name_counter)}" if name is None else name
+        if is_cscalar is None:
+            # Internally, we sometimes use `is_cscalar=None` to either defer to `expr.is_cscalar`
+            # or to create a C scalar from a Python scalar.  For example, see Matrix.apply.
+            is_cscalar = True  # pragma: to_grb
+        self._is_cscalar = is_cscalar
         if is_cscalar:
-            self._is_cscalar = True
-            self._empty = empty
+            self._empty = True
+            if dtype._is_udt:
+                self.gb_obj = ffi_new(dtype.c_type)
+            else:
+                self.gb_obj = ffi_new(f"{dtype.c_type}*")
         else:
-            self._is_cscalar = False  # pragma: is_grbscalar
+            self.gb_obj = ffi_new("GrB_Scalar*")
+            call("GrB_Scalar_new", [_Pointer(self), dtype])
+        return self
 
     def __del__(self):
         gb_obj = getattr(self, "gb_obj", None)
@@ -92,7 +114,7 @@ class Scalar(BaseType):
         dtype = self.dtype
         if dtype.name[0] == "U" or dtype == BOOL or dtype._is_udt:
             raise TypeError(f"The negative operator, `-`, is not supported for {dtype.name} dtype")
-        rv = Scalar.new(dtype, is_cscalar=self._is_cscalar, name=f"-{self.name or 's_temp'}")
+        rv = Scalar(dtype, is_cscalar=self._is_cscalar, name=f"-{self.name or 's_temp'}")
         if self._is_empty:
             return rv
         rv.value = -self.value
@@ -104,7 +126,7 @@ class Scalar(BaseType):
                 f"The invert operator, `~`, is not supported for {self.dtype.name} dtype.  "
                 "It is only supported for BOOL dtype."
             )
-        rv = Scalar.new(BOOL, is_cscalar=self._is_cscalar, name=f"~{self.name or 's_temp'}")
+        rv = Scalar(BOOL, is_cscalar=self._is_cscalar, name=f"~{self.name or 's_temp'}")
         if self._is_empty:
             return rv
         rv.value = not self.value
@@ -123,8 +145,7 @@ class Scalar(BaseType):
             return base + self.gb_obj.__sizeof__() + ffi.sizeof(self.dtype.c_type)
         else:
             size = ffi_new("size_t*")
-            scalar = Scalar(size, _INDEX, name="s_size", is_cscalar=True, empty=True)
-            call("GxB_Scalar_memoryUsage", [_Pointer(scalar), self])
+            check_status(lib.GxB_Scalar_memoryUsage(size, self.gb_obj[0]), self)
             return base + size[0]
 
     def isequal(self, other, *, check_dtype=False):
@@ -233,7 +254,7 @@ class Scalar(BaseType):
         if self._is_cscalar:
             scalar = self
         else:
-            scalar = Scalar.new(self.dtype, is_cscalar=True, name="s_temp")
+            scalar = Scalar(self.dtype, is_cscalar=True, name="s_temp")
             dtype_name = "UDT" if is_udt else self.dtype.name
             call(f"GrB_Scalar_extractElement_{dtype_name}", [_Pointer(scalar), self])
         if is_udt:
@@ -278,10 +299,9 @@ class Scalar(BaseType):
     def nvals(self):
         if self._is_cscalar:
             return 0 if self._empty else 1
-        n = ffi_new("GrB_Index*")
-        scalar = Scalar(n, _INDEX, name="s_nvals", is_cscalar=True, empty=True)
+        scalar = _scalar_index("s_nvals")
         call("GrB_Scalar_nvals", [_Pointer(scalar), self])
-        return n[0]
+        return scalar.gb_obj[0]
 
     @property
     def _nvals(self):
@@ -306,16 +326,13 @@ class Scalar(BaseType):
         if is_cscalar is None:
             is_cscalar = self._is_cscalar
         if not is_cscalar and not self._is_cscalar and (dtype is None or dtype == self.dtype):
-            scalar = ffi_new("GrB_Scalar*")
-            new_scalar = Scalar(
-                scalar, self.dtype, is_cscalar=False, name=name  # pragma: is_grbscalar
-            )
+            new_scalar = Scalar(self.dtype, is_cscalar=False, name=name)  # pragma: is_grbscalar
             call("GrB_Scalar_dup", [_Pointer(new_scalar), self])
         elif dtype is None:
-            new_scalar = Scalar.new(self.dtype, is_cscalar=is_cscalar, name=name)
+            new_scalar = Scalar(self.dtype, is_cscalar=is_cscalar, name=name)
             new_scalar.value = self
         else:
-            new_scalar = Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+            new_scalar = Scalar(dtype, is_cscalar=is_cscalar, name=name)
             if not self._is_empty:
                 if new_scalar.is_cscalar and not new_scalar.dtype._is_udt:
                     # Cast value so we don't raise given explicit dup with dtype
@@ -341,22 +358,11 @@ class Scalar(BaseType):
         """
         Create a new empty Scalar from the given type
         """
-        dtype = lookup_dtype(dtype)
-        if is_cscalar is None:
-            # Internally, we sometimes use `is_cscalar=None` to either defer to `expr.is_cscalar`
-            # or to create a C scalar from a Python scalar.  For example, see Matrix.apply.
-            is_cscalar = True  # pragma: to_grb
-        if is_cscalar:
-            if dtype._is_udt:
-                new_scalar = ffi_new(dtype.c_type)
-            else:
-                new_scalar = ffi_new(f"{dtype.c_type}*")
-        else:
-            new_scalar = ffi_new("GrB_Scalar*")
-        rv = cls(new_scalar, dtype, name=name, empty=True, is_cscalar=is_cscalar)
-        if not is_cscalar:
-            call("GrB_Scalar_new", [_Pointer(rv), dtype])
-        return rv
+        warnings.warn(
+            "`Scalar.new(...)` is deprecated; please use `Scalar(...)` instead.",
+            DeprecationWarning,
+        )
+        return Scalar(dtype, is_cscalar=is_cscalar, name=name)
 
     @classmethod
     def from_value(cls, value, dtype=None, *, is_cscalar=False, name=None):
@@ -382,7 +388,7 @@ class Scalar(BaseType):
                 argname="value",
                 extra_message="Literal scalars expected.",
             )
-        new_scalar = cls.new(dtype, is_cscalar=is_cscalar, name=name)
+        new_scalar = cls(dtype, is_cscalar=is_cscalar, name=name)
         new_scalar.value = value
         return new_scalar
 
@@ -431,18 +437,18 @@ class Scalar(BaseType):
         from .vector import Vector
 
         if self._is_cscalar:
-            rv = Vector.new(self.dtype, size=1)
+            rv = Vector(self.dtype, size=1)
             if not self._is_empty:
                 rv[0] = self
+            return rv
         else:
-            rv = Vector(
+            return Vector._from_obj(
                 ffi.cast("GrB_Vector*", self.gb_obj),
                 self.dtype,
+                1,
                 parent=self,
                 name=f"(GrB_Vector){self.name or 's_temp'}",
             )
-            rv._size = 1
-        return rv
 
     def _as_matrix(self):
         """Copy or cast this Scalar to a Matrix
@@ -452,19 +458,19 @@ class Scalar(BaseType):
         from .matrix import Matrix
 
         if self._is_cscalar:
-            rv = Matrix.new(self.dtype, ncols=1, nrows=1)
+            rv = Matrix(self.dtype, ncols=1, nrows=1)
             if not self._is_empty:
                 rv[0, 0] = self
+            return rv
         else:
-            rv = Matrix(
+            return Matrix._from_obj(
                 ffi.cast("GrB_Matrix*", self.gb_obj),
                 self.dtype,
+                1,
+                1,
                 parent=self,
                 name=f"(GrB_Matrix){self.name or 's_temp'}",
             )
-            rv._nrows = 1
-            rv._ncols = 1
-        return rv
 
 
 class ScalarExpression(BaseExpression):
@@ -483,7 +489,7 @@ class ScalarExpression(BaseExpression):
             dtype = self.dtype
         if is_cscalar is None:
             is_cscalar = self._is_cscalar
-        return Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+        return Scalar(dtype, is_cscalar=is_cscalar, name=name)
 
     def new(self, dtype=None, *, is_cscalar=None, name=None):
         if is_cscalar is None:

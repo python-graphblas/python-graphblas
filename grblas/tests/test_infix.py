@@ -301,7 +301,7 @@ def test_infix_nonscalars(v1, v2):
 
 @autocompute
 def test_inplace_infix(s1, v1, v2, A1, A2):
-    A = Matrix.new(float, nrows=3, ncols=3)
+    A = Matrix(float, nrows=3, ncols=3)
     A[:, :] = 1
     x = v1.dup()
     x @= A

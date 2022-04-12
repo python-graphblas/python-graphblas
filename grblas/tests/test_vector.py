@@ -40,7 +40,7 @@ def v():
 
 
 def test_new():
-    u = Vector.new(dtypes.INT8, 17)
+    u = Vector(dtypes.INT8, 17)
     assert u.dtype == "INT8"
     assert u.nvals == 0
     assert u.size == 17
@@ -105,7 +105,7 @@ def test_from_values():
     with pytest.raises(ValueError, match="No indices provided. Unable to infer size"):
         Vector.from_values([], [], dtype=dtypes.INT64)
     u4 = Vector.from_values([], [], size=10, dtype=dtypes.INT64)
-    u5 = Vector.new(dtypes.INT64, size=10)
+    u5 = Vector(dtypes.INT64, size=10)
     assert u4.isequal(u5, check_dtype=True)
 
     # we check index dtype if given numpy array
@@ -185,7 +185,7 @@ def test_build(v):
     v.clear()
     with pytest.raises(IndexOutOfBound):
         v.build([0, 11], [1, 1])
-    w = Vector.new(int, size=3)
+    w = Vector(int, size=3)
     w.build([0, 11], [1, 1], size=12)
     assert w.isequal(Vector.from_values([0, 11], [1, 1]))
 
@@ -244,7 +244,7 @@ def test_extract_element(v):
         v[object()]
     with pytest.raises(IndexError):
         v[100]
-    s = Scalar.new(int)
+    s = Scalar(int)
     s << v[1]
     assert s == 1
 
@@ -281,7 +281,7 @@ def test_vxm_transpose(v, A):
 
 def test_vxm_nonsquare(v):
     A = Matrix.from_values([0, 3], [0, 1], [10, 20], nrows=7, ncols=2)
-    u = Vector.new(v.dtype, size=2)
+    u = Vector(v.dtype, size=2)
     u().update(v.vxm(A, semiring.min_plus))
     result = Vector.from_values([1], [21])
     assert u.isequal(result)
@@ -398,7 +398,7 @@ def test_ewise_add(v):
 
 
 def test_extract(v):
-    w = Vector.new(v.dtype, 3)
+    w = Vector(v.dtype, 3)
     result = Vector.from_values([0, 1], [1, 1], size=3)
     w << v[[1, 3, 5]]
     assert w.isequal(result)
@@ -409,7 +409,7 @@ def test_extract(v):
 
 
 def test_extract_array(v):
-    w = Vector.new(v.dtype, 3)
+    w = Vector(v.dtype, 3)
     result = Vector.from_values(np.array([0, 1]), np.array([1, 1]), size=3)
     w << v[np.array([1, 3, 5])]
     assert w.isequal(result)
@@ -433,7 +433,7 @@ def test_extract_fancy_scalars(v):
     assert s == 1.0
     assert s.dtype == dtypes.FP64
 
-    t = Scalar.new(float)
+    t = Scalar(float)
     with pytest.raises(TypeError, match="is not supported"):
         t(accum=binary.plus) << s
     with pytest.raises(TypeError, match="is not supported"):
@@ -443,10 +443,10 @@ def test_extract_fancy_scalars(v):
 
     s << v[1]
     assert s.value == 1
-    t = Scalar.new(float)
+    t = Scalar(float)
     t << v[1]
     assert t.value == 1.0
-    t = Scalar.new(float)
+    t = Scalar(float)
     t() << v[1]
     assert t.value == 1.0
     with pytest.raises(TypeError, match="Scalar accumulation with extract element"):
@@ -503,7 +503,7 @@ def test_assign_scalar(v):
         w[1] = object()
     w << 2
     assert w.isequal(Vector.from_values([0, 1, 2], [2, 2, 2]))
-    w[0] = Scalar.new(int)
+    w[0] = Scalar(int)
     assert w.isequal(Vector.from_values([1, 2], [2, 2]))
 
 
@@ -642,7 +642,7 @@ def test_apply_binary(v):
 
 
 def test_apply_empty(v):
-    s = Scalar.new(int, is_cscalar=True)
+    s = Scalar(int, is_cscalar=True)
     with pytest.raises(EmptyObject):
         v.apply(binary.plus, s).new()
 
@@ -672,7 +672,7 @@ def test_reduce(v):
 
 
 def test_reduce_empty():
-    w = Vector.new(int, 5)
+    w = Vector(int, 5)
     s = Scalar.from_value(16)
     s(accum=binary.times) << w.reduce(monoid.plus, allow_empty=True)
     assert s == 16
@@ -726,7 +726,7 @@ def test_reduce_agg(v):
     s = v.reduce(silly).new()
     assert s.isclose(0.5**1.5)
 
-    s = Vector.new(int, size=5).reduce(silly).new()
+    s = Vector(int, size=5).reduce(silly).new()
     assert s.is_empty
 
 
@@ -745,7 +745,7 @@ def test_reduce_agg_argminmax(v):
 
 
 def test_reduce_agg_firstlast(v):
-    empty = Vector.new(int, size=4)
+    empty = Vector(int, size=4)
     assert empty.reduce(agg.first).new().is_empty
     assert empty.reduce(agg.last).new().is_empty
 
@@ -777,7 +777,7 @@ def test_reduce_agg_firstlast_index(v):
 
 
 def test_reduce_agg_empty():
-    v = Vector.new("UINT8", size=3)
+    v = Vector("UINT8", size=3)
     for attr, aggr in vars(agg).items():
         if not isinstance(aggr, agg.Aggregator):
             continue
@@ -790,10 +790,10 @@ def test_reduce_coerce_dtype(v):
     s = v.reduce().new(dtype=float)
     assert s == 4.0
     assert s.dtype == dtypes.FP64
-    t = Scalar.new(float)
+    t = Scalar(float)
     t << v.reduce(monoid.plus)
     assert t == 4.0
-    t = Scalar.new(float)
+    t = Scalar(float)
     t() << v.reduce(monoid.plus)
     assert t == 4.0
     t(accum=binary.times) << v.reduce(monoid.plus)
@@ -807,7 +807,7 @@ def test_reduce_coerce_dtype(v):
 
 def test_simple_assignment(v):
     # w[:] = v
-    w = Vector.new(v.dtype, v.size)
+    w = Vector(v.dtype, v.size)
     w << v
     assert w.isequal(v)
 
@@ -1218,14 +1218,14 @@ def test_nbytes(v):
 
 
 def test_inner(v):
-    R = Matrix.new(v.dtype, nrows=1, ncols=v.size)  # row vector
-    C = Matrix.new(v.dtype, nrows=v.size, ncols=1)  # column vector
+    R = Matrix(v.dtype, nrows=1, ncols=v.size)  # row vector
+    C = Matrix(v.dtype, nrows=v.size, ncols=1)  # column vector
     R[0, :] = v
     C[:, 0] = v
     expected = R.mxm(C).new()[0, 0].new()
     assert expected.isequal(v.inner(v).new())
     assert expected.isequal((v @ v).new())
-    s = Scalar.new(v.dtype)
+    s = Scalar(v.dtype)
     s << v.inner(v)
     assert s == 6
     s(binary.plus) << v.inner(v)
@@ -1238,14 +1238,14 @@ def test_inner(v):
 
 @autocompute
 def test_inner_infix(v):
-    s = Scalar.new(v.dtype)
+    s = Scalar(v.dtype)
     s << v @ v
     assert s == 6
     s(binary.plus) << v @ v
     assert s == 12
     # These autocompute to a scalar on the right!
     v << v @ v
-    expected = Vector.new(v.dtype, v.size)
+    expected = Vector(v.dtype, v.size)
     expected[:] = 6
     assert v.isequal(expected)
     v(v.S) << v @ v
@@ -1260,8 +1260,8 @@ def test_inner_infix(v):
 
 
 def test_outer(v):
-    R = Matrix.new(v.dtype, nrows=1, ncols=v.size)  # row vector
-    C = Matrix.new(v.dtype, nrows=v.size, ncols=1)  # column vector
+    R = Matrix(v.dtype, nrows=1, ncols=v.size)  # row vector
+    C = Matrix(v.dtype, nrows=v.size, ncols=1)  # column vector
     R[0, :] = v
     C[:, 0] = v
     expected = C.mxm(R).new()
@@ -1376,6 +1376,7 @@ def test_expr_is_like_vector(v):
         "_delete_element",
         "_deserialize",
         "_extract_element",
+        "_from_obj",
         "_name_counter",
         "_parent",
         "_prep_for_assign",
@@ -1405,6 +1406,7 @@ def test_index_expr_is_like_vector(v):
         "_delete_element",
         "_deserialize",
         "_extract_element",
+        "_from_obj",
         "_name_counter",
         "_parent",
         "_prep_for_assign",
@@ -1617,12 +1619,12 @@ def test_slice():
 
 
 def test_concat(v):
-    expected = Vector.new(v.dtype, size=2 * v.size)
+    expected = Vector(v.dtype, size=2 * v.size)
     expected[: v.size] = v
     expected[v.size :] = v
     w1 = grblas.ss.concat([v, v])
     assert w1.isequal(expected, check_dtype=True)
-    w2 = Vector.new(v.dtype, size=2 * v.size)
+    w2 = Vector(v.dtype, size=2 * v.size)
     w2.ss.concat([v, v])
     assert w2.isequal(expected, check_dtype=True)
     with pytest.raises(TypeError):
@@ -1676,7 +1678,7 @@ def test_ewise_union():
     result = (v1 - v2).new()
     assert result.isequal(expected)
 
-    bad = Vector.new(int, size=1)
+    bad = Vector(int, size=1)
     with pytest.raises(DimensionMismatch):
         v1.ewise_union(bad, binary.plus, 0, 0)
     with pytest.raises(TypeError, match="Literal scalars"):
@@ -1696,7 +1698,7 @@ def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "VectorUDT")
     assert udt._is_anonymous
-    v = Vector.new(udt, size=3)
+    v = Vector(udt, size=3)
     a = np.zeros(1, dtype=record_dtype)
     v[0] = a[0]
     expected = Vector.from_values([0], a, size=3, dtype=udt)
@@ -1714,7 +1716,7 @@ def test_udt():
     assert v.isequal(ones)
     v[:](v.S) << 0
     assert v.isequal(zeros)
-    s = Scalar.new(udt)
+    s = Scalar(udt)
     s.value = (1, 1)
     v(v.S)[:] << s
     assert v.isequal(ones)
@@ -1760,12 +1762,12 @@ def test_udt():
     # arrays as dtypes!
     np_dtype = np.dtype("(3,)uint16")
     udt2 = dtypes.register_anonymous(np_dtype, "has_subdtype")
-    s = Scalar.new(udt2)
+    s = Scalar(udt2)
     s.value = [0, 0, 0]
 
-    v = Vector.new(udt2, size=2)
+    v = Vector(udt2, size=2)
     v[0] = 0
-    w = Vector.new(udt2, size=2)
+    w = Vector(udt2, size=2)
     w[0] = (0, 0, 0)
     assert v.isequal(w)
     assert v.ewise_mult(w, binary.eq).new().reduce(monoid.land).new()
@@ -1804,7 +1806,7 @@ def test_udt():
 
 
 def test_infix_outer():
-    v = Vector.new(int, 2)
+    v = Vector(int, 2)
     v += 1
     assert v.nvals == 0
     v[:] = 1
@@ -1820,7 +1822,7 @@ def test_infix_outer():
         v ^= v
     with pytest.raises(TypeError, match="only supported for BOOL"):
         v |= True
-    w = Vector.new(bool, 2)
+    w = Vector(bool, 2)
     w |= True
     assert w.nvals == 0
     w[:] = False
@@ -1829,7 +1831,7 @@ def test_infix_outer():
 
 
 def test_iteration(v):
-    w = Vector.new(int, 2)
+    w = Vector(int, 2)
     assert list(w.ss.iterkeys()) == []
     assert list(w.ss.itervalues()) == []
     assert list(w.ss.iteritems()) == []
@@ -1908,8 +1910,8 @@ def test_broadcasting(A, v):
 
 
 def test_ewise_union_infix():
-    v = Vector.new(int, 3)
-    w = Vector.new(int, 3)
+    v = Vector(int, 3)
+    w = Vector(int, 3)
     v[0] = 1
     w[1] = 2
     result = binary.plus(v | w, left_default=10, right_default=20).new()

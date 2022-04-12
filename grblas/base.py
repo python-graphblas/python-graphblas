@@ -3,7 +3,6 @@ from contextvars import ContextVar
 from . import config, ffi
 from . import replace as replace_singleton
 from .descriptor import lookup as descriptor_lookup
-from .dtypes import lookup_dtype
 from .exceptions import check_status
 from .expr import AmbiguousAssignOrExtract, Updater
 from .mask import Mask
@@ -185,13 +184,6 @@ class BaseType:
     __slots__ = "gb_obj", "dtype", "name", "__weakref__"
     # Flag for operations which depend on scalar vs vector/matrix
     _is_scalar = False
-
-    def __init__(self, gb_obj, dtype, name):
-        if not isinstance(gb_obj, CData):
-            raise TypeError("Object passed to __init__ must be CData type")
-        self.gb_obj = gb_obj
-        self.dtype = lookup_dtype(dtype)
-        self.name = name
 
     def __call__(
         self, *optional_mask_accum_replace, mask=None, accum=None, replace=False, input_mask=None
@@ -609,7 +601,7 @@ class BaseExpression:
         """
         from .scalar import Scalar
 
-        return Scalar.new(dtype, is_cscalar=is_cscalar, name=name)
+        return Scalar(dtype, is_cscalar=is_cscalar, name=name)
 
     def _new_vector(self, dtype, size=0, *, name=None):
         """Create a new empty Vector.
@@ -618,7 +610,7 @@ class BaseExpression:
         """
         from .vector import Vector
 
-        return Vector.new(dtype, size, name=name)
+        return Vector(dtype, size, name=name)
 
     def _new_matrix(self, dtype, nrows=0, ncols=0, *, name=None):
         """Create a new empty Matrix.
@@ -627,4 +619,4 @@ class BaseExpression:
         """
         from .matrix import Matrix
 
-        return Matrix.new(dtype, nrows, ncols, name=name)
+        return Matrix(dtype, nrows, ncols, name=name)

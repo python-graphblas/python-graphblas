@@ -38,7 +38,7 @@ def test_recorder():
 
 
 def test_record_novalue(switch):
-    A = gb.Matrix.new(int, 3, 3, name="A")
+    A = gb.Matrix(int, 3, 3, name="A")
     rec = gb.Recorder(start=True)
     A[0, 0].new(name="c")
     if switch:
@@ -52,7 +52,7 @@ def test_record_novalue(switch):
 
 
 def test_record_scalars(switch):
-    A = gb.Matrix.new(int, 3, 3, name="A")
+    A = gb.Matrix(int, 3, 3, name="A")
     with gb.Recorder() as rec:
         A[0, 0] = 5
         A.apply(gb.binary.lt, right=10).new(name="B")
@@ -77,7 +77,7 @@ def test_record_scalars(switch):
 
 
 def test_record_repr(switch):
-    A = gb.Matrix.new(int, 3, 3, name="A")
+    A = gb.Matrix(int, 3, 3, name="A")
     rec = gb.Recorder(start=True)
     A[0, 0].new(name="c0")
     if switch:
@@ -151,7 +151,7 @@ def test_record_repr(switch):
 
 
 def test_record_repr_markdown(switch):
-    A = gb.Matrix.new(int, 3, 3, name="A")
+    A = gb.Matrix(int, 3, 3, name="A")
     rec = gb.Recorder()
     rec.start()
     A[0, 0].new(name="c")
@@ -215,8 +215,8 @@ def test_record_repr_markdown(switch):
 
 
 def test_record_failed_call():
-    BIG = gb.Vector.new(int, size=2**55)
-    small = gb.Vector.new(int, size=2**55)
+    BIG = gb.Vector(int, size=2**55)
+    small = gb.Vector(int, size=2**55)
     BIG[:] = 1
     small[0] = 2
     rec = gb.Recorder()

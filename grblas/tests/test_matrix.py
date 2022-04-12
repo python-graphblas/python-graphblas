@@ -49,7 +49,7 @@ def v():
 
 
 def test_new():
-    C = Matrix.new(dtypes.INT8, 17, 12)
+    C = Matrix(dtypes.INT8, 17, 12)
     assert C.dtype == "INT8"
     assert C.nvals == 0
     assert C.nrows == 17
@@ -121,7 +121,7 @@ def test_from_values():
         # could also raise b/c rows and columns are different sizes
         Matrix.from_values([0], [], [0], dtype=dtypes.INT64)
     C4 = Matrix.from_values([], [], [], nrows=3, ncols=4, dtype=dtypes.INT64)
-    C5 = Matrix.new(dtypes.INT64, nrows=3, ncols=4)
+    C5 = Matrix(dtypes.INT64, nrows=3, ncols=4)
     assert C4.isequal(C5, check_dtype=True)
 
     with pytest.raises(
@@ -204,10 +204,10 @@ def test_build(A):
     A.clear()
     with pytest.raises(IndexOutOfBound):
         A.build([0, 11], [0, 0], [1, 1])
-    B = Matrix.new(int, nrows=2, ncols=2)
+    B = Matrix(int, nrows=2, ncols=2)
     B.build([0, 11], [0, 0], [1, 1], nrows=12)
     assert B.isequal(Matrix.from_values([0, 11], [0, 0], [1, 1], ncols=2))
-    C = Matrix.new(int, nrows=2, ncols=2)
+    C = Matrix(int, nrows=2, ncols=2)
     C.build([0, 0], [0, 11], [1, 1], ncols=12)
     assert C.isequal(Matrix.from_values([0, 0], [0, 11], [1, 1], nrows=2))
 
@@ -307,7 +307,7 @@ def test_mxm_transpose(A):
 def test_mxm_nonsquare():
     A = Matrix.from_values([0, 0, 0], [0, 2, 4], [1, 2, 3], nrows=1, ncols=5)
     B = Matrix.from_values([0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1)
-    C = Matrix.new(A.dtype, nrows=1, ncols=1)
+    C = Matrix(A.dtype, nrows=1, ncols=1)
     C << A.mxm(B, semiring.max_plus)
     assert C[0, 0].new() == 33
     C1 = A.mxm(B, semiring.max_plus).new()
@@ -399,7 +399,7 @@ def test_ewise_add(A):
 
 
 def test_extract(A):
-    C = Matrix.new(A.dtype, 3, 4)
+    C = Matrix(A.dtype, 3, 4)
     result = Matrix.from_values(
         [0, 0, 1, 2, 2, 2], [0, 2, 1, 1, 2, 3], [2, 3, 3, 5, 7, 3], nrows=3, ncols=4
     )
@@ -414,7 +414,7 @@ def test_extract(A):
 
 
 def test_extract_row(A):
-    w = Vector.new(A.dtype, 3)
+    w = Vector(A.dtype, 3)
     result = Vector.from_values([1, 2], [5, 3], size=3)
     w << A[6, [0, 2, 4]]
     assert w.isequal(result)
@@ -436,7 +436,7 @@ def test_extract_row(A):
 
 
 def test_extract_column(A):
-    w = Vector.new(A.dtype, 3)
+    w = Vector(A.dtype, 3)
     result = Vector.from_values([1, 2], [3, 1], size=3)
     w << A[[1, 3, 5], 2]
     assert w.isequal(result)
@@ -1010,7 +1010,7 @@ def test_assign_scalar(A):
     C[1::2, 2] = 0
     assert C.isequal(result_column)
     B = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], 1)
-    B[1, 1] = Scalar.new(B.dtype)
+    B[1, 1] = Scalar(B.dtype)
     expected = Matrix.from_values([0, 0, 1], [0, 1, 0], 1)
     assert B.isequal(expected)
 
@@ -1111,7 +1111,7 @@ def test_reduce_agg(A):
     assert w5.isclose(expected)
     w6 = A.reduce_rowwise(monoid.numpy.hypot[float]).new()
     assert w6.isclose(expected)
-    w7 = Vector.new(w5.dtype, size=w5.size)
+    w7 = Vector(w5.dtype, size=w5.size)
     w7 << A.reduce_rowwise(agg.hypot)
     assert w7.isclose(expected)
 
@@ -1174,7 +1174,7 @@ def test_reduce_agg(A):
     s3 = A.reduce_scalar(silly).new()
     assert s3.isclose(s1.value * s2.value)
 
-    B = Matrix.new(int, nrows=4, ncols=5)
+    B = Matrix(int, nrows=4, ncols=5)
     assert B.reduce_scalar(agg.sum, allow_empty=True).new().is_empty
     assert B.reduce_scalar(agg.sum, allow_empty=False).new() == 0
     assert B.reduce_scalar(agg.vars, allow_empty=True).new().is_empty
@@ -1263,13 +1263,13 @@ def test_reduce_agg_firstlast(A):
     assert w5 == 2
     w6 = A.reduce_scalar(agg.last).new()
     assert w6 == 3
-    B = Matrix.new(float, nrows=2, ncols=3)
+    B = Matrix(float, nrows=2, ncols=3)
     assert B.reduce_scalar(agg.first).new().is_empty
     assert B.reduce_scalar(agg.last).new().is_empty
     w7 = B.reduce_rowwise(agg.first).new()
-    assert w7.isequal(Vector.new(float, size=B.nrows))
+    assert w7.isequal(Vector(float, size=B.nrows))
     w8 = B.reduce_columnwise(agg.last).new()
-    assert w8.isequal(Vector.new(float, size=B.ncols))
+    assert w8.isequal(Vector(float, size=B.ncols))
 
     silly = agg.Aggregator(
         "silly",
@@ -1335,10 +1335,10 @@ def test_reduce_agg_firstlast_index(A):
 
 
 def test_reduce_agg_empty():
-    A = Matrix.new("UINT8", nrows=3, ncols=4)
+    A = Matrix("UINT8", nrows=3, ncols=4)
     for B in [A, A.T]:
-        ve = Vector.new(bool, size=B.nrows)
-        we = Vector.new(bool, size=B.ncols)
+        ve = Vector(bool, size=B.nrows)
+        we = Vector(bool, size=B.ncols)
         for attr, aggr in vars(agg).items():
             if not isinstance(aggr, agg.Aggregator):
                 continue
@@ -1385,10 +1385,10 @@ def test_reduce_scalar(A):
     s = A.reduce_scalar().new(dtype=float)
     assert s == 47.0
     assert s.dtype == dtypes.FP64
-    t = Scalar.new(float)
+    t = Scalar(float)
     t << A.reduce_scalar(monoid.plus)
     assert t == 47.0
-    t = Scalar.new(float)
+    t = Scalar(float)
     t() << A.reduce_scalar(monoid.plus)
     assert t == 47.0
     t(accum=binary.times) << A.reduce_scalar(monoid.plus)
@@ -1404,7 +1404,7 @@ def test_transpose(A):
     # C << A.T
     rows, cols, vals = A.to_values()
     result = Matrix.from_values(cols, rows, vals)
-    C = Matrix.new(A.dtype, A.ncols, A.nrows)
+    C = Matrix(A.dtype, A.ncols, A.nrows)
     C << A.T
     assert C.isequal(result)
     C2 = A.T.new()
@@ -1437,13 +1437,13 @@ def test_kronecker():
 
 def test_simple_assignment(A):
     # C << A
-    C = Matrix.new(A.dtype, A.nrows, A.ncols)
+    C = Matrix(A.dtype, A.nrows, A.ncols)
     C << A
     assert C.isequal(A)
 
 
 def test_assign_transpose(A):
-    C = Matrix.new(A.dtype, A.ncols, A.nrows)
+    C = Matrix(A.dtype, A.ncols, A.nrows)
     C << A.T
     assert C.isequal(A.T.new())
 
@@ -1454,7 +1454,7 @@ def test_assign_transpose(A):
     with pytest.raises(TypeError, match="autocompute"):
         C[:, :].T << A
 
-    C = Matrix.new(A.dtype, A.ncols + 1, A.nrows + 1)
+    C = Matrix(A.dtype, A.ncols + 1, A.nrows + 1)
     C[: A.ncols, : A.nrows] << A.T
     assert C[: A.ncols, : A.nrows].new().isequal(A.T.new())
 
@@ -1574,13 +1574,13 @@ def test_transpose_exceptional():
 
 def test_nested_matrix_operations():
     """Make sure temporaries aren't garbage-collected too soon"""
-    A = Matrix.new(int, 8, 8)
+    A = Matrix(int, 8, 8)
     A.ewise_mult(A.mxm(A.T).new()).new().reduce_scalar().new()
     A.ewise_mult(A.ewise_mult(A.ewise_mult(A.ewise_mult(A).new()).new()).new())
 
 
 def test_bad_init():
-    with pytest.raises(TypeError, match="CData"):
+    with pytest.raises(TypeError, match="Bad dtype"):
         Matrix(None, float, name="bad_matrix")
 
 
@@ -1968,7 +1968,7 @@ def test_import_on_view():
 
 
 def test_import_export_empty():
-    A = Matrix.new(int, 2, 3)
+    A = Matrix(int, 2, 3)
     A1 = A.dup()
     d = A1.ss.export("csr")
     assert d["nrows"] == 2
@@ -2390,14 +2390,14 @@ def test_split(A):
 def test_concat(A, v):
     B1 = grblas.ss.concat([[A, A]], dtype=float)
     assert B1.dtype == "FP64"
-    expected = Matrix.new(A.dtype, nrows=A.nrows, ncols=2 * A.ncols)
+    expected = Matrix(A.dtype, nrows=A.nrows, ncols=2 * A.ncols)
     expected[:, : A.ncols] = A
     expected[:, A.ncols :] = A
     assert B1.isequal(expected)
 
-    B2 = Matrix.new(A.dtype, nrows=2 * A.nrows, ncols=A.ncols)
+    B2 = Matrix(A.dtype, nrows=2 * A.nrows, ncols=A.ncols)
     B2.ss.concat([[A], [A]])
-    expected = Matrix.new(A.dtype, nrows=2 * A.nrows, ncols=A.ncols)
+    expected = Matrix(A.dtype, nrows=2 * A.nrows, ncols=A.ncols)
     expected[: A.nrows, :] = A
     expected[A.nrows :, :] = A
     assert B2.isequal(expected)
@@ -2422,19 +2422,19 @@ def test_concat(A, v):
 
     # Treat vectors like Nx1 matrices
     B3 = grblas.ss.concat([[v, v]])
-    expected = Matrix.new(v.dtype, nrows=v.size, ncols=2)
+    expected = Matrix(v.dtype, nrows=v.size, ncols=2)
     expected[:, 0] = v
     expected[:, 1] = v
     assert B3.isequal(expected)
 
     B4 = grblas.ss.concat([[v], [v]])
-    expected = Matrix.new(v.dtype, nrows=2 * v.size, ncols=1)
+    expected = Matrix(v.dtype, nrows=2 * v.size, ncols=1)
     expected[: v.size, 0] = v
     expected[v.size :, 0] = v
     assert B4.isequal(expected)
 
     B5 = grblas.ss.concat([[A, v]])
-    expected = Matrix.new(v.dtype, nrows=v.size, ncols=A.ncols + 1)
+    expected = Matrix(v.dtype, nrows=v.size, ncols=A.ncols + 1)
     expected[:, : A.ncols] = A
     expected[:, A.ncols] = v
     assert B5.isequal(expected)
@@ -2565,6 +2565,7 @@ def test_expr_is_like_matrix(A):
         "_delete_element",
         "_deserialize",
         "_extract_element",
+        "_from_obj",
         "_name_counter",
         "_parent",
         "_prep_for_assign",
@@ -2601,6 +2602,7 @@ def test_index_expr_is_like_matrix(A):
         "_delete_element",
         "_deserialize",
         "_extract_element",
+        "_from_obj",
         "_name_counter",
         "_parent",
         "_prep_for_assign",
@@ -3069,6 +3071,12 @@ def test_deprecated(A):
         A.ss.diag(v)
     with pytest.warns(DeprecationWarning):
         v.ss.diag(A)
+    with pytest.warns(DeprecationWarning):
+        Matrix.new(int)
+    with pytest.warns(DeprecationWarning):
+        Vector.new(int)
+    with pytest.warns(DeprecationWarning):
+        Scalar.new(int)
 
 
 def test_ndim(A):
@@ -3110,7 +3118,7 @@ def test_ewise_union():
     result = (A1 - A2).new()
     assert result.isequal(expected)
 
-    bad = Matrix.new(int, nrows=1, ncols=1)
+    bad = Matrix(int, nrows=1, ncols=1)
     with pytest.raises(DimensionMismatch):
         A1.ewise_union(bad, binary.plus, 0, 0)
     with pytest.raises(TypeError, match="Literal scalars"):
@@ -3132,7 +3140,7 @@ def test_delete_via_scalar(A):
 
 
 def test_iteration(A):
-    B = Matrix.new(int, 2, 2)
+    B = Matrix(int, 2, 2)
     assert list(B.ss.iterkeys()) == []
     assert list(B.ss.itervalues()) == []
     assert list(B.ss.iteritems()) == []
@@ -3161,7 +3169,7 @@ def test_iteration(A):
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "MatrixUDT")
-    A = Matrix.new(udt, nrows=2, ncols=2)
+    A = Matrix(udt, nrows=2, ncols=2)
     a = np.zeros(1, dtype=record_dtype)
     A[0, 0] = a[0]
     expected = Matrix.from_values([0], [0], a, nrows=2, ncols=2, dtype=udt)
@@ -3179,7 +3187,7 @@ def test_udt():
     assert A.isequal(ones)
     A[:, :](A.S) << 0
     assert A.isequal(zeros)
-    s = Scalar.new(udt)
+    s = Scalar(udt)
     s.value = (1, 1)
     A(A.S)[:, :] = s
     assert A.isequal(ones)
@@ -3234,7 +3242,7 @@ def test_udt():
 
     np_dtype = np.dtype("(3,)uint16")
     udt = dtypes.register_anonymous(np_dtype, "has_subdtype")
-    A = Matrix.new(udt, nrows=2, ncols=2)
+    A = Matrix(udt, nrows=2, ncols=2)
     A[:, :] = (1, 2, 3)
     rows, cols, values = A.to_values()
     assert_array_equal(values, np.array([[1, 2, 3]] * 4))
