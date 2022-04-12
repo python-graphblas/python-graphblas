@@ -725,7 +725,7 @@ def test_binaryop_attributes():
             assert val.monoid is not None
             assert any(val[type_].monoid is not None for type_ in val.types)
         else:
-            assert val.monoid is None
+            assert val.monoid is None or val.monoid._is_anonymous
             assert all(val[type_].monoid is None for type_ in val.types)
 
 
