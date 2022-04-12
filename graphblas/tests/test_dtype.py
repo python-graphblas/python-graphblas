@@ -133,7 +133,7 @@ def test_pickle():
     for val in dtypes._registry.values():
         s = pickle.dumps(val)
         val2 = pickle.loads(s)
-        if val._is_udt:
+        if val._is_udt:  # pragma: no cover
             assert val.np_type == val2.np_type
             assert val.name == val2.name
         else:
