@@ -1,5 +1,6 @@
 import atexit
 import functools
+import gc
 import itertools
 
 import numpy as np
@@ -75,6 +76,12 @@ def reset_name_counters():
     gb.Matrix._name_counter = itertools.count()
     gb.Vector._name_counter = itertools.count()
     gb.Scalar._name_counter = itertools.count()
+
+
+@pytest.fixture(autouse=True, scope="function")
+def gc_collect():
+    """Collect garbage after each test"""
+    gc.collect()
 
 
 def autocompute(func):

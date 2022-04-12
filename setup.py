@@ -6,6 +6,7 @@ extras_require = {
     "repr": ["pandas"],
     "io": ["networkx", "scipy"],
     "viz": ["matplotlib"],
+    "test": ["pytest", "pandas"],
 }
 extras_require["complete"] = sorted({v for req in extras_require.values() for v in req})
 
@@ -25,7 +26,6 @@ setup(
     packages=find_packages(),
     python_requires=">=3.8",
     install_requires=["suitesparse-graphblas >=7.0.2, <7.1", "numba", "donfig", "pyyaml"],
-    tests_require=["pytest", "pandas"],
     extras_require=extras_require,
     include_package_data=True,
     license="Apache License 2.0",
