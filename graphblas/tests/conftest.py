@@ -81,6 +81,7 @@ def reset_name_counters():
 @pytest.fixture(autouse=True, scope="function")
 def gc_collect():
     """Collect garbage after each test"""
+    yield
     gc.collect()
 
 
