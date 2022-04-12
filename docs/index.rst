@@ -1,12 +1,12 @@
-.. grblas documentation master file, created by
+.. graphblas documentation master file, created by
    sphinx-quickstart on Tue Mar 15 13:13:40 2022.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-grblas - A Python Wrapper for GraphBLAS
+python-graphblas - A Python Wrapper for GraphBLAS
 =======================================
 
-To install, ``conda install -c conda-forge grblas`` or ``pip install grblas``. This will also install the SuiteSparse ``graphblas`` compiled C library.
+To install, ``conda install -c conda-forge python-graphblas`` or ``pip install python-graphblas``. This will also install the SuiteSparse ``graphblas`` compiled C library.
 
 Currently works with `SuiteSparse:GraphBLAS <https://github.com/DrTimothyAldenDavis/GraphBLAS>`_, but the goal is to make it work with all implementations of the GraphBLAS spec.
 
@@ -158,31 +158,31 @@ Properties
 Initialization
 --------------
 
-There is a mechanism to initialize ``grblas`` with a context prior to use. This allows for setting the backend to
+There is a mechanism to initialize ``graphblas`` with a context prior to use. This allows for setting the backend to
 use as well as the blocking/non-blocking mode. If the context is not initialized, a default initialization will
 be performed automatically.
 
 .. code-block:: python
 
-    import grblas as gb
+    import graphblas as gb
     # Context initialization must happen before any other imports
     gb.init('suitesparse', blocking=True)
 
-    # Now we can import other items from grblas
-    from grblas import binary, semiring
-    from grblas import Matrix, Vector, Scalar
+    # Now we can import other items from graphblas
+    from graphblas import binary, semiring
+    from graphblas import Matrix, Vector, Scalar
 
 Performant User Defined Functions
 ---------------------------------
 
-``grblas`` requires ``numba`` which enables compiling user-defined Python functions to native machine code for use in GraphBLAS.
+Python-graphblas requires ``numba`` which enables compiling user-defined Python functions to native machine code for use in GraphBLAS.
 
 Example customized UnaryOp:
 
 .. code-block:: python
 
-    from grblas import unary
-    from grblas.operator import UnaryOp
+    from graphblas import unary
+    from graphblas.operator import UnaryOp
 
     def force_odd_func(x):
         if x % 2 == 0:
@@ -200,11 +200,11 @@ Similar methods exist for BinaryOp, Monoid, and Semiring.
 Import/Export connectors to the Python ecosystem
 ------------------------------------------------
 
-``grblas.io`` contains functions for converting to and from:
+``graphblas.io`` contains functions for converting to and from:
 
 .. code-block:: python
 
-    import grblas as gb
+    import graphblas as gb
 
     # numpy arrays
     # 1-D array becomes Vector, 2-D array becomes Matrix

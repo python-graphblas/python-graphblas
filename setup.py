@@ -13,7 +13,7 @@ with open("README.md") as f:
     long_description = f.read()
 
 setup(
-    name="grblas",
+    name="python-graphblas",
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
     description="Python interface to GraphBLAS",
@@ -21,7 +21,7 @@ setup(
     long_description_content_type="text/markdown",
     author="Jim Kitchen and Erik Welch",
     author_email="erik.n.welch@gmail.com,jim22k@gmail.com",
-    url="https://github.com/metagraph-dev/grblas",
+    url="https://github.com/metagraph-dev/python-graphblas",
     packages=find_packages(),
     python_requires=">=3.8",
     install_requires=["suitesparse-graphblas >=7.0.2, <7.1", "numba", "donfig", "pyyaml"],

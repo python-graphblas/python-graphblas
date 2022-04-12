@@ -1,4 +1,4 @@
-{% set name = "grblas" %}
+{% set name = "python-graphblas" %}
 {% set version = "2022.4.1" %}
 
 package:
@@ -25,7 +25,7 @@ requirements:
     - pytest-runner
 
 about:
-  home: https://github.com/metagraph-dev/grblas
+  home: https://github.com/metagraph-dev/python-graphblas
   license: Apache-2.0
   license_family: Apache
   license_file: LICENSE
@@ -33,7 +33,7 @@ about:
   description: |
     Python wrapper around GraphBLAS. Currently only supports SuiteSparse::GraphBLAS.
     Goal is to be Pythonic, while also maintaining a 1:1 mapping to GraphBLAS API calls.
-  dev_url: https://github.com/metagraph-dev/grblas
+  dev_url: https://github.com/metagraph-dev/python-graphblas
 
 extra:
   recipe-maintainers:

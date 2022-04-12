@@ -17,7 +17,7 @@
 
 # -- Project information -----------------------------------------------------
 
-project = "grblas"
+project = "graphblas"
 copyright = "2022, Anaconda, Inc"
 author = "Anaconda, Inc"
 
