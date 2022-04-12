@@ -310,7 +310,6 @@ def test_expr_is_like_scalar(s):
     # Should we make any of these raise informative errors?
     expected = {
         "__call__",
-        "__del__",
         "__imatmul__",
         "__lshift__",
         "_carg",
@@ -337,7 +336,6 @@ def test_index_expr_is_like_scalar(s):
     expr_attrs = {attr for attr, val in inspect.getmembers(v[0])}
     # Should we make any of these raise informative errors?
     expected = {
-        "__del__",
         "__imatmul__",
         "_carg",
         "_deserialize",

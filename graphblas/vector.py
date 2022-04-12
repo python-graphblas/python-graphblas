@@ -22,7 +22,12 @@ from .utils import (
     wrapdoc,
 )
 
+ffi_gc = ffi.gc
 ffi_new = ffi.new
+
+
+def _free(gb_obj):
+    lib.GrB_Vector_free(gb_obj)
 
 
 class Vector(BaseType):
@@ -40,7 +45,7 @@ class Vector(BaseType):
         self.dtype = lookup_dtype(dtype)
         size = _as_scalar(size, _INDEX, is_cscalar=True)
         self.name = f"v_{next(Vector._name_counter)}" if name is None else name
-        self.gb_obj = ffi_new("GrB_Vector*")
+        self.gb_obj = ffi_gc(ffi_new("GrB_Vector*"), _free)
         call("GrB_Vector_new", [_Pointer(self), self.dtype, size])
         self._size = size.value
         self._parent = None
@@ -51,21 +56,12 @@ class Vector(BaseType):
     def _from_obj(cls, gb_obj, dtype, size, *, parent=None, name=None):
         self = object.__new__(cls)
         self.name = f"v_{next(Vector._name_counter)}" if name is None else name
-        self.gb_obj = gb_obj
+        self.gb_obj = ffi_gc(gb_obj, _free) if parent is None else gb_obj
         self.dtype = dtype
         self._size = size
         self._parent = parent
         self.ss = ss(self)
         return self
-
-    def __del__(self):
-        parent = getattr(self, "_parent", None)
-        if parent is not None:
-            return
-        gb_obj = getattr(self, "gb_obj", None)
-        if gb_obj is not None and lib is not None:
-            # it's difficult/dangerous to record the call, b/c `self.name` may not exist
-            check_status(lib.GrB_Vector_free(gb_obj), self)
 
     def _as_matrix(self):
         """Cast this Vector to a Matrix (such as a column vector).

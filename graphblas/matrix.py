@@ -23,7 +23,12 @@ from .utils import (
 )
 from .vector import Vector, VectorExpression
 
+ffi_gc = ffi.gc
 ffi_new = ffi.new
+
+
+def _free(gb_obj):
+    lib.GrB_Matrix_free(gb_obj)
 
 
 class Matrix(BaseType):
@@ -43,7 +48,7 @@ class Matrix(BaseType):
         nrows = _as_scalar(nrows, _INDEX, is_cscalar=True)
         ncols = _as_scalar(ncols, _INDEX, is_cscalar=True)
         self.name = f"M_{next(Matrix._name_counter)}" if name is None else name
-        self.gb_obj = ffi_new("GrB_Matrix*")
+        self.gb_obj = ffi_gc(ffi_new("GrB_Matrix*"), _free)
         call("GrB_Matrix_new", [_Pointer(self), self.dtype, nrows, ncols])
         self._nrows = nrows.value
         self._ncols = ncols.value
@@ -54,7 +59,7 @@ class Matrix(BaseType):
     @classmethod
     def _from_obj(cls, gb_obj, dtype, nrows, ncols, *, parent=None, name=None):
         self = object.__new__(cls)
-        self.gb_obj = gb_obj
+        self.gb_obj = ffi_gc(gb_obj, _free) if parent is None else gb_obj
         self.dtype = dtype
         self.name = f"M_{next(Matrix._name_counter)}" if name is None else name
         self._nrows = nrows
@@ -62,15 +67,6 @@ class Matrix(BaseType):
         self._parent = parent
         self.ss = ss(self)
         return self
-
-    def __del__(self):
-        parent = getattr(self, "_parent", None)
-        if parent is not None:
-            return
-        gb_obj = getattr(self, "gb_obj", None)
-        if gb_obj is not None and lib is not None:
-            # it's difficult/dangerous to record the call, b/c `self.name` may not exist
-            check_status(lib.GrB_Matrix_free(gb_obj), self)
 
     def __repr__(self, mask=None):
         from .formatting import format_matrix

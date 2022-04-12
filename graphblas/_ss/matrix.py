@@ -955,7 +955,6 @@ class ss:
                         rv["format"] += "c"
                 if give_ownership:
                     if method == "export":
-                        parent.__del__()
                         parent.gb_obj = NULL
                     else:
                         parent.clear()

@@ -2557,7 +2557,6 @@ def test_expr_is_like_matrix(A):
     # Should we make any of these raise informative errors?
     expected = {
         "__call__",
-        "__del__",
         "__delitem__",
         "__lshift__",
         "__setitem__",
@@ -2595,7 +2594,6 @@ def test_index_expr_is_like_matrix(A):
     expr_attrs = {attr for attr, val in inspect.getmembers(B[[0, 1], [0, 1]])}
     # Should we make any of these raise informative errors?
     expected = {
-        "__del__",
         "__delitem__",
         "__setitem__",
         "_assign_element",

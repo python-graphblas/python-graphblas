@@ -12,6 +12,7 @@ from .expr import AmbiguousAssignOrExtract
 from .operator import get_typed_op
 from .utils import _Pointer, output_type, wrapdoc
 
+ffi_gc = ffi.gc
 ffi_new = ffi.new
 
 
@@ -24,6 +25,10 @@ def _scalar_index(name):
     self._is_cscalar = True
     self._empty = True
     return self
+
+
+def _free(gb_obj):
+    lib.GrB_Scalar_free(gb_obj)
 
 
 class Scalar(BaseType):
@@ -54,15 +59,9 @@ class Scalar(BaseType):
             else:
                 self.gb_obj = ffi_new(f"{dtype.c_type}*")
         else:
-            self.gb_obj = ffi_new("GrB_Scalar*")
+            self.gb_obj = ffi_gc(ffi_new("GrB_Scalar*"), _free)
             call("GrB_Scalar_new", [_Pointer(self), dtype])
         return self
-
-    def __del__(self):
-        gb_obj = getattr(self, "gb_obj", None)
-        if gb_obj is not None and lib is not None and "GB_Scalar_opaque" in str(gb_obj):
-            # it's difficult/dangerous to record the call, b/c `self.name` may not exist
-            check_status(lib.GrB_Scalar_free(gb_obj), self)
 
     @property
     def is_cscalar(self):
