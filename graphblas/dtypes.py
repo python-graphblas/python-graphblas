@@ -5,7 +5,7 @@ from numpy import find_common_type, promote_types
 from . import ffi, lib
 
 # Default assumption unless FC32/FC64 are found in lib
-_supports_complex = hasattr(lib, "GrB_FC64") or hasattr(lib, "GxB_FC64")
+_supports_complex = False  # hasattr(lib, "GrB_FC64") or hasattr(lib, "GxB_FC64")
 
 
 class DataType:
