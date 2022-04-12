@@ -64,7 +64,7 @@ class Matrix(BaseType):
         return self
 
     def __del__(self):
-        parent = getattr(self, "_parent", True)
+        parent = getattr(self, "_parent", None)
         if parent is not None:
             return
         gb_obj = getattr(self, "gb_obj", None)

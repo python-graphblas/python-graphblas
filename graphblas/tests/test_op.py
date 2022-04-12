@@ -726,7 +726,9 @@ def test_binaryop_attributes():
             assert any(val[type_].monoid is not None for type_ in val.types)
         else:
             assert val.monoid is None or val.monoid.name != attr
-            assert all(val[type_].monoid is None for type_ in val.types)
+            assert all(
+                val[type_].monoid is None or val[type_].monoid.name != attr for type_ in val.types
+            )
 
 
 @pytest.mark.slow
