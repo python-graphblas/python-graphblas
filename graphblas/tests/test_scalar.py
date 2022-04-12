@@ -20,12 +20,12 @@ def s():
 
 
 def test_new():
-    s = Scalar.new(dtypes.INT8)
+    s = Scalar(dtypes.INT8)
     assert s.dtype == "INT8"
     assert compute(s.value) is None
     s.value = 0
     assert compute(s.is_empty) is False
-    s2 = Scalar.new(bool)
+    s2 = Scalar(bool)
     assert s2.dtype == "BOOL"
     assert compute(s2.value) is None
     assert bool(s2) is False
@@ -42,7 +42,7 @@ def test_dup(s):
     assert s3.value == s.value
     # extended functionality
     s4 = Scalar.from_value(-2.5, dtype=dtypes.FP64)
-    s_empty = Scalar.new(dtypes.FP64)
+    s_empty = Scalar(dtypes.FP64)
     s_unempty = Scalar.from_value(0.0)
     if s_empty.is_cscalar:
         # NumPy wraps around
@@ -269,7 +269,7 @@ def test_neg():
         reverse=True,  # XXX: segfault when False!!!
     ):
         s = Scalar.from_value(1, dtype=dtype)
-        empty = Scalar.new(dtype)
+        empty = Scalar(dtype)
         if dtype.name == "BOOL" or dtype.name.startswith("U") or dtype._is_udt:
             with pytest.raises(TypeError, match="The negative operator, `-`, is not supported"):
                 -s
@@ -284,7 +284,7 @@ def test_neg():
 
 
 def test_invert():
-    empty = Scalar.new(bool)
+    empty = Scalar(bool)
     assert empty == ~empty
     assert compute((~empty).value) is None
     not_s = Scalar.from_value(0, dtype=bool)
@@ -292,7 +292,7 @@ def test_invert():
     assert ~s == not_s
     assert (~s).value == not_s.value
     assert not (s.value) == not_s.value
-    bad = Scalar.new(int)
+    bad = Scalar(int)
     with pytest.raises(TypeError, match="The invert operator"):
         ~bad
 
@@ -365,7 +365,7 @@ def test_ndim(s):
 # @pytest.mark.parametrize("dtype", ["FC32", "FC64"])  # This segfaults
 @pytest.mark.parametrize("dtype", ["FC64", "FC32"])
 def test_scalar_complex(dtype):
-    s = Scalar.new(dtype)
+    s = Scalar(dtype)
     assert s.is_empty
     s.value = 1
     assert s == 1
@@ -419,7 +419,7 @@ def test_sizeof(s):
 
 
 def test_concat(s):
-    empty = Scalar.new(int)
+    empty = Scalar(int)
     v = gb.ss.concat([s, s, empty])
     expected = Vector.from_values([0, 1], 5, size=3)
     assert v.isequal(expected)

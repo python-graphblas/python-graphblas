@@ -66,7 +66,7 @@ def test_serialize():
     semiring_anon = gb.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
     d = {
         "scalar": gb.Scalar.from_value(2),
-        "empty_scalar": gb.Scalar.new(bool),
+        "empty_scalar": gb.Scalar(bool),
         "vector": v,
         "matrix": gb.Matrix.from_values([2], [3], 4),
         "matrix.T": gb.Matrix.from_values([3], [4], 5).T,
@@ -127,7 +127,7 @@ def test_serialize():
 def check_values(d):
     v = gb.Vector.from_values([1], 2)
     assert d["scalar"].isequal(gb.Scalar.from_value(2), check_dtype=True)
-    assert d["empty_scalar"].isequal(gb.Scalar.new(bool), check_dtype=True)
+    assert d["empty_scalar"].isequal(gb.Scalar(bool), check_dtype=True)
     assert d["vector"].isequal(v, check_dtype=True)
     assert d["matrix"].isequal(gb.Matrix.from_values([2], [3], 4), check_dtype=True)
     assert d["matrix.T"].isequal(gb.Matrix.from_values([3], [4], 5).T, check_dtype=True)
@@ -295,7 +295,7 @@ def test_udt():
     assert udt3.name == "PickledUDT"
     assert udt3 is gb.dtypes.PickledUDT
     assert v.dtype == udt3
-    expected = gb.Vector.new(udt3, size=2)
+    expected = gb.Vector(udt3, size=2)
     expected[0] = (False, 1)
     expected[1] = (True, 3)
     assert expected.isequal(v)
@@ -305,7 +305,7 @@ def test_udt():
     assert udt4.name == "pickled_subdtype"
     assert not hasattr(gb.dtypes, udt4.name)
     assert A.dtype == udt4
-    expected = gb.Matrix.new(udt4, nrows=1, ncols=2)
+    expected = gb.Matrix(udt4, nrows=1, ncols=2)
     expected[0, 0] = (1, 2)
     expected[0, 1] = (3, 4)
     assert expected.isequal(A)

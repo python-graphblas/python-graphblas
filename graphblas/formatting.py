@@ -95,7 +95,7 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
         if mask is None:
             submatrix = matrix
         else:
-            submatrix = Matrix.new("UINT8", matrix._nrows, matrix._ncols, name="")
+            submatrix = Matrix("UINT8", matrix._nrows, matrix._ncols, name="")
             if mask.structure:
                 submatrix(matrix.S)[...] = 0 if mask.complement else 1
             else:
@@ -108,7 +108,7 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
             columns = slice(None)
         if type(matrix) is TransposedMatrix:
             parent = matrix._matrix
-            submatrix = Matrix.new(parent.dtype, parent._nrows, parent._ncols, name="")
+            submatrix = Matrix(parent.dtype, parent._nrows, parent._ncols, name="")
             if parent._nvals > 0:
                 # Get val to support iso-valued matrices
                 val = parent.reduce_scalar(monoid.any, allow_empty=False).new(name="")
@@ -119,14 +119,14 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
             submatrix = submatrix.T
         else:
             if mask is None:
-                submatrix = Matrix.new(matrix.dtype, matrix._nrows, matrix._ncols, name="")
+                submatrix = Matrix(matrix.dtype, matrix._nrows, matrix._ncols, name="")
                 # Get val to support iso-valued matrices
                 if matrix._nvals > 0:
                     val = matrix.reduce_scalar(monoid.any).new(name="")
                     submatrix(matrix.S)[rows, columns] = val
                     submatrix(submatrix.S)[...] = matrix
             else:
-                submatrix = Matrix.new("UINT8", matrix._nrows, matrix._ncols, name="")
+                submatrix = Matrix("UINT8", matrix._nrows, matrix._ncols, name="")
                 if mask.structure:
                     submatrix(matrix.S)[rows, columns] = 0 if mask.complement else 1
                 else:
@@ -149,7 +149,7 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
         if mask is None:
             subvector = vector
         else:
-            subvector = Vector.new("UINT8", vector._size, name="")
+            subvector = Vector("UINT8", vector._size, name="")
             if mask.structure:
                 subvector(vector.S)[...] = 0 if mask.complement else 1
             else:
@@ -157,14 +157,14 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
                 subvector(vector.V)[...] = 0 if mask.complement else 1
     else:
         if mask is None:
-            subvector = Vector.new(vector.dtype, vector._size, name="")
+            subvector = Vector(vector.dtype, vector._size, name="")
             # Get val to support iso-valued vectors
             if vector._nvals > 0:
                 val = vector.reduce(monoid.any).new(name="")
                 subvector(vector.S)[columns] = val
                 subvector(subvector.S)[...] = vector
         else:
-            subvector = Vector.new("UINT8", vector._size, name="")
+            subvector = Vector("UINT8", vector._size, name="")
             if mask.structure:
                 subvector(vector.S)[columns] = 0 if mask.complement else 1
             else:

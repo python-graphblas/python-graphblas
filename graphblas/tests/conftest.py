@@ -25,7 +25,7 @@ def pytest_configure(config):
         mapnumpy = np.random.rand() < 0.5 if randomly else False
     runslow = config.getoption("--runslow", False)
     if runslow is None:
-        runslow = np.random.rand() < 0.5 if randomly else False
+        runslow = np.random.rand() < 0.25 if randomly else False
     config.runslow = runslow
 
     gb.config.set(autocompute=False, mapnumpy=mapnumpy)

@@ -31,7 +31,7 @@ def test_resolve_ops_using_common_dtype():
     # C << A.ewise_mult(B, binary.plus) <-- PLUS should use FP64 because unify(INT64, FP64) -> FP64
     u = Vector.from_values([0, 1, 3], [1, 2, 3], dtype=dtypes.INT64)
     v = Vector.from_values([0, 1, 3], [0.1, 0.1, 0.1], dtype="FP64")
-    w = Vector.new("FP32", u.size)
+    w = Vector("FP32", u.size)
     w << u.ewise_mult(v, binary.plus)
     result = Vector.from_values([0, 1, 3], [1.1, 2.1, 3.1], dtype="FP32")
     assert w.isclose(result, check_dtype=True)

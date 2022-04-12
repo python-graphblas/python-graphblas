@@ -40,7 +40,7 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     nrows, ncols = A.shape
     data = A.data
     if data.size == 0:
-        return Matrix.new(A.dtype, nrows=nrows, ncols=ncols, name=name)
+        return Matrix(A.dtype, nrows=nrows, ncols=ncols, name=name)
     if backend == "suitesparse":
         is_iso = (data[[0]] == data).all()
         if is_iso:
