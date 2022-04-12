@@ -803,8 +803,6 @@ class OpBase:
                                 if num_bits not in {"32", "64"}:  # pragma: no cover
                                     raise TypeError(f"Unexpected number of bits: {num_bits}")
                                 return_type = f"{return_prefix}{num_bits}"
-                        if not _supports_complex and (type_ == "FC32" or type_ == "FC64"):
-                            continue
                         builtin_op = cls._typed_class(
                             obj,
                             name,
