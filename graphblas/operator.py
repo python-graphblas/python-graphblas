@@ -1132,16 +1132,16 @@ class SelectOp(OpBase):
     def _initialize(cls):
         super()._initialize(include_in_ops=False)
         # Update type information to handle more than bool
-        # fmt: off
         bool_names = ("tril", "triu", "diag", "offdiag", "colle", "colgt", "rowle", "rowgt")
-        types = (INT8, UINT8, INT16, UINT16, INT32, UINT32, INT64, UINT64, FP32, FP64, FC32, FC64)
-        # fmt: on
+        types = [INT8, UINT8, INT16, UINT16, INT32, UINT32, INT64, UINT64, FP32, FP64]
+        if _supports_complex:
+            types.extend([FC32, FC64])
         for name in bool_names:
             op = getattr(select, name)
             typed_op = op._typed_ops[BOOL]
             output_type = op.types[BOOL]
             for dtype in types:
-                if dtype not in op.types and (_supports_complex or dtype not in {FC32, FC64}):
+                if dtype not in op.types:
                     op.types[dtype] = output_type
                     op._typed_ops[dtype] = typed_op
                     op.coercions[dtype] = BOOL
