@@ -698,18 +698,19 @@ class Vector(BaseType):
             size=self._size,
         )
 
-    def select(self, op, thunk=0):
+    def select(self, op, thunk=None):
         """
         GrB_Vector_select
-        Compute IndexUnaryOp at each element of the calling Vector, keeping
+        Compute SelectOp at each element of the calling Vector, keeping
         elements which return True.
         """
         method_name = "select"
-        op = get_typed_op(op, self.dtype, kind="indexunary")
-        self._expect_op(op, "IndexUnaryOp", within=method_name, argname="op")
+        if thunk is None:
+            thunk = False  # most basic form of 0 when unifying dtypes
         if type(thunk) is not Scalar:
+            dtype = self.dtype if self.dtype._is_udt else None
             try:
-                thunk = Scalar.from_value(thunk, is_cscalar=None, name="")
+                thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")
             except TypeError:
                 thunk = self._expect_type(
                     thunk,
@@ -719,7 +720,17 @@ class Vector(BaseType):
                     extra_message="Literal scalars also accepted.",
                     op=op,
                 )
-        cfunc_name = f"GrB_Vector_select_{self.dtype}"
+        op = get_typed_op(op, self.dtype, thunk.dtype, is_right_scalar=True, kind="select")
+        self._expect_op(op, ("SelectOp", "IndexUnaryOp"), within=method_name, argname="op")
+        if thunk._is_cscalar:
+            if thunk.dtype._is_udt:
+                dtype_name = "UDT"
+                thunk = _Pointer(thunk)
+            else:
+                dtype_name = thunk.dtype.name
+            cfunc_name = f"GrB_Vector_select_{dtype_name}"
+        else:
+            cfunc_name = "GrB_Vector_select_Scalar"
         return VectorExpression(
             method_name,
             cfunc_name,

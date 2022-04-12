@@ -353,6 +353,7 @@ if __name__ == "__main__":
         "ewise_add",
         "ewise_mult",
         "ewise_union",
+        "select",
         "ss",
         "to_values",
     }
