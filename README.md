@@ -1,4 +1,4 @@
-# Python-GraphBLAS
+# Python-graphblas
 
 [![conda-forge](https://img.shields.io/conda/vn/conda-forge/python-graphblas.svg)](https://anaconda.org/conda-forge/python-graphblas)
 [![pypi](https://img.shields.io/pypi/v/python-graphblas.svg)](https://pypi.python.org/pypi/python-graphblas/)
@@ -142,7 +142,7 @@ from graphblas import binary, semiring
 from graphblas import Matrix, Vector, Scalar
 ```
 ## Performant User Defined Functions
-Python-GraphBLAS requires `numba` which enables compiling user-defined Python functions to native C for use in GraphBLAS.
+Python-graphblas requires `numba` which enables compiling user-defined Python functions to native C for use in GraphBLAS.
 
 Example customized UnaryOp:
 ```python

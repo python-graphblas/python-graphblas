@@ -175,7 +175,7 @@ be performed automatically.
 Performant User Defined Functions
 ---------------------------------
 
-Python-GraphBLAS requires ``numba`` which enables compiling user-defined Python functions to native machine code for use in GraphBLAS.
+Python-graphblas requires ``numba`` which enables compiling user-defined Python functions to native machine code for use in GraphBLAS.
 
 Example customized UnaryOp:
 
