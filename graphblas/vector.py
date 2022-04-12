@@ -59,7 +59,7 @@ class Vector(BaseType):
         return self
 
     def __del__(self):
-        parent = getattr(self, "_parent", None)
+        parent = getattr(self, "_parent", True)
         if parent is not None:
             return
         gb_obj = getattr(self, "gb_obj", None)
