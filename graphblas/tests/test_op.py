@@ -805,8 +805,8 @@ def test_semiring_attributes():
 
 
 def test_binaryop_superset_monoids():
-    monoid_names = {x for x in dir(monoid) if not x.startswith("_")} - {"udt_any"}
-    binary_names = {x for x in dir(binary) if not x.startswith("_")} - {"udt_any"}
+    monoid_names = {x for x in dir(monoid) if not x.startswith("_")} - {"udt_any", "lazy2"}
+    binary_names = {x for x in dir(binary) if not x.startswith("_")} - {"udt_any", "lazy2"}
     diff = monoid_names - binary_names
     assert not diff
     extras = {x for x in set(dir(monoid.numpy)) - set(dir(binary.numpy)) if not x.startswith("_")}
