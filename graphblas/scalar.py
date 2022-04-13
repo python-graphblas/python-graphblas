@@ -7,7 +7,7 @@ from . import _automethods, backend, config, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
 from .binary import isclose
 from .dtypes import _INDEX, BOOL, FP64, lookup_dtype
-from .exceptions import EmptyObject, check_status
+from .exceptions import EmptyObject, check_status, check_status_carg
 from .expr import AmbiguousAssignOrExtract
 from .operator import get_typed_op
 from .utils import _Pointer, output_type, wrapdoc
@@ -28,7 +28,7 @@ def _scalar_index(name):
 
 
 def _free(gb_obj):
-    lib.GrB_Scalar_free(gb_obj)
+    check_status_carg(lib.GrB_Scalar_free(gb_obj), "Scalar", gb_obj[0])
 
 
 class Scalar(BaseType):

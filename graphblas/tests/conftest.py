@@ -2,6 +2,7 @@ import atexit
 import functools
 import gc
 import itertools
+import sys
 
 import numpy as np
 import pytest
@@ -81,7 +82,9 @@ def reset_name_counters():
 @pytest.fixture(autouse=True, scope="function")
 def gc_collect():
     """Collect garbage after each test"""
+    sys.stdout.flush()
     yield
+    sys.stdout.flush()
     gc.collect()
 
 

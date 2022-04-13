@@ -83,7 +83,6 @@ def concat(tiles, dtype=None, *, name=None):
     Vector.ss.concat
 
     """
-    1 / 0
     tiles, m, n, is_matrix = _concat_mn(tiles)
     if is_matrix:
         if dtype is None:

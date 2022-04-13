@@ -467,9 +467,8 @@ class ss:
         Matrix.ss.concat
         graphblas.ss.concat
         """
-        from ..matrix import Matrix
+        from ..matrix import Matrix, _free
 
-        1 / 0
         tile_nrows, tile_ncols = normalize_chunks(chunks, self._parent.shape)
         m = len(tile_nrows)
         n = len(tile_ncols)
@@ -497,8 +496,9 @@ class ss:
                 # Copy to a new handle so we can free `tiles`
                 new_matrix = ffi.new("GrB_Matrix*")
                 new_matrix[0] = tiles[index]
-                # TODO: properly free these objects
-                tile = Matrix._from_obj(new_matrix, dtype, nrows, ncols, name=f"{name}_{i}x{j}")
+                tile = Matrix._from_obj(
+                    ffi.gc(new_matrix, _free), dtype, nrows, ncols, name=f"{name}_{i}x{j}"
+                )
                 cur.append(tile)
                 index += 1
             rv.append(cur)

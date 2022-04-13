@@ -7,7 +7,7 @@ from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
 from ._ss.matrix import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, FP64, lookup_dtype, unify
-from .exceptions import DimensionMismatch, NoValue, check_status
+from .exceptions import DimensionMismatch, NoValue, check_status, check_status_carg
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import get_semiring, get_typed_op
@@ -28,7 +28,7 @@ ffi_new = ffi.new
 
 
 def _free(gb_obj):
-    lib.GrB_Matrix_free(gb_obj)
+    check_status_carg(lib.GrB_Matrix_free(gb_obj), "Matrix", gb_obj[0])
 
 
 class Matrix(BaseType):

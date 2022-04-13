@@ -190,9 +190,8 @@ class ss:
         Vector.ss.concat
         graphblas.ss.concat
         """
-        from ..vector import Vector
+        from ..vector import Vector, _free
 
-        1 / 0
         tile_nrows, _ = normalize_chunks([chunks, None], (self._parent._size, 1))
         m = len(tile_nrows)
         tiles = ffi.new("GrB_Matrix[]", m)
@@ -217,8 +216,7 @@ class ss:
             # Copy to a new handle so we can free `tiles`
             new_vector = ffi.new("GrB_Vector*")
             new_vector[0] = ffi.cast("GrB_Vector", tiles[i])
-            # TODO: properly free these objects
-            tile = Vector._from_obj(new_vector, dtype, size, name=f"{name}_{i}")
+            tile = Vector._from_obj(ffi.gc(new_vector, _free), dtype, size, name=f"{name}_{i}")
             rv.append(tile)
         return rv
 
