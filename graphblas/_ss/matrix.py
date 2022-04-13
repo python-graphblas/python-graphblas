@@ -895,8 +895,6 @@ class ss:
                 format = f"{self.format[:-1]}r"
             elif format == "columnwise":
                 format = f"{self.format[:-1]}c"
-        if give_ownership:
-            1 / 0
         if give_ownership or format == "coo":
             parent = self._parent
         else:
@@ -1419,8 +1417,6 @@ class ss:
     ):
         if format is not None and format.lower() != "csr":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'csr'.")
-        if take_ownership:
-            1 / 0
         copy = not take_ownership
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
@@ -1594,8 +1590,6 @@ class ss:
     ):
         if format is not None and format.lower() != "csc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'csc'.")
-        if take_ownership:
-            1 / 0
         copy = not take_ownership
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
@@ -1783,8 +1777,6 @@ class ss:
     ):
         if format is not None and format.lower() != "hypercsr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsr'.")
-        if take_ownership:
-            1 / 0
         copy = not take_ownership
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
@@ -1979,8 +1971,6 @@ class ss:
     ):
         if format is not None and format.lower() != "hypercsc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsc'.")
-        if take_ownership:
-            1 / 0
         copy = not take_ownership
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
@@ -2163,8 +2153,6 @@ class ss:
     ):
         if format is not None and format.lower() != "bitmapr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapr'.")
-        if take_ownership:
-            1 / 0
         copy = not take_ownership
         bitmap = ints_to_numpy_buffer(
             bitmap, np.bool8, copy=copy, ownable=True, order="C", name="bitmap"
@@ -2341,8 +2329,6 @@ class ss:
     ):
         if format is not None and format.lower() != "bitmapc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapc'.")
-        if take_ownership:
-            1 / 0
         copy = not take_ownership
         bitmap = ints_to_numpy_buffer(
             bitmap, np.bool8, copy=copy, ownable=True, order="F", name="bitmap"
@@ -2504,8 +2490,6 @@ class ss:
     ):
         if format is not None and format.lower() != "fullr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'fullr'.")
-        if take_ownership:
-            1 / 0
         copy = not take_ownership
         if method == "pack":
             dtype = matrix.dtype
@@ -2653,8 +2637,6 @@ class ss:
     ):
         if format is not None and format.lower() != "fullc":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'fullc'.")
-        if take_ownership:
-            1 / 0
         copy = not take_ownership
         if method == "pack":
             dtype = matrix.dtype

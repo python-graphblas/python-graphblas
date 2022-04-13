@@ -468,8 +468,6 @@ class ss:
 
     def _export(self, format=None, *, sort=False, give_ownership=False, raw=False, method):
         if give_ownership:
-            1 / 0
-        if give_ownership:
             parent = self._parent
         else:
             parent = self._parent.dup(name=f"v_{method}")
@@ -898,8 +896,6 @@ class ss:
     ):
         if format is not None and format.lower() != "sparse":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'sparse'.")
-        if take_ownership:
-            1 / 0
         copy = not take_ownership
         indices = ints_to_numpy_buffer(indices, np.uint64, copy=copy, ownable=True, name="indices")
         if method == "pack":
@@ -1063,8 +1059,6 @@ class ss:
     ):
         if format is not None and format.lower() != "bitmap":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'bitmap'.")
-        if take_ownership:
-            1 / 0
         copy = not take_ownership
         bitmap = ints_to_numpy_buffer(bitmap, np.bool8, copy=copy, ownable=True, name="bitmap")
         if method == "pack":
@@ -1220,8 +1214,6 @@ class ss:
     ):
         if format is not None and format.lower() != "full":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'full'.")
-        if take_ownership:
-            1 / 0
         copy = not take_ownership
         if method == "pack":
             dtype = vector.dtype

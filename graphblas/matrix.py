@@ -49,7 +49,11 @@ class Matrix(BaseType):
         ncols = _as_scalar(ncols, _INDEX, is_cscalar=True)
         self.name = f"M_{next(Matrix._name_counter)}" if name is None else name
         self.gb_obj = ffi_gc(ffi_new("GrB_Matrix*"), _free)
-        call("GrB_Matrix_new", [_Pointer(self), self.dtype, nrows, ncols])
+        try:
+            call("GrB_Matrix_new", [_Pointer(self), self.dtype, nrows, ncols])
+        except Exception as exc:
+            print(exc)
+            1 / 0
         self._nrows = nrows.value
         self._ncols = ncols.value
         self._parent = None
@@ -337,7 +341,11 @@ class Matrix(BaseType):
         else:
             new_mat = ffi_new("GrB_Matrix*")
             rv = Matrix._from_obj(new_mat, self.dtype, self._nrows, self._ncols, name=name)
-            call("GrB_Matrix_dup", [_Pointer(rv), self])
+            try:
+                call("GrB_Matrix_dup", [_Pointer(rv), self])
+            except Exception as exc:
+                print(exc)
+                1 / 0
         return rv
 
     def diag(self, k=0, dtype=None, *, name=None):

@@ -46,7 +46,11 @@ class Vector(BaseType):
         size = _as_scalar(size, _INDEX, is_cscalar=True)
         self.name = f"v_{next(Vector._name_counter)}" if name is None else name
         self.gb_obj = ffi_gc(ffi_new("GrB_Vector*"), _free)
-        call("GrB_Vector_new", [_Pointer(self), self.dtype, size])
+        try:
+            call("GrB_Vector_new", [_Pointer(self), self.dtype, size])
+        except Exception as exc:
+            print(exc)
+            1 / 0
         self._size = size.value
         self._parent = None
         self.ss = ss(self)
@@ -315,7 +319,11 @@ class Vector(BaseType):
             rv(mask=mask)[...] = self
         else:
             rv = Vector._from_obj(ffi_new("GrB_Vector*"), self.dtype, self._size, name=name)
-            call("GrB_Vector_dup", [_Pointer(rv), self])
+            try:
+                call("GrB_Vector_dup", [_Pointer(rv), self])
+            except Exception as exc:
+                print(exc)
+                1 / 0
         return rv
 
     def diag(self, k=0, *, name=None):
@@ -328,7 +336,11 @@ class Vector(BaseType):
         k = _as_scalar(k, INT64, is_cscalar=True)
         n = self._size + abs(k.value)
         rv = Matrix._from_obj(ffi_new("GrB_Matrix*"), self.dtype, n, n, name=name)
-        call("GrB_Matrix_diag", [_Pointer(rv), self, k])
+        try:
+            call("GrB_Matrix_diag", [_Pointer(rv), self, k])
+        except Exception as exc:
+            print(exc)
+            1 / 0
         return rv
 
     def wait(self):
