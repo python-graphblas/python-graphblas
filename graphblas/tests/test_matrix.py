@@ -1608,7 +1608,7 @@ def test_del(capsys):
     import gc
 
     # shell_A does not have `gb_obj` attribute
-    shell_A = Matrix.__new__(Matrix)
+    shell_A = object.__new__(Matrix)
     del shell_A
     # A has `gb_obj` of NULL
     A = Matrix.from_values([0, 1], [0, 1], [0, 1])
@@ -1616,7 +1616,7 @@ def test_del(capsys):
     A.gb_obj = graphblas.ffi.NULL
     del A
     # let's clean up so we don't have a memory leak
-    A2 = Matrix.__new__(Matrix)
+    A2 = object.__new__(Matrix)
     A2.gb_obj = gb_obj
     del A2
     gc.collect()
