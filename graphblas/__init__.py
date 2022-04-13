@@ -145,7 +145,7 @@ def _init(backend_arg, blocking, automatic=False):
             if blocking is None:
                 blocking = False
                 passed_params["blocking"] = blocking
-            initialize(blocking=blocking, memory_manager="c")
+            initialize(blocking=blocking, memory_manager="numpy")
     else:
         raise ValueError(f'Bad backend name.  Must be "suitesparse".  Got: {backend}')
     _init_params = passed_params
