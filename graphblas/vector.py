@@ -45,12 +45,9 @@ class Vector(BaseType):
         self.dtype = lookup_dtype(dtype)
         size = _as_scalar(size, _INDEX, is_cscalar=True)
         self.name = f"v_{next(Vector._name_counter)}" if name is None else name
-        self.gb_obj = ffi_gc(ffi_new("GrB_Vector*"), _free)
-        try:
-            call("GrB_Vector_new", [_Pointer(self), self.dtype, size])
-        except Exception as exc:
-            print(exc)
-            1 / 0
+        self.gb_obj = ffi_new("GrB_Vector*")
+        call("GrB_Vector_new", [_Pointer(self), self.dtype, size])
+        self.gb_obj = ffi_gc(self.gb_obj, _free)
         self._size = size.value
         self._parent = None
         self.ss = ss(self)
@@ -60,7 +57,7 @@ class Vector(BaseType):
     def _from_obj(cls, gb_obj, dtype, size, *, parent=None, name=None):
         self = object.__new__(cls)
         self.name = f"v_{next(Vector._name_counter)}" if name is None else name
-        self.gb_obj = ffi_gc(gb_obj, _free) if parent is None else gb_obj
+        self.gb_obj = gb_obj
         self.dtype = dtype
         self._size = size
         self._parent = parent
@@ -319,11 +316,8 @@ class Vector(BaseType):
             rv(mask=mask)[...] = self
         else:
             rv = Vector._from_obj(ffi_new("GrB_Vector*"), self.dtype, self._size, name=name)
-            try:
-                call("GrB_Vector_dup", [_Pointer(rv), self])
-            except Exception as exc:
-                print(exc)
-                1 / 0
+            call("GrB_Vector_dup", [_Pointer(rv), self])
+            rv.gb_obj = ffi_gc(rv.gb_obj, _free)
         return rv
 
     def diag(self, k=0, *, name=None):
@@ -332,15 +326,13 @@ class Vector(BaseType):
         Create a Matrix whose kth diagonal is this Vector
         """
         from .matrix import Matrix
+        from .matrix import _free as free_matrix
 
         k = _as_scalar(k, INT64, is_cscalar=True)
         n = self._size + abs(k.value)
         rv = Matrix._from_obj(ffi_new("GrB_Matrix*"), self.dtype, n, n, name=name)
-        try:
-            call("GrB_Matrix_diag", [_Pointer(rv), self, k])
-        except Exception as exc:
-            print(exc)
-            1 / 0
+        call("GrB_Matrix_diag", [_Pointer(rv), self, k])
+        rv.gb_obj = ffi_gc(rv.gb_obj, free_matrix)
         return rv
 
     def wait(self):

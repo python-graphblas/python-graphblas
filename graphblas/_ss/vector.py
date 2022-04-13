@@ -192,6 +192,7 @@ class ss:
         """
         from ..vector import Vector
 
+        1 / 0
         tile_nrows, _ = normalize_chunks([chunks, None], (self._parent._size, 1))
         m = len(tile_nrows)
         tiles = ffi.new("GrB_Matrix[]", m)
@@ -216,6 +217,7 @@ class ss:
             # Copy to a new handle so we can free `tiles`
             new_vector = ffi.new("GrB_Vector*")
             new_vector[0] = ffi.cast("GrB_Vector", tiles[i])
+            # TODO: properly free these objects
             tile = Vector._from_obj(new_vector, dtype, size, name=f"{name}_{i}")
             rv.append(tile)
         return rv
@@ -934,7 +936,7 @@ class ss:
                 "Vector",
                 vhandle[0],
             )
-            vector = gb.Vector._from_obj(vhandle, dtype, size, name=name)
+            vector = gb.Vector._from_obj(ffi.gc(vhandle, gb.vector._free), dtype, size, name=name)
         else:
             check_status(status, vector)
         unclaim_buffer(indices)
@@ -1103,7 +1105,7 @@ class ss:
                 "Vector",
                 vhandle[0],
             )
-            vector = gb.Vector._from_obj(vhandle, dtype, size, name=name)
+            vector = gb.Vector._from_obj(ffi.gc(vhandle, gb.vector._free), dtype, size, name=name)
         else:
             check_status(status, vector)
         unclaim_buffer(bitmap)
@@ -1243,7 +1245,7 @@ class ss:
                 "Vector",
                 vhandle[0],
             )
-            vector = gb.Vector._from_obj(vhandle, dtype, size, name=name)
+            vector = gb.Vector._from_obj(ffi.gc(vhandle, gb.vector._free), dtype, size, name=name)
         else:
             check_status(status, vector)
         unclaim_buffer(values)

@@ -59,12 +59,18 @@ class Scalar(BaseType):
             else:
                 self.gb_obj = ffi_new(f"{dtype.c_type}*")
         else:
-            self.gb_obj = ffi_gc(ffi_new("GrB_Scalar*"), _free)
-            try:
-                call("GrB_Scalar_new", [_Pointer(self), dtype])
-            except Exception as exc:
-                print(exc)
-                1 / 0
+            self.gb_obj = ffi_new("GrB_Scalar*")
+            call("GrB_Scalar_new", [_Pointer(self), dtype])
+            self.gb_obj = ffi_gc(self.gb_obj, _free)
+        return self
+
+    @classmethod
+    def _from_obj(cls, gb_obj, dtype, *, is_cscalar=False, name=None):
+        self = object.__new__(cls)
+        self.name = f"s_{next(Scalar._name_counter)}" if name is None else name
+        self.gb_obj = gb_obj
+        self.dtype = dtype
+        self._is_cscalar = is_cscalar
         return self
 
     @property
@@ -329,12 +335,15 @@ class Scalar(BaseType):
         if is_cscalar is None:
             is_cscalar = self._is_cscalar
         if not is_cscalar and not self._is_cscalar and (dtype is None or dtype == self.dtype):
-            new_scalar = Scalar(self.dtype, is_cscalar=False, name=name)  # pragma: is_grbscalar
-            try:
-                call("GrB_Scalar_dup", [_Pointer(new_scalar), self])
-            except Exception as exc:
-                print(exc)
-                1 / 0
+            # new_scalar = Scalar(self.dtype, is_cscalar=False, name=name)  # pragma: is_grbscalar
+            new_scalar = Scalar._from_obj(
+                ffi_new("GrB_Scalar*"),
+                self.dtype,
+                is_cscalar=False,  # pragma: is_grbscalar
+                name=name,
+            )
+            call("GrB_Scalar_dup", [_Pointer(new_scalar), self])
+            new_scalar.gb_obj = ffi_gc(new_scalar.gb_obj, _free)
         elif dtype is None:
             new_scalar = Scalar(self.dtype, is_cscalar=is_cscalar, name=name)
             new_scalar.value = self

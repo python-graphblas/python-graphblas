@@ -48,12 +48,9 @@ class Matrix(BaseType):
         nrows = _as_scalar(nrows, _INDEX, is_cscalar=True)
         ncols = _as_scalar(ncols, _INDEX, is_cscalar=True)
         self.name = f"M_{next(Matrix._name_counter)}" if name is None else name
-        self.gb_obj = ffi_gc(ffi_new("GrB_Matrix*"), _free)
-        try:
-            call("GrB_Matrix_new", [_Pointer(self), self.dtype, nrows, ncols])
-        except Exception as exc:
-            print(exc)
-            1 / 0
+        self.gb_obj = ffi_new("GrB_Matrix*")
+        call("GrB_Matrix_new", [_Pointer(self), self.dtype, nrows, ncols])
+        self.gb_obj = ffi_gc(self.gb_obj, _free)
         self._nrows = nrows.value
         self._ncols = ncols.value
         self._parent = None
@@ -63,7 +60,7 @@ class Matrix(BaseType):
     @classmethod
     def _from_obj(cls, gb_obj, dtype, nrows, ncols, *, parent=None, name=None):
         self = object.__new__(cls)
-        self.gb_obj = ffi_gc(gb_obj, _free) if parent is None else gb_obj
+        self.gb_obj = gb_obj
         self.dtype = dtype
         self.name = f"M_{next(Matrix._name_counter)}" if name is None else name
         self._nrows = nrows
@@ -341,11 +338,8 @@ class Matrix(BaseType):
         else:
             new_mat = ffi_new("GrB_Matrix*")
             rv = Matrix._from_obj(new_mat, self.dtype, self._nrows, self._ncols, name=name)
-            try:
-                call("GrB_Matrix_dup", [_Pointer(rv), self])
-            except Exception as exc:
-                print(exc)
-                1 / 0
+            call("GrB_Matrix_dup", [_Pointer(rv), self])
+            rv.gb_obj = ffi_gc(rv.gb_obj, _free)
         return rv
 
     def diag(self, k=0, dtype=None, *, name=None):
