@@ -589,7 +589,7 @@ class ss:
             values=values,
         )
         if method == "export":
-            parent.gb_obj = NULL
+            parent.gb_obj[0] = NULL
         if parent.dtype._is_udt:
             rv["dtype"] = parent.dtype
         return rv

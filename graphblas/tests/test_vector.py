@@ -892,7 +892,7 @@ def test_del(capsys):
     import gc
 
     # shell_v does not have `gb_obj` attribute
-    shell_v = Vector.__new__(Vector)
+    shell_v = object.__new__(Vector)
     del shell_v
     # v has `gb_obj` of NULL
     v = Vector.from_values([0, 1], [0, 1])
@@ -900,7 +900,7 @@ def test_del(capsys):
     v.gb_obj = graphblas.ffi.NULL
     del v
     # let's clean up so we don't have a memory leak
-    v2 = Vector.__new__(Vector)
+    v2 = object.__new__(Vector)
     v2.gb_obj = gb_obj
     del v2
     gc.collect()
