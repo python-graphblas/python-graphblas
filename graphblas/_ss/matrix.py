@@ -274,7 +274,7 @@ def _concat_mn(tiles, *, is_matrix=None):
         raise TypeError(f"tiles argument must be list or tuple; got: {type(tiles)}")
     if not tiles:
         raise ValueError("tiles argument must not be empty")
-    dummy = Matrix.__new__(Matrix)
+    dummy = object.__new__(Matrix)
     m = len(tiles)
     n = None
     new_tiles = []
@@ -956,7 +956,7 @@ class ss:
                 if give_ownership:
                     if method == "export":
                         parent.__del__()
-                        parent.gb_obj = NULL
+                        parent.gb_obj[0] = NULL
                     else:
                         parent.clear()
             elif format == "coor":
@@ -1288,7 +1288,7 @@ class ss:
         rv["format"] = format
         rv["values"] = values
         if method == "export":
-            parent.gb_obj = NULL
+            parent.gb_obj[0] = NULL
         if parent.dtype._is_udt:
             rv["dtype"] = parent.dtype
         return rv
