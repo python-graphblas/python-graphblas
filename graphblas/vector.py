@@ -3,7 +3,7 @@ import warnings
 
 import numpy as np
 
-from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
+from . import _automethods, backend, binary, ffi, lib, monoid, select, semiring, utils
 from ._ss.vector import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
@@ -714,11 +714,13 @@ class Vector(BaseType):
         Compute SelectOp at each element of the calling Vector, keeping
         elements which return True.
         """
+        if isinstance(op, str):
+            op = select.from_string(op)
         method_name = "select"
         if thunk is None:
             thunk = False  # most basic form of 0 when unifying dtypes
         if type(thunk) is not Scalar:
-            dtype = self.dtype if self.dtype._is_udt else None
+            dtype = self.dtype if (self.dtype._is_udt and not op.is_positional) else None
             try:
                 thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")
             except TypeError:
