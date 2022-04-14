@@ -200,19 +200,19 @@ def test_npmonoid():
         ],
     ]
     # Complex monoids not working yet (they segfault upon creation in graphblas.operators)
-    # if _supports_complex:  # pragma: no branch
-    #     data.append(
-    #         [
-    #             [
-    #                 Vector.from_values(index, values1, dtype="FC64"),
-    #                 Vector.from_values(index, values2, dtype="FC64"),
-    #             ],
-    #             [
-    #                 np.array(values1, dtype=np.complex128),
-    #                 np.array(values2, dtype=np.complex128),
-    #             ],
-    #         ]
-    #     )
+    if _supports_complex:  # pragma: no branch
+        data.append(
+            [
+                [
+                    Vector.from_values(index, values1, dtype="FC64"),
+                    Vector.from_values(index, values2, dtype="FC64"),
+                ],
+                [
+                    np.array(values1, dtype=np.complex128),
+                    np.array(values2, dtype=np.complex128),
+                ],
+            ]
+        )
     blocklist = {}
     reduction_blocklist = {
         "BOOL": {"add"},
