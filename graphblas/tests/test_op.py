@@ -527,7 +527,7 @@ def test_monoid_udf():
     BinaryOp.register_new("plus_plus_one", plus_plus_one)
     Monoid.register_new("plus_plus_one", binary.plus_plus_one, -1)
     assert hasattr(monoid, "plus_plus_one")
-    assert set(monoid.plus_plus_one.types) == {
+    comp_set = {
         INT8,
         INT16,
         INT32,
@@ -539,6 +539,9 @@ def test_monoid_udf():
         FP32,
         FP64,
     }
+    if dtypes._supports_complex:
+        comp_set.update({FC32, FC64})
+    assert set(monoid.plus_plus_one.types) == comp_set
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
     w = v1.ewise_add(v2, monoid.plus_plus_one).new()
@@ -725,8 +728,10 @@ def test_binaryop_attributes():
             assert val.monoid is not None
             assert any(val[type_].monoid is not None for type_ in val.types)
         else:
-            assert val.monoid is None
-            assert all(val[type_].monoid is None for type_ in val.types)
+            assert val.monoid is None or val.monoid.name != attr
+            assert all(
+                val[type_].monoid is None or val[type_].monoid.name != attr for type_ in val.types
+            )
 
 
 @pytest.mark.slow
@@ -805,11 +810,13 @@ def test_semiring_attributes():
 
 
 def test_binaryop_superset_monoids():
-    monoid_names = {x for x in dir(monoid) if not x.startswith("_")} - {"udt_any"}
-    binary_names = {x for x in dir(binary) if not x.startswith("_")} - {"udt_any"}
+    ignore = {"udt_any", "lazy2", "monoid_pickle", "monoid_pickle_par"}
+    monoid_names = {x for x in dir(monoid) if not x.startswith("_")} - ignore
+    binary_names = {x for x in dir(binary) if not x.startswith("_")} - ignore
     diff = monoid_names - binary_names
     assert not diff
     extras = {x for x in set(dir(monoid.numpy)) - set(dir(binary.numpy)) if not x.startswith("_")}
+    extras -= ignore
     assert not extras, ", ".join(sorted(extras))
 
 

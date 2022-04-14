@@ -58,6 +58,15 @@ class Scalar(BaseType):
             call("GrB_Scalar_new", [_Pointer(self), dtype])
         return self
 
+    @classmethod
+    def _from_obj(cls, gb_obj, dtype, *, is_cscalar=False, name=None):
+        self = object.__new__(cls)
+        self.name = f"s_{next(Scalar._name_counter)}" if name is None else name
+        self.gb_obj = gb_obj
+        self.dtype = dtype
+        self._is_cscalar = is_cscalar
+        return self
+
     def __del__(self):
         gb_obj = getattr(self, "gb_obj", None)
         if gb_obj is not None and lib is not None and "GB_Scalar_opaque" in str(gb_obj):
@@ -326,7 +335,12 @@ class Scalar(BaseType):
         if is_cscalar is None:
             is_cscalar = self._is_cscalar
         if not is_cscalar and not self._is_cscalar and (dtype is None or dtype == self.dtype):
-            new_scalar = Scalar(self.dtype, is_cscalar=False, name=name)  # pragma: is_grbscalar
+            new_scalar = Scalar._from_obj(
+                ffi_new("GrB_Scalar*"),
+                self.dtype,
+                is_cscalar=False,  # pragma: is_grbscalar
+                name=name,
+            )
             call("GrB_Scalar_dup", [_Pointer(new_scalar), self])
         elif dtype is None:
             new_scalar = Scalar(self.dtype, is_cscalar=is_cscalar, name=name)

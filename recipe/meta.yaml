@@ -21,7 +21,7 @@ requirements:
   run:
     - python
     - numba
-    - python-suitesparse-graphblas >=7.0.2,<7.1
+    - python-suitesparse-graphblas >=7.0.3.1,<7.1
     - pytest-runner
 
 about:
