@@ -1110,6 +1110,7 @@ class UnaryOp(OpBase):
 
 
 class SelectOp(OpBase):
+    __slots__ = ("is_positional",)
     _module = select
     _modname = "select"
     _is_udt = False

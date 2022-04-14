@@ -3254,6 +3254,9 @@ def test_udt():
     result = unary.positioni(A).new()
     expected = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 0, 1, 1])
     assert result.isequal(expected)
+    AB = unary.one(select.tril(A).new()).new()
+    BA = select.tril(unary.one(A).new()).new()
+    assert AB.isequal(BA)
 
     # Just make sure these work
     for aggop in [agg.any_value, agg.first, agg.last, agg.count]:

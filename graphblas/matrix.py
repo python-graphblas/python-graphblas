@@ -835,6 +835,7 @@ class Matrix(BaseType):
             nrows=self._nrows,
             ncols=self._ncols,
             dtype=self.dtype,
+            at=self._is_transposed,
         )
 
     def reduce_rowwise(self, op=monoid.plus):
