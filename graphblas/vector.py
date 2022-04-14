@@ -3,7 +3,7 @@ import warnings
 
 import numpy as np
 
-from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
+from . import _automethods, backend, binary, ffi, lib, monoid, select, semiring, utils
 from ._ss.vector import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
@@ -708,6 +708,51 @@ class Vector(BaseType):
             size=self._size,
         )
 
+    def select(self, op, thunk=None):
+        """
+        GrB_Vector_select
+        Compute SelectOp at each element of the calling Vector, keeping
+        elements which return True.
+        """
+        if isinstance(op, str):
+            op = select.from_string(op)
+        method_name = "select"
+        if thunk is None:
+            thunk = False  # most basic form of 0 when unifying dtypes
+        if type(thunk) is not Scalar:
+            dtype = self.dtype if (self.dtype._is_udt and not op.is_positional) else None
+            try:
+                thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")
+            except TypeError:
+                thunk = self._expect_type(
+                    thunk,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="thunk",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        op = get_typed_op(op, self.dtype, thunk.dtype, is_right_scalar=True, kind="select")
+        self._expect_op(op, ("SelectOp", "IndexUnaryOp"), within=method_name, argname="op")
+        if thunk._is_cscalar:
+            if thunk.dtype._is_udt:
+                dtype_name = "UDT"
+                thunk = _Pointer(thunk)
+            else:
+                dtype_name = thunk.dtype.name
+            cfunc_name = f"GrB_Vector_select_{dtype_name}"
+        else:
+            cfunc_name = "GrB_Vector_select_Scalar"
+        return VectorExpression(
+            method_name,
+            cfunc_name,
+            [self, thunk],
+            op=op,
+            expr_repr="{0.name}.select({op}, thunk={1._expr_name})",
+            size=self._size,
+            dtype=self.dtype,
+        )
+
     def reduce(self, op=monoid.plus, *, allow_empty=True):
         """
         GrB_Vector_reduce
@@ -1067,6 +1112,7 @@ class VectorExpression(BaseExpression):
     nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(_automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
+    select = wrapdoc(Vector.select)(property(_automethods.select))
     ss = wrapdoc(Vector.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(_automethods.to_values))
@@ -1137,6 +1183,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(_automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
+    select = wrapdoc(Vector.select)(property(_automethods.select))
     ss = wrapdoc(Vector.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(_automethods.to_values))

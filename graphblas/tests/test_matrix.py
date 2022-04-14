@@ -9,7 +9,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas
-from graphblas import agg, binary, dtypes, monoid, semiring, unary
+from graphblas import agg, binary, dtypes, monoid, select, semiring, unary
 from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
@@ -1080,6 +1080,30 @@ def test_apply_binary(A):
     w3 = A.apply(monoid.plus, right=1).new()
     assert w1.isequal(w2)
     assert w1.isequal(w3)
+
+
+def test_select(A):
+    A3 = Matrix.from_values([0, 3, 3, 6], [3, 0, 2, 4], [3, 3, 3, 3], nrows=7, ncols=7)
+    w1 = A.select(select.valueeq, 3).new()
+    w2 = A.select("==", 3).new()
+    w3 = select.value(A == 3).new()
+    assert w1.isequal(A3)
+    assert w2.isequal(A3)
+    assert w3.isequal(A3)
+
+    A2cols = Matrix.from_values([3, 0, 3, 5, 6], [0, 1, 2, 2, 2], [3, 2, 3, 1, 5], nrows=7, ncols=7)
+    w4 = select.colle(A, 2).new()
+    w5 = A.select("col<=", 2).new()
+    w6 = select.column(A < 3).new()
+    assert w4.isequal(A2cols)
+    assert w5.isequal(A2cols)
+    assert w6.isequal(A2cols)
+
+    Aupper = Matrix.from_values(
+        [0, 0, 1, 2, 4, 1], [1, 3, 4, 5, 5, 6], [2, 3, 8, 1, 7, 4], nrows=7, ncols=7
+    )
+    w7 = A.select("TRIU").new()
+    assert w7.isequal(Aupper)
 
 
 def test_reduce_row(A):
@@ -3230,6 +3254,9 @@ def test_udt():
     result = unary.positioni(A).new()
     expected = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 0, 1, 1])
     assert result.isequal(expected)
+    AB = unary.one(select.tril(A).new()).new()
+    BA = select.tril(unary.one(A).new()).new()
+    assert AB.isequal(BA)
 
     # Just make sure these work
     for aggop in [agg.any_value, agg.first, agg.last, agg.count]:

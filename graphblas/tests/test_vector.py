@@ -9,7 +9,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas
-from graphblas import agg, binary, dtypes, monoid, semiring, unary
+from graphblas import agg, binary, dtypes, monoid, select, semiring, unary
 from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
@@ -645,6 +645,22 @@ def test_apply_empty(v):
     s = Scalar(int, is_cscalar=True)
     with pytest.raises(EmptyObject):
         v.apply(binary.plus, s).new()
+
+
+def test_select(v):
+    result = Vector.from_values([1, 3], [1, 1], size=7)
+    w1 = v.select(select.valueeq, 1).new()
+    w2 = v.select("==", 1).new()
+    w3 = select.rowle(v, 3).new()
+    w4 = v.select("row<=", 3).new()
+    w5 = select.value(v == 1).new()
+    w6 = select.row(v < 4).new()
+    assert w1.isequal(result)
+    assert w2.isequal(result)
+    assert w3.isequal(result)
+    assert w4.isequal(result)
+    assert w5.isequal(result)
+    assert w6.isequal(result)
 
 
 def test_reduce(v):

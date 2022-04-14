@@ -3,7 +3,7 @@ import warnings
 
 import numpy as np
 
-from . import _automethods, backend, binary, ffi, lib, monoid, semiring, utils
+from . import _automethods, backend, binary, ffi, lib, monoid, select, semiring, utils
 from ._ss.matrix import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, FP64, lookup_dtype, unify
@@ -791,6 +791,53 @@ class Matrix(BaseType):
             bt=self._is_transposed,
         )
 
+    def select(self, op, thunk=None):
+        """
+        GrB_Matrix_select
+        Compute SelectOp at each element of the calling Matrix, keeping
+        elements which return True.
+        """
+        if isinstance(op, str):
+            op = select.from_string(op)
+        method_name = "select"
+        if thunk is None:
+            thunk = False  # most basic form of 0 when unifying dtypes
+        if type(thunk) is not Scalar:
+            dtype = self.dtype if (self.dtype._is_udt and not op.is_positional) else None
+            try:
+                thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")
+            except TypeError:
+                thunk = self._expect_type(
+                    thunk,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="thunk",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        op = get_typed_op(op, self.dtype, thunk.dtype, is_right_scalar=True, kind="select")
+        self._expect_op(op, ("SelectOp", "IndexUnaryOp"), within=method_name, argname="op")
+        if thunk._is_cscalar:
+            if thunk.dtype._is_udt:
+                dtype_name = "UDT"
+                thunk = _Pointer(thunk)
+            else:
+                dtype_name = thunk.dtype.name
+            cfunc_name = f"GrB_Matrix_select_{dtype_name}"
+        else:
+            cfunc_name = "GrB_Matrix_select_Scalar"
+        return MatrixExpression(
+            method_name,
+            cfunc_name,
+            [self, thunk],
+            op=op,
+            expr_repr="{0.name}.select({op}, thunk={1._expr_name})",
+            nrows=self._nrows,
+            ncols=self._ncols,
+            dtype=self.dtype,
+            at=self._is_transposed,
+        )
+
     def reduce_rowwise(self, op=monoid.plus):
         """
         GrB_Matrix_reduce
@@ -1427,6 +1474,7 @@ class MatrixExpression(BaseExpression):
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    select = wrapdoc(Matrix.select)(property(_automethods.select))
     ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
@@ -1505,6 +1553,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    select = wrapdoc(Matrix.select)(property(_automethods.select))
     ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
@@ -1607,6 +1656,7 @@ class TransposedMatrix:
     mxm = Matrix.mxm
     kronecker = Matrix.kronecker
     apply = Matrix.apply
+    select = Matrix.select
     reduce_rowwise = Matrix.reduce_rowwise
     reduce_columnwise = Matrix.reduce_columnwise
     reduce_scalar = Matrix.reduce_scalar

@@ -68,6 +68,7 @@ _SPECIAL_ATTRS = {
     "operator",
     "recorder",
     "scalar",
+    "select",
     "semiring",
     "ss",
     "tests",
