@@ -420,6 +420,7 @@ def _deserialize_parameterized(parameterized_op, args, kwargs):
 
 class ParameterizedUdf:
     __slots__ = "name", "__call__", "_anonymous", "__weakref__"
+    is_positional = False
 
     def __init__(self, name, anonymous):
         self.name = name
