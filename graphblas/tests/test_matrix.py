@@ -305,7 +305,6 @@ def test_mxm_transpose(A):
 
 
 def test_mxm_nonsquare():
-    return  # XXX
     A = Matrix.from_values([0, 0, 0], [0, 2, 4], [1, 2, 3], nrows=1, ncols=5)
     B = Matrix.from_values([0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1)
     C = Matrix(A.dtype, nrows=1, ncols=1)
@@ -1093,7 +1092,6 @@ def test_reduce_row(A):
 
 @pytest.mark.slow
 def test_reduce_agg(A):
-    return  # XXX
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
     w1 = A.reduce_rowwise(agg.sum).new()
     assert w1.isequal(result)
@@ -1185,7 +1183,6 @@ def test_reduce_agg(A):
 
 
 def test_reduce_agg_argminmax(A):
-    return  # XXX
     # reduce_rowwise
     expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [1, 6, 5, 0, 5, 2, 4])
     w1b = A.reduce_rowwise(agg.argmin).new()
@@ -1338,7 +1335,6 @@ def test_reduce_agg_firstlast_index(A):
 
 
 def test_reduce_agg_empty():
-    return  # XXX
     A = Matrix("UINT8", nrows=3, ncols=4)
     for B in [A, A.T]:
         ve = Vector(bool, size=B.nrows)
@@ -1356,7 +1352,6 @@ def test_reduce_agg_empty():
 
 
 def test_reduce_row_udf(A):
-    return  # XXX
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
     binop = graphblas.operator.BinaryOp.register_anonymous(lambda x, y: x + y)
     with pytest.raises(NotImplementedException):
@@ -2456,7 +2451,6 @@ def test_nbytes(A):
 
 @autocompute
 def test_auto(A, v):
-    return  # XXX
     expected = binary.land[bool](A & A).new()
     B = A.dup(dtype=bool)
     for expr in [(B & B), binary.land[bool](A & A)]:

@@ -1,3 +1,4 @@
+import ctypes
 import warnings
 from numbers import Integral, Number
 
@@ -1224,6 +1225,7 @@ class ss:
                 values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             else:
                 is_c_order = format == "bitmapr"
+                ctypes.pythonapi.Py_IncRef(ctypes.c_size_t(id(bool_dtype)))  # XXX
                 bitmap = claim_buffer_2d(
                     ffi,
                     Ab[0],
@@ -1238,6 +1240,7 @@ class ss:
                     if values.size > 1:  # pragma: no cover
                         values = values[:1]
                 else:
+                    ctypes.pythonapi.Py_IncRef(ctypes.c_size_t(id(dtype)))  # XXX
                     values = claim_buffer_2d(
                         ffi,
                         Ax[0],
@@ -1278,6 +1281,7 @@ class ss:
                 rv = {"nrows": nrows, "ncols": ncols}
             else:
                 is_c_order = format == "fullr"
+                ctypes.pythonapi.Py_IncRef(ctypes.c_size_t(id(dtype)))  # XXX
                 values = claim_buffer_2d(
                     ffi, Ax[0], Ax_size[0] // dtype.itemsize, nrows, ncols, dtype, is_c_order
                 )

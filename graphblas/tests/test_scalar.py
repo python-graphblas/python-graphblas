@@ -263,7 +263,6 @@ def test_scalar_to_numpy(s):
 
 
 def test_neg():
-    return  # XXX
     for dtype in sorted(
         (dtype for dtype in vars(dtypes).values() if isinstance(dtype, dtypes.DataType)),
         key=lambda x: x.name,
@@ -366,7 +365,6 @@ def test_ndim(s):
 # @pytest.mark.parametrize("dtype", ["FC32", "FC64"])  # This segfaults
 @pytest.mark.parametrize("dtype", ["FC64", "FC32"])
 def test_scalar_complex(dtype):
-    return  # XXX
     s = Scalar(dtype)
     assert s.is_empty
     s.value = 1
