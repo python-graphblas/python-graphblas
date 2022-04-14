@@ -527,7 +527,7 @@ def test_monoid_udf():
     BinaryOp.register_new("plus_plus_one", plus_plus_one)
     Monoid.register_new("plus_plus_one", binary.plus_plus_one, -1)
     assert hasattr(monoid, "plus_plus_one")
-    assert set(monoid.plus_plus_one.types) == {
+    comp_set = {
         INT8,
         INT16,
         INT32,
@@ -539,6 +539,9 @@ def test_monoid_udf():
         FP32,
         FP64,
     }
+    if dtypes._supports_complex:
+        comp_set.update({FC32, FC64})
+    assert set(monoid.plus_plus_one.types) == comp_set
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
     w = v1.ewise_add(v2, monoid.plus_plus_one).new()

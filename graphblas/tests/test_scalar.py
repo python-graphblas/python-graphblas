@@ -1,5 +1,6 @@
 import inspect
 import pickle
+import random
 import sys
 import weakref
 
@@ -266,7 +267,7 @@ def test_neg():
     for dtype in sorted(
         (dtype for dtype in vars(dtypes).values() if isinstance(dtype, dtypes.DataType)),
         key=lambda x: x.name,
-        reverse=True,  # XXX: segfault when False!!!
+        reverse=random.choice([False, True]),  # used to segfault when False
     ):
         s = Scalar.from_value(1, dtype=dtype)
         empty = Scalar(dtype)

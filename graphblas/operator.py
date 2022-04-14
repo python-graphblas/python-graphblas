@@ -1772,8 +1772,7 @@ class Monoid(OpBase):
                 ret_type = binaryop[type_].return_type
                 # If there is a domain mismatch, then DomainMismatch will be raised
                 # below if identities were explicitly given.
-                # Skip complex dtypes for now, because they segfault!
-                if type_ != ret_type and not explicit_identities or "FC" in type_.name:
+                if type_ != ret_type and not explicit_identities:
                     continue
                 new_monoid = ffi_new("GrB_Monoid*")
                 func = libget(f"GrB_Monoid_new_{type_.name}")
