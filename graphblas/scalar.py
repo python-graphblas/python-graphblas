@@ -335,7 +335,6 @@ class Scalar(BaseType):
         if is_cscalar is None:
             is_cscalar = self._is_cscalar
         if not is_cscalar and not self._is_cscalar and (dtype is None or dtype == self.dtype):
-            # new_scalar = Scalar(self.dtype, is_cscalar=False, name=name)  # pragma: is_grbscalar
             new_scalar = Scalar._from_obj(
                 ffi_new("GrB_Scalar*"),
                 self.dtype,
