@@ -181,6 +181,7 @@ def test_unaryop_parameterized():
         return inner
 
     op = UnaryOp.register_anonymous(plus_x, parameterized=True)
+    assert not op.is_positional
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v0 = v.apply(op).new()
     assert v.isequal(v0, check_dtype=True)
@@ -205,6 +206,7 @@ def test_binaryop_parameterized():
         return inner
 
     op = BinaryOp.register_anonymous(plus_plus_x, parameterized=True)
+    assert not op.is_positional
     assert op.monoid is None
     assert op(1).monoid is None
     v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
@@ -277,6 +279,7 @@ def test_monoid_parameterized():
     bin_op1 = bin_op(1)
     assert bin_op1.monoid is None
     monoid = Monoid.register_anonymous(bin_op, plus_plus_x_identity, name="my_monoid")
+    assert not monoid.is_positional
     assert bin_op.monoid is monoid
     assert bin_op(1).monoid is monoid(1)
     assert monoid(2) is bin_op(2).monoid
@@ -354,6 +357,7 @@ def test_semiring_parameterized():
     mymonoid = Monoid.register_anonymous(bin_op, plus_plus_x_identity)
     # monoid and binaryop are both parameterized
     mysemiring = Semiring.register_anonymous(mymonoid, bin_op, name="my_semiring")
+    assert not mysemiring.is_positional
     assert mysemiring.name == "my_semiring"
 
     A = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
