@@ -2602,7 +2602,12 @@ def test_expr_is_like_matrix(A):
         "resize",
         "update",
     }
-    assert attrs - expr_attrs == expected
+    assert attrs - expr_attrs == expected, (
+        "If you see this message, you probably added a method to Matrix.  You may need to "
+        "add an entry to `matrix` or `matrix_vector` set in `graphblas._automethods.py` "
+        "and then run `python -m graphblas._automethods`.  If you're messing with infix "
+        "methods, then you may need to run `python -m graphblas._infixmethods`."
+    )
     assert attrs - infix_attrs == expected
     # TransposedMatrix is used differently than other expressions,
     # so maybe it shouldn't support everything.
@@ -2638,7 +2643,12 @@ def test_index_expr_is_like_matrix(A):
         "from_values",
         "resize",
     }
-    assert attrs - expr_attrs == expected
+    assert attrs - expr_attrs == expected, (
+        "If you see this message, you probably added a method to Matrix.  You may need to "
+        "add an entry to `matrix` or `matrix_vector` set in `graphblas._automethods.py` "
+        "and then run `python -m graphblas._automethods`.  If you're messing with infix "
+        "methods, then you may need to run `python -m graphblas._infixmethods`."
+    )
 
 
 def test_flatten(A):
@@ -3291,20 +3301,25 @@ def test_reposition(A):
     rows = rows.astype(int)
     cols = cols.astype(int)
 
-    def get_expected(row_offset, col_offset, nrows, ncols):
-        r = rows + row_offset
-        c = cols + col_offset
+    def get_expected(row_offset, col_offset, nrows, ncols, is_transposed):
+        r = rows
+        c = cols
+        if is_transposed:
+            r, c = c, r
+        r = r + row_offset
+        c = c + col_offset
         mask = (r >= 0) & (r < nrows) & (c >= 0) & (c < ncols)
         return Matrix.from_values(r[mask], c[mask], values[mask], nrows=nrows, ncols=ncols)
 
     for row_offset in range(-A.nrows - 2, A.nrows + 3, 3):
         for col_offset in range(-A.ncols - 2, A.ncols + 3, 3):
-            result = A.reposition(row_offset, col_offset)
-            expected = get_expected(row_offset, col_offset, A.nrows, A.ncols)
-            assert result.isequal(expected)
-            result = A.reposition(row_offset, col_offset, nrows=3, ncols=10)
-            expected = get_expected(row_offset, col_offset, 3, 10)
-            assert result.isequal(expected)
-            result = A.reposition(row_offset, col_offset, nrows=10, ncols=3)
-            expected = get_expected(row_offset, col_offset, 10, 3)
-            assert result.isequal(expected)
+            for M in [A, A.T]:
+                result = M.reposition(row_offset, col_offset)
+                expected = get_expected(row_offset, col_offset, M.nrows, M.ncols, M._is_transposed)
+                assert result.isequal(expected)
+                result = M.reposition(row_offset, col_offset, nrows=3, ncols=10)
+                expected = get_expected(row_offset, col_offset, 3, 10, M._is_transposed)
+                assert result.isequal(expected)
+                result = M.reposition(row_offset, col_offset, nrows=10, ncols=3)
+                expected = get_expected(row_offset, col_offset, 10, 3, M._is_transposed)
+                assert result.isequal(expected)

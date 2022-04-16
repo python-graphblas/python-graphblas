@@ -954,12 +954,19 @@ class Matrix(BaseType):
         else:
             col_start = 0
             col_stop = max(0, ncols - col_offset)
-        chunk = self[row_start:row_stop, col_start:col_stop].new(name="M_repositioning")
         rv = Matrix(self.dtype, nrows, ncols, name=name)
-        rv[
-            row_start + row_offset : row_start + row_offset + chunk._nrows,
-            col_start + col_offset : col_start + col_offset + chunk._ncols,
-        ] = chunk
+        if self._is_transposed:
+            chunk = self._matrix[col_start:col_stop, row_start:row_stop].new(name="M_repositioning")
+            rv[
+                row_start + row_offset : row_start + row_offset + chunk._ncols,
+                col_start + col_offset : col_start + col_offset + chunk._nrows,
+            ] = chunk.T
+        else:
+            chunk = self[row_start:row_stop, col_start:col_stop].new(name="M_repositioning")
+            rv[
+                row_start + row_offset : row_start + row_offset + chunk._nrows,
+                col_start + col_offset : col_start + col_offset + chunk._ncols,
+            ] = chunk
         return rv
 
     ##################################
@@ -1707,6 +1714,7 @@ class TransposedMatrix:
     reduce_rowwise = Matrix.reduce_rowwise
     reduce_columnwise = Matrix.reduce_columnwise
     reduce_scalar = Matrix.reduce_scalar
+    reposition = Matrix.reposition
 
     # Operator sugar
     __or__ = Matrix.__or__
