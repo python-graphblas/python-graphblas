@@ -843,6 +843,8 @@ class Vector(BaseType):
         Positive offset moves values to the right, negative to the left.
         Values repositioned outside of the new Vector are dropped (i.e., they don't wrap around).
 
+        This is not a standard GraphBLAS method.  This is implemented with an extract and assign.
+
         Parameters
         ----------
         offset : int

@@ -924,6 +924,8 @@ class Matrix(BaseType):
         Positive offset moves values to the right (or down), negative to the left (or up).
         Values repositioned outside of the new Matrix are dropped (i.e., they don't wrap around).
 
+        This is not a standard GraphBLAS method.  This is implemented with an extract and assign.
+
         Parameters
         ----------
         row_offset : int
