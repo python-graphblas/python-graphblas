@@ -3284,3 +3284,27 @@ def test_udt():
     info = A.ss.export("coor")
     result = A.ss.import_any(**info)
     assert result.isequal(A)
+
+
+def test_reposition(A):
+    rows, cols, values = A.to_values()
+    rows = rows.astype(int)
+    cols = cols.astype(int)
+
+    def get_expected(row_offset, col_offset, nrows, ncols):
+        r = rows + row_offset
+        c = cols + col_offset
+        mask = (r >= 0) & (r < nrows) & (c >= 0) & (c < ncols)
+        return Matrix.from_values(r[mask], c[mask], values[mask], nrows=nrows, ncols=ncols)
+
+    for row_offset in range(-A.nrows - 2, A.nrows + 3, 3):
+        for col_offset in range(-A.ncols - 2, A.ncols + 3, 3):
+            result = A.reposition(row_offset, col_offset)
+            expected = get_expected(row_offset, col_offset, A.nrows, A.ncols)
+            assert result.isequal(expected)
+            result = A.reposition(row_offset, col_offset, nrows=3, ncols=10)
+            expected = get_expected(row_offset, col_offset, 3, 10)
+            assert result.isequal(expected)
+            result = A.reposition(row_offset, col_offset, nrows=10, ncols=3)
+            expected = get_expected(row_offset, col_offset, 10, 3)
+            assert result.isequal(expected)

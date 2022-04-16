@@ -1959,3 +1959,24 @@ def test_ewise_union_infix():
             op(v & w, 5, left_default=10, right_default=20)
         with pytest.raises(TypeError):
             op(v, w, left_default=10, right_default=20)
+
+
+def test_reposition(v):
+    indices, values = v.to_values()
+    indices = indices.astype(int)
+
+    def get_expected(offset, size):
+        ind = indices + offset
+        mask = (ind >= 0) & (ind < size)
+        return Vector.from_values(ind[mask], values[mask], size=size)
+
+    for offset in range(-v.size - 2, v.size + 3):
+        result = v.reposition(offset)
+        expected = get_expected(offset, v.size)
+        assert result.isequal(expected)
+        result = v.reposition(offset, size=3)
+        expected = get_expected(offset, 3)
+        assert result.isequal(expected)
+        result = v.reposition(offset, size=10)
+        expected = get_expected(offset, 10)
+        assert result.isequal(expected)

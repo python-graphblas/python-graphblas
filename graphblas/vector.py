@@ -837,6 +837,35 @@ class Vector(BaseType):
         )
         return expr
 
+    def reposition(self, offset, *, size=None, name=None):
+        """Return a new Vector with the values repositioned by offset.
+
+        Positive offset moves values to the right, negative to the left.
+        Values repositioned outside of the new Vector are dropped (i.e., they don't wrap around).
+
+        Parameters
+        ----------
+        offset : int
+        size : int, optional
+            The size of the new Vector.  If not specified, same size as input Vector.
+        name : str, optional
+            Name of the new Vector.
+
+        """
+        if size is None:
+            size = self._size
+        offset = int(offset)
+        if offset < 0:
+            start = -offset
+            stop = start + size
+        else:
+            start = 0
+            stop = max(0, size - offset)
+        chunk = self[start:stop].new(name="v_repositioning")
+        rv = Vector(self.dtype, size, name=name)
+        rv[start + offset : start + offset + chunk._size] = chunk
+        return rv
+
     ##################################
     # Extract and Assign index methods
     ##################################
@@ -1112,6 +1141,7 @@ class VectorExpression(BaseExpression):
     nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(_automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
+    reposition = wrapdoc(Vector.reposition)(property(_automethods.reposition))
     select = wrapdoc(Vector.select)(property(_automethods.select))
     ss = wrapdoc(Vector.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))
@@ -1183,6 +1213,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(_automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
+    reposition = wrapdoc(Vector.reposition)(property(_automethods.reposition))
     select = wrapdoc(Vector.select)(property(_automethods.select))
     ss = wrapdoc(Vector.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))

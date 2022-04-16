@@ -917,6 +917,51 @@ class Matrix(BaseType):
             is_cscalar=not allow_empty,
         )
 
+    # Unofficial methods
+    def reposition(self, row_offset, column_offset, *, nrows=None, ncols=None, name=None):
+        """Return a new Matrix with the values repositioned by row_offset and column_offset.
+
+        Positive offset moves values to the right (or down), negative to the left (or up).
+        Values repositioned outside of the new Matrix are dropped (i.e., they don't wrap around).
+
+        Parameters
+        ----------
+        row_offset : int
+        column_offset : int
+        nrows : int, optional
+            The nrows of the new Matrix.  If not specified, same nrows as input Matrix.
+        ncols : int, optional
+            The ncols of the new Matrix.  If not specified, same ncols as input Matrix.
+        name : str, optional
+            Name of the new Matrix.
+
+        """
+        if nrows is None:
+            nrows = self._nrows
+        if ncols is None:
+            ncols = self._ncols
+        row_offset = int(row_offset)
+        if row_offset < 0:
+            row_start = -row_offset
+            row_stop = row_start + nrows
+        else:
+            row_start = 0
+            row_stop = max(0, nrows - row_offset)
+        col_offset = int(column_offset)
+        if col_offset < 0:
+            col_start = -col_offset
+            col_stop = col_start + ncols
+        else:
+            col_start = 0
+            col_stop = max(0, ncols - col_offset)
+        chunk = self[row_start:row_stop, col_start:col_stop].new(name="M_repositioning")
+        rv = Matrix(self.dtype, nrows, ncols, name=name)
+        rv[
+            row_start + row_offset : row_start + row_offset + chunk._nrows,
+            col_start + col_offset : col_start + col_offset + chunk._ncols,
+        ] = chunk
+        return rv
+
     ##################################
     # Extract and Assign index methods
     ##################################
@@ -1474,6 +1519,7 @@ class MatrixExpression(BaseExpression):
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    reposition = wrapdoc(Matrix.reposition)(property(_automethods.reposition))
     select = wrapdoc(Matrix.select)(property(_automethods.select))
     ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
@@ -1553,6 +1599,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    reposition = wrapdoc(Matrix.reposition)(property(_automethods.reposition))
     select = wrapdoc(Matrix.select)(property(_automethods.select))
     ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
