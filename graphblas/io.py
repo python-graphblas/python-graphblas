@@ -159,8 +159,8 @@ def mmread(source, *, dup_op=None, name=None):
     https://math.nist.gov/MatrixMarket/formats.html
     """
     try:
-        from scipy.io import mmread  # noqa
-        from scipy.sparse import coo_matrix  # noqa
+        from scipy.io import mmread
+        from scipy.sparse import coo_matrix
     except ImportError:  # pragma: no cover
         raise ImportError("scipy is required to read Matrix Market files") from None
     array = mmread(source)
@@ -180,7 +180,7 @@ def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=
     https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.mmwrite.html
     """
     try:
-        from scipy.io import mmwrite  # noqa
+        from scipy.io import mmwrite
     except ImportError:  # pragma: no cover
         raise ImportError("scipy is required to write Matrix Market files") from None
 

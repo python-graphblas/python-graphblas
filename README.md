@@ -6,7 +6,6 @@
 [![Tests](https://github.com/metagraph-dev/python-graphblas/workflows/Tests/badge.svg?branch=main)](https://github.com/metagraph-dev/python-graphblas/actions)
 [![Docs](https://readthedocs.org/projects/python-graphblas/badge/?version=latest)](https://python-graphblas.readthedocs.io/en/latest/)
 [![Coverage](https://coveralls.io/repos/metagraph-dev/python-graphblas/badge.svg?branch=main)](https://coveralls.io/r/metagraph-dev/python-graphblas)
-[![Code style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/metagraph-dev/python-graphblas/HEAD?filepath=notebooks%2FIntro%20to%20GraphBLAS%20%2B%20SSSP%20example.ipynb)
 
 Python wrapper around GraphBLAS

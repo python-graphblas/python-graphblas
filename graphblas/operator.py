@@ -892,7 +892,7 @@ class UnaryOp(OpBase):
         return_types = {}
         nt = numba.types
         if not is_udt:
-            for type_, sample_val in _sample_values.items():
+            for type_ in _sample_values:
                 sig = (type_.numba_type,)
                 try:
                     unary_udf.compile(sig)
@@ -1391,7 +1391,7 @@ class BinaryOp(OpBase):
         return_types = {}
         nt = numba.types
         if not is_udt:
-            for type_, sample_val in _sample_values.items():
+            for type_ in _sample_values:
                 sig = (type_.numba_type, type_.numba_type)
                 try:
                     binary_udf.compile(sig)

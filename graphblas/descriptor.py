@@ -73,7 +73,7 @@ def lookup(
     mask_complement=False,
     mask_structure=False,
     transpose_first=False,
-    transpose_second=False
+    transpose_second=False,
 ):
     key = (
         output_replace,

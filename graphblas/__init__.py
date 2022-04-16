@@ -4,7 +4,7 @@ from importlib.abc import Loader as _Loader
 from importlib.abc import MetaPathFinder as _MetaPathFinder
 
 from . import mask  # noqa
-from ._version import get_versions  # noqa
+from ._version import get_versions
 
 
 class replace:
@@ -110,7 +110,7 @@ def init(backend="suitesparse", blocking=False):
 def _init(backend_arg, blocking, automatic=False):
     global _init_params, backend, lib, ffi
 
-    passed_params = dict(backend=backend_arg, blocking=blocking, automatic=automatic)
+    passed_params = {"backend": backend_arg, "blocking": blocking, "automatic": automatic}
     if _init_params is not None:
         if blocking is None:
             passed_params["blocking"] = _init_params["blocking"]

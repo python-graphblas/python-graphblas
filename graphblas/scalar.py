@@ -29,7 +29,7 @@ def _scalar_index(name):
 class Scalar(BaseType):
     """
     GraphBLAS Scalar
-    Pseudo-object for GraphBLAS functions which accumlate into a scalar type
+    Pseudo-object for GraphBLAS functions which accumulate into a scalar type
     """
 
     __slots__ = "_empty", "_is_cscalar"
