@@ -3834,6 +3834,7 @@ class ss:
             - smallest : take the smallest values (if tied, may take any)
             - largest : take the largest values (if tied, may take any)
             - random : take values randomly with equal probability and without replacement
+              Chosen values may not be ordered randomly
         reverse : bool, default False
             Reverse the values in each row when True
         asindex : bool, default False
@@ -3867,6 +3868,7 @@ class ss:
             - smallest : take the smallest values (if tied, may take any)
             - largest : take the largest values (if tied, may take any)
             - random : take values randomly with equal probability and without replacement
+              Chosen values may not be ordered randomly
         reverse : bool, default False
             Reverse the values in each column when True
         asindex : bool, default False

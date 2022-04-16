@@ -1784,9 +1784,9 @@ def test_import_export(A, do_iso, methods):
             assert B5b.ss.is_iso is do_iso
         else:
             # B5b == [A, A]
-            B5b.nvals == 2 * A.nvals
-            B5b.nrows == A.nrows
-            B5b.ncols == 2 * A.ncols
+            assert B5b.nvals == 2 * A.nvals
+            assert B5b.nrows == 2 * A.nrows
+            assert B5b.ncols == A.ncols
     else:
         A5.ss.pack_any(**d)
         assert A5.isequal(A)
@@ -2201,26 +2201,26 @@ def test_no_bool_or_eq(A):
     with pytest.raises(TypeError, match="not defined"):
         bool(A)
     # with pytest.raises(TypeError, match="not defined"):
-    A == A
+    assert (A == A) is not None
     with pytest.raises(TypeError, match="not defined"):
         bool(A.S)
     with pytest.raises(TypeError, match="not defined"):
-        A.S == A.S
+        assert A.S == A.S
     expr = A.ewise_mult(A)
     with pytest.raises(TypeError, match="not defined"):
         bool(expr)
     with pytest.raises(TypeError, match="not enabled"):
-        expr == expr
+        assert expr == expr
     assigner = A[1, 2]()
     with pytest.raises(TypeError, match="not defined"):
         bool(assigner)
     with pytest.raises(TypeError, match="not defined"):
-        assigner == assigner
+        assert assigner == assigner
     updater = A()
     with pytest.raises(TypeError, match="not defined"):
         bool(updater)
     with pytest.raises(TypeError, match="not defined"):
-        updater == updater
+        assert updater == updater
 
 
 @autocompute
@@ -2241,7 +2241,7 @@ def test_bool_eq_on_scalar_expressions(A):
 
     expr = A[0, [1, 1]]
     # with pytest.raises(TypeError, match="not defined"):
-    expr == expr  # Now okay
+    assert (expr == expr) is not None  # Now okay
     with pytest.raises(TypeError, match="not defined"):
         bool(expr)
     with pytest.raises(TypeError):
@@ -2255,7 +2255,7 @@ def test_bool_eq_on_scalar_expressions(A):
 def test_bool_eq_on_scalar_expressions_no_auto(A):
     expr = A.reduce_scalar()
     with pytest.raises(TypeError, match="autocompute"):
-        expr == 47
+        assert expr == 47
     with pytest.raises(TypeError, match="autocompute"):
         bool(expr)
     with pytest.raises(TypeError, match="autocompute"):
@@ -2270,11 +2270,11 @@ def test_contains(A):
     assert (1, 0) not in A
 
     with pytest.raises(TypeError):
-        1 in A
+        assert 1 in A
     with pytest.raises(TypeError):
-        (1,) in A.T
+        assert (1,) in A.T
     with pytest.raises(TypeError, match="Invalid index"):
-        (1, [1, 2]) in A
+        assert (1, [1, 2]) in A
 
 
 def test_iter(A):

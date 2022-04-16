@@ -794,7 +794,7 @@ def test_reduce_agg_firstlast_index(v):
 
 def test_reduce_agg_empty():
     v = Vector("UINT8", size=3)
-    for attr, aggr in vars(agg).items():
+    for _attr, aggr in vars(agg).items():
         if not isinstance(aggr, agg.Aggregator):
             continue
         s = v.reduce(aggr).new()
@@ -1155,9 +1155,9 @@ def test_contains(v):
     assert 0 not in v
     assert 1 in v
     with pytest.raises(TypeError):
-        [0] in v
+        assert [0] in v
     with pytest.raises(TypeError):
-        (0,) in v
+        assert (0,) in v
 
 
 def test_iter(v):
@@ -1443,7 +1443,7 @@ def test_random(v):
     r3 = Vector.from_values([4], [2], size=v.size)
     r4 = Vector.from_values([6], [0], size=v.size)
     seen = set()
-    for i in range(1000000):  # pragma: no branch
+    for _i in range(1000000):  # pragma: no branch
         r = v.ss.selectk("random", 1)
         if r.isequal(r1):
             seen.add("r1")
@@ -1472,11 +1472,11 @@ def test_random(v):
 
 
 def test_firstk(v):
-    data = [[1, 3, 4, 6], [1, 1, 2, 0]]
+    mixed_data = [[1, 3, 4, 6], [1, 1, 2, 0]]
     iso_data = [[1, 3, 4, 6], [1, 1, 1, 1]]
     iso_v = v.dup()
     iso_v(iso_v.S) << 1
-    for w, data in [(v, data), (iso_v, iso_data)]:
+    for w, data in [(v, mixed_data), (iso_v, iso_data)]:
         for k in range(w.nvals + 1):
             x = w.ss.selectk("first", k)
             expected = Vector.from_values(data[0][:k], data[1][:k], size=w.size)
@@ -1486,11 +1486,11 @@ def test_firstk(v):
 
 
 def test_lastk(v):
-    data = [[1, 3, 4, 6], [1, 1, 2, 0]]
+    mixed_data = [[1, 3, 4, 6], [1, 1, 2, 0]]
     iso_data = [[1, 3, 4, 6], [1, 1, 1, 1]]
     iso_v = v.dup()
     iso_v(iso_v.S) << 1
-    for w, data in [(v, data), (iso_v, iso_data)]:
+    for w, data in [(v, mixed_data), (iso_v, iso_data)]:
         for k in range(w.nvals + 1):
             x = w.ss.selectk("last", k)
             expected = Vector.from_values(data[0][-k:], data[1][-k:], size=w.size)
@@ -1597,9 +1597,11 @@ def test_compactify(do_iso):
         check(v, reverse(expected), "largest", asindex=True, stop=3)
         check_reverse(v, reverse(expected), "largest", asindex=True, stop=3)
 
-    def compare(v, expected, isequal=True, **kwargs):
+    def compare(v, expected, isequal=True, sort=False, **kwargs):
         for _ in range(1000):
             w = v.ss.compactify("random", **kwargs)
+            if sort:
+                w = w.ss.compactify("smallest")
             if w.isequal(expected) == isequal:
                 break
         else:
@@ -1612,10 +1614,13 @@ def test_compactify(do_iso):
         compare(v, v.ss.compactify("first", 0, asindex=asindex), size=0, asindex=asindex)
         for i in range(1, 4):
             for how in ["first", "last", "smallest", "largest"]:
-                w = v.ss.compactify("first", i, asindex=asindex)
-                compare(v, w, size=i, asindex=asindex)
+                w = v.ss.compactify(how, i, asindex=asindex, reverse=how == "last")
+                sort = how in {"largest", "smallest"}
+                if sort:
+                    w = w.ss.compactify("smallest")
+                compare(v, w, size=i, asindex=asindex, sort=sort)
                 if not do_iso:
-                    compare(v, w, size=i, asindex=asindex, isequal=True)
+                    compare(v, w, size=i, asindex=asindex, isequal=True, sort=sort)
     with pytest.raises(ValueError):
         v.ss.compactify("bad_how")
 

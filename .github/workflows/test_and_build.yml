@@ -54,7 +54,8 @@ jobs:
           activate-environment: graphblas
       - name: Update env
         run: |
-          conda install -c conda-forge pytest coverage 'black>=20.8b1' flake8 coveralls pytest-randomly
+          conda install -c conda-forge pytest coverage 'black>=20.8b1' flake8 \
+          coveralls pytest-randomly flake8-comprehensions flake8-bugbear
       - name: Style Checks
         run: |
           flake8

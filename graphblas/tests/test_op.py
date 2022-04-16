@@ -1082,9 +1082,9 @@ def test_udt():
     assert int in udt_identity
     assert operator.get_typed_op(udt_identity, udt) is udt_identity[udt]
     with pytest.raises(ValueError):
-        "badname" in binary.eq
+        assert "badname" in binary.eq
     with pytest.raises(ValueError):
-        "badname" in udt_identity
+        assert "badname" in udt_identity
 
     def _udt_getx(val):
         return val["x"]  # pragma: no cover

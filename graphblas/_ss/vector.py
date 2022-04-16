@@ -1370,6 +1370,7 @@ class ss:
         ----------
         how : str
             - "random": choose k elements with equal probability
+               Chosen values may not be ordered randomly
             - "first": choose the first k elements
             - "last": choose the last k elements
             - "largest": choose the k largest elements.  If tied, any may be chosen.

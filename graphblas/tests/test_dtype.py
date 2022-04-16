@@ -110,9 +110,9 @@ def test_unify_dtypes():
 
 def test_dtype_bad_comparison():
     with pytest.raises(TypeError):
-        dtypes.BOOL == object()
+        assert dtypes.BOOL == object()
     with pytest.raises(TypeError):
-        object() != dtypes.BOOL
+        assert object() != dtypes.BOOL
 
 
 def test_dtypes_match_numpy():
@@ -137,7 +137,7 @@ def test_pickle():
             assert val.np_type == val2.np_type
             assert val.name == val2.name
         else:
-            val == val2
+            assert val == val2
     s = pickle.dumps(dtypes._INDEX)
     val2 = pickle.loads(s)
     assert dtypes._INDEX == val2
@@ -170,7 +170,7 @@ def test_lt_dtypes():
     assert sorted(all_dtypes) == expected
     assert dtypes.BOOL < "FP32"
     with pytest.raises(TypeError):
-        dtypes.BOOL < 5
+        assert dtypes.BOOL < 5
 
 
 def test_bad_register():
