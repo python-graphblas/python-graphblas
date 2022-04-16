@@ -3314,12 +3314,30 @@ def test_reposition(A):
     for row_offset in range(-A.nrows - 2, A.nrows + 3, 3):
         for col_offset in range(-A.ncols - 2, A.ncols + 3, 3):
             for M in [A, A.T]:
-                result = M.reposition(row_offset, col_offset)
+                result = M.reposition(row_offset, col_offset).new()
                 expected = get_expected(row_offset, col_offset, M.nrows, M.ncols, M._is_transposed)
                 assert result.isequal(expected)
-                result = M.reposition(row_offset, col_offset, nrows=3, ncols=10)
+                result = M.reposition(row_offset, col_offset, nrows=3, ncols=10).new()
                 expected = get_expected(row_offset, col_offset, 3, 10, M._is_transposed)
                 assert result.isequal(expected)
-                result = M.reposition(row_offset, col_offset, nrows=10, ncols=3)
+                result = M.reposition(row_offset, col_offset, nrows=10, ncols=3).new()
                 expected = get_expected(row_offset, col_offset, 10, 3, M._is_transposed)
                 assert result.isequal(expected)
+
+    result = A.reposition(3, 1).new(mask=A.S)
+    expected = Matrix.from_values([3, 4, 6], [2, 5, 3], [2, 8, 3], nrows=A.nrows, ncols=A.ncols)
+    assert result.isequal(expected)
+
+    result(A.S, binary.plus) << A.reposition(3, 1)
+    expected *= 2
+    assert result.isequal(expected)
+
+    result = A.T.reposition(-1, 1).new(mask=A.S)
+    expected = Matrix.from_values(
+        [0, 1, 1, 3, 4, 5], [1, 4, 6, 2, 5, 2], [2, 3, 1, 8, 7, 4], nrows=A.ncols, ncols=A.nrows
+    )
+    assert result.isequal(expected)
+
+    result(A.S, binary.plus) << A.T.reposition(-1, 1)
+    expected *= 2
+    assert result.isequal(expected)

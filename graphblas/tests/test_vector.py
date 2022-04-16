@@ -1981,12 +1981,12 @@ def test_reposition(v):
         return Vector.from_values(ind[mask], values[mask], size=size)
 
     for offset in range(-v.size - 2, v.size + 3):
-        result = v.reposition(offset)
+        result = v.reposition(offset).new()
         expected = get_expected(offset, v.size)
         assert result.isequal(expected)
-        result = v.reposition(offset, size=3)
+        result = v.reposition(offset, size=3).new()
         expected = get_expected(offset, 3)
         assert result.isequal(expected)
-        result = v.reposition(offset, size=10)
+        result = v.reposition(offset, size=10).new()
         expected = get_expected(offset, 10)
         assert result.isequal(expected)

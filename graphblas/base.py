@@ -423,9 +423,13 @@ class BaseType:
 
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
-        if expr.op is not None and expr.op.opclass == "Aggregator":
+        elif expr.op is not None and expr.op.opclass == "Aggregator":
             updater = self(mask=mask, accum=accum, replace=replace)
             expr.op._new(updater, expr)
+            return
+        elif expr.cfunc_name is None:  # Custom recipe
+            updater = self(mask=mask, accum=accum, replace=replace)
+            expr.args[0](updater, *expr.args[1])
             return
 
         # Normalize mask and separate out complement and structural flags
@@ -573,6 +577,9 @@ class BaseExpression:
         if self.op is not None and self.op.opclass == "Aggregator":
             updater = output(mask=mask)
             self.op._new(updater, self)
+        elif self.cfunc_name is None:  # Custom recipe
+            updater = output if mask is None else output(mask=mask)
+            self.args[0](updater, *self.args[1])
         elif mask is None:
             output.update(self)
         else:

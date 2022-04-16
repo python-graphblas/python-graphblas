@@ -1,5 +1,6 @@
 import itertools
 import warnings
+from operator import setitem
 
 import numpy as np
 
@@ -918,8 +919,8 @@ class Matrix(BaseType):
         )
 
     # Unofficial methods
-    def reposition(self, row_offset, column_offset, *, nrows=None, ncols=None, name=None):
-        """Return a new Matrix with the values repositioned by row_offset and column_offset.
+    def reposition(self, row_offset, column_offset, *, nrows=None, ncols=None):
+        """Reposition values by adding `row_offset` and `column_offset` to the indices.
 
         Positive offset moves values to the right (or down), negative to the left (or up).
         Values repositioned outside of the new Matrix are dropped (i.e., they don't wrap around).
@@ -934,14 +935,16 @@ class Matrix(BaseType):
             The nrows of the new Matrix.  If not specified, same nrows as input Matrix.
         ncols : int, optional
             The ncols of the new Matrix.  If not specified, same ncols as input Matrix.
-        name : str, optional
-            Name of the new Matrix.
 
         """
         if nrows is None:
             nrows = self._nrows
+        else:
+            nrows = int(nrows)
         if ncols is None:
             ncols = self._ncols
+        else:
+            ncols = int(ncols)
         row_offset = int(row_offset)
         if row_offset < 0:
             row_start = -row_offset
@@ -956,20 +959,25 @@ class Matrix(BaseType):
         else:
             col_start = 0
             col_stop = max(0, ncols - col_offset)
-        rv = Matrix(self.dtype, nrows, ncols, name=name)
         if self._is_transposed:
-            chunk = self._matrix[col_start:col_stop, row_start:row_stop].new(name="M_repositioning")
-            rv[
-                row_start + row_offset : row_start + row_offset + chunk._ncols,
-                col_start + col_offset : col_start + col_offset + chunk._nrows,
-            ] = chunk.T
+            chunk = (
+                self._matrix[col_start:col_stop, row_start:row_stop].new(name="M_repositioning").T
+            )
         else:
             chunk = self[row_start:row_stop, col_start:col_stop].new(name="M_repositioning")
-            rv[
-                row_start + row_offset : row_start + row_offset + chunk._nrows,
-                col_start + col_offset : col_start + col_offset + chunk._ncols,
-            ] = chunk
-        return rv
+        indices = (
+            slice(row_start + row_offset, row_start + row_offset + chunk._nrows),
+            slice(col_start + col_offset, col_start + col_offset + chunk._ncols),
+        )
+        return MatrixExpression(
+            "reposition",
+            None,
+            [setitem, (indices, chunk), self],  # [func, args, expr_arg0, expr_arg1, ...]
+            expr_repr="{2.name}.reposition(%d, %d)" % (row_offset, column_offset),
+            nrows=nrows,
+            ncols=ncols,
+            dtype=self.dtype,
+        )
 
     ##################################
     # Extract and Assign index methods

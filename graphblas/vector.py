@@ -1,5 +1,6 @@
 import itertools
 import warnings
+from operator import setitem
 
 import numpy as np
 
@@ -837,8 +838,8 @@ class Vector(BaseType):
         )
         return expr
 
-    def reposition(self, offset, *, size=None, name=None):
-        """Return a new Vector with the values repositioned by offset.
+    def reposition(self, offset, *, size=None):
+        """Reposition the values by adding `offset` to the indices.
 
         Positive offset moves values to the right, negative to the left.
         Values repositioned outside of the new Vector are dropped (i.e., they don't wrap around).
@@ -850,12 +851,12 @@ class Vector(BaseType):
         offset : int
         size : int, optional
             The size of the new Vector.  If not specified, same size as input Vector.
-        name : str, optional
-            Name of the new Vector.
 
         """
         if size is None:
             size = self._size
+        else:
+            size = int(size)
         offset = int(offset)
         if offset < 0:
             start = -offset
@@ -864,9 +865,15 @@ class Vector(BaseType):
             start = 0
             stop = max(0, size - offset)
         chunk = self[start:stop].new(name="v_repositioning")
-        rv = Vector(self.dtype, size, name=name)
-        rv[start + offset : start + offset + chunk._size] = chunk
-        return rv
+        indices = slice(start + offset, start + offset + chunk._size)
+        return VectorExpression(
+            "reposition",
+            None,
+            [setitem, (indices, chunk), self],  # [func, args, expr_arg0, expr_arg1, ...]
+            expr_repr="{2.name}.reposition(%d)" % offset,
+            size=size,
+            dtype=self.dtype,
+        )
 
     ##################################
     # Extract and Assign index methods
