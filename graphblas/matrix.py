@@ -1,6 +1,5 @@
 import itertools
 import warnings
-from operator import setitem
 
 import numpy as np
 
@@ -25,6 +24,29 @@ from .utils import (
 from .vector import Vector, VectorExpression
 
 ffi_new = ffi.new
+
+
+# Custom recipes
+def _m_add_v(updater, left, right, op):
+    full = Vector(right.dtype, left._nrows, name="v_full")
+    full[:] = 0
+    temp = full.outer(right, binary.second).new(name="M_temp", mask=updater.kwargs.get("mask"))
+    updater << left.ewise_add(temp, op, require_monoid=False)
+
+
+def _m_mult_v(updater, left, right, op):
+    updater << left.mxm(right.diag(name="M_temp"), get_semiring(monoid.any, op))
+
+
+def _m_union_v(updater, left, right, left_default, right_default, op):
+    full = Vector(right.dtype, left._nrows, name="v_full")
+    full[:] = 0
+    temp = full.outer(right, binary.second).new(name="M_temp", mask=updater.kwargs.get("mask"))
+    updater << left.ewise_union(temp, op, left_default=left_default, right_default=right_default)
+
+
+def _reposition(updater, indices, chunk):
+    updater[indices] = chunk
 
 
 class Matrix(BaseType):
@@ -478,17 +500,20 @@ class Matrix(BaseType):
             self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if other.ndim == 1:
             # Broadcast rowwise from the right
-            # Can we do `C(M.S) << plus(A | v)` -> `C(M.S) << plus(any_second(M @ v.diag()) | A)`?
             if self._ncols != other._size:
-                # Check this before we compute a possibly large matrix below
                 raise DimensionMismatch(
                     "Dimensions not compatible for broadcasting Vector from the right "
                     f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                     f"must equal Vector.size (={other._size})."
                 )
-            full = Vector(other.dtype, self._nrows, name="v_full")
-            full[:] = 0
-            other = full.outer(other, binary.second).new(name="M_temp")
+            return MatrixExpression(
+                method_name,
+                None,
+                [self, other, _m_add_v, (self, other, op)],  # [*expr_args, func, args]
+                nrows=self._nrows,
+                ncols=self._ncols,
+                op=op,
+            )
         expr = MatrixExpression(
             method_name,
             f"GrB_Matrix_eWiseAdd_{op.opclass}",
@@ -516,7 +541,21 @@ class Matrix(BaseType):
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if other.ndim == 1:
-            return self.mxm(other.diag(name="M_temp"), get_semiring(monoid.any, op))
+            # Broadcast rowwise from the right
+            if self._ncols != other._size:
+                raise DimensionMismatch(
+                    "Dimensions not compatible for broadcasting Vector from the right "
+                    f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
+                    f"must equal Vector.size (={other._size})."
+                )
+            return MatrixExpression(
+                method_name,
+                None,
+                [self, other, _m_mult_v, (self, other, op)],  # [*expr_args, func, args]
+                nrows=self._nrows,
+                ncols=self._ncols,
+                op=op,
+            )
         expr = MatrixExpression(
             method_name,
             f"GrB_Matrix_eWiseMult_{op.opclass}",
@@ -585,19 +624,24 @@ class Matrix(BaseType):
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
+        expr_repr = "{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})"
         if other.ndim == 1:
             # Broadcast rowwise from the right
-            # Can we do `C(M.S) << plus(A | v)` -> `C(M.S) << plus(any_second(M @ v.diag()) | A)`?
             if self._ncols != other._size:
-                # Check this before we compute a possibly large matrix below
                 raise DimensionMismatch(
                     "Dimensions not compatible for broadcasting Vector from the right "
                     f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                     f"must equal Vector.size (={other._size})."
                 )
-            full = Vector(other.dtype, self._nrows, name="v_full")
-            full[:] = 0
-            other = full.outer(other, binary.second).new(name="M_temp")
+            return MatrixExpression(
+                method_name,
+                None,
+                [self, left, other, right, _m_union_v, (self, other, left, right, op)],
+                expr_repr=expr_repr,
+                nrows=self._nrows,
+                ncols=self._ncols,
+                op=op,
+            )
         expr = MatrixExpression(
             method_name,
             "GxB_Matrix_eWiseUnion",
@@ -605,7 +649,7 @@ class Matrix(BaseType):
             op=op,
             at=self._is_transposed,
             bt=other._is_transposed,
-            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})",
+            expr_repr=expr_repr,
         )
         if self.shape != other.shape:
             expr.new(name="")  # incompatible shape; raise now
@@ -972,7 +1016,7 @@ class Matrix(BaseType):
         return MatrixExpression(
             "reposition",
             None,
-            [setitem, (indices, chunk), self],  # [func, args, expr_arg0, expr_arg1, ...]
+            [self, _reposition, (indices, chunk)],  # [*expr_args, func, args]
             expr_repr="{2.name}.reposition(%d, %d)" % (row_offset, column_offset),
             nrows=nrows,
             ncols=ncols,

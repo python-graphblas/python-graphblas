@@ -1902,6 +1902,10 @@ def test_broadcasting(A, v):
     assert result.isequal(expected)
     result = binary.plus(v | A).new()
     assert result.isequal(expected)
+    # use mask
+    result(A.S, replace=True) << binary.plus(v | A)
+    expected(A.S, replace=True) << expected
+    assert result.isequal(expected)
 
     expected = semiring.any_plus(v.diag() @ A).new()
     result = v.ewise_mult(A, monoid.plus).new()
@@ -1923,6 +1927,10 @@ def test_broadcasting(A, v):
     assert result.isequal(expected)
     result = A.dup()
     result += v
+    assert result.isequal(expected)
+    # use mask
+    result(A.S, replace=True) << binary.plus(A | v)
+    expected(A.S, replace=True) << expected
     assert result.isequal(expected)
 
     expected = semiring.any_plus(A @ v.diag()).new()

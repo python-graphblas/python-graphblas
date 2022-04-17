@@ -429,7 +429,7 @@ class BaseType:
             return
         elif expr.cfunc_name is None:  # Custom recipe
             updater = self(mask=mask, accum=accum, replace=replace)
-            expr.args[0](updater, *expr.args[1])
+            expr.args[-2](updater, *expr.args[-1])
             return
 
         # Normalize mask and separate out complement and structural flags
@@ -544,9 +544,9 @@ class BaseExpression:
         self.bt = bt
         self.op = op
         if expr_repr is None:
-            if len(args) == 1:
+            if len(args) == 1 or cfunc_name is None and len(args) == 3:
                 expr_repr = "{0.name}.{method_name}({op})"
-            elif len(args) == 2:
+            elif len(args) == 2 or cfunc_name is None and len(args) == 4:
                 expr_repr = "{0.name}.{method_name}({1.name}, op={op})"
             else:  # pragma: no cover
                 raise ValueError(f"No default expr_repr for len(args) == {len(args)}")
@@ -578,8 +578,7 @@ class BaseExpression:
             updater = output(mask=mask)
             self.op._new(updater, self)
         elif self.cfunc_name is None:  # Custom recipe
-            updater = output if mask is None else output(mask=mask)
-            self.args[0](updater, *self.args[1])
+            self.args[-2](output(mask=mask), *self.args[-1])
         elif mask is None:
             output.update(self)
         else:
@@ -590,13 +589,15 @@ class BaseExpression:
     dup = new
 
     def _format_expr(self):
-        return self.expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
+        args = self.args[:-2] if self.cfunc_name is None else self.args
+        return self.expr_repr.format(*args, method_name=self.method_name, op=self.op)
 
     def _format_expr_html(self):
         expr_repr = self.expr_repr.replace(".name", "._name_html").replace(
             "._expr_name", "._expr_name_html"
         )
-        return expr_repr.format(*self.args, method_name=self.method_name, op=self.op)
+        args = self.args[:-2] if self.cfunc_name is None else self.args
+        return expr_repr.format(*args, method_name=self.method_name, op=self.op)
 
     _expect_type = _expect_type
     _expect_op = _expect_op
