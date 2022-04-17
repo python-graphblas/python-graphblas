@@ -186,7 +186,7 @@ class _GraphblasModuleFinder(_MetaPathFinder):
         if fullname in _NEEDS_OPERATOR and "operator" not in globals():
             _load("operator")
             name = fullname[7:]  # Trim "graphblas."
-            if name in globals():
+            if name in globals():  # pragma: no cover
                 # Make sure we execute the module only once
                 module = globals()[name]
                 spec = module.__spec__
@@ -195,14 +195,14 @@ class _GraphblasModuleFinder(_MetaPathFinder):
 
 
 class _SkipLoad(_Loader):
-    def __init__(self, module, orig_loader):
+    def __init__(self, module, orig_loader):  # pragma: no cover
         self.module = module
         self.orig_loader = orig_loader
 
-    def create_module(self, spec):
+    def create_module(self, spec):  # pragma: no cover
         return self.module
 
-    def exec_module(self, module):
+    def exec_module(self, module):  # pragma: no cover
         # Don't execute the module, but restore the original loader
         module.__spec__.loader = self.orig_loader
 

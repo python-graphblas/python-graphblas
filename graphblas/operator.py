@@ -1556,7 +1556,7 @@ class BinaryOp(OpBase):
             if ret_type is not dtype and ret_type is not dtype2:
                 if ret_type.gb_obj is dtype.gb_obj:
                     ret_type = dtype
-                elif ret_type.gb_obj is dtype2.gb_obj:
+                elif ret_type.gb_obj is dtype2.gb_obj:  # pragma: no cover
                     ret_type = dtype2
             binary_wrapper, wrapper_sig = _get_udt_wrapper(numba_func, ret_type, dtype, dtype2)
 
