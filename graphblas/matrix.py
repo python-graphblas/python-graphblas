@@ -26,6 +26,29 @@ from .vector import Vector, VectorExpression
 ffi_new = ffi.new
 
 
+# Custom recipes
+def _m_add_v(updater, left, right, op):
+    full = Vector(right.dtype, left._nrows, name="v_full")
+    full[:] = 0
+    temp = full.outer(right, binary.second).new(name="M_temp", mask=updater.kwargs.get("mask"))
+    updater << left.ewise_add(temp, op, require_monoid=False)
+
+
+def _m_mult_v(updater, left, right, op):
+    updater << left.mxm(right.diag(name="M_temp"), get_semiring(monoid.any, op))
+
+
+def _m_union_v(updater, left, right, left_default, right_default, op):
+    full = Vector(right.dtype, left._nrows, name="v_full")
+    full[:] = 0
+    temp = full.outer(right, binary.second).new(name="M_temp", mask=updater.kwargs.get("mask"))
+    updater << left.ewise_union(temp, op, left_default=left_default, right_default=right_default)
+
+
+def _reposition(updater, indices, chunk):
+    updater[indices] = chunk
+
+
 class Matrix(BaseType):
     """
     GraphBLAS Sparse Matrix
@@ -477,17 +500,20 @@ class Matrix(BaseType):
             self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if other.ndim == 1:
             # Broadcast rowwise from the right
-            # Can we do `C(M.S) << plus(A | v)` -> `C(M.S) << plus(any_second(M @ v.diag()) | A)`?
             if self._ncols != other._size:
-                # Check this before we compute a possibly large matrix below
                 raise DimensionMismatch(
                     "Dimensions not compatible for broadcasting Vector from the right "
                     f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                     f"must equal Vector.size (={other._size})."
                 )
-            full = Vector(other.dtype, self._nrows, name="v_full")
-            full[:] = 0
-            other = full.outer(other, binary.second).new(name="M_temp")
+            return MatrixExpression(
+                method_name,
+                None,
+                [self, other, _m_add_v, (self, other, op)],  # [*expr_args, func, args]
+                nrows=self._nrows,
+                ncols=self._ncols,
+                op=op,
+            )
         expr = MatrixExpression(
             method_name,
             f"GrB_Matrix_eWiseAdd_{op.opclass}",
@@ -515,7 +541,21 @@ class Matrix(BaseType):
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if other.ndim == 1:
-            return self.mxm(other.diag(name="M_temp"), get_semiring(monoid.any, op))
+            # Broadcast rowwise from the right
+            if self._ncols != other._size:
+                raise DimensionMismatch(
+                    "Dimensions not compatible for broadcasting Vector from the right "
+                    f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
+                    f"must equal Vector.size (={other._size})."
+                )
+            return MatrixExpression(
+                method_name,
+                None,
+                [self, other, _m_mult_v, (self, other, op)],  # [*expr_args, func, args]
+                nrows=self._nrows,
+                ncols=self._ncols,
+                op=op,
+            )
         expr = MatrixExpression(
             method_name,
             f"GrB_Matrix_eWiseMult_{op.opclass}",
@@ -584,19 +624,24 @@ class Matrix(BaseType):
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
+        expr_repr = "{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})"
         if other.ndim == 1:
             # Broadcast rowwise from the right
-            # Can we do `C(M.S) << plus(A | v)` -> `C(M.S) << plus(any_second(M @ v.diag()) | A)`?
             if self._ncols != other._size:
-                # Check this before we compute a possibly large matrix below
                 raise DimensionMismatch(
                     "Dimensions not compatible for broadcasting Vector from the right "
                     f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                     f"must equal Vector.size (={other._size})."
                 )
-            full = Vector(other.dtype, self._nrows, name="v_full")
-            full[:] = 0
-            other = full.outer(other, binary.second).new(name="M_temp")
+            return MatrixExpression(
+                method_name,
+                None,
+                [self, left, other, right, _m_union_v, (self, other, left, right, op)],
+                expr_repr=expr_repr,
+                nrows=self._nrows,
+                ncols=self._ncols,
+                op=op,
+            )
         expr = MatrixExpression(
             method_name,
             "GxB_Matrix_eWiseUnion",
@@ -604,7 +649,7 @@ class Matrix(BaseType):
             op=op,
             at=self._is_transposed,
             bt=other._is_transposed,
-            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})",
+            expr_repr=expr_repr,
         )
         if self.shape != other.shape:
             expr.new(name="")  # incompatible shape; raise now
@@ -915,6 +960,67 @@ class Matrix(BaseType):
             [self],
             op=op,  # to be determined later
             is_cscalar=not allow_empty,
+        )
+
+    # Unofficial methods
+    def reposition(self, row_offset, column_offset, *, nrows=None, ncols=None):
+        """Reposition values by adding `row_offset` and `column_offset` to the indices.
+
+        Positive offset moves values to the right (or down), negative to the left (or up).
+        Values repositioned outside of the new Matrix are dropped (i.e., they don't wrap around).
+
+        This is not a standard GraphBLAS method.  This is implemented with an extract and assign.
+
+        Parameters
+        ----------
+        row_offset : int
+        column_offset : int
+        nrows : int, optional
+            The nrows of the new Matrix.  If not specified, same nrows as input Matrix.
+        ncols : int, optional
+            The ncols of the new Matrix.  If not specified, same ncols as input Matrix.
+
+        """
+        if nrows is None:
+            nrows = self._nrows
+        else:
+            nrows = int(nrows)
+        if ncols is None:
+            ncols = self._ncols
+        else:
+            ncols = int(ncols)
+        row_offset = int(row_offset)
+        if row_offset < 0:
+            row_start = -row_offset
+            row_stop = row_start + nrows
+        else:
+            row_start = 0
+            row_stop = max(0, nrows - row_offset)
+        col_offset = int(column_offset)
+        if col_offset < 0:
+            col_start = -col_offset
+            col_stop = col_start + ncols
+        else:
+            col_start = 0
+            col_stop = max(0, ncols - col_offset)
+        if self._is_transposed:
+            chunk = (
+                self._matrix[col_start:col_stop, row_start:row_stop].new(name="M_repositioning").T
+            )
+        else:
+            chunk = self[row_start:row_stop, col_start:col_stop].new(name="M_repositioning")
+        indices = (
+            slice(row_start + row_offset, row_start + row_offset + chunk._nrows),
+            slice(col_start + col_offset, col_start + col_offset + chunk._ncols),
+        )
+        return MatrixExpression(
+            "reposition",
+            None,
+            [self, _reposition, (indices, chunk)],  # [*expr_args, func, args]
+            expr_repr="{2.name}.reposition(%d, %d)" % (row_offset, column_offset),
+            nrows=nrows,
+            ncols=ncols,
+            dtype=self.dtype,
         )
 
     ##################################
@@ -1474,6 +1580,7 @@ class MatrixExpression(BaseExpression):
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    reposition = wrapdoc(Matrix.reposition)(property(_automethods.reposition))
     select = wrapdoc(Matrix.select)(property(_automethods.select))
     ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
@@ -1553,6 +1660,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
+    reposition = wrapdoc(Matrix.reposition)(property(_automethods.reposition))
     select = wrapdoc(Matrix.select)(property(_automethods.select))
     ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
@@ -1660,6 +1768,7 @@ class TransposedMatrix:
     reduce_rowwise = Matrix.reduce_rowwise
     reduce_columnwise = Matrix.reduce_columnwise
     reduce_scalar = Matrix.reduce_scalar
+    reposition = Matrix.reposition
 
     # Operator sugar
     __or__ = Matrix.__or__

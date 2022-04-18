@@ -1405,7 +1405,12 @@ def test_expr_is_like_vector(v):
         "resize",
         "update",
     }
-    assert attrs - expr_attrs == expected
+    assert attrs - expr_attrs == expected, (
+        "If you see this message, you probably added a method to Vector.  You may need to "
+        "add an entry to `vector` or `matrix_vector` set in `graphblas._automethods.py` "
+        "and then run `python -m graphblas._automethods`.  If you're messing with infix "
+        "methods, then you may need to run `python -m graphblas._infixmethods`."
+    )
     assert attrs - infix_attrs == expected
 
 
@@ -1434,7 +1439,12 @@ def test_index_expr_is_like_vector(v):
         "from_values",
         "resize",
     }
-    assert attrs - expr_attrs == expected
+    assert attrs - expr_attrs == expected, (
+        "If you see this message, you probably added a method to Vector.  You may need to "
+        "add an entry to `vector` or `matrix_vector` set in `graphblas._automethods.py` "
+        "and then run `python -m graphblas._automethods`.  If you're messing with infix "
+        "methods, then you may need to run `python -m graphblas._infixmethods`."
+    )
 
 
 def test_random(v):
@@ -1892,6 +1902,10 @@ def test_broadcasting(A, v):
     assert result.isequal(expected)
     result = binary.plus(v | A).new()
     assert result.isequal(expected)
+    # use mask
+    result(A.S, replace=True) << binary.plus(v | A)
+    expected(A.S, replace=True) << expected
+    assert result.isequal(expected)
 
     expected = semiring.any_plus(v.diag() @ A).new()
     result = v.ewise_mult(A, monoid.plus).new()
@@ -1913,6 +1927,10 @@ def test_broadcasting(A, v):
     assert result.isequal(expected)
     result = A.dup()
     result += v
+    assert result.isequal(expected)
+    # use mask
+    result(A.S, replace=True) << binary.plus(A | v)
+    expected(A.S, replace=True) << expected
     assert result.isequal(expected)
 
     expected = semiring.any_plus(A @ v.diag()).new()
@@ -1959,3 +1977,24 @@ def test_ewise_union_infix():
             op(v & w, 5, left_default=10, right_default=20)
         with pytest.raises(TypeError):
             op(v, w, left_default=10, right_default=20)
+
+
+def test_reposition(v):
+    indices, values = v.to_values()
+    indices = indices.astype(int)
+
+    def get_expected(offset, size):
+        ind = indices + offset
+        mask = (ind >= 0) & (ind < size)
+        return Vector.from_values(ind[mask], values[mask], size=size)
+
+    for offset in range(-v.size - 2, v.size + 3):
+        result = v.reposition(offset).new()
+        expected = get_expected(offset, v.size)
+        assert result.isequal(expected)
+        result = v.reposition(offset, size=3).new()
+        expected = get_expected(offset, 3)
+        assert result.isequal(expected)
+        result = v.reposition(offset, size=10).new()
+        expected = get_expected(offset, 10)
+        assert result.isequal(expected)
