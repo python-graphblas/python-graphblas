@@ -109,7 +109,7 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
         if type(matrix) is TransposedMatrix:
             parent = matrix._matrix
             submatrix = Matrix(parent.dtype, parent._nrows, parent._ncols, name="")
-            if parent._nvals > 0:
+            if parent._nvals > 0:  # pragma: no branch
                 # Get val to support iso-valued matrices
                 val = parent.reduce_scalar(monoid.any, allow_empty=False).new(name="")
                 submatrix(parent.S)[columns, rows] = val
@@ -257,7 +257,7 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
         if min(nonzero._nvals, num_rows) > 2 * df.count().sum():
             rows, cols, vals = nonzero.ss.head(num_rows, sort=True)
             if mask.complement:
-                if not vals.flags.writeable:
+                if not vals.flags.writeable:  # pragma: no branch
                     vals = vals.copy()
                 vals[:] = 0
             df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
@@ -307,7 +307,7 @@ def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None)
         if min(nonzero._nvals, num_rows) > 2 * df.count().sum():
             indices, vals = nonzero.ss.head(num_rows, sort=True)
             if mask.complement:
-                if not vals.flags.writeable:
+                if not vals.flags.writeable:  # pragma: no branch
                     vals = vals.copy()
                 vals[:] = 0
             df = pd.DataFrame({"index": indices, "val": vals})

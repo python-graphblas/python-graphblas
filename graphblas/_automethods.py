@@ -230,6 +230,10 @@ def reduce_scalar(self):
     return self._get_value("reduce_scalar")
 
 
+def reposition(self):
+    return self._get_value("reposition")
+
+
 def select(self):
     return self._get_value("select")
 
@@ -353,6 +357,7 @@ if __name__ == "__main__":
         "ewise_add",
         "ewise_mult",
         "ewise_union",
+        "reposition",
         "select",
         "ss",
         "to_values",

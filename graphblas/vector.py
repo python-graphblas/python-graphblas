@@ -25,6 +25,29 @@ from .utils import (
 ffi_new = ffi.new
 
 
+# Custom recipes
+def _v_add_m(updater, left, right, op):
+    full = Vector(left.dtype, right._ncols, name="v_full")
+    full[:] = 0
+    temp = left.outer(full, binary.first).new(name="M_temp", mask=updater.kwargs.get("mask"))
+    updater << temp.ewise_add(right, op, require_monoid=False)
+
+
+def _v_mult_m(updater, left, right, op):
+    updater << left.diag(name="M_temp").mxm(right, get_semiring(monoid.any, op))
+
+
+def _v_union_m(updater, left, right, left_default, right_default, op):
+    full = Vector(left.dtype, right._ncols, name="v_full")
+    full[:] = 0
+    temp = left.outer(full, binary.first).new(name="M_temp", mask=updater.kwargs.get("mask"))
+    updater << temp.ewise_union(right, op, left_default=left_default, right_default=right_default)
+
+
+def _reposition(updater, indices, chunk):
+    updater[indices] = chunk
+
+
 class Vector(BaseType):
     """
     GraphBLAS Sparse Vector
@@ -422,7 +445,7 @@ class Vector(BaseType):
         performing any operation. In the case of `gt`, the non-empty value is cast to a boolean.
         For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
-        from .matrix import Matrix, TransposedMatrix
+        from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
         method_name = "ewise_add"
         other = self._expect_type(
@@ -443,7 +466,6 @@ class Vector(BaseType):
             self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if other.ndim == 2:
             # Broadcast columnwise from the left
-            # Can we do `C(M.S) << plus(v | A)` -> `C(M.S) << plus(any_first(v.diag() @ M) | A)`?
             if other._nrows != self._size:
                 # Check this before we compute a possibly large matrix below
                 raise DimensionMismatch(
@@ -451,10 +473,14 @@ class Vector(BaseType):
                     f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
                     f"must equal Vector.size (={self._size})."
                 )
-            full = Vector(self.dtype, other._ncols, name="v_full")
-            full[:] = 0
-            temp = self.outer(full, binary.first).new(name="M_temp")
-            return temp.ewise_add(other, op, require_monoid=False)
+            return MatrixExpression(
+                method_name,
+                None,
+                [self, other, _v_add_m, (self, other, op)],
+                nrows=other._nrows,
+                ncols=other._ncols,
+                op=op,
+            )
         expr = VectorExpression(
             method_name,
             f"GrB_Vector_eWiseAdd_{op.opclass}",
@@ -472,7 +498,7 @@ class Vector(BaseType):
         Result will contain the intersection of indices from both Vectors
         Default op is binary.times
         """
-        from .matrix import Matrix, TransposedMatrix
+        from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
         method_name = "ewise_mult"
         other = self._expect_type(
@@ -482,7 +508,21 @@ class Vector(BaseType):
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if other.ndim == 2:
-            return self.diag(name="M_temp").mxm(other, get_semiring(monoid.any, op))
+            # Broadcast columnwise from the left
+            if other._nrows != self._size:
+                raise DimensionMismatch(
+                    "Dimensions not compatible for broadcasting Vector from the left "
+                    f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
+                    f"must equal Vector.size (={self._size})."
+                )
+            return MatrixExpression(
+                method_name,
+                None,
+                [self, other, _v_mult_m, (self, other, op)],
+                nrows=other._nrows,
+                ncols=other._ncols,
+                op=op,
+            )
         expr = VectorExpression(
             method_name,
             f"GrB_Vector_eWiseMult_{op.opclass}",
@@ -506,7 +546,7 @@ class Vector(BaseType):
         ``op`` should be a BinaryOp or Monoid.
         """
         # SS, SuiteSparse-specific: eWiseUnion
-        from .matrix import Matrix, TransposedMatrix
+        from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
         method_name = "ewise_union"
         other = self._expect_type(
@@ -551,26 +591,30 @@ class Vector(BaseType):
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
+        expr_repr = "{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})"
         if other.ndim == 2:
             # Broadcast columnwise from the left
-            # Can we do `C(M.S) << plus(v | A)` -> `C(M.S) << plus(any_first(v.diag() @ M) | A)`?
             if other._nrows != self._size:
-                # Check this before we compute a possibly large matrix below
                 raise DimensionMismatch(
                     "Dimensions not compatible for broadcasting Vector from the left "
                     f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
                     f"must equal Vector.size (={self._size})."
                 )
-            full = Vector(self.dtype, other._ncols, name="v_full")
-            full[:] = 0
-            temp = self.outer(full, binary.first).new(name="M_temp")
-            return temp.ewise_union(other, op, left_default, right_default)
+            return MatrixExpression(
+                method_name,
+                None,
+                [self, left, other, right, _v_union_m, (self, other, left, right, op)],
+                expr_repr=expr_repr,
+                nrows=other._nrows,
+                ncols=other._ncols,
+                op=op,
+            )
         expr = VectorExpression(
             method_name,
             "GxB_Vector_eWiseUnion",
             [self, left, other, right],
             op=op,
-            expr_repr="{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})",
+            expr_repr=expr_repr,
         )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
@@ -836,6 +880,43 @@ class Vector(BaseType):
             bt=True,
         )
         return expr
+
+    def reposition(self, offset, *, size=None):
+        """Reposition the values by adding `offset` to the indices.
+
+        Positive offset moves values to the right, negative to the left.
+        Values repositioned outside of the new Vector are dropped (i.e., they don't wrap around).
+
+        This is not a standard GraphBLAS method.  This is implemented with an extract and assign.
+
+        Parameters
+        ----------
+        offset : int
+        size : int, optional
+            The size of the new Vector.  If not specified, same size as input Vector.
+
+        """
+        if size is None:
+            size = self._size
+        else:
+            size = int(size)
+        offset = int(offset)
+        if offset < 0:
+            start = -offset
+            stop = start + size
+        else:
+            start = 0
+            stop = max(0, size - offset)
+        chunk = self[start:stop].new(name="v_repositioning")
+        indices = slice(start + offset, start + offset + chunk._size)
+        return VectorExpression(
+            "reposition",
+            None,
+            [self, _reposition, (indices, chunk)],  # [*expr_args, func, args]
+            expr_repr="{0.name}.reposition(%d)" % offset,
+            size=size,
+            dtype=self.dtype,
+        )
 
     ##################################
     # Extract and Assign index methods
@@ -1112,6 +1193,7 @@ class VectorExpression(BaseExpression):
     nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(_automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
+    reposition = wrapdoc(Vector.reposition)(property(_automethods.reposition))
     select = wrapdoc(Vector.select)(property(_automethods.select))
     ss = wrapdoc(Vector.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))
@@ -1183,6 +1265,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(_automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
+    reposition = wrapdoc(Vector.reposition)(property(_automethods.reposition))
     select = wrapdoc(Vector.select)(property(_automethods.select))
     ss = wrapdoc(Vector.ss)(property(_automethods.ss))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))
