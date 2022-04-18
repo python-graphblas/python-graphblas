@@ -188,3 +188,9 @@ def test_bad_register():
         dtypes.register_new("register_new", record_dtype)
     with pytest.raises(ValueError, match="name"):
         dtypes.register_new("UINT8", record_dtype)
+
+
+def test_auto_register():
+    n = np.random.randint(10, 64)
+    np_type = np.dtype(f"({n},)int16")
+    assert lookup_dtype(np_type).np_type == np_type
