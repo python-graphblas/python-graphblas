@@ -23,26 +23,20 @@ class DataType:
         return self.name
 
     def __eq__(self, other):
-        if type(other) is DataType:
-            return self is other
-        # Attempt to use `other` as a lookup key
         try:
             return self is lookup_dtype(other)
         except ValueError:
             raise TypeError(f"Invalid or unknown datatype: {other}") from None
 
     def __hash__(self):
-        return hash(self.gb_obj)
+        return hash(self.np_type)
 
     def __lt__(self, other):
         # Let us sort for prettier error reporting
-        if type(other) is DataType:
-            t1 = self.np_type
-            t2 = other.np_type
-            return (t1.kind, t1.itemsize, t1.name) < (t2.kind, t2.itemsize, t2.name)
-        # Attempt to use `other` as a lookup key
         try:
-            return self < lookup_dtype(other)
+            t1 = self.np_type
+            t2 = lookup_dtype(other).np_type
+            return (t1.kind, t1.itemsize, t1.name) < (t2.kind, t2.itemsize, t2.name)
         except ValueError:
             raise TypeError(f"Invalid or unknown datatype: {other}") from None
 
@@ -86,30 +80,32 @@ def register_new(name, dtype):
 
 
 def register_anonymous(dtype, name=None):
-    from .exceptions import check_status_carg
-
     dtype = np.dtype(dtype)
-    if dtype.hasobject:
-        raise ValueError("dtype must not allow Python objects")
-    if dtype.isbuiltin != 0:
-        raise ValueError("dtype must not be a builtin type")
-    if name is None:
-        name = repr(dtype)
-    numba_type = numba.typeof(dtype).dtype
-
     if dtype in _registry:
-        gb_obj = _registry[dtype].gb_obj
+        # Always use the same object, but use the latest name
+        rv = _registry[dtype]
+        if name is not None:
+            if rv.gb_name is not None and name != rv.gb_name:
+                raise ValueError("dtype must not be a builtin type")
+            rv.name = name  # Rename an existing object (a little weird, but okay)
+        return rv
+    elif dtype.hasobject:
+        raise ValueError("dtype must not allow Python objects")
     else:
+        from .exceptions import check_status_carg
+
         gb_obj = ffi.new("GrB_Type*")
         status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
         check_status_carg(status, "Type", gb_obj[0])
     # For now, let's use "opaque" unsigned bytes for the c type.
+    if name is None:
+        name = repr(dtype)
+    numba_type = numba.typeof(dtype).dtype
     rv = DataType(name, gb_obj, None, f"uint8_t[{dtype.itemsize}]", numba_type, dtype)
-    if dtype not in _registry:
-        _registry[gb_obj] = rv
-        _registry[dtype] = rv
-        _registry[numba_type] = rv
-        _registry[numba_type.name] = rv
+    _registry[gb_obj] = rv
+    _registry[dtype] = rv
+    _registry[numba_type] = rv
+    _registry[numba_type.name] = rv
     return rv
 
 
@@ -221,20 +217,18 @@ def lookup_dtype(key, value=None):
         return _registry[key]
     except KeyError:
         pass
-    if hasattr(key, "name"):
-        try:
-            return _registry[key.name]
-        except KeyError:
-            pass
     if value is not None and hasattr(value, "dtype") and value.dtype in _registry:
         return _registry[value.dtype]
     # np.dtype(x) accepts some weird values; we may want to guard against some
     if key is None:
         raise TypeError("Bad dtype: None.  A valid dtype must be provided.")
     try:
-        return lookup_dtype(np.dtype(key))
+        np_type = np.dtype(key)
     except Exception:
         pass
+    else:
+        # Auto-register!
+        return register_anonymous(np_type)
     try:
         return lookup_dtype(key.literal_type)  # For numba dtype inference
     except Exception:

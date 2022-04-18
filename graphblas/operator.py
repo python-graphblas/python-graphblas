@@ -971,8 +971,6 @@ class UnaryOp(OpBase):
         sig = (dtype.numba_type,)
         numba_func.compile(sig)  # Should we catch and give additional error message?
         ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
-        if ret_type is not dtype and ret_type.gb_obj is dtype.gb_obj:
-            ret_type = dtype
 
         unary_wrapper, wrapper_sig = _get_udt_wrapper(numba_func, ret_type, dtype)
         unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
@@ -1553,11 +1551,6 @@ class BinaryOp(OpBase):
             sig = (dtype.numba_type, dtype2.numba_type)
             numba_func.compile(sig)  # Should we catch and give additional error message?
             ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
-            if ret_type is not dtype and ret_type is not dtype2:
-                if ret_type.gb_obj is dtype.gb_obj:
-                    ret_type = dtype
-                elif ret_type.gb_obj is dtype2.gb_obj:
-                    ret_type = dtype2
             binary_wrapper, wrapper_sig = _get_udt_wrapper(numba_func, ret_type, dtype, dtype2)
 
         binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
