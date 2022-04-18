@@ -2345,20 +2345,41 @@ class Semiring(OpBase):
 
 def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scalar=False, kind=None):
     if isinstance(op, OpBase):
+        # UDTs always get compiled
         if op._is_udt:
             return op._compile_udt(dtype, dtype2)
-        if dtype2 is not None:
-            try:
-                dtype = unify(
-                    dtype, dtype2, is_left_scalar=is_left_scalar, is_right_scalar=is_right_scalar
-                )
-            except (TypeError, AttributeError):
-                if op.is_positional:
-                    return op[UINT64]
-                if op._udt_types is None:
-                    raise
+        # Single dtype is simple lookup
+        if dtype2 is None:
+            return op[dtype]
+        # Handle special cases for first and second (may have UDTs)
+        if op._module is binary:
+            binop = op
+        elif op._module is semiring:
+            binop = op.binaryop
+        else:
+            binop = None
+        if binop is binary.first:
+            if dtype._is_udt:
                 return op._compile_udt(dtype, dtype2)
-        return op[dtype]
+            else:
+                return op[dtype]
+        elif binop is binary.second:
+            if dtype2._is_udt:
+                return op._compile_udt(dtype, dtype2)
+            else:
+                return op[dtype2]
+        # Generic case: try to unify the two dtypes
+        try:
+            return op[
+                unify(dtype, dtype2, is_left_scalar=is_left_scalar, is_right_scalar=is_right_scalar)
+            ]
+        except (TypeError, AttributeError):
+            # Failure to unify implies a dtype is UDT; some builtin operators can handle UDTs
+            if op.is_positional:
+                return op[UINT64]
+            if op._udt_types is None:
+                raise
+            return op._compile_udt(dtype, dtype2)
     elif isinstance(op, ParameterizedUdf):
         op = op()  # Use default parameters of parameterized UDFs
         return get_typed_op(
