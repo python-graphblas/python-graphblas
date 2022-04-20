@@ -1158,8 +1158,12 @@ def test_udt():
 
     assert binary.second[udt].type is udt
     assert binary.second[udt].type2 is udt
-    assert binary.second[udt, dtypes.INT8].type is udt
+    assert binary.second[udt, dtypes.INT8].type is dtypes.INT8  # ignore first arg
     assert binary.second[udt, dtypes.INT8].type2 is dtypes.INT8
+    assert semiring.any_second[udt, dtypes.INT8].type is dtypes.INT8  # ignore first arg
+    assert semiring.any_second[udt, dtypes.INT8].type2 is dtypes.INT8
+    assert binary.first[udt, dtypes.INT8].type is udt
+    assert binary.first[udt, dtypes.INT8].type2 is dtypes.INT8  # include second arg!
     assert monoid.any[udt].type2 is udt
 
 

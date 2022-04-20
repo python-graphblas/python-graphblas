@@ -434,6 +434,7 @@ def _deserialize_parameterized(parameterized_op, args, kwargs):
 class ParameterizedUdf:
     __slots__ = "name", "__call__", "_anonymous", "__weakref__"
     is_positional = False
+    _custom_dtype = None
 
     def __init__(self, name, anonymous):
         self.name = name
@@ -849,6 +850,7 @@ def _one(x):
 
 class UnaryOp(OpBase):
     __slots__ = "orig_func", "is_positional", "_is_udt", "_numba_func"
+    _custom_dtype = None
     _module = unary
     _modname = "unary"
     _typed_class = TypedBuiltinUnaryOp
@@ -1113,6 +1115,7 @@ class SelectOp(OpBase):
     _module = select
     _modname = "select"
     _is_udt = False
+    _custom_dtype = None
     _typed_class = TypedBuiltinSelectOp
     _parse_config = {
         "trim_from_front": 4,
@@ -1199,6 +1202,24 @@ def _pair(x, y):
     return 1  # pragma: no cover
 
 
+def _first_dtype(op, dtype, dtype2):
+    if dtype._is_udt:
+        return op._compile_udt(dtype, dtype2)
+    else:
+        return op[dtype]
+
+
+def _second_dtype(op, dtype, dtype2):
+    if dtype2._is_udt:
+        return op._compile_udt(dtype, dtype2)
+    else:
+        return op[dtype2]
+
+
+def _pair_dtype(op, dtype, dtype2):
+    return op[INT64]
+
+
 def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None):
     ztype = INT8 if return_type == BOOL else return_type
     xtype = INT8 if dtype == BOOL else dtype
@@ -1273,6 +1294,7 @@ class BinaryOp(OpBase):
         "is_positional",
         "_is_udt",
         "_numba_func",
+        "_custom_dtype",
     )
     _module = binary
     _modname = "binary"
@@ -1747,6 +1769,10 @@ class BinaryOp(OpBase):
         binary.eq._udt_ops = {}
         binary.ne._udt_types = {}
         binary.ne._udt_ops = {}
+        # Set custom dtype handling
+        binary.first._custom_dtype = _first_dtype
+        binary.second._custom_dtype = _second_dtype
+        binary.pair._custom_dtype = _pair_dtype
         cls._initialized = True
 
     def __init__(
@@ -1767,6 +1793,7 @@ class BinaryOp(OpBase):
         self._numba_func = numba_func
         self._is_udt = is_udt
         self.is_positional = is_positional
+        self._custom_dtype = None
         if is_udt:
             self._udt_types = {}  # {(dtype, dtype): DataType}
             self._udt_ops = {}  # {(dtype, dtype): TypedUserBinaryOp}
@@ -1796,6 +1823,7 @@ class Monoid(OpBase):
     __slots__ = "_binaryop", "_identity"
     is_commutative = True
     is_positional = False
+    _custom_dtype = None
     _module = monoid
     _modname = "monoid"
     _typed_class = TypedBuiltinMonoid
@@ -2338,6 +2366,10 @@ class Semiring(OpBase):
     def _is_udt(self):
         return self._binaryop is not None and self._binaryop._is_udt
 
+    @property
+    def _custom_dtype(self):
+        return self.binaryop._custom_dtype
+
     commutes_to = TypedBuiltinSemiring.commutes_to
     is_commutative = TypedBuiltinSemiring.is_commutative
     __call__ = TypedBuiltinSemiring.__call__
@@ -2345,20 +2377,28 @@ class Semiring(OpBase):
 
 def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scalar=False, kind=None):
     if isinstance(op, OpBase):
+        # UDTs always get compiled
         if op._is_udt:
             return op._compile_udt(dtype, dtype2)
-        if dtype2 is not None:
-            try:
-                dtype = unify(
-                    dtype, dtype2, is_left_scalar=is_left_scalar, is_right_scalar=is_right_scalar
-                )
-            except (TypeError, AttributeError):
-                if op.is_positional:
-                    return op[UINT64]
-                if op._udt_types is None:
-                    raise
+        # Single dtype is simple lookup
+        elif dtype2 is None:
+            return op[dtype]
+        # Handle special cases such as first and second (may have UDTs)
+        elif op._custom_dtype is not None:
+            return op._custom_dtype(op, dtype, dtype2)
+        # Generic case: try to unify the two dtypes
+        try:
+            return op[
+                unify(dtype, dtype2, is_left_scalar=is_left_scalar, is_right_scalar=is_right_scalar)
+            ]
+        except (TypeError, AttributeError):
+            # Failure to unify implies a dtype is UDT; some builtin operators can handle UDTs
+            if op.is_positional:
+                return op[UINT64]
+            elif op._udt_types is None:
+                raise
+            else:
                 return op._compile_udt(dtype, dtype2)
-        return op[dtype]
     elif isinstance(op, ParameterizedUdf):
         op = op()  # Use default parameters of parameterized UDFs
         return get_typed_op(
