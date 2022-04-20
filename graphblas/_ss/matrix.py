@@ -828,7 +828,7 @@ class ss:
                     - values : ndarray(ndim=2, shape=(nrows, ncols), order="F")
                 - ``raw=True``
                     - values : ndarray(ndim=1, size=nrows * ncols)
-                        - Stored row-oriented
+                        - Stored column-oriented
                     - nrows : int
                     - ncols : int
             - "coor" format
