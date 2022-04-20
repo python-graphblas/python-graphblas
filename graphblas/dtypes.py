@@ -99,7 +99,7 @@ def register_anonymous(dtype, name=None):
         check_status_carg(status, "Type", gb_obj[0])
     # For now, let's use "opaque" unsigned bytes for the c type.
     if name is None:
-        name = repr(dtype)
+        name = _default_name(dtype)
     numba_type = numba.typeof(dtype).dtype
     rv = DataType(name, gb_obj, None, f"uint8_t[{dtype.itemsize}]", numba_type, dtype)
     _registry[gb_obj] = rv
@@ -262,3 +262,21 @@ def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
     else:
         array_types.append(type2.np_type)
     return lookup_dtype(find_common_type(array_types, scalar_types))
+
+
+def _default_name(dtype):
+    if dtype in _registry:
+        dt = _registry[dtype]
+        if not dt._is_udt:
+            return dt.name
+    if dtype.subdtype is not None:
+        subdtype = _default_name(dtype.subdtype[0])
+        shape = ", ".join(map(str, dtype.subdtype[1]))
+        return f"{subdtype}[{shape}]"
+    elif dtype.names:
+        args = ", ".join(
+            f"{name!r}: {_default_name(dtype.fields[name][0])}" for name in dtype.names
+        )
+        return "{%s}" % args
+    else:
+        return repr(dtype)

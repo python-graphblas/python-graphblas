@@ -194,3 +194,15 @@ def test_auto_register():
     n = np.random.randint(10, 64)
     np_type = np.dtype(f"({n},)int16")
     assert lookup_dtype(np_type).np_type == np_type
+
+
+def test_default_names():
+    from graphblas.dtypes import _default_name
+
+    assert _default_name(np.dtype([("x", np.int32), ("y", np.float64)], align=True)) == (
+        "{'x': INT32, 'y': FP64}"
+    )
+    assert _default_name(np.dtype("(29,)uint8")) == "UINT8[29]"
+    assert _default_name(np.dtype("(3,4)bool")) == "BOOL[3, 4]"
+    assert _default_name(np.dtype((np.dtype("(5,)float64"), (6,)))) == "FP64[5][6]"
+    assert _default_name(np.dtype("S5")) == "dtype('S5')"
