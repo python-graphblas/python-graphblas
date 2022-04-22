@@ -2449,8 +2449,14 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             is_right_scalar=is_right_scalar,
             kind=kind,
         )
-    else:
-        raise TypeError(f"Unable to get typed operator from object with type {type(op)}")
+    elif isinstance(op, FunctionType):
+        if kind == "unary":
+            op = UnaryOp.register_anonymous(op, is_udt=True)
+            return op._compile_udt(dtype, dtype2)
+        elif kind.startswith("binary"):
+            op = BinaryOp.register_anonymous(op, is_udt=True)
+            return op._compile_udt(dtype, dtype2)
+    raise TypeError(f"Unable to get typed operator from object with type {type(op)}")
 
 
 def find_opclass(gb_op):
