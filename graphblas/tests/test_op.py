@@ -1198,3 +1198,11 @@ def test_binaryop_commute_exists():
             missing.add(commutes_to.name)
     if missing:
         raise AssertionError("Missing binaryops: " + ", ".join(sorted(missing)))
+
+
+def test_binom():
+    v = Vector.from_values([0, 1, 2], [3, 4, 5])
+    result = v.apply(binary.binom, 2).new()
+    expected = Vector.from_values([0, 1, 2], [3, 6, 10])
+    assert result.isequal(expected)
+    assert op.binom is binary.binom
