@@ -34,6 +34,7 @@ FCFP = frozenset(FC | FP)
 ALL = frozenset(NOFC | FC)
 POS = frozenset({INT32, INT64})
 NOBOOL = frozenset(ALL - BOOL)
+INT64 = frozenset({INT64})
 
 # fmt: off
 UNARY = {
@@ -67,6 +68,7 @@ BINARY = {
     },
     (BOOLINT, FP): {"ldexp"},
     (INT, INT): {"band", "bclr", "bget", "bor", "bset", "bshift", "bxnor", "bxor"},
+    (INT, INT64): {"binom"},
     (NOFC, BOOL): {"ge", "gt", "le", "lt", "lxnor"},
     (NOFC, FC): {"cmplx"},
     (NOFC, FP): {"atan2", "copysign", "fmod", "hypot", "remainder"},

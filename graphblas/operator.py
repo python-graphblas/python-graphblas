@@ -1194,17 +1194,15 @@ _MAX_INT64 = np.iinfo(np.int64).max
 
 
 def _binom(N, k):  # pragma: no cover
-    # Returns 0 if overflow or otherwise bad
-    if k > N or k < 0 or N == _MAX_INT64:
+    # Returns 0 if overflow or out-of-bounds
+    if k > N or k < 0:
         return 0
-    nterms = min(k, N - k)
-    N += 1
-    val = 1
-    for j in range(1, nterms + 1):
-        if val > _MAX_INT64 // (N - j):  # Overflow
+    val = np.int64(1)
+    for i in range(min(k, N - k)):
+        if val > _MAX_INT64 // (N - i):  # Overflow
             return 0
-        val *= N - j
-        val //= j
+        val *= N - i
+        val //= i + 1
     return val
 
 
