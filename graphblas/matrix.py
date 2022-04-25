@@ -277,11 +277,18 @@ class Matrix(BaseType):
         self._nrows = nrows.value
         self._ncols = ncols.value
 
-    def to_values(self, dtype=None):
+    def to_values(self, dtype=None, *, sort=True):
         """
         GrB_Matrix_extractTuples
         Extract the rows, columns and values as a 3-tuple of numpy arrays
+
+        If sort is True then the rows and columns will be lexicographically sorted
+        by rows then columns if sorted rowwise, else columns then rows if columnwise.
         """
+        if sort:
+            if backend != "suitesparse":
+                raise NotImplementedError()
+            self.wait()  # sort in SS
         nvals = self._nvals
         rows = _CArray(size=nvals, name="&rows_array")
         columns = _CArray(size=nvals, name="&columns_array")
