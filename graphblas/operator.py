@@ -2449,8 +2449,14 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             is_right_scalar=is_right_scalar,
             kind=kind,
         )
-    else:
-        raise TypeError(f"Unable to get typed operator from object with type {type(op)}")
+    elif isinstance(op, FunctionType):
+        if kind == "unary":
+            op = UnaryOp.register_anonymous(op, is_udt=True)
+            return op._compile_udt(dtype, dtype2)
+        elif kind.startswith("binary"):
+            op = BinaryOp.register_anonymous(op, is_udt=True)
+            return op._compile_udt(dtype, dtype2)
+    raise TypeError(f"Unable to get typed operator from object with type {type(op)}")
 
 
 def find_opclass(gb_op):
@@ -2575,6 +2581,15 @@ except Exception:  # pragma: no cover
 
     traceback.print_exc()
     raise
+
+unary.register_new = UnaryOp.register_new
+unary.register_anonymous = UnaryOp.register_anonymous
+binary.register_new = BinaryOp.register_new
+binary.register_anonymous = BinaryOp.register_anonymous
+monoid.register_new = Monoid.register_new
+monoid.register_anonymous = Monoid.register_anonymous
+semiring.register_new = Semiring.register_new
+semiring.register_anonymous = Semiring.register_anonymous
 
 _str_to_unary = {
     "-": unary.ainv,

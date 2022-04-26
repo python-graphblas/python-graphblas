@@ -2012,3 +2012,19 @@ def test_to_values_sort():
     indices, values = v.to_values(sort=True)
     assert_array_equal(indices, expected)
     assert_array_equal(values, expected)
+
+
+def test_lambda_udfs(v):
+    result = v.apply(lambda x: x + 1).new()
+    expected = binary.plus(v, 1).new()
+    assert result.isequal(expected)
+    result = v.ewise_mult(v, lambda x, y: x + y).new()
+    expected = binary.plus(v & v).new()
+    assert result.isequal(expected)
+    result = v.ewise_add(v, lambda x, y: x + y, require_monoid=False).new()
+    assert result.isequal(expected)
+    # Should we also allow lambdas for monoids with assumed identity of 0?
+    with pytest.raises(TypeError):
+        v.ewise_add(v, lambda x, y: x + y)
+    with pytest.raises(TypeError):
+        v.inner(v, lambda x, y: x + y)

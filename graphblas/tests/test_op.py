@@ -136,7 +136,7 @@ def test_unaryop_udf():
     def plus_one(x):
         return x + 1  # pragma: no cover
 
-    UnaryOp.register_new("plus_one", plus_one)
+    unary.register_new("plus_one", plus_one)
     assert hasattr(unary, "plus_one")
     assert unary.plus_one.orig_func is plus_one
     assert unary.plus_one[int].orig_func is plus_one
@@ -205,7 +205,7 @@ def test_binaryop_parameterized():
 
         return inner
 
-    op = BinaryOp.register_anonymous(plus_plus_x, parameterized=True)
+    op = binary.register_anonymous(plus_plus_x, parameterized=True)
     assert not op.is_positional
     assert op.monoid is None
     assert op(1).monoid is None
@@ -351,10 +351,10 @@ def test_semiring_parameterized():
     def plus_plus_x_identity(x=0):
         return -x
 
-    assert Semiring.register_anonymous(monoid.min, binary.plus).name == "min_plus"
+    assert semiring.register_anonymous(monoid.min, binary.plus).name == "min_plus"
 
     bin_op = BinaryOp.register_anonymous(plus_plus_x, parameterized=True)
-    mymonoid = Monoid.register_anonymous(bin_op, plus_plus_x_identity)
+    mymonoid = monoid.register_anonymous(bin_op, plus_plus_x_identity)
     # monoid and binaryop are both parameterized
     mysemiring = Semiring.register_anonymous(mymonoid, bin_op, name="my_semiring")
     assert not mysemiring.is_positional
