@@ -132,13 +132,13 @@ def check_values(d):
     assert d["matrix"].isequal(gb.Matrix.from_values([2], [3], 4), check_dtype=True)
     assert d["matrix.T"].isequal(gb.Matrix.from_values([3], [4], 5).T, check_dtype=True)
     assert type(d["vector.S"]) is gb.mask.StructuralMask
-    assert d["vector.S"].mask.isequal(v, check_dtype=True)
+    assert d["vector.S"].parent.isequal(v, check_dtype=True)
     assert type(d["vector.V"]) is gb.mask.ValueMask
-    assert d["vector.V"].mask.isequal(v, check_dtype=True)
+    assert d["vector.V"].parent.isequal(v, check_dtype=True)
     assert type(d["~vector.S"]) is gb.mask.ComplementedStructuralMask
-    assert d["~vector.S"].mask.isequal(v, check_dtype=True)
+    assert d["~vector.S"].parent.isequal(v, check_dtype=True)
     assert type(d["~vector.V"]) is gb.mask.ComplementedValueMask
-    assert d["~vector.V"].mask.isequal(v, check_dtype=True)
+    assert d["~vector.V"].parent.isequal(v, check_dtype=True)
     assert d["unary.abs"] is gb.unary.abs
     assert d["binary.minus"] is gb.binary.minus
     assert d["monoid.lxor"] is gb.monoid.lxor
