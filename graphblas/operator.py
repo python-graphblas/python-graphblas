@@ -1190,6 +1190,41 @@ def _isclose(rel_tol=1e-7, abs_tol=0.0):
     return inner
 
 
+_MAX_INT64 = np.iinfo(np.int64).max
+
+
+def _binom(N, k):  # pragma: no cover
+    # Returns 0 if overflow or out-of-bounds
+    if k > N or k < 0:
+        return 0
+    val = np.int64(1)
+    for i in range(min(k, N - k)):
+        if val > _MAX_INT64 // (N - i):  # Overflow
+            return 0
+        val *= N - i
+        val //= i + 1
+    return val
+
+
+# Kinda complicated, but works for now
+def _register_binom():
+    # "Fake" UDT so we only compile once for INT64
+    op = BinaryOp.register_new("binom", _binom, is_udt=True)
+    typed_op = op[INT64, INT64]
+    # Make this look like a normal operator
+    for dtype in [UINT8, UINT16, UINT32, UINT64, INT8, INT16, INT32, INT64]:
+        op.types[dtype] = INT64
+        op._typed_ops[dtype] = typed_op
+        if dtype != INT64:
+            op.coercions[dtype] = typed_op
+    # And make it not look like it operates on UDTs
+    typed_op._type2 = None
+    op._is_udt = False
+    op._udt_types = None
+    op._udt_ops = None
+    return op
+
+
 def _first(x, y):
     return x  # pragma: no cover
 
@@ -1671,6 +1706,10 @@ class BinaryOp(OpBase):
         BinaryOp.register_new("absfirst", _absfirst, lazy=True)
         BinaryOp.register_new("abssecond", _abssecond, lazy=True)
         BinaryOp.register_new("rpow", _rpow, lazy=True)
+
+        # For algorithms
+        binary._delayed["binom"] = (_register_binom, {})  # Lazy with custom creation
+        op._delayed["binom"] = binary
 
         BinaryOp.register_new("isclose", _isclose, parameterized=True)
 
