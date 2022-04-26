@@ -1998,3 +1998,19 @@ def test_reposition(v):
         result = v.reposition(offset, size=10).new()
         expected = get_expected(offset, 10)
         assert result.isequal(expected)
+
+
+def test_lambda_udfs(v):
+    result = v.apply(lambda x: x + 1).new()
+    expected = binary.plus(v, 1).new()
+    assert result.isequal(expected)
+    result = v.ewise_mult(v, lambda x, y: x + y).new()
+    expected = binary.plus(v & v).new()
+    assert result.isequal(expected)
+    result = v.ewise_add(v, lambda x, y: x + y, require_monoid=False).new()
+    assert result.isequal(expected)
+    # Should we also allow lambdas for monoids with assumed identity of 0?
+    with pytest.raises(TypeError):
+        v.ewise_add(v, lambda x, y: x + y)
+    with pytest.raises(TypeError):
+        v.inner(v, lambda x, y: x + y)
