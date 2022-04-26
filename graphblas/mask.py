@@ -1,11 +1,14 @@
+import warnings
+
+
 class Mask:
-    __slots__ = "mask", "__weakref__"
+    __slots__ = "parent", "__weakref__"
     complement = False
     structure = False
     value = False
 
     def __init__(self, mask):
-        self.mask = mask
+        self.parent = mask
 
     def __eq__(self, other):
         raise TypeError(f"__eq__ not defined for objects of type {type(self)}.")
@@ -14,14 +17,22 @@ class Mask:
         raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
 
     def __repr__(self):
-        return self.mask.__repr__(mask=self)
+        return self.parent.__repr__(mask=self)
 
     def _repr_html_(self):
-        return self.mask._repr_html_(mask=self)
+        return self.parent._repr_html_(mask=self)
 
     @property
     def _carg(self):
-        return self.mask.gb_obj[0]
+        return self.parent.gb_obj[0]
+
+    @property
+    def mask(self):
+        warnings.warn(
+            "`mask.mask` is deprecated; please use `mask.parent` instead.",
+            DeprecationWarning,
+        )
+        return self.parent
 
 
 class StructuralMask(Mask):
@@ -31,15 +42,15 @@ class StructuralMask(Mask):
     value = False
 
     def __invert__(self):
-        return ComplementedStructuralMask(self.mask)
+        return ComplementedStructuralMask(self.parent)
 
     @property
     def name(self):
-        return f"{self.mask.name}.S"
+        return f"{self.parent.name}.S"
 
     @property
     def _name_html(self):
-        return f"{self.mask._name_html}.S"
+        return f"{self.parent._name_html}.S"
 
 
 class ValueMask(Mask):
@@ -49,15 +60,15 @@ class ValueMask(Mask):
     value = True
 
     def __invert__(self):
-        return ComplementedValueMask(self.mask)
+        return ComplementedValueMask(self.parent)
 
     @property
     def name(self):
-        return f"{self.mask.name}.V"
+        return f"{self.parent.name}.V"
 
     @property
     def _name_html(self):
-        return f"{self.mask._name_html}.V"
+        return f"{self.parent._name_html}.V"
 
 
 class ComplementedStructuralMask(Mask):
@@ -67,15 +78,15 @@ class ComplementedStructuralMask(Mask):
     value = False
 
     def __invert__(self):
-        return StructuralMask(self.mask)
+        return StructuralMask(self.parent)
 
     @property
     def name(self):
-        return f"~{self.mask.name}.S"
+        return f"~{self.parent.name}.S"
 
     @property
     def _name_html(self):
-        return f"~{self.mask._name_html}.S"
+        return f"~{self.parent._name_html}.S"
 
 
 class ComplementedValueMask(Mask):
@@ -85,12 +96,12 @@ class ComplementedValueMask(Mask):
     value = True
 
     def __invert__(self):
-        return ValueMask(self.mask)
+        return ValueMask(self.parent)
 
     @property
     def name(self):
-        return f"~{self.mask.name}.V"
+        return f"~{self.parent.name}.V"
 
     @property
     def _name_html(self):
-        return f"~{self.mask._name_html}.V"
+        return f"~{self.parent._name_html}.V"

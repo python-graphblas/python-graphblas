@@ -331,46 +331,46 @@ class AmbiguousAssignOrExtract:
     def _input_mask_to_mask(self, input_mask):
         from .vector import Vector
 
-        if type(input_mask.mask) is Vector and type(self.parent) is not Vector:
+        if type(input_mask.parent) is Vector and type(self.parent) is not Vector:
             rowidx, colidx = self.resolved_indexes.indices
             if rowidx.size is None:
-                if self.parent._ncols != input_mask.mask._size:
+                if self.parent._ncols != input_mask.parent._size:
                     raise ValueError(
                         "Size of `input_mask` Vector does not match ncols of Matrix:\n"
-                        f"{self.parent.name}.ncols != {input_mask.mask.name}.size  -->  "
-                        f"{self.parent._ncols} != {input_mask.mask._size}"
+                        f"{self.parent.name}.ncols != {input_mask.parent.name}.size  -->  "
+                        f"{self.parent._ncols} != {input_mask.parent._size}"
                     )
-                mask_expr = input_mask.mask._prep_for_extract(self.resolved_indexes.get_index(1))
+                mask_expr = input_mask.parent._prep_for_extract(self.resolved_indexes.get_index(1))
             elif colidx.size is None:
-                if self.parent._nrows != input_mask.mask._size:
+                if self.parent._nrows != input_mask.parent._size:
                     raise ValueError(
                         "Size of `input_mask` Vector does not match nrows of Matrix:\n"
-                        f"{self.parent.name}.nrows != {input_mask.mask.name}.size  -->  "
-                        f"{self.parent._nrows} != {input_mask.mask._size}"
+                        f"{self.parent.name}.nrows != {input_mask.parent.name}.size  -->  "
+                        f"{self.parent._nrows} != {input_mask.parent._size}"
                     )
-                mask_expr = input_mask.mask._prep_for_extract(self.resolved_indexes.get_index(0))
+                mask_expr = input_mask.parent._prep_for_extract(self.resolved_indexes.get_index(0))
             else:
                 raise TypeError(
                     "Got Vector `input_mask` when extracting a submatrix from a Matrix.  "
                     "Vector `input_mask` with a Matrix (or TransposedMatrix) input is "
                     "only valid when extracting from a single row or column."
                 )
-        elif input_mask.mask.shape != self.parent.shape:
+        elif input_mask.parent.shape != self.parent.shape:
             if type(self.parent) is Vector:
                 attr = "size"
                 shape1 = self.parent._size
-                shape2 = input_mask.mask._size
+                shape2 = input_mask.parent._size
             else:
                 attr = "shape"
                 shape1 = self.parent.shape
-                shape2 = input_mask.mask.shape
+                shape2 = input_mask.parent.shape
             raise ValueError(
                 f"{attr.capitalize()} of `input_mask` does not match {attr} of input:\n"
-                f"{self.parent.name}.{attr} != {input_mask.mask.name}.{attr}  -->  "
+                f"{self.parent.name}.{attr} != {input_mask.parent.name}.{attr}  -->  "
                 f"{shape1} != {shape2}"
             )
         else:
-            mask_expr = input_mask.mask._prep_for_extract(self.resolved_indexes)
+            mask_expr = input_mask.parent._prep_for_extract(self.resolved_indexes)
         mask_value = mask_expr.new(name="mask_temp")
         return type(input_mask)(mask_value)
 

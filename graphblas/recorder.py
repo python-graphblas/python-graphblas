@@ -16,7 +16,7 @@ def gbstr(arg):
     elif isinstance(arg, TypedOpBase):
         name = arg.gb_name
     elif isinstance(arg, Mask):
-        name = arg.mask.name
+        name = arg.parent.name
     elif type(arg) is TransposedMatrix:
         name = arg._matrix.name
     elif type(arg) is DataType:

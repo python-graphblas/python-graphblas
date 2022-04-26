@@ -3111,6 +3111,8 @@ def test_deprecated(A):
         Vector.new(int)
     with pytest.warns(DeprecationWarning):
         Scalar.new(int)
+    with pytest.warns(DeprecationWarning):
+        A.S.mask
 
 
 def test_ndim(A):

@@ -1138,7 +1138,7 @@ class Matrix(BaseType):
                 )
             if rowsize is None and colsize is not None:
                 # Row-only selection
-                if mask is not None and type(mask.mask) is Matrix:
+                if mask is not None and type(mask.parent) is Matrix:
                     if is_submask:
                         # C[i, J](M) << v
                         raise TypeError(
@@ -1184,7 +1184,7 @@ class Matrix(BaseType):
                     )
             elif colsize is None and rowsize is not None:
                 # Column-only selection
-                if mask is not None and type(mask.mask) is Matrix:
+                if mask is not None and type(mask.parent) is Matrix:
                     if is_submask:
                         # C[I, j](M) << v
                         raise TypeError(
@@ -1307,13 +1307,13 @@ class Matrix(BaseType):
                         argname="value",
                         extra_message=extra_message,
                     )
-            if mask is not None and type(mask.mask) is Vector:
+            if mask is not None and type(mask.parent) is Vector:
                 if rowsize is None and colsize is not None:
                     if is_submask:
                         # C[i, J](m) << c
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Row_subassign"
-                        value_vector = Vector(value.dtype, size=mask.mask._size, name="v_temp")
+                        value_vector = Vector(value.dtype, size=mask.parent._size, name="v_temp")
                         expr_repr = (
                             "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
                         )
@@ -1341,7 +1341,7 @@ class Matrix(BaseType):
                         # C[I, j](m) << c
                         # SS, SuiteSparse-specific: subassign
                         cfunc_name = "GrB_Col_subassign"
-                        value_vector = Vector(value.dtype, size=mask.mask._size, name="v_temp")
+                        value_vector = Vector(value.dtype, size=mask.parent._size, name="v_temp")
                     else:
                         # C(m)[I, j] << c
                         # C[I, j] << c

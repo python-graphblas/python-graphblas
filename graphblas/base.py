@@ -176,8 +176,8 @@ def _check_mask(mask, output=None):
     if output is not None:
         from .vector import Vector
 
-        if type(output) is Vector and type(mask.mask) is not Vector:
-            raise TypeError(f"Mask object must be type Vector; got {type(mask.mask)}")
+        if type(output) is Vector and type(mask.parent) is not Vector:
+            raise TypeError(f"Mask object must be type Vector; got {type(mask.parent)}")
 
 
 class BaseType:
