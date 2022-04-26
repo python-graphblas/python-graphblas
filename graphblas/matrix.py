@@ -1736,8 +1736,8 @@ class TransposedMatrix:
         return self._matrix.dtype
 
     @wrapdoc(Matrix.to_values)
-    def to_values(self, dtype=None):
-        rows, cols, vals = self._matrix.to_values(dtype)
+    def to_values(self, dtype=None, *, sort=True):
+        rows, cols, vals = self._matrix.to_values(dtype, sort=sort)
         return cols, rows, vals
 
     @wrapdoc(Matrix.diag)

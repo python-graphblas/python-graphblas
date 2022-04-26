@@ -3356,3 +3356,5 @@ def test_to_values_sort():
     A = Matrix.from_values(r, c, r, nrows=N, ncols=N)
     rows, cols, values = A.to_values(sort=True)
     assert_array_equal(rows, expected_rows)
+    rows, cols, values = A.T.to_values(sort=True)
+    assert_array_equal(cols, expected_rows)
