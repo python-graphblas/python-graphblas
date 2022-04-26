@@ -2582,6 +2582,15 @@ except Exception:  # pragma: no cover
     traceback.print_exc()
     raise
 
+unary.register_new = UnaryOp.register_new
+unary.register_anonymous = UnaryOp.register_anonymous
+binary.register_new = BinaryOp.register_new
+binary.register_anonymous = BinaryOp.register_anonymous
+monoid.register_new = Monoid.register_new
+monoid.register_anonymous = Monoid.register_anonymous
+semiring.register_new = Semiring.register_new
+semiring.register_anonymous = Semiring.register_anonymous
+
 _str_to_unary = {
     "-": unary.ainv,
     "~": unary.lnot,
