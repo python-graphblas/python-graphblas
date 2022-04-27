@@ -2000,6 +2000,20 @@ def test_reposition(v):
         assert result.isequal(expected)
 
 
+def test_to_values_sort():
+    # How can we get a vector to a jumbled state in SS so that export won't be sorted?
+    N = 1000000
+    a = np.unique(np.random.randint(N, size=100))
+    expected = a.copy()
+    np.random.shuffle(a)
+    v = Vector.from_values(a, a, size=N)
+    indices, values = v.to_values(sort=False)
+    v = Vector.from_values(a, a, size=N)
+    indices, values = v.to_values(sort=True)
+    assert_array_equal(indices, expected)
+    assert_array_equal(values, expected)
+
+
 def test_lambda_udfs(v):
     result = v.apply(lambda x: x + 1).new()
     expected = binary.plus(v, 1).new()

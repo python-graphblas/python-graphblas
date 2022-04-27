@@ -267,11 +267,17 @@ class Vector(BaseType):
         call("GrB_Vector_resize", [self, size])
         self._size = size.value
 
-    def to_values(self, dtype=None):
+    def to_values(self, dtype=None, *, sort=True):
         """
         GrB_Vector_extractTuples
         Extract the indices and values as a 2-tuple of numpy arrays
+
+        If sort is True, the indices is guaranteed to be sorted.
         """
+        if sort:
+            if backend != "suitesparse":
+                raise NotImplementedError()
+            self.wait()  # sort in SS
         nvals = self._nvals
         indices = _CArray(size=nvals, name="&index_array")
         values = _CArray(size=nvals, dtype=self.dtype, name="&values_array")

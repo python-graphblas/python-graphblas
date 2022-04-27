@@ -3343,3 +3343,20 @@ def test_reposition(A):
     result(A.S, binary.plus) << A.T.reposition(-1, 1)
     expected *= 2
     assert result.isequal(expected)
+
+
+def test_to_values_sort():
+    # How can we get a matrix to a jumbled state in SS so that export won't be sorted?
+    N = 1000000
+    r = np.unique(np.random.randint(N, size=100))
+    c = np.unique(np.random.randint(N, size=100))
+    expected_rows = r.copy()
+    np.random.shuffle(r)
+    np.random.shuffle(c)
+    A = Matrix.from_values(r, c, r, nrows=N, ncols=N)
+    rows, cols, values = A.to_values(sort=False)
+    A = Matrix.from_values(r, c, r, nrows=N, ncols=N)
+    rows, cols, values = A.to_values(sort=True)
+    assert_array_equal(rows, expected_rows)
+    rows, cols, values = A.T.to_values(sort=True)
+    assert_array_equal(cols, expected_rows)
