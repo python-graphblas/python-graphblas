@@ -398,8 +398,8 @@ def test_vector_repr_small(v):
         '"v"        nvals  size  dtype  format\n'
         "gb.Vector      3     5   FP64  bitmap\n"
         "-------------------------------------\n"
-        "    0 1    2 3    4\n"
-        "  0.0    1.1    2.2"
+        "index    0 1    2 3    4\n"
+        "value  0.0    1.1    2.2"
     )
 
 
@@ -411,8 +411,8 @@ def test_vector_repr_large(w):
             '"w"        nvals  size  dtype  format\n'
             "gb.Vector      4    77  INT64  bitmap\n"
             "-------------------------------------\n"
-            " 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
-            "  1              2                       ...  3              4                     "
+            "index 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
+            "value  1              2                       ...  3              4                     "
         )
 
 
@@ -424,8 +424,8 @@ def test_vector_mask_repr_small(v):
         "StructuralMask\n"
         "of gb.Vector        3     5   FP64  bitmap\n"
         "------------------------------------------\n"
-        "  0 1  2 3  4\n"
-        "  1    1    1"
+        "index  0 1  2 3  4\n"
+        "value  1    1    1"
     )
     repr_printer(v.V, "v.V")
     assert repr(v.V) == (
@@ -433,8 +433,8 @@ def test_vector_mask_repr_small(v):
         "ValueMask   \n"
         "of gb.Vector      3     5   FP64  bitmap\n"
         "----------------------------------------\n"
-        "  0 1  2 3  4\n"
-        "  0    1    1"
+        "index  0 1  2 3  4\n"
+        "value  0    1    1"
     )
     repr_printer(~v.S, "~v.S")
     assert repr(~v.S) == (
@@ -442,8 +442,8 @@ def test_vector_mask_repr_small(v):
         "ComplementedStructuralMask\n"
         "of gb.Vector                    3     5   FP64  bitmap\n"
         "------------------------------------------------------\n"
-        "  0 1  2 3  4\n"
-        "  0    0    0"
+        "index  0 1  2 3  4\n"
+        "value  0    0    0"
     )
     repr_printer(~v.V, "~v.V")
     assert repr(~v.V) == (
@@ -451,8 +451,8 @@ def test_vector_mask_repr_small(v):
         "ComplementedValueMask\n"
         "of gb.Vector               3     5   FP64  bitmap\n"
         "-------------------------------------------------\n"
-        "  0 1  2 3  4\n"
-        "  1    0    0"
+        "index  0 1  2 3  4\n"
+        "value  1    0    0"
     )
 
 
@@ -465,8 +465,8 @@ def test_vector_mask_repr_large(w):
             "StructuralMask\n"
             "of gb.Vector        4    77  INT64  bitmap\n"
             "------------------------------------------\n"
-            " 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
-            "  1              1                       ...  1              1                     "
+            "index 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
+            "value  1              1                       ...  1              1                     "
         )
         repr_printer(w.V, "w.V", indent=8)
         assert repr(w.V) == (
@@ -474,8 +474,8 @@ def test_vector_mask_repr_large(w):
             "ValueMask   \n"
             "of gb.Vector      4    77  INT64  bitmap\n"
             "----------------------------------------\n"
-            " 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
-            "  1              1                       ...  1              1                     "
+            "index 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
+            "value  1              1                       ...  1              1                     "
         )
         repr_printer(~w.S, "~w.S", indent=8)
         assert repr(~w.S) == (
@@ -483,8 +483,8 @@ def test_vector_mask_repr_large(w):
             "ComplementedStructuralMask\n"
             "of gb.Vector                    4    77  INT64  bitmap\n"
             "------------------------------------------------------\n"
-            " 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
-            "  0              0                       ...  0              0                     "
+            "index 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
+            "value  0              0                       ...  0              0                     "
         )
         repr_printer(~w.V, "~w.V", indent=8)
         assert repr(~w.V) == (
@@ -492,8 +492,8 @@ def test_vector_mask_repr_large(w):
             "ComplementedValueMask\n"
             "of gb.Vector               4    77  INT64  bitmap\n"
             "-------------------------------------------------\n"
-            " 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
-            "  0              0                       ...  0              0                     "
+            "index 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
+            "value  0              0                       ...  0              0                     "
         )
 
 
@@ -3716,8 +3716,8 @@ def test_vector_huge():
         '"v_0"      nvals                 size  dtype  format\n'
         "gb.Vector      0  1152921504606846976  INT64  sparse\n"
         "----------------------------------------------------\n"
-        " 0                    ... 1152921504606846975\n"
-        "                      ...                    "
+        "index 0                    ... 1152921504606846975\n"
+        "value                      ...                    "
     )
     v2 = v[0:].new()
     assert v2.isequal(v)
@@ -5767,8 +5767,8 @@ def test_autocompute(A, B, v):
         '"Result"   nvals               size  dtype        format\n'
         "gb.Vector      1  36028797018963968  INT64  sparse (iso)\n"
         "--------------------------------------------------------\n"
-        " 0                 1                  ... 36028797018963966 36028797018963967\n"
-        "                 2                    ...                                    \n"
+        "index 0                 1                  ... 36028797018963966 36028797018963967\n"
+        "value                 2                    ...                                    \n"
         "\n"
         "Do expr.new() or other << expr to calculate the expression."
     )
@@ -7293,8 +7293,8 @@ def test_display_nan():
         '"v"        nvals  size  dtype  format\n'
         "gb.Vector      2     3   FP64  bitmap\n"
         "-------------------------------------\n"
-        "    0    1 2\n"
-        "  1.0  nan  "
+        "index    0    1 2\n"
+        "value  1.0  nan  "
     )
     html_printer(v, "v")
     assert repr_html(v) == (
@@ -7485,8 +7485,8 @@ def test_large_iso():
         '"v_0"                    nvals                 size  dtype      format\n'
         "gb.Vector  1152921504606846976  1152921504606846976  INT64  full (iso)\n"
         "----------------------------------------------------------------------\n"
-        " 0                    ... 1152921504606846975\n"
-        "                   1  ...                   1"
+        "index 0                    ... 1152921504606846975\n"
+        "value                   1  ...                   1"
     )
     repr_printer(v.S, "v.S")
     assert repr(v.S) == (
@@ -7494,8 +7494,8 @@ def test_large_iso():
         "StructuralMask\n"
         "of gb.Vector    1152921504606846976  1152921504606846976  INT64  full (iso)\n"
         "---------------------------------------------------------------------------\n"
-        " 0                    ... 1152921504606846975\n"
-        "                   1  ...                   1"
+        "index 0                    ... 1152921504606846975\n"
+        "value                   1  ...                   1"
     )
 
 
@@ -7872,8 +7872,8 @@ def test_scalar_as_vector():
         '"(GrB_Vector)s_0"  nvals  size  dtype      format\n'
         "gb.Vector              1     1  INT64  full (iso)\n"
         "-------------------------------------------------\n"
-        "  0\n"
-        "  5"
+        "index  0\n"
+        "value  5"
     )
     expr = v.reduce()
     repr_printer(expr, "expr")
@@ -8066,8 +8066,8 @@ def test_udt():
         '"v_0"      nvals  size         dtype  format\n'
         "gb.Vector      2     2  record_dtype    full\n"
         "--------------------------------------------\n"
-        "           0          1\n"
-        "  (False, 2)  (True, 3)"
+        "index           0          1\n"
+        "value  (False, 2)  (True, 3)"
     )
     A = Matrix(udt, nrows=1, ncols=3)
     A[:, :2] = 0
@@ -8089,8 +8089,8 @@ def test_udt():
         '"v_1"      nvals  size         dtype  format\n'
         "gb.Vector      2     2  has_subdtype    full\n"
         "--------------------------------------------\n"
-        "          0          1\n"
-        "  [1, 2, 3]  [3, 2, 1]"
+        "index          0          1\n"
+        "value  [1, 2, 3]  [3, 2, 1]"
     )
     A = Matrix(udt2, nrows=1, ncols=3)
     A[:, :2] = 1
@@ -8101,4 +8101,28 @@ def test_udt():
         "-----------------------------------------------------------\n"
         "           0          1 2\n"
         "0  [1, 1, 1]  [1, 1, 1]  "
+    )
+
+
+def test_empty():
+    v = Vector(int, 0)
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v_0"      nvals  size  dtype  format\n'
+        "gb.Vector      0     0  INT64  sparse\n"
+        "-------------------------------------"
+    )
+    A = Matrix(int, 0, 0)
+    repr_printer(A, "A")
+    assert repr(A) == (
+        '"M_0"      nvals  nrows  ncols  dtype  format\n'
+        "gb.Matrix      0      0      0  INT64     csr\n"
+        "---------------------------------------------"
+    )
+    A = Matrix(int, 0, 5)
+    repr_printer(A, "A")
+    assert repr(A) == (
+        '"M_1"      nvals  nrows  ncols  dtype  format\n'
+        "gb.Matrix      0      0      5  INT64     csr\n"
+        "---------------------------------------------"
     )
