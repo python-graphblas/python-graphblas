@@ -597,9 +597,12 @@ def format_matrix(matrix, *, max_rows=None, min_rows=None, max_columns=None, mas
     )
     if has_pandas:
         df = _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, mask=mask)
-        with pd.option_context("display.show_dimensions", False, "display.large_repr", "truncate"):
-            df_repr = df.__repr__()
-        return f"{header}\n{df_repr}"
+        if 0 not in matrix.shape:
+            with pd.option_context(
+                "display.show_dimensions", False, "display.large_repr", "truncate"
+            ):
+                df_repr = df.__repr__()
+            return f"{header}\n{df_repr}"
     return header
 
 
@@ -614,9 +617,15 @@ def format_vector(vector, *, max_rows=None, min_rows=None, max_columns=None, mas
     )
     if has_pandas:
         df = _get_vector_dataframe(vector, max_rows, min_rows, max_columns, mask=mask)
-        with pd.option_context("display.show_dimensions", False, "display.large_repr", "truncate"):
-            df_repr = df.__repr__()
-        return f"{header}\n{df_repr}"
+        if vector._size > 0:
+            if df.columns[0] != "index":
+                df.columns.name = "index"
+                df.index = ["value"]
+            with pd.option_context(
+                "display.show_dimensions", False, "display.large_repr", "truncate"
+            ):
+                df_repr = df.__repr__()
+            return f"{header}\n{df_repr}"
     return header
 
 
