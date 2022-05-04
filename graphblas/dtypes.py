@@ -80,7 +80,14 @@ def register_new(name, dtype):
 
 
 def register_anonymous(dtype, name=None):
-    dtype = np.dtype(dtype)
+    try:
+        dtype = np.dtype(dtype)
+    except TypeError:
+        if isinstance(dtype, dict):
+            # Allow dtypes such as `{'x': int, 'y': float}` for convenience
+            dtype = np.dtype([(key, lookup_dtype(val).np_type) for key, val in dtype.items()])
+        else:
+            raise
     if dtype in _registry:
         # Always use the same object, but use the latest name
         rv = _registry[dtype]
@@ -215,7 +222,7 @@ def lookup_dtype(key, value=None):
         return key
     try:
         return _registry[key]
-    except KeyError:
+    except (KeyError, TypeError):
         pass
     if value is not None and hasattr(value, "dtype") and value.dtype in _registry:
         return _registry[value.dtype]
@@ -223,12 +230,10 @@ def lookup_dtype(key, value=None):
     if key is None:
         raise TypeError("Bad dtype: None.  A valid dtype must be provided.")
     try:
-        np_type = np.dtype(key)
+        # Auto-register!
+        return register_anonymous(key)
     except Exception:
         pass
-    else:
-        # Auto-register!
-        return register_anonymous(np_type)
     try:
         return lookup_dtype(key.literal_type)  # For numba dtype inference
     except Exception:

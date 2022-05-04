@@ -206,3 +206,8 @@ def test_default_names():
     assert _default_name(np.dtype("(3,4)bool")) == "BOOL[3, 4]"
     assert _default_name(np.dtype((np.dtype("(5,)float64"), (6,)))) == "FP64[5][6]"
     assert _default_name(np.dtype("S5")) == "dtype('S5')"
+
+
+def test_record_dtype_from_dict():
+    dtype = dtypes.lookup_dtype({"x": int, "y": float})
+    assert dtype.name == "{'x': INT64, 'y': FP64}"
