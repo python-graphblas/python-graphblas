@@ -442,3 +442,10 @@ def test_concat(s):
     A = gb.ss.concat([[s], [s], [empty]])
     expected = Matrix.from_values([0, 1], [0, 0], 5, nrows=3, ncols=1)
     assert A.isequal(expected)
+
+
+def test_record_from_dict():
+    s = Scalar.from_value(
+        {"x": 1, "y": {"a": 2, "b": 3}}, dtype={"x": int, "y": {"a": int, "b": int}}
+    )
+    assert s == (1, (2, 3))
