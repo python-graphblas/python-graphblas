@@ -9,7 +9,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas
-from graphblas import agg, binary, dtypes, monoid, select, semiring, unary
+from graphblas import agg, binary, dtypes, indexunary, monoid, select, semiring, unary
 from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
@@ -1080,6 +1080,38 @@ def test_apply_binary(A):
     w3 = A.apply(monoid.plus, right=1).new()
     assert w1.isequal(w2)
     assert w1.isequal(w3)
+
+
+def test_apply_indexunary(A):
+    ridx = [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]
+    cidx = [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6]
+    Ar = Matrix.from_values(ridx, cidx, ridx)
+    r1 = A.apply("rowindex").new()
+    r2 = A.apply(indexunary.rowindex).new()
+    r3 = indexunary.rowindex(A).new()
+    assert r1.isequal(Ar)
+    assert r2.isequal(Ar)
+    assert r3.isequal(Ar)
+
+    Ac = Matrix.from_values(ridx, cidx, [c + 2 for c in cidx])
+    c1 = A.apply("colindex", 2).new()
+    c2 = A.apply(indexunary.colindex, 2).new()
+    c3 = indexunary.colindex(A, thunk=2).new()
+    assert c1.isequal(Ac)
+    assert c2.isequal(Ac)
+    assert c3.isequal(Ac)
+
+    A3 = Matrix.from_values(ridx, cidx, [1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0], dtype=bool)
+    s3 = Scalar(dtypes.INT64)
+    s3.value = 3
+    w1 = A.apply(indexunary.valueeq, s3).new()
+    w2 = A.apply(select.valueeq, s3).new()
+    w3 = A.apply("==", s3).new()
+    w4 = indexunary.valueeq(A, s3).new()
+    assert w1.isequal(A3)
+    assert w2.isequal(A3)
+    assert w3.isequal(A3)
+    assert w4.isequal(A3)
 
 
 def test_select(A):

@@ -59,6 +59,7 @@ _SPECIAL_ATTRS = {
     "expr",
     "ffi",
     "formatting",
+    "indexunary",
     "infix",
     "io",
     "lib",
