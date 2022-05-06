@@ -3350,6 +3350,8 @@ def test_to_values_sort():
     N = 1000000
     r = np.unique(np.random.randint(N, size=100))
     c = np.unique(np.random.randint(N, size=100))
+    r = r[: c.size].copy()  # make sure same length
+    c = c[: r.size].copy()
     expected_rows = r.copy()
     np.random.shuffle(r)
     np.random.shuffle(c)
