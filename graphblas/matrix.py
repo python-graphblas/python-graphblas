@@ -10,7 +10,7 @@ from .dtypes import _INDEX, FP64, lookup_dtype, unify
 from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
-from .operator import get_semiring, get_typed_op
+from .operator import find_opclass, get_semiring, get_typed_op, op_from_string
 from .scalar import _MATERIALIZE, Scalar, ScalarExpression, _as_scalar, _scalar_index
 from .utils import (
     _CArray,
@@ -740,11 +740,23 @@ class Matrix(BaseType):
         Apply UnaryOp to each element of the calling Matrix
         A BinaryOp can also be applied if a scalar is passed in as `left` or `right`,
             effectively converting a BinaryOp into a UnaryOp
+        An IndexUnaryOp can also be applied with the thunk passed in as `right`
         """
         method_name = "apply"
         extra_message = (
-            "apply only accepts UnaryOp with no scalars or BinaryOp with `left` or `right` scalar."
+            "apply only accepts UnaryOp with no scalars or BinaryOp with `left` or `right` scalar "
+            "or IndexUnaryOp with `right` thunk."
         )
+        if isinstance(op, str):
+            op = op_from_string(op)
+        op, opclass = find_opclass(op)
+        if opclass in {"IndexUnaryOp", "SelectOp"}:
+            # Provide default value for index unary
+            if right is None:
+                right = False  # most basic form of 0 when unifying dtypes
+            if left is not None:
+                raise TypeError("Do not pass `left` when applying IndexUnaryOp")
+
         if left is None and right is None:
             op = get_typed_op(op, self.dtype, kind="unary")
             self._expect_op(
@@ -772,7 +784,7 @@ class Matrix(BaseType):
                         op=op,
                     )
             op = get_typed_op(op, left.dtype, self.dtype, is_left_scalar=True, kind="binary")
-            if op.opclass == "Monoid":
+            if opclass == "Monoid":
                 op = op.binaryop
             else:
                 self._expect_op(
@@ -807,26 +819,33 @@ class Matrix(BaseType):
                         extra_message="Literal scalars also accepted.",
                         op=op,
                     )
-            op = get_typed_op(op, self.dtype, right.dtype, is_right_scalar=True, kind="binary")
-            if op.opclass == "Monoid":
-                op = op.binaryop
-            else:
-                self._expect_op(
-                    op,
-                    "BinaryOp",
-                    within=method_name,
-                    argname="op",
-                    extra_message=extra_message,
+            if opclass in {"IndexUnaryOp", "SelectOp"}:
+                op = get_typed_op(
+                    op, self.dtype, right.dtype, is_right_scalar=True, kind="indexunary"
                 )
+                cfunc_method = "IndexOp"
+            else:
+                op = get_typed_op(op, self.dtype, right.dtype, is_right_scalar=True, kind="binary")
+                cfunc_method = "BinaryOp2nd"
+                if opclass == "Monoid":
+                    op = op.binaryop
+                else:
+                    self._expect_op(
+                        op,
+                        "BinaryOp",
+                        within=method_name,
+                        argname="op",
+                        extra_message=extra_message,
+                    )
             if right._is_cscalar:
                 if right.dtype._is_udt:
                     dtype_name = "UDT"
                     right = _Pointer(right)
                 else:
                     dtype_name = right.dtype.name
-                cfunc_name = f"GrB_Matrix_apply_BinaryOp2nd_{dtype_name}"
+                cfunc_name = f"GrB_Matrix_apply_{cfunc_method}_{dtype_name}"
             else:
-                cfunc_name = "GrB_Matrix_apply_BinaryOp2nd_Scalar"
+                cfunc_name = f"GrB_Matrix_apply_{cfunc_method}_Scalar"
             args = [self, right]
             expr_repr = "{0.name}.apply({op}, right={1._expr_name})"
         else:

@@ -36,7 +36,7 @@ if _supports_complex:
 
 _STANDARD_OPERATOR_NAMES = set()
 
-from . import binary, monoid, op, semiring, unary, select  # noqa isort:skip
+from . import binary, indexunary, monoid, op, select, semiring, unary  # noqa isort:skip
 
 ffi_new = ffi.new
 UNKNOWN_OPCLASS = "UnknownOpClass"
@@ -187,6 +187,16 @@ class TypedBuiltinUnaryOp(TypedOpBase):
             "Calling a UnaryOp is syntactic sugar for calling apply.  "
             f"For example, `A.apply({self!r})` is the same as `{self!r}(A)`."
         )
+
+
+class TypedBuiltinIndexUnaryOp(TypedOpBase):
+    __slots__ = ()
+    opclass = "IndexUnaryOp"
+
+    def __call__(self, val, thunk=None):
+        if thunk is None:
+            thunk = False  # most basic form of 0 when unifying dtypes
+        return _call_op(self, val, right=thunk)
 
 
 class TypedBuiltinSelectOp(TypedOpBase):
@@ -1110,8 +1120,70 @@ class UnaryOp(OpBase):
     __call__ = TypedBuiltinUnaryOp.__call__
 
 
+class IndexUnaryOp(OpBase):
+    __slots__ = "is_positional"
+    _module = indexunary
+    _modname = "indexunary"
+    _is_udt = False
+    _custom_dtype = None
+    _typed_class = TypedBuiltinIndexUnaryOp
+    _parse_config = {
+        "trim_from_front": 4,
+        "num_underscores": 1,
+        "re_exprs": [
+            re.compile("^GrB_(ROWINDEX|COLINDEX)_(INT32|INT64)$"),
+        ],
+        "re_exprs_return_bool": [
+            re.compile("^GrB_(TRIL|TRIU|DIAG|OFFDIAG|COLLE|COLGT|ROWLE|ROWGT)$"),
+            re.compile(
+                "^GrB_(VALUEEQ|VALUENE|VALUEGT|VALUEGE|VALUELT|VALUELE)"
+                "_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$"
+            ),
+            re.compile("^GxB_(VALUEEQ|VALUENE)_(FC32|FC64)$"),
+        ],
+    }
+    # fmt: off
+    _positional = {"tril", "triu", "diag", "offdiag", "colle", "colgt", "rowle", "rowgt",
+                   "rowindex", "colindex"}
+    # fmt: on
+
+    @classmethod
+    def _initialize(cls):
+        super()._initialize(include_in_ops=False)
+        # Update type information to include UINT64 for positional ops
+        for name in ("tril", "triu", "diag", "offdiag", "colle", "colgt", "rowle", "rowgt"):
+            op = getattr(indexunary, name)
+            typed_op = op._typed_ops[BOOL]
+            output_type = op.types[BOOL]
+            if UINT64 not in op.types:
+                op.types[UINT64] = output_type
+                op._typed_ops[UINT64] = typed_op
+                op.coercions[UINT64] = BOOL
+        for name in ("rowindex", "colindex"):
+            op = getattr(indexunary, name)
+            typed_op = op._typed_ops[INT64]
+            output_type = op.types[INT64]
+            if UINT64 not in op.types:
+                op.types[UINT64] = output_type
+                op._typed_ops[UINT64] = typed_op
+                op.coercions[UINT64] = INT64
+        cls._initialized = True
+
+    def __init__(
+        self,
+        name,
+        *,
+        anonymous=False,
+        is_positional=False,
+    ):
+        super().__init__(name, anonymous=anonymous)
+        self.is_positional = is_positional
+
+    __call__ = TypedBuiltinIndexUnaryOp.__call__
+
+
 class SelectOp(OpBase):
-    __slots__ = ("is_positional",)
+    __slots__ = "is_positional"
     _module = select
     _modname = "select"
     _is_udt = False
@@ -1134,20 +1206,15 @@ class SelectOp(OpBase):
     @classmethod
     def _initialize(cls):
         super()._initialize(include_in_ops=False)
-        # Update type information to handle more than bool
-        bool_names = ("tril", "triu", "diag", "offdiag", "colle", "colgt", "rowle", "rowgt")
-        types = [INT8, UINT8, INT16, UINT16, INT32, UINT32, INT64, UINT64, FP32, FP64]
-        if _supports_complex:
-            types.extend([FC32, FC64])
-        for name in bool_names:
+        # Update type information to include UINT64 for positional ops
+        for name in ("tril", "triu", "diag", "offdiag", "colle", "colgt", "rowle", "rowgt"):
             op = getattr(select, name)
             typed_op = op._typed_ops[BOOL]
             output_type = op.types[BOOL]
-            for dtype in types:
-                if dtype not in op.types:
-                    op.types[dtype] = output_type
-                    op._typed_ops[dtype] = typed_op
-                    op.coercions[dtype] = BOOL
+            if UINT64 not in op.types:
+                op.types[UINT64] = output_type
+                op._typed_ops[UINT64] = typed_op
+                op.coercions[UINT64] = BOOL
         cls._initialized = True
 
     def __init__(
@@ -2475,10 +2542,12 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
                     raise ValueError(
                         f"Unknown binary or aggregator string: {op!r}.  Example usage: '+[int]'"
                     ) from None
+
         else:
             raise ValueError(
                 f"Unable to get op from string {op!r}.  `kind=` argument must be provided as "
-                '"unary", "binary", "monoid", "semiring", or "binary|aggregator".'
+                '"unary", "binary", "monoid", "semiring", "indexunary", "select", '
+                'or "binary|aggregator".'
             )
         return get_typed_op(
             op,
@@ -2610,6 +2679,7 @@ def get_semiring(monoid, binaryop, name=None):
 # Now initialize all the things!
 try:
     UnaryOp._initialize()
+    IndexUnaryOp._initialize()
     SelectOp._initialize()
     BinaryOp._initialize()
     Monoid._initialize()
@@ -2726,6 +2796,12 @@ def unary_from_string(string):
     return _from_string(string, unary, _str_to_unary, "abs[int]")
 
 
+def indexunary_from_string(string):
+    # "select" is a variant of IndexUnary, so the string abbreviations in
+    # _str_to_select are appropriate to reuse here
+    return _from_string(string, indexunary, _str_to_select, "row_index")
+
+
 def select_from_string(string):
     return _from_string(string, select, _str_to_select, "tril")
 
@@ -2764,6 +2840,7 @@ def op_from_string(string):
         semiring_from_string,
         # Give binary precedence over this
         select_from_string,
+        indexunary_from_string,
     ]:
         try:
             return func(string)
@@ -2773,6 +2850,7 @@ def op_from_string(string):
 
 
 unary.from_string = unary_from_string
+indexunary.from_string = indexunary_from_string
 select.from_string = select_from_string
 binary.from_string = binary_from_string
 monoid.from_string = monoid_from_string
