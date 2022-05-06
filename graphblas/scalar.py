@@ -287,6 +287,8 @@ class Scalar(BaseType):
                 np_type = self.dtype.np_type
                 if np_type.subdtype is None:
                     arr = np.empty(1, dtype=np_type)
+                    if isinstance(val, dict) and np_type.names is not None:
+                        val = _dict_to_record(np_type, val)
                 else:
                     arr = np.empty(np_type.subdtype[1], dtype=np_type.subdtype[0])
                 arr[:] = val
@@ -628,6 +630,18 @@ def _as_scalar(scalar, dtype=None, *, is_cscalar):
         return scalar.dup(dtype, is_cscalar=is_cscalar, name=scalar.name)
     else:
         return scalar
+
+
+def _dict_to_record(np_type, d):
+    """Converts e.g. `{"x": 1, "y": 2.3}` to `(1, 2.3)`"""
+    rv = []
+    for name, (dtype, _) in np_type.fields.items():
+        val = d[name]
+        if dtype.names is not None and isinstance(val, dict):
+            rv.append(_dict_to_record(dtype, val))
+        else:
+            rv.append(val)
+    return tuple(rv)
 
 
 _MATERIALIZE = Scalar.from_value(lib.GrB_MATERIALIZE, is_cscalar=True, name="GrB_MATERIALIZE")
