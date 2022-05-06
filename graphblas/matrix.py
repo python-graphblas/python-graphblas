@@ -749,8 +749,8 @@ class Matrix(BaseType):
         )
         if isinstance(op, str):
             op = op_from_string(op)
-        opclass = find_opclass(op)[1]
-        if opclass in ("IndexUnaryOp", "SelectOp"):
+        op, opclass = find_opclass(op)
+        if opclass in {"IndexUnaryOp", "SelectOp"}:
             # Provide default value for index unary
             if right is None:
                 right = False  # most basic form of 0 when unifying dtypes
@@ -784,7 +784,7 @@ class Matrix(BaseType):
                         op=op,
                     )
             op = get_typed_op(op, left.dtype, self.dtype, is_left_scalar=True, kind="binary")
-            if op.opclass == "Monoid":
+            if opclass == "Monoid":
                 op = op.binaryop
             else:
                 self._expect_op(
@@ -819,7 +819,7 @@ class Matrix(BaseType):
                         extra_message="Literal scalars also accepted.",
                         op=op,
                     )
-            if opclass in ("IndexUnaryOp", "SelectOp"):
+            if opclass in {"IndexUnaryOp", "SelectOp"}:
                 op = get_typed_op(
                     op, self.dtype, right.dtype, is_right_scalar=True, kind="indexunary"
                 )
@@ -827,16 +827,16 @@ class Matrix(BaseType):
             else:
                 op = get_typed_op(op, self.dtype, right.dtype, is_right_scalar=True, kind="binary")
                 cfunc_method = "BinaryOp2nd"
-            if op.opclass == "Monoid":
-                op = op.binaryop
-            else:
-                self._expect_op(
-                    op,
-                    ("BinaryOp", "IndexUnaryOp", "SelectOp"),
-                    within=method_name,
-                    argname="op",
-                    extra_message=extra_message,
-                )
+                if opclass == "Monoid":
+                    op = op.binaryop
+                else:
+                    self._expect_op(
+                        op,
+                        "BinaryOp",
+                        within=method_name,
+                        argname="op",
+                        extra_message=extra_message,
+                    )
             if right._is_cscalar:
                 if right.dtype._is_udt:
                     dtype_name = "UDT"

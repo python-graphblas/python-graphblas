@@ -1102,8 +1102,7 @@ def test_apply_indexunary(A):
     assert c3.isequal(Ac)
 
     A3 = Matrix.from_values(ridx, cidx, [1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0], dtype=bool)
-    s3 = Scalar(dtypes.INT64)
-    s3.value = 3
+    s3 = Scalar.from_value(3, dtypes.INT64)
     w1 = A.apply(indexunary.valueeq, s3).new()
     w2 = A.apply(select.valueeq, s3).new()
     w3 = A.apply("==", s3).new()
@@ -1117,9 +1116,11 @@ def test_apply_indexunary(A):
 def test_select(A):
     A3 = Matrix.from_values([0, 3, 3, 6], [3, 0, 2, 4], [3, 3, 3, 3], nrows=7, ncols=7)
     w1 = A.select(select.valueeq, 3).new()
+    w1b = A.select(indexunary.valueeq, 3).new()
     w2 = A.select("==", 3).new()
     w3 = select.value(A == 3).new()
     assert w1.isequal(A3)
+    assert w1b.isequal(A3)
     assert w2.isequal(A3)
     assert w3.isequal(A3)
 

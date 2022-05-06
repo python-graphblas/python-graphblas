@@ -1121,7 +1121,7 @@ class UnaryOp(OpBase):
 
 
 class IndexUnaryOp(OpBase):
-    __slots__ = ("is_positional",)
+    __slots__ = "is_positional"
     _module = indexunary
     _modname = "indexunary"
     _is_udt = False
@@ -1183,7 +1183,7 @@ class IndexUnaryOp(OpBase):
 
 
 class SelectOp(OpBase):
-    __slots__ = ("is_positional",)
+    __slots__ = "is_positional"
     _module = select
     _modname = "select"
     _is_udt = False
