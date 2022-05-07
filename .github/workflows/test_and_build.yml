@@ -93,7 +93,6 @@ jobs:
         run: |
           # Make sure `from graphblas import *` works as expected
           python -c "from graphblas import * ; Matrix"
-          python -c "from graphblas.agg import count"
           # Make sure all top-level imports work
           ( for attr in Matrix Scalar Vector Recorder _agg agg base binary descriptor dtypes exceptions expr ffi formatting infix init io lib mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"from graphblas import $attr\" ; if ! python -c "from graphblas import $attr" ; then exit 1 ; fi ; done )
           ( for attr in _agg agg base binary descriptor dtypes exceptions expr formatting infix io mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"import graphblas.$attr\" ; if ! python -c "import graphblas.$attr" ; then exit 1 ; fi ; done )
@@ -113,6 +112,12 @@ jobs:
           # Test (and cover) automatic initialization
           coverage run -a --branch graphblas/tests/test_auto_init.py
           coverage run -a --branch graphblas/tests/test_external_init.py
+          # Test (and cover) lazy module loader
+          echo "from graphblas.agg import count" > script.py
+          coverage run -a --branch script.py
+          echo "from graphblas import agg, _agg" > script.py
+          coverage run -a --branch script.py
+          rm script.py
       - name: Auto-generated code check
         run: |
           coverage run -a --branch -m graphblas._automethods
