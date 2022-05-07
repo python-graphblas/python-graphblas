@@ -112,6 +112,12 @@ jobs:
           # Test (and cover) automatic initialization
           coverage run -a --branch graphblas/tests/test_auto_init.py
           coverage run -a --branch graphblas/tests/test_external_init.py
+          # Test (and cover) lazy module loader
+          echo "from graphblas.agg import count" > script.py
+          coverage run -a --branch script.py
+          echo "from graphblas import agg, _agg" > script.py
+          coverage run -a --branch script.py
+          rm script.py
       - name: Auto-generated code check
         run: |
           coverage run -a --branch -m graphblas._automethods

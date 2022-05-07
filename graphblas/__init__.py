@@ -85,7 +85,10 @@ def __getattr__(name):
         if _init_params is None:
             _init("suitesparse", None, automatic=True)
         if name not in globals():
-            _load(name)
+            if f"graphblas.{name}" in _sys.modules:
+                globals()[name] = _sys.modules[f"graphblas.{name}"]
+            else:
+                _load(name)
         return globals()[name]
     else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -147,8 +150,6 @@ def _init(backend_arg, blocking, automatic=False):
             if blocking is None:
                 blocking = False
                 passed_params["blocking"] = blocking
-            for attr in dir(lib):
-                getattr(lib, attr)
             initialize(blocking=blocking, memory_manager="numpy")
     else:
         raise ValueError(f'Bad backend name.  Must be "suitesparse".  Got: {backend}')
@@ -180,6 +181,10 @@ def _load(name):
         # Everything else is a module
         module = _import_module(f".{name}", __name__)
         globals()[name] = module
+        spec = module.__spec__
+        if not isinstance(spec.loader, _SkipLoad):
+            # Make sure we execute the module only once
+            spec.loader = _SkipLoad(module, spec.loader)
 
 
 class _GraphblasModuleFinder(_MetaPathFinder):
@@ -196,16 +201,15 @@ class _GraphblasModuleFinder(_MetaPathFinder):
 
 
 class _SkipLoad(_Loader):
-    def __init__(self, module, orig_loader):  # pragma: no cover
+    def __init__(self, module, orig_loader):
         self.module = module
         self.orig_loader = orig_loader
 
-    def create_module(self, spec):  # pragma: no cover
+    def create_module(self, spec):
         return self.module
 
-    def exec_module(self, module):  # pragma: no cover
-        # Don't execute the module, but restore the original loader
-        module.__spec__.loader = self.orig_loader
+    def exec_module(self, module):
+        pass
 
 
 _sys.meta_path.insert(0, _GraphblasModuleFinder())
