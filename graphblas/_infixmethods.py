@@ -295,7 +295,8 @@ for name in [
         setattr(MatrixIndexExpr, name, val)
 # End auto-generated code
 
-if __name__ == "__main__":
+
+def _main():
     # Run via `python -m graphblas._infixmethods`
     comparisons = {
         "lt": "lt",
@@ -398,3 +399,7 @@ if __name__ == "__main__":
     from .utils import _autogenerate_code
 
     _autogenerate_code(__file__, "\n".join(lines))
+
+
+if __name__ == "__main__":
+    _main()
