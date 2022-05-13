@@ -307,7 +307,7 @@ def __ixor__(self, other):
 
 
 # End auto-generated code
-if __name__ == "__main__":
+def _main():
     import os
 
     from .utils import _autogenerate_code
@@ -410,7 +410,7 @@ if __name__ == "__main__":
     }
     # Copy the result of this above
     lines = []
-    for name in sorted(common | scalar | vector_matrix | vector | matrix):  # noqa
+    for name in sorted(common | scalar | vector_matrix | vector | matrix):
         lines.append(f"def {name}(self):")
         if name in has_defaults:
             lines.append(f"    return self._get_value({name!r}, default{name})\n\n")
@@ -481,3 +481,7 @@ if __name__ == "__main__":
     _autogenerate_code(os.path.join(thisdir, "matrix.py"), text, "Matrix")
     text = "\n".join(line for line in lines if get_name(line) not in infix_exclude) + "\n    "
     _autogenerate_code(os.path.join(thisdir, "infix.py"), text, "Matrix")
+
+
+if __name__ == "__main__":
+    _main()
