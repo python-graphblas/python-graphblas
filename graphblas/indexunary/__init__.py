@@ -1,9 +1,6 @@
 # All items are dynamically added by classes in operator.py
 # This module acts as a container of IndexUnaryOp instances
 _delayed = {}
-from graphblas import operator  # noqa isort:skip
-
-del operator
 
 
 def __dir__():

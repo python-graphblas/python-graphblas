@@ -4,7 +4,19 @@ import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import agg, binary, dtypes, lib, monoid, op, operator, semiring, unary
+from graphblas import (
+    agg,
+    binary,
+    dtypes,
+    indexunary,
+    lib,
+    monoid,
+    op,
+    operator,
+    select,
+    semiring,
+    unary,
+)
 from graphblas.dtypes import (
     BOOL,
     FP32,
@@ -1133,6 +1145,11 @@ def test_udt():
     result = v.apply(gb.unary.positioni).new()
     expected = expected.apply(gb.unary.positioni).new()
     assert result.isequal(expected)
+
+    result = indexunary.rowindex(v).new()
+    assert result.isequal(Vector.from_values([0, 1, 2], [0, 1, 2]))
+    result = select.rowle(v, 2).new()
+    assert result.isequal(v)
 
     class BreakCompile:
         pass

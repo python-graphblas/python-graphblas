@@ -156,6 +156,9 @@ def _init(backend_arg, blocking, automatic=False):
     _init_params = passed_params
 
 
+# Ideally this is in operator.py, but lives here to avoid circular references
+_STANDARD_OPERATOR_NAMES = set()
+
 _NEEDS_OPERATOR = {
     "graphblas._agg",
     "graphblas.agg",

@@ -4,9 +4,6 @@
 # boolean and they default to `select` when called, rather than
 # `apply`).
 _delayed = {}
-from graphblas import operator  # noqa isort:skip
-
-del operator
 
 
 def __dir__():

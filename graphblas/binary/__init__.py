@@ -8,10 +8,7 @@ _delayed_commutes_to = {
     "rfloordiv": "floordiv",
     "rpow": "pow",
 }
-from graphblas import operator  # noqa isort:skip
 from . import numpy  # noqa isort:skip
-
-del operator
 
 
 def __dir__():
