@@ -724,7 +724,7 @@ class Vector(BaseType):
             expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
-                dtype = self.dtype if self.dtype._is_udt else None
+                dtype = self.dtype if (self.dtype._is_udt and not op.is_positional) else None
                 try:
                     right = Scalar.from_value(right, dtype, is_cscalar=None, name="")
                 except TypeError:

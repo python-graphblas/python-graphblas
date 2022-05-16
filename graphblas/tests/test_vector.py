@@ -686,6 +686,35 @@ def test_select(v):
     assert w6.isequal(result)
 
 
+def test_indexunary_udf(v):
+    def twox_minusthunk(x, row, col, thunk):
+        return 2 * x - thunk
+
+    indexunary.register_new("twox_minusthunk", twox_minusthunk)
+    assert hasattr(indexunary, "twox_minusthunk")
+    assert not hasattr(select, "twox_minusthunk")
+    with pytest.raises(ValueError):
+        select.register_anonymous(twox_minusthunk)
+    expected = Vector.from_values([1, 3, 4, 6], [-2, -2, 0, -4], size=7)
+    result = indexunary.twox_minusthunk(v, 4).new()
+    assert result.isequal(expected)
+
+    def ii(x, row, col, thunk):
+        return row // 2 >= thunk
+
+    indexunary.register_new("ii", ii)
+    assert hasattr(indexunary, "ii")
+    assert hasattr(select, "ii")
+    ii_apply = indexunary.register_anonymous(ii)
+    expected = Vector.from_values([1, 3, 4, 6], [False, False, True, True], size=7)
+    result = ii_apply(v, 2).new()
+    assert result.isequal(expected)
+    ii_select = select.register_anonymous(ii)
+    expected = Vector.from_values([4, 6], [2, 0], size=7)
+    result = ii_select(v, 2).new()
+    assert result.isequal(expected)
+
+
 def test_reduce(v):
     s = v.reduce(monoid.plus).new()
     assert s == 4
