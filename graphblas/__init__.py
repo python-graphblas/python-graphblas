@@ -163,12 +163,19 @@ _NEEDS_OPERATOR = {
     "graphblas._agg",
     "graphblas.agg",
     "graphblas.base",
+    "graphblas.binary",
+    "graphblas.indexunary",
     "graphblas.io",
     "graphblas.matrix",
-    "graphblas.scalar",
-    "graphblas.vector",
+    "graphblas.monoid",
+    "graphblas.op",
     "graphblas.recorder",
+    "graphblas.scalar",
+    "graphblas.select",
+    "graphblas.semiring",
     "graphblas.ss",
+    "graphblas.unary",
+    "graphblas.vector",
 }
 
 
