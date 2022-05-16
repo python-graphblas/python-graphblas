@@ -14,3 +14,8 @@ def __getattr__(key):
         globals()[key] = rv
         return rv
     raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
+
+
+from .. import operator  # noqa isort:skip
+
+del operator

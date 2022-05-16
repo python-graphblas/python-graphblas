@@ -34,7 +34,7 @@ from .utils import libget, output_type
 if _supports_complex:
     from .dtypes import FC32, FC64
 
-from . import binary, indexunary, monoid, op, select, semiring, unary  # noqa isort:skip
+from . import binary, indexunary, monoid, op, select, semiring, unary  # isort:skip
 
 ffi_new = ffi.new
 UNKNOWN_OPCLASS = "UnknownOpClass"

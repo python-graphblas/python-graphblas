@@ -163,19 +163,9 @@ _NEEDS_OPERATOR = {
     "graphblas._agg",
     "graphblas.agg",
     "graphblas.base",
-    "graphblas.binary",
-    "graphblas.indexunary",
-    "graphblas.io",
-    "graphblas.matrix",
     "graphblas.monoid",
-    "graphblas.op",
-    "graphblas.recorder",
     "graphblas.scalar",
-    "graphblas.select",
     "graphblas.semiring",
-    "graphblas.ss",
-    "graphblas.unary",
-    "graphblas.vector",
 }
 
 
@@ -199,14 +189,17 @@ def _load(name):
 
 class _GraphblasModuleFinder(_MetaPathFinder):
     def find_spec(self, fullname, path, target=None):
+        if not fullname.startswith("graphblas."):
+            return
         if fullname in _NEEDS_OPERATOR and "operator" not in globals():
             _load("operator")
-            name = fullname[7:]  # Trim "graphblas."
-            if name in globals():  # pragma: no cover
-                # Make sure we execute the module only once
-                module = globals()[name]
-                spec = module.__spec__
-                spec.loader = _SkipLoad(module, spec.loader)
+        name = fullname.split(".")[1]
+        if name in globals():
+            # Make sure we execute the module only once
+            module = globals()[name]
+            spec = module.__spec__
+            spec.loader = _SkipLoad(module, spec.loader)
+            if fullname == f"graphblas.{name}":
                 return spec
 
 

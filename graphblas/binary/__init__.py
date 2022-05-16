@@ -29,3 +29,8 @@ def __getattr__(key):
             rv._commutes_to = other
         return rv
     raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
+
+
+from .. import operator  # noqa isort:skip
+
+del operator

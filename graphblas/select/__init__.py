@@ -102,3 +102,8 @@ def index(expr):
     while being potentially nicer to read.
     """
     return _resolve_expr(expr, "index", "index")
+
+
+from .. import operator  # noqa isort:skip
+
+del operator
