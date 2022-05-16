@@ -140,10 +140,10 @@ def __getattr__(name):
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         globals()[name] = getattr(_binary, _numpy_to_graphblas[name])
     else:
-        from .. import operator as _operator
+        from .. import operator
 
         numpy_func = getattr(_np, name)
-        _operator.BinaryOp.register_new(f"numpy.{name}", lambda x, y: numpy_func(x, y))
+        operator.BinaryOp.register_new(f"numpy.{name}", lambda x, y: numpy_func(x, y))
     rv = globals()[name]
     if name in _commutative:
         rv._commutes_to = rv

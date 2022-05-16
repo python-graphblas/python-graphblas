@@ -92,7 +92,7 @@ def __dir__():
 
 
 def __getattr__(name):
-    from .. import operator as _operator
+    from .. import operator
 
     if name in _delayed:
         func, kwargs = _delayed.pop(name)
@@ -117,7 +117,7 @@ def __getattr__(name):
         binary_name = "_".join(words[i:])
         if hasattr(_binary.numpy, binary_name):  # pragma: no branch
             break
-    _operator.get_semiring(
+    operator.get_semiring(
         getattr(_monoid.numpy, monoid_name),
         getattr(_binary.numpy, binary_name),
         name=f"numpy.{name}",
