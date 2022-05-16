@@ -698,6 +698,7 @@ def test_indexunary_udf(v):
     expected = Vector.from_values([1, 3, 4, 6], [-2, -2, 0, -4], size=7)
     result = indexunary.twox_minusthunk(v, 4).new()
     assert result.isequal(expected)
+    delattr(indexunary, "twox_minusthunk")
 
     def ii(x, idx, _, thunk):
         return idx // 2 >= thunk
@@ -713,6 +714,8 @@ def test_indexunary_udf(v):
     expected = Vector.from_values([4, 6], [2, 0], size=7)
     result = ii_select(v, 2).new()
     assert result.isequal(expected)
+    delattr(indexunary, "ii")
+    delattr(select, "ii")
 
 
 def test_reduce(v):

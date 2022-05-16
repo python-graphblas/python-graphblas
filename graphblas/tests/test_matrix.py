@@ -1155,6 +1155,7 @@ def test_indexunary_udf(A):
     )
     result = indexunary.threex_minusthunk(A, 4).new()
     assert result.isequal(expected)
+    delattr(indexunary, "threex_minusthunk")
 
     def iii(x, row, col, thunk):
         return (row + col) // 2 >= thunk
@@ -1176,6 +1177,8 @@ def test_indexunary_udf(A):
     )
     result = iii_select(A, 2).new()
     assert result.isequal(expected)
+    delattr(indexunary, "iii")
+    delattr(select, "iii")
 
 
 def test_reduce_row(A):

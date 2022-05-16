@@ -676,11 +676,12 @@ def test_op_namespace():
     # Make sure all have been initialized so `vars` below works
     for key in list(op._delayed):  # pragma: no cover
         getattr(op, key)
+    known_aliases = {"index", "indexle", "indexgt"}
     opnames = {
         key
         for key, val in vars(op).items()
         if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
-    }
+    } | known_aliases
     unarynames = {
         key
         for key, val in vars(unary).items()
@@ -701,11 +702,25 @@ def test_op_namespace():
         for key, val in vars(semiring).items()
         if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
     }
+    indexunarynames = {
+        key
+        for key, val in vars(indexunary).items()
+        if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
+    }
+    selectnames = {
+        key
+        for key, val in vars(select).items()
+        if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
+    }
     assert not unarynames - opnames, unarynames - opnames
     assert not binarynames - opnames, binarynames - opnames
     assert not monoidnames - opnames, monoidnames - opnames
     assert not semiringnames - opnames, semiringnames - opnames
-    assert not opnames - (unarynames | binarynames | monoidnames | semiringnames)
+    assert not indexunarynames - opnames, indexunarynames - opnames
+    assert not selectnames - opnames, selectnames - opnames
+    assert not opnames - (
+        unarynames | binarynames | monoidnames | semiringnames | indexunarynames | selectnames
+    )
 
 
 @pytest.mark.slow
