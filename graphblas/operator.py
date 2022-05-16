@@ -1428,25 +1428,18 @@ class IndexUnaryOp(OpBase):
                 op.types[UINT64] = output_type
                 op._typed_ops[UINT64] = typed_op
                 op.coercions[UINT64] = INT64
+        # Add index->row alias to make it more intuitive which to use for vectors
+        indexunary.indexle = indexunary.rowle
+        indexunary.indexgt = indexunary.rowgt
+        indexunary.index = indexunary.rowindex
+        # fmt: off
         # Add SelectOp when it makes sense
-        for name in (
-            "tril",
-            "triu",
-            "diag",
-            "offdiag",
-            "colle",
-            "colgt",
-            "rowle",
-            "rowgt",
-            "valueeq",
-            "valuene",
-            "valuegt",
-            "valuege",
-            "valuelt",
-            "valuele",
-        ):
+        for name in ("tril", "triu", "diag", "offdiag",
+                     "colle", "colgt", "rowle", "rowgt", "indexle", "indexgt",
+                     "valueeq", "valuene", "valuegt", "valuege", "valuelt", "valuele"):
             iop = getattr(indexunary, name)
             setattr(select, name, SelectOp._from_indexunary(iop))
+        # fmt: on
         cls._initialized = True
 
     def __init__(
@@ -3077,6 +3070,8 @@ _str_to_select = {
     "col>": select.colgt,
     "row<=": select.rowle,
     "row>": select.rowgt,
+    "index<=": select.indexle,
+    "index>": select.indexgt,
 }
 _str_to_binary = {
     "<": binary.lt,
@@ -3196,13 +3191,13 @@ def semiring_from_string(string):
 
 def op_from_string(string):
     for func in [
+        # Note: order matters here
         unary_from_string,
         binary_from_string,
         monoid_from_string,
         semiring_from_string,
-        # Give binary precedence over this
-        select_from_string,
         indexunary_from_string,
+        select_from_string,
     ]:
         try:
             return func(string)

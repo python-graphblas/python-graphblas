@@ -650,9 +650,9 @@ def test_apply_empty(v):
 def test_apply_indexunary(v):
     idx = [1, 3, 4, 6]
     vr = Vector.from_values(idx, idx)
-    r1 = v.apply(indexunary.rowindex).new()
-    r2 = v.apply("rowindex").new()
-    r3 = indexunary.rowindex(v).new()
+    r1 = v.apply(indexunary.index).new()
+    r2 = v.apply("index").new()
+    r3 = indexunary.index(v).new()
     assert r1.isequal(vr)
     assert r2.isequal(vr)
     assert r3.isequal(vr)
@@ -675,9 +675,9 @@ def test_select(v):
     w1 = v.select(select.valueeq, 1).new()
     w2 = v.select("==", 1).new()
     w3 = select.rowle(v, 3).new()
-    w4 = v.select("row<=", 3).new()
+    w4 = v.select("index<=", 3).new()
     w5 = select.value(v == 1).new()
-    w6 = select.row(v < 4).new()
+    w6 = select.index(v < 4).new()
     assert w1.isequal(result)
     assert w2.isequal(result)
     assert w3.isequal(result)
@@ -699,8 +699,8 @@ def test_indexunary_udf(v):
     result = indexunary.twox_minusthunk(v, 4).new()
     assert result.isequal(expected)
 
-    def ii(x, row, col, thunk):
-        return row // 2 >= thunk
+    def ii(x, idx, _, thunk):
+        return idx // 2 >= thunk
 
     indexunary.register_new("ii", ii)
     assert hasattr(indexunary, "ii")

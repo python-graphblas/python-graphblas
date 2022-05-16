@@ -1151,7 +1151,8 @@ def test_indexunary_udf(A):
     expected = Matrix.from_values(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
-        [5, 2, 5, -1, 11, 5, 17, 20, 5, -1, 17, 8])
+        [5, 2, 5, -1, 11, 5, 17, 20, 5, -1, 17, 8],
+    )
     result = indexunary.threex_minusthunk(A, 4).new()
     assert result.isequal(expected)
 
@@ -1165,14 +1166,14 @@ def test_indexunary_udf(A):
     expected = Matrix.from_values(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
-        [False, False, True, True, True, False, True, True, True, True, True, True])
+        [False, False, True, True, True, False, True, True, True, True, True, True],
+    )
     result = iii_apply(A, 2).new()
     assert result.isequal(expected)
     iii_select = select.register_anonymous(iii)
     expected = Matrix.from_values(
-        [3, 5, 6, 6, 1, 6, 2, 4, 1],
-        [2, 2, 2, 3, 4, 4, 5, 5, 6],
-        [3, 1, 5, 7, 8, 3, 1, 7, 4])
+        [3, 5, 6, 6, 1, 6, 2, 4, 1], [2, 2, 2, 3, 4, 4, 5, 5, 6], [3, 1, 5, 7, 8, 3, 1, 7, 4]
+    )
     result = iii_select(A, 2).new()
     assert result.isequal(expected)
 
