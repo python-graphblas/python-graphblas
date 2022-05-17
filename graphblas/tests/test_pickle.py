@@ -23,6 +23,10 @@ def binaryanon(x, y):
     return x + y  # pragma: no cover
 
 
+def indexunaryanon(x, row, col, thunk):
+    return x >= thunk  # pragma: no cover
+
+
 @pytest.mark.slow
 def test_deserialize():
     thisdir = os.path.dirname(__file__)
@@ -62,6 +66,8 @@ def test_serialize():
 
     unary_anon = gb.operator.UnaryOp.register_anonymous(unaryanon)
     binary_anon = gb.operator.BinaryOp.register_anonymous(binaryanon)
+    indexunary_anon = gb.operator.IndexUnaryOp.register_anonymous(indexunaryanon)
+    select_anon = gb.operator.SelectOp.register_anonymous(indexunaryanon)
     monoid_anon = gb.operator.Monoid.register_anonymous(binary_anon, 0)
     semiring_anon = gb.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
     d = {
@@ -102,6 +108,8 @@ def test_serialize():
         # "semiring_pickle": semiring_pickle,
         "unary_anon": unary_anon,
         "unary_anon[float]": unary_anon[float],
+        "indexunary_anon": indexunary_anon,
+        "select_anon": select_anon,
         "binary_anon": binary_anon,
         "monoid_anon": monoid_anon,
         "semiring_anon": semiring_anon,

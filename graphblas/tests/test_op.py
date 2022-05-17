@@ -31,7 +31,7 @@ from graphblas.dtypes import (
     UINT64,
 )
 from graphblas.exceptions import DomainMismatch, UdfParseError
-from graphblas.operator import BinaryOp, Monoid, Semiring, UnaryOp, get_semiring
+from graphblas.operator import BinaryOp, IndexUnaryOp, Monoid, Semiring, UnaryOp, get_semiring
 
 if dtypes._supports_complex:
     from graphblas.dtypes import FC32, FC64
@@ -1120,6 +1120,17 @@ def test_udt():
     assert udt in udt_getx
     result = v.apply(udt_getx).new()
     expected = Vector.from_values([0, 1, 2], 0)
+    assert result.isequal(expected)
+
+    def _udt_index(val, idx, _, thunk):
+        if idx == 0:  # pragma: no cover
+            return thunk["y"]
+        return -thunk["y"]  # pragma: no cover
+
+    _udt_index = IndexUnaryOp.register_anonymous(_udt_index, "_udt_index", is_udt=True)
+    assert udt in _udt_index
+    result = v.apply(_udt_index, 3).new()
+    expected = Vector.from_values([0, 1, 2], [3, -3, -3])
     assert result.isequal(expected)
 
     def _udt_first(x, y):

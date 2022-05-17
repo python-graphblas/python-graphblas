@@ -393,8 +393,8 @@ class TypedUserIndexUnaryOp(TypedOpBase):
     __slots__ = ()
     opclass = "IndexUnaryOp"
 
-    def __init__(self, parent, name, type_, return_type, gb_obj):
-        super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
+    def __init__(self, parent, name, type_, return_type, gb_obj, dtype2=None):
+        super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
 
     @property
     def orig_func(self):
@@ -1361,10 +1361,12 @@ class IndexUnaryOp(OpBase):
             return self._udt_ops[dtypes]
 
         numba_func = self._numba_func
-        sig = (dtype.numba_type, dtype2.numba_type)
+        sig = (dtype.numba_type, UINT64.numba_type, UINT64.numba_type, dtype2.numba_type)
         numba_func.compile(sig)  # Should we catch and give additional error message?
         ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
-        indexunary_wrapper, wrapper_sig = _get_udt_wrapper(numba_func, ret_type, dtype, dtype2)
+        indexunary_wrapper, wrapper_sig = _get_udt_wrapper(
+            numba_func, ret_type, dtype, dtype2, include_indexes=True
+        )
 
         indexunary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(indexunary_wrapper)
         new_indexunary = ffi_new("GrB_IndexUnaryOp*")
@@ -1677,24 +1679,19 @@ def _pair_dtype(op, dtype, dtype2):
     return op[INT64]
 
 
-def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None):
+def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None, *, include_indexes=False):
     ztype = INT8 if return_type == BOOL else return_type
     xtype = INT8 if dtype == BOOL else dtype
     nt = numba.types
+    wrapper_args = [nt.CPointer(ztype.numba_type), nt.CPointer(xtype.numba_type)]
+    if include_indexes:
+        wrapper_args.extend([UINT64.numba_type, UINT64.numba_type])
     if dtype2 is not None:
         ytype = INT8 if dtype2 == BOOL else dtype2
-        wrapper_sig = nt.void(
-            nt.CPointer(ztype.numba_type),
-            nt.CPointer(xtype.numba_type),
-            nt.CPointer(ytype.numba_type),
-        )
-    else:
-        wrapper_sig = nt.void(
-            nt.CPointer(ztype.numba_type),
-            nt.CPointer(xtype.numba_type),
-        )
+        wrapper_args.append(nt.CPointer(ytype.numba_type))
+    wrapper_sig = nt.void(*wrapper_args)
 
-    zarray = xarray = yarray = BL = BR = yarg = yname = ""
+    zarray = xarray = yarray = BL = BR = yarg = yname = rcidx = ""
     if return_type._is_udt:
         if return_type.np_type.subdtype is None:
             zarray = "    z = numba.carray(z_ptr, 1)\n"
@@ -1732,11 +1729,14 @@ def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None):
         else:
             yname = ", y_ptr[0]"
 
+    if include_indexes:
+        rcidx = ", row, col"
+
     d = {"numba": numba, "numba_func": numba_func}
     text = (
-        f"def wrapper(z_ptr, x_ptr{yarg}):\n"
+        f"def wrapper(z_ptr, x_ptr{rcidx}{yarg}):\n"
         f"{zarray}{xarray}{yarray}"
-        f"    {zname} = {BL}numba_func({xname}{yname}){BR}\n"
+        f"    {zname} = {BL}numba_func({xname}{rcidx}{yname}){BR}\n"
     )
     exec(text, d)
     return d["wrapper"], wrapper_sig

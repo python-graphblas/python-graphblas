@@ -703,7 +703,7 @@ def test_indexunary_udf(v):
     def ii(x, idx, _, thunk):
         return idx // 2 >= thunk
 
-    indexunary.register_new("ii", ii)
+    select.register_new("ii", ii)
     assert hasattr(indexunary, "ii")
     assert hasattr(select, "ii")
     ii_apply = indexunary.register_anonymous(ii)
