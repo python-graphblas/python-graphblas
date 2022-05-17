@@ -9,7 +9,19 @@ from types import FunctionType, ModuleType
 import numba
 import numpy as np
 
-from . import _STANDARD_OPERATOR_NAMES, config, ffi, lib
+from . import (
+    _STANDARD_OPERATOR_NAMES,
+    binary,
+    config,
+    ffi,
+    indexunary,
+    lib,
+    monoid,
+    op,
+    select,
+    semiring,
+    unary,
+)
 from .dtypes import (
     BOOL,
     FP32,
@@ -33,8 +45,6 @@ from .utils import libget, output_type
 
 if _supports_complex:
     from .dtypes import FC32, FC64
-
-from . import binary, indexunary, monoid, op, select, semiring, unary  # isort:skip
 
 ffi_new = ffi.new
 UNKNOWN_OPCLASS = "UnknownOpClass"
@@ -2868,7 +2878,10 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
         )
     elif isinstance(op, TypedOpBase):
         return op
-    elif isinstance(op, Aggregator):
+
+    from ._agg import Aggregator, TypedAggregator
+
+    if isinstance(op, Aggregator):
         return op[dtype]
     elif isinstance(op, TypedAggregator):
         return op
@@ -3214,19 +3227,18 @@ monoid.from_string = monoid_from_string
 semiring.from_string = semiring_from_string
 op.from_string = op_from_string
 
-from . import agg  # noqa isort:skip
-from .agg import Aggregator, TypedAggregator  # noqa isort:skip
-
 _str_to_agg = {
-    "+": agg.sum,
-    "*": agg.prod,
-    "&": agg.all,
-    "|": agg.any,
+    "+": "sum",
+    "*": "prod",
+    "&": "all",
+    "|": "any",
 }
 
 
 def aggregator_from_string(string):
     return _from_string(string, agg, _str_to_agg, "sum[int]")
 
+
+from . import agg  # noqa isort:skip
 
 agg.from_string = aggregator_from_string

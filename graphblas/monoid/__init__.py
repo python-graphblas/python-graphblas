@@ -1,7 +1,6 @@
 # All items are dynamically added by classes in operator.py
 # This module acts as a container of Monoid instances
 _delayed = {}
-from . import numpy  # noqa isort:skip
 
 
 def __dir__():
@@ -22,5 +21,6 @@ def __getattr__(key):
 
 
 from .. import operator  # noqa isort:skip
+from . import numpy  # noqa isort:skip
 
 del operator

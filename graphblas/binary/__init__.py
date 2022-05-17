@@ -8,7 +8,6 @@ _delayed_commutes_to = {
     "rfloordiv": "floordiv",
     "rpow": "pow",
 }
-from . import numpy  # noqa isort:skip
 
 
 def __dir__():
@@ -32,5 +31,6 @@ def __getattr__(key):
 
 
 from .. import operator  # noqa isort:skip
+from . import numpy  # noqa isort:skip
 
 del operator

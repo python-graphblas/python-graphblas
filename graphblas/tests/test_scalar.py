@@ -8,11 +8,9 @@ import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import binary, dtypes, replace
+from graphblas import Matrix, Scalar, Vector, binary, dtypes, replace
 
 from .conftest import autocompute, compute
-
-from graphblas import Matrix, Scalar, Vector  # isort:skip
 
 
 @pytest.fixture

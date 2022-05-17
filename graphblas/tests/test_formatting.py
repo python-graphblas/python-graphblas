@@ -2,13 +2,10 @@ import numpy as np
 import pytest
 
 import graphblas
-from graphblas import dtypes, formatting, unary
+from graphblas import Matrix, Scalar, Vector, dtypes, formatting, unary
 from graphblas.formatting import CSS_STYLE
 
 from .conftest import autocompute
-
-from graphblas import Matrix, Scalar, Vector  # isort:skip
-
 
 try:
     import pandas as pd

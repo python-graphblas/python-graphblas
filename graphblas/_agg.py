@@ -5,8 +5,6 @@ import numpy as np
 
 from . import agg, binary, monoid, semiring, unary
 from .dtypes import INT64, lookup_dtype
-from .operator import get_typed_op
-from .scalar import Scalar
 
 
 def _get_types(ops, initdtype):
@@ -124,7 +122,7 @@ class TypedAggregator:
         if agg._monoid is not None:
             x = expr.args[0]
             method = getattr(x, expr.method_name)
-            if expr.output_type is Scalar:
+            if expr.output_type.__name__ == "Scalar":
                 expr = method(agg._monoid[self.type], allow_empty=not expr._is_cscalar)
             else:
                 expr = method(agg._monoid[self.type])
@@ -621,3 +619,7 @@ agg.last_index = Aggregator(
     types=[semiring.min_secondi],
     any_dtype=INT64,
 )
+agg.Aggregator = Aggregator
+agg.TypedAggregator = TypedAggregator
+
+from .operator import get_typed_op  # noqa isort:skip

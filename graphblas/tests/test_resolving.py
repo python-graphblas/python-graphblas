@@ -1,10 +1,8 @@
 import numpy as np
 import pytest
 
-from graphblas import binary, dtypes, replace, unary
+from graphblas import Matrix, Scalar, Vector, binary, dtypes, replace, unary
 from graphblas.expr import Updater
-
-from graphblas import Matrix, Scalar, Vector  # isort:skip
 
 
 def test_from_values_dtype_resolving():
