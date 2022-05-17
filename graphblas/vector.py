@@ -11,7 +11,14 @@ from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import find_opclass, get_semiring, get_typed_op, op_from_string
-from .scalar import _MATERIALIZE, Scalar, ScalarExpression, _as_scalar, _scalar_index
+from .scalar import (
+    _MATERIALIZE,
+    Scalar,
+    ScalarExpression,
+    ScalarIndexExpr,
+    _as_scalar,
+    _scalar_index,
+)
 from .utils import (
     _CArray,
     _Pointer,
@@ -155,8 +162,6 @@ class Vector(BaseType):
         resolved_indexes = IndexerResolver(self, keys)
         shape = resolved_indexes.shape
         if not shape:
-            from .scalar import ScalarIndexExpr
-
             return ScalarIndexExpr(self, resolved_indexes)
         else:
             return VectorIndexExpr(self, resolved_indexes, *shape)

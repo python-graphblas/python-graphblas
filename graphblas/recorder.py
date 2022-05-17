@@ -3,6 +3,7 @@ import collections
 from . import base, lib
 from .base import _recorder
 from .dtypes import DataType
+from .formatting import CSS_STYLE
 from .mask import Mask
 from .matrix import TransposedMatrix
 from .operator import TypedOpBase
@@ -105,8 +106,6 @@ class Recorder:
     def _repr_markdown_(self):
         # Syntax highlighting from github-flavored markdown looks better than
         # using IPython.display.Code or pygments
-        from .formatting import CSS_STYLE
-
         status = (
             '<div style="'
             "height: 12px; "
