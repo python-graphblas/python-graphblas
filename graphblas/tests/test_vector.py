@@ -9,19 +9,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas
-from graphblas import (
-    Matrix,
-    Scalar,
-    Vector,
-    agg,
-    binary,
-    dtypes,
-    indexunary,
-    monoid,
-    select,
-    semiring,
-    unary,
-)
+from graphblas import agg, binary, dtypes, indexunary, monoid, select, semiring, unary
 from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
@@ -31,6 +19,8 @@ from graphblas.exceptions import (
 )
 
 from .conftest import autocompute, compute
+
+from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 
 @pytest.fixture

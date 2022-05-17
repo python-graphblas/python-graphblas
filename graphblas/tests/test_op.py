@@ -5,8 +5,6 @@ import pytest
 
 import graphblas as gb
 from graphblas import (
-    Matrix,
-    Vector,
     agg,
     binary,
     dtypes,
@@ -37,6 +35,8 @@ from graphblas.operator import BinaryOp, Monoid, Semiring, UnaryOp, get_semiring
 
 if dtypes._supports_complex:
     from graphblas.dtypes import FC32, FC64
+
+from graphblas import Matrix, Vector  # isort:skip (for dask-graphblas)
 
 
 def orig_types(op):
