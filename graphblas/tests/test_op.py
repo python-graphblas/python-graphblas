@@ -1015,6 +1015,7 @@ def test_from_string():
     assert op.from_string("min.plus") is semiring.min_plus
     with pytest.raises(ValueError, match="Unknown op string"):
         op.from_string("min.plus.times")
+    assert op.from_string("count") is agg.count
 
     assert agg.from_string("count") is agg.count
     assert agg.from_string("|") is agg.any
