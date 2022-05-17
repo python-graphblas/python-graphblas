@@ -374,15 +374,15 @@ def test_ewise_add(v):
     # Binary, Monoid, and Semiring
     v2 = Vector.from_values([0, 3, 5, 6], [2, 3, 2, 1])
     result = Vector.from_values([0, 1, 3, 4, 5, 6], [2, 1, 3, 2, 2, 1])
-    with pytest.raises(TypeError, match="require_monoid"):
-        v.ewise_add(v2, binary.minus)
+    # with pytest.raises(TypeError, match="require_monoid"):
+    v.ewise_add(v2, binary.minus)  # okay now
     w = v.ewise_add(v2, binary.max).new()  # ok if the binaryop is part of a monoid
     assert w.isequal(result)
-    w = v.ewise_add(v2, binary.max, require_monoid=False).new()
+    w = v.ewise_add(v2, binary.max).new()
     assert w.isequal(result)
     w.update(v.ewise_add(v2, monoid.max))
     assert w.isequal(result)
-    with pytest.raises(TypeError, match="Expected type: Monoid"):
+    with pytest.raises(TypeError, match="Expected type: BinaryOp, Monoid"):
         v.ewise_add(v2, semiring.max_times)
     # default is plus
     w = v.ewise_add(v2).new()
@@ -393,8 +393,8 @@ def test_ewise_add(v):
     b2 = Vector.from_values([0, 1, 2, 3], [True, True, False, False])
     with pytest.raises(KeyError, match="plus does not work"):
         b1.ewise_add(b2).new()
-    with pytest.raises(TypeError, match="for BOOL datatype"):
-        binary.plus(b1 | b2)
+    # with pytest.raises(TypeError, match="for BOOL datatype"):
+    binary.plus(b1 | b2)  # now okay (btw, `binary.plus[bool].monoid is None`)
 
 
 def test_extract(v):
@@ -1998,9 +1998,7 @@ def test_broadcasting(A, v):
     (A.dup(bool) & v.dup(bool)).new()  # okay
     with pytest.raises(TypeError):
         v += A
-    with pytest.raises(TypeError):
-        binary.minus(v | A)
-    binary.minus(v | A, require_monoid=False)
+    binary.minus(v | A)
 
 
 def test_ewise_union_infix():
@@ -2076,10 +2074,10 @@ def test_lambda_udfs(v):
     result = v.ewise_mult(v, lambda x, y: x + y).new()
     expected = binary.plus(v & v).new()
     assert result.isequal(expected)
-    result = v.ewise_add(v, lambda x, y: x + y, require_monoid=False).new()
+    result = v.ewise_add(v, lambda x, y: x + y).new()
     assert result.isequal(expected)
     # Should we also allow lambdas for monoids with assumed identity of 0?
-    with pytest.raises(TypeError):
-        v.ewise_add(v, lambda x, y: x + y)
+    # with pytest.raises(TypeError):
+    v.ewise_add(v, lambda x, y: x + y)  # now okay
     with pytest.raises(TypeError):
         v.inner(v, lambda x, y: x + y)
