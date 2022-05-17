@@ -21,7 +21,7 @@ from graphblas.exceptions import (
 
 from .conftest import autocompute, compute
 
-from graphblas import Matrix, Scalar, Vector  # isort:skip
+from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 
 @pytest.fixture
@@ -1137,6 +1137,48 @@ def test_select(A):
     )
     w7 = A.select("TRIU").new()
     assert w7.isequal(Aupper)
+
+
+def test_indexunary_udf(A):
+    def threex_minusthunk(x, row, col, thunk):
+        return 3 * x - thunk
+
+    indexunary.register_new("threex_minusthunk", threex_minusthunk)
+    assert hasattr(indexunary, "threex_minusthunk")
+    assert not hasattr(select, "threex_minusthunk")
+    with pytest.raises(ValueError):
+        select.register_anonymous(threex_minusthunk)
+    expected = Matrix.from_values(
+        [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [5, 2, 5, -1, 11, 5, 17, 20, 5, -1, 17, 8],
+    )
+    result = indexunary.threex_minusthunk(A, 4).new()
+    assert result.isequal(expected)
+    delattr(indexunary, "threex_minusthunk")
+
+    def iii(x, row, col, thunk):
+        return (row + col) // 2 >= thunk
+
+    select.register_new("iii", iii)
+    assert hasattr(indexunary, "iii")
+    assert hasattr(select, "iii")
+    iii_apply = indexunary.register_anonymous(iii)
+    expected = Matrix.from_values(
+        [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [False, False, True, True, True, False, True, True, True, True, True, True],
+    )
+    result = iii_apply(A, 2).new()
+    assert result.isequal(expected)
+    iii_select = select.register_anonymous(iii)
+    expected = Matrix.from_values(
+        [3, 5, 6, 6, 1, 6, 2, 4, 1], [2, 2, 2, 3, 4, 4, 5, 5, 6], [3, 1, 5, 7, 8, 3, 1, 7, 4]
+    )
+    result = iii_select(A, 2).new()
+    assert result.isequal(expected)
+    delattr(indexunary, "iii")
+    delattr(select, "iii")
 
 
 def test_reduce_row(A):

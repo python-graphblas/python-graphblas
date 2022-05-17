@@ -11,7 +11,14 @@ from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import StructuralMask, ValueMask
 from .operator import find_opclass, get_semiring, get_typed_op, op_from_string
-from .scalar import _MATERIALIZE, Scalar, ScalarExpression, _as_scalar, _scalar_index
+from .scalar import (
+    _MATERIALIZE,
+    Scalar,
+    ScalarExpression,
+    ScalarIndexExpr,
+    _as_scalar,
+    _scalar_index,
+)
 from .utils import (
     _CArray,
     _Pointer,
@@ -21,7 +28,7 @@ from .utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from .vector import Vector, VectorExpression
+from .vector import Vector, VectorExpression, VectorIndexExpr
 
 ffi_new = ffi.new
 
@@ -142,12 +149,8 @@ class Matrix(BaseType):
         resolved_indexes = IndexerResolver(self, keys)
         shape = resolved_indexes.shape
         if not shape:
-            from .scalar import ScalarIndexExpr
-
             return ScalarIndexExpr(self, resolved_indexes)
         elif len(shape) == 1:
-            from .vector import VectorIndexExpr
-
             return VectorIndexExpr(self, resolved_indexes, *shape)
         else:
             return MatrixIndexExpr(self, resolved_indexes, *shape)
@@ -807,7 +810,7 @@ class Matrix(BaseType):
             expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
-                dtype = self.dtype if self.dtype._is_udt else None
+                dtype = self.dtype if (self.dtype._is_udt and not op.is_positional) else None
                 try:
                     right = Scalar.from_value(right, dtype, is_cscalar=None, name="")
                 except TypeError:

@@ -1,7 +1,5 @@
 import sys as _sys
 from importlib import import_module as _import_module
-from importlib.abc import Loader as _Loader
-from importlib.abc import MetaPathFinder as _MetaPathFinder
 
 from . import mask  # noqa
 from ._version import get_versions
@@ -156,17 +154,8 @@ def _init(backend_arg, blocking, automatic=False):
     _init_params = passed_params
 
 
-_NEEDS_OPERATOR = {
-    "graphblas._agg",
-    "graphblas.agg",
-    "graphblas.base",
-    "graphblas.io",
-    "graphblas.matrix",
-    "graphblas.scalar",
-    "graphblas.vector",
-    "graphblas.recorder",
-    "graphblas.ss",
-}
+# Ideally this is in operator.py, but lives here to avoid circular references
+_STANDARD_OPERATOR_NAMES = set()
 
 
 def _load(name):
@@ -175,44 +164,11 @@ def _load(name):
         if module_name not in globals():
             _load(module_name)
         module = globals()[module_name]
-        val = getattr(module, name)
-        globals()[name] = val
+        globals()[name] = getattr(module, name)
     else:
         # Everything else is a module
-        module = _import_module(f".{name}", __name__)
-        globals()[name] = module
-        spec = module.__spec__
-        if not isinstance(spec.loader, _SkipLoad):
-            # Make sure we execute the module only once
-            spec.loader = _SkipLoad(module, spec.loader)
+        globals()[name] = _import_module(f".{name}", __name__)
 
-
-class _GraphblasModuleFinder(_MetaPathFinder):
-    def find_spec(self, fullname, path, target=None):
-        if fullname in _NEEDS_OPERATOR and "operator" not in globals():
-            _load("operator")
-            name = fullname[7:]  # Trim "graphblas."
-            if name in globals():  # pragma: no cover
-                # Make sure we execute the module only once
-                module = globals()[name]
-                spec = module.__spec__
-                spec.loader = _SkipLoad(module, spec.loader)
-                return spec
-
-
-class _SkipLoad(_Loader):
-    def __init__(self, module, orig_loader):
-        self.module = module
-        self.orig_loader = orig_loader
-
-    def create_module(self, spec):
-        return self.module
-
-    def exec_module(self, module):
-        pass
-
-
-_sys.meta_path.insert(0, _GraphblasModuleFinder())
 
 __version__ = get_versions()["version"]
 del get_versions

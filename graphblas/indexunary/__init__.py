@@ -1,9 +1,6 @@
 # All items are dynamically added by classes in operator.py
 # This module acts as a container of IndexUnaryOp instances
 _delayed = {}
-from graphblas import operator  # noqa isort:skip
-
-del operator
 
 
 def __dir__():
@@ -17,3 +14,8 @@ def __getattr__(key):
         globals()[key] = rv
         return rv
     raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
+
+
+from .. import operator  # noqa isort:skip
+
+del operator

@@ -7,10 +7,10 @@ https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operat
 """
 import numpy as _np
 
+from .. import _STANDARD_OPERATOR_NAMES
 from .. import binary as _binary
 from .. import config as _config
 from .. import monoid as _monoid
-from .. import operator as _operator
 from ..dtypes import _supports_complex
 
 _delayed = {}
@@ -98,7 +98,7 @@ if _supports_complex:
     )
     _monoid_identities["minimum"].update(dict.fromkeys(_complex_dtypes, complex(_np.inf, _np.inf)))
 
-_operator._STANDARD_OPERATOR_NAMES.update(f"monoid.numpy.{name}" for name in _monoid_identities)
+_STANDARD_OPERATOR_NAMES.update(f"monoid.numpy.{name}" for name in _monoid_identities)
 __all__ = list(_monoid_identities)
 _numpy_to_graphblas = {
     "add": "plus",
@@ -136,6 +136,8 @@ def __getattr__(name):
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         globals()[name] = getattr(_monoid, _numpy_to_graphblas[name])
     else:
+        from .. import operator
+
         func = getattr(_binary.numpy, name)
-        _operator.Monoid.register_new(f"numpy.{name}", func, _monoid_identities[name])
+        operator.Monoid.register_new(f"numpy.{name}", func, _monoid_identities[name])
     return globals()[name]

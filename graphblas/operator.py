@@ -9,7 +9,19 @@ from types import FunctionType, ModuleType
 import numba
 import numpy as np
 
-from . import config, ffi, lib
+from . import (
+    _STANDARD_OPERATOR_NAMES,
+    binary,
+    config,
+    ffi,
+    indexunary,
+    lib,
+    monoid,
+    op,
+    select,
+    semiring,
+    unary,
+)
 from .dtypes import (
     BOOL,
     FP32,
@@ -33,10 +45,6 @@ from .utils import libget, output_type
 
 if _supports_complex:
     from .dtypes import FC32, FC64
-
-_STANDARD_OPERATOR_NAMES = set()
-
-from . import binary, indexunary, monoid, op, select, semiring, unary  # noqa isort:skip
 
 ffi_new = ffi.new
 UNKNOWN_OPCLASS = "UnknownOpClass"
@@ -381,6 +389,42 @@ class TypedUserUnaryOp(TypedOpBase):
     __call__ = TypedBuiltinUnaryOp.__call__
 
 
+class TypedUserIndexUnaryOp(TypedOpBase):
+    __slots__ = ()
+    opclass = "IndexUnaryOp"
+
+    def __init__(self, parent, name, type_, return_type, gb_obj, dtype2=None):
+        super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
+
+    @property
+    def orig_func(self):
+        return self.parent.orig_func
+
+    @property
+    def _numba_func(self):
+        return self.parent._numba_func
+
+    __call__ = TypedBuiltinIndexUnaryOp.__call__
+
+
+class TypedUserSelectOp(TypedOpBase):
+    __slots__ = ()
+    opclass = "SelectOp"
+
+    def __init__(self, parent, name, type_, return_type, gb_obj):
+        super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
+
+    @property
+    def orig_func(self):
+        return self.parent.orig_func
+
+    @property
+    def _numba_func(self):
+        return self.parent._numba_func
+
+    __call__ = TypedBuiltinSelectOp.__call__
+
+
 class TypedUserBinaryOp(TypedOpBase):
     __slots__ = "_monoid"
     opclass = "BinaryOp"
@@ -487,6 +531,70 @@ class ParameterizedUnaryOp(ParameterizedUdf):
         if rv is not None:
             return rv
         return UnaryOp.register_new(name, func, parameterized=True)
+
+
+class ParameterizedIndexUnaryOp(ParameterizedUdf):
+    __slots__ = "func", "__signature__", "_is_udt"
+
+    def __init__(self, name, func, *, anonymous=False, is_udt=False):
+        self.func = func
+        self.__signature__ = inspect.signature(func)
+        self._is_udt = is_udt
+        if name is None:
+            name = getattr(func, "__name__", name)
+        super().__init__(name, anonymous)
+
+    def _call(self, *args, **kwargs):
+        indexunary = self.func(*args, **kwargs)
+        indexunary._parameterized_info = (self, args, kwargs)
+        return IndexUnaryOp.register_anonymous(indexunary, self.name, is_udt=self._is_udt)
+
+    def __reduce__(self):
+        name = f"indexunary.{self.name}"
+        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
+            return name
+        return (self._deserialize, (self.name, self.func, self._anonymous))
+
+    @staticmethod
+    def _deserialize(name, func, anonymous):
+        if anonymous:
+            return IndexUnaryOp.register_anonymous(func, name, parameterized=True)
+        rv = IndexUnaryOp._find(name)
+        if rv is not None:
+            return rv
+        return IndexUnaryOp.register_new(name, func, parameterized=True)
+
+
+class ParameterizedSelectOp(ParameterizedUdf):
+    __slots__ = "func", "__signature__", "_is_udt"
+
+    def __init__(self, name, func, *, anonymous=False, is_udt=False):
+        self.func = func
+        self.__signature__ = inspect.signature(func)
+        self._is_udt = is_udt
+        if name is None:
+            name = getattr(func, "__name__", name)
+        super().__init__(name, anonymous)
+
+    def _call(self, *args, **kwargs):
+        sel = self.func(*args, **kwargs)
+        sel._parameterized_info = (self, args, kwargs)
+        return SelectOp.register_anonymous(sel, self.name, is_udt=self._is_udt)
+
+    def __reduce__(self):
+        name = f"select.{self.name}"
+        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
+            return name
+        return (self._deserialize, (self.name, self.func, self._anonymous))
+
+    @staticmethod
+    def _deserialize(name, func, anonymous):
+        if anonymous:
+            return SelectOp.register_anonymous(func, name, parameterized=True)
+        rv = SelectOp._find(name)
+        if rv is not None:
+            return rv
+        return SelectOp.register_new(name, func, parameterized=True)
 
 
 class ParameterizedBinaryOp(ParameterizedUdf):
@@ -1031,6 +1139,8 @@ class UnaryOp(OpBase):
 
     @classmethod
     def _initialize(cls):
+        if cls._initialized:
+            return
         super()._initialize()
         # Update type information with sane coercion
         position_dtypes = [
@@ -1121,12 +1231,12 @@ class UnaryOp(OpBase):
 
 
 class IndexUnaryOp(OpBase):
-    __slots__ = "is_positional"
+    __slots__ = "orig_func", "is_positional", "_is_udt", "_numba_func"
     _module = indexunary
     _modname = "indexunary"
-    _is_udt = False
     _custom_dtype = None
     _typed_class = TypedBuiltinIndexUnaryOp
+    _typed_user_class = TypedUserIndexUnaryOp
     _parse_config = {
         "trim_from_front": 4,
         "num_underscores": 1,
@@ -1148,8 +1258,171 @@ class IndexUnaryOp(OpBase):
     # fmt: on
 
     @classmethod
+    def _build(cls, name, func, *, is_udt=False, anonymous=False):
+        if not isinstance(func, FunctionType):
+            raise TypeError(f"UDF argument must be a function, not {type(func)}")
+        if name is None:
+            name = getattr(func, "__name__", "<anonymous_binary>")
+        success = False
+        indexunary_udf = numba.njit(func)
+        new_type_obj = cls(
+            name, func, anonymous=anonymous, is_udt=is_udt, numba_func=indexunary_udf
+        )
+        return_types = {}
+        nt = numba.types
+        if not is_udt:
+            for type_ in _sample_values:
+                sig = (type_.numba_type, UINT64.numba_type, UINT64.numba_type, type_.numba_type)
+                try:
+                    indexunary_udf.compile(sig)
+                except numba.TypingError:
+                    continue
+                ret_type = lookup_dtype(indexunary_udf.overloads[sig].signature.return_type)
+                if ret_type != type_ and (
+                    ("INT" in ret_type.name and "INT" in type_.name)
+                    or ("FP" in ret_type.name and "FP" in type_.name)
+                    or ("FC" in ret_type.name and "FC" in type_.name)
+                    or (type_ == UINT64 and ret_type == FP64 and return_types.get(INT64) == INT64)
+                ):
+                    # Downcast `ret_type` to `type_`.
+                    # This is what users want most of the time, but we can't make a perfect rule.
+                    # There should be a way for users to be explicit.
+                    ret_type = type_
+                elif type_ == BOOL and ret_type == INT64 and return_types.get(INT8) == INT8:
+                    ret_type = INT8
+
+                # Numba is unable to handle BOOL correctly right now, but we have a workaround
+                # See: https://github.com/numba/numba/issues/5395
+                # We're relying on coercion behaving correctly here
+                input_type = INT8 if type_ == BOOL else type_
+                return_type = INT8 if ret_type == BOOL else ret_type
+
+                # Build wrapper because GraphBLAS wants pointers and void return
+                wrapper_sig = nt.void(
+                    nt.CPointer(return_type.numba_type),
+                    nt.CPointer(input_type.numba_type),
+                    UINT64.numba_type,
+                    UINT64.numba_type,
+                    nt.CPointer(input_type.numba_type),
+                )
+
+                if type_ == BOOL:
+                    if ret_type == BOOL:
+
+                        def indexunary_wrapper(z, x, row, col, y):
+                            z[0] = bool(
+                                indexunary_udf(bool(x[0]), row, col, bool(y[0]))
+                            )  # pragma: no cover
+
+                    else:
+
+                        def indexunary_wrapper(z, x, row, col, y):
+                            z[0] = indexunary_udf(
+                                bool(x[0]), row, col, bool(y[0])
+                            )  # pragma: no cover
+
+                elif ret_type == BOOL:
+
+                    def indexunary_wrapper(z, x, row, col, y):
+                        z[0] = bool(indexunary_udf(x[0], row, col, y[0]))  # pragma: no cover
+
+                else:
+
+                    def indexunary_wrapper(z, x, row, col, y):
+                        z[0] = indexunary_udf(x[0], row, col, y[0])  # pragma: no cover
+
+                indexunary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(indexunary_wrapper)
+                new_indexunary = ffi_new("GrB_IndexUnaryOp*")
+                check_status_carg(
+                    lib.GrB_IndexUnaryOp_new(
+                        new_indexunary,
+                        indexunary_wrapper.cffi,
+                        ret_type.gb_obj,
+                        type_.gb_obj,
+                        type_.gb_obj,
+                    ),
+                    "IndexUnaryOp",
+                    new_indexunary,
+                )
+                op = cls._typed_user_class(new_type_obj, name, type_, ret_type, new_indexunary[0])
+                new_type_obj._add(op)
+                success = True
+                return_types[type_] = ret_type
+        if success or is_udt:
+            return new_type_obj
+        else:
+            raise UdfParseError("Unable to parse function using Numba")
+
+    def _compile_udt(self, dtype, dtype2):
+        if dtype2 is None:
+            dtype2 = dtype
+        dtypes = (dtype, dtype2)
+        if dtypes in self._udt_types:
+            return self._udt_ops[dtypes]
+
+        numba_func = self._numba_func
+        sig = (dtype.numba_type, UINT64.numba_type, UINT64.numba_type, dtype2.numba_type)
+        numba_func.compile(sig)  # Should we catch and give additional error message?
+        ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
+        indexunary_wrapper, wrapper_sig = _get_udt_wrapper(
+            numba_func, ret_type, dtype, dtype2, include_indexes=True
+        )
+
+        indexunary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(indexunary_wrapper)
+        new_indexunary = ffi_new("GrB_IndexUnaryOp*")
+        check_status_carg(
+            lib.GrB_IndexUnaryOp_new(
+                new_indexunary, indexunary_wrapper.cffi, ret_type._carg, dtype._carg, dtype2._carg
+            ),
+            "IndexUnaryOp",
+            new_indexunary,
+        )
+        op = TypedUserIndexUnaryOp(
+            self,
+            self.name,
+            dtype,
+            ret_type,
+            new_indexunary[0],
+            dtype2=dtype2,
+        )
+        self._udt_types[dtypes] = ret_type
+        self._udt_ops[dtypes] = op
+        return op
+
+    @classmethod
+    def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
+        if parameterized:
+            return ParameterizedIndexUnaryOp(name, func, anonymous=True, is_udt=is_udt)
+        return cls._build(name, func, anonymous=True, is_udt=is_udt)
+
+    @classmethod
+    def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
+        module, funcname = cls._remove_nesting(name)
+        if lazy:
+            module._delayed[funcname] = (
+                cls.register_new,
+                {"name": name, "func": func, "parameterized": parameterized},
+            )
+        elif parameterized:
+            indexunary_op = ParameterizedIndexUnaryOp(name, func, is_udt=is_udt)
+            setattr(module, funcname, indexunary_op)
+        else:
+            indexunary_op = cls._build(name, func, is_udt=is_udt)
+            setattr(module, funcname, indexunary_op)
+            # If return type is BOOL, register additionally as a SelectOp
+            if all(x == BOOL for x in indexunary_op.types.values()):
+                setattr(select, funcname, SelectOp._from_indexunary(indexunary_op))
+
+        if not cls._initialized:
+            _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{name}")
+        if not lazy:
+            return indexunary_op
+
+    @classmethod
     def _initialize(cls):
-        super()._initialize(include_in_ops=False)
+        if cls._initialized:
+            return
+        super()._initialize()
         # Update type information to include UINT64 for positional ops
         for name in ("tril", "triu", "diag", "offdiag", "colle", "colgt", "rowle", "rowgt"):
             op = getattr(indexunary, name)
@@ -1167,65 +1440,149 @@ class IndexUnaryOp(OpBase):
                 op.types[UINT64] = output_type
                 op._typed_ops[UINT64] = typed_op
                 op.coercions[UINT64] = INT64
+        # Add index->row alias to make it more intuitive which to use for vectors
+        indexunary.indexle = indexunary.rowle
+        indexunary.indexgt = indexunary.rowgt
+        indexunary.index = indexunary.rowindex
+        # fmt: off
+        # Add SelectOp when it makes sense
+        for name in ("tril", "triu", "diag", "offdiag",
+                     "colle", "colgt", "rowle", "rowgt", "indexle", "indexgt",
+                     "valueeq", "valuene", "valuegt", "valuege", "valuelt", "valuele"):
+            iop = getattr(indexunary, name)
+            setattr(select, name, SelectOp._from_indexunary(iop))
+        # fmt: on
         cls._initialized = True
 
     def __init__(
         self,
         name,
+        func=None,
         *,
         anonymous=False,
         is_positional=False,
+        is_udt=False,
+        numba_func=None,
     ):
         super().__init__(name, anonymous=anonymous)
+        self.orig_func = func
+        self._numba_func = numba_func
         self.is_positional = is_positional
+        self._is_udt = is_udt
+        if is_udt:
+            self._udt_types = {}  # {dtype: DataType}
+            self._udt_ops = {}  # {dtype: TypedUserIndexUnaryOp}
+
+    def __reduce__(self):
+        if self._anonymous:
+            if hasattr(self.orig_func, "_parameterized_info"):
+                return (_deserialize_parameterized, self.orig_func._parameterized_info)
+            return (self.register_anonymous, (self.orig_func, self.name))
+        name = f"indexunary.{self.name}"
+        if name in _STANDARD_OPERATOR_NAMES:
+            return name
+        return (self._deserialize, (self.name, self.orig_func))
 
     __call__ = TypedBuiltinIndexUnaryOp.__call__
 
 
 class SelectOp(OpBase):
-    __slots__ = "is_positional"
+    __slots__ = "orig_func", "is_positional", "_is_udt", "_numba_func"
     _module = select
     _modname = "select"
-    _is_udt = False
     _custom_dtype = None
     _typed_class = TypedBuiltinSelectOp
-    _parse_config = {
-        "trim_from_front": 4,
-        "num_underscores": 1,
-        "re_exprs_return_bool": [
-            re.compile("^GrB_(TRIL|TRIU|DIAG|OFFDIAG|COLLE|COLGT|ROWLE|ROWGT)$"),
-            re.compile(
-                "^GrB_(VALUEEQ|VALUENE|VALUEGT|VALUEGE|VALUELT|VALUELE)"
-                "_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64)$"
-            ),
-            re.compile("^GxB_(VALUEEQ|VALUENE)_(FC32|FC64)$"),
-        ],
-    }
-    _positional = {"tril", "triu", "diag", "offdiag", "colle", "colgt", "rowle", "rowgt"}
+    _typed_user_class = TypedUserSelectOp
+
+    @classmethod
+    def _from_indexunary(cls, iop):
+        obj = cls(
+            iop.name,
+            iop.orig_func,
+            anonymous=iop._anonymous,
+            is_positional=iop.is_positional,
+            is_udt=iop._is_udt,
+            numba_func=iop._numba_func,
+        )
+        if not all(x == BOOL for x in iop.types.values()):
+            raise ValueError("SelectOp must have BOOL return type")
+        for type, t in iop._typed_ops.items():
+            if iop.orig_func is not None:
+                op = cls._typed_user_class(
+                    obj,
+                    iop.name,
+                    t.type,
+                    t.return_type,
+                    t.gb_obj,
+                )
+            else:
+                op = cls._typed_class(
+                    obj,
+                    iop.name,
+                    t.type,
+                    t.return_type,
+                    t.gb_obj,
+                    t.gb_name,
+                )
+            # type is not always equal to t.type, so can't use op._add
+            # but otherwise perform the same logic
+            obj._typed_ops[type] = op
+            obj.types[type] = op.return_type
+        return obj
+
+    @classmethod
+    def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
+        if parameterized:
+            return ParameterizedSelectOp(name, func, anonymous=True, is_udt=is_udt)
+        iop = IndexUnaryOp._build(name, func, anonymous=True, is_udt=is_udt)
+        return SelectOp._from_indexunary(iop)
+
+    @classmethod
+    def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
+        iop = IndexUnaryOp.register_new(
+            name, func, parameterized=parameterized, is_udt=is_udt, lazy=lazy
+        )
+        if not all(x == BOOL for x in iop.types.values()):
+            raise ValueError("SelectOp must have BOOL return type")
+        if lazy:
+            return getattr(select, iop.name)
 
     @classmethod
     def _initialize(cls):
-        super()._initialize(include_in_ops=False)
-        # Update type information to include UINT64 for positional ops
-        for name in ("tril", "triu", "diag", "offdiag", "colle", "colgt", "rowle", "rowgt"):
-            op = getattr(select, name)
-            typed_op = op._typed_ops[BOOL]
-            output_type = op.types[BOOL]
-            if UINT64 not in op.types:
-                op.types[UINT64] = output_type
-                op._typed_ops[UINT64] = typed_op
-                op.coercions[UINT64] = BOOL
+        if cls._initialized:
+            return
+        # IndexUnaryOp adds it boolean-returning objects to SelectOp
+        IndexUnaryOp._initialize()
         cls._initialized = True
 
     def __init__(
         self,
         name,
+        func=None,
         *,
         anonymous=False,
         is_positional=False,
+        is_udt=False,
+        numba_func=None,
     ):
         super().__init__(name, anonymous=anonymous)
+        self.orig_func = func
+        self._numba_func = numba_func
         self.is_positional = is_positional
+        self._is_udt = is_udt
+        if is_udt:
+            self._udt_types = {}  # {dtype: DataType}
+            self._udt_ops = {}  # {dtype: TypedUserIndexUnaryOp}
+
+    def __reduce__(self):
+        if self._anonymous:
+            if hasattr(self.orig_func, "_parameterized_info"):
+                return (_deserialize_parameterized, self.orig_func._parameterized_info)
+            return (self.register_anonymous, (self.orig_func, self.name))
+        name = f"select.{self.name}"
+        if name in _STANDARD_OPERATOR_NAMES:
+            return name
+        return (self._deserialize, (self.name, self.orig_func))
 
     __call__ = TypedBuiltinSelectOp.__call__
 
@@ -1322,24 +1679,19 @@ def _pair_dtype(op, dtype, dtype2):
     return op[INT64]
 
 
-def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None):
+def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None, *, include_indexes=False):
     ztype = INT8 if return_type == BOOL else return_type
     xtype = INT8 if dtype == BOOL else dtype
     nt = numba.types
+    wrapper_args = [nt.CPointer(ztype.numba_type), nt.CPointer(xtype.numba_type)]
+    if include_indexes:
+        wrapper_args.extend([UINT64.numba_type, UINT64.numba_type])
     if dtype2 is not None:
         ytype = INT8 if dtype2 == BOOL else dtype2
-        wrapper_sig = nt.void(
-            nt.CPointer(ztype.numba_type),
-            nt.CPointer(xtype.numba_type),
-            nt.CPointer(ytype.numba_type),
-        )
-    else:
-        wrapper_sig = nt.void(
-            nt.CPointer(ztype.numba_type),
-            nt.CPointer(xtype.numba_type),
-        )
+        wrapper_args.append(nt.CPointer(ytype.numba_type))
+    wrapper_sig = nt.void(*wrapper_args)
 
-    zarray = xarray = yarray = BL = BR = yarg = yname = ""
+    zarray = xarray = yarray = BL = BR = yarg = yname = rcidx = ""
     if return_type._is_udt:
         if return_type.np_type.subdtype is None:
             zarray = "    z = numba.carray(z_ptr, 1)\n"
@@ -1377,11 +1729,14 @@ def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None):
         else:
             yname = ", y_ptr[0]"
 
+    if include_indexes:
+        rcidx = ", row, col"
+
     d = {"numba": numba, "numba_func": numba_func}
     text = (
-        f"def wrapper(z_ptr, x_ptr{yarg}):\n"
+        f"def wrapper(z_ptr, x_ptr{rcidx}{yarg}):\n"
         f"{zarray}{xarray}{yarray}"
-        f"    {zname} = {BL}numba_func({xname}{yname}){BR}\n"
+        f"    {zname} = {BL}numba_func({xname}{rcidx}{yname}){BR}\n"
     )
     exec(text, d)
     return d["wrapper"], wrapper_sig
@@ -1732,6 +2087,8 @@ class BinaryOp(OpBase):
 
     @classmethod
     def _initialize(cls):
+        if cls._initialized:
+            return
         super()._initialize()
         # Rename div to cdiv
         cdiv = binary.cdiv = op.cdiv = BinaryOp("cdiv")
@@ -2087,6 +2444,8 @@ class Monoid(OpBase):
 
     @classmethod
     def _initialize(cls):
+        if cls._initialized:
+            return
         super()._initialize()
         lor = monoid.lor._typed_ops[BOOL]
         land = monoid.land._typed_ops[BOOL]
@@ -2272,6 +2631,8 @@ class Semiring(OpBase):
 
     @classmethod
     def _initialize(cls):
+        if cls._initialized:
+            return
         super()._initialize()
         # Rename div to cdiv (truncate towards 0)
         div_semirings = {
@@ -2517,7 +2878,10 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
         )
     elif isinstance(op, TypedOpBase):
         return op
-    elif isinstance(op, Aggregator):
+
+    from ._agg import Aggregator, TypedAggregator
+
+    if isinstance(op, Aggregator):
         return op[dtype]
     elif isinstance(op, TypedAggregator):
         return op
@@ -2693,6 +3057,10 @@ except Exception:  # pragma: no cover
 
 unary.register_new = UnaryOp.register_new
 unary.register_anonymous = UnaryOp.register_anonymous
+indexunary.register_new = IndexUnaryOp.register_new
+indexunary.register_anonymous = IndexUnaryOp.register_anonymous
+select.register_new = SelectOp.register_new
+select.register_anonymous = SelectOp.register_anonymous
 binary.register_new = BinaryOp.register_new
 binary.register_anonymous = BinaryOp.register_anonymous
 monoid.register_new = Monoid.register_new
@@ -2715,6 +3083,8 @@ _str_to_select = {
     "col>": select.colgt,
     "row<=": select.rowle,
     "row>": select.rowgt,
+    "index<=": select.indexle,
+    "index>": select.indexgt,
 }
 _str_to_binary = {
     "<": binary.lt,
@@ -2834,13 +3204,13 @@ def semiring_from_string(string):
 
 def op_from_string(string):
     for func in [
+        # Note: order matters here
         unary_from_string,
         binary_from_string,
         monoid_from_string,
         semiring_from_string,
-        # Give binary precedence over this
-        select_from_string,
         indexunary_from_string,
+        select_from_string,
     ]:
         try:
             return func(string)
@@ -2857,19 +3227,18 @@ monoid.from_string = monoid_from_string
 semiring.from_string = semiring_from_string
 op.from_string = op_from_string
 
-from . import agg  # noqa isort:skip
-from .agg import Aggregator, TypedAggregator  # noqa isort:skip
-
 _str_to_agg = {
-    "+": agg.sum,
-    "*": agg.prod,
-    "&": agg.all,
-    "|": agg.any,
+    "+": "sum",
+    "*": "prod",
+    "&": "all",
+    "|": "any",
 }
 
 
 def aggregator_from_string(string):
     return _from_string(string, agg, _str_to_agg, "sum[int]")
 
+
+from . import agg  # noqa isort:skip
 
 agg.from_string = aggregator_from_string

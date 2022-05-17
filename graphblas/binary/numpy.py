@@ -7,9 +7,9 @@ https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operat
 """
 import numpy as _np
 
+from .. import _STANDARD_OPERATOR_NAMES
 from .. import binary as _binary
 from .. import config as _config
-from .. import operator as _operator
 
 _delayed = {}
 _binary_names = {
@@ -56,7 +56,7 @@ _binary_names = {
     "nextafter",
     "ldexp",
 }
-_operator._STANDARD_OPERATOR_NAMES.update(f"binary.numpy.{name}" for name in _binary_names)
+_STANDARD_OPERATOR_NAMES.update(f"binary.numpy.{name}" for name in _binary_names)
 __all__ = list(_binary_names)
 _numpy_to_graphblas = {
     # Monoids
@@ -140,8 +140,10 @@ def __getattr__(name):
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         globals()[name] = getattr(_binary, _numpy_to_graphblas[name])
     else:
+        from .. import operator
+
         numpy_func = getattr(_np, name)
-        _operator.BinaryOp.register_new(f"numpy.{name}", lambda x, y: numpy_func(x, y))
+        operator.BinaryOp.register_new(f"numpy.{name}", lambda x, y: numpy_func(x, y))
     rv = globals()[name]
     if name in _commutative:
         rv._commutes_to = rv

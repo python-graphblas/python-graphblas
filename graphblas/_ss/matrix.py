@@ -3580,8 +3580,6 @@ class ss:
         -------
         Vector
         """
-        from .prefix_scan import prefix_scan
-
         return prefix_scan(self._parent.T, op, name=name, within="scan_columnwise")
 
     def scan_rowwise(self, op=monoid.plus, *, name=None):
@@ -3594,8 +3592,6 @@ class ss:
         -------
         Vector
         """
-        from .prefix_scan import prefix_scan
-
         return prefix_scan(self._parent, op, name=name, within="scan_rowwise")
 
     def flatten(self, order="rowwise", *, name=None):
@@ -4230,3 +4226,6 @@ def indptr_to_indices(indptr):  # pragma: no cover
         for j in range(indptr[i], indptr[i + 1]):
             indices[j] = i
     return indices
+
+
+from .prefix_scan import prefix_scan  # noqa isort:skip

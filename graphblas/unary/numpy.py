@@ -7,8 +7,8 @@ https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operat
 """
 import numpy as _np
 
+from .. import _STANDARD_OPERATOR_NAMES
 from .. import config as _config
-from .. import operator as _operator
 from .. import unary as _unary
 from ..dtypes import _supports_complex
 
@@ -108,7 +108,7 @@ if _supports_complex:
     _numpy_to_graphblas["conjugate"] = "conj"
 # _graphblas_to_numpy = {val: key for key, val in _numpy_to_graphblas.items()}  # Soon...
 
-_operator._STANDARD_OPERATOR_NAMES.update(f"unary.numpy.{name}" for name in _unary_names)
+_STANDARD_OPERATOR_NAMES.update(f"unary.numpy.{name}" for name in _unary_names)
 __all__ = list(_unary_names)
 
 
@@ -127,10 +127,12 @@ def __getattr__(name):
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         globals()[name] = getattr(_unary, _numpy_to_graphblas[name])
     else:
+        from .. import operator
+
         numpy_func = getattr(_np, name)
-        _operator.UnaryOp.register_new(f"numpy.{name}", lambda x: numpy_func(x))
+        operator.UnaryOp.register_new(f"numpy.{name}", lambda x: numpy_func(x))
         if name == "reciprocal":
             # numba doesn't match numpy here
-            op = _operator.UnaryOp.register_anonymous(lambda x: 1 if x else 0)
+            op = operator.UnaryOp.register_anonymous(lambda x: 1 if x else 0)
             globals()[name]._add(op["BOOL"])
     return globals()[name]

@@ -7,9 +7,9 @@ https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operat
 """
 import itertools as _itertools
 
+from .. import _STANDARD_OPERATOR_NAMES
 from .. import binary as _binary
 from .. import monoid as _monoid
-from .. import operator as _operator
 from ..binary.numpy import _binary_names
 from ..monoid.numpy import _monoid_identities
 
@@ -83,7 +83,7 @@ _semiring_names -= {
         },
     )
 }
-_operator._STANDARD_OPERATOR_NAMES.update(f"semiring.numpy.{name}" for name in _semiring_names)
+_STANDARD_OPERATOR_NAMES.update(f"semiring.numpy.{name}" for name in _semiring_names)
 __all__ = list(_semiring_names)
 
 
@@ -92,6 +92,8 @@ def __dir__():
 
 
 def __getattr__(name):
+    from .. import operator
+
     if name in _delayed:
         func, kwargs = _delayed.pop(name)
         if type(kwargs["binaryop"]) is str:
@@ -115,7 +117,7 @@ def __getattr__(name):
         binary_name = "_".join(words[i:])
         if hasattr(_binary.numpy, binary_name):  # pragma: no branch
             break
-    _operator.get_semiring(
+    operator.get_semiring(
         getattr(_monoid.numpy, monoid_name),
         getattr(_binary.numpy, binary_name),
         name=f"numpy.{name}",

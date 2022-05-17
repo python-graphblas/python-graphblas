@@ -4,7 +4,7 @@ import pytest
 import graphblas as gb
 from graphblas import binary, monoid
 
-from graphblas import Matrix, Vector  # isort:skip
+from graphblas import Matrix, Vector  # isort:skip (for dask-graphblas)
 
 try:
     # gb.io.to_numpy currently requires scipy

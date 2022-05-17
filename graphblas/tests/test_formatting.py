@@ -7,7 +7,7 @@ from graphblas.formatting import CSS_STYLE
 
 from .conftest import autocompute
 
-from graphblas import Matrix, Scalar, Vector  # isort:skip
+from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 
 try:

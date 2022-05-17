@@ -4,7 +4,19 @@ import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import agg, binary, dtypes, lib, monoid, op, operator, semiring, unary
+from graphblas import (
+    agg,
+    binary,
+    dtypes,
+    indexunary,
+    lib,
+    monoid,
+    op,
+    operator,
+    select,
+    semiring,
+    unary,
+)
 from graphblas.dtypes import (
     BOOL,
     FP32,
@@ -19,12 +31,12 @@ from graphblas.dtypes import (
     UINT64,
 )
 from graphblas.exceptions import DomainMismatch, UdfParseError
-from graphblas.operator import BinaryOp, Monoid, Semiring, UnaryOp, get_semiring
+from graphblas.operator import BinaryOp, IndexUnaryOp, Monoid, Semiring, UnaryOp, get_semiring
 
 if dtypes._supports_complex:
     from graphblas.dtypes import FC32, FC64
 
-from graphblas import Matrix, Vector  # isort:skip
+from graphblas import Matrix, Vector  # isort:skip (for dask-graphblas)
 
 
 def orig_types(op):
@@ -664,11 +676,12 @@ def test_op_namespace():
     # Make sure all have been initialized so `vars` below works
     for key in list(op._delayed):  # pragma: no cover
         getattr(op, key)
+    known_aliases = {"index", "indexle", "indexgt"}
     opnames = {
         key
         for key, val in vars(op).items()
         if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
-    }
+    } | known_aliases
     unarynames = {
         key
         for key, val in vars(unary).items()
@@ -689,11 +702,25 @@ def test_op_namespace():
         for key, val in vars(semiring).items()
         if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
     }
+    indexunarynames = {
+        key
+        for key, val in vars(indexunary).items()
+        if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
+    }
+    selectnames = {
+        key
+        for key, val in vars(select).items()
+        if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
+    }
     assert not unarynames - opnames, unarynames - opnames
     assert not binarynames - opnames, binarynames - opnames
     assert not monoidnames - opnames, monoidnames - opnames
     assert not semiringnames - opnames, semiringnames - opnames
-    assert not opnames - (unarynames | binarynames | monoidnames | semiringnames)
+    assert not indexunarynames - opnames, indexunarynames - opnames
+    assert not selectnames - opnames, selectnames - opnames
+    assert not opnames - (
+        unarynames | binarynames | monoidnames | semiringnames | indexunarynames | selectnames
+    )
 
 
 @pytest.mark.slow
@@ -1095,6 +1122,17 @@ def test_udt():
     expected = Vector.from_values([0, 1, 2], 0)
     assert result.isequal(expected)
 
+    def _udt_index(val, idx, _, thunk):
+        if idx == 0:  # pragma: no cover
+            return thunk["y"]
+        return -thunk["y"]  # pragma: no cover
+
+    _udt_index = IndexUnaryOp.register_anonymous(_udt_index, "_udt_index", is_udt=True)
+    assert udt in _udt_index
+    result = v.apply(_udt_index, 3).new()
+    expected = Vector.from_values([0, 1, 2], [3, -3, -3])
+    assert result.isequal(expected)
+
     def _udt_first(x, y):
         return x  # pragma: no cover
 
@@ -1133,6 +1171,11 @@ def test_udt():
     result = v.apply(gb.unary.positioni).new()
     expected = expected.apply(gb.unary.positioni).new()
     assert result.isequal(expected)
+
+    result = indexunary.rowindex(v).new()
+    assert result.isequal(Vector.from_values([0, 1, 2], [0, 1, 2]))
+    result = select.rowle(v, 2).new()
+    assert result.isequal(v)
 
     class BreakCompile:
         pass

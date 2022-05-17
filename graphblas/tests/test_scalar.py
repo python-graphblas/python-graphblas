@@ -12,7 +12,7 @@ from graphblas import binary, dtypes, replace
 
 from .conftest import autocompute, compute
 
-from graphblas import Matrix, Scalar, Vector  # isort:skip
+from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 
 @pytest.fixture

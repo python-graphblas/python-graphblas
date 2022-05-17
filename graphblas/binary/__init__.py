@@ -8,10 +8,6 @@ _delayed_commutes_to = {
     "rfloordiv": "floordiv",
     "rpow": "pow",
 }
-from graphblas import operator  # noqa isort:skip
-from . import numpy  # noqa isort:skip
-
-del operator
 
 
 def __dir__():
@@ -32,3 +28,9 @@ def __getattr__(key):
             rv._commutes_to = other
         return rv
     raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
+
+
+from .. import operator  # noqa isort:skip
+from . import numpy  # noqa isort:skip
+
+del operator

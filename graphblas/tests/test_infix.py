@@ -5,7 +5,7 @@ from graphblas.exceptions import DimensionMismatch
 
 from .conftest import autocompute
 
-from graphblas import Matrix, Scalar, Vector  # isort:skip
+from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 
 @fixture

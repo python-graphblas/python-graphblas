@@ -20,7 +20,7 @@ from graphblas.exceptions import (
 
 from .conftest import autocompute, compute
 
-from graphblas import Matrix, Scalar, Vector  # isort:skip
+from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 
 @pytest.fixture
@@ -650,9 +650,9 @@ def test_apply_empty(v):
 def test_apply_indexunary(v):
     idx = [1, 3, 4, 6]
     vr = Vector.from_values(idx, idx)
-    r1 = v.apply(indexunary.rowindex).new()
-    r2 = v.apply("rowindex").new()
-    r3 = indexunary.rowindex(v).new()
+    r1 = v.apply(indexunary.index).new()
+    r2 = v.apply("index").new()
+    r3 = indexunary.index(v).new()
     assert r1.isequal(vr)
     assert r2.isequal(vr)
     assert r3.isequal(vr)
@@ -675,15 +675,47 @@ def test_select(v):
     w1 = v.select(select.valueeq, 1).new()
     w2 = v.select("==", 1).new()
     w3 = select.rowle(v, 3).new()
-    w4 = v.select("row<=", 3).new()
+    w4 = v.select("index<=", 3).new()
     w5 = select.value(v == 1).new()
-    w6 = select.row(v < 4).new()
+    w6 = select.index(v < 4).new()
     assert w1.isequal(result)
     assert w2.isequal(result)
     assert w3.isequal(result)
     assert w4.isequal(result)
     assert w5.isequal(result)
     assert w6.isequal(result)
+
+
+def test_indexunary_udf(v):
+    def twox_minusthunk(x, row, col, thunk):
+        return 2 * x - thunk
+
+    indexunary.register_new("twox_minusthunk", twox_minusthunk)
+    assert hasattr(indexunary, "twox_minusthunk")
+    assert not hasattr(select, "twox_minusthunk")
+    with pytest.raises(ValueError):
+        select.register_anonymous(twox_minusthunk)
+    expected = Vector.from_values([1, 3, 4, 6], [-2, -2, 0, -4], size=7)
+    result = indexunary.twox_minusthunk(v, 4).new()
+    assert result.isequal(expected)
+    delattr(indexunary, "twox_minusthunk")
+
+    def ii(x, idx, _, thunk):
+        return idx // 2 >= thunk
+
+    select.register_new("ii", ii)
+    assert hasattr(indexunary, "ii")
+    assert hasattr(select, "ii")
+    ii_apply = indexunary.register_anonymous(ii)
+    expected = Vector.from_values([1, 3, 4, 6], [False, False, True, True], size=7)
+    result = ii_apply(v, 2).new()
+    assert result.isequal(expected)
+    ii_select = select.register_anonymous(ii)
+    expected = Vector.from_values([4, 6], [2, 0], size=7)
+    result = ii_select(v, 2).new()
+    assert result.isequal(expected)
+    delattr(indexunary, "ii")
+    delattr(select, "ii")
 
 
 def test_reduce(v):

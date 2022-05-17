@@ -4,9 +4,6 @@
 # boolean and they default to `select` when called, rather than
 # `apply`).
 _delayed = {}
-from graphblas import operator  # noqa isort:skip
-
-del operator
 
 
 def __dir__():
@@ -68,7 +65,7 @@ def value(expr):
 def row(expr):
     """
     An advanced select method which allows for easily expressing
-    row index comparison logic.
+    Matrix row index comparison logic.
 
     Example usage:
     >>> gb.select.row(A <= 5)
@@ -82,7 +79,7 @@ def row(expr):
 def column(expr):
     """
     An advanced select method which allows for easily expressing
-    column index comparison logic.
+    Matrix column index comparison logic.
 
     Example usage:
     >>> gb.select.column(A <= 5)
@@ -91,3 +88,22 @@ def column(expr):
     while being potentially nicer to read.
     """
     return _resolve_expr(expr, "column", "col")
+
+
+def index(expr):
+    """
+    An advanced select method which allows for easily expressing
+    Vector index comparison logic.
+
+    Example usage:
+    >>> gb.select.index(v <= 5)
+
+    The example will dispatch to `gb.select.indexle(v, 5)`
+    while being potentially nicer to read.
+    """
+    return _resolve_expr(expr, "index", "index")
+
+
+from .. import operator  # noqa isort:skip
+
+del operator
