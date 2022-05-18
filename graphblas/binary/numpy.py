@@ -143,7 +143,7 @@ def __getattr__(name):
         if name == "float_power":
             from .. import operator
 
-            new_op = operator.BinaryOp(name)
+            new_op = operator.BinaryOp(f"numpy.{name}")
             builtin_op = _binary.pow
             for dtype in builtin_op.types:
                 if dtype.name in {"FP32", "FC32", "FC64"}:
