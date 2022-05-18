@@ -86,7 +86,7 @@ _numpy_to_graphblas = {
     # "mod": "remainder",  # not the same!
     "not_equal": "ne",
     "power": "pow",
-    "float_power": "pow",  # we need to coerce everything to float64
+    "float_power": None,  # uses pow with everything coerced to float64 (constructed below)
     # "remainder": "remainder",  # not the same!
     "subtract": "minus",
     "true_divide": "truediv",
