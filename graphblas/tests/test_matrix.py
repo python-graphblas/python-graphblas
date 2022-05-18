@@ -386,8 +386,7 @@ def test_ewise_add(A):
     )
     # with pytest.raises(TypeError, match="require_monoid"):
     A.ewise_add(B, binary.second)  # okay now
-    # surprising that SECOND(x, empty) == x, which is why user
-    # must opt-in to using binary ops in ewise_add
+    # surprising that SECOND(x, empty) == x
     C = A.ewise_add(B, binary.second).new()
     assert C.isequal(result)
     C << A.ewise_add(B, monoid.max)
