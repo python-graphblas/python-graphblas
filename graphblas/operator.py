@@ -989,7 +989,7 @@ class UnaryOp(OpBase):
                 "|ASINH|ATANH|SIGNUM|CEIL|FLOOR|ROUND|TRUNC|EXP2|EXPM1|LOG10|LOG1P)"
                 "_(FP32|FP64|FC32|FC64)$"
             ),
-            re.compile("^GxB_(LGAMMA|TGAMMA|ERF|ERFC|FREXPX|FREXPE)_(FP32|FP64)$"),
+            re.compile("^GxB_(LGAMMA|TGAMMA|ERF|ERFC|FREXPX|FREXPE|CBRT)_(FP32|FP64)$"),
             re.compile("^GxB_(IDENTITY|AINV|MINV|ONE|CONJ)_(FC32|FC64)$"),
         ],
         "re_exprs_return_bool": [

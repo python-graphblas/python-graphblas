@@ -2,7 +2,7 @@
 
 See list of numpy ufuncs supported by numpy here:
 
-https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operations
+https://numba.readthedocs.io/en/stable/reference/numpysupported.html#math-operations
 
 """
 import numpy as _np
@@ -23,6 +23,7 @@ _binary_names = {
     "true_divide",
     "floor_divide",
     "power",
+    "float_power",
     "remainder",
     "mod",
     "fmod",
@@ -85,6 +86,7 @@ _numpy_to_graphblas = {
     # "mod": "remainder",  # not the same!
     "not_equal": "ne",
     "power": "pow",
+    "float_power": None,  # uses pow with everything coerced to float64 (constructed below)
     # "remainder": "remainder",  # not the same!
     "subtract": "minus",
     "true_divide": "truediv",
@@ -138,7 +140,29 @@ def __getattr__(name):
     if name not in _binary_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
-        globals()[name] = getattr(_binary, _numpy_to_graphblas[name])
+        if name == "float_power":
+            from .. import operator
+
+            new_op = operator.BinaryOp(f"numpy.{name}")
+            builtin_op = _binary.pow
+            for dtype in builtin_op.types:
+                if dtype.name in {"FP32", "FC32", "FC64"}:
+                    orig_dtype = dtype
+                else:
+                    orig_dtype = operator.FP64
+                orig_op = builtin_op[orig_dtype]
+                cur_op = operator.TypedBuiltinBinaryOp(
+                    new_op,
+                    new_op.name,
+                    dtype,
+                    builtin_op.types[orig_dtype],
+                    orig_op.gb_obj,
+                    orig_op.gb_name,
+                )
+                new_op._add(cur_op)
+            globals()[name] = new_op
+        else:
+            globals()[name] = getattr(_binary, _numpy_to_graphblas[name])
     else:
         from .. import operator
 
