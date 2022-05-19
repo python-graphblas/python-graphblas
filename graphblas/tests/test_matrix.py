@@ -384,17 +384,16 @@ def test_ewise_add(A):
         [2, 0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [4, 3, 5, 3, 8, 5, 3, 7, 8, 3, 1, 7, 4],
     )
-    with pytest.raises(TypeError, match="require_monoid"):
-        A.ewise_add(B, binary.second)
-    # surprising that SECOND(x, empty) == x, which is why user
-    # must opt-in to using binary ops in ewise_add
-    C = A.ewise_add(B, binary.second, require_monoid=False).new()
+    # with pytest.raises(TypeError, match="require_monoid"):
+    A.ewise_add(B, binary.second)  # okay now
+    # surprising that SECOND(x, empty) == x
+    C = A.ewise_add(B, binary.second).new()
     assert C.isequal(result)
     C << A.ewise_add(B, monoid.max)
     assert C.isequal(result)
     C << A.ewise_add(B, binary.max)
     assert C.isequal(result)
-    with pytest.raises(TypeError, match="Expected type: Monoid"):
+    with pytest.raises(TypeError, match="Expected type: BinaryOp, Monoid"):
         A.ewise_add(B, semiring.max_minus)
 
 
@@ -3188,6 +3187,8 @@ def test_deprecated(A):
         Scalar.new(int)
     with pytest.warns(DeprecationWarning):
         A.S.mask
+    with pytest.warns(DeprecationWarning):
+        binary.plus(A | A, require_monoid=True)
 
 
 def test_ndim(A):

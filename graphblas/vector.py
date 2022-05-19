@@ -37,7 +37,7 @@ def _v_add_m(updater, left, right, op):
     full = Vector(left.dtype, right._ncols, name="v_full")
     full[:] = 0
     temp = left.outer(full, binary.first).new(name="M_temp", mask=updater.kwargs.get("mask"))
-    updater << temp.ewise_add(right, op, require_monoid=False)
+    updater << temp.ewise_add(right, op)
 
 
 def _v_mult_m(updater, left, right, op):
@@ -435,7 +435,7 @@ class Vector(BaseType):
     # to update to trigger a call to GraphBLAS
     #########################################################
 
-    def ewise_add(self, other, op=monoid.plus, *, require_monoid=True):
+    def ewise_add(self, other, op=monoid.plus, *, require_monoid=None):
         """
         GrB_Vector_eWiseAdd
 
@@ -443,9 +443,8 @@ class Vector(BaseType):
 
         Default op is monoid.plus.
 
-        Unless explicitly disabled, this method requires a monoid (directly or from a semiring).
-        The reason for this is that binary operators can create very confusing behavior when
-        only one of the two elements is present.
+        *Warning*: using binary operators can create very confusing behavior
+        when only one of the two elements is present.
 
         Examples:
             - binary.minus where left=N/A and right=4 yields 4 rather than -4 as might be expected
@@ -454,10 +453,17 @@ class Vector(BaseType):
 
         The behavior is caused by grabbing the non-empty value and using it directly without
         performing any operation. In the case of `gt`, the non-empty value is cast to a boolean.
-        For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
+        if require_monoid is not None:
+            warnings.warn(
+                "require_monoid keyword is deprecated; "
+                "future behavior will be like `require_monoid=False`",
+                DeprecationWarning,
+            )
+        else:
+            require_monoid = False
         method_name = "ewise_add"
         other = self._expect_type(
             other, (Vector, Matrix, TransposedMatrix), within=method_name, argname="other", op=op

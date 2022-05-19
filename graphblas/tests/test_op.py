@@ -225,7 +225,7 @@ def test_binaryop_parameterized():
     v0 = v.ewise_mult(v, op).new()
     r0 = Vector.from_values([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
     assert v0.isequal(r0, check_dtype=True)
-    v1 = v.ewise_add(v, op(1), require_monoid=False).new()
+    v1 = v.ewise_add(v, op(1)).new()
     r1 = Vector.from_values([0, 1, 3], [3, 5, -7], dtype=dtypes.INT32)
     assert v1.isequal(r1, check_dtype=True)
 
@@ -396,7 +396,7 @@ def test_semiring_parameterized():
     B = A.mxm(A, mysemiring(1)).new()  # three extra pluses
     assert B.isequal(Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [10, 12, 14, 16]))
 
-    with pytest.raises(TypeError, match="Expected type: Monoid"):
+    with pytest.raises(TypeError, match="Expected type: BinaryOp, Monoid"):
         A.ewise_add(A, mysemiring)
 
     # mismatched signatures.
@@ -531,7 +531,7 @@ def test_binaryop_udf():
     assert set(binary.bin_test_func.types) == comp_set
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
-    w = v1.ewise_add(v2, binary.bin_test_func, require_monoid=False).new()
+    w = v1.ewise_add(v2, binary.bin_test_func).new()
     result = Vector.from_values([0, 1, 2, 3], [-1, 2, 3, -31], dtype=dtypes.INT32)
     assert w.isequal(result)
 
