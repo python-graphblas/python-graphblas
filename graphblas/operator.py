@@ -3211,6 +3211,7 @@ def op_from_string(string):
         semiring_from_string,
         indexunary_from_string,
         select_from_string,
+        aggregator_from_string,
     ]:
         try:
             return func(string)
