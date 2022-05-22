@@ -590,14 +590,14 @@ def test_assign(A):
     C = A.dup()
     C[:3:2, :6:5]() << B
     assert C.isequal(result)
-    with pytest.raises(TypeError, match="will make the Matrix dense"):
-        C << 1
     nvals = C.nvals
     C(C.S) << 1
     assert C.nvals == nvals
     assert C.reduce_scalar().new() == nvals
     with pytest.raises(TypeError, match="Invalid type for index"):
         C[C, [1]] = C
+    C << 1  # Now okay
+    assert C.nvals == C.nrows * C.ncols
 
 
 def test_assign_wrong_dims(A):

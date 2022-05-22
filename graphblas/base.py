@@ -396,19 +396,7 @@ class BaseType:
                                 "AmbiguousAssignOrExtract, and scalars."
                             ) from None
                     updater = self(mask=mask, accum=accum, replace=replace, input_mask=input_mask)
-                    if type(self) is Matrix:
-                        if mask is None:
-                            raise TypeError(
-                                "Warning: updating a Matrix with a scalar without a mask will "
-                                "make the Matrix dense.  This may use a lot of memory and probably "
-                                "isn't what you want.  Perhaps you meant:"
-                                "\n\n    M(M.S) << s\n\n"
-                                "If you do wish to make a dense matrix, then please be explicit:"
-                                "\n\n    M[:, :] = s"
-                            )
-                        updater[...] = scalar
-                    else:  # Vector
-                        updater[...] = scalar
+                    updater[...] = scalar
                     return
 
         if type(self) is not expr.output_type:
