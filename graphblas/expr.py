@@ -2,7 +2,6 @@ import numpy as np
 
 from . import lib, utils
 from .dtypes import _INDEX
-from .mask import Mask
 from .utils import _CArray, output_type
 
 
@@ -232,6 +231,8 @@ class IndexerResolver:
             try:
                 index = list(index)
             except Exception:
+                from .mask import Mask
+
                 if isinstance(index, Mask):
                     raise TypeError(
                         f"Invalid type for index: {typ.__name__}.\n"

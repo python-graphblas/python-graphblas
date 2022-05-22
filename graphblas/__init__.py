@@ -1,7 +1,6 @@
 import sys as _sys
 from importlib import import_module as _import_module
 
-from . import mask  # noqa
 from ._version import get_versions
 
 
@@ -61,6 +60,7 @@ _SPECIAL_ATTRS = {
     "infix",
     "io",
     "lib",
+    "mask",
     "matrix",
     "monoid",
     "op",
