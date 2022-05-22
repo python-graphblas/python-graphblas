@@ -3438,3 +3438,16 @@ def test_to_values_sort():
     assert_array_equal(rows, expected_rows)
     rows, cols, values = A.T.to_values(sort=True)
     assert_array_equal(cols, expected_rows)
+
+
+def test_get(A):
+    assert compute(A.get(0, 0)) is None
+    assert A.get(0, 0, "mittens") == "mittens"
+    assert A.get(0, 1) == 2
+    assert compute(A.T.get(0, 1)) is None
+    assert A.T.get(1, 0) == 2
+    assert A.get(0, 1, "mittens") == 2
+    assert type(compute(A.get(0, 1))) is int
+    with pytest.raises(ValueError):
+        # Not yet supported
+        A.get(0, [0, 1])

@@ -393,6 +393,20 @@ class Matrix(BaseType):
         # TODO: expose COMPLETE or MATERIALIZE options to the user
         call("GrB_Matrix_wait", [self, _MATERIALIZE])
 
+    def get(self, row, col, default=None):
+        """Get an element at row, col indices as a Python scalar.
+
+        If there is no element at ``matrix[row, col]``, then the default value is returned.
+        """
+        expr = self[row, col]
+        if expr._is_scalar:
+            rv = expr.new().value
+            return default if rv is None else rv
+        raise ValueError(
+            "Bad row, col arguments in Matrix.get(...).  "
+            "Indices should get a single element, which will be extracted as a Python scalar."
+        )
+
     @classmethod
     def new(cls, dtype, nrows=0, ncols=0, *, name=None):
         """
@@ -1604,6 +1618,7 @@ class MatrixExpression(BaseExpression):
     ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
     ewise_union = wrapdoc(Matrix.ewise_union)(property(_automethods.ewise_union))
     gb_obj = wrapdoc(Matrix.gb_obj)(property(_automethods.gb_obj))
+    get = wrapdoc(Matrix.get)(property(_automethods.get))
     isclose = wrapdoc(Matrix.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Matrix.isequal)(property(_automethods.isequal))
     kronecker = wrapdoc(Matrix.kronecker)(property(_automethods.kronecker))
@@ -1684,6 +1699,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
     ewise_union = wrapdoc(Matrix.ewise_union)(property(_automethods.ewise_union))
     gb_obj = wrapdoc(Matrix.gb_obj)(property(_automethods.gb_obj))
+    get = wrapdoc(Matrix.get)(property(_automethods.get))
     isclose = wrapdoc(Matrix.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Matrix.isequal)(property(_automethods.isequal))
     kronecker = wrapdoc(Matrix.kronecker)(property(_automethods.kronecker))
@@ -1827,6 +1843,7 @@ class TransposedMatrix:
     __ixor__ = _automethods.__ixor__
 
     # Misc.
+    get = Matrix.get
     isequal = Matrix.isequal
     isclose = Matrix.isclose
     wait = Matrix.wait
