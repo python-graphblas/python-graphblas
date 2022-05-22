@@ -5,6 +5,7 @@ import numpy as np
 
 from . import agg, binary, monoid, semiring, unary
 from .dtypes import INT64, lookup_dtype
+from .utils import output_type
 
 
 def _get_types(ops, initdtype):
@@ -98,6 +99,36 @@ class Aggregator:
 
     def __reduce__(self):
         return f"agg.{self.name}"
+
+    def __call__(self, val, *, rowwise=False, columnwise=False):
+        # Should we expose `allow_empty=` keyword when reducing to Scalar?
+        from .matrix import Matrix, TransposedMatrix
+        from .vector import Vector
+
+        typ = output_type(val)
+        if typ is Vector:
+            if rowwise or columnwise:
+                raise ValueError(
+                    "rowwise and columnwise arguments should not be used with Vector input"
+                )
+            return val.reduce(self)
+        elif typ in {Matrix, TransposedMatrix}:
+            if rowwise:
+                if columnwise:
+                    raise ValueError("rowwise and columnwise arguments cannot both be True")
+                return val.reduce_rowwise(self)
+            elif columnwise:
+                return val.reduce_columnwise(self)
+            else:
+                return val.reduce_scalar(self)
+        else:
+            raise TypeError(
+                f"Bad type when calling {self!r}.\n"
+                "    - Expected type: Vector, Matrix, TransposedMatrix.\n"
+                f"    - Got: {type(val)}.\n"
+                "Calling an Aggregator is syntactic sugar for calling reduce methods.  "
+                f"For example, `A.reduce_scalar({self!r})` is the same as `{self!r}(A)`."
+            )
 
 
 class TypedAggregator:
@@ -237,6 +268,8 @@ class TypedAggregator:
 
     def __reduce__(self):
         return (getitem, (self.parent, self.type))
+
+    __call__ = Aggregator.__call__
 
 
 # Monoid-only

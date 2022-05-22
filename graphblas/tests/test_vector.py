@@ -876,6 +876,21 @@ def test_reduce_coerce_dtype(v):
     assert t == 5.23
 
 
+@autocompute
+def test_reduce_call_agg(v):
+    assert agg.sum(v) == 4
+    assert agg.sum(v + v) == 8  # handles expression
+    result = agg.max[float](v).new()  # typed agg is callable too
+    assert result.dtype == "FP64"
+    assert result == 2
+    with pytest.raises(ValueError, match="rowwise"):
+        agg.sum(v, rowwise=True)
+    with pytest.raises(ValueError, match="columnwise"):
+        agg.sum(v, columnwise=True)
+    with pytest.raises(TypeError):
+        agg.sum(7)
+
+
 def test_simple_assignment(v):
     # w[:] = v
     w = Vector(v.dtype, v.size)

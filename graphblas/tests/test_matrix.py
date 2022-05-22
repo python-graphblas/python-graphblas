@@ -1498,6 +1498,23 @@ def test_reduce_scalar(A):
     assert t == 48.23
 
 
+@autocompute
+def test_reduce_call_agg(A):
+    assert agg.sum(A) == 47
+    assert agg.sum(A.T) == 47
+    assert agg.sum(A + A) == 94  # handles expression
+    result = agg.max[float](A).new()  # typed agg is callable too
+    assert result.dtype == "FP64"
+    assert result == 8
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
+    result = agg.sum(A, rowwise=True)
+    assert result.isequal(expected)
+    result = agg.sum(A.T, columnwise=True)
+    assert result.isequal(expected)
+    with pytest.raises(ValueError, match="cannot both be True"):
+        agg.sum(A, rowwise=True, columnwise=True)
+
+
 def test_transpose(A):
     # C << A.T
     rows, cols, vals = A.to_values()
