@@ -41,11 +41,23 @@ class Mask:
         return self.parent
 
     def new(self, dtype=None, *, complement=False, mask=None, name=None):
-        """Return a new object with True values determined by the mask.
+        """Return a new object with True values determined by the mask(s).
 
-        The resulting object used as structural or value mask is equivalent to the original mask.
+        By default, the result is True wherever the mask(s) would have been applied,
+        and empty otherwise.  If `complement` is True, then these are switched:
+        the result is empty where the mask(s) would have been applied, and True otherwise.
 
-        Efficiently merge two masks by passing a mask with the `mask=` argument.
+        In other words, these are equivalent if complement is False (and mask keyword is None):
+
+        >>> C(self) << expr
+        >>> C(result.S) << expr  # equivalent when complement is False
+
+        And these are equivalent if complement is True (and mask keyword is None):
+
+        >>> C(self) << expr
+        >>> C(~result.S) << expr  # equivalent when complement is True
+
+        This can also efficiently merge two masks by using the `mask=` argument.
         This is equivalent to the following (but uses more efficient recipes):
 
         >>> val = Matrix(...)
@@ -163,7 +175,7 @@ class ComplementedValueMask(Mask):
 #    CV: complemented value
 def _combine_S_S(m1, m2, dtype, name):
     """S-S"""
-    return pair(one(m1.parent).new() & one(m2.parent).new()).new(dtype, name=name)
+    return pair(m1.parent & m2.parent).new(dtype, name=name)
 
 
 def _combine_S_A(m1, m2, dtype, name):
