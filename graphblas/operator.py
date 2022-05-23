@@ -1163,7 +1163,7 @@ class UnaryOp(OpBase):
                     "erf", "erfc", "lgamma", "tgamma", "acos", "acosh", "asin", "asinh",
                     "atan", "atanh", "ceil", "cos", "cosh", "exp", "exp2", "expm1", "floor",
                     "log", "log10", "log1p", "log2", "round", "signum", "sin", "sinh", "sqrt",
-                    "tan", "tanh", "trunc",
+                    "tan", "tanh", "trunc", "cbrt",
                 ),
                 ((BOOL, INT8, INT16, UINT8, UINT16), FP32),
                 ((INT32, INT64, UINT32, UINT64), FP64),
