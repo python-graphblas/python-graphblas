@@ -25,7 +25,7 @@ setup(
     url="https://github.com/metagraph-dev/python-graphblas",
     packages=find_packages(),
     python_requires=">=3.8",
-    install_requires=["suitesparse-graphblas >=7.0.3.1, <7.1", "numba", "donfig", "pyyaml"],
+    install_requires=["suitesparse-graphblas >=7.1.0.0, <7.2", "numba", "donfig", "pyyaml"],
     extras_require=extras_require,
     include_package_data=True,
     license="Apache License 2.0",
