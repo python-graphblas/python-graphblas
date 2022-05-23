@@ -1,6 +1,6 @@
 import numpy as np
 
-from . import ffi, lib, mask
+from . import ffi, lib
 from .dtypes import _INDEX, lookup_dtype
 
 
@@ -38,11 +38,6 @@ _output_types = {
     # Mistakes
     object: object,
     type: type,
-    mask.Mask: mask.Mask,
-    mask.StructuralMask: mask.StructuralMask,
-    mask.ValueMask: mask.ValueMask,
-    mask.ComplementedStructuralMask: mask.ComplementedStructuralMask,
-    mask.ComplementedValueMask: mask.ComplementedValueMask,
 }
 _output_types.update((k, k) for k in np.cast)
 

@@ -9,7 +9,7 @@ def test_import_special_attrs():
     assert len(not_hidden & graphblas._SPECIAL_ATTRS) == len(graphblas._SPECIAL_ATTRS)
     # Is everything special that needs to be?
     not_special = {x for x in dir(graphblas) if not x.startswith("_")} - graphblas._SPECIAL_ATTRS
-    assert not_special == {"backend", "config", "init", "mask", "replace"}
+    assert not_special == {"backend", "config", "init", "replace"}
     # Make sure these "not special" objects don't have objects that look special within them
     for attr in not_special:
         assert not set(dir(getattr(graphblas, attr))) & graphblas._SPECIAL_ATTRS
