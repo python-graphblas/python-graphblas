@@ -380,6 +380,20 @@ class Vector(BaseType):
         # TODO: expose COMPLETE or MATERIALIZE options to the user
         call("GrB_Vector_wait", [self, _MATERIALIZE])
 
+    def get(self, index, default=None):
+        """Get an element at index as a Python scalar.
+
+        If there is no element at ``vector[index]``, then the default value is returned.
+        """
+        expr = self[index]
+        if expr._is_scalar:
+            rv = expr.new().value
+            return default if rv is None else rv
+        raise ValueError(
+            "Bad index in Vector.get(...).  "
+            "A single index should be given, and the result will be a Python scalar."
+        )
+
     @classmethod
     def new(cls, dtype, size=0, *, name=None):
         """
@@ -1220,6 +1234,7 @@ class VectorExpression(BaseExpression):
     ewise_mult = wrapdoc(Vector.ewise_mult)(property(_automethods.ewise_mult))
     ewise_union = wrapdoc(Vector.ewise_union)(property(_automethods.ewise_union))
     gb_obj = wrapdoc(Vector.gb_obj)(property(_automethods.gb_obj))
+    get = wrapdoc(Vector.get)(property(_automethods.get))
     inner = wrapdoc(Vector.inner)(property(_automethods.inner))
     isclose = wrapdoc(Vector.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Vector.isequal)(property(_automethods.isequal))
@@ -1292,6 +1307,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     ewise_mult = wrapdoc(Vector.ewise_mult)(property(_automethods.ewise_mult))
     ewise_union = wrapdoc(Vector.ewise_union)(property(_automethods.ewise_union))
     gb_obj = wrapdoc(Vector.gb_obj)(property(_automethods.gb_obj))
+    get = wrapdoc(Vector.get)(property(_automethods.get))
     inner = wrapdoc(Vector.inner)(property(_automethods.inner))
     isclose = wrapdoc(Vector.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Vector.isequal)(property(_automethods.isequal))

@@ -2081,3 +2081,14 @@ def test_lambda_udfs(v):
     v.ewise_add(v, lambda x, y: x + y)  # now okay
     with pytest.raises(TypeError):
         v.inner(v, lambda x, y: x + y)
+
+
+def test_get(v):
+    assert compute(v.get(0)) is None
+    assert v.get(0, "mittens") == "mittens"
+    assert v.get(1) == 1
+    assert v.get(1, "mittens") == 1
+    assert type(compute(v.get(1))) is int
+    with pytest.raises(ValueError):
+        # Not yet supported
+        v.get([0, 1])

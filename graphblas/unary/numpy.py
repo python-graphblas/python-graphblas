@@ -77,7 +77,7 @@ _numpy_to_graphblas = {
     "arctan": "atan",
     "arctanh": "atanh",
     "bitwise_not": "bnot",
-    # "cbrt": "cbrt",  # TODO: added in SuiteSparse:GraphBLAS 7.1.0
+    "cbrt": "cbrt",
     "ceil": "ceil",
     "cos": "cos",
     "cosh": "cosh",
