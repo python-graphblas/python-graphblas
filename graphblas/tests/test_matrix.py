@@ -3468,3 +3468,11 @@ def test_get(A):
     with pytest.raises(ValueError):
         # Not yet supported
         A.get(0, [0, 1])
+
+
+@autocompute
+def test_bool_as_mask(A):
+    expected = select.value(A < 3).new()
+    expected *= 3
+    A(A < 3, binary.plus, replace=True) << A + A
+    assert A.isequal(expected)
