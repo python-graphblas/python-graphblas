@@ -1110,6 +1110,8 @@ def test_apply_indexunary(A):
     assert w2.isequal(A3)
     assert w3.isequal(A3)
     assert w4.isequal(A3)
+    with pytest.raises(TypeError, match="left"):
+        A.apply(select.valueeq, left=s3)
 
 
 def test_select(A):
@@ -1136,8 +1138,11 @@ def test_select(A):
     )
     w7 = A.select("TRIU").new()
     assert w7.isequal(Aupper)
+    with pytest.raises(TypeError, match="thunk"):
+        A.select(select.valueeq, object())
 
 
+@pytest.mark.slow
 def test_indexunary_udf(A):
     def threex_minusthunk(x, row, col, thunk):  # pragma: no cover
         return 3 * x - thunk

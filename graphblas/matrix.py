@@ -517,7 +517,7 @@ class Matrix(BaseType):
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
-        if require_monoid:
+        if require_monoid:  # pragma: no cover
             if op.opclass != "BinaryOp" or op.monoid is None:
                 self._expect_op(
                     op,

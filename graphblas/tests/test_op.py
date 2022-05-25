@@ -129,6 +129,7 @@ def test_get_typed_op():
     assert operator.get_typed_op("+", dtypes.FP64, kind="monoid") is monoid.plus["FP64"]
     assert operator.get_typed_op("+[int64]", dtypes.FP64, kind="monoid") is monoid.plus["INT64"]
     assert operator.get_typed_op("+.*", dtypes.FP64, kind="semiring") is semiring.plus_times["FP64"]
+    assert operator.get_typed_op("row<=", dtypes.INT64, kind="select") is select.rowle["INT64"]
     with pytest.raises(ValueError, match="Unable to get op from string"):
         operator.get_typed_op("+", dtypes.FP64)
     assert (

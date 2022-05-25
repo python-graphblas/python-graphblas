@@ -668,6 +668,8 @@ def test_apply_indexunary(v):
     assert w2.isequal(v2)
     assert w3.isequal(v2)
     assert w4.isequal(v2)
+    with pytest.raises(TypeError, match="left"):
+        v.apply(indexunary.valueeq, left=s2)
 
 
 def test_select(v):
@@ -684,8 +686,11 @@ def test_select(v):
     assert w4.isequal(result)
     assert w5.isequal(result)
     assert w6.isequal(result)
+    with pytest.raises(TypeError, match="thunk"):
+        v.select(select.valueeq, object())
 
 
+@pytest.mark.slow
 def test_indexunary_udf(v):
     def twox_minusthunk(x, row, col, thunk):  # pragma: no cover
         return 2 * x - thunk
@@ -695,6 +700,8 @@ def test_indexunary_udf(v):
     assert not hasattr(select, "twox_minusthunk")
     with pytest.raises(ValueError):
         select.register_anonymous(twox_minusthunk)
+    with pytest.raises(TypeError, match="must be a function"):
+        select.register_anonymous(object())
     expected = Vector.from_values([1, 3, 4, 6], [-2, -2, 0, -4], size=7)
     result = indexunary.twox_minusthunk(v, 4).new()
     assert result.isequal(expected)
@@ -725,6 +732,10 @@ def test_reduce(v):
     assert v.reduce(binary.plus).new() == 4
     with pytest.raises(TypeError, match="Expected type: Monoid"):
         v.reduce(binary.minus)
+    with pytest.raises(TypeError, match="to get the Monoid"):
+        v.reduce(semiring.plus_times)
+    with pytest.raises(TypeError, match="part of a Monoid for BOOL datatype"):
+        v.reduce(binary.plus[bool])
 
     # Test accum
     s(accum=binary.times) << v.reduce(monoid.plus)

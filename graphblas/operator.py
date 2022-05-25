@@ -880,7 +880,7 @@ class OpBase:
         include_in_ops determines whether the operators are included in the
         `gb.ops` namespace in addition to the defined module.
         """
-        if cls._initialized:
+        if cls._initialized:  # pragma: no cover
             return
         # Read in the parse configs
         trim_from_front = cls._parse_config.get("trim_from_front", 0)
@@ -1183,7 +1183,7 @@ class UnaryOp(OpBase):
                     typed_op = op._typed_ops[target_type]
                     output_type = op.types[target_type]
                     for dtype in input_types:
-                        if dtype not in op.types:
+                        if dtype not in op.types:  # pragma: no branch
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
                             op.coercions[dtype] = target_type
@@ -1354,7 +1354,7 @@ class IndexUnaryOp(OpBase):
             raise UdfParseError("Unable to parse function using Numba")
 
     def _compile_udt(self, dtype, dtype2):
-        if dtype2 is None:
+        if dtype2 is None:  # pragma: no cover
             dtype2 = dtype
         dtypes = (dtype, dtype2)
         if dtypes in self._udt_types:
@@ -1428,7 +1428,7 @@ class IndexUnaryOp(OpBase):
             op = getattr(indexunary, name)
             typed_op = op._typed_ops[BOOL]
             output_type = op.types[BOOL]
-            if UINT64 not in op.types:
+            if UINT64 not in op.types:  # pragma: no cover
                 op.types[UINT64] = output_type
                 op._typed_ops[UINT64] = typed_op
                 op.coercions[UINT64] = BOOL
@@ -1436,7 +1436,7 @@ class IndexUnaryOp(OpBase):
             op = getattr(indexunary, name)
             typed_op = op._typed_ops[INT64]
             output_type = op.types[INT64]
-            if UINT64 not in op.types:
+            if UINT64 not in op.types:  # pragma: no cover
                 op.types[UINT64] = output_type
                 op._typed_ops[UINT64] = typed_op
                 op.coercions[UINT64] = INT64
@@ -1549,7 +1549,7 @@ class SelectOp(OpBase):
 
     @classmethod
     def _initialize(cls):
-        if cls._initialized:
+        if cls._initialized:  # pragma: no cover
             return
         # IndexUnaryOp adds it boolean-returning objects to SelectOp
         IndexUnaryOp._initialize()
@@ -2087,7 +2087,7 @@ class BinaryOp(OpBase):
 
     @classmethod
     def _initialize(cls):
-        if cls._initialized:
+        if cls._initialized:  # pragma: no cover
             return
         super()._initialize()
         # Rename div to cdiv
@@ -2444,7 +2444,7 @@ class Monoid(OpBase):
 
     @classmethod
     def _initialize(cls):
-        if cls._initialized:
+        if cls._initialized:  # pragma: no cover
             return
         super()._initialize()
         lor = monoid.lor._typed_ops[BOOL]
@@ -2631,7 +2631,7 @@ class Semiring(OpBase):
 
     @classmethod
     def _initialize(cls):
-        if cls._initialized:
+        if cls._initialized:  # pragma: no cover
             return
         super()._initialize()
         # Rename div to cdiv (truncate towards 0)
