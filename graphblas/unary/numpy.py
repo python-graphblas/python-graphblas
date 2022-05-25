@@ -137,7 +137,7 @@ def __getattr__(name):
 
         numpy_func = getattr(_np, name)
 
-        def func(x):
+        def func(x):  # pragma: no cover
             return numpy_func(x)
 
         operator.UnaryOp.register_new(f"numpy.{name}", func)

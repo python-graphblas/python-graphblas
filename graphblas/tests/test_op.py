@@ -334,7 +334,7 @@ def test_monoid_parameterized():
     monoid = gb.monoid._user_defined_monoid
     fv2 = fv.ewise_mult(fv, monoid(2)).new()
 
-    def plus1(x):
+    def plus1(x):  # pragma: no cover
         return x + 1
 
     plus1 = UnaryOp.register_anonymous(plus1)

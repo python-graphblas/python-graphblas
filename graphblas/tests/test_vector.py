@@ -2093,7 +2093,7 @@ def test_lambda_udfs(v):
     assert result.isequal(expected)
     # Should we also allow lambdas for monoids with assumed identity of 0?
     # with pytest.raises(TypeError):
-    v.ewise_add(v, lambda x, y: x + y)  # now okay. pragma: no branch
+    v.ewise_add(v, lambda x, y: x + y)  # pragma: no branch
     with pytest.raises(TypeError):
         v.inner(v, lambda x, y: x + y)
 
