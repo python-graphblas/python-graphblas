@@ -342,8 +342,8 @@ def test_mxm_mask(A):
     assert C.isequal(result3)
     C2 = A.mxm(A, semiring.plus_times).new(mask=struct_mask.S)
     assert C2.isequal(result3)
-    with pytest.raises(TypeError, match="Mask must indicate"):
-        A.mxm(A).new(mask=struct_mask)
+    with pytest.raises(TypeError, match="Mask must be"):
+        A.mxm(A).new(mask=struct_mask)  # would be okay if bool mask, but it's not
 
 
 def test_mxm_accum(A):
@@ -523,9 +523,9 @@ def test_extract_input_mask():
         A[0, [0, 1]].new(input_mask=M.S, mask=expected.S)
     with pytest.raises(TypeError, match="mask and input_mask arguments cannot both be given"):
         A(input_mask=M.S, mask=expected.S)
-    with pytest.raises(TypeError, match=r"Mask must indicate values \(M.V\) or structure \(M.S\)"):
+    with pytest.raises(TypeError, match="Mask must be"):
         A[0, [0, 1]].new(input_mask=M)
-    with pytest.raises(TypeError, match=r"Mask must indicate values \(M.V\) or structure \(M.S\)"):
+    with pytest.raises(TypeError, match="Mask must be"):
         A(input_mask=M)
     with pytest.raises(TypeError, match="Mask object must be type Vector"):
         expected[[0, 1]].new(input_mask=M.S)
@@ -1666,9 +1666,9 @@ def test_transpose_exceptional():
 
     with pytest.raises(TypeError, match="not callable"):
         B.T(mask=A.V) << B.ewise_mult(B, op=binary.plus)
-    with pytest.raises(AttributeError):
-        B(mask=A.T.V) << B.ewise_mult(B, op=binary.plus)
-    with pytest.raises(AttributeError):
+    with pytest.raises(TypeError, match="autocompute"):
+        B(mask=A.T.S) << B.ewise_mult(B, op=binary.plus)
+    with pytest.raises(TypeError, match="autocompute"):
         B.T(mask=A.T.V) << B.ewise_mult(B, op=binary.plus)
     with pytest.raises(TypeError, match="does not support item assignment"):
         B.T[1, 0] << 10
@@ -2702,7 +2702,7 @@ def test_expr_is_like_matrix(A):
     assert attrs - infix_attrs == expected
     # TransposedMatrix is used differently than other expressions,
     # so maybe it shouldn't support everything.
-    assert attrs - transposed_attrs == (expected | {"S", "V", "ss", "to_pygraphblas"}) - {
+    assert attrs - transposed_attrs == (expected | {"ss", "to_pygraphblas"}) - {
         "_prep_for_extract",
         "_extract_element",
     }

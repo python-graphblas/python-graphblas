@@ -3,7 +3,7 @@ import warnings
 
 import numpy as np
 
-from . import _automethods, backend, binary, ffi, lib, monoid, select, semiring, utils
+from . import _automethods, backend, binary, config, ffi, lib, monoid, select, semiring, utils
 from ._ss.matrix import ss
 from .base import BaseExpression, BaseType, call
 from .dtypes import _INDEX, FP64, lookup_dtype, unify
@@ -1799,6 +1799,30 @@ class TransposedMatrix:
     @property
     def _name_html(self):
         return f"{self._matrix._name_html}.T"
+
+    @property
+    def S(self):
+        # I wonder if we could delay computing this and come up with faster recipes
+        if config.get("autocompute"):
+            return self.new().S
+        raise TypeError(
+            "S for masking not enabled for TransposedMatrix objects.  "
+            "Use `.new()` to create a new Matrix first.\n\n"
+            "Hint: use `graphblas.config.set(autocompute=True)` to enable "
+            "automatic computation of expressions."
+        )
+
+    @property
+    def V(self):
+        # I wonder if we could delay computing this and come up with faster recipes
+        if config.get("autocompute"):
+            return self.new().V
+        raise TypeError(
+            "V for masking not enabled for TransposedMatrix objects.  "
+            "Use `.new()` to create a new Matrix first.\n\n"
+            "Hint: use `graphblas.config.set(autocompute=True)` to enable "
+            "automatic computation of expressions."
+        )
 
     # Properties
     nrows = Matrix.ncols

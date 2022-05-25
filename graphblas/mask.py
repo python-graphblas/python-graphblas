@@ -81,16 +81,12 @@ class Mask:
             else:
                 val(self) << True
             return val
-        d = _COMPLEMENT_MASKS if complement else _COMBINE_MASKS
-        try:
-            func = d[type(self), type(mask)]
-        except KeyError:
-            from .base import _check_mask
 
-            try:
-                _check_mask(mask)
-            except Exception as exc:
-                raise exc from None
+        from .base import _check_mask
+
+        mask = _check_mask(mask)
+        d = _COMPLEMENT_MASKS if complement else _COMBINE_MASKS
+        func = d[type(self), type(mask)]
         return func(self, mask, dtype, name)
 
 
