@@ -687,7 +687,7 @@ def test_select(v):
 
 
 def test_indexunary_udf(v):
-    def twox_minusthunk(x, row, col, thunk):
+    def twox_minusthunk(x, row, col, thunk):  # pragma: no cover
         return 2 * x - thunk
 
     indexunary.register_new("twox_minusthunk", twox_minusthunk)
@@ -700,7 +700,7 @@ def test_indexunary_udf(v):
     assert result.isequal(expected)
     delattr(indexunary, "twox_minusthunk")
 
-    def ii(x, idx, _, thunk):
+    def ii(x, idx, _, thunk):  # pragma: no cover
         return idx // 2 >= thunk
 
     select.register_new("ii", ii)
@@ -2083,17 +2083,17 @@ def test_to_values_sort():
 
 
 def test_lambda_udfs(v):
-    result = v.apply(lambda x: x + 1).new()
+    result = v.apply(lambda x: x + 1).new()  # pragma: no branch
     expected = binary.plus(v, 1).new()
     assert result.isequal(expected)
-    result = v.ewise_mult(v, lambda x, y: x + y).new()
+    result = v.ewise_mult(v, lambda x, y: x + y).new()  # pragma: no branch
     expected = binary.plus(v & v).new()
     assert result.isequal(expected)
-    result = v.ewise_add(v, lambda x, y: x + y).new()
+    result = v.ewise_add(v, lambda x, y: x + y).new()  # pragma: no branch
     assert result.isequal(expected)
     # Should we also allow lambdas for monoids with assumed identity of 0?
     # with pytest.raises(TypeError):
-    v.ewise_add(v, lambda x, y: x + y)  # now okay
+    v.ewise_add(v, lambda x, y: x + y)  # now okay. pragma: no branch
     with pytest.raises(TypeError):
         v.inner(v, lambda x, y: x + y)
 

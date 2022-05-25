@@ -1139,7 +1139,7 @@ def test_select(A):
 
 
 def test_indexunary_udf(A):
-    def threex_minusthunk(x, row, col, thunk):
+    def threex_minusthunk(x, row, col, thunk):  # pragma: no cover
         return 3 * x - thunk
 
     indexunary.register_new("threex_minusthunk", threex_minusthunk)
@@ -1156,7 +1156,7 @@ def test_indexunary_udf(A):
     assert result.isequal(expected)
     delattr(indexunary, "threex_minusthunk")
 
-    def iii(x, row, col, thunk):
+    def iii(x, row, col, thunk):  # pragma: no cover
         return (row + col) // 2 >= thunk
 
     select.register_new("iii", iii)
@@ -1451,7 +1451,11 @@ def test_reduce_agg_empty():
 
 def test_reduce_row_udf(A):
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
-    binop = graphblas.operator.BinaryOp.register_anonymous(lambda x, y: x + y)
+
+    def plus(x, y):  # pragma: no cover
+        return x + y
+
+    binop = graphblas.operator.BinaryOp.register_anonymous(plus)
     with pytest.raises(NotImplementedException):
         # Although allowed by the spec, SuiteSparse doesn't like user-defined binarops here
         A.reduce_rowwise(binop).new()
@@ -1666,9 +1670,9 @@ def test_transpose_exceptional():
 
     with pytest.raises(TypeError, match="not callable"):
         B.T(mask=A.V) << B.ewise_mult(B, op=binary.plus)
-    with pytest.raises(TypeError, match="autocompute"):
-        B(mask=A.T.S) << B.ewise_mult(B, op=binary.plus)
-    with pytest.raises(TypeError, match="autocompute"):
+    with pytest.raises(AttributeError):
+        B(mask=A.T.V) << B.ewise_mult(B, op=binary.plus)
+    with pytest.raises(AttributeError):
         B.T(mask=A.T.V) << B.ewise_mult(B, op=binary.plus)
     with pytest.raises(TypeError, match="does not support item assignment"):
         B.T[1, 0] << 10
@@ -2702,7 +2706,7 @@ def test_expr_is_like_matrix(A):
     assert attrs - infix_attrs == expected
     # TransposedMatrix is used differently than other expressions,
     # so maybe it shouldn't support everything.
-    assert attrs - transposed_attrs == (expected | {"ss", "to_pygraphblas"}) - {
+    assert attrs - transposed_attrs == (expected | {"S", "V", "ss", "to_pygraphblas"}) - {
         "_prep_for_extract",
         "_extract_element",
     }

@@ -172,7 +172,7 @@ AmbiguousAssignOrExtract._expect_type = _expect_type
 def _check_mask(mask, output=None):
     if not isinstance(mask, Mask):
         # Convert bool objects to value masks
-        if output_type(mask).__name__ in {"Vector", "Matrix", "TransposedMatrix"}:
+        if output_type(mask).__name__ in {"Vector", "Matrix"}:
             if mask.dtype != BOOL:
                 raise TypeError(
                     f"Mask must be boolean objects (got {mask.dtype}) "
@@ -203,7 +203,7 @@ class BaseType:
             elif isinstance(arg, (BaseType, Mask)) or output_type(arg).__name__ in {
                 "Vector",
                 "Matrix",
-                "TransposedMatrix",
+                "TransposedMatrix",  # Included here so we can give a better error message
             }:
                 if self._is_scalar:
                     raise TypeError("Mask not allowed for Scalars")

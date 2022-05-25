@@ -257,7 +257,11 @@ def test_binaryop_parameterized():
         BinaryOp.register_new("bad", object())
     assert not hasattr(binary, "bad")
     with pytest.raises(UdfParseError, match="Unable to parse function using Numba"):
-        BinaryOp.register_new("bad", lambda x, y: v)
+
+        def bad(x, y):  # pragma: no cover
+            return v
+
+        BinaryOp.register_new("bad", bad)
 
     def my_add(x, y):
         return x + y  # pragma: no cover
@@ -329,7 +333,11 @@ def test_monoid_parameterized():
     Monoid.register_new("_user_defined_monoid", bin_op, -np.inf)
     monoid = gb.monoid._user_defined_monoid
     fv2 = fv.ewise_mult(fv, monoid(2)).new()
-    plus1 = UnaryOp.register_anonymous(lambda x: x + 1)
+
+    def plus1(x):
+        return x + 1
+
+    plus1 = UnaryOp.register_anonymous(plus1)
     expected = fv.apply(plus1).new()
     assert fv2.isclose(expected, check_dtype=True)
     with pytest.raises(TypeError, match="must be a BinaryOp"):
