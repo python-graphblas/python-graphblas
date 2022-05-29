@@ -1066,7 +1066,7 @@ class Matrix(BaseType):
             "reposition",
             None,
             [self, _reposition, (indices, chunk)],  # [*expr_args, func, args]
-            expr_repr="{2.name}.reposition(%d, %d)" % (row_offset, column_offset),
+            expr_repr="{0.name}.reposition(%d, %d)" % (row_offset, column_offset),
             nrows=nrows,
             ncols=ncols,
             dtype=self.dtype,
