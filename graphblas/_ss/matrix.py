@@ -2164,7 +2164,7 @@ class ss:
         if bitmap is values:
             values = np.copy(values)
         if method == "import":
-            nrows, ncols = get_shape(nrows, ncols, values=values, bitmap=bitmap)
+            nrows, ncols = get_shape(nrows, ncols, dtype, bitmap=bitmap, values=values)
         else:
             nrows, ncols = matrix.shape
         Ab = ffi_new("int8_t**", ffi.from_buffer("int8_t*", bitmap))
@@ -2340,7 +2340,7 @@ class ss:
         if bitmap is values:
             values = np.copy(values)
         if method == "import":
-            nrows, ncols = get_shape(nrows, ncols, values=values, bitmap=bitmap)
+            nrows, ncols = get_shape(nrows, ncols, dtype, bitmap=bitmap, values=values)
         else:
             nrows, ncols = matrix.shape
         Ab = ffi_new("int8_t**", ffi.from_buffer("int8_t*", bitmap.T))
@@ -2496,7 +2496,7 @@ class ss:
             dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, order="C", ownable=True)
         if method == "import":
-            nrows, ncols = get_shape(nrows, ncols, values=values)
+            nrows, ncols = get_shape(nrows, ncols, dtype, values=values)
         else:
             nrows, ncols = matrix.shape
 
@@ -2643,7 +2643,7 @@ class ss:
             dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, order="F", ownable=True)
         if method == "import":
-            nrows, ncols = get_shape(nrows, ncols, values=values)
+            nrows, ncols = get_shape(nrows, ncols, dtype, values=values)
         else:
             nrows, ncols = matrix.shape
         Ax = ffi_new("void**", ffi.from_buffer("void*", values.T))
