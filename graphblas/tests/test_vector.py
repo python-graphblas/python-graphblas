@@ -715,6 +715,18 @@ def test_select(v):
     w9(w9.V, replace=True) << v.select(w7.V)
     del result2[1]
     assert w9.isequal(result2)
+    w9 << 1
+    w9[1] = 0
+    w9(w9.V, binary.plus) << v.select(w7.V)
+    w8 << 1
+    w8[1] = 0
+    w8(w8.V, binary.plus) << v.dup(mask=w7.V)
+    assert w8.isequal(w9)
+    w9 << 1
+    w9(binary.plus) << v.select(w7.V)
+    w8 << 1
+    w8(binary.plus) << v.dup(mask=w7.V)
+    assert w8.isequal(w9)
 
 
 @pytest.mark.slow

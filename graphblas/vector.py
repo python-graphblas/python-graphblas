@@ -59,7 +59,10 @@ def _select_mask(updater, obj, mask):
     if updater.kwargs.get("mask") is None:
         orig_kwargs = updater.kwargs
         try:
-            updater.kwargs = dict(orig_kwargs, mask=mask, replace=True)
+            if updater.kwargs.get("accum") is None:
+                updater.kwargs = dict(orig_kwargs, mask=mask, replace=True)
+            else:
+                updater.kwargs = dict(orig_kwargs, mask=mask)
             updater << obj
         finally:
             updater.kwargs = orig_kwargs
