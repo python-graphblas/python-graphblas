@@ -5,12 +5,12 @@ import numpy as np
 
 from . import _automethods, backend, binary, ffi, lib, monoid, select, semiring, utils
 from ._ss.vector import ss
-from .base import BaseExpression, BaseType, call
+from .base import BaseExpression, BaseType, _check_mask, call
 from .dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
-from .mask import StructuralMask, ValueMask
-from .operator import find_opclass, get_semiring, get_typed_op, op_from_string
+from .mask import Mask, StructuralMask, ValueMask
+from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
 from .scalar import (
     _MATERIALIZE,
     Scalar,
@@ -53,6 +53,22 @@ def _v_union_m(updater, left, right, left_default, right_default, op):
 
 def _reposition(updater, indices, chunk):
     updater[indices] = chunk
+
+
+def _select_mask(updater, obj, mask):
+    if updater.kwargs.get("mask") is None:
+        orig_kwargs = updater.kwargs
+        try:
+            if updater.kwargs.get("accum") is None:
+                updater.kwargs = dict(orig_kwargs, mask=mask, replace=True)
+            else:
+                updater.kwargs = dict(orig_kwargs, mask=mask)
+            updater << obj
+        finally:
+            updater.kwargs = orig_kwargs
+    else:
+        # Can we do any better depending on accum, replace, and type of masks?
+        updater << obj.dup(mask=mask)
 
 
 class Vector(BaseType):
@@ -807,9 +823,29 @@ class Vector(BaseType):
         Compute SelectOp at each element of the calling Vector, keeping
         elements which return True.
         """
+        method_name = "select"
         if isinstance(op, str):
             op = select.from_string(op)
-        method_name = "select"
+        else:
+            op, opclass = find_opclass(op)
+            if opclass == UNKNOWN_OPCLASS:
+                # Optimization opportunity: we could be smarter and change e.g. `v.select(v == 7)`
+                # to `gb.select.value(v == 7)` or `v.select(gb.select.valueeq, 7)`.
+                mask = _check_mask(op)
+                if thunk is not None:
+                    raise TypeError(
+                        "thunk argument not None when calling select with mask or boolean object"
+                    )
+                self._expect_type(mask.parent, (Vector, Mask), within=method_name, argname="op")
+                return VectorExpression(
+                    "select",
+                    None,
+                    [self, mask, _select_mask, (self, mask)],  # [*expr_args, func, args]
+                    expr_repr="{0.name}.select({1.name})",
+                    size=self.size,
+                    dtype=self.dtype,
+                )
+
         if thunk is None:
             thunk = False  # most basic form of 0 when unifying dtypes
         if type(thunk) is not Scalar:

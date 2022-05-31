@@ -688,6 +688,45 @@ def test_select(v):
     assert w6.isequal(result)
     with pytest.raises(TypeError, match="thunk"):
         v.select(select.valueeq, object())
+    # Select with boolean and masks
+    w7 = v.select((v == 1).new()).new()
+    assert w7.isequal(result)
+    w8 = v.select(w7.S).new()
+    assert w8.isequal(result)
+    w7[4] = 0
+    w9 = v.select(w7.V).new()
+    assert w9.isequal(result)
+    with pytest.raises(TypeError, match="thunk"):
+        v.select(w7.V, 777)
+    with pytest.raises(TypeError):
+        v.select(v.outer(v).new().S)
+    # Make sure we use `replace`
+    w9 << 1
+    w9 << v.select(w7.V)
+    assert w9.isequal(result)
+    # and with masks
+    w9 << 1
+    w9[1] = 0
+    w9(w9.V) << v.select(w7.V)
+    result2 = Vector.from_values([1, 3], [0, 1], size=7)
+    assert w9.isequal(result2)
+    w9 << 1
+    w9[1] = 0
+    w9(w9.V, replace=True) << v.select(w7.V)
+    del result2[1]
+    assert w9.isequal(result2)
+    w9 << 1
+    w9[1] = 0
+    w9(w9.V, binary.plus) << v.select(w7.V)
+    w8 << 1
+    w8[1] = 0
+    w8(w8.V, binary.plus) << v.dup(mask=w7.V)
+    assert w8.isequal(w9)
+    w9 << 1
+    w9(binary.plus) << v.select(w7.V)
+    w8 << 1
+    w8(binary.plus) << v.dup(mask=w7.V)
+    assert w8.isequal(w9)
 
 
 @pytest.mark.slow
