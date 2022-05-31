@@ -5,12 +5,12 @@ import numpy as np
 
 from . import _automethods, backend, binary, ffi, lib, monoid, select, semiring, utils
 from ._ss.matrix import ss
-from .base import BaseExpression, BaseType, call
+from .base import BaseExpression, BaseType, _check_mask, call
 from .dtypes import _INDEX, FP64, lookup_dtype, unify
 from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
-from .mask import StructuralMask, ValueMask
-from .operator import find_opclass, get_semiring, get_typed_op, op_from_string
+from .mask import Mask, StructuralMask, ValueMask
+from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
 from .scalar import (
     _MATERIALIZE,
     Scalar,
@@ -28,7 +28,7 @@ from .utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from .vector import Vector, VectorExpression, VectorIndexExpr
+from .vector import Vector, VectorExpression, VectorIndexExpr, _select_mask
 
 ffi_new = ffi.new
 
@@ -891,9 +891,31 @@ class Matrix(BaseType):
         Compute SelectOp at each element of the calling Matrix, keeping
         elements which return True.
         """
+        method_name = "select"
         if isinstance(op, str):
             op = select.from_string(op)
-        method_name = "select"
+        else:
+            op, opclass = find_opclass(op)
+            if opclass == UNKNOWN_OPCLASS:
+                # Optimization opportunity: we could be smarter and change e.g. `A.select(A == 7)`
+                # to `gb.select.value(A == 7)` or `A.select(gb.select.valueeq, 7)`.
+                # Should we allow e.g., `A.select(B.T)`?
+                mask = _check_mask(op)
+                if thunk is not None:
+                    raise TypeError(
+                        "thunk argument not None when calling select with mask or boolean object"
+                    )
+                self._expect_type(mask.parent, (Matrix, Mask), within=method_name, argname="op")
+                return MatrixExpression(
+                    "select",
+                    None,
+                    [self, mask, _select_mask, (self, mask)],  # [*expr_args, func, args]
+                    expr_repr="{0.name}.select({1.name})",
+                    nrows=self.nrows,
+                    ncols=self.ncols,
+                    dtype=self.dtype,
+                )
+
         if thunk is None:
             thunk = False  # most basic form of 0 when unifying dtypes
         if type(thunk) is not Scalar:

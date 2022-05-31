@@ -1140,6 +1140,18 @@ def test_select(A):
     assert w7.isequal(Aupper)
     with pytest.raises(TypeError, match="thunk"):
         A.select(select.valueeq, object())
+    # Select with boolean and masks
+    w8 = A.select((A == 3).new()).new()
+    assert w8.isequal(A3)
+    w9 = A.select(w8.S).new()
+    assert w9.isequal(A3)
+    w8[0, 1] = 0
+    w10 = A.select(w8.V).new()
+    assert w10.isequal(A3)
+    with pytest.raises(TypeError, match="thunk"):
+        A.select(w8.V, 777)
+    with pytest.raises(TypeError):
+        A.select(A[0, :].new().S)
 
 
 @pytest.mark.slow
