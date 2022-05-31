@@ -1356,6 +1356,12 @@ class Matrix(BaseType):
                         else:
                             shape = values.shape
                             if rowsize is None or colsize is None:
+                                # C[I, j] << [1, 2, 3]
+                                # C[i, J] << [1, 2, 3]
+                                # C(M)[I, j] << [1, 2, 3]
+                                # C(M)[i, J] << [1, 2, 3]
+                                # C[I, j](m) << [1, 2, 3]
+                                # C[i, J](m) << [1, 2, 3]
                                 expected_shape = (rowsize or colsize,)
                                 try:
                                     vals = Vector.ss.import_full(
@@ -1366,6 +1372,9 @@ class Matrix(BaseType):
                                 except Exception:
                                     vals = None
                             else:
+                                # C[I, J] << [[1, 2, 3], [4, 5, 6]]
+                                # C(M)[I, J] << [[1, 2, 3], [4, 5, 6]]
+                                # C[I, J](M) << [[1, 2, 3], [4, 5, 6]]
                                 expected_shape = (rowsize, colsize)
                                 try:
                                     vals = Matrix.ss.import_fullr(

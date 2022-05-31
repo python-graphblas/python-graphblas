@@ -1061,6 +1061,9 @@ class Vector(BaseType):
                     value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
                 except (TypeError, ValueError):
                     if size is not None:
+                        # v[I] << [1, 2, 3]
+                        # v(m)[I] << [1, 2, 3]
+                        # v[I](m) << [1, 2, 3]
                         try:
                             values, dtype = values_to_numpy_buffer(value, dtype, copy=True)
                         except Exception:
