@@ -517,7 +517,7 @@ class Matrix(BaseType):
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
-        if require_monoid:
+        if require_monoid:  # pragma: no cover
             if op.opclass != "BinaryOp" or op.monoid is None:
                 self._expect_op(
                     op,
@@ -1066,7 +1066,7 @@ class Matrix(BaseType):
             "reposition",
             None,
             [self, _reposition, (indices, chunk)],  # [*expr_args, func, args]
-            expr_repr="{2.name}.reposition(%d, %d)" % (row_offset, column_offset),
+            expr_repr="{0.name}.reposition(%d, %d)" % (row_offset, column_offset),
             nrows=nrows,
             ncols=ncols,
             dtype=self.dtype,

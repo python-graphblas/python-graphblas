@@ -3,6 +3,7 @@ from contextvars import ContextVar
 from . import config, ffi
 from . import replace as replace_singleton
 from .descriptor import lookup as descriptor_lookup
+from .dtypes import BOOL
 from .exceptions import check_status
 from .expr import AmbiguousAssignOrExtract, Updater
 from .mask import Mask
@@ -170,14 +171,19 @@ AmbiguousAssignOrExtract._expect_type = _expect_type
 
 def _check_mask(mask, output=None):
     if not isinstance(mask, Mask):
-        if isinstance(mask, BaseType):
-            raise TypeError("Mask must indicate values (M.V) or structure (M.S)")
-        raise TypeError(f"Invalid mask: {type(mask)}")
-    if output is not None:
-        from .vector import Vector
-
-        if type(output) is Vector and type(mask.parent) is not Vector:
-            raise TypeError(f"Mask object must be type Vector; got {type(mask.parent)}")
+        # Convert bool objects to value masks
+        if output_type(mask).__name__ in {"Vector", "Matrix"}:
+            if mask.dtype != BOOL:
+                raise TypeError(
+                    f"Mask must be boolean objects (got {mask.dtype}) "
+                    "or indicate values (M.V) or structure (M.S)"
+                )
+            mask = mask.V  # auto-compute (will raise if disabled)
+        else:
+            raise TypeError(f"Invalid mask: {type(mask)}")
+    if output is not None and output.ndim == 1 and mask.parent.ndim != 1:
+        raise TypeError(f"Mask object must be type Vector; got {type(mask.parent)}")
+    return mask
 
 
 class BaseType:
@@ -194,7 +200,11 @@ class BaseType:
         for arg in optional_mask_accum_replace:
             if arg is replace_singleton:
                 replace = True
-            elif isinstance(arg, (BaseType, Mask)):
+            elif isinstance(arg, (BaseType, Mask)) or output_type(arg).__name__ in {
+                "Vector",
+                "Matrix",
+                "TransposedMatrix",  # Included here so we can give a better error message
+            }:
                 if self._is_scalar:
                     raise TypeError("Mask not allowed for Scalars")
                 if mask_arg is not None:
@@ -226,13 +236,13 @@ class BaseType:
             elif self._is_scalar:
                 raise TypeError("input_mask not allowed for Scalars")
             else:
-                _check_mask(input_mask)
+                input_mask = _check_mask(input_mask)
         elif self._is_scalar:
             raise TypeError("Mask not allowed for Scalars")
         elif input_mask is not None:
             raise TypeError("mask and input_mask arguments cannot both be given")
         else:
-            _check_mask(mask)
+            mask = _check_mask(mask)
         if accum_arg is not None:
             if accum is not None:
                 raise TypeError("Got multiple values for argument 'accum'")
@@ -328,7 +338,7 @@ class BaseType:
                 if input_mask is not None:
                     if mask is not None:  # pragma: no cover (can this be covered?)
                         raise TypeError("mask and input_mask arguments cannot both be given")
-                    _check_mask(input_mask, output=expr.parent)
+                    input_mask = _check_mask(input_mask, expr.parent)
                     mask = expr._input_mask_to_mask(input_mask)
                     input_mask = None
                 expr = expr._extract_delayed()
@@ -425,7 +435,7 @@ class BaseType:
             complement = False
             structure = False
         else:
-            _check_mask(mask, self)
+            mask = _check_mask(mask, self)
             complement = mask.complement
             structure = mask.structure
 
@@ -570,7 +580,7 @@ class BaseExpression:
         elif mask is None:
             output.update(self)
         else:
-            _check_mask(mask, output)
+            mask = _check_mask(mask, output)
             output(mask=mask).update(self)
         return output
 

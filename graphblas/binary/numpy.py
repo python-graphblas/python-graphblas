@@ -167,7 +167,11 @@ def __getattr__(name):
         from .. import operator
 
         numpy_func = getattr(_np, name)
-        operator.BinaryOp.register_new(f"numpy.{name}", lambda x, y: numpy_func(x, y))
+
+        def func(x, y):  # pragma: no cover
+            return numpy_func(x, y)
+
+        operator.BinaryOp.register_new(f"numpy.{name}", func)
     rv = globals()[name]
     if name in _commutative:
         rv._commutes_to = rv

@@ -48,5 +48,8 @@ def test_mask_new(as_matrix):
             assert result.isequal(expected, check_dtype=True)
         with pytest.raises(TypeError, match="Invalid mask"):
             m.new(mask=object())
-        with pytest.raises(TypeError, match="Mask must indicate"):
-            m.new(mask=v1)
+        if v1.dtype == bool:
+            m.new(mask=v1)  # now okay
+        else:
+            with pytest.raises(TypeError, match="Mask must be"):
+                m.new(mask=v1)

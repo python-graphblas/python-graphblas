@@ -317,7 +317,7 @@ class AmbiguousAssignOrExtract:
                 raise TypeError("mask and input_mask arguments cannot both be given")
             from .base import _check_mask
 
-            _check_mask(input_mask, output=self.parent)
+            input_mask = _check_mask(input_mask, self.parent)
             mask = self._input_mask_to_mask(input_mask)
         delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
         return delayed_extractor.new(dtype, mask=mask, name=name)

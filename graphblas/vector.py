@@ -470,7 +470,7 @@ class Vector(BaseType):
         """
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
-        if require_monoid is not None:
+        if require_monoid is not None:  # pragma: no cover
             warnings.warn(
                 "require_monoid keyword is deprecated; "
                 "future behavior will be like `require_monoid=False`",
@@ -484,7 +484,7 @@ class Vector(BaseType):
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
-        if require_monoid:
+        if require_monoid:  # pragma: no cover
             if op.opclass != "BinaryOp" or op.monoid is None:
                 self._expect_op(
                     op,

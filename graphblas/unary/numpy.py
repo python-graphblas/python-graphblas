@@ -136,9 +136,16 @@ def __getattr__(name):
         from .. import operator
 
         numpy_func = getattr(_np, name)
-        operator.UnaryOp.register_new(f"numpy.{name}", lambda x: numpy_func(x))
+
+        def func(x):  # pragma: no cover
+            return numpy_func(x)
+
+        operator.UnaryOp.register_new(f"numpy.{name}", func)
         if name == "reciprocal":
             # numba doesn't match numpy here
-            op = operator.UnaryOp.register_anonymous(lambda x: 1 if x else 0)
+            def reciprocal(x):
+                return 1 if x else 0
+
+            op = operator.UnaryOp.register_anonymous(reciprocal)
             globals()[name]._add(op["BOOL"])
     return globals()[name]

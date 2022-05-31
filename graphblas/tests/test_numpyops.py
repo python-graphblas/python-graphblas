@@ -35,7 +35,10 @@ def test_bool_doesnt_get_too_large():
         x, y = z.to_values()
         np.testing.assert_array_equal(y, (True, True, True, False))
 
-    op = graphblas.operator.UnaryOp.register_anonymous(lambda x: np.add(x, x))
+    def func(x):  # pragma: no cover
+        return np.add(x, x)
+
+    op = graphblas.operator.UnaryOp.register_anonymous(func)
     z = a.apply(op).new()
     x, y = z.to_values()
     np.testing.assert_array_equal(y, (True, False, True, False))

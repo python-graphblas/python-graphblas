@@ -342,8 +342,8 @@ def test_mxm_mask(A):
     assert C.isequal(result3)
     C2 = A.mxm(A, semiring.plus_times).new(mask=struct_mask.S)
     assert C2.isequal(result3)
-    with pytest.raises(TypeError, match="Mask must indicate"):
-        A.mxm(A).new(mask=struct_mask)
+    with pytest.raises(TypeError, match="Mask must be"):
+        A.mxm(A).new(mask=struct_mask)  # would be okay if bool mask, but it's not
 
 
 def test_mxm_accum(A):
@@ -523,9 +523,9 @@ def test_extract_input_mask():
         A[0, [0, 1]].new(input_mask=M.S, mask=expected.S)
     with pytest.raises(TypeError, match="mask and input_mask arguments cannot both be given"):
         A(input_mask=M.S, mask=expected.S)
-    with pytest.raises(TypeError, match=r"Mask must indicate values \(M.V\) or structure \(M.S\)"):
+    with pytest.raises(TypeError, match="Mask must be"):
         A[0, [0, 1]].new(input_mask=M)
-    with pytest.raises(TypeError, match=r"Mask must indicate values \(M.V\) or structure \(M.S\)"):
+    with pytest.raises(TypeError, match="Mask must be"):
         A(input_mask=M)
     with pytest.raises(TypeError, match="Mask object must be type Vector"):
         expected[[0, 1]].new(input_mask=M.S)
@@ -1110,6 +1110,8 @@ def test_apply_indexunary(A):
     assert w2.isequal(A3)
     assert w3.isequal(A3)
     assert w4.isequal(A3)
+    with pytest.raises(TypeError, match="left"):
+        A.apply(select.valueeq, left=s3)
 
 
 def test_select(A):
@@ -1136,10 +1138,13 @@ def test_select(A):
     )
     w7 = A.select("TRIU").new()
     assert w7.isequal(Aupper)
+    with pytest.raises(TypeError, match="thunk"):
+        A.select(select.valueeq, object())
 
 
+@pytest.mark.slow
 def test_indexunary_udf(A):
-    def threex_minusthunk(x, row, col, thunk):
+    def threex_minusthunk(x, row, col, thunk):  # pragma: no cover
         return 3 * x - thunk
 
     indexunary.register_new("threex_minusthunk", threex_minusthunk)
@@ -1156,7 +1161,7 @@ def test_indexunary_udf(A):
     assert result.isequal(expected)
     delattr(indexunary, "threex_minusthunk")
 
-    def iii(x, row, col, thunk):
+    def iii(x, row, col, thunk):  # pragma: no cover
         return (row + col) // 2 >= thunk
 
     select.register_new("iii", iii)
@@ -1451,7 +1456,11 @@ def test_reduce_agg_empty():
 
 def test_reduce_row_udf(A):
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
-    binop = graphblas.operator.BinaryOp.register_anonymous(lambda x, y: x + y)
+
+    def plus(x, y):  # pragma: no cover
+        return x + y
+
+    binop = graphblas.operator.BinaryOp.register_anonymous(plus)
     with pytest.raises(NotImplementedException):
         # Although allowed by the spec, SuiteSparse doesn't like user-defined binarops here
         A.reduce_rowwise(binop).new()
@@ -3468,3 +3477,11 @@ def test_get(A):
     with pytest.raises(ValueError):
         # Not yet supported
         A.get(0, [0, 1])
+
+
+@autocompute
+def test_bool_as_mask(A):
+    expected = select.value(A < 3).new()
+    expected *= 3
+    A(A < 3, binary.plus, replace=True) << A + A
+    assert A.isequal(expected)
