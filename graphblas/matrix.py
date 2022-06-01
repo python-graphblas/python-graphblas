@@ -895,11 +895,20 @@ class Matrix(BaseType):
         if isinstance(op, str):
             op = select.from_string(op)
         else:
-            op, opclass = find_opclass(op)
+            if isinstance(op, MatrixExpression):
+                # Try to rewrite e.g. `A.select(A == 7)` to `gb.select.value(A == 7)`
+                if thunk is not None:
+                    raise TypeError(
+                        "thunk argument not None when calling select with mask or boolean object"
+                    )
+                expr = select._match_expr(self, op)
+                if expr is not None:
+                    return expr
+                opclass = UNKNOWN_OPCLASS
+            else:
+                op, opclass = find_opclass(op)
             if opclass == UNKNOWN_OPCLASS:
-                # Optimization opportunity: we could be smarter and change e.g. `A.select(A == 7)`
-                # to `gb.select.value(A == 7)` or `A.select(gb.select.valueeq, 7)`.
-                # Should we allow e.g., `A.select(B.T)`?
+                # e.g., `A.select(B.S)` or `A.select(B < 7)`
                 mask = _check_mask(op)
                 if thunk is not None:
                     raise TypeError(

@@ -3068,6 +3068,23 @@ monoid.register_anonymous = Monoid.register_anonymous
 semiring.register_new = Semiring.register_new
 semiring.register_anonymous = Semiring.register_anonymous
 
+select._binary_to_select.update(
+    {
+        binary.eq: select.valueeq,
+        binary.ne: select.valuene,
+        binary.le: select.valuele,
+        binary.lt: select.valuelt,
+        binary.ge: select.valuege,
+        binary.gt: select.valuegt,
+        binary.iseq: select.valueeq,
+        binary.isne: select.valuene,
+        binary.isle: select.valuele,
+        binary.islt: select.valuelt,
+        binary.isge: select.valuege,
+        binary.isgt: select.valuegt,
+    }
+)
+
 _str_to_unary = {
     "-": unary.ainv,
     "~": unary.lnot,

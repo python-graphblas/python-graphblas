@@ -827,10 +827,20 @@ class Vector(BaseType):
         if isinstance(op, str):
             op = select.from_string(op)
         else:
-            op, opclass = find_opclass(op)
+            if isinstance(op, VectorExpression):
+                # Try to rewrite e.g. `v.select(v == 7)` to `gb.select.value(v == 7)`
+                if thunk is not None:
+                    raise TypeError(
+                        "thunk argument not None when calling select with mask or boolean object"
+                    )
+                expr = select._match_expr(self, op)
+                if expr is not None:
+                    return expr
+                opclass = UNKNOWN_OPCLASS
+            else:
+                op, opclass = find_opclass(op)
             if opclass == UNKNOWN_OPCLASS:
-                # Optimization opportunity: we could be smarter and change e.g. `v.select(v == 7)`
-                # to `gb.select.value(v == 7)` or `v.select(gb.select.valueeq, 7)`.
+                # e.g., `v.select(w.S)` or `v.select(w < 7)`
                 mask = _check_mask(op)
                 if thunk is not None:
                     raise TypeError(

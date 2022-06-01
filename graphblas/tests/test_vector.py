@@ -710,9 +710,18 @@ def test_select(v):
     assert w6.isequal(result)
     with pytest.raises(TypeError, match="thunk"):
         v.select(select.valueeq, object())
+
+
+@autocompute
+def test_select_bools_and_masks(v):
     # Select with boolean and masks
+    result = Vector.from_values([1, 3], [1, 1], size=7)
     w7 = v.select((v == 1).new()).new()
     assert w7.isequal(result)
+    w7b = v.select(v == 1).new()  # we rewrite!
+    assert w7b.isequal(result)
+    w7c = v.select(~(v != 1)).new()
+    assert w7c.isequal(result)
     w8 = v.select(w7.S).new()
     assert w8.isequal(result)
     w7[4] = 0
@@ -720,6 +729,8 @@ def test_select(v):
     assert w9.isequal(result)
     with pytest.raises(TypeError, match="thunk"):
         v.select(w7.V, 777)
+    with pytest.raises(TypeError, match="thunk"):
+        v.select(v == 1, 777)
     with pytest.raises(TypeError):
         v.select(v.outer(v).new().S)
     # Make sure we use `replace`
