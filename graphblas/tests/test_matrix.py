@@ -1595,6 +1595,35 @@ def test_assign_transpose(A):
     assert C[: A.ncols, : A.nrows].new().isequal(A.T.new())
 
 
+def test_assign_list():
+    A = Matrix(int, 3, 3)
+    A[[0, 1], [1, 2]] = [[3, 4], [5, 6]]
+    expected = Matrix.from_values([0, 0, 1, 1], [1, 2, 1, 2], [3, 4, 5, 6], nrows=3, ncols=3)
+    assert A.isequal(expected)
+    A[[0, 1], 1] = np.arange(2)
+    expected = Matrix.from_values([0, 0, 1, 1], [1, 2, 1, 2], [0, 4, 1, 6], nrows=3, ncols=3)
+    assert A.isequal(expected)
+    A[0, 1:3] = [10, 20]
+    expected = Matrix.from_values([0, 0, 1, 1], [1, 2, 1, 2], [10, 20, 1, 6], nrows=3, ncols=3)
+    assert A.isequal(expected)
+    with pytest.raises(TypeError):
+        A[0, 1] = [0]
+    with pytest.raises(TypeError):
+        A()[0, 1] = [0]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1], 1] = [0]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1], [1, 2]] = [0]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1], [1, 2]] = [1, 2, 3, 4]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1, 2], [1]] = [1, 2, 3]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1, 2], [1]] = [[1, 2, 3]]
+    with pytest.raises(TypeError):
+        A[[0, 1], [1, 2]] = [[3, 4], [5, object()]]
+
+
 def test_isequal(A, v):
     assert A.isequal(A)
     with pytest.raises(TypeError, match="Matrix"):
@@ -1891,14 +1920,10 @@ def test_import_export(A, do_iso, methods):
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=0)
     B5b = Matrix.ss.import_any(**d)
     if in_method == "import":
-        if not do_iso:
-            assert B5b.isequal(A)
-            assert B5b.ss.is_iso is do_iso
-        else:
-            # B5b == [A, A]
-            assert B5b.nvals == 2 * A.nvals
-            assert B5b.nrows == 2 * A.nrows
-            assert B5b.ncols == A.ncols
+        # B5b == [A, A] (i.e, get 2d shape from bitmap first if possible)
+        assert B5b.nvals == 2 * A.nvals
+        assert B5b.nrows == 2 * A.nrows
+        assert B5b.ncols == A.ncols
     else:
         A5.ss.pack_any(**d)
         assert A5.isequal(A)
@@ -3392,6 +3417,15 @@ def test_udt():
     for aggop in [agg.first_index, agg.last_index]:
         A.reduce_rowwise(aggop).new()
         A.reduce_columnwise(aggop).new()
+    A.clear()
+    A[[0, 1], 1] = [(2, 3), (4, 5)]
+    expected = Matrix.from_values([0, 1], [1, 1], [(2, 3), (4, 5)], dtype=udt)
+    assert A.isequal(expected)
+    A.clear()
+    A[[0, 1], [1]] = [[(2, 3)], [(4, 5)]]
+    assert A.isequal(expected)
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1], [1]] = [[(2, 3), (4, 5)]]
 
     np_dtype = np.dtype("(3,)uint16")
     udt = dtypes.register_anonymous(np_dtype, "has_subdtype")
@@ -3410,6 +3444,18 @@ def test_udt():
     info = A.ss.export("coor")
     result = A.ss.import_any(**info)
     assert result.isequal(A)
+    A.clear()
+    A[[0, 1], 1] = [(2, 3, 4), [5, 6, 7]]
+    expected = Matrix.from_values([0, 1], [1, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt)
+    assert A.isequal(expected)
+    A[[0, 1], [1]] = [[[2, 3, 4]], [[5, 6, 7]]]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1], [1]] = [[[2, 3, 4], [5, 6, 7]]]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1], [1]] = [[2, 3, 4], [5, 6, 7]]
+    A = Matrix(udt, nrows=2, ncols=3)
+    with pytest.raises(ValueError, match="include dtype shape"):
+        A[[0, 1], :] = [[2, 3, 4], [5, 6, 7]]
 
 
 def test_reposition(A):

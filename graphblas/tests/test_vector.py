@@ -608,6 +608,28 @@ def test_assign_scalar_with_mask():
     assert v.isequal(result)
 
 
+def test_assign_list():
+    v = Vector(int, 4)
+    v[[0, 1]] = [2, 3]
+    expected = Vector.from_values([0, 1], [2, 3], size=4)
+    assert v.isequal(expected)
+    v[::2] = np.arange(2)
+    expected = Vector.from_values([0, 1, 2], [0, 3, 1], size=4)
+    assert v.isequal(expected)
+    with pytest.raises(TypeError):
+        v[0] = [1]
+    with pytest.raises(TypeError):
+        v()[0] = [1]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        v[[0, 1]] = [1, 2, 3]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        v[[0, 1]] = [[1, 2]]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        v[[0, 1]] = [[1], [2]]
+    with pytest.raises(TypeError):
+        v[[0, 1]] = [2, object()]
+
+
 def test_apply(v):
     result = Vector.from_values([1, 3, 4, 6], [-1, -1, -2, 0])
     w = v.apply(unary.ainv).new()
@@ -1909,6 +1931,9 @@ def test_udt():
     assert result.isequal(v)
     for aggop in [agg.any_value, agg.first, agg.last, agg.count, agg.first_index, agg.last_index]:
         v.reduce(aggop).new()
+    v.clear()
+    v[[0, 1]] = [(2, 3), (4, 5)]
+    expected = Vector.from_values([0, 1], [(2, 3), (4, 5)], dtype=udt, size=v.size)
 
     # arrays as dtypes!
     np_dtype = np.dtype("(3,)uint16")
@@ -1954,6 +1979,10 @@ def test_udt():
     # Just make sure these work
     for aggop in [agg.any_value, agg.first, agg.last, agg.count, agg.first_index, agg.last_index]:
         v.reduce(aggop).new()
+    v.clear()
+    v[[0, 1]] = [[2, 3, 4], [5, 6, 7]]
+    expected = Vector.from_values([0, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt2, size=v.size)
+    assert v.isequal(expected)
 
 
 def test_infix_outer():

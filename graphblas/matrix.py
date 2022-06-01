@@ -1197,7 +1197,10 @@ class Matrix(BaseType):
         cols = colidx.index
         colscalar = colidx.cscalar
 
-        extra_message = "Literal scalars also accepted."
+        if rowsize is not None or colsize is not None:
+            extra_message = "Literal scalars and lists also accepted."
+        else:
+            extra_message = "Literal scalars also accepted."
 
         value_type = output_type(value)
         if value_type is Vector:
@@ -1366,7 +1369,59 @@ class Matrix(BaseType):
                 dtype = self.dtype if self.dtype._is_udt else None
                 try:
                     value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
-                except TypeError:
+                except (TypeError, ValueError):
+                    if rowsize is not None or colsize is not None:
+                        try:
+                            values, dtype = values_to_numpy_buffer(value, dtype, copy=True)
+                        except Exception:
+                            pass
+                        else:
+                            shape = values.shape
+                            if rowsize is None or colsize is None:
+                                # C[I, j] << [1, 2, 3]
+                                # C[i, J] << [1, 2, 3]
+                                # C(M)[I, j] << [1, 2, 3]
+                                # C(M)[i, J] << [1, 2, 3]
+                                # C[I, j](m) << [1, 2, 3]
+                                # C[i, J](m) << [1, 2, 3]
+                                expected_shape = (rowsize or colsize,)
+                                try:
+                                    vals = Vector.ss.import_full(
+                                        values, dtype=dtype, take_ownership=True
+                                    )
+                                    if dtype.np_type.subdtype is not None:
+                                        shape = vals.shape
+                                except Exception:
+                                    vals = None
+                            else:
+                                # C[I, J] << [[1, 2, 3], [4, 5, 6]]
+                                # C(M)[I, J] << [[1, 2, 3], [4, 5, 6]]
+                                # C[I, J](M) << [[1, 2, 3], [4, 5, 6]]
+                                expected_shape = (rowsize, colsize)
+                                try:
+                                    vals = Matrix.ss.import_fullr(
+                                        values, dtype=dtype, take_ownership=True
+                                    )
+                                    if dtype.np_type.subdtype is not None:
+                                        shape = vals.shape
+                                except Exception:
+                                    vals = None
+                            if vals is None or shape != expected_shape:
+                                if dtype.np_type.subdtype is not None:
+                                    extra = (
+                                        " (this is assigning to a matrix with sub-array dtype "
+                                        f"({dtype}), so array shape should include dtype shape)"
+                                    )
+                                else:
+                                    extra = ""
+                                raise ValueError(
+                                    f"shape mismatch: value array of shape {shape} "
+                                    f"does not match indexing of shape {expected_shape}"
+                                    f"{extra}"
+                                ) from None
+                            return self._prep_for_assign(
+                                resolved_indexes, vals, mask=mask, is_submask=is_submask
+                            )
                     if rowsize is None or colsize is None:
                         types = (Scalar, Vector)
                     else:

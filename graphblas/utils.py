@@ -86,11 +86,18 @@ def values_to_numpy_buffer(array, dtype=None, *, copy=False, ownable=False, orde
     return array, dtype
 
 
-def get_shape(nrows, ncols, **arrays):
+def get_shape(nrows, ncols, dtype=None, **arrays):
     if nrows is None or ncols is None:
         # Get nrows and ncols from the first 2d array
-        arr = next((array for array in arrays.values() if array.ndim == 2), None)
-        if arr is None:
+        is_subarray = dtype.np_type.subdtype is not None
+        for name, arr in arrays.items():
+            if name == "values" and is_subarray:
+                # We could be smarter and determine the shape of the dtype sub-arrays
+                if arr.ndim >= 3:
+                    break
+            elif arr.ndim == 2:
+                break
+        else:
             raise ValueError(
                 "Either nrows and ncols must be provided, or one of the following arrays"
                 f'must be 2d (from which to get nrows and ncols): {", ".join(arrays)}'

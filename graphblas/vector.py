@@ -1095,13 +1095,49 @@ class Vector(BaseType):
                 dtype = self.dtype if self.dtype._is_udt else None
                 try:
                     value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
-                except TypeError:
+                except (TypeError, ValueError):
+                    if size is not None:
+                        # v[I] << [1, 2, 3]
+                        # v(m)[I] << [1, 2, 3]
+                        # v[I](m) << [1, 2, 3]
+                        try:
+                            values, dtype = values_to_numpy_buffer(value, dtype, copy=True)
+                        except Exception:
+                            extra_message = "Literal scalars and lists also accepted."
+                        else:
+                            shape = values.shape
+                            try:
+                                vals = Vector.ss.import_full(
+                                    values, dtype=dtype, take_ownership=True
+                                )
+                                if dtype.np_type.subdtype is not None:
+                                    shape = vals.shape
+                            except Exception:
+                                vals = None
+                            if vals is None or shape != (size,):
+                                if dtype.np_type.subdtype is not None:
+                                    extra = (
+                                        " (this is assigning to a vector with sub-array dtype "
+                                        f"({dtype}), so array shape should include dtype shape)"
+                                    )
+                                else:
+                                    extra = ""
+                                raise ValueError(
+                                    f"shape mismatch: value array of shape {shape} "
+                                    f"does not match indexing of shape ({size},)"
+                                    f"{extra}"
+                                ) from None
+                            return self._prep_for_assign(
+                                resolved_indexes, vals, mask=mask, is_submask=is_submask
+                            )
+                    else:
+                        extra_message = "Literal scalars also accepted."
                     value = self._expect_type(
                         value,
                         (Scalar, Vector),
                         within=method_name,
                         argname="value",
-                        extra_message="Literal scalars also accepted.",
+                        extra_message=extra_message,
                     )
             if is_submask:
                 if size is None:

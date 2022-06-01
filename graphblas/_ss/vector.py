@@ -901,6 +901,8 @@ class ss:
         if nvals is None:
             if is_iso:
                 nvals = indices.size
+            elif dtype.np_type.subdtype is not None:
+                nvals = values.shape[0]
             else:
                 nvals = values.size
         if method == "import":
@@ -1066,6 +1068,8 @@ class ss:
         if size is None:
             if is_iso:
                 size = bitmap.size
+            elif dtype.np_type.subdtype is not None:
+                size = values.shape[0]
             else:
                 size = values.size
         if nvals is None:
@@ -1215,7 +1219,10 @@ class ss:
         vhandle = ffi_new("GrB_Vector*")
         vx = ffi_new("void**", ffi.from_buffer("void*", values))
         if size is None:
-            size = values.size
+            if dtype.np_type.subdtype is not None:
+                size = values.shape[0]
+            else:
+                size = values.size
         if method == "import":
             vhandle = ffi_new("GrB_Vector*")
             args = (dtype._carg, size)
