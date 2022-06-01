@@ -4,6 +4,7 @@
 # boolean and they default to `select` when called, rather than
 # `apply`).
 _delayed = {}
+_binary_to_select = {}
 
 
 def __dir__():
@@ -46,6 +47,25 @@ def _resolve_expr(expr, callname, opname):
         if method not in globals():
             raise ValueError(f"Unknown or unregistered select method: {method}")
     return globals()[method](tensor, thunk)
+
+
+def _match_expr(parent, expr):
+    """Match expressions to rewrite `A.select(A < 5)` into select expression
+
+    The argument must match the parent, so this _won't_ be rewritten: `A.select(B < 5)`
+    """
+    args = expr.args
+    op = expr.op
+    if (
+        expr.method_name == "apply"
+        and len(args) == 2
+        and op.parent in _binary_to_select
+        and args[1]._is_scalar
+        and (args[0] is parent or getattr(args[0], "T", None) is parent)
+        and op.type in _binary_to_select[op.parent]
+    ):
+        selectop = _binary_to_select[op.parent][op.type]
+        return selectop(parent, args[1])
 
 
 def value(expr):
