@@ -1,3 +1,4 @@
+import itertools
 import warnings
 from numbers import Integral, Number
 
@@ -23,6 +24,7 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
+from .descriptor import get_compression_descriptor, get_nthreads_descriptor
 from .utils import get_order
 
 ffi_new = ffi.new
@@ -3949,6 +3951,56 @@ class ss:
             take_ownership=True,
             name=name,
         )
+
+    def serialize(self, compression="default", level=None, *, nthreads=None):
+        desc = get_compression_descriptor(compression, level=level, nthreads=nthreads)
+        blob_handle = ffi_new("void**")
+        blob_size_handle = ffi_new("GrB_Index*")
+        parent = self._parent
+        check_status(
+            lib.GxB_Matrix_serialize(
+                blob_handle,
+                blob_size_handle,
+                parent._carg,
+                desc._carg,
+            ),
+            parent,
+        )
+        # Should we return numpy array or bytes?
+        return claim_buffer(ffi, blob_handle[0], blob_size_handle[0], np.dtype(np.uint8))
+
+    @classmethod
+    def deserialize(cls, data, *, nthreads=None, name=None):
+        if isinstance(data, np.ndarray):
+            data = ints_to_numpy_buffer(data, np.uint8)
+        else:
+            data = np.frombuffer(data, np.uint8)
+        data_obj = ffi.from_buffer("void*", data)
+        # Get the dtype name first
+        cname = ffi_new(f"char[{lib.GxB_MAX_NAME_LEN}]")
+        info = lib.GxB_deserialize_type_name(
+            cname,
+            data_obj,
+            data.nbytes,
+        )
+        if info != lib.GrB_SUCCESS:
+            raise _error_code_lookup[info]("Matrix deserialize failed to get the dtype name")
+        dtype_name = b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode()
+        dtype = lookup_dtype(dtype_name)
+        if nthreads is not None:
+            desc = get_nthreads_descriptor(nthreads)
+        else:
+            desc = NULL
+        gb_obj = ffi_new("GrB_Matrix*")
+        check_status_carg(
+            lib.GxB_Matrix_deserialize(gb_obj, dtype._carg, data_obj, data.nbytes, desc),
+            "Matrix",
+            gb_obj[0],
+        )
+        rv = gb.Matrix._from_obj(gb_obj, dtype, -1, -1, name=name)
+        rv._nrows = rv.nrows
+        rv._ncols = rv.ncols
+        return rv
 
 
 @numba.njit(parallel=True)

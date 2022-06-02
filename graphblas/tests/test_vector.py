@@ -2210,6 +2210,9 @@ def test_ss_serialize(v):
         a = v.ss.serialize(compression, level, nthreads=nthreads)
         w = Vector.ss.deserialize(a)
         assert v.isequal(w, check_dtype=True)
+    b = a.tobytes()
+    w = Vector.ss.deserialize(b)
+    assert v.isequal(w, check_dtype=True)
     with pytest.raises(ValueError, match="compression argument"):
         v.ss.serialize("bad")
     with pytest.raises(ValueError, match="level argument"):

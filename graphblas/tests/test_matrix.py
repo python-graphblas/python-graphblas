@@ -3554,3 +3554,25 @@ def test_bool_as_mask(A):
     expected *= 3
     A(A < 3, binary.plus, replace=True) << A + A
     assert A.isequal(expected)
+
+
+def test_ss_serialize(A):
+    for compression, level, nthreads in itertools.product(
+        [None, "none", "default", "lz4", "lz4hc"], [None, 1, 5, 9], [None, -1, 1, 10]
+    ):
+        if level is not None and compression != "lz4hc":
+            with pytest.raises(TypeError, match="level argument"):
+                A.ss.serialize(compression, level, nthreads=nthreads)
+            continue
+        a = A.ss.serialize(compression, level, nthreads=nthreads)
+        C = Matrix.ss.deserialize(a)
+        assert A.isequal(C, check_dtype=True)
+    b = a.tobytes()
+    C = Matrix.ss.deserialize(b)
+    assert A.isequal(C, check_dtype=True)
+    with pytest.raises(ValueError, match="compression argument"):
+        A.ss.serialize("bad")
+    with pytest.raises(ValueError, match="level argument"):
+        A.ss.serialize("lz4hc", -1)
+    with pytest.raises(ValueError, match="level argument"):
+        A.ss.serialize("lz4hc", 0)
