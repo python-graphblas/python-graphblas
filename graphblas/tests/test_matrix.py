@@ -14,6 +14,7 @@ from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
     IndexOutOfBound,
+    InvalidObject,
     InvalidValue,
     NotImplementedException,
     OutputNotEmpty,
@@ -3438,6 +3439,13 @@ def test_udt():
     with pytest.raises(ValueError, match="shape mismatch"):
         A[[0, 1], [1]] = [[(2, 3), (4, 5)]]
 
+    AA = Matrix.ss.deserialize(A.ss.serialize(), unsafe=True)
+    assert A.isequal(AA, check_dtype=True)
+    AA = Matrix.ss.deserialize(A.ss.serialize(), dtype=A.dtype)
+    assert A.isequal(AA, check_dtype=True)
+    with pytest.raises(ValueError):
+        Matrix.ss.deserialize(A.ss.serialize())
+
     np_dtype = np.dtype("(3,)uint16")
     udt = dtypes.register_anonymous(np_dtype, "has_subdtype")
     A = Matrix(udt, nrows=2, ncols=2)
@@ -3460,6 +3468,8 @@ def test_udt():
     expected = Matrix.from_values([0, 1], [1, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt)
     assert A.isequal(expected)
     A[[0, 1], [1]] = [[[2, 3, 4]], [[5, 6, 7]]]
+    AA = Matrix.ss.deserialize(A.ss.serialize(), unsafe=True)
+    assert A.isequal(AA, check_dtype=True)
     with pytest.raises(ValueError, match="shape mismatch"):
         A[[0, 1], [1]] = [[[2, 3, 4], [5, 6, 7]]]
     with pytest.raises(ValueError, match="shape mismatch"):
@@ -3554,3 +3564,27 @@ def test_bool_as_mask(A):
     expected *= 3
     A(A < 3, binary.plus, replace=True) << A + A
     assert A.isequal(expected)
+
+
+def test_ss_serialize(A):
+    for compression, level, nthreads in itertools.product(
+        [None, "none", "default", "lz4", "lz4hc"], [None, 1, 5, 9], [None, -1, 1, 10]
+    ):
+        if level is not None and compression != "lz4hc":
+            with pytest.raises(TypeError, match="level argument"):
+                A.ss.serialize(compression, level, nthreads=nthreads)
+            continue
+        a = A.ss.serialize(compression, level, nthreads=nthreads)
+        C = Matrix.ss.deserialize(a, nthreads=nthreads)
+        assert A.isequal(C, check_dtype=True)
+    b = a.tobytes()
+    C = Matrix.ss.deserialize(b)
+    assert A.isequal(C, check_dtype=True)
+    with pytest.raises(ValueError, match="compression argument"):
+        A.ss.serialize("bad")
+    with pytest.raises(ValueError, match="level argument"):
+        A.ss.serialize("lz4hc", -1)
+    with pytest.raises(ValueError, match="level argument"):
+        A.ss.serialize("lz4hc", 0)
+    with pytest.raises(InvalidObject):
+        Matrix.ss.deserialize(a[:-5])

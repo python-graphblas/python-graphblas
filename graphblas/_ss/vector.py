@@ -1,3 +1,4 @@
+import itertools
 import warnings
 
 import numpy as np
@@ -12,6 +13,7 @@ from ..dtypes import _INDEX, INT64, UINT64, lookup_dtype
 from ..exceptions import _error_code_lookup, check_status, check_status_carg
 from ..scalar import Scalar, _as_scalar
 from ..utils import _CArray, ints_to_numpy_buffer, libget, values_to_numpy_buffer, wrapdoc
+from .descriptor import get_compression_descriptor, get_nthreads_descriptor
 from .matrix import MatrixArray, _concat_mn, normalize_chunks
 from .prefix_scan import prefix_scan
 from .utils import get_order
@@ -194,7 +196,7 @@ class ss:
 
         tile_nrows, _ = normalize_chunks([chunks, None], (self._parent._size, 1))
         m = len(tile_nrows)
-        tiles = ffi.new("GrB_Matrix[]", m)
+        tiles = ffi_new("GrB_Matrix[]", m)
         parent = self._parent._as_matrix()
         call(
             "GxB_Matrix_split",
@@ -214,14 +216,14 @@ class ss:
             name = self._parent.name
         for i, size in enumerate(tile_nrows):
             # Copy to a new handle so we can free `tiles`
-            new_vector = ffi.new("GrB_Vector*")
+            new_vector = ffi_new("GrB_Vector*")
             new_vector[0] = ffi.cast("GrB_Vector", tiles[i])
             tile = Vector._from_obj(new_vector, dtype, size, name=f"{name}_{i}")
             rv.append(tile)
         return rv
 
     def _concat(self, tiles, m):
-        ctiles = ffi.new("GrB_Matrix[]", m)
+        ctiles = ffi_new("GrB_Matrix[]", m)
         for i, tile in enumerate(tiles):
             ctiles[i] = tile.gb_obj[0]
         call(
@@ -277,7 +279,7 @@ class ss:
         )
 
     def _begin_iter(self, seek):
-        it_ptr = ffi.new("GxB_Iterator*")
+        it_ptr = ffi_new("GxB_Iterator*")
         info = lib.GxB_Iterator_new(it_ptr)
         it = it_ptr[0]
         success = lib.GrB_SUCCESS
@@ -1518,6 +1520,114 @@ class ss:
             take_ownership=True,
             name=name,
         )
+
+    def serialize(self, compression="default", level=None, *, nthreads=None):
+        """Serialize a Vector to bytes (as numpy array) using SuiteSparse GxB_Vector_serialize.
+
+        Parameters
+        ----------
+        compression : {"default", "lz4", "lz4hc", "none", None}, optional
+            Whether and how to compress the data.
+            - "default": the default in SuiteSparse:GraphBLAS, which is currently LZ4
+            - "lz4": the default LZ4 compression
+            - "lz4hc": LZ4 compression that allows the compression level (1-9) to be set.
+              Low compression level (1) is faster, high (9) is more compact.  Default is 9.
+            - "none" or None: no compression
+        level : int [1-9], optional
+            The compression level, between 1 to 9, to use with "lz4hc" compression.
+            (1) is the fastest and largest, (9) is the slowest and most compressed.
+            Level 9 is the default when using "lz4hc" compression.
+        nthreads : int, optional
+            The maximum number of threads to use when serializing the Vector.
+            None, 0 or negative nthreads means to use the default number of threads.
+
+        For best performance, this function returns a numpy array with uint8 dtype.
+        Use `Vector.ss.deserialize(blob)` to create a Vector from the result of serialization·
+
+        This method is intended to support all serialization options from SuiteSparse:GraphBLAS.
+        """
+        desc = get_compression_descriptor(compression, level=level, nthreads=nthreads)
+        blob_handle = ffi_new("void**")
+        blob_size_handle = ffi_new("GrB_Index*")
+        parent = self._parent
+        check_status(
+            lib.GxB_Vector_serialize(
+                blob_handle,
+                blob_size_handle,
+                parent._carg,
+                desc._carg,
+            ),
+            parent,
+        )
+        return claim_buffer(ffi, blob_handle[0], blob_size_handle[0], np.dtype(np.uint8))
+
+    @classmethod
+    def deserialize(cls, data, dtype=None, *, unsafe=False, nthreads=None, name=None):
+        """Deserialize a Vector from bytes, buffer, or numpy array using GxB_Vector_deserialize.
+
+        The data should have been previously serialized with a compatible version of
+        SuiteSparse:GraphBLAS.  For example, from the result of `data = vector.ss.serialize()`.
+
+        Examples
+        --------
+        >>> data = vector.serialize()
+        >>> new_vector = Vector.ss.deserialize(data)
+        >>> new_vector.isequal(vector)
+        True
+
+        Parameters
+        ----------
+        dtype : DataType, optional
+            If given, this should specify the dtype of the object.  This is usually unnecessary.
+            If the dtype doesn't match what is in the serialized metadata, deserialize will fail.
+            You need to specify the dtype to _safely_ load user-defined types.
+        unsafe : bool, default False
+            Ignored for builtin types.  Automatic loading of user-defined types (if not given via
+            the `dtype=` argument) may require `eval`, which is often considered unsafe in Python
+            if you don't trust the data.  Hence, you must opt-in by specifying `unsafe=True`.
+            Automatically loading UDTs will probably only work for objects saved by this library.
+        nthreads : int, optional
+            The maximum number of threads to use when deserializing.
+            None, 0 or negative nthreads means to use the default number of threads.
+        """
+        if isinstance(data, np.ndarray):
+            data = ints_to_numpy_buffer(data, np.uint8)
+        else:
+            data = np.frombuffer(data, np.uint8)
+        data_obj = ffi.from_buffer("void*", data)
+        if dtype is None:
+            # Get the dtype name first
+            cname = ffi_new(f"char[{lib.GxB_MAX_NAME_LEN}]")
+            info = lib.GxB_deserialize_type_name(
+                cname,
+                data_obj,
+                data.nbytes,
+            )
+            if info != lib.GrB_SUCCESS:
+                raise _error_code_lookup[info]("Vector deserialize failed to get the dtype name")
+            dtype_name = b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode()
+            try:
+                dtype = lookup_dtype(dtype_name)
+            except ValueError:
+                if not unsafe:
+                    raise
+                np_dtype = np.dtype(eval(dtype_name, np.__dict__))
+                dtype = lookup_dtype(np_dtype)
+        else:
+            dtype = lookup_dtype(dtype)
+        if nthreads is not None:
+            desc_obj = get_nthreads_descriptor(nthreads)._carg
+        else:
+            desc_obj = NULL
+        gb_obj = ffi_new("GrB_Vector*")
+        check_status_carg(
+            lib.GxB_Vector_deserialize(gb_obj, dtype._carg, data_obj, data.nbytes, desc_obj),
+            "Vector",
+            gb_obj[0],
+        )
+        rv = gb.Vector._from_obj(gb_obj, dtype, -1, name=name)
+        rv._size = rv.size
+        return rv
 
 
 @njit

@@ -1,3 +1,5 @@
+import warnings
+
 import numba
 import numpy as np
 from numpy import find_common_type, promote_types
@@ -102,7 +104,24 @@ def register_anonymous(dtype, name=None):
         from .exceptions import check_status_carg
 
         gb_obj = ffi.new("GrB_Type*")
-        status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
+        if hasattr(lib, "GxB_MAX_NAME_LEN"):
+            # SS, SuiteSparse-specific: naming dtypes
+            # We name this so that we can serialize and deserialize UDTs
+            # We don't yet have C definitions
+            np_repr = repr(dtype).encode()
+            if len(np_repr) > lib.GxB_MAX_NAME_LEN:
+                if name is not None:
+                    np_repr = name.encode()[: lib.GxB_MAX_NAME_LEN]
+                else:
+                    np_repr = np_repr[: lib.GxB_MAX_NAME_LEN]
+                warnings.warn(
+                    f"UDT repr is too large to serialize ({len(repr(dtype).encode())} > "
+                    f"{lib.GxB_MAX_NAME_LEN}).  It will use the following name, "
+                    f"and the dtype may need to be specified when deserializing: {np_repr}"
+                )
+            status = lib.GxB_Type_new(gb_obj, dtype.itemsize, np_repr, ffi.NULL)
+        else:  # pragma: no cover
+            status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
         check_status_carg(status, "Type", gb_obj[0])
     # For now, let's use "opaque" unsigned bytes for the c type.
     if name is None:
