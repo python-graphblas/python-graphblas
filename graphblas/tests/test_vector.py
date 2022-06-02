@@ -2197,3 +2197,22 @@ def test_get(v):
     with pytest.raises(ValueError):
         # Not yet supported
         v.get([0, 1])
+
+
+def test_ss_serialize(v):
+    for compression, level, nthreads in itertools.product(
+        [None, "none", "default", "lz4", "lz4hc"], [None, 1, 5, 9], [None, -1, 1, 10]
+    ):
+        if level is not None and compression != "lz4hc":
+            with pytest.raises(TypeError, match="level argument"):
+                v.ss.serialize(compression, level, nthreads=nthreads)
+            continue
+        a = v.ss.serialize(compression, level, nthreads=nthreads)
+        w = Vector.ss.deserialize(a)
+        assert v.isequal(w, check_dtype=True)
+    with pytest.raises(ValueError, match="compression argument"):
+        v.ss.serialize("bad")
+    with pytest.raises(ValueError, match="level argument"):
+        v.ss.serialize("lz4hc", -1)
+    with pytest.raises(ValueError, match="level argument"):
+        v.ss.serialize("lz4hc", 0)

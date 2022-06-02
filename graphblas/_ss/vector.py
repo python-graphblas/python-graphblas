@@ -1,3 +1,4 @@
+import itertools
 import warnings
 
 import numpy as np
@@ -12,6 +13,7 @@ from ..dtypes import _INDEX, INT64, UINT64, lookup_dtype
 from ..exceptions import _error_code_lookup, check_status, check_status_carg
 from ..scalar import Scalar, _as_scalar
 from ..utils import _CArray, ints_to_numpy_buffer, libget, values_to_numpy_buffer, wrapdoc
+from .descriptor import get_compression_descriptor, get_nthreads_descriptor
 from .matrix import MatrixArray, _concat_mn, normalize_chunks
 from .prefix_scan import prefix_scan
 from .utils import get_order
@@ -194,7 +196,7 @@ class ss:
 
         tile_nrows, _ = normalize_chunks([chunks, None], (self._parent._size, 1))
         m = len(tile_nrows)
-        tiles = ffi.new("GrB_Matrix[]", m)
+        tiles = ffi_new("GrB_Matrix[]", m)
         parent = self._parent._as_matrix()
         call(
             "GxB_Matrix_split",
@@ -214,14 +216,14 @@ class ss:
             name = self._parent.name
         for i, size in enumerate(tile_nrows):
             # Copy to a new handle so we can free `tiles`
-            new_vector = ffi.new("GrB_Vector*")
+            new_vector = ffi_new("GrB_Vector*")
             new_vector[0] = ffi.cast("GrB_Vector", tiles[i])
             tile = Vector._from_obj(new_vector, dtype, size, name=f"{name}_{i}")
             rv.append(tile)
         return rv
 
     def _concat(self, tiles, m):
-        ctiles = ffi.new("GrB_Matrix[]", m)
+        ctiles = ffi_new("GrB_Matrix[]", m)
         for i, tile in enumerate(tiles):
             ctiles[i] = tile.gb_obj[0]
         call(
@@ -277,7 +279,7 @@ class ss:
         )
 
     def _begin_iter(self, seek):
-        it_ptr = ffi.new("GxB_Iterator*")
+        it_ptr = ffi_new("GxB_Iterator*")
         info = lib.GxB_Iterator_new(it_ptr)
         it = it_ptr[0]
         success = lib.GrB_SUCCESS
@@ -1518,6 +1520,55 @@ class ss:
             take_ownership=True,
             name=name,
         )
+
+    def serialize(self, compression="default", level=None, *, nthreads=None):
+        desc = get_compression_descriptor(compression, level=level, nthreads=nthreads)
+        blob_handle = ffi_new("void**")
+        blob_size_handle = ffi_new("GrB_Index*")
+        parent = self._parent
+        check_status(
+            lib.GxB_Vector_serialize(
+                blob_handle,
+                blob_size_handle,
+                parent._carg,
+                desc._carg,
+            ),
+            parent,
+        )
+        # Should we return numpy array or bytes?
+        return claim_buffer(ffi, blob_handle[0], blob_size_handle[0], np.dtype(np.uint8))
+
+    @classmethod
+    def deserialize(cls, data, *, nthreads=None, name=None):
+        if isinstance(data, np.ndarray):
+            data = ints_to_numpy_buffer(data, np.uint8)
+        else:
+            data = np.frombuffer(data, np.uint8)
+        data_obj = ffi.from_buffer("void*", data)
+        # Get the dtype name first
+        cname = ffi_new(f"char[{lib.GxB_MAX_NAME_LEN}]")
+        info = lib.GxB_deserialize_type_name(
+            cname,
+            data_obj,
+            data.nbytes,
+        )
+        if info != lib.GrB_SUCCESS:
+            raise _error_code_lookup[info]("Vector deserialize failed to get the dtype name")
+        dtype_name = b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode()
+        dtype = lookup_dtype(dtype_name)
+        if nthreads is not None:
+            desc = get_nthreads_descriptor(nthreads)
+        else:
+            desc = NULL
+        gb_obj = ffi_new("GrB_Vector*")
+        check_status_carg(
+            lib.GxB_Vector_deserialize(gb_obj, dtype._carg, data_obj, data.nbytes, desc),
+            "Vector",
+            gb_obj[0],
+        )
+        rv = gb.Vector._from_obj(gb_obj, dtype, -1, name=name)
+        rv._size = rv.size
+        return rv
 
 
 @njit
