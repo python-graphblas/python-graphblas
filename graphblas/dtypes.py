@@ -120,7 +120,7 @@ def register_anonymous(dtype, name=None):
                     f"and the dtype may need to be specified when deserializing: {np_repr}"
                 )
             status = lib.GxB_Type_new(gb_obj, dtype.itemsize, np_repr, ffi.NULL)
-        else:
+        else:  # pragma: no cover
             status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
         check_status_carg(status, "Type", gb_obj[0])
     # For now, let's use "opaque" unsigned bytes for the c type.
