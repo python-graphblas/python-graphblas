@@ -3993,7 +3993,7 @@ class ss:
         return claim_buffer(ffi, blob_handle[0], blob_size_handle[0], np.dtype(np.uint8))
 
     @classmethod
-    def deserialize(cls, data, *, nthreads=None, name=None):
+    def deserialize(cls, data, dtype=None, *, unsafe=False, nthreads=None, name=None):
         """Deserialize a Matrix from bytes, buffer, or numpy array using GxB_Matrix_deserialize.
 
         The data should have been previously serialized with a compatible version of
@@ -4008,6 +4008,15 @@ class ss:
 
         Parameters
         ----------
+        dtype : DataType, optional
+            If given, this should specify the dtype of the object.  This is usually unnecessary.
+            If the dtype doesn't match what is in the serialized metadata, deserialize will fail.
+            You need to specify the dtype to _safely_ load user-defined types.
+        unsafe : bool, default False
+            Ignored for builtin types.  Automatic loading of user-defined types (if not given via
+            the `dtype=` argument) may require `eval`, which is often considered unsafe in Python
+            if you don't trust the data.  Hence, you must opt-in by specifying `unsafe=True`.
+            Automatically loading UDTs will probably only work for objects saved by this library.
         nthreads : int, optional
             The maximum number of threads to use when deserializing.
             None, 0 or negative nthreads means to use the default number of threads.
@@ -4018,16 +4027,25 @@ class ss:
             data = np.frombuffer(data, np.uint8)
         data_obj = ffi.from_buffer("void*", data)
         # Get the dtype name first
-        cname = ffi_new(f"char[{lib.GxB_MAX_NAME_LEN}]")
-        info = lib.GxB_deserialize_type_name(
-            cname,
-            data_obj,
-            data.nbytes,
-        )
-        if info != lib.GrB_SUCCESS:
-            raise _error_code_lookup[info]("Matrix deserialize failed to get the dtype name")
-        dtype_name = b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode()
-        dtype = lookup_dtype(dtype_name)
+        if dtype is None:
+            cname = ffi_new(f"char[{lib.GxB_MAX_NAME_LEN}]")
+            info = lib.GxB_deserialize_type_name(
+                cname,
+                data_obj,
+                data.nbytes,
+            )
+            if info != lib.GrB_SUCCESS:
+                raise _error_code_lookup[info]("Matrix deserialize failed to get the dtype name")
+            dtype_name = b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode()
+            try:
+                dtype = lookup_dtype(dtype_name)
+            except ValueError:
+                if not unsafe:
+                    raise
+                np_dtype = np.dtype(eval(dtype_name, np.__dict__))
+                dtype = lookup_dtype(np_dtype)
+        else:
+            dtype = lookup_dtype(dtype)
         if nthreads is not None:
             desc_obj = get_nthreads_descriptor(nthreads)._carg
         else:
