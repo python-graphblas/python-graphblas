@@ -27,7 +27,7 @@ def get_nthreads_descriptor(nthreads, _cache=True):
         desc,
     )
     if _cache:
-        _cache[key] = desc
+        _desc_map[key] = desc
     return desc
 
 
@@ -62,10 +62,11 @@ def get_compression_descriptor(compression="default", level=None, nthreads=None)
     else:
         desc_obj = ffi.new("GrB_Descriptor*")
         lib.GrB_Descriptor_new(desc_obj)
-        name = f"compression_{compression}{level or ''}"
-        if nthreads and nthreads > 0:
-            name += f"_nthreads{nthreads}"
-        desc = Descriptor(desc_obj[0], name)
+        desc = Descriptor(desc_obj[0], "")
+    name = f"compression_{compression}{level or ''}"
+    if nthreads and nthreads > 0:
+        name += f"_nthreads{nthreads}"
+    desc.name = name
     check_status(
         lib.GxB_Desc_set(
             desc._carg,

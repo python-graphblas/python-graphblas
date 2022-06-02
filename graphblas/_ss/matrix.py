@@ -3953,6 +3953,30 @@ class ss:
         )
 
     def serialize(self, compression="default", level=None, *, nthreads=None):
+        """Serialize a Matrix to bytes (as numpy array) using SuiteSparse GxB_Matrix_serialize.
+
+        Parameters
+        ----------
+        compression : {"default", "lz4", "lz4hc", "none", None}, optional
+            Whether and how to compress the data.
+            - "default": the default in SuiteSparse:GraphBLAS, which is currently LZ4
+            - "lz4": the default LZ4 compression
+            - "lz4hc": LZ4 compression that allows the compression level (1-9) to be set.
+              Low compression level (1) is faster, high (9) is more compact.  Default is 9.
+            - "none" or None: no compression
+        level : int [1-9], optional
+            The compression level, between 1 to 9, to use with "lz4hc" compression.
+            (1) is the fastest and largest, (9) is the slowest and most compressed.
+            Level 9 is the default when using "lz4hc" compression.
+        nthreads : int, optional
+            The maximum number of threads to use when serializing the Matrix.
+            None, 0 or negative nthreads means to use the default number of threads.
+
+        For best performance, this function returns a numpy array with uint8 dtype.
+        Use `Matrix.ss.deserialize(blob)` to create a Matrix from the result of serialization
+
+        This method is intended to support all serialization options from SuiteSparse:GraphBLAS.
+        """
         desc = get_compression_descriptor(compression, level=level, nthreads=nthreads)
         blob_handle = ffi_new("void**")
         blob_size_handle = ffi_new("GrB_Index*")
@@ -3966,11 +3990,28 @@ class ss:
             ),
             parent,
         )
-        # Should we return numpy array or bytes?
         return claim_buffer(ffi, blob_handle[0], blob_size_handle[0], np.dtype(np.uint8))
 
     @classmethod
     def deserialize(cls, data, *, nthreads=None, name=None):
+        """Deserialize a Matrix from bytes, buffer, or numpy array using GxB_Matrix_deserialize.
+
+        The data should have been previously serialized with a compatible version of
+        SuiteSparse:GraphBLAS.  For example, from the result of `data = matrix.ss.serialize()`.
+
+        Examples
+        --------
+        >>> data = matrix.serialize()
+        >>> new_matrix = Matrix.ss.deserialize(data)
+        >>> new_matrix.isequal(matrix)
+        True
+
+        Parameters
+        ----------
+        nthreads : int, optional
+            The maximum number of threads to use when deserializing.
+            None, 0 or negative nthreads means to use the default number of threads.
+        """
         if isinstance(data, np.ndarray):
             data = ints_to_numpy_buffer(data, np.uint8)
         else:
@@ -3988,12 +4029,12 @@ class ss:
         dtype_name = b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode()
         dtype = lookup_dtype(dtype_name)
         if nthreads is not None:
-            desc = get_nthreads_descriptor(nthreads)
+            desc_obj = get_nthreads_descriptor(nthreads)._carg
         else:
-            desc = NULL
+            desc_obj = NULL
         gb_obj = ffi_new("GrB_Matrix*")
         check_status_carg(
-            lib.GxB_Matrix_deserialize(gb_obj, dtype._carg, data_obj, data.nbytes, desc),
+            lib.GxB_Matrix_deserialize(gb_obj, dtype._carg, data_obj, data.nbytes, desc_obj),
             "Matrix",
             gb_obj[0],
         )

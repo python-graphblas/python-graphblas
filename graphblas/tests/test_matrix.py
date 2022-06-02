@@ -14,6 +14,7 @@ from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
     IndexOutOfBound,
+    InvalidObject,
     InvalidValue,
     NotImplementedException,
     OutputNotEmpty,
@@ -3565,7 +3566,7 @@ def test_ss_serialize(A):
                 A.ss.serialize(compression, level, nthreads=nthreads)
             continue
         a = A.ss.serialize(compression, level, nthreads=nthreads)
-        C = Matrix.ss.deserialize(a)
+        C = Matrix.ss.deserialize(a, nthreads=nthreads)
         assert A.isequal(C, check_dtype=True)
     b = a.tobytes()
     C = Matrix.ss.deserialize(b)
@@ -3576,3 +3577,5 @@ def test_ss_serialize(A):
         A.ss.serialize("lz4hc", -1)
     with pytest.raises(ValueError, match="level argument"):
         A.ss.serialize("lz4hc", 0)
+    with pytest.raises(InvalidObject):
+        Matrix.ss.deserialize(a[:-5])
