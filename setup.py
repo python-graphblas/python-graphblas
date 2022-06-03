@@ -22,7 +22,7 @@ setup(
     long_description_content_type="text/markdown",
     author="Jim Kitchen and Erik Welch",
     author_email="erik.n.welch@gmail.com,jim22k@gmail.com",
-    url="https://github.com/metagraph-dev/python-graphblas",
+    url="https://github.com/python-graphblas/python-graphblas",
     packages=find_packages(),
     python_requires=">=3.8",
     install_requires=["suitesparse-graphblas >=7.1.0.0, <7.2", "numba", "donfig", "pyyaml"],
