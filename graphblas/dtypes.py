@@ -310,22 +310,39 @@ def _default_name(dtype):
 
 
 def _dtype_to_string(dtype):
-    """Convert a numpy dtype to a string that can be safely evaluated to recreate the dtype.
+    """Convert a dtype to a string that can be safely evaluated to recreate the dtype.
 
-    This is useful when serializing a numpy dtype.  To recreate the dtype, do:
+    This is useful when serializing UDT.  To recreate the dtype, do:
 
     >>> s = _dtype_to_string(dtype)
-    >>> new_dtype = np.dtype(np.lib.format.safe_eval(s))
+    >>> new_dtype = _string_to_dtype(s)
     >>> dtype == new_dtype
     True
     """
-    s = str(dtype)
+    if isinstance(dtype, np.dtype) and dtype not in _registry:
+        np_type = dtype
+    else:
+        dtype = lookup_dtype(dtype)
+        if not dtype._is_udt:
+            return dtype.name
+        np_type = dtype.np_type
+    s = str(np_type)
     try:
-        if np.dtype(np.lib.format.safe_eval(s)) == dtype:
+        if np.dtype(np.lib.format.safe_eval(s)) == np_type:
             return s
     except Exception:
         pass
-    if np.dtype(dtype.str) == dtype:
-        return repr(dtype.str)
+    if np.dtype(np_type.str) == np_type:
+        return repr(np_type.str)
     else:  # pragma: no cover
         raise ValueError(f"Unable to reliably convert dtype to string and back: {dtype}")
+
+
+def _string_to_dtype(s):
+    """_string_to_dtype(_dtype_to_string(dtype)) == dtype"""
+    try:
+        return lookup_dtype(s)
+    except Exception:
+        pass
+    np_type = np.dtype(np.lib.format.safe_eval(s))
+    return lookup_dtype(np_type)

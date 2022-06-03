@@ -11,7 +11,7 @@ import graphblas as gb
 
 from .. import ffi, lib, monoid
 from ..base import call, record_raw
-from ..dtypes import _INDEX, INT64, lookup_dtype
+from ..dtypes import _INDEX, INT64, _string_to_dtype, lookup_dtype
 from ..exceptions import _error_code_lookup, check_status, check_status_carg
 from ..scalar import Scalar, _as_scalar, _scalar_index
 from ..utils import (
@@ -4032,11 +4032,7 @@ class ss:
             if info != lib.GrB_SUCCESS:
                 raise _error_code_lookup[info]("Matrix deserialize failed to get the dtype name")
             dtype_name = b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode()
-            try:
-                dtype = lookup_dtype(dtype_name)
-            except ValueError:
-                np_dtype = np.dtype(eval(dtype_name, np.__dict__))
-                dtype = lookup_dtype(np_dtype)
+            dtype = _string_to_dtype(dtype_name)
         else:
             dtype = lookup_dtype(dtype)
         if nthreads is not None:
