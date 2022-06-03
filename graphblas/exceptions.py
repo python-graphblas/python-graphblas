@@ -126,7 +126,7 @@ def check_status_carg(response_code, type_name, carg):
         text = (
             f"Unable to get the error string for type {type_name}.  "
             "This is most likely a bug in graphblas.  Please report this as an issue at:\n"
-            "    https://github.com/metagraph-dev/graphblas/issues\n"
+            "    https://github.com/python-graphblas/python-graphblas/issues\n"
             "Thanks (and sorry)!"
         )
     else:
