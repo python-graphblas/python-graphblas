@@ -222,9 +222,6 @@ for dtype in _dtypes_to_register:
     val = _sample_values[dtype]
     _registry[val.dtype] = dtype
     _registry[val.dtype.name] = dtype
-# Upcast numpy float16 to float32
-_registry[np.dtype(np.float16)] = FP32
-_registry["float16"] = FP32
 
 # Add some common Python types as lookup keys
 _registry[bool] = BOOL
