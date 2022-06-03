@@ -3439,12 +3439,10 @@ def test_udt():
     with pytest.raises(ValueError, match="shape mismatch"):
         A[[0, 1], [1]] = [[(2, 3), (4, 5)]]
 
-    AA = Matrix.ss.deserialize(A.ss.serialize(), unsafe=True)
+    AA = Matrix.ss.deserialize(A.ss.serialize())
     assert A.isequal(AA, check_dtype=True)
     AA = Matrix.ss.deserialize(A.ss.serialize(), dtype=A.dtype)
     assert A.isequal(AA, check_dtype=True)
-    with pytest.raises(ValueError):
-        Matrix.ss.deserialize(A.ss.serialize())
 
     np_dtype = np.dtype("(3,)uint16")
     udt = dtypes.register_anonymous(np_dtype, "has_subdtype")
@@ -3468,7 +3466,7 @@ def test_udt():
     expected = Matrix.from_values([0, 1], [1, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt)
     assert A.isequal(expected)
     A[[0, 1], [1]] = [[[2, 3, 4]], [[5, 6, 7]]]
-    AA = Matrix.ss.deserialize(A.ss.serialize(), unsafe=True)
+    AA = Matrix.ss.deserialize(A.ss.serialize())
     assert A.isequal(AA, check_dtype=True)
     with pytest.raises(ValueError, match="shape mismatch"):
         A[[0, 1], [1]] = [[[2, 3, 4], [5, 6, 7]]]

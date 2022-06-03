@@ -1946,12 +1946,10 @@ def test_udt():
     v.clear()
     v[[0, 1]] = [(2, 3), (4, 5)]
     expected = Vector.from_values([0, 1], [(2, 3), (4, 5)], dtype=udt, size=v.size)
-    vv = Vector.ss.deserialize(v.ss.serialize(), unsafe=True)
+    vv = Vector.ss.deserialize(v.ss.serialize())
     assert v.isequal(vv, check_dtype=True)
     vv = Vector.ss.deserialize(v.ss.serialize(), dtype=v.dtype)
     assert v.isequal(vv, check_dtype=True)
-    with pytest.raises(ValueError):
-        Vector.ss.deserialize(v.ss.serialize())
 
     # arrays as dtypes!
     np_dtype = np.dtype("(3,)uint16")
@@ -2001,7 +1999,7 @@ def test_udt():
     v[[0, 1]] = [[2, 3, 4], [5, 6, 7]]
     expected = Vector.from_values([0, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt2, size=v.size)
     assert v.isequal(expected)
-    vv = Vector.ss.deserialize(v.ss.serialize(), unsafe=True)
+    vv = Vector.ss.deserialize(v.ss.serialize())
     assert v.isequal(vv, check_dtype=True)
 
     long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=True)
@@ -2014,7 +2012,7 @@ def test_udt():
     assert v.isequal(vv, check_dtype=True)
     with pytest.raises(Exception):
         # The size of the UDT name is limited
-        Vector.ss.deserialize(v.ss.serialize(), unsafe=True)
+        Vector.ss.deserialize(v.ss.serialize())
     # May be able to look up non-anonymous dtypes by name if their names are too long
     named_long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=False)
     with pytest.warns(UserWarning, match="too large"):
