@@ -794,10 +794,10 @@ class Matrix(BaseType):
             if left is not None:
                 raise TypeError("Do not pass `left` when applying IndexUnaryOp")
         elif opclass == UNKNOWN_OPCLASS and isinstance(op, Mapping):
-            op = _dict_to_func(op, right)
-            right = None
             if left is not None:
                 raise TypeError("Do not pass `left` when applying a Mapping")
+            op = _dict_to_func(op, right)
+            right = None
         if left is None and right is None:
             op = get_typed_op(op, self.dtype, kind="unary")
             self._expect_op(
