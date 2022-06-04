@@ -704,8 +704,16 @@ def test_apply_dict(v):
     w2 = v.apply({0: 10, 2: 20}).new()
     expected = Vector.from_values([1, 3, 4, 6], [0, 0, 20, 10])
     assert w2.isequal(expected)
+    # Scalar default can up-cast dtype
+    w3 = v.apply({1: 10, 2: 20}, 0.5).new()
+    expected = Vector.from_values([1, 3, 4, 6], [10, 10, 20, 0.5])
+    assert w3.isequal(expected)
     with pytest.raises(TypeError, match="left"):
         v.apply({0: 10, 2: 20}, left=999)
+    with pytest.raises(ValueError, match="Unknown dtype"):
+        v.apply({0: 10, 2: object()})
+    with pytest.raises(Exception):  # This error and message should be better
+        v.apply({0: 10, 2: 20}, object())
 
 
 def test_select(v):
