@@ -1,5 +1,6 @@
 import itertools
 import warnings
+from collections.abc import Mapping
 
 import numpy as np
 
@@ -10,7 +11,14 @@ from .dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
-from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
+from .operator import (
+    UNKNOWN_OPCLASS,
+    _dict_to_func,
+    find_opclass,
+    get_semiring,
+    get_typed_op,
+    op_from_string,
+)
 from .scalar import (
     _MATERIALIZE,
     Scalar,
@@ -694,11 +702,18 @@ class Vector(BaseType):
         return expr
 
     def apply(self, op, right=None, *, left=None):
-        """
-        GrB_Vector_apply
-        Apply UnaryOp to each element of the calling Vector
+        """Apply an operator, function, or mapping to each element of the Vector
+
+        Apply UnaryOp to each element of the calling Vector.
+
         A BinaryOp can also be applied if a scalar is passed in as `left` or `right`,
-            effectively converting a BinaryOp into a UnaryOp
+        effectively converting a BinaryOp into a UnaryOp.
+
+        An IndexUnaryOp can also be applied with the thunk passed in as `right`
+
+        A dict or Mapping can also be applied to map input values to specific output values.
+        If an input value isn't in the mapping, the result is the default value passed in
+        as `right` with a default of 0.  For example, `v.apply({1: 10, 2: 20}, 100)`.
         """
         method_name = "apply"
         extra_message = (
@@ -714,7 +729,11 @@ class Vector(BaseType):
                 right = False  # most basic form of 0 when unifying dtypes
             if left is not None:
                 raise TypeError("Do not pass `left` when applying IndexUnaryOp")
-
+        elif opclass == UNKNOWN_OPCLASS and isinstance(op, Mapping):
+            if left is not None:
+                raise TypeError("Do not pass `left` when applying a Mapping")
+            op = _dict_to_func(op, right)
+            right = None
         if left is None and right is None:
             op = get_typed_op(op, self.dtype, kind="unary")
             self._expect_op(

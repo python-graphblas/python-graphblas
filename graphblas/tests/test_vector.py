@@ -695,6 +695,19 @@ def test_apply_indexunary(v):
         v.apply(indexunary.valueeq, left=s2)
 
 
+def test_apply_dict(v):
+    # Use right as default
+    w1 = v.apply({1: 10, 2: 20}, 100).new()
+    expected = Vector.from_values([1, 3, 4, 6], [10, 10, 20, 100])
+    assert w1.isequal(expected)
+    # Default is 0 if unspecified
+    w2 = v.apply({0: 10, 2: 20}).new()
+    expected = Vector.from_values([1, 3, 4, 6], [0, 0, 20, 10])
+    assert w2.isequal(expected)
+    with pytest.raises(TypeError, match="left"):
+        v.apply({0: 10, 2: 20}, left=999)
+
+
 def test_select(v):
     result = Vector.from_values([1, 3], [1, 1], size=7)
     w1 = v.select(select.valueeq, 1).new()
