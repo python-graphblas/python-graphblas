@@ -1,5 +1,6 @@
 import itertools
 import pickle
+import string
 
 import numpy as np
 import pytest
@@ -211,3 +212,22 @@ def test_default_names():
 def test_record_dtype_from_dict():
     dtype = dtypes.lookup_dtype({"x": int, "y": float})
     assert dtype.name == "{'x': INT64, 'y': FP64}"
+
+
+def test_dtype_to_from_string():
+    types = [dtypes.BOOL, dtypes.FP64]
+    for c in string.ascii_letters:
+        try:
+            dtype = np.dtype(c)
+            types.append(dtype)
+        except Exception:
+            pass
+    for dtype in types:
+        s = dtypes._dtype_to_string(dtype)
+        try:
+            dtype2 = dtypes._string_to_dtype(s)
+        except Exception:
+            with pytest.raises(Exception):
+                lookup_dtype(dtype)
+        else:
+            assert dtype == dtype2

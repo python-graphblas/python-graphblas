@@ -9,7 +9,7 @@ import graphblas as gb
 
 from .. import ffi, lib, monoid
 from ..base import call
-from ..dtypes import _INDEX, INT64, UINT64, lookup_dtype
+from ..dtypes import _INDEX, INT64, UINT64, _string_to_dtype, lookup_dtype
 from ..exceptions import _error_code_lookup, check_status, check_status_carg
 from ..scalar import Scalar, _as_scalar
 from ..utils import _CArray, ints_to_numpy_buffer, libget, values_to_numpy_buffer, wrapdoc
@@ -1562,7 +1562,7 @@ class ss:
         return claim_buffer(ffi, blob_handle[0], blob_size_handle[0], np.dtype(np.uint8))
 
     @classmethod
-    def deserialize(cls, data, dtype=None, *, unsafe=False, nthreads=None, name=None):
+    def deserialize(cls, data, dtype=None, *, nthreads=None, name=None):
         """Deserialize a Vector from bytes, buffer, or numpy array using GxB_Vector_deserialize.
 
         The data should have been previously serialized with a compatible version of
@@ -1580,12 +1580,7 @@ class ss:
         dtype : DataType, optional
             If given, this should specify the dtype of the object.  This is usually unnecessary.
             If the dtype doesn't match what is in the serialized metadata, deserialize will fail.
-            You need to specify the dtype to _safely_ load user-defined types.
-        unsafe : bool, default False
-            Ignored for builtin types.  Automatic loading of user-defined types (if not given via
-            the `dtype=` argument) may require `eval`, which is often considered unsafe in Python
-            if you don't trust the data.  Hence, you must opt-in by specifying `unsafe=True`.
-            Automatically loading UDTs will probably only work for objects saved by this library.
+            You may need to specify the dtype to load user-defined types.
         nthreads : int, optional
             The maximum number of threads to use when deserializing.
             None, 0 or negative nthreads means to use the default number of threads.
@@ -1606,13 +1601,7 @@ class ss:
             if info != lib.GrB_SUCCESS:
                 raise _error_code_lookup[info]("Vector deserialize failed to get the dtype name")
             dtype_name = b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode()
-            try:
-                dtype = lookup_dtype(dtype_name)
-            except ValueError:
-                if not unsafe:
-                    raise
-                np_dtype = np.dtype(eval(dtype_name, np.__dict__))
-                dtype = lookup_dtype(np_dtype)
+            dtype = _string_to_dtype(dtype_name)
         else:
             dtype = lookup_dtype(dtype)
         if nthreads is not None:
