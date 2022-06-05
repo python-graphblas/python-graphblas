@@ -46,7 +46,7 @@ class BaseConfig(MutableMapping):
             info = self._get_function(key_obj, val_ptr)
         else:
             info = self._get_function(self._parent._carg, key_obj, val_ptr)
-        if info == lib.GrB_SUCCESS:
+        if info == lib.GrB_SUCCESS:  # pragma: no branch
             if is_array:
                 return list(val_ptr)
             elif key in self._enumerations:
@@ -62,7 +62,7 @@ class BaseConfig(MutableMapping):
                         rv.add(k)
                 return rv
             return val_ptr[0]
-        raise _error_code_lookup[info](f"Failed to get info for {key}")
+        raise _error_code_lookup[info](f"Failed to get info for {key!r}")  # pragma: no cover
 
     def __setitem__(self, key, val):
         key = key.lower()
@@ -91,7 +91,7 @@ class BaseConfig(MutableMapping):
             if key in self._defaults:
                 val = self._defaults[key]
             else:
-                raise ValueError(f"Unable to set default value for {key}")
+                raise ValueError(f"Unable to set default value for {key!r}")
         if val is None:
             val_obj = ffi.NULL
         elif "[" in ctype:
@@ -101,8 +101,8 @@ class BaseConfig(MutableMapping):
             vals, dtype = values_to_numpy_buffer(val, dtype.np_type)
             if int(size) != vals.size:
                 raise ValueError(
-                    f"Wrong number of elements when setting {key} config.  "
-                    f"{size} expected, got {vals.size}: {val}"
+                    f"Wrong number of elements when setting {key!r} config.  "
+                    f"expected {size}, got {vals.size}: {val}"
                 )
             val_obj = ffi.from_buffer(ctype, vals)
         else:
@@ -112,7 +112,7 @@ class BaseConfig(MutableMapping):
         else:
             info = self._set_function(self._parent._carg, key_obj, val_obj)
         if info != lib.GrB_SUCCESS:
-            raise _error_code_lookup[info](f"Failed to set info for {key}")
+            raise _error_code_lookup[info](f"Failed to set info for {key!r}")
 
     def __iter__(self):
         return iter(sorted(self._options))
@@ -123,5 +123,5 @@ class BaseConfig(MutableMapping):
     def __repr__(self):
         return "{" + ",\n ".join(f"{k!r}: {v!r}" for k, v in self.items()) + "}"
 
-    def _ipython_key_completions_(self):
+    def _ipython_key_completions_(self):  # pragma: no cover
         return list(self)

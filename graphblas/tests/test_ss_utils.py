@@ -175,11 +175,13 @@ def test_about():
     for k in about:
         d[k] = about[k]
     assert d == about
+    assert len(d) == len(about)
     with pytest.raises(KeyError):
         about["badkey"]
     assert "SuiteSparse" in about["library_name"]
     with pytest.raises(TypeError):
         del about["library_name"]
+    assert "library_name" in repr(about)
 
 
 def test_global_config():
@@ -188,11 +190,14 @@ def test_global_config():
     for k in config:
         d[k] = config[k]
     assert d == config
+    assert len(d) == len(config)
     for k, v in d.items():
         config[k] = v
     assert d == config
     with pytest.raises(KeyError):
         config["badkey"]
+    with pytest.raises(KeyError):
+        config["badkey"] = None
     config["format"] = "by_col"
     assert config["format"] == "by_col"
     config["format"] = "by_row"
@@ -201,5 +206,12 @@ def test_global_config():
         del config["format"]
     with pytest.raises(KeyError):
         config["format"] = "bad_format"
-    for k in config._defaults:
-        config[k] = None
+    for k in config:
+        if k in config._defaults:
+            config[k] = None
+        else:
+            with pytest.raises(ValueError):
+                config[k] = None
+    with pytest.raises(ValueError, match="Wrong number"):
+        config["memory_pool"] = [1, 2]
+    assert "format" in repr(config)

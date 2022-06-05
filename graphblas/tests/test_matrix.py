@@ -3605,9 +3605,15 @@ def test_ss_config(A):
     assert A.ss.config["sparsity_status"] == "sparse"
     A.ss.config["sparsity_control"] = {"sparse", "bitmap"}
     assert A.ss.config["sparsity_control"] == {"sparse", "bitmap"}
+    A.ss.config["sparsity_control"] = lib.GxB_SPARSE
+    assert A.ss.config["sparsity_status"] == "sparse"
+    A.ss.config["sparsity_control"] = {"sparse", lib.GxB_BITMAP}
+    assert A.ss.config["sparsity_control"] == {"sparse", "bitmap"}
     A.ss.config["sparsity_control"] = "auto"
     assert A.ss.config["sparsity_control"] == {"auto"}
     A.ss.config["format"] = "by_col"
     assert A.ss.config["format"] == "by_col"
     A.ss.config["format"] = lib.GxB_BY_ROW
     assert A.ss.config["format"] == "by_row"
+    with pytest.raises(InvalidValue):
+        A.ss.config["format"] = lib.GxB_NO_FORMAT
