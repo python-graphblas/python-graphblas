@@ -15,8 +15,9 @@ class BaseConfig(MutableMapping):
     _null_valid = {}
     _options = {}
     _defaults = {}
+    # We add reverse lookups for _enumerations and _bitwise in __init__
     _bitwise = {}
-    _enumerations = {}  # We add reverse lookups for _enumeration in __init__
+    _enumerations = {}
     _read_only = set()
     _set_ctypes = {
         "GxB_Format_Value": "int",

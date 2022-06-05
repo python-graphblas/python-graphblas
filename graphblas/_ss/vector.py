@@ -90,7 +90,7 @@ class VectorConfig(BaseConfig):
     -----------------
     bitmap_switch : double
         Threshold that determines when to switch to bitmap format
-    sparsity_control : set of str from {"sparse", "bitmap", "full", "auto"}
+    sparsity_control : Set[str] from {"sparse", "bitmap", "full", "auto"}
         Allowed sparsity formats.  May be set with a single string or a set of strings.
     sparsity_status : str, {"sparse", "bitmap", "full"}
         Current sparsity format
@@ -107,7 +107,7 @@ class VectorConfig(BaseConfig):
     }
     _bitwise = {
         "sparsity_control": {
-            # lib.GxB_HYPERSPARSE: "hypersparse",
+            # lib.GxB_HYPERSPARSE: "hypersparse",  # For matrices, not vectors
             lib.GxB_SPARSE: "sparse",
             lib.GxB_BITMAP: "bitmap",
             lib.GxB_FULL: "full",

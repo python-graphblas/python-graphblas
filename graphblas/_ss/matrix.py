@@ -349,7 +349,7 @@ class MatrixConfig(BaseConfig):
         Threshold that determines when to switch to hypersparse format
     bitmap_switch : double
         Threshold that determines when to switch to bitmap format
-    sparsity_control : set of str from {"hypersparse", "sparse", "bitmap", "full", "auto"}
+    sparsity_control : Set[str] from {"hypersparse", "sparse", "bitmap", "full", "auto"}
         Allowed sparsity formats.  May be set with a single string or a set of strings.
     sparsity_status : str, {"hypersparse", "sparse", "bitmap", "full"}
         Current sparsity format
