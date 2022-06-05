@@ -2249,3 +2249,22 @@ def test_ss_serialize(v):
         v.ss.serialize("lz4hc", 0)
     with pytest.raises(InvalidObject):
         Vector.ss.deserialize(a[:-5])
+
+
+def test_ss_config(v):
+    d = {}
+    for key in v.ss.config:
+        d[key] = v.ss.config[key]
+    assert v.ss.config == d
+    for key, val in d.items():
+        if key in v.ss.config._read_only:
+            with pytest.raises(ValueError):
+                v.ss.config[key] = val
+        else:
+            v.ss.config[key] = val
+    assert v.ss.config == d
+    v.ss.config["sparsity_control"] = "sparse"
+    assert v.ss.config["sparsity_control"] == {"sparse"}
+    assert v.ss.config["sparsity_status"] == "sparse"
+    v.ss.config["sparsity_control"] = {"sparse", "bitmap"}
+    assert v.ss.config["sparsity_control"] == {"sparse", "bitmap"}

@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
+import graphblas as gb
 from graphblas import Matrix, Vector
 
 
@@ -166,3 +167,39 @@ def test_matrix_head(do_iso):
             assert_array_equal(vals, values4[:2])
             assert rows.dtype == cols.dtype == np.uint64
             assert vals.dtype == expected_dtype
+
+
+def test_about():
+    d = {}
+    about = gb.ss.about
+    for k in about:
+        d[k] = about[k]
+    assert d == about
+    with pytest.raises(KeyError):
+        about["badkey"]
+    assert "SuiteSparse" in about["library_name"]
+    with pytest.raises(TypeError):
+        del about["library_name"]
+
+
+def test_global_config():
+    d = {}
+    config = gb.ss.config
+    for k in config:
+        d[k] = config[k]
+    assert d == config
+    for k, v in d.items():
+        config[k] = v
+    assert d == config
+    with pytest.raises(KeyError):
+        config["badkey"]
+    config["format"] = "by_col"
+    assert config["format"] == "by_col"
+    config["format"] = "by_row"
+    assert config["format"] == "by_row"
+    with pytest.raises(TypeError):
+        del config["format"]
+    with pytest.raises(KeyError):
+        config["format"] = "bad_format"
+    for k in config._defaults:
+        config[k] = None
