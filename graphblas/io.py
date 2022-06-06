@@ -76,18 +76,18 @@ def from_numpy(m):
         raise GraphblasException("m.ndim must be <= 2")
 
     try:
-        from scipy.sparse import coo_matrix, csr_matrix
+        from scipy.sparse import coo_array, csr_array
     except ImportError:  # pragma: no cover
         raise ImportError("scipy is required to import from numpy") from None
 
     if m.ndim == 1:
-        A = csr_matrix(m)
+        A = csr_array(m)
         _, size = A.shape
         dtype = lookup_dtype(m.dtype)
         g = Vector.from_values(A.indices, A.data, size=size, dtype=dtype)
         return g
     else:
-        A = coo_matrix(m)
+        A = coo_array(m)
         return from_scipy_sparse(A)
 
 
@@ -254,11 +254,11 @@ def mmread(source, *, dup_op=None, name=None):
     """
     try:
         from scipy.io import mmread
-        from scipy.sparse import coo_matrix
+        from scipy.sparse import isspmatrix_coo
     except ImportError:  # pragma: no cover
         raise ImportError("scipy is required to read Matrix Market files") from None
     array = mmread(source)
-    if isinstance(array, coo_matrix):
+    if isspmatrix_coo(array):
         nrows, ncols = array.shape
         return Matrix.from_values(
             array.row, array.col, array.data, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
