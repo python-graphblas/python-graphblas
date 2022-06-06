@@ -212,8 +212,8 @@ Import/Export connectors to the Python ecosystem
     m = gb.io.to_numpy(A)
 
     # scipy.sparse matrices
-    A = gb.io.from_scipy_sparse_matrix(m)
-    m = gb.io.to_scipy_sparse_matrix(m, format='csr')
+    A = gb.io.from_scipy_sparse(m)
+    m = gb.io.to_scipy_sparse(m, format='csr')
 
     # networkx graphs
     A = gb.io.from_networkx(g)
