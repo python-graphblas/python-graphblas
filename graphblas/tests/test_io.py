@@ -285,3 +285,20 @@ def test_matrix_market_sparse_duplicates():
     a = gb.io.mmread(mm, dup_op=gb.binary.plus)
     expected = gb.Matrix.from_values([0, 1, 2], [2, 1, 0], [1, 2, 7])
     assert a.isequal(expected)
+
+
+@pytest.mark.skipif("not ss")
+def test_scipy_sparse():
+    a = np.arange(12).reshape(3, 4)
+    for a in [np.arange(12).reshape(3, 4), np.ones((3, 4)), np.zeros((3, 4))]:
+        for fmt in {"bsr", "csr", "csc", "coo", "lil", "dia", "dok"}:
+            sa = getattr(ss, f"{fmt}_array")(a)
+            A = gb.io.from_scipy_sparse(sa)
+            for M in [A, A.T.new().T]:
+                if fmt == "dia" and M.nvals > 0:  # "dia" format is weird
+                    assert sa.nnz == M.nrows * M.ncols
+                else:
+                    assert sa.nnz == M.nvals
+                assert sa.shape == M.shape
+                sa2 = gb.io.to_scipy_sparse(M, fmt)
+                assert (sa != sa2).nnz == 0

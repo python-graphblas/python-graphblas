@@ -1,5 +1,7 @@
 import warnings
 
+import numpy as np
+
 from . import Matrix, Vector, backend
 from .dtypes import lookup_dtype
 from .exceptions import GraphblasException
@@ -115,7 +117,7 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
     """
     nrows, ncols = A.shape
     dtype = lookup_dtype(A.dtype)
-    if A.data.size == 0:
+    if A.nnz == 0:
         return Matrix(dtype, nrows=nrows, ncols=ncols, name=name)
     if backend == "suitesparse" and A.format in {"csr", "csc"}:
         data = A.data
@@ -173,7 +175,7 @@ def to_numpy(m):
         return sparse.toarray()
 
 
-def to_scipy_sparse_matrix(m, format="csr"):
+def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover
     """
     format: str in {'bsr', 'csr', 'csc', 'coo', 'lil', 'dia', 'dok'}
     """
@@ -205,6 +207,8 @@ def to_scipy_sparse_matrix(m, format="csr"):
 def to_scipy_sparse(A, format="csr"):
     """Create a scipy.sparse array (not matrix) from a GraphBLAS Matrix or Vector
 
+    Zero values will not be included in the scipy.sparse array.
+
     Parameters
     ----------
     format : str in {'bsr', 'csr', 'csc', 'coo', 'lil', 'dia', 'dok'}
@@ -224,9 +228,15 @@ def to_scipy_sparse(A, format="csr"):
                 return rv
     elif backend == "suitesparse" and format in {"csr", "csc"}:
         if A._is_transposed:
-            A = A.T
-            format = "csc" if format == "csr" else "csr"
-        info = A.ss.export(format, sort=True)
+            info = A.T.ss.export("csc" if format == "csr" else "csr", sort=True)
+            if "col_indices" in info:
+                info["row_indices"] = info["col_indices"]
+            else:
+                info["col_indices"] = info["row_indices"]
+        else:
+            info = A.ss.export(format, sort=True)
+        if info["is_iso"]:
+            info["values"] = np.broadcast_to(info["values"], (A._nvals,))
         if format == "csr":
             return ss.csr_array(
                 (info["values"], info["col_indices"], info["indptr"]), shape=A.shape
