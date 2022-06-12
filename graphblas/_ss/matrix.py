@@ -442,6 +442,8 @@ class ss:
         vector = self._parent._expect_type(
             vector, gb.Vector, within="ss.build_diag", argname="vector"
         )
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         call("GxB_Matrix_diag", [self._parent, vector, _as_scalar(k, INT64, is_cscalar=True), None])
 
     def split(self, chunks, *, name=None):
@@ -544,6 +546,8 @@ class ss:
         graphblas.ss.concat
         """
         tiles, m, n, is_matrix = _concat_mn(tiles, is_matrix=True)
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         self._concat(tiles, m, n)
 
     def build_scalar(self, rows, columns, value):
@@ -564,6 +568,8 @@ class ss:
                 f"`rows` and `columns` lengths must match: {rows.size}, {columns.size}"
             )
         scalar = _as_scalar(value, self._parent.dtype, is_cscalar=False)  # pragma: is_grbscalar
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         call(
             "GxB_Matrix_build_Scalar",
             [
@@ -897,8 +903,12 @@ class ss:
                 format = f"{self.format[:-1]}r"
             elif format == "columnwise":
                 format = f"{self.format[:-1]}c"
-        if give_ownership or format == "coo":
+        if format == "coo":
             parent = self._parent
+        elif give_ownership:
+            parent = self._parent
+            if parent._hooks is not None and "onchange" in parent._hooks:
+                parent._hooks["onchange"](self)
         else:
             parent = self._parent.dup(name=f"M_{method}")
         dtype = parent.dtype.np_type
@@ -1388,6 +1398,8 @@ class ss:
 
         See `Matrix.ss.import_csr` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_csr(
             indptr=indptr,
             values=values,
@@ -1561,6 +1573,8 @@ class ss:
 
         See `Matrix.ss.import_csc` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_csc(
             indptr=indptr,
             values=values,
@@ -1744,6 +1758,8 @@ class ss:
 
         See `Matrix.ss.import_hypercsr` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_hypercsr(
             rows=rows,
             indptr=indptr,
@@ -1938,6 +1954,8 @@ class ss:
 
         See `Matrix.ss.import_hypercsc` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_hypercsc(
             cols=cols,
             indptr=indptr,
@@ -2126,6 +2144,8 @@ class ss:
 
         See `Matrix.ss.import_bitmapr` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_bitmapr(
             bitmap=bitmap,
             values=values,
@@ -2302,6 +2322,8 @@ class ss:
 
         See `Matrix.ss.import_bitmapc` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_bitmapc(
             bitmap=bitmap,
             values=values,
@@ -2467,6 +2489,8 @@ class ss:
 
         See `Matrix.ss.import_fullr` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_fullr(
             values=values,
             is_iso=is_iso,
@@ -2614,6 +2638,8 @@ class ss:
 
         See `Matrix.ss.import_fullc` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_fullc(
             values=values,
             is_iso=is_iso,
@@ -2765,6 +2791,8 @@ class ss:
 
         See `Matrix.ss.import_coo` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_coo(
             nrows=self._parent._nrows,
             ncols=self._parent._ncols,
@@ -2943,6 +2971,8 @@ class ss:
 
         See `Matrix.ss.import_coor` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_coor(
             rows=rows,
             cols=cols,
@@ -3096,6 +3126,8 @@ class ss:
 
         See `Matrix.ss.import_cooc` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_cooc(
             ncols=self._parent._ncols,
             rows=rows,
@@ -3284,6 +3316,8 @@ class ss:
 
         See `Matrix.ss.import_any` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_any(
             values=values,
             is_iso=is_iso,

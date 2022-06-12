@@ -2739,6 +2739,7 @@ def test_expr_is_like_matrix(A):
         "_deserialize",
         "_extract_element",
         "_from_obj",
+        "_hooks",
         "_name_counter",
         "_parent",
         "_prep_for_assign",
@@ -2781,6 +2782,7 @@ def test_index_expr_is_like_matrix(A):
         "_deserialize",
         "_extract_element",
         "_from_obj",
+        "_hooks",
         "_name_counter",
         "_parent",
         "_prep_for_assign",
@@ -3586,3 +3588,58 @@ def test_ss_serialize(A):
         A.ss.serialize("lz4hc", 0)
     with pytest.raises(InvalidObject):
         Matrix.ss.deserialize(a[:-5])
+
+
+def test_hooks(A):
+    B = A.dup()
+
+    class OnChangeException(Exception):
+        pass
+
+    def onchange(x, **kwargs):
+        raise OnChangeException()
+
+    B._hooks = {"onchange": onchange}
+    with pytest.raises(OnChangeException):
+        B.clear()
+    with pytest.raises(OnChangeException):
+        B.resize(100, 100)
+    with pytest.raises(OnChangeException):
+        B.build([1, 2], [1, 2], [1, 2], clear=True)
+    with pytest.raises(OnChangeException):
+        B[1, 2] = 2
+    with pytest.raises(OnChangeException):
+        del B[1, 1]
+    with pytest.raises(OnChangeException):
+        B[:, :] = A
+    with pytest.raises(OnChangeException):
+        del B[[1, 2], [1, 2]]
+    with pytest.raises(OnChangeException):
+        B << B.reposition(1, 2)
+    with pytest.raises(OnChangeException):
+        B << A @ A
+    v = A.diag()
+    with pytest.raises(OnChangeException):
+        B.ss.build_diag(v)
+    tiles = B.ss.split((3, 3))
+    with pytest.raises(OnChangeException):
+        B.ss.concat(tiles)
+    with pytest.raises(OnChangeException):
+        B << B + 1
+    with pytest.raises(OnChangeException):
+        B.ss.build_scalar([1, 2], [1, 2], 1)
+    with pytest.raises(OnChangeException):
+        B.ss.export(give_ownership=True)
+    with pytest.raises(OnChangeException):
+        B.ss.unpack()
+    info = B.ss.export()
+    with pytest.raises(OnChangeException):
+        B.ss.pack_any(**info)
+    for fmt in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc", "coor", "cooc", "coo"]:
+        info = B.ss.export(fmt)
+        with pytest.raises(OnChangeException):
+            getattr(B.ss, f"pack_{fmt}")(**info)
+    with pytest.raises(OnChangeException):
+        B.ss.pack_fullr(np.ones(B.shape))
+    with pytest.raises(OnChangeException):
+        B.ss.pack_fullc(np.ones(B.shape))

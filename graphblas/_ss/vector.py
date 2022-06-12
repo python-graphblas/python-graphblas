@@ -169,6 +169,8 @@ class ss:
             # Transpose descriptor doesn't do anything, so use the parent
             k = -k
             matrix = matrix._matrix
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         call("GxB_Vector_diag", [self._parent, matrix, _as_scalar(k, INT64, is_cscalar=True), None])
 
     def split(self, chunks, *, name=None):
@@ -253,6 +255,8 @@ class ss:
         graphblas.ss.concat
         """
         tiles, m, n, is_matrix = _concat_mn(tiles, is_matrix=False)
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         self._concat(tiles, m)
 
     def build_scalar(self, indices, value):
@@ -268,6 +272,8 @@ class ss:
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         scalar = _as_scalar(value, self._parent.dtype, is_cscalar=False)  # pragma: is_grbscalar
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         call(
             "GxB_Vector_build_Scalar",
             [
@@ -464,6 +470,8 @@ class ss:
     def _export(self, format=None, *, sort=False, give_ownership=False, raw=False, method):
         if give_ownership:
             parent = self._parent
+            if parent._hooks is not None and "onchange" in parent._hooks:
+                parent._hooks["onchange"](self)
         else:
             parent = self._parent.dup(name=f"v_{method}")
         dtype = parent.dtype.np_type
@@ -680,6 +688,8 @@ class ss:
 
         See `Vector.ss.import_any` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_any(
             values=values,
             is_iso=is_iso,
@@ -860,6 +870,8 @@ class ss:
 
         See `Vector.ss.import_sparse` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_sparse(
             indices=indices,
             values=values,
@@ -1027,6 +1039,8 @@ class ss:
 
         See `Vector.ss.import_bitmap` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_bitmap(
             bitmap=bitmap,
             values=values,
@@ -1188,6 +1202,8 @@ class ss:
 
         See `Vector.ss.import_full` documentation for more details.
         """
+        if self._parent._hooks is not None and "onchange" in self._parent._hooks:
+            self._parent._hooks["onchange"](self)
         return self._import_full(
             values=values,
             is_iso=is_iso,

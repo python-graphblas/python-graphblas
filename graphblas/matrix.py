@@ -62,7 +62,7 @@ class Matrix(BaseType):
     High-level wrapper around GrB_Matrix type
     """
 
-    __slots__ = "_nrows", "_ncols", "_parent", "ss"
+    __slots__ = "_nrows", "_ncols", "_parent", "_hooks", "ss"
     ndim = 2
     _is_transposed = False
     _name_counter = itertools.count()
@@ -78,6 +78,7 @@ class Matrix(BaseType):
         self._nrows = nrows.value
         self._ncols = ncols.value
         self._parent = None
+        self._hooks = None
         self.ss = ss(self)
         return self
 
@@ -90,6 +91,7 @@ class Matrix(BaseType):
         self._nrows = nrows
         self._ncols = ncols
         self._parent = parent
+        self._hooks = None if parent is None else parent._hooks
         self.ss = ss(self)
         return self
 
@@ -271,11 +273,15 @@ class Matrix(BaseType):
         return TransposedMatrix(self)
 
     def clear(self):
+        if self._hooks is not None and "onchange" in self._hooks:
+            self._hooks["onchange"](self)
         call("GrB_Matrix_clear", [self])
 
     def resize(self, nrows, ncols):
         nrows = _as_scalar(nrows, _INDEX, is_cscalar=True)
         ncols = _as_scalar(ncols, _INDEX, is_cscalar=True)
+        if self._hooks is not None and "onchange" in self._hooks:
+            self._hooks["onchange"](self)
         call("GrB_Matrix_resize", [self, nrows, ncols])
         self._nrows = nrows.value
         self._ncols = ncols.value
@@ -325,6 +331,8 @@ class Matrix(BaseType):
                 f"`rows` and `columns` and `values` lengths must match: "
                 f"{rows.size}, {columns.size}, {values.size}"
             )
+        if self._hooks is not None and "onchange" in self._hooks:
+            self._hooks["onchange"](self)
         if clear:
             self.clear()
         if nrows is not None or ncols is not None:

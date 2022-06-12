@@ -23,6 +23,7 @@ def _scalar_index(name):
     self.gb_obj = ffi_new("GrB_Index*")
     self._is_cscalar = True
     self._empty = True
+    self._hooks = None
     return self
 
 
@@ -32,7 +33,7 @@ class Scalar(BaseType):
     Pseudo-object for GraphBLAS functions which accumulate into a scalar type
     """
 
-    __slots__ = "_empty", "_is_cscalar"
+    __slots__ = "_empty", "_is_cscalar", "_hooks"
     ndim = 0
     shape = ()
     _is_scalar = True
@@ -56,6 +57,7 @@ class Scalar(BaseType):
         else:
             self.gb_obj = ffi_new("GrB_Scalar*")
             call("GrB_Scalar_new", [_Pointer(self), dtype])
+        self._hooks = None
         return self
 
     @classmethod
@@ -65,6 +67,7 @@ class Scalar(BaseType):
         self.gb_obj = gb_obj
         self.dtype = dtype
         self._is_cscalar = is_cscalar
+        self._hooks = None
         return self
 
     def __del__(self):
@@ -167,8 +170,8 @@ class Scalar(BaseType):
         if type(other) is not Scalar:
             if other is None:
                 return self._is_empty
+            dtype = self.dtype if self.dtype._is_udt else None
             try:
-                dtype = self.dtype if self.dtype._is_udt else None
                 other = Scalar.from_value(other, dtype, is_cscalar=None, name="s_isequal")
             except TypeError:
                 other = self._expect_type(
@@ -204,8 +207,9 @@ class Scalar(BaseType):
         if type(other) is not Scalar:
             if other is None:
                 return self._is_empty
+            dtype = self.dtype if self.dtype._is_udt else None
             try:
-                other = Scalar.from_value(other, is_cscalar=None, name="s_isclose")
+                other = Scalar.from_value(other, dtype, is_cscalar=None, name="s_isclose")
             except TypeError:
                 other = self._expect_type(
                     other,
@@ -235,6 +239,8 @@ class Scalar(BaseType):
         return isclose_func._numba_func(self.value, other.value)
 
     def clear(self):
+        if self._hooks is not None and "onchange" in self._hooks:
+            self._hooks["onchange"](self)
         if self._is_empty:
             return
         if self._is_cscalar:
@@ -278,6 +284,8 @@ class Scalar(BaseType):
 
     @value.setter
     def value(self, val):
+        if self._hooks is not None and "onchange" in self._hooks:
+            self._hooks["onchange"](self)
         if val is None or output_type(val) is Scalar and val._is_empty:
             self.clear()
         elif self._is_cscalar:
