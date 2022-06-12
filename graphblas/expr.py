@@ -406,6 +406,8 @@ class Updater:
 
     def _setitem(self, resolved_indexes, obj, *, is_submask):
         # Occurs when user calls C(params)[index] = expr
+        if self.parent._hooks is not None and "onchange" in self.parent._hooks:
+            self.parent._hooks["onchange"](self)
         if resolved_indexes.is_single_element and not self.kwargs:
             # Fast path using assignElement
             self.parent._assign_element(resolved_indexes, obj)
@@ -427,6 +429,8 @@ class Updater:
         if self.parent._is_scalar:
             raise TypeError("Indexing not supported for Scalars")
         resolved_indexes = IndexerResolver(self.parent, keys)
+        if self.parent._hooks is not None and "onchange" in self.parent._hooks:
+            self.parent._hooks["onchange"](self)
         if resolved_indexes.is_single_element:
             self.parent._delete_element(resolved_indexes)
         else:

@@ -77,7 +77,7 @@ class Vector(BaseType):
     High-level wrapper around GrB_Vector type
     """
 
-    __slots__ = "_size", "_parent", "ss"
+    __slots__ = "_size", "_parent", "_hooks", "ss"
     ndim = 1
     _name_counter = itertools.count()
 
@@ -90,6 +90,7 @@ class Vector(BaseType):
         call("GrB_Vector_new", [_Pointer(self), self.dtype, size])
         self._size = size.value
         self._parent = None
+        self._hooks = None
         self.ss = ss(self)
         return self
 
@@ -101,6 +102,7 @@ class Vector(BaseType):
         self.dtype = dtype
         self._size = size
         self._parent = parent
+        self._hooks = None if parent is None else parent._hooks
         self.ss = ss(self)
         return self
 
@@ -281,10 +283,14 @@ class Vector(BaseType):
         return n[0]
 
     def clear(self):
+        if self._hooks is not None and "onchange" in self._hooks:
+            self._hooks["onchange"](self)
         call("GrB_Vector_clear", [self])
 
     def resize(self, size):
         size = _as_scalar(size, _INDEX, is_cscalar=True)
+        if self._hooks is not None and "onchange" in self._hooks:
+            self._hooks["onchange"](self)
         call("GrB_Vector_resize", [self, size])
         self._size = size.value
 
@@ -325,6 +331,8 @@ class Vector(BaseType):
             raise ValueError(
                 f"`indices` and `values` lengths must match: {indices.size} != {values.size}"
             )
+        if self._hooks is not None and "onchange" in self._hooks:
+            self._hooks["onchange"](self)
         if clear:
             self.clear()
         if size is not None:

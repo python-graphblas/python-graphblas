@@ -1547,6 +1547,7 @@ def test_expr_is_like_vector(v):
         "_deserialize",
         "_extract_element",
         "_from_obj",
+        "_hooks",
         "_name_counter",
         "_parent",
         "_prep_for_assign",
@@ -1582,6 +1583,7 @@ def test_index_expr_is_like_vector(v):
         "_deserialize",
         "_extract_element",
         "_from_obj",
+        "_hooks",
         "_name_counter",
         "_parent",
         "_prep_for_assign",
@@ -2249,3 +2251,60 @@ def test_ss_serialize(v):
         v.ss.serialize("lz4hc", 0)
     with pytest.raises(InvalidObject):
         Vector.ss.deserialize(a[:-5])
+
+
+def test_hooks(v):
+    w = v.dup()
+
+    class OnChangeException(Exception):
+        pass
+
+    def onchange(x, **kwargs):
+        raise OnChangeException()
+
+    w._hooks = {"onchange": onchange}
+    with pytest.raises(OnChangeException):
+        w.clear()
+    with pytest.raises(OnChangeException):
+        w.resize(100)
+    with pytest.raises(OnChangeException):
+        w.build([1, 2], [1, 2], clear=True)
+    with pytest.raises(OnChangeException):
+        w[1] = 2
+    with pytest.raises(OnChangeException):
+        del w[1]
+    with pytest.raises(OnChangeException):
+        w[: v.size] = v
+    with pytest.raises(OnChangeException):
+        del w[[1, 2]]
+    with pytest.raises(OnChangeException):
+        w << w.reposition(1)
+    A = w.outer(w).new()
+    with pytest.raises(OnChangeException):
+        w << A.reduce_rowwise(agg.count)
+    with pytest.raises(OnChangeException):
+        w.ss.build_diag(A)
+    tiles = w.ss.split(3)
+    with pytest.raises(OnChangeException):
+        w.ss.concat(tiles)
+    with pytest.raises(OnChangeException):
+        w << w + w
+    with pytest.raises(OnChangeException):
+        w << w + 1
+    with pytest.raises(OnChangeException):
+        w.ss.build_scalar([1, 2, 3], 1)
+    with pytest.raises(OnChangeException):
+        w.ss.export(give_ownership=True)
+    with pytest.raises(OnChangeException):
+        w.ss.unpack()
+    info = w.ss.export()
+    with pytest.raises(OnChangeException):
+        w.ss.pack_any(**info)
+    info = w.ss.export("sparse")
+    with pytest.raises(OnChangeException):
+        w.ss.pack_sparse(**info)
+    info = w.ss.export("bitmap")
+    with pytest.raises(OnChangeException):
+        w.ss.pack_bitmap(**info)
+    with pytest.raises(OnChangeException):
+        w.ss.pack_full(np.arange(w.size))

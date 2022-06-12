@@ -329,6 +329,8 @@ class BaseType:
                             "Scalar accumulation with extract element"
                             "--such as `s(accum=accum) << v[0]`--is not supported"
                         )
+                    if self._hooks is not None and "onchange" in self._hooks:
+                        self._hooks["onchange"](self)
                     expr.parent._extract_element(
                         expr.resolved_indexes, self.dtype, is_cscalar=self._is_cscalar, result=self
                     )
@@ -396,8 +398,9 @@ class BaseType:
                     if type(expr) is Scalar:
                         scalar = expr
                     else:
+                        dtype = self.dtype if self.dtype._is_udt else None
                         try:
-                            scalar = Scalar.from_value(expr, is_cscalar=None, name="")
+                            scalar = Scalar.from_value(expr, dtype, is_cscalar=None, name="")
                         except TypeError:
                             raise TypeError(
                                 "Assignment value must be a valid expression type, not "
@@ -422,10 +425,14 @@ class BaseType:
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
         elif expr.op is not None and expr.op.opclass == "Aggregator":
+            if self._hooks is not None and "onchange" in self._hooks:
+                self._hooks["onchange"](self)
             updater = self(mask=mask, accum=accum, replace=replace)
             expr.op._new(updater, expr)
             return
         elif expr.cfunc_name is None:  # Custom recipe
+            if self._hooks is not None and "onchange" in self._hooks:
+                self._hooks["onchange"](self)
             updater = self(mask=mask, accum=accum, replace=replace)
             expr.args[-2](updater, *expr.args[-1])
             return
@@ -474,6 +481,8 @@ class BaseType:
             args.append(expr.op)
         args.extend(expr.args)
         args.append(desc)
+        if self._hooks is not None and "onchange" in self._hooks:
+            self._hooks["onchange"](self)
         # Make the GraphBLAS call
         call(cfunc_name, args)
         if self._is_scalar:

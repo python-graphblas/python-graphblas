@@ -319,6 +319,7 @@ def test_expr_is_like_scalar(s):
         "_expr_name",
         "_expr_name_html",
         "_from_obj",
+        "_hooks",
         "_name_counter",
         "_update",
         "clear",
@@ -351,6 +352,7 @@ def test_index_expr_is_like_scalar(s):
         "_expr_name",
         "_expr_name_html",
         "_from_obj",
+        "_hooks",
         "_name_counter",
         "_update",
         "clear",
@@ -458,3 +460,28 @@ def test_get(s):
     s.clear()
     assert compute(s.get()) is None
     assert s.get("mittens") == "mittens"
+
+
+def test_hooks(s):
+    t = s.dup()
+
+    class OnChangeException(Exception):
+        pass
+
+    def onchange(x, **kwargs):
+        raise OnChangeException()
+
+    t._hooks = {"onchange": onchange}
+    with pytest.raises(OnChangeException):
+        t.clear()
+    with pytest.raises(OnChangeException):
+        t.value = 7
+    v = Vector.from_values([1, 2], [3, 4])
+    with pytest.raises(OnChangeException):
+        t << v[1]
+    with pytest.raises(OnChangeException):
+        t << v.reduce()
+    with pytest.raises(OnChangeException):
+        t << v.reduce(gb.agg.count)
+    with pytest.raises(OnChangeException):
+        t << s
