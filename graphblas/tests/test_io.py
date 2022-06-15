@@ -24,22 +24,25 @@ def test_vector_to_from_numpy():
     a2 = gb.io.to_numpy(v)
     np.testing.assert_array_equal(a, a2)
 
-    csr = gb.io.to_scipy_sparse_matrix(v, "csr")
+    csr = gb.io.to_scipy_sparse(v, "csr")
     assert csr.nnz == 2
     assert ss.isspmatrix_csr(csr)
     np.testing.assert_array_equal(csr.toarray(), np.array([[0.0, 2.0, 4.1]]))
 
-    csc = gb.io.to_scipy_sparse_matrix(v, "csc")
+    csc = gb.io.to_scipy_sparse(v, "csc")
     assert csc.nnz == 2
     assert ss.isspmatrix_csc(csc)
     np.testing.assert_array_equal(csc.toarray(), np.array([[0.0, 2.0, 4.1]]).T)
 
     # default to csr-like
-    coo = gb.io.to_scipy_sparse_matrix(v, "coo")
+    coo = gb.io.to_scipy_sparse(v, "coo")
     assert coo.shape == csr.shape
     assert ss.isspmatrix_coo(coo)
     assert coo.nnz == 2
     np.testing.assert_array_equal(coo.toarray(), np.array([[0.0, 2.0, 4.1]]))
+
+    with pytest.warns(DeprecationWarning):
+        coo = gb.io.to_scipy_sparse_matrix(v, "coo")
 
 
 @pytest.mark.skipif("not ss")
@@ -50,9 +53,9 @@ def test_vector_to_from_numpy_correct_size(a):
     assert v.shape == a.shape
     b = gb.io.to_numpy(v)
     np.testing.assert_array_equal(a, b)
-    csr = gb.io.to_scipy_sparse_matrix(v, "csr")
+    csr = gb.io.to_scipy_sparse(v, "csr")
     np.testing.assert_array_equal(a[None, :], csr.toarray())
-    csc = gb.io.to_scipy_sparse_matrix(v, "csc")
+    csc = gb.io.to_scipy_sparse(v, "csc")
     np.testing.assert_array_equal(a[:, None], csc.toarray())
 
 
@@ -65,15 +68,15 @@ def test_matrix_to_from_numpy():
     np.testing.assert_array_equal(a, a2)
 
     for format in ["csr", "csc", "coo"]:
-        sparse = gb.io.to_scipy_sparse_matrix(M, format)
+        sparse = gb.io.to_scipy_sparse(M, format)
         assert getattr(ss, f"isspmatrix_{format}")(sparse)
         assert sparse.nnz == 3
         np.testing.assert_array_equal(sparse.toarray(), a)
-        M2 = gb.io.from_scipy_sparse_matrix(sparse)
+        M2 = gb.io.from_scipy_sparse(sparse)
         assert M.isequal(M2, check_dtype=True)
 
-    with pytest.raises(gb.exceptions.GraphblasException, match="Invalid format"):
-        gb.io.to_scipy_sparse_matrix(M, "bad format")
+    with pytest.raises(ValueError, match="Invalid format"):
+        gb.io.to_scipy_sparse(M, "bad format")
 
     with pytest.raises(gb.exceptions.GraphblasException, match="ndim must be"):
         gb.io.from_numpy(np.array([[[1.0, 0.0], [2.0, 3.7]]]))
@@ -254,13 +257,16 @@ def test_mmread_mmwrite():
 
 @pytest.mark.skipif("not ss")
 def test_from_scipy_sparse_duplicates():
-    a = ss.coo_matrix(([1, 2, 3, 4], ([0, 1, 2, 2], [2, 1, 0, 0])))
+    a = ss.coo_array(([1, 2, 3, 4], ([0, 1, 2, 2], [2, 1, 0, 0])))
     np.testing.assert_array_equal(a.toarray(), np.array([[0, 0, 1], [0, 2, 0], [7, 0, 0]]))
     with pytest.raises(ValueError, match="Duplicate indices found"):
-        gb.io.from_scipy_sparse_matrix(a)
-    a2 = gb.io.from_scipy_sparse_matrix(a, dup_op=gb.binary.plus)
+        gb.io.from_scipy_sparse(a)
+    a2 = gb.io.from_scipy_sparse(a, dup_op=gb.binary.plus)
     expected = gb.Matrix.from_values([0, 1, 2], [2, 1, 0], [1, 2, 7])
     assert a2.isequal(expected)
+    with pytest.warns(DeprecationWarning):
+        a3 = gb.io.from_scipy_sparse_matrix(a, dup_op=gb.binary.plus)
+    assert a3.isequal(expected)
 
 
 @pytest.mark.skipif("not ss")
@@ -279,3 +285,20 @@ def test_matrix_market_sparse_duplicates():
     a = gb.io.mmread(mm, dup_op=gb.binary.plus)
     expected = gb.Matrix.from_values([0, 1, 2], [2, 1, 0], [1, 2, 7])
     assert a.isequal(expected)
+
+
+@pytest.mark.skipif("not ss")
+def test_scipy_sparse():
+    a = np.arange(12).reshape(3, 4)
+    for a in [np.arange(12).reshape(3, 4), np.ones((3, 4)), np.zeros((3, 4))]:
+        for fmt in {"bsr", "csr", "csc", "coo", "lil", "dia", "dok"}:
+            sa = getattr(ss, f"{fmt}_array")(a)
+            A = gb.io.from_scipy_sparse(sa)
+            for M in [A, A.T.new().T]:
+                if fmt == "dia" and M.nvals > 0:  # "dia" format is weird
+                    assert sa.nnz == M.nrows * M.ncols
+                else:
+                    assert sa.nnz == M.nvals
+                assert sa.shape == M.shape
+                sa2 = gb.io.to_scipy_sparse(M, fmt)
+                assert (sa != sa2).nnz == 0

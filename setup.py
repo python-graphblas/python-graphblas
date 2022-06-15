@@ -4,7 +4,7 @@ import versioneer
 
 extras_require = {
     "repr": ["pandas"],
-    "io": ["networkx", "scipy"],
+    "io": ["networkx", "scipy >=1.7.0"],
     "viz": ["matplotlib"],
     "test": ["pytest", "pandas"],
 }
