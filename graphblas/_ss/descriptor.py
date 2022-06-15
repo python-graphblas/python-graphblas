@@ -22,7 +22,7 @@ def get_nthreads_descriptor(nthreads, _cache=True):
         lib.GxB_Desc_set(
             desc._carg,
             lib.GxB_NTHREADS,
-            ffi.cast("GrB_Desc_Value", nthreads),
+            ffi.cast("int", nthreads),
         ),
         desc,
     )
@@ -71,7 +71,7 @@ def get_compression_descriptor(compression="default", level=None, nthreads=None)
         lib.GxB_Desc_set(
             desc._carg,
             lib.GxB_COMPRESSION,
-            ffi.cast("GrB_Desc_Value", comp),
+            ffi.cast("int", comp),
         ),
         desc,
     )

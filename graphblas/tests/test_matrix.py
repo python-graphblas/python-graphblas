@@ -9,7 +9,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas
-from graphblas import agg, binary, dtypes, indexunary, monoid, select, semiring, unary
+from graphblas import agg, binary, dtypes, indexunary, lib, monoid, select, semiring, unary
 from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
@@ -3586,3 +3586,34 @@ def test_ss_serialize(A):
         A.ss.serialize("lz4hc", 0)
     with pytest.raises(InvalidObject):
         Matrix.ss.deserialize(a[:-5])
+
+
+def test_ss_config(A):
+    d = {}
+    for key in A.ss.config:
+        d[key] = A.ss.config[key]
+    assert A.ss.config == d
+    for key, val in d.items():
+        if key in A.ss.config._read_only:
+            with pytest.raises(ValueError):
+                A.ss.config[key] = val
+        else:
+            A.ss.config[key] = val
+    assert A.ss.config == d
+    A.ss.config["sparsity_control"] = "sparse"
+    assert A.ss.config["sparsity_control"] == {"sparse"}
+    assert A.ss.config["sparsity_status"] == "sparse"
+    A.ss.config["sparsity_control"] = {"sparse", "bitmap"}
+    assert A.ss.config["sparsity_control"] == {"sparse", "bitmap"}
+    A.ss.config["sparsity_control"] = lib.GxB_SPARSE
+    assert A.ss.config["sparsity_status"] == "sparse"
+    A.ss.config["sparsity_control"] = {"sparse", lib.GxB_BITMAP}
+    assert A.ss.config["sparsity_control"] == {"sparse", "bitmap"}
+    A.ss.config["sparsity_control"] = "auto"
+    assert A.ss.config["sparsity_control"] == {"auto"}
+    A.ss.config["format"] = "by_col"
+    assert A.ss.config["format"] == "by_col"
+    A.ss.config["format"] = lib.GxB_BY_ROW
+    assert A.ss.config["format"] == "by_row"
+    with pytest.raises(InvalidValue):
+        A.ss.config["format"] = lib.GxB_NO_FORMAT

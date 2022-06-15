@@ -24,6 +24,7 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
+from .config import BaseConfig
 from .descriptor import get_compression_descriptor, get_nthreads_descriptor
 from .utils import get_order
 
@@ -335,11 +336,71 @@ class MatrixArray:
         record_raw(f"GrB_Matrix {name}[{len(matrices)}];")
 
 
+class MatrixConfig(BaseConfig):
+    """Get and set configuration options for this Matrix.
+
+    See SuiteSparse:GraphBLAS documentation for more details.
+
+    Config parameters
+    -----------------
+    format : str, {"by_row", "by_col"}
+        Rowwise or columnwise orientation
+    hyper_switch : double
+        Threshold that determines when to switch to hypersparse format
+    bitmap_switch : double
+        Threshold that determines when to switch to bitmap format
+    sparsity_control : Set[str] from {"hypersparse", "sparse", "bitmap", "full", "auto"}
+        Allowed sparsity formats.  May be set with a single string or a set of strings.
+    sparsity_status : str, {"hypersparse", "sparse", "bitmap", "full"}
+        Current sparsity format
+    """
+
+    _get_function = lib.GxB_Matrix_Option_get
+    _set_function = lib.GxB_Matrix_Option_set
+    _options = {
+        "format": (lib.GxB_FORMAT, "GxB_Format_Value"),
+        "hyper_switch": (lib.GxB_HYPER_SWITCH, "double"),
+        "bitmap_switch": (lib.GxB_BITMAP_SWITCH, "double"),
+        "sparsity_control": (lib.GxB_SPARSITY_CONTROL, "int"),
+        # read-only
+        "sparsity_status": (lib.GxB_SPARSITY_STATUS, "int"),
+    }
+    _bitwise = {
+        "sparsity_control": {
+            lib.GxB_HYPERSPARSE: "hypersparse",
+            lib.GxB_SPARSE: "sparse",
+            lib.GxB_BITMAP: "bitmap",
+            lib.GxB_FULL: "full",
+            lib.GxB_AUTO_SPARSITY: "auto",
+        },
+    }
+    _enumerations = {
+        "format": {
+            lib.GxB_BY_ROW: "by_row",
+            lib.GxB_BY_COL: "by_col",
+            # lib.GxB_NO_FORMAT: "no_format",  # Used by iterators; not valid here
+        },
+        "sparsity_status": {
+            lib.GxB_HYPERSPARSE: "hypersparse",
+            lib.GxB_SPARSE: "sparse",
+            lib.GxB_BITMAP: "bitmap",
+            lib.GxB_FULL: "full",
+        },
+    }
+    _defaults = {
+        "hyper_switch": lib.GxB_HYPER_DEFAULT,
+        "format": lib.GxB_FORMAT_DEFAULT,
+        "sparsity_control": "auto",
+    }
+    _read_only = {"sparsity_status"}
+
+
 class ss:
-    __slots__ = "_parent"
+    __slots__ = "_parent", "config"
 
     def __init__(self, parent):
         self._parent = parent
+        self.config = MatrixConfig(parent)
 
     @property
     def nbytes(self):
@@ -3976,6 +4037,8 @@ class ss:
         Use `Matrix.ss.deserialize(blob)` to create a Matrix from the result of serialization
 
         This method is intended to support all serialization options from SuiteSparse:GraphBLAS.
+
+        *Warning*: Behavior of serializing UDTs is experimental and may change in a future release.
         """
         desc = get_compression_descriptor(compression, level=level, nthreads=nthreads)
         blob_handle = ffi_new("void**")

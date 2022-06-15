@@ -564,7 +564,7 @@ def _first_last(agg, updater, expr, *, in_composite, semiring_):
 
         Matrix_ = type(expr._new_matrix(bool))
         P = Matrix_.from_values(Js, Is, 1, nrows=A._ncols, ncols=A._nrows)
-        mask = Matrix_.from_values(Is, Is, True, nrows=A._nrows, ncols=A._nrows)
+        mask = step1.diag()
         result = semiring.any_first(A @ P).new(mask=mask.S).diag()
 
         updater << result

@@ -1,1 +1,1 @@
-from ._core import concat, diag  # noqa
+from ._core import about, concat, config, diag  # noqa
