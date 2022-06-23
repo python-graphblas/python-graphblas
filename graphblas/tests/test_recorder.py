@@ -111,6 +111,7 @@ def test_record_repr(switch):
     rec.max_rows = 10
     for i in range(1, 20):
         A[0, 0].new(name=f"c{i}")
+    n = len(rec.data) - rec.max_rows
     if switch:
         assert repr(rec) == (
             "gb.Recorder (recording)\n"
@@ -121,7 +122,7 @@ def test_record_repr(switch):
             "  GrB_Matrix_extractElement_INT64(&c3, A, 0, 0);\n"
             "  GrB_Matrix_extractElement_INT64(&c4, A, 0, 0);\n"
             "\n"
-            "  // 30 rows not shown; set `recorder.max_rows` attribute to show more (or less)\n"
+            f"  // {n} rows not shown; set `recorder.max_rows` attribute to show more (or less)\n"
             "\n"
             "  GrB_Matrix_extractElement_INT64(&c15, A, 0, 0);\n"
             "  GrB_Matrix_extractElement_INT64(&c16, A, 0, 0);\n"
@@ -139,7 +140,7 @@ def test_record_repr(switch):
             "  GrB_Matrix_extractElement_Scalar(c1, A, 0, 0);\n"
             "  GrB_Scalar_new(&c2, GrB_INT64);\n"
             "\n"
-            "  // 30 rows not shown; set `recorder.max_rows` attribute to show more (or less)\n"
+            f"  // {n} rows not shown; set `recorder.max_rows` attribute to show more (or less)\n"
             "\n"
             "  GrB_Matrix_extractElement_Scalar(c17, A, 0, 0);\n"
             "  GrB_Scalar_new(&c18, GrB_INT64);\n"
