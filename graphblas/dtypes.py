@@ -257,7 +257,7 @@ def lookup_dtype(key, value=None):
         return lookup_dtype(key.literal_type)  # For numba dtype inference
     except Exception:
         pass
-    raise ValueError(f"Unknown dtype: {key}", type(key))
+    raise ValueError(f"Unknown dtype: {key} of type {type(key)}")
 
 
 def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
