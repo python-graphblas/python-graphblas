@@ -78,7 +78,7 @@ def test_npunary():
                     compare_op = isclose
                 else:
                     np_result = getattr(np, unary_name)(np_input)
-                    if gb_result.dtype.name.startswith("FC"):
+                    if gb_result.dtype.name.startswith("F"):
                         compare_op = isclose
                     else:
                         compare_op = npbinary.equal
