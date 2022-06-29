@@ -17,12 +17,12 @@
 
 # -- Project information -----------------------------------------------------
 
-project = "graphblas"
+project = "python-graphblas"
 copyright = "2022, Anaconda, Inc"
 author = "Anaconda, Inc"
 
 # The full version, including alpha/beta/rc tags
-release = "1.3.2"
+# release = "1.3.2"
 
 
 # -- General configuration ---------------------------------------------------
@@ -30,7 +30,9 @@ release = "1.3.2"
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = []
+extensions = ["sphinx.ext.autodoc", "nbsphinx", "sphinx_panels"]
+html_css_files = ["custom.css"]
+html_js_files = ["custom.js"]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -46,9 +48,36 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "alabaster"
+html_theme = "pydata_sphinx_theme"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
+html_theme_options = {
+    "github_url": "https://github.com/python-graphblas/python-graphblas",
+}
+
+# -- Options for notebook output -------------------------------------------------
+
+### nbsphinx config
+nbsphinx_input_prompt = "%.0s"  # suppress prompt
+nbsphinx_output_prompt = "%.0s"  # suppress prompt
+nbsphinx_prolog = r"""
+{% set nbname = env.doc2path(env.docname, base=False) %}
+
+.. raw:: html
+
+
+      <p class="text-right font-italic">
+        This page was generated from
+        <a href="../{{ nbname|e }}">{{ nbname|e }}</a>.
+      </p>
+
+
+.. raw:: latex
+
+    \nbsphinxstartnotebook{\scriptsize\noindent\strut
+    \textcolor{gray}{The following section was generated from
+    \sphinxcode{\sphinxupquote{\strut {{ nbname | escape_latex }}}} \dotfill}}
+"""

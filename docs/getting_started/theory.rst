@@ -1,0 +1,6 @@
+
+.. _theory:
+
+GraphBLAS Primer
+================
+
