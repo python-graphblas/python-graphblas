@@ -1,6 +1,10 @@
 
 /* Main Page Stylings */
 
+.container-xl {
+    max-width: 1400px;
+}
+
 .intro-card {
     margin-bottom: 30px;
 }

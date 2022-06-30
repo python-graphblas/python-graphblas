@@ -35,11 +35,11 @@ to work.
   - `scipy <https://scipy.org/>`__ -- used in ``io`` module to read/write ``scipy.sparse`` format
   - `networkx <https://networkx.org>`__ -- used in ``io`` module to interface with networkx graphs
 
-Understanding GraphBLAS
------------------------
+GraphBLAS Fundamentals
+----------------------
 
-For a short primer on the concepts of graph analytics using linear algebra,
-:ref:`click here <theory>`.
+For a short introduction to the concepts of graph analytics using linear algebra,
+read the :ref:`primer`.
 
 For more details, the best resource for learning about GraphBLAS is `graphblas.org <https://graphblas.org>`_.
 It contains information about the history, core ideas, and the full specification. It also contains links to
@@ -49,5 +49,5 @@ many videos and papers about GraphBLAS, as well as a list of implementations and
     :maxdepth: 1
     :hidden:
 
-    theory
+    primer
     faq
