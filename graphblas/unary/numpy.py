@@ -2,7 +2,7 @@
 
 See list of numpy ufuncs supported by numpy here:
 
-https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operations
+https://numba.readthedocs.io/en/stable/reference/numpysupported.html#math-operations
 
 """
 import numpy as _np
@@ -18,6 +18,7 @@ _unary_names = {
     "negative",
     "abs",
     "absolute",
+    "cbrt",
     "fabs",
     "rint",
     "sign",
@@ -28,6 +29,7 @@ _unary_names = {
     "log10",
     "expm1",
     "log1p",
+    "positive",
     "sqrt",
     "square",
     "reciprocal",
@@ -62,6 +64,8 @@ _unary_names = {
     "ceil",
     "trunc",
     "spacing",
+    # Datetime functions
+    # "nat",  # We need to see if our UDTs support datetime dtypes!
 }
 _numpy_to_graphblas = {
     "abs": "abs",
@@ -73,6 +77,7 @@ _numpy_to_graphblas = {
     "arctan": "atan",
     "arctanh": "atanh",
     "bitwise_not": "bnot",
+    "cbrt": "cbrt",
     "ceil": "ceil",
     "cos": "cos",
     "cosh": "cosh",
@@ -91,6 +96,7 @@ _numpy_to_graphblas = {
     "log2": "log2",
     "logical_not": "lnot",  # should we?  result_type not the same
     "negative": "ainv",
+    "positive": "identity",  # positive is supposed to check dtype, but doesn't in numba
     # "reciprocal": "minv",  # has differences.  We should investigate further.
     "rint": "round",
     # 'sign': 'signum'  # signum is float-only
@@ -130,9 +136,16 @@ def __getattr__(name):
         from .. import operator
 
         numpy_func = getattr(_np, name)
-        operator.UnaryOp.register_new(f"numpy.{name}", lambda x: numpy_func(x))
+
+        def func(x):  # pragma: no cover
+            return numpy_func(x)
+
+        operator.UnaryOp.register_new(f"numpy.{name}", func)
         if name == "reciprocal":
             # numba doesn't match numpy here
-            op = operator.UnaryOp.register_anonymous(lambda x: 1 if x else 0)
+            def reciprocal(x):
+                return 1 if x else 0
+
+            op = operator.UnaryOp.register_anonymous(reciprocal)
             globals()[name]._add(op["BOOL"])
     return globals()[name]

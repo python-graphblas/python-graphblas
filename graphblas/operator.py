@@ -880,7 +880,7 @@ class OpBase:
         include_in_ops determines whether the operators are included in the
         `gb.ops` namespace in addition to the defined module.
         """
-        if cls._initialized:
+        if cls._initialized:  # pragma: no cover
             return
         # Read in the parse configs
         trim_from_front = cls._parse_config.get("trim_from_front", 0)
@@ -989,7 +989,7 @@ class UnaryOp(OpBase):
                 "|ASINH|ATANH|SIGNUM|CEIL|FLOOR|ROUND|TRUNC|EXP2|EXPM1|LOG10|LOG1P)"
                 "_(FP32|FP64|FC32|FC64)$"
             ),
-            re.compile("^GxB_(LGAMMA|TGAMMA|ERF|ERFC|FREXPX|FREXPE)_(FP32|FP64)$"),
+            re.compile("^GxB_(LGAMMA|TGAMMA|ERF|ERFC|FREXPX|FREXPE|CBRT)_(FP32|FP64)$"),
             re.compile("^GxB_(IDENTITY|AINV|MINV|ONE|CONJ)_(FC32|FC64)$"),
         ],
         "re_exprs_return_bool": [
@@ -1163,7 +1163,7 @@ class UnaryOp(OpBase):
                     "erf", "erfc", "lgamma", "tgamma", "acos", "acosh", "asin", "asinh",
                     "atan", "atanh", "ceil", "cos", "cosh", "exp", "exp2", "expm1", "floor",
                     "log", "log10", "log1p", "log2", "round", "signum", "sin", "sinh", "sqrt",
-                    "tan", "tanh", "trunc",
+                    "tan", "tanh", "trunc", "cbrt",
                 ),
                 ((BOOL, INT8, INT16, UINT8, UINT16), FP32),
                 ((INT32, INT64, UINT32, UINT64), FP64),
@@ -1183,7 +1183,7 @@ class UnaryOp(OpBase):
                     typed_op = op._typed_ops[target_type]
                     output_type = op.types[target_type]
                     for dtype in input_types:
-                        if dtype not in op.types:
+                        if dtype not in op.types:  # pragma: no branch
                             op.types[dtype] = output_type
                             op._typed_ops[dtype] = typed_op
                             op.coercions[dtype] = target_type
@@ -1354,7 +1354,7 @@ class IndexUnaryOp(OpBase):
             raise UdfParseError("Unable to parse function using Numba")
 
     def _compile_udt(self, dtype, dtype2):
-        if dtype2 is None:
+        if dtype2 is None:  # pragma: no cover
             dtype2 = dtype
         dtypes = (dtype, dtype2)
         if dtypes in self._udt_types:
@@ -1428,7 +1428,7 @@ class IndexUnaryOp(OpBase):
             op = getattr(indexunary, name)
             typed_op = op._typed_ops[BOOL]
             output_type = op.types[BOOL]
-            if UINT64 not in op.types:
+            if UINT64 not in op.types:  # pragma: no cover
                 op.types[UINT64] = output_type
                 op._typed_ops[UINT64] = typed_op
                 op.coercions[UINT64] = BOOL
@@ -1436,7 +1436,7 @@ class IndexUnaryOp(OpBase):
             op = getattr(indexunary, name)
             typed_op = op._typed_ops[INT64]
             output_type = op.types[INT64]
-            if UINT64 not in op.types:
+            if UINT64 not in op.types:  # pragma: no cover
                 op.types[UINT64] = output_type
                 op._typed_ops[UINT64] = typed_op
                 op.coercions[UINT64] = INT64
@@ -1549,7 +1549,7 @@ class SelectOp(OpBase):
 
     @classmethod
     def _initialize(cls):
-        if cls._initialized:
+        if cls._initialized:  # pragma: no cover
             return
         # IndexUnaryOp adds it boolean-returning objects to SelectOp
         IndexUnaryOp._initialize()
@@ -2087,7 +2087,7 @@ class BinaryOp(OpBase):
 
     @classmethod
     def _initialize(cls):
-        if cls._initialized:
+        if cls._initialized:  # pragma: no cover
             return
         super()._initialize()
         # Rename div to cdiv
@@ -2444,7 +2444,7 @@ class Monoid(OpBase):
 
     @classmethod
     def _initialize(cls):
-        if cls._initialized:
+        if cls._initialized:  # pragma: no cover
             return
         super()._initialize()
         lor = monoid.lor._typed_ops[BOOL]
@@ -2631,7 +2631,7 @@ class Semiring(OpBase):
 
     @classmethod
     def _initialize(cls):
-        if cls._initialized:
+        if cls._initialized:  # pragma: no cover
             return
         super()._initialize()
         # Rename div to cdiv (truncate towards 0)
@@ -3068,6 +3068,23 @@ monoid.register_anonymous = Monoid.register_anonymous
 semiring.register_new = Semiring.register_new
 semiring.register_anonymous = Semiring.register_anonymous
 
+select._binary_to_select.update(
+    {
+        binary.eq: select.valueeq,
+        binary.ne: select.valuene,
+        binary.le: select.valuele,
+        binary.lt: select.valuelt,
+        binary.ge: select.valuege,
+        binary.gt: select.valuegt,
+        binary.iseq: select.valueeq,
+        binary.isne: select.valuene,
+        binary.isle: select.valuele,
+        binary.islt: select.valuelt,
+        binary.isge: select.valuege,
+        binary.isgt: select.valuegt,
+    }
+)
+
 _str_to_unary = {
     "-": unary.ainv,
     "~": unary.lnot,
@@ -3211,6 +3228,7 @@ def op_from_string(string):
         semiring_from_string,
         indexunary_from_string,
         select_from_string,
+        aggregator_from_string,
     ]:
         try:
             return func(string)

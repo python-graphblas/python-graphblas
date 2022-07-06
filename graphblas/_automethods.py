@@ -174,6 +174,10 @@ def gb_obj(self):
     return self._get_value("gb_obj")
 
 
+def get(self):
+    return self._get_value("get")
+
+
 def inner(self):
     return self._get_value("inner")
 
@@ -316,6 +320,7 @@ def _main():
         "_name_html",
         "_nvals",
         "gb_obj",
+        "get",
         "isclose",
         "isequal",
         "name",

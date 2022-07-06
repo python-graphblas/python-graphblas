@@ -12,7 +12,7 @@ def call_op(self, other, method, op, *, outer=False, union=False):
     types = {Matrix, TransposedMatrix, Vector}
     if type1 in types and type2 in types:
         if outer:
-            return self.ewise_add(other, op, require_monoid=False)
+            return self.ewise_add(other, op)
         elif union:
             return self.ewise_union(other, op, False, False)
         else:

@@ -5,12 +5,12 @@ import numpy as np
 
 from . import _automethods, backend, binary, ffi, lib, monoid, select, semiring, utils
 from ._ss.vector import ss
-from .base import BaseExpression, BaseType, call
+from .base import BaseExpression, BaseType, _check_mask, call
 from .dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
-from .mask import StructuralMask, ValueMask
-from .operator import find_opclass, get_semiring, get_typed_op, op_from_string
+from .mask import Mask, StructuralMask, ValueMask
+from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
 from .scalar import (
     _MATERIALIZE,
     Scalar,
@@ -37,7 +37,7 @@ def _v_add_m(updater, left, right, op):
     full = Vector(left.dtype, right._ncols, name="v_full")
     full[:] = 0
     temp = left.outer(full, binary.first).new(name="M_temp", mask=updater.kwargs.get("mask"))
-    updater << temp.ewise_add(right, op, require_monoid=False)
+    updater << temp.ewise_add(right, op)
 
 
 def _v_mult_m(updater, left, right, op):
@@ -53,6 +53,22 @@ def _v_union_m(updater, left, right, left_default, right_default, op):
 
 def _reposition(updater, indices, chunk):
     updater[indices] = chunk
+
+
+def _select_mask(updater, obj, mask):
+    if updater.kwargs.get("mask") is None:
+        orig_kwargs = updater.kwargs
+        try:
+            if updater.kwargs.get("accum") is None:
+                updater.kwargs = dict(orig_kwargs, mask=mask, replace=True)
+            else:
+                updater.kwargs = dict(orig_kwargs, mask=mask)
+            updater << obj
+        finally:
+            updater.kwargs = orig_kwargs
+    else:
+        # Can we do any better depending on accum, replace, and type of masks?
+        updater << obj.dup(mask=mask)
 
 
 class Vector(BaseType):
@@ -380,6 +396,20 @@ class Vector(BaseType):
         # TODO: expose COMPLETE or MATERIALIZE options to the user
         call("GrB_Vector_wait", [self, _MATERIALIZE])
 
+    def get(self, index, default=None):
+        """Get an element at index as a Python scalar.
+
+        If there is no element at ``vector[index]``, then the default value is returned.
+        """
+        expr = self[index]
+        if expr._is_scalar:
+            rv = expr.new().value
+            return default if rv is None else rv
+        raise ValueError(
+            "Bad index in Vector.get(...).  "
+            "A single index should be given, and the result will be a Python scalar."
+        )
+
     @classmethod
     def new(cls, dtype, size=0, *, name=None):
         """
@@ -435,7 +465,7 @@ class Vector(BaseType):
     # to update to trigger a call to GraphBLAS
     #########################################################
 
-    def ewise_add(self, other, op=monoid.plus, *, require_monoid=True):
+    def ewise_add(self, other, op=monoid.plus, *, require_monoid=None):
         """
         GrB_Vector_eWiseAdd
 
@@ -443,9 +473,8 @@ class Vector(BaseType):
 
         Default op is monoid.plus.
 
-        Unless explicitly disabled, this method requires a monoid (directly or from a semiring).
-        The reason for this is that binary operators can create very confusing behavior when
-        only one of the two elements is present.
+        *Warning*: using binary operators can create very confusing behavior
+        when only one of the two elements is present.
 
         Examples:
             - binary.minus where left=N/A and right=4 yields 4 rather than -4 as might be expected
@@ -454,17 +483,24 @@ class Vector(BaseType):
 
         The behavior is caused by grabbing the non-empty value and using it directly without
         performing any operation. In the case of `gt`, the non-empty value is cast to a boolean.
-        For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
+        if require_monoid is not None:  # pragma: no cover
+            warnings.warn(
+                "require_monoid keyword is deprecated; "
+                "future behavior will be like `require_monoid=False`",
+                DeprecationWarning,
+            )
+        else:
+            require_monoid = False
         method_name = "ewise_add"
         other = self._expect_type(
             other, (Vector, Matrix, TransposedMatrix), within=method_name, argname="other", op=op
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
-        if require_monoid:
+        if require_monoid:  # pragma: no cover
             if op.opclass != "BinaryOp" or op.monoid is None:
                 self._expect_op(
                     op,
@@ -787,9 +823,39 @@ class Vector(BaseType):
         Compute SelectOp at each element of the calling Vector, keeping
         elements which return True.
         """
+        method_name = "select"
         if isinstance(op, str):
             op = select.from_string(op)
-        method_name = "select"
+        else:
+            if isinstance(op, VectorExpression):
+                # Try to rewrite e.g. `v.select(v == 7)` to `gb.select.value(v == 7)`
+                if thunk is not None:
+                    raise TypeError(
+                        "thunk argument not None when calling select with mask or boolean object"
+                    )
+                expr = select._match_expr(self, op)
+                if expr is not None:
+                    return expr
+                opclass = UNKNOWN_OPCLASS
+            else:
+                op, opclass = find_opclass(op)
+            if opclass == UNKNOWN_OPCLASS:
+                # e.g., `v.select(w.S)` or `v.select(w < 7)`
+                mask = _check_mask(op)
+                if thunk is not None:
+                    raise TypeError(
+                        "thunk argument not None when calling select with mask or boolean object"
+                    )
+                self._expect_type(mask.parent, (Vector, Mask), within=method_name, argname="op")
+                return VectorExpression(
+                    "select",
+                    None,
+                    [self, mask, _select_mask, (self, mask)],  # [*expr_args, func, args]
+                    expr_repr="{0.name}.select({1.name})",
+                    size=self.size,
+                    dtype=self.dtype,
+                )
+
         if thunk is None:
             thunk = False  # most basic form of 0 when unifying dtypes
         if type(thunk) is not Scalar:
@@ -1039,13 +1105,49 @@ class Vector(BaseType):
                 dtype = self.dtype if self.dtype._is_udt else None
                 try:
                     value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
-                except TypeError:
+                except (TypeError, ValueError):
+                    if size is not None:
+                        # v[I] << [1, 2, 3]
+                        # v(m)[I] << [1, 2, 3]
+                        # v[I](m) << [1, 2, 3]
+                        try:
+                            values, dtype = values_to_numpy_buffer(value, dtype, copy=True)
+                        except Exception:
+                            extra_message = "Literal scalars and lists also accepted."
+                        else:
+                            shape = values.shape
+                            try:
+                                vals = Vector.ss.import_full(
+                                    values, dtype=dtype, take_ownership=True
+                                )
+                                if dtype.np_type.subdtype is not None:
+                                    shape = vals.shape
+                            except Exception:
+                                vals = None
+                            if vals is None or shape != (size,):
+                                if dtype.np_type.subdtype is not None:
+                                    extra = (
+                                        " (this is assigning to a vector with sub-array dtype "
+                                        f"({dtype}), so array shape should include dtype shape)"
+                                    )
+                                else:
+                                    extra = ""
+                                raise ValueError(
+                                    f"shape mismatch: value array of shape {shape} "
+                                    f"does not match indexing of shape ({size},)"
+                                    f"{extra}"
+                                ) from None
+                            return self._prep_for_assign(
+                                resolved_indexes, vals, mask=mask, is_submask=is_submask
+                            )
+                    else:
+                        extra_message = "Literal scalars also accepted."
                     value = self._expect_type(
                         value,
                         (Scalar, Vector),
                         within=method_name,
                         argname="value",
-                        extra_message="Literal scalars also accepted.",
+                        extra_message=extra_message,
                     )
             if is_submask:
                 if size is None:
@@ -1214,6 +1316,7 @@ class VectorExpression(BaseExpression):
     ewise_mult = wrapdoc(Vector.ewise_mult)(property(_automethods.ewise_mult))
     ewise_union = wrapdoc(Vector.ewise_union)(property(_automethods.ewise_union))
     gb_obj = wrapdoc(Vector.gb_obj)(property(_automethods.gb_obj))
+    get = wrapdoc(Vector.get)(property(_automethods.get))
     inner = wrapdoc(Vector.inner)(property(_automethods.inner))
     isclose = wrapdoc(Vector.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Vector.isequal)(property(_automethods.isequal))
@@ -1286,6 +1389,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     ewise_mult = wrapdoc(Vector.ewise_mult)(property(_automethods.ewise_mult))
     ewise_union = wrapdoc(Vector.ewise_union)(property(_automethods.ewise_union))
     gb_obj = wrapdoc(Vector.gb_obj)(property(_automethods.gb_obj))
+    get = wrapdoc(Vector.get)(property(_automethods.get))
     inner = wrapdoc(Vector.inner)(property(_automethods.inner))
     isclose = wrapdoc(Vector.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Vector.isequal)(property(_automethods.isequal))

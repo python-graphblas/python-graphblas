@@ -9,11 +9,12 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas
-from graphblas import agg, binary, dtypes, indexunary, monoid, select, semiring, unary
+from graphblas import agg, binary, dtypes, indexunary, lib, monoid, select, semiring, unary
 from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
     IndexOutOfBound,
+    InvalidObject,
     InvalidValue,
     NotImplementedException,
     OutputNotEmpty,
@@ -342,8 +343,8 @@ def test_mxm_mask(A):
     assert C.isequal(result3)
     C2 = A.mxm(A, semiring.plus_times).new(mask=struct_mask.S)
     assert C2.isequal(result3)
-    with pytest.raises(TypeError, match="Mask must indicate"):
-        A.mxm(A).new(mask=struct_mask)
+    with pytest.raises(TypeError, match="Mask must be"):
+        A.mxm(A).new(mask=struct_mask)  # would be okay if bool mask, but it's not
 
 
 def test_mxm_accum(A):
@@ -384,17 +385,16 @@ def test_ewise_add(A):
         [2, 0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [4, 3, 5, 3, 8, 5, 3, 7, 8, 3, 1, 7, 4],
     )
-    with pytest.raises(TypeError, match="require_monoid"):
-        A.ewise_add(B, binary.second)
-    # surprising that SECOND(x, empty) == x, which is why user
-    # must opt-in to using binary ops in ewise_add
-    C = A.ewise_add(B, binary.second, require_monoid=False).new()
+    # with pytest.raises(TypeError, match="require_monoid"):
+    A.ewise_add(B, binary.second)  # okay now
+    # surprising that SECOND(x, empty) == x
+    C = A.ewise_add(B, binary.second).new()
     assert C.isequal(result)
     C << A.ewise_add(B, monoid.max)
     assert C.isequal(result)
     C << A.ewise_add(B, binary.max)
     assert C.isequal(result)
-    with pytest.raises(TypeError, match="Expected type: Monoid"):
+    with pytest.raises(TypeError, match="Expected type: BinaryOp, Monoid"):
         A.ewise_add(B, semiring.max_minus)
 
 
@@ -524,9 +524,9 @@ def test_extract_input_mask():
         A[0, [0, 1]].new(input_mask=M.S, mask=expected.S)
     with pytest.raises(TypeError, match="mask and input_mask arguments cannot both be given"):
         A(input_mask=M.S, mask=expected.S)
-    with pytest.raises(TypeError, match=r"Mask must indicate values \(M.V\) or structure \(M.S\)"):
+    with pytest.raises(TypeError, match="Mask must be"):
         A[0, [0, 1]].new(input_mask=M)
-    with pytest.raises(TypeError, match=r"Mask must indicate values \(M.V\) or structure \(M.S\)"):
+    with pytest.raises(TypeError, match="Mask must be"):
         A(input_mask=M)
     with pytest.raises(TypeError, match="Mask object must be type Vector"):
         expected[[0, 1]].new(input_mask=M.S)
@@ -591,14 +591,14 @@ def test_assign(A):
     C = A.dup()
     C[:3:2, :6:5]() << B
     assert C.isequal(result)
-    with pytest.raises(TypeError, match="will make the Matrix dense"):
-        C << 1
     nvals = C.nvals
     C(C.S) << 1
     assert C.nvals == nvals
     assert C.reduce_scalar().new() == nvals
     with pytest.raises(TypeError, match="Invalid type for index"):
         C[C, [1]] = C
+    C << 1  # Now okay
+    assert C.nvals == C.nrows * C.ncols
 
 
 def test_assign_wrong_dims(A):
@@ -1111,6 +1111,8 @@ def test_apply_indexunary(A):
     assert w2.isequal(A3)
     assert w3.isequal(A3)
     assert w4.isequal(A3)
+    with pytest.raises(TypeError, match="left"):
+        A.apply(select.valueeq, left=s3)
 
 
 def test_select(A):
@@ -1137,10 +1139,36 @@ def test_select(A):
     )
     w7 = A.select("TRIU").new()
     assert w7.isequal(Aupper)
+    with pytest.raises(TypeError, match="thunk"):
+        A.select(select.valueeq, object())
 
 
+@autocompute
+def test_select_bools_and_masks(A):
+    A3 = Matrix.from_values([0, 3, 3, 6], [3, 0, 2, 4], [3, 3, 3, 3], nrows=7, ncols=7)
+    # Select with boolean and masks
+    w8 = A.select((A == 3).new()).new()
+    assert w8.isequal(A3)
+    w8b = A.select(A == 3).new()  # we rewrite!
+    assert w8b.isequal(A3)
+    w8c = A.select(~(A != 3)).new()
+    assert w8c.isequal(A3)
+    w9 = A.select(w8.S).new()
+    assert w9.isequal(A3)
+    w8[0, 1] = 0
+    w10 = A.select(w8.V).new()
+    assert w10.isequal(A3)
+    with pytest.raises(TypeError, match="thunk"):
+        A.select(w8.V, 777)
+    with pytest.raises(TypeError, match="thunk"):
+        A.select(A == 3, 777)
+    with pytest.raises(TypeError):
+        A.select(A[0, :].new().S)
+
+
+@pytest.mark.slow
 def test_indexunary_udf(A):
-    def threex_minusthunk(x, row, col, thunk):
+    def threex_minusthunk(x, row, col, thunk):  # pragma: no cover
         return 3 * x - thunk
 
     indexunary.register_new("threex_minusthunk", threex_minusthunk)
@@ -1157,7 +1185,7 @@ def test_indexunary_udf(A):
     assert result.isequal(expected)
     delattr(indexunary, "threex_minusthunk")
 
-    def iii(x, row, col, thunk):
+    def iii(x, row, col, thunk):  # pragma: no cover
         return (row + col) // 2 >= thunk
 
     select.register_new("iii", iii)
@@ -1452,7 +1480,11 @@ def test_reduce_agg_empty():
 
 def test_reduce_row_udf(A):
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
-    binop = graphblas.operator.BinaryOp.register_anonymous(lambda x, y: x + y)
+
+    def plus(x, y):  # pragma: no cover
+        return x + y
+
+    binop = graphblas.operator.BinaryOp.register_anonymous(plus)
     with pytest.raises(NotImplementedException):
         # Although allowed by the spec, SuiteSparse doesn't like user-defined binarops here
         A.reduce_rowwise(binop).new()
@@ -1497,6 +1529,23 @@ def test_reduce_scalar(A):
     t.value = 1.23
     t(accum=binary.plus) << A.reduce_scalar()
     assert t == 48.23
+
+
+@autocompute
+def test_reduce_call_agg(A):
+    assert agg.sum(A) == 47
+    assert agg.sum(A.T) == 47
+    assert agg.sum(A + A) == 94  # handles expression
+    result = agg.max[float](A).new()  # typed agg is callable too
+    assert result.dtype == "FP64"
+    assert result == 8
+    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
+    result = agg.sum(A, rowwise=True)
+    assert result.isequal(expected)
+    result = agg.sum(A.T, columnwise=True)
+    assert result.isequal(expected)
+    with pytest.raises(ValueError, match="cannot both be True"):
+        agg.sum(A, rowwise=True, columnwise=True)
 
 
 def test_transpose(A):
@@ -1556,6 +1605,35 @@ def test_assign_transpose(A):
     C = Matrix(A.dtype, A.ncols + 1, A.nrows + 1)
     C[: A.ncols, : A.nrows] << A.T
     assert C[: A.ncols, : A.nrows].new().isequal(A.T.new())
+
+
+def test_assign_list():
+    A = Matrix(int, 3, 3)
+    A[[0, 1], [1, 2]] = [[3, 4], [5, 6]]
+    expected = Matrix.from_values([0, 0, 1, 1], [1, 2, 1, 2], [3, 4, 5, 6], nrows=3, ncols=3)
+    assert A.isequal(expected)
+    A[[0, 1], 1] = np.arange(2)
+    expected = Matrix.from_values([0, 0, 1, 1], [1, 2, 1, 2], [0, 4, 1, 6], nrows=3, ncols=3)
+    assert A.isequal(expected)
+    A[0, 1:3] = [10, 20]
+    expected = Matrix.from_values([0, 0, 1, 1], [1, 2, 1, 2], [10, 20, 1, 6], nrows=3, ncols=3)
+    assert A.isequal(expected)
+    with pytest.raises(TypeError):
+        A[0, 1] = [0]
+    with pytest.raises(TypeError):
+        A()[0, 1] = [0]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1], 1] = [0]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1], [1, 2]] = [0]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1], [1, 2]] = [1, 2, 3, 4]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1, 2], [1]] = [1, 2, 3]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1, 2], [1]] = [[1, 2, 3]]
+    with pytest.raises(TypeError):
+        A[[0, 1], [1, 2]] = [[3, 4], [5, object()]]
 
 
 def test_isequal(A, v):
@@ -1854,14 +1932,10 @@ def test_import_export(A, do_iso, methods):
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=0)
     B5b = Matrix.ss.import_any(**d)
     if in_method == "import":
-        if not do_iso:
-            assert B5b.isequal(A)
-            assert B5b.ss.is_iso is do_iso
-        else:
-            # B5b == [A, A]
-            assert B5b.nvals == 2 * A.nvals
-            assert B5b.nrows == 2 * A.nrows
-            assert B5b.ncols == A.ncols
+        # B5b == [A, A] (i.e, get 2d shape from bitmap first if possible)
+        assert B5b.nvals == 2 * A.nvals
+        assert B5b.nrows == 2 * A.nrows
+        assert B5b.ncols == A.ncols
     else:
         A5.ss.pack_any(**d)
         assert A5.isequal(A)
@@ -3188,6 +3262,8 @@ def test_deprecated(A):
         Scalar.new(int)
     with pytest.warns(DeprecationWarning):
         A.S.mask
+    with pytest.warns(DeprecationWarning):
+        binary.plus(A | A, require_monoid=True)
 
 
 def test_ndim(A):
@@ -3353,6 +3429,20 @@ def test_udt():
     for aggop in [agg.first_index, agg.last_index]:
         A.reduce_rowwise(aggop).new()
         A.reduce_columnwise(aggop).new()
+    A.clear()
+    A[[0, 1], 1] = [(2, 3), (4, 5)]
+    expected = Matrix.from_values([0, 1], [1, 1], [(2, 3), (4, 5)], dtype=udt)
+    assert A.isequal(expected)
+    A.clear()
+    A[[0, 1], [1]] = [[(2, 3)], [(4, 5)]]
+    assert A.isequal(expected)
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1], [1]] = [[(2, 3), (4, 5)]]
+
+    AA = Matrix.ss.deserialize(A.ss.serialize())
+    assert A.isequal(AA, check_dtype=True)
+    AA = Matrix.ss.deserialize(A.ss.serialize(), dtype=A.dtype)
+    assert A.isequal(AA, check_dtype=True)
 
     np_dtype = np.dtype("(3,)uint16")
     udt = dtypes.register_anonymous(np_dtype, "has_subdtype")
@@ -3371,6 +3461,20 @@ def test_udt():
     info = A.ss.export("coor")
     result = A.ss.import_any(**info)
     assert result.isequal(A)
+    A.clear()
+    A[[0, 1], 1] = [(2, 3, 4), [5, 6, 7]]
+    expected = Matrix.from_values([0, 1], [1, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt)
+    assert A.isequal(expected)
+    A[[0, 1], [1]] = [[[2, 3, 4]], [[5, 6, 7]]]
+    AA = Matrix.ss.deserialize(A.ss.serialize())
+    assert A.isequal(AA, check_dtype=True)
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1], [1]] = [[[2, 3, 4], [5, 6, 7]]]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        A[[0, 1], [1]] = [[2, 3, 4], [5, 6, 7]]
+    A = Matrix(udt, nrows=2, ncols=3)
+    with pytest.raises(ValueError, match="include dtype shape"):
+        A[[0, 1], :] = [[2, 3, 4], [5, 6, 7]]
 
 
 def test_reposition(A):
@@ -3437,3 +3541,79 @@ def test_to_values_sort():
     assert_array_equal(rows, expected_rows)
     rows, cols, values = A.T.to_values(sort=True)
     assert_array_equal(cols, expected_rows)
+
+
+def test_get(A):
+    assert compute(A.get(0, 0)) is None
+    assert A.get(0, 0, "mittens") == "mittens"
+    assert A.get(0, 1) == 2
+    assert compute(A.T.get(0, 1)) is None
+    assert A.T.get(1, 0) == 2
+    assert A.get(0, 1, "mittens") == 2
+    assert type(compute(A.get(0, 1))) is int
+    with pytest.raises(ValueError):
+        # Not yet supported
+        A.get(0, [0, 1])
+
+
+@autocompute
+def test_bool_as_mask(A):
+    expected = select.value(A < 3).new()
+    expected *= 3
+    A(A < 3, binary.plus, replace=True) << A + A
+    assert A.isequal(expected)
+
+
+def test_ss_serialize(A):
+    for compression, level, nthreads in itertools.product(
+        [None, "none", "default", "lz4", "lz4hc"], [None, 1, 5, 9], [None, -1, 1, 10]
+    ):
+        if level is not None and compression != "lz4hc":
+            with pytest.raises(TypeError, match="level argument"):
+                A.ss.serialize(compression, level, nthreads=nthreads)
+            continue
+        a = A.ss.serialize(compression, level, nthreads=nthreads)
+        C = Matrix.ss.deserialize(a, nthreads=nthreads)
+        assert A.isequal(C, check_dtype=True)
+    b = a.tobytes()
+    C = Matrix.ss.deserialize(b)
+    assert A.isequal(C, check_dtype=True)
+    with pytest.raises(ValueError, match="compression argument"):
+        A.ss.serialize("bad")
+    with pytest.raises(ValueError, match="level argument"):
+        A.ss.serialize("lz4hc", -1)
+    with pytest.raises(ValueError, match="level argument"):
+        A.ss.serialize("lz4hc", 0)
+    with pytest.raises(InvalidObject):
+        Matrix.ss.deserialize(a[:-5])
+
+
+def test_ss_config(A):
+    d = {}
+    for key in A.ss.config:
+        d[key] = A.ss.config[key]
+    assert A.ss.config == d
+    for key, val in d.items():
+        if key in A.ss.config._read_only:
+            with pytest.raises(ValueError):
+                A.ss.config[key] = val
+        else:
+            A.ss.config[key] = val
+    assert A.ss.config == d
+    A.ss.config["sparsity_control"] = "sparse"
+    assert A.ss.config["sparsity_control"] == {"sparse"}
+    assert A.ss.config["sparsity_status"] == "sparse"
+    A.ss.config["sparsity_control"] = {"sparse", "bitmap"}
+    assert A.ss.config["sparsity_control"] == {"sparse", "bitmap"}
+    A.ss.config["sparsity_control"] = lib.GxB_SPARSE
+    assert A.ss.config["sparsity_status"] == "sparse"
+    A.ss.config["sparsity_control"] = {"sparse", lib.GxB_BITMAP}
+    assert A.ss.config["sparsity_control"] == {"sparse", "bitmap"}
+    A.ss.config["sparsity_control"] = "auto"
+    assert A.ss.config["sparsity_control"] == {"auto"}
+    A.ss.config["format"] = "by_col"
+    assert A.ss.config["format"] == "by_col"
+    A.ss.config["format"] = lib.GxB_BY_ROW
+    assert A.ss.config["format"] == "by_row"
+    with pytest.raises(InvalidValue):
+        A.ss.config["format"] = lib.GxB_NO_FORMAT

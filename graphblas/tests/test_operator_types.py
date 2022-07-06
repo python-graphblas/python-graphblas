@@ -51,7 +51,7 @@ UNARY = {
     (FC, FP): {"carg", "cimag", "creal"},
     (FP, FP): {"frexpe", "frexpx"},
     (INT, INT): {"bnot"},
-    (NOFC, FP): {"erf", "erfc", "lgamma", "tgamma"},
+    (NOFC, FP): {"cbrt", "erf", "erfc", "lgamma", "tgamma"},
     (NOFC, NOFC): {"lnot"},
 }
 BINARY = {

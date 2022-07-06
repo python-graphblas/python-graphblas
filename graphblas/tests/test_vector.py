@@ -14,6 +14,7 @@ from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
     IndexOutOfBound,
+    InvalidObject,
     InvalidValue,
     OutputNotEmpty,
 )
@@ -374,15 +375,15 @@ def test_ewise_add(v):
     # Binary, Monoid, and Semiring
     v2 = Vector.from_values([0, 3, 5, 6], [2, 3, 2, 1])
     result = Vector.from_values([0, 1, 3, 4, 5, 6], [2, 1, 3, 2, 2, 1])
-    with pytest.raises(TypeError, match="require_monoid"):
-        v.ewise_add(v2, binary.minus)
+    # with pytest.raises(TypeError, match="require_monoid"):
+    v.ewise_add(v2, binary.minus)  # okay now
     w = v.ewise_add(v2, binary.max).new()  # ok if the binaryop is part of a monoid
     assert w.isequal(result)
-    w = v.ewise_add(v2, binary.max, require_monoid=False).new()
+    w = v.ewise_add(v2, binary.max).new()
     assert w.isequal(result)
     w.update(v.ewise_add(v2, monoid.max))
     assert w.isequal(result)
-    with pytest.raises(TypeError, match="Expected type: Monoid"):
+    with pytest.raises(TypeError, match="Expected type: BinaryOp, Monoid"):
         v.ewise_add(v2, semiring.max_times)
     # default is plus
     w = v.ewise_add(v2).new()
@@ -393,8 +394,8 @@ def test_ewise_add(v):
     b2 = Vector.from_values([0, 1, 2, 3], [True, True, False, False])
     with pytest.raises(KeyError, match="plus does not work"):
         b1.ewise_add(b2).new()
-    with pytest.raises(TypeError, match="for BOOL datatype"):
-        binary.plus(b1 | b2)
+    # with pytest.raises(TypeError, match="for BOOL datatype"):
+    binary.plus(b1 | b2)  # now okay (btw, `binary.plus[bool].monoid is None`)
 
 
 def test_extract(v):
@@ -608,6 +609,28 @@ def test_assign_scalar_with_mask():
     assert v.isequal(result)
 
 
+def test_assign_list():
+    v = Vector(int, 4)
+    v[[0, 1]] = [2, 3]
+    expected = Vector.from_values([0, 1], [2, 3], size=4)
+    assert v.isequal(expected)
+    v[::2] = np.arange(2)
+    expected = Vector.from_values([0, 1, 2], [0, 3, 1], size=4)
+    assert v.isequal(expected)
+    with pytest.raises(TypeError):
+        v[0] = [1]
+    with pytest.raises(TypeError):
+        v()[0] = [1]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        v[[0, 1]] = [1, 2, 3]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        v[[0, 1]] = [[1, 2]]
+    with pytest.raises(ValueError, match="shape mismatch"):
+        v[[0, 1]] = [[1], [2]]
+    with pytest.raises(TypeError):
+        v[[0, 1]] = [2, object()]
+
+
 def test_apply(v):
     result = Vector.from_values([1, 3, 4, 6], [-1, -1, -2, 0])
     w = v.apply(unary.ainv).new()
@@ -668,6 +691,8 @@ def test_apply_indexunary(v):
     assert w2.isequal(v2)
     assert w3.isequal(v2)
     assert w4.isequal(v2)
+    with pytest.raises(TypeError, match="left"):
+        v.apply(indexunary.valueeq, left=s2)
 
 
 def test_select(v):
@@ -684,10 +709,63 @@ def test_select(v):
     assert w4.isequal(result)
     assert w5.isequal(result)
     assert w6.isequal(result)
+    with pytest.raises(TypeError, match="thunk"):
+        v.select(select.valueeq, object())
 
 
+@autocompute
+def test_select_bools_and_masks(v):
+    # Select with boolean and masks
+    result = Vector.from_values([1, 3], [1, 1], size=7)
+    w7 = v.select((v == 1).new()).new()
+    assert w7.isequal(result)
+    w7b = v.select(v == 1).new()  # we rewrite!
+    assert w7b.isequal(result)
+    w7c = v.select(~(v != 1)).new()
+    assert w7c.isequal(result)
+    w8 = v.select(w7.S).new()
+    assert w8.isequal(result)
+    w7[4] = 0
+    w9 = v.select(w7.V).new()
+    assert w9.isequal(result)
+    with pytest.raises(TypeError, match="thunk"):
+        v.select(w7.V, 777)
+    with pytest.raises(TypeError, match="thunk"):
+        v.select(v == 1, 777)
+    with pytest.raises(TypeError):
+        v.select(v.outer(v).new().S)
+    # Make sure we use `replace`
+    w9 << 1
+    w9 << v.select(w7.V)
+    assert w9.isequal(result)
+    # and with masks
+    w9 << 1
+    w9[1] = 0
+    w9(w9.V) << v.select(w7.V)
+    result2 = Vector.from_values([1, 3], [0, 1], size=7)
+    assert w9.isequal(result2)
+    w9 << 1
+    w9[1] = 0
+    w9(w9.V, replace=True) << v.select(w7.V)
+    del result2[1]
+    assert w9.isequal(result2)
+    w9 << 1
+    w9[1] = 0
+    w9(w9.V, binary.plus) << v.select(w7.V)
+    w8 << 1
+    w8[1] = 0
+    w8(w8.V, binary.plus) << v.dup(mask=w7.V)
+    assert w8.isequal(w9)
+    w9 << 1
+    w9(binary.plus) << v.select(w7.V)
+    w8 << 1
+    w8(binary.plus) << v.dup(mask=w7.V)
+    assert w8.isequal(w9)
+
+
+@pytest.mark.slow
 def test_indexunary_udf(v):
-    def twox_minusthunk(x, row, col, thunk):
+    def twox_minusthunk(x, row, col, thunk):  # pragma: no cover
         return 2 * x - thunk
 
     indexunary.register_new("twox_minusthunk", twox_minusthunk)
@@ -695,12 +773,14 @@ def test_indexunary_udf(v):
     assert not hasattr(select, "twox_minusthunk")
     with pytest.raises(ValueError):
         select.register_anonymous(twox_minusthunk)
+    with pytest.raises(TypeError, match="must be a function"):
+        select.register_anonymous(object())
     expected = Vector.from_values([1, 3, 4, 6], [-2, -2, 0, -4], size=7)
     result = indexunary.twox_minusthunk(v, 4).new()
     assert result.isequal(expected)
     delattr(indexunary, "twox_minusthunk")
 
-    def ii(x, idx, _, thunk):
+    def ii(x, idx, _, thunk):  # pragma: no cover
         return idx // 2 >= thunk
 
     select.register_new("ii", ii)
@@ -725,6 +805,10 @@ def test_reduce(v):
     assert v.reduce(binary.plus).new() == 4
     with pytest.raises(TypeError, match="Expected type: Monoid"):
         v.reduce(binary.minus)
+    with pytest.raises(TypeError, match="to get the Monoid"):
+        v.reduce(semiring.plus_times)
+    with pytest.raises(TypeError, match="part of a Monoid for BOOL datatype"):
+        v.reduce(binary.plus[bool])
 
     # Test accum
     s(accum=binary.times) << v.reduce(monoid.plus)
@@ -874,6 +958,21 @@ def test_reduce_coerce_dtype(v):
     t.value = 1.23
     t(accum=binary.plus) << v.reduce()
     assert t == 5.23
+
+
+@autocompute
+def test_reduce_call_agg(v):
+    assert agg.sum(v) == 4
+    assert agg.sum(v + v) == 8  # handles expression
+    result = agg.max[float](v).new()  # typed agg is callable too
+    assert result.dtype == "FP64"
+    assert result == 2
+    with pytest.raises(ValueError, match="rowwise"):
+        agg.sum(v, rowwise=True)
+    with pytest.raises(ValueError, match="columnwise"):
+        agg.sum(v, columnwise=True)
+    with pytest.raises(TypeError):
+        agg.sum(7)
 
 
 def test_simple_assignment(v):
@@ -1844,6 +1943,13 @@ def test_udt():
     assert result.isequal(v)
     for aggop in [agg.any_value, agg.first, agg.last, agg.count, agg.first_index, agg.last_index]:
         v.reduce(aggop).new()
+    v.clear()
+    v[[0, 1]] = [(2, 3), (4, 5)]
+    expected = Vector.from_values([0, 1], [(2, 3), (4, 5)], dtype=udt, size=v.size)
+    vv = Vector.ss.deserialize(v.ss.serialize())
+    assert v.isequal(vv, check_dtype=True)
+    vv = Vector.ss.deserialize(v.ss.serialize(), dtype=v.dtype)
+    assert v.isequal(vv, check_dtype=True)
 
     # arrays as dtypes!
     np_dtype = np.dtype("(3,)uint16")
@@ -1889,6 +1995,33 @@ def test_udt():
     # Just make sure these work
     for aggop in [agg.any_value, agg.first, agg.last, agg.count, agg.first_index, agg.last_index]:
         v.reduce(aggop).new()
+    v.clear()
+    v[[0, 1]] = [[2, 3, 4], [5, 6, 7]]
+    expected = Vector.from_values([0, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt2, size=v.size)
+    assert v.isequal(expected)
+    vv = Vector.ss.deserialize(v.ss.serialize())
+    assert v.isequal(vv, check_dtype=True)
+
+    long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=True)
+    with pytest.warns(UserWarning, match="too large"):
+        long_udt = dtypes.register_anonymous(long_dtype)
+    v = Vector(long_udt, size=3)
+    v[0] = 0
+    v[1] = (1, 5.6)
+    vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
+    assert v.isequal(vv, check_dtype=True)
+    with pytest.raises(Exception):
+        # The size of the UDT name is limited
+        Vector.ss.deserialize(v.ss.serialize())
+    # May be able to look up non-anonymous dtypes by name if their names are too long
+    named_long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=False)
+    with pytest.warns(UserWarning, match="too large"):
+        named_long_udt = dtypes.register_new("LongUDT", named_long_dtype)
+    v = Vector(named_long_udt, size=3)
+    v[0] = 0
+    v[1] = (1, 5.6)
+    vv = Vector.ss.deserialize(v.ss.serialize())
+    assert v.isequal(vv, check_dtype=True)
 
 
 def test_infix_outer():
@@ -1998,9 +2131,7 @@ def test_broadcasting(A, v):
     (A.dup(bool) & v.dup(bool)).new()  # okay
     with pytest.raises(TypeError):
         v += A
-    with pytest.raises(TypeError):
-        binary.minus(v | A)
-    binary.minus(v | A, require_monoid=False)
+    binary.minus(v | A)
 
 
 def test_ewise_union_infix():
@@ -2070,16 +2201,70 @@ def test_to_values_sort():
 
 
 def test_lambda_udfs(v):
-    result = v.apply(lambda x: x + 1).new()
+    result = v.apply(lambda x: x + 1).new()  # pragma: no branch
     expected = binary.plus(v, 1).new()
     assert result.isequal(expected)
-    result = v.ewise_mult(v, lambda x, y: x + y).new()
+    result = v.ewise_mult(v, lambda x, y: x + y).new()  # pragma: no branch
     expected = binary.plus(v & v).new()
     assert result.isequal(expected)
-    result = v.ewise_add(v, lambda x, y: x + y, require_monoid=False).new()
+    result = v.ewise_add(v, lambda x, y: x + y).new()  # pragma: no branch
     assert result.isequal(expected)
     # Should we also allow lambdas for monoids with assumed identity of 0?
-    with pytest.raises(TypeError):
-        v.ewise_add(v, lambda x, y: x + y)
+    # with pytest.raises(TypeError):
+    v.ewise_add(v, lambda x, y: x + y)  # pragma: no branch
     with pytest.raises(TypeError):
         v.inner(v, lambda x, y: x + y)
+
+
+def test_get(v):
+    assert compute(v.get(0)) is None
+    assert v.get(0, "mittens") == "mittens"
+    assert v.get(1) == 1
+    assert v.get(1, "mittens") == 1
+    assert type(compute(v.get(1))) is int
+    with pytest.raises(ValueError):
+        # Not yet supported
+        v.get([0, 1])
+
+
+def test_ss_serialize(v):
+    for compression, level, nthreads in itertools.product(
+        [None, "none", "default", "lz4", "lz4hc"], [None, 1, 5, 9], [None, -1, 1, 10]
+    ):
+        if level is not None and compression != "lz4hc":
+            with pytest.raises(TypeError, match="level argument"):
+                v.ss.serialize(compression, level, nthreads=nthreads)
+            continue
+        a = v.ss.serialize(compression, level, nthreads=nthreads)
+        w = Vector.ss.deserialize(a, nthreads=nthreads)
+        assert v.isequal(w, check_dtype=True)
+    b = a.tobytes()
+    w = Vector.ss.deserialize(b)
+    assert v.isequal(w, check_dtype=True)
+    with pytest.raises(ValueError, match="compression argument"):
+        v.ss.serialize("bad")
+    with pytest.raises(ValueError, match="level argument"):
+        v.ss.serialize("lz4hc", -1)
+    with pytest.raises(ValueError, match="level argument"):
+        v.ss.serialize("lz4hc", 0)
+    with pytest.raises(InvalidObject):
+        Vector.ss.deserialize(a[:-5])
+
+
+def test_ss_config(v):
+    d = {}
+    for key in v.ss.config:
+        d[key] = v.ss.config[key]
+    assert v.ss.config == d
+    for key, val in d.items():
+        if key in v.ss.config._read_only:
+            with pytest.raises(ValueError):
+                v.ss.config[key] = val
+        else:
+            v.ss.config[key] = val
+    assert v.ss.config == d
+    v.ss.config["sparsity_control"] = "sparse"
+    assert v.ss.config["sparsity_control"] == {"sparse"}
+    assert v.ss.config["sparsity_status"] == "sparse"
+    v.ss.config["sparsity_control"] = {"sparse", "bitmap"}
+    assert v.ss.config["sparsity_control"] == {"sparse", "bitmap"}

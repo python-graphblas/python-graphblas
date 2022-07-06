@@ -111,6 +111,7 @@ def test_record_repr(switch):
     rec.max_rows = 10
     for i in range(1, 20):
         A[0, 0].new(name=f"c{i}")
+    n = len(rec.data) - rec.max_rows
     if switch:
         assert repr(rec) == (
             "gb.Recorder (recording)\n"
@@ -121,7 +122,7 @@ def test_record_repr(switch):
             "  GrB_Matrix_extractElement_INT64(&c3, A, 0, 0);\n"
             "  GrB_Matrix_extractElement_INT64(&c4, A, 0, 0);\n"
             "\n"
-            "  ... (10 rows not shown)\n"
+            f"  // {n} rows not shown; set `recorder.max_rows` attribute to show more (or less)\n"
             "\n"
             "  GrB_Matrix_extractElement_INT64(&c15, A, 0, 0);\n"
             "  GrB_Matrix_extractElement_INT64(&c16, A, 0, 0);\n"
@@ -139,7 +140,7 @@ def test_record_repr(switch):
             "  GrB_Matrix_extractElement_Scalar(c1, A, 0, 0);\n"
             "  GrB_Scalar_new(&c2, GrB_INT64);\n"
             "\n"
-            "  ... (30 rows not shown)\n"
+            f"  // {n} rows not shown; set `recorder.max_rows` attribute to show more (or less)\n"
             "\n"
             "  GrB_Matrix_extractElement_Scalar(c17, A, 0, 0);\n"
             "  GrB_Scalar_new(&c18, GrB_INT64);\n"
@@ -156,11 +157,9 @@ def test_record_repr_markdown(switch):
     rec.start()
     A[0, 0].new(name="c")
     if switch:
-        text = "  GrB_Matrix_extractElement_INT64(&c, A, 0, 0);\n"
+        text = "GrB_Matrix_extractElement_INT64(&c, A, 0, 0);\n"
     else:
-        text = (
-            "  GrB_Scalar_new(&c, GrB_INT64);\n" "  GrB_Matrix_extractElement_Scalar(c, A, 0, 0);\n"
-        )
+        text = "GrB_Scalar_new(&c, GrB_INT64);\nGrB_Matrix_extractElement_Scalar(c, A, 0, 0);\n"
     assert rec._repr_markdown_() == (
         "<div>\n"
         f"{CSS_STYLE}\n"
@@ -185,11 +184,9 @@ def test_record_repr_markdown(switch):
     )
     rec.stop()
     if switch:
-        text = "  GrB_Matrix_extractElement_INT64(&c, A, 0, 0);\n"
+        text = "GrB_Matrix_extractElement_INT64(&c, A, 0, 0);\n"
     else:
-        text = (
-            "  GrB_Scalar_new(&c, GrB_INT64);\n" "  GrB_Matrix_extractElement_Scalar(c, A, 0, 0);\n"
-        )
+        text = "GrB_Scalar_new(&c, GrB_INT64);\nGrB_Matrix_extractElement_Scalar(c, A, 0, 0);\n"
     assert rec._repr_markdown_() == (
         "<div>\n"
         f"{CSS_STYLE}\n"
@@ -212,6 +209,20 @@ def test_record_repr_markdown(switch):
         "</details>\n"
         "</div>"
     )
+
+
+def test_record_repr_html(switch):
+    A = gb.Matrix(int, 3, 3, name="A")
+    rec = gb.Recorder()
+    rec.start()
+    A[0, 0].new(name="c")
+    try:
+        import IPython  # noqa
+    except ImportError:
+        with pytest.raises(NotImplementedError):
+            rec._repr_html_()
+    else:  # pragma: no cover
+        assert isinstance(rec._repr_html_(), str)
 
 
 def test_record_failed_call():

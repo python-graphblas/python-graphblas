@@ -449,3 +449,12 @@ def test_record_from_dict():
         {"x": 1, "y": {"a": 2, "b": 3}}, dtype={"x": int, "y": {"a": int, "b": int}}
     )
     assert s == (1, (2, 3))
+
+
+def test_get(s):
+    assert s.get() == 5
+    assert s.get("mittens") == 5
+    assert type(compute(s.get())) is int
+    s.clear()
+    assert compute(s.get()) is None
+    assert s.get("mittens") == "mittens"

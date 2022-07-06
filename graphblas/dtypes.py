@@ -1,3 +1,5 @@
+import warnings
+
 import numba
 import numpy as np
 from numpy import find_common_type, promote_types
@@ -102,7 +104,27 @@ def register_anonymous(dtype, name=None):
         from .exceptions import check_status_carg
 
         gb_obj = ffi.new("GrB_Type*")
-        status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
+        if hasattr(lib, "GxB_MAX_NAME_LEN"):
+            # SS, SuiteSparse-specific: naming dtypes
+            # We name this so that we can serialize and deserialize UDTs
+            # We don't yet have C definitions
+            np_repr = _dtype_to_string(dtype).encode()
+            if len(np_repr) > lib.GxB_MAX_NAME_LEN:
+                msg = (
+                    f"UDT repr is too large to serialize ({len(repr(dtype).encode())} > "
+                    f"{lib.GxB_MAX_NAME_LEN})."
+                )
+                if name is not None:
+                    np_repr = name.encode()[: lib.GxB_MAX_NAME_LEN]
+                else:
+                    np_repr = np_repr[: lib.GxB_MAX_NAME_LEN]
+                warnings.warn(
+                    f"{msg}.  It will use the following name, "
+                    f"and the dtype may need to be specified when deserializing: {np_repr}"
+                )
+            status = lib.GxB_Type_new(gb_obj, dtype.itemsize, np_repr, ffi.NULL)
+        else:  # pragma: no cover
+            status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
         check_status_carg(status, "Type", gb_obj[0])
     # For now, let's use "opaque" unsigned bytes for the c type.
     if name is None:
@@ -200,9 +222,6 @@ for dtype in _dtypes_to_register:
     val = _sample_values[dtype]
     _registry[val.dtype] = dtype
     _registry[val.dtype.name] = dtype
-# Upcast numpy float16 to float32
-_registry[np.dtype(np.float16)] = FP32
-_registry["float16"] = FP32
 
 # Add some common Python types as lookup keys
 _registry[bool] = BOOL
@@ -238,7 +257,7 @@ def lookup_dtype(key, value=None):
         return lookup_dtype(key.literal_type)  # For numba dtype inference
     except Exception:
         pass
-    raise ValueError(f"Unknown dtype: {key}", type(key))
+    raise ValueError(f"Unknown dtype: {key} of type {type(key)}")
 
 
 def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
@@ -285,3 +304,42 @@ def _default_name(dtype):
         return "{%s}" % args
     else:
         return repr(dtype)
+
+
+def _dtype_to_string(dtype):
+    """Convert a dtype to a string that can be safely evaluated to recreate the dtype.
+
+    This is useful when serializing UDT.  To recreate the dtype, do:
+
+    >>> s = _dtype_to_string(dtype)
+    >>> new_dtype = _string_to_dtype(s)
+    >>> dtype == new_dtype
+    True
+    """
+    if isinstance(dtype, np.dtype) and dtype not in _registry:
+        np_type = dtype
+    else:
+        dtype = lookup_dtype(dtype)
+        if not dtype._is_udt:
+            return dtype.name
+        np_type = dtype.np_type
+    s = str(np_type)
+    try:
+        if np.dtype(np.lib.format.safe_eval(s)) == np_type:
+            return s
+    except Exception:
+        pass
+    if np.dtype(np_type.str) == np_type:
+        return repr(np_type.str)
+    else:  # pragma: no cover
+        raise ValueError(f"Unable to reliably convert dtype to string and back: {dtype}")
+
+
+def _string_to_dtype(s):
+    """_string_to_dtype(_dtype_to_string(dtype)) == dtype"""
+    try:
+        return lookup_dtype(s)
+    except Exception:
+        pass
+    np_type = np.dtype(np.lib.format.safe_eval(s))
+    return lookup_dtype(np_type)

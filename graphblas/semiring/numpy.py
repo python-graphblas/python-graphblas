@@ -2,7 +2,7 @@
 
 See list of numpy ufuncs supported by numpy here:
 
-https://numba.pydata.org/numba-doc/dev/reference/numpysupported.html#math-operations
+https://numba.readthedocs.io/en/stable/reference/numpysupported.html#math-operations
 
 """
 import itertools as _itertools
@@ -43,6 +43,7 @@ _semiring_names -= {
             "arctan2",
             "copysign",
             "divide",
+            "float_power",
             "hypot",
             "ldexp",
             "logaddexp2",

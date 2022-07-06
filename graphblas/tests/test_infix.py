@@ -71,8 +71,8 @@ def test_ewise(v1, v2, A1, A2):
         expected = left.ewise_mult(right, op.minus).new()
         assert expected.isequal(op.minus(left & right).new())
 
-        expected = left.ewise_add(right, op.minus, require_monoid=False).new()
-        assert expected.isequal(op.minus(left | right, require_monoid=False).new())
+        expected = left.ewise_add(right, op.minus).new()
+        assert expected.isequal(op.minus(left | right).new())
         expr = left | right
         assert expr.nvals == expr.nvals  # tests caching of ._value
 
@@ -182,8 +182,8 @@ def test_bad_ewise(s1, v1, A1, A2):
     with raises(TypeError, match="not supported for FP64"):
         A1 &= A1
 
-    with raises(TypeError, match="require_monoid"):
-        op.minus(v1 | v1)
+    # with raises(TypeError, match="require_monoid"):
+    op.minus(v1 | v1)  # ok now
     with raises(TypeError):
         op.minus(v1 & v1, require_monoid=False)
     with raises(TypeError, match="Bad dtype"):

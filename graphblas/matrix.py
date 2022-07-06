@@ -5,12 +5,12 @@ import numpy as np
 
 from . import _automethods, backend, binary, ffi, lib, monoid, select, semiring, utils
 from ._ss.matrix import ss
-from .base import BaseExpression, BaseType, call
+from .base import BaseExpression, BaseType, _check_mask, call
 from .dtypes import _INDEX, FP64, lookup_dtype, unify
 from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
-from .mask import StructuralMask, ValueMask
-from .operator import find_opclass, get_semiring, get_typed_op, op_from_string
+from .mask import Mask, StructuralMask, ValueMask
+from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
 from .scalar import (
     _MATERIALIZE,
     Scalar,
@@ -28,7 +28,7 @@ from .utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from .vector import Vector, VectorExpression, VectorIndexExpr
+from .vector import Vector, VectorExpression, VectorIndexExpr, _select_mask
 
 ffi_new = ffi.new
 
@@ -38,7 +38,7 @@ def _m_add_v(updater, left, right, op):
     full = Vector(right.dtype, left._nrows, name="v_full")
     full[:] = 0
     temp = full.outer(right, binary.second).new(name="M_temp", mask=updater.kwargs.get("mask"))
-    updater << left.ewise_add(temp, op, require_monoid=False)
+    updater << left.ewise_add(temp, op)
 
 
 def _m_mult_v(updater, left, right, op):
@@ -393,6 +393,20 @@ class Matrix(BaseType):
         # TODO: expose COMPLETE or MATERIALIZE options to the user
         call("GrB_Matrix_wait", [self, _MATERIALIZE])
 
+    def get(self, row, col, default=None):
+        """Get an element at row, col indices as a Python scalar.
+
+        If there is no element at ``matrix[row, col]``, then the default value is returned.
+        """
+        expr = self[row, col]
+        if expr._is_scalar:
+            rv = expr.new().value
+            return default if rv is None else rv
+        raise ValueError(
+            "Bad row, col arguments in Matrix.get(...).  "
+            "Indices should get a single element, which will be extracted as a Python scalar."
+        )
+
     @classmethod
     def new(cls, dtype, nrows=0, ncols=0, *, name=None):
         """
@@ -466,7 +480,7 @@ class Matrix(BaseType):
     # to __setitem__ to trigger a call to GraphBLAS
     #########################################################
 
-    def ewise_add(self, other, op=monoid.plus, *, require_monoid=True):
+    def ewise_add(self, other, op=monoid.plus, *, require_monoid=None):
         """
         GrB_Matrix_eWiseAdd
 
@@ -474,9 +488,8 @@ class Matrix(BaseType):
 
         Default op is monoid.plus.
 
-        Unless explicitly disabled, this method requires a monoid (directly or from a semiring).
-        The reason for this is that binary operators can create very confusing behavior when
-        only one of the two elements is present.
+        *Warning*: using binary operators can create very confusing behavior
+        when only one of the two elements is present.
 
         Examples:
             - binary.minus where left=N/A and right=4 yields 4 rather than -4 as might be expected
@@ -485,8 +498,15 @@ class Matrix(BaseType):
 
         The behavior is caused by grabbing the non-empty value and using it directly without
         performing any operation. In the case of `gt`, the non-empty value is cast to a boolean.
-        For these reasons, users are required to be explicit when choosing this surprising behavior.
         """
+        if require_monoid is not None:
+            warnings.warn(
+                "require_monoid keyword is deprecated; "
+                "future behavior will be like `require_monoid=False`",
+                DeprecationWarning,
+            )
+        else:
+            require_monoid = False
         method_name = "ewise_add"
         other = self._expect_type(
             other,
@@ -497,7 +517,7 @@ class Matrix(BaseType):
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
-        if require_monoid:
+        if require_monoid:  # pragma: no cover
             if op.opclass != "BinaryOp" or op.monoid is None:
                 self._expect_op(
                     op,
@@ -871,9 +891,40 @@ class Matrix(BaseType):
         Compute SelectOp at each element of the calling Matrix, keeping
         elements which return True.
         """
+        method_name = "select"
         if isinstance(op, str):
             op = select.from_string(op)
-        method_name = "select"
+        else:
+            if isinstance(op, MatrixExpression):
+                # Try to rewrite e.g. `A.select(A == 7)` to `gb.select.value(A == 7)`
+                if thunk is not None:
+                    raise TypeError(
+                        "thunk argument not None when calling select with mask or boolean object"
+                    )
+                expr = select._match_expr(self, op)
+                if expr is not None:
+                    return expr
+                opclass = UNKNOWN_OPCLASS
+            else:
+                op, opclass = find_opclass(op)
+            if opclass == UNKNOWN_OPCLASS:
+                # e.g., `A.select(B.S)` or `A.select(B < 7)`
+                mask = _check_mask(op)
+                if thunk is not None:
+                    raise TypeError(
+                        "thunk argument not None when calling select with mask or boolean object"
+                    )
+                self._expect_type(mask.parent, (Matrix, Mask), within=method_name, argname="op")
+                return MatrixExpression(
+                    "select",
+                    None,
+                    [self, mask, _select_mask, (self, mask)],  # [*expr_args, func, args]
+                    expr_repr="{0.name}.select({1.name})",
+                    nrows=self.nrows,
+                    ncols=self.ncols,
+                    dtype=self.dtype,
+                )
+
         if thunk is None:
             thunk = False  # most basic form of 0 when unifying dtypes
         if type(thunk) is not Scalar:
@@ -1046,7 +1097,7 @@ class Matrix(BaseType):
             "reposition",
             None,
             [self, _reposition, (indices, chunk)],  # [*expr_args, func, args]
-            expr_repr="{2.name}.reposition(%d, %d)" % (row_offset, column_offset),
+            expr_repr="{0.name}.reposition(%d, %d)" % (row_offset, column_offset),
             nrows=nrows,
             ncols=ncols,
             dtype=self.dtype,
@@ -1155,7 +1206,10 @@ class Matrix(BaseType):
         cols = colidx.index
         colscalar = colidx.cscalar
 
-        extra_message = "Literal scalars also accepted."
+        if rowsize is not None or colsize is not None:
+            extra_message = "Literal scalars and lists also accepted."
+        else:
+            extra_message = "Literal scalars also accepted."
 
         value_type = output_type(value)
         if value_type is Vector:
@@ -1324,7 +1378,59 @@ class Matrix(BaseType):
                 dtype = self.dtype if self.dtype._is_udt else None
                 try:
                     value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
-                except TypeError:
+                except (TypeError, ValueError):
+                    if rowsize is not None or colsize is not None:
+                        try:
+                            values, dtype = values_to_numpy_buffer(value, dtype, copy=True)
+                        except Exception:
+                            pass
+                        else:
+                            shape = values.shape
+                            if rowsize is None or colsize is None:
+                                # C[I, j] << [1, 2, 3]
+                                # C[i, J] << [1, 2, 3]
+                                # C(M)[I, j] << [1, 2, 3]
+                                # C(M)[i, J] << [1, 2, 3]
+                                # C[I, j](m) << [1, 2, 3]
+                                # C[i, J](m) << [1, 2, 3]
+                                expected_shape = (rowsize or colsize,)
+                                try:
+                                    vals = Vector.ss.import_full(
+                                        values, dtype=dtype, take_ownership=True
+                                    )
+                                    if dtype.np_type.subdtype is not None:
+                                        shape = vals.shape
+                                except Exception:
+                                    vals = None
+                            else:
+                                # C[I, J] << [[1, 2, 3], [4, 5, 6]]
+                                # C(M)[I, J] << [[1, 2, 3], [4, 5, 6]]
+                                # C[I, J](M) << [[1, 2, 3], [4, 5, 6]]
+                                expected_shape = (rowsize, colsize)
+                                try:
+                                    vals = Matrix.ss.import_fullr(
+                                        values, dtype=dtype, take_ownership=True
+                                    )
+                                    if dtype.np_type.subdtype is not None:
+                                        shape = vals.shape
+                                except Exception:
+                                    vals = None
+                            if vals is None or shape != expected_shape:
+                                if dtype.np_type.subdtype is not None:
+                                    extra = (
+                                        " (this is assigning to a matrix with sub-array dtype "
+                                        f"({dtype}), so array shape should include dtype shape)"
+                                    )
+                                else:
+                                    extra = ""
+                                raise ValueError(
+                                    f"shape mismatch: value array of shape {shape} "
+                                    f"does not match indexing of shape {expected_shape}"
+                                    f"{extra}"
+                                ) from None
+                            return self._prep_for_assign(
+                                resolved_indexes, vals, mask=mask, is_submask=is_submask
+                            )
                     if rowsize is None or colsize is None:
                         types = (Scalar, Vector)
                     else:
@@ -1598,6 +1704,7 @@ class MatrixExpression(BaseExpression):
     ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
     ewise_union = wrapdoc(Matrix.ewise_union)(property(_automethods.ewise_union))
     gb_obj = wrapdoc(Matrix.gb_obj)(property(_automethods.gb_obj))
+    get = wrapdoc(Matrix.get)(property(_automethods.get))
     isclose = wrapdoc(Matrix.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Matrix.isequal)(property(_automethods.isequal))
     kronecker = wrapdoc(Matrix.kronecker)(property(_automethods.kronecker))
@@ -1678,6 +1785,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
     ewise_union = wrapdoc(Matrix.ewise_union)(property(_automethods.ewise_union))
     gb_obj = wrapdoc(Matrix.gb_obj)(property(_automethods.gb_obj))
+    get = wrapdoc(Matrix.get)(property(_automethods.get))
     isclose = wrapdoc(Matrix.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Matrix.isequal)(property(_automethods.isequal))
     kronecker = wrapdoc(Matrix.kronecker)(property(_automethods.kronecker))
@@ -1821,6 +1929,7 @@ class TransposedMatrix:
     __ixor__ = _automethods.__ixor__
 
     # Misc.
+    get = Matrix.get
     isequal = Matrix.isequal
     isclose = Matrix.isclose
     wait = Matrix.wait

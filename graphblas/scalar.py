@@ -369,6 +369,10 @@ class Scalar(BaseType):
         if not self._is_cscalar:
             call("GrB_Scalar_wait", [self, _MATERIALIZE])
 
+    def get(self, default=None):
+        """Get the value of a scalar as a Python scalar or the default value if it is empty."""
+        return default if self._is_empty else self.value
+
     @classmethod
     def new(cls, dtype, *, is_cscalar=False, name=None):
         """
@@ -544,6 +548,7 @@ class ScalarExpression(BaseExpression):
     _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
     gb_obj = wrapdoc(Scalar.gb_obj)(property(_automethods.gb_obj))
+    get = wrapdoc(Scalar.get)(property(_automethods.get))
     is_empty = wrapdoc(Scalar.is_empty)(property(_automethods.is_empty))
     isclose = wrapdoc(Scalar.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Scalar.isequal)(property(_automethods.isequal))
@@ -604,6 +609,7 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
     gb_obj = wrapdoc(Scalar.gb_obj)(property(_automethods.gb_obj))
+    get = wrapdoc(Scalar.get)(property(_automethods.get))
     is_empty = wrapdoc(Scalar.is_empty)(property(_automethods.is_empty))
     isclose = wrapdoc(Scalar.isclose)(property(_automethods.isclose))
     isequal = wrapdoc(Scalar.isequal)(property(_automethods.isequal))

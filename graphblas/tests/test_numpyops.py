@@ -35,7 +35,10 @@ def test_bool_doesnt_get_too_large():
         x, y = z.to_values()
         np.testing.assert_array_equal(y, (True, True, True, False))
 
-    op = graphblas.operator.UnaryOp.register_anonymous(lambda x: np.add(x, x))
+    def func(x):  # pragma: no cover
+        return np.add(x, x)
+
+    op = graphblas.operator.UnaryOp.register_anonymous(func)
     z = a.apply(op).new()
     x, y = z.to_values()
     np.testing.assert_array_equal(y, (True, False, True, False))
@@ -53,7 +56,7 @@ def test_npunary():
         data.append(
             [Vector.from_values(L, L, dtype="FC64"), np.array(L, dtype=np.complex128)],
         )
-    blocklist = {"BOOL": {"negative", "sign"}, "FC64": {"ceil", "floor", "trunc"}}
+    blocklist = {"BOOL": {"negative", "positive", "sign"}, "FC64": {"ceil", "floor", "trunc"}}
     isclose = graphblas.binary.isclose(1e-7, 0)
     for gb_input, np_input in data:
         for unary_name in sorted(npunary._unary_names):
@@ -75,7 +78,7 @@ def test_npunary():
                     compare_op = isclose
                 else:
                     np_result = getattr(np, unary_name)(np_input)
-                    if gb_result.dtype.name.startswith("FC"):
+                    if gb_result.dtype.name.startswith("F"):
                         compare_op = isclose
                     else:
                         compare_op = npbinary.equal

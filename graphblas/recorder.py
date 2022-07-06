@@ -103,9 +103,7 @@ class Recorder:
     def is_recording(self):
         return self._token is not None and _recorder.get(base._prev_recorder) is self
 
-    def _repr_markdown_(self):
-        # Syntax highlighting from github-flavored markdown looks better than
-        # using IPython.display.Code or pygments
+    def _repr_base_(self):
         status = (
             '<div style="'
             "height: 12px; "
@@ -118,11 +116,11 @@ class Recorder:
         )
         if self.is_recording:
             # red circle for recording
-            status = status % ("background-color: red; " "border-radius: 50%;")
+            status = status % ("background-color: red; border-radius: 50%;")
         else:
             # two vertical bars for paused
-            status = status % ("border-right: 5px solid gray; " "border-left: 5px solid gray;")
-        lines = [
+            status = status % ("border-right: 5px solid gray; border-left: 5px solid gray;")
+        head = [
             "<div>",
             f"{CSS_STYLE}",
             '<details open class="gb-arg-details">',
@@ -135,27 +133,48 @@ class Recorder:
             "</table>",
             "</summary>",
             '<blockquote class="gb-expr-blockquote" style="margin-left: -8px;">',
-            "",
-            "```C",
-            "  " + "\n  ".join(self.data),
-            "```",
-            "</blockquote>",
-            "</details>",
-            "</div>",
         ]
-        return "\n".join(lines)
+        tail = "\n</blockquote>\n</details>\n</div>"
+        return "\n".join(head), tail
+
+    def _repr_html_(self):  # pragma: no cover
+        try:
+            from IPython.display import Code
+        except ImportError:
+            raise NotImplementedError()
+        lines = self._get_repr_lines()
+        code = Code("\n".join(lines), language="C")
+        head, tail = self._repr_base_()
+        return head + code._repr_html_() + tail
+
+    def _repr_markdown_(self):
+        # Syntax highlighting from github-flavored markdown looks better than
+        # using IPython.display.Code or pygments
+        lines = self._get_repr_lines()
+        code = "\n\n```C\n" + "\n".join(lines) + "\n```"
+        head, tail = self._repr_base_()
+        return head + code + tail
+
+    def _get_repr_lines(self, indent=""):
+        lines = []
+        if self.max_rows is not None and len(self.data) > self.max_rows:
+            lines.extend(f"{indent}{line}" for line in self.data[: self.max_rows // 2])
+            lines.append("")
+            lines.append(
+                f"{indent}// {len(self.data) - self.max_rows} rows not shown; "
+                # f"{indent}// {len(self.data) - self.max_rows} rows not shown; "
+                "set `recorder.max_rows` attribute to show more (or less)"
+            )
+            lines.append("")
+            lines.extend(f"{indent}{line}" for line in self.data[-((self.max_rows + 1) // 2) :])
+        else:
+            lines.extend(f"{indent}{line}" for line in self.data)
+        return lines
 
     def __repr__(self):
         lines = [f'gb.Recorder ({"" if self.is_recording else "not "}recording)']
         lines.append("-" * len(lines[0]))
-        if self.max_rows is not None and len(self.data) > self.max_rows:
-            lines.extend(f"  {line}" for line in self.data[: self.max_rows // 2])
-            lines.append("")
-            lines.append(f"  ... ({len(self.data) - self.max_rows} rows not shown)")
-            lines.append("")
-            lines.extend(f"  {line}" for line in self.data[-((self.max_rows + 1) // 2) :])
-        else:
-            lines.extend(f"  {line}" for line in self.data)
+        lines.extend(self._get_repr_lines(indent="  "))
         return "\n".join(lines)
 
 

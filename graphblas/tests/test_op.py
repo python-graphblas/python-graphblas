@@ -129,6 +129,7 @@ def test_get_typed_op():
     assert operator.get_typed_op("+", dtypes.FP64, kind="monoid") is monoid.plus["FP64"]
     assert operator.get_typed_op("+[int64]", dtypes.FP64, kind="monoid") is monoid.plus["INT64"]
     assert operator.get_typed_op("+.*", dtypes.FP64, kind="semiring") is semiring.plus_times["FP64"]
+    assert operator.get_typed_op("row<=", dtypes.INT64, kind="select") is select.rowle["INT64"]
     with pytest.raises(ValueError, match="Unable to get op from string"):
         operator.get_typed_op("+", dtypes.FP64)
     assert (
@@ -225,7 +226,7 @@ def test_binaryop_parameterized():
     v0 = v.ewise_mult(v, op).new()
     r0 = Vector.from_values([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
     assert v0.isequal(r0, check_dtype=True)
-    v1 = v.ewise_add(v, op(1), require_monoid=False).new()
+    v1 = v.ewise_add(v, op(1)).new()
     r1 = Vector.from_values([0, 1, 3], [3, 5, -7], dtype=dtypes.INT32)
     assert v1.isequal(r1, check_dtype=True)
 
@@ -257,7 +258,11 @@ def test_binaryop_parameterized():
         BinaryOp.register_new("bad", object())
     assert not hasattr(binary, "bad")
     with pytest.raises(UdfParseError, match="Unable to parse function using Numba"):
-        BinaryOp.register_new("bad", lambda x, y: v)
+
+        def bad(x, y):  # pragma: no cover
+            return v
+
+        BinaryOp.register_new("bad", bad)
 
     def my_add(x, y):
         return x + y  # pragma: no cover
@@ -329,7 +334,11 @@ def test_monoid_parameterized():
     Monoid.register_new("_user_defined_monoid", bin_op, -np.inf)
     monoid = gb.monoid._user_defined_monoid
     fv2 = fv.ewise_mult(fv, monoid(2)).new()
-    plus1 = UnaryOp.register_anonymous(lambda x: x + 1)
+
+    def plus1(x):  # pragma: no cover
+        return x + 1
+
+    plus1 = UnaryOp.register_anonymous(plus1)
     expected = fv.apply(plus1).new()
     assert fv2.isclose(expected, check_dtype=True)
     with pytest.raises(TypeError, match="must be a BinaryOp"):
@@ -396,7 +405,7 @@ def test_semiring_parameterized():
     B = A.mxm(A, mysemiring(1)).new()  # three extra pluses
     assert B.isequal(Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [10, 12, 14, 16]))
 
-    with pytest.raises(TypeError, match="Expected type: Monoid"):
+    with pytest.raises(TypeError, match="Expected type: BinaryOp, Monoid"):
         A.ewise_add(A, mysemiring)
 
     # mismatched signatures.
@@ -531,7 +540,7 @@ def test_binaryop_udf():
     assert set(binary.bin_test_func.types) == comp_set
     v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
-    w = v1.ewise_add(v2, binary.bin_test_func, require_monoid=False).new()
+    w = v1.ewise_add(v2, binary.bin_test_func).new()
     result = Vector.from_values([0, 1, 2, 3], [-1, 2, 3, -31], dtype=dtypes.INT32)
     assert w.isequal(result)
 
@@ -1015,6 +1024,7 @@ def test_from_string():
     assert op.from_string("min.plus") is semiring.min_plus
     with pytest.raises(ValueError, match="Unknown op string"):
         op.from_string("min.plus.times")
+    assert op.from_string("count") is agg.count
 
     assert agg.from_string("count") is agg.count
     assert agg.from_string("|") is agg.any

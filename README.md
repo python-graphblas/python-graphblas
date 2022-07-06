@@ -2,11 +2,11 @@
 
 [![conda-forge](https://img.shields.io/conda/vn/conda-forge/python-graphblas.svg)](https://anaconda.org/conda-forge/python-graphblas)
 [![pypi](https://img.shields.io/pypi/v/python-graphblas.svg)](https://pypi.python.org/pypi/python-graphblas/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/metagraph-dev/python-graphblas/blob/main/LICENSE)
-[![Tests](https://github.com/metagraph-dev/python-graphblas/workflows/Tests/badge.svg?branch=main)](https://github.com/metagraph-dev/python-graphblas/actions)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/python-graphblas/python-graphblas/blob/main/LICENSE)
+[![Tests](https://github.com/python-graphblas/python-graphblas/workflows/Tests/badge.svg?branch=main)](https://github.com/python-graphblas/python-graphblas/actions)
 [![Docs](https://readthedocs.org/projects/python-graphblas/badge/?version=latest)](https://python-graphblas.readthedocs.io/en/latest/)
-[![Coverage](https://coveralls.io/repos/metagraph-dev/python-graphblas/badge.svg?branch=main)](https://coveralls.io/r/metagraph-dev/python-graphblas)
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/metagraph-dev/python-graphblas/HEAD?filepath=notebooks%2FIntro%20to%20GraphBLAS%20%2B%20SSSP%20example.ipynb)
+[![Coverage](https://coveralls.io/repos/python-graphblas/python-graphblas/badge.svg?branch=main)](https://coveralls.io/r/python-graphblas/python-graphblas)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/python-graphblas/python-graphblas/HEAD?filepath=notebooks%2FIntro%20to%20GraphBLAS%20%2B%20SSSP%20example.ipynb)
 
 Python wrapper around GraphBLAS
 
@@ -172,8 +172,8 @@ A = gb.io.from_numpy(m)
 m = gb.io.to_numpy(A)
 
 # scipy.sparse matrices
-A = gb.io.from_scipy_sparse_matrix(m)
-m = gb.io.to_scipy_sparse_matrix(m, format='csr')
+A = gb.io.from_scipy_sparse(m)
+m = gb.io.to_scipy_sparse(m, format='csr')
 
 # networkx graphs
 A = gb.io.from_networkx(g)
