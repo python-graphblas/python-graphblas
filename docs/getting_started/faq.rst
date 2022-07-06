@@ -50,7 +50,7 @@ together with the output.
 What is the performance penalty of writing algorithms with python-graphblas vs writing them directly in C?
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-For large graphs, the performance penalty is quite small (5-10%) as the bulk of the work
+For large graphs, the performance penalty is very small as the bulk of the work
 of operating on Matrices and Vectors is done purely in C. The overhead is only in the calls made
 to C.
 

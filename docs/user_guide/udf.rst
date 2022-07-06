@@ -27,3 +27,6 @@ Example customized UnaryOp:
     w  # indexes=[0, 1, 3], values=[1, 3, 3]
 
 Similar methods exist for BinaryOp, Monoid, and Semiring.
+
+
+TODO: mention auto-register and using lambdas

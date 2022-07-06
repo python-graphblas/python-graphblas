@@ -2,71 +2,197 @@
 Fundamentals
 ============
 
-1. Pull from powerpoint to show mapping from C to python
-2. Discuss delayed objects
-3. Discuss << and .update()
-4. Discuss .new()
-5. Discuss functional vs method calling syntax
-6. Discuss comparison using .isequal and .isclose
+The GraphBLAS specification is a mathematically sound, well thought out API. Most GraphBLAS functions
+follow a general pattern as follows:
 
+.. image:: ../_static/img/GraphBLAS-API-example.png
 
-The approach taken with this library is to follow the C-API specification as closely as possible while making improvements
-allowed with the Python syntax. Because the spec always passes in the output object to be written to, we follow the same,
-which is very different from the way Python normally operates. In fact, many who are familiar with other Python data
-libraries (numpy, pandas, etc) will find it strange to not create new objects for every call.
+The name of the function is obviously unique for each function, but in general the output, mask, accumulator,
+operator, input arguments, and descriptor are common to every GraphBLAS function.
 
-At the highest level, the goal is to separate output, mask, and accumulator on the left side of the assignment
-operator ``=`` and put the computation on the right side. Unfortunately, that approach doesn't always work very well
-with how Python handles assignment, so instead we (ab)use the left-shift ``<<`` notation to give the same flavor of
-assignment. This opens up all kinds of nice possibilities.
+The **output** is the object which will be updated with the result of the computation. It must already exist
+and be initialized, even if initialized as an empty object.
 
-This is an example of how the mapping works:
+The **mask** is optional and, if defined, controls which elements of the output are updated. Elements outside
+the mask are left untouched.
 
-.. code-block:: c
+The **accumulator** is optional and, if defined, determines how existing values in the output are combined
+with new values from the computation.
 
-    // C call
-    GrB_Matrix_mxm(M, mask, GrB_PLUS_INT64, GrB_MIN_PLUS_INT64, A, B, NULL)
+The **operator** is the secret sauce in GraphBLAS, allowing matrix multiplication to use a different semiring
+than the standard *plus_times*, or to add two vectors together using something other than standard addition.
+
+The **inputs** are the objects involved in the computation. There may be two inputs (for addition or matrix
+multiplication) or there may be one input (for apply or reduction).
+
+The descriptor is a set of bitwise flags.
+
+  - The first input can be transposed during the computation (only applies for Matrix input).
+  - The second input can be transposed during the computation (only applies for Matrix input).
+  - The mask can be complemented, which is needed to avoid situations where only a few elements are
+    *not* part of the mask. Rather than creating a mostly dense object, the very sparse mask can be provided
+    with a complement indicator.
+  - The structure of the mask can be used as the mask, ignoring the values in the mask object. This is more
+    efficient than checking each value and essentially treats the mask as if every element were True.
+  - Replace mode indicates that elements outside the mask area should be cleared in the final output.
+    When not in replace mode, elements outside the mask are left untouched.
+
+For more details, look at the official API spec at `graphblas.org <https:://graphblas.org>`_.
+
+C-to-Python Mapping
+-------------------
+
+The mapping between the C API and the python-graphblas API is as follows.
+
+.. image:: ../_static/img/GraphBLAS-mapping.png
+
+All arguments which impact the output are grouped on the left side of the ``<<``.
+This includes the output itself as well as the mask, accumulator, and relevant pieces of
+the descriptor.
+
+Everything which describes the actual computation (operation, input arguments, operator)
+is grouped on the right side of the ``<<``.
+
+This separation is very intentional. While the whole expression is passed as a single call
+to the backend GraphBLAS implementation, it really is two operations fused together for
+efficiency. The computation on the right could be computed fully and subsequently the output could be
+updated with the computed object. This is obviously inefficient when a mask is used and
+many of the elements computed on the right would be thrown away. This is the reason to fuse
+the two operations for performance. However, keeping them separated in the python-graphblas
+notation makes it much easier to see and reason about the two aspects of the fused operation.
+
+The descriptor bit flags are common in C, but with Python we can have a much nicer syntax.
+The bit flags become attributes on the objects they impact.
+
+  - For input arguments, adding ``.T`` will indicate that the argument should be transposed in the operation.
+  - For the mask, ``.S`` indicates the structure is only considered, while ``.V`` indicates that the value
+    of each element should be used.
+  - The mask also has a prefix ``~`` to indicate the complement of the mask.
+  - Replace mode is indicated with a boolean keyword argument named ``replace``.
+
+Update Notation (<<)
+--------------------
+
+With the goal to separate output-affecting items on the left side of an assignment syntax, the obvious choice
+would have been to use ``M = ...``.  Unfortunately, in Python this replaces what the variable ``M`` is pointing
+to rather than updating ``M``.
 
 .. code-block:: python
 
-    # Python call
-    M(mask.V, accum=binary.plus) << A.mxm(B, semiring.min_plus)
+    # This doesn't actually update M
+    M = semiring.min_plus(A @ B)
 
-The expression on the right ``A.mxm(B)`` creates a delayed object which does no computation. Once it is used in the
-``<<`` expression with ``M``, the whole thing is translated into the equivalent GraphBLAS call.
 
-Delayed objects also have a ``.new()`` method which can be used to force computation and return a new
-object. This is convenient and often appropriate, but will create many unnecessary objects if used in a loop. It
-also loses the ability to perform accumulation with existing results. For best performance, following the standard
-GraphBLAS approach of (1) creating the object outside the loop and (2) using the object repeatedly within each loop
-is a much better approach, even if it doesn't feel very Pythonic.
-
-Descriptor flags are set on the appropriate elements to keep logic close to what it affects. Here is the same call
-with descriptor bits set. ``ttcsr`` indicates transpose the first and second matrices, complement the structure of the mask,
-and do a replacement on the output.
-
-.. code-block:: c
-
-    // C call
-    GrB_Matrix_mxm(M, mask, GrB_PLUS_INT64, GrB_MIN_PLUS_INT64, A, B, desc.ttcsr)
+Python does have assignment notation using square brackets. While this would work to update ``M``,
+the square bracket notation lacks the ability for keyword-arguments. Doing something like this is impossible:
 
 .. code-block:: python
 
-    # Python call
-    M(~mask.S, accum=binary.plus, replace=True) << A.T.mxm(B.T, semiring.min_plus)
+    # This will raise a SyntaxError
+    M[mask, accum=binary.min] = semiring.min_plus(A @ B)
 
-The objects receiving the flag operations (``A.T``, ``~mask``, etc) are also delayed objects. They hold on to the state but
-do no computation, allowing the correct descriptor bits to be set in a single GraphBLAS call.
+To have the full power of keyword arguments, the choice was made to use call syntax (i.e. parentheses) on
+the output object. Python does not allow assignment into the result of a function call. However, the
+left-shift (<<) operator can work with the result of such a call.
 
-If no mask or accumulator is used, the call looks like this:
-
-.. code-block:: python
-
-    M << A.mxm(B, semiring.min_plus)
-
-The use of ``<<`` to indicate updating is actually just syntactic sugar for a real ``.update()`` method. The above
-expression could be written as:
+Thus the choice was made to (ab)use the left-shift operator to indicate updates. It satisfies the visual
+feeling of computation from the right side flowing to the left. The result of the left-shift operator is
+ignored, while the object on the left is updated as a side-effect.
 
 .. code-block:: python
 
-    M.update(A.mxm(B, semiring.min_plus))
+    # This is the preferred syntax for python-graphblas
+    M(mask, accum=binary.min) << semiring.min_plus(A @ B)
+
+For anyone who objects to using the left-shift operator this way, an update method exists to perform the
+same job.
+
+.. code-block:: python
+
+    # This is equivalent to the code above
+    M(mask, accum=binary.min).update(semiring.min_plus(A @ B))
+
+Delayed Objects
+---------------
+
+In python-graphblas, most computations result in delayed objects. It is only when both sides are passed in the
+update (``<<``) that everything is brought together into a single call to the GraphBLAS backend. This gives
+the benefit of nicer Python syntax with very efficient fused GraphBLAS calls for performance.
+
+The user needs to be aware of these delayed objects when inspecting them. The ``__repr__`` is very similar,
+but will usually show something like ``MatrixExpression`` to indicate a delayed object. For small objects,
+the ``__repr__`` will usually perform the computation to show the user what the result will be. For large objects,
+this is not done to avoid an expensive computation during object inspection.
+
+Delayed objects can also be explicitly converted to real objects using the ``.new()`` method.
+
+.. code-block:: python
+
+    # This is a delayed object
+    delayed = semiring.min_plus(A @ B)
+    # This is now a real object
+    real_object = delayed.new()
+
+    # Or make it real in one go
+    M = semiring.min_plus(A @ B).new()
+
+In general, delayed objects can be passed as inputs into subsequent computations without problems.
+
+.. code-block:: python
+
+    # C is a delayed object
+    C = semiring.min_plus(A @ B)
+
+    # Passing C is okay here; D is still a delayed object
+    D = C.reduce_rowwise(monoid.plus)
+
+
+However, a delayed object cannot be used as the output object without first converting it into a real object.
+
+Functional vs. Method Call Syntax
+---------------------------------
+
+Some operations (ex. reduce) only have a method form for calling.
+
+.. code-block:: python
+
+    v << A.reduce_columnwise(monoid.times)
+
+Other operations (ex. assignment) only have a syntax form.
+
+.. code-block:: python
+
+    # Fill the 2nd column of B with all 1's
+    B[:, 1] << 1
+
+However, most operations have both a functional and a method-based calling syntax.
+For method-based calls, the operator is an argument. For functional calls, the operator
+is the calling object.
+
+.. code-block:: python
+
+    # Method form for element-wise intersection
+    C << A.ewise_mult(B, binary.plus)
+
+    # Functional form for element-wise intersection
+    C << binary.plus(A & B)
+
+Comparing Objects
+-----------------
+
+Comparing objects can be tricky because of the need to check the shape, sparsity pattern, and values
+of both objects. Two convenience methods exist to simplify comparisons.
+
+1. isequal -- for checking exact matches
+2. isclose -- for checking approximately equal for floating point dtypes
+
+By default, the types do not need to match as long as the values are equivalent. If exact dtype matching
+is required, set the ``check_dtype`` keyword argument to True.
+
+.. code-block:: python
+
+    while True:
+        w = ... # perform some computation
+        # Exit the loop once converged
+        if v.isclose(w, rel_tol=1e-03):
+            break

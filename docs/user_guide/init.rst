@@ -2,7 +2,7 @@
 GraphBLAS Initialization
 ========================
 
-python-graphblas must be initialized before it can be used. This is done with the
+GraphBLAS must be initialized before it can be used. This is done with the
 ``graphblas.init`` function. The backend and the mode must be specified.
 
 .. code-block:: python

@@ -181,7 +181,7 @@ also much faster, as the matrix multiplication can be dispatched to scipy.
         err = np.absolute(x - xlast).sum()
         if err < N * tol:
             return dict(zip(nodelist, map(float, x)))
-    raise nx.PowerIterationFailedConvergence(max_iter
+    raise nx.PowerIterationFailedConvergence(max_iter)
 
 
 
