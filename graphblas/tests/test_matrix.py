@@ -2276,15 +2276,18 @@ def test_import_export_auto(A, do_iso, methods):
             else:
                 d = A2.ss.unpack(format, sort=sort, raw=raw)
             if in_method == "import":
-                import_func = getattr(Matrix.ss, f"import_{import_name}")
+
+                def import_func(x, import_name, **kwargs):
+                    return getattr(Matrix.ss, f"import_{import_name}")(**kwargs)
+
             else:
 
-                def import_func(**kwargs):
-                    getattr(A2.ss, f"pack_{import_name}")(**kwargs)
-                    return A2
+                def import_func(x, import_name, **kwargs):
+                    getattr(x.ss, f"pack_{import_name}")(**kwargs)
+                    return x
 
             d["format"] = import_format
-            other = import_func(take_ownership=take_ownership, **d)
+            other = import_func(A2, import_name, take_ownership=take_ownership, **d)
             if format == "bitmapc" and raw and import_format is None and import_name == "any":
                 # It's 1d, so we can't tell we're column-oriented w/o format keyword
                 assert other.isequal(A_orig.T)
@@ -2293,7 +2296,7 @@ def test_import_export_auto(A, do_iso, methods):
             assert other.ss.is_iso is do_iso
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
-                import_func(**d)
+                import_func(A2, import_name, **d)
     assert A.isequal(A_orig)
     assert A.ss.is_iso is do_iso
     assert A_orig.ss.is_iso is do_iso
@@ -2317,15 +2320,18 @@ def test_import_export_auto(A, do_iso, methods):
             else:
                 d = C2.ss.unpack(format, raw=raw)
             if in_method == "import":
-                import_func = getattr(Matrix.ss, f"import_{import_name}")
+
+                def import_func(x, import_name, **kwargs):
+                    return getattr(Matrix.ss, f"import_{import_name}")(**kwargs)
+
             else:
 
-                def import_func(**kwargs):
-                    getattr(C2.ss, f"pack_{import_name}")(**kwargs)
-                    return C2
+                def import_func(x, import_name, **kwargs):
+                    getattr(x.ss, f"pack_{import_name}")(**kwargs)
+                    return x
 
             d["format"] = import_format
-            other = import_func(take_ownership=take_ownership, **d)
+            other = import_func(C2, import_name, take_ownership=take_ownership, **d)
             if format == "fullc" and raw and import_format is None and import_name == "any":
                 # It's 1d, so we can't tell we're column-oriented w/o format keyword
                 if do_iso:
@@ -2340,7 +2346,7 @@ def test_import_export_auto(A, do_iso, methods):
             assert other.ss.is_iso is do_iso
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
-                import_func(**d)
+                import_func(C2, import_name, **d)
     assert C.isequal(C_orig)
     assert C.ss.is_iso is do_iso
     assert C_orig.ss.is_iso is do_iso

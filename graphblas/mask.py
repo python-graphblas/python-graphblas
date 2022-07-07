@@ -1,6 +1,6 @@
 import warnings
 
-from . import utils
+from . import monoid, utils
 from .binary import land, lor, pair
 from .dtypes import BOOL
 from .select import valuene
@@ -62,7 +62,7 @@ class Mask:
 
         >>> val = Matrix(...)
         >>> val(self) << True
-        >>> val(mask, replace=True) << True
+        >>> val(mask, replace=True) << val
 
         If `complement=` argument is True, then the *complement* will be returned.
         This is equivalent to the following (but uses more efficient recipes):
@@ -88,6 +88,54 @@ class Mask:
         d = _COMPLEMENT_MASKS if complement else _COMBINE_MASKS
         func = d[type(self), type(mask)]
         return func(self, mask, dtype, name)
+
+    def __and__(self, other):
+        """Return the intersection of two masks as a new mask.
+
+        `new_mask = mask1 & mask2` is equivalent to the following:
+
+        >>> val = Matrix(bool, nrows, ncols)
+        >>> val(mask1) << True
+        >>> val(mask2, replace=True) << val
+        >>> new_mask = val.S
+
+        This uses faster recipes than the above for all combinations of input mask types,
+        and aims to be memory efficient when operating on complemented masks.
+        """
+        from .base import _check_mask
+
+        other = _check_mask(other)
+        complement = self.complement or other.complement
+        d = _COMPLEMENT_MASKS if complement else _COMBINE_MASKS
+        func = d[type(self), type(other)]
+        val = func(self, other, bool, None)
+        if complement:
+            return ComplementedStructuralMask(val)
+        else:
+            return StructuralMask(val)
+
+    __rand__ = __and__
+
+    def __or__(self, other):
+        """Return the union of two masks as a new mask.
+
+        `new_mask = mask1 | mask2` is equivalent to the following:
+
+        >>> val = Matrix(bool, nrows, ncols)
+        >>> val(mask1) << True
+        >>> val(mask2) << True
+        >>> new_mask = val.S
+
+        This uses faster recipes than the above for all combinations of input mask types,
+        and aims to be memory efficient when operating on complemented masks.
+        """
+        from .base import _check_mask
+
+        other = _check_mask(other)
+        func = _MASK_OR[type(self), type(other)]
+        return func(self, other)
+
+    __ror__ = __or__
 
 
 class StructuralMask(Mask):
@@ -371,6 +419,97 @@ _COMPLEMENT_MASKS = {
     # CV-CV
     (ComplementedValueMask, ComplementedValueMask): _complement_CV_CV,
 }
+
+
+def _combine_S_S_mask_or(m1, m2):
+    """S-S"""
+    val = monoid.any(one(m1.parent).new(bool) | one(m2.parent).new(bool)).new()
+    return StructuralMask(val)
+
+
+def _combine_S_SV_mask_or(m1, m2):
+    """S-V"""
+    val = monoid.any(one(m1.parent).new(bool) | one(m2.parent).new(bool, mask=m2)).new()
+    return StructuralMask(val)
+
+
+def _combine_SV_S_mask_or(m1, m2):
+    """V-S"""
+    val = monoid.any(one(m1.parent).new(bool, mask=m1) | one(m2.parent).new(bool)).new()
+    return StructuralMask(val)
+
+
+def _complement_A_CS_mask_or(m1, m2):
+    """~S-CS, ~V-CS, ~CV-CS"""
+    val = one(m2.parent).new(bool, mask=~m1)
+    return ComplementedStructuralMask(val)
+
+
+def _complement_CS_A_mask_or(m1, m2):
+    """~CS-S, ~CS-V, ~CS-CV"""
+    val = one(m1.parent).new(bool, mask=~m2)
+    return ComplementedStructuralMask(val)
+
+
+def _complement_A_CV_mask_or(m1, m2):
+    """~S-CV, ~V-CV"""
+    val = valuene(m2.parent).new(bool, mask=~m1)
+    return ComplementedStructuralMask(val)
+
+
+def _complement_CV_A_mask_or(m1, m2):
+    """~CV-S, ~CV-V"""
+    val = valuene(m1.parent).new(bool, mask=~m2)
+    return ComplementedStructuralMask(val)
+
+
+def _combine_V_V_mask_or(m1, m2):
+    """V-V"""
+    val = monoid.any(valuene(m1.parent).new() | valuene(m2.parent).new()).new(bool)
+    return StructuralMask(val)
+
+
+def _complement_CS_CS_mask_or(m1, m2):
+    """~CS-CS"""
+    val = pair(m1.parent & m2.parent).new(bool)
+    return ComplementedStructuralMask(val)
+
+
+def _complement_CV_CV_mask_or(m1, m2):
+    """~CV-CV"""
+    val = valuene(land(m1.parent & m2.parent).new(bool)).new()
+    return ComplementedStructuralMask(val)
+
+
+_MASK_OR = {
+    # S-S
+    (StructuralMask, StructuralMask): _combine_S_S_mask_or,
+    # S-V, V-S
+    (StructuralMask, ValueMask): _combine_S_SV_mask_or,
+    (ValueMask, StructuralMask): _combine_SV_S_mask_or,
+    # S-CS, CS-S
+    (StructuralMask, ComplementedStructuralMask): _complement_A_CS_mask_or,
+    (ComplementedStructuralMask, StructuralMask): _complement_CS_A_mask_or,
+    # S-CV, CV-S
+    (StructuralMask, ComplementedValueMask): _complement_A_CV_mask_or,
+    (ComplementedValueMask, StructuralMask): _complement_CV_A_mask_or,
+    # V-V
+    (ValueMask, ValueMask): _combine_V_V_mask_or,
+    # V-CS, CS-V
+    (ValueMask, ComplementedStructuralMask): _complement_A_CS_mask_or,
+    (ComplementedStructuralMask, ValueMask): _complement_CS_A_mask_or,
+    # V-CV, CV-V
+    (ValueMask, ComplementedValueMask): _complement_A_CV_mask_or,
+    (ComplementedValueMask, ValueMask): _complement_CV_A_mask_or,
+    # CS-CS
+    (ComplementedStructuralMask, ComplementedStructuralMask): _complement_CS_CS_mask_or,
+    # CS-CV, CV-CS
+    (ComplementedStructuralMask, ComplementedValueMask): _complement_CS_A_mask_or,
+    (ComplementedValueMask, ComplementedStructuralMask): _complement_A_CS_mask_or,
+    # CV-CV
+    (ComplementedValueMask, ComplementedValueMask): _complement_CV_CV_mask_or,
+}
+
 utils._output_types[StructuralMask] = StructuralMask
 utils._output_types[ValueMask] = ValueMask
 utils._output_types[ComplementedStructuralMask] = ComplementedStructuralMask
