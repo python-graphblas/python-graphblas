@@ -33,6 +33,14 @@
     box-shadow: 0.2rem 0.5rem 1rem var(--pst-color-text-muted) !important;
 }
 
+.table {
+    font-size: smaller;
+    width: inherit;
+}
+
+.table td, .table th {
+    padding: 0 .75rem;
+}
 
 /* Styling for Jupyter Notebook ReST Exports */
 

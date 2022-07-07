@@ -6,9 +6,11 @@ User-defined Functions
 2. Discuss commonality for other operators
 3. Discuss register_anonymous
 
-Python-graphblas requires ``numba`` which enables compiling user-defined Python functions to native machine code for use in GraphBLAS.
+Python-graphblas requires ``numba`` which enables compiling user-defined Python functions
+to native machine code for use by the GraphBLAS backend. This provides functions which are
+very performant.
 
-Example customized UnaryOp:
+Example user-defined UnaryOp:
 
 .. code-block:: python
 
@@ -22,11 +24,31 @@ Example customized UnaryOp:
 
     UnaryOp.register_new('force_odd', force_odd_func)
 
-    v = Vector.from_values([0, 1, 3], [1, 2, 3])
+    v = Vector.from_values([0, 1, 3, 4, 5], [1, 2, 3, 8, 14])
     w = v.apply(unary.force_odd).new()
-    w  # indexes=[0, 1, 3], values=[1, 3, 3]
 
-Similar methods exist for BinaryOp, Monoid, and Semiring.
+.. csv-table:: w
+    :header: 0,1,2,3,4,5
+
+    1,3,,3,9,15
 
 
-TODO: mention auto-register and using lambdas
+Similar methods exist for BinaryOp and IndexUnaryOp. User-defined Monoids and Semirings are
+constructed out of previously defined and built-in UnaryOps and BinaryOps.
+
+Auto-registration of Lambdas
+----------------------------
+
+As a convenience, any lambda expression used in place of a UnaryOp will be automatically
+compiled as registered anonymously.
+
+Example lambda usage:
+
+.. code-block:: python
+
+    v.apply(lambda x: x % 5 - 2).new()
+
+.. csv-table::
+    :header: 0,1,2,3,4,5
+
+    -1,0,,1,1,2
