@@ -2,6 +2,7 @@ from . import _automethods, binary, utils
 from .base import _expect_op, _expect_type
 from .dtypes import BOOL
 from .expr import InfixExprBase
+from .mask import Mask
 from .matrix import Matrix, MatrixExpression, TransposedMatrix
 from .monoid import land, lor
 from .scalar import Scalar, ScalarExpression
@@ -352,7 +353,11 @@ def _ewise_infix_expr(left, right, *, method, within):
         elif method == "ewise_mult":
             return MatrixEwiseMultExpr(left, right)
         return MatrixEwiseAddExpr(left, right)
-    if left_type in types:
+    if within == "__or__" and isinstance(right, Mask):
+        return right.__ror__(left)
+    elif within == "__and__" and isinstance(right, Mask):
+        return right.__rand__(left)
+    elif left_type in types:
         left._expect_type(right, tuple(types), within=within, argname="right")
     elif right_type in types:
         right._expect_type(left, tuple(types), within=within, argname="left")

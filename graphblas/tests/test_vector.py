@@ -1251,19 +1251,23 @@ def test_import_export_auto(v, do_iso, methods):
                 d = v2.ss.unpack(format, sort=sort, raw=raw)
             if in_method == "import":
                 import_func = getattr(Vector.ss, f"import_{import_name}")
+
+                def import_func(x, import_name, **kwargs):
+                    return getattr(Vector.ss, f"import_{import_name}")(**kwargs)
+
             else:
 
-                def import_func(**kwargs):
-                    getattr(v2.ss, f"pack_{import_name}")(**kwargs)
-                    return v2
+                def import_func(x, import_name, **kwargs):
+                    getattr(x.ss, f"pack_{import_name}")(**kwargs)
+                    return x
 
             d["format"] = import_format
-            other = import_func(take_ownership=take_ownership, **d)
+            other = import_func(v2, import_name, take_ownership=take_ownership, **d)
             assert other.isequal(v_orig)
             assert other.ss.is_iso is do_iso
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
-                import_func(**d)
+                import_func(v2, import_name, **d)
     assert v.isequal(v_orig)
     assert v.ss.is_iso is do_iso
     assert v_orig.ss.is_iso is do_iso
@@ -1286,20 +1290,23 @@ def test_import_export_auto(v, do_iso, methods):
         else:
             d = w2.ss.unpack(format, raw=raw)
         if in_method == "import":
-            import_func = getattr(Vector.ss, f"import_{import_name}")
+
+            def import_func(x, import_name, **kwargs):
+                return getattr(Vector.ss, f"import_{import_name}")(**kwargs)
+
         else:
 
-            def import_func(**kwargs):
-                getattr(w2.ss, f"pack_{import_name}")(**kwargs)
-                return w2
+            def import_func(x, import_name, **kwargs):
+                getattr(x.ss, f"pack_{import_name}")(**kwargs)
+                return x
 
         d["format"] = import_format
-        other = import_func(take_ownership=take_ownership, **d)
+        other = import_func(w2, import_name, take_ownership=take_ownership, **d)
         assert other.isequal(w_orig)
         assert other.ss.is_iso is do_iso
         d["format"] = "bad_format"
         with pytest.raises(ValueError, match="Invalid format"):
-            import_func(**d)
+            import_func(w2, import_name, **d)
     assert w.isequal(w_orig)
     assert w.ss.is_iso is do_iso
     assert w_orig.ss.is_iso is do_iso
