@@ -62,7 +62,7 @@ class Mask:
 
         >>> val = Matrix(...)
         >>> val(self) << True
-        >>> val(mask, replace=True) << True
+        >>> val(mask, replace=True) << val
 
         If `complement=` argument is True, then the *complement* will be returned.
         This is equivalent to the following (but uses more efficient recipes):
@@ -96,7 +96,7 @@ class Mask:
 
         >>> val = Matrix(bool, nrows, ncols)
         >>> val(mask1) << True
-        >>> val(mask2, replace=True) << True
+        >>> val(mask2, replace=True) << val
         >>> new_mask = val.S
 
         This uses faster recipes than the above for all combinations of input mask types,
