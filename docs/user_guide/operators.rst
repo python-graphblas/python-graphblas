@@ -184,17 +184,20 @@ Example usage with a thunk parameter:
 
 Defined IndexUnary operators are:
 
-  - **rowindex** -- return the row index
-  - **colindex** -- return the column index
-  - **diagindex** -- return the diagonal (i.e. column - row) index
+    **index** -- return the vector index
+  - **rowindex** -- return the matrix row index
+  - **colindex** -- return the matrix column index
+  - **diagindex** -- return the matrix diagonal index (i.e. column - row)
   - **tril** -- lower triangle matrix (True if column >= row)
   - **triu** -- upper triangle matrix (True if column <= row)
   - **diag** -- matrix diagonal (True if row == column)
   - **offdiag** -- matrix off-diagonal (True if row != column)
-  - **colle** -- column index <= thunk
-  - **colgt** -- column index > thunk
-  - **rowle** -- row index <= thunk
-  - **rowgt** -- row index > thunk
+  - **indexle** -- vector index <= thunk
+  - **indexgt** -- vector index > thunk
+  - **rowle** -- matrix row index <= thunk
+  - **rowgt** -- matrix row index > thunk
+  - **colle** -- matrix column index <= thunk
+  - **colgt** -- matrix column index > thunk
   - **valueeq** -- value == thunk
   - **valuene** -- value != thunk
   - **valuelt** -- value < thunk

@@ -42,6 +42,11 @@
     padding: 0 .75rem;
 }
 
+.table.inline {
+    display: inline-table;
+    margin-right: 30px;
+}
+
 /* Styling for Jupyter Notebook ReST Exports */
 
 .dataframe tbody th, .dataframe tbody td {
