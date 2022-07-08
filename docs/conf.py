@@ -12,7 +12,8 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('..'))
+
+sys.path.insert(0, os.path.abspath(".."))
 
 
 # -- Project information -----------------------------------------------------
@@ -60,7 +61,7 @@ html_theme_options = {
 
 # -- Options for notebook output -------------------------------------------------
 
-### nbsphinx config
+# nbsphinx config
 nbsphinx_input_prompt = "%.0s"  # suppress prompt
 nbsphinx_output_prompt = "%.0s"  # suppress prompt
 nbsphinx_prolog = r"""
