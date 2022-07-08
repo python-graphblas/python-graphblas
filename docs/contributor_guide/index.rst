@@ -2,4 +2,4 @@
 Contributor Guide
 =================
 
-Erik Welch is working on this
+Needs work
