@@ -184,7 +184,7 @@ Example usage with a thunk parameter:
 
 Defined IndexUnary operators are:
 
-    **index** -- return the vector index
+  - **index** -- return the vector index
   - **rowindex** -- return the matrix row index
   - **colindex** -- return the matrix column index
   - **diagindex** -- return the matrix diagonal index (i.e. column - row)
