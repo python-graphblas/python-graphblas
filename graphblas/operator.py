@@ -1241,7 +1241,7 @@ class IndexUnaryOp(OpBase):
         "trim_from_front": 4,
         "num_underscores": 1,
         "re_exprs": [
-            re.compile("^GrB_(ROWINDEX|COLINDEX)_(INT32|INT64)$"),
+            re.compile("^GrB_(ROWINDEX|COLINDEX|DIAGINDEX)_(INT32|INT64)$"),
         ],
         "re_exprs_return_bool": [
             re.compile("^GrB_(TRIL|TRIU|DIAG|OFFDIAG|COLLE|COLGT|ROWLE|ROWGT)$"),

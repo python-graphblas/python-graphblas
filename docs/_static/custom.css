@@ -1,0 +1,54 @@
+
+/* Main Page Stylings */
+
+.container-xl {
+    max-width: 1400px;
+}
+
+.intro-card {
+    margin-bottom: 30px;
+}
+
+.intro-card:hover {
+    box-shadow: 0.2rem 0.5rem 1rem var(--pst-color-link) !important;
+}
+
+.intro-card .card-header {
+    background-color: inherit;
+}
+
+.intro-card .card-header .card-text {
+    font-weight: bold;
+}
+
+.intro-card .card-body {
+    margin-top: 0;
+}
+
+.intro-card .card-body .card-text:first-child {
+    margin-bottom: 0;
+}
+
+.shadow {
+    box-shadow: 0.2rem 0.5rem 1rem var(--pst-color-text-muted) !important;
+}
+
+.table {
+    font-size: smaller;
+    width: inherit;
+}
+
+.table td, .table th {
+    padding: 0 .75rem;
+}
+
+.table.inline {
+    display: inline-table;
+    margin-right: 30px;
+}
+
+/* Styling for Jupyter Notebook ReST Exports */
+
+.dataframe tbody th, .dataframe tbody td {
+    padding: 10px;
+}
