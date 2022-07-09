@@ -196,7 +196,7 @@ There are two methods in python-graphblas for element-wise union.
     This is the official method based on the spec. It follows the spec by using a single value as-is when
     there is no overlap. For binary operations which are associative (plus, and, min, etc),
     ewise_add always gives the right answer. However, when the operation is not associative (minus, div, etc),
-    ewise_add can have suprising results.
+    ewise_add can have surprising results.
 
       - ``7 - 3 = 4``
       - ``7 - missing = 7``
