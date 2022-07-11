@@ -37,9 +37,9 @@ array will match the collection dtype.
 
     >>> idx, vals = v.to_values()
     >>> idx
-    array([0, 1, 3], dtype=uint64)
+    array([1, 3, 6], dtype=uint64)
     >>> vals
-    array([4., 5., 6.])
+    array([2., 3., 4.])
 
 
 NetworkX

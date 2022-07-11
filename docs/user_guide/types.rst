@@ -15,20 +15,20 @@ Defined data types are:
   - INT16
   - INT32
   - INT64
-  - FP32
-  - FP64
-  - FC32 (complex float32, not supported on Windows)
-  - FC64 (complex float64, not supported on Windows)
+  - FP32 (float32)
+  - FP64 (float64)
+  - FC32 (complex float32) (*not supported on Windows*)
+  - FC64 (complex float64)  (*not supported on Windows*)
+
+The ``graphblas.dtypes`` namespace contains objects for each of these data types.
 
 Each of these defined types has a string representation (accessed by ``.name``),
-a corresponding dtype in numpy (accessed by ``.np_type``), and a corresponding
-dtype in numba (accessed by ``.numba_type``).
+a corresponding numpy dtype (accessed by ``.np_type``), and a corresponding
+numba dtype (accessed by ``.numba_type``).
 
-When API calls need a dtype, a string or numpy or numba dtype may be used.
-Additionally, the Python builtin ``bool``, ``int``, and ``float`` may be used.
-``int`` indicates INT64 and ``float`` indicates FP64.
-
-The ``graphblas.dtypes`` namespace contains objects for each of the dtypes.
+When a data type is needed in an API call, a string or numpy or numba dtype may be used
+instead of the actual data type object. Additionally, the Python builtin
+``bool``, ``int``, and ``float`` may be used. ``int`` indicates INT64 and ``float`` indicates FP64.
 
 User-defined Types
 ------------------
