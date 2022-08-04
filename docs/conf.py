@@ -56,6 +56,10 @@ html_theme = "pydata_sphinx_theme"
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 html_theme_options = {
+    "logo": {
+        "image_light": "img/logo-name-light.svg",
+        "image_dark": "img/logo-name-dark.svg",
+    },
     "github_url": "https://github.com/python-graphblas/python-graphblas",
 }
 
