@@ -52,3 +52,7 @@
 .dataframe tbody th, .dataframe tbody td {
     padding: 10px;
 }
+
+.bd-sidebar-primary, .bd-sidebar-secondary {
+    position: sticky;
+}

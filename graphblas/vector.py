@@ -73,8 +73,12 @@ def _select_mask(updater, obj, mask):
 
 class Vector(BaseType):
     """
-    GraphBLAS Sparse Vector
-    High-level wrapper around GrB_Vector type
+    Create a new GraphBLAS Sparse Vector
+
+    :param dtype: Data type for elements in the Vector.
+    :param int size: Size of the Vector.
+    :param str name: Optional name to give the Vector.
+        This will be displayed in the ``__repr__``.
     """
 
     __slots__ = "_size", "_parent", "ss"
@@ -165,16 +169,39 @@ class Vector(BaseType):
 
     @property
     def S(self):
+        """
+        Creates a Mask based on the structure of the Vector.
+        """
         return StructuralMask(self)
 
     @property
     def V(self):
+        """
+        Creates a Mask based on the values in the Vector (treating each value as truthy).
+        """
         return ValueMask(self)
 
     def __delitem__(self, keys):
+        """
+        Delete a single element or subvector.
+
+        .. code-block:: python
+
+            del v[1:-1]
+        """
         del Updater(self)[keys]
 
     def __getitem__(self, keys):
+        """
+        Extract a single element or subvector.
+        The `user guide <../user_guide/operations.html#extract>`__ contains more details.
+
+        Example:
+
+        .. code-block:: python
+
+            sub_v = v[[1, 3, 5]].new()
+        """
         resolved_indexes = IndexerResolver(self, keys)
         shape = resolved_indexes.shape
         if not shape:
@@ -183,9 +210,26 @@ class Vector(BaseType):
             return VectorIndexExpr(self, resolved_indexes, *shape)
 
     def __setitem__(self, keys, expr):
+        """
+        Assign values to a single element or subvector.
+        The `user guide <../user_guide/operations.html#assign>`__ contains more details.
+
+        .. code-block:: python
+
+            # This makes a dense iso-value vector
+            v[:] << 1
+        """
         Updater(self)[keys] = expr
 
     def __contains__(self, index):
+        """
+        Indicates whether a value is present at the index.
+
+        .. code-block:: python
+
+            # Check if v[15] is non-empty
+            15 in v
+        """
         extractor = self[index]
         if not extractor._is_scalar:
             raise TypeError(
@@ -196,6 +240,9 @@ class Vector(BaseType):
         return not scalar._is_empty
 
     def __iter__(self):
+        """
+        Iterates over indices which are present in the vector.
+        """
         self.wait()  # sort in SS
         indices, values = self.to_values()
         return indices.flat
@@ -207,9 +254,13 @@ class Vector(BaseType):
 
     def isequal(self, other, *, check_dtype=False):
         """
-        Check for exact equality (same size, same empty values)
-        If `check_dtype` is True, also checks that dtypes match
-        For equality of floating point Vectors, consider using `isclose`
+        Check for exact equality (same size, same structure)
+
+        :param Vector other: the vector to compare against
+        :param bool check_dtypes: If True, also checks that dtypes match
+        :rtype: bool
+
+        *Note:* For equality of floating point dtypes, consider using :meth:`isclose`.
         """
         other = self._expect_type(other, Vector, within="isequal", argname="other")
         if check_dtype and self.dtype != other.dtype:
@@ -412,10 +463,6 @@ class Vector(BaseType):
 
     @classmethod
     def new(cls, dtype, size=0, *, name=None):
-        """
-        GrB_Vector_new
-        Create a new empty Vector from the given type and size
-        """
         warnings.warn(
             "`Vector.new(...)` is deprecated; please use `Vector(...)` instead.",
             DeprecationWarning,
@@ -697,8 +744,9 @@ class Vector(BaseType):
         """
         GrB_Vector_apply
         Apply UnaryOp to each element of the calling Vector
+
         A BinaryOp can also be applied if a scalar is passed in as `left` or `right`,
-            effectively converting a BinaryOp into a UnaryOp
+        effectively converting a BinaryOp into a UnaryOp
         """
         method_name = "apply"
         extra_message = (
@@ -984,11 +1032,9 @@ class Vector(BaseType):
 
         This is not a standard GraphBLAS method.  This is implemented with an extract and assign.
 
-        Parameters
-        ----------
         offset : int
         size : int, optional
-            The size of the new Vector.  If not specified, same size as input Vector.
+        The size of the new Vector.  If not specified, same size as input Vector.
 
         """
         if size is None:

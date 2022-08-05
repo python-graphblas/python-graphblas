@@ -58,8 +58,13 @@ def _reposition(updater, indices, chunk):
 
 class Matrix(BaseType):
     """
-    GraphBLAS Sparse Matrix
-    High-level wrapper around GrB_Matrix type
+    Create a new GraphBLAS Sparse Matrix
+
+    :param dtype: Data type for elements in the Matrix.
+    :param int nrows: Number of rows.
+    :param int ncols: Number of columns.
+    :param str name: Optional name to give the Matrix.
+        This will be displayed in the ``__repr__``.
     """
 
     __slots__ = "_nrows", "_ncols", "_parent", "ss"
@@ -136,16 +141,39 @@ class Matrix(BaseType):
 
     @property
     def S(self):
+        """
+        Creates a Mask based on the structure of the Matrix.
+        """
         return StructuralMask(self)
 
     @property
     def V(self):
+        """
+        Creates a Mask based on the values in the Matrix (treating each value as truthy).
+        """
         return ValueMask(self)
 
     def __delitem__(self, keys):
+        """
+        Delete a single element, row/column, or submatrix.
+
+        .. code-block:: python
+
+            del M[1, 5]
+        """
         del Updater(self)[keys]
 
     def __getitem__(self, keys):
+        """
+        Extract a single element, row/column, or submatrix.
+        The `user guide <../user_guide/operations.html#extract>`__ contains more details.
+
+        Example:
+
+        .. code-block:: python
+
+            subM = M[[1, 3, 5], :].new()
+        """
         resolved_indexes = IndexerResolver(self, keys)
         shape = resolved_indexes.shape
         if not shape:
@@ -156,9 +184,24 @@ class Matrix(BaseType):
             return MatrixIndexExpr(self, resolved_indexes, *shape)
 
     def __setitem__(self, keys, expr):
+        """
+        Assign values to a single element, row/column, or submatrix.
+        The `user guide <../user_guide/operations.html#assign>`__ contains more details.
+
+        .. code-block:: python
+
+            M[0, 0:3] << [15, 16, 17]
+        """
         Updater(self)[keys] = expr
 
     def __contains__(self, index):
+        """
+        Indicates whether the (row, col) index has a value present.
+
+        .. code-block:: python
+
+            (10, 15) in M
+        """
         extractor = self[index]
         if not extractor._is_scalar:
             raise TypeError(
@@ -169,6 +212,9 @@ class Matrix(BaseType):
         return not scalar._is_empty
 
     def __iter__(self):
+        """
+        Iterates over (row, col) indices which are present in the matrix.
+        """
         self.wait()  # sort in SS
         rows, columns, values = self.to_values()
         return zip(rows.flat, columns.flat)
@@ -180,9 +226,13 @@ class Matrix(BaseType):
 
     def isequal(self, other, *, check_dtype=False):
         """
-        Check for exact equality (same size, same empty values)
-        If `check_dtype` is True, also checks that dtypes match
-        For equality of floating point Vectors, consider using `isclose`
+        Check for exact equality (same size, same structure)
+
+        :param Matrix other: the matrix to compare against
+        :param bool check_dtypes: If True, also checks that dtypes match
+        :rtype: bool
+
+        *Note:* For equality of floating point dtypes, consider using :meth:`isclose`.
         """
         other = self._expect_type(
             other, (Matrix, TransposedMatrix), within="isequal", argname="other"
@@ -239,6 +289,9 @@ class Matrix(BaseType):
 
     @property
     def nrows(self):
+        """
+        Number of rows in the Matrix
+        """
         scalar = _scalar_index("s_nrows")
         call("GrB_Matrix_nrows", [_Pointer(scalar), self])
         return scalar.gb_obj[0]
@@ -409,10 +462,6 @@ class Matrix(BaseType):
 
     @classmethod
     def new(cls, dtype, nrows=0, ncols=0, *, name=None):
-        """
-        GrB_Matrix_new
-        Create a new empty Matrix from the given type, number of rows, and number of columns
-        """
         warnings.warn(
             "`Matrix.new(...)` is deprecated; please use `Matrix(...)` instead.",
             DeprecationWarning,
@@ -759,11 +808,16 @@ class Matrix(BaseType):
 
     def apply(self, op, right=None, *, left=None):
         """
-        GrB_Matrix_apply
-        Apply UnaryOp to each element of the calling Matrix
-        A BinaryOp can also be applied if a scalar is passed in as `left` or `right`,
-            effectively converting a BinaryOp into a UnaryOp
-        An IndexUnaryOp can also be applied with the thunk passed in as `right`
+        Applies `op` to each element of the Matrix.
+
+        Common usage is to pass a :class:`UnaryOp <graphblas.operator.UnaryOp>`,
+        in which case ``right`` and ``left`` may not be defined.
+
+        A :class:`BinaryOp <graphblas.operator.BinaryOp>` can also be used, in
+        which case a scalar must be passed as ``left`` or ``right``.
+
+        An :class:`IndexUnaryOp <graphblas.operator.IndexUnaryOp>` can also be used
+        with the thunk passed in as ``right``.
         """
         method_name = "apply"
         extra_message = (
@@ -1044,22 +1098,20 @@ class Matrix(BaseType):
 
     # Unofficial methods
     def reposition(self, row_offset, column_offset, *, nrows=None, ncols=None):
-        """Reposition values by adding `row_offset` and `column_offset` to the indices.
+        """Reposition the entire block of values within the (nrows x ncols) space
+        by adding offsets to the indices.
 
         Positive offset moves values to the right (or down), negative to the left (or up).
-        Values repositioned outside of the new Matrix are dropped (i.e., they don't wrap around).
+        Values repositioned outside of the new Matrix are dropped (i.e. they don't wrap around).
 
-        This is not a standard GraphBLAS method.  This is implemented with an extract and assign.
+        *This is not a standard GraphBLAS method.  This is implemented with an extract and assign.*
 
-        Parameters
-        ----------
-        row_offset : int
-        column_offset : int
-        nrows : int, optional
-            The nrows of the new Matrix.  If not specified, same nrows as input Matrix.
-        ncols : int, optional
-            The ncols of the new Matrix.  If not specified, same ncols as input Matrix.
-
+        :param int row_offset: Offset for the row indices.
+        :param int column_offset: Offset for the column indices.
+        :param int nrows: If specified, the new Matrix will be sized with nrows.
+            Default is the same number of rows as the original Matrix.
+        :param int ncols: If specified, the new Matrix will be sized with ncols.
+            Default is the same number of columns as the original Matrix.
         """
         if nrows is None:
             nrows = self._nrows

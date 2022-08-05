@@ -28,8 +28,13 @@ def _scalar_index(name):
 
 class Scalar(BaseType):
     """
-    GraphBLAS Scalar
-    Pseudo-object for GraphBLAS functions which accumulate into a scalar type
+    Create a new GraphBLAS Sparse Scalar
+
+    :param dtype: Data type of the Scalar.
+    :param bool is_cscalar: If True, the empty state is managed on the Python side rather than
+        with a proper GrB_Scalar object.
+    :param str name: Optional name to give the Scalar.
+        This will be displayed in the ``__repr__``.
     """
 
     __slots__ = "_empty", "_is_cscalar"
@@ -75,10 +80,16 @@ class Scalar(BaseType):
 
     @property
     def is_cscalar(self):
+        """
+        Returns True if the empty state is managed on the Python side.
+        """
         return self._is_cscalar
 
     @property
     def is_grbscalar(self):
+        """
+        Returns True if the empty state is managed by the GraphBLAS backend.
+        """
         return not self._is_cscalar
 
     @property
@@ -103,9 +114,18 @@ class Scalar(BaseType):
         return format_scalar_html(self)
 
     def __eq__(self, other):
+        """
+        Equality comparison uses :meth:`isequal`. Use that directly for finer control of
+        what is considered equal.
+        """
         return self.isequal(other)
 
     def __bool__(self):
+        """
+        The scalar is considered truthy if it is non-empty and the value inside is truthy.
+
+        To only check if a value is present, use :attr:`is_empty`.
+        """
         if self._is_empty:
             return False
         return bool(self.value)
@@ -159,10 +179,13 @@ class Scalar(BaseType):
 
     def isequal(self, other, *, check_dtype=False):
         """
-        Check for exact equality
+        Check for exact equality (including whether the value is missing).
 
-        If `check_dtype` is True, also checks that dtypes match
-        For equality of floating point Vectors, consider using `isclose`
+        :param Scalar other: the scalar to compare against
+        :param bool check_dtypes: If True, also checks that dtypes match
+        :rtype: bool
+
+        *Note:* For equality of floating point dtypes, consider using :meth:`isclose`.
         """
         if type(other) is not Scalar:
             if other is None:
@@ -244,6 +267,9 @@ class Scalar(BaseType):
 
     @property
     def is_empty(self):
+        """
+        Indicates whether the scalar is empty or not.
+        """
         if self._is_cscalar:
             return self._empty
         return self.nvals == 0
@@ -375,9 +401,6 @@ class Scalar(BaseType):
 
     @classmethod
     def new(cls, dtype, *, is_cscalar=False, name=None):
-        """
-        Create a new empty Scalar from the given type
-        """
         warnings.warn(
             "`Scalar.new(...)` is deprecated; please use `Scalar(...)` instead.",
             DeprecationWarning,

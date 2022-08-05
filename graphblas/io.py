@@ -2,14 +2,25 @@ import warnings
 
 import numpy as np
 
-from . import Matrix, Vector, backend
+from . import backend
 from .dtypes import lookup_dtype
 from .exceptions import GraphblasException
-from .matrix import TransposedMatrix
+from .matrix import Matrix, TransposedMatrix
 from .utils import output_type
+from .vector import Vector
 
 
 def draw(m):  # pragma: no cover
+    """
+    Draw a square adjacency Matrix as a graph.
+
+    Requires `networkx <https://networkx.org/>`_ and
+    `matplotlib <https://matplotlib.org/>`_ to be installed.
+
+    Example output:
+
+    .. image:: /_static/img/draw-example.png
+    """
     try:
         import networkx as nx
     except ImportError:
@@ -35,7 +46,14 @@ def draw(m):  # pragma: no cover
 
 def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     """
-    Returns a Matrix
+    Create a square adjacency Matrix from a networkx Graph.
+
+    :param nx.Graph G: Graph
+    :param list nodelist: List of nodes in the nx.Graph
+    :param dtype: Data type
+    :param str weight: Weight attribute
+    :param str name: Name of resulting Matrix
+    :rtype: Matrix
     """
     import networkx as nx
 
@@ -69,10 +87,18 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
 # TODO: add parameter to indicate empty value (default is 0 and NaN)
 def from_numpy(m):
     """
-    If m.ndim == 1, returns a Vector
-    if m.ndim == 2, returns a Matrix
-    if m.ndim > 2, raises an error
+    Create a sparse Vector or Matrix from a dense numpy array.
+
+    A value of 0 is considered as "missing".
+
+    - m.ndim == 1 returns a `Vector`
+    - m.ndim == 2 returns a `Matrix`
+    - m.ndim > 2 raises an error
+
     dtype is inferred from m.dtype
+
+    :param np.ndarray m: input array
+    :rtype: Vector or Matrix
     """
     if m.ndim > 2:
         raise GraphblasException("m.ndim must be <= 2")
@@ -111,9 +137,15 @@ def from_scipy_sparse_matrix(m, *, dup_op=None, name=None):
 
 
 def from_scipy_sparse(A, *, dup_op=None, name=None):
-    """Create a Matrix from a scipy.sparse array or matrix.
+    """
+    Create a Matrix from a scipy.sparse array or matrix.
 
-    Input data in "csr" or "csc" format will be efficient when importing with SuiteSparse:GraphBLAS
+    Input data in "csr" or "csc" format will be efficient when importing with SuiteSparse:GraphBLAS.
+
+    :param scipy.sparse A: Scipy sparse array or matrix
+    :param BinaryOp dup_op: Aggregation function for formats that allow duplicate entries (e.g. coo)
+    :param str name: Name of resulting Matrix
+    :rtype: Matrix
     """
     nrows, ncols = A.shape
     dtype = lookup_dtype(A.dtype)
@@ -155,6 +187,12 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
 
 # TODO: add parameters to allow different networkx classes and attribute names
 def to_networkx(m):
+    """
+    Create a networkx DiGraph from a square adjacency Matrix
+
+    :param Matrix m: square adjacency Matrix
+    :rtype: nx.DiGraph
+    """
     import networkx as nx
 
     g = nx.DiGraph()
@@ -164,6 +202,16 @@ def to_networkx(m):
 
 
 def to_numpy(m):
+    """
+    Create a dense numpy array from a sparse Vector or Matrix.
+
+    Missing values will become 0 in the output.
+
+    numpy dtype will match the GraphBLAS dtype
+
+    :param Vector or Matrix m: GraphBLAS Vector or Matrix
+    :rtype: np.ndarray
+    """
     try:
         import scipy  # noqa
     except ImportError:  # pragma: no cover
@@ -205,13 +253,12 @@ def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover
 
 
 def to_scipy_sparse(A, format="csr"):
-    """Create a scipy.sparse array (not matrix) from a GraphBLAS Matrix or Vector
+    """
+    Create a scipy.sparse array from a GraphBLAS Matrix or Vector
 
-    Zero values will not be included in the scipy.sparse array.
-
-    Parameters
-    ----------
-    format : str in {'bsr', 'csr', 'csc', 'coo', 'lil', 'dia', 'dok'}
+    :param Matrix or Vector A: GraphBLAS object to be converted
+    :param str format: {'bsr', 'csr', 'csc', 'coo', 'lil', 'dia', 'dok'}
+    :rtype: scipy.sparse array
     """
     import scipy.sparse as ss
 
@@ -254,13 +301,15 @@ def to_scipy_sparse(A, format="csr"):
 
 
 def mmread(source, *, dup_op=None, name=None):
-    """Read the contents of a Matrix Market filename or file into a new Matrix.
+    """
+    Create a GraphBLAS Matrix from the contents of a Matrix Market file.
 
-    This uses `scipy.io.mmread`:
-    https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.mmread.html
+    This uses `scipy.io.mmread
+    <https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.mmread.html>`_.
 
-    For more information on the Matrix Market format, see:
-    https://math.nist.gov/MatrixMarket/formats.html
+    :param str or file source: filename (.mtx or .mtz.gz) or file-like object
+    :param BinaryOp dup_op: Aggregation function for duplicate coordinates (if found)
+    :param str name: Name of resulting Matrix
     """
     try:
         from scipy.io import mmread
@@ -278,10 +327,18 @@ def mmread(source, *, dup_op=None, name=None):
 
 
 def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=None):
-    """Write matrix to Matrix Market file `target`.
+    """
+    Write a Matrix Market file from the contents of a GraphBLAS Matrix.
 
-    This uses `scipy.io.mmwrite`.  See documentation for the parameters here:
-    https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.mmwrite.html
+    This uses `scipy.io.mmwrite
+    <https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.mmwrite.html>`_.
+
+    :param str or file target: filename (.mtx) or file-like object opened for writing
+    :param Matrix matrix: Matrix to be written
+    :param str comment: Comments to be prepended to the Matrix Market file
+    :param str field: {"real", "complex", "pattern", "integer"}
+    :param int precision: Number of digits to write for real or complex values
+    :param str symmetry: {"general", "symmetric", "skew-symmetric", "hermetian"}
     """
     try:
         from scipy.io import mmwrite
