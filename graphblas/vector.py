@@ -196,8 +196,10 @@ class Vector(BaseType):
         return not scalar._is_empty
 
     def __iter__(self):
-        self.wait()  # sort in SS
-        indices, values = self.to_values()
+        if backend == "suitesparse":
+            indices, values = self.ss.to_values(indices=True)
+        else:  # pragma: no cover
+            indices, values = self.to_values()
         return indices.flat
 
     def __sizeof__(self):

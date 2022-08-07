@@ -3549,6 +3549,32 @@ def test_to_values_sort():
     assert_array_equal(cols, expected_rows)
 
 
+def test_ss_to_values(A):
+    rows, cols, vals = A.to_values()
+    for do_rows, do_cols, do_vals in itertools.product([True, False], [True, False], [True, False]):
+        r, c, v = A.ss.to_values(rows=do_rows, cols=do_cols, values=do_vals)
+        if do_rows:
+            assert_array_equal(r, rows)
+        else:
+            assert r is None
+        if do_cols:
+            assert_array_equal(c, cols)
+        else:
+            assert c is None
+        if do_vals:
+            assert_array_equal(v, vals)
+            assert v.dtype == int
+        else:
+            assert v is None
+    r, c, v = A.ss.to_values(values=True, dtype=float)
+    assert r is None
+    assert c is None
+    assert_array_equal(v, vals)
+    assert v.dtype == float
+    r, c, v = A.ss.to_values(values=True, dtype=int, sort=False)
+    assert v.dtype == int
+
+
 def test_get(A):
     assert compute(A.get(0, 0)) is None
     assert A.get(0, 0, "mittens") == "mittens"

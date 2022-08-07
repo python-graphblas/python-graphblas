@@ -169,8 +169,13 @@ class Matrix(BaseType):
         return not scalar._is_empty
 
     def __iter__(self):
-        self.wait()  # sort in SS
-        rows, columns, values = self.to_values()
+        if backend == "suitesparse":
+            if self._is_transposed:
+                columns, rows, values = self._matrix.ss.to_values(rows=True, cols=True)
+            else:
+                rows, columns, values = self.ss.to_values(rows=True, cols=True)
+        else:  # pragma: no cover
+            rows, columns, values = self.to_values()
         return zip(rows.flat, columns.flat)
 
     def __sizeof__(self):

@@ -2207,6 +2207,27 @@ def test_to_values_sort():
     assert_array_equal(values, expected)
 
 
+def test_ss_to_values(v):
+    indices, values = v.to_values()
+    for do_indices, do_vals in itertools.product([True, False], [True, False]):
+        idx, vals = v.ss.to_values(indices=do_indices, values=do_vals)
+        if do_indices:
+            assert_array_equal(idx, indices)
+        else:
+            assert idx is None
+        if do_vals:
+            assert_array_equal(vals, values)
+            assert vals.dtype == int
+        else:
+            assert vals is None
+    idx, vals = v.ss.to_values(values=True, dtype=float)
+    assert idx is None
+    assert_array_equal(vals, values)
+    assert vals.dtype == float
+    idx, vals = v.ss.to_values(values=True, dtype=int, sort=False)
+    assert vals.dtype == int
+
+
 def test_lambda_udfs(v):
     result = v.apply(lambda x: x + 1).new()  # pragma: no branch
     expected = binary.plus(v, 1).new()

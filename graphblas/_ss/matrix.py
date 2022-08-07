@@ -4113,6 +4113,51 @@ class ss:
         rv._ncols = rv.ncols
         return rv
 
+    def to_values(self, rows=False, cols=False, values=False, *, dtype=None, sort=True):
+        """Like Matrix.to_values, but only returns requested data.
+
+        For example, if only values are desired, do:
+
+        >>> _, _, values = matrix.ss.to_values(values=True)
+
+        Note that the return type is always tuple of length 3, but data not requested
+        will be None.
+        """
+        parent = self._parent
+        if sort:
+            parent.wait()  # sort in SS
+        nvals = parent._nvals
+        if rows:
+            c_rows = _CArray(size=nvals, name="&rows_array")
+        else:
+            c_rows = NULL
+        if cols:
+            c_cols = _CArray(size=nvals, name="&columns_array")
+        else:
+            c_cols = NULL
+        if values:
+            c_vals = _CArray(size=nvals, dtype=parent.dtype, name="&values_array")
+        else:
+            c_vals = NULL
+        scalar = _scalar_index("s_nvals")
+        scalar.value = nvals
+        dtype_name = "UDT" if parent.dtype._is_udt else parent.dtype.name
+        call(
+            f"GrB_Matrix_extractTuples_{dtype_name}",
+            [c_rows, c_cols, c_vals, _Pointer(scalar), parent],
+        )
+        if values:
+            c_vals = c_vals.array
+            if dtype is not None:
+                dtype = lookup_dtype(dtype)
+                if dtype != parent.dtype:
+                    c_vals = c_vals.astype(dtype.np_type)  # copies
+        return (
+            c_rows.array if rows else None,
+            c_cols.array if cols else None,
+            c_vals if values else None,
+        )
+
 
 @numba.njit(parallel=True)
 def argsort_values(indptr, indices, values):  # pragma: no cover
