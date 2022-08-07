@@ -78,6 +78,16 @@ def test_dup(s):
         assert compute(s7.value) is not None
 
 
+def test_dup_clear(s):
+    for is_cscalar in [True, False, None]:
+        s2 = s.dup(clear=True, is_cscalar=is_cscalar)
+        assert s2.dtype == s.dtype
+        assert compute(s2.value) is None
+        s3 = s.dup("FP64", clear=True, is_cscalar=is_cscalar)
+        assert s3.dtype == "FP64"
+        assert compute(s3.value) is None
+
+
 def test_from_value():
     s = Scalar.from_value(False)
     assert s.dtype == bool

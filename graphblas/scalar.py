@@ -332,11 +332,25 @@ class Scalar(BaseType):
             "Perhaps use GrB_Scalar instead (e.g., `my_scalar.dup(is_cscalar=False)`)"
         )
 
-    def dup(self, dtype=None, *, is_cscalar=None, name=None):
-        """Create a new Scalar by duplicating this one"""
+    def dup(self, dtype=None, *, clear=False, is_cscalar=None, name=None):
+        """Create a new Scalar by duplicating this one
+
+        Parameters
+        ----------
+        dtype : dtype, optional
+        clear : bool, default False
+            If True, the returned Scalar will be empty.
+        is_cscalar : bool, optional
+        name : str, optional
+        """
         if is_cscalar is None:
             is_cscalar = self._is_cscalar
-        if not is_cscalar and not self._is_cscalar and (dtype is None or dtype == self.dtype):
+        if (
+            not is_cscalar
+            and not self._is_cscalar
+            and not clear
+            and (dtype is None or dtype == self.dtype)
+        ):
             new_scalar = Scalar._from_obj(
                 ffi_new("GrB_Scalar*"),
                 self.dtype,
@@ -346,10 +360,11 @@ class Scalar(BaseType):
             call("GrB_Scalar_dup", [_Pointer(new_scalar), self])
         elif dtype is None:
             new_scalar = Scalar(self.dtype, is_cscalar=is_cscalar, name=name)
-            new_scalar.value = self
+            if not clear:
+                new_scalar.value = self
         else:
             new_scalar = Scalar(dtype, is_cscalar=is_cscalar, name=name)
-            if not self._is_empty:
+            if not clear and not self._is_empty:
                 if new_scalar.is_cscalar and not new_scalar.dtype._is_udt:
                     # Cast value so we don't raise given explicit dup with dtype
                     new_scalar.value = new_scalar.dtype.np_type.type(self.value)
