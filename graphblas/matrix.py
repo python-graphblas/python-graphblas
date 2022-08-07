@@ -361,16 +361,27 @@ class Matrix(BaseType):
         if not dup_op_given and self._nvals < n:
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
 
-    def dup(self, dtype=None, *, mask=None, name=None):
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None):
         """
         GrB_Matrix_dup
         Create a new Matrix by duplicating this one
+
+        Parameters
+        ----------
+        dtype : dtype, optional
+        clear : bool, default False
+            If True, the returned Matrix will be empty.
+        mask : Mask, optional
+            If given, the mask will be applied to the returned Matrix.
+            The mask is ignored if clear is True.
+        name : str, optional
         """
-        if dtype is not None or mask is not None:
+        if dtype is not None or mask is not None or clear:
             if dtype is None:
                 dtype = self.dtype
             rv = Matrix(dtype, nrows=self._nrows, ncols=self._ncols, name=name)
-            rv(mask=mask)[...] = self
+            if not clear:
+                rv(mask=mask)[...] = self
         else:
             new_mat = ffi_new("GrB_Matrix*")
             rv = Matrix._from_obj(new_mat, self.dtype, self._nrows, self._ncols, name=name)

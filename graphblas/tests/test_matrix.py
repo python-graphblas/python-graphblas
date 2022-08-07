@@ -79,6 +79,19 @@ def test_dup(A):
     assert E.isequal(Matrix.from_values([1], [1], [2], dtype=dtypes.INT64), check_dtype=True)
 
 
+def test_dup_clear(A):
+    C = A.dup(clear=True)
+    assert C.dtype == A.dtype
+    assert C.nvals == 0
+    assert C.nrows == A.nrows
+    assert C.ncols == A.ncols
+    D = A.dup(dtypes.INT8, clear=True)
+    assert D.dtype == dtypes.INT8
+    assert D.nvals == 0
+    assert D.nrows == A.nrows
+    assert D.ncols == A.ncols
+
+
 def test_from_values():
     C = Matrix.from_values([0, 1, 3], [1, 1, 2], [True, False, True])
     assert C.nrows == 4

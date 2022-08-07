@@ -76,6 +76,17 @@ def test_dup(v):
     assert x.isequal(Vector.from_values([1], [2], dtype=dtypes.INT64), check_dtype=True)
 
 
+def test_dup_clear(v):
+    w = v.dup(clear=True)
+    assert w.dtype == v.dtype
+    assert w.nvals == 0
+    assert w.size == v.size
+    x = v.dup(dtypes.INT8, clear=True)
+    assert x.dtype == dtypes.INT8
+    assert x.nvals == 0
+    assert x.size == v.size
+
+
 def test_from_values():
     u = Vector.from_values([0, 1, 3], [True, False, True])
     assert u.size == 4

@@ -357,16 +357,27 @@ class Vector(BaseType):
         if not dup_op_given and self._nvals < n:
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
 
-    def dup(self, dtype=None, *, mask=None, name=None):
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None):
         """
         GrB_Vector_dup
         Create a new Vector by duplicating this one
+
+        Parameters
+        ----------
+        dtype : dtype, optional
+        clear : bool, default False
+            If True, the returned Vector will be empty.
+        mask : Mask, optional
+            If given, the mask will be applied to the returned Vector.
+            The mask is ignored if clear is True.
+        name : str, optional
         """
-        if dtype is not None or mask is not None:
+        if dtype is not None or mask is not None or clear:
             if dtype is None:
                 dtype = self.dtype
             rv = Vector(dtype, size=self._size, name=name)
-            rv(mask=mask)[...] = self
+            if not clear:
+                rv(mask=mask)[...] = self
         else:
             rv = Vector._from_obj(ffi_new("GrB_Vector*"), self.dtype, self._size, name=name)
             call("GrB_Vector_dup", [_Pointer(rv), self])
