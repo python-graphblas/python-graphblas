@@ -295,7 +295,7 @@ class Scalar(BaseType):
         """
         Returns the value held by the Scalar as a Python object, or None if the Scalar is empty.
 
-        The `value` can also be assigned to update the Scalar.
+        Assigning to ``value`` will update the Scalar.
 
         Example Usage:
 
@@ -508,7 +508,9 @@ class Scalar(BaseType):
 
     @classmethod
     def from_pygraphblas(cls, scalar):  # pragma: no cover
-        """Convert a ``pygraphblas.Scalar`` to a new :class:`Scalar` by making a copy of the internal value.
+        """
+        Convert a ``pygraphblas.Scalar`` to a new :class:`Scalar` by making
+        a copy of the internal value.
 
         This method requires the
         `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
