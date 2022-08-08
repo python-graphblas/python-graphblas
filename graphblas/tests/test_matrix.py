@@ -3563,7 +3563,7 @@ def test_ss_to_values(A):
             assert c is None
         if do_vals:
             assert_array_equal(v, vals)
-            assert v.dtype == int
+            assert v.dtype == np.int64
         else:
             assert v is None
     r, c, v = A.ss.to_values(values=True, dtype=float)
@@ -3571,8 +3571,8 @@ def test_ss_to_values(A):
     assert c is None
     assert_array_equal(v, vals)
     assert v.dtype == float
-    r, c, v = A.ss.to_values(values=True, dtype=int, sort=False)
-    assert v.dtype == int
+    r, c, v = A.ss.to_values(values=True, dtype=A.dtype, sort=False)
+    assert v.dtype == np.int64
 
 
 def test_get(A):

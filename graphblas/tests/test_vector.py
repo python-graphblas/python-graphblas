@@ -2217,15 +2217,15 @@ def test_ss_to_values(v):
             assert idx is None
         if do_vals:
             assert_array_equal(vals, values)
-            assert vals.dtype == int
+            assert vals.dtype == np.int64
         else:
             assert vals is None
     idx, vals = v.ss.to_values(values=True, dtype=float)
     assert idx is None
     assert_array_equal(vals, values)
     assert vals.dtype == float
-    idx, vals = v.ss.to_values(values=True, dtype=int, sort=False)
-    assert vals.dtype == int
+    idx, vals = v.ss.to_values(values=True, dtype=v.dtype, sort=False)
+    assert vals.dtype == np.int64
 
 
 def test_lambda_udfs(v):
