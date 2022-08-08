@@ -4130,15 +4130,15 @@ class ss:
         if rows:
             c_rows = _CArray(size=nvals, name="&rows_array")
         else:
-            c_rows = NULL
+            c_rows = None
         if cols:
             c_cols = _CArray(size=nvals, name="&columns_array")
         else:
-            c_cols = NULL
+            c_cols = None
         if values:
             c_vals = _CArray(size=nvals, dtype=parent.dtype, name="&values_array")
         else:
-            c_vals = NULL
+            c_vals = None
         scalar = _scalar_index("s_nvals")
         scalar.value = nvals
         dtype_name = "UDT" if parent.dtype._is_udt else parent.dtype.name

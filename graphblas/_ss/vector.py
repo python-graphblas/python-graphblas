@@ -1691,11 +1691,11 @@ class ss:
         if indices:
             c_indices = _CArray(size=nvals, name="&indices_array")
         else:
-            c_indices = NULL
+            c_indices = None
         if values:
             c_values = _CArray(size=nvals, dtype=parent.dtype, name="&values_array")
         else:
-            c_values = NULL
+            c_values = None
         scalar = _scalar_index("s_nvals")
         scalar.value = nvals
         dtype_name = "UDT" if parent.dtype._is_udt else parent.dtype.name
