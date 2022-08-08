@@ -219,10 +219,14 @@ class Scalar(BaseType):
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """
-        Check for approximate equality
+        | Check for approximate equality (including whether the value is missing).
+        | Check is equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
 
-        If `check_dtype` is True, also checks that dtypes match
-        Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
+        :param Scalar other: the scalar to compare against
+        :param float rel_tol: relative tolerance
+        :param float abs_tol: absolute tolerance
+        :param bool check_dtype: If True, also checks that dtypes match
+        :rtype: bool
         """
         if type(other) is not Scalar:
             if other is None:
@@ -258,6 +262,11 @@ class Scalar(BaseType):
         return isclose_func._numba_func(self.value, other.value)
 
     def clear(self):
+        """
+        In-place operation which clears the value in the Scalar.
+
+        After the call, :attr:`nvals` will return 0.
+        """
         if self._is_empty:
             return
         if self._is_cscalar:
@@ -268,7 +277,7 @@ class Scalar(BaseType):
     @property
     def is_empty(self):
         """
-        Indicates whether the scalar is empty or not.
+        Indicates whether the Scalar is empty or not.
         """
         if self._is_cscalar:
             return self._empty
@@ -283,6 +292,21 @@ class Scalar(BaseType):
 
     @property
     def value(self):
+        """
+        Returns the value held by the Scalar as a Python object, or None if the Scalar is empty.
+
+        The `value` can also be assigned to update the Scalar.
+
+        Example Usage:
+
+        .. code-block:: python
+
+            >>> s.value
+            15
+            >>> s.value = 16
+            >>> s.value
+            16
+        """
         if self._is_empty:
             return None
         is_udt = self.dtype._is_udt
@@ -334,6 +358,9 @@ class Scalar(BaseType):
 
     @property
     def nvals(self):
+        """
+        Number of non-empty values. Can only be 0 or 1.
+        """
         if self._is_cscalar:
             return 0 if self._empty else 1
         scalar = _scalar_index("s_nvals")
@@ -359,7 +386,15 @@ class Scalar(BaseType):
         )
 
     def dup(self, dtype=None, *, is_cscalar=None, name=None):
-        """Create a new Scalar by duplicating this one"""
+        """
+        Create a duplicate of the Scalar. This is a full copy, not a view on the original.
+
+        :param dtype: Data type of the new Scalar. Normal typecasting rules apply.
+        :param bool is_cscalar: If True, the empty state is managed on the Python side rather than
+            with a proper GrB_Scalar object.
+        :param str name: Optional name to give the Scalar.
+        :rtype: Scalar
+        """
         if is_cscalar is None:
             is_cscalar = self._is_cscalar
         if not is_cscalar and not self._is_cscalar and (dtype is None or dtype == self.dtype):
@@ -385,18 +420,22 @@ class Scalar(BaseType):
 
     def wait(self):
         """
-        GrB_Scalar_wait
+        In `non-blocking mode <../user_guide/init.html#graphblas-modes>`__,
+        the computations may be delayed and not yet safe to use by multiple threads.
+        Use wait to force completion of the Scalar.
 
-        In non-blocking mode with GrB_Scalars, the computations may be delayed
-        and not yet safe to use by multiple threads.  Use wait to force completion
-        of a Scalar and make it safe to use as input parameters on multiple threads.
+        Has no effect in `blocking mode <../user_guide/init.html#graphblas-modes>`__.
         """
         # TODO: expose COMPLETE or MATERIALIZE options to the user
         if not self._is_cscalar:
             call("GrB_Scalar_wait", [self, _MATERIALIZE])
 
     def get(self, default=None):
-        """Get the value of a scalar as a Python scalar or the default value if it is empty."""
+        """
+        Get the internal value of the Scalar as a Python scalar.
+
+        :param default: Value returned if internal value is missing.
+        """
         return default if self._is_empty else self.value
 
     @classmethod
@@ -409,7 +448,16 @@ class Scalar(BaseType):
 
     @classmethod
     def from_value(cls, value, dtype=None, *, is_cscalar=False, name=None):
-        """Create a new Scalar from a Python value"""
+        """
+        Create a new Scalar from a value.
+
+        :param value: Internal value of the Scalar.
+        :param dtype: Data type of the Scalar. If not provided, the value will be
+            inspected to choose an appropriate dtype.
+        :param bool is_cscalar: If True, the empty state is managed on the Python side
+            rather than with a proper GrB_Scalar object.
+        :param str name: Optional name to give the Scalar.
+        """
         typ = output_type(value)
         if dtype is None:
             if typ is Scalar:
@@ -443,9 +491,12 @@ class Scalar(BaseType):
         return Scalar.from_value(value, dtype, is_cscalar=is_cscalar, name=name)
 
     def to_pygraphblas(self):  # pragma: no cover
-        """Convert to a new `pygraphblas.Scalar`
+        """
+        Convert to a ``pygraphblas.Scalar`` by making a copy of the internal value.
 
-        This copies data.
+        This method requires the
+        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
+        library to be installed.
         """
         if backend != "suitesparse":
             raise RuntimeError(
@@ -457,9 +508,11 @@ class Scalar(BaseType):
 
     @classmethod
     def from_pygraphblas(cls, scalar):  # pragma: no cover
-        """Convert a `pygraphblas.Scalar` to a new `graphblas.Scalar`
+        """Convert a ``pygraphblas.Scalar`` to a new :class:`Scalar` by making a copy of the internal value.
 
-        This copies data.
+        This method requires the
+        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
+        library to be installed.
         """
         if backend != "suitesparse":
             raise RuntimeError(

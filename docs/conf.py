@@ -63,6 +63,8 @@ html_theme_options = {
     "github_url": "https://github.com/python-graphblas/python-graphblas",
 }
 
+autodoc_member_order = "groupwise"
+
 # -- Options for notebook output -------------------------------------------------
 
 # nbsphinx config
