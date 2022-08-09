@@ -967,6 +967,12 @@ def _one(x):
 
 
 class UnaryOp(OpBase):
+    """Takes one input and returns one output, possibly of a different data type.
+
+    Built-in and registered UnaryOps are located in the ``graphblas.unary`` namespace
+    as well as in the ``graphblas.ops`` combined namespace.
+    """
+
     __slots__ = "orig_func", "is_positional", "_is_udt", "_numba_func"
     _custom_dtype = None
     _module = unary
@@ -1107,12 +1113,23 @@ class UnaryOp(OpBase):
 
     @classmethod
     def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
+        """Register a UnaryOp without registering it in the ``graphblas.unary`` namespace.
+
+        Because it is not registered in the namespace, the name is optional.
+        """
         if parameterized:
             return ParameterizedUnaryOp(name, func, anonymous=True, is_udt=is_udt)
         return cls._build(name, func, anonymous=True, is_udt=is_udt)
 
     @classmethod
     def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
+        """Register a UnaryOp. The name will be used to identify the UnaryOp in the
+        ``graphblas.unary`` namespace.
+
+            >>> gb.operator.UnaryOp.register_new("plus_one", lambda x: x + 1)
+            >>> dir(gb.unary)
+            [..., 'plus_one', ...]
+        """
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
@@ -1231,6 +1248,17 @@ class UnaryOp(OpBase):
 
 
 class IndexUnaryOp(OpBase):
+    """Takes one input and a thunk and returns one output, possibly of a different data type.
+    Along with the input value, the index(es) of the element are given to the function.
+
+    This is an advanced form of a unary operation that allows, for example, converting
+    elements of a Vector to their index position to build a ramp structure. Another use
+    case is returning a boolean value indicating whether the element is part of the upper
+    triangular structure of a Matrix.
+
+    Built-in and registered IndexUnaryOps are located in the ``graphblas.indexunary`` namespace.
+    """
+
     __slots__ = "orig_func", "is_positional", "_is_udt", "_numba_func"
     _module = indexunary
     _modname = "indexunary"
@@ -1391,12 +1419,28 @@ class IndexUnaryOp(OpBase):
 
     @classmethod
     def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
+        """Register an IndexUnaryOp without registering it in the
+        ``graphblas.indexunary`` namespace.
+
+        Because it is not registered in the namespace, the name is optional.
+        """
         if parameterized:
             return ParameterizedIndexUnaryOp(name, func, anonymous=True, is_udt=is_udt)
         return cls._build(name, func, anonymous=True, is_udt=is_udt)
 
     @classmethod
     def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
+        """Register an IndexUnaryOp. The name will be used to identify the IndexUnaryOp in the
+        ``graphblas.indexunary`` namespace.
+
+        If the return type is Boolean, the function will also be registered as a SelectOp
+        with the same name.
+
+            >>> from graphblas.operator import IndexUnaryOp
+            >>> IndexUnaryOp.register_new("row_mod", lambda x, i, j, thunk: i % max(thunk, 2))
+            >>> dir(gb.indexunary)
+            [..., 'row_mod', ...]
+        """
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
@@ -1487,6 +1531,15 @@ class IndexUnaryOp(OpBase):
 
 
 class SelectOp(OpBase):
+    """Identical to an :class:`IndexUnaryOp <graphblas.operator.IndexUnaryOp>`,
+    but must have a Boolean return type.
+
+    A SelectOp is used exclusively to select a subset of values from a collection where
+    the function returns True.
+
+    Built-in and registered SelectOps are located in the ``graphblas.select`` namespace.
+    """
+
     __slots__ = "orig_func", "is_positional", "_is_udt", "_numba_func"
     _module = select
     _modname = "select"
@@ -1532,6 +1585,10 @@ class SelectOp(OpBase):
 
     @classmethod
     def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
+        """Register a SelectOp without registering it in the ``graphblas.select`` namespace.
+
+        Because it is not registered in the namespace, the name is optional.
+        """
         if parameterized:
             return ParameterizedSelectOp(name, func, anonymous=True, is_udt=is_udt)
         iop = IndexUnaryOp._build(name, func, anonymous=True, is_udt=is_udt)
@@ -1539,6 +1596,16 @@ class SelectOp(OpBase):
 
     @classmethod
     def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
+        """Register a SelectOp. The name will be used to identify the SelectOp in the
+        ``graphblas.select`` namespace.
+
+        The function will also be registered as a IndexUnaryOp with the same name.
+
+            >>> from graphblas.operator import SelectOp
+            >>> SelectOp.register_new("upper_left_triangle", lambda x, i, j, thunk: i + j <= thunk)
+            >>> dir(gb.select)
+            [..., 'upper_left_triangle', ...]
+        """
         iop = IndexUnaryOp.register_new(
             name, func, parameterized=parameterized, is_udt=is_udt, lazy=lazy
         )
@@ -1743,6 +1810,12 @@ def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None, *, include_ind
 
 
 class BinaryOp(OpBase):
+    """Takes two inputs and returns one output, possibly of a different data type.
+
+    Built-in and registered BinaryOps are located in the ``graphblas.binary`` namespace
+    as well as in the ``graphblas.ops`` combined namespace.
+    """
+
     __slots__ = (
         "_monoid",
         "_commutes_to",
@@ -2055,12 +2128,30 @@ class BinaryOp(OpBase):
 
     @classmethod
     def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
+        """Register a BinaryOp without registering it in the ``graphblas.binary`` namespace.
+
+        Because it is not registered in the namespace, the name is optional.
+        """
         if parameterized:
             return ParameterizedBinaryOp(name, func, anonymous=True, is_udt=is_udt)
         return cls._build(name, func, anonymous=True, is_udt=is_udt)
 
     @classmethod
     def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
+        """Register a BinaryOp. The name will be used to identify the BinaryOp in the
+        ``graphblas.binary`` namespace.
+
+            >>> def max_zero(x, y):
+                    r = 0
+                    if x > r:
+                        r = x
+                    if y > r:
+                        r = y
+                    return r
+            >>> gb.operator.BinaryOp.register_new("max_zero", max_zero)
+            >>> dir(gb.binary)
+            [..., 'max_zero', ...]
+        """
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
@@ -2283,6 +2374,12 @@ class BinaryOp(OpBase):
 
 
 class Monoid(OpBase):
+    """Takes two inputs and returns one output, all of the same data type.
+
+    Built-in and registered Monoids are located in the ``graphblas.monoid`` namespace
+    as well as in the ``graphblas.ops`` combined namespace.
+    """
+
     __slots__ = "_binaryop", "_identity"
     is_commutative = True
     is_positional = False
@@ -2379,12 +2476,36 @@ class Monoid(OpBase):
 
     @classmethod
     def register_anonymous(cls, binaryop, identity, name=None):
+        """Register a Monoid without registering it in the ``graphblas.monoid`` namespace.
+
+        Because it is not registered in the namespace, the name is optional.
+
+        Parameters
+        ----------
+        binaryop : BinaryOp
+            Builtin or registered binary operator
+        identity :
+            Identity value of the monoid
+        name : str, optional
+            Name associated with the monoid
+
+        Returns
+        -------
+        Function handle
+        """
         if type(binaryop) is ParameterizedBinaryOp:
             return ParameterizedMonoid(name, binaryop, identity, anonymous=True)
         return cls._build(name, binaryop, identity, anonymous=True)
 
     @classmethod
     def register_new(cls, name, binaryop, identity, *, lazy=False):
+        """Register a Monoid. The name will be used to identify the Monoid in the
+        ``graphblas.monoid`` namespace.
+
+            >>> gb.operator.Monoid.register_new("max_zero", gb.binary.max_zero, 0)
+            >>> dir(gb.monoid)
+            [..., 'max_zero', ...]
+        """
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
@@ -2429,6 +2550,7 @@ class Monoid(OpBase):
 
     @property
     def binaryop(self):
+        """The :class:`BinaryOp` associated with the Monoid."""
         if self._binaryop is not None:
             return self._binaryop
         # Must be builtin
@@ -2436,6 +2558,7 @@ class Monoid(OpBase):
 
     @property
     def identities(self):
+        """The per-dtype identity values for the Monoid."""
         return {dtype: val.identity for dtype, val in self._typed_ops.items()}
 
     @property
@@ -2491,6 +2614,16 @@ class Monoid(OpBase):
 
 
 class Semiring(OpBase):
+    """Combination of a :class:`Monoid` and a :class:`BinaryOp`.
+
+    Semirings are most commonly used for performing matrix multiplication,
+    with the BinaryOp taking the place of the standard multiplication operator
+    and the Monoid taking the place of the standard addition operator.
+
+    Built-in and registered Semirings are located in the ``graphblas.semiring`` namespace
+    as well as in the ``graphblas.ops`` combined namespace.
+    """
+
     __slots__ = "_monoid", "_binaryop"
     _module = semiring
     _modname = "semiring"
@@ -2599,12 +2732,36 @@ class Semiring(OpBase):
 
     @classmethod
     def register_anonymous(cls, monoid, binaryop, name=None):
+        """Register a Semiring without registering it in the ``graphblas.semiring`` namespace.
+
+        Because it is not registered in the namespace, the name is optional.
+
+        Parameters
+        ----------
+        monoid : Monoid
+            Builtin or registered monoid
+        binaryop : BinaryOp
+            Builtin or registered binary operator
+        name : str, optional
+            Name associated with the semiring
+
+        Returns
+        -------
+        Function handle
+        """
         if type(monoid) is ParameterizedMonoid or type(binaryop) is ParameterizedBinaryOp:
             return ParameterizedSemiring(name, monoid, binaryop, anonymous=True)
         return cls._build(name, monoid, binaryop, anonymous=True)
 
     @classmethod
     def register_new(cls, name, monoid, binaryop, *, lazy=False):
+        """Register a Semiring. The name will be used to identify the Semiring in the
+        ``graphblas.semiring`` namespace.
+
+            >>> gb.operator.Semiring.register_new("max_max", gb.monoid.max, gb.binary.max)
+            >>> dir(gb.semiring)
+            [..., 'max_max', ...]
+        """
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
@@ -2813,6 +2970,7 @@ class Semiring(OpBase):
 
     @property
     def binaryop(self):
+        """The :class:`BinaryOp` associated with the Semiring."""
         if self._binaryop is not None:
             return self._binaryop
         # Must be builtin
@@ -2820,6 +2978,7 @@ class Semiring(OpBase):
 
     @property
     def monoid(self):
+        """The :class:`Monoid` associated with the Semiring."""
         if self._monoid is not None:
             return self._monoid
         # Must be builtin

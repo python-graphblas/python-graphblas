@@ -31,7 +31,7 @@ author = "Anaconda, Inc"
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ["sphinx.ext.autodoc", "nbsphinx", "sphinx_panels"]
+extensions = ["sphinx.ext.autodoc", "numpydoc", "sphinx_panels", "nbsphinx"]
 html_css_files = ["custom.css"]
 html_js_files = ["custom.js"]
 
@@ -56,8 +56,19 @@ html_theme = "pydata_sphinx_theme"
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 html_theme_options = {
+    "logo": {
+        "image_light": "img/logo-name-light.svg",
+        "image_dark": "img/logo-name-dark.svg",
+    },
     "github_url": "https://github.com/python-graphblas/python-graphblas",
 }
+
+autodoc_member_order = "groupwise"
+
+numpydoc_show_class_members = False
+numpydoc_show_inherited_class_members = False
+numpydoc_class_members_toctree = False
+
 
 # -- Options for notebook output -------------------------------------------------
 

@@ -157,7 +157,7 @@ IndexUnary Operators
 --------------------
 
 A variant of unary operators are indexunary operators. They behave exactly like unary operators,
-but the inputs are the value, the index position(s) of that value, and an thunk parameter.
+but the inputs are the value, the index position(s) of that value, and a thunk parameter.
 
 For example, an IndexUnary operator applied to a Matrix would be given the value, row, and column
 of each element (plus the thunk). The operator can use all of those pieces to determine an appropriate output.

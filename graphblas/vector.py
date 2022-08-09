@@ -72,9 +72,16 @@ def _select_mask(updater, obj, mask):
 
 
 class Vector(BaseType):
-    """
-    GraphBLAS Sparse Vector
-    High-level wrapper around GrB_Vector type
+    """Create a new GraphBLAS Sparse Vector.
+
+    Parameters
+    ----------
+    dtype :
+        Data type for elements in the Vector.
+    size : int
+        Size of the Vector.
+    name : str, optional
+        Name to give the Vector. This will be displayed in the ``__repr__``.
     """
 
     __slots__ = "_size", "_parent", "ss"
@@ -165,16 +172,37 @@ class Vector(BaseType):
 
     @property
     def S(self):
+        """Create a Mask based on the structure of the Vector."""
         return StructuralMask(self)
 
     @property
     def V(self):
+        """Create a Mask based on the values in the Vector (treating each value as truthy)."""
         return ValueMask(self)
 
     def __delitem__(self, keys):
+        """Delete a single element or subvector.
+
+        Examples
+        --------
+
+            >>> del v[1:-1]
+        """
         del Updater(self)[keys]
 
     def __getitem__(self, keys):
+        """Extract a single element or subvector.
+
+        See the `Extract section <../user_guide/operations.html#extract>`__
+        in the User Guide for more details.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            sub_v = v[[1, 3, 5]].new()
+        """
         resolved_indexes = IndexerResolver(self, keys)
         shape = resolved_indexes.shape
         if not shape:
@@ -183,9 +211,32 @@ class Vector(BaseType):
             return VectorIndexExpr(self, resolved_indexes, *shape)
 
     def __setitem__(self, keys, expr):
+        """Assign values to a single element or subvector.
+
+        See the `Assign section <../user_guide/operations.html#assign>`__
+        in the User Guide for more details.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # This makes a dense iso-value vector
+            v[:] = 1
+        """
         Updater(self)[keys] = expr
 
     def __contains__(self, index):
+        """Indicates whether a value is present at the index.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # Check if v[15] is non-empty
+            15 in v
+        """
         extractor = self[index]
         if not extractor._is_scalar:
             raise TypeError(
@@ -196,6 +247,7 @@ class Vector(BaseType):
         return not scalar._is_empty
 
     def __iter__(self):
+        """Iterate over indices which are present in the vector."""
         self.wait()  # sort in SS
         indices, values = self.to_values()
         return indices.flat
@@ -206,10 +258,22 @@ class Vector(BaseType):
         return size[0] + object.__sizeof__(self)
 
     def isequal(self, other, *, check_dtype=False):
-        """
-        Check for exact equality (same size, same empty values)
-        If `check_dtype` is True, also checks that dtypes match
-        For equality of floating point Vectors, consider using `isclose`
+        """Check for exact equality (same size, same structure)
+
+        Parameters
+        ----------
+        other : Vector
+            The vector to compare against
+        check_dtypes : bool, default=False
+            If True, also checks that dtypes match
+
+        Returns
+        -------
+        bool
+
+        See Also
+        --------
+        :meth:`isclose` : For equality check of floating point dtypes
         """
         other = self._expect_type(other, Vector, within="isequal", argname="other")
         if check_dtype and self.dtype != other.dtype:
@@ -234,10 +298,24 @@ class Vector(BaseType):
         return matches.reduce(monoid.land, allow_empty=False).new().value
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
-        """
-        Check for approximate equality (including same size and empty values)
-        If `check_dtype` is True, also checks that dtypes match
-        Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
+        """Check for approximate equality (including same size and same structure).
+
+        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
+
+        Parameters
+        ----------
+        other : Vector
+            Vector to compare against
+        rel_tol : float
+            Relative tolerance
+        abs_tol : float
+            Absolute tolerance
+        check_dtype : bool
+            If True, also checks that dtypes match
+
+        Returns
+        -------
+        bool
         """
         other = self._expect_type(other, Vector, within="isclose", argname="other")
         if check_dtype and self.dtype != other.dtype:
@@ -259,16 +337,19 @@ class Vector(BaseType):
 
     @property
     def size(self):
+        """Size of the Vector."""
         scalar = _scalar_index("s_size")
         call("GrB_Vector_size", [_Pointer(scalar), self])
         return scalar.gb_obj[0]
 
     @property
     def shape(self):
+        """A tuple of ``(size,)``."""
         return (self._size,)
 
     @property
     def nvals(self):
+        """Number of non-empty values in the Vector."""
         scalar = _scalar_index("s_nvals")
         call("GrB_Vector_nvals", [_Pointer(scalar), self])
         return scalar.gb_obj[0]
@@ -281,19 +362,36 @@ class Vector(BaseType):
         return n[0]
 
     def clear(self):
+        """In-place operation which clears all values in the Vector.
+
+        After the call, :attr:`nvals` will return 0. The :attr:`size` will not change.
+        """
         call("GrB_Vector_clear", [self])
 
     def resize(self, size):
+        """In-place operation which changes the :attr:`size`.
+
+        | Increasing :attr:`size` will expand with empty values.
+        | Decreasing :attr:`size` will drop existing values above the new maximum index.
+        """
         size = _as_scalar(size, _INDEX, is_cscalar=True)
         call("GrB_Vector_resize", [self, size])
         self._size = size.value
 
     def to_values(self, dtype=None, *, sort=True):
-        """
-        GrB_Vector_extractTuples
-        Extract the indices and values as a 2-tuple of numpy arrays
+        """Extract the indices and values as a 2-tuple of numpy arrays.
 
-        If sort is True, the indices is guaranteed to be sorted.
+        Parameters
+        ----------
+        dtype :
+            Requested dtype for the output values array.
+        sort : bool, default=True
+            Whether to require sorted indices.
+
+        Returns
+        -------
+        np.ndarray[dtype=uint64] : Indices
+        np.ndarray : Values
         """
         if sort:
             if backend != "suitesparse":
@@ -317,6 +415,12 @@ class Vector(BaseType):
         )
 
     def build(self, indices, values, *, dup_op=None, clear=False, size=None):
+        """Rarely used method to insert values into an existing Vector. The typical use case
+        is to create a new Vector and insert values at the same time using :meth:`from_values`.
+
+        All the arguments are used identically in :meth:`from_values`, except for `clear`, which
+        indicates whether to clear the Vector prior to adding the new values.
+        """
         # TODO: accept `dtype` keyword to match the dtype of `values`?
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         values, dtype = values_to_numpy_buffer(values, self.dtype)
@@ -358,9 +462,22 @@ class Vector(BaseType):
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
 
     def dup(self, dtype=None, *, mask=None, name=None):
-        """
-        GrB_Vector_dup
-        Create a new Vector by duplicating this one
+        """Create a duplicate of the Vector.
+
+        This is a full copy, not a view on the original.
+
+        Parameters
+        ----------
+        dtype :
+            Data type of the new Vector. Normal typecasting rules apply.
+        mask : Matrix, optional
+            Mask controlling which elements of the original to include in the copy.
+        name : str, optional
+            Name to give the Vector.
+
+        Returns
+        -------
+        Vector
         """
         if dtype is not None or mask is not None:
             if dtype is None:
@@ -373,9 +490,20 @@ class Vector(BaseType):
         return rv
 
     def diag(self, k=0, *, name=None):
-        """
-        GrB_Matrix_diag
-        Create a Matrix whose kth diagonal is this Vector
+        """Return a Matrix with values on the diagonal built from the Vector.
+
+        Parameters
+        ----------
+        k : int
+            Off-diagonal offset in the Matrix.
+        dtype :
+            Data type of the new Matrix. Normal typecasting rules apply.
+        name : str, optional
+            Name to give the new Matrix.
+
+        Returns
+        -------
+        :class:`~graphblas.Matrix`
         """
         from .matrix import Matrix
 
@@ -386,20 +514,30 @@ class Vector(BaseType):
         return rv
 
     def wait(self):
-        """
-        GrB_Vector_wait
+        """Wait for a computation to complete.
 
-        In non-blocking mode, the computations may be delayed and not yet safe
-        to use by multiple threads.  Use wait to force completion of a Vector
-        and make it safe to use as input parameters on multiple threads.
+        In `non-blocking mode <../user_guide/init.html#graphblas-modes>`__,
+        the computations may be delayed and not yet safe to use by multiple threads.
+        Use wait to force completion of the Vector.
+
+        Has no effect in `blocking mode <../user_guide/init.html#graphblas-modes>`__.
         """
         # TODO: expose COMPLETE or MATERIALIZE options to the user
         call("GrB_Vector_wait", [self, _MATERIALIZE])
 
     def get(self, index, default=None):
-        """Get an element at index as a Python scalar.
+        """Get an element at ``index`` as a Python scalar.
 
-        If there is no element at ``vector[index]``, then the default value is returned.
+        Parameters
+        ----------
+        index : int
+            Vector index
+        default :
+            Value returned if no element exists at index
+
+        Returns
+        -------
+        Python scalar
         """
         expr = self[index]
         if expr._is_scalar:
@@ -412,10 +550,6 @@ class Vector(BaseType):
 
     @classmethod
     def new(cls, dtype, size=0, *, name=None):
-        """
-        GrB_Vector_new
-        Create a new empty Vector from the given type and size
-        """
         warnings.warn(
             "`Vector.new(...)` is deprecated; please use `Vector(...)` instead.",
             DeprecationWarning,
@@ -424,10 +558,29 @@ class Vector(BaseType):
 
     @classmethod
     def from_values(cls, indices, values, dtype=None, *, size=None, dup_op=None, name=None):
-        """Create a new Vector from the given lists of indices and values.  If
-        size is not provided, it is computed from the max index found.
+        """Create a new Vector from indices and values.
 
-        values may be a scalar, in which case duplicate indices are ignored.
+        Parameters
+        ----------
+        indices : list or np.ndarray
+            Vector indices.
+        values : list or np.ndarray or scalar
+            List of values. If a scalar is provided, all values will be set to this single value.
+        dtype :
+            Data type of the Vector. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        size : int, optional
+            Size of the Vector. If not provided, ``size`` is computed from
+            the maximum index found in ``indices``.
+        dup_op : BinaryOp, optional
+            Function used to combine values if duplicate indices are found.
+            Leaving ``dup_op=None`` will raise an error if duplicates are found.
+        name : str, optional
+            Name to give the Vector.
+
+        Returns
+        -------
+        Vector
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         values, new_dtype = values_to_numpy_buffer(values, dtype)
@@ -466,23 +619,35 @@ class Vector(BaseType):
     #########################################################
 
     def ewise_add(self, other, op=monoid.plus, *, require_monoid=None):
-        """
-        GrB_Vector_eWiseAdd
+        """Perform element-wise computation on the union of sparse values, similar to how
+        one expects addition to work for sparse vectors.
 
-        Result will contain the union of indices from both Vectors.
+        See the `Element-wise Union <../user_guide/operations.html#element-wise-union>`__
+        section in the User Guide for more details, especially about the difference between
+        ewise_add and :meth:`ewise_union`.
 
-        Default op is monoid.plus.
+        Parameters
+        ----------
+        other : Vector
+            The other vector in the computation
+        op : :class:`~graphblas.operator.Monoid` or :class:`~graphblas.operator.BinaryOp`
+            Operator to use on intersecting values
+        require_monoid : deprecated
 
-        *Warning*: using binary operators can create very confusing behavior
-        when only one of the two elements is present.
+        Returns
+        -------
+        Vector with a structure formed as the union of the input structures
 
-        Examples:
-            - binary.minus where left=N/A and right=4 yields 4 rather than -4 as might be expected
-            - binary.gt where left=N/A and right=4 yields True
-            - binary.gt where left=N/A and right=0 yields False
+        Examples
+        --------
 
-        The behavior is caused by grabbing the non-empty value and using it directly without
-        performing any operation. In the case of `gt`, the non-empty value is cast to a boolean.
+        .. code-block:: python
+
+            # Method syntax
+            w << u.ewise_add(v, op=monoid.max)
+
+            # Functional syntax
+            w << monoid.max(u | v)
         """
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
@@ -539,11 +704,34 @@ class Vector(BaseType):
         return expr
 
     def ewise_mult(self, other, op=binary.times):
-        """
-        GrB_Vector_eWiseMult
+        """Perform element-wise computation on the intersection of sparse values,
+        similar to how one expects multiplication to work for sparse vectors.
 
-        Result will contain the intersection of indices from both Vectors
-        Default op is binary.times
+        See the
+        `Element-wise Intersection <../user_guide/operations.html#element-wise-intersection>`__
+        section in the User Guide for more details.
+
+        Parameters
+        ----------
+        other : Vector
+            The other vector in the computation
+        op : :class:`~graphblas.operator.Monoid` or :class:`~graphblas.operator.BinaryOp`
+            Operator to use on intersecting values
+
+        Returns
+        -------
+        Vector with a structure formed as the intersection of the input structures
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # Method syntax
+            w << u.ewise_mult(v, op=binary.gt)
+
+            # Functional syntax
+            w << binary.gt(u & v)
         """
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
@@ -581,16 +769,38 @@ class Vector(BaseType):
         return expr
 
     def ewise_union(self, other, op, left_default, right_default):
-        """
-        GxB_Vector_eWiseUnion
+        """Perform element-wise computation on the union of sparse values,
+        similar to how one expects subtraction to work for sparse matrices.
 
-        This is similar to `ewise_add` in that result will contain the union of
-        indices from both Vectors.  Unlike `ewise_add`, this will use
-        ``left_default`` for the left value when there is a value on the right
-        but not the left, and ``right_default`` for the right value when there
-        is a value on the left but not the right.
+        See the `Element-wise Union <../user_guide/operations.html#element-wise-union>`__
+        section in the User Guide for more details, especially about the difference between
+        ewise_union and :meth:`ewise_add`.
 
-        ``op`` should be a BinaryOp or Monoid.
+        Parameters
+        ----------
+        other : Vector
+            The other vector in the computation
+        op : :class:`~graphblas.operator.Monoid` or :class:`~graphblas.operator.BinaryOp`
+            Operator to use
+        left_default :
+            Scalar value to use when the index on the left is missing
+        right_default :
+            Scalar value to use when the index on the right is missing
+
+        Returns
+        -------
+        Vector with a structure formed as the union of the input structures
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # Method syntax
+            w << u.ewise_union(v, op=binary.div, left_default=1, right_default=1)
+
+            # Functional syntax
+            w << binary.div(u | v, left_default=1, right_default=1)
         """
         # SS, SuiteSparse-specific: eWiseUnion
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
@@ -668,10 +878,34 @@ class Vector(BaseType):
         return expr
 
     def vxm(self, other, op=semiring.plus_times):
-        """
-        GrB_vxm
-        Vector-Matrix multiplication. Result is a Vector.
-        Default op is semiring.plus_times
+        """Perform vector-matrix multiplication with the Vector being treated as a
+        (1xn) row vector on the left side of the computation.
+
+        See the
+        `Matrix Multiply <../user_guide/operations.html#matrix-multiply>`__
+        section in the User Guide for more details.
+
+        Parameters
+        ----------
+        other: Matrix
+            The matrix on the right side in the computation
+        op : :class:`~graphblas.operator.Semiring`
+            Semiring used in the computation
+
+        Returns
+        -------
+        Vector
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # Method syntax
+            C << v.vxm(A, op=semiring.min_plus)
+
+            # Functional syntax
+            C << semiring.min_plus(v @ A)
         """
         from .matrix import Matrix, TransposedMatrix
 
@@ -694,11 +928,43 @@ class Vector(BaseType):
         return expr
 
     def apply(self, op, right=None, *, left=None):
-        """
-        GrB_Vector_apply
-        Apply UnaryOp to each element of the calling Vector
-        A BinaryOp can also be applied if a scalar is passed in as `left` or `right`,
-            effectively converting a BinaryOp into a UnaryOp
+        """Create a new Vector by applying ``op`` to each element of the Vector.
+
+        See the `Apply <../user_guide/operations.html#apply>`__
+        section in the User Guide for more details.
+
+        Common usage is to pass a :class:`~graphblas.operator.UnaryOp`,
+        in which case ``right`` and ``left`` may not be defined.
+
+        A :class:`~graphblas.operator.BinaryOp` can also be used, in
+        which case a scalar must be passed as ``left`` or ``right``.
+
+        An :class:`~graphblas.operator.IndexUnaryOp` can also be used
+        with the thunk passed in as ``right``.
+
+        Parameters
+        ----------
+        op : UnaryOp or BinaryOp or IndexUnaryOp
+            Operator to apply
+        right :
+            Scalar used with BinaryOp or IndexUnaryOp
+        left :
+            Scalar used with BinaryOp
+
+        Returns
+        -------
+        Vector
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # Method syntax
+            w << v.apply(op.abs)
+
+            # Functional syntax
+            w << op.abs(v)
         """
         method_name = "apply"
         extra_message = (
@@ -818,10 +1084,33 @@ class Vector(BaseType):
         )
 
     def select(self, op, thunk=None):
-        """
-        GrB_Vector_select
-        Compute SelectOp at each element of the calling Vector, keeping
-        elements which return True.
+        """Create a new Vector by applying ``op`` to each element of the Vector and keeping
+        those elements where ``op`` returns True.
+
+        See the `Select <../user_guide/operations.html#select>`__
+        section in the User Guide for more details.
+
+        Parameters
+        ----------
+        op : :class:`~graphblas.operator.SelectOp` or :class:`~graphblas.operator.IndexUnaryOp`
+            Operator to apply
+        thunk :
+            Scalar passed to operator
+
+        Returns
+        -------
+        Vector
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # Method syntax
+            w << v.select(">=", 1)
+
+            # Functional syntax
+            w << select.value(v >= 1)
         """
         method_name = "select"
         if isinstance(op, str):
@@ -893,13 +1182,29 @@ class Vector(BaseType):
         )
 
     def reduce(self, op=monoid.plus, *, allow_empty=True):
-        """
-        GrB_Vector_reduce
-        Reduce all values into a scalar
-        Default op is monoid.lor for boolean and monoid.plus otherwise
+        """Reduce all values in the Vector into a single value using ``op``.
 
-        For empty Vector objects, the result will be the monoid identity if
-        `allow_empty` is False or empty Scalar if `allow_empty` is True.
+        See the `Reduce <../user_guide/operations.html#reduce>`__
+        section in the User Guide for more details.
+
+        Parameters
+        ----------
+        op : :class:`~graphblas.operator.Monoid`
+            Reduction operator
+        allow_empty : bool, default=True
+            If False and the Vector is empty, the Scalar result
+            will hold the monoid identity rather than a missing value
+
+        Returns
+        -------
+        Scalar
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            total << v.reduce(monoid.plus)
         """
         method_name = "reduce"
         op = get_typed_op(op, self.dtype, kind="binary|aggregator")
@@ -926,12 +1231,33 @@ class Vector(BaseType):
 
     # Unofficial methods
     def inner(self, other, op=semiring.plus_times):
-        """
-        Vector-vector inner (or dot) product. Result is a Scalar.
+        """Perform vector-vector inner (or dot) product.
 
-        Default op is semiring.plus_times
+        Parameters
+        ----------
+        other : Vector
+            The vector on the right side in the computation
+        op : :class:`~graphblas.operator.Semiring`
+            Semiring used in the computation
 
-        *This is not a standard GraphBLAS function*
+        Returns
+        -------
+        Scalar
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # Method syntax
+            s << v.inner(w, op=semiring.min_plus)
+
+            # Functional syntax
+            s << semiring.min_plus(v @ w)
+
+        *Note*: This is not a standard GraphBLAS function, but fits with other functions in the
+        `Matrix Multiplication <../user_guide/operations.html#matrix-multiply>`__
+        family of functions.
         """
         method_name = "inner"
         other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
@@ -949,12 +1275,27 @@ class Vector(BaseType):
         return expr
 
     def outer(self, other, op=binary.times):
-        """
-        Vector-vector outer (or cross) product. Result is a Matrix.
+        """Perform vector-vector outer (or cross) product.
 
-        Default op is binary.times
+        Parameters
+        ----------
+        other : Vector
+            The vector on the right side in the computation
+        op : :class:`~graphblas.operator.BinaryOp`
+            Operator used in the computation
 
-        *This is not a standard GraphBLAS function*
+        Returns
+        -------
+        Matrix
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            C << v.outer(w, op=binary.times)
+
+        *Note*: This is not a standard GraphBLAS function.
         """
         from .matrix import MatrixExpression
 
@@ -977,19 +1318,33 @@ class Vector(BaseType):
         return expr
 
     def reposition(self, offset, *, size=None):
-        """Reposition the values by adding `offset` to the indices.
+        """Create a new Vector with values identical to the original Vector,
+        but repositioned within the total size by adding ``offset`` to the indices.
 
         Positive offset moves values to the right, negative to the left.
-        Values repositioned outside of the new Vector are dropped (i.e., they don't wrap around).
+        Values repositioned outside of the new Vector are dropped (i.e. they don't wrap around).
 
-        This is not a standard GraphBLAS method.  This is implemented with an extract and assign.
+        *Note*: This is not a standard GraphBLAS method.
+        It is implemented using extract and assign.
 
         Parameters
         ----------
         offset : int
+            Offset for the indices.
         size : int, optional
-            The size of the new Vector.  If not specified, same size as input Vector.
+            If specified, the new Vector will be resized.
+            Default is the same size as the original Vector.
 
+        Returns
+        -------
+        Vector
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            w = v.reposition(20).new()
         """
         if size is None:
             size = self._size
@@ -1194,12 +1549,14 @@ class Vector(BaseType):
         call("GrB_Vector_removeElement", [self, idx.index])
 
     def to_pygraphblas(self):  # pragma: no cover
-        """Convert to a new `pygraphblas.Vector`
+        """Convert to a ``pygraphblas.Vector`` without copying data.
 
-        This does not copy data.
+        This gives control of the underlying GraphBLAS memory to pygraphblas,
+        meaning further operations on the current :class:`Vector` object will fail!
 
-        This gives control of the underlying GraphBLAS object to `pygraphblas`.
-        This means operations on the current `graphblas` object will fail!
+        This method requires the
+        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
+        library to be installed.
         """
         if backend != "suitesparse":
             raise RuntimeError(
@@ -1213,12 +1570,14 @@ class Vector(BaseType):
 
     @classmethod
     def from_pygraphblas(cls, vector):  # pragma: no cover
-        """Convert a `pygraphblas.Vector` to a new `graphblas.Vector`
+        """Convert a ``pygraphblas.Vector`` to a new :class:`Vector` without copying data.
 
-        This does not copy data.
+        This gives control of the underlying GraphBLAS memory to python-graphblas,
+        meaning further operations on the original ``pygraphblas`` vector object will fail!
 
-        This gives control of the underlying GraphBLAS object to `graphblas`.
-        This means operations on the original `pygraphblas` object will fail!
+        This method requires the
+        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
+        library to be installed.
         """
         if backend != "suitesparse":
             raise RuntimeError(
