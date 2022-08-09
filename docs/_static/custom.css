@@ -47,6 +47,10 @@
     margin-right: 30px;
 }
 
+p.rubric {
+    border-bottom: none;
+}
+
 /* Styling for Jupyter Notebook ReST Exports */
 
 .dataframe tbody th, .dataframe tbody td {

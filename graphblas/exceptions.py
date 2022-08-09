@@ -15,9 +15,8 @@ class UninitializedObject(GraphblasException):
 
 
 class InvalidObject(GraphblasException):
-    """
-    One of the collection objects (input or output) is in an invalid state due to
-    a previous error.
+    """One of the collection objects (input or output)
+    is in an invalid state due to a previous error.
     """
 
 
@@ -30,35 +29,28 @@ class InvalidValue(GraphblasException):
 
 
 class InvalidIndex(GraphblasException):
-    """
-    Provided index specifies a location outside the dimensions.
+    """Provided index specifies a location outside the dimensions.
 
     This error is always raised immediately, even in non-blocking mode.
     """
 
 
 class DomainMismatch(GraphblasException):
-    """
-    The domains (i.e. data types) of the inputs or outputs are incompatible for the operation.
+    """The domains (i.e. data types) of the inputs or outputs
+    are incompatible for the operation.
     """
 
 
 class DimensionMismatch(GraphblasException):
-    """
-    The input or output dimensions (i.e. shape) are not compatible.
-    """
+    """The input or output dimensions (i.e. shape) are not compatible."""
 
 
 class OutputNotEmpty(GraphblasException):
-    """
-    Attempt to call ``build`` on a non-empty object.
-    """
+    """Attempt to call :meth:`~graphblas.Matrix.build` on a non-empty object."""
 
 
 class OutOfMemory(GraphblasException):
-    """
-    GraphBLAS ran out of memory when allocating space for the operation.
-    """
+    """GraphBLAS ran out of memory when allocating space for the operation."""
 
 
 class InsufficientSpace(GraphblasException):
@@ -66,40 +58,33 @@ class InsufficientSpace(GraphblasException):
 
 
 class IndexOutOfBound(GraphblasException):
-    """
-    A provided index falls outside the dimensions.
+    """A provided index falls outside the dimensions.
 
     In non-blocking mode, this error can be deferred.
     """
 
 
 class Panic(GraphblasException):
-    """
-    Unknown internal GraphBLAS error
-    """
+    """Unknown internal GraphBLAS error."""
 
 
 class EmptyObject(GraphblasException):
-    """
-    A provided Scalar object is empty, but requires a value.
+    """A provided Scalar object is empty, but requires a value.
 
     This could happen, for example, if an empty Scalar is provided as the
-    ``right`` scalar argument to ``apply``.
+    ``right`` argument to :meth:`~graphblas.Matrix.apply`.
     """
 
 
 class NotImplementedException(GraphblasException):
-    """
-    The backend GraphBLAS implementation does not support the operation for
-    the provided inputs.
+    """The backend GraphBLAS implementation does not support
+    the operation for the provided inputs.
     """
 
 
 # Our errors
 class UdfParseError(GraphblasException):
-    """
-    Unable to parse the user-defined function.
-    """
+    """Unable to parse the user-defined function."""
 
 
 _error_code_lookup = {

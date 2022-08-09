@@ -57,14 +57,18 @@ def _reposition(updater, indices, chunk):
 
 
 class Matrix(BaseType):
-    """
-    Create a new GraphBLAS Sparse Matrix
+    """Create a new GraphBLAS Sparse Matrix.
 
-    :param dtype: Data type for elements in the Matrix.
-    :param int nrows: Number of rows.
-    :param int ncols: Number of columns.
-    :param str name: Optional name to give the Matrix.
-        This will be displayed in the ``__repr__``.
+    Parameters
+    ----------
+    dtype :
+        Data type for elements in the Matrix.
+    nrows : int
+        Number of rows.
+    ncols : int
+        Number of columns.
+    name : str, optional
+        Name to give the Matrix. This will be displayed in the ``__repr__``.
     """
 
     __slots__ = "_nrows", "_ncols", "_parent", "ss"
@@ -141,42 +145,36 @@ class Matrix(BaseType):
 
     @property
     def S(self):
-        """
-        Creates a Mask based on the structure of the Matrix.
-        """
+        """Create a Mask based on the structure of the Matrix."""
         return StructuralMask(self)
 
     @property
     def V(self):
-        """
-        Creates a Mask based on the values in the Matrix (treating each value as truthy).
-        """
+        """Create a Mask based on the values in the Matrix (treating each value as truthy)."""
         return ValueMask(self)
 
     def __delitem__(self, keys):
-        """
-        Delete a single element, row/column, or submatrix.
+        """Delete a single element, row/column, or submatrix.
 
-        Example Usage:
+        Examples
+        --------
 
-        .. code-block:: python
-
-            del M[1, 5]
+            >>> del M[1, 5]
         """
         del Updater(self)[keys]
 
     def __getitem__(self, keys):
-        """
-        Extract a single element, row/column, or submatrix.
+        """Extract a single element, row/column, or submatrix.
 
-        Example Usage:
+        See the `Extract section <../user_guide/operations.html#extract>`__
+        in the User Guide for more details.
+
+        Examples
+        --------
 
         .. code-block:: python
 
             subM = M[[1, 3, 5], :].new()
-
-        See the `Extract section <../user_guide/operations.html#extract>`__
-        in the User Guide for more details.
         """
         resolved_indexes = IndexerResolver(self, keys)
         shape = resolved_indexes.shape
@@ -188,25 +186,25 @@ class Matrix(BaseType):
             return MatrixIndexExpr(self, resolved_indexes, *shape)
 
     def __setitem__(self, keys, expr):
-        """
-        Assign values to a single element, row/column, or submatrix.
-
-        Example Usage:
-
-        .. code-block:: python
-
-            M[0, 0:3] << [15, 16, 17]
+        """Assign values to a single element, row/column, or submatrix.
 
         See the `Assign section <../user_guide/operations.html#assign>`__
         in the User Guide for more details.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            M[0, 0:3] = 17
         """
         Updater(self)[keys] = expr
 
     def __contains__(self, index):
-        """
-        Indicates whether the (row, col) index has a value present.
+        """Indicates whether the (row, col) index has a value present.
 
-        Example Usage:
+        Examples
+        --------
 
         .. code-block:: python
 
@@ -222,9 +220,7 @@ class Matrix(BaseType):
         return not scalar._is_empty
 
     def __iter__(self):
-        """
-        Iterates over (row, col) indices which are present in the matrix.
-        """
+        """Iterate over (row, col) indices which are present in the matrix."""
         self.wait()  # sort in SS
         rows, columns, values = self.to_values()
         return zip(rows.flat, columns.flat)
@@ -235,14 +231,22 @@ class Matrix(BaseType):
         return size[0] + object.__sizeof__(self)
 
     def isequal(self, other, *, check_dtype=False):
-        """
-        Check for exact equality (same size, same structure)
+        """Check for exact equality (same size, same structure).
 
-        :param Matrix other: the matrix to compare against
-        :param bool check_dtypes: If True, also checks that dtypes match
-        :rtype: bool
+        Parameters
+        ----------
+        other : Matrix
+            The matrix to compare against
+        check_dtypes : bool
+            If True, also checks that dtypes match
 
-        *Note:* For equality of floating point dtypes, consider using :meth:`isclose`.
+        Returns
+        -------
+        bool
+
+        See Also
+        --------
+        :meth:`isclose` : For equality check of floating point dtypes
         """
         other = self._expect_type(
             other, (Matrix, TransposedMatrix), within="isequal", argname="other"
@@ -270,15 +274,25 @@ class Matrix(BaseType):
         return matches.reduce_scalar(monoid.land, allow_empty=False).new().value
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
-        """
-        | Check for approximate equality (including same size and same structure).
-        | Check is equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
+        """Check for approximate equality (including same size and same structure).
 
-        :param Matrix other: the matrix to compare against
-        :param float rel_tol: relative tolerance
-        :param float abs_tol: absolute tolerance
-        :param bool check_dtype: If True, also checks that dtypes match
-        :rtype: bool
+        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
+
+        Parameters
+        ----------
+        other : Matrix
+            The matrix to compare against.
+        rel_tol : float
+            Relative tolerance.
+        abs_tol : float
+            Absolute tolerance.
+        check_dtype : bool
+            If True, also checks that dtypes match
+
+        Returns
+        -------
+        bool
+            Whether all values of the Matrix are close to the values in `other`.
         """
         other = self._expect_type(
             other, (Matrix, TransposedMatrix), within="isclose", argname="other"
@@ -304,34 +318,26 @@ class Matrix(BaseType):
 
     @property
     def nrows(self):
-        """
-        Number of rows in the Matrix.
-        """
+        """Number of rows in the Matrix."""
         scalar = _scalar_index("s_nrows")
         call("GrB_Matrix_nrows", [_Pointer(scalar), self])
         return scalar.gb_obj[0]
 
     @property
     def ncols(self):
-        """
-        Number of columns in the Matrix.
-        """
+        """Number of columns in the Matrix."""
         scalar = _scalar_index("s_ncols")
         call("GrB_Matrix_ncols", [_Pointer(scalar), self])
         return scalar.gb_obj[0]
 
     @property
     def shape(self):
-        """
-        A tuple of ``(nrows, ncols)``.
-        """
+        """A tuple of ``(nrows, ncols)``."""
         return (self._nrows, self._ncols)
 
     @property
     def nvals(self):
-        """
-        Number of non-empty values in the Matrix.
-        """
+        """Number of non-empty values in the Matrix."""
         scalar = _scalar_index("s_nvals")
         call("GrB_Matrix_nvals", [_Pointer(scalar), self])
         return scalar.gb_obj[0]
@@ -345,8 +351,7 @@ class Matrix(BaseType):
 
     @property
     def T(self):
-        """
-        Indicates the transpose of the Matrix.
+        """Indicates the transpose of the Matrix.
 
         Can be used in the arguments of most operations. It also can be used standalone
         as the `Transpose operation <../user_guide/operations.html#transpose>`__.
@@ -354,16 +359,14 @@ class Matrix(BaseType):
         return TransposedMatrix(self)
 
     def clear(self):
-        """
-        In-place operation which clears all values in the Matrix.
+        """In-place operation which clears all values in the Matrix.
 
         After the call, :attr:`nvals` will return 0. The :attr:`shape` will not change.
         """
         call("GrB_Matrix_clear", [self])
 
     def resize(self, nrows, ncols):
-        """
-        In-place operation which changes the :attr:`shape`.
+        """In-place operation which changes the :attr:`shape`.
 
         | Increasing :attr:`nrows` or :attr:`ncols` will expand with empty values.
         | Decreasing :attr:`nrows` or :attr:`ncols` will drop existing values above
@@ -376,15 +379,23 @@ class Matrix(BaseType):
         self._ncols = ncols.value
 
     def to_values(self, dtype=None, *, sort=True):
-        """
-        Extract the indices and values as a 3-tuple of numpy arrays corresponding to
-        the COO format of the Matrix.
+        """Extract the indices and values as a 3-tuple of numpy arrays
+        corresponding to the COO format of the Matrix.
 
-        :param dtype: Requested dtype for the output values array.
-        :param bool sort: Whether to require sorted indices.
+        Parameters
+        ----------
+        dtype :
+            Requested dtype for the output values array.
+        sort : bool, default=True
+            Whether to require sorted indices.
             If internally stored rowwise, the sorting will be first by rows, then by column.
             If internally stored columnwise, the sorting will be first by column, then by row.
-        :returns: (Rows, Columns, Values) as numpy arrays
+
+        Returns
+        -------
+        np.ndarray[dtype=uint64] : Rows
+        np.ndarray[dtype=uint64] : Columns
+        np.ndarray : Values
         """
         if sort:
             if backend != "suitesparse":
@@ -413,9 +424,10 @@ class Matrix(BaseType):
         )
 
     def build(self, rows, columns, values, *, dup_op=None, clear=False, nrows=None, ncols=None):
-        """
-        Rarely used method to insert values into an existing Matrix. The typical use case
-        is to create a new Matrix and insert values at the same time using :meth:`from_values`.
+        """Rarely used method to insert values into an existing Matrix.
+
+        The typical use case is to create a new Matrix and insert values
+        at the same time using :meth:`from_values`.
 
         All the arguments are used identically in :meth:`from_values`, except for `clear`, which
         indicates whether to clear the Matrix prior to adding the new values.
@@ -467,14 +479,23 @@ class Matrix(BaseType):
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
 
     def dup(self, dtype=None, *, mask=None, name=None):
-        """
-        Create a duplicate of the Matrix. This is a full copy, not a view on the original.
+        """Create a duplicate of the Matrix.
 
-        :param dtype: Data type of the new Matrix. Normal typecasting rules apply.
-        :param Matrix mask: Optional mask controlling which elements of the original to
+        This is a full copy, not a view on the original.
+
+        Parameters
+        ----------
+        dtype :
+            Data type of the new Matrix. Normal typecasting rules apply.
+        mask : Matrix, optional
+            Mask controlling which elements of the original to
             include in the copy.
-        :param str name: Optional name to give the Matrix.
-        :rtype: Matrix
+        name : str, optional
+            Name to give the Matrix.
+
+        Returns
+        -------
+        Matrix
         """
         if dtype is not None or mask is not None:
             if dtype is None:
@@ -488,19 +509,28 @@ class Matrix(BaseType):
         return rv
 
     def diag(self, k=0, dtype=None, *, name=None):
-        """
-        Return a Vector built from the diagonal values of the Matrix.
+        """Return a Vector built from the diagonal values of the Matrix.
 
-        :param int k: Off-diagonal offset.
-        :param dtype: Data type of the new Vector. Normal typecasting rules apply.
-        :param str name: Optional name to give the new Vector.
+        Parameters
+        ----------
+        k : int
+            Off-diagonal offset.
+        dtype :
+            Data type of the new Vector. Normal typecasting rules apply.
+        name : str, optional
+            Name to give the new Vector.
+
+        Returns
+        -------
+        :class:`~graphblas.Vector`
         """
         from .ss._core import diag
 
         return diag(self, k=k, dtype=dtype, name=name)
 
     def wait(self):
-        """
+        """Wait for a computation to complete.
+
         In `non-blocking mode <../user_guide/init.html#graphblas-modes>`__,
         the computations may be delayed and not yet safe to use by multiple threads.
         Use wait to force completion of the Matrix.
@@ -511,12 +541,20 @@ class Matrix(BaseType):
         call("GrB_Matrix_wait", [self, _MATERIALIZE])
 
     def get(self, row, col, default=None):
-        """
-        Get an element at (``row``, ``col``) indices as a Python scalar.
+        """Get an element at (``row``, ``col``) indices as a Python scalar.
 
-        :param int row: Row index
-        :param int col: Column index
-        :param default: Value returned if no element exists at (row, col)
+        Parameters
+        ----------
+        row : int
+            Row index
+        col : int
+            Column index
+        default :
+            Value returned if no element exists at (row, col)
+
+        Returns
+        -------
+        Python scalar
         """
         expr = self[row, col]
         if expr._is_scalar:
@@ -548,22 +586,34 @@ class Matrix(BaseType):
         dup_op=None,
         name=None,
     ):
-        """
-        Create a new Matrix from row and column indices and values.
+        """Create a new Matrix from row and column indices and values.
 
-        :param list or np.ndarray rows: Row indices.
-        :param list or np.ndarray columns: Column indices.
-        :param list or np.ndarray or scalar values: List of values. If a scalar is provided,
-            all values will be set to this single value.
-        :param dtype: Data type of the Matrix. If not provided, the values will be inspected
+        Parameters
+        ----------
+        rows : list or np.ndarray
+            Row indices.
+        columns : list or np.ndarray
+            Column indices.
+        values : list or np.ndarray or scalar
+            List of values. If a scalar is provided, all values will be set to this single value.
+        dtype :
+            Data type of the Matrix. If not provided, the values will be inspected
             to choose an appropriate dtype.
-        :param int nrows: Number of rows in the Matrix. If not provided, ``nrows`` is computed
+        nrows : int, optional
+            Number of rows in the Matrix. If not provided, ``nrows`` is computed
             from the maximum row index found in ``rows``.
-        :param int ncols: Number of columns in the Matrix. If not provided, ``ncols`` is computed
+        ncols : int, optional
+            Number of columns in the Matrix. If not provided, ``ncols`` is computed
             from the maximum column index found in ``columns``.
-        :param BinaryOp dup_op: Function used to combine values if duplicate indices are found.
+        dup_op : :class:`~graphblas.operator.BinaryOp`, optional
+            Function used to combine values if duplicate indices are found.
             Leaving ``dup_op=None`` will raise an error if duplicates are found.
-        :param str name: Optional name to give the Matrix.
+        name : str, optional
+            Name to give the Matrix.
+
+        Returns
+        -------
+        Matrix
         """
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
@@ -608,18 +658,27 @@ class Matrix(BaseType):
     #########################################################
 
     def ewise_add(self, other, op=monoid.plus, *, require_monoid=None):
-        """
-        Perform element-wise computation on the union of sparse values, similar to how
-        one expects addition to work for sparse matrices.
+        """Perform element-wise computation on the union of sparse values,
+        similar to how one expects addition to work for sparse matrices.
 
-        The resulting Matrix will have a structure formed as the union of the input structures.
+        See the `Element-wise Union <../user_guide/operations.html#element-wise-union>`__
+        section in the User Guide for more details, especially about the difference between
+        ewise_add and :meth:`ewise_union`.
 
-        :param Matrix other: the other matrix in the computation
-        :param Monoid or BinaryOp op: the operation to perform on intersecting values
-        :param bool require_monoid: *deprecated*
-        :rtype: Matrix
+        Parameters
+        ----------
+        other : Matrix
+            The other matrix in the computation
+        op : Monoid or BinaryOp
+            Operator to use on intersecting values
+        require_monoid : deprecated
 
-        Example Usage:
+        Returns
+        -------
+        Matrix with a structure formed as the union of the input structures
+
+        Examples
+        --------
 
         .. code-block:: python
 
@@ -628,10 +687,6 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << monoid.max(A | B)
-
-        See the `Element-wise Union <../user_guide/operations.html#element-wise-union>`__
-        section in the User Guide for more details, especially about the difference between
-        ewise_add and :meth:`ewise_union`.
         """
         if require_monoid is not None:
             warnings.warn(
@@ -691,18 +746,26 @@ class Matrix(BaseType):
         return expr
 
     def ewise_mult(self, other, op=binary.times):
-        """
-        Perform element-wise computation on the intersection of sparse values, similar to how
-        one expects multiplication to work for sparse matrices.
+        """Perform element-wise computation on the intersection of sparse values,
+        similar to how one expects multiplication to work for sparse matrices.
 
-        The resulting Matrix will have a structure formed as the intersection of the
-        input structures.
+        See the
+        `Element-wise Intersection <../user_guide/operations.html#element-wise-intersection>`__
+        section in the User Guide for more details.
 
-        :param Matrix other: the other matrix in the computation
-        :param Monoid or BinaryOp op: the operation to perform on intersecting values
-        :rtype: Matrix
+        Parameters
+        ----------
+        other : Matrix
+            The other matrix in the computation
+        op : Monoid or BinaryOp
+            Operator to use on intersecting values
 
-        Example Usage:
+        Returns
+        -------
+        Matrix with a structure formed as the intersection of the input structures
+
+        Examples
+        --------
 
         .. code-block:: python
 
@@ -711,10 +774,6 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << binary.gt(A & B)
-
-        See the
-        `Element-wise Intersection <../user_guide/operations.html#element-wise-intersection>`__
-        section in the User Guide for more details.
         """
         method_name = "ewise_mult"
         other = self._expect_type(
@@ -752,19 +811,30 @@ class Matrix(BaseType):
         return expr
 
     def ewise_union(self, other, op, left_default, right_default):
-        """
-        Perform element-wise computation on the union of sparse values, similar to how
-        one expects subtraction to work for sparse matrices.
+        """Perform element-wise computation on the union of sparse values,
+        similar to how one expects subtraction to work for sparse matrices.
 
-        The resulting Matrix will have a structure formed as the union of the input structures.
+        See the `Element-wise Union <../user_guide/operations.html#element-wise-union>`__
+        section in the User Guide for more details, especially about the difference between
+        ewise_union and :meth:`ewise_add`.
 
-        :param Matrix other: the other matrix in the computation
-        :param Monoid or BinaryOp op: the operation to perform
-        :param left_default: Scalar value to use when the index on the left is missing
-        :param right_default: Scalar value to use when the index on the right is missing
-        :rtype: Matrix
+        Parameters
+        ----------
+        other : Matrix
+            The other matrix in the computation
+        op : Monoid or BinaryOp
+            Operator to use
+        left_default :
+            Scalar value to use when the index on the left is missing
+        right_default :
+            Scalar value to use when the index on the right is missing
 
-        Example Usage:
+        Returns
+        -------
+        Matrix with a structure formed as the union of the input structures
+
+        Examples
+        --------
 
         .. code-block:: python
 
@@ -773,10 +843,6 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << binary.div(A | B, left_default=1, right_default=1)
-
-        See the `Element-wise Union <../user_guide/operations.html#element-wise-union>`__
-        section in the User Guide for more details, especially about the difference between
-        ewise_union and :meth:`ewise_add`.
         """
         # SS, SuiteSparse-specific: eWiseUnion
         method_name = "ewise_union"
@@ -854,14 +920,24 @@ class Matrix(BaseType):
         return expr
 
     def mxv(self, other, op=semiring.plus_times):
-        """
-        Perform matrix-vector multiplication.
+        """Perform matrix-vector multiplication.
 
-        :param Vector other: the vector, treated as an (nx1) column matrix
-        :param Semiring op: the semiring used in the computation
-        :rtype: Vector
+        See the `Matrix Multiply <../user_guide/operations.html#matrix-multiply>`__
+        section in the User Guide for more details.
 
-        Example Usage:
+        Parameters
+        ----------
+        other : Vector
+            The vector, treated as an (nx1) column matrix
+        op : :class:`~graphblas.operator.Semiring`
+            Semiring used in the computation
+
+        Returns
+        -------
+        :class:`~graphblas.Vector`
+
+        Examples
+        --------
 
         .. code-block:: python
 
@@ -870,9 +946,6 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << semiring.min_plus(A @ v)
-
-        See the `Matrix Multiply <../user_guide/operations.html#matrix-multiply>`__
-        section in the User Guide for more details.
         """
         method_name = "mxv"
         other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
@@ -891,14 +964,24 @@ class Matrix(BaseType):
         return expr
 
     def mxm(self, other, op=semiring.plus_times):
-        """
-        Perform matrix-matrix multiplication.
+        """Perform matrix-matrix multiplication.
 
-        :param Matrix other: the matrix on the right side in the computation
-        :param Semiring op: the semiring used in the computation
-        :rtype: Matrix
+        See the `Matrix Multiply <../user_guide/operations.html#matrix-multiply>`__
+        section in the User Guide for more details.
 
-        Example Usage:
+        Parameters
+        ----------
+        other : Matrix
+            The matrix on the right side in the computation
+        op : :class:`~graphblas.operator.Semiring`
+            Semiring used in the computation
+
+        Returns
+        -------
+        Matrix
+
+        Examples
+        --------
 
         .. code-block:: python
 
@@ -907,9 +990,6 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << semiring.min_plus(A @ B)
-
-        See the `Matrix Multiply <../user_guide/operations.html#matrix-multiply>`__
-        section in the User Guide for more details.
         """
         method_name = "mxm"
         other = self._expect_type(
@@ -932,21 +1012,28 @@ class Matrix(BaseType):
         return expr
 
     def kronecker(self, other, op=binary.times):
-        """
-        Compute the kronecker product or sum (depending on the op).
+        """Compute the kronecker product or sum (depending on the op).
 
-        :param Matrix other: the matrix on the right side in the computation
-        :param BinaryOp op: the binary operation used element-wise
-        :rtype: Matrix
+        See the `Kronecker <../user_guide/operations.html#kronecker>`__
+        section in the User Guide for more details.
 
-        Example Usage:
+        Parameters
+        ----------
+        other : Matrix
+            The matrix on the right side in the computation
+        op : :class:`~graphblas.operator.BinaryOp`
+            Operator used on the combination of elements
+
+        Returns
+        -------
+        Matrix
+
+        Examples
+        --------
 
         .. code-block:: python
 
             C << A.kronecker(B, op=binary.times)
-
-        See the `Kronecker <../user_guide/operations.html#kronecker>`__
-        section in the User Guide for more details.
         """
         method_name = "kronecker"
         other = self._expect_type(
@@ -967,24 +1054,35 @@ class Matrix(BaseType):
         )
 
     def apply(self, op, right=None, *, left=None):
-        """
-        Create a new Matrix by applying ``op`` to each element of the Matrix.
+        """Create a new Matrix by applying ``op`` to each element of the Matrix.
 
-        Common usage is to pass a :class:`UnaryOp <graphblas.operator.UnaryOp>`,
+        See the `Apply <../user_guide/operations.html#apply>`__
+        section in the User Guide for more details.
+
+        Common usage is to pass a :class:`~graphblas.operator.UnaryOp`,
         in which case ``right`` and ``left`` may not be defined.
 
-        A :class:`BinaryOp <graphblas.operator.BinaryOp>` can also be used, in
+        A :class:`~graphblas.operator.BinaryOp` can also be used, in
         which case a scalar must be passed as ``left`` or ``right``.
 
-        An :class:`IndexUnaryOp <graphblas.operator.IndexUnaryOp>` can also be used
+        An :class:`~graphblas.operator.IndexUnaryOp` can also be used
         with the thunk passed in as ``right``.
 
-        :param UnaryOp or BinaryOp or IndexUnaryOp op: Operator to apply
-        :param right: Scalar used with BinaryOp or IndexUnaryOp
-        :param left: Scalar used with BinaryOp
-        :rtype: Matrix
+        Parameters
+        ----------
+        op : UnaryOp or BinaryOp or IndexUnaryOp
+            Operator to apply
+        right :
+            Scalar used with BinaryOp or IndexUnaryOp
+        left :
+            Scalar used with BinaryOp
 
-        Example Usage:
+        Returns
+        -------
+        Matrix
+
+        Examples
+        --------
 
         .. code-block:: python
 
@@ -993,9 +1091,6 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << op.abs(A)
-
-        See the `Apply <../user_guide/operations.html#apply>`__
-        section in the User Guide for more details.
         """
         method_name = "apply"
         extra_message = (
@@ -1118,15 +1213,25 @@ class Matrix(BaseType):
         )
 
     def select(self, op, thunk=None):
-        """
-        Create a new Matrix by applying ``op`` to each element of the Matrix and keeping
-        those elements where ``op`` returns True.
+        """Create a new Matrix by applying ``op`` to each element of the Matrix
+        and keeping those elements where ``op`` returns True.
 
-        :param SelectOp or IndexUnaryOp op: Operator to apply
-        :param thunk: Scalar passed to operator
-        :rtype: Matrix
+        See the `Select <../user_guide/operations.html#select>`__
+        section in the User Guide for more details.
 
-        Example Usage:
+        Parameters
+        ----------
+        op : :class:`~graphblas.operator.SelectOp` or :class:`~graphblas.operator.IndexUnaryOp`
+            Operator to apply
+        thunk :
+            Scalar passed to operator
+
+        Returns
+        -------
+        Matrix
+
+        Examples
+        --------
 
         .. code-block:: python
 
@@ -1135,9 +1240,6 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << select.value(A >= 1)
-
-        See the `Select <../user_guide/operations.html#select>`__
-        section in the User Guide for more details.
         """
         method_name = "select"
         if isinstance(op, str):
@@ -1212,20 +1314,26 @@ class Matrix(BaseType):
         )
 
     def reduce_rowwise(self, op=monoid.plus):
-        """
-        Create a new Vector by reducing values per-row in the Matrix using ``op``.
+        """Create a new Vector by reducing values per-row in the Matrix using ``op``.
 
-        :param Monoid op: Reduction operator
-        :rtype: Vector
+        See the `Reduce <../user_guide/operations.html#reduce>`__
+        section in the User Guide for more details.
 
-        Example Usage:
+        Parameters
+        ----------
+        op : :class:`~graphblas.operator.Monoid`
+            Reduction operator
+
+        Returns
+        -------
+        Vector
+
+        Examples
+        --------
 
         .. code-block:: python
 
             w << A.reduce_rowwise(monoid.plus)
-
-        See the `Reduce <../user_guide/operations.html#reduce>`__
-        section in the User Guide for more details.
         """
         method_name = "reduce_rowwise"
         op = get_typed_op(op, self.dtype, kind="binary|aggregator")
@@ -1244,20 +1352,26 @@ class Matrix(BaseType):
         )
 
     def reduce_columnwise(self, op=monoid.plus):
-        """
-        Create a new Vector by reducing values per-column in the Matrix using ``op``.
+        """Create a new Vector by reducing values per-column in the Matrix using ``op``.
 
-        :param Monoid op: Reduction operator
-        :rtype: Vector
+        See the `Reduce <../user_guide/operations.html#reduce>`__
+        section in the User Guide for more details.
 
-        Example Usage:
+        Parameters
+        ----------
+        op : :class:`~graphblas.operator.Monoid`
+            Reduction operator
+
+        Returns
+        -------
+        :class:`~graphblas.Vector`
+
+        Examples
+        --------
 
         .. code-block:: python
 
             w << A.reduce_columnwise(monoid.plus)
-
-        See the `Reduce <../user_guide/operations.html#reduce>`__
-        section in the User Guide for more details.
         """
         method_name = "reduce_columnwise"
         op = get_typed_op(op, self.dtype, kind="binary|aggregator")
@@ -1279,19 +1393,27 @@ class Matrix(BaseType):
         """
         Reduce all values in the Matrix into a single value using ``op``.
 
-        :param Monoid op: Reduction operator
-        :param bool allow_empty: If False and the Matrix is empty, the Scalar result
-            will hold the monoid identity rather than a missing value
-        :rtype: Scalar
+        See the `Reduce <../user_guide/operations.html#reduce>`__
+        section in the User Guide for more details.
 
-        Example Usage:
+        Parameters
+        ----------
+        op : :class:`~graphblas.operator.Monoid`
+            Reduction operator
+        allow_empty : bool, default=True
+            If False and the Matrix is empty, the Scalar result
+            will hold the monoid identity rather than a missing value
+
+        Returns
+        -------
+        :class:`~graphblas.Scalar`
+
+        Examples
+        --------
 
         .. code-block:: python
 
             total << A.reduce_scalar(monoid.plus)
-
-        See the `Reduce <../user_guide/operations.html#reduce>`__
-        section in the User Guide for more details.
         """
         method_name = "reduce_scalar"
         op = get_typed_op(op, self.dtype, kind="binary|aggregator")
@@ -1321,9 +1443,8 @@ class Matrix(BaseType):
 
     # Unofficial methods
     def reposition(self, row_offset, column_offset, *, nrows=None, ncols=None):
-        """
-        Create a new Matrix with values identical to the original Matrix, but repositioned
-        within the (nrows x ncols) space by adding offsets to the indices.
+        """Create a new Matrix with values identical to the original Matrix,
+        but repositioned within the (nrows x ncols) space by adding offsets to the indices.
 
         Positive offset moves values to the right (or down), negative to the left (or up).
         Values repositioned outside of the new Matrix are dropped (i.e. they don't wrap around).
@@ -1331,15 +1452,25 @@ class Matrix(BaseType):
         *Note*: This is not a standard GraphBLAS method.
         It is implemented using extract and assign.
 
-        :param int row_offset: Offset for the row indices.
-        :param int column_offset: Offset for the column indices.
-        :param int nrows: If specified, the new Matrix will be sized with nrows.
+        Parameters
+        ----------
+        row_offset : int
+            Offset for the row indices.
+        column_offset : int
+            Offset for the column indices.
+        nrows : int, optional
+            If specified, the new Matrix will be sized with nrows.
             Default is the same number of rows as the original Matrix.
-        :param int ncols: If specified, the new Matrix will be sized with ncols.
+        ncols : int, optional
+            If specified, the new Matrix will be sized with ncols.
             Default is the same number of columns as the original Matrix.
-        :rtype: Matrix
 
-        Example Usage:
+        Returns
+        -------
+        Matrix
+
+        Examples
+        --------
 
         .. code-block:: python
 
@@ -1856,8 +1987,7 @@ class Matrix(BaseType):
         call("GrB_Matrix_removeElement", [self, rowidx.index, colidx.index])
 
     def to_pygraphblas(self):  # pragma: no cover
-        """
-        Convert to a ``pygraphblas.Matrix`` without copying data.
+        """Convert to a ``pygraphblas.Matrix`` without copying data.
 
         This gives control of the underlying GraphBLAS memory to pygraphblas,
         meaning further operations on the current :class:`Matrix` object will fail!
@@ -1878,8 +2008,7 @@ class Matrix(BaseType):
 
     @classmethod
     def from_pygraphblas(cls, matrix):  # pragma: no cover
-        """
-        Convert a ``pygraphblas.Matrix`` to a new :class:`Matrix` without copying data.
+        """Convert a ``pygraphblas.Matrix`` to a new :class:`Matrix` without copying data.
 
         This gives control of the underlying GraphBLAS memory to python-graphblas,
         meaning further operations on the original ``pygraphblas`` matrix object will fail!
