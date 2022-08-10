@@ -27,9 +27,17 @@ def _scalar_index(name):
 
 
 class Scalar(BaseType):
-    """
-    GraphBLAS Scalar
-    Pseudo-object for GraphBLAS functions which accumulate into a scalar type
+    """Create a new GraphBLAS Sparse Scalar.
+
+    Parameters
+    ----------
+    dtype :
+        Data type of the Scalar.
+    is_cscalar : bool, default=False
+        If True, the empty state is managed on the Python side rather than
+        with a proper GrB_Scalar object.
+    name : str, optional
+        Name to give the Scalar. This will be displayed in the ``__repr__``.
     """
 
     __slots__ = "_empty", "_is_cscalar"
@@ -75,10 +83,12 @@ class Scalar(BaseType):
 
     @property
     def is_cscalar(self):
+        """Returns True if the empty state is managed on the Python side."""
         return self._is_cscalar
 
     @property
     def is_grbscalar(self):
+        """Returns True if the empty state is managed by the GraphBLAS backend."""
         return not self._is_cscalar
 
     @property
@@ -103,9 +113,20 @@ class Scalar(BaseType):
         return format_scalar_html(self)
 
     def __eq__(self, other):
+        """Check equality.
+
+        Equality comparison uses :meth:`isequal`. Use that directly for finer control of
+        what is considered equal.
+        """
         return self.isequal(other)
 
     def __bool__(self):
+        """Truthiness check.
+
+        The scalar is considered truthy if it is non-empty and the value inside is truthy.
+
+        To only check if a value is present, use :attr:`is_empty`.
+        """
         if self._is_empty:
             return False
         return bool(self.value)
@@ -158,11 +179,22 @@ class Scalar(BaseType):
             return base + size[0]
 
     def isequal(self, other, *, check_dtype=False):
-        """
-        Check for exact equality
+        """Check for exact equality (including whether the value is missing).
 
-        If `check_dtype` is True, also checks that dtypes match
-        For equality of floating point Vectors, consider using `isclose`
+        Parameters
+        ----------
+        other : Scalar
+            Scalar to compare against
+        check_dtypes : bool, default=False
+            If True, also checks that dtypes match
+
+        Returns
+        -------
+        Bool
+
+        See Also
+        --------
+        :meth:`isclose` : For equality check of floating point dtypes
         """
         if type(other) is not Scalar:
             if other is None:
@@ -195,11 +227,24 @@ class Scalar(BaseType):
                 return bool(rv.all())
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
-        """
-        Check for approximate equality
+        """Check for approximate equality (including whether the value is missing).
 
-        If `check_dtype` is True, also checks that dtypes match
-        Closeness check is equivalent to `abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)`
+        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
+
+        Parameters
+        ----------
+        other : Scalar
+            Scalar to compare against
+        rel_tol : float
+            Relative tolerance
+        abs_tol : float
+            Absolute tolerance
+        check_dtype : bool
+            If True, also checks that dtypes match
+
+        Returns
+        -------
+        bool
         """
         if type(other) is not Scalar:
             if other is None:
@@ -235,6 +280,10 @@ class Scalar(BaseType):
         return isclose_func._numba_func(self.value, other.value)
 
     def clear(self):
+        """In-place operation which clears the value in the Scalar.
+
+        After the call, :attr:`nvals` will return 0.
+        """
         if self._is_empty:
             return
         if self._is_cscalar:
@@ -244,6 +293,7 @@ class Scalar(BaseType):
 
     @property
     def is_empty(self):
+        """Indicates whether the Scalar is empty or not."""
         if self._is_cscalar:
             return self._empty
         return self.nvals == 0
@@ -257,6 +307,19 @@ class Scalar(BaseType):
 
     @property
     def value(self):
+        """Returns the value held by the Scalar as a Python object,
+        or None if the Scalar is empty.
+
+        Assigning to ``value`` will update the Scalar.
+
+        Example Usage:
+
+            >>> s.value
+            15
+            >>> s.value = 16
+            >>> s.value
+            16
+        """
         if self._is_empty:
             return None
         is_udt = self.dtype._is_udt
@@ -308,6 +371,10 @@ class Scalar(BaseType):
 
     @property
     def nvals(self):
+        """Number of non-empty values.
+
+        Can only be 0 or 1.
+        """
         if self._is_cscalar:
             return 0 if self._empty else 1
         scalar = _scalar_index("s_nvals")
@@ -333,7 +400,24 @@ class Scalar(BaseType):
         )
 
     def dup(self, dtype=None, *, is_cscalar=None, name=None):
-        """Create a new Scalar by duplicating this one"""
+        """Create a duplicate of the Scalar.
+
+        This is a full copy, not a view on the original.
+
+        Parameters
+        ----------
+        dtype :
+            Data type of the new Scalar. Normal typecasting rules apply.
+        is_cscalar : bool
+            If True, the empty state is managed on the Python side rather
+            than with a proper GrB_Scalar object.
+        name : str, optional
+            Name to give the Scalar.
+
+        Returns
+        -------
+        Scalar
+        """
         if is_cscalar is None:
             is_cscalar = self._is_cscalar
         if not is_cscalar and not self._is_cscalar and (dtype is None or dtype == self.dtype):
@@ -358,26 +442,34 @@ class Scalar(BaseType):
         return new_scalar
 
     def wait(self):
-        """
-        GrB_Scalar_wait
+        """Wait for a computation to complete.
 
-        In non-blocking mode with GrB_Scalars, the computations may be delayed
-        and not yet safe to use by multiple threads.  Use wait to force completion
-        of a Scalar and make it safe to use as input parameters on multiple threads.
+        In `non-blocking mode <../user_guide/init.html#graphblas-modes>`__,
+        the computations may be delayed and not yet safe to use by multiple threads.
+        Use wait to force completion of the Scalar.
+
+        Has no effect in `blocking mode <../user_guide/init.html#graphblas-modes>`__.
         """
         # TODO: expose COMPLETE or MATERIALIZE options to the user
         if not self._is_cscalar:
             call("GrB_Scalar_wait", [self, _MATERIALIZE])
 
     def get(self, default=None):
-        """Get the value of a scalar as a Python scalar or the default value if it is empty."""
+        """Get the internal value of the Scalar as a Python scalar.
+
+        Parameters
+        ----------
+        default :
+            Value returned if internal value is missing.
+
+        Returns
+        -------
+        Python scalar
+        """
         return default if self._is_empty else self.value
 
     @classmethod
     def new(cls, dtype, *, is_cscalar=False, name=None):
-        """
-        Create a new empty Scalar from the given type
-        """
         warnings.warn(
             "`Scalar.new(...)` is deprecated; please use `Scalar(...)` instead.",
             DeprecationWarning,
@@ -386,7 +478,25 @@ class Scalar(BaseType):
 
     @classmethod
     def from_value(cls, value, dtype=None, *, is_cscalar=False, name=None):
-        """Create a new Scalar from a Python value"""
+        """Create a new Scalar from a value.
+
+        Parameters
+        ----------
+        value : Python scalar
+            Internal value of the Scalar.
+        dtype :
+            Data type of the Scalar. If not provided, the value will be
+            inspected to choose an appropriate dtype.
+        is_cscalar : bool, default=False
+            If True, the empty state is managed on the Python side
+            rather than with a proper GrB_Scalar object.
+        name : str, optional
+            Name to give the Scalar.
+
+        Returns
+        -------
+        Scalar
+        """
         typ = output_type(value)
         if dtype is None:
             if typ is Scalar:
@@ -420,9 +530,11 @@ class Scalar(BaseType):
         return Scalar.from_value(value, dtype, is_cscalar=is_cscalar, name=name)
 
     def to_pygraphblas(self):  # pragma: no cover
-        """Convert to a new `pygraphblas.Scalar`
+        """Convert to a ``pygraphblas.Scalar`` by making a copy of the internal value.
 
-        This copies data.
+        This method requires the
+        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
+        library to be installed.
         """
         if backend != "suitesparse":
             raise RuntimeError(
@@ -434,9 +546,12 @@ class Scalar(BaseType):
 
     @classmethod
     def from_pygraphblas(cls, scalar):  # pragma: no cover
-        """Convert a `pygraphblas.Scalar` to a new `graphblas.Scalar`
+        """Convert a ``pygraphblas.Scalar`` to a new :class:`Scalar` by making
+        a copy of the internal value.
 
-        This copies data.
+        This method requires the
+        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
+        library to be installed.
         """
         if backend != "suitesparse":
             raise RuntimeError(

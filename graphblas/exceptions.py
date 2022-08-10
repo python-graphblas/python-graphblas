@@ -15,7 +15,9 @@ class UninitializedObject(GraphblasException):
 
 
 class InvalidObject(GraphblasException):
-    pass
+    """One of the collection objects (input or output)
+    is in an invalid state due to a previous error.
+    """
 
 
 class NullPointer(GraphblasException):
@@ -27,23 +29,28 @@ class InvalidValue(GraphblasException):
 
 
 class InvalidIndex(GraphblasException):
-    pass
+    """Provided index specifies a location outside the dimensions.
+
+    This error is always raised immediately, even in non-blocking mode.
+    """
 
 
 class DomainMismatch(GraphblasException):
-    pass
+    """The domains (i.e. data types) of the inputs or outputs
+    are incompatible for the operation.
+    """
 
 
 class DimensionMismatch(GraphblasException):
-    pass
+    """The input or output dimensions (i.e. shape) are not compatible."""
 
 
 class OutputNotEmpty(GraphblasException):
-    pass
+    """Attempt to call :meth:`~graphblas.Matrix.build` on a non-empty object."""
 
 
 class OutOfMemory(GraphblasException):
-    pass
+    """GraphBLAS ran out of memory when allocating space for the operation."""
 
 
 class InsufficientSpace(GraphblasException):
@@ -51,24 +58,33 @@ class InsufficientSpace(GraphblasException):
 
 
 class IndexOutOfBound(GraphblasException):
-    pass
+    """A provided index falls outside the dimensions.
+
+    In non-blocking mode, this error can be deferred.
+    """
 
 
 class Panic(GraphblasException):
-    pass
+    """Unknown internal GraphBLAS error."""
 
 
 class EmptyObject(GraphblasException):
-    pass
+    """A provided Scalar object is empty, but requires a value.
+
+    This could happen, for example, if an empty Scalar is provided as the
+    ``right`` argument to :meth:`~graphblas.Matrix.apply`.
+    """
 
 
 class NotImplementedException(GraphblasException):
-    pass
+    """The backend GraphBLAS implementation does not support
+    the operation for the provided inputs.
+    """
 
 
 # Our errors
 class UdfParseError(GraphblasException):
-    pass
+    """Unable to parse the user-defined function."""
 
 
 _error_code_lookup = {
