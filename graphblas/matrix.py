@@ -221,13 +221,7 @@ class Matrix(BaseType):
 
     def __iter__(self):
         """Iterate over (row, col) indices which are present in the matrix."""
-        if backend == "suitesparse":
-            if self._is_transposed:
-                columns, rows, values = self._matrix.ss.to_values(rows=True, cols=True)
-            else:
-                rows, columns, values = self.ss.to_values(rows=True, cols=True)
-        else:  # pragma: no cover
-            rows, columns, values = self.to_values()
+        rows, columns, _ = self.to_values(values=False)
         return zip(rows.flat, columns.flat)
 
     def __sizeof__(self):
@@ -383,7 +377,7 @@ class Matrix(BaseType):
         self._nrows = nrows.value
         self._ncols = ncols.value
 
-    def to_values(self, dtype=None, *, sort=True):
+    def to_values(self, dtype=None, *, rows=True, columns=True, values=True, sort=True):
         """Extract the indices and values as a 3-tuple of numpy arrays
         corresponding to the COO format of the Matrix.
 
@@ -391,6 +385,12 @@ class Matrix(BaseType):
         ----------
         dtype :
             Requested dtype for the output values array.
+        rows : bool, default=True
+            Whether to return rows; will return `None` for rows if `False`
+        columns  :bool, default=True
+            Whether to return columns; will return `None` for columns if `False`
+        values : bool, default=True
+            Whether to return values; will return `None` for values if `False`
         sort : bool, default=True
             Whether to require sorted indices.
             If internally stored rowwise, the sorting will be first by rows, then by column.
@@ -407,25 +407,35 @@ class Matrix(BaseType):
                 raise NotImplementedError()
             self.wait()  # sort in SS
         nvals = self._nvals
-        rows = _CArray(size=nvals, name="&rows_array")
-        columns = _CArray(size=nvals, name="&columns_array")
-        values = _CArray(size=nvals, dtype=self.dtype, name="&values_array")
+        if rows or backend != "suitesparse":
+            c_rows = _CArray(size=nvals, name="&rows_array")
+        else:
+            c_rows = None
+        if columns or backend != "suitesparse":
+            c_columns = _CArray(size=nvals, name="&columns_array")
+        else:
+            c_columns = None
+        if values or backend != "suitesparse":
+            c_values = _CArray(size=nvals, dtype=self.dtype, name="&values_array")
+        else:
+            c_values = None
         scalar = _scalar_index("s_nvals")
         scalar.value = nvals
         dtype_name = "UDT" if self.dtype._is_udt else self.dtype.name
         call(
             f"GrB_Matrix_extractTuples_{dtype_name}",
-            [rows, columns, values, _Pointer(scalar), self],
+            [c_rows, c_columns, c_values, _Pointer(scalar), self],
         )
-        values = values.array
-        if dtype is not None:
-            dtype = lookup_dtype(dtype)
-            if dtype != self.dtype:
-                values = values.astype(dtype.np_type)  # copies
+        if values:
+            c_values = c_values.array
+            if dtype is not None:
+                dtype = lookup_dtype(dtype)
+                if dtype != self.dtype:
+                    c_values = c_values.astype(dtype.np_type)  # copies
         return (
-            rows.array,
-            columns.array,
-            values,
+            c_rows.array if rows else None,
+            c_columns.array if columns else None,
+            c_values if values else None,
         )
 
     def build(self, rows, columns, values, *, dup_op=None, clear=False, nrows=None, ncols=None):
@@ -2290,8 +2300,10 @@ class TransposedMatrix:
         return self._matrix.dtype
 
     @wrapdoc(Matrix.to_values)
-    def to_values(self, dtype=None, *, sort=True):
-        rows, cols, vals = self._matrix.to_values(dtype, sort=sort)
+    def to_values(self, dtype=None, *, rows=True, columns=True, values=True, sort=True):
+        rows, cols, vals = self._matrix.to_values(
+            dtype, rows=rows, columns=columns, values=values, sort=sort
+        )
         return cols, rows, vals
 
     @wrapdoc(Matrix.diag)

@@ -11,8 +11,8 @@ from .. import ffi, lib, monoid
 from ..base import call
 from ..dtypes import _INDEX, INT64, UINT64, _string_to_dtype, lookup_dtype
 from ..exceptions import _error_code_lookup, check_status, check_status_carg
-from ..scalar import Scalar, _as_scalar, _scalar_index
-from ..utils import _CArray, _Pointer, ints_to_numpy_buffer, libget, values_to_numpy_buffer, wrapdoc
+from ..scalar import Scalar, _as_scalar
+from ..utils import _CArray, ints_to_numpy_buffer, libget, values_to_numpy_buffer, wrapdoc
 from .config import BaseConfig
 from .descriptor import get_compression_descriptor, get_nthreads_descriptor
 from .matrix import MatrixArray, _concat_mn, normalize_chunks
@@ -1673,46 +1673,6 @@ class ss:
         rv = gb.Vector._from_obj(gb_obj, dtype, -1, name=name)
         rv._size = rv.size
         return rv
-
-    def to_values(self, indices=False, values=False, *, dtype=None, sort=True):
-        """Like Vector.to_values, but only returns requested data.
-
-        For example, if only values are desired, do:
-
-        >>> _, values = vector.ss.to_values(values=True)
-
-        Note that the return type is always tuple of length 2, but data not requested
-        will be None.
-        """
-        parent = self._parent
-        if sort:
-            parent.wait()  # sort in SS
-        nvals = parent._nvals
-        if indices:
-            c_indices = _CArray(size=nvals, name="&indices_array")
-        else:
-            c_indices = None
-        if values:
-            c_values = _CArray(size=nvals, dtype=parent.dtype, name="&values_array")
-        else:
-            c_values = None
-        scalar = _scalar_index("s_nvals")
-        scalar.value = nvals
-        dtype_name = "UDT" if parent.dtype._is_udt else parent.dtype.name
-        call(
-            f"GrB_Vector_extractTuples_{dtype_name}",
-            [c_indices, c_values, _Pointer(scalar), parent],
-        )
-        if values:
-            c_values = c_values.array
-            if dtype is not None:
-                dtype = lookup_dtype(dtype)
-                if dtype != parent.dtype:
-                    c_values = c_values.astype(dtype.np_type)  # copies
-        return (
-            c_indices.array if indices else None,
-            c_values if values else None,
-        )
 
 
 @njit

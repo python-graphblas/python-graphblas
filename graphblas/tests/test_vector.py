@@ -2207,10 +2207,10 @@ def test_to_values_sort():
     assert_array_equal(values, expected)
 
 
-def test_ss_to_values(v):
+def test_to_values_subset(v):
     indices, values = v.to_values()
     for do_indices, do_vals in itertools.product([True, False], [True, False]):
-        idx, vals = v.ss.to_values(indices=do_indices, values=do_vals)
+        idx, vals = v.to_values(indices=do_indices, values=do_vals)
         if do_indices:
             assert_array_equal(idx, indices)
         else:
@@ -2220,11 +2220,11 @@ def test_ss_to_values(v):
             assert vals.dtype == np.int64
         else:
             assert vals is None
-    idx, vals = v.ss.to_values(values=True, dtype=float)
+    idx, vals = v.to_values(indices=None, values=True, dtype=float)
     assert idx is None
     assert_array_equal(vals, values)
     assert vals.dtype == float
-    idx, vals = v.ss.to_values(values=True, dtype=v.dtype, sort=False)
+    idx, vals = v.to_values(values=True, dtype=v.dtype, sort=False)
     assert vals.dtype == np.int64
 
 

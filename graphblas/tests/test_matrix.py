@@ -3549,10 +3549,10 @@ def test_to_values_sort():
     assert_array_equal(cols, expected_rows)
 
 
-def test_ss_to_values(A):
+def test_to_values_subset(A):
     rows, cols, vals = A.to_values()
     for do_rows, do_cols, do_vals in itertools.product([True, False], [True, False], [True, False]):
-        r, c, v = A.ss.to_values(rows=do_rows, cols=do_cols, values=do_vals)
+        r, c, v = A.to_values(rows=do_rows, columns=do_cols, values=do_vals)
         if do_rows:
             assert_array_equal(r, rows)
         else:
@@ -3566,12 +3566,12 @@ def test_ss_to_values(A):
             assert v.dtype == np.int64
         else:
             assert v is None
-    r, c, v = A.ss.to_values(values=True, dtype=float)
+    r, c, v = A.to_values(rows=None, columns=None, values=True, dtype=float)
     assert r is None
     assert c is None
     assert_array_equal(v, vals)
     assert v.dtype == float
-    r, c, v = A.ss.to_values(values=True, dtype=A.dtype, sort=False)
+    r, c, v = A.to_values(values=True, dtype=A.dtype, sort=False)
     assert v.dtype == np.int64
 
 
