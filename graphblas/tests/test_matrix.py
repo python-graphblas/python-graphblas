@@ -3604,9 +3604,9 @@ def test_bool_as_mask(A):
 
 def test_ss_serialize(A):
     for compression, level, nthreads in itertools.product(
-        [None, "none", "default", "lz4", "lz4hc"], [None, 1, 5, 9], [None, -1, 1, 10]
+        [None, "none", "default", "lz4", "lz4hc", "zstd"], [None, 1, 5, 9], [None, -1, 1, 10]
     ):
-        if level is not None and compression != "lz4hc":
+        if level is not None and compression not in {"lz4hc", "zstd"}:
             with pytest.raises(TypeError, match="level argument"):
                 A.ss.serialize(compression, level, nthreads=nthreads)
             continue
@@ -3622,6 +3622,8 @@ def test_ss_serialize(A):
         A.ss.serialize("lz4hc", -1)
     with pytest.raises(ValueError, match="level argument"):
         A.ss.serialize("lz4hc", 0)
+    with pytest.raises(ValueError, match="level argument"):
+        A.ss.serialize("zstd", 0)
     with pytest.raises(InvalidObject):
         Matrix.ss.deserialize(a[:-5])
 
