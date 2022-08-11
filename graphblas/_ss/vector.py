@@ -1336,7 +1336,7 @@ class ss:
             "rowwise" means to fill the Matrix in row-major (C-style) order.
             Aliases of "rowwise" also accepted: "row", "rows", "C".
             "columnwise" means to fill the Matrix in column-major (F-style) order.
-            Aliases of "rowwise" also accepted: "col", "cols", "column", "columns", "F".
+            Aliases of "columnwise" also accepted: "col", "cols", "column", "columns", "F".
             The default is "rowwise".
         name : str, optional
             Name of the new Matrix.

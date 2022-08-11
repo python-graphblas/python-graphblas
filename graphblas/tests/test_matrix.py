@@ -2857,6 +2857,38 @@ def test_flatten(A):
         v.ss.reshape(A.shape + (1,))
 
 
+def test_ss_reshape(A):
+    A.resize(8, 8)
+    r, c, v = A.to_values()
+    idx = c + 8 * r
+    expected = Matrix.from_values(idx // 16, idx % 16, v, nrows=4, ncols=16)
+    rv = A.ss.reshape(4, 16)
+    assert rv.isequal(expected)
+    rv = A.ss.reshape(4, -1, order="row")
+    assert rv.isequal(expected)
+    rv = A.ss.reshape((4, 16))
+    assert rv.isequal(expected)
+    rv = A.ss.reshape((-1, 16))
+    assert rv.isequal(expected)
+    with pytest.raises(ValueError):
+        A.ss.reshape(5, 5)
+    with pytest.raises(ValueError):
+        A.ss.reshape(4)
+    with pytest.raises(ValueError):
+        A.ss.reshape((4,))
+    with pytest.raises(ValueError):
+        A.ss.reshape((4, 5))
+    with pytest.raises(ValueError):
+        A.ss.reshape((4, 4, 4))
+    with pytest.raises(ValueError):
+        A.ss.reshape(4, 16, order="bad_order")
+
+    idx = r + 8 * c
+    expected = Matrix.from_values(idx % 4, idx // 4, v, nrows=4, ncols=16)
+    rv = A.ss.reshape(4, 16, order="col")
+    assert rv.isequal(expected)
+
+
 def test_autocompute_argument_messages(A, v):
     with pytest.raises(TypeError, match="autocompute"):
         A.ewise_mult(A & A)

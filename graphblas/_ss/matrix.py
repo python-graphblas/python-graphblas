@@ -11,7 +11,7 @@ import graphblas as gb
 
 from .. import ffi, lib, monoid
 from ..base import call, record_raw
-from ..dtypes import _INDEX, INT64, _string_to_dtype, lookup_dtype
+from ..dtypes import _INDEX, BOOL, INT64, _string_to_dtype, lookup_dtype
 from ..exceptions import _error_code_lookup, check_status, check_status_carg
 from ..scalar import Scalar, _as_scalar, _scalar_index
 from ..utils import (
@@ -3784,6 +3784,61 @@ class ss:
             )
         else:
             raise NotImplementedError(fmt)
+
+    def reshape(self, nrows, ncols=None, order="rowwise", *, name=None):
+        """Return a copy of Matrix with a new shape without changing its data.
+
+        The shape of the Matrix must be compatible with the original shape.
+        That is, the number of elements must be equal:
+        ``nrows * ncols == old_nrows * old_ncols``.
+        One of the dimensions may be -1, which will infer the correct size.
+
+        Parameters
+        ----------
+        nrows : int or tuple of ints
+        ncols : int or None
+        order : {"rowwise", "columnwise"}, optional
+            "rowwise" means to traverse and fill the Matrix in row-major (C-style) order.
+            Aliases of "rowwise" also accepted: "row", "rows", "C".
+            "columnwise" means to traverse and fill the Matrix in column-major (F-style) order.
+            Aliases of "columnwise" also accepted: "col", "cols", "column", "columns", "F".
+            The default is "rowwise".
+        name : str, optional
+            Name of the new Matrix.
+
+        Returns
+        -------
+        Matrix
+
+        See Also
+        --------
+        Matrix.ss.flatten : flatten a Matrix into a Vector.
+        Vector.ss.reshape : copy a Vector to a Matrix.
+        """
+        from ..matrix import Matrix
+
+        order = get_order(order)
+        array = np.broadcast_to(False, self._parent.shape)
+        if ncols is None:
+            array = array.reshape(nrows)
+        else:
+            array = array.reshape(nrows, ncols)
+        if array.ndim != 2:
+            raise ValueError(f"Shape tuple must be of length 2, not {array.ndim}")
+        nrows, ncols = array.shape
+        rv = Matrix._from_obj(ffi_new("GrB_Matrix*"), self._parent.dtype, nrows, ncols, name=name)
+        call(
+            "GxB_Matrix_reshapeDup",
+            [
+                _Pointer(rv),
+                self._parent,
+                _as_scalar(order == "columnwise", BOOL, is_cscalar=True),
+                _as_scalar(nrows, _INDEX, is_cscalar=True),
+                _as_scalar(ncols, _INDEX, is_cscalar=True),
+                None,
+            ],
+        )
+        return rv
 
     def selectk_rowwise(self, how, k, *, name=None):
         """Select (up to) k elements from each row.
