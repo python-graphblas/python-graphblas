@@ -478,7 +478,7 @@ class Matrix(BaseType):
         if not dup_op_given and self._nvals < n:
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
 
-    def dup(self, dtype=None, *, mask=None, name=None):
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None):
         """Create a duplicate of the Matrix.
 
         This is a full copy, not a view on the original.
@@ -487,7 +487,9 @@ class Matrix(BaseType):
         ----------
         dtype :
             Data type of the new Matrix. Normal typecasting rules apply.
-        mask : Matrix, optional
+        clear : bool, default=False
+            If True, the returned Matrix will be empty.
+        mask : Mask, optional
             Mask controlling which elements of the original to
             include in the copy.
         name : str, optional
@@ -497,11 +499,12 @@ class Matrix(BaseType):
         -------
         Matrix
         """
-        if dtype is not None or mask is not None:
+        if dtype is not None or mask is not None or clear:
             if dtype is None:
                 dtype = self.dtype
             rv = Matrix(dtype, nrows=self._nrows, ncols=self._ncols, name=name)
-            rv(mask=mask)[...] = self
+            if not clear:
+                rv(mask=mask)[...] = self
         else:
             new_mat = ffi_new("GrB_Matrix*")
             rv = Matrix._from_obj(new_mat, self.dtype, self._nrows, self._ncols, name=name)
