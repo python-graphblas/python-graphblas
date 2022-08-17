@@ -3785,7 +3785,7 @@ class ss:
         else:
             raise NotImplementedError(fmt)
 
-    def reshape(self, nrows, ncols=None, order="rowwise", *, name=None):
+    def reshape(self, nrows, ncols=None, order="rowwise", *, inplace=False, name=None):
         """Return a copy of Matrix with a new shape without changing its data.
 
         The shape of the Matrix must be compatible with the original shape.
@@ -3803,12 +3803,15 @@ class ss:
             "columnwise" means to traverse and fill the Matrix in column-major (F-style) order.
             Aliases of "columnwise" also accepted: "col", "cols", "column", "columns", "F".
             The default is "rowwise".
+        inplace : bool, default=False
+            If True, perform operation in-place.
         name : str, optional
             Name of the new Matrix.
 
         Returns
         -------
-        Matrix
+        Matrix or None
+            Reshaped Matrix or None if ``inplace=True``.
 
         See Also
         --------
@@ -3818,7 +3821,8 @@ class ss:
         from ..matrix import Matrix
 
         order = get_order(order)
-        array = np.broadcast_to(False, self._parent.shape)
+        parent = self._parent
+        array = np.broadcast_to(False, parent.shape)
         if ncols is None:
             array = array.reshape(nrows)
         else:
@@ -3826,19 +3830,34 @@ class ss:
         if array.ndim != 2:
             raise ValueError(f"Shape tuple must be of length 2, not {array.ndim}")
         nrows, ncols = array.shape
-        rv = Matrix._from_obj(ffi_new("GrB_Matrix*"), self._parent.dtype, nrows, ncols, name=name)
-        call(
-            "GxB_Matrix_reshapeDup",
-            [
-                _Pointer(rv),
-                self._parent,
-                _as_scalar(order == "columnwise", BOOL, is_cscalar=True),
-                _as_scalar(nrows, _INDEX, is_cscalar=True),
-                _as_scalar(ncols, _INDEX, is_cscalar=True),
-                None,
-            ],
-        )
-        return rv
+        if inplace:
+            call(
+                "GxB_Matrix_reshape",
+                [
+                    parent,
+                    _as_scalar(order == "columnwise", BOOL, is_cscalar=True),
+                    _as_scalar(nrows, _INDEX, is_cscalar=True),
+                    _as_scalar(ncols, _INDEX, is_cscalar=True),
+                    None,
+                ],
+            )
+            parent._nrows = nrows
+            parent._ncols = ncols
+            return
+        else:
+            rv = Matrix._from_obj(ffi_new("GrB_Matrix*"), parent.dtype, nrows, ncols, name=name)
+            call(
+                "GxB_Matrix_reshapeDup",
+                [
+                    _Pointer(rv),
+                    parent,
+                    _as_scalar(order == "columnwise", BOOL, is_cscalar=True),
+                    _as_scalar(nrows, _INDEX, is_cscalar=True),
+                    _as_scalar(ncols, _INDEX, is_cscalar=True),
+                    None,
+                ],
+            )
+            return rv
 
     def selectk_rowwise(self, how, k, *, name=None):
         """Select (up to) k elements from each row.

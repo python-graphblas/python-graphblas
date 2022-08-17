@@ -2,7 +2,7 @@ def get_order(order):
     val = order.lower()
     if val in {"c", "row", "rows", "rowwise"}:
         return "rowwise"
-    elif val in {"f", "col", "cols", "column", "columns", "columnwise"}:
+    elif val in {"f", "col", "cols", "column", "columns", "colwise", "columnwise"}:
         return "columnwise"
     else:
         raise ValueError(

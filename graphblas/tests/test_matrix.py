@@ -2870,6 +2870,8 @@ def test_ss_reshape(A):
     assert rv.isequal(expected)
     rv = A.ss.reshape((-1, 16))
     assert rv.isequal(expected)
+    assert rv.ss.reshape(8, 8, inplace=True) is None
+    assert rv.isequal(A)
     with pytest.raises(ValueError):
         A.ss.reshape(5, 5)
     with pytest.raises(ValueError):
