@@ -248,8 +248,7 @@ class Vector(BaseType):
 
     def __iter__(self):
         """Iterate over indices which are present in the vector."""
-        self.wait()  # sort in SS
-        indices, values = self.to_values()
+        indices, _ = self.to_values(values=False)
         return indices.flat
 
     def __sizeof__(self):
@@ -378,13 +377,17 @@ class Vector(BaseType):
         call("GrB_Vector_resize", [self, size])
         self._size = size.value
 
-    def to_values(self, dtype=None, *, sort=True):
+    def to_values(self, dtype=None, *, indices=True, values=True, sort=True):
         """Extract the indices and values as a 2-tuple of numpy arrays.
 
         Parameters
         ----------
         dtype :
             Requested dtype for the output values array.
+        indices :bool, default=True
+            Whether to return indices; will return `None` for indices if `False`
+        values : bool, default=True
+            Whether to return values; will return `None` for values if `False`
         sort : bool, default=True
             Whether to require sorted indices.
 
@@ -398,20 +401,29 @@ class Vector(BaseType):
                 raise NotImplementedError()
             self.wait()  # sort in SS
         nvals = self._nvals
-        indices = _CArray(size=nvals, name="&index_array")
-        values = _CArray(size=nvals, dtype=self.dtype, name="&values_array")
+        if indices or backend != "suitesparse":
+            c_indices = _CArray(size=nvals, name="&index_array")
+        else:
+            c_indices = None
+        if values or backend != "suitesparse":
+            c_values = _CArray(size=nvals, dtype=self.dtype, name="&values_array")
+        else:
+            c_values = None
         scalar = _scalar_index("s_nvals")
         scalar.value = nvals
         dtype_name = "UDT" if self.dtype._is_udt else self.dtype.name
-        call(f"GrB_Vector_extractTuples_{dtype_name}", [indices, values, _Pointer(scalar), self])
-        values = values.array
-        if dtype is not None:
-            dtype = lookup_dtype(dtype)
-            if dtype != self.dtype:
-                values = values.astype(dtype.np_type)  # copies
+        call(
+            f"GrB_Vector_extractTuples_{dtype_name}", [c_indices, c_values, _Pointer(scalar), self]
+        )
+        if values:
+            c_values = c_values.array
+            if dtype is not None:
+                dtype = lookup_dtype(dtype)
+                if dtype != self.dtype:
+                    c_values = c_values.astype(dtype.np_type)  # copies
         return (
-            indices.array,
-            values,
+            c_indices.array if indices else None,
+            c_values if values else None,
         )
 
     def build(self, indices, values, *, dup_op=None, clear=False, size=None):
