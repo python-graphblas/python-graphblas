@@ -2870,6 +2870,40 @@ def test_flatten(A):
         v.ss.reshape(A.shape + (1,))
 
 
+def test_ss_reshape(A):
+    A.resize(8, 8)
+    r, c, v = A.to_values()
+    idx = c + 8 * r
+    expected = Matrix.from_values(idx // 16, idx % 16, v, nrows=4, ncols=16)
+    rv = A.ss.reshape(4, 16)
+    assert rv.isequal(expected)
+    rv = A.ss.reshape(4, -1, order="row")
+    assert rv.isequal(expected)
+    rv = A.ss.reshape((4, 16))
+    assert rv.isequal(expected)
+    rv = A.ss.reshape((-1, 16))
+    assert rv.isequal(expected)
+    assert rv.ss.reshape(8, 8, inplace=True) is None
+    assert rv.isequal(A)
+    with pytest.raises(ValueError):
+        A.ss.reshape(5, 5)
+    with pytest.raises(ValueError):
+        A.ss.reshape(4)
+    with pytest.raises(ValueError):
+        A.ss.reshape((4,))
+    with pytest.raises(ValueError):
+        A.ss.reshape((4, 5))
+    with pytest.raises(ValueError):
+        A.ss.reshape((4, 4, 4))
+    with pytest.raises(ValueError):
+        A.ss.reshape(4, 16, order="bad_order")
+
+    idx = r + 8 * c
+    expected = Matrix.from_values(idx % 4, idx // 4, v, nrows=4, ncols=16)
+    rv = A.ss.reshape(4, 16, order="col")
+    assert rv.isequal(expected)
+
+
 def test_autocompute_argument_messages(A, v):
     with pytest.raises(TypeError, match="autocompute"):
         A.ewise_mult(A & A)
@@ -3611,9 +3645,9 @@ def test_bool_as_mask(A):
 
 def test_ss_serialize(A):
     for compression, level, nthreads in itertools.product(
-        [None, "none", "default", "lz4", "lz4hc"], [None, 1, 5, 9], [None, -1, 1, 10]
+        [None, "none", "default", "lz4", "lz4hc", "zstd"], [None, 1, 5, 9], [None, -1, 1, 10]
     ):
-        if level is not None and compression != "lz4hc":
+        if level is not None and compression not in {"lz4hc", "zstd"}:
             with pytest.raises(TypeError, match="level argument"):
                 A.ss.serialize(compression, level, nthreads=nthreads)
             continue
@@ -3629,6 +3663,8 @@ def test_ss_serialize(A):
         A.ss.serialize("lz4hc", -1)
     with pytest.raises(ValueError, match="level argument"):
         A.ss.serialize("lz4hc", 0)
+    with pytest.raises(ValueError, match="level argument"):
+        A.ss.serialize("zstd", 0)
     with pytest.raises(InvalidObject):
         Matrix.ss.deserialize(a[:-5])
 

@@ -1336,7 +1336,7 @@ class ss:
             "rowwise" means to fill the Matrix in row-major (C-style) order.
             Aliases of "rowwise" also accepted: "row", "rows", "C".
             "columnwise" means to fill the Matrix in column-major (F-style) order.
-            Aliases of "rowwise" also accepted: "col", "cols", "column", "columns", "F".
+            Aliases of "columnwise" also accepted: "col", "cols", "column", "columns", "F".
             The default is "rowwise".
         name : str, optional
             Name of the new Matrix.
@@ -1580,16 +1580,18 @@ class ss:
 
         Parameters
         ----------
-        compression : {"default", "lz4", "lz4hc", "none", None}, optional
+        compression : {"default", "lz4", "lz4hc", "zstd", "none", None}, optional
             Whether and how to compress the data.
-            - "default": the default in SuiteSparse:GraphBLAS, which is currently LZ4
+            - "default": the default in SuiteSparse:GraphBLAS, which is currently ZSTD
             - "lz4": the default LZ4 compression
             - "lz4hc": LZ4 compression that allows the compression level (1-9) to be set.
               Low compression level (1) is faster, high (9) is more compact.  Default is 9.
+            - "zstd": ZSTD compression, which allows compression level (1-19) to be set.
+              Low compression level (1) is faster, high (19) is more compact.  Default is 19.
             - "none" or None: no compression
         level : int [1-9], optional
-            The compression level, between 1 to 9, to use with "lz4hc" compression.
-            (1) is the fastest and largest, (9) is the slowest and most compressed.
+            The compression level, between 1 to 9, to use with "lz4hc" and "zstd" compression.
+            Level 1 is the fastest and largest, and is the default for "zstd" compression.
             Level 9 is the default when using "lz4hc" compression.
         nthreads : int, optional
             The maximum number of threads to use when serializing the Vector.
