@@ -1,14 +1,45 @@
-import numpy as np
+from importlib import import_module as _import_module
 
-from .io import to_networkx, to_scipy_sparse
-from .matrix import Matrix, TransposedMatrix
+from .matrix import Matrix as _Matrix
+from .matrix import TransposedMatrix as _TransposedMatrix
+from .utils import output_type as _output_type
 
-try:
-    import matplotlib as mpl
-    import matplotlib.pyplot as plt
-except Exception:
-    mpl = None
-    plt = None
+_LAZY_IMPORTS = {
+    "bk": "bokeh",
+    "ds": "datashader",
+    "hv": "holoviews",
+    "hp": "hvplot.pandas",
+    "mpl": "matplotlib",
+    "plt": "matplotlib.pyplot",
+    "np": "numpy",
+    "nx": "networkx",
+    "pd": "pandas",
+    "ss": "scipy.sparse",
+}
+
+
+def _get_imports(names, within):
+    is_string = isinstance(names, str)
+    if is_string:
+        names = [names]
+    rv = []
+    for name in names:
+        if name not in _LAZY_IMPORTS:  # pragma: no cover
+            raise KeyError(f"Unknown library to import: {name}")
+        if name in globals():
+            val = globals()[name]
+        else:
+            try:
+                val = _import_module(_LAZY_IMPORTS[name])
+            except ImportError:
+                modname = _LAZY_IMPORTS[name].split(".")[0]
+                raise ImportError(f"`{within}` requires {modname} to be installed") from None
+            finally:
+                globals()[name] = val
+        rv.append(val)
+    if is_string:
+        return rv[0]
+    return rv
 
 
 def draw(m):  # pragma: no cover
@@ -21,16 +52,14 @@ def draw(m):  # pragma: no cover
 
     .. image:: /_static/img/draw-example.png
     """
-    try:
-        import networkx as nx
-    except ImportError:
-        print("`draw` requires networkx to be installed")
-        return
-    if plt is None:
-        print("`draw` requires matplotlib to be installed")
-        return
+    from .io import to_networkx
 
-    if not isinstance(m, (Matrix, TransposedMatrix)):
+    try:
+        nx, plt = _get_imports(["nx", "plt"], "draw")
+    except ImportError as exc:
+        print(exc.msg)
+        return
+    if not isinstance(_output_type(m), (_Matrix, _TransposedMatrix)):
         print(f"Can only draw a Matrix, not {type(m)}")
         return
 
@@ -42,9 +71,24 @@ def draw(m):  # pragma: no cover
     plt.show()
 
 
-def spy(M, xxx=True, *, show=True, figure=None, axes=None, figsize=None, **kwargs):
-    if mpl is None:
-        raise ImportError("`spy` requires matplotlib to be installed")
+def spy(M, *, centered=False, show=True, figure=None, axes=None, figsize=None, **kwargs):
+    """Plot the sparsity pattern of a Matrix using `matplotlib.spy`
+
+    See:
+    - https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.spy.html
+    - https://matplotlib.org/stable/gallery/images_contours_and_fields/spy_demos.html
+
+    By default, this function automatically calculates markersize to properly tile
+    the sparsity pattern.  That is, the square plotted for a visible element abuts
+    adjacent element.
+
+    See Also
+    --------
+    datashade
+    """
+    from .io import to_scipy_sparse
+
+    mpl, plt, ss = _get_imports(["mpl", "plt", "ss"], "spy")
     A = to_scipy_sparse(M, "coo")
     if show:
         plt.ion()
@@ -55,31 +99,46 @@ def spy(M, xxx=True, *, show=True, figure=None, axes=None, figsize=None, **kwarg
         axes = fig.subplots()
     if kwargs.get("markersize") is None:
         # Make the square markers "fill" their space
-        markersize = min(axes.bbox.width / A.shape[1], axes.bbox.height / A.shape[0]) * (
-            72 / fig.dpi
-        )
-        kwargs["markersize"] = max(0.002, markersize)
+        markersize = min(axes.bbox.width / A.shape[1], axes.bbox.height / A.shape[0])
+        kwargs["markersize"] = max(0.002, markersize * 72 / fig.dpi)
     axes.spy(A, **kwargs)
     # Fix offsets
-    if xxx:  # TODO: need name for option
+    if not centered:
         axes.figure.draw_without_rendering()  # Generates tick labels
-        axes.set_xticks(axes.get_xticks()[1:] - 0.5, axes.get_xticklabels()[1:])
-        axes.set_yticks(axes.get_yticks()[1:] - 0.5, axes.get_yticklabels()[1:])
+        axes.set_xticks(axes.get_xticks()[1:-1] - 0.5, axes.get_xticklabels()[1:-1])
+        axes.set_yticks(axes.get_yticks()[1:-1] - 0.5, axes.get_yticklabels()[1:-1])
     return axes.figure
 
 
-def datashade(M, aggs="count", *, width=None, height=None, opts_kwargs=None, **kwargs):
-    try:
-        import hvplot.pandas  # noqa
-    except ImportError:
-        raise ImportError("`datashade` requires hvplot to be installed")
-    try:
-        import datashader  # noqa
-    except ImportError:
-        raise ImportError("`datashade` requires datashader to be installed")
-    import bokeh as bk
-    import pandas as pd
+def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kwargs):
+    """Interactive plot of the sparsity pattern of a Matrix using hvplot and datashader
 
+    The `datashader` library rasterizes large data into a 2d grid of pixels.  Each pixel
+    may contain multiple data points, which are combined by an aggregator (`agg="count"`).
+    Common aggregators are "count", "sum", "mean", "min", and "max".  See full list here:
+    - https://datashader.org/api.html#reductions
+
+    Multiple aggregators may be given to create a grid of linked plots.  For example,
+
+    >>> datashade(A, agg=[["count", "sum"], ["min", "max"]])
+
+    creates a 2x2 grid of plots.  They share axes, so when you pan or zoom on one plot,
+    the other plots pan and zoom as well.
+
+    You can combine multiple datashade plots together:
+
+    >>> datashade(A) + datashade(B)
+
+    will show two plots side by side.
+
+    Learn more about customization here:
+    - https://hvplot.holoviz.org/user_guide/Customization.html
+
+    See Also
+    --------
+    spy
+    """
+    np, pd, bk, hv, hp, ds = _get_imports(["np", "pd", "bk", "hv", "hp", "ds"], "datashade")
     if "df" not in kwargs:
         rows, cols, vals = M.to_values()
         max_int = np.iinfo(np.int64).max
@@ -95,15 +154,46 @@ def datashade(M, aggs="count", *, width=None, height=None, opts_kwargs=None, **k
     else:
         df = kwargs.pop("df")
 
-    aggregator = aggs
     if width is None and height is None:
         width = 500
+
+    if isinstance(agg, list):
+        if not agg:
+            return
+        kwargs["M"] = M
+        kwargs["df"] = df
+        kwargs["height"] = height
+        kwargs["opts_kwargs"] = opts_kwargs
+        if any(isinstance(x, list) for x in agg):
+            ncols = max(len(x) for x in agg if isinstance(x, list))
+            agg = [x if isinstance(x, list) else [x] for x in agg]
+        else:
+            ncols = len(agg)
+            agg = [agg]
+        if width is not None:
+            width //= ncols
+        kwargs["width"] = width
+        images = []
+        for i, row in enumerate(agg):
+            kwargs["_row"] = i
+            image_row = []
+            for j, aggregator in enumerate(row):
+                if aggregator is None:
+                    image_row.append(hv.Empty())
+                    continue
+                kwargs["_col"] = j
+                kwargs["agg"] = aggregator
+                image_row.append(datashade(**kwargs))
+            while len(image_row) < ncols:
+                image_row.append(hv.Empty())
+            images.extend(image_row)
+        return hv.Layout(images).cols(ncols)
 
     kwds = dict(  # noqa
         x="col",
         y="row",
         c="val",
-        aggregator=aggregator,
+        aggregator=agg,
         frame_width=width,
         frame_height=height,
         cmap="fire",
@@ -123,6 +213,12 @@ def datashade(M, aggs="count", *, width=None, height=None, opts_kwargs=None, **k
         yformatter="%d",
         rot=60,
     )
+    # Only show axes on outer-most plots
+    if kwargs.pop("_col", 0) != 0:
+        kwds["yaxis"] = None
+    if kwargs.pop("_row", 0) != 0:
+        kwds["xaxis"] = None
+
     kwds.update(kwargs)
     im = df.hvplot.scatter(**kwds)
     if opts_kwargs is None:
@@ -132,7 +228,7 @@ def datashade(M, aggs="count", *, width=None, height=None, opts_kwargs=None, **k
     if "tools" not in opts_kwargs:
         # Format rows and columns as integers
         hover = bk.models.HoverTool(
-            tooltips=[("col", "$x{i}"), ("row", "$y{i}"), (aggregator, "@image")],
+            tooltips=[("row", "$y{i}"), ("col", "$x{i}"), (agg, "@image")],
             formatters={"@col": "printf", "@row": "printf"},
         )
         opts_kwargs["tools"] = [hover]
