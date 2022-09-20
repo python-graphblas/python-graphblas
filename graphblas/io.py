@@ -1,13 +1,13 @@
-import warnings
+from warnings import warn as _warn
 
-import numpy as np
+import numpy as _np
 
-from . import backend
-from .dtypes import lookup_dtype
-from .exceptions import GraphblasException
-from .matrix import Matrix, TransposedMatrix
-from .utils import output_type
-from .vector import Vector
+from . import backend as _backend
+from .dtypes import lookup_dtype as _lookup_dtype
+from .exceptions import GraphblasException as _GraphblasException
+from .matrix import Matrix as _Matrix
+from .utils import output_type as _output_type
+from .vector import Vector as _Vector
 
 
 def draw(m):  # pragma: no cover
@@ -20,27 +20,13 @@ def draw(m):  # pragma: no cover
 
     .. image:: /_static/img/draw-example.png
     """
-    try:
-        import networkx as nx
-    except ImportError:
-        print("`draw` requires networkx to be installed")
-        return
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        print("`draw` requires matplotlib to be installed")
-        return
+    from . import viz
 
-    if not isinstance(m, (Matrix, TransposedMatrix)):
-        print(f"Can only draw a Matrix, not {type(m)}")
-        return
-
-    g = to_networkx(m)
-    pos = nx.spring_layout(g)
-    edge_labels = {(i, j): d["weight"] for i, j, d in g.edges(data=True)}
-    nx.draw_networkx(g, pos, node_color="red", node_size=500)
-    nx.draw_networkx_edge_labels(g, pos, edge_labels=edge_labels)
-    plt.show()
+    _warn(
+        "`graphblas.io.draw` is deprecated; it has been moved to `graphblas.viz.draw`",
+        DeprecationWarning,
+    )
+    viz.draw(m)
 
 
 def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
@@ -65,17 +51,17 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     """
     import networkx as nx
 
-    dtype = dtype if dtype is None else lookup_dtype(dtype).np_type
+    dtype = dtype if dtype is None else _lookup_dtype(dtype).np_type
     A = nx.to_scipy_sparse_array(G, nodelist=nodelist, dtype=dtype, weight=weight)
     nrows, ncols = A.shape
     data = A.data
     if data.size == 0:
-        return Matrix(A.dtype, nrows=nrows, ncols=ncols, name=name)
-    if backend == "suitesparse":
+        return _Matrix(A.dtype, nrows=nrows, ncols=ncols, name=name)
+    if _backend == "suitesparse":
         is_iso = (data[[0]] == data).all()
         if is_iso:
             data = data[[0]]
-        M = Matrix.ss.import_csr(
+        M = _Matrix.ss.import_csr(
             nrows=nrows,
             ncols=ncols,
             indptr=A.indptr,
@@ -88,7 +74,7 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         )
     else:  # pragma: no cover
         rows, cols = A.nonzero()
-        M = Matrix.from_values(rows, cols, data, nrows=nrows, ncols=ncols, name=name)
+        M = _Matrix.from_values(rows, cols, data, nrows=nrows, ncols=ncols, name=name)
     return M
 
 
@@ -114,7 +100,7 @@ def from_numpy(m):
     Vector or Matrix
     """
     if m.ndim > 2:
-        raise GraphblasException("m.ndim must be <= 2")
+        raise _GraphblasException("m.ndim must be <= 2")
 
     try:
         from scipy.sparse import coo_array, csr_array
@@ -124,8 +110,8 @@ def from_numpy(m):
     if m.ndim == 1:
         A = csr_array(m)
         _, size = A.shape
-        dtype = lookup_dtype(m.dtype)
-        g = Vector.from_values(A.indices, A.data, size=size, dtype=dtype)
+        dtype = _lookup_dtype(m.dtype)
+        g = _Vector.from_values(A.indices, A.data, size=size, dtype=dtype)
         return g
     else:
         A = coo_array(m)
@@ -134,14 +120,14 @@ def from_numpy(m):
 
 def from_scipy_sparse_matrix(m, *, dup_op=None, name=None):
     """dtype is inferred from m.dtype"""
-    warnings.warn(
+    _warn(
         "`from_scipy_sparse_matrix` is deprecated; please use `from_scipy_sparse` instead.",
         DeprecationWarning,
     )
     A = m.tocoo()
     nrows, ncols = A.shape
-    dtype = lookup_dtype(m.dtype)
-    g = Matrix.from_values(
+    dtype = _lookup_dtype(m.dtype)
+    g = _Matrix.from_values(
         A.row, A.col, A.data, nrows=nrows, ncols=ncols, dtype=dtype, dup_op=dup_op, name=name
     )
     return g
@@ -166,16 +152,16 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
     :class:`~graphblas.Matrix`
     """
     nrows, ncols = A.shape
-    dtype = lookup_dtype(A.dtype)
+    dtype = _lookup_dtype(A.dtype)
     if A.nnz == 0:
-        return Matrix(dtype, nrows=nrows, ncols=ncols, name=name)
-    if backend == "suitesparse" and A.format in {"csr", "csc"}:
+        return _Matrix(dtype, nrows=nrows, ncols=ncols, name=name)
+    if _backend == "suitesparse" and A.format in {"csr", "csc"}:
         data = A.data
         is_iso = (data[[0]] == data).all()
         if is_iso:
             data = data[[0]]
         if A.format == "csr":
-            return Matrix.ss.import_csr(
+            return _Matrix.ss.import_csr(
                 nrows=nrows,
                 ncols=ncols,
                 indptr=A.indptr,
@@ -186,7 +172,7 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
                 name=name,
             )
         else:
-            return Matrix.ss.import_csc(
+            return _Matrix.ss.import_csc(
                 nrows=nrows,
                 ncols=ncols,
                 indptr=A.indptr,
@@ -198,7 +184,7 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
             )
     if A.format != "coo":
         A = A.tocoo()
-    return Matrix.from_values(
+    return _Matrix.from_values(
         A.row, A.col, A.data, nrows=nrows, ncols=ncols, dtype=dtype, dup_op=dup_op, name=name
     )
 
@@ -244,7 +230,7 @@ def to_numpy(m):
         import scipy  # noqa
     except ImportError:  # pragma: no cover
         raise ImportError("scipy is required to export to numpy") from None
-    if output_type(m) is Vector:
+    if _output_type(m) is _Vector:
         return to_scipy_sparse(m).toarray()[0]
     else:
         sparse = to_scipy_sparse(m, "coo")
@@ -255,12 +241,12 @@ def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover
     """format: str in {'bsr', 'csr', 'csc', 'coo', 'lil', 'dia', 'dok'}"""
     import scipy.sparse as ss
 
-    warnings.warn(
+    _warn(
         "`to_scipy_sparse_matrix` is deprecated; please use `to_scipy_sparse` instead.",
         DeprecationWarning,
     )
     format = format.lower()
-    if output_type(m) is Vector:
+    if _output_type(m) is _Vector:
         indices, data = m.to_values()
         if format == "csc":
             return ss.csc_matrix((data, indices, [0, len(data)]), shape=(m._size, 1))
@@ -274,7 +260,7 @@ def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover
         if format == "coo":
             return rv
     if format not in {"bsr", "csr", "csc", "coo", "lil", "dia", "dok"}:
-        raise GraphblasException(f"Invalid format: {format}")
+        raise _GraphblasException(f"Invalid format: {format}")
     return rv.asformat(format)
 
 
@@ -298,7 +284,7 @@ def to_scipy_sparse(A, format="csr"):
     format = format.lower()
     if format not in {"bsr", "csr", "csc", "coo", "lil", "dia", "dok"}:
         raise ValueError(f"Invalid format: {format}")
-    if output_type(A) is Vector:
+    if _output_type(A) is _Vector:
         indices, data = A.to_values()
         if format == "csc":
             return ss.csc_array((data, indices, [0, len(data)]), shape=(A._size, 1))
@@ -306,7 +292,7 @@ def to_scipy_sparse(A, format="csr"):
             rv = ss.csr_array((data, indices, [0, len(data)]), shape=(1, A._size))
             if format == "csr":
                 return rv
-    elif backend == "suitesparse" and format in {"csr", "csc"}:
+    elif _backend == "suitesparse" and format in {"csr", "csc"}:
         if A._is_transposed:
             info = A.T.ss.export("csc" if format == "csr" else "csr", sort=True)
             if "col_indices" in info:
@@ -316,7 +302,7 @@ def to_scipy_sparse(A, format="csr"):
         else:
             info = A.ss.export(format, sort=True)
         if info["is_iso"]:
-            info["values"] = np.broadcast_to(info["values"], (A._nvals,))
+            info["values"] = _np.broadcast_to(info["values"], (A._nvals,))
         if format == "csr":
             return ss.csr_array(
                 (info["values"], info["col_indices"], info["indptr"]), shape=A.shape
@@ -360,11 +346,11 @@ def mmread(source, *, dup_op=None, name=None):
     array = mmread(source)
     if isspmatrix_coo(array):
         nrows, ncols = array.shape
-        return Matrix.from_values(
+        return _Matrix.from_values(
             array.row, array.col, array.data, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
         )
     # SS, SuiteSparse-specific: import_full
-    return Matrix.ss.import_fullr(values=array, take_ownership=True, name=name)
+    return _Matrix.ss.import_fullr(values=array, take_ownership=True, name=name)
 
 
 def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=None):
@@ -392,7 +378,7 @@ def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=
         from scipy.io import mmwrite
     except ImportError:  # pragma: no cover
         raise ImportError("scipy is required to write Matrix Market files") from None
-    if backend == "suitesparse" and matrix.ss.format in {"fullr", "fullc"}:
+    if _backend == "suitesparse" and matrix.ss.format in {"fullr", "fullc"}:
         array = matrix.ss.export()["values"]
     else:
         array = to_scipy_sparse(matrix, format="coo")

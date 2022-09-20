@@ -13,7 +13,7 @@ if ! python -c "from graphblas.semiring import plus_times" ; then exit 1 ; fi
 if ! python -c "from graphblas.unary import exp" ; then exit 1 ; fi
 if ! (for attr in Matrix Scalar Vector Recorder _agg agg base binary descriptor \
   dtypes exceptions expr ffi formatting infix init io lib mask matrix monoid \
-  op operator scalar select semiring tests unary vector recorder _ss ss \
+  op operator scalar select semiring tests unary vector recorder _ss ss viz \
   _automethods _infixmethods _slice
   do echo python -c \"from graphblas import $attr\"
     if ! python -c "from graphblas import $attr"
@@ -31,7 +31,7 @@ if ! python -c "import graphblas as gb ; gb.semiring.plus_times" ; then exit 1 ;
 if ! python -c "import graphblas as gb ; gb.unary.exp" ; then exit 1 ; fi
 if ! (for attr in _agg agg base binary binary.numpy descriptor dtypes exceptions \
   expr formatting infix io mask matrix monoid monoid.numpy op op.numpy operator scalar \
-  select semiring semiring.numpy tests unary unary.numpy vector recorder _ss ss \
+  select semiring semiring.numpy tests unary unary.numpy vector recorder _ss ss viz \
   _automethods _infixmethods _slice
   do echo python -c \"import graphblas.$attr\"
     if ! python -c "import graphblas.$attr"

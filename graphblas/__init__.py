@@ -74,6 +74,7 @@ _SPECIAL_ATTRS = {
     "unary",
     "utils",
     "vector",
+    "viz",
 }
 
 
