@@ -319,6 +319,95 @@ def to_scipy_sparse(A, format="csr"):
     return rv.asformat(format)
 
 
+def to_awkward(A, format=None):
+    """Create an Awkward Array from a GraphBLAS Matrix
+
+    Parameters
+    ----------
+    A : Matrix or Vector
+        GraphBLAS object to be converted
+    format : str
+        {'csr', 'csc', 'hypercsr', 'hypercsc', 'vec}
+
+    The Awkward Array will have a RecordType layout.
+    For a Vector, the fields will be: values, indices
+    For a Matrix with non-hyper format, the fields will be: values, indices
+    For a Matrix with hyper format, the fields will be: values, indices, offset_labels
+
+    The following parameters will also be set: format, shape
+
+    Returns
+    -------
+    awkward.Array
+
+    """
+    import awkward._v2 as ak
+    from awkward._v2.forms.listoffsetform import ListOffsetForm
+    from awkward._v2.forms.numpyform import NumpyForm
+
+    out_type = _output_type(A)
+    if format is None:
+        format = "vec" if out_type is _Vector else "csr"
+    format = format.lower()
+
+    if out_type is _Vector:
+        if format != "vec":
+            raise TypeError(f"Invalid format for Vector: {format}")
+        size = A.nvals
+        indices, values = A.to_values()
+        contents = [
+            NumpyForm(A.dtype.numba_type.name, form_key="node1"),
+            NumpyForm("int64", form_key="node0"),
+        ]
+        fields = ["values", "indices"]
+        d = {"node0-data": indices, "node1-data": values}
+
+    elif out_type is _Matrix:
+        if _backend != "suitesparse":
+            raise NotImplementedError(
+                f"Conversion of Matrix to Awkward Array not supported for backend '{_backend}'"
+            )
+        if format not in {"csr", "csc", "hypercsr", "hypercsc"}:
+            raise ValueError(f"Invalid format for Matrix: {format}")
+        if format[-1] == "r":
+            size = A.nrows
+            indices = "col_indices"
+            labels = "rows"
+        else:
+            size = A.ncols
+            indices = "row_indices"
+            labels = "cols"
+        exp = A.ss.export(format, sort=True)
+        if exp.get("is_iso", False):
+            exp["values"] = _np.ascontiguousarray(_np.broadcast_to(exp["values"], A.nvals))
+        contents = [
+            ListOffsetForm(
+                "i64", NumpyForm(A.dtype.numba_type.name, form_key="node2"), form_key="node1"
+            ),
+            ListOffsetForm("i64", NumpyForm("int64", form_key="node3"), form_key="node1"),
+        ]
+        d = {
+            "node1-offsets": exp["indptr"],
+            "node2-data": exp["values"],
+            "node3-data": exp[indices],
+        }
+        fields = ["values", "indices"]
+        if format[:5] == "hyper":
+            size = len(exp[labels])
+            contents.append(NumpyForm("int64", form_key="node4"))
+            d["node4-data"] = exp[labels]
+            fields.append("offset_labels")
+
+    else:
+        raise TypeError(f"A must be a Matrix or Vector, found {type(A)}")
+
+    rec = ak.forms.recordform.RecordForm(contents, fields)
+    ret = ak.from_buffers(rec, size, d)
+    ret = ak.with_parameter(ret, "format", format)
+    ret = ak.with_parameter(ret, "shape", list(A.shape))
+    return ret
+
+
 def mmread(source, *, dup_op=None, name=None):
     """Create a GraphBLAS Matrix from the contents of a Matrix Market file.
 
