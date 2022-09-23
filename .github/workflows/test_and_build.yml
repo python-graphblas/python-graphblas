@@ -62,7 +62,7 @@ jobs:
           black . --check --diff
       - name: Build extension module
         run: |
-          conda install -c conda-forge pandas numba scipy networkx cffi donfig pyyaml
+          conda install -c conda-forge pandas numba scipy networkx cffi donfig pyyaml awkward
           if [[ ${{ matrix.cfg.sourcetype }} == "wheel" ]]; then
               pip install suitesparse-graphblas
           else
