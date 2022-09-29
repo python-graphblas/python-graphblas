@@ -347,3 +347,25 @@ def test_awkward_iso_roundtrip():
         assert isinstance(km, ak.Array)
         m2 = gb.io.from_awkward(km)
         assert m2.isequal(m)
+
+
+@pytest.mark.skipif("not ak")
+def test_awkward_errors():
+    v = gb.Vector.from_values([1, 3, 5], [20, 20, 20], size=22)
+    m = gb.Matrix.from_values([0, 0, 3, 5], [1, 4, 0, 2], [1, 1, 1, 1], nrows=7, ncols=6)
+    with pytest.raises(ValueError, match="Missing parameters"):
+        gb.io.from_awkward(ak.Array([1, 2, 3]))
+    with pytest.raises(ValueError, match="Invalid format for Vector"):
+        kv = gb.io.to_awkward(v)
+        kv = ak.with_parameter(kv, "format", "csr")
+        gb.io.from_awkward(kv)
+    with pytest.raises(ValueError, match="Invalid format for Matrix"):
+        km = gb.io.to_awkward(m)
+        km = ak.with_parameter(km, "format", "dcsr")
+        gb.io.from_awkward(km)
+    with pytest.raises(ValueError, match="Invalid format for Vector"):
+        gb.io.to_awkward(v, format="csr")
+    with pytest.raises(ValueError, match="Invalid format for Matrix"):
+        gb.io.to_awkward(m, format="dcsr")
+    with pytest.raises(TypeError):
+        gb.io.to_awkward(gb.Scalar.from_value(5))
