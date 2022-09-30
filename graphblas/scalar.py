@@ -107,10 +107,10 @@ class Scalar(BaseType):
 
         return format_scalar(self)
 
-    def _repr_html_(self, collapse=False):
+    def _repr_html_(self, collapse=False, expr=None):
         from .formatting import format_scalar_html
 
-        return format_scalar_html(self)
+        return format_scalar_html(self, expr=expr)
 
     def __eq__(self, other):
         """Check equality.

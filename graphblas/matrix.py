@@ -118,14 +118,14 @@ class Matrix(BaseType):
         with skip_record:
             return format_matrix(self, mask=mask)
 
-    def _repr_html_(self, mask=None, collapse=False):
+    def _repr_html_(self, mask=None, collapse=False, expr=None):
         if self._parent is not None:
             return self._parent._repr_html_(mask=mask, collapse=collapse)
         from .formatting import format_matrix_html
         from .recorder import skip_record
 
         with skip_record:
-            return format_matrix_html(self, mask=mask, collapse=collapse)
+            return format_matrix_html(self, mask=mask, collapse=collapse, expr=expr)
 
     @property
     def _name_html(self):

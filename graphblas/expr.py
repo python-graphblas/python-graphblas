@@ -384,6 +384,14 @@ class AmbiguousAssignOrExtract:
 
         return formatting.format_index_expression(self)
 
+    def _format_expr(self):
+        indices = ", ".join(index._expr_name for index in self.resolved_indexes.indices)
+        return f"{self.parent.name}[{indices}]"
+
+    def _format_expr_html(self):
+        indices = ", ".join(index._expr_name for index in self.resolved_indexes.indices)
+        return f"{self.parent._name_html}[{indices}]"
+
     @property
     def dtype(self):
         return self.parent.dtype
