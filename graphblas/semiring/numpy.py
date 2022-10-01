@@ -7,8 +7,11 @@ https://numba.readthedocs.io/en/stable/reference/numpysupported.html#math-operat
 """
 import itertools as _itertools
 
+import numba as _numba
+
 from .. import _STANDARD_OPERATOR_NAMES
 from .. import binary as _binary
+from .. import config as _config
 from .. import monoid as _monoid
 from ..binary.numpy import _binary_names
 from ..monoid.numpy import _monoid_identities
@@ -84,6 +87,48 @@ _semiring_names -= {
         },
     )
 }
+if _numba.__version__ == "0.56.2" and not _config.get("mapnumpy"):
+    # See: https://github.com/numba/numba/issues/8478
+    # <non-float>_<float>
+    _semiring_names -= {
+        f"{monoid_name}_{binary_name}"
+        for monoid_name, binary_name in _itertools.product(
+            {
+                "bitwise_and",
+                "bitwise_or",
+                "bitwise_xor",
+                "equal",
+                "gcd",
+            },
+            {"fmax", "fmin"},
+        )
+    }
+    _semiring_names -= {
+        f"{monoid_name}_{binary_name}"
+        for monoid_name, binary_name in _itertools.product(
+            {"fmax", "fmin"},
+            {
+                # <non-float>
+                "bitwise_and",
+                "bitwise_or",
+                "bitwise_xor",
+                # <bool>
+                "equal",
+                "greater",
+                "greater_equal",
+                "less",
+                "less_equal",
+                "not_equal",
+                # <int>
+                "gcd",
+                "lcm",
+                "left_shift",
+                "right_shift",
+            },
+        )
+    }
+
+
 _STANDARD_OPERATOR_NAMES.update(f"semiring.numpy.{name}" for name in _semiring_names)
 __all__ = list(_semiring_names)
 

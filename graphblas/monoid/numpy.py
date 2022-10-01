@@ -5,6 +5,7 @@ See list of numpy ufuncs supported by numpy here:
 https://numba.readthedocs.io/en/stable/reference/numpysupported.html#math-operations
 
 """
+import numba as _numba
 import numpy as _np
 
 from .. import _STANDARD_OPERATOR_NAMES
@@ -64,28 +65,12 @@ _monoid_identities = {
         "FP64": _np.inf,
     },
     "fmax": {
-        "BOOL": False,
-        "INT8": _np.iinfo(_np.int8).min,
-        "UINT8": 0,
-        "INT16": _np.iinfo(_np.int8).min,
-        "UINT16": 0,
-        "INT32": _np.iinfo(_np.int8).min,
-        "UINT32": 0,
-        "INT64": _np.iinfo(_np.int8).min,
-        "UINT64": 0,
+        # More conditionally added below
         "FP32": -_np.inf,  # or _np.nan?
         "FP64": -_np.inf,  # or _np.nan?
     },
     "fmin": {
-        "BOOL": True,
-        "INT8": _np.iinfo(_np.int8).max,
-        "UINT8": _np.iinfo(_np.uint8).max,
-        "INT16": _np.iinfo(_np.int16).max,
-        "UINT16": _np.iinfo(_np.uint16).max,
-        "INT32": _np.iinfo(_np.int32).max,
-        "UINT32": _np.iinfo(_np.uint32).max,
-        "INT64": _np.iinfo(_np.int64).max,
-        "UINT64": _np.iinfo(_np.uint64).max,
+        # More conditionally added below
         "FP32": _np.inf,  # or _np.nan?
         "FP64": _np.inf,  # or _np.nan?
     },
@@ -97,6 +82,35 @@ if _supports_complex:
         dict.fromkeys(_complex_dtypes, complex(-_np.inf, -_np.inf))
     )
     _monoid_identities["minimum"].update(dict.fromkeys(_complex_dtypes, complex(_np.inf, _np.inf)))
+
+if _numba.__version__ != "0.56.2" or _config.get("mapnumpy"):
+    # See: https://github.com/numba/numba/issues/8478
+    _monoid_identities["fmax"].update(
+        {
+            "BOOL": False,
+            "INT8": _np.iinfo(_np.int8).min,
+            "UINT8": 0,
+            "INT16": _np.iinfo(_np.int8).min,
+            "UINT16": 0,
+            "INT32": _np.iinfo(_np.int8).min,
+            "UINT32": 0,
+            "INT64": _np.iinfo(_np.int8).min,
+            "UINT64": 0,
+        }
+    )
+    _monoid_identities["fmin"].update(
+        {
+            "BOOL": True,
+            "INT8": _np.iinfo(_np.int8).max,
+            "UINT8": _np.iinfo(_np.uint8).max,
+            "INT16": _np.iinfo(_np.int16).max,
+            "UINT16": _np.iinfo(_np.uint16).max,
+            "INT32": _np.iinfo(_np.int32).max,
+            "UINT32": _np.iinfo(_np.uint32).max,
+            "INT64": _np.iinfo(_np.int64).max,
+            "UINT64": _np.iinfo(_np.uint64).max,
+        }
+    )
 
 _STANDARD_OPERATOR_NAMES.update(f"monoid.numpy.{name}" for name in _monoid_identities)
 __all__ = list(_monoid_identities)
