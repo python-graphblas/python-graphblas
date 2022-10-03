@@ -375,6 +375,9 @@ def to_scipy_sparse(A, format="csr"):
     return rv.asformat(format)
 
 
+_AwkwardDoublyCompressedMatrix = None
+
+
 def to_awkward(A, format=None):
     """Create an Awkward Array from a GraphBLAS Matrix
 
@@ -456,16 +459,18 @@ def to_awkward(A, format=None):
             "node4-data": info["values"],
         }
         if format.startswith("hyper"):
-            # Define behaviors to make all fields function at the top-level
-            @ak.behaviors.mixins.mixin_class(ak.behavior)
-            class DoublyCompressedMatrix:
-                @property
-                def values(self):
-                    return self.data.values
+            global _AwkwardDoublyCompressedMatrix
+            if _AwkwardDoublyCompressedMatrix is None:
+                # Define behaviors to make all fields function at the top-level
+                @ak.behaviors.mixins.mixin_class(ak.behavior)
+                class _AwkwardDoublyCompressedMatrix:
+                    @property
+                    def values(self):
+                        return self.data.values
 
-                @property
-                def indices(self):
-                    return self.data.indices
+                    @property
+                    def indices(self):
+                        return self.data.indices
 
             size = len(info[labels])
             form = RecordForm(
@@ -476,7 +481,7 @@ def to_awkward(A, format=None):
                 fields=["data", "offset_labels"],
             )
             d["node5-data"] = info[labels]
-            classname = "DoublyCompressedMatrix"
+            classname = "_AwkwardDoublyCompressedMatrix"
 
     else:
         raise TypeError(f"A must be a Matrix or Vector, found {type(A)}")
