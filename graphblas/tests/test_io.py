@@ -15,6 +15,11 @@ try:
 except ImportError:  # pragma: no cover
     ss = None
 
+try:
+    import awkward._v2 as ak
+except ImportError:  # pragma: no cover
+    ak = None
+
 
 @pytest.mark.skipif("not ss")
 def test_vector_to_from_numpy():
@@ -302,3 +307,65 @@ def test_scipy_sparse():
                 assert sa.shape == M.shape
                 sa2 = gb.io.to_scipy_sparse(M, fmt)
                 assert (sa != sa2).nnz == 0
+
+
+@pytest.mark.skipif("not ak")
+def test_awkward_roundtrip():
+    # Vector
+    v = gb.Vector.from_values([1, 3, 5], [20, 21, -5], size=22)
+    for dtype in ["int16", "float32", "bool"]:
+        v1 = v.dup(dtype=dtype)
+        kv = gb.io.to_awkward(v1)
+        assert isinstance(kv, ak.Array)
+        v2 = gb.io.from_awkward(kv)
+        assert v2.isequal(v1)
+    # Matrix
+    m = gb.Matrix.from_values([0, 0, 3, 5], [1, 4, 0, 2], [1, 0, 2, -1], nrows=7, ncols=6)
+    for dtype in ["int16", "float32", "bool"]:
+        for format in ["csr", "csc", "hypercsr", "hypercsc"]:
+            m1 = m.dup(dtype=dtype)
+            km = gb.io.to_awkward(m1, format=format)
+            assert isinstance(km, ak.Array)
+            m2 = gb.io.from_awkward(km)
+            assert m2.isequal(m1)
+
+
+@pytest.mark.skipif("not ak")
+def test_awkward_iso_roundtrip():
+    # Vector
+    v = gb.Vector.from_values([1, 3, 5], [20, 20, 20], size=22)
+    assert v.ss.is_iso
+    kv = gb.io.to_awkward(v)
+    assert isinstance(kv, ak.Array)
+    v2 = gb.io.from_awkward(kv)
+    assert v2.isequal(v)
+    # Matrix
+    m = gb.Matrix.from_values([0, 0, 3, 5], [1, 4, 0, 2], [1, 1, 1, 1], nrows=7, ncols=6)
+    assert m.ss.is_iso
+    for format in ["csr", "csc", "hypercsr", "hypercsc"]:
+        km = gb.io.to_awkward(m, format=format)
+        assert isinstance(km, ak.Array)
+        m2 = gb.io.from_awkward(km)
+        assert m2.isequal(m)
+
+
+@pytest.mark.skipif("not ak")
+def test_awkward_errors():
+    v = gb.Vector.from_values([1, 3, 5], [20, 20, 20], size=22)
+    m = gb.Matrix.from_values([0, 0, 3, 5], [1, 4, 0, 2], [1, 1, 1, 1], nrows=7, ncols=6)
+    with pytest.raises(ValueError, match="Missing parameters"):
+        gb.io.from_awkward(ak.Array([1, 2, 3]))
+    with pytest.raises(ValueError, match="Invalid format for Vector"):
+        kv = gb.io.to_awkward(v)
+        kv = ak.with_parameter(kv, "format", "csr")
+        gb.io.from_awkward(kv)
+    with pytest.raises(ValueError, match="Invalid format for Matrix"):
+        km = gb.io.to_awkward(m)
+        km = ak.with_parameter(km, "format", "dcsr")
+        gb.io.from_awkward(km)
+    with pytest.raises(ValueError, match="Invalid format for Vector"):
+        gb.io.to_awkward(v, format="csr")
+    with pytest.raises(ValueError, match="Invalid format for Matrix"):
+        gb.io.to_awkward(m, format="dcsr")
+    with pytest.raises(TypeError):
+        gb.io.to_awkward(gb.Scalar.from_value(5))

@@ -189,6 +189,62 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
     )
 
 
+def from_awkward(A, *, name=None):
+    """Create a Matrix or Vector from an Awkward Array.
+
+    The Awkward Array must have top-level parameters: format, shape
+
+    The Awkward Array must have top-level attributes based on format:
+    - vec/csr/csc: values, indices
+    - hypercsr/hypercsc: values, indices, offset_labels
+
+    Parameters
+    ----------
+    A : awkward.Array
+        Awkward Array with values and indices
+    name : str, optional
+        Name of resulting Matrix or Vector
+
+    Returns
+    -------
+    Vector or Matrix
+    """
+    params = A.layout.parameters
+    missing = {"format", "shape"} - params.keys()
+    if missing:
+        raise ValueError(f"Missing parameters: {missing}")
+    format = params["format"]
+    shape = params["shape"]
+
+    if len(shape) == 1:
+        if format != "vec":
+            raise ValueError(f"Invalid format for Vector: {format}")
+        return _Vector.from_values(
+            A.indices.layout.data, A.values.layout.data, size=shape[0], name=name
+        )
+    else:
+        if format not in {"csr", "csc", "hypercsr", "hypercsc"}:
+            raise ValueError(f"Invalid format for Matrix: {format}")
+        d = {
+            "format": format,
+            "nrows": shape[0],
+            "ncols": shape[1],
+            "values": A.values.layout.content.data,
+            "indptr": A.values.layout.offsets.data,
+        }
+        if format[-1] == "r":
+            indices = "col"
+            labels = "rows"
+        else:
+            indices = "row"
+            labels = "cols"
+        d[f"{indices}_indices"] = A.indices.layout.content.data
+        d[f"sorted_{indices}s"] = True
+        if format[:5] == "hyper":
+            d[labels] = A.offset_labels.layout.data
+        return _Matrix.ss.import_any(**d, name=name)
+
+
 # TODO: add parameters to allow different networkx classes and attribute names
 def to_networkx(m):
     """Create a networkx DiGraph from a square adjacency Matrix
@@ -317,6 +373,125 @@ def to_scipy_sparse(A, format="csr"):
         if format == "coo":
             return rv
     return rv.asformat(format)
+
+
+_AwkwardDoublyCompressedMatrix = None
+
+
+def to_awkward(A, format=None):
+    """Create an Awkward Array from a GraphBLAS Matrix
+
+    Parameters
+    ----------
+    A : Matrix or Vector
+        GraphBLAS object to be converted
+    format : str {'csr', 'csc', 'hypercsr', 'hypercsc', 'vec}
+        Default format is csr for Matrix; vec for Vector
+
+    The Awkward Array will have top-level attributes based on format:
+    - vec/csr/csc: values, indices
+    - hypercsr/hypercsc: values, indices, offset_labels
+
+    Top-level parameters will also be set: format, shape
+
+    Returns
+    -------
+    awkward.Array
+
+    """
+    import awkward._v2 as ak
+    from awkward._v2.forms.listoffsetform import ListOffsetForm
+    from awkward._v2.forms.numpyform import NumpyForm
+    from awkward._v2.forms.recordform import RecordForm
+
+    out_type = _output_type(A)
+    if format is None:
+        format = "vec" if out_type is _Vector else "csr"
+    format = format.lower()
+    classname = None
+
+    if out_type is _Vector:
+        if format != "vec":
+            raise ValueError(f"Invalid format for Vector: {format}")
+        size = A.nvals
+        indices, values = A.to_values()
+        form = RecordForm(
+            contents=[
+                NumpyForm(A.dtype.numba_type.name, form_key="node1"),
+                NumpyForm("int64", form_key="node0"),
+            ],
+            fields=["values", "indices"],
+        )
+        d = {"node0-data": indices, "node1-data": values}
+
+    elif out_type is _Matrix:
+        if _backend != "suitesparse":
+            raise NotImplementedError(
+                f"Conversion of Matrix to Awkward Array not supported for backend '{_backend}'"
+            )
+        if format not in {"csr", "csc", "hypercsr", "hypercsc"}:
+            raise ValueError(f"Invalid format for Matrix: {format}")
+        if format[-1] == "r":
+            size = A.nrows
+            indices = "col_indices"
+            labels = "rows"
+        else:
+            size = A.ncols
+            indices = "row_indices"
+            labels = "cols"
+        info = A.ss.export(format, sort=True)
+        if info["is_iso"]:
+            info["values"] = _np.ascontiguousarray(_np.broadcast_to(info["values"], A.nvals))
+        form = ListOffsetForm(
+            "i64",
+            RecordForm(
+                contents=[
+                    NumpyForm("int64", form_key="node3"),
+                    NumpyForm(A.dtype.numba_type.name, form_key="node4"),
+                ],
+                fields=["indices", "values"],
+            ),
+            form_key="node1",
+        )
+        d = {
+            "node1-offsets": info["indptr"],
+            "node3-data": info[indices],
+            "node4-data": info["values"],
+        }
+        if format.startswith("hyper"):
+            global _AwkwardDoublyCompressedMatrix
+            if _AwkwardDoublyCompressedMatrix is None:
+                # Define behaviors to make all fields function at the top-level
+                @ak.behaviors.mixins.mixin_class(ak.behavior)
+                class _AwkwardDoublyCompressedMatrix:
+                    @property
+                    def values(self):
+                        return self.data.values
+
+                    @property
+                    def indices(self):
+                        return self.data.indices
+
+            size = len(info[labels])
+            form = RecordForm(
+                contents=[
+                    form,
+                    NumpyForm("int64", form_key="node5"),
+                ],
+                fields=["data", "offset_labels"],
+            )
+            d["node5-data"] = info[labels]
+            classname = "_AwkwardDoublyCompressedMatrix"
+
+    else:
+        raise TypeError(f"A must be a Matrix or Vector, found {type(A)}")
+
+    ret = ak.from_buffers(form, size, d)
+    ret = ak.with_parameter(ret, "format", format)
+    ret = ak.with_parameter(ret, "shape", list(A.shape))
+    if classname:
+        ret = ak.with_name(ret, classname)
+    return ret
 
 
 def mmread(source, *, dup_op=None, name=None):
