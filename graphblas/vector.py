@@ -144,7 +144,7 @@ class Vector(BaseType):
         with skip_record:
             return format_vector(self, mask=mask)
 
-    def _repr_html_(self, mask=None, collapse=False):
+    def _repr_html_(self, mask=None, collapse=False, expr=None):
         if self._parent is not None and mask is None:
             # Scalars repr can't handle mask
             return self._parent._repr_html_(collapse=collapse)
@@ -152,7 +152,7 @@ class Vector(BaseType):
         from .recorder import skip_record
 
         with skip_record:
-            return format_vector_html(self, mask=mask, collapse=collapse)
+            return format_vector_html(self, mask=mask, collapse=collapse, expr=expr)
 
     @property
     def _name_html(self):
