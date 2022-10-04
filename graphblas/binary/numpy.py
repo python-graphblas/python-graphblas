@@ -56,6 +56,8 @@ _binary_names = {
     "copysign",
     "nextafter",
     "ldexp",
+    # Misc.
+    # "around",  # <non-bool>_<int> -> <non-bool>
 }
 _STANDARD_OPERATOR_NAMES.update(f"binary.numpy.{name}" for name in _binary_names)
 __all__ = list(_binary_names)
@@ -122,8 +124,8 @@ _commutes_to = {
     "less": "greater",
     "less_equal": "greater_equal",
 }
-# Don't commute: arctan2, copysign, divide, floor_divide, fmod, ldexp, left_shift,
-# mod, nextafter, power, remainder, right_shift, subtract, true_divide.
+# Don't commute: arctan2, around, copysign, divide, floor_divide, fmod, ldexp,
+# left_shift, mod, nextafter, power, remainder, right_shift, subtract, true_divide.
 # If desired, we could create r-versions of these so they can commute to something.
 
 
