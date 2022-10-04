@@ -83,7 +83,11 @@ if _supports_complex:
     )
     _monoid_identities["minimum"].update(dict.fromkeys(_complex_dtypes, complex(_np.inf, _np.inf)))
 
-if _numba.__version__ != "0.56.2" or _config.get("mapnumpy"):
+if _config.get("mapnumpy") or not (
+    # To increase import speed, only call njit when `_config.get("mapnumpy")` is False
+    _fmin_is_float := type(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2))
+    is float
+):
     # See: https://github.com/numba/numba/issues/8478
     _monoid_identities["fmax"].update(
         {
@@ -111,6 +115,8 @@ if _numba.__version__ != "0.56.2" or _config.get("mapnumpy"):
             "UINT64": _np.iinfo(_np.uint64).max,
         }
     )
+else:
+    _fmin_is_float = True
 
 _STANDARD_OPERATOR_NAMES.update(f"monoid.numpy.{name}" for name in _monoid_identities)
 __all__ = list(_monoid_identities)

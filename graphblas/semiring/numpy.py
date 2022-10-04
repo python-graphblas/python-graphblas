@@ -7,14 +7,12 @@ https://numba.readthedocs.io/en/stable/reference/numpysupported.html#math-operat
 """
 import itertools as _itertools
 
-import numba as _numba
-
 from .. import _STANDARD_OPERATOR_NAMES
 from .. import binary as _binary
 from .. import config as _config
 from .. import monoid as _monoid
 from ..binary.numpy import _binary_names
-from ..monoid.numpy import _monoid_identities
+from ..monoid.numpy import _fmin_is_float, _monoid_identities
 
 _delayed = {}
 _semiring_names = {
@@ -87,7 +85,7 @@ _semiring_names -= {
         },
     )
 }
-if _numba.__version__ == "0.56.2" and not _config.get("mapnumpy"):
+if _fmin_is_float and not _config.get("mapnumpy"):
     # See: https://github.com/numba/numba/issues/8478
     # <non-float>_<float>
     _semiring_names -= {
