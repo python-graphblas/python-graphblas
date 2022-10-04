@@ -85,7 +85,7 @@ if _supports_complex:
 
 if _config.get("mapnumpy") or not (
     # To increase import speed, only call njit when `_config.get("mapnumpy")` is False
-    _fmin_is_float := type(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2))
+    type(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2))
     is float
 ):
     # See: https://github.com/numba/numba/issues/8478
@@ -115,6 +115,7 @@ if _config.get("mapnumpy") or not (
             "UINT64": _np.iinfo(_np.uint64).max,
         }
     )
+    _fmin_is_float = False
 else:
     _fmin_is_float = True
 
