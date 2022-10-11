@@ -1509,8 +1509,7 @@ class Matrix(BaseType):
         else:
             row_start = 0
             row_stop = max(0, nrows - row_offset)
-        col_offset = int(column_offset)
-        if col_offset < 0:
+        if (col_offset := int(column_offset)) < 0:
             col_start = -col_offset
             col_stop = col_start + ncols
         else:
@@ -1644,8 +1643,7 @@ class Matrix(BaseType):
         else:
             extra_message = "Literal scalars also accepted."
 
-        value_type = output_type(value)
-        if value_type is Vector:
+        if (value_type := output_type(value)) is Vector:
             if type(value) is not Vector:
                 value = self._expect_type(
                     value,

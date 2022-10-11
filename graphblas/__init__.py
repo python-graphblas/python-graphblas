@@ -131,8 +131,7 @@ def _init(backend_arg, blocking, automatic=False):
         # Already initialized with these parameters; nothing more to do
         return
 
-    backend = backend_arg
-    if backend == "suitesparse":
+    if (backend := backend_arg) == "suitesparse":
         from suitesparse_graphblas import ffi, initialize, is_initialized, lib
 
         if is_initialized():
