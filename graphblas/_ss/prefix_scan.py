@@ -89,7 +89,7 @@ def prefix_scan(A, monoid, *, name=None, within):
 
     # Upsweep
     stride = 1
-    stride2 = 2  # no-walrus
+    stride2 = 2
     while stride2 <= N_half:
         k = (N_half - stride2) // stride2 + 1
         cols = np.arange(stride2 - 1, N_half, stride2, dtype=index_t)
