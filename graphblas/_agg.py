@@ -105,7 +105,8 @@ class Aggregator:
         from .matrix import Matrix, TransposedMatrix
         from .vector import Vector
 
-        if (typ := output_type(val)) is Vector:
+        typ = output_type(val)
+        if typ is Vector:
             if rowwise or columnwise:
                 raise ValueError(
                     "rowwise and columnwise arguments should not be used with Vector input"

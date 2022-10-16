@@ -210,7 +210,8 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
 
 
 def _get_max_columns():
-    if (max_columns := pd.options.display.max_columns) == 0:
+    max_columns = pd.options.display.max_columns
+    if max_columns == 0:
         # We are probably in a terminal and pandas will automatically size the data correctly.
         # In this case, let's get a sufficiently large amount of data to show and defer to pandas.
         max_columns = 150

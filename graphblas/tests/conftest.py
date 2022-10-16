@@ -14,14 +14,17 @@ orig_semirings = set()
 def pytest_configure(config):
     randomly = config.getoption("--randomly", False)
     backend = config.getoption("--backend", "suitesparse")
-    if (blocking := config.getoption("--blocking", True)) is None:  # pragma: no branch
+    blocking = config.getoption("--blocking", True)
+    if blocking is None:  # pragma: no branch
         blocking = np.random.rand() < 0.5 if randomly else True
     record = config.getoption("--record", False)
     if record is None:  # pragma: no branch
         record = np.random.rand() < 0.5 if randomly else False
-    if (mapnumpy := config.getoption("--mapnumpy", False)) is None:  # pragma: no branch
+    mapnumpy = config.getoption("--mapnumpy", False)
+    if mapnumpy is None:  # pragma: no branch
         mapnumpy = np.random.rand() < 0.5 if randomly else False
-    if (runslow := config.getoption("--runslow", False)) is None:  # pragma: no branch
+    runslow = config.getoption("--runslow", False)
+    if runslow is None:  # pragma: no branch
         runslow = np.random.rand() < 0.25 if randomly else False
     config.runslow = runslow
 
