@@ -2757,14 +2757,19 @@ def test_expr_is_like_matrix(A):
         "_delete_element",
         "_deserialize",
         "_extract_element",
+        "_from_csx",
         "_from_obj",
         "_name_counter",
         "_parent",
         "_prep_for_assign",
         "_prep_for_extract",
+        "_to_csx",
         "_update",
         "build",
         "clear",
+        "from_coo",
+        "from_csc",
+        "from_csr",
         "from_pygraphblas",
         "from_values",
         "resize",
@@ -2799,14 +2804,19 @@ def test_index_expr_is_like_matrix(A):
         "_delete_element",
         "_deserialize",
         "_extract_element",
+        "_from_csx",
         "_from_obj",
         "_name_counter",
         "_parent",
         "_prep_for_assign",
         "_prep_for_extract",
+        "_to_csx",
         "_update",
         "build",
         "clear",
+        "from_coo",
+        "from_csc",
+        "from_csr",
         "from_pygraphblas",
         "from_values",
         "resize",
@@ -3473,6 +3483,7 @@ def test_udt():
     AB = unary.one(select.tril(A).new()).new()
     BA = select.tril(unary.one(A).new()).new()
     assert AB.isequal(BA)
+    assert Matrix.from_csc(*A.to_csc()).isequal(A)
 
     # Just make sure these work
     for aggop in [agg.any_value, agg.first, agg.last, agg.count]:
@@ -3514,6 +3525,7 @@ def test_udt():
     info = A.ss.export("coor")
     result = A.ss.import_any(**info)
     assert result.isequal(A)
+    assert Matrix.from_csr(*A.to_csr()).isequal(A)
     A.clear()
     A[[0, 1], 1] = [(2, 3, 4), [5, 6, 7]]
     expected = Matrix.from_values([0, 1], [1, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt)
@@ -3698,3 +3710,35 @@ def test_ss_config(A):
     assert A.ss.config["format"] == "by_row"
     with pytest.raises(InvalidValue):
         A.ss.config["format"] = lib.GxB_NO_FORMAT
+
+
+def test_to_csr_from_csc(A):
+    assert Matrix.from_csr(*A.to_csr(dtype=int)).isequal(A, check_dtype=True)
+    assert Matrix.from_csr(*A.T.to_csc()).isequal(A, check_dtype=True)
+    assert Matrix.from_csc(*A.to_csc()).isequal(A)
+    assert Matrix.from_csc(*A.T.to_csr()).isequal(A)
+    assert Matrix.from_csr(*A.to_csr(dtype=float)).isequal(A.dup(float), check_dtype=True)
+
+    #     0 1 2
+    # 0 [- 1 -]
+    # 1 [2 - -]
+    B = Matrix.from_csr([0, 1, 2], [1, 0], [10, 20], ncols=3)
+    expected = Matrix.from_values([0, 1], [1, 0], [10, 20], nrows=2, ncols=3)
+    assert expected.isequal(B, check_dtype=True)
+
+    B = Matrix.from_csc([0, 1, 2, 2], [1, 0], [20, 10])
+    assert expected.isequal(B, check_dtype=True)
+
+    B = Matrix.from_csr([0, 1, 2], [1, 0], 100)
+    expected = Matrix.from_values([0, 1], [1, 0], [100, 100], nrows=2, ncols=2)
+    assert expected.isequal(B, check_dtype=True)
+
+    with pytest.raises(InvalidValue):
+        Matrix.from_csr([0, 1, 2, 3], [1, 0], [10, 20], ncols=3)
+
+    # Test empty
+    B = Matrix.from_csr([0, 0, 0], [], [], ncols=2, dtype=int)
+    expected = Matrix(int, 2, 2)
+    assert expected.isequal(B, check_dtype=True)
+    assert Matrix.from_csr(*B.to_csr(), ncols=2).isequal(B)
+    assert Matrix.from_csr(*B.to_csr()).isequal(B[:, 0:0].new())
