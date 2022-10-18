@@ -760,20 +760,6 @@ class Matrix(BaseType):
         if (Ax := Ax.array).shape[0] > (Ax_len := Ax_len.gb_obj[0]):  # pragma: no cover
             Ax = Ax[:Ax_len]
 
-        # Alt w/o walrus
-        # Ap = Ap.array
-        # Ai = Ai.array
-        # Ax = Ax.array
-        # Ap_len = Ap_len.gb_obj[0]
-        # Ai_len = Ai_len.gb_obj[0]
-        # Ax_len = Ax_len.gb_obj[0]
-        # if Ap.size > Ap_len:  # pragma: no cover
-        #     Ap = Ap[:Ap_len]
-        # if Ai.size > Ai_len:  # pragma: no cover
-        #     Ai = Ai[:Ai_len]
-        # if Ax.size > Ax_len:  # pragma: no cover
-        #     Ax = Ax[:Ax_len]
-
         if dtype is not None:
             dtype = lookup_dtype(dtype)
             if dtype != self.dtype:
