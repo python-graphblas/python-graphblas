@@ -3,11 +3,11 @@ from warnings import warn as _warn
 import numpy as _np
 
 from . import backend as _backend
+from .core.matrix import Matrix as _Matrix
+from .core.utils import output_type as _output_type
+from .core.vector import Vector as _Vector
 from .dtypes import lookup_dtype as _lookup_dtype
 from .exceptions import GraphblasException as _GraphblasException
-from .matrix import Matrix as _Matrix
-from .utils import output_type as _output_type
-from .vector import Vector as _Vector
 
 
 def draw(m):  # pragma: no cover

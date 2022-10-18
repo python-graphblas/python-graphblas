@@ -1,10 +1,9 @@
 from collections.abc import MutableMapping
 from numbers import Integral
 
-from graphblas import ffi, lib
-
-from ..dtypes import lookup_dtype
-from ..exceptions import _error_code_lookup
+from ... import ffi, lib
+from ...dtypes import lookup_dtype
+from ...exceptions import _error_code_lookup
 from ..utils import values_to_numpy_buffer
 
 

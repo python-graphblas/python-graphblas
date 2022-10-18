@@ -340,9 +340,9 @@ def test_expr_is_like_scalar(s):
         expected.add("_empty")
     assert attrs - expr_attrs == expected, (
         "If you see this message, you probably added a method to Scalar.  You may need to "
-        "add an entry to `scalar` set in `graphblas._automethods.py` "
-        "and then run `python -m graphblas._automethods`.  If you're messing with infix "
-        "methods, then you may need to run `python -m graphblas._infixmethods`."
+        "add an entry to `scalar` set in `graphblas.core.automethods` "
+        "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
+        "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
     assert attrs - infix_attrs == expected
 
@@ -371,9 +371,9 @@ def test_index_expr_is_like_scalar(s):
         expected.add("_empty")
     assert attrs - expr_attrs == expected, (
         "If you see this message, you probably added a method to Scalar.  You may need to "
-        "add an entry to `scalar` set in `graphblas._automethods.py` "
-        "and then run `python -m graphblas._automethods`.  If you're messing with infix "
-        "methods, then you may need to run `python -m graphblas._infixmethods`."
+        "add an entry to `scalar` set in `graphblas.core.automethods` "
+        "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
+        "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
 
 

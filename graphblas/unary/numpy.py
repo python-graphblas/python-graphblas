@@ -133,7 +133,7 @@ def __getattr__(name):
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         globals()[name] = getattr(_unary, _numpy_to_graphblas[name])
     else:
-        from .. import operator
+        from ..core import operator
 
         numpy_func = getattr(_np, name)
 

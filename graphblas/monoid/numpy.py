@@ -157,7 +157,7 @@ def __getattr__(name):
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         globals()[name] = getattr(_monoid, _numpy_to_graphblas[name])
     else:
-        from .. import operator
+        from ..core import operator
 
         func = getattr(_binary.numpy, name)
         operator.Monoid.register_new(f"numpy.{name}", func, _monoid_identities[name])

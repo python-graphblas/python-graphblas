@@ -136,7 +136,7 @@ def __dir__():
 
 
 def __getattr__(name):
-    from .. import operator
+    from ..core import operator
 
     if name in _delayed:
         func, kwargs = _delayed.pop(name)

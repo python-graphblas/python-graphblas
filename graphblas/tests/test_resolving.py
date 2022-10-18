@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from graphblas import binary, dtypes, replace, unary
-from graphblas.expr import Updater
+from graphblas.core.expr import Updater
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 

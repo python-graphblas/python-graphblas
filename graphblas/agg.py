@@ -68,9 +68,8 @@ Custom recipes:
 #   - bxnor monoid: even bits
 #   - bnor monoid: odd bits
 """
-# All items are dynamically added by classes in _agg.py
+# All items are dynamically added by classes in core/agg.py
 # This module acts as a container of Aggregator instances
-from . import operator
+from .core import agg
 
-del operator
-from . import _agg  # noqa isort:skip
+del agg

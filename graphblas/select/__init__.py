@@ -21,8 +21,8 @@ def __getattr__(key):
 
 
 def _resolve_expr(expr, callname, opname):
-    from graphblas.matrix import MatrixExpression
-    from graphblas.vector import VectorExpression
+    from ..core.matrix import MatrixExpression
+    from ..core.vector import VectorExpression
 
     if not isinstance(expr, (VectorExpression, MatrixExpression)):
         raise TypeError(
@@ -124,6 +124,6 @@ def index(expr):
     return _resolve_expr(expr, "index", "index")
 
 
-from .. import operator  # noqa isort:skip
+from ..core import operator  # noqa isort:skip
 
 del operator

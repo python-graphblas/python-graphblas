@@ -1,7 +1,8 @@
 import numpy as np
 
-from . import lib, utils
-from .dtypes import _INDEX
+from .. import lib
+from ..dtypes import _INDEX
+from . import utils
 from .utils import _CArray, output_type
 
 
@@ -58,7 +59,7 @@ class AxisIndex:
             return self.index.value
         if self.index is _ALL_INDICES:
             return slice(None)
-        from ._slice import gxb_backwards, gxb_range, gxb_stride
+        from .slice import gxb_backwards, gxb_range, gxb_stride
 
         if self.cscalar is gxb_backwards:
             start, stop, step = self.index.array.tolist()
@@ -183,7 +184,7 @@ class IndexerResolver:
         if typ is list:
             pass
         elif typ is slice:
-            from ._slice import slice_to_index
+            from .slice import slice_to_index
 
             return slice_to_index(index, size)
 

@@ -16,6 +16,6 @@ def __getattr__(key):
     raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
 
 
-from .. import operator  # noqa isort:skip
+from ..core import operator  # noqa isort:skip
 
 del operator

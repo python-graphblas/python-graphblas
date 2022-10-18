@@ -1,5 +1,5 @@
 from . import ffi, lib
-from .utils import _Pointer, libget
+from .core.utils import _Pointer, libget
 
 
 class GraphblasException(Exception):

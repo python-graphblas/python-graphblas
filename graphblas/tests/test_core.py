@@ -28,7 +28,7 @@ def test_bad_init():
 
 def test_bad_libget():
     with pytest.raises(AttributeError, match="GrB_bad_name"):
-        graphblas.base.libget("GrB_bad_name")
+        graphblas.core.base.libget("GrB_bad_name")
 
 
 def test_lib_attrs():
@@ -42,8 +42,8 @@ def test_bad_call():
         _carg = 1
 
     with pytest.raises(TypeError, match="Error calling GrB_Matrix_apply"):
-        graphblas.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad])
+        graphblas.core.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad])
     with pytest.raises(
         TypeError, match=r"Call objects: GrB_Matrix_apply\(bad, bad, bad, bad, bad, bad\)"
     ):
-        graphblas.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad, bad])
+        graphblas.core.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad, bad])

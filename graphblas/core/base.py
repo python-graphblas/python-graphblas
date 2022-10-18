@@ -1,10 +1,10 @@
 from contextvars import ContextVar
 
-from . import config, ffi
-from . import replace as replace_singleton
+from .. import config, ffi
+from .. import replace as replace_singleton
+from ..dtypes import BOOL
+from ..exceptions import check_status
 from .descriptor import lookup as descriptor_lookup
-from .dtypes import BOOL
-from .exceptions import check_status
 from .expr import AmbiguousAssignOrExtract, Updater
 from .mask import Mask
 from .operator import UNKNOWN_OPCLASS, binary_from_string, find_opclass, get_typed_op

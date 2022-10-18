@@ -143,7 +143,7 @@ def __getattr__(name):
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         if name == "float_power":
-            from .. import operator
+            from ..core import operator
 
             new_op = operator.BinaryOp(f"numpy.{name}")
             builtin_op = _binary.pow
@@ -166,7 +166,7 @@ def __getattr__(name):
         else:
             globals()[name] = getattr(_binary, _numpy_to_graphblas[name])
     else:
-        from .. import operator
+        from ..core import operator
 
         numpy_func = getattr(_np, name)
 

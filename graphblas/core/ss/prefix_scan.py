@@ -2,7 +2,7 @@ from math import ceil, log2
 
 import numpy as np
 
-from .. import binary
+from ... import binary
 from ..operator import get_semiring, get_typed_op
 from .matrix import compact_indices
 
@@ -10,8 +10,8 @@ from .matrix import compact_indices
 # By default, scans on matrices are done along rows.
 # To perform scans along columns, pass a transposed matrix.
 def prefix_scan(A, monoid, *, name=None, within):
-    from .. import Matrix, Vector
-    from ..matrix import TransposedMatrix
+    from ..matrix import Matrix, TransposedMatrix
+    from ..vector import Vector
 
     monoid = get_typed_op(monoid, A.dtype, kind="binary")
     A._expect_op(monoid, ("BinaryOp", "Monoid"), argname="op", within=within)

@@ -1,8 +1,8 @@
 import numpy as np
 
-from . import config, monoid, unary
-from .dtypes import BOOL
-from .exceptions import OutOfMemory
+from .. import config, monoid, unary
+from ..dtypes import BOOL
+from ..exceptions import OutOfMemory
 from .matrix import Matrix, TransposedMatrix
 from .vector import Vector
 

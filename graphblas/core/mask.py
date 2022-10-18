@@ -1,10 +1,11 @@
 import warnings
 
-from . import monoid, utils
-from .binary import land, lor, pair
-from .dtypes import BOOL
-from .select import valuene
-from .unary import one
+from .. import monoid
+from ..binary import land, lor, pair
+from ..dtypes import BOOL
+from ..select import valuene
+from ..unary import one
+from . import utils
 
 
 class Mask:

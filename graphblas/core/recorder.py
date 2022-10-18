@@ -1,8 +1,9 @@
 import collections
 
-from . import base, lib
+from .. import lib
+from ..dtypes import DataType
+from . import base
 from .base import _recorder
-from .dtypes import DataType
 from .formatting import CSS_STYLE
 from .mask import Mask
 from .matrix import TransposedMatrix
