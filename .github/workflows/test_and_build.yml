@@ -112,7 +112,8 @@ jobs:
           # Test (and cover) lazy module loader
           echo "from graphblas.agg import count" > script.py
           coverage run -a --branch script.py
-          echo "from graphblas import agg, _agg" > script.py
+          echo "from graphblas import agg" > script.py  # Does this still cover?
+          echo "from graphblas.core import agg" >> script.py
           coverage run -a --branch script.py
           rm script.py
       - name: Auto-generated code check
