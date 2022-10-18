@@ -7,7 +7,7 @@ if __name__ == "__main__":
         graphblas.init("bad_name")
 
     graphblas.ffi
-    graphblas.matrix
+    graphblas.op
     graphblas.Matrix
     with pytest.raises(
         graphblas.exceptions.GraphblasException,
