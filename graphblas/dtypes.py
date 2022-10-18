@@ -243,7 +243,7 @@ for dtype in _dtypes_to_register:
     val = _sample_values[dtype]
     _registry[val.dtype] = dtype
     _registry[val.dtype.name] = dtype
-del val
+del dtype, val
 
 # Add some common Python types as lookup keys
 _registry[bool] = BOOL
