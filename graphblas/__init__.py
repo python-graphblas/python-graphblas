@@ -73,6 +73,9 @@ def __getattr__(name):
             else:
                 _load(name)
         return globals()[name]
+    elif name == "_autoinit":
+        if _init_params is None:
+            _init("suitesparse", None, automatic=True)
     else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

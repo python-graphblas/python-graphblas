@@ -18,3 +18,4 @@ if __name__ == "__main__":
     graphblas._init_params = None
     graphblas.init(blocking=None)
     graphblas.init(blocking=None)
+    graphblas._autoinit
