@@ -13,9 +13,7 @@ from .. import (
     _STANDARD_OPERATOR_NAMES,
     binary,
     config,
-    ffi,
     indexunary,
-    lib,
     monoid,
     op,
     select,
@@ -40,6 +38,7 @@ from ..dtypes import (
     unify,
 )
 from ..exceptions import UdfParseError, check_status_carg
+from . import ffi, lib
 from .expr import InfixExprBase
 from .utils import libget, output_type
 

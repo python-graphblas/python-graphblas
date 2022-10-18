@@ -9,7 +9,8 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas
-from graphblas import agg, binary, dtypes, indexunary, lib, monoid, select, semiring, unary
+from graphblas import agg, binary, dtypes, indexunary, monoid, select, semiring, unary
+from graphblas.core import lib
 from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
@@ -1803,7 +1804,7 @@ def test_del(capsys):
     # A has `gb_obj` of NULL
     A = Matrix.from_values([0, 1], [0, 1], [0, 1])
     gb_obj = A.gb_obj
-    A.gb_obj = graphblas.ffi.NULL
+    A.gb_obj = graphblas.core.NULL
     del A
     # let's clean up so we don't have a memory leak
     A2 = object.__new__(Matrix)

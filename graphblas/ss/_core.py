@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 
-from .. import ffi, lib
+from ..core import ffi, lib
 from ..core.base import _expect_type
 from ..core.matrix import Matrix, TransposedMatrix
 from ..core.scalar import Scalar

@@ -1,8 +1,7 @@
 import numpy as np
 
-from .. import lib
 from ..dtypes import _INDEX
-from . import utils
+from . import lib, utils
 from .utils import _CArray, output_type
 
 

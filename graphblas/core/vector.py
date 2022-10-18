@@ -3,10 +3,10 @@ import warnings
 
 import numpy as np
 
-from .. import backend, binary, ffi, lib, monoid, select, semiring
+from .. import backend, binary, monoid, select, semiring
 from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, NoValue, check_status
-from . import automethods, utils
+from . import NULL, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
@@ -1582,7 +1582,7 @@ class Vector(BaseType):
         import pygraphblas as pg
 
         vector = pg.Vector(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
-        self.gb_obj = ffi.NULL
+        self.gb_obj = NULL
         return vector
 
     @classmethod
@@ -1607,7 +1607,7 @@ class Vector(BaseType):
         dtype = lookup_dtype(vector.gb_type)
         rv = cls(vector._vector, dtype)
         rv._size = vector.size
-        vector._vector = ffi.NULL
+        vector._vector = NULL
         return rv
 
 

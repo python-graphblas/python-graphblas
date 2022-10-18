@@ -1,4 +1,4 @@
-from . import ffi, lib
+from .core import ffi, lib
 from .core.utils import _Pointer, libget
 
 

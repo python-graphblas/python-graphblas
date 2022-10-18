@@ -1,8 +1,7 @@
 import collections
 
-from .. import lib
 from ..dtypes import DataType
-from . import base
+from . import base, lib
 from .base import _recorder
 from .formatting import CSS_STYLE
 from .mask import Mask

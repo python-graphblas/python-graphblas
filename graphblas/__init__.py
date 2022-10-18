@@ -50,10 +50,8 @@ _SPECIAL_ATTRS = {
     "core",
     "dtypes",
     "exceptions",
-    "ffi",
     "indexunary",
     "io",
-    "lib",
     "monoid",
     "op",
     "select",
@@ -97,7 +95,7 @@ def init(backend="suitesparse", blocking=False):
 
 
 def _init(backend_arg, blocking, automatic=False):
-    global _init_params, backend, lib, ffi
+    global _init_params, backend
 
     passed_params = {"backend": backend_arg, "blocking": blocking, "automatic": automatic}
     if _init_params is not None:
@@ -139,6 +137,12 @@ def _init(backend_arg, blocking, automatic=False):
     else:
         raise ValueError(f'Bad backend name.  Must be "suitesparse".  Got: {backend}')
     _init_params = passed_params
+
+    from . import core
+
+    core.ffi = ffi
+    core.lib = lib
+    core.NULL = ffi.NULL
 
 
 # Ideally this is in operator.py, but lives here to avoid circular references

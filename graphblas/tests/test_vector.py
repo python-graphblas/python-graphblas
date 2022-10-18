@@ -1078,7 +1078,7 @@ def test_del(capsys):
     # v has `gb_obj` of NULL
     v = Vector.from_values([0, 1], [0, 1])
     gb_obj = v.gb_obj
-    v.gb_obj = graphblas.ffi.NULL
+    v.gb_obj = graphblas.core.NULL
     del v
     # let's clean up so we don't have a memory leak
     v2 = object.__new__(Vector)

@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import agg, binary, dtypes, indexunary, lib, monoid, op, select, semiring, unary
-from graphblas.core import operator
+from graphblas import agg, binary, dtypes, indexunary, monoid, op, select, semiring, unary
+from graphblas.core import lib, operator
 from graphblas.core.operator import BinaryOp, IndexUnaryOp, Monoid, Semiring, UnaryOp, get_semiring
 from graphblas.dtypes import (
     BOOL,

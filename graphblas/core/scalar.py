@@ -3,11 +3,11 @@ import warnings
 
 import numpy as np
 
-from .. import backend, config, ffi, lib
+from .. import backend, config
 from ..binary import isclose
 from ..dtypes import _INDEX, BOOL, FP64, lookup_dtype
 from ..exceptions import EmptyObject, check_status
-from . import automethods, utils
+from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
 from .expr import AmbiguousAssignOrExtract
 from .operator import get_typed_op

@@ -1,5 +1,5 @@
-from ... import ffi, lib
 from ...exceptions import check_status
+from .. import ffi, lib
 from ..descriptor import Descriptor, _desc_map
 
 str_to_compression = {

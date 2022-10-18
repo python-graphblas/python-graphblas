@@ -9,9 +9,10 @@ from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_b
 
 import graphblas as gb
 
-from ... import ffi, lib, monoid
+from ... import monoid
 from ...dtypes import _INDEX, BOOL, INT64, _string_to_dtype, lookup_dtype
 from ...exceptions import _error_code_lookup, check_status, check_status_carg
+from .. import NULL, ffi, lib
 from ..base import call, record_raw
 from ..scalar import Scalar, _as_scalar, _scalar_index
 from ..utils import (
@@ -29,7 +30,6 @@ from .descriptor import get_compression_descriptor, get_nthreads_descriptor
 from .utils import get_order
 
 ffi_new = ffi.new
-NULL = ffi.NULL
 
 
 @njit

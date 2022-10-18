@@ -3,10 +3,10 @@ import warnings
 
 import numpy as np
 
-from .. import backend, binary, ffi, lib, monoid, select, semiring
+from .. import backend, binary, monoid, select, semiring
 from ..dtypes import _INDEX, FP64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, NoValue, check_status
-from . import automethods, utils
+from . import NULL, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
@@ -2023,7 +2023,7 @@ class Matrix(BaseType):
         import pygraphblas as pg
 
         matrix = pg.Matrix(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
-        self.gb_obj = ffi.NULL
+        self.gb_obj = NULL
         return matrix
 
     @classmethod
@@ -2049,7 +2049,7 @@ class Matrix(BaseType):
         rv = cls(matrix._matrix, dtype)
         rv._nrows = matrix.nrows
         rv._ncols = matrix.ncols
-        matrix._matrix = ffi.NULL
+        matrix._matrix = NULL
         return rv
 
 

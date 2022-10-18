@@ -1,7 +1,7 @@
 import numpy as np
 
-from .. import ffi, lib
 from ..dtypes import _INDEX, lookup_dtype
+from . import ffi, lib
 
 
 def libget(name):

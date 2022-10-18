@@ -6,7 +6,7 @@ if __name__ == "__main__":
     with pytest.raises(ValueError, match="Bad backend name"):
         graphblas.init("bad_name")
 
-    graphblas.ffi
+    graphblas.core.ffi
     graphblas.op
     graphblas.Matrix
     with pytest.raises(

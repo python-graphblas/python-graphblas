@@ -32,8 +32,8 @@ def test_bad_libget():
 
 
 def test_lib_attrs():
-    for attr in dir(graphblas.lib):
-        getattr(graphblas.lib, attr)
+    for attr in dir(graphblas.core.lib):
+        getattr(graphblas.core.lib, attr)
 
 
 def test_bad_call():

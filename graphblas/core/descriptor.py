@@ -1,7 +1,5 @@
-from .. import ffi, lib
 from ..exceptions import check_status_carg
-
-NULL = ffi.NULL
+from . import NULL, ffi, lib
 
 
 class Descriptor:

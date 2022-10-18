@@ -5,7 +5,8 @@ import string
 import numpy as np
 import pytest
 
-from graphblas import dtypes, lib
+from graphblas import dtypes
+from graphblas.core import lib
 from graphblas.dtypes import lookup_dtype
 
 all_dtypes = [

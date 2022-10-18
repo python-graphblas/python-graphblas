@@ -1,5 +1,4 @@
-from graphblas import lib
-from graphblas.core import descriptor
+from graphblas.core import descriptor, lib
 
 
 def test_caching():
