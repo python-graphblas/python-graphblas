@@ -246,6 +246,18 @@ def ss(self):
     return self._get_value("ss")
 
 
+def to_coo(self):
+    return self._get_value("to_coo")
+
+
+def to_csc(self):
+    return self._get_value("to_csc")
+
+
+def to_csr(self):
+    return self._get_value("to_csr")
+
+
 def to_pygraphblas(self):
     return self._get_value("to_pygraphblas")
 
@@ -382,6 +394,9 @@ def _main():
         "reduce_columnwise",
         "reduce_rowwise",
         "reduce_scalar",
+        "to_coo",
+        "to_csc",
+        "to_csr",
     }
     common_raises = set()
     scalar_raises = {

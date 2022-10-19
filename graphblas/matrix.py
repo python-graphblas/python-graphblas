@@ -32,6 +32,17 @@ from .vector import Vector, VectorExpression, VectorIndexExpr, _select_mask
 
 ffi_new = ffi.new
 
+_CSR_FORMAT = Scalar.from_value(
+    lib.GrB_CSR_FORMAT, dtype=_INDEX, name="GrB_CSR_FORMAT", is_cscalar=True
+)
+_CSC_FORMAT = Scalar.from_value(
+    lib.GrB_CSC_FORMAT, dtype=_INDEX, name="GrB_CSC_FORMAT", is_cscalar=True
+)
+# COO format is not used yet.
+# _COO_FORMAT = Scalar.from_value(
+#     lib.GrB_COO_FORMAT, dtype=_INDEX, name="GrB_COO_FORMAT", is_cscalar=True
+# )
+
 
 # Custom recipes
 def _m_add_v(updater, left, right, op):
@@ -663,6 +674,220 @@ class Matrix(BaseType):
             # This needs to be the original data to get proper error messages
             C.build(rows, columns, values, dup_op=dup_op)
         return C
+
+    @classmethod
+    def _from_csx(cls, fmt, indptr, indices, values, dtype, num, name):
+        if fmt is _CSR_FORMAT:
+            indices_name = "column indices"
+        else:
+            indices_name = "row indices"
+        indptr = ints_to_numpy_buffer(indptr, np.uint64, name="index pointers")
+        indices = ints_to_numpy_buffer(indices, np.uint64, name=indices_name)
+        values, new_dtype = values_to_numpy_buffer(values, dtype)
+        if num is None:
+            if indices.size > 0:
+                num = int(indices.max()) + 1
+            else:
+                num = 0
+        if fmt is _CSR_FORMAT:
+            nrows = indptr.size - 1
+            ncols = num
+        else:
+            ncols = indptr.size - 1
+            nrows = num
+        if dtype is None and values.ndim > 1:
+            # Look for array-subtdype
+            new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
+        if values.ndim == 0:
+            values = np.repeat(values, indices.size)
+        new_mat = ffi_new("GrB_Matrix*")
+        rv = Matrix._from_obj(new_mat, new_dtype, nrows, ncols, name=name)
+        if new_dtype._is_udt:
+            dtype_name = "UDT"
+        else:
+            dtype_name = new_dtype.name
+        call(
+            f"GrB_Matrix_import_{dtype_name}",
+            [
+                _Pointer(rv),
+                new_dtype,
+                _as_scalar(nrows, _INDEX, is_cscalar=True),
+                _as_scalar(ncols, _INDEX, is_cscalar=True),
+                _CArray(indptr),
+                _CArray(indices),
+                _CArray(values, dtype=new_dtype),
+                _as_scalar(indptr.size, _INDEX, is_cscalar=True),
+                _as_scalar(indices.size, _INDEX, is_cscalar=True),
+                _as_scalar(values.shape[0], _INDEX, is_cscalar=True),
+                fmt,
+            ],
+        )
+        return rv
+
+    @classmethod
+    def from_csr(cls, indptr, col_indices, values, dtype=None, *, ncols=None, name=None):
+        """Create a new Matrix from standard CSR representation of data.
+
+        In CSR, the column indices for row i are stored in ``col_indices[indptr[i]:indptr[i+1]]``
+        and the values are stored in ``values[indptr[i]:indptr[i+1]]``. The number of rows is
+        inferred as ``nrows = len(indptr) - 1``.
+
+        This always copies data. For zero-copy import with move semantics, see Matrix.ss.import_csr
+
+        Parameters
+        ----------
+        indptr : list or np.ndarray
+            Pointers for each row into col_indices and values; `indptr.size == nrows + 1`.
+        col_indices : list or np.ndarray
+            Column indices.
+        values : list or np.ndarray or scalar
+            List of values. If a scalar is provided, all values will be set to this single value.
+        dtype :
+            Data type of the Matrix. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        ncols : int, optional
+            Number of columns in the Matrix. If not provided, ``ncols`` is computed
+            from the maximum column index found in ``col_indices``.
+        name : str, optional
+            Name to give the Matrix.
+
+        Returns
+        -------
+        Matrix
+
+        See Also
+        --------
+        from_csc
+        from_values
+        Matrix.ss.import_csr
+        io.from_scipy_sparse
+        """
+        return cls._from_csx(_CSR_FORMAT, indptr, col_indices, values, dtype, ncols, name)
+
+    @classmethod
+    def from_csc(cls, indptr, row_indices, values, dtype=None, *, nrows=None, name=None):
+        """Create a new Matrix from standard CSC representation of data.
+
+        In CSC, the row indices for column i are stored in ``row_indices[indptr[i]:indptr[i+1]]``
+        and the values are stored in ``values[indptr[i]:indptr[i+1]]``. The number of columns is
+        inferred as ``ncols = len(indptr) - 1``.
+
+        This always copies data. For zero-copy import with move semantics, see Matrix.ss.import_csc
+
+        Parameters
+        ----------
+        indptr : list or np.ndarray
+            Pointers for each column into row_indices and values; `indptr.size == ncols + 1`.
+        col_indices : list or np.ndarray
+            Column indices.
+        values : list or np.ndarray or scalar
+            List of values. If a scalar is provided, all values will be set to this single value.
+        dtype :
+            Data type of the Matrix. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        nrows : int, optional
+            Number of rows in the Matrix. If not provided, ``ncols`` is computed
+            from the maximum row index found in ``row_indices``.
+        name : str, optional
+            Name to give the Matrix.
+
+        Returns
+        -------
+        Matrix
+
+        See Also
+        --------
+        from_csr
+        from_values
+        Matrix.ss.import_csc
+        io.from_scipy_sparse
+        """
+        return cls._from_csx(_CSC_FORMAT, indptr, row_indices, values, dtype, nrows, name)
+
+    def _to_csx(self, fmt, dtype=None):
+        Ap_len = _scalar_index("Ap_len")
+        Ai_len = _scalar_index("Ai_len")
+        Ax_len = _scalar_index("Ax_len")
+        call(
+            "GrB_Matrix_exportSize",
+            [_Pointer(Ap_len), _Pointer(Ai_len), _Pointer(Ax_len), fmt, self],
+        )
+        Ap = _CArray(size=Ap_len.gb_obj[0], name="&Ap")
+        Ai = _CArray(size=Ai_len.gb_obj[0], name="&Ai")
+        Ax = _CArray(size=Ax_len.gb_obj[0], name="&Ax", dtype=self.dtype)
+        if self.dtype._is_udt:
+            dtype_name = "UDT"
+        else:
+            dtype_name = self.dtype.name
+        call(
+            f"GrB_Matrix_export_{dtype_name}",
+            [Ap, Ai, Ax, _Pointer(Ap_len), _Pointer(Ai_len), _Pointer(Ax_len), fmt, self],
+        )
+
+        # Unwrap objects with walrus operator and trim to proper size if necessary
+        if (Ap := Ap.array).size > (Ap_len := Ap_len.gb_obj[0]):  # pragma: no cover
+            Ap = Ap[:Ap_len]
+        if (Ai := Ai.array).size > (Ai_len := Ai_len.gb_obj[0]):  # pragma: no cover
+            Ai = Ai[:Ai_len]
+        if (Ax := Ax.array).shape[0] > (Ax_len := Ax_len.gb_obj[0]):  # pragma: no cover
+            Ax = Ax[:Ax_len]
+
+        if dtype is not None:
+            dtype = lookup_dtype(dtype)
+            if dtype != self.dtype:
+                Ax = Ax.astype(dtype.np_type)
+        return Ap, Ai, Ax
+
+    def to_csr(self, dtype=None):
+        """Returns three arrays of the standard CSR representation: indptr, col_indices, values
+
+        In CSR, the column indices for row i are stored in ``col_indices[indptr[i]:indptr[i+1]]``
+        and the values are stored in ``values[indptr[i]:indptr[i+1]]``.
+
+        This copies data and leaves the Matrix unmodified. For zero-copy move semantics,
+        see Matrix.ss.export.
+
+        Returns
+        -------
+        np.ndarray[dtype=uint64] : indptr
+        np.ndarray[dtype=uint64] : col_indices
+        np.ndarray : values
+
+        See Also
+        --------
+        to_csc
+        to_values
+        Matrix.ss.export
+        io.to_scipy_sparse
+        """
+        return self._to_csx(_CSR_FORMAT, dtype)
+
+    def to_csc(self, dtype=None):
+        """Returns three arrays of the standard CSC representation: indptr, row_indices, values
+
+        In CSC, the row indices for column i are stored in ``row_indices[indptr[i]:indptr[i+1]]``
+        and the values are stored in ``values[indptr[i]:indptr[i+1]]``.
+
+        This copies data and leaves the Matrix unmodified. For zero-copy move semantics,
+        see Matrix.ss.export.
+
+        Returns
+        -------
+        np.ndarray[dtype=uint64] : indptr
+        np.ndarray[dtype=uint64] : row_indices
+        np.ndarray : values
+
+        See Also
+        --------
+        to_csr
+        to_values
+        Matrix.ss.export
+        io.to_scipy_sparse
+        """
+        return self._to_csx(_CSC_FORMAT, dtype)
+
+    from_coo = from_values  # Alias
+    to_coo = to_values  # Alias
 
     @property
     def _carg(self):
@@ -2156,6 +2381,9 @@ class MatrixExpression(BaseExpression):
     reposition = wrapdoc(Matrix.reposition)(property(_automethods.reposition))
     select = wrapdoc(Matrix.select)(property(_automethods.select))
     ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
+    to_coo = wrapdoc(Matrix.to_coo)(property(_automethods.to_coo))
+    to_csc = wrapdoc(Matrix.to_csc)(property(_automethods.to_csc))
+    to_csr = wrapdoc(Matrix.to_csr)(property(_automethods.to_csr))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(_automethods.wait))
@@ -2237,6 +2465,9 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     reposition = wrapdoc(Matrix.reposition)(property(_automethods.reposition))
     select = wrapdoc(Matrix.select)(property(_automethods.select))
     ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
+    to_coo = wrapdoc(Matrix.to_coo)(property(_automethods.to_coo))
+    to_csc = wrapdoc(Matrix.to_csc)(property(_automethods.to_csc))
+    to_csr = wrapdoc(Matrix.to_csr)(property(_automethods.to_csr))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(_automethods.wait))
@@ -2324,6 +2555,16 @@ class TransposedMatrix:
     @property
     def _name_html(self):
         return f"{self._matrix._name_html}.T"
+
+    @wrapdoc(Matrix.to_csr)
+    def to_csr(self, dtype=None):
+        return self._matrix.to_csc(dtype)
+
+    @wrapdoc(Matrix.to_csc)
+    def to_csc(self, dtype=None):
+        return self._matrix.to_csr(dtype)
+
+    to_coo = to_values  # Alias
 
     # Properties
     nrows = Matrix.ncols
