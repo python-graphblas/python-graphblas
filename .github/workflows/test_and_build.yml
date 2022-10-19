@@ -112,13 +112,17 @@ jobs:
           # Test (and cover) lazy module loader
           echo "from graphblas.agg import count" > script.py
           coverage run -a --branch script.py
-          echo "from graphblas import agg, _agg" > script.py
+          echo "from graphblas import agg" > script.py  # Does this still cover?
+          echo "from graphblas.core import agg" >> script.py
+          coverage run -a --branch script.py
+          # Tests lazy loading of lib, ffi, and NULL in gb.core
+          echo "from graphblas.core import base" > script.py
           coverage run -a --branch script.py
           rm script.py
       - name: Auto-generated code check
         run: |
-          coverage run -a --branch -m graphblas._automethods
-          coverage run -a --branch -m graphblas._infixmethods
+          coverage run -a --branch -m graphblas.core.automethods
+          coverage run -a --branch -m graphblas.core.infixmethods
           git diff --exit-code
       - name: Coverage
         # if: (! contains(matrix.cfg.testopts, 'pygraphblas')) || (matrix.cfg.pyver != 3.9)

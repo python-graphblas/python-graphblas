@@ -1,10 +1,9 @@
 from collections.abc import MutableMapping
 from numbers import Integral
 
-from graphblas import ffi, lib
-
-from ..dtypes import lookup_dtype
-from ..exceptions import _error_code_lookup
+from ...dtypes import lookup_dtype
+from ...exceptions import _error_code_lookup
+from .. import NULL, ffi, lib
 from ..utils import values_to_numpy_buffer
 
 
@@ -94,7 +93,7 @@ class BaseConfig(MutableMapping):
             else:
                 raise ValueError(f"Unable to set default value for {key!r}")
         if val is None:
-            val_obj = ffi.NULL
+            val_obj = NULL
         elif "[" in ctype:
             dtype, size = ctype.split("[", 1)
             size = size.split("]", 1)[0]

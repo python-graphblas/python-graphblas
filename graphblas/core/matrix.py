@@ -3,11 +3,11 @@ import warnings
 
 import numpy as np
 
-from . import _automethods, backend, binary, ffi, lib, monoid, select, semiring, utils
-from ._ss.matrix import ss
+from .. import backend, binary, monoid, select, semiring
+from ..dtypes import _INDEX, FP64, lookup_dtype, unify
+from ..exceptions import DimensionMismatch, NoValue, check_status
+from . import NULL, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
-from .dtypes import _INDEX, FP64, lookup_dtype, unify
-from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
@@ -19,6 +19,7 @@ from .scalar import (
     _as_scalar,
     _scalar_index,
 )
+from .ss.matrix import ss
 from .utils import (
     _CArray,
     _Pointer,
@@ -553,7 +554,7 @@ class Matrix(BaseType):
         -------
         :class:`~graphblas.Vector`
         """
-        from .ss._core import diag
+        from ..ss._core import diag
 
         return diag(self, k=k, dtype=dtype, name=name)
 
@@ -634,7 +635,7 @@ class Matrix(BaseType):
         ncols : int, optional
             Number of columns in the Matrix. If not provided, ``ncols`` is computed
             from the maximum column index found in ``columns``.
-        dup_op : :class:`~graphblas.operator.BinaryOp`, optional
+        dup_op : :class:`~graphblas.core.operator.BinaryOp`, optional
             Function used to combine values if duplicate indices are found.
             Leaving ``dup_op=None`` will raise an error if duplicates are found.
         name : str, optional
@@ -1172,7 +1173,7 @@ class Matrix(BaseType):
         ----------
         other : Vector
             The vector, treated as an (nx1) column matrix
-        op : :class:`~graphblas.operator.Semiring`
+        op : :class:`~graphblas.core.operator.Semiring`
             Semiring used in the computation
 
         Returns
@@ -1216,7 +1217,7 @@ class Matrix(BaseType):
         ----------
         other : Matrix
             The matrix on the right side in the computation
-        op : :class:`~graphblas.operator.Semiring`
+        op : :class:`~graphblas.core.operator.Semiring`
             Semiring used in the computation
 
         Returns
@@ -1264,7 +1265,7 @@ class Matrix(BaseType):
         ----------
         other : Matrix
             The matrix on the right side in the computation
-        op : :class:`~graphblas.operator.BinaryOp`
+        op : :class:`~graphblas.core.operator.BinaryOp`
             Operator used on the combination of elements
 
         Returns
@@ -1302,13 +1303,13 @@ class Matrix(BaseType):
         See the `Apply <../user_guide/operations.html#apply>`__
         section in the User Guide for more details.
 
-        Common usage is to pass a :class:`~graphblas.operator.UnaryOp`,
+        Common usage is to pass a :class:`~graphblas.core.operator.UnaryOp`,
         in which case ``right`` and ``left`` may not be defined.
 
-        A :class:`~graphblas.operator.BinaryOp` can also be used, in
+        A :class:`~graphblas.core.operator.BinaryOp` can also be used, in
         which case a scalar must be passed as ``left`` or ``right``.
 
-        An :class:`~graphblas.operator.IndexUnaryOp` can also be used
+        An :class:`~graphblas.core.operator.IndexUnaryOp` can also be used
         with the thunk passed in as ``right``.
 
         Parameters
@@ -1464,7 +1465,8 @@ class Matrix(BaseType):
 
         Parameters
         ----------
-        op : :class:`~graphblas.operator.SelectOp` or :class:`~graphblas.operator.IndexUnaryOp`
+        op : :class:`~graphblas.core.operator.SelectOp`or
+             :class:`~graphblas.core.operator.IndexUnaryOp`
             Operator to apply
         thunk :
             Scalar passed to operator
@@ -1564,7 +1566,7 @@ class Matrix(BaseType):
 
         Parameters
         ----------
-        op : :class:`~graphblas.operator.Monoid`
+        op : :class:`~graphblas.core.operator.Monoid`
             Reduction operator
 
         Returns
@@ -1602,7 +1604,7 @@ class Matrix(BaseType):
 
         Parameters
         ----------
-        op : :class:`~graphblas.operator.Monoid`
+        op : :class:`~graphblas.core.operator.Monoid`
             Reduction operator
 
         Returns
@@ -1641,7 +1643,7 @@ class Matrix(BaseType):
 
         Parameters
         ----------
-        op : :class:`~graphblas.operator.Monoid`
+        op : :class:`~graphblas.core.operator.Monoid`
             Reduction operator
         allow_empty : bool, default=True
             If False and the Matrix is empty, the Scalar result
@@ -2246,7 +2248,7 @@ class Matrix(BaseType):
         import pygraphblas as pg
 
         matrix = pg.Matrix(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
-        self.gb_obj = ffi.NULL
+        self.gb_obj = NULL
         return matrix
 
     @classmethod
@@ -2272,7 +2274,7 @@ class Matrix(BaseType):
         rv = cls(matrix._matrix, dtype)
         rv._nrows = matrix.nrows
         rv._ncols = matrix.ncols
-        matrix._matrix = ffi.NULL
+        matrix._matrix = NULL
         return rv
 
 
@@ -2344,63 +2346,63 @@ class MatrixExpression(BaseExpression):
         return (self._nrows, self._ncols)
 
     # Begin auto-generated code: Matrix
-    _get_value = _automethods._get_value
-    S = wrapdoc(Matrix.S)(property(_automethods.S))
-    T = wrapdoc(Matrix.T)(property(_automethods.T))
-    V = wrapdoc(Matrix.V)(property(_automethods.V))
-    __and__ = wrapdoc(Matrix.__and__)(property(_automethods.__and__))
-    __contains__ = wrapdoc(Matrix.__contains__)(property(_automethods.__contains__))
-    __getitem__ = wrapdoc(Matrix.__getitem__)(property(_automethods.__getitem__))
-    __iter__ = wrapdoc(Matrix.__iter__)(property(_automethods.__iter__))
-    __matmul__ = wrapdoc(Matrix.__matmul__)(property(_automethods.__matmul__))
-    __or__ = wrapdoc(Matrix.__or__)(property(_automethods.__or__))
-    __rand__ = wrapdoc(Matrix.__rand__)(property(_automethods.__rand__))
-    __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(_automethods.__rmatmul__))
-    __ror__ = wrapdoc(Matrix.__ror__)(property(_automethods.__ror__))
-    _carg = wrapdoc(Matrix._carg)(property(_automethods._carg))
-    _name_html = wrapdoc(Matrix._name_html)(property(_automethods._name_html))
-    _nvals = wrapdoc(Matrix._nvals)(property(_automethods._nvals))
-    apply = wrapdoc(Matrix.apply)(property(_automethods.apply))
-    diag = wrapdoc(Matrix.diag)(property(_automethods.diag))
-    ewise_add = wrapdoc(Matrix.ewise_add)(property(_automethods.ewise_add))
-    ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
-    ewise_union = wrapdoc(Matrix.ewise_union)(property(_automethods.ewise_union))
-    gb_obj = wrapdoc(Matrix.gb_obj)(property(_automethods.gb_obj))
-    get = wrapdoc(Matrix.get)(property(_automethods.get))
-    isclose = wrapdoc(Matrix.isclose)(property(_automethods.isclose))
-    isequal = wrapdoc(Matrix.isequal)(property(_automethods.isequal))
-    kronecker = wrapdoc(Matrix.kronecker)(property(_automethods.kronecker))
-    mxm = wrapdoc(Matrix.mxm)(property(_automethods.mxm))
-    mxv = wrapdoc(Matrix.mxv)(property(_automethods.mxv))
-    name = wrapdoc(Matrix.name)(property(_automethods.name))
-    name = name.setter(_automethods._set_name)
-    nvals = wrapdoc(Matrix.nvals)(property(_automethods.nvals))
-    reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
-    reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
-    reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
-    reposition = wrapdoc(Matrix.reposition)(property(_automethods.reposition))
-    select = wrapdoc(Matrix.select)(property(_automethods.select))
-    ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
-    to_coo = wrapdoc(Matrix.to_coo)(property(_automethods.to_coo))
-    to_csc = wrapdoc(Matrix.to_csc)(property(_automethods.to_csc))
-    to_csr = wrapdoc(Matrix.to_csr)(property(_automethods.to_csr))
-    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
-    to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
-    wait = wrapdoc(Matrix.wait)(property(_automethods.wait))
+    _get_value = automethods._get_value
+    S = wrapdoc(Matrix.S)(property(automethods.S))
+    T = wrapdoc(Matrix.T)(property(automethods.T))
+    V = wrapdoc(Matrix.V)(property(automethods.V))
+    __and__ = wrapdoc(Matrix.__and__)(property(automethods.__and__))
+    __contains__ = wrapdoc(Matrix.__contains__)(property(automethods.__contains__))
+    __getitem__ = wrapdoc(Matrix.__getitem__)(property(automethods.__getitem__))
+    __iter__ = wrapdoc(Matrix.__iter__)(property(automethods.__iter__))
+    __matmul__ = wrapdoc(Matrix.__matmul__)(property(automethods.__matmul__))
+    __or__ = wrapdoc(Matrix.__or__)(property(automethods.__or__))
+    __rand__ = wrapdoc(Matrix.__rand__)(property(automethods.__rand__))
+    __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(automethods.__rmatmul__))
+    __ror__ = wrapdoc(Matrix.__ror__)(property(automethods.__ror__))
+    _carg = wrapdoc(Matrix._carg)(property(automethods._carg))
+    _name_html = wrapdoc(Matrix._name_html)(property(automethods._name_html))
+    _nvals = wrapdoc(Matrix._nvals)(property(automethods._nvals))
+    apply = wrapdoc(Matrix.apply)(property(automethods.apply))
+    diag = wrapdoc(Matrix.diag)(property(automethods.diag))
+    ewise_add = wrapdoc(Matrix.ewise_add)(property(automethods.ewise_add))
+    ewise_mult = wrapdoc(Matrix.ewise_mult)(property(automethods.ewise_mult))
+    ewise_union = wrapdoc(Matrix.ewise_union)(property(automethods.ewise_union))
+    gb_obj = wrapdoc(Matrix.gb_obj)(property(automethods.gb_obj))
+    get = wrapdoc(Matrix.get)(property(automethods.get))
+    isclose = wrapdoc(Matrix.isclose)(property(automethods.isclose))
+    isequal = wrapdoc(Matrix.isequal)(property(automethods.isequal))
+    kronecker = wrapdoc(Matrix.kronecker)(property(automethods.kronecker))
+    mxm = wrapdoc(Matrix.mxm)(property(automethods.mxm))
+    mxv = wrapdoc(Matrix.mxv)(property(automethods.mxv))
+    name = wrapdoc(Matrix.name)(property(automethods.name))
+    name = name.setter(automethods._set_name)
+    nvals = wrapdoc(Matrix.nvals)(property(automethods.nvals))
+    reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(automethods.reduce_columnwise))
+    reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(automethods.reduce_rowwise))
+    reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(automethods.reduce_scalar))
+    reposition = wrapdoc(Matrix.reposition)(property(automethods.reposition))
+    select = wrapdoc(Matrix.select)(property(automethods.select))
+    ss = wrapdoc(Matrix.ss)(property(automethods.ss))
+    to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
+    to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
+    to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
+    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(automethods.to_pygraphblas))
+    to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
+    wait = wrapdoc(Matrix.wait)(property(automethods.wait))
     # These raise exceptions
     __array__ = Matrix.__array__
     __bool__ = Matrix.__bool__
-    __iadd__ = _automethods.__iadd__
-    __iand__ = _automethods.__iand__
-    __ifloordiv__ = _automethods.__ifloordiv__
-    __imatmul__ = _automethods.__imatmul__
-    __imod__ = _automethods.__imod__
-    __imul__ = _automethods.__imul__
-    __ior__ = _automethods.__ior__
-    __ipow__ = _automethods.__ipow__
-    __isub__ = _automethods.__isub__
-    __itruediv__ = _automethods.__itruediv__
-    __ixor__ = _automethods.__ixor__
+    __iadd__ = automethods.__iadd__
+    __iand__ = automethods.__iand__
+    __ifloordiv__ = automethods.__ifloordiv__
+    __imatmul__ = automethods.__imatmul__
+    __imod__ = automethods.__imod__
+    __imul__ = automethods.__imul__
+    __ior__ = automethods.__ior__
+    __ipow__ = automethods.__ipow__
+    __isub__ = automethods.__isub__
+    __itruediv__ = automethods.__itruediv__
+    __ixor__ = automethods.__ixor__
     # End auto-generated code: Matrix
 
 
@@ -2428,63 +2430,63 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
         return (self._nrows, self._ncols)
 
     # Begin auto-generated code: Matrix
-    _get_value = _automethods._get_value
-    S = wrapdoc(Matrix.S)(property(_automethods.S))
-    T = wrapdoc(Matrix.T)(property(_automethods.T))
-    V = wrapdoc(Matrix.V)(property(_automethods.V))
-    __and__ = wrapdoc(Matrix.__and__)(property(_automethods.__and__))
-    __contains__ = wrapdoc(Matrix.__contains__)(property(_automethods.__contains__))
-    __getitem__ = wrapdoc(Matrix.__getitem__)(property(_automethods.__getitem__))
-    __iter__ = wrapdoc(Matrix.__iter__)(property(_automethods.__iter__))
-    __matmul__ = wrapdoc(Matrix.__matmul__)(property(_automethods.__matmul__))
-    __or__ = wrapdoc(Matrix.__or__)(property(_automethods.__or__))
-    __rand__ = wrapdoc(Matrix.__rand__)(property(_automethods.__rand__))
-    __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(_automethods.__rmatmul__))
-    __ror__ = wrapdoc(Matrix.__ror__)(property(_automethods.__ror__))
-    _carg = wrapdoc(Matrix._carg)(property(_automethods._carg))
-    _name_html = wrapdoc(Matrix._name_html)(property(_automethods._name_html))
-    _nvals = wrapdoc(Matrix._nvals)(property(_automethods._nvals))
-    apply = wrapdoc(Matrix.apply)(property(_automethods.apply))
-    diag = wrapdoc(Matrix.diag)(property(_automethods.diag))
-    ewise_add = wrapdoc(Matrix.ewise_add)(property(_automethods.ewise_add))
-    ewise_mult = wrapdoc(Matrix.ewise_mult)(property(_automethods.ewise_mult))
-    ewise_union = wrapdoc(Matrix.ewise_union)(property(_automethods.ewise_union))
-    gb_obj = wrapdoc(Matrix.gb_obj)(property(_automethods.gb_obj))
-    get = wrapdoc(Matrix.get)(property(_automethods.get))
-    isclose = wrapdoc(Matrix.isclose)(property(_automethods.isclose))
-    isequal = wrapdoc(Matrix.isequal)(property(_automethods.isequal))
-    kronecker = wrapdoc(Matrix.kronecker)(property(_automethods.kronecker))
-    mxm = wrapdoc(Matrix.mxm)(property(_automethods.mxm))
-    mxv = wrapdoc(Matrix.mxv)(property(_automethods.mxv))
-    name = wrapdoc(Matrix.name)(property(_automethods.name))
-    name = name.setter(_automethods._set_name)
-    nvals = wrapdoc(Matrix.nvals)(property(_automethods.nvals))
-    reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(_automethods.reduce_columnwise))
-    reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(_automethods.reduce_rowwise))
-    reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(_automethods.reduce_scalar))
-    reposition = wrapdoc(Matrix.reposition)(property(_automethods.reposition))
-    select = wrapdoc(Matrix.select)(property(_automethods.select))
-    ss = wrapdoc(Matrix.ss)(property(_automethods.ss))
-    to_coo = wrapdoc(Matrix.to_coo)(property(_automethods.to_coo))
-    to_csc = wrapdoc(Matrix.to_csc)(property(_automethods.to_csc))
-    to_csr = wrapdoc(Matrix.to_csr)(property(_automethods.to_csr))
-    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(_automethods.to_pygraphblas))
-    to_values = wrapdoc(Matrix.to_values)(property(_automethods.to_values))
-    wait = wrapdoc(Matrix.wait)(property(_automethods.wait))
+    _get_value = automethods._get_value
+    S = wrapdoc(Matrix.S)(property(automethods.S))
+    T = wrapdoc(Matrix.T)(property(automethods.T))
+    V = wrapdoc(Matrix.V)(property(automethods.V))
+    __and__ = wrapdoc(Matrix.__and__)(property(automethods.__and__))
+    __contains__ = wrapdoc(Matrix.__contains__)(property(automethods.__contains__))
+    __getitem__ = wrapdoc(Matrix.__getitem__)(property(automethods.__getitem__))
+    __iter__ = wrapdoc(Matrix.__iter__)(property(automethods.__iter__))
+    __matmul__ = wrapdoc(Matrix.__matmul__)(property(automethods.__matmul__))
+    __or__ = wrapdoc(Matrix.__or__)(property(automethods.__or__))
+    __rand__ = wrapdoc(Matrix.__rand__)(property(automethods.__rand__))
+    __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(automethods.__rmatmul__))
+    __ror__ = wrapdoc(Matrix.__ror__)(property(automethods.__ror__))
+    _carg = wrapdoc(Matrix._carg)(property(automethods._carg))
+    _name_html = wrapdoc(Matrix._name_html)(property(automethods._name_html))
+    _nvals = wrapdoc(Matrix._nvals)(property(automethods._nvals))
+    apply = wrapdoc(Matrix.apply)(property(automethods.apply))
+    diag = wrapdoc(Matrix.diag)(property(automethods.diag))
+    ewise_add = wrapdoc(Matrix.ewise_add)(property(automethods.ewise_add))
+    ewise_mult = wrapdoc(Matrix.ewise_mult)(property(automethods.ewise_mult))
+    ewise_union = wrapdoc(Matrix.ewise_union)(property(automethods.ewise_union))
+    gb_obj = wrapdoc(Matrix.gb_obj)(property(automethods.gb_obj))
+    get = wrapdoc(Matrix.get)(property(automethods.get))
+    isclose = wrapdoc(Matrix.isclose)(property(automethods.isclose))
+    isequal = wrapdoc(Matrix.isequal)(property(automethods.isequal))
+    kronecker = wrapdoc(Matrix.kronecker)(property(automethods.kronecker))
+    mxm = wrapdoc(Matrix.mxm)(property(automethods.mxm))
+    mxv = wrapdoc(Matrix.mxv)(property(automethods.mxv))
+    name = wrapdoc(Matrix.name)(property(automethods.name))
+    name = name.setter(automethods._set_name)
+    nvals = wrapdoc(Matrix.nvals)(property(automethods.nvals))
+    reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(automethods.reduce_columnwise))
+    reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(automethods.reduce_rowwise))
+    reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(automethods.reduce_scalar))
+    reposition = wrapdoc(Matrix.reposition)(property(automethods.reposition))
+    select = wrapdoc(Matrix.select)(property(automethods.select))
+    ss = wrapdoc(Matrix.ss)(property(automethods.ss))
+    to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
+    to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
+    to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
+    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(automethods.to_pygraphblas))
+    to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
+    wait = wrapdoc(Matrix.wait)(property(automethods.wait))
     # These raise exceptions
     __array__ = Matrix.__array__
     __bool__ = Matrix.__bool__
-    __iadd__ = _automethods.__iadd__
-    __iand__ = _automethods.__iand__
-    __ifloordiv__ = _automethods.__ifloordiv__
-    __imatmul__ = _automethods.__imatmul__
-    __imod__ = _automethods.__imod__
-    __imul__ = _automethods.__imul__
-    __ior__ = _automethods.__ior__
-    __ipow__ = _automethods.__ipow__
-    __isub__ = _automethods.__isub__
-    __itruediv__ = _automethods.__itruediv__
-    __ixor__ = _automethods.__ixor__
+    __iadd__ = automethods.__iadd__
+    __iand__ = automethods.__iand__
+    __ifloordiv__ = automethods.__ifloordiv__
+    __imatmul__ = automethods.__imatmul__
+    __imod__ = automethods.__imod__
+    __imul__ = automethods.__imul__
+    __ior__ = automethods.__ior__
+    __ipow__ = automethods.__ipow__
+    __isub__ = automethods.__isub__
+    __itruediv__ = automethods.__itruediv__
+    __ixor__ = automethods.__ixor__
     # End auto-generated code: Matrix
 
 
@@ -2596,17 +2598,17 @@ class TransposedMatrix:
     __rmatmul__ = Matrix.__rmatmul__
 
     # Bad sugar
-    __iadd__ = _automethods.__iadd__
-    __iand__ = _automethods.__iand__
-    __ifloordiv__ = _automethods.__ifloordiv__
-    __imatmul__ = _automethods.__imatmul__
-    __imod__ = _automethods.__imod__
-    __imul__ = _automethods.__imul__
-    __ior__ = _automethods.__ior__
-    __ipow__ = _automethods.__ipow__
-    __isub__ = _automethods.__isub__
-    __itruediv__ = _automethods.__itruediv__
-    __ixor__ = _automethods.__ixor__
+    __iadd__ = automethods.__iadd__
+    __iand__ = automethods.__iand__
+    __ifloordiv__ = automethods.__ifloordiv__
+    __imatmul__ = automethods.__imatmul__
+    __imod__ = automethods.__imod__
+    __imul__ = automethods.__imul__
+    __ior__ = automethods.__ior__
+    __ipow__ = automethods.__ipow__
+    __isub__ = automethods.__isub__
+    __itruediv__ = automethods.__itruediv__
+    __ixor__ = automethods.__ixor__
 
     # Misc.
     get = Matrix.get
@@ -2630,5 +2632,5 @@ utils._output_types[MatrixIndexExpr] = Matrix
 utils._output_types[MatrixExpression] = Matrix
 utils._output_types[TransposedMatrix] = TransposedMatrix
 
-# Import infix to import _infixmethods, which has side effects
+# Import infix to import infixmethods, which has side effects
 from . import infix  # noqa isort:skip

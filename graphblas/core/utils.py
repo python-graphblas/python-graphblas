@@ -1,7 +1,7 @@
 import numpy as np
 
+from ..dtypes import _INDEX, lookup_dtype
 from . import ffi, lib
-from .dtypes import _INDEX, lookup_dtype
 
 
 def libget(name):
@@ -182,7 +182,7 @@ def _autogenerate_code(
     begin="# Begin auto-generated code",
     end="# End auto-generated code",
 ):
-    """Super low-tech auto-code generation used by _automethods.py and _infixmethods.py"""
+    """Super low-tech auto-code generation used by automethods.py and infixmethods.py"""
     with open(filename) as f:
         orig_text = f.read()
     if specializer:

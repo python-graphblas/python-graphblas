@@ -1,7 +1,8 @@
 import itertools
 from collections import defaultdict
 
-from graphblas import binary, dtypes, monoid, operator, semiring, unary
+from graphblas import binary, dtypes, monoid, semiring, unary
+from graphblas.core import operator
 from graphblas.dtypes import (
     BOOL,
     FP32,

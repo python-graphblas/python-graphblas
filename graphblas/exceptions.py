@@ -1,5 +1,7 @@
-from . import ffi, lib
-from .utils import _Pointer, libget
+from .core import ffi as _ffi
+from .core import lib as _lib
+from .core.utils import _Pointer
+from .core.utils import libget as _libget
 
 
 class GraphblasException(Exception):
@@ -89,28 +91,28 @@ class UdfParseError(GraphblasException):
 
 _error_code_lookup = {
     # Warning
-    lib.GrB_NO_VALUE: NoValue,
+    _lib.GrB_NO_VALUE: NoValue,
     # API Errors
-    lib.GrB_UNINITIALIZED_OBJECT: UninitializedObject,
-    lib.GrB_INVALID_OBJECT: InvalidObject,
-    lib.GrB_NULL_POINTER: NullPointer,
-    lib.GrB_INVALID_VALUE: InvalidValue,
-    lib.GrB_INVALID_INDEX: InvalidIndex,
-    lib.GrB_DOMAIN_MISMATCH: DomainMismatch,
-    lib.GrB_DIMENSION_MISMATCH: DimensionMismatch,
-    lib.GrB_OUTPUT_NOT_EMPTY: OutputNotEmpty,
-    lib.GrB_EMPTY_OBJECT: EmptyObject,
+    _lib.GrB_UNINITIALIZED_OBJECT: UninitializedObject,
+    _lib.GrB_INVALID_OBJECT: InvalidObject,
+    _lib.GrB_NULL_POINTER: NullPointer,
+    _lib.GrB_INVALID_VALUE: InvalidValue,
+    _lib.GrB_INVALID_INDEX: InvalidIndex,
+    _lib.GrB_DOMAIN_MISMATCH: DomainMismatch,
+    _lib.GrB_DIMENSION_MISMATCH: DimensionMismatch,
+    _lib.GrB_OUTPUT_NOT_EMPTY: OutputNotEmpty,
+    _lib.GrB_EMPTY_OBJECT: EmptyObject,
     # Execution Errors
-    lib.GrB_OUT_OF_MEMORY: OutOfMemory,
-    lib.GrB_INSUFFICIENT_SPACE: InsufficientSpace,
-    lib.GrB_INDEX_OUT_OF_BOUNDS: IndexOutOfBound,
-    lib.GrB_PANIC: Panic,
-    lib.GrB_NOT_IMPLEMENTED: NotImplementedException,
+    _lib.GrB_OUT_OF_MEMORY: OutOfMemory,
+    _lib.GrB_INSUFFICIENT_SPACE: InsufficientSpace,
+    _lib.GrB_INDEX_OUT_OF_BOUNDS: IndexOutOfBound,
+    _lib.GrB_PANIC: Panic,
+    _lib.GrB_NOT_IMPLEMENTED: NotImplementedException,
     # GxB Errors
-    lib.GxB_EXHAUSTED: StopIteration,
+    _lib.GxB_EXHAUSTED: StopIteration,
 }
-GrB_SUCCESS = lib.GrB_SUCCESS
-GrB_NO_VALUE = lib.GrB_NO_VALUE
+GrB_SUCCESS = _lib.GrB_SUCCESS
+GrB_NO_VALUE = _lib.GrB_NO_VALUE
 
 
 def check_status(response_code, args):
@@ -137,7 +139,7 @@ def check_status_carg(response_code, type_name, carg):
     if response_code == GrB_NO_VALUE:  # pragma: no cover
         return NoValue
     try:
-        error_func = libget(f"GrB_{type_name}_error")
+        error_func = _libget(f"GrB_{type_name}_error")
     except AttributeError:  # pragma: no cover
         text = (
             f"Unable to get the error string for type {type_name}.  "
@@ -146,7 +148,7 @@ def check_status_carg(response_code, type_name, carg):
             "Thanks (and sorry)!"
         )
     else:
-        string = ffi.new("char**")
+        string = _ffi.new("char**")
         error_func(string, carg)
-        text = ffi.string(string[0]).decode()
+        text = _ffi.string(string[0]).decode()
     raise _error_code_lookup[response_code](text)

@@ -9,20 +9,18 @@ from types import FunctionType, ModuleType
 import numba
 import numpy as np
 
-from . import (
+from .. import (
     _STANDARD_OPERATOR_NAMES,
     binary,
     config,
-    ffi,
     indexunary,
-    lib,
     monoid,
     op,
     select,
     semiring,
     unary,
 )
-from .dtypes import (
+from ..dtypes import (
     BOOL,
     FP32,
     FP64,
@@ -39,12 +37,13 @@ from .dtypes import (
     lookup_dtype,
     unify,
 )
-from .exceptions import UdfParseError, check_status_carg
+from ..exceptions import UdfParseError, check_status_carg
+from . import ffi, lib
 from .expr import InfixExprBase
 from .utils import libget, output_type
 
 if _supports_complex:
-    from .dtypes import FC32, FC64
+    from ..dtypes import FC32, FC64
 
 ffi_new = ffi.new
 UNKNOWN_OPCLASS = "UnknownOpClass"
@@ -1119,7 +1118,7 @@ class UnaryOp(OpBase):
         """Register a UnaryOp. The name will be used to identify the UnaryOp in the
         ``graphblas.unary`` namespace.
 
-            >>> gb.operator.UnaryOp.register_new("plus_one", lambda x: x + 1)
+            >>> gb.core.operator.UnaryOp.register_new("plus_one", lambda x: x + 1)
             >>> dir(gb.unary)
             [..., 'plus_one', ...]
         """
@@ -1428,8 +1427,7 @@ class IndexUnaryOp(OpBase):
         If the return type is Boolean, the function will also be registered as a SelectOp
         with the same name.
 
-            >>> from graphblas.operator import IndexUnaryOp
-            >>> IndexUnaryOp.register_new("row_mod", lambda x, i, j, thunk: i % max(thunk, 2))
+            >>> gb.indexunary.register_new("row_mod", lambda x, i, j, thunk: i % max(thunk, 2))
             >>> dir(gb.indexunary)
             [..., 'row_mod', ...]
         """
@@ -1522,7 +1520,7 @@ class IndexUnaryOp(OpBase):
 
 
 class SelectOp(OpBase):
-    """Identical to an :class:`IndexUnaryOp <graphblas.operator.IndexUnaryOp>`,
+    """Identical to an :class:`IndexUnaryOp <graphblas.core.operator.IndexUnaryOp>`,
     but must have a Boolean return type.
 
     A SelectOp is used exclusively to select a subset of values from a collection where
@@ -1592,8 +1590,7 @@ class SelectOp(OpBase):
 
         The function will also be registered as a IndexUnaryOp with the same name.
 
-            >>> from graphblas.operator import SelectOp
-            >>> SelectOp.register_new("upper_left_triangle", lambda x, i, j, thunk: i + j <= thunk)
+            >>> gb.select.register_new("upper_left_triangle", lambda x, i, j, thunk: i + j <= thunk)
             >>> dir(gb.select)
             [..., 'upper_left_triangle', ...]
         """
@@ -2138,7 +2135,7 @@ class BinaryOp(OpBase):
                     if y > r:
                         r = y
                     return r
-            >>> gb.operator.BinaryOp.register_new("max_zero", max_zero)
+            >>> gb.core.operator.BinaryOp.register_new("max_zero", max_zero)
             >>> dir(gb.binary)
             [..., 'max_zero', ...]
         """
@@ -2491,7 +2488,7 @@ class Monoid(OpBase):
         """Register a Monoid. The name will be used to identify the Monoid in the
         ``graphblas.monoid`` namespace.
 
-            >>> gb.operator.Monoid.register_new("max_zero", gb.binary.max_zero, 0)
+            >>> gb.core.operator.Monoid.register_new("max_zero", gb.binary.max_zero, 0)
             >>> dir(gb.monoid)
             [..., 'max_zero', ...]
         """
@@ -2746,7 +2743,7 @@ class Semiring(OpBase):
         """Register a Semiring. The name will be used to identify the Semiring in the
         ``graphblas.semiring`` namespace.
 
-            >>> gb.operator.Semiring.register_new("max_max", gb.monoid.max, gb.binary.max)
+            >>> gb.core.operator.Semiring.register_new("max_max", gb.monoid.max, gb.binary.max)
             >>> dir(gb.semiring)
             [..., 'max_max', ...]
         """
@@ -3025,7 +3022,7 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
     elif isinstance(op, TypedOpBase):
         return op
 
-    from ._agg import Aggregator, TypedAggregator
+    from .agg import Aggregator, TypedAggregator
 
     if isinstance(op, Aggregator):
         return op[dtype]
@@ -3403,6 +3400,6 @@ def aggregator_from_string(string):
     return _from_string(string, agg, _str_to_agg, "sum[int]")
 
 
-from . import agg  # noqa isort:skip
+from .. import agg  # noqa isort:skip
 
 agg.from_string = aggregator_from_string

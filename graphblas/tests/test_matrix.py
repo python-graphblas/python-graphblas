@@ -9,7 +9,8 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas
-from graphblas import agg, binary, dtypes, indexunary, lib, monoid, select, semiring, unary
+from graphblas import agg, binary, dtypes, indexunary, monoid, select, semiring, unary
+from graphblas.core import lib
 from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
@@ -1497,12 +1498,12 @@ def test_reduce_row_udf(A):
     def plus(x, y):  # pragma: no cover
         return x + y
 
-    binop = graphblas.operator.BinaryOp.register_anonymous(plus)
+    binop = graphblas.core.operator.BinaryOp.register_anonymous(plus)
     with pytest.raises(NotImplementedException):
         # Although allowed by the spec, SuiteSparse doesn't like user-defined binarops here
         A.reduce_rowwise(binop).new()
     # If the user creates a monoid from the binop, then we can use the monoid instead
-    monoid = graphblas.operator.Monoid.register_anonymous(binop, 0)
+    monoid = graphblas.core.operator.Monoid.register_anonymous(binop, 0)
     w = A.reduce_rowwise(binop).new()
     assert w.isequal(result)
     w2 = A.reduce_rowwise(monoid).new()
@@ -1803,7 +1804,7 @@ def test_del(capsys):
     # A has `gb_obj` of NULL
     A = Matrix.from_values([0, 1], [0, 1], [0, 1])
     gb_obj = A.gb_obj
-    A.gb_obj = graphblas.ffi.NULL
+    A.gb_obj = graphblas.core.NULL
     del A
     # let's clean up so we don't have a memory leak
     A2 = object.__new__(Matrix)
@@ -2526,7 +2527,7 @@ def test_diag(A, params):
 
 
 def test_normalize_chunks():
-    from graphblas._ss.matrix import normalize_chunks
+    from graphblas.core.ss.matrix import normalize_chunks
 
     shape = (20, 20)
     assert normalize_chunks(10, shape) == [[10, 10], [10, 10]]
@@ -2777,9 +2778,9 @@ def test_expr_is_like_matrix(A):
     }
     assert attrs - expr_attrs == expected, (
         "If you see this message, you probably added a method to Matrix.  You may need to "
-        "add an entry to `matrix` or `matrix_vector` set in `graphblas._automethods.py` "
-        "and then run `python -m graphblas._automethods`.  If you're messing with infix "
-        "methods, then you may need to run `python -m graphblas._infixmethods`."
+        "add an entry to `matrix` or `matrix_vector` set in `graphblas.core.automethods` "
+        "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
+        "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
     assert attrs - infix_attrs == expected
     # TransposedMatrix is used differently than other expressions,
@@ -2823,9 +2824,9 @@ def test_index_expr_is_like_matrix(A):
     }
     assert attrs - expr_attrs == expected, (
         "If you see this message, you probably added a method to Matrix.  You may need to "
-        "add an entry to `matrix` or `matrix_vector` set in `graphblas._automethods.py` "
-        "and then run `python -m graphblas._automethods`.  If you're messing with infix "
-        "methods, then you may need to run `python -m graphblas._infixmethods`."
+        "add an entry to `matrix` or `matrix_vector` set in `graphblas.core.automethods` "
+        "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
+        "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
 
 

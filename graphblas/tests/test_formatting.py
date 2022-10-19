@@ -2,8 +2,9 @@ import numpy as np
 import pytest
 
 import graphblas
-from graphblas import dtypes, formatting, unary
-from graphblas.formatting import CSS_STYLE
+from graphblas import dtypes, unary
+from graphblas.core import formatting
+from graphblas.core.formatting import CSS_STYLE
 
 from .conftest import autocompute
 

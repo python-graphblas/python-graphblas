@@ -3,8 +3,8 @@ from operator import getitem
 
 import numpy as np
 
-from . import agg, binary, monoid, semiring, unary
-from .dtypes import INT64, lookup_dtype
+from .. import agg, binary, monoid, semiring, unary
+from ..dtypes import INT64, lookup_dtype
 from .utils import output_type
 
 

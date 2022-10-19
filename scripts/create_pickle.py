@@ -14,17 +14,17 @@ from graphblas.tests.test_pickle import *
 def pickle1(filename):
     v = gb.Vector.from_values([1], 2)
 
-    unary_pickle = gb.operator.UnaryOp.register_new("unary_pickle", unarypickle)
-    binary_pickle = gb.operator.BinaryOp.register_new("binary_pickle", binarypickle)
-    monoid_pickle = gb.operator.Monoid.register_new("monoid_pickle", binary_pickle, 0)
-    semiring_pickle = gb.operator.Semiring.register_new(
+    unary_pickle = gb.core.operator.UnaryOp.register_new("unary_pickle", unarypickle)
+    binary_pickle = gb.core.operator.BinaryOp.register_new("binary_pickle", binarypickle)
+    monoid_pickle = gb.core.operator.Monoid.register_new("monoid_pickle", binary_pickle, 0)
+    semiring_pickle = gb.core.operator.Semiring.register_new(
         "semiring_pickle", monoid_pickle, binary_pickle
     )
 
-    unary_anon = gb.operator.UnaryOp.register_anonymous(unaryanon)
-    binary_anon = gb.operator.BinaryOp.register_anonymous(binaryanon)
-    monoid_anon = gb.operator.Monoid.register_anonymous(binary_anon, 0)
-    semiring_anon = gb.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
+    unary_anon = gb.core.operator.UnaryOp.register_anonymous(unaryanon)
+    binary_anon = gb.core.operator.BinaryOp.register_anonymous(binaryanon)
+    monoid_anon = gb.core.operator.Monoid.register_anonymous(binary_anon, 0)
+    semiring_anon = gb.core.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
     d = {
         "scalar": gb.Scalar.from_value(2),
         "empty_scalar": gb.Scalar.new(bool),
@@ -68,7 +68,7 @@ def pickle1(filename):
         "semiring_anon": semiring_anon,
         "dtypes.BOOL": gb.dtypes.BOOL,
         "dtypes._INDEX": gb.dtypes._INDEX,
-        "all_indices": gb.expr._ALL_INDICES,
+        "all_indices": gb.core.expr._ALL_INDICES,
         "replace": gb.replace,
     }
     with open(filename, "wb") as f:
@@ -76,22 +76,22 @@ def pickle1(filename):
 
 
 def pickle2(filename):
-    unary_pickle = gb.operator.UnaryOp.register_new(
+    unary_pickle = gb.core.operator.UnaryOp.register_new(
         "unary_pickle_par", unarypickle_par, parameterized=True
     )
-    binary_pickle = gb.operator.BinaryOp.register_new(
+    binary_pickle = gb.core.operator.BinaryOp.register_new(
         "binary_pickle_par", binarypickle_par, parameterized=True
     )
-    monoid_pickle = gb.operator.Monoid.register_new("monoid_pickle_par", binary_pickle, 0)
-    semiring_pickle = gb.operator.Semiring.register_new(
+    monoid_pickle = gb.core.operator.Monoid.register_new("monoid_pickle_par", binary_pickle, 0)
+    semiring_pickle = gb.core.operator.Semiring.register_new(
         "semiring_pickle_par", monoid_pickle, binary_pickle
     )
 
-    unary_anon = gb.operator.UnaryOp.register_anonymous(unaryanon_par, parameterized=True)
-    binary_anon = gb.operator.BinaryOp.register_anonymous(binaryanon_par, parameterized=True)
-    monoid_anon = gb.operator.Monoid.register_anonymous(binary_anon, 0)
-    monoid2_anon = gb.operator.Monoid.register_anonymous(binary_anon, identity_par)
-    semiring_anon = gb.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
+    unary_anon = gb.core.operator.UnaryOp.register_anonymous(unaryanon_par, parameterized=True)
+    binary_anon = gb.core.operator.BinaryOp.register_anonymous(binaryanon_par, parameterized=True)
+    monoid_anon = gb.core.operator.Monoid.register_anonymous(binary_anon, 0)
+    monoid2_anon = gb.core.operator.Monoid.register_anonymous(binary_anon, identity_par)
+    semiring_anon = gb.core.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
     d = {
         "binary.isclose(rel_tol=1., abs_tol=1.)": gb.binary.isclose(rel_tol=1.0, abs_tol=1.0),
         "unary_anon": unary_anon,

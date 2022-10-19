@@ -3,11 +3,11 @@ import warnings
 
 import numpy as np
 
-from . import _automethods, backend, binary, ffi, lib, monoid, select, semiring, utils
-from ._ss.vector import ss
+from .. import backend, binary, monoid, select, semiring
+from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
+from ..exceptions import DimensionMismatch, NoValue, check_status
+from . import NULL, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
-from .dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
-from .exceptions import DimensionMismatch, NoValue, check_status
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
@@ -19,6 +19,7 @@ from .scalar import (
     _as_scalar,
     _scalar_index,
 )
+from .ss.vector import ss
 from .utils import (
     _CArray,
     _Pointer,
@@ -645,7 +646,7 @@ class Vector(BaseType):
         ----------
         other : Vector
             The other vector in the computation
-        op : :class:`~graphblas.operator.Monoid` or :class:`~graphblas.operator.BinaryOp`
+        op : :class:`~graphblas.core.operator.Monoid` or :class:`~graphblas.core.operator.BinaryOp`
             Operator to use on intersecting values
         require_monoid : deprecated
 
@@ -730,7 +731,7 @@ class Vector(BaseType):
         ----------
         other : Vector
             The other vector in the computation
-        op : :class:`~graphblas.operator.Monoid` or :class:`~graphblas.operator.BinaryOp`
+        op : :class:`~graphblas.core.operator.Monoid` or :class:`~graphblas.core.operator.BinaryOp`
             Operator to use on intersecting values
 
         Returns
@@ -795,7 +796,7 @@ class Vector(BaseType):
         ----------
         other : Vector
             The other vector in the computation
-        op : :class:`~graphblas.operator.Monoid` or :class:`~graphblas.operator.BinaryOp`
+        op : :class:`~graphblas.core.operator.Monoid` or :class:`~graphblas.core.operator.BinaryOp`
             Operator to use
         left_default :
             Scalar value to use when the index on the left is missing
@@ -904,7 +905,7 @@ class Vector(BaseType):
         ----------
         other: Matrix
             The matrix on the right side in the computation
-        op : :class:`~graphblas.operator.Semiring`
+        op : :class:`~graphblas.core.operator.Semiring`
             Semiring used in the computation
 
         Returns
@@ -948,13 +949,13 @@ class Vector(BaseType):
         See the `Apply <../user_guide/operations.html#apply>`__
         section in the User Guide for more details.
 
-        Common usage is to pass a :class:`~graphblas.operator.UnaryOp`,
+        Common usage is to pass a :class:`~graphblas.core.operator.UnaryOp`,
         in which case ``right`` and ``left`` may not be defined.
 
-        A :class:`~graphblas.operator.BinaryOp` can also be used, in
+        A :class:`~graphblas.core.operator.BinaryOp` can also be used, in
         which case a scalar must be passed as ``left`` or ``right``.
 
-        An :class:`~graphblas.operator.IndexUnaryOp` can also be used
+        An :class:`~graphblas.core.operator.IndexUnaryOp` can also be used
         with the thunk passed in as ``right``.
 
         Parameters
@@ -1107,7 +1108,8 @@ class Vector(BaseType):
 
         Parameters
         ----------
-        op : :class:`~graphblas.operator.SelectOp` or :class:`~graphblas.operator.IndexUnaryOp`
+        op : :class:`~graphblas.core.operator.SelectOp` or
+             :class:`~graphblas.core.operator.IndexUnaryOp`
             Operator to apply
         thunk :
             Scalar passed to operator
@@ -1204,7 +1206,7 @@ class Vector(BaseType):
 
         Parameters
         ----------
-        op : :class:`~graphblas.operator.Monoid`
+        op : :class:`~graphblas.core.operator.Monoid`
             Reduction operator
         allow_empty : bool, default=True
             If False and the Vector is empty, the Scalar result
@@ -1252,7 +1254,7 @@ class Vector(BaseType):
         ----------
         other : Vector
             The vector on the right side in the computation
-        op : :class:`~graphblas.operator.Semiring`
+        op : :class:`~graphblas.core.operator.Semiring`
             Semiring used in the computation
 
         Returns
@@ -1296,7 +1298,7 @@ class Vector(BaseType):
         ----------
         other : Vector
             The vector on the right side in the computation
-        op : :class:`~graphblas.operator.BinaryOp`
+        op : :class:`~graphblas.core.operator.BinaryOp`
             Operator used in the computation
 
         Returns
@@ -1580,7 +1582,7 @@ class Vector(BaseType):
         import pygraphblas as pg
 
         vector = pg.Vector(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
-        self.gb_obj = ffi.NULL
+        self.gb_obj = NULL
         return vector
 
     @classmethod
@@ -1605,7 +1607,7 @@ class Vector(BaseType):
         dtype = lookup_dtype(vector.gb_type)
         rv = cls(vector._vector, dtype)
         rv._size = vector.size
-        vector._vector = ffi.NULL
+        vector._vector = NULL
         return rv
 
 
@@ -1668,58 +1670,58 @@ class VectorExpression(BaseExpression):
         return (self._size,)
 
     # Begin auto-generated code: Vector
-    _get_value = _automethods._get_value
-    S = wrapdoc(Vector.S)(property(_automethods.S))
-    V = wrapdoc(Vector.V)(property(_automethods.V))
-    __and__ = wrapdoc(Vector.__and__)(property(_automethods.__and__))
-    __contains__ = wrapdoc(Vector.__contains__)(property(_automethods.__contains__))
-    __getitem__ = wrapdoc(Vector.__getitem__)(property(_automethods.__getitem__))
-    __iter__ = wrapdoc(Vector.__iter__)(property(_automethods.__iter__))
-    __matmul__ = wrapdoc(Vector.__matmul__)(property(_automethods.__matmul__))
-    __or__ = wrapdoc(Vector.__or__)(property(_automethods.__or__))
-    __rand__ = wrapdoc(Vector.__rand__)(property(_automethods.__rand__))
-    __rmatmul__ = wrapdoc(Vector.__rmatmul__)(property(_automethods.__rmatmul__))
-    __ror__ = wrapdoc(Vector.__ror__)(property(_automethods.__ror__))
-    _as_matrix = wrapdoc(Vector._as_matrix)(property(_automethods._as_matrix))
-    _carg = wrapdoc(Vector._carg)(property(_automethods._carg))
-    _name_html = wrapdoc(Vector._name_html)(property(_automethods._name_html))
-    _nvals = wrapdoc(Vector._nvals)(property(_automethods._nvals))
-    apply = wrapdoc(Vector.apply)(property(_automethods.apply))
-    diag = wrapdoc(Vector.diag)(property(_automethods.diag))
-    ewise_add = wrapdoc(Vector.ewise_add)(property(_automethods.ewise_add))
-    ewise_mult = wrapdoc(Vector.ewise_mult)(property(_automethods.ewise_mult))
-    ewise_union = wrapdoc(Vector.ewise_union)(property(_automethods.ewise_union))
-    gb_obj = wrapdoc(Vector.gb_obj)(property(_automethods.gb_obj))
-    get = wrapdoc(Vector.get)(property(_automethods.get))
-    inner = wrapdoc(Vector.inner)(property(_automethods.inner))
-    isclose = wrapdoc(Vector.isclose)(property(_automethods.isclose))
-    isequal = wrapdoc(Vector.isequal)(property(_automethods.isequal))
-    name = wrapdoc(Vector.name)(property(_automethods.name))
-    name = name.setter(_automethods._set_name)
-    nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
-    outer = wrapdoc(Vector.outer)(property(_automethods.outer))
-    reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
-    reposition = wrapdoc(Vector.reposition)(property(_automethods.reposition))
-    select = wrapdoc(Vector.select)(property(_automethods.select))
-    ss = wrapdoc(Vector.ss)(property(_automethods.ss))
-    to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))
-    to_values = wrapdoc(Vector.to_values)(property(_automethods.to_values))
-    vxm = wrapdoc(Vector.vxm)(property(_automethods.vxm))
-    wait = wrapdoc(Vector.wait)(property(_automethods.wait))
+    _get_value = automethods._get_value
+    S = wrapdoc(Vector.S)(property(automethods.S))
+    V = wrapdoc(Vector.V)(property(automethods.V))
+    __and__ = wrapdoc(Vector.__and__)(property(automethods.__and__))
+    __contains__ = wrapdoc(Vector.__contains__)(property(automethods.__contains__))
+    __getitem__ = wrapdoc(Vector.__getitem__)(property(automethods.__getitem__))
+    __iter__ = wrapdoc(Vector.__iter__)(property(automethods.__iter__))
+    __matmul__ = wrapdoc(Vector.__matmul__)(property(automethods.__matmul__))
+    __or__ = wrapdoc(Vector.__or__)(property(automethods.__or__))
+    __rand__ = wrapdoc(Vector.__rand__)(property(automethods.__rand__))
+    __rmatmul__ = wrapdoc(Vector.__rmatmul__)(property(automethods.__rmatmul__))
+    __ror__ = wrapdoc(Vector.__ror__)(property(automethods.__ror__))
+    _as_matrix = wrapdoc(Vector._as_matrix)(property(automethods._as_matrix))
+    _carg = wrapdoc(Vector._carg)(property(automethods._carg))
+    _name_html = wrapdoc(Vector._name_html)(property(automethods._name_html))
+    _nvals = wrapdoc(Vector._nvals)(property(automethods._nvals))
+    apply = wrapdoc(Vector.apply)(property(automethods.apply))
+    diag = wrapdoc(Vector.diag)(property(automethods.diag))
+    ewise_add = wrapdoc(Vector.ewise_add)(property(automethods.ewise_add))
+    ewise_mult = wrapdoc(Vector.ewise_mult)(property(automethods.ewise_mult))
+    ewise_union = wrapdoc(Vector.ewise_union)(property(automethods.ewise_union))
+    gb_obj = wrapdoc(Vector.gb_obj)(property(automethods.gb_obj))
+    get = wrapdoc(Vector.get)(property(automethods.get))
+    inner = wrapdoc(Vector.inner)(property(automethods.inner))
+    isclose = wrapdoc(Vector.isclose)(property(automethods.isclose))
+    isequal = wrapdoc(Vector.isequal)(property(automethods.isequal))
+    name = wrapdoc(Vector.name)(property(automethods.name))
+    name = name.setter(automethods._set_name)
+    nvals = wrapdoc(Vector.nvals)(property(automethods.nvals))
+    outer = wrapdoc(Vector.outer)(property(automethods.outer))
+    reduce = wrapdoc(Vector.reduce)(property(automethods.reduce))
+    reposition = wrapdoc(Vector.reposition)(property(automethods.reposition))
+    select = wrapdoc(Vector.select)(property(automethods.select))
+    ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
+    to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
+    vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
+    wait = wrapdoc(Vector.wait)(property(automethods.wait))
     # These raise exceptions
     __array__ = Vector.__array__
     __bool__ = Vector.__bool__
-    __iadd__ = _automethods.__iadd__
-    __iand__ = _automethods.__iand__
-    __ifloordiv__ = _automethods.__ifloordiv__
-    __imatmul__ = _automethods.__imatmul__
-    __imod__ = _automethods.__imod__
-    __imul__ = _automethods.__imul__
-    __ior__ = _automethods.__ior__
-    __ipow__ = _automethods.__ipow__
-    __isub__ = _automethods.__isub__
-    __itruediv__ = _automethods.__itruediv__
-    __ixor__ = _automethods.__ixor__
+    __iadd__ = automethods.__iadd__
+    __iand__ = automethods.__iand__
+    __ifloordiv__ = automethods.__ifloordiv__
+    __imatmul__ = automethods.__imatmul__
+    __imod__ = automethods.__imod__
+    __imul__ = automethods.__imul__
+    __ior__ = automethods.__ior__
+    __ipow__ = automethods.__ipow__
+    __isub__ = automethods.__isub__
+    __itruediv__ = automethods.__itruediv__
+    __ixor__ = automethods.__ixor__
     # End auto-generated code: Vector
 
 
@@ -1741,58 +1743,58 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
         return (self._size,)
 
     # Begin auto-generated code: Vector
-    _get_value = _automethods._get_value
-    S = wrapdoc(Vector.S)(property(_automethods.S))
-    V = wrapdoc(Vector.V)(property(_automethods.V))
-    __and__ = wrapdoc(Vector.__and__)(property(_automethods.__and__))
-    __contains__ = wrapdoc(Vector.__contains__)(property(_automethods.__contains__))
-    __getitem__ = wrapdoc(Vector.__getitem__)(property(_automethods.__getitem__))
-    __iter__ = wrapdoc(Vector.__iter__)(property(_automethods.__iter__))
-    __matmul__ = wrapdoc(Vector.__matmul__)(property(_automethods.__matmul__))
-    __or__ = wrapdoc(Vector.__or__)(property(_automethods.__or__))
-    __rand__ = wrapdoc(Vector.__rand__)(property(_automethods.__rand__))
-    __rmatmul__ = wrapdoc(Vector.__rmatmul__)(property(_automethods.__rmatmul__))
-    __ror__ = wrapdoc(Vector.__ror__)(property(_automethods.__ror__))
-    _as_matrix = wrapdoc(Vector._as_matrix)(property(_automethods._as_matrix))
-    _carg = wrapdoc(Vector._carg)(property(_automethods._carg))
-    _name_html = wrapdoc(Vector._name_html)(property(_automethods._name_html))
-    _nvals = wrapdoc(Vector._nvals)(property(_automethods._nvals))
-    apply = wrapdoc(Vector.apply)(property(_automethods.apply))
-    diag = wrapdoc(Vector.diag)(property(_automethods.diag))
-    ewise_add = wrapdoc(Vector.ewise_add)(property(_automethods.ewise_add))
-    ewise_mult = wrapdoc(Vector.ewise_mult)(property(_automethods.ewise_mult))
-    ewise_union = wrapdoc(Vector.ewise_union)(property(_automethods.ewise_union))
-    gb_obj = wrapdoc(Vector.gb_obj)(property(_automethods.gb_obj))
-    get = wrapdoc(Vector.get)(property(_automethods.get))
-    inner = wrapdoc(Vector.inner)(property(_automethods.inner))
-    isclose = wrapdoc(Vector.isclose)(property(_automethods.isclose))
-    isequal = wrapdoc(Vector.isequal)(property(_automethods.isequal))
-    name = wrapdoc(Vector.name)(property(_automethods.name))
-    name = name.setter(_automethods._set_name)
-    nvals = wrapdoc(Vector.nvals)(property(_automethods.nvals))
-    outer = wrapdoc(Vector.outer)(property(_automethods.outer))
-    reduce = wrapdoc(Vector.reduce)(property(_automethods.reduce))
-    reposition = wrapdoc(Vector.reposition)(property(_automethods.reposition))
-    select = wrapdoc(Vector.select)(property(_automethods.select))
-    ss = wrapdoc(Vector.ss)(property(_automethods.ss))
-    to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(_automethods.to_pygraphblas))
-    to_values = wrapdoc(Vector.to_values)(property(_automethods.to_values))
-    vxm = wrapdoc(Vector.vxm)(property(_automethods.vxm))
-    wait = wrapdoc(Vector.wait)(property(_automethods.wait))
+    _get_value = automethods._get_value
+    S = wrapdoc(Vector.S)(property(automethods.S))
+    V = wrapdoc(Vector.V)(property(automethods.V))
+    __and__ = wrapdoc(Vector.__and__)(property(automethods.__and__))
+    __contains__ = wrapdoc(Vector.__contains__)(property(automethods.__contains__))
+    __getitem__ = wrapdoc(Vector.__getitem__)(property(automethods.__getitem__))
+    __iter__ = wrapdoc(Vector.__iter__)(property(automethods.__iter__))
+    __matmul__ = wrapdoc(Vector.__matmul__)(property(automethods.__matmul__))
+    __or__ = wrapdoc(Vector.__or__)(property(automethods.__or__))
+    __rand__ = wrapdoc(Vector.__rand__)(property(automethods.__rand__))
+    __rmatmul__ = wrapdoc(Vector.__rmatmul__)(property(automethods.__rmatmul__))
+    __ror__ = wrapdoc(Vector.__ror__)(property(automethods.__ror__))
+    _as_matrix = wrapdoc(Vector._as_matrix)(property(automethods._as_matrix))
+    _carg = wrapdoc(Vector._carg)(property(automethods._carg))
+    _name_html = wrapdoc(Vector._name_html)(property(automethods._name_html))
+    _nvals = wrapdoc(Vector._nvals)(property(automethods._nvals))
+    apply = wrapdoc(Vector.apply)(property(automethods.apply))
+    diag = wrapdoc(Vector.diag)(property(automethods.diag))
+    ewise_add = wrapdoc(Vector.ewise_add)(property(automethods.ewise_add))
+    ewise_mult = wrapdoc(Vector.ewise_mult)(property(automethods.ewise_mult))
+    ewise_union = wrapdoc(Vector.ewise_union)(property(automethods.ewise_union))
+    gb_obj = wrapdoc(Vector.gb_obj)(property(automethods.gb_obj))
+    get = wrapdoc(Vector.get)(property(automethods.get))
+    inner = wrapdoc(Vector.inner)(property(automethods.inner))
+    isclose = wrapdoc(Vector.isclose)(property(automethods.isclose))
+    isequal = wrapdoc(Vector.isequal)(property(automethods.isequal))
+    name = wrapdoc(Vector.name)(property(automethods.name))
+    name = name.setter(automethods._set_name)
+    nvals = wrapdoc(Vector.nvals)(property(automethods.nvals))
+    outer = wrapdoc(Vector.outer)(property(automethods.outer))
+    reduce = wrapdoc(Vector.reduce)(property(automethods.reduce))
+    reposition = wrapdoc(Vector.reposition)(property(automethods.reposition))
+    select = wrapdoc(Vector.select)(property(automethods.select))
+    ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
+    to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
+    vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
+    wait = wrapdoc(Vector.wait)(property(automethods.wait))
     # These raise exceptions
     __array__ = Vector.__array__
     __bool__ = Vector.__bool__
-    __iadd__ = _automethods.__iadd__
-    __iand__ = _automethods.__iand__
-    __ifloordiv__ = _automethods.__ifloordiv__
-    __imatmul__ = _automethods.__imatmul__
-    __imod__ = _automethods.__imod__
-    __imul__ = _automethods.__imul__
-    __ior__ = _automethods.__ior__
-    __ipow__ = _automethods.__ipow__
-    __isub__ = _automethods.__isub__
-    __itruediv__ = _automethods.__itruediv__
-    __ixor__ = _automethods.__ixor__
+    __iadd__ = automethods.__iadd__
+    __iand__ = automethods.__iand__
+    __ifloordiv__ = automethods.__ifloordiv__
+    __imatmul__ = automethods.__imatmul__
+    __imod__ = automethods.__imod__
+    __imul__ = automethods.__imul__
+    __ior__ = automethods.__ior__
+    __ipow__ = automethods.__ipow__
+    __isub__ = automethods.__isub__
+    __itruediv__ = automethods.__itruediv__
+    __ixor__ = automethods.__ixor__
     # End auto-generated code: Vector
 
 
@@ -1800,5 +1802,5 @@ utils._output_types[Vector] = Vector
 utils._output_types[VectorIndexExpr] = Vector
 utils._output_types[VectorExpression] = Vector
 
-# Import matrix to import infix to import _infixmethods, which has side effects
+# Import matrix to import infix to import infixmethods, which has side effects
 from . import matrix  # noqa isort:skip

@@ -4,19 +4,9 @@ import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import (
-    agg,
-    binary,
-    dtypes,
-    indexunary,
-    lib,
-    monoid,
-    op,
-    operator,
-    select,
-    semiring,
-    unary,
-)
+from graphblas import agg, binary, dtypes, indexunary, monoid, op, select, semiring, unary
+from graphblas.core import lib, operator
+from graphblas.core.operator import BinaryOp, IndexUnaryOp, Monoid, Semiring, UnaryOp, get_semiring
 from graphblas.dtypes import (
     BOOL,
     FP32,
@@ -31,7 +21,6 @@ from graphblas.dtypes import (
     UINT64,
 )
 from graphblas.exceptions import DomainMismatch, UdfParseError
-from graphblas.operator import BinaryOp, IndexUnaryOp, Monoid, Semiring, UnaryOp, get_semiring
 
 if dtypes._supports_complex:
     from graphblas.dtypes import FC32, FC64

@@ -5,8 +5,9 @@ import numpy as _np
 from numpy import find_common_type as _find_common_type
 from numpy import promote_types as _promote_types
 
-from . import ffi as _ffi
-from . import lib as _lib
+from .core import NULL as _NULL
+from .core import ffi as _ffi
+from .core import lib as _lib
 
 # Default assumption unless FC32/FC64 are found in lib
 _supports_complex = hasattr(_lib, "GrB_FC64") or hasattr(_lib, "GxB_FC64")
@@ -124,7 +125,7 @@ def register_anonymous(dtype, name=None):
                     f"{msg}.  It will use the following name, "
                     f"and the dtype may need to be specified when deserializing: {np_repr}"
                 )
-            status = _lib.GxB_Type_new(gb_obj, dtype.itemsize, np_repr, _ffi.NULL)
+            status = _lib.GxB_Type_new(gb_obj, dtype.itemsize, np_repr, _NULL)
         else:  # pragma: no cover
             status = _lib.GrB_Type_new(gb_obj, dtype.itemsize)
         check_status_carg(status, "Type", gb_obj[0])
@@ -242,7 +243,7 @@ for dtype in _dtypes_to_register:
     val = _sample_values[dtype]
     _registry[val.dtype] = dtype
     _registry[val.dtype.name] = dtype
-del val
+del dtype, val
 
 # Add some common Python types as lookup keys
 _registry[bool] = BOOL

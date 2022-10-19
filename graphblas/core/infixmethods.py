@@ -1,5 +1,5 @@
-from . import binary, unary
-from .dtypes import BOOL
+from .. import binary, unary
+from ..dtypes import BOOL
 from .infix import MatrixInfixExpr, VectorInfixExpr
 from .matrix import Matrix, MatrixExpression, MatrixIndexExpr, TransposedMatrix
 from .utils import output_type
@@ -297,7 +297,7 @@ for name in [
 
 
 def _main():
-    # Run via `python -m graphblas._infixmethods`
+    # Run via `python -m graphblas.core.infixmethods`
     comparisons = {
         "lt": "lt",
         "le": "le",

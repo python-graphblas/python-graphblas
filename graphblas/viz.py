@@ -1,8 +1,9 @@
 from importlib import import_module as _import_module
 
-from .matrix import Matrix as _Matrix
-from .matrix import TransposedMatrix as _TransposedMatrix
-from .utils import output_type as _output_type
+from .core.matrix import Matrix as _Matrix
+from .core.matrix import TransposedMatrix as _TransposedMatrix
+from .core.utils import output_type as _output_type
+from .io import to_networkx, to_scipy_sparse
 
 _LAZY_IMPORTS = {
     "bk": "bokeh",
@@ -52,8 +53,6 @@ def draw(m):  # pragma: no cover
 
     .. image:: /_static/img/draw-example.png
     """
-    from .io import to_networkx
-
     try:
         nx, plt = _get_imports(["nx", "plt"], "draw")
     except ImportError as exc:
@@ -86,8 +85,6 @@ def spy(M, *, centered=False, show=True, figure=None, axes=None, figsize=None, *
     --------
     datashade
     """
-    from .io import to_scipy_sparse
-
     mpl, plt, ss = _get_imports(["mpl", "plt", "ss"], "spy")
     A = to_scipy_sparse(M, "coo")
     if show:

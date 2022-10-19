@@ -1,8 +1,8 @@
 import pytest
 
 import graphblas as gb
+from graphblas.core.formatting import CSS_STYLE
 from graphblas.exceptions import OutOfMemory
-from graphblas.formatting import CSS_STYLE
 
 
 @pytest.fixture

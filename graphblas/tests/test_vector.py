@@ -1078,7 +1078,7 @@ def test_del(capsys):
     # v has `gb_obj` of NULL
     v = Vector.from_values([0, 1], [0, 1])
     gb_obj = v.gb_obj
-    v.gb_obj = graphblas.ffi.NULL
+    v.gb_obj = graphblas.core.NULL
     del v
     # let's clean up so we don't have a memory leak
     v2 = object.__new__(Vector)
@@ -1579,9 +1579,9 @@ def test_expr_is_like_vector(v):
     }
     assert attrs - expr_attrs == expected, (
         "If you see this message, you probably added a method to Vector.  You may need to "
-        "add an entry to `vector` or `matrix_vector` set in `graphblas._automethods.py` "
-        "and then run `python -m graphblas._automethods`.  If you're messing with infix "
-        "methods, then you may need to run `python -m graphblas._infixmethods`."
+        "add an entry to `vector` or `matrix_vector` set in `graphblas.core.automethods` "
+        "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
+        "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
     assert attrs - infix_attrs == expected
 
@@ -1613,9 +1613,9 @@ def test_index_expr_is_like_vector(v):
     }
     assert attrs - expr_attrs == expected, (
         "If you see this message, you probably added a method to Vector.  You may need to "
-        "add an entry to `vector` or `matrix_vector` set in `graphblas._automethods.py` "
-        "and then run `python -m graphblas._automethods`.  If you're messing with infix "
-        "methods, then you may need to run `python -m graphblas._infixmethods`."
+        "add an entry to `vector` or `matrix_vector` set in `graphblas.core.automethods` "
+        "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
+        "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
 
 

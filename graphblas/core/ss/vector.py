@@ -7,10 +7,11 @@ from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
 
 import graphblas as gb
 
-from .. import ffi, lib, monoid
+from ... import monoid
+from ...dtypes import _INDEX, INT64, UINT64, _string_to_dtype, lookup_dtype
+from ...exceptions import _error_code_lookup, check_status, check_status_carg
+from .. import NULL, ffi, lib
 from ..base import call
-from ..dtypes import _INDEX, INT64, UINT64, _string_to_dtype, lookup_dtype
-from ..exceptions import _error_code_lookup, check_status, check_status_carg
 from ..scalar import Scalar, _as_scalar
 from ..utils import _CArray, ints_to_numpy_buffer, libget, values_to_numpy_buffer, wrapdoc
 from .config import BaseConfig
@@ -20,7 +21,6 @@ from .prefix_scan import prefix_scan
 from .utils import get_order
 
 ffi_new = ffi.new
-NULL = ffi.NULL
 
 
 @njit
@@ -213,13 +213,15 @@ class ss:
         Vector.diag
 
         """
+        from ..matrix import Matrix, TransposedMatrix
+
         matrix = self._parent._expect_type(
             matrix,
-            (gb.Matrix, gb.matrix.TransposedMatrix),
+            (Matrix, TransposedMatrix),
             within="ss.build_diag",
             argname="matrix",
         )
-        if type(matrix) is gb.matrix.TransposedMatrix:
+        if type(matrix) is TransposedMatrix:
             # Transpose descriptor doesn't do anything, so use the parent
             k = -k
             matrix = matrix._matrix
@@ -1462,7 +1464,7 @@ class ss:
             newinfo["sorted_index"] = True
         elif not do_sort:
             newinfo["sorted_index"] = False
-        return gb.Vector.ss.import_sparse(
+        return self.import_sparse(
             **newinfo,
             take_ownership=True,
             name=name,
@@ -1569,7 +1571,7 @@ class ss:
             sorted_index=True,
             size=size,
         )
-        return gb.Vector.ss.import_sparse(
+        return self.import_sparse(
             **newinfo,
             take_ownership=True,
             name=name,

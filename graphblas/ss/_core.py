@@ -1,15 +1,14 @@
 from collections.abc import Mapping
 
-from graphblas import ffi, lib
-
-from .._ss.config import BaseConfig
-from .._ss.matrix import _concat_mn
-from ..base import _expect_type
+from ..core import ffi, lib
+from ..core.base import _expect_type
+from ..core.matrix import Matrix, TransposedMatrix
+from ..core.scalar import Scalar
+from ..core.ss.config import BaseConfig
+from ..core.ss.matrix import _concat_mn
+from ..core.vector import Vector
 from ..dtypes import INT64
 from ..exceptions import _error_code_lookup
-from ..matrix import Matrix, TransposedMatrix
-from ..scalar import Scalar
-from ..vector import Vector
 
 
 class _graphblas_ss:

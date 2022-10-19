@@ -1,5 +1,5 @@
+from ..dtypes import _INDEX
 from . import lib
-from .dtypes import _INDEX
 from .expr import _ALL_INDICES, AxisIndex
 from .scalar import Scalar, _as_scalar
 from .utils import _CArray

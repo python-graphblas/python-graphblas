@@ -45,35 +45,19 @@ _SPECIAL_ATTRS = {
     "Recorder",
     "Scalar",
     "Vector",
-    "_agg",
-    "_ss",
     "agg",
-    "base",
     "binary",
-    "descriptor",
+    "core",
     "dtypes",
     "exceptions",
-    "expr",
-    "ffi",
-    "formatting",
     "indexunary",
-    "infix",
     "io",
-    "lib",
-    "mask",
-    "matrix",
     "monoid",
     "op",
-    "operator",
-    "recorder",
-    "scalar",
     "select",
     "semiring",
     "ss",
-    "tests",
     "unary",
-    "utils",
-    "vector",
     "viz",
 }
 
@@ -89,6 +73,9 @@ def __getattr__(name):
             else:
                 _load(name)
         return globals()[name]
+    elif name == "_autoinit":
+        if _init_params is None:
+            _init("suitesparse", None, automatic=True)
     else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -111,7 +98,7 @@ def init(backend="suitesparse", blocking=False):
 
 
 def _init(backend_arg, blocking, automatic=False):
-    global _init_params, backend, lib, ffi
+    global _init_params, backend
 
     passed_params = {"backend": backend_arg, "blocking": blocking, "automatic": automatic}
     if _init_params is not None:
@@ -154,6 +141,12 @@ def _init(backend_arg, blocking, automatic=False):
         raise ValueError(f'Bad backend name.  Must be "suitesparse".  Got: {backend}')
     _init_params = passed_params
 
+    from . import core
+
+    core.ffi = ffi
+    core.lib = lib
+    core.NULL = ffi.NULL
+
 
 # Ideally this is in operator.py, but lives here to avoid circular references
 _STANDARD_OPERATOR_NAMES = set()
@@ -161,10 +154,7 @@ _STANDARD_OPERATOR_NAMES = set()
 
 def _load(name):
     if name in {"Matrix", "Vector", "Scalar", "Recorder"}:
-        module_name = name.lower()
-        if module_name not in globals():
-            _load(module_name)
-        module = globals()[module_name]
+        module = _import_module(f".core.{name.lower()}", __name__)
         globals()[name] = getattr(module, name)
     else:
         # Everything else is a module

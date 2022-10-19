@@ -9,7 +9,7 @@ def test_import_special_attrs():
     assert len(not_hidden & graphblas._SPECIAL_ATTRS) == len(graphblas._SPECIAL_ATTRS)
     # Is everything special that needs to be?
     not_special = {x for x in dir(graphblas) if not x.startswith("_")} - graphblas._SPECIAL_ATTRS
-    assert not_special == {"backend", "config", "init", "replace"}
+    assert not_special == {"backend", "config", "init", "replace", "tests"}
     # Make sure these "not special" objects don't have objects that look special within them
     for attr in not_special:
         assert not set(dir(getattr(graphblas, attr))) & graphblas._SPECIAL_ATTRS
@@ -28,12 +28,12 @@ def test_bad_init():
 
 def test_bad_libget():
     with pytest.raises(AttributeError, match="GrB_bad_name"):
-        graphblas.base.libget("GrB_bad_name")
+        graphblas.core.base.libget("GrB_bad_name")
 
 
 def test_lib_attrs():
-    for attr in dir(graphblas.lib):
-        getattr(graphblas.lib, attr)
+    for attr in dir(graphblas.core.lib):
+        getattr(graphblas.core.lib, attr)
 
 
 def test_bad_call():
@@ -42,8 +42,8 @@ def test_bad_call():
         _carg = 1
 
     with pytest.raises(TypeError, match="Error calling GrB_Matrix_apply"):
-        graphblas.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad])
+        graphblas.core.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad])
     with pytest.raises(
         TypeError, match=r"Call objects: GrB_Matrix_apply\(bad, bad, bad, bad, bad, bad\)"
     ):
-        graphblas.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad, bad])
+        graphblas.core.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad, bad])

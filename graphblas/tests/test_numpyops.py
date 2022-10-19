@@ -38,7 +38,7 @@ def test_bool_doesnt_get_too_large():
     def func(x):  # pragma: no cover
         return np.add(x, x)
 
-    op = graphblas.operator.UnaryOp.register_anonymous(func)
+    op = graphblas.core.operator.UnaryOp.register_anonymous(func)
     z = a.apply(op).new()
     x, y = z.to_values()
     np.testing.assert_array_equal(y, (True, False, True, False))
@@ -202,7 +202,7 @@ def test_npmonoid():
             [np.array([True, False, True, False]), np.array([True, True, False, False])],
         ],
     ]
-    # Complex monoids not working yet (they segfault upon creation in graphblas.operators)
+    # Complex monoids not working yet (they segfault upon creation in graphblas.core.operators)
     if _supports_complex:  # pragma: no branch
         data.append(
             [
@@ -268,7 +268,7 @@ def test_npsemiring():
         name = monoid.name.split(".")[-1] + "_" + binary.name.split(".")[-1]
         if name in {"eq_pow", "eq_minus"}:
             continue
-        semiring = graphblas.operator.Semiring.register_anonymous(monoid, binary, name)
+        semiring = graphblas.core.operator.Semiring.register_anonymous(monoid, binary, name)
         if len(semiring.types) == 0:
             if not graphblas.config["mapnumpy"] and "logical" not in name:
                 assert not hasattr(npsemiring, semiring.name), name

@@ -3,11 +3,12 @@ import warnings
 
 import numpy as np
 
-from . import _automethods, backend, config, ffi, lib, utils
+from .. import backend, config
+from ..binary import isclose
+from ..dtypes import _INDEX, BOOL, FP64, lookup_dtype
+from ..exceptions import EmptyObject, check_status
+from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
-from .binary import isclose
-from .dtypes import _INDEX, BOOL, FP64, lookup_dtype
-from .exceptions import EmptyObject, check_status
 from .expr import AmbiguousAssignOrExtract
 from .operator import get_typed_op
 from .utils import _Pointer, output_type, wrapdoc
@@ -655,32 +656,32 @@ class ScalarExpression(BaseExpression):
     is_grbscalar = Scalar.is_grbscalar
 
     # Begin auto-generated code: Scalar
-    _get_value = _automethods._get_value
-    __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
-    __bool__ = wrapdoc(Scalar.__bool__)(property(_automethods.__bool__))
-    __complex__ = wrapdoc(Scalar.__complex__)(property(_automethods.__complex__))
-    __eq__ = wrapdoc(Scalar.__eq__)(property(_automethods.__eq__))
-    __float__ = wrapdoc(Scalar.__float__)(property(_automethods.__float__))
-    __index__ = wrapdoc(Scalar.__index__)(property(_automethods.__index__))
-    __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
-    __invert__ = wrapdoc(Scalar.__invert__)(property(_automethods.__invert__))
-    __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
-    _as_matrix = wrapdoc(Scalar._as_matrix)(property(_automethods._as_matrix))
-    _as_vector = wrapdoc(Scalar._as_vector)(property(_automethods._as_vector))
-    _is_empty = wrapdoc(Scalar._is_empty)(property(_automethods._is_empty))
-    _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
-    _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
-    gb_obj = wrapdoc(Scalar.gb_obj)(property(_automethods.gb_obj))
-    get = wrapdoc(Scalar.get)(property(_automethods.get))
-    is_empty = wrapdoc(Scalar.is_empty)(property(_automethods.is_empty))
-    isclose = wrapdoc(Scalar.isclose)(property(_automethods.isclose))
-    isequal = wrapdoc(Scalar.isequal)(property(_automethods.isequal))
-    name = wrapdoc(Scalar.name)(property(_automethods.name))
-    name = name.setter(_automethods._set_name)
-    nvals = wrapdoc(Scalar.nvals)(property(_automethods.nvals))
-    to_pygraphblas = wrapdoc(Scalar.to_pygraphblas)(property(_automethods.to_pygraphblas))
-    value = wrapdoc(Scalar.value)(property(_automethods.value))
-    wait = wrapdoc(Scalar.wait)(property(_automethods.wait))
+    _get_value = automethods._get_value
+    __array__ = wrapdoc(Scalar.__array__)(property(automethods.__array__))
+    __bool__ = wrapdoc(Scalar.__bool__)(property(automethods.__bool__))
+    __complex__ = wrapdoc(Scalar.__complex__)(property(automethods.__complex__))
+    __eq__ = wrapdoc(Scalar.__eq__)(property(automethods.__eq__))
+    __float__ = wrapdoc(Scalar.__float__)(property(automethods.__float__))
+    __index__ = wrapdoc(Scalar.__index__)(property(automethods.__index__))
+    __int__ = wrapdoc(Scalar.__int__)(property(automethods.__int__))
+    __invert__ = wrapdoc(Scalar.__invert__)(property(automethods.__invert__))
+    __neg__ = wrapdoc(Scalar.__neg__)(property(automethods.__neg__))
+    _as_matrix = wrapdoc(Scalar._as_matrix)(property(automethods._as_matrix))
+    _as_vector = wrapdoc(Scalar._as_vector)(property(automethods._as_vector))
+    _is_empty = wrapdoc(Scalar._is_empty)(property(automethods._is_empty))
+    _name_html = wrapdoc(Scalar._name_html)(property(automethods._name_html))
+    _nvals = wrapdoc(Scalar._nvals)(property(automethods._nvals))
+    gb_obj = wrapdoc(Scalar.gb_obj)(property(automethods.gb_obj))
+    get = wrapdoc(Scalar.get)(property(automethods.get))
+    is_empty = wrapdoc(Scalar.is_empty)(property(automethods.is_empty))
+    isclose = wrapdoc(Scalar.isclose)(property(automethods.isclose))
+    isequal = wrapdoc(Scalar.isequal)(property(automethods.isequal))
+    name = wrapdoc(Scalar.name)(property(automethods.name))
+    name = name.setter(automethods._set_name)
+    nvals = wrapdoc(Scalar.nvals)(property(automethods.nvals))
+    to_pygraphblas = wrapdoc(Scalar.to_pygraphblas)(property(automethods.to_pygraphblas))
+    value = wrapdoc(Scalar.value)(property(automethods.value))
+    wait = wrapdoc(Scalar.wait)(property(automethods.wait))
     # These raise exceptions
     __and__ = Scalar.__and__
     __matmul__ = Scalar.__matmul__
@@ -716,32 +717,32 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
         return not self._is_cscalar
 
     # Begin auto-generated code: Scalar
-    _get_value = _automethods._get_value
-    __array__ = wrapdoc(Scalar.__array__)(property(_automethods.__array__))
-    __bool__ = wrapdoc(Scalar.__bool__)(property(_automethods.__bool__))
-    __complex__ = wrapdoc(Scalar.__complex__)(property(_automethods.__complex__))
-    __eq__ = wrapdoc(Scalar.__eq__)(property(_automethods.__eq__))
-    __float__ = wrapdoc(Scalar.__float__)(property(_automethods.__float__))
-    __index__ = wrapdoc(Scalar.__index__)(property(_automethods.__index__))
-    __int__ = wrapdoc(Scalar.__int__)(property(_automethods.__int__))
-    __invert__ = wrapdoc(Scalar.__invert__)(property(_automethods.__invert__))
-    __neg__ = wrapdoc(Scalar.__neg__)(property(_automethods.__neg__))
-    _as_matrix = wrapdoc(Scalar._as_matrix)(property(_automethods._as_matrix))
-    _as_vector = wrapdoc(Scalar._as_vector)(property(_automethods._as_vector))
-    _is_empty = wrapdoc(Scalar._is_empty)(property(_automethods._is_empty))
-    _name_html = wrapdoc(Scalar._name_html)(property(_automethods._name_html))
-    _nvals = wrapdoc(Scalar._nvals)(property(_automethods._nvals))
-    gb_obj = wrapdoc(Scalar.gb_obj)(property(_automethods.gb_obj))
-    get = wrapdoc(Scalar.get)(property(_automethods.get))
-    is_empty = wrapdoc(Scalar.is_empty)(property(_automethods.is_empty))
-    isclose = wrapdoc(Scalar.isclose)(property(_automethods.isclose))
-    isequal = wrapdoc(Scalar.isequal)(property(_automethods.isequal))
-    name = wrapdoc(Scalar.name)(property(_automethods.name))
-    name = name.setter(_automethods._set_name)
-    nvals = wrapdoc(Scalar.nvals)(property(_automethods.nvals))
-    to_pygraphblas = wrapdoc(Scalar.to_pygraphblas)(property(_automethods.to_pygraphblas))
-    value = wrapdoc(Scalar.value)(property(_automethods.value))
-    wait = wrapdoc(Scalar.wait)(property(_automethods.wait))
+    _get_value = automethods._get_value
+    __array__ = wrapdoc(Scalar.__array__)(property(automethods.__array__))
+    __bool__ = wrapdoc(Scalar.__bool__)(property(automethods.__bool__))
+    __complex__ = wrapdoc(Scalar.__complex__)(property(automethods.__complex__))
+    __eq__ = wrapdoc(Scalar.__eq__)(property(automethods.__eq__))
+    __float__ = wrapdoc(Scalar.__float__)(property(automethods.__float__))
+    __index__ = wrapdoc(Scalar.__index__)(property(automethods.__index__))
+    __int__ = wrapdoc(Scalar.__int__)(property(automethods.__int__))
+    __invert__ = wrapdoc(Scalar.__invert__)(property(automethods.__invert__))
+    __neg__ = wrapdoc(Scalar.__neg__)(property(automethods.__neg__))
+    _as_matrix = wrapdoc(Scalar._as_matrix)(property(automethods._as_matrix))
+    _as_vector = wrapdoc(Scalar._as_vector)(property(automethods._as_vector))
+    _is_empty = wrapdoc(Scalar._is_empty)(property(automethods._is_empty))
+    _name_html = wrapdoc(Scalar._name_html)(property(automethods._name_html))
+    _nvals = wrapdoc(Scalar._nvals)(property(automethods._nvals))
+    gb_obj = wrapdoc(Scalar.gb_obj)(property(automethods.gb_obj))
+    get = wrapdoc(Scalar.get)(property(automethods.get))
+    is_empty = wrapdoc(Scalar.is_empty)(property(automethods.is_empty))
+    isclose = wrapdoc(Scalar.isclose)(property(automethods.isclose))
+    isequal = wrapdoc(Scalar.isequal)(property(automethods.isequal))
+    name = wrapdoc(Scalar.name)(property(automethods.name))
+    name = name.setter(automethods._set_name)
+    nvals = wrapdoc(Scalar.nvals)(property(automethods.nvals))
+    to_pygraphblas = wrapdoc(Scalar.to_pygraphblas)(property(automethods.to_pygraphblas))
+    value = wrapdoc(Scalar.value)(property(automethods.value))
+    wait = wrapdoc(Scalar.wait)(property(automethods.wait))
     # These raise exceptions
     __and__ = Scalar.__and__
     __matmul__ = Scalar.__matmul__

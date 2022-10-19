@@ -4,10 +4,10 @@ These will automatically compute the value and avoid the need for `.new()`.
 
 To automatically create the functions, run:
 
-$ python -m graphblas._automethods
+$ python -m graphblas.core.automethods
 
 """
-from . import config
+from .. import config
 
 
 def _get_value(self, attr=None, default=None):
@@ -446,11 +446,11 @@ def _main():
 
     # Copy to scalar.py and infix.py
     lines = []
-    lines.append("    _get_value = _automethods._get_value")
+    lines.append("    _get_value = automethods._get_value")
     for name in sorted(common | scalar):
-        lines.append(f"    {name} = wrapdoc(Scalar.{name})(property(_automethods.{name}))")
+        lines.append(f"    {name} = wrapdoc(Scalar.{name})(property(automethods.{name}))")
         if name == "name":
-            lines.append("    name = name.setter(_automethods._set_name)")
+            lines.append("    name = name.setter(automethods._set_name)")
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | scalar_raises):
         lines.append(f"    {name} = Scalar.{name}")
@@ -468,16 +468,16 @@ def _main():
 
     # Copy to vector.py and infix.py
     lines = []
-    lines.append("    _get_value = _automethods._get_value")
+    lines.append("    _get_value = automethods._get_value")
     for name in sorted(common | vector_matrix | vector):
-        lines.append(f"    {name} = wrapdoc(Vector.{name})(property(_automethods.{name}))")
+        lines.append(f"    {name} = wrapdoc(Vector.{name})(property(automethods.{name}))")
         if name == "name":
-            lines.append("    name = name.setter(_automethods._set_name)")
+            lines.append("    name = name.setter(automethods._set_name)")
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | vector_matrix_raises):
         lines.append(f"    {name} = Vector.{name}")
     for name in sorted(bad_sugar):
-        lines.append(f"    {name} = _automethods.{name}")
+        lines.append(f"    {name} = automethods.{name}")
 
     text = "\n".join(lines) + "\n    "
     _autogenerate_code(os.path.join(thisdir, "vector.py"), text, "Vector")
@@ -486,16 +486,16 @@ def _main():
 
     # Copy to matrix.py and infix.py
     lines = []
-    lines.append("    _get_value = _automethods._get_value")
+    lines.append("    _get_value = automethods._get_value")
     for name in sorted(common | vector_matrix | matrix):
-        lines.append(f"    {name} = wrapdoc(Matrix.{name})(property(_automethods.{name}))")
+        lines.append(f"    {name} = wrapdoc(Matrix.{name})(property(automethods.{name}))")
         if name == "name":
-            lines.append("    name = name.setter(_automethods._set_name)")
+            lines.append("    name = name.setter(automethods._set_name)")
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | vector_matrix_raises):
         lines.append(f"    {name} = Matrix.{name}")
     for name in sorted(bad_sugar):
-        lines.append(f"    {name} = _automethods.{name}")
+        lines.append(f"    {name} = automethods.{name}")
 
     text = "\n".join(lines) + "\n    "
     _autogenerate_code(os.path.join(thisdir, "matrix.py"), text, "Matrix")
