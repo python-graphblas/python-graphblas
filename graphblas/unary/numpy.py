@@ -143,7 +143,7 @@ def __getattr__(name):
         operator.UnaryOp.register_new(f"numpy.{name}", func)
         if name == "reciprocal":
             # numba doesn't match numpy here
-            def reciprocal(x):
+            def reciprocal(x):  # pragma: no cover
                 return 1 if x else 0
 
             op = operator.UnaryOp.register_anonymous(reciprocal)

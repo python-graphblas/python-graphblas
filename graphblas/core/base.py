@@ -17,8 +17,7 @@ _prev_recorder = None
 
 
 def record_raw(text):
-    rec = _recorder.get(_prev_recorder)
-    if rec is not None:
+    if (rec := _recorder.get(_prev_recorder)) is not None:
         rec.record_raw(text)
 
 
@@ -160,8 +159,7 @@ def _expect_op_message(
 
 
 def _expect_op(self, op, values, **kwargs):
-    message = _expect_op_message(self, op, values, **kwargs)
-    if message is not None:
+    if (message := _expect_op_message(self, op, values, **kwargs)) is not None:
         raise TypeError(message) from None
 
 

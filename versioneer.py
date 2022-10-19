@@ -1466,8 +1466,7 @@ def get_versions(verbose=False):
     except NotThisMethod:
         pass
 
-    from_vcs_f = handlers.get("pieces_from_vcs")
-    if from_vcs_f:
+    if from_vcs_f := handlers.get("pieces_from_vcs"):
         try:
             pieces = from_vcs_f(cfg.tag_prefix, root, verbose)
             ver = render(pieces, cfg.style)

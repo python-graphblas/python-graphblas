@@ -210,8 +210,7 @@ def from_awkward(A, *, name=None):
     Vector or Matrix
     """
     params = A.layout.parameters
-    missing = {"format", "shape"} - params.keys()
-    if missing:
+    if missing := {"format", "shape"} - params.keys():
         raise ValueError(f"Missing parameters: {missing}")
     format = params["format"]
     shape = params["shape"]
