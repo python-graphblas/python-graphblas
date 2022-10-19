@@ -1466,7 +1466,7 @@ class IndexUnaryOp(OpBase):
     def _initialize(cls):
         if cls._initialized:
             return
-        super()._initialize()
+        super()._initialize(include_in_ops=False)
         # Update type information to include UINT64 for positional ops
         for name in ("tril", "triu", "diag", "offdiag", "colle", "colgt", "rowle", "rowgt"):
             op = getattr(indexunary, name)
