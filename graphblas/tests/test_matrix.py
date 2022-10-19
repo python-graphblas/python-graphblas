@@ -9,7 +9,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas
-from graphblas import agg, binary, dtypes, indexunary, monoid, select, semiring, unary
+from graphblas import agg, binary, dtypes, indexunary, lib, monoid, select, semiring, unary
 from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
@@ -77,6 +77,19 @@ def test_dup(A):
     assert E.isequal(Matrix.from_values([1], [1], [2.5], dtype=dtypes.FP64), check_dtype=True)
     E = D.dup(dtype=dtypes.INT64, mask=D.V)
     assert E.isequal(Matrix.from_values([1], [1], [2], dtype=dtypes.INT64), check_dtype=True)
+
+
+def test_dup_clear(A):
+    C = A.dup(clear=True)
+    assert C.dtype == A.dtype
+    assert C.nvals == 0
+    assert C.nrows == A.nrows
+    assert C.ncols == A.ncols
+    D = A.dup(dtypes.INT8, clear=True)
+    assert D.dtype == dtypes.INT8
+    assert D.nvals == 0
+    assert D.nrows == A.nrows
+    assert D.ncols == A.ncols
 
 
 def test_from_values():
@@ -2293,15 +2306,18 @@ def test_import_export_auto(A, do_iso, methods):
             else:
                 d = A2.ss.unpack(format, sort=sort, raw=raw)
             if in_method == "import":
-                import_func = getattr(Matrix.ss, f"import_{import_name}")
+
+                def import_func(x, import_name, **kwargs):
+                    return getattr(Matrix.ss, f"import_{import_name}")(**kwargs)
+
             else:
 
-                def import_func(**kwargs):
-                    getattr(A2.ss, f"pack_{import_name}")(**kwargs)
-                    return A2
+                def import_func(x, import_name, **kwargs):
+                    getattr(x.ss, f"pack_{import_name}")(**kwargs)
+                    return x
 
             d["format"] = import_format
-            other = import_func(take_ownership=take_ownership, **d)
+            other = import_func(A2, import_name, take_ownership=take_ownership, **d)
             if format == "bitmapc" and raw and import_format is None and import_name == "any":
                 # It's 1d, so we can't tell we're column-oriented w/o format keyword
                 assert other.isequal(A_orig.T)
@@ -2310,7 +2326,7 @@ def test_import_export_auto(A, do_iso, methods):
             assert other.ss.is_iso is do_iso
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
-                import_func(**d)
+                import_func(A2, import_name, **d)
     assert A.isequal(A_orig)
     assert A.ss.is_iso is do_iso
     assert A_orig.ss.is_iso is do_iso
@@ -2334,15 +2350,18 @@ def test_import_export_auto(A, do_iso, methods):
             else:
                 d = C2.ss.unpack(format, raw=raw)
             if in_method == "import":
-                import_func = getattr(Matrix.ss, f"import_{import_name}")
+
+                def import_func(x, import_name, **kwargs):
+                    return getattr(Matrix.ss, f"import_{import_name}")(**kwargs)
+
             else:
 
-                def import_func(**kwargs):
-                    getattr(C2.ss, f"pack_{import_name}")(**kwargs)
-                    return C2
+                def import_func(x, import_name, **kwargs):
+                    getattr(x.ss, f"pack_{import_name}")(**kwargs)
+                    return x
 
             d["format"] = import_format
-            other = import_func(take_ownership=take_ownership, **d)
+            other = import_func(C2, import_name, take_ownership=take_ownership, **d)
             if format == "fullc" and raw and import_format is None and import_name == "any":
                 # It's 1d, so we can't tell we're column-oriented w/o format keyword
                 if do_iso:
@@ -2357,7 +2376,7 @@ def test_import_export_auto(A, do_iso, methods):
             assert other.ss.is_iso is do_iso
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
-                import_func(**d)
+                import_func(C2, import_name, **d)
     assert C.isequal(C_orig)
     assert C.ss.is_iso is do_iso
     assert C_orig.ss.is_iso is do_iso
@@ -2866,6 +2885,40 @@ def test_flatten(A):
         v.ss.reshape(100, 100)
     with pytest.raises(ValueError):
         v.ss.reshape(A.shape + (1,))
+
+
+def test_ss_reshape(A):
+    A.resize(8, 8)
+    r, c, v = A.to_values()
+    idx = c + 8 * r
+    expected = Matrix.from_values(idx // 16, idx % 16, v, nrows=4, ncols=16)
+    rv = A.ss.reshape(4, 16)
+    assert rv.isequal(expected)
+    rv = A.ss.reshape(4, -1, order="row")
+    assert rv.isequal(expected)
+    rv = A.ss.reshape((4, 16))
+    assert rv.isequal(expected)
+    rv = A.ss.reshape((-1, 16))
+    assert rv.isequal(expected)
+    assert rv.ss.reshape(8, 8, inplace=True) is None
+    assert rv.isequal(A)
+    with pytest.raises(ValueError):
+        A.ss.reshape(5, 5)
+    with pytest.raises(ValueError):
+        A.ss.reshape(4)
+    with pytest.raises(ValueError):
+        A.ss.reshape((4,))
+    with pytest.raises(ValueError):
+        A.ss.reshape((4, 5))
+    with pytest.raises(ValueError):
+        A.ss.reshape((4, 4, 4))
+    with pytest.raises(ValueError):
+        A.ss.reshape(4, 16, order="bad_order")
+
+    idx = r + 8 * c
+    expected = Matrix.from_values(idx % 4, idx // 4, v, nrows=4, ncols=16)
+    rv = A.ss.reshape(4, 16, order="col")
+    assert rv.isequal(expected)
 
 
 def test_autocompute_argument_messages(A, v):
@@ -3456,12 +3509,10 @@ def test_udt():
     with pytest.raises(ValueError, match="shape mismatch"):
         A[[0, 1], [1]] = [[(2, 3), (4, 5)]]
 
-    AA = Matrix.ss.deserialize(A.ss.serialize(), unsafe=True)
+    AA = Matrix.ss.deserialize(A.ss.serialize())
     assert A.isequal(AA, check_dtype=True)
     AA = Matrix.ss.deserialize(A.ss.serialize(), dtype=A.dtype)
     assert A.isequal(AA, check_dtype=True)
-    with pytest.raises(ValueError):
-        Matrix.ss.deserialize(A.ss.serialize())
 
     np_dtype = np.dtype("(3,)uint16")
     udt = dtypes.register_anonymous(np_dtype, "has_subdtype")
@@ -3485,7 +3536,7 @@ def test_udt():
     expected = Matrix.from_values([0, 1], [1, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt)
     assert A.isequal(expected)
     A[[0, 1], [1]] = [[[2, 3, 4]], [[5, 6, 7]]]
-    AA = Matrix.ss.deserialize(A.ss.serialize(), unsafe=True)
+    AA = Matrix.ss.deserialize(A.ss.serialize())
     assert A.isequal(AA, check_dtype=True)
     with pytest.raises(ValueError, match="shape mismatch"):
         A[[0, 1], [1]] = [[[2, 3, 4], [5, 6, 7]]]
@@ -3562,6 +3613,32 @@ def test_to_values_sort():
     assert_array_equal(cols, expected_rows)
 
 
+def test_to_values_subset(A):
+    rows, cols, vals = A.to_values()
+    for do_rows, do_cols, do_vals in itertools.product([True, False], [True, False], [True, False]):
+        r, c, v = A.to_values(rows=do_rows, columns=do_cols, values=do_vals)
+        if do_rows:
+            assert_array_equal(r, rows)
+        else:
+            assert r is None
+        if do_cols:
+            assert_array_equal(c, cols)
+        else:
+            assert c is None
+        if do_vals:
+            assert_array_equal(v, vals)
+            assert v.dtype == np.int64
+        else:
+            assert v is None
+    r, c, v = A.to_values(rows=None, columns=None, values=True, dtype=float)
+    assert r is None
+    assert c is None
+    assert_array_equal(v, vals)
+    assert v.dtype == float
+    r, c, v = A.to_values(values=True, dtype=A.dtype, sort=False)
+    assert v.dtype == np.int64
+
+
 def test_get(A):
     assert compute(A.get(0, 0)) is None
     assert A.get(0, 0, "mittens") == "mittens"
@@ -3585,9 +3662,9 @@ def test_bool_as_mask(A):
 
 def test_ss_serialize(A):
     for compression, level, nthreads in itertools.product(
-        [None, "none", "default", "lz4", "lz4hc"], [None, 1, 5, 9], [None, -1, 1, 10]
+        [None, "none", "default", "lz4", "lz4hc", "zstd"], [None, 1, 5, 9], [None, -1, 1, 10]
     ):
-        if level is not None and compression != "lz4hc":
+        if level is not None and compression not in {"lz4hc", "zstd"}:
             with pytest.raises(TypeError, match="level argument"):
                 A.ss.serialize(compression, level, nthreads=nthreads)
             continue
@@ -3603,5 +3680,38 @@ def test_ss_serialize(A):
         A.ss.serialize("lz4hc", -1)
     with pytest.raises(ValueError, match="level argument"):
         A.ss.serialize("lz4hc", 0)
+    with pytest.raises(ValueError, match="level argument"):
+        A.ss.serialize("zstd", 0)
     with pytest.raises(InvalidObject):
         Matrix.ss.deserialize(a[:-5])
+
+
+def test_ss_config(A):
+    d = {}
+    for key in A.ss.config:
+        d[key] = A.ss.config[key]
+    assert A.ss.config == d
+    for key, val in d.items():
+        if key in A.ss.config._read_only:
+            with pytest.raises(ValueError):
+                A.ss.config[key] = val
+        else:
+            A.ss.config[key] = val
+    assert A.ss.config == d
+    A.ss.config["sparsity_control"] = "sparse"
+    assert A.ss.config["sparsity_control"] == {"sparse"}
+    assert A.ss.config["sparsity_status"] == "sparse"
+    A.ss.config["sparsity_control"] = {"sparse", "bitmap"}
+    assert A.ss.config["sparsity_control"] == {"sparse", "bitmap"}
+    A.ss.config["sparsity_control"] = lib.GxB_SPARSE
+    assert A.ss.config["sparsity_status"] == "sparse"
+    A.ss.config["sparsity_control"] = {"sparse", lib.GxB_BITMAP}
+    assert A.ss.config["sparsity_control"] == {"sparse", "bitmap"}
+    A.ss.config["sparsity_control"] = "auto"
+    assert A.ss.config["sparsity_control"] == {"auto"}
+    A.ss.config["format"] = "by_col"
+    assert A.ss.config["format"] == "by_col"
+    A.ss.config["format"] = lib.GxB_BY_ROW
+    assert A.ss.config["format"] == "by_row"
+    with pytest.raises(InvalidValue):
+        A.ss.config["format"] = lib.GxB_NO_FORMAT

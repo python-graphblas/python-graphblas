@@ -7,6 +7,7 @@ str_to_compression = {
     "default": lib.GxB_COMPRESSION_DEFAULT,
     "lz4": lib.GxB_COMPRESSION_LZ4,
     "lz4hc": lib.GxB_COMPRESSION_LZ4HC,
+    "zstd": lib.GxB_COMPRESSION_ZSTD,
 }
 
 
@@ -22,7 +23,7 @@ def get_nthreads_descriptor(nthreads, _cache=True):
         lib.GxB_Desc_set(
             desc._carg,
             lib.GxB_NTHREADS,
-            ffi.cast("GrB_Desc_Value", nthreads),
+            ffi.cast("int", nthreads),
         ),
         desc,
     )
@@ -41,13 +42,15 @@ def get_compression_descriptor(compression="default", level=None, nthreads=None)
         compression = compression.lower()
         comp = str_to_compression[compression]
     if level is not None:
-        if compression != "lz4hc":
+        if compression not in {"lz4hc", "zstd"}:
             raise TypeError('level argument is only valid when using "lz4hc" compression')
         level = int(level)
-        if level < 1 or level > 9:
+        upper = 9 if compression == "lz4hc" else 19
+        default = 9 if compression == "lz4hc" else 1
+        if level < 1 or level > upper:
             raise ValueError(
-                f"level argument should be an integer between 1 and 9 (got {level}).  "
-                "1 is the fastest, 9 is the most compression (default is 9)."
+                f"level argument should be an integer between 1 and {upper} (got {level}).  "
+                f"1 is the fastest, {upper} is the most compression (default is {default})."
             )
         comp += level
     if nthreads is not None:
@@ -71,7 +74,7 @@ def get_compression_descriptor(compression="default", level=None, nthreads=None)
         lib.GxB_Desc_set(
             desc._carg,
             lib.GxB_COMPRESSION,
-            ffi.cast("GrB_Desc_Value", comp),
+            ffi.cast("int", comp),
         ),
         desc,
     )

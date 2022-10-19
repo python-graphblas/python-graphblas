@@ -9,10 +9,11 @@ import graphblas as gb
 
 from .. import ffi, lib, monoid
 from ..base import call
-from ..dtypes import _INDEX, INT64, UINT64, lookup_dtype
+from ..dtypes import _INDEX, INT64, UINT64, _string_to_dtype, lookup_dtype
 from ..exceptions import _error_code_lookup, check_status, check_status_carg
 from ..scalar import Scalar, _as_scalar
 from ..utils import _CArray, ints_to_numpy_buffer, libget, values_to_numpy_buffer, wrapdoc
+from .config import BaseConfig
 from .descriptor import get_compression_descriptor, get_nthreads_descriptor
 from .matrix import MatrixArray, _concat_mn, normalize_chunks
 from .prefix_scan import prefix_scan
@@ -80,11 +81,64 @@ def head(vector, n=10, dtype=None, *, sort=False):
     return indices, vals
 
 
+class VectorConfig(BaseConfig):
+    """Get and set configuration options for this Vector.
+
+    See SuiteSparse:GraphBLAS documentation for more details.
+
+    Config parameters
+    -----------------
+    bitmap_switch : double
+        Threshold that determines when to switch to bitmap format
+    sparsity_control : Set[str] from {"sparse", "bitmap", "full", "auto"}
+        Allowed sparsity formats.  May be set with a single string or a set of strings.
+    sparsity_status : str, {"sparse", "bitmap", "full"}
+        Current sparsity format
+    """
+
+    _get_function = lib.GxB_Vector_Option_get
+    _set_function = lib.GxB_Vector_Option_set
+    _options = {
+        "bitmap_switch": (lib.GxB_BITMAP_SWITCH, "double"),
+        "sparsity_control": (lib.GxB_SPARSITY_CONTROL, "int"),
+        # read-only
+        "sparsity_status": (lib.GxB_SPARSITY_STATUS, "int"),
+        # "format": (lib.GxB_FORMAT, "GxB_Format_Value"),  # Not useful to show
+    }
+    _bitwise = {
+        "sparsity_control": {
+            # lib.GxB_HYPERSPARSE: "hypersparse",  # For matrices, not vectors
+            lib.GxB_SPARSE: "sparse",
+            lib.GxB_BITMAP: "bitmap",
+            lib.GxB_FULL: "full",
+            lib.GxB_AUTO_SPARSITY: "auto",
+        },
+    }
+    _enumerations = {
+        "format": {
+            lib.GxB_BY_ROW: "by_row",
+            lib.GxB_BY_COL: "by_col",
+            # lib.GxB_NO_FORMAT: "no_format",  # Used by iterators; not valid here
+        },
+        "sparsity_status": {
+            lib.GxB_HYPERSPARSE: "hypersparse",
+            lib.GxB_SPARSE: "sparse",
+            lib.GxB_BITMAP: "bitmap",
+            lib.GxB_FULL: "full",
+        },
+    }
+    _defaults = {
+        "sparsity_control": "auto",
+    }
+    _read_only = {"sparsity_status", "format"}
+
+
 class ss:
-    __slots__ = "_parent"
+    __slots__ = "_parent", "config"
 
     def __init__(self, parent):
         self._parent = parent
+        self.config = VectorConfig(parent)
 
     @property
     def nbytes(self):
@@ -1282,7 +1336,7 @@ class ss:
             "rowwise" means to fill the Matrix in row-major (C-style) order.
             Aliases of "rowwise" also accepted: "row", "rows", "C".
             "columnwise" means to fill the Matrix in column-major (F-style) order.
-            Aliases of "rowwise" also accepted: "col", "cols", "column", "columns", "F".
+            Aliases of "columnwise" also accepted: "col", "cols", "column", "columns", "F".
             The default is "rowwise".
         name : str, optional
             Name of the new Matrix.
@@ -1526,16 +1580,18 @@ class ss:
 
         Parameters
         ----------
-        compression : {"default", "lz4", "lz4hc", "none", None}, optional
+        compression : {"default", "lz4", "lz4hc", "zstd", "none", None}, optional
             Whether and how to compress the data.
-            - "default": the default in SuiteSparse:GraphBLAS, which is currently LZ4
+            - "default": the default in SuiteSparse:GraphBLAS, which is currently ZSTD
             - "lz4": the default LZ4 compression
             - "lz4hc": LZ4 compression that allows the compression level (1-9) to be set.
               Low compression level (1) is faster, high (9) is more compact.  Default is 9.
+            - "zstd": ZSTD compression, which allows compression level (1-19) to be set.
+              Low compression level (1) is faster, high (19) is more compact.  Default is 19.
             - "none" or None: no compression
         level : int [1-9], optional
-            The compression level, between 1 to 9, to use with "lz4hc" compression.
-            (1) is the fastest and largest, (9) is the slowest and most compressed.
+            The compression level, between 1 to 9, to use with "lz4hc" and "zstd" compression.
+            Level 1 is the fastest and largest, and is the default for "zstd" compression.
             Level 9 is the default when using "lz4hc" compression.
         nthreads : int, optional
             The maximum number of threads to use when serializing the Vector.
@@ -1545,6 +1601,8 @@ class ss:
         Use `Vector.ss.deserialize(blob)` to create a Vector from the result of serialization·
 
         This method is intended to support all serialization options from SuiteSparse:GraphBLAS.
+
+        *Warning*: Behavior of serializing UDTs is experimental and may change in a future release.
         """
         desc = get_compression_descriptor(compression, level=level, nthreads=nthreads)
         blob_handle = ffi_new("void**")
@@ -1562,7 +1620,7 @@ class ss:
         return claim_buffer(ffi, blob_handle[0], blob_size_handle[0], np.dtype(np.uint8))
 
     @classmethod
-    def deserialize(cls, data, dtype=None, *, unsafe=False, nthreads=None, name=None):
+    def deserialize(cls, data, dtype=None, *, nthreads=None, name=None):
         """Deserialize a Vector from bytes, buffer, or numpy array using GxB_Vector_deserialize.
 
         The data should have been previously serialized with a compatible version of
@@ -1580,12 +1638,7 @@ class ss:
         dtype : DataType, optional
             If given, this should specify the dtype of the object.  This is usually unnecessary.
             If the dtype doesn't match what is in the serialized metadata, deserialize will fail.
-            You need to specify the dtype to _safely_ load user-defined types.
-        unsafe : bool, default False
-            Ignored for builtin types.  Automatic loading of user-defined types (if not given via
-            the `dtype=` argument) may require `eval`, which is often considered unsafe in Python
-            if you don't trust the data.  Hence, you must opt-in by specifying `unsafe=True`.
-            Automatically loading UDTs will probably only work for objects saved by this library.
+            You may need to specify the dtype to load user-defined types.
         nthreads : int, optional
             The maximum number of threads to use when deserializing.
             None, 0 or negative nthreads means to use the default number of threads.
@@ -1606,13 +1659,7 @@ class ss:
             if info != lib.GrB_SUCCESS:
                 raise _error_code_lookup[info]("Vector deserialize failed to get the dtype name")
             dtype_name = b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode()
-            try:
-                dtype = lookup_dtype(dtype_name)
-            except ValueError:
-                if not unsafe:
-                    raise
-                np_dtype = np.dtype(eval(dtype_name, np.__dict__))
-                dtype = lookup_dtype(np_dtype)
+            dtype = _string_to_dtype(dtype_name)
         else:
             dtype = lookup_dtype(dtype)
         if nthreads is not None:

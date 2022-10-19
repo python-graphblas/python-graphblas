@@ -282,7 +282,7 @@ class BaseType:
             return NotImplemented
         from .infix import _ewise_infix_expr
 
-        return _ewise_infix_expr(self, other, method="ewise_mult", within="__rand__")
+        return _ewise_infix_expr(other, self, method="ewise_mult", within="__rand__")
 
     def __matmul__(self, other):
         if self._is_scalar:

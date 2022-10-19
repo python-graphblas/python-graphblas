@@ -76,6 +76,17 @@ def test_dup(v):
     assert x.isequal(Vector.from_values([1], [2], dtype=dtypes.INT64), check_dtype=True)
 
 
+def test_dup_clear(v):
+    w = v.dup(clear=True)
+    assert w.dtype == v.dtype
+    assert w.nvals == 0
+    assert w.size == v.size
+    x = v.dup(dtypes.INT8, clear=True)
+    assert x.dtype == dtypes.INT8
+    assert x.nvals == 0
+    assert x.size == v.size
+
+
 def test_from_values():
     u = Vector.from_values([0, 1, 3], [True, False, True])
     assert u.size == 4
@@ -1272,19 +1283,23 @@ def test_import_export_auto(v, do_iso, methods):
                 d = v2.ss.unpack(format, sort=sort, raw=raw)
             if in_method == "import":
                 import_func = getattr(Vector.ss, f"import_{import_name}")
+
+                def import_func(x, import_name, **kwargs):
+                    return getattr(Vector.ss, f"import_{import_name}")(**kwargs)
+
             else:
 
-                def import_func(**kwargs):
-                    getattr(v2.ss, f"pack_{import_name}")(**kwargs)
-                    return v2
+                def import_func(x, import_name, **kwargs):
+                    getattr(x.ss, f"pack_{import_name}")(**kwargs)
+                    return x
 
             d["format"] = import_format
-            other = import_func(take_ownership=take_ownership, **d)
+            other = import_func(v2, import_name, take_ownership=take_ownership, **d)
             assert other.isequal(v_orig)
             assert other.ss.is_iso is do_iso
             d["format"] = "bad_format"
             with pytest.raises(ValueError, match="Invalid format"):
-                import_func(**d)
+                import_func(v2, import_name, **d)
     assert v.isequal(v_orig)
     assert v.ss.is_iso is do_iso
     assert v_orig.ss.is_iso is do_iso
@@ -1307,20 +1322,23 @@ def test_import_export_auto(v, do_iso, methods):
         else:
             d = w2.ss.unpack(format, raw=raw)
         if in_method == "import":
-            import_func = getattr(Vector.ss, f"import_{import_name}")
+
+            def import_func(x, import_name, **kwargs):
+                return getattr(Vector.ss, f"import_{import_name}")(**kwargs)
+
         else:
 
-            def import_func(**kwargs):
-                getattr(w2.ss, f"pack_{import_name}")(**kwargs)
-                return w2
+            def import_func(x, import_name, **kwargs):
+                getattr(x.ss, f"pack_{import_name}")(**kwargs)
+                return x
 
         d["format"] = import_format
-        other = import_func(take_ownership=take_ownership, **d)
+        other = import_func(w2, import_name, take_ownership=take_ownership, **d)
         assert other.isequal(w_orig)
         assert other.ss.is_iso is do_iso
         d["format"] = "bad_format"
         with pytest.raises(ValueError, match="Invalid format"):
-            import_func(**d)
+            import_func(w2, import_name, **d)
     assert w.isequal(w_orig)
     assert w.ss.is_iso is do_iso
     assert w_orig.ss.is_iso is do_iso
@@ -1967,12 +1985,10 @@ def test_udt():
     v.clear()
     v[[0, 1]] = [(2, 3), (4, 5)]
     expected = Vector.from_values([0, 1], [(2, 3), (4, 5)], dtype=udt, size=v.size)
-    vv = Vector.ss.deserialize(v.ss.serialize(), unsafe=True)
+    vv = Vector.ss.deserialize(v.ss.serialize())
     assert v.isequal(vv, check_dtype=True)
     vv = Vector.ss.deserialize(v.ss.serialize(), dtype=v.dtype)
     assert v.isequal(vv, check_dtype=True)
-    with pytest.raises(ValueError):
-        Vector.ss.deserialize(v.ss.serialize())
 
     # arrays as dtypes!
     np_dtype = np.dtype("(3,)uint16")
@@ -2022,7 +2038,7 @@ def test_udt():
     v[[0, 1]] = [[2, 3, 4], [5, 6, 7]]
     expected = Vector.from_values([0, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt2, size=v.size)
     assert v.isequal(expected)
-    vv = Vector.ss.deserialize(v.ss.serialize(), unsafe=True)
+    vv = Vector.ss.deserialize(v.ss.serialize())
     assert v.isequal(vv, check_dtype=True)
 
     long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=True)
@@ -2035,7 +2051,7 @@ def test_udt():
     assert v.isequal(vv, check_dtype=True)
     with pytest.raises(Exception):
         # The size of the UDT name is limited
-        Vector.ss.deserialize(v.ss.serialize(), unsafe=True)
+        Vector.ss.deserialize(v.ss.serialize())
     # May be able to look up non-anonymous dtypes by name if their names are too long
     named_long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=False)
     with pytest.warns(UserWarning, match="too large"):
@@ -2223,6 +2239,27 @@ def test_to_values_sort():
     assert_array_equal(values, expected)
 
 
+def test_to_values_subset(v):
+    indices, values = v.to_values()
+    for do_indices, do_vals in itertools.product([True, False], [True, False]):
+        idx, vals = v.to_values(indices=do_indices, values=do_vals)
+        if do_indices:
+            assert_array_equal(idx, indices)
+        else:
+            assert idx is None
+        if do_vals:
+            assert_array_equal(vals, values)
+            assert vals.dtype == np.int64
+        else:
+            assert vals is None
+    idx, vals = v.to_values(indices=None, values=True, dtype=float)
+    assert idx is None
+    assert_array_equal(vals, values)
+    assert vals.dtype == float
+    idx, vals = v.to_values(values=True, dtype=v.dtype, sort=False)
+    assert vals.dtype == np.int64
+
+
 def test_lambda_udfs(v):
     result = v.apply(lambda x: x + 1).new()  # pragma: no branch
     expected = binary.plus(v, 1).new()
@@ -2252,9 +2289,9 @@ def test_get(v):
 
 def test_ss_serialize(v):
     for compression, level, nthreads in itertools.product(
-        [None, "none", "default", "lz4", "lz4hc"], [None, 1, 5, 9], [None, -1, 1, 10]
+        [None, "none", "default", "lz4", "lz4hc", "zstd"], [None, 1, 5, 9], [None, -1, 1, 10]
     ):
-        if level is not None and compression != "lz4hc":
+        if level is not None and compression not in {"lz4hc", "zstd"}:
             with pytest.raises(TypeError, match="level argument"):
                 v.ss.serialize(compression, level, nthreads=nthreads)
             continue
@@ -2270,5 +2307,26 @@ def test_ss_serialize(v):
         v.ss.serialize("lz4hc", -1)
     with pytest.raises(ValueError, match="level argument"):
         v.ss.serialize("lz4hc", 0)
+    with pytest.raises(ValueError, match="level argument"):
+        v.ss.serialize("zstd", 0)
     with pytest.raises(InvalidObject):
         Vector.ss.deserialize(a[:-5])
+
+
+def test_ss_config(v):
+    d = {}
+    for key in v.ss.config:
+        d[key] = v.ss.config[key]
+    assert v.ss.config == d
+    for key, val in d.items():
+        if key in v.ss.config._read_only:
+            with pytest.raises(ValueError):
+                v.ss.config[key] = val
+        else:
+            v.ss.config[key] = val
+    assert v.ss.config == d
+    v.ss.config["sparsity_control"] = "sparse"
+    assert v.ss.config["sparsity_control"] == {"sparse"}
+    assert v.ss.config["sparsity_status"] == "sparse"
+    v.ss.config["sparsity_control"] = {"sparse", "bitmap"}
+    assert v.ss.config["sparsity_control"] == {"sparse", "bitmap"}

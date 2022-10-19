@@ -42,7 +42,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
       - name: Setup conda
@@ -62,11 +62,11 @@ jobs:
           black . --check --diff
       - name: Build extension module
         run: |
-          conda install -c conda-forge pandas numba scipy networkx cffi donfig pyyaml
+          conda install -c conda-forge pandas numba scipy networkx cffi donfig pyyaml awkward
           if [[ ${{ matrix.cfg.sourcetype }} == "wheel" ]]; then
               pip install suitesparse-graphblas
           else
-              conda install -c conda-forge "graphblas>=7.1.0"
+              conda install -c conda-forge "graphblas>=7.2.0"
           fi
           if [[ ${{ matrix.cfg.sourcetype }} == "source" ]]; then
               pip install --no-binary=all suitesparse-graphblas

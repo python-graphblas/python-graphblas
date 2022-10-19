@@ -27,7 +27,7 @@ table.gb-info-table {
 }
 
 td.gb-info-name-cell {
-    line-height: 100%;
+    white-space: nowrap;
 }
 
 details.gb-arg-details {
@@ -85,6 +85,34 @@ table.dataframe {
     margin-bottom: 0px;
     padding-top: 0px;
     padding-bottom: 0px;
+}
+
+/* expression tooltips */
+.expr-tooltip .tooltip-circle {
+    background: #9a9cc6;
+    color: #fff;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    padding-left: 4px;
+    padding-right: 4px;
+}
+.expr-tooltip .tooltip-text {
+    visibility: hidden;
+    position: absolute;
+    width: 450px;
+    background: #eef;
+    border: 1px solid #99a;
+    text-align: left;
+    border-radius: 6px;
+    padding: 3px 3px 3px 8px;
+    margin-left: 6px;
+}
+.expr-tooltip:hover .tooltip-text {
+    visibility: visible;
+}
+.expr-tooltip code {
+    background-color: #f8ffed;
 }
 </style>
 """
@@ -376,8 +404,28 @@ def matrix_header_html(matrix, *, mask=None):
     return create_header_html(name, keys, vals)
 
 
+def matrix_expression_header_html(matrix, expr):
+    _, keys, vals = matrix_info(matrix, for_html=True)
+    name = expr._format_expr_html()
+    # Drop format (the last entry)
+    assert keys[-1] == "format"
+    keys = keys[:-1]
+    vals = vals[:-1]
+    return create_header_html(name, keys, vals)
+
+
 def vector_header_html(vector, *, mask=None):
     name, keys, vals = vector_info(vector, mask=mask, for_html=True)
+    return create_header_html(name, keys, vals)
+
+
+def vector_expression_header_html(matrix, expr):
+    _, keys, vals = vector_info(matrix, for_html=True)
+    name = expr._format_expr_html()
+    # Drop format (the last entry)
+    assert keys[-1] == "format"
+    keys = keys[:-1]
+    vals = vals[:-1]
     return create_header_html(name, keys, vals)
 
 
@@ -403,32 +451,50 @@ def _format_html(name, header, df, collapse):
 
 
 def format_matrix_html(
-    matrix, *, max_rows=None, min_rows=None, max_columns=None, mask=None, collapse=False
+    matrix,
+    *,
+    max_rows=None,
+    min_rows=None,
+    max_columns=None,
+    mask=None,
+    collapse=False,
+    expr=None,
 ):
-    header = matrix_header_html(matrix, mask=mask)
-    df = _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, mask=mask)
-    if mask is None:
-        name = matrix._name_html
+    if expr is not None:
+        header = matrix_expression_header_html(matrix, expr)
+        name = "__EXPR__"
     else:
-        name = mask._name_html
+        header = matrix_header_html(matrix, mask=mask)
+        name = (matrix if mask is None else mask)._name_html
+    df = _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, mask=mask)
     return _format_html(name, header, df, collapse)
 
 
 def format_vector_html(
-    vector, *, max_rows=None, min_rows=None, max_columns=None, mask=None, collapse=False
+    vector,
+    *,
+    max_rows=None,
+    min_rows=None,
+    max_columns=None,
+    mask=None,
+    collapse=False,
+    expr=None,
 ):
-    header = vector_header_html(vector, mask=mask)
-    df = _get_vector_dataframe(vector, max_rows, min_rows, max_columns, mask=mask)
-    if mask is None:
-        name = vector._name_html
+    if expr is not None:
+        header = vector_expression_header_html(vector, expr)
+        name = "__EXPR__"
     else:
-        name = mask._name_html
+        header = vector_header_html(vector, mask=mask)
+        name = (vector if mask is None else mask)._name_html
+    df = _get_vector_dataframe(vector, max_rows, min_rows, max_columns, mask=mask)
     return _format_html(name, header, df, collapse)
 
 
-def format_scalar_html(scalar):
-    header = create_header_html("gb.Scalar", ["value", "dtype"], [scalar.value, scalar.dtype])
-    return f'<div class="gb-scalar"><tt>{scalar._name_html}</tt>{header}</div>'
+def format_scalar_html(scalar, expr=None):
+    top_name = scalar._name_html if expr is None else "__EXPR__"
+    box_name = "gb.Scalar" if expr is None else expr._format_expr_html()
+    header = create_header_html(box_name, ["value", "dtype"], [scalar.value, scalar.dtype])
+    return f'{CSS_STYLE}<div class="gb-scalar"><tt>{top_name}</tt>{header}</div>'
 
 
 def format_scalar(scalar):
@@ -446,12 +512,12 @@ def get_expr_result(expr, html=False):
     except OutOfMemory:
         arg_string = "Result is too large to compute!"
         if html:
-            arg_string = f"<hr><b>{arg_string}</b>"
+            arg_string = f'<span style="color: red">{arg_string}</span>'
     else:
         name = val.name
         val.name = "Result"
         if html:
-            arg_string = f"<hr>{val._repr_html_()}"
+            arg_string = f"{val._repr_html_(expr=expr)}"
         else:
             arg_string = f"{val}"
         val.name = name
@@ -459,29 +525,31 @@ def get_expr_result(expr, html=False):
 
 
 def _format_expression(expr, header):
-    pos_to_arg = {}
-    for i, arg in enumerate(expr.args):
-        pos = expr.expr_repr.find("{%s" % i)  # -1 if not found
-        if pos >= 0:  # pragma: no branch
-            pos_to_arg[pos] = arg
-    args = [pos_to_arg[pos] for pos in sorted(pos_to_arg)]
-    arg_string = "".join(x._repr_html_(collapse=True) for x in args if hasattr(x, "_repr_html_"))
+    topline = (
+        f"<tt><b>gb.{type(expr).__name__}</b></tt>"
+        '&nbsp;<span class="expr-tooltip">'
+        '<span class="tooltip-circle">?</span>'
+        f'<span class="tooltip-text"><em>'
+        "Do <code>expr.new()</code> or <code>other << expr</code> to calculate the expression."
+        "</em></span></span>"
+    )
+
+    computed = ""
     if config.get("autocompute"):
-        arg_string += get_expr_result(expr, html=True)
+        computed = get_expr_result(expr, html=True)
+        if "__EXPR__" in computed:
+            return computed.replace("<tt>__EXPR__</tt>", topline)
+
     return (
         "<div>"
+        f"{CSS_STYLE}"
         '<details class="gb-expr-details">'
         '<summary class="gb-expr-summary">'
-        f"<b><tt>gb.{type(expr).__name__}:</tt></b>"
+        f"{topline}"
         f"{header}"
         "</summary>"
-        '<blockquote class="gb-expr-blockquote">'
-        f"{arg_string}"
-        "</blockquote>"
+        f"{computed}"
         "</details>"
-        "<em>"
-        "Do <code>expr.new()</code> or <code>other << expr</code> to calculate the expression."
-        "</em>"
         "</div>"
     )
 
@@ -630,29 +698,37 @@ def format_vector(vector, *, max_rows=None, min_rows=None, max_columns=None, mas
 
 
 def _format_infix_expression(expr, header, expr_name):
-    arg_string = f"{expr.left._repr_html_(collapse=True)}{expr.right._repr_html_(collapse=True)}"
+    topline = (
+        f"<tt><b>gb.{type(expr).__name__}</b></tt>"
+        '&nbsp;<span class="expr-tooltip">'
+        '<span class="tooltip-circle">?</span>'
+        f'<span class="tooltip-text"><em>'
+        f"Do <code>op(expr)</code> to create a <tt>{expr.output_type.__name__}</tt>"
+        f" for <tt>{expr.method_name}</tt>."
+        f"<br>For example: <code>{expr._example_op}({expr_name})</code>"
+        "</em></span></span>"
+    )
+
+    computed = ""
     if config.get("autocompute") and (
         expr.method_name not in {"ewise_add", "ewise_mult"}
         or expr.left.dtype == BOOL
         and expr.right.dtype == BOOL
     ):
-        arg_string += get_expr_result(expr, html=True)
+        computed = get_expr_result(expr, html=True)
+        if "__EXPR__" in computed:
+            return computed.replace("<tt>__EXPR__</tt>", topline)
+
     return (
         "<div>"
+        f"{CSS_STYLE}"
         '<details class="gb-expr-details">'
         '<summary class="gb-expr-summary">'
-        f"<b><tt>gb.{type(expr).__name__}:</tt></b>"
+        f"{topline}"
         f"{header}"
         "</summary>"
-        '<blockquote class="gb-expr-blockquote">'
-        f"{arg_string}"
-        "</blockquote>"
+        f"{computed}"
         "</details>"
-        "<em>"
-        f"Do <code>op(expr)</code> to create a <tt>{expr.output_type.__name__}</tt> "
-        f"for <tt>{expr.method_name}</tt>."
-        f"<br>For example: <code>{expr._example_op}({expr_name})</code>"
-        "</em>"
         "</div>"
     )
 
@@ -758,8 +834,7 @@ def format_matrix_infix_expression_html(expr):
 
 def format_index_expression(expr):
     name = f"gb.{type(expr).__name__}"
-    indices = ", ".join(index._expr_name for index in expr.resolved_indexes.indices)
-    expr_repr = f"{expr.parent.name}[{indices}]"
+    expr_repr = expr._format_expr()
     keys = []
     values = []
     if expr.output_type is Vector:
@@ -789,8 +864,26 @@ def format_index_expression(expr):
 
 
 def format_index_expression_html(expr):
-    indices = ", ".join(index._expr_name for index in expr.resolved_indexes.indices)
-    expr_repr = f"{expr.parent._name_html}[{indices}]"
+    expr_repr = expr._format_expr()
+    c = expr.output_type.__name__[0]
+    c = "M" if c == "M" else c.lower()
+    topline = (
+        f"<tt><b>gb.{type(expr).__name__}</b></tt>"
+        '&nbsp;<span class="expr-tooltip">'
+        '<span class="tooltip-circle">?</span>'
+        f'<span class="tooltip-text"><em>'
+        f"This expression may be used to extract or assign a <tt>{expr.output_type.__name__}</tt>."
+        f"<br>Example extract: <code>{expr_repr}.new()</code>"
+        f"<br>Example assign: <code>{expr_repr} << {'M' if c == 'M' else c.lower()}</code>"
+        "</em></span></span>"
+    )
+
+    computed = ""
+    if config.get("autocompute"):
+        computed = get_expr_result(expr, html=True)
+        if "__EXPR__" in computed:
+            return computed.replace("<tt>__EXPR__</tt>", topline)
+
     keys = []
     values = []
     if expr.output_type is Vector:
@@ -806,26 +899,15 @@ def format_index_expression_html(expr):
         keys,
         values,
     )
-    arg_string = expr.parent._repr_html_(collapse=True)
-    if config.get("autocompute"):
-        arg_string += get_expr_result(expr, html=True)
-    c = expr.output_type.__name__[0]
-    c = "M" if c == "M" else c.lower()
     return (
         "<div>"
+        f"{CSS_STYLE}"
         '<details class="gb-expr-details">'
         '<summary class="gb-expr-summary">'
-        f"<b><tt>gb.{type(expr).__name__}:</tt></b>"
+        f"{topline}"
         f"{header}"
         "</summary>"
-        '<blockquote class="gb-expr-blockquote">'
-        f"{arg_string}"
-        "</blockquote>"
+        f"{computed}"
         "</details>"
-        "<em>"
-        f"This expression may be used to extract or assign a <tt>{expr.output_type.__name__}</tt>."
-        f"<br>Example extract: <code>{expr_repr}.new()</code>"
-        f"<br>Example assign: <code>{expr_repr} << {'M' if c == 'M' else c.lower()}</code>"
-        "</em>"
         "</div>"
     )
