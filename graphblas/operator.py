@@ -527,8 +527,7 @@ class ParameterizedUnaryOp(ParameterizedUdf):
     def _deserialize(name, func, anonymous):
         if anonymous:
             return UnaryOp.register_anonymous(func, name, parameterized=True)
-        rv = UnaryOp._find(name)
-        if rv is not None:
+        if (rv := UnaryOp._find(name)) is not None:
             return rv
         return UnaryOp.register_new(name, func, parameterized=True)
 
@@ -559,8 +558,7 @@ class ParameterizedIndexUnaryOp(ParameterizedUdf):
     def _deserialize(name, func, anonymous):
         if anonymous:
             return IndexUnaryOp.register_anonymous(func, name, parameterized=True)
-        rv = IndexUnaryOp._find(name)
-        if rv is not None:
+        if (rv := IndexUnaryOp._find(name)) is not None:
             return rv
         return IndexUnaryOp.register_new(name, func, parameterized=True)
 
@@ -591,8 +589,7 @@ class ParameterizedSelectOp(ParameterizedUdf):
     def _deserialize(name, func, anonymous):
         if anonymous:
             return SelectOp.register_anonymous(func, name, parameterized=True)
-        rv = SelectOp._find(name)
-        if rv is not None:
+        if (rv := SelectOp._find(name)) is not None:
             return rv
         return SelectOp.register_new(name, func, parameterized=True)
 
@@ -658,8 +655,7 @@ class ParameterizedBinaryOp(ParameterizedUdf):
     def _deserialize(name, func, anonymous):
         if anonymous:
             return BinaryOp.register_anonymous(func, name, parameterized=True)
-        rv = BinaryOp._find(name)
-        if rv is not None:
+        if (rv := BinaryOp._find(name)) is not None:
             return rv
         return BinaryOp.register_new(name, func, parameterized=True)
 
@@ -711,8 +707,7 @@ class ParameterizedMonoid(ParameterizedUdf):
     def _deserialize(name, binaryop, identity, anonymous):
         if anonymous:
             return Monoid.register_anonymous(binaryop, identity, name)
-        rv = Monoid._find(name)
-        if rv is not None:
+        if (rv := Monoid._find(name)) is not None:
             return rv
         return Monoid.register_new(name, binaryop, identity)
 
@@ -768,8 +763,7 @@ class ParameterizedSemiring(ParameterizedUdf):
     def _deserialize(name, monoid, binaryop, anonymous):
         if anonymous:
             return Semiring.register_anonymous(monoid, binaryop, name)
-        rv = Semiring._find(name)
-        if rv is not None:
+        if (rv := Semiring._find(name)) is not None:
             return rv
         return Semiring.register_new(name, monoid, binaryop)
 
@@ -952,8 +946,7 @@ class OpBase:
 
     @classmethod
     def _deserialize(cls, name, *args):
-        rv = cls._find(name)
-        if rv is not None:
+        if (rv := cls._find(name)) is not None:
             return rv  # Should we verify this is what the user expects?
         return cls.register_new(name, *args)
 
@@ -1239,8 +1232,7 @@ class UnaryOp(OpBase):
             if hasattr(self.orig_func, "_parameterized_info"):
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
             return (self.register_anonymous, (self.orig_func, self.name))
-        name = f"unary.{self.name}"
-        if name in _STANDARD_OPERATOR_NAMES:
+        if (name := f"unary.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
         return (self._deserialize, (self.name, self.orig_func))
 
@@ -1522,8 +1514,7 @@ class IndexUnaryOp(OpBase):
             if hasattr(self.orig_func, "_parameterized_info"):
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
             return (self.register_anonymous, (self.orig_func, self.name))
-        name = f"indexunary.{self.name}"
-        if name in _STANDARD_OPERATOR_NAMES:
+        if (name := f"indexunary.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
         return (self._deserialize, (self.name, self.orig_func))
 
@@ -1646,8 +1637,7 @@ class SelectOp(OpBase):
             if hasattr(self.orig_func, "_parameterized_info"):
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
             return (self.register_anonymous, (self.orig_func, self.name))
-        name = f"select.{self.name}"
-        if name in _STANDARD_OPERATOR_NAMES:
+        if (name := f"select.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
         return (self._deserialize, (self.name, self.orig_func))
 
@@ -2357,8 +2347,7 @@ class BinaryOp(OpBase):
             if hasattr(self.orig_func, "_parameterized_info"):
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
             return (self.register_anonymous, (self.orig_func, self.name))
-        name = f"binary.{self.name}"
-        if name in _STANDARD_OPERATOR_NAMES:
+        if (name := f"binary.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
         return (self._deserialize, (self.name, self.orig_func))
 
@@ -2543,8 +2532,7 @@ class Monoid(OpBase):
     def __reduce__(self):
         if self._anonymous:
             return (self.register_anonymous, (self._binaryop, self._identity, self.name))
-        name = f"monoid.{self.name}"
-        if name in _STANDARD_OPERATOR_NAMES:
+        if (name := f"monoid.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
         return (self._deserialize, (self.name, self._binaryop, self._identity))
 
@@ -2963,8 +2951,7 @@ class Semiring(OpBase):
     def __reduce__(self):
         if self._anonymous:
             return (self.register_anonymous, (self._monoid, self._binaryop, self.name))
-        name = f"semiring.{self.name}"
-        if name in _STANDARD_OPERATOR_NAMES:
+        if (name := f"semiring.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
         return (self._deserialize, (self.name, self._monoid, self._binaryop))
 
