@@ -726,10 +726,82 @@ class Matrix(BaseType):
 
     @classmethod
     def from_csr(cls, indptr, col_indices, values, dtype=None, *, ncols=None, name=None):
+        """Create a new Matrix from standard CSR representation of data.
+
+        In CSR, the column indices for row i are stored in ``col_indices[indptr[i]:indptr[i+1]]``
+        and the values are stored in ``values[indptr[i]:indptr[i+1]]``. The number of rows is
+        inferred as ``nrows = len(indptr) - 1``.
+
+        This always copies data. For zero-copy import with move semantics, see Matrix.ss.import_csr
+
+        Parameters
+        ----------
+        indptr : list or np.ndarray
+            Pointers for each row into col_indices and values; `indptr.size == nrows + 1`.
+        col_indices : list or np.ndarray
+            Column indices.
+        values : list or np.ndarray or scalar
+            List of values. If a scalar is provided, all values will be set to this single value.
+        dtype :
+            Data type of the Matrix. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        ncols : int, optional
+            Number of columns in the Matrix. If not provided, ``ncols`` is computed
+            from the maximum column index found in ``col_indices``.
+        name : str, optional
+            Name to give the Matrix.
+
+        Returns
+        -------
+        Matrix
+
+        See Also
+        --------
+        from_csc
+        from_values
+        Matrix.ss.import_csr
+        io.from_scipy_sparse
+        """
         return cls._from_csx(_CSR_FORMAT, indptr, col_indices, values, dtype, ncols, name)
 
     @classmethod
     def from_csc(cls, indptr, row_indices, values, dtype=None, *, nrows=None, name=None):
+        """Create a new Matrix from standard CSC representation of data.
+
+        In CSC, the row indices for column i are stored in ``row_indices[indptr[i]:indptr[i+1]]``
+        and the values are stored in ``values[indptr[i]:indptr[i+1]]``. The number of columns is
+        inferred as ``ncols = len(indptr) - 1``.
+
+        This always copies data. For zero-copy import with move semantics, see Matrix.ss.import_csc
+
+        Parameters
+        ----------
+        indptr : list or np.ndarray
+            Pointers for each column into row_indices and values; `indptr.size == ncols + 1`.
+        col_indices : list or np.ndarray
+            Column indices.
+        values : list or np.ndarray or scalar
+            List of values. If a scalar is provided, all values will be set to this single value.
+        dtype :
+            Data type of the Matrix. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        nrows : int, optional
+            Number of rows in the Matrix. If not provided, ``ncols`` is computed
+            from the maximum row index found in ``row_indices``.
+        name : str, optional
+            Name to give the Matrix.
+
+        Returns
+        -------
+        Matrix
+
+        See Also
+        --------
+        from_csr
+        from_values
+        Matrix.ss.import_csc
+        io.from_scipy_sparse
+        """
         return cls._from_csx(_CSC_FORMAT, indptr, row_indices, values, dtype, nrows, name)
 
     def _to_csx(self, fmt, dtype=None):
@@ -767,9 +839,51 @@ class Matrix(BaseType):
         return Ap, Ai, Ax
 
     def to_csr(self, dtype=None):
+        """Returns three arrays of the standard CSR representation: indptr, col_indices, values
+
+        In CSR, the column indices for row i are stored in ``col_indices[indptr[i]:indptr[i+1]]``
+        and the values are stored in ``values[indptr[i]:indptr[i+1]]``.
+
+        This copies data and leaves the Matrix unmodified. For zero-copy move semantics,
+        see Matrix.ss.export.
+
+        Returns
+        -------
+        np.ndarray[dtype=uint64] : indptr
+        np.ndarray[dtype=uint64] : col_indices
+        np.ndarray : values
+
+        See Also
+        --------
+        to_csc
+        to_values
+        Matrix.ss.export
+        io.to_scipy_sparse
+        """
         return self._to_csx(_CSR_FORMAT, dtype)
 
     def to_csc(self, dtype=None):
+        """Returns three arrays of the standard CSC representation: indptr, row_indices, values
+
+        In CSC, the row indices for column i are stored in ``row_indices[indptr[i]:indptr[i+1]]``
+        and the values are stored in ``values[indptr[i]:indptr[i+1]]``.
+
+        This copies data and leaves the Matrix unmodified. For zero-copy move semantics,
+        see Matrix.ss.export.
+
+        Returns
+        -------
+        np.ndarray[dtype=uint64] : indptr
+        np.ndarray[dtype=uint64] : row_indices
+        np.ndarray : values
+
+        See Also
+        --------
+        to_csr
+        to_values
+        Matrix.ss.export
+        io.to_scipy_sparse
+        """
         return self._to_csx(_CSC_FORMAT, dtype)
 
     from_coo = from_values  # Alias
