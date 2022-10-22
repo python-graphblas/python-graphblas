@@ -3430,7 +3430,7 @@ def test_udt():
         [0, 0], [0, 1], np.array([(0, 0), (1, 2)], dtype=record_dtype), nrows=2, ncols=2, dtype=udt
     )
     assert A.isequal(expected)
-    A[:, :] = 0
+    A << 0
     zeros = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], 0, dtype=udt)
     assert A.isequal(zeros)
     A(A.S)[:, :] = 1

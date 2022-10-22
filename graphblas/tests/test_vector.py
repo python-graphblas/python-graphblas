@@ -1990,6 +1990,12 @@ def test_udt():
     v[:] = 1
     w[:] = np.array([1, 1, 1], dtype=np.uint8)
     assert v.isequal(w)
+    v[:] = 0
+    v << 1
+    assert v.isequal(w)
+    v[:] = 0
+    v << (1, 1, 1)
+    assert v.isequal(w)
 
     indices, values = v.to_values()
     assert_array_equal(values, np.ones((2, 3), dtype=np.uint16))

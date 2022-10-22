@@ -394,8 +394,9 @@ class BaseType:
                     if type(expr) is Scalar:
                         scalar = expr
                     else:
+                        dtype = self.dtype if self.dtype._is_udt else None
                         try:
-                            scalar = Scalar.from_value(expr, is_cscalar=None, name="")
+                            scalar = Scalar.from_value(expr, dtype, is_cscalar=None, name="")
                         except TypeError:
                             raise TypeError(
                                 "Assignment value must be a valid expression type, not "
