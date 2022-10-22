@@ -91,6 +91,12 @@ def register_anonymous(dtype, name=None):
         if isinstance(dtype, dict):
             # Allow dtypes such as `{'x': int, 'y': float}` for convenience
             dtype = _np.dtype([(key, lookup_dtype(val).np_type) for key, val in dtype.items()])
+        elif isinstance(dtype, str) and "[" in dtype and dtype.endswith("]"):
+            # Allow dtypes such as `"INT64[3, 4]"` for convenience
+            base_dtype, shape = dtype.split("[", 1)
+            base_dtype = lookup_dtype(base_dtype)
+            shape = _np.lib.format.safe_eval(f"[{shape}")
+            dtype = _np.dtype((base_dtype.np_type, shape))
         else:
             raise
     if dtype in _registry:

@@ -1972,6 +1972,8 @@ def test_udt():
     # arrays as dtypes!
     np_dtype = np.dtype("(3,)uint16")
     udt2 = dtypes.register_anonymous(np_dtype, "has_subdtype")
+    udt2alt = dtypes.register_anonymous("UINT16[3]")
+    assert udt2 == udt2alt
     s = Scalar(udt2)
     s.value = [0, 0, 0]
 
