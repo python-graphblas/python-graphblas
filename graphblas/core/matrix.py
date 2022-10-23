@@ -123,12 +123,12 @@ class Matrix(BaseType):
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Matrix_free(gb_obj), self)
 
-    def __repr__(self, mask=None):
+    def __repr__(self, mask=None, expr=None):
         from .formatting import format_matrix
         from .recorder import skip_record
 
         with skip_record:
-            return format_matrix(self, mask=mask)
+            return format_matrix(self, mask=mask, expr=expr)
 
     def _repr_html_(self, mask=None, collapse=False, expr=None):
         if self._parent is not None:

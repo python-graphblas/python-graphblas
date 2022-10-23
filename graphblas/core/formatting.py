@@ -355,7 +355,7 @@ def get_format(x, is_transposed=False):
     return fmt
 
 
-def matrix_info(matrix, *, mask=None, for_html=True):
+def matrix_info(matrix, *, mask=None, expr=None, for_html=True):
     if mask is not None:
         if for_html:
             name = f"{type(mask).__name__}\nof\ngb.{type(matrix).__name__}"
@@ -363,16 +363,18 @@ def matrix_info(matrix, *, mask=None, for_html=True):
             name = [f"{type(mask).__name__}", f"of gb.{type(matrix).__name__}"]
     else:
         name = f"gb.{type(matrix).__name__}"
-    keys = ["nvals", "nrows", "ncols", "dtype", "format"]
+    keys = ["nvals", "nrows", "ncols", "dtype"]
     vals = [matrix._nvals, matrix._nrows, matrix._ncols, matrix.dtype.name]
-    if type(matrix) is Matrix:
-        vals.append(get_format(matrix))
-    else:  # TransposedMatrix
-        vals.append(get_format(matrix._matrix, is_transposed=True))
+    if expr is None:
+        keys.append("format")
+        if type(matrix) is Matrix:
+            vals.append(get_format(matrix))
+        else:  # TransposedMatrix
+            vals.append(get_format(matrix._matrix, is_transposed=True))
     return name, keys, vals
 
 
-def vector_info(vector, *, mask=None, for_html=True):
+def vector_info(vector, *, mask=None, expr=None, for_html=True):
     if mask is not None:
         if for_html:
             name = f"{type(mask).__name__}\nof\ngb.{type(vector).__name__}"
@@ -381,8 +383,11 @@ def vector_info(vector, *, mask=None, for_html=True):
     else:
         name = f"gb.{type(vector).__name__}"
     # SS, SuiteSparse-specific: format
-    keys = ["nvals", "size", "dtype", "format"]
-    vals = [vector._nvals, vector._size, vector.dtype.name, get_format(vector)]
+    keys = ["nvals", "size", "dtype"]
+    vals = [vector._nvals, vector._size, vector.dtype.name]
+    if expr is None:
+        keys.append("format")
+        vals.append(get_format(vector))
     return name, keys, vals
 
 
@@ -405,12 +410,8 @@ def matrix_header_html(matrix, *, mask=None):
 
 
 def matrix_expression_header_html(matrix, expr):
-    _, keys, vals = matrix_info(matrix, for_html=True)
+    _, keys, vals = matrix_info(matrix, expr=expr, for_html=True)
     name = expr._format_expr_html()
-    # Drop format (the last entry)
-    assert keys[-1] == "format"
-    keys = keys[:-1]
-    vals = vals[:-1]
     return create_header_html(name, keys, vals)
 
 
@@ -420,12 +421,8 @@ def vector_header_html(vector, *, mask=None):
 
 
 def vector_expression_header_html(matrix, expr):
-    _, keys, vals = vector_info(matrix, for_html=True)
+    _, keys, vals = vector_info(matrix, expr=expr, for_html=True)
     name = expr._format_expr_html()
-    # Drop format (the last entry)
-    assert keys[-1] == "format"
-    keys = keys[:-1]
-    vals = vals[:-1]
     return create_header_html(name, keys, vals)
 
 
@@ -497,7 +494,7 @@ def format_scalar_html(scalar, expr=None):
     return f'{CSS_STYLE}<div class="gb-scalar"><tt>{top_name}</tt>{header}</div>'
 
 
-def format_scalar(scalar):
+def format_scalar(scalar, expr=None):
     return create_header(
         "gb.Scalar",
         ["value", "dtype"],
@@ -519,7 +516,7 @@ def get_expr_result(expr, html=False):
         if html:
             arg_string = f"{val._repr_html_(expr=expr)}"
         else:
-            arg_string = f"{val}"
+            arg_string = val.__repr__(expr=expr)
         val.name = name
     return arg_string
 
@@ -654,8 +651,8 @@ def create_header(type_name, keys, vals, *, lower_border=False, name="", quote=T
     return "\n".join(lines)
 
 
-def format_matrix(matrix, *, max_rows=None, min_rows=None, max_columns=None, mask=None):
-    name, keys, vals = matrix_info(matrix, mask=mask, for_html=False)
+def format_matrix(matrix, *, max_rows=None, min_rows=None, max_columns=None, mask=None, expr=None):
+    name, keys, vals = matrix_info(matrix, mask=mask, expr=expr, for_html=False)
     header = create_header(
         name,
         keys,
@@ -674,8 +671,8 @@ def format_matrix(matrix, *, max_rows=None, min_rows=None, max_columns=None, mas
     return header
 
 
-def format_vector(vector, *, max_rows=None, min_rows=None, max_columns=None, mask=None):
-    name, keys, vals = vector_info(vector, mask=mask, for_html=False)
+def format_vector(vector, *, max_rows=None, min_rows=None, max_columns=None, mask=None, expr=None):
+    name, keys, vals = vector_info(vector, mask=mask, expr=expr, for_html=False)
     header = create_header(
         name,
         keys,

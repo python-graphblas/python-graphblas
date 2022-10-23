@@ -103,10 +103,10 @@ class Scalar(BaseType):
         """The name used in the text for expressions in HTML formatting"""
         return self._name_html or repr(self.value)
 
-    def __repr__(self):
+    def __repr__(self, expr=None):
         from .formatting import format_scalar
 
-        return format_scalar(self)
+        return format_scalar(self, expr=expr)
 
     def _repr_html_(self, collapse=False, expr=None):
         from .formatting import format_scalar_html

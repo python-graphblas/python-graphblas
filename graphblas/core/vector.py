@@ -138,12 +138,12 @@ class Vector(BaseType):
             name=f"(GrB_Matrix){self.name}",
         )
 
-    def __repr__(self, mask=None):
+    def __repr__(self, mask=None, expr=None):
         from .formatting import format_vector
         from .recorder import skip_record
 
         with skip_record:
-            return format_vector(self, mask=mask)
+            return format_vector(self, mask=mask, expr=expr)
 
     def _repr_html_(self, mask=None, collapse=False, expr=None):
         if self._parent is not None and mask is None:

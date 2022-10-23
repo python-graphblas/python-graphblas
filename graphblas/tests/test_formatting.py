@@ -4076,9 +4076,9 @@ def test_autocompute(A, B, v):
         "gb.MatrixExpression                        nrows  ncols  dtype\n"
         "A_1.ewise_add(A_1, op=monoid.plus[INT64])      1      5  INT64\n"
         "\n"
-        '"Result"   nvals  nrows  ncols  dtype   format\n'
-        "gb.Matrix      3      1      5  INT64  bitmapr\n"
-        "----------------------------------------------\n"
+        '"Result"   nvals  nrows  ncols  dtype\n'
+        "gb.Matrix      3      1      5  INT64\n"
+        "-------------------------------------\n"
         "   0 1  2 3  4\n"
         "0  0    2    4\n"
         "\n"
@@ -4094,9 +4094,9 @@ def test_autocompute(A, B, v):
         "gb.VectorExpression                                       size  dtype\n"
         "v_0.ewise_mult(v_1, op=binary.times[INT64])  36028797018963968  INT64\n"
         "\n"
-        '"Result"   nvals               size  dtype        format\n'
-        "gb.Vector      1  36028797018963968  INT64  sparse (iso)\n"
-        "--------------------------------------------------------\n"
+        '"Result"   nvals               size  dtype\n'
+        "gb.Vector      1  36028797018963968  INT64\n"
+        "------------------------------------------\n"
         "index 0                 1                  ... 36028797018963966 36028797018963967\n"
         "value                 2                    ...                                    \n"
         "\n"
@@ -4130,9 +4130,9 @@ def test_autocompute(A, B, v):
         "gb.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
         "M_2 & M_2                   1      5        BOOL         BOOL\n"
         "\n"
-        '"Result"   nvals  nrows  ncols  dtype   format\n'
-        "gb.Matrix      3      1      5   BOOL  bitmapr\n"
-        "----------------------------------------------\n"
+        '"Result"   nvals  nrows  ncols  dtype\n'
+        "gb.Matrix      3      1      5   BOOL\n"
+        "-------------------------------------\n"
         "       0 1     2 3     4\n"
         "0  False    True    True\n"
         "\n"
