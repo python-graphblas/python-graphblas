@@ -3415,6 +3415,9 @@ def test_iteration(A):
     assert len(list(A.ss.iterkeys(N + 2))) == 0
     assert len(list(A.ss.iterkeys(-N))) == N
     assert len(list(A.ss.itervalues(-N - 1))) == N
+    assert next(A.ss.iterkeys()) in A
+    assert next(A.ss.itervalues()) is not None
+    assert next(A.ss.iteritems()) is not None
 
 
 def test_udt():
