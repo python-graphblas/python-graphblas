@@ -526,7 +526,7 @@ def _format_expression(expr, header):
         f"<tt><b>gb.{type(expr).__name__}</b></tt>"
         '&nbsp;<span class="expr-tooltip">'
         '<span class="tooltip-circle">?</span>'
-        f'<span class="tooltip-text"><em>'
+        '<span class="tooltip-text"><em>'
         "Do <code>expr.new()</code> or <code>other << expr</code> to calculate the expression."
         "</em></span></span>"
     )
@@ -699,7 +699,7 @@ def _format_infix_expression(expr, header, expr_name):
         f"<tt><b>gb.{type(expr).__name__}</b></tt>"
         '&nbsp;<span class="expr-tooltip">'
         '<span class="tooltip-circle">?</span>'
-        f'<span class="tooltip-text"><em>'
+        '<span class="tooltip-text"><em>'
         f"Do <code>op(expr)</code> to create a <tt>{expr.output_type.__name__}</tt>"
         f" for <tt>{expr.method_name}</tt>."
         f"<br>For example: <code>{expr._example_op}({expr_name})</code>"
@@ -868,7 +868,7 @@ def format_index_expression_html(expr):
         f"<tt><b>gb.{type(expr).__name__}</b></tt>"
         '&nbsp;<span class="expr-tooltip">'
         '<span class="tooltip-circle">?</span>'
-        f'<span class="tooltip-text"><em>'
+        '<span class="tooltip-text"><em>'
         f"This expression may be used to extract or assign a <tt>{expr.output_type.__name__}</tt>."
         f"<br>Example extract: <code>{expr_repr}.new()</code>"
         f"<br>Example assign: <code>{expr_repr} << {'M' if c == 'M' else c.lower()}</code>"

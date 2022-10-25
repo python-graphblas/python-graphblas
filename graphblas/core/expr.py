@@ -221,9 +221,9 @@ class IndexerResolver:
             if typ is Vector or typ is Matrix:
                 raise TypeError(
                     f"Invalid type for index: {typ.__name__}.\n"
-                    f"If you want to apply a mask, perhaps do something like "
+                    "If you want to apply a mask, perhaps do something like "
                     f"`x.dup(mask={index.name}.S)`.\n"
-                    f"If you want to assign with a mask, perhaps do something like "
+                    "If you want to assign with a mask, perhaps do something like "
                     f"`x(mask={index.name}.S) << value`."
                 )
             elif typ is TransposedMatrix:
@@ -236,9 +236,9 @@ class IndexerResolver:
                 if isinstance(index, Mask):
                     raise TypeError(
                         f"Invalid type for index: {typ.__name__}.\n"
-                        f"If you want to apply a mask, perhaps do something like "
+                        "If you want to apply a mask, perhaps do something like "
                         f"`x.dup(mask={index.name})`.\n"
-                        f"If you want to assign with a mask, perhaps do something like "
+                        "If you want to assign with a mask, perhaps do something like "
                         f"`x(mask={index.name}) << value`."
                     ) from None
                 raise TypeError(
