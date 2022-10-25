@@ -466,7 +466,7 @@ class Matrix(BaseType):
         n = values.shape[0]
         if rows.size != n or columns.size != n:
             raise ValueError(
-                f"`rows` and `columns` and `values` lengths must match: "
+                "`rows` and `columns` and `values` lengths must match: "
                 f"{rows.size}, {columns.size}, {values.size}"
             )
         if clear:

@@ -664,7 +664,7 @@ class ParameterizedMonoid(ParameterizedUdf):
     is_commutative = True
 
     def __init__(self, name, binaryop, identity, *, anonymous=False):
-        if not type(binaryop) is ParameterizedBinaryOp:
+        if type(binaryop) is not ParameterizedBinaryOp:
             raise TypeError("binaryop must be parameterized")
         self.binaryop = binaryop
         self.__signature__ = binaryop.__signature__
@@ -673,10 +673,10 @@ class ParameterizedMonoid(ParameterizedUdf):
             sig = inspect.signature(identity)
             if sig != self.__signature__:
                 raise ValueError(
-                    f"Signatures of binaryop and identity passed to "
+                    "Signatures of binaryop and identity passed to "
                     f"{type(self).__name__} must be the same.  Got:\n"
                     f"    binaryop{self.__signature__}\n"
-                    f"    !=\n"
+                    "    !=\n"
                     f"    identity{sig}"
                 )
         self.identity = identity
@@ -721,10 +721,10 @@ class ParameterizedSemiring(ParameterizedUdf):
             self.__signature__ = binaryop.__signature__
             if type(monoid) is ParameterizedMonoid and monoid.__signature__ != self.__signature__:
                 raise ValueError(
-                    f"Signatures of monoid and binaryop passed to "
+                    "Signatures of monoid and binaryop passed to "
                     f"{type(self).__name__} must be the same.  Got:\n"
                     f"    monoid{monoid.__signature__}\n"
-                    f"    !=\n"
+                    "    !=\n"
                     f"    binaryop{self.__signature__}\n\n"
                     "Perhaps call monoid or binaryop with parameters before creating the semiring."
                 )

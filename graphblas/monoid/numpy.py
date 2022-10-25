@@ -83,11 +83,8 @@ if _supports_complex:
     )
     _monoid_identities["minimum"].update(dict.fromkeys(_complex_dtypes, complex(_np.inf, _np.inf)))
 
-if _config.get("mapnumpy") or not (
-    # To increase import speed, only call njit when `_config.get("mapnumpy")` is False
-    type(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2))
-    is float
-):
+# To increase import speed, only call njit when `_config.get("mapnumpy")` is False
+if _config.get("mapnumpy") or type(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2)) is not float:
     # See: https://github.com/numba/numba/issues/8478
     _monoid_identities["fmax"].update(
         {
