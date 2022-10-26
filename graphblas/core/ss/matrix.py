@@ -680,13 +680,18 @@ class ss:
         next_func = lib.GxB_Matrix_Iterator_next
         row_ptr = ffi_new("GrB_Index*")
         col_ptr = ffi_new("GrB_Index*")
-        while info == success:
-            key_func(it, row_ptr, col_ptr)
-            yield (row_ptr[0], col_ptr[0])
-            info = next_func(it)
-        lib.GxB_Iterator_free(it_ptr)
-        if info != lib.GxB_EXHAUSTED:  # pragma: no cover
-            raise _error_code_lookup[info]("Matrix iterator failed")
+        try:
+            while info == success:
+                key_func(it, row_ptr, col_ptr)
+                yield (row_ptr[0], col_ptr[0])
+                info = next_func(it)
+        except GeneratorExit:
+            pass
+        else:
+            if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+                raise _error_code_lookup[info]("Matrix iterator failed")
+        finally:
+            lib.GxB_Iterator_free(it_ptr)
 
     def itervalues(self, seek=0):
         """Iterate over all the values of a Matrix.
@@ -710,12 +715,17 @@ class ss:
         info = success = lib.GrB_SUCCESS
         val_func = getattr(lib, f"GxB_Iterator_get_{self._parent.dtype.name}")
         next_func = lib.GxB_Matrix_Iterator_next
-        while info == success:
-            yield val_func(it)
-            info = next_func(it)
-        lib.GxB_Iterator_free(it_ptr)
-        if info != lib.GxB_EXHAUSTED:  # pragma: no cover
-            raise _error_code_lookup[info]("Matrix iterator failed")
+        try:
+            while info == success:
+                yield val_func(it)
+                info = next_func(it)
+        except GeneratorExit:
+            pass
+        else:
+            if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+                raise _error_code_lookup[info]("Matrix iterator failed")
+        finally:
+            lib.GxB_Iterator_free(it_ptr)
 
     def iteritems(self, seek=0):
         """Iterate over all the row, column, and value triples of a Matrix.
@@ -742,13 +752,18 @@ class ss:
         next_func = lib.GxB_Matrix_Iterator_next
         row_ptr = ffi_new("GrB_Index*")
         col_ptr = ffi_new("GrB_Index*")
-        while info == success:
-            key_func(it, row_ptr, col_ptr)
-            yield (row_ptr[0], col_ptr[0], val_func(it))
-            info = next_func(it)
-        lib.GxB_Iterator_free(it_ptr)
-        if info != lib.GxB_EXHAUSTED:  # pragma: no cover
-            raise _error_code_lookup[info]("Matrix iterator failed")
+        try:
+            while info == success:
+                key_func(it, row_ptr, col_ptr)
+                yield (row_ptr[0], col_ptr[0], val_func(it))
+                info = next_func(it)
+        except GeneratorExit:
+            pass
+        else:
+            if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+                raise _error_code_lookup[info]("Matrix iterator failed")
+        finally:
+            lib.GxB_Iterator_free(it_ptr)
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
         """

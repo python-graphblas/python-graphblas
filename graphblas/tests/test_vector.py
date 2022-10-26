@@ -2101,6 +2101,9 @@ def test_iteration(v):
     assert len(list(v.ss.iterkeys(2))) == 2
     assert len(list(v.ss.itervalues(N))) == 0
     assert len(list(v.ss.iteritems(N + 1))) == 0
+    assert next(v.ss.iterkeys()) in v
+    assert next(v.ss.itervalues()) is not None
+    assert next(v.ss.iteritems()) is not None
 
 
 def test_broadcasting(A, v):
