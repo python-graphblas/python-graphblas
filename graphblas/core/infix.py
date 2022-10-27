@@ -190,6 +190,7 @@ class MatrixInfixExpr(InfixExprBase):
     __rand__ = wrapdoc(Matrix.__rand__)(property(automethods.__rand__))
     __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(automethods.__rmatmul__))
     __ror__ = wrapdoc(Matrix.__ror__)(property(automethods.__ror__))
+    _as_vector = wrapdoc(Matrix._as_vector)(property(automethods._as_vector))
     _carg = wrapdoc(Matrix._carg)(property(automethods._carg))
     _name_html = wrapdoc(Matrix._name_html)(property(automethods._name_html))
     _nvals = wrapdoc(Matrix._nvals)(property(automethods._nvals))

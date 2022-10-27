@@ -121,7 +121,7 @@ class Vector(BaseType):
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Vector_free(gb_obj), self)
 
-    def _as_matrix(self):
+    def _as_matrix(self, *, name=None):
         """Cast this Vector to a Matrix (such as a column vector).
 
         This is SuiteSparse-specific and may change in the future.
@@ -135,7 +135,7 @@ class Vector(BaseType):
             self._size,
             1,
             parent=self,
-            name=f"(GrB_Matrix){self.name}",
+            name=f"(GrB_Matrix){self.name}" if name is None else name,
         )
 
     def __repr__(self, mask=None, expr=None):
