@@ -3545,6 +3545,39 @@ class ss:
         else:
             raise ValueError(f"Invalid format: {format}")
 
+    def unpack_hyperhash(self, *, compute=False, name=None):
+        """Unpacks the hyper_hash of a hypersparse matrix if possible.
+
+        Will return None if the matrix is not hypersparse or if the hash is not computed.
+        Use ``compute=True`` to compute the hyper_hash if the input is hypersparse.
+
+        Use ``pack_hyperhash`` to move a hyper_hash matrix that was previously unpacked
+        back into a matrix.
+
+        This may be used before unpacking a HyperCSR or HyperCSC matrix to preserve the
+        full underlying data structure that can be packed back into an empty matrix.
+        """
+        from ..matrix import Matrix
+
+        if compute and self.format.startswith("hypercs"):
+            self._parent.wait()
+        rv = Matrix._from_obj(ffi_new("GrB_Matrix*"), INT64, 0, 0, name=name)
+        call("GxB_unpack_HyperHash", [self._parent, _Pointer(rv), None])
+        if rv.gb_obj[0] == NULL:
+            return
+        rv._nrows = rv.nrows
+        rv._ncols = rv.ncols
+        return rv
+
+    def pack_hyperhash(self, Y):
+        """Pack a hyper_hash matrix Y into the current hypersparse matrix.
+
+        The hyper_hash matrix Y should be from ``unpack_hyperhash`` and unmodified.
+
+        This uses move semantics. Y will become an invalid matrix.
+        """
+        call("GxB_pack_HyperHash", [self._parent, _Pointer(Y), None])
+
     @wrapdoc(head)
     def head(self, n=10, dtype=None, *, sort=False):
         return head(self._parent, n, dtype, sort=sort)

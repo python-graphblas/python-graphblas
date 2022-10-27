@@ -3746,3 +3746,20 @@ def test_to_csr_from_csc(A):
     assert expected.isequal(B, check_dtype=True)
     assert Matrix.from_csr(*B.to_csr(), ncols=2).isequal(B)
     assert Matrix.from_csr(*B.to_csr()).isequal(B[:, 0:0].new())
+
+
+def test_ss_pack_hyperhash(A):
+    A.ss.config["sparsity_control"] = "sparse"
+    assert A.ss.unpack_hyperhash() is None
+
+    C = Matrix(int, 20000, 200000)
+    C.ss.config["sparsity_control"] = "hypersparse"
+    C[100, 2000] = 2
+    C[10, 20] = 1
+    Y = C.ss.unpack_hyperhash()
+    Y = C.ss.unpack_hyperhash(compute=True)
+    assert C.ss.unpack_hyperhash() is None
+    assert Y.nrows == C.nrows
+    C.ss.pack_hyperhash(Y)
+    assert Y.gb_obj[0] == graphblas.core.NULL
+    assert C.ss.unpack_hyperhash() is not None
