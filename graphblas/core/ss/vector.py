@@ -13,12 +13,20 @@ from ...exceptions import _error_code_lookup, check_status, check_status_carg
 from .. import NULL, ffi, lib
 from ..base import call
 from ..scalar import Scalar, _as_scalar
-from ..utils import _CArray, ints_to_numpy_buffer, libget, values_to_numpy_buffer, wrapdoc
+from ..utils import (
+    _CArray,
+    _MatrixArray,
+    get_order,
+    ints_to_numpy_buffer,
+    libget,
+    normalize_chunks,
+    values_to_numpy_buffer,
+    wrapdoc,
+)
 from .config import BaseConfig
 from .descriptor import get_compression_descriptor, get_nthreads_descriptor
-from .matrix import MatrixArray, _concat_mn, normalize_chunks
+from .matrix import _concat_mn
 from .prefix_scan import prefix_scan
-from .utils import get_order
 
 ffi_new = ffi.new
 
@@ -257,7 +265,7 @@ class ss:
         call(
             "GxB_Matrix_split",
             [
-                MatrixArray(tiles, parent, name="tiles"),
+                _MatrixArray(tiles, parent, name="tiles"),
                 _as_scalar(m, _INDEX, is_cscalar=True),
                 _as_scalar(1, _INDEX, is_cscalar=True),
                 _CArray(tile_nrows),
@@ -286,7 +294,7 @@ class ss:
             "GxB_Matrix_concat",
             [
                 self._parent._as_matrix(),
-                MatrixArray(ctiles, name="tiles"),
+                _MatrixArray(ctiles, name="tiles"),
                 _as_scalar(m, _INDEX, is_cscalar=True),
                 _as_scalar(1, _INDEX, is_cscalar=True),
                 None,

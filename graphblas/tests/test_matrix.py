@@ -2527,7 +2527,7 @@ def test_diag(A, params):
 
 
 def test_normalize_chunks():
-    from graphblas.core.ss.matrix import normalize_chunks
+    from graphblas.core.utils import normalize_chunks
 
     shape = (20, 20)
     assert normalize_chunks(10, shape) == [[10, 10], [10, 10]]
