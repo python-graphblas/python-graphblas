@@ -470,7 +470,12 @@ def _main():
     lines = []
     lines.append("    _get_value = automethods._get_value")
     for name in sorted(common | vector_matrix | vector):
-        lines.append(f"    {name} = wrapdoc(Vector.{name})(property(automethods.{name}))")
+        if name == "ss":
+            lines.append('    if backend == "suitesparse":')
+            indent = "    "
+        else:
+            indent = ""
+        lines.append(f"    {indent}{name} = wrapdoc(Vector.{name})(property(automethods.{name}))")
         if name == "name":
             lines.append("    name = name.setter(automethods._set_name)")
     lines.append("    # These raise exceptions")
@@ -488,7 +493,12 @@ def _main():
     lines = []
     lines.append("    _get_value = automethods._get_value")
     for name in sorted(common | vector_matrix | matrix):
-        lines.append(f"    {name} = wrapdoc(Matrix.{name})(property(automethods.{name}))")
+        if name == "ss":
+            lines.append('    if backend == "suitesparse":')
+            indent = "    "
+        else:
+            indent = ""
+        lines.append(f"    {indent}{name} = wrapdoc(Matrix.{name})(property(automethods.{name}))")
         if name == "name":
             lines.append("    name = name.setter(automethods._set_name)")
     lines.append("    # These raise exceptions")

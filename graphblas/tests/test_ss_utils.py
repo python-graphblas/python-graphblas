@@ -3,7 +3,10 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas as gb
-from graphblas import Matrix, Vector
+from graphblas import Matrix, Vector, backend
+
+if backend != "suitesparse":
+    pytest.skip("Formatting tests only work with suitesparse backend", allow_module_level=True)
 
 
 @pytest.mark.parametrize("do_iso", [False, True])

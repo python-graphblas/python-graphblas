@@ -110,13 +110,16 @@ def get_shape(nrows, ncols, dtype=None, **arrays):
 
 
 class class_property:
-    __slots__ = "classval", "member_property"
+    __slots__ = "classval", "member_property", "exceptional"
 
-    def __init__(self, member_property, classval):
+    def __init__(self, member_property, classval, exceptional=False):
         self.classval = classval
         self.member_property = member_property
+        self.exceptional = exceptional
 
     def __get__(self, obj, type=None):
+        if self.exceptional:
+            raise AttributeError(self.classval)
         if obj is None:
             return self.classval
         return self.member_property.__get__(obj, type)

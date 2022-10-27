@@ -5,6 +5,7 @@ import numpy as _np
 from numpy import find_common_type as _find_common_type
 from numpy import promote_types as _promote_types
 
+from . import backend
 from .core import NULL as _NULL
 from .core import ffi as _ffi
 from .core import lib as _lib
@@ -113,7 +114,7 @@ def register_anonymous(dtype, name=None):
         from .exceptions import check_status_carg
 
         gb_obj = _ffi.new("GrB_Type*")
-        if hasattr(_lib, "GxB_MAX_NAME_LEN"):
+        if backend == "suitesparse":
             # SS, SuiteSparse-specific: naming dtypes
             # We name this so that we can serialize and deserialize UDTs
             # We don't yet have C definitions

@@ -419,10 +419,15 @@ class Updater:
             self.parent._assign_element(resolved_indexes, obj)
         else:
             mask = self.kwargs.get("mask")
-            expr = self.parent._prep_for_assign(
-                resolved_indexes, obj, mask=mask, is_submask=is_submask
+            replace = self.kwargs.get("replace", False)
+            expr, alt_mask = self.parent._prep_for_assign(
+                resolved_indexes, obj, mask=mask, is_submask=is_submask, replace=replace
             )
-            self.update(expr)
+            if alt_mask is mask:
+                self.update(expr)
+            else:
+                kwargs = dict(self.kwargs, mask=alt_mask)
+                Updater(self.parent, **kwargs).update(expr)
 
     def __setitem__(self, keys, obj):
         if self.parent._is_scalar:

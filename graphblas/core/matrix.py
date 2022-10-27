@@ -19,7 +19,6 @@ from .scalar import (
     _as_scalar,
     _scalar_index,
 )
-from .ss.matrix import ss
 from .utils import (
     _CArray,
     _Pointer,
@@ -30,6 +29,9 @@ from .utils import (
     wrapdoc,
 )
 from .vector import Vector, VectorExpression, VectorIndexExpr, _select_mask
+
+if backend == "suitesparse":
+    from .ss.matrix import ss
 
 ffi_new = ffi.new
 
@@ -99,7 +101,8 @@ class Matrix(BaseType):
         self._nrows = nrows.value
         self._ncols = ncols.value
         self._parent = None
-        self.ss = ss(self)
+        if backend == "suitesparse":
+            self.ss = ss(self)
         return self
 
     @classmethod
@@ -111,7 +114,8 @@ class Matrix(BaseType):
         self._nrows = nrows
         self._ncols = ncols
         self._parent = parent
-        self.ss = ss(self)
+        if backend == "suitesparse":
+            self.ss = ss(self)
         return self
 
     def __del__(self):
@@ -414,9 +418,7 @@ class Matrix(BaseType):
         np.ndarray[dtype=uint64] : Columns
         np.ndarray : Values
         """
-        if sort:
-            if backend != "suitesparse":
-                raise NotImplementedError()
+        if sort and backend == "suitesparse":
             self.wait()  # sort in SS
         nvals = self._nvals
         if rows or backend != "suitesparse":
@@ -444,6 +446,15 @@ class Matrix(BaseType):
                 dtype = lookup_dtype(dtype)
                 if dtype != self.dtype:
                     c_values = c_values.astype(dtype.np_type)  # copies
+        if sort and backend != "suitesparse":
+            col = c_columns.array
+            row = c_rows.array
+            ind = np.lexsort((col, row))  # sort by rows, then columns
+            return (
+                row[ind] if rows else None,
+                col[ind] if columns else None,
+                c_values[ind] if values else None,
+            )
         return (
             c_rows.array if rows else None,
             c_columns.array if columns else None,
@@ -668,8 +679,10 @@ class Matrix(BaseType):
                     "dup_op must be None if values is a scalar so that all "
                     "values can be identical.  Duplicate indices will be ignored."
                 )
-            # SS, SuiteSparse-specific: build_Scalar
-            C.ss.build_scalar(rows, columns, values.tolist())
+            if backend == "suitesparse":
+                C.ss.build_scalar(rows, columns, values.tolist())
+            else:
+                C.build(rows, columns, np.repeat(values, rows.size), dup_op=binary.any)
         else:
             # Add the data
             # This needs to be the original data to get proper error messages
@@ -1856,7 +1869,7 @@ class Matrix(BaseType):
             cfunc_name = "GrB_Matrix_setElement_Scalar"
         call(cfunc_name, [self, value, rowidx.index, colidx.index])
 
-    def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
+    def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False, replace=False):
         method_name = "__setitem__"
         rowidx, colidx = resolved_indexes.indices
         rowsize = rowidx.size
@@ -1907,10 +1920,15 @@ class Matrix(BaseType):
                     if is_submask:
                         # C[i, J](m) << v
                         # SS, SuiteSparse-specific: subassign
-                        cfunc_name = "GrB_Row_subassign"
                         expr_repr = (
                             "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
                         )
+                        if backend == "suitesparse":
+                            cfunc_name = "GrB_Row_subassign"
+                        else:
+                            # Recipe: create a new mask by expanding the old mask
+                            cfunc_name = "GrB_Row_assign"
+                            mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
                     else:
                         # C(m)[i, J] << v
                         # C[i, J] << v
@@ -1951,11 +1969,15 @@ class Matrix(BaseType):
                 else:
                     if is_submask:
                         # C[I, j](m) << v
-                        # SS, SuiteSparse-specific: subassign
-                        cfunc_name = "GrB_Col_subassign"
                         expr_repr = (
                             "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
                         )
+                        if backend == "suitesparse":
+                            cfunc_name = "GrB_Col_subassign"
+                        else:
+                            # Recipe: create a new mask by expanding the old mask
+                            cfunc_name = "GrB_Col_assign"
+                            mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
                     else:
                         # C(m)[I, j] << v
                         # C[I, j] << v
@@ -2013,11 +2035,14 @@ class Matrix(BaseType):
                     )
             if is_submask:
                 # C[I, J](M) << A
-                # SS, SuiteSparse-specific: subassign
-                cfunc_name = "GrB_Matrix_subassign"
                 expr_repr = (
                     "[[{2._expr_name} rows], [{4._expr_name} cols]](%s) << {0.name}" % mask.name
                 )
+                if backend == "suitesparse":
+                    cfunc_name = "GrB_Matrix_subassign"
+                else:
+                    cfunc_name = "GrB_Matrix_assign"
+                    mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
             else:
                 # C[I, J] << A
                 # C(M)[I, J] << A
@@ -2055,26 +2080,53 @@ class Matrix(BaseType):
                                 # C[i, J](m) << [1, 2, 3]
                                 expected_shape = (rowsize or colsize,)
                                 try:
-                                    vals = Vector.ss.import_full(
-                                        values, dtype=dtype, take_ownership=True
-                                    )
-                                    if dtype.np_type.subdtype is not None:
-                                        shape = vals.shape
+                                    if backend == "suitesparse":
+                                        vals = Vector.ss.import_full(
+                                            values, dtype=dtype, take_ownership=True
+                                        )
+                                    else:
+                                        # TODO: GraphBLAS needs a way to import or assign dense
+                                        vals = Vector.from_values(
+                                            np.arange(shape[0]), values, dtype, size=shape[0]
+                                        )
                                 except Exception:
                                     vals = None
+                                else:
+                                    if dtype.np_type.subdtype is not None:
+                                        shape = vals.shape
                             else:
                                 # C[I, J] << [[1, 2, 3], [4, 5, 6]]
                                 # C(M)[I, J] << [[1, 2, 3], [4, 5, 6]]
                                 # C[I, J](M) << [[1, 2, 3], [4, 5, 6]]
                                 expected_shape = (rowsize, colsize)
                                 try:
-                                    vals = Matrix.ss.import_fullr(
-                                        values, dtype=dtype, take_ownership=True
-                                    )
-                                    if dtype.np_type.subdtype is not None:
-                                        shape = vals.shape
+                                    if backend == "suitesparse":
+                                        vals = Matrix.ss.import_fullr(
+                                            values, dtype=dtype, take_ownership=True
+                                        )
+                                    else:
+                                        # TODO: GraphBLAS needs a way to import or assign dense
+                                        cols, rows = np.meshgrid(
+                                            np.arange(shape[0], dtype=np.uint64),
+                                            np.arange(shape[1], dtype=np.uint64),
+                                        )
+                                        if values.ndim > 2:
+                                            values = np.reshape((shape[0] * shape[1]) + shape[2:])
+                                        else:
+                                            values = values.ravel()
+                                        vals = Matrix.from_values(
+                                            rows,
+                                            cols,
+                                            values,
+                                            dtype,
+                                            nrows=shape[0],
+                                            ncols=shape[1],
+                                        )
                                 except Exception:
                                     vals = None
+                                else:
+                                    if dtype.np_type.subdtype is not None:
+                                        shape = vals.shape
                             if vals is None or shape != expected_shape:
                                 if dtype.np_type.subdtype is not None:
                                     extra = (
@@ -2089,7 +2141,11 @@ class Matrix(BaseType):
                                     f"{extra}"
                                 ) from None
                             return self._prep_for_assign(
-                                resolved_indexes, vals, mask=mask, is_submask=is_submask
+                                resolved_indexes,
+                                vals,
+                                mask=mask,
+                                is_submask=is_submask,
+                                replace=replace,
                             )
                     if rowsize is None or colsize is None:
                         types = (Scalar, Vector)
@@ -2106,20 +2162,23 @@ class Matrix(BaseType):
                 if rowsize is None and colsize is not None:
                     if is_submask:
                         # C[i, J](m) << c
-                        # SS, SuiteSparse-specific: subassign
-                        cfunc_name = "GrB_Row_subassign"
                         value_vector = Vector(value.dtype, size=mask.parent._size, name="v_temp")
+                        value_vector << value
                         expr_repr = (
                             "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
                         )
+                        if backend == "suitesparse":
+                            cfunc_name = "GrB_Row_subassign"
+                        else:
+                            cfunc_name = "GrB_Row_assign"
+                            mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
                     else:
                         # C(m)[i, J] << c
                         # C[i, J] << c
                         cfunc_name = "GrB_Row_assign"
                         value_vector = Vector(value.dtype, size=colsize, name="v_temp")
                         expr_repr = "[{1._expr_name}, [{3._expr_name} cols]] = {0.name}"
-                    # SS, SuiteSparse-specific: assume efficient vector with single scalar
-                    value_vector << value
+                        value_vector << value
 
                     # Row-only selection
                     expr = MatrixExpression(
@@ -2134,16 +2193,19 @@ class Matrix(BaseType):
                 elif colsize is None and rowsize is not None:
                     if is_submask:
                         # C[I, j](m) << c
-                        # SS, SuiteSparse-specific: subassign
-                        cfunc_name = "GrB_Col_subassign"
                         value_vector = Vector(value.dtype, size=mask.parent._size, name="v_temp")
+                        value_vector << value
+                        if backend == "suitesparse":
+                            cfunc_name = "GrB_Col_subassign"
+                        else:
+                            cfunc_name = "GrB_Col_assign"
+                            mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
                     else:
                         # C(m)[I, j] << c
                         # C[I, j] << c
                         cfunc_name = "GrB_Col_assign"
                         value_vector = Vector(value.dtype, size=rowsize, name="v_temp")
-                    # SS, SuiteSparse-specific: assume efficient vector with single scalar
-                    value_vector << value
+                        value_vector << value
 
                     # Column-only selection
                     expr = MatrixExpression(
@@ -2225,7 +2287,7 @@ class Matrix(BaseType):
                     ncols=self._ncols,
                     dtype=self.dtype,
                 )
-        return expr
+        return expr, mask
 
     def _delete_element(self, resolved_indexes):
         rowidx, colidx = resolved_indexes.indices
@@ -2278,7 +2340,39 @@ class Matrix(BaseType):
         return rv
 
 
-Matrix.ss = class_property(Matrix.ss, ss)
+if backend == "suitesparse":
+    Matrix.ss = class_property(Matrix.ss, ss)
+else:
+    Matrix.ss = class_property(
+        Matrix.ss, 'ss attribute is only available with "suitesparse" backend', exceptional=True
+    )
+
+
+def _vanilla_subassign_mask(self, mask, rows, cols, replace):
+    # TODO: understand and verify this!
+    is_rowwise = isinstance(rows, Scalar)
+    is_matrix = not is_rowwise and not isinstance(cols, Scalar)
+    if is_matrix:
+        val = Matrix(mask.parent.dtype, nrows=self._nrows, ncols=self._ncols, name="M_temp")
+        val[rows.array, cols.array] = mask.parent
+    else:
+        size = self._ncols if is_rowwise else self._nrows
+        val = Vector(mask.parent.dtype, size=size, name="m_temp")
+        val[cols.array if is_rowwise else rows.array] = mask.parent
+    # TODO: check if this works for complemented masks too
+    mask = type(mask)(val)
+    if replace:
+        if is_matrix:
+            val = self.dup()
+            del val[rows.array, cols.array]
+        elif is_rowwise:
+            val = self[rows, :].new()
+            del val[cols.array]
+        else:
+            val = self[:, cols].new()
+            del val[rows.array]
+        mask |= val.S
+    return mask
 
 
 class MatrixExpression(BaseExpression):
@@ -2382,7 +2476,8 @@ class MatrixExpression(BaseExpression):
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(automethods.reduce_scalar))
     reposition = wrapdoc(Matrix.reposition)(property(automethods.reposition))
     select = wrapdoc(Matrix.select)(property(automethods.select))
-    ss = wrapdoc(Matrix.ss)(property(automethods.ss))
+    if backend == "suitesparse":
+        ss = wrapdoc(Matrix.ss)(property(automethods.ss))
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
@@ -2466,7 +2561,8 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(automethods.reduce_scalar))
     reposition = wrapdoc(Matrix.reposition)(property(automethods.reposition))
     select = wrapdoc(Matrix.select)(property(automethods.select))
-    ss = wrapdoc(Matrix.ss)(property(automethods.ss))
+    if backend == "suitesparse":
+        ss = wrapdoc(Matrix.ss)(property(automethods.ss))
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))

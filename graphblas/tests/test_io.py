@@ -21,6 +21,9 @@ except ImportError:  # pragma: no cover
     ak = None
 
 
+suitesparse = gb.backend == "suitesparse"
+
+
 @pytest.mark.skipif("not ss")
 def test_vector_to_from_numpy():
     a = np.array([0.0, 2.0, 4.1])
@@ -117,7 +120,8 @@ def test_matrix_to_from_networkx():
     G.add_edges_from(edges)
     G.add_node(0)
     M = gb.io.from_networkx(G, nodelist=range(7))
-    assert M.ss.is_iso
+    if suitesparse:
+        assert M.ss.is_iso
     rows, cols = zip(*edges)
     expected = gb.Matrix.from_values(rows, cols, 1)
     assert expected.isequal(M)

@@ -19,7 +19,6 @@ from .scalar import (
     _as_scalar,
     _scalar_index,
 )
-from .ss.vector import ss
 from .utils import (
     _CArray,
     _Pointer,
@@ -29,6 +28,9 @@ from .utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
+
+if backend == "suitesparse":
+    from .ss.vector import ss
 
 ffi_new = ffi.new
 
@@ -98,7 +100,8 @@ class Vector(BaseType):
         call("GrB_Vector_new", [_Pointer(self), self.dtype, size])
         self._size = size.value
         self._parent = None
-        self.ss = ss(self)
+        if backend == "suitesparse":
+            self.ss = ss(self)
         return self
 
     @classmethod
@@ -109,7 +112,8 @@ class Vector(BaseType):
         self.dtype = dtype
         self._size = size
         self._parent = parent
-        self.ss = ss(self)
+        if backend == "suitesparse":
+            self.ss = ss(self)
         return self
 
     def __del__(self):
@@ -397,9 +401,7 @@ class Vector(BaseType):
         np.ndarray[dtype=uint64] : Indices
         np.ndarray : Values
         """
-        if sort:
-            if backend != "suitesparse":
-                raise NotImplementedError()
+        if sort and backend == "suitesparse":
             self.wait()  # sort in SS
         nvals = self._nvals
         if indices or backend != "suitesparse":
@@ -422,6 +424,13 @@ class Vector(BaseType):
                 dtype = lookup_dtype(dtype)
                 if dtype != self.dtype:
                     c_values = c_values.astype(dtype.np_type)  # copies
+        if sort and backend != "suitesparse":
+            c_indices = c_indices.array
+            ind = np.argsort(c_indices)
+            return (
+                c_indices[ind] if indices else None,
+                c_values[ind] if values else None,
+            )
         return (
             c_indices.array if indices else None,
             c_values if values else None,
@@ -882,13 +891,22 @@ class Vector(BaseType):
                 ncols=other._ncols,
                 op=op,
             )
-        expr = VectorExpression(
-            method_name,
-            "GxB_Vector_eWiseUnion",
-            [self, left, other, right],
-            op=op,
-            expr_repr=expr_repr,
-        )
+        if backend == "suitesparse":
+            expr = VectorExpression(
+                method_name,
+                "GxB_Vector_eWiseUnion",
+                [self, left, other, right],
+                op=op,
+                expr_repr=expr_repr,
+            )
+        else:
+            new_left = other.dup(clear=True)
+            new_left(other.S) << left
+            new_left(self.S) << self
+            new_right = self.dup(clear=True)
+            new_right(self.S) << right
+            new_right(other.S) << other
+            expr = op(new_left & new_right)
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
         return expr
@@ -1446,7 +1464,7 @@ class Vector(BaseType):
             cfunc_name = "GrB_Vector_setElement_Scalar"
         call(cfunc_name, [self, value, idx.index])
 
-    def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
+    def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False, replace=False):
         method_name = "__setitem__"
         idx = resolved_indexes.indices[0]
         size = idx.size
@@ -1510,7 +1528,11 @@ class Vector(BaseType):
                                     f"{extra}"
                                 ) from None
                             return self._prep_for_assign(
-                                resolved_indexes, vals, mask=mask, is_submask=is_submask
+                                resolved_indexes,
+                                vals,
+                                mask=mask,
+                                is_submask=is_submask,
+                                replace=False,
                             )
                     else:
                         extra_message = "Literal scalars also accepted."
@@ -1552,7 +1574,7 @@ class Vector(BaseType):
                 else:
                     cfunc_name = "GrB_Vector_assign_Scalar"
                 expr_repr = "[[{2._expr_name} elements]] = {0._expr_name}"
-        return VectorExpression(
+        expr = VectorExpression(
             method_name,
             cfunc_name,
             [value, index, cscalar],
@@ -1560,6 +1582,7 @@ class Vector(BaseType):
             size=self._size,
             dtype=self.dtype,
         )
+        return expr, mask
 
     def _delete_element(self, resolved_indexes):
         idx = resolved_indexes.indices[0]
@@ -1611,7 +1634,12 @@ class Vector(BaseType):
         return rv
 
 
-Vector.ss = class_property(Vector.ss, ss)
+if backend == "suitesparse":
+    Vector.ss = class_property(Vector.ss, ss)
+else:
+    Vector.ss = class_property(
+        Vector.ss, 'ss attribute is only available with "suitesparse" backend', exceptional=True
+    )
 
 
 class VectorExpression(BaseExpression):
@@ -1703,7 +1731,8 @@ class VectorExpression(BaseExpression):
     reduce = wrapdoc(Vector.reduce)(property(automethods.reduce))
     reposition = wrapdoc(Vector.reposition)(property(automethods.reposition))
     select = wrapdoc(Vector.select)(property(automethods.select))
-    ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    if backend == "suitesparse":
+        ss = wrapdoc(Vector.ss)(property(automethods.ss))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
@@ -1776,7 +1805,8 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     reduce = wrapdoc(Vector.reduce)(property(automethods.reduce))
     reposition = wrapdoc(Vector.reposition)(property(automethods.reposition))
     select = wrapdoc(Vector.select)(property(automethods.select))
-    ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    if backend == "suitesparse":
+        ss = wrapdoc(Vector.ss)(property(automethods.ss))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))

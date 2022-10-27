@@ -524,7 +524,12 @@ def mmread(source, *, dup_op=None, name=None):
             array.row, array.col, array.data, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
         )
     # SS, SuiteSparse-specific: import_full
-    return _Matrix.ss.import_fullr(values=array, take_ownership=True, name=name)
+    if _backend == "suitesparse":
+        return _Matrix.ss.import_fullr(values=array, take_ownership=True, name=name)
+    else:
+        rv = _Matrix(array.dtype, *array.shape, name=name)
+        rv[...] = array
+        return rv
 
 
 def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=None):

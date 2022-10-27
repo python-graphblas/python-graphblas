@@ -6,7 +6,8 @@ import graphblas
 def test_import_special_attrs():
     not_hidden = {x for x in dir(graphblas) if not x.startswith("__")}
     # Is everything imported?
-    assert len(not_hidden & graphblas._SPECIAL_ATTRS) == len(graphblas._SPECIAL_ATTRS)
+    exclude = {"ss"} if graphblas.backend != "suitesparse" else set()
+    assert len(not_hidden & graphblas._SPECIAL_ATTRS) == len(graphblas._SPECIAL_ATTRS - exclude)
     # Is everything special that needs to be?
     not_special = {x for x in dir(graphblas) if not x.startswith("_")} - graphblas._SPECIAL_ATTRS
     assert not_special == {"backend", "config", "init", "replace", "tests"}

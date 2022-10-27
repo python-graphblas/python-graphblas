@@ -9,7 +9,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas
-from graphblas import agg, binary, dtypes, indexunary, monoid, select, semiring, unary
+from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
 from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
@@ -22,6 +22,9 @@ from graphblas.exceptions import (
 from .conftest import autocompute, compute
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
+
+
+suitesparse = backend == "suitesparse"
 
 
 @pytest.fixture
@@ -137,7 +140,7 @@ def test_from_values_scalar():
     assert u.size == 4
     assert u.nvals == 3
     assert u.dtype == dtypes.INT64
-    if hasattr(u, "ss"):  # pragma: no branch
+    if suitesparse:
         assert u.ss.is_iso
         assert u.ss.iso_value == 7
     assert u.reduce(monoid.any).new() == 7
@@ -146,7 +149,7 @@ def test_from_values_scalar():
     u = Vector.from_values([0, 1, 1, 3], 7)
     assert u.size == 4
     assert u.nvals == 3
-    if hasattr(u, "ss"):  # pragma: no branch
+    if suitesparse:
         assert u.ss.is_iso
         assert u.ss.iso_value == 7
     assert u.reduce(monoid.any).new() == 7
@@ -202,6 +205,7 @@ def test_build(v):
     assert w.isequal(Vector.from_values([0, 11], [1, 1]))
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_build_scalar(v):
     with pytest.raises(OutputNotEmpty):
         v.ss.build_scalar([1, 5], 3)
@@ -1090,6 +1094,7 @@ def test_del(capsys):
     assert not captured.err
 
 
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
 @pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
 def test_import_export(v, do_iso, methods):
@@ -1619,7 +1624,8 @@ def test_index_expr_is_like_vector(v):
     )
 
 
-def test_random(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_random(v):
     r1 = Vector.from_values([1], [1], size=v.size)
     r2 = Vector.from_values([3], [1], size=v.size)
     r3 = Vector.from_values([4], [2], size=v.size)
@@ -1653,7 +1659,8 @@ def test_random(v):
         v.ss.selectk("bad", 1)
 
 
-def test_firstk(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_firstk(v):
     mixed_data = [[1, 3, 4, 6], [1, 1, 2, 0]]
     iso_data = [[1, 3, 4, 6], [1, 1, 1, 1]]
     iso_v = v.dup()
@@ -1667,7 +1674,8 @@ def test_firstk(v):
         v.ss.selectk("first", -1)
 
 
-def test_lastk(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_lastk(v):
     mixed_data = [[1, 3, 4, 6], [1, 1, 2, 0]]
     iso_data = [[1, 3, 4, 6], [1, 1, 1, 1]]
     iso_v = v.dup()
@@ -1679,7 +1687,8 @@ def test_lastk(v):
             assert x.isequal(expected)
 
 
-def test_largestk(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_largestk(v):
     w = v.ss.selectk("largest", 1)
     expected = Vector.from_values([4], [2], size=v.size)
     assert w.isequal(expected)
@@ -1694,6 +1703,7 @@ def test_largestk(v):
     assert w.isequal(expected)
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_smallestk(v):
     w = v.ss.selectk("smallest", 1)
     expected = Vector.from_values([6], [0], size=v.size)
@@ -1709,6 +1719,7 @@ def test_smallestk(v):
     assert w.isequal(expected)
 
 
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
 def test_compactify(do_iso):
     orig_indices = [1, 3, 4, 6]
@@ -1821,7 +1832,8 @@ def test_slice():
     assert w.isequal(expected)
 
 
-def test_concat(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_concat(v):
     expected = Vector(v.dtype, size=2 * v.size)
     expected[: v.size] = v
     expected[v.size :] = v
@@ -1837,7 +1849,8 @@ def test_concat(v):
     assert w3.dtype == float
 
 
-def test_split(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_split(v):
     w1, w2 = v.ss.split(4)
     expected1 = Vector.from_values([1, 3], 1)
     expected2 = Vector.from_values([0, 2], [2, 0])
@@ -2075,7 +2088,8 @@ def test_infix_outer():
     assert w.reduce(binary.plus[int]).new() == 2
 
 
-def test_iteration(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_iteration(v):
     w = Vector(int, 2)
     assert list(w.ss.iterkeys()) == []
     assert list(w.ss.itervalues()) == []
@@ -2277,6 +2291,7 @@ def test_get(v):
         v.get([0, 1])
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_ss_serialize(v):
     for compression, level, nthreads in itertools.product(
         [None, "none", "default", "lz4", "lz4hc", "zstd"], [None, 1, 5, 9], [None, -1, 1, 10]
@@ -2303,6 +2318,7 @@ def test_ss_serialize(v):
         Vector.ss.deserialize(a[:-5])
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_ss_config(v):
     d = {}
     for key in v.ss.config:

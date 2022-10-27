@@ -17,6 +17,10 @@ except ImportError:  # pragma: no cover
     pd = None
 
 
+if graphblas.backend != "suitesparse":
+    pytest.skip("Formatting tests only work with suitesparse backend", allow_module_level=True)
+
+
 def repr_html(x):
     return x._repr_html_()
 

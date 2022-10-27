@@ -1,4 +1,4 @@
-from .. import binary
+from .. import backend, binary
 from ..dtypes import BOOL
 from ..monoid import land, lor
 from ..semiring import any_pair
@@ -94,7 +94,8 @@ class VectorInfixExpr(InfixExprBase):
     reduce = wrapdoc(Vector.reduce)(property(automethods.reduce))
     reposition = wrapdoc(Vector.reposition)(property(automethods.reposition))
     select = wrapdoc(Vector.select)(property(automethods.select))
-    ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    if backend == "suitesparse":
+        ss = wrapdoc(Vector.ss)(property(automethods.ss))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
@@ -213,7 +214,8 @@ class MatrixInfixExpr(InfixExprBase):
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(automethods.reduce_scalar))
     reposition = wrapdoc(Matrix.reposition)(property(automethods.reposition))
     select = wrapdoc(Matrix.select)(property(automethods.select))
-    ss = wrapdoc(Matrix.ss)(property(automethods.ss))
+    if backend == "suitesparse":
+        ss = wrapdoc(Matrix.ss)(property(automethods.ss))
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))

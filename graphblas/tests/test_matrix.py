@@ -9,7 +9,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas
-from graphblas import agg, binary, dtypes, indexunary, monoid, select, semiring, unary
+from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
 from graphblas.core import lib
 from graphblas.exceptions import (
     DimensionMismatch,
@@ -24,6 +24,8 @@ from graphblas.exceptions import (
 from .conftest import autocompute, compute
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
+
+suitesparse = backend == "suitesparse"
 
 
 @pytest.fixture
@@ -151,8 +153,9 @@ def test_from_values_scalar():
     assert C.ncols == 3
     assert C.nvals == 3
     assert C.dtype == dtypes.INT64
-    assert C.ss.is_iso
-    assert C.ss.iso_value == 7
+    if suitesparse:
+        assert C.ss.is_iso
+        assert C.ss.iso_value == 7
     assert C.reduce_scalar(monoid.any).new() == 7
 
     # iso drumps duplicates
@@ -161,14 +164,16 @@ def test_from_values_scalar():
     assert C.ncols == 3
     assert C.nvals == 3
     assert C.dtype == dtypes.INT64
-    assert C.ss.is_iso
-    assert C.ss.iso_value == 7
+    if suitesparse:
+        assert C.ss.is_iso
+        assert C.ss.iso_value == 7
     assert C.reduce_scalar(monoid.any).new() == 7
     with pytest.raises(ValueError, match="dup_op must be None"):
         Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7, dup_op=binary.plus)
     C[0, 0] = 0
-    with pytest.raises(ValueError, match="not iso"):
-        C.ss.iso_value
+    if suitesparse:
+        with pytest.raises(ValueError, match="not iso"):
+            C.ss.iso_value
 
 
 def test_clear(A):
@@ -227,7 +232,8 @@ def test_build(A):
     assert C.isequal(Matrix.from_values([0, 0], [0, 11], [1, 1], nrows=2))
 
 
-def test_build_scalar(A):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_build_scalar(A):
     assert A.nvals == 12
     with pytest.raises(OutputNotEmpty):
         A.ss.build_scalar([1, 5], [2, 3], 3)
@@ -1816,6 +1822,7 @@ def test_del(capsys):
     assert not captured.err
 
 
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
 @pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
 def test_import_export(A, do_iso, methods):
@@ -2148,12 +2155,14 @@ def test_import_export(A, do_iso, methods):
     assert E.isequal(D)
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_import_on_view():
     A = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
     B = Matrix.ss.import_any(nrows=2, ncols=2, values=np.array([1, 2, 3, 4, 99, 99, 99])[:4])
     assert A.isequal(B)
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_import_export_empty():
     A = Matrix(int, 2, 3)
     A1 = A.dup()
@@ -2251,6 +2260,7 @@ def test_import_export_empty():
         A.ss.export(format="bad_format")
 
 
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
 @pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
 def test_import_export_auto(A, do_iso, methods):
@@ -2567,7 +2577,8 @@ def test_normalize_chunks():
         normalize_chunks([10, np.array([-1, 2])], shape)
 
 
-def test_split(A):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_split(A):
     results = A.ss.split([4, 3])
     for results in [A.ss.split([4, 3]), A.ss.split([[4, None], 3], name="split")]:
         row_boundaries = [0, 4, 7]
@@ -2580,7 +2591,8 @@ def test_split(A):
         A.ss.split([[5, 5], 3])
 
 
-def test_concat(A, v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_concat(A, v):
     B1 = graphblas.ss.concat([[A, A]], dtype=float)
     assert B1.dtype == "FP64"
     expected = Matrix(A.dtype, nrows=A.nrows, ncols=2 * A.ncols)
@@ -2785,7 +2797,9 @@ def test_expr_is_like_matrix(A):
     assert attrs - infix_attrs == expected
     # TransposedMatrix is used differently than other expressions,
     # so maybe it shouldn't support everything.
-    assert attrs - transposed_attrs == (expected | {"S", "V", "ss", "to_pygraphblas"}) - {
+    if suitesparse:
+        expected.add("ss")
+    assert attrs - transposed_attrs == (expected | {"S", "V", "to_pygraphblas"}) - {
         "_prep_for_extract",
         "_extract_element",
     }
@@ -2830,7 +2844,8 @@ def test_index_expr_is_like_matrix(A):
     )
 
 
-def test_flatten(A):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_flatten(A):
     data = [
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
@@ -2881,6 +2896,7 @@ def test_flatten(A):
         v.ss.reshape(A.shape + (1,))
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_ss_reshape(A):
     A.resize(8, 8)
     r, c, v = A.to_values()
@@ -3082,7 +3098,8 @@ def test_random(A):
         A.ss.selectk_columnwise("random", -1)
 
 
-def test_firstk(A):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_firstk(A):
     B = A.ss.selectk_rowwise("first", 1)
     expected = Matrix.from_values(
         [0, 1, 2, 3, 4, 5, 6],
@@ -3130,7 +3147,8 @@ def test_firstk(A):
     assert B.isequal(A)
 
 
-def test_lastk(A):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_lastk(A):
     B = A.ss.selectk_rowwise("last", 1)
     expected = Matrix.from_values(
         [0, 3, 5, 6, 2, 4, 1],
@@ -3390,7 +3408,8 @@ def test_delete_via_scalar(A):
     assert A.nvals == 0
 
 
-def test_iteration(A):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_iteration(A):
     B = Matrix(int, 2, 2)
     assert list(B.ss.iterkeys()) == []
     assert list(B.ss.itervalues()) == []
@@ -3659,6 +3678,7 @@ def test_bool_as_mask(A):
     assert A.isequal(expected)
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_ss_serialize(A):
     for compression, level, nthreads in itertools.product(
         [None, "none", "default", "lz4", "lz4hc", "zstd"], [None, 1, 5, 9], [None, -1, 1, 10]
@@ -3685,6 +3705,7 @@ def test_ss_serialize(A):
         Matrix.ss.deserialize(a[:-5])
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_ss_config(A):
     d = {}
     for key in A.ss.config:
