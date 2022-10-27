@@ -3661,7 +3661,7 @@ class ss:
         if compute and self.format.startswith("hypercs"):
             self._parent.wait()
         rv = Matrix._from_obj(ffi_new("GrB_Matrix*"), INT64, 0, 0, name=name)
-        call("GxB_unpack_HyperHash", [self._parent, _Pointer(rv), NULL])
+        call("GxB_unpack_HyperHash", [self._parent, _Pointer(rv), None])
         if rv.gb_obj[0] == NULL:
             return
         rv._nrows = rv.nrows
@@ -3675,7 +3675,7 @@ class ss:
 
         This uses move semantics. Y will become an invalid matrix.
         """
-        call("GxB_pack_HyperHash", [self._parent, _Pointer(Y), NULL])
+        call("GxB_pack_HyperHash", [self._parent, _Pointer(Y), None])
 
     @wrapdoc(head)
     def head(self, n=10, dtype=None, *, sort=False):
