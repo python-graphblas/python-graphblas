@@ -1,3 +1,5 @@
+from numbers import Integral, Number
+
 import numpy as np
 
 from ..dtypes import _INDEX, lookup_dtype
@@ -109,6 +111,109 @@ def get_shape(nrows, ncols, dtype=None, **arrays):
     return nrows, ncols
 
 
+def get_order(order):
+    val = order.lower()
+    if val in {"c", "row", "rows", "rowwise"}:
+        return "rowwise"
+    elif val in {"f", "col", "cols", "column", "columns", "colwise", "columnwise"}:
+        return "columnwise"
+    else:
+        raise ValueError(
+            f"Bad value for order: {order!r}.  "
+            'Expected "rowwise", "columnwise", "rows", "columns", "C", or "F"'
+        )
+
+
+def normalize_chunks(chunks, shape):
+    """Normalize chunks argument for use by `Matrix.ss.split`.
+
+    Examples
+    --------
+    >>> shape = (10, 20)
+    >>> normalize_chunks(10, shape)
+    [(10,), (10, 10)]
+    >>> normalize_chunks((10, 10), shape)
+    [(10,), (10, 10)]
+    >>> normalize_chunks([None, (5, 15)], shape)
+    [(10,), (5, 15)]
+    >>> normalize_chunks((5, (5, None)), shape)
+    [(5, 5), (5, 15)]
+    """
+    if isinstance(chunks, (list, tuple)):
+        pass
+    elif isinstance(chunks, Number):
+        chunks = (chunks,) * len(shape)
+    elif isinstance(chunks, np.ndarray):
+        chunks = chunks.tolist()
+    else:
+        raise TypeError(
+            f"chunks argument must be a list, tuple, or numpy array; got: {type(chunks)}"
+        )
+    if len(chunks) != len(shape):
+        typ = "Vector" if len(shape) == 1 else "Matrix"
+        raise ValueError(
+            f"chunks argument must be of length {len(shape)} (one for each dimension of a {typ})"
+        )
+    chunksizes = []
+    for size, chunk in zip(shape, chunks):
+        if chunk is None:
+            cur_chunks = [size]
+        elif isinstance(chunk, Integral) or isinstance(chunk, float) and chunk.is_integer():
+            chunk = int(chunk)
+            if chunk < 0:
+                raise ValueError(f"Chunksize must be greater than 0; got: {chunk}")
+            div, mod = divmod(size, chunk)
+            cur_chunks = [chunk] * div
+            if mod:
+                cur_chunks.append(mod)
+        elif isinstance(chunk, (list, tuple)):
+            cur_chunks = []
+            none_index = None
+            for c in chunk:
+                if isinstance(c, Integral) or isinstance(c, float) and c.is_integer():
+                    c = int(c)
+                    if c < 0:
+                        raise ValueError(f"Chunksize must be greater than 0; got: {c}")
+                elif c is None:
+                    if none_index is not None:
+                        raise TypeError(
+                            'None value in chunks for "the rest" can only appear once per dimension'
+                        )
+                    none_index = len(cur_chunks)
+                    c = 0
+                else:
+                    raise TypeError(
+                        "Bad type for element in chunks; expected int or None, but got: "
+                        f"{type(chunks)}"
+                    )
+                cur_chunks.append(c)
+            if none_index is not None:
+                fill = size - sum(cur_chunks)
+                if fill < 0:
+                    raise ValueError(
+                        "Chunks are too large; None value in chunks would need to be negative "
+                        "to match size of input"
+                    )
+                cur_chunks[none_index] = fill
+        elif isinstance(chunk, np.ndarray):
+            if not np.issubdtype(chunk.dtype, np.integer):
+                raise TypeError(f"numpy array for chunks must be integer dtype; got {chunk.dtype}")
+            if chunk.ndim != 1:
+                raise TypeError(
+                    f"numpy array for chunks must be 1-dimension; got ndim={chunk.ndim}"
+                )
+            if (chunk < 0).any():
+                raise ValueError(f"Chunksize must be greater than 0; got: {chunk[chunk < 0]}")
+            cur_chunks = chunk.tolist()
+        else:
+            raise TypeError(
+                "Chunks for a dimension must be an integer, a list or tuple of integers, or None."
+                f"  Got: {type(chunk)}"
+            )
+        chunksizes.append(cur_chunks)
+    return chunksizes
+
+
 class class_property:
     __slots__ = "classval", "member_property"
 
@@ -173,6 +278,18 @@ class _Pointer:
             c = type(self.val).__name__[0]
             name = f"{'M' if c == 'M' else c.lower()}_temp"
         return f"&{name}"
+
+
+class _MatrixArray:
+    __slots__ = "_carg", "_exc_arg", "name"
+
+    def __init__(self, matrices, exc_arg=None, *, name):
+        from .base import record_raw
+
+        self._carg = matrices
+        self._exc_arg = exc_arg
+        self.name = name
+        record_raw(f"GrB_Matrix {name}[{len(matrices)}];")
 
 
 def _autogenerate_code(
