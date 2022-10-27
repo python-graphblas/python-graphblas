@@ -66,8 +66,8 @@ def __getattr__(name):
     """Auto-initialize if special attrs used without explicit init call by user"""
     if name in _SPECIAL_ATTRS:
         if _init_params is None:
-            # _init("suitesparse", None, automatic=True)
-            _init("suitesparse-vanilla", None, automatic=True)
+            _init("suitesparse", None, automatic=True)
+            # _init("suitesparse-vanilla", None, automatic=True)
         if name in {"ss", "_ss"} and backend != "suitesparse":
             raise AttributeError(
                 f'module {__name__!r} only has attribute "ss" when backend is "suitesparse"'
@@ -87,8 +87,8 @@ def __getattr__(name):
 
 def __dir__():
     names = globals().keys() | _SPECIAL_ATTRS
-    # if backend is not None and backend != "suitesparse":
-    if backend != "suitesparse":
+    if backend is not None and backend != "suitesparse":
+        # if backend != "suitesparse":
         names.remove("ss")
     return list(names)
 
