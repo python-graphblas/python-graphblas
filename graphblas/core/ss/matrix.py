@@ -5,6 +5,7 @@ from numbers import Integral, Number
 import numba
 import numpy as np
 from numba import njit
+from suitesparse_graphblas import vararg
 from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
 
 import graphblas as gb
@@ -428,11 +429,11 @@ class ss:
         format_ptr = ffi_new("GxB_Option_Field*")
         sparsity_ptr = ffi_new("GxB_Option_Field*")
         check_status(
-            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, format_ptr),
+            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, vararg(format_ptr)),
             parent,
         )
         check_status(
-            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
+            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, vararg(sparsity_ptr)),
             parent,
         )
         sparsity_status = sparsity_ptr[0]
@@ -457,7 +458,7 @@ class ss:
         parent = self._parent
         format_ptr = ffi_new("GxB_Option_Field*")
         check_status(
-            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, format_ptr),
+            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, vararg(format_ptr)),
             parent,
         )
         if format_ptr[0] == lib.GxB_BY_COL:

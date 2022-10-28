@@ -1,3 +1,5 @@
+from suitesparse_graphblas import vararg
+
 from ...exceptions import check_status
 from .. import ffi, lib
 from ..descriptor import Descriptor, _desc_map
@@ -23,7 +25,7 @@ def get_nthreads_descriptor(nthreads, _cache=True):
         lib.GxB_Desc_set(
             desc._carg,
             lib.GxB_NTHREADS,
-            ffi.cast("int", nthreads),
+            vararg(ffi.cast("int", nthreads)),
         ),
         desc,
     )
@@ -74,7 +76,7 @@ def get_compression_descriptor(compression="default", level=None, nthreads=None)
         lib.GxB_Desc_set(
             desc._carg,
             lib.GxB_COMPRESSION,
-            ffi.cast("int", comp),
+            vararg(ffi.cast("int", comp)),
         ),
         desc,
     )

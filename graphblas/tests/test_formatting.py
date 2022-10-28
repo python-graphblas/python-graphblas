@@ -4062,7 +4062,7 @@ def test_inner_outer_repr(v):
 @autocompute
 def test_autocompute(A, B, v):
     if not pd:  # pragma: no cover
-        return
+        pytest.skip("needs pandas")
     repr_printer(A & A, "A & A")
     assert repr(A & A) == (
         "gb.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
@@ -4144,7 +4144,7 @@ def test_autocompute(A, B, v):
 @autocompute
 def test_autocompute_html(A, B, v):
     if not pd:  # pragma: no cover
-        return
+        pytest.skip("needs pandas")
     html_printer(A & A, "A & A")
     assert repr_html(A & A) == (
         "<div>"
@@ -4829,6 +4829,7 @@ def test_index_expr_matrix_html(A):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_scalar_as_vector():
     s = Scalar.from_value(5, is_cscalar=False)  # pragma: is_grbscalar
     v = s._as_vector()
@@ -4887,6 +4888,8 @@ def test_scalar_as_vector():
 
 @autocompute
 def test_index_expr_autocompute(v):
+    if not pd:  # pragma: no cover
+        pytest.skip("needs pandas")
     html_printer(v[[0, 1]], "v[[0, 1]]")
     assert repr_html(v[[0, 1]]) == (
         "<div>"
@@ -4940,6 +4943,7 @@ def test_index_expr_autocompute(v):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.int64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "record_dtype")
@@ -4989,6 +4993,7 @@ def test_udt():
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_empty():
     v = Vector(int, 0)
     repr_printer(v, "v")
