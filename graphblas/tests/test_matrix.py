@@ -2771,6 +2771,8 @@ def test_expr_is_like_matrix(A):
         "from_coo",
         "from_csc",
         "from_csr",
+        "from_dcsc",
+        "from_dcsr",
         "from_pygraphblas",
         "from_values",
         "resize",
@@ -2820,6 +2822,8 @@ def test_index_expr_is_like_matrix(A):
         "from_coo",
         "from_csc",
         "from_csr",
+        "from_dcsc",
+        "from_dcsr",
         "from_pygraphblas",
         "from_values",
         "resize",
@@ -3725,7 +3729,7 @@ def test_to_csr_from_csc(A):
     assert Matrix.from_csc(*A.T.to_csr()).isequal(A)
     assert Matrix.from_csr(*A.to_csr(dtype=float)).isequal(A.dup(float), check_dtype=True)
 
-    #     0 1 2
+    #    0 1 2
     # 0 [- 1 -]
     # 1 [2 - -]
     B = Matrix.from_csr([0, 1, 2], [1, 0], [10, 20], ncols=3)
@@ -3748,6 +3752,42 @@ def test_to_csr_from_csc(A):
     assert expected.isequal(B, check_dtype=True)
     assert Matrix.from_csr(*B.to_csr(), ncols=2).isequal(B)
     assert Matrix.from_csr(*B.to_csr()).isequal(B[:, 0:0].new())
+
+
+def test_to_dcsr_from_dcsc(A):
+    assert Matrix.from_dcsr(*A.to_dcsr(dtype=int)).isequal(A, check_dtype=True)
+    assert Matrix.from_dcsr(*A.T.to_dcsc()).isequal(A, check_dtype=True)
+    assert Matrix.from_dcsc(*A.to_dcsc()).isequal(A)
+    assert Matrix.from_dcsc(*A.T.to_dcsr()).isequal(A)
+    assert Matrix.from_dcsr(*A.to_dcsr(dtype=float)).isequal(A.dup(float), check_dtype=True)
+
+    #    0 1 2
+    # 0 [- 1 -]
+    # 1 [- - -]
+    # 2 [2 - -]
+    B = Matrix.from_dcsr([0, 2], [0, 1, 2], [1, 0], [10, 20], ncols=3)
+    expected = Matrix.from_values([0, 2], [1, 0], [10, 20], nrows=3, ncols=3)
+    assert expected.isequal(B, check_dtype=True)
+
+    B = Matrix.from_dcsc([0, 1], [0, 1, 2], [2, 0], [20, 10], ncols=3)
+    assert expected.isequal(B, check_dtype=True)
+
+    B = Matrix.from_dcsr([0, 2], [0, 1, 2], [1, 0], 100)
+    expected = Matrix.from_values([0, 2], [1, 0], [100, 100], nrows=3, ncols=2)
+    assert expected.isequal(B, check_dtype=True)
+
+    # Test empty
+    B = Matrix.from_dcsr([], [0], [], [], nrows=2, ncols=2, dtype=int)
+    expected = Matrix(int, 2, 2)
+    assert expected.isequal(B, check_dtype=True)
+    assert Matrix.from_dcsr(*B.to_dcsr(), nrows=2, ncols=2).isequal(B)
+    assert Matrix.from_dcsr(*B.to_dcsr()).isequal(B[0:0, 0:0].new())
+
+    # indptr must not be empty
+    with pytest.raises(InvalidValue):
+        Matrix.from_dcsr([], [], [], [], dtype=int)
+    with pytest.raises(InvalidValue):
+        Matrix.from_dcsc([], [], [], [], dtype=int)
 
 
 @autocompute
