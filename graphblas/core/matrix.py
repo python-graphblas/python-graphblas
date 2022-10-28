@@ -5,7 +5,7 @@ import numpy as np
 
 from .. import backend, binary, monoid, select, semiring
 from ..dtypes import _INDEX, FP64, lookup_dtype, unify
-from ..exceptions import DimensionMismatch, NoValue, check_status
+from ..exceptions import DimensionMismatch, InvalidValue, NoValue, check_status
 from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
@@ -865,7 +865,7 @@ class Matrix(BaseType):
             to choose an appropriate dtype.
         nrows : int, optional
             Number of rows in the Matrix. If not provided, ``nrows`` is computed
-            from the maximum column index found in ``compressed_rows``.
+            from the maximum row index found in ``compressed_rows``.
         ncols : int, optional
             Number of columns in the Matrix. If not provided, ``ncols`` is computed
             from the maximum column index found in ``col_indices``.
@@ -898,7 +898,7 @@ class Matrix(BaseType):
         else:
             indptr = ints_to_numpy_buffer(indptr, np.int64, name="indptr")  # Ensure int, not uint
             if indptr.size == 0:
-                raise ValueError("indptr array must not be empty")
+                raise InvalidValue("indptr array must not be empty")
             elif indptr.size == 1:
                 nrows = 0 if nrows is None else nrows
                 ncols = 0 if ncols is None else ncols
@@ -947,7 +947,7 @@ class Matrix(BaseType):
             to choose an appropriate dtype.
         nrows : int, optional
             Number of rows in the Matrix. If not provided, ``nrows`` is computed
-            from the maximum column index found in ``row_indices``.
+            from the maximum row index found in ``row_indices``.
         ncols : int, optional
             Number of columns in the Matrix. If not provided, ``ncols`` is computed
             from the maximum column index found in ``compressed_cols``.
@@ -980,7 +980,7 @@ class Matrix(BaseType):
         else:
             indptr = ints_to_numpy_buffer(indptr, np.int64, name="indptr")  # Ensure int, not uint
             if indptr.size == 0:
-                raise ValueError("indptr array must not be empty")
+                raise InvalidValue("indptr array must not be empty")
             elif indptr.size == 1:
                 nrows = 0 if nrows is None else nrows
                 ncols = 0 if ncols is None else ncols

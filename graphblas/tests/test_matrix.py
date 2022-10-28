@@ -3783,6 +3783,12 @@ def test_to_dcsr_from_dcsc(A):
     assert Matrix.from_dcsr(*B.to_dcsr(), nrows=2, ncols=2).isequal(B)
     assert Matrix.from_dcsr(*B.to_dcsr()).isequal(B[0:0, 0:0].new())
 
+    # indptr must not be empty
+    with pytest.raises(InvalidValue):
+        Matrix.from_dcsr([], [], [], [], dtype=int)
+    with pytest.raises(InvalidValue):
+        Matrix.from_dcsc([], [], [], [], dtype=int)
+
 
 @autocompute
 def test_as_vector(A):
