@@ -218,6 +218,8 @@ class MatrixInfixExpr(InfixExprBase):
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
+    to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
+    to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))

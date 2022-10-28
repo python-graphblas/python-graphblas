@@ -1768,6 +1768,8 @@ class ss:
         if method == "pack":
             dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        if not is_iso and values.ndim == 0:
+            is_iso = True
         if col_indices is values:
             values = np.copy(values)
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
@@ -1778,6 +1780,16 @@ class ss:
             nvec = rows.size
         if method == "import":
             mhandle = ffi_new("GrB_Matrix*")
+            if nrows is None:
+                if rows.size == 0:
+                    nrows = 0
+                else:
+                    nrows = rows[-1] + np.uint64(1)
+            if ncols is None:
+                if col_indices.size == 0:
+                    ncols = 0
+                else:
+                    ncols = col_indices.max() + np.uint64(1)
             args = (dtype._carg, nrows, ncols)
         else:
             mhandle = matrix._carg
@@ -1964,6 +1976,8 @@ class ss:
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if row_indices is values:
             values = np.copy(values)
+        if not is_iso and values.ndim == 0:
+            is_iso = True
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
         Ah = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", cols))
         Ai = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", row_indices))
@@ -1972,6 +1986,16 @@ class ss:
             nvec = cols.size
         if method == "import":
             mhandle = ffi_new("GrB_Matrix*")
+            if nrows is None:
+                if row_indices.size == 0:
+                    nrows = 0
+                else:
+                    nrows = row_indices.max() + np.uint64(1)
+            if ncols is None:
+                if cols.size == 0:
+                    ncols = 0
+                else:
+                    ncols = cols[-1] + np.uint64(1)
             args = (dtype._carg, nrows, ncols)
         else:
             mhandle = matrix._carg
