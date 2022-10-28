@@ -13,12 +13,19 @@ from ...exceptions import _error_code_lookup, check_status, check_status_carg
 from .. import NULL, ffi, lib
 from ..base import call
 from ..scalar import Scalar, _as_scalar
-from ..utils import _CArray, ints_to_numpy_buffer, libget, values_to_numpy_buffer, wrapdoc
+from ..utils import (
+    _CArray,
+    _MatrixArray,
+    ints_to_numpy_buffer,
+    libget,
+    normalize_chunks,
+    values_to_numpy_buffer,
+    wrapdoc,
+)
 from .config import BaseConfig
 from .descriptor import get_compression_descriptor, get_nthreads_descriptor
-from .matrix import MatrixArray, _concat_mn, normalize_chunks
+from .matrix import _concat_mn
 from .prefix_scan import prefix_scan
-from .utils import get_order
 
 ffi_new = ffi.new
 
@@ -257,7 +264,7 @@ class ss:
         call(
             "GxB_Matrix_split",
             [
-                MatrixArray(tiles, parent, name="tiles"),
+                _MatrixArray(tiles, parent, name="tiles"),
                 _as_scalar(m, _INDEX, is_cscalar=True),
                 _as_scalar(1, _INDEX, is_cscalar=True),
                 _CArray(tile_nrows),
@@ -286,7 +293,7 @@ class ss:
             "GxB_Matrix_concat",
             [
                 self._parent._as_matrix(),
-                MatrixArray(ctiles, name="tiles"),
+                _MatrixArray(ctiles, name="tiles"),
                 _as_scalar(m, _INDEX, is_cscalar=True),
                 _as_scalar(1, _INDEX, is_cscalar=True),
                 None,
@@ -1366,75 +1373,7 @@ class ss:
         --------
         Matrix.ss.flatten : flatten a Matrix into a Vector.
         """
-        order = get_order(order)
-        array = np.broadcast_to(False, self._parent._size)
-        if ncols is None:
-            array = array.reshape(nrows)
-        else:
-            array = array.reshape(nrows, ncols)
-        if array.ndim != 2:
-            raise ValueError(f"Shape tuple must be of length 2, not {array.ndim}")
-        nrows, ncols = array.shape
-        fmt = self.format
-        if fmt == "sparse":
-            info = self.export(sort=True)
-            indices = info["indices"]
-            if order == "rowwise":
-                return gb.Matrix.ss.import_coor(
-                    nrows=nrows,
-                    ncols=ncols,
-                    rows=indices // ncols,
-                    cols=indices % ncols,
-                    values=info["values"],
-                    is_iso=info["is_iso"],
-                    sorted_cols=True,
-                    take_ownership=True,
-                    name=name,
-                )
-            else:
-                return gb.Matrix.ss.import_cooc(
-                    nrows=nrows,
-                    ncols=ncols,
-                    cols=indices // nrows,
-                    rows=indices % nrows,
-                    values=info["values"],
-                    is_iso=info["is_iso"],
-                    sorted_rows=True,
-                    take_ownership=True,
-                    name=name,
-                )
-        elif fmt == "bitmap":
-            info = self.export(raw=True)
-            if order == "rowwise":
-                method = gb.Matrix.ss.import_bitmapr
-            else:
-                method = gb.Matrix.ss.import_bitmapc
-            return method(
-                nrows=nrows,
-                ncols=ncols,
-                bitmap=info["bitmap"],
-                values=info["values"],
-                nvals=info["nvals"],
-                is_iso=info["is_iso"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "full":
-            info = self.export(raw=True)
-            if order == "rowwise":
-                method = gb.Matrix.ss.import_fullr
-            else:
-                method = gb.Matrix.ss.import_fullc
-            return method(
-                nrows=nrows,
-                ncols=ncols,
-                values=info["values"],
-                is_iso=info["is_iso"],
-                take_ownership=True,
-                name=name,
-            )
-        else:
-            raise NotImplementedError(fmt)
+        return self._parent._as_matrix().ss.reshape(nrows, ncols, order, name=name)
 
     def selectk(self, how, k, *, name=None):
         """Select (up to) k elements.

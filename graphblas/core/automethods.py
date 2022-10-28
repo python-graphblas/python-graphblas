@@ -387,6 +387,7 @@ def _main():
         "vxm",
     }
     matrix = {
+        "_as_vector",
         "T",
         "kronecker",
         "mxm",

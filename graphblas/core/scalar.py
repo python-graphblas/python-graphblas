@@ -573,7 +573,7 @@ class Scalar(BaseType):
         dtype = lookup_dtype(scalar.gb_type)
         return cls.from_value(scalar[0], dtype)
 
-    def _as_vector(self):
+    def _as_vector(self, *, name=None):
         """Copy or cast this Scalar to a Vector
 
         This casts to a Vector when using GrB_Scalar from SuiteSparse.
@@ -581,7 +581,7 @@ class Scalar(BaseType):
         from .vector import Vector
 
         if self._is_cscalar:
-            rv = Vector(self.dtype, size=1)
+            rv = Vector(self.dtype, size=1, name=name)
             if not self._is_empty:
                 rv[0] = self
             return rv
@@ -591,10 +591,10 @@ class Scalar(BaseType):
                 self.dtype,
                 1,
                 parent=self,
-                name=f"(GrB_Vector){self.name or 's_temp'}",
+                name=f"(GrB_Vector){self.name or 's_temp'}" if name is None else name,
             )
 
-    def _as_matrix(self):
+    def _as_matrix(self, *, name=None):
         """Copy or cast this Scalar to a Matrix
 
         This casts to a Matrix when using GrB_Scalar from SuiteSparse.
@@ -602,7 +602,7 @@ class Scalar(BaseType):
         from .matrix import Matrix
 
         if self._is_cscalar:
-            rv = Matrix(self.dtype, ncols=1, nrows=1)
+            rv = Matrix(self.dtype, ncols=1, nrows=1, name=name)
             if not self._is_empty:
                 rv[0, 0] = self
             return rv
@@ -613,7 +613,7 @@ class Scalar(BaseType):
                 1,
                 1,
                 parent=self,
-                name=f"(GrB_Matrix){self.name or 's_temp'}",
+                name=f"(GrB_Matrix){self.name or 's_temp'}" if name is None else name,
             )
 
 
