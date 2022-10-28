@@ -2527,7 +2527,7 @@ def test_diag(A, params):
 
 
 def test_normalize_chunks():
-    from graphblas.core.ss.matrix import normalize_chunks
+    from graphblas.core.utils import normalize_chunks
 
     shape = (20, 20)
     assert normalize_chunks(10, shape) == [[10, 10], [10, 10]]
@@ -3757,3 +3757,20 @@ def test_as_vector(A):
     v = A[:, [1]]._as_vector()
     expected = A[:, 1].new()
     assert v.isequal(expected)
+
+
+def test_ss_pack_hyperhash(A):
+    A.ss.config["sparsity_control"] = "sparse"
+    assert A.ss.unpack_hyperhash() is None
+
+    C = Matrix(int, 20000, 200000)
+    C.ss.config["sparsity_control"] = "hypersparse"
+    C[100, 2000] = 2
+    C[10, 20] = 1
+    Y = C.ss.unpack_hyperhash()
+    Y = C.ss.unpack_hyperhash(compute=True)
+    assert C.ss.unpack_hyperhash() is None
+    assert Y.nrows == C.nrows
+    C.ss.pack_hyperhash(Y)
+    assert Y.gb_obj[0] == graphblas.core.NULL
+    assert C.ss.unpack_hyperhash() is not None
