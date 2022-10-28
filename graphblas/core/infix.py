@@ -155,6 +155,7 @@ class MatrixInfixExpr(InfixExprBase):
     ndim = 2
     output_type = MatrixExpression
     _is_transposed = False
+    __networkx_plugin__ = "graphblas"
 
     def __init__(self, left, right):
         super().__init__(left, right)
@@ -245,6 +246,7 @@ class MatrixEwiseAddExpr(MatrixInfixExpr):
     method_name = "ewise_add"
     _example_op = "plus"
     _infix = "|"
+    __networkx_plugin__ = "graphblas"
 
     _to_expr = _ewise_add_to_expr
 
@@ -254,6 +256,7 @@ class MatrixEwiseMultExpr(MatrixInfixExpr):
     method_name = "ewise_mult"
     _example_op = "times"
     _infix = "&"
+    __networkx_plugin__ = "graphblas"
 
     _to_expr = _ewise_mult_to_expr
 
@@ -263,6 +266,7 @@ class MatrixMatMulExpr(MatrixInfixExpr):
     method_name = "mxm"
     _example_op = "plus_times"
     _infix = "@"
+    __networkx_plugin__ = "graphblas"
 
     def __init__(self, left, right, *, nrows, ncols):
         super().__init__(left, right)

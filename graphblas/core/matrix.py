@@ -87,6 +87,7 @@ class Matrix(BaseType):
     ndim = 2
     _is_transposed = False
     _name_counter = itertools.count()
+    __networkx_plugin__ = "graphblas"
 
     def __new__(cls, dtype=FP64, nrows=0, ncols=0, *, name=None):
         self = object.__new__(cls)
@@ -2566,6 +2567,7 @@ class MatrixExpression(BaseExpression):
     ndim = 2
     output_type = Matrix
     _is_transposed = False
+    __networkx_plugin__ = "graphblas"
 
     def __init__(
         self,
@@ -2694,6 +2696,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     ndim = 2
     output_type = Matrix
     _is_transposed = False
+    __networkx_plugin__ = "graphblas"
 
     def __init__(self, parent, resolved_indexes, nrows, ncols):
         super().__init__(parent, resolved_indexes)
@@ -2781,6 +2784,7 @@ class TransposedMatrix:
     ndim = 2
     _is_scalar = False
     _is_transposed = True
+    __networkx_plugin__ = "graphblas"
 
     def __init__(self, matrix):
         self._matrix = matrix
