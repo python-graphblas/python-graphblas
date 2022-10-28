@@ -123,6 +123,26 @@ class Matrix(BaseType):
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Matrix_free(gb_obj), self)
 
+    def _as_vector(self, *, name=None):
+        """Cast this Matrix with one column to a Vector.
+
+        This is SuiteSparse-specific and may change in the future.
+        This does not copy the matrix.
+        """
+        from .vector import Vector
+
+        if self._ncols != 1:
+            raise ValueError(
+                f"Matrix must have a single column (not {self._ncols}) to be cast to a Vector"
+            )
+        return Vector._from_obj(
+            ffi.cast("GrB_Vector*", self.gb_obj),
+            self.dtype,
+            self._nrows,
+            parent=self,
+            name=f"(GrB_Vector){self.name}" if name is None else name,
+        )
+
     def __repr__(self, mask=None, expr=None):
         from .formatting import format_matrix
         from .recorder import skip_record
@@ -2359,6 +2379,7 @@ class MatrixExpression(BaseExpression):
     __rand__ = wrapdoc(Matrix.__rand__)(property(automethods.__rand__))
     __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(automethods.__rmatmul__))
     __ror__ = wrapdoc(Matrix.__ror__)(property(automethods.__ror__))
+    _as_vector = wrapdoc(Matrix._as_vector)(property(automethods._as_vector))
     _carg = wrapdoc(Matrix._carg)(property(automethods._carg))
     _name_html = wrapdoc(Matrix._name_html)(property(automethods._name_html))
     _nvals = wrapdoc(Matrix._nvals)(property(automethods._nvals))
@@ -2443,6 +2464,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     __rand__ = wrapdoc(Matrix.__rand__)(property(automethods.__rand__))
     __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(automethods.__rmatmul__))
     __ror__ = wrapdoc(Matrix.__ror__)(property(automethods.__ror__))
+    _as_vector = wrapdoc(Matrix._as_vector)(property(automethods._as_vector))
     _carg = wrapdoc(Matrix._carg)(property(automethods._carg))
     _name_html = wrapdoc(Matrix._name_html)(property(automethods._name_html))
     _nvals = wrapdoc(Matrix._nvals)(property(automethods._nvals))

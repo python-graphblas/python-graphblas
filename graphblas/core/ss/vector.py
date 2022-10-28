@@ -16,7 +16,6 @@ from ..scalar import Scalar, _as_scalar
 from ..utils import (
     _CArray,
     _MatrixArray,
-    get_order,
     ints_to_numpy_buffer,
     libget,
     normalize_chunks,
@@ -1374,75 +1373,7 @@ class ss:
         --------
         Matrix.ss.flatten : flatten a Matrix into a Vector.
         """
-        order = get_order(order)
-        array = np.broadcast_to(False, self._parent._size)
-        if ncols is None:
-            array = array.reshape(nrows)
-        else:
-            array = array.reshape(nrows, ncols)
-        if array.ndim != 2:
-            raise ValueError(f"Shape tuple must be of length 2, not {array.ndim}")
-        nrows, ncols = array.shape
-        fmt = self.format
-        if fmt == "sparse":
-            info = self.export(sort=True)
-            indices = info["indices"]
-            if order == "rowwise":
-                return gb.Matrix.ss.import_coor(
-                    nrows=nrows,
-                    ncols=ncols,
-                    rows=indices // ncols,
-                    cols=indices % ncols,
-                    values=info["values"],
-                    is_iso=info["is_iso"],
-                    sorted_cols=True,
-                    take_ownership=True,
-                    name=name,
-                )
-            else:
-                return gb.Matrix.ss.import_cooc(
-                    nrows=nrows,
-                    ncols=ncols,
-                    cols=indices // nrows,
-                    rows=indices % nrows,
-                    values=info["values"],
-                    is_iso=info["is_iso"],
-                    sorted_rows=True,
-                    take_ownership=True,
-                    name=name,
-                )
-        elif fmt == "bitmap":
-            info = self.export(raw=True)
-            if order == "rowwise":
-                method = gb.Matrix.ss.import_bitmapr
-            else:
-                method = gb.Matrix.ss.import_bitmapc
-            return method(
-                nrows=nrows,
-                ncols=ncols,
-                bitmap=info["bitmap"],
-                values=info["values"],
-                nvals=info["nvals"],
-                is_iso=info["is_iso"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "full":
-            info = self.export(raw=True)
-            if order == "rowwise":
-                method = gb.Matrix.ss.import_fullr
-            else:
-                method = gb.Matrix.ss.import_fullc
-            return method(
-                nrows=nrows,
-                ncols=ncols,
-                values=info["values"],
-                is_iso=info["is_iso"],
-                take_ownership=True,
-                name=name,
-            )
-        else:
-            raise NotImplementedError(fmt)
+        return self._parent._as_matrix().ss.reshape(nrows, ncols, order, name=name)
 
     def selectk(self, how, k, *, name=None):
         """Select (up to) k elements.

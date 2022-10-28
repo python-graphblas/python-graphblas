@@ -3628,111 +3628,8 @@ class ss:
         --------
         Vector.ss.reshape : copy a Vector to a Matrix.
         """
-        order = get_order(order)
-        info = self.export(order, raw=True)
-        fmt = info["format"]
-        if fmt == "csr":
-            indptr = info["indptr"]
-            nrows = info["nrows"]
-            ncols = info["ncols"]
-            indices = flatten_csr(indptr, info["col_indices"], nrows, ncols)
-            return gb.Vector.ss.import_sparse(
-                size=nrows * ncols,  # Should we check if this is less than GxB_INDEX_MAX?
-                indices=indices,
-                values=info["values"],
-                nvals=indptr[nrows],
-                is_iso=info["is_iso"],
-                sorted_index=info["sorted_cols"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "hypercsr":
-            rows = info["rows"]
-            indptr = info["indptr"]
-            nrows = info["nrows"]
-            ncols = info["ncols"]
-            nvec = info["nvec"]
-            indices = flatten_hypercsr(rows, indptr, info["col_indices"], nrows, ncols, nvec)
-            return gb.Vector.ss.import_sparse(
-                size=nrows * ncols,
-                indices=indices,
-                values=info["values"],
-                nvals=indptr[nvec],
-                is_iso=info["is_iso"],
-                sorted_index=info["sorted_cols"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "bitmapr":
-            return gb.Vector.ss.import_bitmap(
-                bitmap=info["bitmap"],
-                values=info["values"],
-                nvals=info["nvals"],
-                size=info["nrows"] * info["ncols"],
-                is_iso=info["is_iso"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "fullr":
-            return gb.Vector.ss.import_full(
-                values=info["values"],
-                size=info["nrows"] * info["ncols"],
-                is_iso=info["is_iso"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "csc":
-            indptr = info["indptr"]
-            nrows = info["nrows"]
-            ncols = info["ncols"]
-            indices = flatten_csr(indptr, info["row_indices"], ncols, nrows)
-            return gb.Vector.ss.import_sparse(
-                size=nrows * ncols,
-                indices=indices,
-                values=info["values"],
-                nvals=indptr[ncols],
-                is_iso=info["is_iso"],
-                sorted_index=info["sorted_rows"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "hypercsc":
-            cols = info["cols"]
-            indptr = info["indptr"]
-            nrows = info["nrows"]
-            ncols = info["ncols"]
-            nvec = info["nvec"]
-            indices = flatten_hypercsr(cols, indptr, info["row_indices"], ncols, nrows, nvec)
-            return gb.Vector.ss.import_sparse(
-                size=nrows * ncols,
-                indices=indices,
-                values=info["values"],
-                nvals=indptr[nvec],
-                is_iso=info["is_iso"],
-                sorted_index=info["sorted_rows"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "bitmapc":
-            return gb.Vector.ss.import_bitmap(
-                bitmap=info["bitmap"],
-                values=info["values"],
-                nvals=info["nvals"],
-                size=info["nrows"] * info["ncols"],
-                is_iso=info["is_iso"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "fullc":
-            return gb.Vector.ss.import_full(
-                values=info["values"],
-                size=info["nrows"] * info["ncols"],
-                is_iso=info["is_iso"],
-                take_ownership=True,
-                name=name,
-            )
-        else:
-            raise NotImplementedError(fmt)
+        rv = self.reshape(-1, 1, order=order, name=name)
+        return rv._as_vector()
 
     def reshape(self, nrows, ncols=None, order="rowwise", *, inplace=False, name=None):
         """Return a copy of Matrix with a new shape without changing its data.
@@ -4357,16 +4254,6 @@ def choose_last(indptr, k):  # pragma: no cover
     return choices, new_indptr
 
 
-@njit(parallel=True)
-def flatten_csr(indptr, indices, nrows, ncols):  # pragma: no cover
-    rv = np.empty(indices.size, indices.dtype)
-    for i in numba.prange(nrows):
-        offset = i * ncols
-        for j in range(indptr[i], indptr[i + 1]):
-            rv[j] = indices[j] + offset
-    return rv
-
-
 @njit
 def issorted(arr):  # pragma: no cover
     if arr.size > 1:
@@ -4380,17 +4267,6 @@ def issorted(arr):  # pragma: no cover
             else:
                 prev = cur
     return True
-
-
-@njit(parallel=True)
-def flatten_hypercsr(rows, indptr, indices, nrows, ncols, nvec):  # pragma: no cover
-    rv = np.empty(indices.size, indices.dtype)
-    for i in numba.prange(nvec):
-        row = rows[i]
-        offset = row * ncols
-        for j in range(indptr[i], indptr[i + 1]):
-            rv[j] = indices[j] + offset
-    return rv
 
 
 @njit

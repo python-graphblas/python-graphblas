@@ -2785,7 +2785,9 @@ def test_expr_is_like_matrix(A):
     assert attrs - infix_attrs == expected
     # TransposedMatrix is used differently than other expressions,
     # so maybe it shouldn't support everything.
-    assert attrs - transposed_attrs == (expected | {"S", "V", "ss", "to_pygraphblas"}) - {
+    assert attrs - transposed_attrs == (
+        expected | {"_as_vector", "S", "V", "ss", "to_pygraphblas"}
+    ) - {
         "_prep_for_extract",
         "_extract_element",
     }
@@ -3746,6 +3748,15 @@ def test_to_csr_from_csc(A):
     assert expected.isequal(B, check_dtype=True)
     assert Matrix.from_csr(*B.to_csr(), ncols=2).isequal(B)
     assert Matrix.from_csr(*B.to_csr()).isequal(B[:, 0:0].new())
+
+
+@autocompute
+def test_as_vector(A):
+    with pytest.raises(ValueError):
+        A._as_vector()
+    v = A[:, [1]]._as_vector()
+    expected = A[:, 1].new()
+    assert v.isequal(expected)
 
 
 def test_ss_pack_hyperhash(A):
