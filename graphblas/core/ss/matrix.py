@@ -1,6 +1,5 @@
 import itertools
 import warnings
-from numbers import Integral, Number
 
 import numba
 import numpy as np
@@ -14,21 +13,23 @@ from ... import monoid
 from ...dtypes import _INDEX, BOOL, INT64, _string_to_dtype, lookup_dtype
 from ...exceptions import _error_code_lookup, check_status, check_status_carg
 from .. import NULL, ffi, lib
-from ..base import call, record_raw
+from ..base import call
 from ..scalar import Scalar, _as_scalar, _scalar_index
 from ..utils import (
     _CArray,
+    _MatrixArray,
     _Pointer,
+    get_order,
     get_shape,
     ints_to_numpy_buffer,
     libget,
+    normalize_chunks,
     output_type,
     values_to_numpy_buffer,
     wrapdoc,
 )
 from .config import BaseConfig
 from .descriptor import get_compression_descriptor, get_nthreads_descriptor
-from .utils import get_order
 
 ffi_new = ffi.new
 
@@ -178,96 +179,6 @@ def head(matrix, n=10, dtype=None, *, sort=False):
     return rows, cols, vals
 
 
-def normalize_chunks(chunks, shape):
-    """Normalize chunks argument for use by `Matrix.ss.split`.
-
-    Examples
-    --------
-    >>> shape = (10, 20)
-    >>> normalize_chunks(10, shape)
-    [(10,), (10, 10)]
-    >>> normalize_chunks((10, 10), shape)
-    [(10,), (10, 10)]
-    >>> normalize_chunks([None, (5, 15)], shape)
-    [(10,), (5, 15)]
-    >>> normalize_chunks((5, (5, None)), shape)
-    [(5, 5), (5, 15)]
-    """
-    if isinstance(chunks, (list, tuple)):
-        pass
-    elif isinstance(chunks, Number):
-        chunks = (chunks,) * len(shape)
-    elif isinstance(chunks, np.ndarray):
-        chunks = chunks.tolist()
-    else:
-        raise TypeError(
-            f"chunks argument must be a list, tuple, or numpy array; got: {type(chunks)}"
-        )
-    if len(chunks) != len(shape):
-        typ = "Vector" if len(shape) == 1 else "Matrix"
-        raise ValueError(
-            f"chunks argument must be of length {len(shape)} (one for each dimension of a {typ})"
-        )
-    chunksizes = []
-    for size, chunk in zip(shape, chunks):
-        if chunk is None:
-            cur_chunks = [size]
-        elif isinstance(chunk, Integral) or isinstance(chunk, float) and chunk.is_integer():
-            chunk = int(chunk)
-            if chunk < 0:
-                raise ValueError(f"Chunksize must be greater than 0; got: {chunk}")
-            div, mod = divmod(size, chunk)
-            cur_chunks = [chunk] * div
-            if mod:
-                cur_chunks.append(mod)
-        elif isinstance(chunk, (list, tuple)):
-            cur_chunks = []
-            none_index = None
-            for c in chunk:
-                if isinstance(c, Integral) or isinstance(c, float) and c.is_integer():
-                    c = int(c)
-                    if c < 0:
-                        raise ValueError(f"Chunksize must be greater than 0; got: {c}")
-                elif c is None:
-                    if none_index is not None:
-                        raise TypeError(
-                            'None value in chunks for "the rest" can only appear once per dimension'
-                        )
-                    none_index = len(cur_chunks)
-                    c = 0
-                else:
-                    raise TypeError(
-                        "Bad type for element in chunks; expected int or None, but got: "
-                        f"{type(chunks)}"
-                    )
-                cur_chunks.append(c)
-            if none_index is not None:
-                fill = size - sum(cur_chunks)
-                if fill < 0:
-                    raise ValueError(
-                        "Chunks are too large; None value in chunks would need to be negative "
-                        "to match size of input"
-                    )
-                cur_chunks[none_index] = fill
-        elif isinstance(chunk, np.ndarray):
-            if not np.issubdtype(chunk.dtype, np.integer):
-                raise TypeError(f"numpy array for chunks must be integer dtype; got {chunk.dtype}")
-            if chunk.ndim != 1:
-                raise TypeError(
-                    f"numpy array for chunks must be 1-dimension; got ndim={chunk.ndim}"
-                )
-            if (chunk < 0).any():
-                raise ValueError(f"Chunksize must be greater than 0; got: {chunk[chunk < 0]}")
-            cur_chunks = chunk.tolist()
-        else:
-            raise TypeError(
-                "Chunks for a dimension must be an integer, a list or tuple of integers, or None."
-                f"  Got: {type(chunk)}"
-            )
-        chunksizes.append(cur_chunks)
-    return chunksizes
-
-
 def _concat_mn(tiles, *, is_matrix=None):
     """Argument checking for `Matrix.ss.concat` and returns number of tiles in each dimension"""
     from ..matrix import Matrix, TransposedMatrix
@@ -325,16 +236,6 @@ def _concat_mn(tiles, *, is_matrix=None):
 
 def _as_matrix(x):
     return x._as_matrix() if hasattr(x, "_as_matrix") else x
-
-
-class MatrixArray:
-    __slots__ = "_carg", "_exc_arg", "name"
-
-    def __init__(self, matrices, exc_arg=None, *, name):
-        self._carg = matrices
-        self._exc_arg = exc_arg
-        self.name = name
-        record_raw(f"GrB_Matrix {name}[{len(matrices)}];")
 
 
 class MatrixConfig(BaseConfig):
@@ -540,7 +441,7 @@ class ss:
         call(
             "GxB_Matrix_split",
             [
-                MatrixArray(tiles, self._parent, name="tiles"),
+                _MatrixArray(tiles, self._parent, name="tiles"),
                 _as_scalar(m, _INDEX, is_cscalar=True),
                 _as_scalar(n, _INDEX, is_cscalar=True),
                 _CArray(tile_nrows),
@@ -581,7 +482,7 @@ class ss:
             "GxB_Matrix_concat",
             [
                 self._parent,
-                MatrixArray(ctiles, name="tiles"),
+                _MatrixArray(ctiles, name="tiles"),
                 _as_scalar(m, _INDEX, is_cscalar=True),
                 _as_scalar(n, _INDEX, is_cscalar=True),
                 None,
@@ -1868,6 +1769,8 @@ class ss:
         if method == "pack":
             dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        if not is_iso and values.ndim == 0:
+            is_iso = True
         if col_indices is values:
             values = np.copy(values)
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
@@ -1878,6 +1781,16 @@ class ss:
             nvec = rows.size
         if method == "import":
             mhandle = ffi_new("GrB_Matrix*")
+            if nrows is None:
+                if rows.size == 0:
+                    nrows = 0
+                else:
+                    nrows = rows[-1] + np.uint64(1)
+            if ncols is None:
+                if col_indices.size == 0:
+                    ncols = 0
+                else:
+                    ncols = col_indices.max() + np.uint64(1)
             args = (dtype._carg, nrows, ncols)
         else:
             mhandle = matrix._carg
@@ -2064,6 +1977,8 @@ class ss:
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if row_indices is values:
             values = np.copy(values)
+        if not is_iso and values.ndim == 0:
+            is_iso = True
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
         Ah = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", cols))
         Ai = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", row_indices))
@@ -2072,6 +1987,16 @@ class ss:
             nvec = cols.size
         if method == "import":
             mhandle = ffi_new("GrB_Matrix*")
+            if nrows is None:
+                if row_indices.size == 0:
+                    nrows = 0
+                else:
+                    nrows = row_indices.max() + np.uint64(1)
+            if ncols is None:
+                if cols.size == 0:
+                    ncols = 0
+                else:
+                    ncols = cols[-1] + np.uint64(1)
             args = (dtype._carg, nrows, ncols)
         else:
             mhandle = matrix._carg
@@ -3645,6 +3570,39 @@ class ss:
         else:
             raise ValueError(f"Invalid format: {format}")
 
+    def unpack_hyperhash(self, *, compute=False, name=None):
+        """Unpacks the hyper_hash of a hypersparse matrix if possible.
+
+        Will return None if the matrix is not hypersparse or if the hash is not computed.
+        Use ``compute=True`` to compute the hyper_hash if the input is hypersparse.
+
+        Use ``pack_hyperhash`` to move a hyper_hash matrix that was previously unpacked
+        back into a matrix.
+
+        This may be used before unpacking a HyperCSR or HyperCSC matrix to preserve the
+        full underlying data structure that can be packed back into an empty matrix.
+        """
+        from ..matrix import Matrix
+
+        if compute and self.format.startswith("hypercs"):
+            self._parent.wait()
+        rv = Matrix._from_obj(ffi_new("GrB_Matrix*"), INT64, 0, 0, name=name)
+        call("GxB_unpack_HyperHash", [self._parent, _Pointer(rv), None])
+        if rv.gb_obj[0] == NULL:
+            return
+        rv._nrows = rv.nrows
+        rv._ncols = rv.ncols
+        return rv
+
+    def pack_hyperhash(self, Y):
+        """Pack a hyper_hash matrix Y into the current hypersparse matrix.
+
+        The hyper_hash matrix Y should be from ``unpack_hyperhash`` and unmodified.
+
+        This uses move semantics. Y will become an invalid matrix.
+        """
+        call("GxB_pack_HyperHash", [self._parent, _Pointer(Y), None])
+
     @wrapdoc(head)
     def head(self, n=10, dtype=None, *, sort=False):
         return head(self._parent, n, dtype, sort=sort)
@@ -3695,111 +3653,8 @@ class ss:
         --------
         Vector.ss.reshape : copy a Vector to a Matrix.
         """
-        order = get_order(order)
-        info = self.export(order, raw=True)
-        fmt = info["format"]
-        if fmt == "csr":
-            indptr = info["indptr"]
-            nrows = info["nrows"]
-            ncols = info["ncols"]
-            indices = flatten_csr(indptr, info["col_indices"], nrows, ncols)
-            return gb.Vector.ss.import_sparse(
-                size=nrows * ncols,  # Should we check if this is less than GxB_INDEX_MAX?
-                indices=indices,
-                values=info["values"],
-                nvals=indptr[nrows],
-                is_iso=info["is_iso"],
-                sorted_index=info["sorted_cols"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "hypercsr":
-            rows = info["rows"]
-            indptr = info["indptr"]
-            nrows = info["nrows"]
-            ncols = info["ncols"]
-            nvec = info["nvec"]
-            indices = flatten_hypercsr(rows, indptr, info["col_indices"], nrows, ncols, nvec)
-            return gb.Vector.ss.import_sparse(
-                size=nrows * ncols,
-                indices=indices,
-                values=info["values"],
-                nvals=indptr[nvec],
-                is_iso=info["is_iso"],
-                sorted_index=info["sorted_cols"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "bitmapr":
-            return gb.Vector.ss.import_bitmap(
-                bitmap=info["bitmap"],
-                values=info["values"],
-                nvals=info["nvals"],
-                size=info["nrows"] * info["ncols"],
-                is_iso=info["is_iso"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "fullr":
-            return gb.Vector.ss.import_full(
-                values=info["values"],
-                size=info["nrows"] * info["ncols"],
-                is_iso=info["is_iso"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "csc":
-            indptr = info["indptr"]
-            nrows = info["nrows"]
-            ncols = info["ncols"]
-            indices = flatten_csr(indptr, info["row_indices"], ncols, nrows)
-            return gb.Vector.ss.import_sparse(
-                size=nrows * ncols,
-                indices=indices,
-                values=info["values"],
-                nvals=indptr[ncols],
-                is_iso=info["is_iso"],
-                sorted_index=info["sorted_rows"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "hypercsc":
-            cols = info["cols"]
-            indptr = info["indptr"]
-            nrows = info["nrows"]
-            ncols = info["ncols"]
-            nvec = info["nvec"]
-            indices = flatten_hypercsr(cols, indptr, info["row_indices"], ncols, nrows, nvec)
-            return gb.Vector.ss.import_sparse(
-                size=nrows * ncols,
-                indices=indices,
-                values=info["values"],
-                nvals=indptr[nvec],
-                is_iso=info["is_iso"],
-                sorted_index=info["sorted_rows"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "bitmapc":
-            return gb.Vector.ss.import_bitmap(
-                bitmap=info["bitmap"],
-                values=info["values"],
-                nvals=info["nvals"],
-                size=info["nrows"] * info["ncols"],
-                is_iso=info["is_iso"],
-                take_ownership=True,
-                name=name,
-            )
-        elif fmt == "fullc":
-            return gb.Vector.ss.import_full(
-                values=info["values"],
-                size=info["nrows"] * info["ncols"],
-                is_iso=info["is_iso"],
-                take_ownership=True,
-                name=name,
-            )
-        else:
-            raise NotImplementedError(fmt)
+        rv = self.reshape(-1, 1, order=order, name=name)
+        return rv._as_vector()
 
     def reshape(self, nrows, ncols=None, order="rowwise", *, inplace=False, name=None):
         """Return a copy of Matrix with a new shape without changing its data.
@@ -4424,16 +4279,6 @@ def choose_last(indptr, k):  # pragma: no cover
     return choices, new_indptr
 
 
-@njit(parallel=True)
-def flatten_csr(indptr, indices, nrows, ncols):  # pragma: no cover
-    rv = np.empty(indices.size, indices.dtype)
-    for i in numba.prange(nrows):
-        offset = i * ncols
-        for j in range(indptr[i], indptr[i + 1]):
-            rv[j] = indices[j] + offset
-    return rv
-
-
 @njit
 def issorted(arr):  # pragma: no cover
     if arr.size > 1:
@@ -4447,17 +4292,6 @@ def issorted(arr):  # pragma: no cover
             else:
                 prev = cur
     return True
-
-
-@njit(parallel=True)
-def flatten_hypercsr(rows, indptr, indices, nrows, ncols, nvec):  # pragma: no cover
-    rv = np.empty(indices.size, indices.dtype)
-    for i in numba.prange(nvec):
-        row = rows[i]
-        offset = row * ncols
-        for j in range(indptr[i], indptr[i + 1]):
-            rv[j] = indices[j] + offset
-    return rv
 
 
 @njit

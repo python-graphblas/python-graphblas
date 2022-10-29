@@ -155,6 +155,7 @@ class MatrixInfixExpr(InfixExprBase):
     ndim = 2
     output_type = MatrixExpression
     _is_transposed = False
+    __networkx_plugin__ = "graphblas"
 
     def __init__(self, left, right):
         super().__init__(left, right)
@@ -190,6 +191,7 @@ class MatrixInfixExpr(InfixExprBase):
     __rand__ = wrapdoc(Matrix.__rand__)(property(automethods.__rand__))
     __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(automethods.__rmatmul__))
     __ror__ = wrapdoc(Matrix.__ror__)(property(automethods.__ror__))
+    _as_vector = wrapdoc(Matrix._as_vector)(property(automethods._as_vector))
     _carg = wrapdoc(Matrix._carg)(property(automethods._carg))
     _name_html = wrapdoc(Matrix._name_html)(property(automethods._name_html))
     _nvals = wrapdoc(Matrix._nvals)(property(automethods._nvals))
@@ -217,6 +219,8 @@ class MatrixInfixExpr(InfixExprBase):
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
+    to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
+    to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
@@ -242,6 +246,7 @@ class MatrixEwiseAddExpr(MatrixInfixExpr):
     method_name = "ewise_add"
     _example_op = "plus"
     _infix = "|"
+    __networkx_plugin__ = "graphblas"
 
     _to_expr = _ewise_add_to_expr
 
@@ -251,6 +256,7 @@ class MatrixEwiseMultExpr(MatrixInfixExpr):
     method_name = "ewise_mult"
     _example_op = "times"
     _infix = "&"
+    __networkx_plugin__ = "graphblas"
 
     _to_expr = _ewise_mult_to_expr
 
@@ -260,6 +266,7 @@ class MatrixMatMulExpr(MatrixInfixExpr):
     method_name = "mxm"
     _example_op = "plus_times"
     _infix = "@"
+    __networkx_plugin__ = "graphblas"
 
     def __init__(self, left, right, *, nrows, ncols):
         super().__init__(left, right)

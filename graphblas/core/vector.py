@@ -6,7 +6,7 @@ import numpy as np
 from .. import backend, binary, monoid, select, semiring
 from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, NoValue, check_status
-from . import NULL, automethods, ffi, lib, utils
+from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
@@ -121,7 +121,7 @@ class Vector(BaseType):
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Vector_free(gb_obj), self)
 
-    def _as_matrix(self):
+    def _as_matrix(self, *, name=None):
         """Cast this Vector to a Matrix (such as a column vector).
 
         This is SuiteSparse-specific and may change in the future.
@@ -135,7 +135,7 @@ class Vector(BaseType):
             self._size,
             1,
             parent=self,
-            name=f"(GrB_Matrix){self.name}",
+            name=f"(GrB_Matrix){self.name}" if name is None else name,
         )
 
     def __repr__(self, mask=None, expr=None):
@@ -1582,7 +1582,7 @@ class Vector(BaseType):
         import pygraphblas as pg
 
         vector = pg.Vector(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
-        self.gb_obj = NULL
+        self.gb_obj = ffi_new("GrB_Vector*")
         return vector
 
     @classmethod
@@ -1607,7 +1607,7 @@ class Vector(BaseType):
         dtype = lookup_dtype(vector.gb_type)
         rv = cls(vector._vector, dtype)
         rv._size = vector.size
-        vector._vector = NULL
+        vector._vector = ffi_new("GrB_Vector*")
         return rv
 
 

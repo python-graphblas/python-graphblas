@@ -5,8 +5,8 @@ import numpy as np
 
 from .. import backend, binary, monoid, select, semiring
 from ..dtypes import _INDEX, FP64, lookup_dtype, unify
-from ..exceptions import DimensionMismatch, NoValue, check_status
-from . import NULL, automethods, ffi, lib, utils
+from ..exceptions import DimensionMismatch, InvalidValue, NoValue, check_status
+from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
 from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
@@ -87,6 +87,7 @@ class Matrix(BaseType):
     ndim = 2
     _is_transposed = False
     _name_counter = itertools.count()
+    __networkx_plugin__ = "graphblas"
 
     def __new__(cls, dtype=FP64, nrows=0, ncols=0, *, name=None):
         self = object.__new__(cls)
@@ -122,6 +123,26 @@ class Matrix(BaseType):
         if gb_obj is not None and lib is not None:
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Matrix_free(gb_obj), self)
+
+    def _as_vector(self, *, name=None):
+        """Cast this Matrix with one column to a Vector.
+
+        This is SuiteSparse-specific and may change in the future.
+        This does not copy the matrix.
+        """
+        from .vector import Vector
+
+        if self._ncols != 1:
+            raise ValueError(
+                f"Matrix must have a single column (not {self._ncols}) to be cast to a Vector"
+            )
+        return Vector._from_obj(
+            ffi.cast("GrB_Vector*", self.gb_obj),
+            self.dtype,
+            self._nrows,
+            parent=self,
+            name=f"(GrB_Vector){self.name}" if name is None else name,
+        )
 
     def __repr__(self, mask=None, expr=None):
         from .formatting import format_matrix
@@ -759,6 +780,7 @@ class Matrix(BaseType):
         See Also
         --------
         from_csc
+        from_dcsr
         from_values
         Matrix.ss.import_csr
         io.from_scipy_sparse
@@ -799,11 +821,176 @@ class Matrix(BaseType):
         See Also
         --------
         from_csr
+        from_dcsc
         from_values
         Matrix.ss.import_csc
         io.from_scipy_sparse
         """
         return cls._from_csx(_CSC_FORMAT, indptr, row_indices, values, dtype, nrows, name)
+
+    @classmethod
+    def from_dcsr(
+        cls,
+        compressed_rows,
+        indptr,
+        col_indices,
+        values,
+        dtype=None,
+        *,
+        nrows=None,
+        ncols=None,
+        name=None,
+    ):
+        """Create a new Matrix from DCSR (a.k.a. HyperCSR) representation of data.
+
+        In DCSR, we store the index of each non-empty row in ``compressed_rows``.
+        The column indices for row ``compressed_rows[i]`` are stored in
+        ``col_indices[indptr[compressed_row[i]]:indptr[compressed_row[i]+1]]`` and the values
+        are stored in ``values[indptr[compressed_row[i]]:indptr[compressed_row[i]+1]]``.
+
+        This always copies data. For zero-copy import with move semantics,
+        see Matrix.ss.import_hypercsr.
+
+        Parameters
+        ----------
+        compressed_rows : list or np.ndarray
+            Indices of non-empty rows; unique and sorted.
+        indptr : list or np.ndarray
+            Pointers for each non-empty row into col_indices and values.
+        col_indices : list or np.ndarray
+            Column indices.
+        values : list or np.ndarray or scalar
+            List of values. If a scalar is provided, all values will be set to this single value.
+        dtype :
+            Data type of the Matrix. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        nrows : int, optional
+            Number of rows in the Matrix. If not provided, ``nrows`` is computed
+            from the maximum row index found in ``compressed_rows``.
+        ncols : int, optional
+            Number of columns in the Matrix. If not provided, ``ncols`` is computed
+            from the maximum column index found in ``col_indices``.
+        name : str, optional
+            Name to give the Matrix.
+
+        Returns
+        -------
+        Matrix
+
+        See Also
+        --------
+        from_csr
+        from_dcsc
+        from_values
+        Matrix.ss.import_hypercsr
+        io.from_scipy_sparse
+        """
+        if backend == "suitesparse":
+            return cls.ss.import_hypercsr(
+                rows=compressed_rows,
+                indptr=indptr,
+                col_indices=col_indices,
+                values=values,
+                nrows=nrows,
+                ncols=ncols,
+                dtype=dtype,
+                name=name,
+            )
+        else:
+            indptr = ints_to_numpy_buffer(indptr, np.int64, name="indptr")  # Ensure int, not uint
+            if indptr.size == 0:
+                raise InvalidValue("indptr array must not be empty")
+            elif indptr.size == 1:
+                nrows = 0 if nrows is None else nrows
+                ncols = 0 if ncols is None else ncols
+                rows = np.empty(0, np.uint64)
+            else:
+                rows = np.repeat(compressed_rows, np.diff(indptr))
+            return cls.from_coo(
+                rows, col_indices, values, dtype, nrows=nrows, ncols=ncols, name=name
+            )
+
+    @classmethod
+    def from_dcsc(
+        cls,
+        compressed_cols,
+        indptr,
+        row_indices,
+        values,
+        dtype=None,
+        *,
+        nrows=None,
+        ncols=None,
+        name=None,
+    ):
+        """Create a new Matrix from DCSC (a.k.a. HyperCSC) representation of data.
+
+        In DCSC, we store the index of each non-empty column in ``compressed_cols``.
+        The row indices for column ``compressed_cols[i]`` are stored in
+        ``col_indices[indptr[compressed_cols[i]]:indptr[compressed_cols[i]+1]]`` and the values
+        are stored in ``values[indptr[compressed_cols[i]]:indptr[compressed_cols[i]+1]]``.
+
+        This always copies data. For zero-copy import with move semantics,
+        see Matrix.ss.import_hypercsc.
+
+        Parameters
+        ----------
+        compressed_cols : list or np.ndarray
+            Indices of non-empty columns; unique and sorted.
+        indptr : list or np.ndarray
+            Pointers for each non-empty columns into row_indices and values.
+        row_indices : list or np.ndarray
+            Row indices.
+        values : list or np.ndarray or scalar
+            List of values. If a scalar is provided, all values will be set to this single value.
+        dtype :
+            Data type of the Matrix. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        nrows : int, optional
+            Number of rows in the Matrix. If not provided, ``nrows`` is computed
+            from the maximum row index found in ``row_indices``.
+        ncols : int, optional
+            Number of columns in the Matrix. If not provided, ``ncols`` is computed
+            from the maximum column index found in ``compressed_cols``.
+        name : str, optional
+            Name to give the Matrix.
+
+        Returns
+        -------
+        Matrix
+
+        See Also
+        --------
+        from_csc
+        from_dcsr
+        from_values
+        Matrix.ss.import_hypercsc
+        io.from_scipy_sparse
+        """
+        if backend == "suitesparse":
+            return cls.ss.import_hypercsc(
+                cols=compressed_cols,
+                indptr=indptr,
+                row_indices=row_indices,
+                values=values,
+                nrows=nrows,
+                ncols=ncols,
+                dtype=dtype,
+                name=name,
+            )
+        else:
+            indptr = ints_to_numpy_buffer(indptr, np.int64, name="indptr")  # Ensure int, not uint
+            if indptr.size == 0:
+                raise InvalidValue("indptr array must not be empty")
+            elif indptr.size == 1:
+                nrows = 0 if nrows is None else nrows
+                ncols = 0 if ncols is None else ncols
+                cols = np.empty(0, np.uint64)
+            else:
+                cols = np.repeat(compressed_cols, np.diff(indptr))
+            return cls.from_coo(
+                row_indices, cols, values, dtype, nrows=nrows, ncols=ncols, name=name
+            )
 
     def _to_csx(self, fmt, dtype=None):
         Ap_len = _scalar_index("Ap_len")
@@ -857,6 +1044,7 @@ class Matrix(BaseType):
         See Also
         --------
         to_csc
+        to_dcsr
         to_values
         Matrix.ss.export
         io.to_scipy_sparse
@@ -881,11 +1069,104 @@ class Matrix(BaseType):
         See Also
         --------
         to_csr
+        to_dcsc
         to_values
         Matrix.ss.export
         io.to_scipy_sparse
         """
         return self._to_csx(_CSC_FORMAT, dtype)
+
+    def to_dcsr(self, dtype=None):
+        """Returns four arrays of DCSR representation: compressed_rows, indptr, col_indices, values
+
+        In DCSR, we store the index of each non-empty row in ``compressed_rows``.
+        The column indices for row ``compressed_rows[i]`` are stored in
+        ``col_indices[indptr[compressed_row[i]]:indptr[compressed_row[i]+1]]`` and the values
+        are stored in ``values[indptr[compressed_row[i]]:indptr[compressed_row[i]+1]]``.
+
+        This copies data and leaves the Matrix unmodified. For zero-copy move semantics,
+        see Matrix.ss.export.
+
+        Returns
+        -------
+        np.ndarray[dtype=uint64] : compressed_rows
+        np.ndarray[dtype=uint64] : indptr
+        np.ndarray[dtype=uint64] : col_indices
+        np.ndarray : values
+
+        See Also
+        --------
+        to_csr
+        to_dcsc
+        to_values
+        Matrix.ss.export
+        io.to_scipy_sparse
+        """
+        if backend == "suitesparse":
+            info = self.ss.export("hypercsr", sort=True)
+            compressed_rows = info["rows"]
+            indptr = info["indptr"]
+            cols = info["col_indices"]
+            values = info["values"]
+        else:
+            rows, cols, values = self.to_coo()  # sorted by row then col
+            compressed_rows, indices = np.unique(rows, return_index=True)
+            indptr = np.empty(indices.size + 1, np.uint64)
+            indptr[:-1] = indices
+            indptr[-1] = rows.size
+        if dtype is not None:
+            dtype = lookup_dtype(dtype)
+            if dtype != self.dtype:
+                values = values.astype(dtype.np_type)
+        return compressed_rows, indptr, cols, values
+
+    def to_dcsc(self, dtype=None):
+        """Returns four arrays of DCSC representation: compressed_cols, indptr, row_indices, values
+
+        In DCSC, we store the index of each non-empty column in ``compressed_cols``.
+        The row indices for column ``compressed_cols[i]`` are stored in
+        ``col_indices[indptr[compressed_cols[i]]:indptr[compressed_cols[i]+1]]`` and the values
+        are stored in ``values[indptr[compressed_cols[i]]:indptr[compressed_cols[i]+1]]``.
+
+        This copies data and leaves the Matrix unmodified. For zero-copy move semantics,
+        see Matrix.ss.export.
+
+        Returns
+        -------
+        np.ndarray[dtype=uint64] : compressed_cols
+        np.ndarray[dtype=uint64] : indptr
+        np.ndarray[dtype=uint64] : row_indices
+        np.ndarray : values
+
+        See Also
+        --------
+        to_csc
+        to_dcsr
+        to_values
+        Matrix.ss.export
+        io.to_scipy_sparse
+        """
+        if backend == "suitesparse":
+            info = self.ss.export("hypercsc", sort=True)
+            compressed_cols = info["cols"]
+            indptr = info["indptr"]
+            rows = info["row_indices"]
+            values = info["values"]
+        else:
+            rows, cols, values = self.to_coo(sort=False)
+            ind = np.lexsort((rows, cols))  # sort by columns, then rows
+            rows = rows[ind]
+            cols = cols[ind]
+            values = values[ind]
+            compressed_cols, indices = np.unique(cols, return_index=True)
+            indptr = np.empty(indices.size + 1, np.uint64)
+            indptr[:-1] = indices
+            indptr[-1] = cols.size
+        if dtype is not None:
+            dtype = lookup_dtype(dtype)
+            if dtype != self.dtype:
+                values = values.astype(dtype.np_type)
+        return compressed_cols, indptr, rows, values
 
     from_coo = from_values  # Alias
     to_coo = to_values  # Alias
@@ -2248,7 +2529,7 @@ class Matrix(BaseType):
         import pygraphblas as pg
 
         matrix = pg.Matrix(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
-        self.gb_obj = NULL
+        self.gb_obj = ffi_new("GrB_Matrix*")
         return matrix
 
     @classmethod
@@ -2274,7 +2555,7 @@ class Matrix(BaseType):
         rv = cls(matrix._matrix, dtype)
         rv._nrows = matrix.nrows
         rv._ncols = matrix.ncols
-        matrix._matrix = NULL
+        matrix._matrix = ffi_new("GrB_Matrix*")
         return rv
 
 
@@ -2286,6 +2567,7 @@ class MatrixExpression(BaseExpression):
     ndim = 2
     output_type = Matrix
     _is_transposed = False
+    __networkx_plugin__ = "graphblas"
 
     def __init__(
         self,
@@ -2359,6 +2641,7 @@ class MatrixExpression(BaseExpression):
     __rand__ = wrapdoc(Matrix.__rand__)(property(automethods.__rand__))
     __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(automethods.__rmatmul__))
     __ror__ = wrapdoc(Matrix.__ror__)(property(automethods.__ror__))
+    _as_vector = wrapdoc(Matrix._as_vector)(property(automethods._as_vector))
     _carg = wrapdoc(Matrix._carg)(property(automethods._carg))
     _name_html = wrapdoc(Matrix._name_html)(property(automethods._name_html))
     _nvals = wrapdoc(Matrix._nvals)(property(automethods._nvals))
@@ -2386,6 +2669,8 @@ class MatrixExpression(BaseExpression):
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
+    to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
+    to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
@@ -2411,6 +2696,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     ndim = 2
     output_type = Matrix
     _is_transposed = False
+    __networkx_plugin__ = "graphblas"
 
     def __init__(self, parent, resolved_indexes, nrows, ncols):
         super().__init__(parent, resolved_indexes)
@@ -2443,6 +2729,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     __rand__ = wrapdoc(Matrix.__rand__)(property(automethods.__rand__))
     __rmatmul__ = wrapdoc(Matrix.__rmatmul__)(property(automethods.__rmatmul__))
     __ror__ = wrapdoc(Matrix.__ror__)(property(automethods.__ror__))
+    _as_vector = wrapdoc(Matrix._as_vector)(property(automethods._as_vector))
     _carg = wrapdoc(Matrix._carg)(property(automethods._carg))
     _name_html = wrapdoc(Matrix._name_html)(property(automethods._name_html))
     _nvals = wrapdoc(Matrix._nvals)(property(automethods._nvals))
@@ -2470,6 +2757,8 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
+    to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
+    to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
@@ -2495,6 +2784,7 @@ class TransposedMatrix:
     ndim = 2
     _is_scalar = False
     _is_transposed = True
+    __networkx_plugin__ = "graphblas"
 
     def __init__(self, matrix):
         self._matrix = matrix
@@ -2565,6 +2855,14 @@ class TransposedMatrix:
     @wrapdoc(Matrix.to_csc)
     def to_csc(self, dtype=None):
         return self._matrix.to_csr(dtype)
+
+    @wrapdoc(Matrix.to_csr)
+    def to_dcsr(self, dtype=None):
+        return self._matrix.to_dcsc(dtype)
+
+    @wrapdoc(Matrix.to_csc)
+    def to_dcsc(self, dtype=None):
+        return self._matrix.to_dcsr(dtype)
 
     to_coo = to_values  # Alias
 
