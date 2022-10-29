@@ -6,7 +6,7 @@ extras_require = {
     "repr": ["pandas"],
     "io": ["networkx", "scipy >=1.7.0", "awkward"],
     "viz": ["matplotlib"],
-    "test": ["pytest", "pandas"],
+    "test": ["pytest", "pandas", "scipy"],
 }
 extras_require["complete"] = sorted({v for req in extras_require.values() for v in req})
 
@@ -20,12 +20,12 @@ setup(
     description="Python interface to GraphBLAS",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    author="Jim Kitchen and Erik Welch",
+    author="Erik Welch and Jim Kitchen",
     author_email="erik.n.welch@gmail.com,jim22k@gmail.com",
     url="https://github.com/python-graphblas/python-graphblas",
     packages=find_packages(),
     python_requires=">=3.8",
-    install_requires=["suitesparse-graphblas >=7.3.0.0, <7.4", "numba", "donfig", "pyyaml"],
+    install_requires=["suitesparse-graphblas >=7.3.0.2, <7.4", "numba", "donfig", "pyyaml"],
     extras_require=extras_require,
     include_package_data=True,
     license="Apache License 2.0",
