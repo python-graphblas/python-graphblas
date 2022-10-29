@@ -505,7 +505,7 @@ def format_scalar(scalar, expr=None):
 
 def get_expr_result(expr, html=False):
     try:
-        val = expr._get_value()
+        val = expr.new()
     except OutOfMemory:
         arg_string = "Result is too large to compute!"
         if html:

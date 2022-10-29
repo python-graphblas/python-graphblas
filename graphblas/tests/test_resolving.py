@@ -3,6 +3,7 @@ import pytest
 
 from graphblas import binary, dtypes, replace, unary
 from graphblas.core.expr import Updater
+from graphblas.core.utils import ensure_type
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
@@ -246,3 +247,20 @@ def test_py_indices():
     # All together now!
     idx = v[0 : v.size : 1].resolved_indexes.py_indices
     assert idx == slice(None)
+
+
+def test_ensure_type():
+    v = Vector.from_values([0, 1, 2], [1, 2, 3])
+    A = Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, 3])
+    assert ensure_type(v, Vector) is v
+    assert ensure_type(A, Matrix) is A
+    assert ensure_type(v, (Matrix, Vector)) is v
+    assert ensure_type(A, (Matrix, Vector)) is A
+    with pytest.raises(TypeError):
+        ensure_type(A, Vector)
+    assert ensure_type(v + 1, Vector).isequal((v + 1).new())
+    assert ensure_type(v + 1, (Vector,)).isequal((v + 1).new())
+    assert ensure_type(A.mxm(A), Matrix).isequal(A.mxm(A).new())
+    with pytest.raises(TypeError):
+        ensure_type(A.mxm(A), (Vector,))
+    ensure_type(4, int)  # why not
