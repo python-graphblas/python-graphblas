@@ -3094,8 +3094,9 @@ def get_semiring(monoid, binaryop, name=None):
 
     See Also
     --------
-    Semiring.register_anonymous
-    Semiring.register_new
+    semiring.register_anonymous
+    semiring.register_new
+    semiring.from_string
     """
     monoid, opclass = find_opclass(monoid)
     switched = False
@@ -3210,6 +3211,7 @@ monoid.register_new = Monoid.register_new
 monoid.register_anonymous = Monoid.register_anonymous
 semiring.register_new = Semiring.register_new
 semiring.register_anonymous = Semiring.register_anonymous
+semiring.get_semiring = get_semiring
 
 select._binary_to_select.update(
     {

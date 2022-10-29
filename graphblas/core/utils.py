@@ -214,6 +214,29 @@ def normalize_chunks(chunks, shape):
     return chunksizes
 
 
+def ensure_type(x, types):
+    """Try to ensure `x` is one of the given types, computing if necessary.
+
+    `types` must be a type or a tuple of types as used in `isinstance`.
+
+    For example, if `types` is a Vector, then a Vector input will be returned,
+    and a `VectorExpression` input will be computed and returned as a Vector.
+
+    TypeError will be raised if the input is not or can't be converted to types.
+
+    This function ignores `graphblas.config["autocompute"]`; it always computes
+    if the return type will match `types`.
+    """
+    if isinstance(x, types):
+        return x
+    elif isinstance(types, tuple):
+        if output_type(x) in types:
+            return x.new()
+    elif output_type(x) is types:
+        return x.new()
+    raise TypeError(f"{type(x).__name__!r} object is not of type {types}")
+
+
 class class_property:
     __slots__ = "classval", "member_property"
 
