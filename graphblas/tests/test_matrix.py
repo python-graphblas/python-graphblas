@@ -2773,6 +2773,7 @@ def test_expr_is_like_matrix(A):
         "from_csr",
         "from_dcsc",
         "from_dcsr",
+        "from_dicts",
         "from_pygraphblas",
         "from_values",
         "resize",
@@ -2824,6 +2825,7 @@ def test_index_expr_is_like_matrix(A):
         "from_csr",
         "from_dcsc",
         "from_dcsr",
+        "from_dicts",
         "from_pygraphblas",
         "from_values",
         "resize",
@@ -3814,3 +3816,26 @@ def test_ss_pack_hyperhash(A):
     C.ss.pack_hyperhash(Y)
     assert Y.gb_obj[0] == graphblas.core.NULL
     assert C.ss.unpack_hyperhash() is not None
+
+
+def test_to_dicts_from_dicts(A):
+    assert A.isequal(Matrix.from_dicts(A.to_dicts(), int))
+    assert A.isequal(Matrix.from_dicts(A.T.to_dicts("columnwise")))
+    assert A.isequal(Matrix.from_dicts(A.to_dicts(order="col"), order="col"))
+    assert not A.isequal(Matrix.from_dicts(A.to_dicts(order="col")))
+
+    empty = Matrix.from_dicts({})
+    assert empty.shape == (0, 0)
+    empty = Matrix.from_dicts({}, int, nrows=2, ncols=3)
+    assert empty.shape == (2, 3)
+    assert empty.dtype == int
+    assert empty.nvals == 0
+    empty2 = Matrix.from_dicts({1: {}})
+    assert empty2.shape == (2, 0)
+    assert empty2.nvals == 0
+
+    d = {1: {0: 1, 5: 2}, 4: {2: 3}, 8: {10: 4}}
+    D = Matrix.from_dicts(d)
+    expected = Matrix.from_coo([1, 1, 4, 8], [0, 5, 2, 10], [1, 2, 3, 4])
+    assert expected.isequal(D)
+    assert D.to_dicts() == d

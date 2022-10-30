@@ -24,6 +24,7 @@ from .utils import (
     _CArray,
     _Pointer,
     class_property,
+    get_order,
     ints_to_numpy_buffer,
     output_type,
     values_to_numpy_buffer,
@@ -992,6 +993,55 @@ class Matrix(BaseType):
                 row_indices, cols, values, dtype, nrows=nrows, ncols=ncols, name=name
             )
 
+    @classmethod
+    def from_dicts(
+        cls, nested_dicts, dtype=None, *, order="rowwise", nrows=None, ncols=None, name=None
+    ):
+        """Create a new Matrix from a dict of dicts in the form ``{row: {col: val}}``
+
+        Parameters
+        ----------
+        d : Mapping
+            The dict-like object to convert. The keys will be cast to uint64 for the indices.
+        dtype :
+            Data type of the Matrix. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        order : {"rowwise", "columnwise"}, optional
+            "rowwise" interprets the input dict as ``{row: {col: val}}``.
+            "columnwise" interprets the input dict as ``{col: {row: val}}``.
+            The default is "rowwise".
+        nrows : int, optional
+            Number of rows in the Matrix. If not provided, ``nrows`` is computed
+            from the maximum row index found in the dicts.
+        ncols : int, optional
+            Number of columns in the Matrix. If not provided, ``ncols`` is computed
+            from the maximum column index found in the dicts.
+        name : str, optional
+            Name to give the Matrix.
+
+        Returns
+        -------
+        Matrix
+        """
+        order = get_order(order)
+        compressed_rows = np.fromiter(nested_dicts.keys(), np.uint64)
+        indptr = np.cumsum(
+            np.fromiter(itertools.chain([0], map(len, nested_dicts.values())), np.uint64)
+        )
+        col_indices = np.fromiter(itertools.chain.from_iterable(nested_dicts.values()), np.uint64)
+        iter_values = itertools.chain.from_iterable(v.values() for v in nested_dicts.values())
+        if dtype is None:
+            values = np.array(list(iter_values))
+            dtype = lookup_dtype(values.dtype)
+        else:
+            # If we know the dtype, then using `np.fromiter` is much faster
+            dtype = lookup_dtype(dtype)
+            values = np.fromiter(iter_values, dtype.np_type)
+        method = cls.from_dcsr if order == "rowwise" else cls.from_dcsc
+        return method(
+            compressed_rows, indptr, col_indices, values, dtype, nrows=nrows, ncols=ncols, name=name
+        )
+
     def _to_csx(self, fmt, dtype=None):
         Ap_len = _scalar_index("Ap_len")
         Ai_len = _scalar_index("Ai_len")
@@ -1167,6 +1217,49 @@ class Matrix(BaseType):
             if dtype != self.dtype:
                 values = values.astype(dtype.np_type)
         return compressed_cols, indptr, rows, values
+
+    def to_dicts(self, order="rowwise"):
+        """Return Matrix as a dict of dicts in the form ``{row: {col: val}}``
+
+        Parameters
+        ----------
+        order : {"rowwise", "columnwise"}, optional
+            "rowwise" returns dict of dicts as ``{row: {col: val}}``.
+            "columnwise" returns dict of dicts as ``{col: {row: val}}``.
+            The default is "rowwise".
+
+        Returns
+        -------
+        dict
+        """
+        order = get_order(order)
+        if order == "rowwise":
+            compressed_rows, indptr, cols, values = self.to_dcsr()
+        else:
+            # Names are wrong, but works for logic below
+            compressed_rows, indptr, cols, values = self.to_dcsc()
+        # This is pretty fast, but can anybody make it faster? ;)
+        cols = cols.tolist()
+        values = values.tolist()
+        return {
+            row: dict(zip(cols[start:stop], values[start:stop]))
+            for row, (start, stop) in zip(
+                compressed_rows.tolist(),
+                np.lib.stride_tricks.sliding_window_view(indptr, 2).tolist(),
+            )
+        }
+        # Alternative
+        # slices = list(
+        #     itertools.starmap(slice, np.lib.stride_tricks.sliding_window_view(indptr, 2).tolist())
+        # )
+        # return {
+        #     r: dict(zip(c, v))
+        #     for r, c, v in zip(
+        #         compressed_rows.tolist(),
+        #         map(cols.tolist().__getitem__, slices),
+        #         map(values.tolist().__getitem__, slices),
+        #     )
+        # }
 
     from_coo = from_values  # Alias
     to_coo = to_values  # Alias
@@ -2671,6 +2764,7 @@ class MatrixExpression(BaseExpression):
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
     to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
     to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
+    to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
@@ -2759,6 +2853,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
     to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
     to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
+    to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
     to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
@@ -2863,6 +2958,11 @@ class TransposedMatrix:
     @wrapdoc(Matrix.to_csc)
     def to_dcsc(self, dtype=None):
         return self._matrix.to_dcsr(dtype)
+
+    @wrapdoc(Matrix.to_dicts)
+    def to_dicts(self, order="rowwise"):
+        order = "columnwise" if get_order(order) == "rowwise" else "rowwise"
+        return self._matrix.to_dicts(order)
 
     to_coo = to_values  # Alias
 
