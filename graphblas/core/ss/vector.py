@@ -38,7 +38,7 @@ def head(vector, n=10, dtype=None, *, sort=False):
     result is not guaranteed.  Formats full and bitmap should always return in sorted order.
     """
     if vector._nvals <= n:
-        return vector.to_coo(dtype, sort=sort)
+        return vector.to_values(dtype, sort=sort)
     if sort:
         vector.wait()
     if dtype is None:
