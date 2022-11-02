@@ -31,62 +31,22 @@ from .prefix_scan import prefix_scan
 ffi_new = ffi.new
 
 
-@njit
-def _head_indices_vector_bitmap(bitmap, values, size, dtype, n, is_iso):  # pragma: no cover
-    indices = np.empty(n, dtype=np.uint64)
-    if is_iso:
-        vals = np.empty(1, dtype=dtype)
-        vals[0] = values[0]
-    else:
-        vals = np.empty(n, dtype=dtype)
-    j = 0
-    for i in range(size):
-        if bitmap[i]:
-            indices[j] = i
-            if not is_iso:
-                vals[j] = values[i]
-            j += 1
-            if j == n:
-                break
-    return indices, vals
-
-
 def head(vector, n=10, dtype=None, *, sort=False):
     """Like ``vector.to_values()``, but only returns the first n elements.
 
     If sort is True, then the results will be sorted by index, otherwise the order of the
     result is not guaranteed.  Formats full and bitmap should always return in sorted order.
-
-    This changes ``vector.gb_obj``, so care should be taken when using multiple threads.
     """
+    if vector._nvals <= n:
+        return vector.to_values(dtype, sort=sort)
+    if sort:
+        vector.wait()
     if dtype is None:
         dtype = vector.dtype
     else:
         dtype = lookup_dtype(dtype)
-    n = min(n, vector._nvals)
-    if n == 0:
-        return (np.empty(0, dtype=np.uint64), np.empty(0, dtype=dtype.np_type))
-    is_iso = vector.ss.is_iso
-    d = vector.ss.unpack(raw=True, sort=sort)
-    fmt = d["format"]
-    try:
-        if fmt == "full":
-            indices = np.arange(n, dtype=np.uint64)
-            vals = d["values"][:n].astype(dtype.np_type)
-        elif fmt == "bitmap":
-            indices, vals = _head_indices_vector_bitmap(
-                d["bitmap"], d["values"], d["size"], dtype.np_type, n, is_iso
-            )
-        elif fmt == "sparse":
-            indices = d["indices"][:n].copy()
-            vals = d["values"][:n].astype(dtype.np_type)
-        else:  # pragma: no cover
-            raise RuntimeError(f"Invalid format: {fmt}")
-    finally:
-        vector.ss.pack_any(take_ownership=True, **d)
-    if is_iso:
-        vals = np.broadcast_to(vals[:1], (n,))
-    return indices, vals
+    indices, vals = zip(*itertools.islice(vector.ss.iteritems(), n))
+    return np.array(indices, np.uint64), np.array(vals, dtype.np_type)
 
 
 class VectorConfig(BaseConfig):
