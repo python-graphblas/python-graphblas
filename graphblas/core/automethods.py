@@ -258,6 +258,14 @@ def to_csr(self):
     return self._get_value("to_csr")
 
 
+def to_dcsc(self):
+    return self._get_value("to_dcsc")
+
+
+def to_dcsr(self):
+    return self._get_value("to_dcsr")
+
+
 def to_pygraphblas(self):
     return self._get_value("to_pygraphblas")
 
@@ -398,6 +406,8 @@ def _main():
         "to_coo",
         "to_csc",
         "to_csr",
+        "to_dcsc",
+        "to_dcsr",
     }
     common_raises = set()
     scalar_raises = {

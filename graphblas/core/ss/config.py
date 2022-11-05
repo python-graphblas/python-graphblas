@@ -1,6 +1,8 @@
 from collections.abc import MutableMapping
 from numbers import Integral
 
+from suitesparse_graphblas import vararg
+
 from ...dtypes import lookup_dtype
 from ...exceptions import _error_code_lookup
 from .. import NULL, ffi, lib
@@ -43,9 +45,9 @@ class BaseConfig(MutableMapping):
         is_array = "[" in ctype
         val_ptr = ffi.new(ctype if is_array else f"{ctype}*")
         if self._parent is None:
-            info = self._get_function(key_obj, val_ptr)
+            info = self._get_function(key_obj, vararg(val_ptr))
         else:
-            info = self._get_function(self._parent._carg, key_obj, val_ptr)
+            info = self._get_function(self._parent._carg, key_obj, vararg(val_ptr))
         if info == lib.GrB_SUCCESS:  # pragma: no branch
             if is_array:
                 return list(val_ptr)
@@ -108,9 +110,9 @@ class BaseConfig(MutableMapping):
         else:
             val_obj = ffi.cast(ctype, val)
         if self._parent is None:
-            info = self._set_function(key_obj, val_obj)
+            info = self._set_function(key_obj, vararg(val_obj))
         else:
-            info = self._set_function(self._parent._carg, key_obj, val_obj)
+            info = self._set_function(self._parent._carg, key_obj, vararg(val_obj))
         if info != lib.GrB_SUCCESS:
             raise _error_code_lookup[info](f"Failed to set info for {key!r}")
 

@@ -63,7 +63,7 @@ def _expect_type_message(
             return x, None
         elif output_type(x) in types:
             if config.get("autocompute"):
-                return x._get_value(), None
+                return x.new(), None
             extra_message = f"{extra_message}\n\n" if extra_message else ""
             extra_message += (
                 "Hint: use `graphblas.config.set(autocompute=True)` to automatically "
@@ -73,7 +73,7 @@ def _expect_type_message(
         return x, None
     elif output_type(x) is types:
         if config.get("autocompute"):
-            return x._get_value(), None
+            return x.new(), None
         extra_message = f"{extra_message}\n\n" if extra_message else ""
         extra_message += (
             "Hint: use `graphblas.config.set(autocompute=True)` to automatically "
@@ -410,7 +410,7 @@ class BaseType:
 
         if type(self) is not expr.output_type:
             if expr.output_type._is_scalar and config.get("autocompute"):
-                self._update(expr._get_value(), mask, accum, replace, input_mask)
+                self._update(expr.new(), mask, accum, replace, input_mask)
                 return
             from .scalar import Scalar
 

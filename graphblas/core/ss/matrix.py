@@ -4,6 +4,7 @@ import warnings
 import numba
 import numpy as np
 from numba import njit
+from suitesparse_graphblas import vararg
 from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
 
 import graphblas as gb
@@ -33,84 +34,6 @@ from .descriptor import get_compression_descriptor, get_nthreads_descriptor
 ffi_new = ffi.new
 
 
-@njit
-def _head_matrix_full(values, nrows, ncols, dtype, n, is_iso):  # pragma: no cover
-    rows = np.empty(n, dtype=np.uint64)
-    cols = np.empty(n, dtype=np.uint64)
-    if is_iso:
-        vals = np.empty(1, dtype=dtype)
-        vals[0] = values[0]
-    else:
-        vals = np.empty(n, dtype=dtype)
-    k = 0
-    for i in range(nrows):
-        for j in range(ncols):
-            rows[k] = i
-            cols[k] = j
-            if not is_iso:
-                vals[k] = values[i * ncols + j]
-            k += 1
-            if k == n:
-                return rows, cols, vals
-    return rows, cols, vals
-
-
-@njit
-def _head_matrix_bitmap(bitmap, values, nrows, ncols, dtype, n, is_iso):  # pragma: no cover
-    rows = np.empty(n, dtype=np.uint64)
-    cols = np.empty(n, dtype=np.uint64)
-    if is_iso:
-        vals = np.empty(1, dtype=dtype)
-        vals[0] = values[0]
-    else:
-        vals = np.empty(n, dtype=dtype)
-    k = 0
-    for i in range(nrows):
-        for j in range(ncols):
-            if bitmap[i * ncols + j]:
-                rows[k] = i
-                cols[k] = j
-                if not is_iso:
-                    vals[k] = values[i * ncols + j]
-                k += 1
-                if k == n:
-                    return rows, cols, vals
-    return rows, cols, vals
-
-
-@njit
-def _head_csr_rows(indptr, n):  # pragma: no cover
-    rows = np.empty(n, dtype=np.uint64)
-    idx = 0
-    index = 0
-    for row in range(indptr.size - 1):
-        next_idx = indptr[row + 1]
-        while next_idx != idx:
-            rows[index] = row
-            index += 1
-            if index == n:
-                return rows
-            idx += 1
-    return rows
-
-
-@njit
-def _head_hypercsr_rows(indptr, rows, n):  # pragma: no cover
-    rv = np.empty(n, dtype=np.uint64)
-    idx = 0
-    index = 0
-    for ptr in range(indptr.size - 1):
-        next_idx = indptr[ptr + 1]
-        row = rows[ptr]
-        while next_idx != idx:
-            rv[index] = row
-            index += 1
-            if index == n:
-                return rv
-            idx += 1
-    return rv
-
-
 def head(matrix, n=10, dtype=None, *, sort=False):
     """Like ``matrix.to_values()``, but only returns the first n elements.
 
@@ -119,63 +42,17 @@ def head(matrix, n=10, dtype=None, *, sort=False):
     (fullr, bitmapr, csr, hypercsr) will sort by row index first, then by column index.
     Column-oriented formats, naturally, will sort by column index first, then by row index.
     Formats fullr, fullc, bitmapr, and bitmapc should always return in sorted order.
-
-    This changes ``matrix.gb_obj``, so care should be taken when using multiple threads.
     """
+    if matrix._nvals <= n:
+        return matrix.to_coo(dtype, sort=sort)
+    if sort:
+        matrix.wait()
     if dtype is None:
         dtype = matrix.dtype
     else:
         dtype = lookup_dtype(dtype)
-    n = min(n, matrix._nvals)
-    if n == 0:
-        return (
-            np.empty(0, dtype=np.uint64),
-            np.empty(0, dtype=np.uint64),
-            np.empty(0, dtype=dtype.np_type),
-        )
-    is_iso = matrix.ss.is_iso
-    d = matrix.ss.unpack(raw=True, sort=sort)
-    try:
-        fmt = d["format"]
-        if fmt == "fullr":
-            rows, cols, vals = _head_matrix_full(
-                d["values"], d["nrows"], d["ncols"], dtype.np_type, n, is_iso
-            )
-        elif fmt == "fullc":
-            cols, rows, vals = _head_matrix_full(
-                d["values"], d["ncols"], d["nrows"], dtype.np_type, n, is_iso
-            )
-        elif fmt == "bitmapr":
-            rows, cols, vals = _head_matrix_bitmap(
-                d["bitmap"], d["values"], d["nrows"], d["ncols"], dtype.np_type, n, is_iso
-            )
-        elif fmt == "bitmapc":
-            cols, rows, vals = _head_matrix_bitmap(
-                d["bitmap"], d["values"], d["ncols"], d["nrows"], dtype.np_type, n, is_iso
-            )
-        elif fmt == "csr":
-            vals = d["values"][:n].astype(dtype.np_type)
-            cols = d["col_indices"][:n].copy()
-            rows = _head_csr_rows(d["indptr"], n)
-        elif fmt == "csc":
-            vals = d["values"][:n].astype(dtype.np_type)
-            rows = d["row_indices"][:n].copy()
-            cols = _head_csr_rows(d["indptr"], n)
-        elif fmt == "hypercsr":
-            vals = d["values"][:n].astype(dtype.np_type)
-            cols = d["col_indices"][:n].copy()
-            rows = _head_hypercsr_rows(d["indptr"], d["rows"], n)
-        elif fmt == "hypercsc":
-            vals = d["values"][:n].astype(dtype.np_type)
-            rows = d["row_indices"][:n].copy()
-            cols = _head_hypercsr_rows(d["indptr"], d["cols"], n)
-        else:  # pragma: no cover
-            raise RuntimeError(f"Invalid format: {fmt}")
-    finally:
-        matrix.ss.pack_any(take_ownership=True, **d)
-    if is_iso:
-        vals = np.broadcast_to(vals[:1], (n,))
-    return rows, cols, vals
+    rows, cols, vals = zip(*itertools.islice(matrix.ss.iteritems(), n))
+    return np.array(rows, np.uint64), np.array(cols, np.uint64), np.array(vals, dtype.np_type)
 
 
 def _concat_mn(tiles, *, is_matrix=None):
@@ -329,11 +206,11 @@ class ss:
         format_ptr = ffi_new("GxB_Option_Field*")
         sparsity_ptr = ffi_new("GxB_Option_Field*")
         check_status(
-            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, format_ptr),
+            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, vararg(format_ptr)),
             parent,
         )
         check_status(
-            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
+            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, vararg(sparsity_ptr)),
             parent,
         )
         sparsity_status = sparsity_ptr[0]
@@ -358,7 +235,7 @@ class ss:
         parent = self._parent
         format_ptr = ffi_new("GxB_Option_Field*")
         check_status(
-            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, format_ptr),
+            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, vararg(format_ptr)),
             parent,
         )
         if format_ptr[0] == lib.GxB_BY_COL:
@@ -1768,6 +1645,8 @@ class ss:
         if method == "pack":
             dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        if not is_iso and values.ndim == 0:
+            is_iso = True
         if col_indices is values:
             values = np.copy(values)
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
@@ -1778,6 +1657,16 @@ class ss:
             nvec = rows.size
         if method == "import":
             mhandle = ffi_new("GrB_Matrix*")
+            if nrows is None:
+                if rows.size == 0:
+                    nrows = 0
+                else:
+                    nrows = rows[-1] + np.uint64(1)
+            if ncols is None:
+                if col_indices.size == 0:
+                    ncols = 0
+                else:
+                    ncols = col_indices.max() + np.uint64(1)
             args = (dtype._carg, nrows, ncols)
         else:
             mhandle = matrix._carg
@@ -1964,6 +1853,8 @@ class ss:
         values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
         if row_indices is values:
             values = np.copy(values)
+        if not is_iso and values.ndim == 0:
+            is_iso = True
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
         Ah = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", cols))
         Ai = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", row_indices))
@@ -1972,6 +1863,16 @@ class ss:
             nvec = cols.size
         if method == "import":
             mhandle = ffi_new("GrB_Matrix*")
+            if nrows is None:
+                if row_indices.size == 0:
+                    nrows = 0
+                else:
+                    nrows = row_indices.max() + np.uint64(1)
+            if ncols is None:
+                if cols.size == 0:
+                    ncols = 0
+                else:
+                    ncols = cols[-1] + np.uint64(1)
             args = (dtype._carg, nrows, ncols)
         else:
             mhandle = matrix._carg

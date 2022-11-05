@@ -56,8 +56,12 @@ def test_npunary():
         data.append(
             [Vector.from_values(L, L, dtype="FC64"), np.array(L, dtype=np.complex128)],
         )
-    blocklist = {"BOOL": {"negative", "positive", "sign"}, "FC64": {"ceil", "floor", "trunc"}}
-    isclose = graphblas.binary.isclose(1e-7, 0)
+    blocklist = {
+        "BOOL": {"negative", "positive", "reciprocal", "sign"},
+        "INT64": {"reciprocal"},
+        "FC64": {"ceil", "floor", "trunc"},
+    }
+    isclose = graphblas.binary.isclose(1e-6, 0)
     for gb_input, np_input in data:
         for unary_name in sorted(npunary._unary_names):
             op = getattr(npunary, unary_name)
