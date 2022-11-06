@@ -8,11 +8,13 @@ import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import binary, dtypes, replace
+from graphblas import backend, binary, dtypes, replace
 
 from .conftest import autocompute, compute
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
+
+suitesparse = backend == "suitesparse"
 
 
 @pytest.fixture
@@ -438,9 +440,14 @@ def test_scalar_expr(s):
 
 
 def test_sizeof(s):
-    assert 1 < sys.getsizeof(s) < 1000
+    if suitesparse or s._is_cscalar:
+        assert 1 < sys.getsizeof(s) < 1000
+    else:
+        with pytest.raises(TypeError):
+            sys.getsizeof(s)
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_concat(s):
     empty = Scalar(int)
     v = gb.ss.concat([s, s, empty])

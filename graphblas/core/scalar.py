@@ -174,10 +174,12 @@ class Scalar(BaseType):
         base = object.__sizeof__(self)
         if self._is_cscalar:
             return base + self.gb_obj.__sizeof__() + ffi.sizeof(self.dtype.c_type)
-        else:
+        elif backend == "suitesparse":
             size = ffi_new("size_t*")
             check_status(lib.GxB_Scalar_memoryUsage(size, self.gb_obj[0]), self)
             return base + size[0]
+        else:
+            raise TypeError("Unable to get size of GrB_Scalar with backend: {backend}")
 
     def isequal(self, other, *, check_dtype=False):
         """Check for exact equality (including whether the value is missing).

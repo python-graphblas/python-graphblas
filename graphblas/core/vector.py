@@ -8,7 +8,7 @@ from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, NoValue, check_status
 from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
-from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
+from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
 from .scalar import (
@@ -257,9 +257,12 @@ class Vector(BaseType):
         return indices.flat
 
     def __sizeof__(self):
-        size = ffi_new("size_t*")
-        check_status(lib.GxB_Vector_memoryUsage(size, self.gb_obj[0]), self)
-        return size[0] + object.__sizeof__(self)
+        if backend == "suitesparse":
+            size = ffi_new("size_t*")
+            check_status(lib.GxB_Vector_memoryUsage(size, self.gb_obj[0]), self)
+            return size[0] + object.__sizeof__(self)
+        else:
+            raise TypeError("Unable to get size of Vector with backend: {backend}")
 
     def isequal(self, other, *, check_dtype=False):
         """Check for exact equality (same size, same structure)
@@ -626,7 +629,12 @@ class Vector(BaseType):
                     "values can be identical.  Duplicate indices will be ignored."
                 )
             # SS, SuiteSparse-specific: build_Scalar
-            w.ss.build_scalar(indices, values.tolist())
+            if backend == "suitesparse":
+                w.ss.build_scalar(indices, values.tolist())
+            else:
+                if dup_op is None:
+                    dup_op = binary.any  # XXX: should we do this to match SuiteSparse behavior?
+                w.build(indices, np.broadcast_to(values, indices.size), dup_op=dup_op)
         else:
             # This needs to be the original data to get proper error messages
             w.build(indices, values, dup_op=dup_op)
@@ -900,10 +908,11 @@ class Vector(BaseType):
                 expr_repr=expr_repr,
             )
         else:
-            new_left = other.dup(clear=True)
+            dtype = unify(scalar_dtype, nonscalar_dtype, is_left_scalar=True)
+            new_left = other.dup(dtype, clear=True)
             new_left(other.S) << left
             new_left(self.S) << self
-            new_right = self.dup(clear=True)
+            new_right = self.dup(dtype, clear=True)
             new_right(self.S) << right
             new_right(other.S) << other
             expr = op(new_left & new_right)
@@ -1483,7 +1492,11 @@ class Vector(BaseType):
                     # v[i](m) << w
                     raise TypeError("Single element assign does not accept a submask")
                 # v[I](m) << w
-                cfunc_name = "GrB_Vector_subassign"
+                if backend == "suitesparse":
+                    cfunc_name = "GrB_Vector_subassign"
+                else:
+                    cfunc_name = "GrB_Vector_assign"
+                    mask = _vanilla_subassign_mask(self, mask, index, replace)
                 expr_repr = "[[{2._expr_name} elements]](%s) = {0.name}" % mask.name
             else:
                 # v(m)[I] << w
@@ -1554,9 +1567,17 @@ class Vector(BaseType):
                         value = _Pointer(value)
                     else:
                         dtype_name = value.dtype.name
-                    cfunc_name = f"GrB_Vector_subassign_{dtype_name}"
+                    if backend == "suitesparse":
+                        cfunc_name = f"GrB_Vector_subassign_{dtype_name}"
+                    else:
+                        cfunc_name = f"GrB_Vector_assign_{dtype_name}"
+                        mask = _vanilla_subassign_mask(self, mask, index, replace)
                 else:
-                    cfunc_name = "GrB_Vector_subassign_Scalar"
+                    if backend == "suitesparse":
+                        cfunc_name = "GrB_Vector_subassign_Scalar"
+                    else:
+                        cfunc_name = "GrB_Vector_assign_Scalar"
+                        mask = _vanilla_subassign_mask(self, mask, index, replace)
                 expr_repr = "[[{2._expr_name} elements]](%s) = {0._expr_name}" % mask.name
             else:
                 # v(m)[I] << c
@@ -1640,6 +1661,25 @@ else:
     Vector.ss = class_property(
         Vector.ss, 'ss attribute is only available with "suitesparse" backend', exceptional=True
     )
+
+
+def _vanilla_subassign_mask(self, mask, indices, replace):
+    _check_mask(mask, self)
+    if not replace and indices is _ALL_INDICES:
+        return mask
+    if indices is _ALL_INDICES:
+        indices = slice(None)
+    else:
+        indices = indices.array
+    val = Vector(mask.parent.dtype, size=self._size, name="v_temp")
+    val[indices] = mask.parent
+    # TODO: check if this works for complemented masks too
+    mask = type(mask)(val)
+    if replace:
+        val = self.dup()
+        del val[indices]
+        mask |= val.S
+    return mask
 
 
 class VectorExpression(BaseExpression):

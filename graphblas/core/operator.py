@@ -1716,17 +1716,13 @@ def _pair(x, y):
 
 
 def _first_dtype(op, dtype, dtype2):
-    if dtype._is_udt:
+    if dtype._is_udt or dtype2._is_udt:
         return op._compile_udt(dtype, dtype2)
-    else:
-        return op[dtype]
 
 
 def _second_dtype(op, dtype, dtype2):
-    if dtype2._is_udt:
+    if dtype._is_udt or dtype2._is_udt:
         return op._compile_udt(dtype, dtype2)
-    else:
-        return op[dtype2]
 
 
 def _pair_dtype(op, dtype, dtype2):
@@ -2995,7 +2991,8 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             return op[dtype]
         # Handle special cases such as first and second (may have UDTs)
         elif op._custom_dtype is not None:
-            return op._custom_dtype(op, dtype, dtype2)
+            if (rv := op._custom_dtype(op, dtype, dtype2)) is not None:
+                return rv
         # Generic case: try to unify the two dtypes
         try:
             return op[

@@ -156,8 +156,9 @@ def test_from_values_scalar():
     with pytest.raises(ValueError, match="dup_op must be None"):
         Vector.from_values([0, 1, 1, 3], 7, dup_op=binary.plus)
     u[0] = 0
-    with pytest.raises(ValueError, match="not iso"):
-        u.ss.iso_value
+    if suitesparse:
+        with pytest.raises(ValueError, match="not iso"):
+            u.ss.iso_value
 
 
 def test_clear(v):
@@ -206,7 +207,7 @@ def test_build(v):
 
 
 @pytest.mark.skipif("not suitesparse")
-def test_build_scalar(v):
+def test_ss_build_scalar(v):
     with pytest.raises(OutputNotEmpty):
         v.ss.build_scalar([1, 5], 3)
     v.clear()
@@ -1237,6 +1238,7 @@ def test_import_export(v, do_iso, methods):
         Vector.ss.import_any(take_ownership=True, **d)
 
 
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
 @pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
 def test_import_export_auto(v, do_iso, methods):
@@ -1386,27 +1388,37 @@ def test_vector_index_with_scalar():
 def test_diag(v):
     indices, values = v.to_values()
     for k in range(-5, 5):
-        # Construct diagonal matrix A
-        A = graphblas.ss.diag(v, k=k)
         size = v.size + abs(k)
         rows = indices + max(0, -k)
         cols = indices + max(0, k)
         expected = Matrix.from_values(rows, cols, values, nrows=size, ncols=size, dtype=v.dtype)
-        assert expected.isequal(A)
+        # Construct diagonal matrix A
+        if suitesparse:
+            A = graphblas.ss.diag(v, k=k)
+            assert expected.isequal(A)
         A = v.diag(k)
         assert expected.isequal(A)
 
         # Extract diagonal from A
-        w = graphblas.ss.diag(A, Scalar.from_value(k))
+        if suitesparse:
+            w = graphblas.ss.diag(A, Scalar.from_value(k))
+            assert v.isequal(w)
+            assert w.dtype == "INT64"
+
+            w = graphblas.ss.diag(A.T, -k, dtype=float)
+            assert v.isequal(w)
+            assert w.dtype == "FP64"
+        w = A.diag(Scalar.from_value(k))
         assert v.isequal(w)
         assert w.dtype == "INT64"
 
-        w = graphblas.ss.diag(A.T, -k, dtype=float)
+        w = A.T.diag(-k, dtype=float)
         assert v.isequal(w)
         assert w.dtype == "FP64"
 
 
-def test_nbytes(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_nbytes(v):
     assert v.ss.nbytes > 0
 
 
@@ -1704,7 +1716,7 @@ def test_ss_largestk(v):
 
 
 @pytest.mark.skipif("not suitesparse")
-def test_smallestk(v):
+def test_ss_smallestk(v):
     w = v.ss.selectk("smallest", 1)
     expected = Vector.from_values([6], [0], size=v.size)
     assert w.isequal(expected)
@@ -1721,7 +1733,7 @@ def test_smallestk(v):
 
 @pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
-def test_compactify(do_iso):
+def test_ss_compactify(do_iso):
     orig_indices = [1, 3, 4, 6]
     new_indices = [0, 1, 2, 3]
     if do_iso:
@@ -1871,7 +1883,11 @@ def test_ndim(A, v):
 
 
 def test_sizeof(v):
-    assert sys.getsizeof(v) > v.nvals * 16
+    if suitesparse:
+        assert sys.getsizeof(v) > v.nvals * 16
+    else:
+        with pytest.raises(TypeError):
+            sys.getsizeof(v)
 
 
 def test_ewise_union():
@@ -1969,18 +1985,20 @@ def test_udt():
     assert v.reduce(agg.first_index).new() == 0
     assert v.reduce(agg.last_index).new() == 2
     assert v.reduce(agg.count).new() == 3
-    info = v.ss.export()
-    result = Vector.ss.import_any(**info)
-    assert result.isequal(v)
+    if suitesparse:
+        info = v.ss.export()
+        result = Vector.ss.import_any(**info)
+        assert result.isequal(v)
     for aggop in [agg.any_value, agg.first, agg.last, agg.count, agg.first_index, agg.last_index]:
         v.reduce(aggop).new()
     v.clear()
     v[[0, 1]] = [(2, 3), (4, 5)]
     expected = Vector.from_values([0, 1], [(2, 3), (4, 5)], dtype=udt, size=v.size)
-    vv = Vector.ss.deserialize(v.ss.serialize())
-    assert v.isequal(vv, check_dtype=True)
-    vv = Vector.ss.deserialize(v.ss.serialize(), dtype=v.dtype)
-    assert v.isequal(vv, check_dtype=True)
+    if suitesparse:
+        vv = Vector.ss.deserialize(v.ss.serialize())
+        assert v.isequal(vv, check_dtype=True)
+        vv = Vector.ss.deserialize(v.ss.serialize(), dtype=v.dtype)
+        assert v.isequal(vv, check_dtype=True)
 
     # arrays as dtypes!
     np_dtype = np.dtype("(3,)uint16")
@@ -2016,9 +2034,10 @@ def test_udt():
     assert_array_equal(values, np.ones((2, 3), dtype=np.uint16))
     assert v.isequal(Vector.from_values(indices, values, dtype=v.dtype))
     assert v.isequal(Vector.from_values(indices, values))
-    info = v.ss.export()
-    result = Vector.ss.import_any(**info)
-    assert result.isequal(v)
+    if suitesparse:
+        info = v.ss.export()
+        result = Vector.ss.import_any(**info)
+        assert result.isequal(v)
 
     s = v.reduce(monoid.any).new()
     assert (s.value == [1, 1, 1]).all()
@@ -2038,8 +2057,9 @@ def test_udt():
     v[[0, 1]] = [[2, 3, 4], [5, 6, 7]]
     expected = Vector.from_values([0, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt2, size=v.size)
     assert v.isequal(expected)
-    vv = Vector.ss.deserialize(v.ss.serialize())
-    assert v.isequal(vv, check_dtype=True)
+    if suitesparse:
+        vv = Vector.ss.deserialize(v.ss.serialize())
+        assert v.isequal(vv, check_dtype=True)
 
     long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=True)
     with pytest.warns(UserWarning, match="too large"):
@@ -2047,11 +2067,12 @@ def test_udt():
     v = Vector(long_udt, size=3)
     v[0] = 0
     v[1] = (1, 5.6)
-    vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
-    assert v.isequal(vv, check_dtype=True)
-    with pytest.raises(Exception):
-        # The size of the UDT name is limited
-        Vector.ss.deserialize(v.ss.serialize())
+    if suitesparse:
+        vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
+        assert v.isequal(vv, check_dtype=True)
+        with pytest.raises(Exception):
+            # The size of the UDT name is limited
+            Vector.ss.deserialize(v.ss.serialize())
     # May be able to look up non-anonymous dtypes by name if their names are too long
     named_long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=False)
     with pytest.warns(UserWarning, match="too large"):
@@ -2059,8 +2080,9 @@ def test_udt():
     v = Vector(named_long_udt, size=3)
     v[0] = 0
     v[1] = (1, 5.6)
-    vv = Vector.ss.deserialize(v.ss.serialize())
-    assert v.isequal(vv, check_dtype=True)
+    if suitesparse:
+        vv = Vector.ss.deserialize(v.ss.serialize())
+        assert v.isequal(vv, check_dtype=True)
 
 
 def test_infix_outer():

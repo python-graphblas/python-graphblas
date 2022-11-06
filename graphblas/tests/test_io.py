@@ -338,14 +338,16 @@ def test_awkward_roundtrip():
 def test_awkward_iso_roundtrip():
     # Vector
     v = gb.Vector.from_values([1, 3, 5], [20, 20, 20], size=22)
-    assert v.ss.is_iso
+    if suitesparse:
+        assert v.ss.is_iso
     kv = gb.io.to_awkward(v)
     assert isinstance(kv, ak.Array)
     v2 = gb.io.from_awkward(kv)
     assert v2.isequal(v)
     # Matrix
     m = gb.Matrix.from_values([0, 0, 3, 5], [1, 4, 0, 2], [1, 1, 1, 1], nrows=7, ncols=6)
-    assert m.ss.is_iso
+    if suitesparse:
+        assert m.ss.is_iso
     for format in ["csr", "csc", "hypercsr", "hypercsc"]:
         km = gb.io.to_awkward(m, format=format)
         assert isinstance(km, ak.Array)
