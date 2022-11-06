@@ -480,6 +480,7 @@ class BaseType:
                 if self._is_cscalar:
                     self.value = fake_self[0].new(is_cscalar=True, name="")
                 # SS: this assumes GrB_Scalar was cast to Vector
+                # TODO: if backend != "suitesparse"
             elif is_temp_scalar:
                 if temp_scalar._is_cscalar:
                     temp_scalar._empty = False

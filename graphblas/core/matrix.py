@@ -1414,7 +1414,6 @@ class Matrix(BaseType):
             # Functional syntax
             C << binary.div(A | B, left_default=1, right_default=1)
         """
-        # SS, SuiteSparse-specific: eWiseUnion
         method_name = "ewise_union"
         other = self._expect_type(
             other, (Matrix, TransposedMatrix, Vector), within=method_name, argname="other", op=op
@@ -2252,12 +2251,11 @@ class Matrix(BaseType):
                 else:
                     if is_submask:
                         # C[i, J](m) << v
-                        # SS, SuiteSparse-specific: subassign
                         expr_repr = (
                             "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
                         )
                         if backend == "suitesparse":
-                            cfunc_name = "GrB_Row_subassign"
+                            cfunc_name = "GxB_Row_subassign"
                         else:
                             # Recipe: create a new mask by expanding the old mask
                             cfunc_name = "GrB_Row_assign"
@@ -2306,7 +2304,7 @@ class Matrix(BaseType):
                             "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
                         )
                         if backend == "suitesparse":
-                            cfunc_name = "GrB_Col_subassign"
+                            cfunc_name = "GxB_Col_subassign"
                         else:
                             # Recipe: create a new mask by expanding the old mask
                             cfunc_name = "GrB_Col_assign"
@@ -2372,7 +2370,7 @@ class Matrix(BaseType):
                     "[[{2._expr_name} rows], [{4._expr_name} cols]](%s) << {0.name}" % mask.name
                 )
                 if backend == "suitesparse":
-                    cfunc_name = "GrB_Matrix_subassign"
+                    cfunc_name = "GxB_Matrix_subassign"
                 else:
                     cfunc_name = "GrB_Matrix_assign"
                     mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
@@ -2501,7 +2499,7 @@ class Matrix(BaseType):
                             "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
                         )
                         if backend == "suitesparse":
-                            cfunc_name = "GrB_Row_subassign"
+                            cfunc_name = "GxB_Row_subassign"
                         else:
                             cfunc_name = "GrB_Row_assign"
                             mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
@@ -2529,7 +2527,7 @@ class Matrix(BaseType):
                         value_vector = Vector(value.dtype, size=mask.parent._size, name="v_temp")
                         value_vector << value
                         if backend == "suitesparse":
-                            cfunc_name = "GrB_Col_subassign"
+                            cfunc_name = "GxB_Col_subassign"
                         else:
                             cfunc_name = "GrB_Col_assign"
                             mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
@@ -2576,7 +2574,6 @@ class Matrix(BaseType):
                                 "but got Matrix mask instead"
                             )
                     # C[I, J](M) << c
-                    # SS, SuiteSparse-specific: subassign
                     if value._is_cscalar:
                         if value.dtype._is_udt:
                             dtype_name = "UDT"
@@ -2584,13 +2581,13 @@ class Matrix(BaseType):
                         else:
                             dtype_name = value.dtype.name
                         if backend == "suitesparse":
-                            cfunc_name = f"GrB_Matrix_subassign_{dtype_name}"
+                            cfunc_name = f"GxB_Matrix_subassign_{dtype_name}"
                         else:
                             cfunc_name = f"GrB_Matrix_assign_{dtype_name}"
                             mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
                     else:
                         if backend == "suitesparse":
-                            cfunc_name = "GrB_Matrix_subassign_Scalar"
+                            cfunc_name = "GxB_Matrix_subassign_Scalar"
                         else:
                             cfunc_name = "GrB_Matrix_assign_Scalar"
                             mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)

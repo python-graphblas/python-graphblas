@@ -11,6 +11,8 @@ def libget(name):
     try:
         return getattr(lib, name)
     except AttributeError:
+        if name[-4:] not in {"FC32", "FC64"}:
+            raise
         ext_name = f"GxB_{name[4:]}"
         try:
             return getattr(lib, ext_name)

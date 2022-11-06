@@ -628,7 +628,6 @@ class Vector(BaseType):
                     "dup_op must be None if values is a scalar so that all "
                     "values can be identical.  Duplicate indices will be ignored."
                 )
-            # SS, SuiteSparse-specific: build_Scalar
             if backend == "suitesparse":
                 w.ss.build_scalar(indices, values.tolist())
             else:
@@ -835,7 +834,6 @@ class Vector(BaseType):
             # Functional syntax
             w << binary.div(u | v, left_default=1, right_default=1)
         """
-        # SS, SuiteSparse-specific: eWiseUnion
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
         method_name = "ewise_union"
@@ -1493,7 +1491,7 @@ class Vector(BaseType):
                     raise TypeError("Single element assign does not accept a submask")
                 # v[I](m) << w
                 if backend == "suitesparse":
-                    cfunc_name = "GrB_Vector_subassign"
+                    cfunc_name = "GxB_Vector_subassign"
                 else:
                     cfunc_name = "GrB_Vector_assign"
                     mask = _vanilla_subassign_mask(self, mask, index, replace)
@@ -1568,13 +1566,13 @@ class Vector(BaseType):
                     else:
                         dtype_name = value.dtype.name
                     if backend == "suitesparse":
-                        cfunc_name = f"GrB_Vector_subassign_{dtype_name}"
+                        cfunc_name = f"GxB_Vector_subassign_{dtype_name}"
                     else:
                         cfunc_name = f"GrB_Vector_assign_{dtype_name}"
                         mask = _vanilla_subassign_mask(self, mask, index, replace)
                 else:
                     if backend == "suitesparse":
-                        cfunc_name = "GrB_Vector_subassign_Scalar"
+                        cfunc_name = "GxB_Vector_subassign_Scalar"
                     else:
                         cfunc_name = "GrB_Vector_assign_Scalar"
                         mask = _vanilla_subassign_mask(self, mask, index, replace)
