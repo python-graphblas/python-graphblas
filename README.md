@@ -7,11 +7,31 @@
 [![Docs](https://readthedocs.org/projects/python-graphblas/badge/?version=latest)](https://python-graphblas.readthedocs.io/en/latest/)
 [![Coverage](https://coveralls.io/repos/python-graphblas/python-graphblas/badge.svg?branch=main)](https://coveralls.io/r/python-graphblas/python-graphblas)
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/python-graphblas/python-graphblas/HEAD?filepath=notebooks%2FIntro%20to%20GraphBLAS%20%2B%20SSSP%20example.ipynb)
+[![Discord](https://img.shields.io/badge/Chat-Discord-blue)](https://discord.com/invite/vur45CbwMz)
 
-Python wrapper around GraphBLAS
+Python library for GraphBLAS: high-performance sparse linear algebra for scalable graph analytics.
 
-To install, `conda install -c conda-forge python-graphblas` or `pip install python-graphblas`. This will also install the SuiteSparse `graphblas` compiled C library.
+- **Documentation:** [https://python-graphblas.readthedocs.io/](https://python-graphblas.readthedocs.io/)
+  - **GraphBLAS C API:** [https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf](https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf)
+  - **SuiteSparse:GraphBLAS User Guide:** [https://github.com/DrTimothyAldenDavis/GraphBLAS/raw/stable/Doc/GraphBLAS_UserGuide.pdf](https://github.com/DrTimothyAldenDavis/GraphBLAS/raw/stable/Doc/GraphBLAS_UserGuide.pdf)
+- **Source:** [https://github.com/python-graphblas/python-graphblas](https://github.com/python-graphblas/python-graphblas)
+- **Bug reports:** [https://github.com/python-graphblas/python-graphblas/issues](https://github.com/python-graphblas/python-graphblas/issues)
+- **Github discussions:** [https://github.com/python-graphblas/python-graphblas/discussions](https://github.com/python-graphblas/python-graphblas/discussions)
+- **Weekly community call:** [https://github.com/python-graphblas/python-graphblas/issues/247](https://github.com/python-graphblas/python-graphblas/issues/247)
+- **Chat via Discord:** [https://discord.com/invite/vur45CbwMz](https://discord.com/invite/vur45CbwMz) in the [#graphblas channel](https://discord.com/channels/786703927705862175/1024732940233605190)
 
+## Install
+Install the latest version of Python-graphblas via conda:
+```
+$ conda install -c conda-forge python-graphblas
+```
+or pip:
+```
+$ pip install python-graphblas
+```
+This will also install the [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS) compiled C library.
+
+## Description
 Currently works with [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS), but the goal is to make it work with all implementations of the GraphBLAS spec.
 
 The approach taken with this library is to follow the C-API specification as closely as possible while making improvements

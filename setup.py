@@ -17,7 +17,10 @@ setup(
     name="python-graphblas",
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
-    description="Python interface to GraphBLAS",
+    description=(
+        "Python library for GraphBLAS: high-performance sparse linear algebra "
+        "for scalable graph analytics"
+    ),
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Erik Welch and Jim Kitchen",
