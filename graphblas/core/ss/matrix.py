@@ -240,8 +240,7 @@ class ss:
         )
         if format_ptr[0] == lib.GxB_BY_COL:
             return "columnwise"
-        else:
-            return "rowwise"
+        return "rowwise"
 
     def diag(self, vector, k=0):
         """
@@ -2694,7 +2693,7 @@ class ss:
                 method=method,
                 matrix=matrix,
             )
-        elif sorted_cols and (not sorted_rows or issorted(cols)):
+        if sorted_cols and (not sorted_rows or issorted(cols)):
             return cls._import_cooc(
                 rows=rows,
                 cols=cols,
@@ -3314,7 +3313,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        elif format == "csc":
+        if format == "csc":
             return getattr(obj, f"{method}_csc")(
                 nrows=nrows,
                 ncols=ncols,
@@ -3327,7 +3326,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        elif format == "hypercsr":
+        if format == "hypercsr":
             return getattr(obj, f"{method}_hypercsr")(
                 nrows=nrows,
                 ncols=ncols,
@@ -3342,7 +3341,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        elif format == "hypercsc":
+        if format == "hypercsc":
             return getattr(obj, f"{method}_hypercsc")(
                 nrows=nrows,
                 ncols=ncols,
@@ -3357,7 +3356,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        elif format == "bitmapr":
+        if format == "bitmapr":
             return getattr(obj, f"{method}_bitmapr")(
                 nrows=nrows,
                 ncols=ncols,
@@ -3369,7 +3368,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        elif format == "bitmapc":
+        if format == "bitmapc":
             return getattr(obj, f"{method}_bitmapc")(
                 nrows=nrows,
                 ncols=ncols,
@@ -3381,7 +3380,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        elif format == "fullr":
+        if format == "fullr":
             return getattr(obj, f"{method}_fullr")(
                 nrows=nrows,
                 ncols=ncols,
@@ -3391,7 +3390,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        elif format == "fullc":
+        if format == "fullc":
             return getattr(obj, f"{method}_fullc")(
                 nrows=nrows,
                 ncols=ncols,
@@ -3401,7 +3400,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        elif format == "coo":
+        if format == "coo":
             return getattr(obj, f"{method}_coo")(
                 nrows=nrows,
                 ncols=ncols,
@@ -3415,7 +3414,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        elif format == "coor":
+        if format == "coor":
             return getattr(obj, f"{method}_coor")(
                 nrows=nrows,
                 ncols=ncols,
@@ -3429,7 +3428,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        elif format == "cooc":
+        if format == "cooc":
             return getattr(obj, f"{method}_cooc")(
                 nrows=nrows,
                 ncols=ncols,
@@ -3443,8 +3442,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        else:
-            raise ValueError(f"Invalid format: {format}")
+        raise ValueError(f"Invalid format: {format}")
 
     def unpack_hyperhash(self, *, compute=False, name=None):
         """Unpacks the hyper_hash of a hypersparse matrix if possible.
@@ -3591,20 +3589,19 @@ class ss:
             parent._nrows = nrows
             parent._ncols = ncols
             return
-        else:
-            rv = Matrix._from_obj(ffi_new("GrB_Matrix*"), parent.dtype, nrows, ncols, name=name)
-            call(
-                "GxB_Matrix_reshapeDup",
-                [
-                    _Pointer(rv),
-                    parent,
-                    _as_scalar(order == "columnwise", BOOL, is_cscalar=True),
-                    _as_scalar(nrows, _INDEX, is_cscalar=True),
-                    _as_scalar(ncols, _INDEX, is_cscalar=True),
-                    None,
-                ],
-            )
-            return rv
+        rv = Matrix._from_obj(ffi_new("GrB_Matrix*"), parent.dtype, nrows, ncols, name=name)
+        call(
+            "GxB_Matrix_reshapeDup",
+            [
+                _Pointer(rv),
+                parent,
+                _as_scalar(order == "columnwise", BOOL, is_cscalar=True),
+                _as_scalar(nrows, _INDEX, is_cscalar=True),
+                _as_scalar(ncols, _INDEX, is_cscalar=True),
+                None,
+            ],
+        )
+        return rv
 
     def selectk_rowwise(self, how, k, *, name=None):
         """Select (up to) k elements from each row.

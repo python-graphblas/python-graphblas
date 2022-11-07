@@ -117,13 +117,12 @@ def get_order(order):
     val = order.lower()
     if val in {"c", "row", "rows", "rowwise"}:
         return "rowwise"
-    elif val in {"f", "col", "cols", "column", "columns", "colwise", "columnwise"}:
+    if val in {"f", "col", "cols", "column", "columns", "colwise", "columnwise"}:
         return "columnwise"
-    else:
-        raise ValueError(
-            f"Bad value for order: {order!r}.  "
-            'Expected "rowwise", "columnwise", "rows", "columns", "C", or "F"'
-        )
+    raise ValueError(
+        f"Bad value for order: {order!r}.  "
+        'Expected "rowwise", "columnwise", "rows", "columns", "C", or "F"'
+    )
 
 
 def normalize_chunks(chunks, shape):
@@ -231,7 +230,7 @@ def ensure_type(x, types):
     """
     if isinstance(x, types):
         return x
-    elif isinstance(types, tuple):
+    if isinstance(types, tuple):
         if output_type(x) in types:
             return x.new()
     elif output_type(x) is types:

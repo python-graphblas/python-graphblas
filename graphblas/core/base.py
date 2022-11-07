@@ -61,7 +61,7 @@ def _expect_type_message(
     if type(types) is tuple:
         if type(x) in types:
             return x, None
-        elif output_type(x) in types:
+        if output_type(x) in types:
             if config.get("autocompute"):
                 return x.new(), None
             extra_message = f"{extra_message}\n\n" if extra_message else ""
@@ -420,11 +420,11 @@ class BaseType:
 
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
-        elif expr.op is not None and expr.op.opclass == "Aggregator":
+        if expr.op is not None and expr.op.opclass == "Aggregator":
             updater = self(mask=mask, accum=accum, replace=replace)
             expr.op._new(updater, expr)
             return
-        elif expr.cfunc_name is None:  # Custom recipe
+        if expr.cfunc_name is None:  # Custom recipe
             updater = self(mask=mask, accum=accum, replace=replace)
             expr.args[-2](updater, *expr.args[-1])
             return

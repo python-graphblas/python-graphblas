@@ -91,9 +91,8 @@ def from_numpy(m):
         _, size = A.shape
         dtype = _lookup_dtype(m.dtype)
         return _Vector.from_values(A.indices, A.data, size=size, dtype=dtype)
-    else:
-        A = coo_array(m)
-        return from_scipy_sparse(A)
+    A = coo_array(m)
+    return from_scipy_sparse(A)
 
 
 def from_scipy_sparse_matrix(m, *, dup_op=None, name=None):
@@ -148,22 +147,21 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
                 sorted_cols=getattr(A, "_has_sorted_indices", False),
                 name=name,
             )
-        else:
-            return _Matrix.ss.import_csc(
-                nrows=nrows,
-                ncols=ncols,
-                indptr=A.indptr,
-                row_indices=A.indices,
-                values=data,
-                is_iso=is_iso,
-                sorted_rows=getattr(A, "_has_sorted_indices", False),
-                name=name,
-            )
-    elif A.format == "csr":
+        return _Matrix.ss.import_csc(
+            nrows=nrows,
+            ncols=ncols,
+            indptr=A.indptr,
+            row_indices=A.indices,
+            values=data,
+            is_iso=is_iso,
+            sorted_rows=getattr(A, "_has_sorted_indices", False),
+            name=name,
+        )
+    if A.format == "csr":
         return _Matrix.from_csr(A.indptr, A.indices, A.data, ncols=ncols, name=name)
-    elif A.format == "csc":
+    if A.format == "csc":
         return _Matrix.from_csc(A.indptr, A.indices, A.data, nrows=nrows, name=name)
-    elif A.format != "coo":
+    if A.format != "coo":
         A = A.tocoo()
     return _Matrix.from_values(
         A.row, A.col, A.data, nrows=nrows, ncols=ncols, dtype=dtype, dup_op=dup_op, name=name
@@ -202,30 +200,24 @@ def from_awkward(A, *, name=None):
         return _Vector.from_values(
             A.indices.layout.data, A.values.layout.data, size=shape[0], name=name
         )
-    else:
-        nrows, ncols = shape
-        values = A.values.layout.content.data
-        indptr = A.values.layout.offsets.data
-        if format == "csr":
-            cols = A.indices.layout.content.data
-            return _Matrix.from_csr(indptr, cols, values, ncols=ncols, name=name)
-        elif format == "csc":
-            rows = A.indices.layout.content.data
-            return _Matrix.from_csc(indptr, rows, values, nrows=nrows, name=name)
-        elif format == "hypercsr":
-            rows = A.offset_labels.layout.data
-            cols = A.indices.layout.content.data
-            return _Matrix.from_dcsr(
-                rows, indptr, cols, values, nrows=nrows, ncols=ncols, name=name
-            )
-        elif format == "hypercsc":
-            cols = A.offset_labels.layout.data
-            rows = A.indices.layout.content.data
-            return _Matrix.from_dcsc(
-                cols, indptr, rows, values, nrows=nrows, ncols=ncols, name=name
-            )
-        else:
-            raise ValueError(f"Invalid format for Matrix: {format}")
+    nrows, ncols = shape
+    values = A.values.layout.content.data
+    indptr = A.values.layout.offsets.data
+    if format == "csr":
+        cols = A.indices.layout.content.data
+        return _Matrix.from_csr(indptr, cols, values, ncols=ncols, name=name)
+    if format == "csc":
+        rows = A.indices.layout.content.data
+        return _Matrix.from_csc(indptr, rows, values, nrows=nrows, name=name)
+    if format == "hypercsr":
+        rows = A.offset_labels.layout.data
+        cols = A.indices.layout.content.data
+        return _Matrix.from_dcsr(rows, indptr, cols, values, nrows=nrows, ncols=ncols, name=name)
+    if format == "hypercsc":
+        cols = A.offset_labels.layout.data
+        rows = A.indices.layout.content.data
+        return _Matrix.from_dcsc(cols, indptr, rows, values, nrows=nrows, ncols=ncols, name=name)
+    raise ValueError(f"Invalid format for Matrix: {format}")
 
 
 # TODO: add parameters to allow different networkx classes and attribute names
@@ -279,9 +271,8 @@ def to_numpy(m):
         raise ImportError("scipy is required to export to numpy") from None
     if _output_type(m) is _Vector:
         return to_scipy_sparse(m).toarray()[0]
-    else:
-        sparse = to_scipy_sparse(m, "coo")
-        return sparse.toarray()
+    sparse = to_scipy_sparse(m, "coo")
+    return sparse.toarray()
 
 
 def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover
@@ -297,10 +288,9 @@ def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover
         indices, data = m.to_values()
         if format == "csc":
             return ss.csc_matrix((data, indices, [0, len(data)]), shape=(m._size, 1))
-        else:
-            rv = ss.csr_matrix((data, indices, [0, len(data)]), shape=(1, m._size))
-            if format == "csr":
-                return rv
+        rv = ss.csr_matrix((data, indices, [0, len(data)]), shape=(1, m._size))
+        if format == "csr":
+            return rv
     else:
         rows, cols, data = m.to_values()
         rv = ss.coo_matrix((data, (rows, cols)), shape=m.shape)
@@ -335,10 +325,9 @@ def to_scipy_sparse(A, format="csr"):
         indices, data = A.to_values()
         if format == "csc":
             return ss.csc_array((data, indices, [0, len(data)]), shape=(A._size, 1))
-        else:
-            rv = ss.csr_array((data, indices, [0, len(data)]), shape=(1, A._size))
-            if format == "csr":
-                return rv
+        rv = ss.csr_array((data, indices, [0, len(data)]), shape=(1, A._size))
+        if format == "csr":
+            return rv
     elif _backend == "suitesparse" and format in {"csr", "csc"}:
         if A._is_transposed:
             info = A.T.ss.export("csc" if format == "csr" else "csr", sort=True)
@@ -354,10 +343,7 @@ def to_scipy_sparse(A, format="csr"):
             return ss.csr_array(
                 (info["values"], info["col_indices"], info["indptr"]), shape=A.shape
             )
-        else:
-            return ss.csc_array(
-                (info["values"], info["row_indices"], info["indptr"]), shape=A.shape
-            )
+        return ss.csc_array((info["values"], info["row_indices"], info["indptr"]), shape=A.shape)
     elif format == "csr":
         indptr, cols, vals = A.to_csr()
         return ss.csr_array((vals, cols, indptr), shape=A.shape)
@@ -518,12 +504,11 @@ def mmread(source, *, dup_op=None, name=None):
         return _Matrix.from_values(
             array.row, array.col, array.data, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
         )
-    elif _backend == "suitesparse":
+    if _backend == "suitesparse":
         return _Matrix.ss.import_fullr(values=array, take_ownership=True, name=name)
-    else:
-        rv = _Matrix(array.dtype, *array.shape, name=name)
-        rv[...] = array
-        return rv
+    rv = _Matrix(array.dtype, *array.shape, name=name)
+    rv[...] = array
+    return rv
 
 
 def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=None):

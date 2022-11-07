@@ -80,7 +80,7 @@ def __getattr__(name):
             else:
                 _load(name)
         return globals()[name]
-    elif name == "_autoinit":
+    if name == "_autoinit":
         if _init_params is None:
             _init("suitesparse", None, automatic=True)
     else:
@@ -121,10 +121,9 @@ def _init(backend_arg, blocking, automatic=False):
                 raise GraphblasException(
                     "graphblas objects accessed prior to manual initialization"
                 )
-            else:
-                raise GraphblasException(
-                    "graphblas initialized multiple times with different init parameters"
-                )
+            raise GraphblasException(
+                "graphblas initialized multiple times with different init parameters"
+            )
         # Already initialized with these parameters; nothing more to do
         return
 

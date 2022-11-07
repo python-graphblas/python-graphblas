@@ -92,9 +92,8 @@ def _call_op(op, left, right=None, thunk=None, **kwargs):
     if output_type(left) in {Vector, Matrix, TransposedMatrix}:
         if thunk is not None:
             return left.select(op, thunk=thunk, **kwargs)
-        else:
-            return left.apply(op, right=right, **kwargs)
-    elif output_type(right) in {Vector, Matrix, TransposedMatrix}:
+        return left.apply(op, right=right, **kwargs)
+    if output_type(right) in {Vector, Matrix, TransposedMatrix}:
         return right.apply(op, left=left, **kwargs)
     raise TypeError(
         f"Bad types when calling {op!r}.  Got types: {type(left)}, {type(right)}.\n"
@@ -173,8 +172,7 @@ class TypedOpBase:
     def __reduce__(self):
         if self._type2 is None or self.type == self._type2:
             return (getitem, (self.parent, self.type))
-        else:
-            return (getitem, (self.parent, (self.type, self._type2)))
+        return (getitem, (self.parent, (self.type, self._type2)))
 
 
 class TypedBuiltinUnaryOp(TypedOpBase):
@@ -804,7 +802,7 @@ class OpBase:
             dtype1 = lookup_dtype(dtype1)
             dtype2 = lookup_dtype(dtype2)
             return get_typed_op(self, dtype1, dtype2)
-        elif not self._is_udt:
+        if not self._is_udt:
             type_ = lookup_dtype(type_)
             if type_ not in self._typed_ops:
                 if self._udt_types is None:
@@ -1078,8 +1076,7 @@ class UnaryOp(OpBase):
                 return_types[type_] = ret_type
         if success or is_udt:
             return new_type_obj
-        else:
-            raise UdfParseError("Unable to parse function using Numba")
+        raise UdfParseError("Unable to parse function using Numba")
 
     def _compile_udt(self, dtype, dtype2):
         if dtype in self._udt_types:
@@ -1369,8 +1366,7 @@ class IndexUnaryOp(OpBase):
                 return_types[type_] = ret_type
         if success or is_udt:
             return new_type_obj
-        else:
-            raise UdfParseError("Unable to parse function using Numba")
+        raise UdfParseError("Unable to parse function using Numba")
 
     def _compile_udt(self, dtype, dtype2):
         if dtype2 is None:  # pragma: no cover
@@ -1997,8 +1993,7 @@ class BinaryOp(OpBase):
                 return_types[type_] = ret_type
         if success or is_udt:
             return new_type_obj
-        else:
-            raise UdfParseError("Unable to parse function using Numba")
+        raise UdfParseError("Unable to parse function using Numba")
 
     def _compile_udt(self, dtype, dtype2):
         if dtype2 is None:
@@ -2987,10 +2982,10 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
         if op._is_udt:
             return op._compile_udt(dtype, dtype2)
         # Single dtype is simple lookup
-        elif dtype2 is None:
+        if dtype2 is None:
             return op[dtype]
         # Handle special cases such as first and second (may have UDTs)
-        elif op._custom_dtype is not None:
+        if op._custom_dtype is not None:
             if (rv := op._custom_dtype(op, dtype, dtype2)) is not None:
                 return rv
         # Generic case: try to unify the two dtypes
@@ -3002,11 +2997,10 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             # Failure to unify implies a dtype is UDT; some builtin operators can handle UDTs
             if op.is_positional:
                 return op[UINT64]
-            elif op._udt_types is None:
+            if op._udt_types is None:
                 raise
-            else:
-                return op._compile_udt(dtype, dtype2)
-    elif isinstance(op, ParameterizedUdf):
+            return op._compile_udt(dtype, dtype2)
+    if isinstance(op, ParameterizedUdf):
         op = op()  # Use default parameters of parameterized UDFs
         return get_typed_op(
             op,
@@ -3016,16 +3010,16 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             is_right_scalar=is_right_scalar,
             kind=kind,
         )
-    elif isinstance(op, TypedOpBase):
+    if isinstance(op, TypedOpBase):
         return op
 
     from .agg import Aggregator, TypedAggregator
 
     if isinstance(op, Aggregator):
         return op[dtype]
-    elif isinstance(op, TypedAggregator):
+    if isinstance(op, TypedAggregator):
         return op
-    elif isinstance(op, str):
+    if isinstance(op, str):
         if kind == "unary":
             op = unary_from_string(op)
         elif kind == "select":
@@ -3061,11 +3055,11 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             is_right_scalar=is_right_scalar,
             kind=kind,
         )
-    elif isinstance(op, FunctionType):
+    if isinstance(op, FunctionType):
         if kind == "unary":
             op = UnaryOp.register_anonymous(op, is_udt=True)
             return op._compile_udt(dtype, dtype2)
-        elif kind.startswith("binary"):
+        if kind.startswith("binary"):
             op = BinaryOp.register_anonymous(op, is_udt=True)
             return op._compile_udt(dtype, dtype2)
     raise TypeError(f"Unable to get typed operator from object with type {type(op)}")
@@ -3175,10 +3169,9 @@ def get_semiring(monoid, binaryop, name=None):
 
     if binary_type is not None:
         return rv[binary_type]
-    elif monoid_type is not None:
+    if monoid_type is not None:
         return rv[monoid_type]
-    else:
-        return rv
+    return rv
 
 
 # Now initialize all the things!
@@ -3281,7 +3274,7 @@ def _from_string(string, module, mapping, example):
         raise ValueError(
             f'Bad {name} string: {string!r}.  Contains too many "[".  Example usage: {example!r}'
         )
-    elif dtype:
+    if dtype:
         dtype = dtype[0]
         if not dtype.endswith("]"):
             name = module.__name__.split(".")[-1]

@@ -112,23 +112,21 @@ class Aggregator:
                     "rowwise and columnwise arguments should not be used with Vector input"
                 )
             return val.reduce(self)
-        elif typ in {Matrix, TransposedMatrix}:
+        if typ in {Matrix, TransposedMatrix}:
             if rowwise:
                 if columnwise:
                     raise ValueError("rowwise and columnwise arguments cannot both be True")
                 return val.reduce_rowwise(self)
-            elif columnwise:
+            if columnwise:
                 return val.reduce_columnwise(self)
-            else:
-                return val.reduce_scalar(self)
-        else:
-            raise TypeError(
-                f"Bad type when calling {self!r}.\n"
-                "    - Expected type: Vector, Matrix, TransposedMatrix.\n"
-                f"    - Got: {type(val)}.\n"
-                "Calling an Aggregator is syntactic sugar for calling reduce methods.  "
-                f"For example, `A.reduce_scalar({self!r})` is the same as `{self!r}(A)`."
-            )
+            return val.reduce_scalar(self)
+        raise TypeError(
+            f"Bad type when calling {self!r}.\n"
+            "    - Expected type: Vector, Matrix, TransposedMatrix.\n"
+            f"    - Got: {type(val)}.\n"
+            "Calling an Aggregator is syntactic sugar for calling reduce methods.  "
+            f"For example, `A.reduce_scalar({self!r})` is the same as `{self!r}(A)`."
+        )
 
 
 class TypedAggregator:
@@ -523,7 +521,7 @@ def _argminmax(agg, updater, expr, *, in_composite, monoid):
             row_semiring=semiring.min_firsti,
             col_semiring=semiring.min_secondi,
         )
-    elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
+    if expr.cfunc_name.startswith("GrB_Vector_reduce"):
         return _argminmaxij(
             agg,
             updater,
@@ -533,10 +531,9 @@ def _argminmax(agg, updater, expr, *, in_composite, monoid):
             row_semiring=semiring.min_firsti,
             col_semiring=semiring.min_secondi,
         )
-    elif expr.cfunc_name.startswith("GrB_Matrix_reduce"):
+    if expr.cfunc_name.startswith("GrB_Matrix_reduce"):
         raise ValueError(f"Aggregator {agg.name} may not be used with Matrix.reduce_scalar.")
-    else:
-        raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
+    raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
 
 
 # These "do the right thing", but don't work with `reduce_scalar`

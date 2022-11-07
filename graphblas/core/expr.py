@@ -49,8 +49,7 @@ class AxisIndex:
             return rv
         if idx.size < 6:
             return f"[{', '.join(map(str, idx))}]"
-        else:
-            return f"[{', '.join(map(str, idx[:3]))}, ...]"
+        return f"[{', '.join(map(str, idx[:3]))}, ...]"
 
     def _py_index(self):
         """Convert resolved index back into a valid Python index"""
@@ -226,7 +225,7 @@ class IndexerResolver:
                     "If you want to assign with a mask, perhaps do something like "
                     f"`x(mask={index.name}.S) << value`."
                 )
-            elif typ is TransposedMatrix:
+            if typ is TransposedMatrix:
                 raise TypeError(f"Invalid type for index: {typ.__name__}.")
             try:
                 index = list(index)
@@ -512,7 +511,7 @@ class InfixExprBase:
 
         if self.output_type.__name__ == "VectorExpression":
             return formatting.format_vector_infix_expression_html(self)
-        elif self.output_type.__name__ == "MatrixExpression":
+        if self.output_type.__name__ == "MatrixExpression":
             return formatting.format_matrix_infix_expression_html(self)
         return formatting.format_scalar_infix_expression_html(self)
 
@@ -521,7 +520,7 @@ class InfixExprBase:
 
         if self.output_type.__name__ == "VectorExpression":
             return formatting.format_vector_infix_expression(self)
-        elif self.output_type.__name__ == "MatrixExpression":
+        if self.output_type.__name__ == "MatrixExpression":
             return formatting.format_matrix_infix_expression(self)
         return formatting.format_scalar_infix_expression(self)
 

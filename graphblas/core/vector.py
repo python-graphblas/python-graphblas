@@ -178,9 +178,8 @@ class Vector(BaseType):
     def _deserialize(pieces, name):
         if backend == "suitesparse":
             return Vector.ss.import_any(name=name, **pieces)
-        else:
-            indices, values, dtype, size = pieces
-            return Vector.from_values(indices, values, dtype, size=size, name=name)
+        indices, values, dtype, size = pieces
+        return Vector.from_values(indices, values, dtype, size=size, name=name)
 
     @property
     def S(self):
@@ -219,8 +218,7 @@ class Vector(BaseType):
         shape = resolved_indexes.shape
         if not shape:
             return ScalarIndexExpr(self, resolved_indexes)
-        else:
-            return VectorIndexExpr(self, resolved_indexes, *shape)
+        return VectorIndexExpr(self, resolved_indexes, *shape)
 
     def __setitem__(self, keys, expr):
         """Assign values to a single element or subvector.
@@ -268,8 +266,7 @@ class Vector(BaseType):
             size = ffi_new("size_t*")
             check_status(lib.GxB_Vector_memoryUsage(size, self.gb_obj[0]), self)
             return size[0] + object.__sizeof__(self)
-        else:
-            raise TypeError("Unable to get size of Vector with backend: {backend}")
+        raise TypeError("Unable to get size of Vector with backend: {backend}")
 
     def isequal(self, other, *, check_dtype=False):
         """Check for exact equality (same size, same structure)

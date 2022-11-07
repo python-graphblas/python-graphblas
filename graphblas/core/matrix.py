@@ -183,9 +183,8 @@ class Matrix(BaseType):
     def _deserialize(pieces, name):
         if backend == "suitesparse":
             return Matrix.ss.import_any(name=name, **pieces)
-        else:
-            rows, cols, vals, dtype, nrows, ncols = pieces
-            return Matrix.from_values(rows, cols, vals, dtype, nrows=nrows, ncols=ncols, name=name)
+        rows, cols, vals, dtype, nrows, ncols = pieces
+        return Matrix.from_values(rows, cols, vals, dtype, nrows=nrows, ncols=ncols, name=name)
 
     @property
     def S(self):
@@ -224,10 +223,9 @@ class Matrix(BaseType):
         shape = resolved_indexes.shape
         if not shape:
             return ScalarIndexExpr(self, resolved_indexes)
-        elif len(shape) == 1:
+        if len(shape) == 1:
             return VectorIndexExpr(self, resolved_indexes, *shape)
-        else:
-            return MatrixIndexExpr(self, resolved_indexes, *shape)
+        return MatrixIndexExpr(self, resolved_indexes, *shape)
 
     def __setitem__(self, keys, expr):
         """Assign values to a single element, row/column, or submatrix.
@@ -273,8 +271,7 @@ class Matrix(BaseType):
             size = ffi_new("size_t*")
             check_status(lib.GxB_Matrix_memoryUsage(size, self.gb_obj[0]), self)
             return size[0] + object.__sizeof__(self)
-        else:
-            raise TypeError("Unable to get size of Matrix with backend: {backend}")
+        raise TypeError("Unable to get size of Matrix with backend: {backend}")
 
     def isequal(self, other, *, check_dtype=False):
         """Check for exact equality (same size, same structure).
@@ -600,30 +597,30 @@ class Matrix(BaseType):
             from ..ss._core import diag
 
             return diag(self, k=k, dtype=dtype, name=name)
+
+        # GraphBLAS spec could use GrB_Vector_diag
+        if dtype is None:
+            dtype = self.dtype
+        if type(k) is not Scalar:
+            k = Scalar.from_value(k, INT64, is_cscalar=True, name="")
+        D = select.diag(self, k).new(dtype, name="Diag_temp")
+        k = k.value
+        if k < 0:
+            size = min(self._nrows + k, self._ncols)
         else:
-            # GraphBLAS spec could use GrB_Vector_diag
-            if dtype is None:
-                dtype = self.dtype
-            if type(k) is not Scalar:
-                k = Scalar.from_value(k, INT64, is_cscalar=True, name="")
-            D = select.diag(self, k).new(dtype, name="Diag_temp")
-            k = k.value
+            size = min(self._ncols - k, self._nrows)
+        if size < 0:
+            size = 0
+        rv = Vector(dtype, size=size, name=name)
+        if k == 0:
+            rv << D.reduce_rowwise(monoid.any)
+        else:
+            d = D.reduce_rowwise(monoid.any).new(name="diag_temp")
             if k < 0:
-                size = min(self._nrows + k, self._ncols)
+                rv << d[d._size - rv._size :]
             else:
-                size = min(self._ncols - k, self._nrows)
-            if size < 0:
-                size = 0
-            rv = Vector(dtype, size=size, name=name)
-            if k == 0:
-                rv << D.reduce_rowwise(monoid.any)
-            else:
-                d = D.reduce_rowwise(monoid.any).new(name="diag_temp")
-                if k < 0:
-                    rv << d[d._size - rv._size :]
-                else:
-                    rv << d[: rv._size]
-            return rv
+                rv << d[: rv._size]
+        return rv
 
     def wait(self):
         """Wait for a computation to complete.
@@ -944,19 +941,16 @@ class Matrix(BaseType):
                 dtype=dtype,
                 name=name,
             )
+        indptr = ints_to_numpy_buffer(indptr, np.int64, name="indptr")  # Ensure int, not uint
+        if indptr.size == 0:
+            raise InvalidValue("indptr array must not be empty")
+        if indptr.size == 1:
+            nrows = 0 if nrows is None else nrows
+            ncols = 0 if ncols is None else ncols
+            rows = np.empty(0, np.uint64)
         else:
-            indptr = ints_to_numpy_buffer(indptr, np.int64, name="indptr")  # Ensure int, not uint
-            if indptr.size == 0:
-                raise InvalidValue("indptr array must not be empty")
-            elif indptr.size == 1:
-                nrows = 0 if nrows is None else nrows
-                ncols = 0 if ncols is None else ncols
-                rows = np.empty(0, np.uint64)
-            else:
-                rows = np.repeat(compressed_rows, np.diff(indptr))
-            return cls.from_coo(
-                rows, col_indices, values, dtype, nrows=nrows, ncols=ncols, name=name
-            )
+            rows = np.repeat(compressed_rows, np.diff(indptr))
+        return cls.from_coo(rows, col_indices, values, dtype, nrows=nrows, ncols=ncols, name=name)
 
     @classmethod
     def from_dcsc(
@@ -1026,19 +1020,16 @@ class Matrix(BaseType):
                 dtype=dtype,
                 name=name,
             )
+        indptr = ints_to_numpy_buffer(indptr, np.int64, name="indptr")  # Ensure int, not uint
+        if indptr.size == 0:
+            raise InvalidValue("indptr array must not be empty")
+        if indptr.size == 1:
+            nrows = 0 if nrows is None else nrows
+            ncols = 0 if ncols is None else ncols
+            cols = np.empty(0, np.uint64)
         else:
-            indptr = ints_to_numpy_buffer(indptr, np.int64, name="indptr")  # Ensure int, not uint
-            if indptr.size == 0:
-                raise InvalidValue("indptr array must not be empty")
-            elif indptr.size == 1:
-                nrows = 0 if nrows is None else nrows
-                ncols = 0 if ncols is None else ncols
-                cols = np.empty(0, np.uint64)
-            else:
-                cols = np.repeat(compressed_cols, np.diff(indptr))
-            return cls.from_coo(
-                row_indices, cols, values, dtype, nrows=nrows, ncols=ncols, name=name
-            )
+            cols = np.repeat(compressed_cols, np.diff(indptr))
+        return cls.from_coo(row_indices, cols, values, dtype, nrows=nrows, ncols=ncols, name=name)
 
     @classmethod
     def _from_dense(cls, values, dtype=None, *, name=None):
@@ -1051,7 +1042,7 @@ class Matrix(BaseType):
         values, dtype = values_to_numpy_buffer(values, dtype)
         if values.ndim < 2:
             raise ValueError("A 2d array is required to create a dense Matrix")
-        elif dtype.np_type.subdtype is not None and values.ndim < 3:
+        if dtype.np_type.subdtype is not None and values.ndim < 3:
             raise ValueError("A >2d array is required to create a dense Matrix with subdtype")
         nrows, ncols, *rest = values.shape
         cols, rows = np.meshgrid(
@@ -2183,7 +2174,7 @@ class Matrix(BaseType):
                 dtype=self.dtype,
                 at=not self._is_transposed,
             )
-        elif colidx.size is None:
+        if colidx.size is None:
             # Column-only selection
             return VectorExpression(
                 method_name,
@@ -2194,17 +2185,16 @@ class Matrix(BaseType):
                 dtype=self.dtype,
                 at=self._is_transposed,
             )
-        else:
-            return MatrixExpression(
-                method_name,
-                "GrB_Matrix_extract",
-                [self, rowidx, rowidx.cscalar, colidx, colidx.cscalar],
-                expr_repr="{0.name}[{1._expr_name}, {3._expr_name}]",
-                nrows=rowidx.size,
-                ncols=colidx.size,
-                dtype=self.dtype,
-                at=self._is_transposed,
-            )
+        return MatrixExpression(
+            method_name,
+            "GrB_Matrix_extract",
+            [self, rowidx, rowidx.cscalar, colidx, colidx.cscalar],
+            expr_repr="{0.name}[{1._expr_name}, {3._expr_name}]",
+            nrows=rowidx.size,
+            ncols=colidx.size,
+            dtype=self.dtype,
+            at=self._is_transposed,
+        )
 
     def _assign_element(self, resolved_indexes, value):
         rowidx, colidx = resolved_indexes.indices
@@ -2266,21 +2256,20 @@ class Matrix(BaseType):
                             "Indices for subassign imply Vector submask, "
                             "but got Matrix mask instead"
                         )
-                    else:
-                        # C(M)[i, J] << v
-                        # Upcast v to a Matrix and use Matrix_assign
-                        rows = _CArray([rows.value])
-                        rowscalar = _as_scalar(1, _INDEX, is_cscalar=True)
-                        expr = MatrixExpression(
-                            method_name,
-                            "GrB_Matrix_assign",
-                            [value._as_matrix(), rows, rowscalar, cols, colscalar],
-                            expr_repr="[[{2._expr_name} rows], [{4._expr_name} cols]] = {0.name}",
-                            nrows=self._nrows,
-                            ncols=self._ncols,
-                            dtype=self.dtype,
-                            at=True,
-                        )
+                    # C(M)[i, J] << v
+                    # Upcast v to a Matrix and use Matrix_assign
+                    rows = _CArray([rows.value])
+                    rowscalar = _as_scalar(1, _INDEX, is_cscalar=True)
+                    expr = MatrixExpression(
+                        method_name,
+                        "GrB_Matrix_assign",
+                        [value._as_matrix(), rows, rowscalar, cols, colscalar],
+                        expr_repr="[[{2._expr_name} rows], [{4._expr_name} cols]] = {0.name}",
+                        nrows=self._nrows,
+                        ncols=self._ncols,
+                        dtype=self.dtype,
+                        at=True,
+                    )
                 else:
                     if is_submask:
                         # C[i, J](m) << v
@@ -2316,20 +2305,19 @@ class Matrix(BaseType):
                             "Indices for subassign imply Vector submask, "
                             "but got Matrix mask instead"
                         )
-                    else:
-                        # C(M)[I, j] << v
-                        # Upcast v to a Matrix and use Matrix_assign
-                        cols = _CArray([cols.value])
-                        colscalar = _as_scalar(1, _INDEX, is_cscalar=True)
-                        expr = MatrixExpression(
-                            method_name,
-                            "GrB_Matrix_assign",
-                            [value._as_matrix(), rows, rowscalar, cols, colscalar],
-                            expr_repr="[[{2._expr_name} rows], [{4._expr_name} cols]] = {0.name}",
-                            nrows=self._nrows,
-                            ncols=self._ncols,
-                            dtype=self.dtype,
-                        )
+                    # C(M)[I, j] << v
+                    # Upcast v to a Matrix and use Matrix_assign
+                    cols = _CArray([cols.value])
+                    colscalar = _as_scalar(1, _INDEX, is_cscalar=True)
+                    expr = MatrixExpression(
+                        method_name,
+                        "GrB_Matrix_assign",
+                        [value._as_matrix(), rows, rowscalar, cols, colscalar],
+                        expr_repr="[[{2._expr_name} rows], [{4._expr_name} cols]] = {0.name}",
+                        nrows=self._nrows,
+                        ncols=self._ncols,
+                        dtype=self.dtype,
+                    )
                 else:
                     if is_submask:
                         # C[I, j](m) << v
@@ -2586,13 +2574,12 @@ class Matrix(BaseType):
                         if rowsize is None and colsize is None:
                             # C[i, j](M) << c
                             raise TypeError("Single element assign does not accept a submask")
-                        else:
-                            # C[i, J](M) << c
-                            # C[I, j](M) << c
-                            raise TypeError(
-                                "Indices for subassign imply Vector submask, "
-                                "but got Matrix mask instead"
-                            )
+                        # C[i, J](M) << c
+                        # C[I, j](M) << c
+                        raise TypeError(
+                            "Indices for subassign imply Vector submask, "
+                            "but got Matrix mask instead"
+                        )
                     # C[I, J](M) << c
                     if value._is_cscalar:
                         if value.dtype._is_udt:
@@ -3016,8 +3003,7 @@ class TransposedMatrix:
             dtype = self.dtype
         if clear:
             return Matrix(dtype, self._nrows, self._ncols, name=name)
-        else:
-            return self.new(dtype, mask=mask, name=name)
+        return self.new(dtype, mask=mask, name=name)
 
     @property
     def T(self):

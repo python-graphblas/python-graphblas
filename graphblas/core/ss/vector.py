@@ -784,7 +784,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        elif format == "bitmap":
+        if format == "bitmap":
             return getattr(obj, f"{method}_bitmap")(
                 nvals=nvals,
                 bitmap=bitmap,
@@ -795,7 +795,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        elif format == "full":
+        if format == "full":
             return getattr(obj, f"{method}_full")(
                 values=values,
                 size=size,
@@ -804,8 +804,7 @@ class ss:
                 dtype=dtype,
                 name=name,
             )
-        else:
-            raise ValueError(f"Invalid format: {format}")
+        raise ValueError(f"Invalid format: {format}")
 
     @classmethod
     def import_sparse(
@@ -1419,8 +1418,7 @@ class ss:
         if size is None and self._parent._nvals == 0 or size == 0:
             if asindex:
                 return gb.Vector(UINT64, size=0, name=name)
-            else:
-                return gb.Vector(self._parent.dtype, size=0, name=name)
+            return gb.Vector(self._parent.dtype, size=0, name=name)
         do_sort = how in {"first", "last"}
         info = self._parent.ss.export("sparse", sort=do_sort)
         if size is None:

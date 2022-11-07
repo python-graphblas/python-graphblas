@@ -51,9 +51,9 @@ class BaseConfig(MutableMapping):
         if info == lib.GrB_SUCCESS:  # pragma: no branch
             if is_array:
                 return list(val_ptr)
-            elif key in self._enumerations:
+            if key in self._enumerations:
                 return self._enumerations[key][val_ptr[0]]
-            elif key in self._bitwise:
+            if key in self._bitwise:
                 bitwise = self._bitwise[key]
                 val = val_ptr[0]
                 if val in bitwise:

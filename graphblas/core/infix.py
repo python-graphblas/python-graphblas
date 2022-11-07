@@ -18,7 +18,7 @@ InfixExprBase._expect_type = _expect_type
 def _ewise_add_to_expr(self):
     if self._value is not None:
         return self._value
-    elif self.left.dtype == BOOL and self.right.dtype == BOOL:
+    if self.left.dtype == BOOL and self.right.dtype == BOOL:
         self._value = self.left.ewise_add(self.right, lor)
         return self._value
     raise TypeError(
@@ -32,7 +32,7 @@ def _ewise_add_to_expr(self):
 def _ewise_mult_to_expr(self):
     if self._value is not None:
         return self._value
-    elif self.left.dtype == BOOL and self.right.dtype == BOOL:
+    if self.left.dtype == BOOL and self.right.dtype == BOOL:
         self._value = self.left.ewise_mult(self.right, land)
         return self._value
     raise TypeError(
@@ -363,14 +363,14 @@ def _ewise_infix_expr(left, right, *, method, within):
             if method == "ewise_mult":
                 return VectorEwiseMultExpr(left, right)
             return VectorEwiseAddExpr(left, right)
-        elif method == "ewise_mult":
+        if method == "ewise_mult":
             return MatrixEwiseMultExpr(left, right)
         return MatrixEwiseAddExpr(left, right)
     if within == "__or__" and isinstance(right, Mask):
         return right.__ror__(left)
-    elif within == "__and__" and isinstance(right, Mask):
+    if within == "__and__" and isinstance(right, Mask):
         return right.__rand__(left)
-    elif left_type in types:
+    if left_type in types:
         left._expect_type(right, tuple(types), within=within, argname="right")
     elif right_type in types:
         right._expect_type(left, tuple(types), within=within, argname="left")
@@ -429,7 +429,7 @@ def _matmul_infix_expr(left, right, *, within):
     expr = getattr(left, method)(right, any_pair[bool])
     if expr.output_type is Vector:
         return VectorMatMulExpr(left, right, method_name=method, size=expr._size)
-    elif expr.output_type is Matrix:
+    if expr.output_type is Matrix:
         return MatrixMatMulExpr(left, right, nrows=expr._nrows, ncols=expr._ncols)
     return ScalarMatMulExpr(left, right)
 

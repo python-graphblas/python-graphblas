@@ -108,33 +108,34 @@ def register_anonymous(dtype, name=None):
                 raise ValueError("dtype must not be a builtin type")
             rv.name = name  # Rename an existing object (a little weird, but okay)
         return rv
-    elif dtype.hasobject:
+    if dtype.hasobject:
         raise ValueError("dtype must not allow Python objects")
-    else:
-        from .exceptions import check_status_carg
 
-        gb_obj = _ffi.new("GrB_Type*")
-        if backend == "suitesparse":
-            # We name this so that we can serialize and deserialize UDTs
-            # We don't yet have C definitions
-            np_repr = _dtype_to_string(dtype).encode()
-            if len(np_repr) > _lib.GxB_MAX_NAME_LEN:
-                msg = (
-                    f"UDT repr is too large to serialize ({len(repr(dtype).encode())} > "
-                    f"{_lib.GxB_MAX_NAME_LEN})."
-                )
-                if name is not None:
-                    np_repr = name.encode()[: _lib.GxB_MAX_NAME_LEN]
-                else:
-                    np_repr = np_repr[: _lib.GxB_MAX_NAME_LEN]
-                _warnings.warn(
-                    f"{msg}.  It will use the following name, "
-                    f"and the dtype may need to be specified when deserializing: {np_repr}"
-                )
-            status = _lib.GxB_Type_new(gb_obj, dtype.itemsize, np_repr, _NULL)
-        else:  # pragma: no cover
-            status = _lib.GrB_Type_new(gb_obj, dtype.itemsize)
-        check_status_carg(status, "Type", gb_obj[0])
+    from .exceptions import check_status_carg
+
+    gb_obj = _ffi.new("GrB_Type*")
+    if backend == "suitesparse":
+        # We name this so that we can serialize and deserialize UDTs
+        # We don't yet have C definitions
+        np_repr = _dtype_to_string(dtype).encode()
+        if len(np_repr) > _lib.GxB_MAX_NAME_LEN:
+            msg = (
+                f"UDT repr is too large to serialize ({len(repr(dtype).encode())} > "
+                f"{_lib.GxB_MAX_NAME_LEN})."
+            )
+            if name is not None:
+                np_repr = name.encode()[: _lib.GxB_MAX_NAME_LEN]
+            else:
+                np_repr = np_repr[: _lib.GxB_MAX_NAME_LEN]
+            _warnings.warn(
+                f"{msg}.  It will use the following name, "
+                f"and the dtype may need to be specified when deserializing: {np_repr}"
+            )
+        status = _lib.GxB_Type_new(gb_obj, dtype.itemsize, np_repr, _NULL)
+    else:  # pragma: no cover
+        status = _lib.GrB_Type_new(gb_obj, dtype.itemsize)
+    check_status_carg(status, "Type", gb_obj[0])
+
     # For now, let's use "opaque" unsigned bytes for the c type.
     if name is None:
         name = _default_name(dtype)
@@ -325,13 +326,12 @@ def _default_name(dtype):
         subdtype = _default_name(dtype.subdtype[0])
         shape = ", ".join(map(str, dtype.subdtype[1]))
         return f"{subdtype}[{shape}]"
-    elif dtype.names:
+    if dtype.names:
         args = ", ".join(
             f"{name!r}: {_default_name(dtype.fields[name][0])}" for name in dtype.names
         )
         return "{%s}" % args
-    else:
-        return repr(dtype)
+    return repr(dtype)
 
 
 def _dtype_to_string(dtype):

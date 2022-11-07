@@ -14,7 +14,7 @@ def gbstr(arg):
     """Convert arg to a string as an argument in a GraphBLAS call"""
     if arg is None:
         return "NULL"
-    elif isinstance(arg, TypedOpBase):
+    if isinstance(arg, TypedOpBase):
         name = arg.gb_name
     elif isinstance(arg, Mask):
         name = arg.parent.name
@@ -27,9 +27,8 @@ def gbstr(arg):
     if not name:
         if type(arg) is Scalar and arg._is_cscalar:
             return repr(arg.value)
-        else:
-            c = type(arg).__name__[0]
-            return f"{'M' if c == 'M' else c.lower()}_temp"
+        c = type(arg).__name__[0]
+        return f"{'M' if c == 'M' else c.lower()}_temp"
     return name
 
 

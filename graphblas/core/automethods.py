@@ -16,8 +16,7 @@ def _get_value(self, attr=None, default=None):
             self._value = self.new()
         if attr is None:
             return self._value
-        else:
-            return getattr(self._value, attr)
+        return getattr(self._value, attr)
     if default is not None:
         return default.__get__(self)
     raise TypeError(

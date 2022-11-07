@@ -112,8 +112,7 @@ class Mask:
         val = func(self, other, bool, None)
         if complement:
             return ComplementedStructuralMask(val)
-        else:
-            return StructuralMask(val)
+        return StructuralMask(val)
 
     __rand__ = __and__
 
