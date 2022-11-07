@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
-import graphblas
+import graphblas as gb
 from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
 from graphblas.core import lib
 from graphblas.exceptions import (
@@ -1504,12 +1504,12 @@ def test_reduce_row_udf(A):
     def plus(x, y):  # pragma: no cover
         return x + y
 
-    binop = graphblas.core.operator.BinaryOp.register_anonymous(plus)
+    binop = gb.core.operator.BinaryOp.register_anonymous(plus)
     with pytest.raises(NotImplementedException):
         # Although allowed by the spec, SuiteSparse doesn't like user-defined binarops here
         A.reduce_rowwise(binop).new()
     # If the user creates a monoid from the binop, then we can use the monoid instead
-    monoid = graphblas.core.operator.Monoid.register_anonymous(binop, 0)
+    monoid = gb.core.operator.Monoid.register_anonymous(binop, 0)
     w = A.reduce_rowwise(binop).new()
     assert w.isequal(result)
     w2 = A.reduce_rowwise(monoid).new()
@@ -1810,7 +1810,7 @@ def test_del(capsys):
     # A has `gb_obj` of NULL
     A = Matrix.from_values([0, 1], [0, 1], [0, 1])
     gb_obj = A.gb_obj
-    A.gb_obj = graphblas.core.NULL
+    A.gb_obj = gb.core.NULL
     del A
     # let's clean up so we don't have a memory leak
     A2 = object.__new__(Matrix)
@@ -2525,12 +2525,12 @@ def test_diag(A, params):
     v = A.T.diag(-k)
     assert expected.isequal(v)
     if suitesparse:
-        v = graphblas.ss.diag(A, k=k)
+        v = gb.ss.diag(A, k=k)
         assert expected.isequal(v)
         v[:] = 0
         v.ss.build_diag(A, k=k)
         assert expected.isequal(v)
-        v = graphblas.ss.diag(A.T, k=-k)
+        v = gb.ss.diag(A.T, k=-k)
         assert expected.isequal(v)
         v[:] = 0
         v.ss.build_diag(A.T, -k)
@@ -2594,7 +2594,7 @@ def test_ss_split(A):
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_concat(A, v):
-    B1 = graphblas.ss.concat([[A, A]], dtype=float)
+    B1 = gb.ss.concat([[A, A]], dtype=float)
     assert B1.dtype == "FP64"
     expected = Matrix(A.dtype, nrows=A.nrows, ncols=2 * A.ncols)
     expected[:, : A.ncols] = A
@@ -2609,46 +2609,46 @@ def test_ss_concat(A, v):
     assert B2.isequal(expected)
 
     tiles = A.ss.split([4, 3])
-    A2 = graphblas.ss.concat(tiles)
+    A2 = gb.ss.concat(tiles)
     assert A2.isequal(A)
 
     with pytest.raises(TypeError, match="tiles argument must be list or tuple"):
-        graphblas.ss.concat(1)
+        gb.ss.concat(1)
     # with pytest.raises(TypeError, match="Each tile must be a Matrix"):
-    assert graphblas.ss.concat([[A.T]]).isequal(A.T)
+    assert gb.ss.concat([[A.T]]).isequal(A.T)
     with pytest.raises(TypeError, match="tiles must be lists or tuples"):
-        graphblas.ss.concat([A])
+        gb.ss.concat([A])
 
     with pytest.raises(ValueError, match="tiles argument must not be empty"):
-        graphblas.ss.concat([])
+        gb.ss.concat([])
     with pytest.raises(ValueError, match="tiles must not be empty"):
-        graphblas.ss.concat([[]])
+        gb.ss.concat([[]])
     with pytest.raises(ValueError, match="tiles must all be the same length"):
-        graphblas.ss.concat([[A], [A, A]])
+        gb.ss.concat([[A], [A, A]])
 
     # Treat vectors like Nx1 matrices
-    B3 = graphblas.ss.concat([[v, v]])
+    B3 = gb.ss.concat([[v, v]])
     expected = Matrix(v.dtype, nrows=v.size, ncols=2)
     expected[:, 0] = v
     expected[:, 1] = v
     assert B3.isequal(expected)
 
-    B4 = graphblas.ss.concat([[v], [v]])
+    B4 = gb.ss.concat([[v], [v]])
     expected = Matrix(v.dtype, nrows=2 * v.size, ncols=1)
     expected[: v.size, 0] = v
     expected[v.size :, 0] = v
     assert B4.isequal(expected)
 
-    B5 = graphblas.ss.concat([[A, v]])
+    B5 = gb.ss.concat([[A, v]])
     expected = Matrix(v.dtype, nrows=v.size, ncols=A.ncols + 1)
     expected[:, : A.ncols] = A
     expected[:, A.ncols] = v
     assert B5.isequal(expected)
 
     with pytest.raises(TypeError, match=""):
-        graphblas.ss.concat([v, [v]])
+        gb.ss.concat([v, [v]])
     with pytest.raises(TypeError):
-        graphblas.ss.concat([[v], v])
+        gb.ss.concat([[v], v])
 
 
 @pytest.mark.skipif("not suitesparse")
@@ -2773,6 +2773,7 @@ def test_expr_is_like_matrix(A):
         "_deserialize",
         "_extract_element",
         "_from_csx",
+        "_from_dense",
         "_from_obj",
         "_name_counter",
         "_parent",
@@ -2824,6 +2825,7 @@ def test_index_expr_is_like_matrix(A):
         "_deserialize",
         "_extract_element",
         "_from_csx",
+        "_from_dense",
         "_from_obj",
         "_name_counter",
         "_parent",
@@ -3845,5 +3847,5 @@ def test_ss_pack_hyperhash(A):
     assert C.ss.unpack_hyperhash() is None
     assert Y.nrows == C.nrows
     C.ss.pack_hyperhash(Y)
-    assert Y.gb_obj[0] == graphblas.core.NULL
+    assert Y.gb_obj[0] == gb.core.NULL
     assert C.ss.unpack_hyperhash() is not None

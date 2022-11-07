@@ -171,14 +171,21 @@ class Matrix(BaseType):
         return super()._name_html
 
     def __reduce__(self):
-        # SS, SuiteSparse-specific: export
-        pieces = self.ss.export(raw=True)
+        # TODO: we should probably use (or compare to) GraphBLAS serialize methods
+        if backend == "suitesparse":
+            pieces = self.ss.export(raw=True)
+        else:
+            rows, cols, vals = self.to_values(sort=False)
+            pieces = (rows, cols, vals, self.dtype, self._nrows, self._ncols)
         return self._deserialize, (pieces, self.name)
 
     @staticmethod
     def _deserialize(pieces, name):
-        # SS, SuiteSparse-specific: import
-        return Matrix.ss.import_any(name=name, **pieces)
+        if backend == "suitesparse":
+            return Matrix.ss.import_any(name=name, **pieces)
+        else:
+            rows, cols, vals, dtype, nrows, ncols = pieces
+            return Matrix.from_values(rows, cols, vals, dtype, nrows=nrows, ncols=ncols, name=name)
 
     @property
     def S(self):
@@ -1032,6 +1039,32 @@ class Matrix(BaseType):
             return cls.from_coo(
                 row_indices, cols, values, dtype, nrows=nrows, ncols=ncols, name=name
             )
+
+    @classmethod
+    def _from_dense(cls, values, dtype=None, *, name=None):
+        """Create a new Matrix from a dense numpy array"""
+        # TODO: GraphBLAS needs a way to import or assign dense
+        # We could also handle F-contiguous data w/o a copy
+        # TODO: handle `Matrix._from_dense(np.arange(3*4*5).reshape(3, 4, 5))` as 3x4 Matrix
+        if backend == "suitesparse":
+            return Matrix.ss.import_fullr(values, dtype=dtype, name=name)
+        values, dtype = values_to_numpy_buffer(values, dtype)
+        if values.ndim < 2:
+            raise ValueError("A 2d array is required to create a dense Matrix")
+        elif dtype.np_type.subdtype is not None and values.ndim < 3:
+            raise ValueError("A >2d array is required to create a dense Matrix with subdtype")
+        nrows, ncols, *rest = values.shape
+        cols, rows = np.meshgrid(
+            np.arange(ncols, dtype=np.uint64),
+            np.arange(nrows, dtype=np.uint64),
+        )
+        rows = rows.ravel()
+        cols = cols.ravel()
+        if values.ndim > 2:
+            values = values.reshape([nrows * ncols] + rest)
+        else:
+            values = values.ravel()
+        return cls.from_values(rows, cols, values, dtype, nrows=nrows, ncols=ncols, name=name)
 
     def _to_csx(self, fmt, dtype=None):
         Ap_len = _scalar_index("Ap_len")
@@ -2397,7 +2430,10 @@ class Matrix(BaseType):
                 except (TypeError, ValueError):
                     if rowsize is not None or colsize is not None:
                         try:
-                            values, dtype = values_to_numpy_buffer(value, dtype, copy=True)
+                            # Do a copy for suitesparse so we can give ownership to suitesparse
+                            values, dtype = values_to_numpy_buffer(
+                                value, dtype, copy=backend == "suitesparse"
+                            )
                         except Exception:
                             pass
                         else:
@@ -2436,23 +2472,7 @@ class Matrix(BaseType):
                                             values, dtype=dtype, take_ownership=True
                                         )
                                     else:
-                                        # TODO: GraphBLAS needs a way to import or assign dense
-                                        cols, rows = np.meshgrid(
-                                            np.arange(shape[0], dtype=np.uint64),
-                                            np.arange(shape[1], dtype=np.uint64),
-                                        )
-                                        if values.ndim > 2:
-                                            values = np.reshape((shape[0] * shape[1]) + shape[2:])
-                                        else:
-                                            values = values.ravel()
-                                        vals = Matrix.from_values(
-                                            rows,
-                                            cols,
-                                            values,
-                                            dtype,
-                                            nrows=shape[0],
-                                            ncols=shape[1],
-                                        )
+                                        vals = Matrix._from_dense(values, dtype)
                                 except Exception:
                                     vals = None
                                 else:

@@ -13,7 +13,12 @@ orig_semirings = set()
 
 def pytest_configure(config):
     randomly = config.getoption("--randomly", False)
-    backend = config.getoption("--backend", "suitesparse")
+    backend = config.getoption("--backend", None)
+    if backend is None:  # pragma: no branch
+        if randomly:
+            backend = "suitesparse" if np.random.rand() < 0.5 else "suitesparse-vanilla"
+        else:
+            backend = "suitesparse"
     blocking = config.getoption("--blocking", True)
     if blocking is None:  # pragma: no branch
         blocking = np.random.rand() < 0.5 if randomly else True

@@ -166,14 +166,21 @@ class Vector(BaseType):
         return super()._name_html
 
     def __reduce__(self):
-        # SS, SuiteSparse-specific: export
-        pieces = self.ss.export(raw=True)
+        # TODO: we should probably use (or compare to) GraphBLAS serialize methods
+        if backend == "suitesparse":
+            pieces = self.ss.export(raw=True)
+        else:
+            indices, values = self.to_values(sort=False)
+            pieces = (indices, values, self.dtype, self._size)
         return self._deserialize, (pieces, self.name)
 
     @staticmethod
     def _deserialize(pieces, name):
-        # SS, SuiteSparse-specific: import
-        return Vector.ss.import_any(name=name, **pieces)
+        if backend == "suitesparse":
+            return Vector.ss.import_any(name=name, **pieces)
+        else:
+            indices, values, dtype, size = pieces
+            return Vector.from_values(indices, values, dtype, size=size, name=name)
 
     @property
     def S(self):
@@ -1512,19 +1519,29 @@ class Vector(BaseType):
                         # v(m)[I] << [1, 2, 3]
                         # v[I](m) << [1, 2, 3]
                         try:
-                            values, dtype = values_to_numpy_buffer(value, dtype, copy=True)
+                            # Do a copy for suitesparse so we can give ownership to suitesparse
+                            values, dtype = values_to_numpy_buffer(
+                                value, dtype, copy=backend == "suitesparse"
+                            )
                         except Exception:
                             extra_message = "Literal scalars and lists also accepted."
                         else:
                             shape = values.shape
                             try:
-                                vals = Vector.ss.import_full(
-                                    values, dtype=dtype, take_ownership=True
-                                )
-                                if dtype.np_type.subdtype is not None:
-                                    shape = vals.shape
+                                if backend == "suitesparse":
+                                    vals = Vector.ss.import_full(
+                                        values, dtype=dtype, take_ownership=True
+                                    )
+                                else:
+                                    # TODO: GraphBLAS needs a way to import or assign dense
+                                    vals = Vector.from_values(
+                                        np.arange(shape[0]), values, dtype, size=shape[0]
+                                    )
                             except Exception:
                                 vals = None
+                            else:
+                                if dtype.np_type.subdtype is not None:
+                                    shape = vals.shape
                             if vals is None or shape != (size,):
                                 if dtype.np_type.subdtype is not None:
                                     extra = (

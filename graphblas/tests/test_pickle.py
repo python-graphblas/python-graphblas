@@ -27,14 +27,21 @@ def indexunaryanon(x, row, col, thunk):
     return x >= thunk  # pragma: no cover
 
 
+@pytest.fixture
+def extra():
+    if gb.backend == "suitesparse-vanilla":
+        return "-vanilla"
+    return ""
+
+
 @pytest.mark.slow
-def test_deserialize():
+def test_deserialize(extra):
     thisdir = os.path.dirname(__file__)
-    with open(os.path.join(thisdir, "pickle1.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle1{extra}.pkl"), "rb") as f:
         d = pickle.load(f)
     check_values(d)
     # Again!
-    with open(os.path.join(thisdir, "pickle1.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle1{extra}.pkl"), "rb") as f:
         d = pickle.load(f)
     check_values(d)
 
@@ -275,16 +282,16 @@ def test_serialize_parameterized():
 
 
 @pytest.mark.slow
-def test_deserialize_parameterized():
+def test_deserialize_parameterized(extra):
     thisdir = os.path.dirname(__file__)
-    with open(os.path.join(thisdir, "pickle2.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle2{extra}.pkl"), "rb") as f:
         pickle.load(f)  # TODO: check results
     # Again!
-    with open(os.path.join(thisdir, "pickle2.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle2{extra}.pkl"), "rb") as f:
         pickle.load(f)  # TODO: check results
 
 
-def test_udt():
+def test_udt(extra):
     record_dtype = np.dtype([("x", np.bool_), ("y", np.int64)], align=True)
     udt = gb.dtypes.register_new("PickleUDT", record_dtype)
     assert not udt._is_anonymous
@@ -296,7 +303,7 @@ def test_udt():
     assert pickle.loads(pickle.dumps(udt2)).np_type == udt2.np_type
 
     thisdir = os.path.dirname(__file__)
-    with open(os.path.join(thisdir, "pickle3.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle3{extra}.pkl"), "rb") as f:
         d = pickle.load(f)
     udt3 = d["PickledUDT"]
     v = d["v"]

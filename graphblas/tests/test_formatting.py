@@ -1,8 +1,7 @@
 import numpy as np
 import pytest
 
-import graphblas
-from graphblas import dtypes, unary
+from graphblas import backend, dtypes, unary
 from graphblas.core import formatting
 from graphblas.core.formatting import CSS_STYLE
 
@@ -17,7 +16,7 @@ except ImportError:  # pragma: no cover
     pd = None
 
 
-if graphblas.backend != "suitesparse":
+if backend != "suitesparse":
     pytest.skip("Formatting tests only work with suitesparse backend", allow_module_level=True)
 
 

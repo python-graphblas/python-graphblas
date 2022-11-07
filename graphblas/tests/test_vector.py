@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
-import graphblas
+import graphblas as gb
 from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
 from graphblas.exceptions import (
     DimensionMismatch,
@@ -1083,7 +1083,7 @@ def test_del(capsys):
     # v has `gb_obj` of NULL
     v = Vector.from_values([0, 1], [0, 1])
     gb_obj = v.gb_obj
-    v.gb_obj = graphblas.core.NULL
+    v.gb_obj = gb.core.NULL
     del v
     # let's clean up so we don't have a memory leak
     v2 = object.__new__(Vector)
@@ -1394,18 +1394,18 @@ def test_diag(v):
         expected = Matrix.from_values(rows, cols, values, nrows=size, ncols=size, dtype=v.dtype)
         # Construct diagonal matrix A
         if suitesparse:
-            A = graphblas.ss.diag(v, k=k)
+            A = gb.ss.diag(v, k=k)
             assert expected.isequal(A)
         A = v.diag(k)
         assert expected.isequal(A)
 
         # Extract diagonal from A
         if suitesparse:
-            w = graphblas.ss.diag(A, Scalar.from_value(k))
+            w = gb.ss.diag(A, Scalar.from_value(k))
             assert v.isequal(w)
             assert w.dtype == "INT64"
 
-            w = graphblas.ss.diag(A.T, -k, dtype=float)
+            w = gb.ss.diag(A.T, -k, dtype=float)
             assert v.isequal(w)
             assert w.dtype == "FP64"
         w = A.diag(Scalar.from_value(k))
@@ -1849,14 +1849,14 @@ def test_ss_concat(v):
     expected = Vector(v.dtype, size=2 * v.size)
     expected[: v.size] = v
     expected[v.size :] = v
-    w1 = graphblas.ss.concat([v, v])
+    w1 = gb.ss.concat([v, v])
     assert w1.isequal(expected, check_dtype=True)
     w2 = Vector(v.dtype, size=2 * v.size)
     w2.ss.concat([v, v])
     assert w2.isequal(expected, check_dtype=True)
     with pytest.raises(TypeError):
         w2.ss.concat([[v, v]])
-    w3 = graphblas.ss.concat([v, v], dtype=float)
+    w3 = gb.ss.concat([v, v], dtype=float)
     assert w3.isequal(expected)
     assert w3.dtype == float
 
@@ -2062,7 +2062,11 @@ def test_udt():
         assert v.isequal(vv, check_dtype=True)
 
     long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=True)
-    with pytest.warns(UserWarning, match="too large"):
+    if suitesparse:
+        with pytest.warns(UserWarning, match="too large"):
+            long_udt = dtypes.register_anonymous(long_dtype)
+    else:
+        # UDTs don't currently have a name in vanilla GraphBLAS
         long_udt = dtypes.register_anonymous(long_dtype)
     v = Vector(long_udt, size=3)
     v[0] = 0
@@ -2075,7 +2079,10 @@ def test_udt():
             Vector.ss.deserialize(v.ss.serialize())
     # May be able to look up non-anonymous dtypes by name if their names are too long
     named_long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=False)
-    with pytest.warns(UserWarning, match="too large"):
+    if suitesparse:
+        with pytest.warns(UserWarning, match="too large"):
+            named_long_udt = dtypes.register_new("LongUDT", named_long_dtype)
+    else:
         named_long_udt = dtypes.register_new("LongUDT", named_long_dtype)
     v = Vector(named_long_udt, size=3)
     v[0] = 0

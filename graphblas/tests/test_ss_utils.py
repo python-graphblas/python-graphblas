@@ -6,7 +6,7 @@ import graphblas as gb
 from graphblas import Matrix, Vector, backend
 
 if backend != "suitesparse":
-    pytest.skip("Formatting tests only work with suitesparse backend", allow_module_level=True)
+    pytest.skip("gb.ss and A.ss only available with suitesparse backend", allow_module_level=True)
 
 
 @pytest.mark.parametrize("do_iso", [False, True])

@@ -115,7 +115,6 @@ def register_anonymous(dtype, name=None):
 
         gb_obj = _ffi.new("GrB_Type*")
         if backend == "suitesparse":
-            # SS, SuiteSparse-specific: naming dtypes
             # We name this so that we can serialize and deserialize UDTs
             # We don't yet have C definitions
             np_repr = _dtype_to_string(dtype).encode()
