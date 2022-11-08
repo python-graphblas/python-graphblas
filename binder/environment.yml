@@ -2,6 +2,7 @@ name: graphblas
 channels:
     - conda-forge
 dependencies:
+    - python=3.10
     - python-graphblas
     - matplotlib
     - networkx
