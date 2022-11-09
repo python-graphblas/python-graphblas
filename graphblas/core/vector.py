@@ -1610,6 +1610,49 @@ class Vector(BaseType):
         vector._vector = ffi_new("GrB_Vector*")
         return rv
 
+    @classmethod
+    def from_dict(cls, d, dtype=None, *, size=None, name=None):
+        """Create a new Vector from a dict with keys as indices and values as values.
+
+        Parameters
+        ----------
+        d : Mapping
+            The dict-like object to convert. The keys will be cast to uint64 for the indices.
+        dtype :
+            Data type of the Vector. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        size : int, optional
+            Size of the Vector. If not provided, ``size`` is computed from
+            the maximum index found in ``indices``.
+        name : str, optional
+            Name to give the Vector.
+
+        Returns
+        -------
+        Vector
+        """
+        indices = np.fromiter(d.keys(), np.uint64)
+        if dtype is None:
+            values = np.array(list(d.values()))  # let numpy infer dtype
+            dtype = lookup_dtype(values.dtype)
+        else:
+            # If we know the dtype, then using `np.fromiter` is much faster
+            dtype = lookup_dtype(dtype)
+            values = np.fromiter(d.values(), dtype.np_type)
+        if size is None and indices.size == 0:
+            size = 0
+        return cls.from_values(indices, values, dtype, size=size, name=name)
+
+    def to_dict(self):
+        """Return Vector as a dict in the form ``{index: val}``
+
+        Returns
+        -------
+        dict
+        """
+        indices, values = self.to_values(sort=False)
+        return dict(zip(indices.tolist(), values.tolist()))
+
 
 Vector.ss = class_property(Vector.ss, ss)
 
@@ -1704,6 +1747,7 @@ class VectorExpression(BaseExpression):
     reposition = wrapdoc(Vector.reposition)(property(automethods.reposition))
     select = wrapdoc(Vector.select)(property(automethods.select))
     ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
@@ -1777,6 +1821,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     reposition = wrapdoc(Vector.reposition)(property(automethods.reposition))
     select = wrapdoc(Vector.select)(property(automethods.select))
     ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))

@@ -266,6 +266,14 @@ def to_dcsr(self):
     return self._get_value("to_dcsr")
 
 
+def to_dict(self):
+    return self._get_value("to_dict")
+
+
+def to_dicts(self):
+    return self._get_value("to_dicts")
+
+
 def to_pygraphblas(self):
     return self._get_value("to_pygraphblas")
 
@@ -392,6 +400,7 @@ def _main():
         "inner",
         "outer",
         "reduce",
+        "to_dict",
         "vxm",
     }
     matrix = {
@@ -408,6 +417,7 @@ def _main():
         "to_csr",
         "to_dcsc",
         "to_dcsr",
+        "to_dicts",
     }
     common_raises = set()
     scalar_raises = {
