@@ -1498,7 +1498,7 @@ class Vector(BaseType):
                     cfunc_name = "GxB_Vector_subassign"
                 else:
                     cfunc_name = "GrB_Vector_assign"
-                    mask = _vanilla_subassign_mask(self, mask, index, replace)
+                    mask = _vanilla_subassign_mask(self, mask, idx, replace)
                 expr_repr = "[[{2._expr_name} elements]](%s) = {0.name}" % mask.name
             else:
                 # v(m)[I] << w
@@ -1583,13 +1583,13 @@ class Vector(BaseType):
                         cfunc_name = f"GxB_Vector_subassign_{dtype_name}"
                     else:
                         cfunc_name = f"GrB_Vector_assign_{dtype_name}"
-                        mask = _vanilla_subassign_mask(self, mask, index, replace)
+                        mask = _vanilla_subassign_mask(self, mask, idx, replace)
                 else:
                     if backend == "suitesparse":
                         cfunc_name = "GxB_Vector_subassign_Scalar"
                     else:
                         cfunc_name = "GrB_Vector_assign_Scalar"
-                        mask = _vanilla_subassign_mask(self, mask, index, replace)
+                        mask = _vanilla_subassign_mask(self, mask, idx, replace)
                 expr_repr = "[[{2._expr_name} elements]](%s) = {0._expr_name}" % mask.name
             else:
                 # v(m)[I] << c
@@ -1720,15 +1720,11 @@ else:
 
 def _vanilla_subassign_mask(self, mask, indices, replace):
     _check_mask(mask, self)
-    if not replace and indices is _ALL_INDICES:
+    if not replace and indices.index is _ALL_INDICES:
         return mask
-    if indices is _ALL_INDICES:
-        indices = slice(None)
-    else:
-        indices = indices.array
+    indices = indices._py_index()
     val = Vector(mask.parent.dtype, size=self._size, name="v_temp")
     val[indices] = mask.parent
-    # TODO: check if this works for complemented masks too
     mask = type(mask)(val)
     if replace:
         val = self.dup()

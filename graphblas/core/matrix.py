@@ -2374,7 +2374,7 @@ class Matrix(BaseType):
                         else:
                             # Recipe: create a new mask by expanding the old mask
                             cfunc_name = "GrB_Row_assign"
-                            mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
+                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
                     else:
                         # C(m)[i, J] << v
                         # C[i, J] << v
@@ -2422,7 +2422,7 @@ class Matrix(BaseType):
                         else:
                             # Recipe: create a new mask by expanding the old mask
                             cfunc_name = "GrB_Col_assign"
-                            mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
+                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
                     else:
                         # C(m)[I, j] << v
                         # C[I, j] << v
@@ -2487,7 +2487,7 @@ class Matrix(BaseType):
                     cfunc_name = "GxB_Matrix_subassign"
                 else:
                     cfunc_name = "GrB_Matrix_assign"
-                    mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
+                    mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
             else:
                 # C[I, J] << A
                 # C(M)[I, J] << A
@@ -2603,7 +2603,7 @@ class Matrix(BaseType):
                             cfunc_name = "GxB_Row_subassign"
                         else:
                             cfunc_name = "GrB_Row_assign"
-                            mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
+                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
                     else:
                         # C(m)[i, J] << c
                         # C[i, J] << c
@@ -2631,7 +2631,7 @@ class Matrix(BaseType):
                             cfunc_name = "GxB_Col_subassign"
                         else:
                             cfunc_name = "GrB_Col_assign"
-                            mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
+                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
                     else:
                         # C(m)[I, j] << c
                         # C[I, j] << c
@@ -2684,13 +2684,13 @@ class Matrix(BaseType):
                             cfunc_name = f"GxB_Matrix_subassign_{dtype_name}"
                         else:
                             cfunc_name = f"GrB_Matrix_assign_{dtype_name}"
-                            mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
+                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
                     else:
                         if backend == "suitesparse":
                             cfunc_name = "GxB_Matrix_subassign_Scalar"
                         else:
                             cfunc_name = "GrB_Matrix_assign_Scalar"
-                            mask = _vanilla_subassign_mask(self, mask, rows, cols, replace)
+                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
                     expr_repr = (
                         "[[{2._expr_name} rows], [{4._expr_name} cols]](%s) = {0._expr_name}"
                         % mask.name
@@ -2787,54 +2787,40 @@ else:
 
 
 def _vanilla_subassign_mask(self, mask, rows, cols, replace):
-    # TODO: understand and verify this!
-    is_rowwise = isinstance(rows, Scalar) and not isinstance(cols, Scalar)
-    is_colwise = not isinstance(rows, Scalar) and isinstance(cols, Scalar)
+    is_rowwise = rows.size is None and cols.size is not None
+    is_colwise = rows.size is not None and cols.size is None
     is_matrix = not is_rowwise and not is_colwise
     if is_matrix:
-        if not replace and rows is _ALL_INDICES and cols is _ALL_INDICES:
+        if not replace and rows.index is _ALL_INDICES and cols.index is _ALL_INDICES:
             return mask
-        if rows is _ALL_INDICES:
-            rows = slice(None)
-        else:
-            rows = rows.array
-        if cols is _ALL_INDICES:
-            cols = slice(None)
-        else:
-            cols = cols.array
+        rows = rows._py_index()
+        cols = cols._py_index()
         val = Matrix(mask.parent.dtype, nrows=self._nrows, ncols=self._ncols, name="M_temp")
         val[rows, cols] = mask.parent
     elif is_rowwise:
-        if not replace and cols is _ALL_INDICES:
+        if not replace and cols.index is _ALL_INDICES:
             return mask
-        if cols is _ALL_INDICES:
-            cols = slice(None)
-        else:
-            cols = cols.array
+        cols = cols._py_index()
         val = Vector(mask.parent.dtype, size=self._ncols, name="m_temp")
         val[cols] = mask.parent
     elif is_colwise:
-        if not replace and rows is _ALL_INDICES:
+        if not replace and rows.index is _ALL_INDICES:
             return mask
-        if rows is _ALL_INDICES:
-            rows = slice(None)
-        else:
-            rows = rows.array
+        rows = rows._py_index()
         val = Vector(mask.parent.dtype, size=self._nrows, name="m_temp")
         val[rows] = mask.parent
     else:  # pragma: no cover
         raise RuntimeError("oops")
-    # TODO: check if this works for complemented masks too
     mask = type(mask)(val)
     if replace:
         if is_matrix:
             val = self.dup()
             del val[rows, cols]
         elif is_rowwise:
-            val = self[rows, :].new()
+            val = self[rows.index, :].new()
             del val[cols]
         else:  # is_colwise:
-            val = self[:, cols].new()
+            val = self[:, cols.index].new()
             del val[rows]
         mask |= val.S
     return mask

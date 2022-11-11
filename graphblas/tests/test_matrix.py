@@ -956,6 +956,98 @@ def test_assign_row_col_matrix_mask():
         C[0, 0](B.S) << 100
 
 
+@pytest.mark.parametrize("index", [slice(12), list(range(12))])
+def test_subassign_combos(index):
+    #         0  1  2  3  4  5  6  7  8  9 10 11 12 13
+    # mask    1  1  1  1  0  0  0  0  _  _  _  _
+    # val     1  2  _  _  3  4  _  _  5  6  _  _
+    # self   10  _ 20  _ 30  _ 40  _ 50  _ 60  _ 70  _
+    mask_base = Vector.from_values(
+        [0, 1, 2, 3, 4, 5, 6, 7], [1, 1, 1, 1, 0, 0, 0, 0], size=12, name="mask"
+    )
+    val_base = Vector.from_values([0, 1, 4, 5, 8, 9], [1, 2, 3, 4, 5, 6], size=12)
+    self_base = Vector.from_values([0, 2, 4, 6, 8, 10, 12], [10, 20, 30, 40, 50, 60, 70], size=14)
+
+    S = gb.core.mask.StructuralMask
+    V = gb.core.mask.ValueMask
+    CS = gb.core.mask.ComplementedStructuralMask
+    CV = gb.core.mask.ComplementedValueMask
+    params = [  # mask_type, replace, indices, values
+        [S, False, [0, 1, 2, 4, 5, 6, 8, 10, 12], [11, 2, 20, 33, 4, 40, 50, 60, 70]],
+        [V, False, [0, 1, 2, 4, 6, 8, 10, 12], [11, 2, 20, 30, 40, 50, 60, 70]],
+        [CS, False, [0, 2, 4, 6, 8, 9, 10, 12], [10, 20, 30, 40, 55, 6, 60, 70]],
+        [CV, False, [0, 2, 4, 5, 6, 8, 9, 10, 12], [10, 20, 33, 4, 40, 55, 6, 60, 70]],
+        [S, True, [0, 1, 2, 4, 5, 6, 12], [11, 2, 20, 33, 4, 40, 70]],
+        [V, True, [0, 1, 2, 12], [11, 2, 20, 70]],
+        [CS, True, [8, 9, 10, 12], [55, 6, 60, 70]],
+        [CV, True, [4, 5, 6, 8, 9, 10, 12], [33, 4, 40, 55, 6, 60, 70]],
+    ]
+    # Vector-Vector
+    for mask_type, replace, indices, values in params:
+        self = self_base.dup(name="self")
+        mask = mask_type(mask_base)
+        val = val_base
+        self[index](binary.plus, mask, replace=replace) << val
+        expected = Vector.from_values(indices, values, size=14, name="expected")
+        if not self.isequal(expected):  # pragma: no cover
+            print(mask_type, replace)
+            print(expected)
+            print(self)
+            raise AssertionError("incorrect; see printed data")
+
+    def asrow(v):
+        Row = Matrix(v.dtype, nrows=1, ncols=v.size, name=v.name)
+        Row[0, :] = v
+        return Row
+
+    # Matrix-vector (row-wise)
+    for mask_type, replace, indices, values in params:
+        self = asrow(self_base)
+        mask = mask_type(mask_base)
+        val = val_base
+        self[0, index](binary.plus, mask, replace=replace) << val
+        expected = Vector.from_values(indices, values, size=14, name="expected")
+        expected = asrow(expected)
+        if not self.isequal(expected):  # pragma: no cover
+            print(mask_type, replace)
+            print(expected)
+            print(self)
+            raise AssertionError("incorrect; see printed data")
+
+    def ascol(v):
+        Col = Matrix(v.dtype, nrows=v.size, ncols=1, name=v.name)
+        Col[:, 0] = v
+        return Col
+
+    # Matrix-vector (column-wwise)
+    for mask_type, replace, indices, values in params:
+        self = ascol(self_base)
+        mask = mask_type(mask_base)
+        val = val_base
+        self[index, 0](binary.plus, mask, replace=replace) << val
+        expected = Vector.from_values(indices, values, size=14, name="expected")
+        expected = ascol(expected)
+        if not self.isequal(expected):  # pragma: no cover
+            print(mask_type, replace)
+            print(expected)
+            print(self)
+            raise AssertionError("incorrect; see printed data")
+
+    # Matrix-matrix
+    for mask_type, replace, indices, values in params:
+        self = asrow(self_base)
+        mask = mask_type(asrow(mask_base))
+        val = asrow(val_base)
+        self[[0], index](binary.plus, mask, replace=replace) << val
+        expected = Vector.from_values(indices, values, size=14, name="expected")
+        expected = asrow(expected)
+        if not self.isequal(expected):  # pragma: no cover
+            print(mask_type, replace)
+            print(expected)
+            print(self)
+            raise AssertionError("incorrect; see printed data")
+
+
 def test_assign_column_scalar(A, v):
     C = A.dup()
     C[:, 0](v.S) << v
