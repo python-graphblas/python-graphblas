@@ -951,6 +951,10 @@ class Matrix(BaseType):
             rows = np.empty(0, np.uint64)
         else:
             rows = np.repeat(compressed_rows, np.diff(indptr))
+            if nrows is None:
+                nrows = int(np.max(compressed_rows)) + 1
+            if ncols is None and rows.size == 0:
+                ncols = 0
         return cls.from_coo(rows, col_indices, values, dtype, nrows=nrows, ncols=ncols, name=name)
 
     @classmethod
@@ -1030,6 +1034,10 @@ class Matrix(BaseType):
             cols = np.empty(0, np.uint64)
         else:
             cols = np.repeat(compressed_cols, np.diff(indptr))
+            if ncols is None:
+                ncols = int(np.max(compressed_cols)) + 1
+            if nrows is None and cols.size == 0:
+                nrows = 0
         return cls.from_coo(row_indices, cols, values, dtype, nrows=nrows, ncols=ncols, name=name)
 
     @classmethod
