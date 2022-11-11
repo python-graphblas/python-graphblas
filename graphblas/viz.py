@@ -58,7 +58,8 @@ def draw(m):  # pragma: no cover
     except ImportError as exc:
         print(exc.msg)
         return
-    if not isinstance(_output_type(m), (_Matrix, _TransposedMatrix)):
+    typ = _output_type(m)
+    if typ is not _Matrix and typ is not _TransposedMatrix:
         print(f"Can only draw a Matrix, not {type(m)}")
         return
 

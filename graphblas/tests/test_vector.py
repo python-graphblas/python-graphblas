@@ -1589,6 +1589,7 @@ def test_expr_is_like_vector(v):
         "_update",
         "build",
         "clear",
+        "from_dict",
         "from_pygraphblas",
         "from_values",
         "resize",
@@ -1624,6 +1625,7 @@ def test_index_expr_is_like_vector(v):
         "_update",
         "build",
         "clear",
+        "from_dict",
         "from_pygraphblas",
         "from_values",
         "resize",
@@ -2365,3 +2367,23 @@ def test_ss_config(v):
     assert v.ss.config["sparsity_status"] == "sparse"
     v.ss.config["sparsity_control"] = {"sparse", "bitmap"}
     assert v.ss.config["sparsity_control"] == {"sparse", "bitmap"}
+
+
+def test_from_dict(v):
+    d = {1: 1, 3: 1, 4: 2, 6: 0}
+    w = Vector.from_dict(d)
+    assert w.isequal(v)
+    w = Vector.from_dict(d, dtype=int)
+    assert w.isequal(v)
+    empty = Vector.from_dict({})
+    assert empty.size == 0
+    empty = Vector.from_dict({}, dtype=int, size=3)
+    assert empty.size == 3
+    assert empty.dtype == int
+    assert empty.nvals == 0
+
+
+def test_to_dict(v):
+    assert v.to_dict() == {1: 1, 3: 1, 4: 2, 6: 0}
+    empty = Vector(int, 2)
+    assert empty.to_dict() == {}
