@@ -28,7 +28,7 @@ setup(
     url="https://github.com/python-graphblas/python-graphblas",
     packages=find_packages(),
     python_requires=">=3.8",
-    install_requires=["suitesparse-graphblas >=7.3.0.2, <7.4", "numba", "donfig", "pyyaml"],
+    install_requires=["suitesparse-graphblas >=7.3.2.0, <7.4", "numba", "donfig", "pyyaml"],
     extras_require=extras_require,
     include_package_data=True,
     license="Apache License 2.0",

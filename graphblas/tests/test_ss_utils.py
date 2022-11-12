@@ -174,6 +174,7 @@ def test_about():
     about = gb.ss.about
     for k in about:
         d[k] = about[k]
+    assert "openmp" in about
     assert d == about
     assert len(d) == len(about)
     with pytest.raises(KeyError):

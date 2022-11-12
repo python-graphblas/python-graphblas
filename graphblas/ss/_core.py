@@ -203,6 +203,9 @@ class About(Mapping):
         "api_url": lib.GxB_API_URL,
         "compiler_name": lib.GxB_COMPILER_NAME,
     }
+    _bool_options = {
+        "openmp": lib.GxB_LIBRARY_OPENMP,
+    }
 
     def __getitem__(self, key):
         key = key.lower()
@@ -224,17 +227,32 @@ class About(Mapping):
             info = lib.GxB_Global_Option_get(self._str_options[key], vararg(val_ptr))
             if info == lib.GrB_SUCCESS:  # pragma: no branch
                 return ffi.string(val_ptr[0]).decode()
+        elif key in self._bool_options:
+            val_ptr = ffi.new("bool*")
+            info = lib.GxB_Global_Option_get(self._bool_options[key], vararg(val_ptr))
+            if info == lib.GrB_SUCCESS:  # pragma: no branch
+                return val_ptr[0]
         else:
             raise KeyError(key)
         raise _error_code_lookup[info](f"Failed to get info for {key}")  # pragma: no cover
 
     def __iter__(self):
         return iter(
-            sorted(self._mode_options.keys() | self._int3_options.keys() | self._str_options.keys())
+            sorted(
+                self._mode_options.keys()
+                | self._int3_options.keys()
+                | self._str_options.keys()
+                | self._bool_options.keys()
+            )
         )
 
     def __len__(self):
-        return len(self._mode_options) + len(self._int3_options) + len(self._str_options)
+        return (
+            len(self._mode_options)
+            + len(self._int3_options)
+            + len(self._str_options)
+            + len(self._bool_options)
+        )
 
     __repr__ = GlobalConfig.__repr__
     _ipython_key_completions_ = GlobalConfig._ipython_key_completions_
