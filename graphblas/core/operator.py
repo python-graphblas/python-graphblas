@@ -4,7 +4,7 @@ import re
 from collections.abc import Mapping
 from functools import lru_cache, reduce
 from operator import getitem, mul
-from types import FunctionType, ModuleType
+from types import BuiltinFunctionType, FunctionType, ModuleType
 
 import numba
 import numpy as np
@@ -3071,6 +3071,15 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
         elif kind.startswith("binary"):
             op = BinaryOp.register_anonymous(op, is_udt=True)
             return op._compile_udt(dtype, dtype2)
+    if isinstance(op, BuiltinFunctionType) and op in _builtin_to_op:
+        return get_typed_op(
+            _builtin_to_op[op],
+            dtype,
+            dtype2,
+            is_left_scalar=is_left_scalar,
+            is_right_scalar=is_right_scalar,
+            kind=kind,
+        )
     raise TypeError(f"Unable to get typed operator from object with type {type(op)}")
 
 
@@ -3082,6 +3091,8 @@ def find_opclass(gb_op):
     elif isinstance(gb_op, ParameterizedUdf):
         gb_op = gb_op()  # Use default parameters of parameterized UDFs
         gb_op, opclass = find_opclass(gb_op)
+    elif isinstance(gb_op, BuiltinFunctionType) and gb_op in _builtin_to_op:
+        gb_op, opclass = find_opclass(_builtin_to_op[gb_op])
     else:
         opclass = UNKNOWN_OPCLASS
     return gb_op, opclass
@@ -3229,6 +3240,16 @@ select._binary_to_select.update(
         binary.isgt: select.valuegt,
     }
 )
+
+_builtin_to_op = {
+    abs: unary.abs,
+    all: binary.land,
+    any: binary.lor,
+    max: binary.max,
+    min: binary.min,
+    pow: binary.pow,
+    sum: binary.plus,
+}
 
 _str_to_unary = {
     "-": unary.ainv,
