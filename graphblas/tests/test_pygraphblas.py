@@ -9,7 +9,7 @@ except ImportError:
 
 
 @pytest.mark.skipif("not pg")
-def test_pygraphblas_matrix():  # pragma: no cover
+def test_pygraphblas_matrix():  # pragma: no cover (outdated)
     if gb.backend != "suitesparse":  # pragma: no cover
         return
     import pygraphblas as pg
@@ -25,7 +25,7 @@ def test_pygraphblas_matrix():  # pragma: no cover
 
 
 @pytest.mark.skipif("not pg")
-def test_pygraphblas_vector():  # pragma: no cover
+def test_pygraphblas_vector():  # pragma: no cover (outdated)
     if gb.backend != "suitesparse":  # pragma: no cover
         return
     import pygraphblas as pg
@@ -41,7 +41,7 @@ def test_pygraphblas_vector():  # pragma: no cover
 
 
 @pytest.mark.skipif("not pg")
-def test_pygraphblas_scalar():  # pragma: no cover
+def test_pygraphblas_scalar():  # pragma: no cover (outdated)
     if gb.backend != "suitesparse":  # pragma: no cover
         return
     import pygraphblas as pg

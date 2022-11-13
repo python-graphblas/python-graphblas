@@ -8,16 +8,16 @@ from graphblas import Matrix, dtypes
 
 try:
     import networkx as nx
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover (import)
     nx = None
 try:
     import scipy.sparse as ss
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover (import)
     ss = None
 
 try:
     import awkward._v2 as ak
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover (import)
     ak = None
 
 
@@ -237,7 +237,7 @@ def test_mmread_mmwrite():
                 M = gb.io.mmread(mm_in)
         else:
             M = gb.io.mmread(mm_in)
-            if not M.isequal(expected):  # pragma: no cover
+            if not M.isequal(expected):  # pragma: no cover (debug)
                 print(example)
                 print("Expected:")
                 print(expected)
@@ -251,7 +251,7 @@ def test_mmread_mmwrite():
             mm_out_str = b"".join(mm_out.readlines()).decode()
             mm_out.seek(0)
             M2 = gb.io.mmread(mm_out)
-            if not M2.isequal(expected):  # pragma: no cover
+            if not M2.isequal(expected):  # pragma: no cover (debug)
                 print(example)
                 print("Expected:")
                 print(expected)

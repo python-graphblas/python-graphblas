@@ -35,7 +35,7 @@ def test_bool_doesnt_get_too_large():
         x, y = z.to_values()
         np.testing.assert_array_equal(y, (True, True, True, False))
 
-    def func(x):  # pragma: no cover
+    def func(x):  # pragma: no cover (numba)
         return np.add(x, x)
 
     op = gb.core.operator.UnaryOp.register_anonymous(func)
@@ -94,7 +94,7 @@ def test_npunary():
             if gb_result.dtype.name.startswith("F"):
                 match(accum=gb.binary.lor) << gb_result.apply(npunary.isnan)
             compare = match.reduce(gb.monoid.land).new()
-            if not compare:  # pragma: no cover
+            if not compare:  # pragma: no cover (debug)
                 print(unary_name, gb_input.dtype)
                 print(compute(gb_result))
                 print(np_result)
@@ -172,7 +172,7 @@ def test_npbinary():
                 # Divide by 0j sometimes result in different behavior, such as `nan` or `(inf+0j)`
                 match(accum=gb.binary.lor) << gb_result.apply(npunary.isinf)
             compare = match.reduce(gb.monoid.land).new()
-            if not compare:  # pragma: no cover
+            if not compare:  # pragma: no cover (debug)
                 print(binary_name)
                 print(compute(gb_left))
                 print(compute(gb_right))
@@ -243,7 +243,7 @@ def test_npmonoid():
             if gb_result.dtype.name.startswith("F"):
                 match(accum=gb.binary.lor) << gb_result.apply(npunary.isnan)
             compare = match.reduce(gb.monoid.land).new()
-            if not compare:  # pragma: no cover
+            if not compare:  # pragma: no cover (debug)
                 print(binary_name, gb_left.dtype)
                 print(compute(gb_result))
                 print(np_result)

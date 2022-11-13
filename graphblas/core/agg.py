@@ -19,7 +19,7 @@ def _get_types(ops, initdtype):
         cur = {}
         types = op.types
         for in_type, out_type in prev.items():
-            if out_type not in types:  # pragma: no cover
+            if out_type not in types:  # pragma: no cover (safety)
                 continue
             cur[in_type] = types[out_type]
         prev = cur
@@ -63,7 +63,7 @@ class Aggregator:
                 if finalize is not None:
                     types.append(finalize)
                 initval = self._initval
-            else:  # pragma: no cover
+            else:  # pragma: no cover (sanity)
                 raise TypeError("types must be provided for composite and custom aggregators")
         self._types_orig = types
         self._types = None

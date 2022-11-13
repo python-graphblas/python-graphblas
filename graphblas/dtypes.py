@@ -132,7 +132,7 @@ def register_anonymous(dtype, name=None):
                 f"and the dtype may need to be specified when deserializing: {np_repr}"
             )
         status = _lib.GxB_Type_new(gb_obj, dtype.itemsize, np_repr, _NULL)
-    else:  # pragma: no cover
+    else:
         status = _lib.GrB_Type_new(gb_obj, dtype.itemsize)
     check_status_carg(status, "Type", gb_obj[0])
 
@@ -174,7 +174,7 @@ if _supports_complex and hasattr(_lib, "GxB_FC32"):
     FC32 = DataType(
         "FC32", _lib.GxB_FC32, "GxB_FC32", "float _Complex", _numba.types.complex64, _np.complex64
     )
-if _supports_complex and hasattr(_lib, "GrB_FC32"):  # pragma: no coverage
+if _supports_complex and hasattr(_lib, "GrB_FC32"):  # pragma: no coverage (invalid)
     FC32 = DataType(
         "FC32", _lib.GrB_FC32, "GrB_FC32", "float _Complex", _numba.types.complex64, _np.complex64
     )
@@ -187,7 +187,7 @@ if _supports_complex and hasattr(_lib, "GxB_FC64"):
         _numba.types.complex128,
         _np.complex128,
     )
-if _supports_complex and hasattr(_lib, "GrB_FC64"):  # pragma: no coverage
+if _supports_complex and hasattr(_lib, "GrB_FC64"):  # pragma: no coverage (invalid)
     FC64 = DataType(
         "FC64",
         _lib.GrB_FC64,
@@ -359,7 +359,7 @@ def _dtype_to_string(dtype):
         pass
     if _np.dtype(np_type.str) == np_type:
         return repr(np_type.str)
-    else:  # pragma: no cover
+    else:  # pragma: no cover (safety)
         raise ValueError(f"Unable to reliably convert dtype to string and back: {dtype}")
 
 

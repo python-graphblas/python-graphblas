@@ -133,14 +133,18 @@ class Vector(BaseType):
         """
         from .matrix import Matrix
 
-        return Matrix._from_obj(
-            ffi.cast("GrB_Matrix*", self.gb_obj),
-            self.dtype,
-            self._size,
-            1,
-            parent=self,
-            name=f"(GrB_Matrix){self.name}" if name is None else name,
-        )
+        if backend == "suitesparse":
+            return Matrix._from_obj(
+                ffi.cast("GrB_Matrix*", self.gb_obj),
+                self.dtype,
+                self._size,
+                1,
+                parent=self,
+                name=f"(GrB_Matrix){self.name}" if name is None else name,
+            )
+        rv = Matrix(self.dtype, self._size, 1, name=self.name if name is None else name)
+        rv[:, 0] = self
+        return rv
 
     def __repr__(self, mask=None, expr=None):
         from .formatting import format_vector
@@ -636,7 +640,7 @@ class Vector(BaseType):
                 w.ss.build_scalar(indices, values.tolist())
             else:
                 if dup_op is None:
-                    dup_op = binary.any  # XXX: should we do this to match SuiteSparse behavior?
+                    dup_op = binary.any  # Handle duplicate indices
                 w.build(indices, np.broadcast_to(values, indices.size), dup_op=dup_op)
         else:
             # This needs to be the original data to get proper error messages
@@ -687,7 +691,7 @@ class Vector(BaseType):
         """
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
-        if require_monoid is not None:  # pragma: no cover
+        if require_monoid is not None:  # pragma: no cover (deprecated)
             warnings.warn(
                 "require_monoid keyword is deprecated; "
                 "future behavior will be like `require_monoid=False`",
@@ -701,7 +705,7 @@ class Vector(BaseType):
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
-        if require_monoid:  # pragma: no cover
+        if require_monoid:  # pragma: no cover (deprecated)
             if op.opclass != "BinaryOp" or op.monoid is None:
                 self._expect_op(
                     op,
@@ -1621,7 +1625,7 @@ class Vector(BaseType):
         idx = resolved_indexes.indices[0]
         call("GrB_Vector_removeElement", [self, idx.index])
 
-    def to_pygraphblas(self):  # pragma: no cover
+    def to_pygraphblas(self):  # pragma: no cover (outdated)
         """Convert to a ``pygraphblas.Vector`` without copying data.
 
         This gives control of the underlying GraphBLAS memory to pygraphblas,
@@ -1642,7 +1646,7 @@ class Vector(BaseType):
         return vector
 
     @classmethod
-    def from_pygraphblas(cls, vector):  # pragma: no cover
+    def from_pygraphblas(cls, vector):  # pragma: no cover (outdated)
         """Convert a ``pygraphblas.Vector`` to a new :class:`Vector` without copying data.
 
         This gives control of the underlying GraphBLAS memory to python-graphblas,

@@ -125,5 +125,5 @@ class BaseConfig(MutableMapping):
     def __repr__(self):
         return "{" + ",\n ".join(f"{k!r}: {v!r}" for k, v in self.items()) + "}"
 
-    def _ipython_key_completions_(self):  # pragma: no cover
+    def _ipython_key_completions_(self):  # pragma: no cover (ipython)
         return list(self)

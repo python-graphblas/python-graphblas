@@ -10,7 +10,7 @@ try:
     import pandas as pd
 
     has_pandas = True
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover (import)
     has_pandas = False
 
 # This was written by a complete novice at CSS.

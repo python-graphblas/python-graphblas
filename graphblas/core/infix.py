@@ -373,7 +373,7 @@ def _ewise_infix_expr(left, right, *, method, within):
         left._expect_type(right, tuple(types), within=within, argname="right")
     elif right_type in types:
         right._expect_type(left, tuple(types), within=within, argname="left")
-    else:  # pragma: no cover
+    else:  # pragma: no cover (sanity)
         raise TypeError(f"Bad types for ewise infix: {type(left).__name__}, {type(right).__name__}")
 
 
@@ -419,7 +419,7 @@ def _matmul_infix_expr(left, right, *, within):
             within=within,
             argname="left",
         )
-    else:  # pragma: no cover
+    else:  # pragma: no cover (sanity)
         raise TypeError(
             f"Bad types for matmul infix: {type(left).__name__}, {type(right).__name__}"
         )

@@ -142,7 +142,7 @@ class ss:
             format = "bitmap"
         elif sparsity_status == lib.GxB_FULL:
             format = "full"
-        else:  # pragma: no cover
+        else:  # pragma: no cover (sanity)
             raise NotImplementedError(f"Unknown sparsity status: {sparsity_status}")
         return format
 
@@ -308,7 +308,7 @@ class ss:
         it = it_ptr[0]
         success = lib.GrB_SUCCESS
         info = lib.GxB_Vector_Iterator_attach(it, self._parent._carg, NULL)
-        if info != success:  # pragma: no cover
+        if info != success:  # pragma: no cover (safety)
             lib.GxB_Iterator_free(it_ptr)
             raise _error_code_lookup[info]("Vector iterator failed to attach")
         if seek < 0:
@@ -351,7 +351,7 @@ class ss:
         except GeneratorExit:
             pass
         else:
-            if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+            if info != lib.GxB_EXHAUSTED:  # pragma: no cover (safety)
                 raise _error_code_lookup[info]("Vector iterator failed")
         finally:
             lib.GxB_Iterator_free(it_ptr)
@@ -385,7 +385,7 @@ class ss:
         except GeneratorExit:
             pass
         else:
-            if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+            if info != lib.GxB_EXHAUSTED:  # pragma: no cover (safety)
                 raise _error_code_lookup[info]("Vector iterator failed")
         finally:
             lib.GxB_Iterator_free(it_ptr)
@@ -420,7 +420,7 @@ class ss:
         except GeneratorExit:
             pass
         else:
-            if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+            if info != lib.GxB_EXHAUSTED:  # pragma: no cover (safety)
                 raise _error_code_lookup[info]("Vector iterator failed")
         finally:
             lib.GxB_Iterator_free(it_ptr)
@@ -553,13 +553,13 @@ class ss:
             indices = claim_buffer(ffi, vi[0], vi_size[0] // index_dtype.itemsize, index_dtype)
             values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
             if not raw:
-                if indices.size > nvals:  # pragma: no cover
+                if indices.size > nvals:
                     indices = indices[:nvals]
                 if is_iso:
-                    if values.size > 1:  # pragma: no cover
+                    if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
                 else:
-                    if values.size > nvals:  # pragma: no cover
+                    if values.size > nvals:
                         values = values[:nvals]
             rv = {
                 "size": size,
@@ -583,13 +583,13 @@ class ss:
             bitmap = claim_buffer(ffi, vb[0], vb_size[0] // bool_dtype.itemsize, bool_dtype)
             values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
             if not raw:
-                if bitmap.size > size:  # pragma: no cover
+                if bitmap.size > size:
                     bitmap = bitmap[:size]
                 if is_iso:
-                    if values.size > 1:  # pragma: no cover
+                    if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
                 else:
-                    if values.size > size:  # pragma: no cover
+                    if values.size > size:
                         values = values[:size]
             rv = {
                 "bitmap": bitmap,
@@ -606,10 +606,10 @@ class ss:
             values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
             if not raw:
                 if is_iso:
-                    if values.size > 1:  # pragma: no cover
+                    if values.size > 1:
                         values = values[:1]
                 else:
-                    if values.size > size:  # pragma: no cover
+                    if values.size > size:
                         values = values[:size]
             rv = {}
             if raw or is_iso:
@@ -1593,7 +1593,7 @@ class ss:
 
 
 @njit
-def random_choice(n, k):  # pragma: no cover
+def random_choice(n, k):  # pragma: no cover (numba)
     if k >= n:
         return np.arange(n, dtype=np.uint64)
     choices = np.empty(k, dtype=np.uint64)

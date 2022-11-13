@@ -781,7 +781,7 @@ def test_select_bools_and_masks(v):
 
 @pytest.mark.slow
 def test_indexunary_udf(v):
-    def twox_minusthunk(x, row, col, thunk):  # pragma: no cover
+    def twox_minusthunk(x, row, col, thunk):  # pragma: no cover (numba)
         return 2 * x - thunk
 
     indexunary.register_new("twox_minusthunk", twox_minusthunk)
@@ -796,7 +796,7 @@ def test_indexunary_udf(v):
     assert result.isequal(expected)
     delattr(indexunary, "twox_minusthunk")
 
-    def ii(x, idx, _, thunk):  # pragma: no cover
+    def ii(x, idx, _, thunk):  # pragma: no cover (numba)
         return idx // 2 >= thunk
 
     select.register_new("ii", ii)
@@ -1655,7 +1655,7 @@ def test_ss_random(v):
             seen.add("r3")
         elif r.isequal(r4):
             seen.add("r4")
-        else:  # pragma: no cover
+        else:  # pragma: no cover (sanity)
             raise AssertionError()
         if len(seen) == 4:
             break

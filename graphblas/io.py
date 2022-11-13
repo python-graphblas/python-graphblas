@@ -83,7 +83,7 @@ def from_numpy(m):
 
     try:
         from scipy.sparse import coo_array, csr_array
-    except ImportError:  # pragma: no cover
+    except ImportError:  # pragma: no cover (import)
         raise ImportError("scipy is required to import from numpy") from None
 
     if m.ndim == 1:
@@ -267,7 +267,7 @@ def to_numpy(m):
     """
     try:
         import scipy  # noqa
-    except ImportError:  # pragma: no cover
+    except ImportError:  # pragma: no cover (import)
         raise ImportError("scipy is required to export to numpy") from None
     if _output_type(m) is _Vector:
         return to_scipy_sparse(m).toarray()[0]
@@ -275,7 +275,7 @@ def to_numpy(m):
     return sparse.toarray()
 
 
-def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover
+def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover (deprecated)
     """format: str in {'bsr', 'csr', 'csc', 'coo', 'lil', 'dia', 'dok'}"""
     import scipy.sparse as ss
 
@@ -496,7 +496,7 @@ def mmread(source, *, dup_op=None, name=None):
     try:
         from scipy.io import mmread
         from scipy.sparse import isspmatrix_coo
-    except ImportError:  # pragma: no cover
+    except ImportError:  # pragma: no cover (import)
         raise ImportError("scipy is required to read Matrix Market files") from None
     array = mmread(source)
     if isspmatrix_coo(array):
@@ -534,7 +534,7 @@ def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=
     """
     try:
         from scipy.io import mmwrite
-    except ImportError:  # pragma: no cover
+    except ImportError:  # pragma: no cover (import)
         raise ImportError("scipy is required to write Matrix Market files") from None
     if _backend == "suitesparse" and matrix.ss.format in {"fullr", "fullc"}:
         array = matrix.ss.export()["values"]

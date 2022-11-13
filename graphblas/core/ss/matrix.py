@@ -222,7 +222,7 @@ class ss:
             format = "bitmap"
         elif sparsity_status == lib.GxB_FULL:
             format = "full"
-        else:  # pragma: no cover
+        else:  # pragma: no cover (sanity)
             raise NotImplementedError(f"Unknown sparsity status: {sparsity_status}")
         if format_ptr[0] == lib.GxB_BY_COL:
             format = f"{format}c"
@@ -419,7 +419,7 @@ class ss:
         it = it_ptr[0]
         success = lib.GrB_SUCCESS
         info = lib.GxB_Matrix_Iterator_attach(it, self._parent._carg, NULL)
-        if info != success:  # pragma: no cover
+        if info != success:  # pragma: no cover (safety)
             lib.GxB_Iterator_free(it_ptr)
             raise _error_code_lookup[info]("Matrix iterator failed to attach")
         if seek < 0:
@@ -465,7 +465,7 @@ class ss:
         except GeneratorExit:
             pass
         else:
-            if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+            if info != lib.GxB_EXHAUSTED:  # pragma: no cover (safety)
                 raise _error_code_lookup[info]("Matrix iterator failed")
         finally:
             lib.GxB_Iterator_free(it_ptr)
@@ -499,7 +499,7 @@ class ss:
         except GeneratorExit:
             pass
         else:
-            if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+            if info != lib.GxB_EXHAUSTED:  # pragma: no cover (safety)
                 raise _error_code_lookup[info]("Matrix iterator failed")
         finally:
             lib.GxB_Iterator_free(it_ptr)
@@ -537,7 +537,7 @@ class ss:
         except GeneratorExit:
             pass
         else:
-            if info != lib.GxB_EXHAUSTED:  # pragma: no cover
+            if info != lib.GxB_EXHAUSTED:  # pragma: no cover (safety)
                 raise _error_code_lookup[info]("Matrix iterator failed")
         finally:
             lib.GxB_Iterator_free(it_ptr)
@@ -879,15 +879,15 @@ class ss:
             col_indices = claim_buffer(ffi, Aj[0], Aj_size[0] // index_dtype.itemsize, index_dtype)
             values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             if not raw:
-                if indptr.size > nrows + 1:  # pragma: no cover
+                if indptr.size > nrows + 1:
                     indptr = indptr[: nrows + 1]
-                if col_indices.size > nvals:  # pragma: no cover
+                if col_indices.size > nvals:
                     col_indices = col_indices[:nvals]
                 if is_iso:
-                    if values.size > 1:  # pragma: no cover
+                    if values.size > 1:
                         values = values[:1]
                 else:
-                    if values.size > nvals:  # pragma: no cover
+                    if values.size > nvals:
                         values = values[:nvals]
             # Note: nvals is also at `indptr[nrows]`
             rv = {
@@ -921,15 +921,15 @@ class ss:
             row_indices = claim_buffer(ffi, Ai[0], Ai_size[0] // index_dtype.itemsize, index_dtype)
             values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             if not raw:
-                if indptr.size > ncols + 1:  # pragma: no cover
+                if indptr.size > ncols + 1:
                     indptr = indptr[: ncols + 1]
-                if row_indices.size > nvals:  # pragma: no cover
+                if row_indices.size > nvals:
                     row_indices = row_indices[:nvals]
                 if is_iso:
-                    if values.size > 1:  # pragma: no cover
+                    if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
                 else:
-                    if values.size > nvals:  # pragma: no cover
+                    if values.size > nvals:
                         values = values[:nvals]
             # Note: nvals is also at `indptr[ncols]`
             rv = {
@@ -971,17 +971,17 @@ class ss:
             values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             nvec = nvec[0]
             if not raw:
-                if indptr.size > nvec + 1:  # pragma: no cover
+                if indptr.size > nvec + 1:
                     indptr = indptr[: nvec + 1]
-                if rows.size > nvec:  # pragma: no cover
+                if rows.size > nvec:
                     rows = rows[:nvec]
-                if col_indices.size > nvals:  # pragma: no cover
+                if col_indices.size > nvals:
                     col_indices = col_indices[:nvals]
                 if is_iso:
-                    if values.size > 1:  # pragma: no cover
+                    if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
                 else:
-                    if values.size > nvals:  # pragma: no cover
+                    if values.size > nvals:
                         values = values[:nvals]
             # Note: nvals is also at `indptr[nvec]`
             rv = {
@@ -1026,17 +1026,17 @@ class ss:
             values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             nvec = nvec[0]
             if not raw:
-                if indptr.size > nvec + 1:  # pragma: no cover
+                if indptr.size > nvec + 1:
                     indptr = indptr[: nvec + 1]
-                if cols.size > nvec:  # pragma: no cover
+                if cols.size > nvec:
                     cols = cols[:nvec]
-                if row_indices.size > nvals:  # pragma: no cover
+                if row_indices.size > nvals:
                     row_indices = row_indices[:nvals]
                 if is_iso:
-                    if values.size > 1:  # pragma: no cover
+                    if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
                 else:
-                    if values.size > nvals:  # pragma: no cover
+                    if values.size > nvals:
                         values = values[:nvals]
             # Note: nvals is also at `indptr[nvec]`
             rv = {
@@ -1089,7 +1089,7 @@ class ss:
                 )
                 if is_iso:
                     values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
-                    if values.size > 1:  # pragma: no cover
+                    if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
                 else:
                     values = claim_buffer_2d(
@@ -1127,7 +1127,7 @@ class ss:
                 rv = {"nrows": nrows, "ncols": ncols}
             elif is_iso:
                 values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
-                if values.size > 1:  # pragma: no cover
+                if values.size > 1:
                     values = values[:1]
                 rv = {"nrows": nrows, "ncols": ncols}
             else:
@@ -3935,7 +3935,7 @@ class ss:
 
 
 @numba.njit(parallel=True)
-def argsort_values(indptr, indices, values):  # pragma: no cover
+def argsort_values(indptr, indices, values):  # pragma: no cover (numba)
     rv = np.empty(indptr[-1], dtype=np.uint64)
     for i in numba.prange(indptr.size - 1):
         rv[indptr[i] : indptr[i + 1]] = indices[
@@ -3945,7 +3945,7 @@ def argsort_values(indptr, indices, values):  # pragma: no cover
 
 
 @numba.njit(parallel=True)
-def sort_values(indptr, values):  # pragma: no cover
+def sort_values(indptr, values):  # pragma: no cover (numba)
     rv = np.empty(indptr[-1], dtype=values.dtype)
     for i in numba.prange(indptr.size - 1):
         rv[indptr[i] : indptr[i + 1]] = np.sort(values[indptr[i] : indptr[i + 1]])
@@ -3953,7 +3953,7 @@ def sort_values(indptr, values):  # pragma: no cover
 
 
 @numba.njit(parallel=True)
-def compact_values(old_indptr, new_indptr, values):  # pragma: no cover
+def compact_values(old_indptr, new_indptr, values):  # pragma: no cover (numba)
     rv = np.empty(new_indptr[-1], dtype=values.dtype)
     for i in numba.prange(new_indptr.size - 1):
         start = np.int64(new_indptr[i])
@@ -3964,7 +3964,7 @@ def compact_values(old_indptr, new_indptr, values):  # pragma: no cover
 
 
 @numba.njit(parallel=True)
-def reverse_values(indptr, values):  # pragma: no cover
+def reverse_values(indptr, values):  # pragma: no cover (numba)
     rv = np.empty(indptr[-1], dtype=values.dtype)
     for i in numba.prange(indptr.size - 1):
         offset = np.int64(indptr[i]) + np.int64(indptr[i + 1]) - 1
@@ -3974,7 +3974,7 @@ def reverse_values(indptr, values):  # pragma: no cover
 
 
 @numba.njit(parallel=True)
-def compact_indices(indptr, k):  # pragma: no cover
+def compact_indices(indptr, k):  # pragma: no cover (numba)
     """Given indptr from hypercsr, create a new col_indices array that is compact.
 
     That is, for each row with degree N, the column indices will be 0..N-1.
@@ -3993,7 +3993,7 @@ def compact_indices(indptr, k):  # pragma: no cover
 
 
 @njit(parallel=True)
-def choose_random1(indptr):  # pragma: no cover
+def choose_random1(indptr):  # pragma: no cover (numba)
     choices = np.empty(indptr.size - 1, dtype=indptr.dtype)
     new_indptr = np.arange(indptr.size, dtype=indptr.dtype)
     for i in numba.prange(indptr.size - 1):
@@ -4007,7 +4007,7 @@ def choose_random1(indptr):  # pragma: no cover
 
 
 @njit
-def create_indptr(indptr, k):  # pragma: no cover
+def create_indptr(indptr, k):  # pragma: no cover (numba)
     new_indptr = np.empty(indptr.size, dtype=indptr.dtype)
     new_indptr[0] = 0
     prev = np.int64(indptr[0])
@@ -4025,7 +4025,7 @@ def create_indptr(indptr, k):  # pragma: no cover
 
 # Assume we are HyperCSR or HyperCSC
 @njit(parallel=True)
-def choose_random(indptr, k):  # pragma: no cover
+def choose_random(indptr, k):  # pragma: no cover (numba)
     if k == 1:
         return choose_random1(indptr)
 
@@ -4106,7 +4106,7 @@ def choose_random(indptr, k):  # pragma: no cover
 
 # Assume we are HyperCSR or HyperCSC
 @njit(parallel=True)
-def choose_first(indptr, k):  # pragma: no cover
+def choose_first(indptr, k):  # pragma: no cover (numba)
     if k == 1:
         choices = indptr[:-1]
         new_indptr = np.arange(indptr.size, dtype=indptr.dtype)
@@ -4130,7 +4130,7 @@ def choose_first(indptr, k):  # pragma: no cover
 
 # Assume we are HyperCSR or HyperCSC
 @njit(parallel=True)
-def choose_last(indptr, k):  # pragma: no cover
+def choose_last(indptr, k):  # pragma: no cover (numba)
     if k == 1:
         choices = (indptr[1:].astype(np.int64) - 1).astype(indptr.dtype)
         new_indptr = np.arange(indptr.size, dtype=indptr.dtype)
@@ -4153,7 +4153,7 @@ def choose_last(indptr, k):  # pragma: no cover
 
 
 @njit
-def issorted(arr):  # pragma: no cover
+def issorted(arr):  # pragma: no cover (numba)
     if arr.size > 1:
         prev = arr[0]
         for i in range(1, arr.size):
@@ -4168,7 +4168,7 @@ def issorted(arr):  # pragma: no cover
 
 
 @njit
-def indices_to_indptr(indices, size):  # pragma: no cover
+def indices_to_indptr(indices, size):  # pragma: no cover (numba)
     """Calculate the indptr for e.g. CSR from sorted COO rows."""
     indptr = np.zeros(size, dtype=indices.dtype)
     index = np.uint64(0)
@@ -4182,7 +4182,7 @@ def indices_to_indptr(indices, size):  # pragma: no cover
 
 
 @njit(parallel=True)
-def indptr_to_indices(indptr):  # pragma: no cover
+def indptr_to_indices(indptr):  # pragma: no cover (numba)
     indices = np.empty(indptr[-1], dtype=indptr.dtype)
     for i in numba.prange(indptr.size - 1):
         for j in range(indptr[i], indptr[i + 1]):

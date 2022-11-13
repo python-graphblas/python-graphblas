@@ -871,7 +871,7 @@ class OpBase:
         include_in_ops determines whether the operators are included in the
         `gb.ops` namespace in addition to the defined module.
         """
-        if cls._initialized:  # pragma: no cover
+        if cls._initialized:  # pragma: no cover (safety)
             return
         # Read in the parse configs
         trim_from_front = cls._parse_config.get("trim_from_front", 0)
@@ -928,7 +928,7 @@ class OpBase:
                             else:
                                 # Grab the number of bits from type_
                                 num_bits = type_[-2:]
-                                if num_bits not in {"32", "64"}:  # pragma: no cover
+                                if num_bits not in {"32", "64"}:  # pragma: no cover (safety)
                                     raise TypeError(f"Unexpected number of bits: {num_bits}")
                                 return_type = f"{return_prefix}{num_bits}"
                         builtin_op = cls._typed_class(
@@ -949,11 +949,11 @@ class OpBase:
 
 
 def _identity(x):
-    return x  # pragma: no cover
+    return x  # pragma: no cover (numba)
 
 
 def _one(x):
-    return 1  # pragma: no cover
+    return 1  # pragma: no cover (numba)
 
 
 class UnaryOp(OpBase):
@@ -1044,22 +1044,22 @@ class UnaryOp(OpBase):
                     if ret_type == BOOL:
 
                         def unary_wrapper(z, x):
-                            z[0] = bool(unary_udf(bool(x[0])))  # pragma: no cover
+                            z[0] = bool(unary_udf(bool(x[0])))  # pragma: no cover (numba)
 
                     else:
 
                         def unary_wrapper(z, x):
-                            z[0] = unary_udf(bool(x[0]))  # pragma: no cover
+                            z[0] = unary_udf(bool(x[0]))  # pragma: no cover (numba)
 
                 elif ret_type == BOOL:
 
                     def unary_wrapper(z, x):
-                        z[0] = bool(unary_udf(x[0]))  # pragma: no cover
+                        z[0] = bool(unary_udf(x[0]))  # pragma: no cover (numba)
 
                 else:
 
                     def unary_wrapper(z, x):
-                        z[0] = unary_udf(x[0])  # pragma: no cover
+                        z[0] = unary_udf(x[0])  # pragma: no cover (numba)
 
                 unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
                 new_unary = ffi_new("GrB_UnaryOp*")
@@ -1325,27 +1325,23 @@ class IndexUnaryOp(OpBase):
                 if type_ == BOOL:
                     if ret_type == BOOL:
 
-                        def indexunary_wrapper(z, x, row, col, y):
-                            z[0] = bool(
-                                indexunary_udf(bool(x[0]), row, col, bool(y[0]))
-                            )  # pragma: no cover
+                        def indexunary_wrapper(z, x, row, col, y):  # pragma: no cover (numba)
+                            z[0] = bool(indexunary_udf(bool(x[0]), row, col, bool(y[0])))
 
                     else:
 
-                        def indexunary_wrapper(z, x, row, col, y):
-                            z[0] = indexunary_udf(
-                                bool(x[0]), row, col, bool(y[0])
-                            )  # pragma: no cover
+                        def indexunary_wrapper(z, x, row, col, y):  # pragma: no cover (numba)
+                            z[0] = indexunary_udf(bool(x[0]), row, col, bool(y[0]))
 
                 elif ret_type == BOOL:
 
-                    def indexunary_wrapper(z, x, row, col, y):
-                        z[0] = bool(indexunary_udf(x[0], row, col, y[0]))  # pragma: no cover
+                    def indexunary_wrapper(z, x, row, col, y):  # pragma: no cover (numba)
+                        z[0] = bool(indexunary_udf(x[0], row, col, y[0]))
 
                 else:
 
-                    def indexunary_wrapper(z, x, row, col, y):
-                        z[0] = indexunary_udf(x[0], row, col, y[0])  # pragma: no cover
+                    def indexunary_wrapper(z, x, row, col, y):  # pragma: no cover (numba)
+                        z[0] = indexunary_udf(x[0], row, col, y[0])
 
                 indexunary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(indexunary_wrapper)
                 new_indexunary = ffi_new("GrB_IndexUnaryOp*")
@@ -1458,7 +1454,7 @@ class IndexUnaryOp(OpBase):
             op = getattr(indexunary, name)
             typed_op = op._typed_ops[BOOL]
             output_type = op.types[BOOL]
-            if UINT64 not in op.types:  # pragma: no cover
+            if UINT64 not in op.types:
                 op.types[UINT64] = output_type
                 op._typed_ops[UINT64] = typed_op
                 op.coercions[UINT64] = BOOL
@@ -1466,7 +1462,7 @@ class IndexUnaryOp(OpBase):
             op = getattr(indexunary, name)
             typed_op = op._typed_ops[INT64]
             output_type = op.types[INT64]
-            if UINT64 not in op.types:  # pragma: no cover
+            if UINT64 not in op.types:
                 op.types[UINT64] = output_type
                 op._typed_ops[UINT64] = typed_op
                 op.coercions[UINT64] = INT64
@@ -1600,7 +1596,7 @@ class SelectOp(OpBase):
 
     @classmethod
     def _initialize(cls):
-        if cls._initialized:  # pragma: no cover
+        if cls._initialized:  # pragma: no cover (safety)
             return
         # IndexUnaryOp adds it boolean-returning objects to SelectOp
         IndexUnaryOp._initialize()
@@ -1638,27 +1634,27 @@ class SelectOp(OpBase):
 
 
 def _floordiv(x, y):
-    return x // y  # pragma: no cover
+    return x // y  # pragma: no cover (numba)
 
 
 def _rfloordiv(x, y):
-    return y // x  # pragma: no cover
+    return y // x  # pragma: no cover (numba)
 
 
 def _absfirst(x, y):
-    return np.abs(x)  # pragma: no cover
+    return np.abs(x)  # pragma: no cover (numba)
 
 
 def _abssecond(x, y):
-    return np.abs(y)  # pragma: no cover
+    return np.abs(y)  # pragma: no cover (numba)
 
 
 def _rpow(x, y):
-    return y**x  # pragma: no cover
+    return y**x  # pragma: no cover (numba)
 
 
 def _isclose(rel_tol=1e-7, abs_tol=0.0):
-    def inner(x, y):  # pragma: no cover
+    def inner(x, y):  # pragma: no cover (numba)
         return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
 
     return inner
@@ -1667,7 +1663,7 @@ def _isclose(rel_tol=1e-7, abs_tol=0.0):
 _MAX_INT64 = np.iinfo(np.int64).max
 
 
-def _binom(N, k):  # pragma: no cover
+def _binom(N, k):  # pragma: no cover (numba)
     # Returns 0 if overflow or out-of-bounds
     if k > N or k < 0:
         return 0
@@ -1700,15 +1696,15 @@ def _register_binom():
 
 
 def _first(x, y):
-    return x  # pragma: no cover
+    return x  # pragma: no cover (numba)
 
 
 def _second(x, y):
-    return y  # pragma: no cover
+    return y  # pragma: no cover (numba)
 
 
 def _pair(x, y):
-    return 1  # pragma: no cover
+    return 1  # pragma: no cover (numba)
 
 
 def _first_dtype(op, dtype, dtype2):
@@ -1956,23 +1952,23 @@ class BinaryOp(OpBase):
                 if type_ == BOOL:
                     if ret_type == BOOL:
 
-                        def binary_wrapper(z, x, y):
-                            z[0] = bool(binary_udf(bool(x[0]), bool(y[0])))  # pragma: no cover
+                        def binary_wrapper(z, x, y):  # pragma: no cover (numba)
+                            z[0] = bool(binary_udf(bool(x[0]), bool(y[0])))
 
                     else:
 
-                        def binary_wrapper(z, x, y):
-                            z[0] = binary_udf(bool(x[0]), bool(y[0]))  # pragma: no cover
+                        def binary_wrapper(z, x, y):  # pragma: no cover (numba)
+                            z[0] = binary_udf(bool(x[0]), bool(y[0]))
 
                 elif ret_type == BOOL:
 
-                    def binary_wrapper(z, x, y):
-                        z[0] = bool(binary_udf(x[0], y[0]))  # pragma: no cover
+                    def binary_wrapper(z, x, y):  # pragma: no cover (numba)
+                        z[0] = bool(binary_udf(x[0], y[0]))
 
                 else:
 
-                    def binary_wrapper(z, x, y):
-                        z[0] = binary_udf(x[0], y[0])  # pragma: no cover
+                    def binary_wrapper(z, x, y):  # pragma: no cover (numba)
+                        z[0] = binary_udf(x[0], y[0])
 
                 binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
                 new_binary = ffi_new("GrB_BinaryOp*")
@@ -2016,7 +2012,7 @@ class BinaryOp(OpBase):
             # PERF: we can probably make this faster
             if mask.all():
 
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover (numba)
                     x = numba.carray(x_ptr, itemsize)
                     y = numba.carray(y_ptr, itemsize)
                     # for i in range(itemsize):
@@ -2029,7 +2025,7 @@ class BinaryOp(OpBase):
 
             else:
 
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover (numba)
                     x = numba.carray(x_ptr, itemsize)
                     y = numba.carray(y_ptr, itemsize)
                     # for i in range(itemsize):
@@ -2052,7 +2048,7 @@ class BinaryOp(OpBase):
             )
             if mask.all():
 
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover (numba)
                     x = numba.carray(x_ptr, itemsize)
                     y = numba.carray(y_ptr, itemsize)
                     # for i in range(itemsize):
@@ -2065,7 +2061,7 @@ class BinaryOp(OpBase):
 
             else:
 
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover
+                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover (numba)
                     x = numba.carray(x_ptr, itemsize)
                     y = numba.carray(y_ptr, itemsize)
                     # for i in range(itemsize):
@@ -2156,7 +2152,7 @@ class BinaryOp(OpBase):
 
     @classmethod
     def _initialize(cls):
-        if cls._initialized:  # pragma: no cover
+        if cls._initialized:  # pragma: no cover (safety)
             return
         super()._initialize()
         # Rename div to cdiv
@@ -2543,7 +2539,7 @@ class Monoid(OpBase):
 
     @classmethod
     def _initialize(cls):
-        if cls._initialized:  # pragma: no cover
+        if cls._initialized:  # pragma: no cover (safety)
             return
         super()._initialize()
         lor = monoid.lor._typed_ops[BOOL]
@@ -2573,7 +2569,7 @@ class Monoid(OpBase):
                 UINT32,
                 UINT64,
             ):
-                if dtype in cur_op.types:  # pragma: no cover
+                if dtype in cur_op.types:  # pragma: no cover (safety)
                     continue
                 cur_op.types[dtype] = BOOL
                 cur_op.coercions[dtype] = BOOL
@@ -2764,7 +2760,7 @@ class Semiring(OpBase):
 
     @classmethod
     def _initialize(cls):
-        if cls._initialized:  # pragma: no cover
+        if cls._initialized:  # pragma: no cover (safety)
             return
         super()._initialize()
         # Rename div to cdiv (truncate towards 0)
@@ -2917,7 +2913,7 @@ class Semiring(OpBase):
         ):
             cur_op = getattr(semiring, opname)
             target = getattr(semiring, targetname)
-            if BOOL in cur_op.types or BOOL not in target.types:  # pragma: no cover
+            if BOOL in cur_op.types or BOOL not in target.types:  # pragma: no cover (safety)
                 continue
             cur_op.types[BOOL] = target.types[BOOL]
             cur_op._typed_ops[BOOL] = target._typed_ops[BOOL]
@@ -3182,7 +3178,7 @@ try:
     BinaryOp._initialize()
     Monoid._initialize()
     Semiring._initialize()
-except Exception:  # pragma: no cover
+except Exception:  # pragma: no cover (debug)
     # Exceptions here can often get ignored by Python
     import traceback
 

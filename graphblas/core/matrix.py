@@ -141,13 +141,15 @@ class Matrix(BaseType):
             raise ValueError(
                 f"Matrix must have a single column (not {self._ncols}) to be cast to a Vector"
             )
-        return Vector._from_obj(
-            ffi.cast("GrB_Vector*", self.gb_obj),
-            self.dtype,
-            self._nrows,
-            parent=self,
-            name=f"(GrB_Vector){self.name}" if name is None else name,
-        )
+        if backend == "suitesparse":
+            return Vector._from_obj(
+                ffi.cast("GrB_Vector*", self.gb_obj),
+                self.dtype,
+                self._nrows,
+                parent=self,
+                name=f"(GrB_Vector){self.name}" if name is None else name,
+            )
+        return self[:, 0].new(name=self.name if name is None else name)
 
     def __repr__(self, mask=None, expr=None):
         from .formatting import format_matrix
@@ -1136,11 +1138,11 @@ class Matrix(BaseType):
         )
 
         # Unwrap objects with walrus operator and trim to proper size if necessary
-        if (Ap := Ap.array).size > (Ap_len := Ap_len.gb_obj[0]):  # pragma: no cover
+        if (Ap := Ap.array).size > (Ap_len := Ap_len.gb_obj[0]):  # pragma: no cover (suitesparse)
             Ap = Ap[:Ap_len]
-        if (Ai := Ai.array).size > (Ai_len := Ai_len.gb_obj[0]):  # pragma: no cover
+        if (Ai := Ai.array).size > (Ai_len := Ai_len.gb_obj[0]):  # pragma: no cover (suitesparse)
             Ai = Ai[:Ai_len]
-        if (Ax := Ax.array).shape[0] > (Ax_len := Ax_len.gb_obj[0]):  # pragma: no cover
+        if (Ax := Ax.array).shape[0] > (Ax_len := Ax_len.gb_obj[0]):  # pragma: no cover (suitespar)
             Ax = Ax[:Ax_len]
 
         if dtype is not None:
@@ -1401,7 +1403,7 @@ class Matrix(BaseType):
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
-        if require_monoid:  # pragma: no cover
+        if require_monoid:  # pragma: no cover (deprecated)
             if op.opclass != "BinaryOp" or op.monoid is None:
                 self._expect_op(
                     op,
@@ -2739,7 +2741,7 @@ class Matrix(BaseType):
         rowidx, colidx = resolved_indexes.indices
         call("GrB_Matrix_removeElement", [self, rowidx.index, colidx.index])
 
-    def to_pygraphblas(self):  # pragma: no cover
+    def to_pygraphblas(self):  # pragma: no cover (outdated)
         """Convert to a ``pygraphblas.Matrix`` without copying data.
 
         This gives control of the underlying GraphBLAS memory to pygraphblas,
@@ -2760,7 +2762,7 @@ class Matrix(BaseType):
         return matrix
 
     @classmethod
-    def from_pygraphblas(cls, matrix):  # pragma: no cover
+    def from_pygraphblas(cls, matrix):  # pragma: no cover (outdated)
         """Convert a ``pygraphblas.Matrix`` to a new :class:`Matrix` without copying data.
 
         This gives control of the underlying GraphBLAS memory to python-graphblas,
@@ -2817,8 +2819,8 @@ def _vanilla_subassign_mask(self, mask, rows, cols, replace):
         rows = rows._py_index()
         val = Vector(mask.parent.dtype, size=self._nrows, name="m_temp")
         val[rows] = mask.parent
-    else:  # pragma: no cover
-        raise RuntimeError("oops")
+    else:  # pragma: no cover (sanity)
+        raise RuntimeError("oops! Submask does not work on scalars")
     mask = type(mask)(val)
     if replace:
         if is_matrix:

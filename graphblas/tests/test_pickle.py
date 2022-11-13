@@ -8,23 +8,23 @@ import graphblas as gb
 
 
 def unarypickle(x):
-    return x + 1  # pragma: no cover
+    return x + 1  # pragma: no cover (numba)
 
 
 def binarypickle(x, y):
-    return x + y  # pragma: no cover
+    return x + y  # pragma: no cover (numba)
 
 
 def unaryanon(x):
-    return x + 2  # pragma: no cover
+    return x + 2  # pragma: no cover (numba)
 
 
 def binaryanon(x, y):
-    return x + y  # pragma: no cover
+    return x + y  # pragma: no cover (numba)
 
 
 def indexunaryanon(x, row, col, thunk):
-    return x >= thunk  # pragma: no cover
+    return x >= thunk  # pragma: no cover (numba)
 
 
 @pytest.fixture
@@ -127,7 +127,7 @@ def test_serialize():
     }
     try:
         pkl = pickle.dumps(d)
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover (debug)
         for key, val in d.items():
             try:
                 pickle.dumps(val)
@@ -198,28 +198,28 @@ def check_values(d):
 
 def unarypickle_par(x):
     def inner(y):
-        return x + y  # pragma: no cover
+        return x + y  # pragma: no cover (numba)
 
     return inner
 
 
 def binarypickle_par(z):
     def inner(x, y):
-        return x + y + z  # pragma: no cover
+        return x + y + z  # pragma: no cover (numba)
 
     return inner
 
 
 def unaryanon_par(x):
     def inner(y):
-        return y + x  # pragma: no cover
+        return y + x  # pragma: no cover (numba)
 
     return inner
 
 
 def binaryanon_par(z):
     def inner(x, y):
-        return x + y + z  # pragma: no cover
+        return x + y + z  # pragma: no cover (numba)
 
     return inner
 
@@ -271,7 +271,7 @@ def test_serialize_parameterized():
     }
     try:
         pkl = pickle.dumps(d)
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover (debug)
         for key, val in d.items():
             try:
                 pickle.dumps(val)

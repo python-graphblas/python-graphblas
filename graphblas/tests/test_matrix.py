@@ -989,7 +989,7 @@ def test_subassign_combos(index):
         val = val_base
         self[index](binary.plus, mask, replace=replace) << val
         expected = Vector.from_values(indices, values, size=14, name="expected")
-        if not self.isequal(expected):  # pragma: no cover
+        if not self.isequal(expected):  # pragma: no cover (debug)
             print(mask_type, replace)
             print(expected)
             print(self)
@@ -1008,7 +1008,7 @@ def test_subassign_combos(index):
         self[0, index](binary.plus, mask, replace=replace) << val
         expected = Vector.from_values(indices, values, size=14, name="expected")
         expected = asrow(expected)
-        if not self.isequal(expected):  # pragma: no cover
+        if not self.isequal(expected):  # pragma: no cover (debug)
             print(mask_type, replace)
             print(expected)
             print(self)
@@ -1027,7 +1027,7 @@ def test_subassign_combos(index):
         self[index, 0](binary.plus, mask, replace=replace) << val
         expected = Vector.from_values(indices, values, size=14, name="expected")
         expected = ascol(expected)
-        if not self.isequal(expected):  # pragma: no cover
+        if not self.isequal(expected):  # pragma: no cover (debug)
             print(mask_type, replace)
             print(expected)
             print(self)
@@ -1041,7 +1041,7 @@ def test_subassign_combos(index):
         self[[0], index](binary.plus, mask, replace=replace) << val
         expected = Vector.from_values(indices, values, size=14, name="expected")
         expected = asrow(expected)
-        if not self.isequal(expected):  # pragma: no cover
+        if not self.isequal(expected):  # pragma: no cover (debug)
             print(mask_type, replace)
             print(expected)
             print(self)
@@ -1280,7 +1280,7 @@ def test_select_bools_and_masks(A):
 
 @pytest.mark.slow
 def test_indexunary_udf(A):
-    def threex_minusthunk(x, row, col, thunk):  # pragma: no cover
+    def threex_minusthunk(x, row, col, thunk):  # pragma: no cover (numba)
         return 3 * x - thunk
 
     indexunary.register_new("threex_minusthunk", threex_minusthunk)
@@ -1297,7 +1297,7 @@ def test_indexunary_udf(A):
     assert result.isequal(expected)
     delattr(indexunary, "threex_minusthunk")
 
-    def iii(x, row, col, thunk):  # pragma: no cover
+    def iii(x, row, col, thunk):  # pragma: no cover (numba)
         return (row + col) // 2 >= thunk
 
     select.register_new("iii", iii)
@@ -1593,7 +1593,7 @@ def test_reduce_agg_empty():
 def test_reduce_row_udf(A):
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
 
-    def plus(x, y):  # pragma: no cover
+    def plus(x, y):  # pragma: no cover (numba)
         return x + y
 
     binop = gb.core.operator.BinaryOp.register_anonymous(plus)

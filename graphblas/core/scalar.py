@@ -536,7 +536,7 @@ class Scalar(BaseType):
     def _deserialize(value, dtype, is_cscalar, name):
         return Scalar.from_value(value, dtype, is_cscalar=is_cscalar, name=name)
 
-    def to_pygraphblas(self):  # pragma: no cover
+    def to_pygraphblas(self):  # pragma: no cover (outdated)
         """Convert to a ``pygraphblas.Scalar`` by making a copy of the internal value.
 
         This method requires the
@@ -552,7 +552,7 @@ class Scalar(BaseType):
         return pg.Scalar.from_value(self.value)
 
     @classmethod
-    def from_pygraphblas(cls, scalar):  # pragma: no cover
+    def from_pygraphblas(cls, scalar):  # pragma: no cover (outdated)
         """Convert a ``pygraphblas.Scalar`` to a new :class:`Scalar` by making
         a copy of the internal value.
 
@@ -578,18 +578,18 @@ class Scalar(BaseType):
         """
         from .vector import Vector
 
-        if self._is_cscalar:
-            rv = Vector(self.dtype, size=1, name=name)
-            if not self._is_empty:
-                rv[0] = self
-            return rv
-        return Vector._from_obj(
-            ffi.cast("GrB_Vector*", self.gb_obj),
-            self.dtype,
-            1,
-            parent=self,
-            name=f"(GrB_Vector){self.name or 's_temp'}" if name is None else name,
-        )
+        if backend == "suitesparse" and not self._is_cscalar:
+            return Vector._from_obj(
+                ffi.cast("GrB_Vector*", self.gb_obj),
+                self.dtype,
+                1,
+                parent=self,
+                name=f"(GrB_Vector){self.name or 's_temp'}" if name is None else name,
+            )
+        rv = Vector(self.dtype, size=1, name=name)
+        if not self._is_empty:
+            rv[0] = self
+        return rv
 
     def _as_matrix(self, *, name=None):
         """Copy or cast this Scalar to a Matrix
@@ -598,19 +598,19 @@ class Scalar(BaseType):
         """
         from .matrix import Matrix
 
-        if self._is_cscalar:
-            rv = Matrix(self.dtype, ncols=1, nrows=1, name=name)
-            if not self._is_empty:
-                rv[0, 0] = self
-            return rv
-        return Matrix._from_obj(
-            ffi.cast("GrB_Matrix*", self.gb_obj),
-            self.dtype,
-            1,
-            1,
-            parent=self,
-            name=f"(GrB_Matrix){self.name or 's_temp'}" if name is None else name,
-        )
+        if backend == "suitesparse" and not self._is_cscalar:
+            return Matrix._from_obj(
+                ffi.cast("GrB_Matrix*", self.gb_obj),
+                self.dtype,
+                1,
+                1,
+                parent=self,
+                name=f"(GrB_Matrix){self.name or 's_temp'}" if name is None else name,
+            )
+        rv = Matrix(self.dtype, ncols=1, nrows=1, name=name)
+        if not self._is_empty:
+            rv[0, 0] = self
+        return rv
 
 
 class ScalarExpression(BaseExpression):

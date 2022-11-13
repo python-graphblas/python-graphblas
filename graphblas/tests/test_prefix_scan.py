@@ -9,7 +9,7 @@ from graphblas import Matrix, Vector  # isort:skip (for dask-graphblas)
 try:
     # gb.io.to_numpy currently requires scipy
     import scipy.sparse as ss
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover (import)
     ss = None
 
 suitesparse = backend == "suitesparse"
@@ -41,7 +41,7 @@ def test_scan_matrix(method, length, do_random):
     result = gb.io.to_numpy(R)
     try:
         np.testing.assert_array_equal(result, expected)
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover (debug)
         print(M)
         raise
 
@@ -65,7 +65,7 @@ def test_scan_vector(length, do_random):
     result = gb.io.to_numpy(r)
     try:
         np.testing.assert_array_equal(result, expected)
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover (debug)
         print(v)
         raise
 

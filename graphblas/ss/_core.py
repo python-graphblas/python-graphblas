@@ -211,7 +211,7 @@ class About(Mapping):
             info = lib.GxB_Global_Option_get(self._mode_options[key], vararg(val_ptr))
             if info == lib.GrB_SUCCESS:  # pragma: no branch
                 val = val_ptr[0]
-                if val not in self._modes:  # pragma: no cover
+                if val not in self._modes:  # pragma: no cover (sanity)
                     raise ValueError(f"Unknown mode: {val}")
                 return self._modes[val]
         elif key in self._int3_options:
@@ -226,7 +226,7 @@ class About(Mapping):
                 return ffi.string(val_ptr[0]).decode()
         else:
             raise KeyError(key)
-        raise _error_code_lookup[info](f"Failed to get info for {key}")  # pragma: no cover
+        raise _error_code_lookup[info](f"Failed to get info for {key}")  # pragma: no cover (safety)
 
     def __iter__(self):
         return iter(
