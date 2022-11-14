@@ -583,13 +583,13 @@ class ss:
             bitmap = claim_buffer(ffi, vb[0], vb_size[0] // bool_dtype.itemsize, bool_dtype)
             values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
             if not raw:
-                if bitmap.size > size:
+                if bitmap.size > size:  # pragma: no branch (suitesparse)
                     bitmap = bitmap[:size]
                 if is_iso:
                     if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
                 else:
-                    if values.size > size:
+                    if values.size > size:  # pragma: no branch (suitesparse)
                         values = values[:size]
             rv = {
                 "bitmap": bitmap,
@@ -609,7 +609,7 @@ class ss:
                     if values.size > 1:
                         values = values[:1]
                 else:
-                    if values.size > size:
+                    if values.size > size:  # pragma: no branch (suitesparse)
                         values = values[:size]
             rv = {}
             if raw or is_iso:

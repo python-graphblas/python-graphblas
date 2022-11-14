@@ -2246,6 +2246,11 @@ def test_ss_import_export(A, do_iso, methods):
     E = Matrix.ss.import_any(**info)
     assert E.isequal(D)
 
+    info = D.ss.export("rowwise")
+    assert info["format"] in {"csr", "dcsr", "bitmapr", "fullr"}
+    info = D.ss.export("colwise")
+    assert info["format"] in {"csc", "dcsc", "bitmapc", "fullc"}
+
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_import_on_view():
@@ -3884,10 +3889,12 @@ def test_to_csr_from_csc(A):
 
 def test_to_dcsr_from_dcsc(A):
     assert Matrix.from_dcsr(*A.to_dcsr(dtype=int)).isequal(A, check_dtype=True)
+    assert Matrix.from_dcsc(*A.to_dcsc(dtype=int)).isequal(A, check_dtype=True)
     assert Matrix.from_dcsr(*A.T.to_dcsc()).isequal(A, check_dtype=True)
     assert Matrix.from_dcsc(*A.to_dcsc()).isequal(A)
     assert Matrix.from_dcsc(*A.T.to_dcsr()).isequal(A)
     assert Matrix.from_dcsr(*A.to_dcsr(dtype=float)).isequal(A.dup(float), check_dtype=True)
+    assert Matrix.from_dcsc(*A.to_dcsc(dtype=float)).isequal(A.dup(float), check_dtype=True)
 
     #    0 1 2
     # 0 [- 1 -]
@@ -3910,6 +3917,17 @@ def test_to_dcsr_from_dcsc(A):
     assert expected.isequal(B, check_dtype=True)
     assert Matrix.from_dcsr(*B.to_dcsr(), nrows=2, ncols=2).isequal(B)
     assert Matrix.from_dcsr(*B.to_dcsr()).isequal(B[0:0, 0:0].new())
+
+    B = Matrix.from_dcsc([], [0], [], [], nrows=2, ncols=2, dtype=int)
+    expected = Matrix(int, 2, 2)
+    assert expected.isequal(B, check_dtype=True)
+    assert Matrix.from_dcsc(*B.to_dcsc(), nrows=2, ncols=2).isequal(B)
+    assert Matrix.from_dcsc(*B.to_dcsc()).isequal(B[0:0, 0:0].new())
+
+    B = Matrix.from_dcsr([2], [0, 0], [], [], dtype=int)
+    assert B.shape == (3, 0)
+    B = Matrix.from_dcsc([2], [0, 0], [], [], dtype=int)
+    assert B.shape == (0, 3)
 
     # indptr must not be empty
     with pytest.raises(InvalidValue):

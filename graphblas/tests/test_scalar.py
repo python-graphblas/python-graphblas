@@ -448,7 +448,7 @@ def test_sizeof(s):
 
 
 @pytest.mark.skipif("not suitesparse")
-def test_concat(s):
+def test_ss_concat(s):
     empty = Scalar(int)
     v = gb.ss.concat([s, s, empty])
     expected = Vector.from_values([0, 1], 5, size=3)

@@ -100,6 +100,14 @@ def test_matrix_to_from_networkx():
     assert G.number_of_nodes() == G2.number_of_nodes() == 2
     np.testing.assert_array_equal(nx.to_numpy_array(G), a)
 
+    # No weights
+    G3 = gb.io.to_networkx(M, edge_attribute=None)
+    a2 = np.array([[1, 0], [1, 1]])
+    G4 = nx.from_numpy_array(a2, create_using=nx.DiGraph)
+    assert G3.number_of_edges() == G4.number_of_edges() == 3
+    assert G3.number_of_nodes() == G4.number_of_nodes() == 2
+    np.testing.assert_array_equal(nx.to_numpy_array(G3), a2)
+
     M2 = gb.io.from_networkx(G, dtype=int)
     assert M.isequal(M2, check_dtype=True)
     # Check iso-value

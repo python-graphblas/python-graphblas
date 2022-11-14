@@ -1022,10 +1022,10 @@ def test_from_string():
 
 @pytest.mark.slow
 def test_lazy_op():
-    UnaryOp.register_new("lazy", lambda x: x, lazy=True)  # pragma: no branch
+    UnaryOp.register_new("lazy", lambda x: x, lazy=True)  # pragma: no branch (numba)
     assert isinstance(op.lazy, UnaryOp)
     assert isinstance(unary.lazy, UnaryOp)
-    BinaryOp.register_new("lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch
+    BinaryOp.register_new("lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch (numba)
     Monoid.register_new("lazy", "lazy", 0, lazy=True)
     assert isinstance(monoid.lazy, Monoid)
     assert isinstance(binary.lazy, BinaryOp)
@@ -1037,9 +1037,9 @@ def test_lazy_op():
     Semiring.register_new("lazy_lazy", monoid.lazy, binary.lazy, lazy=True)
     assert isinstance(semiring.lazy_lazy, Semiring)
     # numpy
-    UnaryOp.register_new("numpy.lazy", lambda x: x, lazy=True)  # pragma: no branch
+    UnaryOp.register_new("numpy.lazy", lambda x: x, lazy=True)  # pragma: no branch (numba)
     assert isinstance(unary.numpy.lazy, UnaryOp)
-    BinaryOp.register_new("numpy.lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch
+    BinaryOp.register_new("numpy.lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch (numba)
     Monoid.register_new("numpy.lazy", "numpy.lazy", 0, lazy=True)
     assert isinstance(monoid.numpy.lazy, Monoid)
     assert isinstance(binary.numpy.lazy, BinaryOp)
@@ -1052,7 +1052,7 @@ def test_lazy_op():
     Semiring.register_new("numpy.lazy_lazy", monoid.numpy.lazy, binary.numpy.lazy, lazy=True)
     assert isinstance(semiring.numpy.lazy_lazy, Semiring)
     # misc
-    UnaryOp.register_new("misc.lazy", lambda x: x, lazy=True)  # pragma: no branch
+    UnaryOp.register_new("misc.lazy", lambda x: x, lazy=True)  # pragma: no branch (numba)
     assert isinstance(unary.misc.lazy, UnaryOp)
     with pytest.raises(AttributeError):
         unary.misc.bad

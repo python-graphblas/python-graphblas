@@ -353,7 +353,7 @@ def _dtype_to_string(dtype):
         np_type = dtype.np_type
     s = str(np_type)
     try:
-        if _np.dtype(_np.lib.format.safe_eval(s)) == np_type:
+        if _np.dtype(_np.lib.format.safe_eval(s)) == np_type:  # pragma: no branch (safety)
             return s
     except Exception:
         pass

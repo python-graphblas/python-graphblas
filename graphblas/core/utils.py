@@ -16,9 +16,9 @@ def libget(name):
         ext_name = f"GxB_{name[4:]}"
         try:
             return getattr(lib, ext_name)
-        except AttributeError:
+        except AttributeError:  # pragma: no cover (sanity)
             pass
-        raise
+        raise  # pragma: no cover (sanity)
 
 
 def wrapdoc(func_with_doc):

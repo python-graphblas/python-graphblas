@@ -727,6 +727,9 @@ def test_select(v):
     assert w6.isequal(result)
     with pytest.raises(TypeError, match="thunk"):
         v.select(select.valueeq, object())
+    w7 = v.select("==").new()
+    expected = Vector.from_values([6], 0)
+    assert w7.isequal(expected)
 
 
 @autocompute
@@ -1098,7 +1101,7 @@ def test_del(capsys):
 @pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
 @pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
-def test_import_export(v, do_iso, methods):
+def test_ss_import_export(v, do_iso, methods):
     if do_iso:
         v(v.S) << 1
     v1 = v.dup()
@@ -1241,7 +1244,7 @@ def test_import_export(v, do_iso, methods):
 @pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
 @pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
-def test_import_export_auto(v, do_iso, methods):
+def test_ss_import_export_auto(v, do_iso, methods):
     if do_iso:
         v(v.S) << 1
     v_orig = v.dup()
@@ -1645,7 +1648,7 @@ def test_ss_random(v):
     r3 = Vector.from_values([4], [2], size=v.size)
     r4 = Vector.from_values([6], [0], size=v.size)
     seen = set()
-    for _i in range(1000000):  # pragma: no branch
+    for _i in range(1000000):  # pragma: no branch (sanity)
         r = v.ss.selectk("random", 1)
         if r.isequal(r1):
             seen.add("r1")
@@ -2296,17 +2299,17 @@ def test_to_values_subset(v):
 
 
 def test_lambda_udfs(v):
-    result = v.apply(lambda x: x + 1).new()  # pragma: no branch
+    result = v.apply(lambda x: x + 1).new()  # pragma: no branch (numba)
     expected = binary.plus(v, 1).new()
     assert result.isequal(expected)
-    result = v.ewise_mult(v, lambda x, y: x + y).new()  # pragma: no branch
+    result = v.ewise_mult(v, lambda x, y: x + y).new()  # pragma: no branch (numba)
     expected = binary.plus(v & v).new()
     assert result.isequal(expected)
-    result = v.ewise_add(v, lambda x, y: x + y).new()  # pragma: no branch
+    result = v.ewise_add(v, lambda x, y: x + y).new()  # pragma: no branch (numba)
     assert result.isequal(expected)
     # Should we also allow lambdas for monoids with assumed identity of 0?
     # with pytest.raises(TypeError):
-    v.ewise_add(v, lambda x, y: x + y)  # pragma: no branch
+    v.ewise_add(v, lambda x, y: x + y)  # pragma: no branch (numba)
     with pytest.raises(TypeError):
         v.inner(v, lambda x, y: x + y)
 

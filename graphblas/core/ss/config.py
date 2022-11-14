@@ -48,7 +48,7 @@ class BaseConfig(MutableMapping):
             info = self._get_function(key_obj, vararg(val_ptr))
         else:
             info = self._get_function(self._parent._carg, key_obj, vararg(val_ptr))
-        if info == lib.GrB_SUCCESS:  # pragma: no branch
+        if info == lib.GrB_SUCCESS:  # pragma: no branch (safety)
             if is_array:
                 return list(val_ptr)
             if key in self._enumerations:

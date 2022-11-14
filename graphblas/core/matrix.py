@@ -1048,7 +1048,7 @@ class Matrix(BaseType):
         # TODO: GraphBLAS needs a way to import or assign dense
         # We could also handle F-contiguous data w/o a copy
         # TODO: handle `Matrix._from_dense(np.arange(3*4*5).reshape(3, 4, 5))` as 3x4 Matrix
-        if backend == "suitesparse":
+        if backend == "suitesparse":  # pragma: no cover (unused)
             return Matrix.ss.import_fullr(values, dtype=dtype, name=name)
         values, dtype = values_to_numpy_buffer(values, dtype)
         if values.ndim < 2:

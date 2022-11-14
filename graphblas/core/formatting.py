@@ -285,7 +285,7 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
         if min(nonzero._nvals, num_rows) > 2 * df.count().sum():
             rows, cols, vals = nonzero.ss.head(num_rows, sort=True)
             if mask.complement:
-                if not vals.flags.writeable:  # pragma: no branch
+                if not vals.flags.writeable:  # pragma: no cover (safety)
                     vals = vals.copy()
                 vals[:] = 0
             df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
@@ -335,7 +335,7 @@ def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None)
         if min(nonzero._nvals, num_rows) > 2 * df.count().sum():
             indices, vals = nonzero.ss.head(num_rows, sort=True)
             if mask.complement:
-                if not vals.flags.writeable:  # pragma: no branch
+                if not vals.flags.writeable:  # pragma: no cover (safety)
                     vals = vals.copy()
                 vals[:] = 0
             df = pd.DataFrame({"index": indices, "val": vals})

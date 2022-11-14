@@ -48,6 +48,11 @@ def test_vector_head(do_iso):
             assert indices.dtype == np.uint64
             assert vals.dtype == expected_dtype
 
+            indices, vals = v3.ss.head(2, sort=False, dtype=dtype)
+            assert indices.size == vals.size == 2
+            assert indices.dtype == np.uint64
+            assert vals.dtype == expected_dtype
+
             indices, vals = v3.ss.head(2, sort=True, dtype=dtype)
             assert_array_equal(indices, [100, 200])
             assert_array_equal(vals, values3[:2])
@@ -161,6 +166,11 @@ def test_matrix_head(do_iso):
             assert_array_equal(rows, [4, 5])
             assert_array_equal(cols, [5, 5])
             assert_array_equal(vals, values3[:2])
+            assert rows.dtype == cols.dtype == np.uint64
+            assert vals.dtype == expected_dtype
+
+            rows, cols, vals = A8.ss.head(2, sort=False, dtype=dtype)
+            assert rows.size == cols.size == vals.size == 2
             assert rows.dtype == cols.dtype == np.uint64
             assert vals.dtype == expected_dtype
 

@@ -14,6 +14,9 @@ def test_import_special_attrs():
     # Make sure these "not special" objects don't have objects that look special within them
     for attr in not_special:
         assert not set(dir(getattr(gb, attr))) & gb._SPECIAL_ATTRS
+    if gb.backend != "suitesparse":
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.ss
 
 
 def test_bad_init():

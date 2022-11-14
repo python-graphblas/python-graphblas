@@ -746,10 +746,15 @@ class ss:
             format = self.format
         else:
             format = format.lower()
-            if format == "rowwise":
-                format = f"{self.format[:-1]}r"
-            elif format == "columnwise":
-                format = f"{self.format[:-1]}c"
+            try:
+                order = get_order(format)
+            except ValueError:
+                pass
+            else:
+                if order == "rowwise":
+                    format = f"{self.format[:-1]}r"
+                else:  # columnwise
+                    format = f"{self.format[:-1]}c"
         if give_ownership or format == "coo":
             parent = self._parent
         else:
@@ -884,10 +889,10 @@ class ss:
                 if col_indices.size > nvals:
                     col_indices = col_indices[:nvals]
                 if is_iso:
-                    if values.size > 1:
+                    if values.size > 1:  # pragma: no branch (suitesparse)
                         values = values[:1]
                 else:
-                    if values.size > nvals:
+                    if values.size > nvals:  # pragma: no branch (suitesparse)
                         values = values[:nvals]
             # Note: nvals is also at `indptr[nrows]`
             rv = {

@@ -639,9 +639,7 @@ class Vector(BaseType):
             if backend == "suitesparse":
                 w.ss.build_scalar(indices, values.tolist())
             else:
-                if dup_op is None:
-                    dup_op = binary.any  # Handle duplicate indices
-                w.build(indices, np.broadcast_to(values, indices.size), dup_op=dup_op)
+                w.build(indices, np.broadcast_to(values, indices.size), dup_op=binary.any)
         else:
             # This needs to be the original data to get proper error messages
             w.build(indices, values, dup_op=dup_op)
