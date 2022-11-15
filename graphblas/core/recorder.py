@@ -43,7 +43,7 @@ class Recorder:
     >>> with Recorder() as rec:
     ...     C = A.mxm(B).new()
     >>> rec.data[0]
-    'GrB_mxm(C, NULL, NULL, GxB_PLUS_TIMES_INT64, A, B, NULL)'
+    'GrB_mxm(C, NULL, NULL, GrB_PLUS_TIMES_SEMIRING_INT64, A, B, NULL)'
 
     Currently, only one recorder will record at a time within a context.
     """
