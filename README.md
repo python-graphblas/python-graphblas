@@ -132,7 +132,7 @@ s(accum) << v.reduce(op)
 ```python
 A = Matrix.new(dtype, num_rows, num_cols)   # new_type
 B = A.dup()                                 # dup
-A = Matrix.from_values([row_indices], [col_indices], [values])  # build
+A = Matrix.from_coo([row_indices], [col_indices], [values])  # build
 ```
 ## New from delayed
 Delayed objects can be used to create a new object using `.new()` method
@@ -145,7 +145,7 @@ size = v.size                               # size
 nrows = M.nrows                             # nrows
 ncols = M.ncols                             # ncols
 nvals = M.nvals                             # nvals
-rindices, cindices, vals = M.to_values()    # extractTuples
+rindices, cindices, vals = M.to_coo()       # extractTuples
 ```
 ## Initialization
 There is a mechanism to initialize `graphblas` with a context prior to use. This allows for setting the backend to
@@ -174,7 +174,7 @@ def force_odd_func(x):
 
 unary.register_new('force_odd', force_odd_func)
 
-v = Vector.from_values([0, 1, 3], [1, 2, 3])
+v = Vector.from_coo([0, 1, 3], [1, 2, 3])
 w = v.apply(unary.force_odd).new()
 w  # indexes=[0, 1, 3], values=[1, 3, 3]
 ```

@@ -255,7 +255,7 @@ class Matrix(BaseType):
 
     def __iter__(self):
         """Iterate over (row, col) indices which are present in the matrix."""
-        rows, columns, _ = self.to_values(values=False)
+        rows, columns, _ = self.to_coo(values=False)
         return zip(rows.flat, columns.flat)
 
     def __sizeof__(self):
@@ -415,6 +415,41 @@ class Matrix(BaseType):
         """Extract the indices and values as a 3-tuple of numpy arrays
         corresponding to the COO format of the Matrix.
 
+        .. deprecated:: 2022.11.0
+            `Matrix.to_values` will be removed in a future release.
+            Use `Matrix.to_coo` instead. Will be removed in version 2023.9.0 or later
+
+        Parameters
+        ----------
+        dtype :
+            Requested dtype for the output values array.
+        rows : bool, default=True
+            Whether to return rows; will return `None` for rows if `False`
+        columns  :bool, default=True
+            Whether to return columns; will return `None` for columns if `False`
+        values : bool, default=True
+            Whether to return values; will return `None` for values if `False`
+        sort : bool, default=True
+            Whether to require sorted indices.
+            If internally stored rowwise, the sorting will be first by rows, then by column.
+            If internally stored columnwise, the sorting will be first by column, then by row.
+
+        Returns
+        -------
+        np.ndarray[dtype=uint64] : Rows
+        np.ndarray[dtype=uint64] : Columns
+        np.ndarray : Values
+        """
+        warnings.warn(
+            "`Matrix.to_values(...)` is deprecated; please use `Matrix.to_coo(...)` instead.",
+            DeprecationWarning,
+        )
+        return self.to_coo(dtype, rows=rows, columns=columns, values=values, sort=sort)
+
+    def to_coo(self, dtype=None, *, rows=True, columns=True, values=True, sort=True):
+        """Extract the indices and values as a 3-tuple of numpy arrays
+        corresponding to the COO format of the Matrix.
+
         Parameters
         ----------
         dtype :
@@ -476,9 +511,9 @@ class Matrix(BaseType):
         """Rarely used method to insert values into an existing Matrix.
 
         The typical use case is to create a new Matrix and insert values
-        at the same time using :meth:`from_values`.
+        at the same time using :meth:`from_coo`.
 
-        All the arguments are used identically in :meth:`from_values`, except for `clear`, which
+        All the arguments are used identically in :meth:`from_coo`, except for `clear`, which
         indicates whether to clear the Matrix prior to adding the new values.
         """
         # TODO: accept `dtype` keyword to match the dtype of `values`?
@@ -640,6 +675,60 @@ class Matrix(BaseType):
     ):
         """Create a new Matrix from row and column indices and values.
 
+        .. deprecated:: 2022.11.0
+            `Matrix.from_values` will be removed in a future release.
+            Use `Matrix.from_coo` instead. Will be removed in version 2023.9.0 or later
+
+        Parameters
+        ----------
+        rows : list or np.ndarray
+            Row indices.
+        columns : list or np.ndarray
+            Column indices.
+        values : list or np.ndarray or scalar
+            List of values. If a scalar is provided, all values will be set to this single value.
+        dtype :
+            Data type of the Matrix. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        nrows : int, optional
+            Number of rows in the Matrix. If not provided, ``nrows`` is computed
+            from the maximum row index found in ``rows``.
+        ncols : int, optional
+            Number of columns in the Matrix. If not provided, ``ncols`` is computed
+            from the maximum column index found in ``columns``.
+        dup_op : :class:`~graphblas.core.operator.BinaryOp`, optional
+            Function used to combine values if duplicate indices are found.
+            Leaving ``dup_op=None`` will raise an error if duplicates are found.
+        name : str, optional
+            Name to give the Matrix.
+
+        Returns
+        -------
+        Matrix
+        """
+        warnings.warn(
+            "`Matrix.from_values(...)` is deprecated; please use `Matrix.from_coo(...)` instead.",
+            DeprecationWarning,
+        )
+        return cls.from_coo(
+            rows, columns, values, dtype, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
+        )
+
+    @classmethod
+    def from_coo(
+        cls,
+        rows,
+        columns,
+        values,
+        dtype=None,
+        *,
+        nrows=None,
+        ncols=None,
+        dup_op=None,
+        name=None,
+    ):
+        """Create a new Matrix from row and column indices and values.
+
         Parameters
         ----------
         rows : list or np.ndarray
@@ -780,9 +869,9 @@ class Matrix(BaseType):
 
         See Also
         --------
+        from_coo
         from_csc
         from_dcsr
-        from_values
         Matrix.ss.import_csr
         io.from_scipy_sparse
         """
@@ -821,9 +910,9 @@ class Matrix(BaseType):
 
         See Also
         --------
+        from_coo
         from_csr
         from_dcsc
-        from_values
         Matrix.ss.import_csc
         io.from_scipy_sparse
         """
@@ -880,9 +969,9 @@ class Matrix(BaseType):
 
         See Also
         --------
+        from_coo
         from_csr
         from_dcsc
-        from_values
         Matrix.ss.import_hypercsr
         io.from_scipy_sparse
         """
@@ -962,9 +1051,9 @@ class Matrix(BaseType):
 
         See Also
         --------
+        from_coo
         from_csc
         from_dcsr
-        from_values
         Matrix.ss.import_hypercsc
         io.from_scipy_sparse
         """
@@ -1093,9 +1182,9 @@ class Matrix(BaseType):
 
         See Also
         --------
+        to_coo
         to_csc
         to_dcsr
-        to_values
         Matrix.ss.export
         io.to_scipy_sparse
         """
@@ -1118,9 +1207,9 @@ class Matrix(BaseType):
 
         See Also
         --------
+        to_coo
         to_csr
         to_dcsc
-        to_values
         Matrix.ss.export
         io.to_scipy_sparse
         """
@@ -1146,9 +1235,9 @@ class Matrix(BaseType):
 
         See Also
         --------
+        to_coo
         to_csr
         to_dcsc
-        to_values
         Matrix.ss.export
         io.to_scipy_sparse
         """
@@ -1190,9 +1279,9 @@ class Matrix(BaseType):
 
         See Also
         --------
+        to_coo
         to_csc
         to_dcsr
-        to_values
         Matrix.ss.export
         io.to_scipy_sparse
         """
@@ -1260,9 +1349,6 @@ class Matrix(BaseType):
         #         map(values.tolist().__getitem__, slices),
         #     )
         # }
-
-    from_coo = from_values  # Alias
-    to_coo = to_values  # Alias
 
     @property
     def _carg(self):
@@ -2921,6 +3007,13 @@ class TransposedMatrix:
         return self._matrix.dtype
 
     @wrapdoc(Matrix.to_values)
+    def to_coo(self, dtype=None, *, rows=True, columns=True, values=True, sort=True):
+        rows, cols, vals = self._matrix.to_coo(
+            dtype, rows=rows, columns=columns, values=values, sort=sort
+        )
+        return cols, rows, vals
+
+    @wrapdoc(Matrix.to_values)
     def to_values(self, dtype=None, *, rows=True, columns=True, values=True, sort=True):
         rows, cols, vals = self._matrix.to_values(
             dtype, rows=rows, columns=columns, values=values, sort=sort
@@ -2963,8 +3056,6 @@ class TransposedMatrix:
     def to_dicts(self, order="rowwise"):
         order = "columnwise" if get_order(order) == "rowwise" else "rowwise"
         return self._matrix.to_dicts(order)
-
-    to_coo = to_values  # Alias
 
     # Properties
     nrows = Matrix.ncols

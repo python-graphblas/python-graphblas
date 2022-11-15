@@ -249,7 +249,7 @@ class Vector(BaseType):
 
     def __iter__(self):
         """Iterate over indices which are present in the vector."""
-        indices, _ = self.to_values(values=False)
+        indices, _ = self.to_coo(values=False)
         return indices.flat
 
     def __sizeof__(self):
@@ -381,6 +381,35 @@ class Vector(BaseType):
     def to_values(self, dtype=None, *, indices=True, values=True, sort=True):
         """Extract the indices and values as a 2-tuple of numpy arrays.
 
+        .. deprecated:: 2022.11.0
+            `Vector.to_values` will be removed in a future release.
+            Use `Vector.to_coo` instead. Will be removed in version 2023.9.0 or later
+
+        Parameters
+        ----------
+        dtype :
+            Requested dtype for the output values array.
+        indices :bool, default=True
+            Whether to return indices; will return `None` for indices if `False`
+        values : bool, default=True
+            Whether to return values; will return `None` for values if `False`
+        sort : bool, default=True
+            Whether to require sorted indices.
+
+        Returns
+        -------
+        np.ndarray[dtype=uint64] : Indices
+        np.ndarray : Values
+        """
+        warnings.warn(
+            "`Vector.to_values(...)` is deprecated; please use `Vector.to_coo(...)` instead.",
+            DeprecationWarning,
+        )
+        return self.to_coo(dtype, indices=indices, values=values, sort=sort)
+
+    def to_coo(self, dtype=None, *, indices=True, values=True, sort=True):
+        """Extract the indices and values as a 2-tuple of numpy arrays.
+
         Parameters
         ----------
         dtype :
@@ -429,9 +458,9 @@ class Vector(BaseType):
 
     def build(self, indices, values, *, dup_op=None, clear=False, size=None):
         """Rarely used method to insert values into an existing Vector. The typical use case
-        is to create a new Vector and insert values at the same time using :meth:`from_values`.
+        is to create a new Vector and insert values at the same time using :meth:`from_coo`.
 
-        All the arguments are used identically in :meth:`from_values`, except for `clear`, which
+        All the arguments are used identically in :meth:`from_coo`, except for `clear`, which
         indicates whether to clear the Vector prior to adding the new values.
         """
         # TODO: accept `dtype` keyword to match the dtype of `values`?
@@ -574,6 +603,42 @@ class Vector(BaseType):
 
     @classmethod
     def from_values(cls, indices, values, dtype=None, *, size=None, dup_op=None, name=None):
+        """Create a new Vector from indices and values.
+
+        .. deprecated:: 2022.11.0
+            `Vector.from_values` will be removed in a future release.
+            Use `Vector.from_coo` instead. Will be removed in version 2023.9.0 or later
+
+        Parameters
+        ----------
+        indices : list or np.ndarray
+            Vector indices.
+        values : list or np.ndarray or scalar
+            List of values. If a scalar is provided, all values will be set to this single value.
+        dtype :
+            Data type of the Vector. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        size : int, optional
+            Size of the Vector. If not provided, ``size`` is computed from
+            the maximum index found in ``indices``.
+        dup_op : BinaryOp, optional
+            Function used to combine values if duplicate indices are found.
+            Leaving ``dup_op=None`` will raise an error if duplicates are found.
+        name : str, optional
+            Name to give the Vector.
+
+        Returns
+        -------
+        Vector
+        """
+        warnings.warn(
+            "`Vector.from_values(...)` is deprecated; please use `Vector.from_coo(...)` instead.",
+            DeprecationWarning,
+        )
+        return cls.from_coo(indices, values, dtype, size=size, dup_op=dup_op, name=name)
+
+    @classmethod
+    def from_coo(cls, indices, values, dtype=None, *, size=None, dup_op=None, name=None):
         """Create a new Vector from indices and values.
 
         Parameters
@@ -1641,7 +1706,7 @@ class Vector(BaseType):
             values = np.fromiter(d.values(), dtype.np_type)
         if size is None and indices.size == 0:
             size = 0
-        return cls.from_values(indices, values, dtype, size=size, name=name)
+        return cls.from_coo(indices, values, dtype, size=size, name=name)
 
     def to_dict(self):
         """Return Vector as a dict in the form ``{index: val}``
@@ -1650,7 +1715,7 @@ class Vector(BaseType):
         -------
         dict
         """
-        indices, values = self.to_values(sort=False)
+        indices, values = self.to_coo(sort=False)
         return dict(zip(indices.tolist(), values.tolist()))
 
 
@@ -1747,6 +1812,7 @@ class VectorExpression(BaseExpression):
     reposition = wrapdoc(Vector.reposition)(property(automethods.reposition))
     select = wrapdoc(Vector.select)(property(automethods.select))
     ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
@@ -1821,6 +1887,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     reposition = wrapdoc(Vector.reposition)(property(automethods.reposition))
     select = wrapdoc(Vector.select)(property(automethods.select))
     ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))

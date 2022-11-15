@@ -10,22 +10,22 @@ from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 @fixture
 def v1():
-    return Vector.from_values([0, 2], [2.0, 5.0], name="v_1")
+    return Vector.from_coo([0, 2], [2.0, 5.0], name="v_1")
 
 
 @fixture
 def v2():
-    return Vector.from_values([1, 2], [3.0, 7.0], name="v_2")
+    return Vector.from_coo([1, 2], [3.0, 7.0], name="v_2")
 
 
 @fixture
 def A1():
-    return Matrix.from_values([0, 0], [0, 1], [0.0, 4.0], ncols=3, name="A_1")
+    return Matrix.from_coo([0, 0], [0, 1], [0.0, 4.0], ncols=3, name="A_1")
 
 
 @fixture
 def A2():
-    return Matrix.from_values([0, 2], [0, 0], [6.0, 8.0], name="A_2")
+    return Matrix.from_coo([0, 2], [0, 0], [6.0, 8.0], name="A_2")
 
 
 @fixture

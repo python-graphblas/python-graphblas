@@ -8,69 +8,69 @@ from graphblas.core.utils import ensure_type
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 
-def test_from_values_dtype_resolving():
-    u = Vector.from_values([0, 1, 2], [1, 2, 3], dtype=dtypes.INT32)
+def test_from_coo_dtype_resolving():
+    u = Vector.from_coo([0, 1, 2], [1, 2, 3], dtype=dtypes.INT32)
     assert u.dtype == "INT32"
-    u = Vector.from_values([0, 1, 2], [1, 2, 3], dtype="INT32")
+    u = Vector.from_coo([0, 1, 2], [1, 2, 3], dtype="INT32")
     assert u.dtype == dtypes.INT32
-    M = Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, 3], dtype=dtypes.UINT8)
+    M = Matrix.from_coo([0, 1, 2], [2, 0, 1], [0, 2, 3], dtype=dtypes.UINT8)
     assert M.dtype == "UINT8"
-    M = Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, 3], dtype=float)
+    M = Matrix.from_coo([0, 1, 2], [2, 0, 1], [0, 2, 3], dtype=float)
     assert M.dtype == dtypes.FP64
 
 
-def test_from_values_invalid_dtype():
+def test_from_coo_invalid_dtype():
     # We now rely on numpy to coerce the data
-    A = Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, 3], dtype=dtypes.BOOL)
-    expected = Matrix.from_values([0, 1, 2], [2, 0, 1], [False, True, True], dtype=dtypes.BOOL)
+    A = Matrix.from_coo([0, 1, 2], [2, 0, 1], [0, 2, 3], dtype=dtypes.BOOL)
+    expected = Matrix.from_coo([0, 1, 2], [2, 0, 1], [False, True, True], dtype=dtypes.BOOL)
     assert A.isequal(expected)
     with pytest.raises(ValueError, match="object dtype for values is not allowed"):
-        Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, object()])
+        Matrix.from_coo([0, 1, 2], [2, 0, 1], [0, 2, object()])
 
 
 def test_resolve_ops_using_common_dtype():
     # C << A.ewise_mult(B, binary.plus) <-- PLUS should use FP64 because unify(INT64, FP64) -> FP64
-    u = Vector.from_values([0, 1, 3], [1, 2, 3], dtype=dtypes.INT64)
-    v = Vector.from_values([0, 1, 3], [0.1, 0.1, 0.1], dtype="FP64")
+    u = Vector.from_coo([0, 1, 3], [1, 2, 3], dtype=dtypes.INT64)
+    v = Vector.from_coo([0, 1, 3], [0.1, 0.1, 0.1], dtype="FP64")
     w = Vector("FP32", u.size)
     w << u.ewise_mult(v, binary.plus)
-    result = Vector.from_values([0, 1, 3], [1.1, 2.1, 3.1], dtype="FP32")
+    result = Vector.from_coo([0, 1, 3], [1.1, 2.1, 3.1], dtype="FP32")
     assert w.isclose(result, check_dtype=True)
 
 
 def test_order_of_updater_params_does_not_matter():
-    u = Vector.from_values([0, 1, 3], [1, 2, 3])
-    mask = Vector.from_values([0, 3], [True, True])
+    u = Vector.from_coo([0, 1, 3], [1, 2, 3])
+    mask = Vector.from_coo([0, 3], [True, True])
     accum = binary.plus
-    result = Vector.from_values([0, 3], [5, 10])
+    result = Vector.from_coo([0, 3], [5, 10])
     # mask, accum, replace=
-    v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v = Vector.from_coo([0, 1, 2, 3], [4, 3, 2, 1])
     v(mask.V, accum, replace=True) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
     # accum, mask, replace=
-    v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v = Vector.from_coo([0, 1, 2, 3], [4, 3, 2, 1])
     v(accum, mask.V, replace=True) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
     # accum, mask=, replace=
-    v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v = Vector.from_coo([0, 1, 2, 3], [4, 3, 2, 1])
     v(accum, mask=mask.V, replace=True) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
     # mask, accum=, replace=
-    v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v = Vector.from_coo([0, 1, 2, 3], [4, 3, 2, 1])
     v(mask.V, accum=accum, replace=True) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
     # replace=, mask=, accum=
-    v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v = Vector.from_coo([0, 1, 2, 3], [4, 3, 2, 1])
     v(replace=True, mask=mask.V, accum=accum) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
     # replace, mask=, accum=
-    v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v = Vector.from_coo([0, 1, 2, 3], [4, 3, 2, 1])
     v(replace, mask=mask.V, accum=accum) << u.ewise_mult(u, binary.times)
     assert v.isequal(result)
 
 
 def test_updater_replace_no_mask():
-    u = Vector.from_values([0, 1, 2], [1, 2, 3])
+    u = Vector.from_coo([0, 1, 2], [1, 2, 3])
     with pytest.raises(
         TypeError, match="'replace' argument may only be True if a mask is provided"
     ):
@@ -87,9 +87,9 @@ def test_replace_repr():
 
 
 def test_updater_repeat_argument_types():
-    mask = Vector.from_values([0, 3], [True, True])
+    mask = Vector.from_coo([0, 3], [True, True])
     accum = binary.plus
-    v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
+    v = Vector.from_coo([0, 1, 2, 3], [4, 3, 2, 1])
     with pytest.raises(TypeError, match="multiple"):
         v(mask.S, mask.S)
     with pytest.raises(TypeError, match="multiple"):
@@ -101,8 +101,8 @@ def test_updater_repeat_argument_types():
 
 
 def test_updater_bad_types():
-    v = Vector.from_values([0, 1, 2, 3], [4, 3, 2, 1])
-    M = Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, 3], dtype=dtypes.UINT8)
+    v = Vector.from_coo([0, 1, 2, 3], [4, 3, 2, 1])
+    M = Matrix.from_coo([0, 1, 2], [2, 0, 1], [0, 2, 3], dtype=dtypes.UINT8)
     with pytest.raises(TypeError, match="Invalid mask"):
         v(mask=object())
     with pytest.raises(TypeError, match="Invalid mask"):
@@ -117,25 +117,25 @@ def test_updater_bad_types():
 
 def test_already_resolved_ops_allowed_in_updater():
     # C(binary.plus['FP64']) << ...
-    u = Vector.from_values([0, 1, 3], [1, 2, 3])
+    u = Vector.from_coo([0, 1, 3], [1, 2, 3])
     u(binary.plus["INT64"]) << u.ewise_mult(u, binary.times["INT64"])
-    result = Vector.from_values([0, 1, 3], [2, 6, 12])
+    result = Vector.from_coo([0, 1, 3], [2, 6, 12])
     assert u.isequal(result)
 
 
 def test_updater_returns_updater():
-    u = Vector.from_values([0, 1, 3], [1, 2, 3])
+    u = Vector.from_coo([0, 1, 3], [1, 2, 3])
     y = u(accum=binary.times)
     assert isinstance(y, Updater)
     z = y << u.apply(unary.ainv)
     assert z is None
     assert isinstance(y, Updater)
-    final_result = Vector.from_values([0, 1, 3], [-1, -4, -9])
+    final_result = Vector.from_coo([0, 1, 3], [-1, -4, -9])
     assert u.isequal(final_result)
 
 
 def test_updater_only_once():
-    u = Vector.from_values([0, 1, 3], [1, 2, 3])
+    u = Vector.from_coo([0, 1, 3], [1, 2, 3])
     with pytest.raises(TypeError, match="'Assigner' object is not callable"):
         u()[0]()
     with pytest.raises(TypeError, match="'Assigner' object is not callable"):
@@ -156,7 +156,7 @@ def test_updater_only_once():
 
 
 def test_bad_extract_with_updater():
-    u = Vector.from_values([0, 1, 3], [1, 2, 3])
+    u = Vector.from_coo([0, 1, 3], [1, 2, 3])
     assert u[0].new() == 1
     with pytest.raises(AttributeError, match="'Assigner' object has no attribute 'value'"):
         u(mask=u.S)[0].value
@@ -180,7 +180,7 @@ def test_bad_extract_with_updater():
 
 
 def test_updater_on_rhs():
-    u = Vector.from_values([0, 1, 3], [1, 2, 3])
+    u = Vector.from_coo([0, 1, 3], [1, 2, 3])
     with pytest.raises(TypeError, match="Assignment value must be a valid expression"):
         u << u(mask=u.S)
     with pytest.raises(TypeError, match="Assignment value must be a valid expression"):
@@ -190,7 +190,7 @@ def test_updater_on_rhs():
 
 
 def test_py_indices():
-    v = Vector.from_values(np.arange(5), np.arange(5))
+    v = Vector.from_coo(np.arange(5), np.arange(5))
 
     idx = v[:].resolved_indexes.py_indices
     assert idx == slice(None)
@@ -216,22 +216,22 @@ def test_py_indices():
     idx = v[::-1].resolved_indexes.py_indices
     assert idx == slice(None, None, -1)
     w = v[idx].new()
-    expected = Vector.from_values(np.arange(5), np.arange(5)[::-1])
+    expected = Vector.from_coo(np.arange(5), np.arange(5)[::-1])
     assert w.isequal(expected)
 
     idx = v[4:-3:-1].resolved_indexes.py_indices
     assert idx == slice(None, -v.size - 1 + 3, -1)
     w = v[idx].new()
-    expected = Vector.from_values(np.arange(2), np.arange(5)[4:-3:-1])
+    expected = Vector.from_coo(np.arange(2), np.arange(5)[4:-3:-1])
     assert w.isequal(expected)
 
     idx = v[1::2].resolved_indexes.py_indices
     assert idx == slice(1, None, 2)
     w = v[idx].new()
-    expected = Vector.from_values(np.arange(2), np.arange(5)[1::2])
+    expected = Vector.from_coo(np.arange(2), np.arange(5)[1::2])
     assert w.isequal(expected)
 
-    A = Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, 3], nrows=10, ncols=10)
+    A = Matrix.from_coo([0, 1, 2], [2, 0, 1], [0, 2, 3], nrows=10, ncols=10)
     idx = A[1:6, 8:-8:-2].resolved_indexes.py_indices
     assert idx == (slice(1, 6), slice(8, -8, -2))
 
@@ -250,8 +250,8 @@ def test_py_indices():
 
 
 def test_ensure_type():
-    v = Vector.from_values([0, 1, 2], [1, 2, 3])
-    A = Matrix.from_values([0, 1, 2], [2, 0, 1], [0, 2, 3])
+    v = Vector.from_coo([0, 1, 2], [1, 2, 3])
+    A = Matrix.from_coo([0, 1, 2], [2, 0, 1], [0, 2, 3])
     assert ensure_type(v, Vector) is v
     assert ensure_type(A, Matrix) is A
     assert ensure_type(v, (Matrix, Vector)) is v

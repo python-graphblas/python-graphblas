@@ -162,7 +162,7 @@ def _update_matrix_dataframe(df, matrix, rows, row_offset, columns, column_offse
                     submatrix(matrix.V)[rows, columns] = 0 if mask.complement else 1
             if row_offset is not None or column_offset is not None:
                 submatrix = submatrix[row_offset:, column_offset:].new(name="")
-    rows, cols, vals = submatrix.to_values()
+    rows, cols, vals = submatrix.to_coo()
     np_type = submatrix.dtype.np_type
     if submatrix.dtype._is_udt and np_type.subdtype is not None:
         vals = vals.tolist()
@@ -200,7 +200,7 @@ def _update_vector_dataframe(df, vector, columns, column_offset, *, mask=None):
                 subvector(vector.V)[columns] = 0 if mask.complement else 1
         if column_offset is not None:
             subvector = subvector[column_offset:].new(name="")
-    cols, vals = subvector.to_values()
+    cols, vals = subvector.to_coo()
     np_type = subvector.dtype.np_type
     if subvector.dtype._is_udt and np_type.subdtype is not None:
         vals = vals.tolist()

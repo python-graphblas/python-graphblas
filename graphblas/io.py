@@ -74,7 +74,7 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         )
     else:  # pragma: no cover
         rows, cols = A.nonzero()
-        M = _Matrix.from_values(rows, cols, data, nrows=nrows, ncols=ncols, name=name)
+        M = _Matrix.from_coo(rows, cols, data, nrows=nrows, ncols=ncols, name=name)
     return M
 
 
@@ -111,7 +111,7 @@ def from_numpy(m):
         A = csr_array(m)
         _, size = A.shape
         dtype = _lookup_dtype(m.dtype)
-        g = _Vector.from_values(A.indices, A.data, size=size, dtype=dtype)
+        g = _Vector.from_coo(A.indices, A.data, size=size, dtype=dtype)
         return g
     else:
         A = coo_array(m)
@@ -127,7 +127,7 @@ def from_scipy_sparse_matrix(m, *, dup_op=None, name=None):
     A = m.tocoo()
     nrows, ncols = A.shape
     dtype = _lookup_dtype(m.dtype)
-    g = _Matrix.from_values(
+    g = _Matrix.from_coo(
         A.row, A.col, A.data, nrows=nrows, ncols=ncols, dtype=dtype, dup_op=dup_op, name=name
     )
     return g
@@ -184,7 +184,7 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
             )
     if A.format != "coo":
         A = A.tocoo()
-    return _Matrix.from_values(
+    return _Matrix.from_coo(
         A.row, A.col, A.data, nrows=nrows, ncols=ncols, dtype=dtype, dup_op=dup_op, name=name
     )
 
@@ -218,7 +218,7 @@ def from_awkward(A, *, name=None):
     if len(shape) == 1:
         if format != "vec":
             raise ValueError(f"Invalid format for Vector: {format}")
-        return _Vector.from_values(
+        return _Vector.from_coo(
             A.indices.layout.data, A.values.layout.data, size=shape[0], name=name
         )
     else:
@@ -260,7 +260,7 @@ def to_networkx(m):
     import networkx as nx
 
     g = nx.DiGraph()
-    for row, col, val in zip(*m.to_values()):
+    for row, col, val in zip(*m.to_coo()):
         g.add_edge(row, col, weight=val)
     return g
 
@@ -302,7 +302,7 @@ def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover
     )
     format = format.lower()
     if _output_type(m) is _Vector:
-        indices, data = m.to_values()
+        indices, data = m.to_coo()
         if format == "csc":
             return ss.csc_matrix((data, indices, [0, len(data)]), shape=(m._size, 1))
         else:
@@ -310,7 +310,7 @@ def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover
             if format == "csr":
                 return rv
     else:
-        rows, cols, data = m.to_values()
+        rows, cols, data = m.to_coo()
         rv = ss.coo_matrix((data, (rows, cols)), shape=m.shape)
         if format == "coo":
             return rv
@@ -340,7 +340,7 @@ def to_scipy_sparse(A, format="csr"):
     if format not in {"bsr", "csr", "csc", "coo", "lil", "dia", "dok"}:
         raise ValueError(f"Invalid format: {format}")
     if _output_type(A) is _Vector:
-        indices, data = A.to_values()
+        indices, data = A.to_coo()
         if format == "csc":
             return ss.csc_array((data, indices, [0, len(data)]), shape=(A._size, 1))
         else:
@@ -367,7 +367,7 @@ def to_scipy_sparse(A, format="csr"):
                 (info["values"], info["row_indices"], info["indptr"]), shape=A.shape
             )
     else:
-        rows, cols, data = A.to_values()
+        rows, cols, data = A.to_coo()
         rv = ss.coo_array((data, (rows, cols)), shape=A.shape)
         if format == "coo":
             return rv
@@ -413,7 +413,7 @@ def to_awkward(A, format=None):
         if format != "vec":
             raise ValueError(f"Invalid format for Vector: {format}")
         size = A.nvals
-        indices, values = A.to_values()
+        indices, values = A.to_coo()
         form = RecordForm(
             contents=[
                 NumpyForm(A.dtype.numba_type.name, form_key="node1"),
@@ -520,7 +520,7 @@ def mmread(source, *, dup_op=None, name=None):
     array = mmread(source)
     if isspmatrix_coo(array):
         nrows, ncols = array.shape
-        return _Matrix.from_values(
+        return _Matrix.from_coo(
             array.row, array.col, array.data, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
         )
     # SS, SuiteSparse-specific: import_full
