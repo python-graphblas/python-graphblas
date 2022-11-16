@@ -1,5 +1,6 @@
 import itertools
 import warnings
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -746,7 +747,7 @@ class Matrix(BaseType):
         return C
 
     @classmethod
-    def _from_csx(cls, fmt, indptr, indices, values, dtype, num, name):
+    def _from_csx(cls, fmt, indptr, indices, values, dtype, num, check_num, name):
         if fmt is _CSR_FORMAT:
             indices_name = "column indices"
         else:
@@ -762,9 +763,19 @@ class Matrix(BaseType):
         if fmt is _CSR_FORMAT:
             nrows = indptr.size - 1
             ncols = num
+            if check_num is not None and nrows != check_num:
+                raise ValueError(
+                    "nrows must be None or equal to len(indptr) - 1; "
+                    f"expected {check_num}, got {nrows}"
+                )
         else:
             ncols = indptr.size - 1
             nrows = num
+            if check_num is not None and ncols != check_num:
+                raise ValueError(
+                    "ncols must be None or equal to len(indptr) - 1; "
+                    f"expected {check_num}, got {ncols}"
+                )
         if dtype is None and values.ndim > 1:
             # Look for array-subtdype
             new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
@@ -818,7 +829,9 @@ class Matrix(BaseType):
         return rv
 
     @classmethod
-    def from_csr(cls, indptr, col_indices, values, dtype=None, *, ncols=None, name=None):
+    def from_csr(
+        cls, indptr, col_indices, values, dtype=None, *, nrows=None, ncols=None, name=None
+    ):
         """Create a new Matrix from standard CSR representation of data.
 
         In CSR, the column indices for row i are stored in ``col_indices[indptr[i]:indptr[i+1]]``
@@ -838,6 +851,9 @@ class Matrix(BaseType):
         dtype :
             Data type of the Matrix. If not provided, the values will be inspected
             to choose an appropriate dtype.
+        nrows : int, optional
+            Number of rows in the Matrix. nrows is computed as ``len(indptr) - 1``.
+            If provided, it must equal ``len(indptr) - 1``.
         ncols : int, optional
             Number of columns in the Matrix. If not provided, ``ncols`` is computed
             from the maximum column index found in ``col_indices``.
@@ -856,10 +872,12 @@ class Matrix(BaseType):
         Matrix.ss.import_csr
         io.from_scipy_sparse
         """
-        return cls._from_csx(_CSR_FORMAT, indptr, col_indices, values, dtype, ncols, name)
+        return cls._from_csx(_CSR_FORMAT, indptr, col_indices, values, dtype, ncols, nrows, name)
 
     @classmethod
-    def from_csc(cls, indptr, row_indices, values, dtype=None, *, nrows=None, name=None):
+    def from_csc(
+        cls, indptr, row_indices, values, dtype=None, *, nrows=None, ncols=None, name=None
+    ):
         """Create a new Matrix from standard CSC representation of data.
 
         In CSC, the row indices for column i are stored in ``row_indices[indptr[i]:indptr[i+1]]``
@@ -882,6 +900,9 @@ class Matrix(BaseType):
         nrows : int, optional
             Number of rows in the Matrix. If not provided, ``ncols`` is computed
             from the maximum row index found in ``row_indices``.
+        ncols : int, optional
+            Number of columns in the Matrix. ncols is computed as ``len(indptr) - 1``.
+            If provided, it must equal ``len(indptr) - 1``.
         name : str, optional
             Name to give the Matrix.
 
@@ -897,7 +918,7 @@ class Matrix(BaseType):
         Matrix.ss.import_csc
         io.from_scipy_sparse
         """
-        return cls._from_csx(_CSC_FORMAT, indptr, row_indices, values, dtype, nrows, name)
+        return cls._from_csx(_CSC_FORMAT, indptr, row_indices, values, dtype, nrows, ncols, name)
 
     @classmethod
     def from_dcsr(
@@ -1095,22 +1116,31 @@ class Matrix(BaseType):
     def from_dicts(
         cls, nested_dicts, dtype=None, *, order="rowwise", nrows=None, ncols=None, name=None
     ):
-        """Create a new Matrix from a dict of dicts in the form ``{row: {col: val}}``
+        """Create a new Matrix from a dict of dicts or list of dicts
+
+        A dict of dicts is of the form ``{row: {col: val}}`` if order is "rowwise" and
+        of the form ``{col: {row: val}}`` if order is "columnwise".
+
+        A list of dicts is of the form ``[{col: val}, {col: val}, ...]`` for "rowwise" order
+        where the i'th element of the list is a dict of column and values for row i.
 
         Parameters
         ----------
-        d : Mapping
+        d : Mapping or Sequence
             The dict-like object to convert. The keys will be cast to uint64 for the indices.
         dtype :
             Data type of the Matrix. If not provided, the values will be inspected
             to choose an appropriate dtype.
         order : {"rowwise", "columnwise"}, optional
-            "rowwise" interprets the input dict as ``{row: {col: val}}``.
-            "columnwise" interprets the input dict as ``{col: {row: val}}``.
+            "rowwise" interprets the input dict of dicts as ``{row: {col: val}}``
+            and input list of dicts as ``[{col: val}, {col: val}]``.
+            "columnwise" interprets the input dict of dicts as ``{col: {row: val}}``
+            and input list of dicts as ``[{row: val}, {row: val}]``.
             The default is "rowwise".
         nrows : int, optional
             Number of rows in the Matrix. If not provided, ``nrows`` is computed
-            from the maximum row index found in the dicts.
+            for dict of dicts from the maximum row index found in the dicts,
+            and for list of dicts as the length of the list.
         ncols : int, optional
             Number of columns in the Matrix. If not provided, ``ncols`` is computed
             from the maximum column index found in the dicts.
@@ -1122,12 +1152,31 @@ class Matrix(BaseType):
         Matrix
         """
         order = get_order(order)
-        compressed_rows = np.fromiter(nested_dicts.keys(), np.uint64)
-        indptr = np.cumsum(
-            np.fromiter(itertools.chain([0], map(len, nested_dicts.values())), np.uint64)
-        )
-        col_indices = np.fromiter(itertools.chain.from_iterable(nested_dicts.values()), np.uint64)
-        iter_values = itertools.chain.from_iterable(v.values() for v in nested_dicts.values())
+        if isinstance(nested_dicts, Sequence):
+            args = ()
+            dicts = nested_dicts
+            if order == "rowwise":
+                methodname = "from_csr"
+                if nrows is not None and nrows != len(nested_dicts):
+                    raise ValueError(
+                        "nrows must be None or equal to len(nested_dicts); "
+                        f"expected {len(nested_dicts)}, got {nrows}"
+                    )
+            else:
+                methodname = "from_csc"
+                if ncols is not None and ncols != len(nested_dicts):
+                    raise ValueError(
+                        "ncols must be None or equal to len(nested_dicts); "
+                        f"expected {len(nested_dicts)}, got {ncols}"
+                    )
+        else:
+            dicts = nested_dicts.values()
+            compressed_rows = np.fromiter(nested_dicts.keys(), np.uint64)
+            methodname = "from_dcsr" if order == "rowwise" else "from_dcsc"
+            args = (compressed_rows,)
+        indptr = np.cumsum(np.fromiter(itertools.chain([0], map(len, dicts)), np.uint64))
+        col_indices = np.fromiter(itertools.chain.from_iterable(dicts), np.uint64)
+        iter_values = itertools.chain.from_iterable(v.values() for v in dicts)
         if dtype is None:
             values = np.array(list(iter_values))
             dtype = lookup_dtype(values.dtype)
@@ -1135,9 +1184,8 @@ class Matrix(BaseType):
             # If we know the dtype, then using `np.fromiter` is much faster
             dtype = lookup_dtype(dtype)
             values = np.fromiter(iter_values, dtype.np_type)
-        method = cls.from_dcsr if order == "rowwise" else cls.from_dcsc
-        return method(
-            compressed_rows, indptr, col_indices, values, dtype, nrows=nrows, ncols=ncols, name=name
+        return getattr(cls, methodname)(
+            *args, indptr, col_indices, values, dtype, nrows=nrows, ncols=ncols, name=name
         )
 
     def _to_csx(self, fmt, dtype=None):

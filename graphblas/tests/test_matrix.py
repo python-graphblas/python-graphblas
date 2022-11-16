@@ -3889,6 +3889,13 @@ def test_to_csr_from_csc(A):
     assert Matrix.from_csr(*B.to_csr(), ncols=2).isequal(B)
     assert Matrix.from_csr(*B.to_csr()).isequal(B[:, 0:0].new())
 
+    with pytest.raises(ValueError, match="nrows must"):
+        assert Matrix.from_csr(*A.to_csr(), nrows=8)
+    with pytest.raises(InvalidObject):
+        assert Matrix.from_csr(*A.to_csr(), ncols=6)
+    with pytest.raises(ValueError, match="ncols must"):
+        assert Matrix.from_csc(*A.to_csc(), ncols=8)
+
 
 def test_to_dcsr_from_dcsc(A):
     assert Matrix.from_dcsr(*A.to_dcsr(dtype=int)).isequal(A, check_dtype=True)
@@ -3987,3 +3994,20 @@ def test_to_dicts_from_dicts(A):
     expected = Matrix.from_coo([1, 1, 4, 8], [0, 5, 2, 10], [1, 2, 3, 4])
     assert expected.isequal(D)
     assert D.to_dicts() == d
+
+
+def test_from_list_of_dicts():
+    list_of_dicts = [{1: 1}, {}, {0: 10, 2: 3}, {}]
+    A1 = Matrix.from_dicts(list_of_dicts)
+    expected = Matrix.from_values([0, 2, 2], [1, 0, 2], [1, 10, 3], nrows=4)
+    assert A1.isequal(expected)
+    A2 = Matrix.from_dicts(list_of_dicts, nrows=4)
+    assert A2.isequal(expected)
+    A3 = Matrix.from_dicts(list_of_dicts, order="colwise")
+    assert A3.isequal(expected.T)
+    with pytest.raises(ValueError, match="nrows must be"):
+        Matrix.from_dicts(list_of_dicts, nrows=3)
+    with pytest.raises(ValueError, match="ncols must be"):
+        Matrix.from_dicts(list_of_dicts, order="colwise", ncols=5)
+    with pytest.raises(InvalidObject):
+        Matrix.from_dicts(list_of_dicts, ncols=1)
