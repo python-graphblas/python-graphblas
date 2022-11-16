@@ -154,7 +154,7 @@ class ss:
 
         """
         warnings.warn(
-            "`Matrix.ss.diag` is deprecated; "
+            "`Vector.ss.diag` is deprecated; "
             "please use `Matrix.diag` or `Vector.ss.build_diag` instead",
             DeprecationWarning,
         )
