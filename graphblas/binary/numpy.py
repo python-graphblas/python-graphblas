@@ -170,7 +170,7 @@ def __getattr__(name):
 
         numpy_func = getattr(_np, name)
 
-        def func(x, y):  # pragma: no cover
+        def func(x, y):  # pragma: no cover (numba)
             return numpy_func(x, y)
 
         operator.BinaryOp.register_new(f"numpy.{name}", func)

@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
-import graphblas
-from graphblas import agg, binary, dtypes, indexunary, monoid, select, semiring, unary
+import graphblas as gb
+from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
 from graphblas.core import lib
 from graphblas.exceptions import (
     DimensionMismatch,
@@ -24,6 +24,8 @@ from graphblas.exceptions import (
 from .conftest import autocompute, compute
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
+
+suitesparse = backend == "suitesparse"
 
 
 @pytest.fixture
@@ -151,8 +153,9 @@ def test_from_values_scalar():
     assert C.ncols == 3
     assert C.nvals == 3
     assert C.dtype == dtypes.INT64
-    assert C.ss.is_iso
-    assert C.ss.iso_value == 7
+    if suitesparse:
+        assert C.ss.is_iso
+        assert C.ss.iso_value == 7
     assert C.reduce_scalar(monoid.any).new() == 7
 
     # iso drumps duplicates
@@ -161,14 +164,16 @@ def test_from_values_scalar():
     assert C.ncols == 3
     assert C.nvals == 3
     assert C.dtype == dtypes.INT64
-    assert C.ss.is_iso
-    assert C.ss.iso_value == 7
+    if suitesparse:
+        assert C.ss.is_iso
+        assert C.ss.iso_value == 7
     assert C.reduce_scalar(monoid.any).new() == 7
     with pytest.raises(ValueError, match="dup_op must be None"):
         Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7, dup_op=binary.plus)
     C[0, 0] = 0
-    with pytest.raises(ValueError, match="not iso"):
-        C.ss.iso_value
+    if suitesparse:
+        with pytest.raises(ValueError, match="not iso"):
+            C.ss.iso_value
 
 
 def test_clear(A):
@@ -227,7 +232,8 @@ def test_build(A):
     assert C.isequal(Matrix.from_values([0, 0], [0, 11], [1, 1], nrows=2))
 
 
-def test_build_scalar(A):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_build_scalar(A):
     assert A.nvals == 12
     with pytest.raises(OutputNotEmpty):
         A.ss.build_scalar([1, 5], [2, 3], 3)
@@ -950,6 +956,98 @@ def test_assign_row_col_matrix_mask():
         C[0, 0](B.S) << 100
 
 
+@pytest.mark.parametrize("index", [slice(12), list(range(12))])
+def test_subassign_combos(index):
+    #         0  1  2  3  4  5  6  7  8  9 10 11 12 13
+    # mask    1  1  1  1  0  0  0  0  _  _  _  _
+    # val     1  2  _  _  3  4  _  _  5  6  _  _
+    # self   10  _ 20  _ 30  _ 40  _ 50  _ 60  _ 70  _
+    mask_base = Vector.from_values(
+        [0, 1, 2, 3, 4, 5, 6, 7], [1, 1, 1, 1, 0, 0, 0, 0], size=12, name="mask"
+    )
+    val_base = Vector.from_values([0, 1, 4, 5, 8, 9], [1, 2, 3, 4, 5, 6], size=12)
+    self_base = Vector.from_values([0, 2, 4, 6, 8, 10, 12], [10, 20, 30, 40, 50, 60, 70], size=14)
+
+    S = gb.core.mask.StructuralMask
+    V = gb.core.mask.ValueMask
+    CS = gb.core.mask.ComplementedStructuralMask
+    CV = gb.core.mask.ComplementedValueMask
+    params = [  # mask_type, replace, indices, values
+        [S, False, [0, 1, 2, 4, 5, 6, 8, 10, 12], [11, 2, 20, 33, 4, 40, 50, 60, 70]],
+        [V, False, [0, 1, 2, 4, 6, 8, 10, 12], [11, 2, 20, 30, 40, 50, 60, 70]],
+        [CS, False, [0, 2, 4, 6, 8, 9, 10, 12], [10, 20, 30, 40, 55, 6, 60, 70]],
+        [CV, False, [0, 2, 4, 5, 6, 8, 9, 10, 12], [10, 20, 33, 4, 40, 55, 6, 60, 70]],
+        [S, True, [0, 1, 2, 4, 5, 6, 12], [11, 2, 20, 33, 4, 40, 70]],
+        [V, True, [0, 1, 2, 12], [11, 2, 20, 70]],
+        [CS, True, [8, 9, 10, 12], [55, 6, 60, 70]],
+        [CV, True, [4, 5, 6, 8, 9, 10, 12], [33, 4, 40, 55, 6, 60, 70]],
+    ]
+    # Vector-Vector
+    for mask_type, replace, indices, values in params:
+        self = self_base.dup(name="self")
+        mask = mask_type(mask_base)
+        val = val_base
+        self[index](binary.plus, mask, replace=replace) << val
+        expected = Vector.from_values(indices, values, size=14, name="expected")
+        if not self.isequal(expected):  # pragma: no cover (debug)
+            print(mask_type, replace)
+            print(expected)
+            print(self)
+            raise AssertionError("incorrect; see printed data")
+
+    def asrow(v):
+        Row = Matrix(v.dtype, nrows=1, ncols=v.size, name=v.name)
+        Row[0, :] = v
+        return Row
+
+    # Matrix-vector (row-wise)
+    for mask_type, replace, indices, values in params:
+        self = asrow(self_base)
+        mask = mask_type(mask_base)
+        val = val_base
+        self[0, index](binary.plus, mask, replace=replace) << val
+        expected = Vector.from_values(indices, values, size=14, name="expected")
+        expected = asrow(expected)
+        if not self.isequal(expected):  # pragma: no cover (debug)
+            print(mask_type, replace)
+            print(expected)
+            print(self)
+            raise AssertionError("incorrect; see printed data")
+
+    def ascol(v):
+        Col = Matrix(v.dtype, nrows=v.size, ncols=1, name=v.name)
+        Col[:, 0] = v
+        return Col
+
+    # Matrix-vector (column-wwise)
+    for mask_type, replace, indices, values in params:
+        self = ascol(self_base)
+        mask = mask_type(mask_base)
+        val = val_base
+        self[index, 0](binary.plus, mask, replace=replace) << val
+        expected = Vector.from_values(indices, values, size=14, name="expected")
+        expected = ascol(expected)
+        if not self.isequal(expected):  # pragma: no cover (debug)
+            print(mask_type, replace)
+            print(expected)
+            print(self)
+            raise AssertionError("incorrect; see printed data")
+
+    # Matrix-matrix
+    for mask_type, replace, indices, values in params:
+        self = asrow(self_base)
+        mask = mask_type(asrow(mask_base))
+        val = asrow(val_base)
+        self[[0], index](binary.plus, mask, replace=replace) << val
+        expected = Vector.from_values(indices, values, size=14, name="expected")
+        expected = asrow(expected)
+        if not self.isequal(expected):  # pragma: no cover (debug)
+            print(mask_type, replace)
+            print(expected)
+            print(self)
+            raise AssertionError("incorrect; see printed data")
+
+
 def test_assign_column_scalar(A, v):
     C = A.dup()
     C[:, 0](v.S) << v
@@ -1182,7 +1280,7 @@ def test_select_bools_and_masks(A):
 
 @pytest.mark.slow
 def test_indexunary_udf(A):
-    def threex_minusthunk(x, row, col, thunk):  # pragma: no cover
+    def threex_minusthunk(x, row, col, thunk):  # pragma: no cover (numba)
         return 3 * x - thunk
 
     indexunary.register_new("threex_minusthunk", threex_minusthunk)
@@ -1199,7 +1297,7 @@ def test_indexunary_udf(A):
     assert result.isequal(expected)
     delattr(indexunary, "threex_minusthunk")
 
-    def iii(x, row, col, thunk):  # pragma: no cover
+    def iii(x, row, col, thunk):  # pragma: no cover (numba)
         return (row + col) // 2 >= thunk
 
     select.register_new("iii", iii)
@@ -1495,15 +1593,15 @@ def test_reduce_agg_empty():
 def test_reduce_row_udf(A):
     result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
 
-    def plus(x, y):  # pragma: no cover
+    def plus(x, y):  # pragma: no cover (numba)
         return x + y
 
-    binop = graphblas.core.operator.BinaryOp.register_anonymous(plus)
+    binop = gb.core.operator.BinaryOp.register_anonymous(plus)
     with pytest.raises(NotImplementedException):
         # Although allowed by the spec, SuiteSparse doesn't like user-defined binarops here
         A.reduce_rowwise(binop).new()
     # If the user creates a monoid from the binop, then we can use the monoid instead
-    monoid = graphblas.core.operator.Monoid.register_anonymous(binop, 0)
+    monoid = gb.core.operator.Monoid.register_anonymous(binop, 0)
     w = A.reduce_rowwise(binop).new()
     assert w.isequal(result)
     w2 = A.reduce_rowwise(monoid).new()
@@ -1804,7 +1902,7 @@ def test_del(capsys):
     # A has `gb_obj` of NULL
     A = Matrix.from_values([0, 1], [0, 1], [0, 1])
     gb_obj = A.gb_obj
-    A.gb_obj = graphblas.core.NULL
+    A.gb_obj = gb.core.NULL
     del A
     # let's clean up so we don't have a memory leak
     A2 = object.__new__(Matrix)
@@ -1816,9 +1914,10 @@ def test_del(capsys):
     assert not captured.err
 
 
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
 @pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
-def test_import_export(A, do_iso, methods):
+def test_ss_import_export(A, do_iso, methods):
     if do_iso:
         A(A.S) << 1
     A1 = A.dup()
@@ -2147,14 +2246,21 @@ def test_import_export(A, do_iso, methods):
     E = Matrix.ss.import_any(**info)
     assert E.isequal(D)
 
+    info = D.ss.export("rowwise")
+    assert info["format"] in {"csr", "dcsr", "bitmapr", "fullr"}
+    info = D.ss.export("colwise")
+    assert info["format"] in {"csc", "dcsc", "bitmapc", "fullc"}
 
-def test_import_on_view():
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_import_on_view():
     A = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
     B = Matrix.ss.import_any(nrows=2, ncols=2, values=np.array([1, 2, 3, 4, 99, 99, 99])[:4])
     assert A.isequal(B)
 
 
-def test_import_export_empty():
+@pytest.mark.skipif("not suitesparse")
+def test_ss_import_export_empty():
     A = Matrix(int, 2, 3)
     A1 = A.dup()
     d = A1.ss.export("csr")
@@ -2251,9 +2357,10 @@ def test_import_export_empty():
         A.ss.export(format="bad_format")
 
 
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
 @pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
-def test_import_export_auto(A, do_iso, methods):
+def test_ss_import_export_auto(A, do_iso, methods):
     if do_iso:
         A(A.S) << 1
     A_orig = A.dup()
@@ -2510,20 +2617,21 @@ def test_not_to_array(A):
 def test_diag(A, params):
     k, indices, values = params
     expected = Vector.from_values(indices, values, dtype=A.dtype, size=max(0, A.nrows - abs(k)))
-    v = graphblas.ss.diag(A, k=k)
-    assert expected.isequal(v)
-    v[:] = 0
-    v.ss.build_diag(A, k=k)
-    assert expected.isequal(v)
     v = A.diag(k)
-    assert expected.isequal(v)
-    v = graphblas.ss.diag(A.T, k=-k)
-    assert expected.isequal(v)
-    v[:] = 0
-    v.ss.build_diag(A.T, -k)
     assert expected.isequal(v)
     v = A.T.diag(-k)
     assert expected.isequal(v)
+    if suitesparse:
+        v = gb.ss.diag(A, k=k)
+        assert expected.isequal(v)
+        v[:] = 0
+        v.ss.build_diag(A, k=k)
+        assert expected.isequal(v)
+        v = gb.ss.diag(A.T, k=-k)
+        assert expected.isequal(v)
+        v[:] = 0
+        v.ss.build_diag(A.T, -k)
+        assert expected.isequal(v)
 
 
 def test_normalize_chunks():
@@ -2567,7 +2675,8 @@ def test_normalize_chunks():
         normalize_chunks([10, np.array([-1, 2])], shape)
 
 
-def test_split(A):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_split(A):
     results = A.ss.split([4, 3])
     for results in [A.ss.split([4, 3]), A.ss.split([[4, None], 3], name="split")]:
         row_boundaries = [0, 4, 7]
@@ -2580,8 +2689,9 @@ def test_split(A):
         A.ss.split([[5, 5], 3])
 
 
-def test_concat(A, v):
-    B1 = graphblas.ss.concat([[A, A]], dtype=float)
+@pytest.mark.skipif("not suitesparse")
+def test_ss_concat(A, v):
+    B1 = gb.ss.concat([[A, A]], dtype=float)
     assert B1.dtype == "FP64"
     expected = Matrix(A.dtype, nrows=A.nrows, ncols=2 * A.ncols)
     expected[:, : A.ncols] = A
@@ -2596,49 +2706,50 @@ def test_concat(A, v):
     assert B2.isequal(expected)
 
     tiles = A.ss.split([4, 3])
-    A2 = graphblas.ss.concat(tiles)
+    A2 = gb.ss.concat(tiles)
     assert A2.isequal(A)
 
     with pytest.raises(TypeError, match="tiles argument must be list or tuple"):
-        graphblas.ss.concat(1)
+        gb.ss.concat(1)
     # with pytest.raises(TypeError, match="Each tile must be a Matrix"):
-    assert graphblas.ss.concat([[A.T]]).isequal(A.T)
+    assert gb.ss.concat([[A.T]]).isequal(A.T)
     with pytest.raises(TypeError, match="tiles must be lists or tuples"):
-        graphblas.ss.concat([A])
+        gb.ss.concat([A])
 
     with pytest.raises(ValueError, match="tiles argument must not be empty"):
-        graphblas.ss.concat([])
+        gb.ss.concat([])
     with pytest.raises(ValueError, match="tiles must not be empty"):
-        graphblas.ss.concat([[]])
+        gb.ss.concat([[]])
     with pytest.raises(ValueError, match="tiles must all be the same length"):
-        graphblas.ss.concat([[A], [A, A]])
+        gb.ss.concat([[A], [A, A]])
 
     # Treat vectors like Nx1 matrices
-    B3 = graphblas.ss.concat([[v, v]])
+    B3 = gb.ss.concat([[v, v]])
     expected = Matrix(v.dtype, nrows=v.size, ncols=2)
     expected[:, 0] = v
     expected[:, 1] = v
     assert B3.isequal(expected)
 
-    B4 = graphblas.ss.concat([[v], [v]])
+    B4 = gb.ss.concat([[v], [v]])
     expected = Matrix(v.dtype, nrows=2 * v.size, ncols=1)
     expected[: v.size, 0] = v
     expected[v.size :, 0] = v
     assert B4.isequal(expected)
 
-    B5 = graphblas.ss.concat([[A, v]])
+    B5 = gb.ss.concat([[A, v]])
     expected = Matrix(v.dtype, nrows=v.size, ncols=A.ncols + 1)
     expected[:, : A.ncols] = A
     expected[:, A.ncols] = v
     assert B5.isequal(expected)
 
     with pytest.raises(TypeError, match=""):
-        graphblas.ss.concat([v, [v]])
+        gb.ss.concat([v, [v]])
     with pytest.raises(TypeError):
-        graphblas.ss.concat([[v], v])
+        gb.ss.concat([[v], v])
 
 
-def test_nbytes(A):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_nbytes(A):
     assert A.ss.nbytes > 0
 
 
@@ -2759,6 +2870,7 @@ def test_expr_is_like_matrix(A):
         "_deserialize",
         "_extract_element",
         "_from_csx",
+        "_from_dense",
         "_from_obj",
         "_name_counter",
         "_parent",
@@ -2788,9 +2900,9 @@ def test_expr_is_like_matrix(A):
     assert attrs - infix_attrs == expected
     # TransposedMatrix is used differently than other expressions,
     # so maybe it shouldn't support everything.
-    assert attrs - transposed_attrs == (
-        expected | {"_as_vector", "S", "V", "ss", "to_pygraphblas"}
-    ) - {
+    if suitesparse:
+        expected.add("ss")
+    assert attrs - transposed_attrs == (expected | {"_as_vector", "S", "V", "to_pygraphblas"}) - {
         "_prep_for_extract",
         "_extract_element",
     }
@@ -2811,6 +2923,7 @@ def test_index_expr_is_like_matrix(A):
         "_deserialize",
         "_extract_element",
         "_from_csx",
+        "_from_dense",
         "_from_obj",
         "_name_counter",
         "_parent",
@@ -2838,7 +2951,8 @@ def test_index_expr_is_like_matrix(A):
     )
 
 
-def test_flatten(A):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_flatten(A):
     data = [
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
@@ -2889,6 +3003,7 @@ def test_flatten(A):
         v.ss.reshape(A.shape + (1,))
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_ss_reshape(A):
     A.resize(8, 8)
     r, c, v = A.to_values()
@@ -3058,8 +3173,9 @@ def test_infix_sugar(A):
         expr ^= 1
 
 
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.slow
-def test_random(A):
+def test_ss_random(A):
     R = A.ss.selectk_rowwise("random", 1)
     counts = R.reduce_rowwise(agg.count).new()
     expected = Vector.from_values(range(A.ncols), 1)
@@ -3090,7 +3206,8 @@ def test_random(A):
         A.ss.selectk_columnwise("random", -1)
 
 
-def test_firstk(A):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_firstk(A):
     B = A.ss.selectk_rowwise("first", 1)
     expected = Matrix.from_values(
         [0, 1, 2, 3, 4, 5, 6],
@@ -3138,7 +3255,8 @@ def test_firstk(A):
     assert B.isequal(A)
 
 
-def test_lastk(A):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_lastk(A):
     B = A.ss.selectk_rowwise("last", 1)
     expected = Matrix.from_values(
         [0, 3, 5, 6, 2, 4, 1],
@@ -3186,9 +3304,10 @@ def test_lastk(A):
     assert B.isequal(A)
 
 
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
 @pytest.mark.slow
-def test_compactify(A, do_iso):
+def test_ss_compactify(A, do_iso):
     if do_iso:
         r, c, v = A.to_values()
         A = Matrix.from_values(r, c, 1)
@@ -3322,10 +3441,11 @@ def test_compactify(A, do_iso):
 
 def test_deprecated(A):
     v = A.diag()
-    with pytest.warns(DeprecationWarning):
-        A.ss.diag(v)
-    with pytest.warns(DeprecationWarning):
-        v.ss.diag(A)
+    if suitesparse:
+        with pytest.warns(DeprecationWarning):
+            A.ss.diag(v)
+        with pytest.warns(DeprecationWarning):
+            v.ss.diag(A)
     with pytest.warns(DeprecationWarning):
         Matrix.new(int)
     with pytest.warns(DeprecationWarning):
@@ -3346,7 +3466,11 @@ def test_ndim(A):
 
 
 def test_sizeof(A):
-    assert sys.getsizeof(A) > A.nvals * 16
+    if suitesparse:
+        assert sys.getsizeof(A) > A.nvals * 16
+    else:
+        with pytest.raises(TypeError):
+            sys.getsizeof(A)
 
 
 def test_ewise_union():
@@ -3398,7 +3522,8 @@ def test_delete_via_scalar(A):
     assert A.nvals == 0
 
 
-def test_iteration(A):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_iteration(A):
     B = Matrix(int, 2, 2)
     assert list(B.ss.iterkeys()) == []
     assert list(B.ss.itervalues()) == []
@@ -3483,12 +3608,13 @@ def test_udt():
     rows, cols, values = A.to_values()
     assert A.isequal(Matrix.from_values(rows, cols, values))
     assert A.isequal(Matrix.from_values(rows, cols, values, dtype=A.dtype))
-    info = A.ss.export()
-    result = A.ss.import_any(**info)
-    assert result.isequal(A)
-    info = A.ss.export("cooc")
-    result = A.ss.import_any(**info)
-    assert result.isequal(A)
+    if suitesparse:
+        info = A.ss.export()
+        result = A.ss.import_any(**info)
+        assert result.isequal(A)
+        info = A.ss.export("cooc")
+        result = A.ss.import_any(**info)
+        assert result.isequal(A)
     result = unary.positioni(A).new()
     expected = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 0, 1, 1])
     assert result.isequal(expected)
@@ -3515,10 +3641,11 @@ def test_udt():
     with pytest.raises(ValueError, match="shape mismatch"):
         A[[0, 1], [1]] = [[(2, 3), (4, 5)]]
 
-    AA = Matrix.ss.deserialize(A.ss.serialize())
-    assert A.isequal(AA, check_dtype=True)
-    AA = Matrix.ss.deserialize(A.ss.serialize(), dtype=A.dtype)
-    assert A.isequal(AA, check_dtype=True)
+    if suitesparse:
+        AA = Matrix.ss.deserialize(A.ss.serialize())
+        assert A.isequal(AA, check_dtype=True)
+        AA = Matrix.ss.deserialize(A.ss.serialize(), dtype=A.dtype)
+        assert A.isequal(AA, check_dtype=True)
 
     np_dtype = np.dtype("(3,)uint16")
     udt = dtypes.register_anonymous(np_dtype, "has_subdtype")
@@ -3531,20 +3658,22 @@ def test_udt():
     assert result.isequal(A)
     result = Matrix.from_values(rows, cols, values, dtype=udt)
     assert result.isequal(A)
-    info = A.ss.export()
-    result = A.ss.import_any(**info)
-    assert result.isequal(A)
-    info = A.ss.export("coor")
-    result = A.ss.import_any(**info)
-    assert result.isequal(A)
+    if suitesparse:
+        info = A.ss.export()
+        result = A.ss.import_any(**info)
+        assert result.isequal(A)
+        info = A.ss.export("coor")
+        result = A.ss.import_any(**info)
+        assert result.isequal(A)
     assert Matrix.from_csr(*A.to_csr()).isequal(A)
     A.clear()
     A[[0, 1], 1] = [(2, 3, 4), [5, 6, 7]]
     expected = Matrix.from_values([0, 1], [1, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt)
     assert A.isequal(expected)
     A[[0, 1], [1]] = [[[2, 3, 4]], [[5, 6, 7]]]
-    AA = Matrix.ss.deserialize(A.ss.serialize())
-    assert A.isequal(AA, check_dtype=True)
+    if suitesparse:
+        AA = Matrix.ss.deserialize(A.ss.serialize())
+        assert A.isequal(AA, check_dtype=True)
     with pytest.raises(ValueError, match="shape mismatch"):
         A[[0, 1], [1]] = [[[2, 3, 4], [5, 6, 7]]]
     with pytest.raises(ValueError, match="shape mismatch"):
@@ -3667,6 +3796,7 @@ def test_bool_as_mask(A):
     assert A.isequal(expected)
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_ss_serialize(A):
     for compression, level, nthreads in itertools.product(
         [None, "none", "default", "lz4", "lz4hc", "zstd"], [None, 1, 5, 9], [None, -1, 1, 10]
@@ -3693,6 +3823,7 @@ def test_ss_serialize(A):
         Matrix.ss.deserialize(a[:-5])
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_ss_config(A):
     d = {}
     for key in A.ss.config:
@@ -3745,6 +3876,9 @@ def test_to_csr_from_csc(A):
     expected = Matrix.from_values([0, 1], [1, 0], [100, 100], nrows=2, ncols=2)
     assert expected.isequal(B, check_dtype=True)
 
+    B = Matrix.from_csc([0, 1, 2], [1, 0], 100)
+    assert expected.isequal(B, check_dtype=True)
+
     with pytest.raises(InvalidValue):
         Matrix.from_csr([0, 1, 2, 3], [1, 0], [10, 20], ncols=3)
 
@@ -3758,10 +3892,12 @@ def test_to_csr_from_csc(A):
 
 def test_to_dcsr_from_dcsc(A):
     assert Matrix.from_dcsr(*A.to_dcsr(dtype=int)).isequal(A, check_dtype=True)
+    assert Matrix.from_dcsc(*A.to_dcsc(dtype=int)).isequal(A, check_dtype=True)
     assert Matrix.from_dcsr(*A.T.to_dcsc()).isequal(A, check_dtype=True)
     assert Matrix.from_dcsc(*A.to_dcsc()).isequal(A)
     assert Matrix.from_dcsc(*A.T.to_dcsr()).isequal(A)
     assert Matrix.from_dcsr(*A.to_dcsr(dtype=float)).isequal(A.dup(float), check_dtype=True)
+    assert Matrix.from_dcsc(*A.to_dcsc(dtype=float)).isequal(A.dup(float), check_dtype=True)
 
     #    0 1 2
     # 0 [- 1 -]
@@ -3785,6 +3921,17 @@ def test_to_dcsr_from_dcsc(A):
     assert Matrix.from_dcsr(*B.to_dcsr(), nrows=2, ncols=2).isequal(B)
     assert Matrix.from_dcsr(*B.to_dcsr()).isequal(B[0:0, 0:0].new())
 
+    B = Matrix.from_dcsc([], [0], [], [], nrows=2, ncols=2, dtype=int)
+    expected = Matrix(int, 2, 2)
+    assert expected.isequal(B, check_dtype=True)
+    assert Matrix.from_dcsc(*B.to_dcsc(), nrows=2, ncols=2).isequal(B)
+    assert Matrix.from_dcsc(*B.to_dcsc()).isequal(B[0:0, 0:0].new())
+
+    B = Matrix.from_dcsr([2], [0, 0], [], [], dtype=int)
+    assert B.shape == (3, 0)
+    B = Matrix.from_dcsc([2], [0, 0], [], [], dtype=int)
+    assert B.shape == (0, 3)
+
     # indptr must not be empty
     with pytest.raises(InvalidValue):
         Matrix.from_dcsr([], [], [], [], dtype=int)
@@ -3801,6 +3948,7 @@ def test_as_vector(A):
     assert v.isequal(expected)
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_ss_pack_hyperhash(A):
     A.ss.config["sparsity_control"] = "sparse"
     assert A.ss.unpack_hyperhash() is None
@@ -3814,7 +3962,7 @@ def test_ss_pack_hyperhash(A):
     assert C.ss.unpack_hyperhash() is None
     assert Y.nrows == C.nrows
     C.ss.pack_hyperhash(Y)
-    assert Y.gb_obj[0] == graphblas.core.NULL
+    assert Y.gb_obj[0] == gb.core.NULL
     assert C.ss.unpack_hyperhash() is not None
 
 

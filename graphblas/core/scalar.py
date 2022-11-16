@@ -174,10 +174,11 @@ class Scalar(BaseType):
         base = object.__sizeof__(self)
         if self._is_cscalar:
             return base + self.gb_obj.__sizeof__() + ffi.sizeof(self.dtype.c_type)
-        else:
+        if backend == "suitesparse":
             size = ffi_new("size_t*")
             check_status(lib.GxB_Scalar_memoryUsage(size, self.gb_obj[0]), self)
             return base + size[0]
+        raise TypeError("Unable to get size of GrB_Scalar with backend: {backend}")
 
     def isequal(self, other, *, check_dtype=False):
         """Check for exact equality (including whether the value is missing).
@@ -215,17 +216,16 @@ class Scalar(BaseType):
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:
             return False
-        elif self._is_empty:
+        if self._is_empty:
             return other._is_empty
-        elif other._is_empty:
+        if other._is_empty:
             return False
-        else:
-            # For now, compare values in Python
-            rv = self.value == other.value
-            try:
-                return bool(rv)
-            except ValueError:
-                return bool(rv.all())
+        # For now, compare values in Python
+        rv = self.value == other.value
+        try:
+            return bool(rv)
+        except ValueError:
+            return bool(rv.all())
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """Check for approximate equality (including whether the value is missing).
@@ -264,9 +264,9 @@ class Scalar(BaseType):
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:
             return False
-        elif self._is_empty:
+        if self._is_empty:
             return other._is_empty
-        elif other._is_empty:
+        if other._is_empty:
             return False
         # We can't yet call a UDF on a scalar as part of the spec, so let's do it ourselves
         isclose_func = isclose(rel_tol, abs_tol)
@@ -335,10 +335,8 @@ class Scalar(BaseType):
             rv = np.array(ffi.buffer(scalar.gb_obj[0 : np_type.itemsize]))
             if np_type.subdtype is None:
                 return rv.view(np_type)[0]
-            else:
-                return rv.view(np_type.subdtype[0]).reshape(np_type.subdtype[1])
-        else:
-            return scalar.gb_obj[0]
+            return rv.view(np_type.subdtype[0]).reshape(np_type.subdtype[1])
+        return scalar.gb_obj[0]
 
     @value.setter
     def value(self, val):
@@ -538,7 +536,7 @@ class Scalar(BaseType):
     def _deserialize(value, dtype, is_cscalar, name):
         return Scalar.from_value(value, dtype, is_cscalar=is_cscalar, name=name)
 
-    def to_pygraphblas(self):  # pragma: no cover
+    def to_pygraphblas(self):  # pragma: no cover (outdated)
         """Convert to a ``pygraphblas.Scalar`` by making a copy of the internal value.
 
         This method requires the
@@ -554,7 +552,7 @@ class Scalar(BaseType):
         return pg.Scalar.from_value(self.value)
 
     @classmethod
-    def from_pygraphblas(cls, scalar):  # pragma: no cover
+    def from_pygraphblas(cls, scalar):  # pragma: no cover (outdated)
         """Convert a ``pygraphblas.Scalar`` to a new :class:`Scalar` by making
         a copy of the internal value.
 
@@ -580,12 +578,7 @@ class Scalar(BaseType):
         """
         from .vector import Vector
 
-        if self._is_cscalar:
-            rv = Vector(self.dtype, size=1, name=name)
-            if not self._is_empty:
-                rv[0] = self
-            return rv
-        else:
+        if backend == "suitesparse" and not self._is_cscalar:
             return Vector._from_obj(
                 ffi.cast("GrB_Vector*", self.gb_obj),
                 self.dtype,
@@ -593,6 +586,10 @@ class Scalar(BaseType):
                 parent=self,
                 name=f"(GrB_Vector){self.name or 's_temp'}" if name is None else name,
             )
+        rv = Vector(self.dtype, size=1, name=name)
+        if not self._is_empty:
+            rv[0] = self
+        return rv
 
     def _as_matrix(self, *, name=None):
         """Copy or cast this Scalar to a Matrix
@@ -601,12 +598,7 @@ class Scalar(BaseType):
         """
         from .matrix import Matrix
 
-        if self._is_cscalar:
-            rv = Matrix(self.dtype, ncols=1, nrows=1, name=name)
-            if not self._is_empty:
-                rv[0, 0] = self
-            return rv
-        else:
+        if backend == "suitesparse" and not self._is_cscalar:
             return Matrix._from_obj(
                 ffi.cast("GrB_Matrix*", self.gb_obj),
                 self.dtype,
@@ -615,6 +607,10 @@ class Scalar(BaseType):
                 parent=self,
                 name=f"(GrB_Matrix){self.name or 's_temp'}" if name is None else name,
             )
+        rv = Matrix(self.dtype, ncols=1, nrows=1, name=name)
+        if not self._is_empty:
+            rv[0, 0] = self
+        return rv
 
 
 class ScalarExpression(BaseExpression):
@@ -756,10 +752,9 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
 def _as_scalar(scalar, dtype=None, *, is_cscalar):
     if type(scalar) is not Scalar:
         return Scalar.from_value(scalar, dtype, is_cscalar=is_cscalar, name="")
-    elif scalar._is_cscalar != is_cscalar or dtype is not None and scalar.dtype != dtype:
+    if scalar._is_cscalar != is_cscalar or dtype is not None and scalar.dtype != dtype:
         return scalar.dup(dtype, is_cscalar=is_cscalar, name=scalar.name)
-    else:
-        return scalar
+    return scalar
 
 
 def _dict_to_record(np_type, d):

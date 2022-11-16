@@ -1,8 +1,7 @@
 import numpy as np
 import pytest
 
-import graphblas
-from graphblas import dtypes, unary
+from graphblas import backend, dtypes, unary
 from graphblas.core import formatting
 from graphblas.core.formatting import CSS_STYLE
 
@@ -13,8 +12,12 @@ from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 try:
     import pandas as pd
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover (import)
     pd = None
+
+
+if backend != "suitesparse":
+    pytest.skip("Formatting tests only work with suitesparse backend", allow_module_level=True)
 
 
 def repr_html(x):
@@ -37,7 +40,7 @@ def _printer(text, name, repr_name, indent):
                 # line = f"f'{{CSS_STYLE}}'"
                 in_style = False
                 is_style = True
-            else:  # pragma: no cover
+            else:  # pragma: no cover (???)
                 # This definitely gets covered, but why is it not picked up?
                 continue
         if repr_name == "repr_html" and line.startswith("<style>"):
@@ -4061,7 +4064,7 @@ def test_inner_outer_repr(v):
 
 @autocompute
 def test_autocompute(A, B, v):
-    if not pd:  # pragma: no cover
+    if not pd:  # pragma: no cover (import)
         pytest.skip("needs pandas")
     repr_printer(A & A, "A & A")
     assert repr(A & A) == (
@@ -4143,7 +4146,7 @@ def test_autocompute(A, B, v):
 
 @autocompute
 def test_autocompute_html(A, B, v):
-    if not pd:  # pragma: no cover
+    if not pd:  # pragma: no cover (import)
         pytest.skip("needs pandas")
     html_printer(A & A, "A & A")
     assert repr_html(A & A) == (
@@ -4888,7 +4891,7 @@ def test_scalar_as_vector():
 
 @autocompute
 def test_index_expr_autocompute(v):
-    if not pd:  # pragma: no cover
+    if not pd:  # pragma: no cover (import)
         pytest.skip("needs pandas")
     html_printer(v[[0, 1]], "v[[0, 1]]")
     assert repr_html(v[[0, 1]]) == (

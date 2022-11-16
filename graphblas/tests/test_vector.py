@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
-import graphblas
-from graphblas import agg, binary, dtypes, indexunary, monoid, select, semiring, unary
+import graphblas as gb
+from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
 from graphblas.exceptions import (
     DimensionMismatch,
     EmptyObject,
@@ -22,6 +22,9 @@ from graphblas.exceptions import (
 from .conftest import autocompute, compute
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
+
+
+suitesparse = backend == "suitesparse"
 
 
 @pytest.fixture
@@ -137,7 +140,7 @@ def test_from_values_scalar():
     assert u.size == 4
     assert u.nvals == 3
     assert u.dtype == dtypes.INT64
-    if hasattr(u, "ss"):  # pragma: no branch
+    if suitesparse:
         assert u.ss.is_iso
         assert u.ss.iso_value == 7
     assert u.reduce(monoid.any).new() == 7
@@ -146,15 +149,16 @@ def test_from_values_scalar():
     u = Vector.from_values([0, 1, 1, 3], 7)
     assert u.size == 4
     assert u.nvals == 3
-    if hasattr(u, "ss"):  # pragma: no branch
+    if suitesparse:
         assert u.ss.is_iso
         assert u.ss.iso_value == 7
     assert u.reduce(monoid.any).new() == 7
     with pytest.raises(ValueError, match="dup_op must be None"):
         Vector.from_values([0, 1, 1, 3], 7, dup_op=binary.plus)
     u[0] = 0
-    with pytest.raises(ValueError, match="not iso"):
-        u.ss.iso_value
+    if suitesparse:
+        with pytest.raises(ValueError, match="not iso"):
+            u.ss.iso_value
 
 
 def test_clear(v):
@@ -202,7 +206,8 @@ def test_build(v):
     assert w.isequal(Vector.from_values([0, 11], [1, 1]))
 
 
-def test_build_scalar(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_build_scalar(v):
     with pytest.raises(OutputNotEmpty):
         v.ss.build_scalar([1, 5], 3)
     v.clear()
@@ -722,6 +727,9 @@ def test_select(v):
     assert w6.isequal(result)
     with pytest.raises(TypeError, match="thunk"):
         v.select(select.valueeq, object())
+    w7 = v.select("==").new()
+    expected = Vector.from_values([6], 0)
+    assert w7.isequal(expected)
 
 
 @autocompute
@@ -776,7 +784,7 @@ def test_select_bools_and_masks(v):
 
 @pytest.mark.slow
 def test_indexunary_udf(v):
-    def twox_minusthunk(x, row, col, thunk):  # pragma: no cover
+    def twox_minusthunk(x, row, col, thunk):  # pragma: no cover (numba)
         return 2 * x - thunk
 
     indexunary.register_new("twox_minusthunk", twox_minusthunk)
@@ -791,7 +799,7 @@ def test_indexunary_udf(v):
     assert result.isequal(expected)
     delattr(indexunary, "twox_minusthunk")
 
-    def ii(x, idx, _, thunk):  # pragma: no cover
+    def ii(x, idx, _, thunk):  # pragma: no cover (numba)
         return idx // 2 >= thunk
 
     select.register_new("ii", ii)
@@ -1078,7 +1086,7 @@ def test_del(capsys):
     # v has `gb_obj` of NULL
     v = Vector.from_values([0, 1], [0, 1])
     gb_obj = v.gb_obj
-    v.gb_obj = graphblas.core.NULL
+    v.gb_obj = gb.core.NULL
     del v
     # let's clean up so we don't have a memory leak
     v2 = object.__new__(Vector)
@@ -1090,9 +1098,10 @@ def test_del(capsys):
     assert not captured.err
 
 
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
 @pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
-def test_import_export(v, do_iso, methods):
+def test_ss_import_export(v, do_iso, methods):
     if do_iso:
         v(v.S) << 1
     v1 = v.dup()
@@ -1232,9 +1241,10 @@ def test_import_export(v, do_iso, methods):
         Vector.ss.import_any(take_ownership=True, **d)
 
 
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
 @pytest.mark.parametrize("methods", [("export", "import"), ("unpack", "pack")])
-def test_import_export_auto(v, do_iso, methods):
+def test_ss_import_export_auto(v, do_iso, methods):
     if do_iso:
         v(v.S) << 1
     v_orig = v.dup()
@@ -1381,27 +1391,37 @@ def test_vector_index_with_scalar():
 def test_diag(v):
     indices, values = v.to_values()
     for k in range(-5, 5):
-        # Construct diagonal matrix A
-        A = graphblas.ss.diag(v, k=k)
         size = v.size + abs(k)
         rows = indices + max(0, -k)
         cols = indices + max(0, k)
         expected = Matrix.from_values(rows, cols, values, nrows=size, ncols=size, dtype=v.dtype)
-        assert expected.isequal(A)
+        # Construct diagonal matrix A
+        if suitesparse:
+            A = gb.ss.diag(v, k=k)
+            assert expected.isequal(A)
         A = v.diag(k)
         assert expected.isequal(A)
 
         # Extract diagonal from A
-        w = graphblas.ss.diag(A, Scalar.from_value(k))
+        if suitesparse:
+            w = gb.ss.diag(A, Scalar.from_value(k))
+            assert v.isequal(w)
+            assert w.dtype == "INT64"
+
+            w = gb.ss.diag(A.T, -k, dtype=float)
+            assert v.isequal(w)
+            assert w.dtype == "FP64"
+        w = A.diag(Scalar.from_value(k))
         assert v.isequal(w)
         assert w.dtype == "INT64"
 
-        w = graphblas.ss.diag(A.T, -k, dtype=float)
+        w = A.T.diag(-k, dtype=float)
         assert v.isequal(w)
         assert w.dtype == "FP64"
 
 
-def test_nbytes(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_nbytes(v):
     assert v.ss.nbytes > 0
 
 
@@ -1621,13 +1641,14 @@ def test_index_expr_is_like_vector(v):
     )
 
 
-def test_random(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_random(v):
     r1 = Vector.from_values([1], [1], size=v.size)
     r2 = Vector.from_values([3], [1], size=v.size)
     r3 = Vector.from_values([4], [2], size=v.size)
     r4 = Vector.from_values([6], [0], size=v.size)
     seen = set()
-    for _i in range(1000000):  # pragma: no branch
+    for _i in range(1000000):  # pragma: no branch (sanity)
         r = v.ss.selectk("random", 1)
         if r.isequal(r1):
             seen.add("r1")
@@ -1637,7 +1658,7 @@ def test_random(v):
             seen.add("r3")
         elif r.isequal(r4):
             seen.add("r4")
-        else:  # pragma: no cover
+        else:  # pragma: no cover (sanity)
             raise AssertionError()
         if len(seen) == 4:
             break
@@ -1655,7 +1676,8 @@ def test_random(v):
         v.ss.selectk("bad", 1)
 
 
-def test_firstk(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_firstk(v):
     mixed_data = [[1, 3, 4, 6], [1, 1, 2, 0]]
     iso_data = [[1, 3, 4, 6], [1, 1, 1, 1]]
     iso_v = v.dup()
@@ -1669,7 +1691,8 @@ def test_firstk(v):
         v.ss.selectk("first", -1)
 
 
-def test_lastk(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_lastk(v):
     mixed_data = [[1, 3, 4, 6], [1, 1, 2, 0]]
     iso_data = [[1, 3, 4, 6], [1, 1, 1, 1]]
     iso_v = v.dup()
@@ -1681,7 +1704,8 @@ def test_lastk(v):
             assert x.isequal(expected)
 
 
-def test_largestk(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_largestk(v):
     w = v.ss.selectk("largest", 1)
     expected = Vector.from_values([4], [2], size=v.size)
     assert w.isequal(expected)
@@ -1696,7 +1720,8 @@ def test_largestk(v):
     assert w.isequal(expected)
 
 
-def test_smallestk(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_smallestk(v):
     w = v.ss.selectk("smallest", 1)
     expected = Vector.from_values([6], [0], size=v.size)
     assert w.isequal(expected)
@@ -1711,8 +1736,9 @@ def test_smallestk(v):
     assert w.isequal(expected)
 
 
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("do_iso", [False, True])
-def test_compactify(do_iso):
+def test_ss_compactify(do_iso):
     orig_indices = [1, 3, 4, 6]
     new_indices = [0, 1, 2, 3]
     if do_iso:
@@ -1823,23 +1849,25 @@ def test_slice():
     assert w.isequal(expected)
 
 
-def test_concat(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_concat(v):
     expected = Vector(v.dtype, size=2 * v.size)
     expected[: v.size] = v
     expected[v.size :] = v
-    w1 = graphblas.ss.concat([v, v])
+    w1 = gb.ss.concat([v, v])
     assert w1.isequal(expected, check_dtype=True)
     w2 = Vector(v.dtype, size=2 * v.size)
     w2.ss.concat([v, v])
     assert w2.isequal(expected, check_dtype=True)
     with pytest.raises(TypeError):
         w2.ss.concat([[v, v]])
-    w3 = graphblas.ss.concat([v, v], dtype=float)
+    w3 = gb.ss.concat([v, v], dtype=float)
     assert w3.isequal(expected)
     assert w3.dtype == float
 
 
-def test_split(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_split(v):
     w1, w2 = v.ss.split(4)
     expected1 = Vector.from_values([1, 3], 1)
     expected2 = Vector.from_values([0, 2], [2, 0])
@@ -1860,7 +1888,11 @@ def test_ndim(A, v):
 
 
 def test_sizeof(v):
-    assert sys.getsizeof(v) > v.nvals * 16
+    if suitesparse:
+        assert sys.getsizeof(v) > v.nvals * 16
+    else:
+        with pytest.raises(TypeError):
+            sys.getsizeof(v)
 
 
 def test_ewise_union():
@@ -1958,18 +1990,20 @@ def test_udt():
     assert v.reduce(agg.first_index).new() == 0
     assert v.reduce(agg.last_index).new() == 2
     assert v.reduce(agg.count).new() == 3
-    info = v.ss.export()
-    result = Vector.ss.import_any(**info)
-    assert result.isequal(v)
+    if suitesparse:
+        info = v.ss.export()
+        result = Vector.ss.import_any(**info)
+        assert result.isequal(v)
     for aggop in [agg.any_value, agg.first, agg.last, agg.count, agg.first_index, agg.last_index]:
         v.reduce(aggop).new()
     v.clear()
     v[[0, 1]] = [(2, 3), (4, 5)]
     expected = Vector.from_values([0, 1], [(2, 3), (4, 5)], dtype=udt, size=v.size)
-    vv = Vector.ss.deserialize(v.ss.serialize())
-    assert v.isequal(vv, check_dtype=True)
-    vv = Vector.ss.deserialize(v.ss.serialize(), dtype=v.dtype)
-    assert v.isequal(vv, check_dtype=True)
+    if suitesparse:
+        vv = Vector.ss.deserialize(v.ss.serialize())
+        assert v.isequal(vv, check_dtype=True)
+        vv = Vector.ss.deserialize(v.ss.serialize(), dtype=v.dtype)
+        assert v.isequal(vv, check_dtype=True)
 
     # arrays as dtypes!
     np_dtype = np.dtype("(3,)uint16")
@@ -2005,9 +2039,10 @@ def test_udt():
     assert_array_equal(values, np.ones((2, 3), dtype=np.uint16))
     assert v.isequal(Vector.from_values(indices, values, dtype=v.dtype))
     assert v.isequal(Vector.from_values(indices, values))
-    info = v.ss.export()
-    result = Vector.ss.import_any(**info)
-    assert result.isequal(v)
+    if suitesparse:
+        info = v.ss.export()
+        result = Vector.ss.import_any(**info)
+        assert result.isequal(v)
 
     s = v.reduce(monoid.any).new()
     assert (s.value == [1, 1, 1]).all()
@@ -2027,29 +2062,39 @@ def test_udt():
     v[[0, 1]] = [[2, 3, 4], [5, 6, 7]]
     expected = Vector.from_values([0, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt2, size=v.size)
     assert v.isequal(expected)
-    vv = Vector.ss.deserialize(v.ss.serialize())
-    assert v.isequal(vv, check_dtype=True)
+    if suitesparse:
+        vv = Vector.ss.deserialize(v.ss.serialize())
+        assert v.isequal(vv, check_dtype=True)
 
     long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=True)
-    with pytest.warns(UserWarning, match="too large"):
+    if suitesparse:
+        with pytest.warns(UserWarning, match="too large"):
+            long_udt = dtypes.register_anonymous(long_dtype)
+    else:
+        # UDTs don't currently have a name in vanilla GraphBLAS
         long_udt = dtypes.register_anonymous(long_dtype)
     v = Vector(long_udt, size=3)
     v[0] = 0
     v[1] = (1, 5.6)
-    vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
-    assert v.isequal(vv, check_dtype=True)
-    with pytest.raises(Exception):
-        # The size of the UDT name is limited
-        Vector.ss.deserialize(v.ss.serialize())
+    if suitesparse:
+        vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
+        assert v.isequal(vv, check_dtype=True)
+        with pytest.raises(Exception):
+            # The size of the UDT name is limited
+            Vector.ss.deserialize(v.ss.serialize())
     # May be able to look up non-anonymous dtypes by name if their names are too long
     named_long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=False)
-    with pytest.warns(UserWarning, match="too large"):
+    if suitesparse:
+        with pytest.warns(UserWarning, match="too large"):
+            named_long_udt = dtypes.register_new("LongUDT", named_long_dtype)
+    else:
         named_long_udt = dtypes.register_new("LongUDT", named_long_dtype)
     v = Vector(named_long_udt, size=3)
     v[0] = 0
     v[1] = (1, 5.6)
-    vv = Vector.ss.deserialize(v.ss.serialize())
-    assert v.isequal(vv, check_dtype=True)
+    if suitesparse:
+        vv = Vector.ss.deserialize(v.ss.serialize())
+        assert v.isequal(vv, check_dtype=True)
 
 
 def test_infix_outer():
@@ -2077,7 +2122,8 @@ def test_infix_outer():
     assert w.reduce(binary.plus[int]).new() == 2
 
 
-def test_iteration(v):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_iteration(v):
     w = Vector(int, 2)
     assert list(w.ss.iterkeys()) == []
     assert list(w.ss.itervalues()) == []
@@ -2253,17 +2299,17 @@ def test_to_values_subset(v):
 
 
 def test_lambda_udfs(v):
-    result = v.apply(lambda x: x + 1).new()  # pragma: no branch
+    result = v.apply(lambda x: x + 1).new()  # pragma: no branch (numba)
     expected = binary.plus(v, 1).new()
     assert result.isequal(expected)
-    result = v.ewise_mult(v, lambda x, y: x + y).new()  # pragma: no branch
+    result = v.ewise_mult(v, lambda x, y: x + y).new()  # pragma: no branch (numba)
     expected = binary.plus(v & v).new()
     assert result.isequal(expected)
-    result = v.ewise_add(v, lambda x, y: x + y).new()  # pragma: no branch
+    result = v.ewise_add(v, lambda x, y: x + y).new()  # pragma: no branch (numba)
     assert result.isequal(expected)
     # Should we also allow lambdas for monoids with assumed identity of 0?
     # with pytest.raises(TypeError):
-    v.ewise_add(v, lambda x, y: x + y)  # pragma: no branch
+    v.ewise_add(v, lambda x, y: x + y)  # pragma: no branch (numba)
     with pytest.raises(TypeError):
         v.inner(v, lambda x, y: x + y)
 
@@ -2279,6 +2325,7 @@ def test_get(v):
         v.get([0, 1])
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_ss_serialize(v):
     for compression, level, nthreads in itertools.product(
         [None, "none", "default", "lz4", "lz4hc", "zstd"], [None, 1, 5, 9], [None, -1, 1, 10]
@@ -2305,6 +2352,7 @@ def test_ss_serialize(v):
         Vector.ss.deserialize(a[:-5])
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_ss_config(v):
     d = {}
     for key in v.ss.config:

@@ -48,12 +48,12 @@ class BaseConfig(MutableMapping):
             info = self._get_function(key_obj, vararg(val_ptr))
         else:
             info = self._get_function(self._parent._carg, key_obj, vararg(val_ptr))
-        if info == lib.GrB_SUCCESS:  # pragma: no branch
+        if info == lib.GrB_SUCCESS:  # pragma: no branch (safety)
             if is_array:
                 return list(val_ptr)
-            elif key in self._enumerations:
+            if key in self._enumerations:
                 return self._enumerations[key][val_ptr[0]]
-            elif key in self._bitwise:
+            if key in self._bitwise:
                 bitwise = self._bitwise[key]
                 val = val_ptr[0]
                 if val in bitwise:
@@ -125,5 +125,5 @@ class BaseConfig(MutableMapping):
     def __repr__(self):
         return "{" + ",\n ".join(f"{k!r}: {v!r}" for k, v in self.items()) + "}"
 
-    def _ipython_key_completions_(self):  # pragma: no cover
+    def _ipython_key_completions_(self):  # pragma: no cover (ipython)
         return list(self)

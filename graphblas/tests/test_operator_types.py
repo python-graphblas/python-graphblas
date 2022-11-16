@@ -318,7 +318,7 @@ def _run_test(module, typ, expected):
         key = (frozenset(val.types.keys()), frozenset(val.types.values()))
         seen[key].add(name)
     seen = dict(seen)
-    if seen != expected:  # pragma: no cover
+    if seen != expected:  # pragma: no cover (debug)
         seen_names = set()
         for names in seen.values():
             seen_names.update(names)

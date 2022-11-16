@@ -3,5 +3,4 @@ def __getattr__(name):
         from .. import _autoinit  # noqa
 
         return globals()[name]
-    else:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

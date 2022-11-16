@@ -4,6 +4,8 @@ import graphblas as gb
 from graphblas.core.formatting import CSS_STYLE
 from graphblas.exceptions import OutOfMemory
 
+suitesparse = gb.backend == "suitesparse"
+
 
 @pytest.fixture
 def switch():
@@ -221,7 +223,7 @@ def test_record_repr_html(switch):
     except ImportError:
         with pytest.raises(NotImplementedError):
             rec._repr_html_()
-    else:  # pragma: no cover
+    else:  # pragma: no cover (import)
         assert isinstance(rec._repr_html_(), str)
 
 
@@ -238,7 +240,8 @@ def test_record_failed_call():
     assert "ERROR: OutOfMemory" in rec.data[-1]
 
 
-def test_record_inner(switch):
+@pytest.mark.skipif("not suitesparse")
+def test_ss_record_inner(switch):
     v = gb.Vector.from_values([0, 1, 2], 1, size=3)
     with gb.Recorder() as rec:
         (v @ v).new(name="s_0")

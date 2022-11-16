@@ -1,4 +1,4 @@
-from .. import binary
+from .. import backend, binary
 from ..dtypes import BOOL
 from ..monoid import land, lor
 from ..semiring import any_pair
@@ -18,7 +18,7 @@ InfixExprBase._expect_type = _expect_type
 def _ewise_add_to_expr(self):
     if self._value is not None:
         return self._value
-    elif self.left.dtype == BOOL and self.right.dtype == BOOL:
+    if self.left.dtype == BOOL and self.right.dtype == BOOL:
         self._value = self.left.ewise_add(self.right, lor)
         return self._value
     raise TypeError(
@@ -32,7 +32,7 @@ def _ewise_add_to_expr(self):
 def _ewise_mult_to_expr(self):
     if self._value is not None:
         return self._value
-    elif self.left.dtype == BOOL and self.right.dtype == BOOL:
+    if self.left.dtype == BOOL and self.right.dtype == BOOL:
         self._value = self.left.ewise_mult(self.right, land)
         return self._value
     raise TypeError(
@@ -94,7 +94,8 @@ class VectorInfixExpr(InfixExprBase):
     reduce = wrapdoc(Vector.reduce)(property(automethods.reduce))
     reposition = wrapdoc(Vector.reposition)(property(automethods.reposition))
     select = wrapdoc(Vector.select)(property(automethods.select))
-    ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    if backend == "suitesparse":
+        ss = wrapdoc(Vector.ss)(property(automethods.ss))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
@@ -216,7 +217,8 @@ class MatrixInfixExpr(InfixExprBase):
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(automethods.reduce_scalar))
     reposition = wrapdoc(Matrix.reposition)(property(automethods.reposition))
     select = wrapdoc(Matrix.select)(property(automethods.select))
-    ss = wrapdoc(Matrix.ss)(property(automethods.ss))
+    if backend == "suitesparse":
+        ss = wrapdoc(Matrix.ss)(property(automethods.ss))
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
@@ -248,7 +250,6 @@ class MatrixEwiseAddExpr(MatrixInfixExpr):
     method_name = "ewise_add"
     _example_op = "plus"
     _infix = "|"
-    __networkx_plugin__ = "graphblas"
 
     _to_expr = _ewise_add_to_expr
 
@@ -258,7 +259,6 @@ class MatrixEwiseMultExpr(MatrixInfixExpr):
     method_name = "ewise_mult"
     _example_op = "times"
     _infix = "&"
-    __networkx_plugin__ = "graphblas"
 
     _to_expr = _ewise_mult_to_expr
 
@@ -268,7 +268,6 @@ class MatrixMatMulExpr(MatrixInfixExpr):
     method_name = "mxm"
     _example_op = "plus_times"
     _infix = "@"
-    __networkx_plugin__ = "graphblas"
 
     def __init__(self, left, right, *, nrows, ncols):
         super().__init__(left, right)
@@ -363,18 +362,18 @@ def _ewise_infix_expr(left, right, *, method, within):
             if method == "ewise_mult":
                 return VectorEwiseMultExpr(left, right)
             return VectorEwiseAddExpr(left, right)
-        elif method == "ewise_mult":
+        if method == "ewise_mult":
             return MatrixEwiseMultExpr(left, right)
         return MatrixEwiseAddExpr(left, right)
     if within == "__or__" and isinstance(right, Mask):
         return right.__ror__(left)
-    elif within == "__and__" and isinstance(right, Mask):
+    if within == "__and__" and isinstance(right, Mask):
         return right.__rand__(left)
-    elif left_type in types:
+    if left_type in types:
         left._expect_type(right, tuple(types), within=within, argname="right")
     elif right_type in types:
         right._expect_type(left, tuple(types), within=within, argname="left")
-    else:  # pragma: no cover
+    else:  # pragma: no cover (sanity)
         raise TypeError(f"Bad types for ewise infix: {type(left).__name__}, {type(right).__name__}")
 
 
@@ -420,7 +419,7 @@ def _matmul_infix_expr(left, right, *, within):
             within=within,
             argname="left",
         )
-    else:  # pragma: no cover
+    else:  # pragma: no cover (sanity)
         raise TypeError(
             f"Bad types for matmul infix: {type(left).__name__}, {type(right).__name__}"
         )
@@ -429,7 +428,7 @@ def _matmul_infix_expr(left, right, *, within):
     expr = getattr(left, method)(right, any_pair[bool])
     if expr.output_type is Vector:
         return VectorMatMulExpr(left, right, method_name=method, size=expr._size)
-    elif expr.output_type is Matrix:
+    if expr.output_type is Matrix:
         return MatrixMatMulExpr(left, right, nrows=expr._nrows, ncols=expr._ncols)
     return ScalarMatMulExpr(left, right)
 

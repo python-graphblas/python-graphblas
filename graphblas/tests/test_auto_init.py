@@ -1,21 +1,21 @@
 if __name__ == "__main__":
     import pytest
 
-    import graphblas
+    import graphblas as gb
 
     with pytest.raises(ValueError, match="Bad backend name"):
-        graphblas.init("bad_name")
+        gb.init("bad_name")
 
-    graphblas.core.ffi
-    graphblas.op
-    graphblas.Matrix
+    gb.core.ffi
+    gb.op
+    gb.Matrix
     with pytest.raises(
-        graphblas.exceptions.GraphblasException,
+        gb.exceptions.GraphblasException,
         match="graphblas objects accessed prior to manual initialization",
     ):
-        graphblas.init()
+        gb.init()
     # hack it to test this edge case
-    graphblas._init_params = None
-    graphblas.init(blocking=None)
-    graphblas.init(blocking=None)
-    graphblas._autoinit
+    gb._init_params = None
+    gb.init(blocking=None)
+    gb.init(blocking=None)
+    gb._autoinit

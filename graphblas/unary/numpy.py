@@ -137,13 +137,13 @@ def __getattr__(name):
 
         numpy_func = getattr(_np, name)
 
-        def func(x):  # pragma: no cover
+        def func(x):  # pragma: no cover (numba)
             return numpy_func(x)
 
         operator.UnaryOp.register_new(f"numpy.{name}", func)
         if name == "reciprocal":
             # numba doesn't match numpy here
-            def reciprocal(x):  # pragma: no cover
+            def reciprocal(x):  # pragma: no cover (numba)
                 return 1 if x else 0
 
             op = operator.UnaryOp.register_anonymous(reciprocal)

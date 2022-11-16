@@ -1,39 +1,43 @@
 import pytest
 
-import graphblas
+import graphblas as gb
 
 
 def test_import_special_attrs():
-    not_hidden = {x for x in dir(graphblas) if not x.startswith("__")}
+    not_hidden = {x for x in dir(gb) if not x.startswith("__")}
     # Is everything imported?
-    assert len(not_hidden & graphblas._SPECIAL_ATTRS) == len(graphblas._SPECIAL_ATTRS)
+    exclude = {"ss"} if gb.backend != "suitesparse" else set()
+    assert len(not_hidden & gb._SPECIAL_ATTRS) == len(gb._SPECIAL_ATTRS - exclude)
     # Is everything special that needs to be?
-    not_special = {x for x in dir(graphblas) if not x.startswith("_")} - graphblas._SPECIAL_ATTRS
+    not_special = {x for x in dir(gb) if not x.startswith("_")} - gb._SPECIAL_ATTRS
     assert not_special == {"backend", "config", "init", "replace", "tests"}
     # Make sure these "not special" objects don't have objects that look special within them
     for attr in not_special:
-        assert not set(dir(getattr(graphblas, attr))) & graphblas._SPECIAL_ATTRS
+        assert not set(dir(getattr(gb, attr))) & gb._SPECIAL_ATTRS
+    if gb.backend != "suitesparse":
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.ss
 
 
 def test_bad_init():
     # same params is okay
-    params = dict(graphblas._init_params)
+    params = dict(gb._init_params)
     del params["automatic"]
-    graphblas.init(**params)
+    gb.init(**params)
     # different params is bad
     params["blocking"] = not params["blocking"]
-    with pytest.raises(graphblas.exceptions.GraphblasException, match="different init parameters"):
-        graphblas.init(**params)
+    with pytest.raises(gb.exceptions.GraphblasException, match="different init parameters"):
+        gb.init(**params)
 
 
 def test_bad_libget():
     with pytest.raises(AttributeError, match="GrB_bad_name"):
-        graphblas.core.base.libget("GrB_bad_name")
+        gb.core.base.libget("GrB_bad_name")
 
 
 def test_lib_attrs():
-    for attr in dir(graphblas.core.lib):
-        getattr(graphblas.core.lib, attr)
+    for attr in dir(gb.core.lib):
+        getattr(gb.core.lib, attr)
 
 
 def test_bad_call():
@@ -42,8 +46,8 @@ def test_bad_call():
         _carg = 1
 
     with pytest.raises(TypeError, match="Error calling GrB_Matrix_apply"):
-        graphblas.core.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad])
+        gb.core.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad])
     with pytest.raises(
         TypeError, match=r"Call objects: GrB_Matrix_apply\(bad, bad, bad, bad, bad, bad\)"
     ):
-        graphblas.core.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad, bad])
+        gb.core.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad, bad])
