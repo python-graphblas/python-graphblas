@@ -1,6 +1,6 @@
 import numpy as np
 
-from .. import config, monoid, unary
+from .. import backend, config, monoid, unary
 from ..dtypes import BOOL
 from ..exceptions import OutOfMemory
 from .matrix import Matrix, TransposedMatrix
@@ -10,7 +10,7 @@ try:
     import pandas as pd
 
     has_pandas = True
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover (import)
     has_pandas = False
 
 # This was written by a complete novice at CSS.
@@ -285,7 +285,7 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
         if min(nonzero._nvals, num_rows) > 2 * df.count().sum():
             rows, cols, vals = nonzero.ss.head(num_rows, sort=True)
             if mask.complement:
-                if not vals.flags.writeable:  # pragma: no branch
+                if not vals.flags.writeable:  # pragma: no cover (safety)
                     vals = vals.copy()
                 vals[:] = 0
             df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
@@ -335,7 +335,7 @@ def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None)
         if min(nonzero._nvals, num_rows) > 2 * df.count().sum():
             indices, vals = nonzero.ss.head(num_rows, sort=True)
             if mask.complement:
-                if not vals.flags.writeable:  # pragma: no branch
+                if not vals.flags.writeable:  # pragma: no cover (safety)
                     vals = vals.copy()
                 vals[:] = 0
             df = pd.DataFrame({"index": indices, "val": vals})
@@ -365,7 +365,7 @@ def matrix_info(matrix, *, mask=None, expr=None, for_html=True):
         name = f"gb.{type(matrix).__name__}"
     keys = ["nvals", "nrows", "ncols", "dtype"]
     vals = [matrix._nvals, matrix._nrows, matrix._ncols, matrix.dtype.name]
-    if expr is None:
+    if expr is None and backend == "suitesparse":
         keys.append("format")
         if type(matrix) is Matrix:
             vals.append(get_format(matrix))
@@ -382,10 +382,9 @@ def vector_info(vector, *, mask=None, expr=None, for_html=True):
             name = [f"{type(mask).__name__}", f"of gb.{type(vector).__name__}"]
     else:
         name = f"gb.{type(vector).__name__}"
-    # SS, SuiteSparse-specific: format
     keys = ["nvals", "size", "dtype"]
     vals = [vector._nvals, vector._size, vector.dtype.name]
-    if expr is None:
+    if expr is None and backend == "suitesparse":
         keys.append("format")
         vals.append(get_format(vector))
     return name, keys, vals

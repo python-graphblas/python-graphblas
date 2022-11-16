@@ -136,7 +136,7 @@ def test_get_typed_op():
 
 def test_unaryop_udf():
     def plus_one(x):
-        return x + 1  # pragma: no cover
+        return x + 1  # pragma: no cover (numba)
 
     unary.register_new("plus_one", plus_one)
     assert hasattr(unary, "plus_one")
@@ -178,7 +178,7 @@ def test_unaryop_udf():
 def test_unaryop_parameterized():
     def plus_x(x=0):
         def inner(val):
-            return val + x  # pragma: no cover
+            return val + x  # pragma: no cover (numba)
 
         return inner
 
@@ -203,7 +203,7 @@ def test_unaryop_parameterized():
 def test_binaryop_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
-            return left + right + x  # pragma: no cover
+            return left + right + x  # pragma: no cover (numba)
 
         return inner
 
@@ -248,13 +248,13 @@ def test_binaryop_parameterized():
     assert not hasattr(binary, "bad")
     with pytest.raises(UdfParseError, match="Unable to parse function using Numba"):
 
-        def bad(x, y):  # pragma: no cover
+        def bad(x, y):  # pragma: no cover (numba)
             return v
 
         BinaryOp.register_new("bad", bad)
 
     def my_add(x, y):
-        return x + y  # pragma: no cover
+        return x + y  # pragma: no cover (numba)
 
     op = BinaryOp.register_anonymous(my_add)
     assert op.name == "my_add"
@@ -264,7 +264,7 @@ def test_binaryop_parameterized():
 def test_monoid_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
-            return left + right + x  # pragma: no cover
+            return left + right + x  # pragma: no cover (numba)
 
         return inner
 
@@ -272,9 +272,9 @@ def test_monoid_parameterized():
 
     # signatures must match
     with pytest.raises(ValueError, match="Signatures"):
-        Monoid.register_anonymous(bin_op, lambda x: -x)  # pragma: no cover
+        Monoid.register_anonymous(bin_op, lambda x: -x)  # pragma: no cover (numba)
     with pytest.raises(ValueError, match="Signatures"):
-        Monoid.register_anonymous(bin_op, lambda y=0: -y)  # pragma: no cover
+        Monoid.register_anonymous(bin_op, lambda y=0: -y)  # pragma: no cover (numba)
     with pytest.raises(TypeError, match="binaryop must be parameterized"):
         operator.ParameterizedMonoid("bad_monoid", binary.plus, 0)
 
@@ -314,7 +314,7 @@ def test_monoid_parameterized():
     # identity may be a value
     def logaddexp(base):
         def inner(x, y):
-            return np.log(base**x + base**y) / np.log(base)  # pragma: no cover
+            return np.log(base**x + base**y) / np.log(base)  # pragma: no cover (numba)
 
         return inner
 
@@ -324,7 +324,7 @@ def test_monoid_parameterized():
     monoid = gb.monoid._user_defined_monoid
     fv2 = fv.ewise_mult(fv, monoid(2)).new()
 
-    def plus1(x):  # pragma: no cover
+    def plus1(x):  # pragma: no cover (numba)
         return x + 1
 
     plus1 = UnaryOp.register_anonymous(plus1)
@@ -335,7 +335,7 @@ def test_monoid_parameterized():
 
     def plus_times_x(x=0):
         def inner(left, right):
-            return (left + right) * x  # pragma: no cover
+            return (left + right) * x  # pragma: no cover (numba)
 
         return inner
 
@@ -354,7 +354,7 @@ def test_monoid_parameterized():
 def test_semiring_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
-            return left + right + x  # pragma: no cover
+            return left + right + x  # pragma: no cover (numba)
 
         return inner
 
@@ -398,14 +398,14 @@ def test_semiring_parameterized():
         A.ewise_add(A, mysemiring)
 
     # mismatched signatures.
-    def other_binary(y=0):  # pragma: no cover
+    def other_binary(y=0):  # pragma: no cover (numba)
         def inner(left, right):
             return left + right - y
 
         return inner
 
     def other_identity(y=0):
-        return x  # pragma: no cover
+        return x  # pragma: no cover (numba)
 
     other_op = BinaryOp.register_anonymous(other_binary, parameterized=True)
     other_monoid = Monoid.register_anonymous(other_op, other_identity)
@@ -455,7 +455,7 @@ def test_semiring_parameterized():
 
     def plus_x(x=0):
         def inner(y):
-            return x + y  # pragma: no cover
+            return x + y  # pragma: no cover (numba)
 
         return inner
 
@@ -482,7 +482,7 @@ def test_semiring_parameterized():
 def test_unaryop_udf_bool_result():
     # numba has trouble compiling this, but we have a work-around
     def is_positive(x):
-        return x > 0  # pragma: no cover
+        return x > 0  # pragma: no cover (numba)
 
     UnaryOp.register_new("is_positive", is_positive)
     assert hasattr(unary, "is_positive")
@@ -507,7 +507,7 @@ def test_unaryop_udf_bool_result():
 
 def test_binaryop_udf():
     def times_minus_sum(x, y):
-        return x * y - (x + y)  # pragma: no cover
+        return x * y - (x + y)  # pragma: no cover (numba)
 
     BinaryOp.register_new("bin_test_func", times_minus_sum)
     assert hasattr(binary, "bin_test_func")
@@ -536,7 +536,7 @@ def test_binaryop_udf():
 
 def test_monoid_udf():
     def plus_plus_one(x, y):
-        return x + y + 1  # pragma: no cover
+        return x + y + 1  # pragma: no cover (numba)
 
     BinaryOp.register_new("plus_plus_one", plus_plus_one)
     Monoid.register_new("plus_plus_one", binary.plus_plus_one, -1)
@@ -570,7 +570,7 @@ def test_monoid_udf():
 
 def test_semiring_udf():
     def plus_plus_two(x, y):
-        return x + y + 2  # pragma: no cover
+        return x + y + 2  # pragma: no cover (numba)
 
     BinaryOp.register_new("plus_plus_two", plus_plus_two)
     Semiring.register_new("extra_twos", monoid.plus, binary.plus_plus_two)
@@ -603,7 +603,7 @@ def test_binary_updates():
 @pytest.mark.slow
 def test_nested_names():
     def plus_three(x):
-        return x + 3  # pragma: no cover
+        return x + 3  # pragma: no cover (numba)
 
     UnaryOp.register_new("incrementers.plus_three", plus_three)
     assert hasattr(unary, "incrementers")
@@ -632,7 +632,7 @@ def test_nested_names():
     assert v.isequal(result), v
 
     def plus_four(x):
-        return x + 4  # pragma: no cover
+        return x + 4  # pragma: no cover (numba)
 
     UnaryOp.register_new("incrementers.plus_four", plus_four)
     assert hasattr(unary.incrementers, "plus_four")
@@ -642,7 +642,7 @@ def test_nested_names():
     assert v.isequal(result2), v
 
     def bad_will_overwrite_path(x):
-        return x + 7  # pragma: no cover
+        return x + 7  # pragma: no cover (numba)
 
     with pytest.raises(AttributeError):
         UnaryOp.register_new("incrementers", bad_will_overwrite_path)
@@ -672,7 +672,7 @@ def test_op_namespace():
         op.numpy.bad_attr
 
     # Make sure all have been initialized so `vars` below works
-    for key in list(op._delayed):  # pragma: no cover
+    for key in list(op._delayed):  # pragma: no cover (safety)
         getattr(op, key)
     opnames = {
         key
@@ -732,7 +732,7 @@ def test_binaryop_attributes():
     assert binary.numpy.subtract.monoid is None
 
     def plus(x, y):
-        return x + y  # pragma: no cover
+        return x + y  # pragma: no cover (numba)
 
     op = BinaryOp.register_anonymous(plus, name="plus")
     assert op.monoid is None
@@ -773,7 +773,7 @@ def test_monoid_attributes():
     assert monoid.numpy.add.binaryop is binary.numpy.add
     assert monoid.numpy.add.identities == {typ: 0 for typ in monoid.numpy.add.types}
 
-    def plus(x, y):  # pragma: no cover
+    def plus(x, y):  # pragma: no cover (numba)
         return x + y
 
     binop = BinaryOp.register_anonymous(plus, name="plus")
@@ -810,7 +810,7 @@ def test_semiring_attributes():
     assert semiring.numpy.add_subtract.binaryop is binary.numpy.subtract
 
     def plus(x, y):
-        return x + y  # pragma: no cover
+        return x + y  # pragma: no cover (numba)
 
     binop = BinaryOp.register_anonymous(plus, name="plus")
     mymonoid = Monoid.register_anonymous(binop, 0, name="plus")
@@ -878,7 +878,7 @@ def test_get_semiring():
         get_semiring(binary.plus, monoid.times)
 
     def myplus(x, y):
-        return x + y  # pragma: no cover
+        return x + y  # pragma: no cover (numba)
 
     binop = BinaryOp.register_anonymous(myplus, name="myplus")
     st = get_semiring(monoid.plus, binop)
@@ -1022,10 +1022,10 @@ def test_from_string():
 
 @pytest.mark.slow
 def test_lazy_op():
-    UnaryOp.register_new("lazy", lambda x: x, lazy=True)  # pragma: no branch
+    UnaryOp.register_new("lazy", lambda x: x, lazy=True)  # pragma: no branch (numba)
     assert isinstance(op.lazy, UnaryOp)
     assert isinstance(unary.lazy, UnaryOp)
-    BinaryOp.register_new("lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch
+    BinaryOp.register_new("lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch (numba)
     Monoid.register_new("lazy", "lazy", 0, lazy=True)
     assert isinstance(monoid.lazy, Monoid)
     assert isinstance(binary.lazy, BinaryOp)
@@ -1037,9 +1037,9 @@ def test_lazy_op():
     Semiring.register_new("lazy_lazy", monoid.lazy, binary.lazy, lazy=True)
     assert isinstance(semiring.lazy_lazy, Semiring)
     # numpy
-    UnaryOp.register_new("numpy.lazy", lambda x: x, lazy=True)  # pragma: no branch
+    UnaryOp.register_new("numpy.lazy", lambda x: x, lazy=True)  # pragma: no branch (numba)
     assert isinstance(unary.numpy.lazy, UnaryOp)
-    BinaryOp.register_new("numpy.lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch
+    BinaryOp.register_new("numpy.lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch (numba)
     Monoid.register_new("numpy.lazy", "numpy.lazy", 0, lazy=True)
     assert isinstance(monoid.numpy.lazy, Monoid)
     assert isinstance(binary.numpy.lazy, BinaryOp)
@@ -1052,7 +1052,7 @@ def test_lazy_op():
     Semiring.register_new("numpy.lazy_lazy", monoid.numpy.lazy, binary.numpy.lazy, lazy=True)
     assert isinstance(semiring.numpy.lazy_lazy, Semiring)
     # misc
-    UnaryOp.register_new("misc.lazy", lambda x: x, lazy=True)  # pragma: no branch
+    UnaryOp.register_new("misc.lazy", lambda x: x, lazy=True)  # pragma: no branch (numba)
     assert isinstance(unary.misc.lazy, UnaryOp)
     with pytest.raises(AttributeError):
         unary.misc.bad
@@ -1094,7 +1094,7 @@ def test_udt():
     w[:] = 1
 
     def _udt_identity(val):
-        return val  # pragma: no cover
+        return val  # pragma: no cover (numba)
 
     udt_identity = UnaryOp.register_new("udt_identity", _udt_identity, is_udt=True)
     assert udt in udt_identity
@@ -1111,7 +1111,7 @@ def test_udt():
         assert "badname" in udt_identity
 
     def _udt_getx(val):
-        return val["x"]  # pragma: no cover
+        return val["x"]  # pragma: no cover (numba)
 
     udt_getx = UnaryOp.register_anonymous(_udt_getx, "udt_getx", is_udt=True)
     assert udt in udt_getx
@@ -1119,10 +1119,10 @@ def test_udt():
     expected = Vector.from_values([0, 1, 2], 0)
     assert result.isequal(expected)
 
-    def _udt_index(val, idx, _, thunk):
-        if idx == 0:  # pragma: no cover
+    def _udt_index(val, idx, _, thunk):  # pragma: no cover (numba)
+        if idx == 0:
             return thunk["y"]
-        return -thunk["y"]  # pragma: no cover
+        return -thunk["y"]
 
     _udt_index = IndexUnaryOp.register_anonymous(_udt_index, "_udt_index", is_udt=True)
     assert udt in _udt_index
@@ -1131,7 +1131,7 @@ def test_udt():
     assert result.isequal(expected)
 
     def _udt_first(x, y):
-        return x  # pragma: no cover
+        return x  # pragma: no cover (numba)
 
     udt_first = BinaryOp.register_anonymous(_udt_first, "udt_first", is_udt=True)
     assert udt in udt_first
@@ -1177,14 +1177,14 @@ def test_udt():
     class BreakCompile:
         pass
 
-    def badfunc(x):  # pragma: no cover
+    def badfunc(x):  # pragma: no cover (numba)
         return BreakCompile(x)
 
     badunary = UnaryOp.register_anonymous(badfunc, is_udt=True)
     assert udt not in badunary
     assert int not in badunary
 
-    def badfunc(x, y):  # pragma: no cover
+    def badfunc(x, y):  # pragma: no cover (numba)
         return BreakCompile(x)
 
     badbinary = BinaryOp.register_anonymous(badfunc, is_udt=True)
@@ -1198,12 +1198,12 @@ def test_udt():
 
     assert binary.second[udt].type is udt
     assert binary.second[udt].type2 is udt
-    assert binary.second[udt, dtypes.INT8].type is dtypes.INT8  # ignore first arg
+    assert binary.second[udt, dtypes.INT8].type is udt
     assert binary.second[udt, dtypes.INT8].type2 is dtypes.INT8
-    assert semiring.any_second[udt, dtypes.INT8].type is dtypes.INT8  # ignore first arg
+    assert semiring.any_second[udt, dtypes.INT8].type is udt
     assert semiring.any_second[udt, dtypes.INT8].type2 is dtypes.INT8
     assert binary.first[udt, dtypes.INT8].type is udt
-    assert binary.first[udt, dtypes.INT8].type2 is dtypes.INT8  # include second arg!
+    assert binary.first[udt, dtypes.INT8].type2 is dtypes.INT8
     assert monoid.any[udt].type2 is udt
 
 
@@ -1220,7 +1220,7 @@ def test_semiring_commute_exists():
     for key in orig_semirings:
         val = getattr(semiring, key)
         commutes_to = val.commutes_to
-        if commutes_to is not None and commutes_to not in vals:  # pragma: no cover
+        if commutes_to is not None and commutes_to not in vals:  # pragma: no cover (debug)
             missing.add(commutes_to.name)
     if missing:
         raise AssertionError("Missing semirings: " + ", ".join(sorted(missing)))
@@ -1234,7 +1234,7 @@ def test_binaryop_commute_exists():
     for key in orig_binaryops:
         val = getattr(binary, key)
         commutes_to = val.commutes_to
-        if commutes_to is not None and commutes_to not in vals:  # pragma: no cover
+        if commutes_to is not None and commutes_to not in vals:  # pragma: no cover (debug)
             missing.add(commutes_to.name)
     if missing:
         raise AssertionError("Missing binaryops: " + ", ".join(sorted(missing)))

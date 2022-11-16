@@ -1,3 +1,4 @@
+from . import backend as _backend
 from .core import ffi as _ffi
 from .core import lib as _lib
 from .core.utils import _Pointer
@@ -108,11 +109,11 @@ _error_code_lookup = {
     _lib.GrB_INDEX_OUT_OF_BOUNDS: IndexOutOfBound,
     _lib.GrB_PANIC: Panic,
     _lib.GrB_NOT_IMPLEMENTED: NotImplementedException,
-    # GxB Errors
-    _lib.GxB_EXHAUSTED: StopIteration,
 }
 GrB_SUCCESS = _lib.GrB_SUCCESS
 GrB_NO_VALUE = _lib.GrB_NO_VALUE
+if _backend == "suitesparse":
+    _error_code_lookup[_lib.GxB_EXHAUSTED] = StopIteration
 
 
 def check_status(response_code, args):
@@ -136,11 +137,11 @@ def check_status(response_code, args):
 def check_status_carg(response_code, type_name, carg):
     if response_code == GrB_SUCCESS:
         return
-    if response_code == GrB_NO_VALUE:  # pragma: no cover
+    if response_code == GrB_NO_VALUE:  # pragma: no cover (safety)
         return NoValue
     try:
         error_func = _libget(f"GrB_{type_name}_error")
-    except AttributeError:  # pragma: no cover
+    except AttributeError:  # pragma: no cover (sanity)
         text = (
             f"Unable to get the error string for type {type_name}.  "
             "This is most likely a bug in graphblas.  Please report this as an issue at:\n"

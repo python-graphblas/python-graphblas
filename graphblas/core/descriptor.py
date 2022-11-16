@@ -80,7 +80,7 @@ def lookup(
         transpose_first,
         transpose_second,
     )
-    if key not in _desc_map:  # pragma: no cover
+    if key not in _desc_map:  # pragma: no cover (unnecessary)
         # We currently don't need this block of code!
         # All 32 possible descriptors are currently already added to _desc_map.
         # Nevertheless, this code may be useful some day, because we will want

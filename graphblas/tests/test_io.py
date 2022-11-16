@@ -8,17 +8,20 @@ from graphblas import Matrix, dtypes
 
 try:
     import networkx as nx
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover (import)
     nx = None
 try:
     import scipy.sparse as ss
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover (import)
     ss = None
 
 try:
     import awkward._v2 as ak
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover (import)
     ak = None
+
+
+suitesparse = gb.backend == "suitesparse"
 
 
 @pytest.mark.skipif("not ss")
@@ -97,6 +100,14 @@ def test_matrix_to_from_networkx():
     assert G.number_of_nodes() == G2.number_of_nodes() == 2
     np.testing.assert_array_equal(nx.to_numpy_array(G), a)
 
+    # No weights
+    G3 = gb.io.to_networkx(M, edge_attribute=None)
+    a2 = np.array([[1, 0], [1, 1]])
+    G4 = nx.from_numpy_array(a2, create_using=nx.DiGraph)
+    assert G3.number_of_edges() == G4.number_of_edges() == 3
+    assert G3.number_of_nodes() == G4.number_of_nodes() == 2
+    np.testing.assert_array_equal(nx.to_numpy_array(G3), a2)
+
     M2 = gb.io.from_networkx(G, dtype=int)
     assert M.isequal(M2, check_dtype=True)
     # Check iso-value
@@ -117,7 +128,8 @@ def test_matrix_to_from_networkx():
     G.add_edges_from(edges)
     G.add_node(0)
     M = gb.io.from_networkx(G, nodelist=range(7))
-    assert M.ss.is_iso
+    if suitesparse:
+        assert M.ss.is_iso
     rows, cols = zip(*edges)
     expected = gb.Matrix.from_values(rows, cols, 1)
     assert expected.isequal(M)
@@ -233,7 +245,7 @@ def test_mmread_mmwrite():
                 M = gb.io.mmread(mm_in)
         else:
             M = gb.io.mmread(mm_in)
-            if not M.isequal(expected):  # pragma: no cover
+            if not M.isequal(expected):  # pragma: no cover (debug)
                 print(example)
                 print("Expected:")
                 print(expected)
@@ -247,7 +259,7 @@ def test_mmread_mmwrite():
             mm_out_str = b"".join(mm_out.readlines()).decode()
             mm_out.seek(0)
             M2 = gb.io.mmread(mm_out)
-            if not M2.isequal(expected):  # pragma: no cover
+            if not M2.isequal(expected):  # pragma: no cover (debug)
                 print(example)
                 print("Expected:")
                 print(expected)
@@ -334,14 +346,16 @@ def test_awkward_roundtrip():
 def test_awkward_iso_roundtrip():
     # Vector
     v = gb.Vector.from_values([1, 3, 5], [20, 20, 20], size=22)
-    assert v.ss.is_iso
+    if suitesparse:
+        assert v.ss.is_iso
     kv = gb.io.to_awkward(v)
     assert isinstance(kv, ak.Array)
     v2 = gb.io.from_awkward(kv)
     assert v2.isequal(v)
     # Matrix
     m = gb.Matrix.from_values([0, 0, 3, 5], [1, 4, 0, 2], [1, 1, 1, 1], nrows=7, ncols=6)
-    assert m.ss.is_iso
+    if suitesparse:
+        assert m.ss.is_iso
     for format in ["csr", "csc", "hypercsr", "hypercsc"]:
         km = gb.io.to_awkward(m, format=format)
         assert isinstance(km, ak.Array)

@@ -11,12 +11,14 @@ def libget(name):
     try:
         return getattr(lib, name)
     except AttributeError:
+        if name[-4:] not in {"FC32", "FC64", "error"}:
+            raise
         ext_name = f"GxB_{name[4:]}"
         try:
             return getattr(lib, ext_name)
-        except AttributeError:
+        except AttributeError:  # pragma: no cover (sanity)
             pass
-        raise
+        raise  # pragma: no cover (sanity)
 
 
 def wrapdoc(func_with_doc):
@@ -115,13 +117,12 @@ def get_order(order):
     val = order.lower()
     if val in {"c", "row", "rows", "rowwise"}:
         return "rowwise"
-    elif val in {"f", "col", "cols", "column", "columns", "colwise", "columnwise"}:
+    if val in {"f", "col", "cols", "column", "columns", "colwise", "columnwise"}:
         return "columnwise"
-    else:
-        raise ValueError(
-            f"Bad value for order: {order!r}.  "
-            'Expected "rowwise", "columnwise", "rows", "columns", "C", or "F"'
-        )
+    raise ValueError(
+        f"Bad value for order: {order!r}.  "
+        'Expected "rowwise", "columnwise", "rows", "columns", "C", or "F"'
+    )
 
 
 def normalize_chunks(chunks, shape):
@@ -229,7 +230,7 @@ def ensure_type(x, types):
     """
     if isinstance(x, types):
         return x
-    elif isinstance(types, tuple):
+    if isinstance(types, tuple):
         if output_type(x) in types:
             return x.new()
     elif output_type(x) is types:
@@ -238,13 +239,16 @@ def ensure_type(x, types):
 
 
 class class_property:
-    __slots__ = "classval", "member_property"
+    __slots__ = "classval", "member_property", "exceptional"
 
-    def __init__(self, member_property, classval):
+    def __init__(self, member_property, classval, exceptional=False):
         self.classval = classval
         self.member_property = member_property
+        self.exceptional = exceptional
 
     def __get__(self, obj, type=None):
+        if self.exceptional:
+            raise AttributeError(self.classval)
         if obj is None:
             return self.classval
         return self.member_property.__get__(obj, type)

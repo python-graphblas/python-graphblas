@@ -49,8 +49,7 @@ class AxisIndex:
             return rv
         if idx.size < 6:
             return f"[{', '.join(map(str, idx))}]"
-        else:
-            return f"[{', '.join(map(str, idx[:3]))}, ...]"
+        return f"[{', '.join(map(str, idx[:3]))}, ...]"
 
     def _py_index(self):
         """Convert resolved index back into a valid Python index"""
@@ -226,7 +225,7 @@ class IndexerResolver:
                     "If you want to assign with a mask, perhaps do something like "
                     f"`x(mask={index.name}.S) << value`."
                 )
-            elif typ is TransposedMatrix:
+            if typ is TransposedMatrix:
                 raise TypeError(f"Invalid type for index: {typ.__name__}.")
             try:
                 index = list(index)
@@ -419,10 +418,15 @@ class Updater:
             self.parent._assign_element(resolved_indexes, obj)
         else:
             mask = self.kwargs.get("mask")
-            expr = self.parent._prep_for_assign(
-                resolved_indexes, obj, mask=mask, is_submask=is_submask
+            replace = self.kwargs.get("replace", False)
+            expr, alt_mask = self.parent._prep_for_assign(
+                resolved_indexes, obj, mask=mask, is_submask=is_submask, replace=replace
             )
-            self.update(expr)
+            if alt_mask is mask:
+                self.update(expr)
+            else:
+                kwargs = dict(self.kwargs, mask=alt_mask)
+                Updater(self.parent, **kwargs).update(expr)
 
     def __setitem__(self, keys, obj):
         if self.parent._is_scalar:
@@ -507,7 +511,7 @@ class InfixExprBase:
 
         if self.output_type.__name__ == "VectorExpression":
             return formatting.format_vector_infix_expression_html(self)
-        elif self.output_type.__name__ == "MatrixExpression":
+        if self.output_type.__name__ == "MatrixExpression":
             return formatting.format_matrix_infix_expression_html(self)
         return formatting.format_scalar_infix_expression_html(self)
 
@@ -516,7 +520,7 @@ class InfixExprBase:
 
         if self.output_type.__name__ == "VectorExpression":
             return formatting.format_vector_infix_expression(self)
-        elif self.output_type.__name__ == "MatrixExpression":
+        if self.output_type.__name__ == "MatrixExpression":
             return formatting.format_matrix_infix_expression(self)
         return formatting.format_scalar_infix_expression(self)
 

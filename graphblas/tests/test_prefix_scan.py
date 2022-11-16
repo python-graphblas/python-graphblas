@@ -2,18 +2,20 @@ import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import binary, monoid
+from graphblas import backend, binary, monoid
 
 from graphblas import Matrix, Vector  # isort:skip (for dask-graphblas)
 
 try:
     # gb.io.to_numpy currently requires scipy
     import scipy.sparse as ss
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover (import)
     ss = None
 
+suitesparse = backend == "suitesparse"
 
-@pytest.mark.skipif("not ss")
+
+@pytest.mark.skipif("not ss or not suitesparse")
 @pytest.mark.parametrize("method", ["scan_rowwise", "scan_columnwise"])
 @pytest.mark.parametrize("length", list(range(34)))
 @pytest.mark.parametrize("do_random", [False, True])
@@ -39,12 +41,12 @@ def test_scan_matrix(method, length, do_random):
     result = gb.io.to_numpy(R)
     try:
         np.testing.assert_array_equal(result, expected)
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover (debug)
         print(M)
         raise
 
 
-@pytest.mark.skipif("not ss")
+@pytest.mark.skipif("not ss or not suitesparse")
 @pytest.mark.parametrize("length", list(range(34)))
 @pytest.mark.parametrize("do_random", [False, True])
 def test_scan_vector(length, do_random):
@@ -63,11 +65,12 @@ def test_scan_vector(length, do_random):
     result = gb.io.to_numpy(r)
     try:
         np.testing.assert_array_equal(result, expected)
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover (debug)
         print(v)
         raise
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_cumprod():
     v = Vector.from_values([1, 3, 4, 6], [2, 3, 4, 5])
     expected = Vector.from_values([1, 3, 4, 6], [2, 6, 24, 120])
@@ -75,6 +78,7 @@ def test_cumprod():
     assert r.isequal(expected)
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_bad_scan():
     v = Vector.from_values(range(10), range(10))
     with pytest.raises(TypeError, match="Bad type for argument `op`"):

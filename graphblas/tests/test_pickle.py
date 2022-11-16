@@ -8,33 +8,40 @@ import graphblas as gb
 
 
 def unarypickle(x):
-    return x + 1  # pragma: no cover
+    return x + 1  # pragma: no cover (numba)
 
 
 def binarypickle(x, y):
-    return x + y  # pragma: no cover
+    return x + y  # pragma: no cover (numba)
 
 
 def unaryanon(x):
-    return x + 2  # pragma: no cover
+    return x + 2  # pragma: no cover (numba)
 
 
 def binaryanon(x, y):
-    return x + y  # pragma: no cover
+    return x + y  # pragma: no cover (numba)
 
 
 def indexunaryanon(x, row, col, thunk):
-    return x >= thunk  # pragma: no cover
+    return x >= thunk  # pragma: no cover (numba)
+
+
+@pytest.fixture
+def extra():
+    if gb.backend == "suitesparse-vanilla":
+        return "-vanilla"
+    return ""
 
 
 @pytest.mark.slow
-def test_deserialize():
+def test_deserialize(extra):
     thisdir = os.path.dirname(__file__)
-    with open(os.path.join(thisdir, "pickle1.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle1{extra}.pkl"), "rb") as f:
         d = pickle.load(f)
     check_values(d)
     # Again!
-    with open(os.path.join(thisdir, "pickle1.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle1{extra}.pkl"), "rb") as f:
         d = pickle.load(f)
     check_values(d)
 
@@ -120,7 +127,7 @@ def test_serialize():
     }
     try:
         pkl = pickle.dumps(d)
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover (debug)
         for key, val in d.items():
             try:
                 pickle.dumps(val)
@@ -191,28 +198,28 @@ def check_values(d):
 
 def unarypickle_par(x):
     def inner(y):
-        return x + y  # pragma: no cover
+        return x + y  # pragma: no cover (numba)
 
     return inner
 
 
 def binarypickle_par(z):
     def inner(x, y):
-        return x + y + z  # pragma: no cover
+        return x + y + z  # pragma: no cover (numba)
 
     return inner
 
 
 def unaryanon_par(x):
     def inner(y):
-        return y + x  # pragma: no cover
+        return y + x  # pragma: no cover (numba)
 
     return inner
 
 
 def binaryanon_par(z):
     def inner(x, y):
-        return x + y + z  # pragma: no cover
+        return x + y + z  # pragma: no cover (numba)
 
     return inner
 
@@ -264,7 +271,7 @@ def test_serialize_parameterized():
     }
     try:
         pkl = pickle.dumps(d)
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover (debug)
         for key, val in d.items():
             try:
                 pickle.dumps(val)
@@ -275,16 +282,16 @@ def test_serialize_parameterized():
 
 
 @pytest.mark.slow
-def test_deserialize_parameterized():
+def test_deserialize_parameterized(extra):
     thisdir = os.path.dirname(__file__)
-    with open(os.path.join(thisdir, "pickle2.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle2{extra}.pkl"), "rb") as f:
         pickle.load(f)  # TODO: check results
     # Again!
-    with open(os.path.join(thisdir, "pickle2.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle2{extra}.pkl"), "rb") as f:
         pickle.load(f)  # TODO: check results
 
 
-def test_udt():
+def test_udt(extra):
     record_dtype = np.dtype([("x", np.bool_), ("y", np.int64)], align=True)
     udt = gb.dtypes.register_new("PickleUDT", record_dtype)
     assert not udt._is_anonymous
@@ -296,7 +303,7 @@ def test_udt():
     assert pickle.loads(pickle.dumps(udt2)).np_type == udt2.np_type
 
     thisdir = os.path.dirname(__file__)
-    with open(os.path.join(thisdir, "pickle3.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle3{extra}.pkl"), "rb") as f:
         d = pickle.load(f)
     udt3 = d["PickledUDT"]
     v = d["v"]

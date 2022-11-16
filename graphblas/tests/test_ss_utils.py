@@ -3,7 +3,10 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas as gb
-from graphblas import Matrix, Vector
+from graphblas import Matrix, Vector, backend
+
+if backend != "suitesparse":
+    pytest.skip("gb.ss and A.ss only available with suitesparse backend", allow_module_level=True)
 
 
 @pytest.mark.parametrize("do_iso", [False, True])
@@ -42,6 +45,11 @@ def test_vector_head(do_iso):
             indices, vals = v2.ss.head(2, sort=True, dtype=dtype)
             assert_array_equal(indices, [1, 3])
             assert_array_equal(vals, values2[:2])
+            assert indices.dtype == np.uint64
+            assert vals.dtype == expected_dtype
+
+            indices, vals = v3.ss.head(2, sort=False, dtype=dtype)
+            assert indices.size == vals.size == 2
             assert indices.dtype == np.uint64
             assert vals.dtype == expected_dtype
 
@@ -158,6 +166,11 @@ def test_matrix_head(do_iso):
             assert_array_equal(rows, [4, 5])
             assert_array_equal(cols, [5, 5])
             assert_array_equal(vals, values3[:2])
+            assert rows.dtype == cols.dtype == np.uint64
+            assert vals.dtype == expected_dtype
+
+            rows, cols, vals = A8.ss.head(2, sort=False, dtype=dtype)
+            assert rows.size == cols.size == vals.size == 2
             assert rows.dtype == cols.dtype == np.uint64
             assert vals.dtype == expected_dtype
 

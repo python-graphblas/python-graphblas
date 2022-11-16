@@ -8,7 +8,7 @@ from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, NoValue, check_status
 from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
-from .expr import AmbiguousAssignOrExtract, IndexerResolver, Updater
+from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
 from .scalar import (
@@ -19,7 +19,6 @@ from .scalar import (
     _as_scalar,
     _scalar_index,
 )
-from .ss.vector import ss
 from .utils import (
     _CArray,
     _Pointer,
@@ -29,6 +28,9 @@ from .utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
+
+if backend == "suitesparse":
+    from .ss.vector import ss
 
 ffi_new = ffi.new
 
@@ -98,7 +100,8 @@ class Vector(BaseType):
         call("GrB_Vector_new", [_Pointer(self), self.dtype, size])
         self._size = size.value
         self._parent = None
-        self.ss = ss(self)
+        if backend == "suitesparse":
+            self.ss = ss(self)
         return self
 
     @classmethod
@@ -109,7 +112,8 @@ class Vector(BaseType):
         self.dtype = dtype
         self._size = size
         self._parent = parent
-        self.ss = ss(self)
+        if backend == "suitesparse":
+            self.ss = ss(self)
         return self
 
     def __del__(self):
@@ -129,14 +133,18 @@ class Vector(BaseType):
         """
         from .matrix import Matrix
 
-        return Matrix._from_obj(
-            ffi.cast("GrB_Matrix*", self.gb_obj),
-            self.dtype,
-            self._size,
-            1,
-            parent=self,
-            name=f"(GrB_Matrix){self.name}" if name is None else name,
-        )
+        if backend == "suitesparse":
+            return Matrix._from_obj(
+                ffi.cast("GrB_Matrix*", self.gb_obj),
+                self.dtype,
+                self._size,
+                1,
+                parent=self,
+                name=f"(GrB_Matrix){self.name}" if name is None else name,
+            )
+        rv = Matrix(self.dtype, self._size, 1, name=self.name if name is None else name)
+        rv[:, 0] = self
+        return rv
 
     def __repr__(self, mask=None, expr=None):
         from .formatting import format_vector
@@ -162,14 +170,20 @@ class Vector(BaseType):
         return super()._name_html
 
     def __reduce__(self):
-        # SS, SuiteSparse-specific: export
-        pieces = self.ss.export(raw=True)
+        # TODO: we should probably use (or compare to) GraphBLAS serialize methods
+        if backend == "suitesparse":
+            pieces = self.ss.export(raw=True)
+        else:
+            indices, values = self.to_values(sort=False)
+            pieces = (indices, values, self.dtype, self._size)
         return self._deserialize, (pieces, self.name)
 
     @staticmethod
     def _deserialize(pieces, name):
-        # SS, SuiteSparse-specific: import
-        return Vector.ss.import_any(name=name, **pieces)
+        if backend == "suitesparse":
+            return Vector.ss.import_any(name=name, **pieces)
+        indices, values, dtype, size = pieces
+        return Vector.from_values(indices, values, dtype, size=size, name=name)
 
     @property
     def S(self):
@@ -208,8 +222,7 @@ class Vector(BaseType):
         shape = resolved_indexes.shape
         if not shape:
             return ScalarIndexExpr(self, resolved_indexes)
-        else:
-            return VectorIndexExpr(self, resolved_indexes, *shape)
+        return VectorIndexExpr(self, resolved_indexes, *shape)
 
     def __setitem__(self, keys, expr):
         """Assign values to a single element or subvector.
@@ -253,9 +266,11 @@ class Vector(BaseType):
         return indices.flat
 
     def __sizeof__(self):
-        size = ffi_new("size_t*")
-        check_status(lib.GxB_Vector_memoryUsage(size, self.gb_obj[0]), self)
-        return size[0] + object.__sizeof__(self)
+        if backend == "suitesparse":
+            size = ffi_new("size_t*")
+            check_status(lib.GxB_Vector_memoryUsage(size, self.gb_obj[0]), self)
+            return size[0] + object.__sizeof__(self)
+        raise TypeError("Unable to get size of Vector with backend: {backend}")
 
     def isequal(self, other, *, check_dtype=False):
         """Check for exact equality (same size, same structure)
@@ -397,9 +412,7 @@ class Vector(BaseType):
         np.ndarray[dtype=uint64] : Indices
         np.ndarray : Values
         """
-        if sort:
-            if backend != "suitesparse":
-                raise NotImplementedError()
+        if sort and backend == "suitesparse":
             self.wait()  # sort in SS
         nvals = self._nvals
         if indices or backend != "suitesparse":
@@ -422,6 +435,13 @@ class Vector(BaseType):
                 dtype = lookup_dtype(dtype)
                 if dtype != self.dtype:
                     c_values = c_values.astype(dtype.np_type)  # copies
+        if sort and backend != "suitesparse":
+            c_indices = c_indices.array
+            ind = np.argsort(c_indices)
+            return (
+                c_indices[ind] if indices else None,
+                c_values[ind] if values else None,
+            )
         return (
             c_indices.array if indices else None,
             c_values if values else None,
@@ -616,8 +636,10 @@ class Vector(BaseType):
                     "dup_op must be None if values is a scalar so that all "
                     "values can be identical.  Duplicate indices will be ignored."
                 )
-            # SS, SuiteSparse-specific: build_Scalar
-            w.ss.build_scalar(indices, values.tolist())
+            if backend == "suitesparse":
+                w.ss.build_scalar(indices, values.tolist())
+            else:
+                w.build(indices, np.broadcast_to(values, indices.size), dup_op=binary.any)
         else:
             # This needs to be the original data to get proper error messages
             w.build(indices, values, dup_op=dup_op)
@@ -667,7 +689,7 @@ class Vector(BaseType):
         """
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
-        if require_monoid is not None:  # pragma: no cover
+        if require_monoid is not None:  # pragma: no cover (deprecated)
             warnings.warn(
                 "require_monoid keyword is deprecated; "
                 "future behavior will be like `require_monoid=False`",
@@ -681,7 +703,7 @@ class Vector(BaseType):
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
-        if require_monoid:  # pragma: no cover
+        if require_monoid:  # pragma: no cover (deprecated)
             if op.opclass != "BinaryOp" or op.monoid is None:
                 self._expect_op(
                     op,
@@ -818,7 +840,6 @@ class Vector(BaseType):
             # Functional syntax
             w << binary.div(u | v, left_default=1, right_default=1)
         """
-        # SS, SuiteSparse-specific: eWiseUnion
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
         method_name = "ewise_union"
@@ -882,13 +903,23 @@ class Vector(BaseType):
                 ncols=other._ncols,
                 op=op,
             )
-        expr = VectorExpression(
-            method_name,
-            "GxB_Vector_eWiseUnion",
-            [self, left, other, right],
-            op=op,
-            expr_repr=expr_repr,
-        )
+        if backend == "suitesparse":
+            expr = VectorExpression(
+                method_name,
+                "GxB_Vector_eWiseUnion",
+                [self, left, other, right],
+                op=op,
+                expr_repr=expr_repr,
+            )
+        else:
+            dtype = unify(scalar_dtype, nonscalar_dtype, is_left_scalar=True)
+            new_left = other.dup(dtype, clear=True)
+            new_left(other.S) << left
+            new_left(self.S) << self
+            new_right = self.dup(dtype, clear=True)
+            new_right(self.S) << right
+            new_right(other.S) << other
+            expr = op(new_left & new_right)
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
         return expr
@@ -1446,7 +1477,7 @@ class Vector(BaseType):
             cfunc_name = "GrB_Vector_setElement_Scalar"
         call(cfunc_name, [self, value, idx.index])
 
-    def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False):
+    def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False, replace=False):
         method_name = "__setitem__"
         idx = resolved_indexes.indices[0]
         size = idx.size
@@ -1465,7 +1496,11 @@ class Vector(BaseType):
                     # v[i](m) << w
                     raise TypeError("Single element assign does not accept a submask")
                 # v[I](m) << w
-                cfunc_name = "GrB_Vector_subassign"
+                if backend == "suitesparse":
+                    cfunc_name = "GxB_Vector_subassign"
+                else:
+                    cfunc_name = "GrB_Vector_assign"
+                    mask = _vanilla_subassign_mask(self, mask, idx, replace)
                 expr_repr = "[[{2._expr_name} elements]](%s) = {0.name}" % mask.name
             else:
                 # v(m)[I] << w
@@ -1483,19 +1518,29 @@ class Vector(BaseType):
                         # v(m)[I] << [1, 2, 3]
                         # v[I](m) << [1, 2, 3]
                         try:
-                            values, dtype = values_to_numpy_buffer(value, dtype, copy=True)
+                            # Do a copy for suitesparse so we can give ownership to suitesparse
+                            values, dtype = values_to_numpy_buffer(
+                                value, dtype, copy=backend == "suitesparse"
+                            )
                         except Exception:
                             extra_message = "Literal scalars and lists also accepted."
                         else:
                             shape = values.shape
                             try:
-                                vals = Vector.ss.import_full(
-                                    values, dtype=dtype, take_ownership=True
-                                )
-                                if dtype.np_type.subdtype is not None:
-                                    shape = vals.shape
+                                if backend == "suitesparse":
+                                    vals = Vector.ss.import_full(
+                                        values, dtype=dtype, take_ownership=True
+                                    )
+                                else:
+                                    # TODO: GraphBLAS needs a way to import or assign dense
+                                    vals = Vector.from_values(
+                                        np.arange(shape[0]), values, dtype, size=shape[0]
+                                    )
                             except Exception:
                                 vals = None
+                            else:
+                                if dtype.np_type.subdtype is not None:
+                                    shape = vals.shape
                             if vals is None or shape != (size,):
                                 if dtype.np_type.subdtype is not None:
                                     extra = (
@@ -1510,7 +1555,11 @@ class Vector(BaseType):
                                     f"{extra}"
                                 ) from None
                             return self._prep_for_assign(
-                                resolved_indexes, vals, mask=mask, is_submask=is_submask
+                                resolved_indexes,
+                                vals,
+                                mask=mask,
+                                is_submask=is_submask,
+                                replace=False,
                             )
                     else:
                         extra_message = "Literal scalars also accepted."
@@ -1532,9 +1581,17 @@ class Vector(BaseType):
                         value = _Pointer(value)
                     else:
                         dtype_name = value.dtype.name
-                    cfunc_name = f"GrB_Vector_subassign_{dtype_name}"
+                    if backend == "suitesparse":
+                        cfunc_name = f"GxB_Vector_subassign_{dtype_name}"
+                    else:
+                        cfunc_name = f"GrB_Vector_assign_{dtype_name}"
+                        mask = _vanilla_subassign_mask(self, mask, idx, replace)
                 else:
-                    cfunc_name = "GrB_Vector_subassign_Scalar"
+                    if backend == "suitesparse":
+                        cfunc_name = "GxB_Vector_subassign_Scalar"
+                    else:
+                        cfunc_name = "GrB_Vector_assign_Scalar"
+                        mask = _vanilla_subassign_mask(self, mask, idx, replace)
                 expr_repr = "[[{2._expr_name} elements]](%s) = {0._expr_name}" % mask.name
             else:
                 # v(m)[I] << c
@@ -1552,7 +1609,7 @@ class Vector(BaseType):
                 else:
                     cfunc_name = "GrB_Vector_assign_Scalar"
                 expr_repr = "[[{2._expr_name} elements]] = {0._expr_name}"
-        return VectorExpression(
+        expr = VectorExpression(
             method_name,
             cfunc_name,
             [value, index, cscalar],
@@ -1560,12 +1617,13 @@ class Vector(BaseType):
             size=self._size,
             dtype=self.dtype,
         )
+        return expr, mask
 
     def _delete_element(self, resolved_indexes):
         idx = resolved_indexes.indices[0]
         call("GrB_Vector_removeElement", [self, idx.index])
 
-    def to_pygraphblas(self):  # pragma: no cover
+    def to_pygraphblas(self):  # pragma: no cover (outdated)
         """Convert to a ``pygraphblas.Vector`` without copying data.
 
         This gives control of the underlying GraphBLAS memory to pygraphblas,
@@ -1586,7 +1644,7 @@ class Vector(BaseType):
         return vector
 
     @classmethod
-    def from_pygraphblas(cls, vector):  # pragma: no cover
+    def from_pygraphblas(cls, vector):  # pragma: no cover (outdated)
         """Convert a ``pygraphblas.Vector`` to a new :class:`Vector` without copying data.
 
         This gives control of the underlying GraphBLAS memory to python-graphblas,
@@ -1654,7 +1712,27 @@ class Vector(BaseType):
         return dict(zip(indices.tolist(), values.tolist()))
 
 
-Vector.ss = class_property(Vector.ss, ss)
+if backend == "suitesparse":
+    Vector.ss = class_property(Vector.ss, ss)
+else:
+    Vector.ss = class_property(
+        Vector.ss, 'ss attribute is only available with "suitesparse" backend', exceptional=True
+    )
+
+
+def _vanilla_subassign_mask(self, mask, indices, replace):
+    _check_mask(mask, self)
+    if not replace and indices.index is _ALL_INDICES:
+        return mask
+    indices = indices._py_index()
+    val = Vector(mask.parent.dtype, size=self._size, name="v_temp")
+    val[indices] = mask.parent
+    mask = type(mask)(val)
+    if replace:
+        val = self.dup()
+        del val[indices]
+        mask |= val.S
+    return mask
 
 
 class VectorExpression(BaseExpression):
@@ -1746,7 +1824,8 @@ class VectorExpression(BaseExpression):
     reduce = wrapdoc(Vector.reduce)(property(automethods.reduce))
     reposition = wrapdoc(Vector.reposition)(property(automethods.reposition))
     select = wrapdoc(Vector.select)(property(automethods.select))
-    ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    if backend == "suitesparse":
+        ss = wrapdoc(Vector.ss)(property(automethods.ss))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
@@ -1820,7 +1899,8 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     reduce = wrapdoc(Vector.reduce)(property(automethods.reduce))
     reposition = wrapdoc(Vector.reposition)(property(automethods.reposition))
     select = wrapdoc(Vector.select)(property(automethods.select))
-    ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    if backend == "suitesparse":
+        ss = wrapdoc(Vector.ss)(property(automethods.ss))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
