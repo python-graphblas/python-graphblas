@@ -769,6 +769,29 @@ class Matrix(BaseType):
             # Look for array-subtdype
             new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
         if values.ndim == 0:
+            if backend == "suitesparse":
+                # SuiteSparse GxB can handle iso-value
+                if fmt is _CSR_FORMAT:
+                    return cls.ss.import_csr(
+                        nrows=nrows,
+                        ncols=ncols,
+                        indptr=indptr,
+                        col_indices=indices,
+                        values=values,
+                        is_iso=True,
+                        dtype=dtype,
+                        name=name,
+                    )
+                return cls.ss.import_csc(
+                    nrows=nrows,
+                    ncols=ncols,
+                    indptr=indptr,
+                    row_indices=indices,
+                    values=values,
+                    is_iso=True,
+                    dtype=dtype,
+                    name=name,
+                )
             values = np.broadcast_to(values, indices.size)
         new_mat = ffi_new("GrB_Matrix*")
         rv = Matrix._from_obj(new_mat, new_dtype, nrows, ncols, name=name)

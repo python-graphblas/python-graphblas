@@ -3876,6 +3876,9 @@ def test_to_csr_from_csc(A):
     expected = Matrix.from_values([0, 1], [1, 0], [100, 100], nrows=2, ncols=2)
     assert expected.isequal(B, check_dtype=True)
 
+    B = Matrix.from_csc([0, 1, 2], [1, 0], 100)
+    assert expected.isequal(B, check_dtype=True)
+
     with pytest.raises(InvalidValue):
         Matrix.from_csr([0, 1, 2, 3], [1, 0], [10, 20], ncols=3)
 
