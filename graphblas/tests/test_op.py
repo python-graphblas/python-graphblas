@@ -1246,3 +1246,14 @@ def test_binom():
     expected = Vector.from_values([0, 1, 2], [3, 6, 10])
     assert result.isequal(expected)
     assert op.binom is binary.binom
+
+
+def test_builtins():
+    v1 = Vector.from_values([0, 1, 2], [1, 2, 3])
+    v2 = Vector.from_values([0, 1, 2], [3, 2, 1])
+    result = v1.ewise_mult(v2, min).new()
+    expected = Vector.from_values([0, 1, 2], [1, 2, 1])
+    assert result.isequal(expected)
+    v1(max) << v2
+    expected = Vector.from_values([0, 1, 2], [3, 2, 3])
+    assert v1.isequal(expected)
