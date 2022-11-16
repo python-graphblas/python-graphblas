@@ -3229,12 +3229,9 @@ select._binary_to_select.update(
 
 _builtin_to_op = {
     abs: unary.abs,
-    all: binary.land,
-    any: binary.lor,
     max: binary.max,
     min: binary.min,
-    pow: binary.pow,
-    sum: binary.plus,
+    # Maybe someday: all, any, pow, sum
 }
 
 _str_to_unary = {
