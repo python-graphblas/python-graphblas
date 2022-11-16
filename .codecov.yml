@@ -1,0 +1,4 @@
+comment: off
+ignore:
+  - graphblas/_version.py
+  - graphblas/viz.py

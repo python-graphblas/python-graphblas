@@ -69,13 +69,18 @@ def __getattr__(name):
     if name in _SPECIAL_ATTRS:
         if _init_params is None:
             _init("suitesparse", None, automatic=True)
+            # _init("suitesparse-vanilla", None, automatic=True)
+        if name == "ss" and backend != "suitesparse":
+            raise AttributeError(
+                f'module {__name__!r} only has attribute "ss" when backend is "suitesparse"'
+            )
         if name not in globals():
             if f"graphblas.{name}" in _sys.modules:
                 globals()[name] = _sys.modules[f"graphblas.{name}"]
             else:
                 _load(name)
         return globals()[name]
-    elif name == "_autoinit":
+    if name == "_autoinit":
         if _init_params is None:
             _init("suitesparse", None, automatic=True)
     else:
@@ -83,7 +88,10 @@ def __getattr__(name):
 
 
 def __dir__():
-    return list(globals().keys() | _SPECIAL_ATTRS)
+    names = globals().keys() | _SPECIAL_ATTRS
+    if backend is not None and backend != "suitesparse":
+        names.remove("ss")
+    return list(names)
 
 
 def init(backend="suitesparse", blocking=False):
@@ -113,15 +121,14 @@ def _init(backend_arg, blocking, automatic=False):
                 raise GraphblasException(
                     "graphblas objects accessed prior to manual initialization"
                 )
-            else:
-                raise GraphblasException(
-                    "graphblas initialized multiple times with different init parameters"
-                )
+            raise GraphblasException(
+                "graphblas initialized multiple times with different init parameters"
+            )
         # Already initialized with these parameters; nothing more to do
         return
 
     backend = backend_arg
-    if backend == "suitesparse":
+    if backend in {"suitesparse", "suitesparse-vanilla"}:
         from suitesparse_graphblas import ffi, initialize, is_initialized, lib
 
         if is_initialized():
@@ -139,6 +146,20 @@ def _init(backend_arg, blocking, automatic=False):
                 blocking = False
                 passed_params["blocking"] = blocking
             initialize(blocking=blocking, memory_manager="numpy")
+        if backend == "suitesparse-vanilla":
+            # Exclude functions that start with GxB
+
+            class Lib:
+                pass
+
+            orig_lib = lib
+            lib = Lib()
+            for key, val in vars(orig_lib).items():
+                # TODO: handle GxB objects
+                if callable(val) and key.startswith("GxB") or "FC32" in key or "FC64" in key:
+                    continue
+                setattr(lib, key, getattr(orig_lib, key))
+
     else:
         raise ValueError(f'Bad backend name.  Must be "suitesparse".  Got: {backend}')
     _init_params = passed_params

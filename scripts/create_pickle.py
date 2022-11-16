@@ -4,6 +4,7 @@
 Note that the exact binary of the pickle files may differ depending on which
 Python version is used to create them.
 """
+import argparse
 import os
 import pickle
 
@@ -145,7 +146,17 @@ def pickle3(filename):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--backend", choices={"suitesparse", "suitesparse-vanilla"}, default="suitesparse"
+    )
+    args = parser.parse_args()
+    gb.init(args.backend)
+    if args.backend == "suitesparse-vanilla":
+        extra = "-vanilla"
+    else:
+        extra = ""
     basedir = os.path.dirname(gb.tests.__file__)
-    pickle1(os.path.join(basedir, "pickle1.pkl"))
-    pickle2(os.path.join(basedir, "pickle2.pkl"))
-    pickle3(os.path.join(basedir, "pickle3.pkl"))
+    pickle1(os.path.join(basedir, f"pickle1{extra}.pkl"))
+    pickle2(os.path.join(basedir, f"pickle2{extra}.pkl"))
+    pickle3(os.path.join(basedir, f"pickle3{extra}.pkl"))

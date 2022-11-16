@@ -1,6 +1,6 @@
 from contextvars import ContextVar
 
-from .. import config
+from .. import backend, config
 from .. import replace as replace_singleton
 from ..dtypes import BOOL
 from ..exceptions import check_status
@@ -61,7 +61,7 @@ def _expect_type_message(
     if type(types) is tuple:
         if type(x) in types:
             return x, None
-        elif output_type(x) in types:
+        if output_type(x) in types:
             if config.get("autocompute"):
                 return x.new(), None
             extra_message = f"{extra_message}\n\n" if extra_message else ""
@@ -123,7 +123,7 @@ def _expect_op_message(
         argmsg = f"for argument `{argname}` "
     elif keyword_name:
         argmsg = f"for keyword argument `{keyword_name}=` "
-    else:  # pragma: no cover
+    else:  # pragma: no cover (safety)
         argmsg = ""
     if type(values) is tuple:
         expected = ", ".join(values)
@@ -334,7 +334,7 @@ class BaseType:
 
                 # Extract (C << A[rows, cols])
                 if input_mask is not None:
-                    if mask is not None:  # pragma: no cover (can this be covered?)
+                    if mask is not None:  # pragma: no cover (can this be covered?!)
                         raise TypeError("mask and input_mask arguments cannot both be given")
                     input_mask = _check_mask(input_mask, expr.parent)
                     mask = expr._input_mask_to_mask(input_mask)
@@ -420,11 +420,11 @@ class BaseType:
 
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
-        elif expr.op is not None and expr.op.opclass == "Aggregator":
+        if expr.op is not None and expr.op.opclass == "Aggregator":
             updater = self(mask=mask, accum=accum, replace=replace)
             expr.op._new(updater, expr)
             return
-        elif expr.cfunc_name is None:  # Custom recipe
+        if expr.cfunc_name is None:  # Custom recipe
             updater = self(mask=mask, accum=accum, replace=replace)
             expr.args[-2](updater, *expr.args[-1])
             return
@@ -477,7 +477,7 @@ class BaseType:
         call(cfunc_name, args)
         if self._is_scalar:
             if scalar_as_vector:
-                if self._is_cscalar:
+                if self._is_cscalar or backend != "suitesparse":
                     self.value = fake_self[0].new(is_cscalar=True, name="")
                 # SS: this assumes GrB_Scalar was cast to Vector
             elif is_temp_scalar:
@@ -545,7 +545,7 @@ class BaseExpression:
                 expr_repr = "{0.name}.{method_name}({op})"
             elif len(args) == 2 or cfunc_name is None and len(args) == 4:
                 expr_repr = "{0.name}.{method_name}({1.name}, op={op})"
-            else:  # pragma: no cover
+            else:  # pragma: no cover (sanity)
                 raise ValueError(f"No default expr_repr for len(args) == {len(args)}")
         self.expr_repr = expr_repr
         if dtype is None:

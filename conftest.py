@@ -2,7 +2,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--backend",
         action="store",
-        default="suitesparse",
+        default=None,
         help="name of a graphblas backend",
     )
     parser.addoption("--runslow", default=None, action="store_true", help="run slow tests")

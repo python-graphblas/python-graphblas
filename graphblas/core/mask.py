@@ -1,6 +1,6 @@
 import warnings
 
-from .. import monoid
+from .. import backend, monoid
 from ..binary import land, lor, pair
 from ..dtypes import BOOL
 from ..select import valuene
@@ -112,8 +112,7 @@ class Mask:
         val = func(self, other, bool, None)
         if complement:
             return ComplementedStructuralMask(val)
-        else:
-            return StructuralMask(val)
+        return StructuralMask(val)
 
     __rand__ = __and__
 
@@ -238,7 +237,7 @@ def _combine_V_A(m1, m2, dtype, name):
     if isinstance(m2, ValueMask) and m1.parent._nvals > m2.parent._nvals:
         m1, m2 = m2, m1
     val = valuene(m1.parent).new(dtype, mask=m2, name=name)
-    if dtype != BOOL or not val.ss.is_iso:
+    if dtype != BOOL or backend != "suitesparse" or not val.ss.is_iso:
         val(val.S) << True
     return val
 
@@ -246,7 +245,7 @@ def _combine_V_A(m1, m2, dtype, name):
 def _combine_A_V(m1, m2, dtype, name):
     """S-V, V-V, CS-V, CV-V"""
     val = valuene(m2.parent).new(dtype, mask=m1, name=name)
-    if dtype != BOOL or not val.ss.is_iso:
+    if dtype != BOOL or backend != "suitesparse" or not val.ss.is_iso:
         val(val.S) << True
     return val
 

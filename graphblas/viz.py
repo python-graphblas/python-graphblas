@@ -25,7 +25,7 @@ def _get_imports(names, within):
         names = [names]
     rv = []
     for name in names:
-        if name not in _LAZY_IMPORTS:  # pragma: no cover
+        if name not in _LAZY_IMPORTS:  # pragma: no cover (safety)
             raise KeyError(f"Unknown library to import: {name}")
         if name in globals():
             val = globals()[name]

@@ -13,10 +13,9 @@ def call_op(self, other, method, op, *, outer=False, union=False):
     if type1 in types and type2 in types:
         if outer:
             return self.ewise_add(other, op)
-        elif union:
+        if union:
             return self.ewise_union(other, op, False, False)
-        else:
-            return self.ewise_mult(other, op)
+        return self.ewise_mult(other, op)
     return op(self, other)
 
 

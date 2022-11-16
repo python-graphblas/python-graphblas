@@ -31,5 +31,4 @@ def slice_to_index(index, size):
         start += 1
     if step == 1:
         return AxisIndex(length, _CArray([start, stop]), gxb_range, size)
-    else:
-        return AxisIndex(length, _CArray([start, stop, step]), gxb_stride, size)
+    return AxisIndex(length, _CArray([start, stop, step]), gxb_stride, size)

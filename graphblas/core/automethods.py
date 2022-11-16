@@ -16,8 +16,7 @@ def _get_value(self, attr=None, default=None):
             self._value = self.new()
         if attr is None:
             return self._value
-        else:
-            return getattr(self._value, attr)
+        return getattr(self._value, attr)
     if default is not None:
         return default.__get__(self)
     raise TypeError(
@@ -491,7 +490,12 @@ def _main():
     lines = []
     lines.append("    _get_value = automethods._get_value")
     for name in sorted(common | vector_matrix | vector):
-        lines.append(f"    {name} = wrapdoc(Vector.{name})(property(automethods.{name}))")
+        if name == "ss":
+            lines.append('    if backend == "suitesparse":')
+            indent = "    "
+        else:
+            indent = ""
+        lines.append(f"    {indent}{name} = wrapdoc(Vector.{name})(property(automethods.{name}))")
         if name == "name":
             lines.append("    name = name.setter(automethods._set_name)")
     lines.append("    # These raise exceptions")
@@ -509,7 +513,12 @@ def _main():
     lines = []
     lines.append("    _get_value = automethods._get_value")
     for name in sorted(common | vector_matrix | matrix):
-        lines.append(f"    {name} = wrapdoc(Matrix.{name})(property(automethods.{name}))")
+        if name == "ss":
+            lines.append('    if backend == "suitesparse":')
+            indent = "    "
+        else:
+            indent = ""
+        lines.append(f"    {indent}{name} = wrapdoc(Matrix.{name})(property(automethods.{name}))")
         if name == "name":
             lines.append("    name = name.setter(automethods._set_name)")
     lines.append("    # These raise exceptions")
