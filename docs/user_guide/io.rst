@@ -9,9 +9,9 @@ From/To Values
 
 Scalar has ``.from_value()`` and ``.value`` to get a Python scalar into and out of python-graphblas.
 
-Matrix and Vector, instead, have a ``.from_values()`` and a ``.to_values()`` method.
+Matrix and Vector, instead, have a ``.from_coo()`` and a ``.to_coo()`` method.
 
-``.from_values()`` takes index(es) and values as either:
+``.from_coo()`` takes index(es) and values as either:
 
   - Python lists
   - Numpy arrays
@@ -21,12 +21,12 @@ If no dtype is provided, the data type is inferred from the values.
 If no size (Vector) or nrows/ncols (Matrix) are provided, the shape is inferred based on the largest
 index found for each dimension.
 
-``.to_values()`` returns numpy arrays. Indexes are always returned as ``uint64``, while the values
+``.to_coo()`` returns numpy arrays. Indexes are always returned as ``uint64``, while the values
 array will match the collection dtype.
 
 .. code-block:: python
 
-    v = gb.Vector.from_values([1, 3, 6], [2, 3, 4], float, size=10)
+    v = gb.Vector.from_coo([1, 3, 6], [2, 3, 4], float, size=10)
 
 .. csv-table::
     :header: 0,1,2,3,4,5,6,7,8,9,10
@@ -35,7 +35,7 @@ array will match the collection dtype.
 
 .. code-block:: python
 
-    >>> idx, vals = v.to_values()
+    >>> idx, vals = v.to_coo()
     >>> idx
     array([1, 3, 6], dtype=uint64)
     >>> vals

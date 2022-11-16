@@ -158,9 +158,9 @@ def test_unaryop_udf():
     if dtypes._supports_complex:
         comp_set.update({FC32, FC64})
     assert set(unary.plus_one.types) == comp_set
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.plus_one)
-    result = Vector.from_values([0, 1, 3], [2, 3, -3], dtype=dtypes.INT32)
+    result = Vector.from_coo([0, 1, 3], [2, 3, -3], dtype=dtypes.INT32)
     assert v.isequal(result)
     assert "INT8" in unary.plus_one
     assert INT8 in unary.plus_one.types
@@ -184,13 +184,13 @@ def test_unaryop_parameterized():
 
     op = UnaryOp.register_anonymous(plus_x, parameterized=True)
     assert not op.is_positional
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v0 = v.apply(op).new()
     assert v.isequal(v0, check_dtype=True)
     v0 = v.apply(op(0)).new()
     assert v.isequal(v0, check_dtype=True)
     v10 = v.apply(op(x=10)).new()
-    r10 = Vector.from_values([0, 1, 3], [11, 12, 6], dtype=dtypes.INT32)
+    r10 = Vector.from_coo([0, 1, 3], [11, 12, 6], dtype=dtypes.INT32)
     assert r10.isequal(v10, check_dtype=True)
     UnaryOp._initialize()  # no-op
     UnaryOp.register_new("plus_x_parameterized", plus_x, parameterized=True)
@@ -211,15 +211,15 @@ def test_binaryop_parameterized():
     assert not op.is_positional
     assert op.monoid is None
     assert op(1).monoid is None
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v0 = v.ewise_mult(v, op).new()
-    r0 = Vector.from_values([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
+    r0 = Vector.from_coo([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
     assert v0.isequal(r0, check_dtype=True)
     v1 = v.ewise_add(v, op(1)).new()
-    r1 = Vector.from_values([0, 1, 3], [3, 5, -7], dtype=dtypes.INT32)
+    r1 = Vector.from_coo([0, 1, 3], [3, 5, -7], dtype=dtypes.INT32)
     assert v1.isequal(r1, check_dtype=True)
 
-    w = Vector.from_values([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=op)
+    w = Vector.from_coo([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=op)
     assert v.isequal(w, check_dtype=True)
     with pytest.raises(TypeError, match="Monoid"):
         assert v.reduce(op).new() == -1
@@ -236,9 +236,9 @@ def test_binaryop_parameterized():
     x = x.ewise_mult(x, op(1)).new()
     assert v.isequal(x)
 
-    assert v.isequal(Vector.from_values([0, 1, 3], [19, 35, -61], dtype=dtypes.INT32))
+    assert v.isequal(Vector.from_coo([0, 1, 3], [19, 35, -61], dtype=dtypes.INT32))
     v11 = v.apply(op(1), left=10).new()
-    r11 = Vector.from_values([0, 1, 3], [30, 46, -50], dtype=dtypes.INT32)
+    r11 = Vector.from_coo([0, 1, 3], [30, 46, -50], dtype=dtypes.INT32)
     # Should we check for dtype here?
     # Is it okay if the literal scalar is an INT64, which causes the output to default to INT64?
     assert v11.isequal(r11, check_dtype=False)
@@ -296,19 +296,19 @@ def test_monoid_parameterized():
     assert bin_op1.monoid is None
 
     assert monoid.name == "my_monoid"
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v0 = v.ewise_add(v, monoid).new()
-    r0 = Vector.from_values([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
+    r0 = Vector.from_coo([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
     assert v0.isequal(r0, check_dtype=True)
     v1 = v.ewise_mult(v, monoid(1)).new()
-    r1 = Vector.from_values([0, 1, 3], [3, 5, -7], dtype=dtypes.INT32)
+    r1 = Vector.from_coo([0, 1, 3], [3, 5, -7], dtype=dtypes.INT32)
     assert v1.isequal(r1, check_dtype=True)
 
     assert v.reduce(monoid).new() == -1
     assert v.reduce(monoid(1)).new() == 1
     # with pytest.raises(TypeError, match="BinaryOp"):  # NOW OKAY
-    w1 = Vector.from_values([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=monoid)
-    w2 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    w1 = Vector.from_coo([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=monoid)
+    w2 = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     assert w1.isequal(w2)
 
     # identity may be a value
@@ -370,29 +370,29 @@ def test_semiring_parameterized():
     assert not mysemiring.is_positional
     assert mysemiring.name == "my_semiring"
 
-    A = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
-    x = Vector.from_values([0, 1], [10, 20])
+    A = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
+    x = Vector.from_coo([0, 1], [10, 20])
 
     y = A.mxv(x, mysemiring).new()
     assert y.isequal(A.mxv(x, semiring.plus_plus).new())
     assert y.isequal(x.vxm(A.T, semiring.plus_plus).new())
-    assert y.isequal(Vector.from_values([0, 1], [33, 37]))
+    assert y.isequal(Vector.from_coo([0, 1], [33, 37]))
 
     y = A.mxv(x, mysemiring(1)).new()
-    assert y.isequal(Vector.from_values([0, 1], [36, 40]))  # three extra pluses
+    assert y.isequal(Vector.from_coo([0, 1], [36, 40]))  # three extra pluses
 
     y = x.vxm(A.T, mysemiring(1)).new()  # same as previous
-    assert y.isequal(Vector.from_values([0, 1], [36, 40]))
+    assert y.isequal(Vector.from_coo([0, 1], [36, 40]))
 
     y = x.vxm(A.T, mysemiring).new()
-    assert y.isequal(Vector.from_values([0, 1], [33, 37]))
+    assert y.isequal(Vector.from_coo([0, 1], [33, 37]))
 
     B = A.mxm(A, mysemiring).new()
     assert B.isequal(A.mxm(A, semiring.plus_plus).new())
-    assert B.isequal(Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [7, 9, 11, 13]))
+    assert B.isequal(Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [7, 9, 11, 13]))
 
     B = A.mxm(A, mysemiring(1)).new()  # three extra pluses
-    assert B.isequal(Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [10, 12, 14, 16]))
+    assert B.isequal(Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [10, 12, 14, 16]))
 
     with pytest.raises(TypeError, match="Expected type: BinaryOp, Monoid"):
         A.ewise_add(A, mysemiring)
@@ -447,10 +447,8 @@ def test_semiring_parameterized():
         operator.ParameterizedSemiring("bad_semiring", monoid.plus, monoid.plus)
 
     # While we're here, let's check misc Matrix operations
-    Adup = Matrix.from_values([0, 0, 0, 1, 1], [0, 0, 1, 0, 1], [100, 1, 2, 3, 4], dup_op=bin_op)
-    Adup2 = Matrix.from_values(
-        [0, 0, 0, 1, 1], [0, 0, 1, 0, 1], [100, 1, 2, 3, 4], dup_op=binary.plus
-    )
+    Adup = Matrix.from_coo([0, 0, 0, 1, 1], [0, 0, 1, 0, 1], [100, 1, 2, 3, 4], dup_op=bin_op)
+    Adup2 = Matrix.from_coo([0, 0, 0, 1, 1], [0, 0, 1, 0, 1], [100, 1, 2, 3, 4], dup_op=binary.plus)
     assert Adup.isequal(Adup2)
 
     def plus_x(x=0):
@@ -499,9 +497,9 @@ def test_unaryop_udf_bool_result():
         FP64,
         BOOL,
     }
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     w = v.apply(unary.is_positive).new()
-    result = Vector.from_values([0, 1, 3], [True, True, False], dtype=dtypes.BOOL)
+    result = Vector.from_coo([0, 1, 3], [True, True, False], dtype=dtypes.BOOL)
     assert w.isequal(result)
 
 
@@ -527,10 +525,10 @@ def test_binaryop_udf():
     if dtypes._supports_complex:
         comp_set.update({FC32, FC64})
     assert set(binary.bin_test_func.types) == comp_set
-    v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
-    v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
+    v1 = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v2 = Vector.from_coo([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
     w = v1.ewise_add(v2, binary.bin_test_func).new()
-    result = Vector.from_values([0, 1, 2, 3], [-1, 2, 3, -31], dtype=dtypes.INT32)
+    result = Vector.from_coo([0, 1, 2, 3], [-1, 2, 3, -31], dtype=dtypes.INT32)
     assert w.isequal(result)
 
 
@@ -556,10 +554,10 @@ def test_monoid_udf():
     if dtypes._supports_complex:
         comp_set.update({FC32, FC64})
     assert set(monoid.plus_plus_one.types) == comp_set
-    v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
-    v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
+    v1 = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v2 = Vector.from_coo([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
     w = v1.ewise_add(v2, monoid.plus_plus_one).new()
-    result = Vector.from_values([0, 1, 2, 3], [4, 2, 3, 4], dtype=dtypes.INT32)
+    result = Vector.from_coo([0, 1, 2, 3], [4, 2, 3, 4], dtype=dtypes.INT32)
     assert w.isequal(result)
 
     with pytest.raises(DomainMismatch):
@@ -574,30 +572,30 @@ def test_semiring_udf():
 
     BinaryOp.register_new("plus_plus_two", plus_plus_two)
     Semiring.register_new("extra_twos", monoid.plus, binary.plus_plus_two)
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
-    A = Matrix.from_values(
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    A = Matrix.from_coo(
         [0, 0, 0, 0, 3, 3, 3, 3],
         [0, 1, 2, 3, 0, 1, 2, 3],
         [2, 3, 4, 5, 6, 7, 8, 9],
         dtype=dtypes.INT32,
     )
     w = v.vxm(A, semiring.extra_twos).new()
-    result = Vector.from_values([0, 1, 2, 3], [9, 11, 13, 15], dtype=dtypes.INT32)
+    result = Vector.from_coo([0, 1, 2, 3], [9, 11, 13, 15], dtype=dtypes.INT32)
     assert w.isequal(result)
 
 
 def test_binary_updates():
     assert not hasattr(binary, "div")
     assert binary.cdiv["INT64"].gb_obj == lib.GrB_DIV_INT64
-    vec1 = Vector.from_values([0], [1], dtype=dtypes.INT64)
-    vec2 = Vector.from_values([0], [2], dtype=dtypes.INT64)
+    vec1 = Vector.from_coo([0], [1], dtype=dtypes.INT64)
+    vec2 = Vector.from_coo([0], [2], dtype=dtypes.INT64)
     result = vec1.ewise_mult(vec2, binary.truediv).new()
-    assert result.isclose(Vector.from_values([0], [0.5], dtype=dtypes.FP64), check_dtype=True)
-    vec4 = Vector.from_values([0], [-3], dtype=dtypes.INT64)
+    assert result.isclose(Vector.from_coo([0], [0.5], dtype=dtypes.FP64), check_dtype=True)
+    vec4 = Vector.from_coo([0], [-3], dtype=dtypes.INT64)
     result2 = vec4.ewise_mult(vec2, binary.cdiv).new()
-    assert result2.isequal(Vector.from_values([0], [-1], dtype=dtypes.INT64), check_dtype=True)
+    assert result2.isequal(Vector.from_coo([0], [-1], dtype=dtypes.INT64), check_dtype=True)
     result3 = vec4.ewise_mult(vec2, binary.floordiv).new()
-    assert result3.isequal(Vector.from_values([0], [-2], dtype=dtypes.INT64), check_dtype=True)
+    assert result3.isequal(Vector.from_coo([0], [-2], dtype=dtypes.INT64), check_dtype=True)
 
 
 @pytest.mark.slow
@@ -626,9 +624,9 @@ def test_nested_names():
         comp_set.update({FC32, FC64})
     assert set(unary.incrementers.plus_three.types) == comp_set
 
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.incrementers.plus_three)
-    result = Vector.from_values([0, 1, 3], [4, 5, -1], dtype=dtypes.INT32)
+    result = Vector.from_coo([0, 1, 3], [4, 5, -1], dtype=dtypes.INT32)
     assert v.isequal(result), v
 
     def plus_four(x):
@@ -638,7 +636,7 @@ def test_nested_names():
     assert hasattr(unary.incrementers, "plus_four")
     assert hasattr(op.incrementers, "plus_four")  # Also save it to `graphblas.op`!
     v << v.apply(unary.incrementers.plus_four)  # this is in addition to the plus_three earlier
-    result2 = Vector.from_values([0, 1, 3], [8, 9, 3], dtype=dtypes.INT32)
+    result2 = Vector.from_coo([0, 1, 3], [8, 9, 3], dtype=dtypes.INT32)
     assert v.isequal(result2), v
 
     def bad_will_overwrite_path(x):
@@ -849,8 +847,8 @@ def test_binaryop_superset_monoids():
 
 def test_div_semirings():
     assert not hasattr(semiring, "plus_div")
-    A1 = Matrix.from_values([0, 1], [0, 0], [-1, -3])
-    A2 = Matrix.from_values([0, 1], [0, 0], [2, 2])
+    A1 = Matrix.from_coo([0, 1], [0, 0], [-1, -3])
+    A2 = Matrix.from_coo([0, 1], [0, 0], [2, 2])
     result = A1.T.mxm(A2, semiring.plus_cdiv).new()
     assert result[0, 0].new() == -1
     assert result.dtype == dtypes.INT64
@@ -1116,7 +1114,7 @@ def test_udt():
     udt_getx = UnaryOp.register_anonymous(_udt_getx, "udt_getx", is_udt=True)
     assert udt in udt_getx
     result = v.apply(udt_getx).new()
-    expected = Vector.from_values([0, 1, 2], 0)
+    expected = Vector.from_coo([0, 1, 2], 0)
     assert result.isequal(expected)
 
     def _udt_index(val, idx, _, thunk):  # pragma: no cover (numba)
@@ -1127,7 +1125,7 @@ def test_udt():
     _udt_index = IndexUnaryOp.register_anonymous(_udt_index, "_udt_index", is_udt=True)
     assert udt in _udt_index
     result = v.apply(_udt_index, 3).new()
-    expected = Vector.from_values([0, 1, 2], [3, -3, -3])
+    expected = Vector.from_coo([0, 1, 2], [3, -3, -3])
     assert result.isequal(expected)
 
     def _udt_first(x, y):
@@ -1170,7 +1168,7 @@ def test_udt():
     assert result.isequal(expected)
 
     result = indexunary.rowindex(v).new()
-    assert result.isequal(Vector.from_values([0, 1, 2], [0, 1, 2]))
+    assert result.isequal(Vector.from_coo([0, 1, 2], [0, 1, 2]))
     result = select.rowle(v, 2).new()
     assert result.isequal(v)
 
@@ -1241,19 +1239,19 @@ def test_binaryop_commute_exists():
 
 
 def test_binom():
-    v = Vector.from_values([0, 1, 2], [3, 4, 5])
+    v = Vector.from_coo([0, 1, 2], [3, 4, 5])
     result = v.apply(binary.binom, 2).new()
-    expected = Vector.from_values([0, 1, 2], [3, 6, 10])
+    expected = Vector.from_coo([0, 1, 2], [3, 6, 10])
     assert result.isequal(expected)
     assert op.binom is binary.binom
 
 
 def test_builtins():
-    v1 = Vector.from_values([0, 1, 2], [1, 2, 3])
-    v2 = Vector.from_values([0, 1, 2], [3, 2, 1])
+    v1 = Vector.from_coo([0, 1, 2], [1, 2, 3])
+    v2 = Vector.from_coo([0, 1, 2], [3, 2, 1])
     result = v1.ewise_mult(v2, min).new()
-    expected = Vector.from_values([0, 1, 2], [1, 2, 1])
+    expected = Vector.from_coo([0, 1, 2], [1, 2, 1])
     assert result.isequal(expected)
     v1(max) << v2
-    expected = Vector.from_values([0, 1, 2], [3, 2, 3])
+    expected = Vector.from_coo([0, 1, 2], [3, 2, 3])
     assert v1.isequal(expected)

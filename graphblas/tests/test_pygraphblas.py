@@ -14,13 +14,13 @@ def test_pygraphblas_matrix():  # pragma: no cover (outdated)
         return
     import pygraphblas as pg
 
-    A = gb.Matrix.from_values([0, 1], [0, 1], [0, 1])
+    A = gb.Matrix.from_coo([0, 1], [0, 1], [0, 1])
     pgA = A.to_pygraphblas()
     assert isinstance(pgA, pg.Matrix)
     assert A.gb_obj is gb.core.NULL
     pgA += 1
     A2 = gb.Matrix.from_pygraphblas(pgA)
-    assert A2.isequal(gb.Matrix.from_values([0, 1], [0, 1], [1, 2]))
+    assert A2.isequal(gb.Matrix.from_coo([0, 1], [0, 1], [1, 2]))
     assert A.dtype == A2.dtype
 
 
@@ -30,13 +30,13 @@ def test_pygraphblas_vector():  # pragma: no cover (outdated)
         return
     import pygraphblas as pg
 
-    v = gb.Vector.from_values([0, 2], [0, 1])
+    v = gb.Vector.from_coo([0, 2], [0, 1])
     pgv = v.to_pygraphblas()
     assert isinstance(pgv, pg.Vector)
     assert v.gb_obj is gb.core.NULL
     pgv += 1
     v2 = gb.Vector.from_pygraphblas(pgv)
-    assert v2.isequal(gb.Vector.from_values([0, 2], [1, 2]))
+    assert v2.isequal(gb.Vector.from_coo([0, 2], [1, 2]))
     assert v.dtype == v2.dtype
 
 

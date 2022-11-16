@@ -62,7 +62,7 @@ def test_deserialize(extra):
 
 @pytest.mark.slow
 def test_serialize():
-    v = gb.Vector.from_values([1], 2)
+    v = gb.Vector.from_coo([1], 2)
 
     # unary_pickle = gb.core.operator.UnaryOp.register_new("unary_pickle", unarypickle)
     # binary_pickle = gb.core.operator.BinaryOp.register_new("binary_pickle", binarypickle)
@@ -81,8 +81,8 @@ def test_serialize():
         "scalar": gb.Scalar.from_value(2),
         "empty_scalar": gb.Scalar(bool),
         "vector": v,
-        "matrix": gb.Matrix.from_values([2], [3], 4),
-        "matrix.T": gb.Matrix.from_values([3], [4], 5).T,
+        "matrix": gb.Matrix.from_coo([2], [3], 4),
+        "matrix.T": gb.Matrix.from_coo([3], [4], 5).T,
         "vector.S": v.S,
         "vector.V": v.V,
         "~vector.S": ~v.S,
@@ -140,12 +140,12 @@ def test_serialize():
 
 
 def check_values(d):
-    v = gb.Vector.from_values([1], 2)
+    v = gb.Vector.from_coo([1], 2)
     assert d["scalar"].isequal(gb.Scalar.from_value(2), check_dtype=True)
     assert d["empty_scalar"].isequal(gb.Scalar(bool), check_dtype=True)
     assert d["vector"].isequal(v, check_dtype=True)
-    assert d["matrix"].isequal(gb.Matrix.from_values([2], [3], 4), check_dtype=True)
-    assert d["matrix.T"].isequal(gb.Matrix.from_values([3], [4], 5).T, check_dtype=True)
+    assert d["matrix"].isequal(gb.Matrix.from_coo([2], [3], 4), check_dtype=True)
+    assert d["matrix.T"].isequal(gb.Matrix.from_coo([3], [4], 5).T, check_dtype=True)
     assert type(d["vector.S"]) is gb.core.mask.StructuralMask
     assert d["vector.S"].parent.isequal(v, check_dtype=True)
     assert type(d["vector.V"]) is gb.core.mask.ValueMask

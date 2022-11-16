@@ -35,7 +35,7 @@ ffi_new = ffi.new
 
 
 def head(matrix, n=10, dtype=None, *, sort=False):
-    """Like ``matrix.to_values()``, but only returns the first n elements.
+    """Like ``matrix.to_coo()``, but only returns the first n elements.
 
     If sort is True, then the results will be sorted as appropriate for the internal format,
     otherwise the order of the result is not guaranteed.  Specifically, row-oriented formats
@@ -393,7 +393,7 @@ class ss:
         See Also
         --------
         Matrix.build
-        Matrix.from_values
+        Matrix.from_coo
         """
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
@@ -589,7 +589,7 @@ class ss:
 
         See Also
         --------
-        Matrix.to_values
+        Matrix.to_coo
         Matrix.ss.import_any
 
         Return values
@@ -772,7 +772,7 @@ class ss:
                     # the values are sorted or not.
                     parent.wait()
                 if self.is_iso:
-                    # Should we expose a way to do `to_values` without values?
+                    # Should we expose a way to do `to_coo` without values?
                     # Passing NULL for values is SuiteSparse-specific.
                     nvals = parent._nvals
                     rows = _CArray(size=nvals, name="&rows_array")
@@ -794,7 +794,7 @@ class ss:
                         "is_iso": True,
                     }
                 else:
-                    rows, columns, values = parent.to_values()
+                    rows, columns, values = parent.to_coo()
                     rv = {
                         "format": "coo",
                         "nrows": nrows,
@@ -3076,7 +3076,7 @@ class ss:
 
         See Also
         --------
-        Matrix.from_values
+        Matrix.from_coo
         Matrix.ss.export
         Matrix.ss.import_csr
         Matrix.ss.import_csc

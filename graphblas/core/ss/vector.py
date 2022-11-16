@@ -32,13 +32,13 @@ ffi_new = ffi.new
 
 
 def head(vector, n=10, dtype=None, *, sort=False):
-    """Like ``vector.to_values()``, but only returns the first n elements.
+    """Like ``vector.to_coo()``, but only returns the first n elements.
 
     If sort is True, then the results will be sorted by index, otherwise the order of the
     result is not guaranteed.  Formats full and bitmap should always return in sorted order.
     """
     if vector._nvals <= n:
-        return vector.to_values(dtype, sort=sort)
+        return vector.to_coo(dtype, sort=sort)
     if sort:
         vector.wait()
     if dtype is None:
@@ -288,7 +288,7 @@ class ss:
         See Also
         --------
         Vector.build
-        Vector.from_values
+        Vector.from_coo
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         scalar = _as_scalar(value, self._parent.dtype, is_cscalar=False)  # pragma: is_grbscalar
@@ -455,7 +455,7 @@ class ss:
 
         See Also
         --------
-        Vector.to_values
+        Vector.to_coo
         Vector.ss.import_any
 
         Return values
@@ -660,7 +660,7 @@ class ss:
 
         See Also
         --------
-        Vector.from_values
+        Vector.from_coo
         Vector.ss.export
         Vector.ss.import_sparse
         Vector.ss.import_bitmap

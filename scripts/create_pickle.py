@@ -13,7 +13,7 @@ from graphblas.tests.test_pickle import *
 
 
 def pickle1(filename):
-    v = gb.Vector.from_values([1], 2)
+    v = gb.Vector.from_coo([1], 2)
 
     unary_pickle = gb.core.operator.UnaryOp.register_new("unary_pickle", unarypickle)
     binary_pickle = gb.core.operator.BinaryOp.register_new("binary_pickle", binarypickle)
@@ -30,8 +30,8 @@ def pickle1(filename):
         "scalar": gb.Scalar.from_value(2),
         "empty_scalar": gb.Scalar.new(bool),
         "vector": v,
-        "matrix": gb.Matrix.from_values([2], [3], 4),
-        "matrix.T": gb.Matrix.from_values([3], [4], 5).T,
+        "matrix": gb.Matrix.from_coo([2], [3], 4),
+        "matrix.T": gb.Matrix.from_coo([3], [4], 5).T,
         "vector.S": v.S,
         "vector.V": v.V,
         "~vector.S": ~v.S,

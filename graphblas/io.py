@@ -90,7 +90,7 @@ def from_numpy(m):
         A = csr_array(m)
         _, size = A.shape
         dtype = _lookup_dtype(m.dtype)
-        return _Vector.from_values(A.indices, A.data, size=size, dtype=dtype)
+        return _Vector.from_coo(A.indices, A.data, size=size, dtype=dtype)
     A = coo_array(m)
     return from_scipy_sparse(A)
 
@@ -104,7 +104,7 @@ def from_scipy_sparse_matrix(m, *, dup_op=None, name=None):
     A = m.tocoo()
     nrows, ncols = A.shape
     dtype = _lookup_dtype(m.dtype)
-    return _Matrix.from_values(
+    return _Matrix.from_coo(
         A.row, A.col, A.data, nrows=nrows, ncols=ncols, dtype=dtype, dup_op=dup_op, name=name
     )
 
@@ -163,7 +163,7 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
         return _Matrix.from_csc(A.indptr, A.indices, A.data, nrows=nrows, name=name)
     if A.format != "coo":
         A = A.tocoo()
-    return _Matrix.from_values(
+    return _Matrix.from_coo(
         A.row, A.col, A.data, nrows=nrows, ncols=ncols, dtype=dtype, dup_op=dup_op, name=name
     )
 
@@ -197,7 +197,7 @@ def from_awkward(A, *, name=None):
     if len(shape) == 1:
         if format != "vec":
             raise ValueError(f"Invalid format for Vector: {format}")
-        return _Vector.from_values(
+        return _Vector.from_coo(
             A.indices.layout.data, A.values.layout.data, size=shape[0], name=name
         )
     nrows, ncols = shape
@@ -238,7 +238,7 @@ def to_networkx(m, edge_attribute="weight"):
     """
     import networkx as nx
 
-    rows, cols, vals = m.to_values()
+    rows, cols, vals = m.to_coo()
     rows = rows.tolist()
     cols = cols.tolist()
     G = nx.DiGraph()
@@ -285,14 +285,14 @@ def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover (deprecated)
     )
     format = format.lower()
     if _output_type(m) is _Vector:
-        indices, data = m.to_values()
+        indices, data = m.to_coo()
         if format == "csc":
             return ss.csc_matrix((data, indices, [0, len(data)]), shape=(m._size, 1))
         rv = ss.csr_matrix((data, indices, [0, len(data)]), shape=(1, m._size))
         if format == "csr":
             return rv
     else:
-        rows, cols, data = m.to_values()
+        rows, cols, data = m.to_coo()
         rv = ss.coo_matrix((data, (rows, cols)), shape=m.shape)
         if format == "coo":
             return rv
@@ -322,7 +322,7 @@ def to_scipy_sparse(A, format="csr"):
     if format not in {"bsr", "csr", "csc", "coo", "lil", "dia", "dok"}:
         raise ValueError(f"Invalid format: {format}")
     if _output_type(A) is _Vector:
-        indices, data = A.to_values()
+        indices, data = A.to_coo()
         if format == "csc":
             return ss.csc_array((data, indices, [0, len(data)]), shape=(A._size, 1))
         rv = ss.csr_array((data, indices, [0, len(data)]), shape=(1, A._size))
@@ -351,7 +351,7 @@ def to_scipy_sparse(A, format="csr"):
         indptr, rows, vals = A.to_csc()
         return ss.csc_array((vals, rows, indptr), shape=A.shape)
     else:
-        rows, cols, data = A.to_values()
+        rows, cols, data = A.to_coo()
         rv = ss.coo_array((data, (rows, cols)), shape=A.shape)
         if format == "coo":
             return rv
@@ -397,7 +397,7 @@ def to_awkward(A, format=None):
         if format != "vec":
             raise ValueError(f"Invalid format for Vector: {format}")
         size = A.nvals
-        indices, values = A.to_values()
+        indices, values = A.to_coo()
         form = RecordForm(
             contents=[
                 NumpyForm(A.dtype.numba_type.name, form_key="node1"),
@@ -501,7 +501,7 @@ def mmread(source, *, dup_op=None, name=None):
     array = mmread(source)
     if isspmatrix_coo(array):
         nrows, ncols = array.shape
-        return _Matrix.from_values(
+        return _Matrix.from_coo(
             array.row, array.col, array.data, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
         )
     if _backend == "suitesparse":

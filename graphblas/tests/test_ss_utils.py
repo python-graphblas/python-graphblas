@@ -18,9 +18,9 @@ def test_vector_head(do_iso):
         values1 = [10, 20, 30]
         values2 = [2, 4, 6]
         values3 = [1, 2, 3]
-    v1 = Vector.from_values([0, 1, 2], values1)  # full
-    v2 = Vector.from_values([1, 3, 5], values2)  # bitmap
-    v3 = Vector.from_values([100, 200, 300], values3)  # sparse
+    v1 = Vector.from_coo([0, 1, 2], values1)  # full
+    v2 = Vector.from_coo([1, 3, 5], values2)  # bitmap
+    v3 = Vector.from_coo([100, 200, 300], values3)  # sparse
     assert v1.ss.export()["format"] == "full"
     assert v2.ss.export()["format"] == "bitmap"
     assert v3.ss.export()["format"] == "sparse"
@@ -71,10 +71,10 @@ def test_matrix_head(do_iso):
         values2 = [1, 2, 4]
         values3 = values4 = [1, 2, 3]
 
-    A1 = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], values1)  # fullr
-    A2 = Matrix.from_values([0, 0, 1], [0, 1, 1], values2)  # Bitmap
-    A3 = Matrix.from_values([5, 5, 10], [4, 5, 10], values3)  # CSR
-    A4 = Matrix.from_values([500, 500, 1000], [400, 500, 1000], values4)  # HyperCSR
+    A1 = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], values1)  # fullr
+    A2 = Matrix.from_coo([0, 0, 1], [0, 1, 1], values2)  # Bitmap
+    A3 = Matrix.from_coo([5, 5, 10], [4, 5, 10], values3)  # CSR
+    A4 = Matrix.from_coo([500, 500, 1000], [400, 500, 1000], values4)  # HyperCSR
     d = A1.ss.export(raw=True)
     assert d["format"] == "fullr"
     d["format"] = "fullc"

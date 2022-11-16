@@ -96,6 +96,7 @@ class VectorInfixExpr(InfixExprBase):
     select = wrapdoc(Vector.select)(property(automethods.select))
     if backend == "suitesparse":
         ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))

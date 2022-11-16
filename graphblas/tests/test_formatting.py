@@ -85,17 +85,17 @@ def html_printer(x, name="", indent=4):
 
 @pytest.fixture
 def A():
-    return Matrix.from_values([0, 0, 0], [0, 2, 4], [0, 1, 2], nrows=1, ncols=5, name="A_1")
+    return Matrix.from_coo([0, 0, 0], [0, 2, 4], [0, 1, 2], nrows=1, ncols=5, name="A_1")
 
 
 @pytest.fixture
 def B():
-    return Matrix.from_values([0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1, name="B_1")
+    return Matrix.from_coo([0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1, name="B_1")
 
 
 @pytest.fixture
 def C():
-    return Matrix.from_values(
+    return Matrix.from_coo(
         [0, 9, 60, 69, 0, 9, 60, 69],
         [4, 4, 4, 4, 72, 72, 72, 72],
         [0, 2, 3, 4, 5, 6, 7, 8],
@@ -107,7 +107,7 @@ def C():
 
 @pytest.fixture
 def D():
-    return Matrix.from_values(
+    return Matrix.from_coo(
         [0, 9, 60, 69],
         [4, 4, 4, 4],
         [True, False, True, False],
@@ -118,12 +118,12 @@ def D():
 
 @pytest.fixture
 def v():
-    return Vector.from_values([0, 2, 4], [0.0, 1.1, 2.2], name="v")
+    return Vector.from_coo([0, 2, 4], [0.0, 1.1, 2.2], name="v")
 
 
 @pytest.fixture
 def w():
-    return Vector.from_values([0, 5, 64, 69], [1, 2, 3, 4], size=77, name="w")
+    return Vector.from_coo([0, 5, 64, 69], [1, 2, 3, 4], size=77, name="w")
 
 
 @pytest.fixture
@@ -3400,7 +3400,7 @@ def test_vector_huge_html():
 
 @pytest.mark.skipif("not pd")
 def test_sparse_vector_repr():
-    v = Vector.from_values([100 * i for i in range(100)], [10 * i for i in range(100)], name="v")
+    v = Vector.from_coo([100 * i for i in range(100)], [10 * i for i in range(100)], name="v")
     repr_printer(v, "v")
     assert repr(v) == (
         '"v"        nvals  size  dtype  format\n'
@@ -3554,7 +3554,7 @@ def test_sparse_vector_repr():
 
 @pytest.mark.skipif("not pd")
 def test_sparse_matrix_repr():
-    A = Matrix.from_values(
+    A = Matrix.from_coo(
         [100 * i for i in range(100)], [10 * i for i in range(100)], list(range(100)), name="A"
     )
     repr_printer(A, "A")
@@ -4471,7 +4471,7 @@ def test_autocompute_html(A, B, v):
 
 @pytest.mark.skipif("not pd")
 def test_display_nan():
-    v = Vector.from_values([0, 1], [1.0, np.nan], size=3, name="v")
+    v = Vector.from_coo([0, 1], [1.0, np.nan], size=3, name="v")
     repr_printer(v, "v")
     assert repr(v) == (
         '"v"        nvals  size  dtype  format\n'
@@ -4535,7 +4535,7 @@ def test_display_nan():
         "</table>\n"
         "</div></details></div>"
     )
-    A = Matrix.from_values([0, 0], [0, 1], [1.0, np.nan], ncols=3, nrows=2, name="A")
+    A = Matrix.from_coo([0, 0], [0, 1], [1.0, np.nan], ncols=3, nrows=2, name="A")
     repr_printer(A, "A")
     assert repr(A) == (
         '"A"        nvals  nrows  ncols  dtype   format\n'

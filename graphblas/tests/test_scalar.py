@@ -316,7 +316,7 @@ def test_wait(s):
 
 @autocompute
 def test_expr_is_like_scalar(s):
-    v = Vector.from_values([1], [2])
+    v = Vector.from_coo([1], [2])
     attrs = {attr for attr, val in inspect.getmembers(s)}
     expr_attrs = {attr for attr, val in inspect.getmembers(v.inner(v))}
     infix_attrs = {attr for attr, val in inspect.getmembers(v @ v)}
@@ -351,7 +351,7 @@ def test_expr_is_like_scalar(s):
 
 @autocompute
 def test_index_expr_is_like_scalar(s):
-    v = Vector.from_values([1], [2])
+    v = Vector.from_coo([1], [2])
     attrs = {attr for attr, val in inspect.getmembers(s)}
     expr_attrs = {attr for attr, val in inspect.getmembers(v[0])}
     # Should we make any of these raise informative errors?
@@ -381,7 +381,7 @@ def test_index_expr_is_like_scalar(s):
 
 def test_ndim(s):
     assert s.ndim == 0
-    v = Vector.from_values([1], [2])
+    v = Vector.from_coo([1], [2])
     assert v.inner(v).ndim == 0
     assert (v @ v).ndim == 0
 
@@ -422,7 +422,7 @@ def test_scalar_complex(dtype):
 
 @autocompute
 def test_scalar_expr(s):
-    v = Vector.from_values([1], [2])
+    v = Vector.from_coo([1], [2])
     expr = v.inner(v)
     t = expr._new_scalar(s.dtype)
     assert t.is_cscalar is s.is_cscalar
@@ -451,13 +451,13 @@ def test_sizeof(s):
 def test_ss_concat(s):
     empty = Scalar(int)
     v = gb.ss.concat([s, s, empty])
-    expected = Vector.from_values([0, 1], 5, size=3)
+    expected = Vector.from_coo([0, 1], 5, size=3)
     assert v.isequal(expected)
     A = gb.ss.concat([[s, s, empty]])
-    expected = Matrix.from_values([0, 0], [0, 1], 5, nrows=1, ncols=3)
+    expected = Matrix.from_coo([0, 0], [0, 1], 5, nrows=1, ncols=3)
     assert A.isequal(expected)
     A = gb.ss.concat([[s], [s], [empty]])
-    expected = Matrix.from_values([0, 1], [0, 0], 5, nrows=3, ncols=1)
+    expected = Matrix.from_coo([0, 1], [0, 0], 5, nrows=3, ncols=1)
     assert A.isequal(expected)
 
 

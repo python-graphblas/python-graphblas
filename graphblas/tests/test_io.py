@@ -28,7 +28,7 @@ suitesparse = gb.backend == "suitesparse"
 def test_vector_to_from_numpy():
     a = np.array([0.0, 2.0, 4.1])
     v = gb.io.from_numpy(a)
-    assert v.isequal(gb.Vector.from_values([1, 2], [2.0, 4.1]), check_dtype=True)
+    assert v.isequal(gb.Vector.from_coo([1, 2], [2.0, 4.1]), check_dtype=True)
     a2 = gb.io.to_numpy(v)
     np.testing.assert_array_equal(a, a2)
 
@@ -71,7 +71,7 @@ def test_vector_to_from_numpy_correct_size(a):
 def test_matrix_to_from_numpy():
     a = np.array([[1.0, 0.0], [2.0, 3.7]])
     M = gb.io.from_numpy(a)
-    assert M.isequal(gb.Matrix.from_values([0, 1, 1], [0, 0, 1], [1.0, 2.0, 3.7]), check_dtype=True)
+    assert M.isequal(gb.Matrix.from_coo([0, 1, 1], [0, 0, 1], [1.0, 2.0, 3.7]), check_dtype=True)
     a2 = gb.io.to_numpy(M)
     np.testing.assert_array_equal(a, a2)
 
@@ -92,7 +92,7 @@ def test_matrix_to_from_numpy():
 
 @pytest.mark.skipif("not nx or not ss")
 def test_matrix_to_from_networkx():
-    M = gb.Matrix.from_values([0, 1, 1], [0, 0, 1], [1, 2, 3])
+    M = gb.Matrix.from_coo([0, 1, 1], [0, 0, 1], [1, 2, 3])
     G = gb.io.to_networkx(M)
     a = np.array([[1, 0], [2, 3]])
     G2 = nx.from_numpy_array(a, create_using=nx.DiGraph)
@@ -131,7 +131,7 @@ def test_matrix_to_from_networkx():
     if suitesparse:
         assert M.ss.is_iso
     rows, cols = zip(*edges)
-    expected = gb.Matrix.from_values(rows, cols, 1)
+    expected = gb.Matrix.from_coo(rows, cols, 1)
     assert expected.isequal(M)
     # Test empty
     G = nx.DiGraph()
@@ -161,33 +161,33 @@ def test_mmread_mmwrite():
     examples = {
         "_32bit_integer_dense_example": (
             False,
-            Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [p311, p311, p312, p312]),
+            Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [p311, p311, p312, p312]),
         ),
         "_32bit_integer_sparse_example": (
             False,
-            Matrix.from_values([0, 1], [0, 1], [p311, p312]),
+            Matrix.from_coo([0, 1], [0, 1], [p311, p312]),
         ),
         "_64bit_integer_dense_example": (
             False,
-            Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [p31, m31, m632, p631]),
+            Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [p31, m31, m632, p631]),
         ),
         "_64bit_integer_sparse_general_example": (
             False,
-            Matrix.from_values([0, 0, 1], [0, 1, 1], [p31, p631, p631]),
+            Matrix.from_coo([0, 0, 1], [0, 1, 1], [p31, p631, p631]),
         ),
         "_64bit_integer_sparse_symmetric_example": (
             False,
-            Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [p31, m631, m631, p631]),
+            Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [p31, m631, m631, p631]),
         ),
         "_64bit_integer_sparse_skew_example": (
             False,
-            Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [p31, m631, p631, p631]),
+            Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [p31, m631, p631, p631]),
         ),
         "_over64bit_integer_dense_example": (True, None),
         "_over64bit_integer_sparse_example": (True, None),
         "_general_example": (
             False,
-            Matrix.from_values(
+            Matrix.from_coo(
                 [0, 0, 1, 2, 3, 3, 3, 4],
                 [0, 3, 1, 2, 1, 3, 4, 4],
                 [1, 6, 10.5, 0.015, 250.5, -280, 33.32, 12],
@@ -195,7 +195,7 @@ def test_mmread_mmwrite():
         ),
         "_skew_example": (
             False,
-            Matrix.from_values(
+            Matrix.from_coo(
                 [0, 1, 1, 2, 3, 3, 3, 4, 4],
                 [0, 1, 3, 2, 1, 3, 4, 3, 4],
                 [1, 10.5, -250.5, 0.015, 250.5, -280, 0, 0, 12],
@@ -203,7 +203,7 @@ def test_mmread_mmwrite():
         ),
         "_symmetric_example": (
             False,
-            Matrix.from_values(
+            Matrix.from_coo(
                 [0, 1, 1, 2, 3, 3, 3, 4, 4],
                 [0, 1, 3, 2, 1, 3, 4, 3, 4],
                 [1, 10.5, 250.5, 0.015, 250.5, -280, 8, 8, 12],
@@ -211,7 +211,7 @@ def test_mmread_mmwrite():
         ),
         "_symmetric_pattern_example": (
             False,
-            Matrix.from_values(
+            Matrix.from_coo(
                 [0, 1, 1, 2, 3, 3, 3, 4, 4],
                 [0, 1, 3, 2, 1, 3, 4, 3, 4],
                 [1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -219,7 +219,7 @@ def test_mmread_mmwrite():
         ),
         "_empty_lines_example": (
             False,
-            Matrix.from_values(
+            Matrix.from_coo(
                 [0, 0, 1, 2, 3, 3, 3, 4],
                 [0, 3, 1, 2, 1, 3, 4, 4],
                 [1, 6, 10.5, 0.015, 250.5, -280, 33.32, 12],
@@ -229,7 +229,7 @@ def test_mmread_mmwrite():
     if dtypes._supports_complex:
         examples["_hermitian_example"] = (
             False,
-            Matrix.from_values(
+            Matrix.from_coo(
                 [0, 1, 1, 2, 3, 3, 3, 4, 4],
                 [0, 1, 3, 2, 1, 3, 4, 3, 4],
                 [1, 10.5, 250.5 - 22.22j, 0.015, 250.5 + 22.22j, -280, -33.32j, 33.32j, 12],
@@ -279,7 +279,7 @@ def test_from_scipy_sparse_duplicates():
     with pytest.raises(ValueError, match="Duplicate indices found"):
         gb.io.from_scipy_sparse(a)
     a2 = gb.io.from_scipy_sparse(a, dup_op=gb.binary.plus)
-    expected = gb.Matrix.from_values([0, 1, 2], [2, 1, 0], [1, 2, 7])
+    expected = gb.Matrix.from_coo([0, 1, 2], [2, 1, 0], [1, 2, 7])
     assert a2.isequal(expected)
     with pytest.warns(DeprecationWarning):
         a3 = gb.io.from_scipy_sparse_matrix(a, dup_op=gb.binary.plus)
@@ -300,7 +300,7 @@ def test_matrix_market_sparse_duplicates():
         gb.io.mmread(mm)
     mm.seek(0)
     a = gb.io.mmread(mm, dup_op=gb.binary.plus)
-    expected = gb.Matrix.from_values([0, 1, 2], [2, 1, 0], [1, 2, 7])
+    expected = gb.Matrix.from_coo([0, 1, 2], [2, 1, 0], [1, 2, 7])
     assert a.isequal(expected)
 
 
@@ -324,7 +324,7 @@ def test_scipy_sparse():
 @pytest.mark.skipif("not ak")
 def test_awkward_roundtrip():
     # Vector
-    v = gb.Vector.from_values([1, 3, 5], [20, 21, -5], size=22)
+    v = gb.Vector.from_coo([1, 3, 5], [20, 21, -5], size=22)
     for dtype in ["int16", "float32", "bool"]:
         v1 = v.dup(dtype=dtype)
         kv = gb.io.to_awkward(v1)
@@ -332,7 +332,7 @@ def test_awkward_roundtrip():
         v2 = gb.io.from_awkward(kv)
         assert v2.isequal(v1)
     # Matrix
-    m = gb.Matrix.from_values([0, 0, 3, 5], [1, 4, 0, 2], [1, 0, 2, -1], nrows=7, ncols=6)
+    m = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 0, 2, -1], nrows=7, ncols=6)
     for dtype in ["int16", "float32", "bool"]:
         for format in ["csr", "csc", "hypercsr", "hypercsc"]:
             m1 = m.dup(dtype=dtype)
@@ -345,7 +345,7 @@ def test_awkward_roundtrip():
 @pytest.mark.skipif("not ak")
 def test_awkward_iso_roundtrip():
     # Vector
-    v = gb.Vector.from_values([1, 3, 5], [20, 20, 20], size=22)
+    v = gb.Vector.from_coo([1, 3, 5], [20, 20, 20], size=22)
     if suitesparse:
         assert v.ss.is_iso
     kv = gb.io.to_awkward(v)
@@ -353,7 +353,7 @@ def test_awkward_iso_roundtrip():
     v2 = gb.io.from_awkward(kv)
     assert v2.isequal(v)
     # Matrix
-    m = gb.Matrix.from_values([0, 0, 3, 5], [1, 4, 0, 2], [1, 1, 1, 1], nrows=7, ncols=6)
+    m = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 1, 1, 1], nrows=7, ncols=6)
     if suitesparse:
         assert m.ss.is_iso
     for format in ["csr", "csc", "hypercsr", "hypercsc"]:
@@ -365,8 +365,8 @@ def test_awkward_iso_roundtrip():
 
 @pytest.mark.skipif("not ak")
 def test_awkward_errors():
-    v = gb.Vector.from_values([1, 3, 5], [20, 20, 20], size=22)
-    m = gb.Matrix.from_values([0, 0, 3, 5], [1, 4, 0, 2], [1, 1, 1, 1], nrows=7, ncols=6)
+    v = gb.Vector.from_coo([1, 3, 5], [20, 20, 20], size=22)
+    m = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 1, 1, 1], nrows=7, ncols=6)
     with pytest.raises(ValueError, match="Missing parameters"):
         gb.io.from_awkward(ak.Array([1, 2, 3]))
     with pytest.raises(ValueError, match="Invalid format for Vector"):

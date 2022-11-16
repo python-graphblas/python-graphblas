@@ -26,10 +26,10 @@ a Vector is treated as an nx1 column matrix.
 
 .. code-block:: python
 
-    A = gb.Matrix.from_values([0, 0, 1, 1, 2], [1, 2, 2, 3, 3],
-                              [2., 5., 1.5, 4.25, 0.5], nrows=4, ncols=4)
-    B = gb.Matrix.from_values([0, 0, 1, 1, 2, 2, 3, 3], [1, 2, 0, 1, 1, 2, 0, 1],
-                              [3., 2., 9., 6., 3., 1., 0., 5.])
+    A = gb.Matrix.from_coo([0, 0, 1, 1, 2], [1, 2, 2, 3, 3],
+                           [2., 5., 1.5, 4.25, 0.5], nrows=4, ncols=4)
+    B = gb.Matrix.from_coo([0, 0, 1, 1, 2, 2, 3, 3], [1, 2, 0, 1, 1, 2, 0, 1],
+                           [3., 2., 9., 6., 3., 1., 0., 5.])
 
     # These are equivalent
     C << A.mxm(B, op='min_plus')  # method style
@@ -66,9 +66,9 @@ a Vector is treated as an nx1 column matrix.
 
 .. code-block:: python
 
-    A = gb.Matrix.from_values([0, 0, 1, 1, 2], [1, 2, 2, 3, 3],
-                              [2., 5., 1.5, 4.25, 0.5], nrows=4, ncols=4)
-    v = gb.Vector.from_values([0, 1, 3], [10., 20., 40.])
+    A = gb.Matrix.from_coo([0, 0, 1, 1, 2], [1, 2, 2, 3, 3],
+                           [2., 5., 1.5, 4.25, 0.5], nrows=4, ncols=4)
+    v = gb.Vector.from_coo([0, 1, 3], [10., 20., 40.])
 
     # These are equivalent
     w << A.mxv(v, op='plus_times')  # method style
@@ -99,9 +99,9 @@ a Vector is treated as an nx1 column matrix.
 
 .. code-block:: python
 
-    v = gb.Vector.from_values([0, 1, 3], [10., 20., 40.])
-    B = gb.Matrix.from_values([0, 0, 1, 1, 2, 2, 3, 3], [1, 2, 0, 1, 1, 2, 0, 1],
-                              [3., 2., 9., 6., 3., 1., 0., 5.])
+    v = gb.Vector.from_coo([0, 1, 3], [10., 20., 40.])
+    B = gb.Matrix.from_coo([0, 0, 1, 1, 2, 2, 3, 3], [1, 2, 0, 1, 1, 2, 0, 1],
+                           [3., 2., 9., 6., 3., 1., 0., 5.])
 
     # These are equivalent
     u << v.vxm(B, op='plus_plus')  # method style
@@ -145,10 +145,10 @@ Example usage:
 
 .. code-block:: python
 
-    A = gb.Matrix.from_values([0, 0, 1, 1, 2], [1, 2, 0, 2, 1],
-                              [2.0, 5.0, 1.5, 4.0, 0.5])
-    B = gb.Matrix.from_values([0, 0, 1, 1, 2, 2], [1, 2, 0, 1, 1, 2],
-                              [3., -2., 0., 6., 3., 1.])
+    A = gb.Matrix.from_coo([0, 0, 1, 1, 2], [1, 2, 0, 2, 1],
+                           [2.0, 5.0, 1.5, 4.0, 0.5])
+    B = gb.Matrix.from_coo([0, 0, 1, 1, 2, 2], [1, 2, 0, 1, 1, 2],
+                           [3., -2., 0., 6., 3., 1.])
 
     # These are equivalent
     C << A.ewise_mult(B, op='min')  # method style
@@ -221,10 +221,10 @@ should be used with the functional syntax, ``left_default`` and ``right_default`
 
 .. code-block:: python
 
-    A = gb.Matrix.from_values([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 2],
-                              [9.0, 2.0, 5.0, 1.5, 4.0], nrows=3)
-    B = gb.Matrix.from_values([0, 0, 0, 2, 2, 2], [0, 1, 2, 0, 1, 2],
-                              [4., 0., -2., 6., 3., 1.])
+    A = gb.Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 2],
+                           [9.0, 2.0, 5.0, 1.5, 4.0], nrows=3)
+    B = gb.Matrix.from_coo([0, 0, 0, 2, 2, 2], [0, 1, 2, 0, 1, 2],
+                           [4., 0., -2., 6., 3., 1.])
 
     # These are equivalent
     C << A.ewise_add(B, op='minus')  # method style
@@ -258,10 +258,10 @@ should be used with the functional syntax, ``left_default`` and ``right_default`
 
 .. code-block:: python
 
-    A = gb.Matrix.from_values([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 2],
-                              [9.0, 2.0, 5.0, 1.5, 4.0], nrows=3)
-    B = gb.Matrix.from_values([0, 0, 0, 2, 2, 2], [0, 1, 2, 0, 1, 2],
-                              [4., 0., -2., 6., 3., 1.])
+    A = gb.Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 2],
+                           [9.0, 2.0, 5.0, 1.5, 4.0], nrows=3)
+    B = gb.Matrix.from_coo([0, 0, 0, 2, 2, 2], [0, 1, 2, 0, 1, 2],
+                           [4., 0., -2., 6., 3., 1.])
 
     # These are equivalent
     C << A.ewise_union(B, op='minus', left_default=0, right_default=0)  # method style
@@ -314,7 +314,7 @@ Vector Slice Example:
 
 .. code-block:: python
 
-    v = gb.Vector.from_values([0, 1, 3, 4, 6], [10., 2., 40., -5., 24.])
+    v = gb.Vector.from_coo([0, 1, 3, 4, 6], [10., 2., 40., -5., 24.])
 
     w << v[:4]
 
@@ -334,8 +334,8 @@ Matrix List Example:
 
 .. code-block:: python
 
-    A = gb.Matrix.from_values([0, 0, 1, 1, 2, 2], [1, 2, 0, 1, 0, 2],
-                              [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
+    A = gb.Matrix.from_coo([0, 0, 1, 1, 2, 2], [1, 2, 0, 1, 0, 2],
+                           [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
 
     C << A[[0, 2], :]
 
@@ -374,10 +374,10 @@ Matrix-Matrix Assignment Example:
 
 .. code-block:: python
 
-    A = gb.Matrix.from_values([0, 0, 1, 1, 2, 2], [1, 2, 0, 1, 0, 2],
-                              [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
-    B = gb.Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1]
-                              [-99., -98., -97., -96.])
+    A = gb.Matrix.from_coo([0, 0, 1, 1, 2, 2], [1, 2, 0, 1, 0, 2],
+                           [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
+    B = gb.Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1]
+                           [-99., -98., -97., -96.])
 
     A[::2, ::2] << B
 
@@ -408,9 +408,9 @@ Matrix-Vector Assignment Example:
 
 .. code-block:: python
 
-    A = gb.Matrix.from_values([0, 0, 1, 1, 2, 2], [1, 2, 0, 1, 0, 2],
-                              [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
-    v = gb.Vector.from_values([2], [-99.])
+    A = gb.Matrix.from_coo([0, 0, 1, 1, 2, 2], [1, 2, 0, 1, 0, 2],
+                           [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
+    v = gb.Vector.from_coo([2], [-99.])
 
     A[1, :] << v
 
@@ -440,7 +440,7 @@ Vector-Scalar Assignment Example:
 
 .. code-block:: python
 
-    v = gb.Vector.from_values([0, 1, 3, 4, 6], [10, 2, 40, -5, 24])
+    v = gb.Vector.from_coo([0, 1, 3, 4, 6], [10, 2, 40, -5, 24])
 
     v[:4] << 99
 
@@ -472,7 +472,7 @@ function with the collection as the argument.
 
 .. code-block:: python
 
-    v = gb.Vector.from_values([0, 1, 3], [10., 20., 40.])
+    v = gb.Vector.from_coo([0, 1, 3], [10., 20., 40.])
 
     # These are equivalent
     w << v.apply(gb.unary.minv)
@@ -494,7 +494,7 @@ function with the collection as the argument.
 
 .. code-block:: python
 
-    v = gb.Vector.from_values([0, 1, 3], [10., 20., 40.])
+    v = gb.Vector.from_coo([0, 1, 3], [10., 20., 40.])
 
     # These are equivalent
     w << v.apply(gb.indexunary.index)
@@ -516,7 +516,7 @@ function with the collection as the argument.
 
 .. code-block:: python
 
-    v = gb.Vector.from_values([0, 1, 3], [10., 20., 40.])
+    v = gb.Vector.from_coo([0, 1, 3], [10., 20., 40.])
 
     # These are all equivalent
     w << v.apply('minus', right=15)
@@ -546,8 +546,8 @@ Upper Triangle Example:
 
 .. code-block:: python
 
-    A = gb.Matrix.from_values([0, 0, 1, 1, 2, 2], [1, 2, 0, 2, 1, 2],
-                              [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
+    A = gb.Matrix.from_coo([0, 0, 1, 1, 2, 2], [1, 2, 0, 2, 1, 2],
+                           [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
 
     # These are equivalent
     C << A.select('triu')
@@ -573,7 +573,7 @@ Select by Value Example:
 
 .. code-block:: python
 
-    v = gb.Vector.from_values([0, 1, 3, 4, 6], [10., 2., 40., -5., 24.])
+    v = gb.Vector.from_coo([0, 1, 3, 4, 6], [10., 2., 40., -5., 24.])
 
     # These are equivalent
     w << v.select('>=', 5)
@@ -605,8 +605,8 @@ A monoid or aggregator is used to perform the reduction.
 
 .. code-block:: python
 
-    A = gb.Matrix.from_values([0, 0, 1, 1, 2, 2], [1, 3, 0, 1, 0, 1],
-                              [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
+    A = gb.Matrix.from_coo([0, 0, 1, 1, 2, 2], [1, 3, 0, 1, 0, 1],
+                           [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
 
     w << A.reduce_columnwise('times')
 
@@ -628,8 +628,8 @@ A monoid or aggregator is used to perform the reduction.
 
 .. code-block:: python
 
-    A = gb.Matrix.from_values([0, 0, 1, 1, 2, 2], [1, 3, 0, 1, 0, 1],
-                              [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
+    A = gb.Matrix.from_coo([0, 0, 1, 1, 2, 2], [1, 3, 0, 1, 0, 1],
+                           [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
 
     s << A.reduce_scalar('max')
 
@@ -651,7 +651,7 @@ A monoid or aggregator is used to perform the reduction.
 
 .. code-block:: python
 
-    v = gb.Vector.from_values([0, 1, 3, 4, 6], [10., 2., 40., -5., 24.])
+    v = gb.Vector.from_coo([0, 1, 3, 4, 6], [10., 2., 40., -5., 24.])
 
     # These are equivalent
     s << v.reduce('argmin')
@@ -679,8 +679,8 @@ To force the transpose to be computed by itself, use it by itself as the right-h
 
 .. code-block:: python
 
-    A = gb.Matrix.from_values([0, 0, 1, 1, 2, 2], [1, 3, 0, 1, 0, 2],
-                                [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
+    A = gb.Matrix.from_coo([0, 0, 1, 1, 2, 2], [1, 3, 0, 1, 0, 2],
+                           [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
 
     C << A.T
 
@@ -711,9 +711,9 @@ The Kronecker product uses a binary operator.
 
 .. code-block:: python
 
-    A = gb.Matrix.from_values([0, 0, 1], [0, 1, 0], [1., -2., 3.])
-    B = gb.Matrix.from_values([0, 0, 1, 1, 2, 2], [1, 2, 0, 1, 0, 2],
-                              [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
+    A = gb.Matrix.from_coo([0, 0, 1], [0, 1, 0], [1., -2., 3.])
+    B = gb.Matrix.from_coo([0, 0, 1, 1, 2, 2], [1, 2, 0, 1, 0, 2],
+                           [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
 
     C << A.kronecker(B, 'times')
 

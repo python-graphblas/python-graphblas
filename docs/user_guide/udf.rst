@@ -24,7 +24,7 @@ Example user-defined UnaryOp:
 
     UnaryOp.register_new('force_odd', force_odd_func)
 
-    v = Vector.from_values([0, 1, 3, 4, 5], [1, 2, 3, 8, 14])
+    v = Vector.from_coo([0, 1, 3, 4, 5], [1, 2, 3, 8, 14])
     w = v.apply(unary.force_odd).new()
 
 .. csv-table:: w

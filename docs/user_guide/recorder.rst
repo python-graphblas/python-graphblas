@@ -21,12 +21,12 @@ Instead, only the calls from the last iteration will be returned.
 
     # Create the graph and starting vector
     start_node = 0
-    G = Matrix.from_values(
+    G = Matrix.from_coo(
         [0, 0, 1, 1, 2],
         [1, 2, 2, 3, 3],
         [2.0, 5.0, 1.5, 4.25, 0.5],
         nrows=4, ncols=4)
-    v = Vector.from_values([start_node], [0.0], size=4)
+    v = Vector.from_coo([start_node], [0.0], size=4)
 
     # Compute SSSP
     while True:

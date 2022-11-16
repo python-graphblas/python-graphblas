@@ -43,13 +43,13 @@ def A():
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4],
     ]
-    return Matrix.from_values(*data)
+    return Matrix.from_coo(*data)
 
 
 @pytest.fixture
 def v():
     data = [[1, 3, 4, 6], [1, 1, 2, 0]]
-    return Vector.from_values(*data)
+    return Vector.from_coo(*data)
 
 
 def test_new():
@@ -71,15 +71,13 @@ def test_dup(A):
     A[0, 0] = 1000
     assert C[0, 0].new() != 1000
     # extended functionality
-    D = Matrix.from_values([0, 1], [0, 1], [0, 2.5], dtype=dtypes.FP64)
+    D = Matrix.from_coo([0, 1], [0, 1], [0, 2.5], dtype=dtypes.FP64)
     E = D.dup(dtype=dtypes.INT64)
-    assert E.isequal(
-        Matrix.from_values([0, 1], [0, 1], [0, 2], dtype=dtypes.INT64), check_dtype=True
-    )
+    assert E.isequal(Matrix.from_coo([0, 1], [0, 1], [0, 2], dtype=dtypes.INT64), check_dtype=True)
     E = D.dup(mask=D.V)
-    assert E.isequal(Matrix.from_values([1], [1], [2.5], dtype=dtypes.FP64), check_dtype=True)
+    assert E.isequal(Matrix.from_coo([1], [1], [2.5], dtype=dtypes.FP64), check_dtype=True)
     E = D.dup(dtype=dtypes.INT64, mask=D.V)
-    assert E.isequal(Matrix.from_values([1], [1], [2], dtype=dtypes.INT64), check_dtype=True)
+    assert E.isequal(Matrix.from_coo([1], [1], [2], dtype=dtypes.INT64), check_dtype=True)
 
 
 def test_dup_clear(A):
@@ -95,60 +93,60 @@ def test_dup_clear(A):
     assert D.ncols == A.ncols
 
 
-def test_from_values():
-    C = Matrix.from_values([0, 1, 3], [1, 1, 2], [True, False, True])
+def test_from_coo():
+    C = Matrix.from_coo([0, 1, 3], [1, 1, 2], [True, False, True])
     assert C.nrows == 4
     assert C.ncols == 3
     assert C.nvals == 3
     assert C.dtype == bool
-    C2 = Matrix.from_values([0, 1, 3], [1, 1, 2], [12.3, 12.4, 12.5], nrows=17, ncols=3)
+    C2 = Matrix.from_coo([0, 1, 3], [1, 1, 2], [12.3, 12.4, 12.5], nrows=17, ncols=3)
     assert C2.nrows == 17
     assert C2.ncols == 3
     assert C2.nvals == 3
     assert C2.dtype == float
-    C3 = Matrix.from_values([0, 1, 1], [2, 1, 1], [1, 2, 3], nrows=10, dup_op=binary.times)
+    C3 = Matrix.from_coo([0, 1, 1], [2, 1, 1], [1, 2, 3], nrows=10, dup_op=binary.times)
     assert C3.nrows == 10
     assert C3.ncols == 3
     assert C3.nvals == 2  # duplicates were combined
     assert C3.dtype == int
     assert C3[1, 1].new() == 6  # 2*3
-    C3monoid = Matrix.from_values([0, 1, 1], [2, 1, 1], [1, 2, 3], nrows=10, dup_op=monoid.times)
+    C3monoid = Matrix.from_coo([0, 1, 1], [2, 1, 1], [1, 2, 3], nrows=10, dup_op=monoid.times)
     assert C3.isequal(C3monoid)
 
     with pytest.raises(ValueError, match="Duplicate indices found"):
         # Duplicate indices requires a dup_op
-        Matrix.from_values([0, 1, 1], [2, 1, 1], [True, True, True])
+        Matrix.from_coo([0, 1, 1], [2, 1, 1], [True, True, True])
     with pytest.raises(IndexOutOfBound):
         # Specified ncols can't hold provided indexes
-        Matrix.from_values([0, 1, 3], [1, 1, 2], [12.3, 12.4, 12.5], nrows=17, ncols=2)
+        Matrix.from_coo([0, 1, 3], [1, 1, 2], [12.3, 12.4, 12.5], nrows=17, ncols=2)
     with pytest.raises(ValueError, match="No row indices provided. Unable to infer nrows."):
-        Matrix.from_values([], [], [])
+        Matrix.from_coo([], [], [])
 
     # Changed: Assume empty value is float64 (like numpy)
     # with pytest.raises(ValueError, match="No values provided. Unable to determine type"):
-    empty1 = Matrix.from_values([], [], [], nrows=3, ncols=4)
+    empty1 = Matrix.from_coo([], [], [], nrows=3, ncols=4)
     assert empty1.dtype == dtypes.FP64
     assert empty1.nrows == 3
     assert empty1.ncols == 4
     assert empty1.nvals == 0
 
     with pytest.raises(ValueError, match="Unable to infer"):
-        Matrix.from_values([], [], [], dtype=dtypes.INT64)
+        Matrix.from_coo([], [], [], dtype=dtypes.INT64)
     with pytest.raises(ValueError, match="Unable to infer"):
         # could also raise b/c rows and columns are different sizes
-        Matrix.from_values([0], [], [0], dtype=dtypes.INT64)
-    C4 = Matrix.from_values([], [], [], nrows=3, ncols=4, dtype=dtypes.INT64)
+        Matrix.from_coo([0], [], [0], dtype=dtypes.INT64)
+    C4 = Matrix.from_coo([], [], [], nrows=3, ncols=4, dtype=dtypes.INT64)
     C5 = Matrix(dtypes.INT64, nrows=3, ncols=4)
     assert C4.isequal(C5, check_dtype=True)
 
     with pytest.raises(
         ValueError, match="`rows` and `columns` and `values` lengths must match: 1, 2, 1"
     ):
-        Matrix.from_values([0], [1, 2], [0])
+        Matrix.from_coo([0], [1, 2], [0])
 
 
-def test_from_values_scalar():
-    C = Matrix.from_values([0, 1, 3], [1, 1, 2], 7)
+def test_from_coo_scalar():
+    C = Matrix.from_coo([0, 1, 3], [1, 1, 2], 7)
     assert C.nrows == 4
     assert C.ncols == 3
     assert C.nvals == 3
@@ -159,7 +157,7 @@ def test_from_values_scalar():
     assert C.reduce_scalar(monoid.any).new() == 7
 
     # iso drumps duplicates
-    C = Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7)
+    C = Matrix.from_coo([0, 1, 3, 0], [1, 1, 2, 1], 7)
     assert C.nrows == 4
     assert C.ncols == 3
     assert C.nvals == 3
@@ -169,7 +167,7 @@ def test_from_values_scalar():
         assert C.ss.iso_value == 7
     assert C.reduce_scalar(monoid.any).new() == 7
     with pytest.raises(ValueError, match="dup_op must be None"):
-        Matrix.from_values([0, 1, 3, 0], [1, 1, 2, 1], 7, dup_op=binary.plus)
+        Matrix.from_coo([0, 1, 3, 0], [1, 1, 2, 1], 7, dup_op=binary.plus)
     C[0, 0] = 0
     if suitesparse:
         with pytest.raises(ValueError, match="not iso"):
@@ -226,10 +224,10 @@ def test_build(A):
         A.build([0, 11], [0, 0], [1, 1])
     B = Matrix(int, nrows=2, ncols=2)
     B.build([0, 11], [0, 0], [1, 1], nrows=12)
-    assert B.isequal(Matrix.from_values([0, 11], [0, 0], [1, 1], ncols=2))
+    assert B.isequal(Matrix.from_coo([0, 11], [0, 0], [1, 1], ncols=2))
     C = Matrix(int, nrows=2, ncols=2)
     C.build([0, 0], [0, 11], [1, 1], ncols=12)
-    assert C.isequal(Matrix.from_values([0, 0], [0, 11], [1, 1], nrows=2))
+    assert C.isequal(Matrix.from_coo([0, 0], [0, 11], [1, 1], nrows=2))
 
 
 @pytest.mark.skipif("not suitesparse")
@@ -249,14 +247,14 @@ def test_ss_build_scalar(A):
 
 
 def test_extract_values(A):
-    rows, cols, vals = A.to_values(dtype=int)
+    rows, cols, vals = A.to_coo(dtype=int)
     np.testing.assert_array_equal(rows, (0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6))
     np.testing.assert_array_equal(cols, (1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4))
     np.testing.assert_array_equal(vals, (2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3))
     assert rows.dtype == np.uint64
     assert cols.dtype == np.uint64
     assert vals.dtype == np.int64
-    Trows, Tcols, Tvals = A.T.to_values(dtype=float)
+    Trows, Tcols, Tvals = A.T.to_coo(dtype=float)
     np.testing.assert_array_equal(rows, Tcols)
     np.testing.assert_array_equal(cols, Trows)
     np.testing.assert_array_equal(vals, Tvals)
@@ -299,7 +297,7 @@ def test_remove_element(A):
 
 def test_mxm(A):
     C = A.mxm(A, semiring.plus_times).new()
-    result = Matrix.from_values(
+    result = Matrix.from_coo(
         [0, 0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 3, 4, 5, 6, 6, 6],
         [0, 2, 4, 6, 2, 3, 4, 5, 2, 1, 3, 5, 2, 5, 0, 2, 5],
         [9, 9, 16, 8, 20, 28, 12, 56, 1, 6, 9, 3, 7, 1, 21, 21, 26],
@@ -310,14 +308,14 @@ def test_mxm(A):
 def test_mxm_transpose(A):
     C = A.dup()
     C << A.mxm(A.T, semiring.plus_times)
-    result = Matrix.from_values(
+    result = Matrix.from_coo(
         [0, 0, 1, 1, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6, 6, 6, 6, 6],
         [0, 6, 1, 6, 2, 4, 3, 5, 6, 2, 4, 3, 5, 6, 0, 1, 3, 5, 6],
         [13, 21, 80, 24, 1, 7, 18, 3, 15, 7, 49, 3, 1, 5, 21, 24, 15, 5, 83],
     )
     assert C.isequal(result)
     C << A.T.mxm(A, semiring.plus_times)
-    result2 = Matrix.from_values(
+    result2 = Matrix.from_coo(
         [0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 6, 6],
         [0, 2, 1, 3, 0, 2, 3, 4, 1, 2, 3, 4, 2, 3, 4, 6, 5, 4, 6],
         [9, 9, 4, 6, 9, 35, 35, 15, 6, 35, 58, 21, 15, 21, 73, 32, 50, 32, 16],
@@ -326,8 +324,8 @@ def test_mxm_transpose(A):
 
 
 def test_mxm_nonsquare():
-    A = Matrix.from_values([0, 0, 0], [0, 2, 4], [1, 2, 3], nrows=1, ncols=5)
-    B = Matrix.from_values([0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1)
+    A = Matrix.from_coo([0, 0, 0], [0, 2, 4], [1, 2, 3], nrows=1, ncols=5)
+    B = Matrix.from_coo([0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1)
     C = Matrix(A.dtype, nrows=1, ncols=1)
     C << A.mxm(B, semiring.max_plus)
     assert C[0, 0].new() == 33
@@ -339,11 +337,11 @@ def test_mxm_nonsquare():
 
 
 def test_mxm_mask(A):
-    val_mask = Matrix.from_values([0, 3, 4], [2, 3, 2], [True, True, True], nrows=7, ncols=7)
-    struct_mask = Matrix.from_values([0, 3, 4], [2, 3, 2], [1, 0, 0], nrows=7, ncols=7)
+    val_mask = Matrix.from_coo([0, 3, 4], [2, 3, 2], [True, True, True], nrows=7, ncols=7)
+    struct_mask = Matrix.from_coo([0, 3, 4], [2, 3, 2], [1, 0, 0], nrows=7, ncols=7)
     C = A.dup()
     C(val_mask.V) << A.mxm(A, semiring.plus_times)
-    result = Matrix.from_values(
+    result = Matrix.from_coo(
         [0, 0, 0, 1, 1, 2, 3, 3, 3, 4, 4, 5, 6, 6, 6],
         [1, 2, 3, 4, 6, 5, 0, 2, 3, 2, 5, 2, 2, 3, 4],
         [2, 9, 3, 8, 4, 1, 3, 3, 9, 7, 7, 1, 5, 7, 3],
@@ -351,7 +349,7 @@ def test_mxm_mask(A):
     assert C.isequal(result)
     C = A.dup()
     C(~val_mask.V) << A.mxm(A, semiring.plus_times)
-    result2 = Matrix.from_values(
+    result2 = Matrix.from_coo(
         [0, 0, 0, 1, 1, 1, 1, 2, 3, 3, 5, 6, 6, 6],
         [0, 4, 6, 2, 3, 4, 5, 2, 1, 5, 5, 0, 2, 5],
         [9, 16, 8, 20, 28, 12, 56, 1, 6, 3, 1, 21, 21, 26],
@@ -359,7 +357,7 @@ def test_mxm_mask(A):
     assert C.isequal(result2)
     C = A.dup()
     C(struct_mask.S, replace=True).update(A.mxm(A, semiring.plus_times))
-    result3 = Matrix.from_values([0, 3, 4], [2, 3, 2], [9, 9, 7], nrows=7, ncols=7)
+    result3 = Matrix.from_coo([0, 3, 4], [2, 3, 2], [9, 9, 7], nrows=7, ncols=7)
     assert C.isequal(result3)
     C2 = A.mxm(A, semiring.plus_times).new(mask=struct_mask.S)
     assert C2.isequal(result3)
@@ -370,7 +368,7 @@ def test_mxm_mask(A):
 def test_mxm_accum(A):
     A(binary.plus) << A.mxm(A, semiring.plus_times)
     # fmt: off
-    result = Matrix.from_values(
+    result = Matrix.from_coo(
         [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 3, 3, 3, 3, 3, 4, 4, 5, 5, 6, 6, 6, 6, 6],
         [0, 1, 2, 3, 4, 6, 2, 3, 4, 5, 6, 2, 5, 0, 1, 2, 3, 5, 2, 5, 2, 5, 0, 2, 3, 4, 5],
         [9, 2, 9, 3, 16, 8, 20, 28, 20, 56, 4, 1, 1, 3, 6, 3, 9, 3, 7, 7, 1, 1, 21, 26, 7, 3, 26],
@@ -381,14 +379,14 @@ def test_mxm_accum(A):
 
 def test_mxv(A, v):
     w = A.mxv(v, semiring.plus_times).new()
-    result = Vector.from_values([0, 1, 6], [5, 16, 13])
+    result = Vector.from_coo([0, 1, 6], [5, 16, 13])
     assert w.isequal(result)
 
 
 def test_ewise_mult(A):
     # Binary, Monoid, and Semiring
-    B = Matrix.from_values([0, 0, 5], [1, 2, 2], [5, 4, 8], nrows=7, ncols=7)
-    result = Matrix.from_values([0, 5], [1, 2], [10, 8], nrows=7, ncols=7)
+    B = Matrix.from_coo([0, 0, 5], [1, 2, 2], [5, 4, 8], nrows=7, ncols=7)
+    result = Matrix.from_coo([0, 5], [1, 2], [10, 8], nrows=7, ncols=7)
     C = A.ewise_mult(B, binary.times).new()
     assert C.isequal(result)
     C() << A.ewise_mult(B, monoid.times)
@@ -399,8 +397,8 @@ def test_ewise_mult(A):
 
 def test_ewise_add(A):
     # Binary, Monoid, and Semiring
-    B = Matrix.from_values([0, 0, 5], [1, 2, 2], [5, 4, 8], nrows=7, ncols=7)
-    result = Matrix.from_values(
+    B = Matrix.from_coo([0, 0, 5], [1, 2, 2], [5, 4, 8], nrows=7, ncols=7)
+    result = Matrix.from_coo(
         [0, 3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [2, 0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [4, 3, 5, 3, 8, 5, 3, 7, 8, 3, 1, 7, 4],
@@ -420,7 +418,7 @@ def test_ewise_add(A):
 
 def test_extract(A):
     C = Matrix(A.dtype, 3, 4)
-    result = Matrix.from_values(
+    result = Matrix.from_coo(
         [0, 0, 1, 2, 2, 2], [0, 2, 1, 1, 2, 3], [2, 3, 3, 5, 7, 3], nrows=3, ncols=4
     )
     C << A[[0, 3, 6], [1, 2, 3, 4]]
@@ -435,7 +433,7 @@ def test_extract(A):
 
 def test_extract_row(A):
     w = Vector(A.dtype, 3)
-    result = Vector.from_values([1, 2], [5, 3], size=3)
+    result = Vector.from_coo([1, 2], [5, 3], size=3)
     w << A[6, [0, 2, 4]]
     assert w.isequal(result)
     w << A[6, :5:2]
@@ -457,7 +455,7 @@ def test_extract_row(A):
 
 def test_extract_column(A):
     w = Vector(A.dtype, 3)
-    result = Vector.from_values([1, 2], [3, 1], size=3)
+    result = Vector.from_coo([1, 2], [3, 1], size=3)
     w << A[[1, 3, 5], 2]
     assert w.isequal(result)
     w << A[1:6:2, 2]
@@ -472,12 +470,12 @@ def test_extract_input_mask():
     # A       M
     # 0 1 2   _ 0 1
     # 3 4 5   2 3 _
-    A = Matrix.from_values(
+    A = Matrix.from_coo(
         [0, 0, 0, 1, 1, 1],
         [0, 1, 2, 0, 1, 2],
         [0, 1, 2, 3, 4, 5],
     )
-    M = Matrix.from_values(
+    M = Matrix.from_coo(
         [0, 0, 1, 1],
         [1, 2, 0, 1],
         [0, 1, 2, 3],
@@ -486,7 +484,7 @@ def test_extract_input_mask():
     MT = M.T.new()
     # Matrix structure mask
     result = A[0, [0, 1]].new(input_mask=M.S)
-    expected = Vector.from_values([1], [1])
+    expected = Vector.from_coo([1], [1])
     assert result.isequal(expected)
     # again
     result.clear()
@@ -503,7 +501,7 @@ def test_extract_input_mask():
 
     # Matrix value mask
     result = A[0, [1, 2]].new(input_mask=M.V)
-    expected = Vector.from_values([1], [2], size=2)
+    expected = Vector.from_coo([1], [2], size=2)
     assert result.isequal(expected)
     # again
     result.clear()
@@ -564,7 +562,7 @@ def test_extract_input_mask():
     # With transpose input value
     # Matrix structure mask
     result = A.T[[0, 1], 0].new(input_mask=MT.S)
-    expected = Vector.from_values([1], [1])
+    expected = Vector.from_coo([1], [1])
     assert result.isequal(expected)
     # again
     result.clear()
@@ -581,7 +579,7 @@ def test_extract_input_mask():
 
     # Matrix value mask
     result = A.T[[1, 2], 0].new(input_mask=MT.V)
-    expected = Vector.from_values([1], [2], size=2)
+    expected = Vector.from_coo([1], [2], size=2)
     assert result.isequal(expected)
     # again
     result.clear()
@@ -599,8 +597,8 @@ def test_extract_with_matrix(A):
 
 
 def test_assign(A):
-    B = Matrix.from_values([0, 0, 1], [0, 1, 0], [9, 8, 7])
-    result = Matrix.from_values(
+    B = Matrix.from_coo([0, 0, 1], [0, 1, 0], [9, 8, 7])
+    result = Matrix.from_coo(
         [0, 0, 2, 3, 0, 3, 5, 6, 0, 6, 1, 6, 4, 1],
         [0, 5, 0, 0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 6],
         [9, 8, 7, 3, 2, 3, 1, 5, 3, 7, 8, 3, 7, 4],
@@ -622,13 +620,13 @@ def test_assign(A):
 
 
 def test_assign_wrong_dims(A):
-    B = Matrix.from_values([0, 0, 1], [0, 1, 0], [9, 8, 7])
+    B = Matrix.from_coo([0, 0, 1], [0, 1, 0], [9, 8, 7])
     with pytest.raises(DimensionMismatch):
         A[[0, 2, 4], [0, 5]] = B
 
 
 def test_assign_row(A, v):
-    result = Matrix.from_values(
+    result = Matrix.from_coo(
         [3, 3, 5, 6, 6, 1, 6, 2, 4, 1, 0, 0, 0, 0],
         [0, 2, 2, 2, 3, 4, 4, 5, 5, 6, 1, 3, 4, 6],
         [3, 3, 1, 5, 7, 8, 3, 1, 7, 4, 1, 1, 2, 0],
@@ -639,16 +637,16 @@ def test_assign_row(A, v):
 
 
 def test_subassign_row_col():
-    A = Matrix.from_values(
+    A = Matrix.from_coo(
         [0, 0, 0, 1, 1, 1, 2, 2, 2],
         [0, 1, 2, 0, 1, 2, 0, 1, 2],
         [0, 1, 2, 3, 4, 5, 6, 7, 8],
     )
-    m = Vector.from_values([1], [True])
-    v = Vector.from_values([0, 1], [10, 20])
+    m = Vector.from_coo([1], [True])
+    v = Vector.from_coo([0, 1], [10, 20])
 
     A[[0, 1], 0](m.S) << v
-    result1 = Matrix.from_values(
+    result1 = Matrix.from_coo(
         [0, 0, 0, 1, 1, 1, 2, 2, 2],
         [0, 1, 2, 0, 1, 2, 0, 1, 2],
         [0, 1, 2, 20, 4, 5, 6, 7, 8],
@@ -656,7 +654,7 @@ def test_subassign_row_col():
     assert A.isequal(result1)
 
     A[1, [1, 2]](m.V, accum=binary.plus).update(v)
-    result2 = Matrix.from_values(
+    result2 = Matrix.from_coo(
         [0, 0, 0, 1, 1, 1, 2, 2, 2],
         [0, 1, 2, 0, 1, 2, 0, 1, 2],
         [0, 1, 2, 20, 4, 25, 6, 7, 8],
@@ -664,7 +662,7 @@ def test_subassign_row_col():
     assert A.isequal(result2)
 
     A[[0, 1], 0](m.S, binary.plus, replace=True) << v
-    result3 = Matrix.from_values(
+    result3 = Matrix.from_coo(
         [0, 0, 1, 1, 1, 2, 2, 2],
         [1, 2, 0, 1, 2, 0, 1, 2],
         [1, 2, 40, 4, 25, 6, 7, 8],
@@ -675,7 +673,7 @@ def test_subassign_row_col():
         A(m.S)[[0, 1], 0] << v
 
     A[[0, 1], 0](m.S) << 99
-    result4 = Matrix.from_values(
+    result4 = Matrix.from_coo(
         [0, 0, 1, 1, 1, 2, 2, 2],
         [1, 2, 0, 1, 2, 0, 1, 2],
         [1, 2, 99, 4, 25, 6, 7, 8],
@@ -683,7 +681,7 @@ def test_subassign_row_col():
     assert A.isequal(result4)
 
     A[[1, 2], 0](m.S, binary.plus, replace=True) << 100
-    result5 = Matrix.from_values(
+    result5 = Matrix.from_coo(
         [0, 0, 1, 1, 2, 2, 2],
         [1, 2, 1, 2, 0, 1, 2],
         [1, 2, 4, 25, 106, 7, 8],
@@ -691,7 +689,7 @@ def test_subassign_row_col():
     assert A.isequal(result5)
 
     A[2, [0, 1]](m.S) << -1
-    result6 = Matrix.from_values(
+    result6 = Matrix.from_coo(
         [0, 0, 1, 1, 2, 2, 2],
         [1, 2, 1, 2, 0, 1, 2],
         [1, 2, 4, 25, 106, -1, 8],
@@ -700,17 +698,17 @@ def test_subassign_row_col():
 
 
 def test_subassign_matrix():
-    A = Matrix.from_values(
+    A = Matrix.from_coo(
         [0, 0, 0, 1, 1, 1, 2, 2, 2],
         [0, 1, 2, 0, 1, 2, 0, 1, 2],
         [0, 1, 2, 3, 4, 5, 6, 7, 8],
     )
-    m = Matrix.from_values([1], [0], [True])
-    v = Matrix.from_values([0, 1], [0, 0], [10, 20])
+    m = Matrix.from_coo([1], [0], [True])
+    v = Matrix.from_coo([0, 1], [0, 0], [10, 20])
     mT = m.T.new()
 
     A[[0, 1], [0]](m.S) << v
-    result1 = Matrix.from_values(
+    result1 = Matrix.from_coo(
         [0, 0, 0, 1, 1, 1, 2, 2, 2],
         [0, 1, 2, 0, 1, 2, 0, 1, 2],
         [0, 1, 2, 20, 4, 5, 6, 7, 8],
@@ -718,7 +716,7 @@ def test_subassign_matrix():
     assert A.isequal(result1)
 
     A[[1], [1, 2]](mT.V, accum=binary.plus) << v.T
-    result2 = Matrix.from_values(
+    result2 = Matrix.from_coo(
         [0, 0, 0, 1, 1, 1, 2, 2, 2],
         [0, 1, 2, 0, 1, 2, 0, 1, 2],
         [0, 1, 2, 20, 4, 25, 6, 7, 8],
@@ -726,7 +724,7 @@ def test_subassign_matrix():
     assert A.isequal(result2)
 
     A[[0, 1], [0]](m.S, binary.plus, replace=True) << v
-    result3 = Matrix.from_values(
+    result3 = Matrix.from_coo(
         [0, 0, 1, 1, 1, 2, 2, 2],
         [1, 2, 0, 1, 2, 0, 1, 2],
         [1, 2, 40, 4, 25, 6, 7, 8],
@@ -737,7 +735,7 @@ def test_subassign_matrix():
         A(m.S)[[0, 1], [0]] << v
 
     A[[0, 1], [0]](m.S) << 99
-    result4 = Matrix.from_values(
+    result4 = Matrix.from_coo(
         [0, 0, 1, 1, 1, 2, 2, 2],
         [1, 2, 0, 1, 2, 0, 1, 2],
         [1, 2, 99, 4, 25, 6, 7, 8],
@@ -745,7 +743,7 @@ def test_subassign_matrix():
     assert A.isequal(result4)
 
     A[[1, 2], [0]](m.S, binary.plus, replace=True) << 100
-    result5 = Matrix.from_values(
+    result5 = Matrix.from_coo(
         [0, 0, 1, 1, 2, 2, 2],
         [1, 2, 1, 2, 0, 1, 2],
         [1, 2, 4, 25, 106, 7, 8],
@@ -753,7 +751,7 @@ def test_subassign_matrix():
     assert A.isequal(result5)
 
     A[[2], [0, 1]](mT.S) << -1
-    result6 = Matrix.from_values(
+    result6 = Matrix.from_coo(
         [0, 0, 1, 1, 2, 2, 2],
         [1, 2, 1, 2, 0, 1, 2],
         [1, 2, 4, 25, 106, -1, 8],
@@ -762,7 +760,7 @@ def test_subassign_matrix():
 
 
 def test_assign_column(A, v):
-    result = Matrix.from_values(
+    result = Matrix.from_coo(
         [3, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1, 1, 3, 4, 6],
         [0, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 1, 1, 1, 1],
         [3, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4, 1, 1, 2, 0],
@@ -806,7 +804,7 @@ def test_assign_row_scalar(A, v):
 
     C = A.dup()
     C(v.S)[0, :] = 10
-    result = Matrix.from_values(
+    result = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1, 0, 0],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 4, 6],
         [3, 10, 3, 1, 5, 10, 7, 8, 3, 1, 7, 4, 10, 10],
@@ -818,84 +816,84 @@ def test_assign_row_col_matrix_mask():
     # A         B       v1      v2
     # 0 1       4 _     100     10
     # 2 _       0 5             20
-    A = Matrix.from_values([0, 0, 1], [0, 1, 0], [0, 1, 2])
-    B = Matrix.from_values([0, 1, 1], [0, 0, 1], [4, 0, 5])
-    v1 = Vector.from_values([0], [100])
-    v2 = Vector.from_values([0, 1], [10, 20])
+    A = Matrix.from_coo([0, 0, 1], [0, 1, 0], [0, 1, 2])
+    B = Matrix.from_coo([0, 1, 1], [0, 0, 1], [4, 0, 5])
+    v1 = Vector.from_coo([0], [100])
+    v2 = Vector.from_coo([0, 1], [10, 20])
 
     # row assign
     C = A.dup()
     C(B.S)[0, :] << v2
-    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [10, 1, 2])
+    result = Matrix.from_coo([0, 0, 1], [0, 1, 0], [10, 1, 2])
     assert C.isequal(result)
 
     C = A.dup()
     C(B.S, accum=binary.plus)[1, :] = v2
-    result = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 12, 20])
+    result = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 12, 20])
     assert C.isequal(result)
 
     C = A.dup()
     C(B.S, replace=True)[1, :] << v2
-    result = Matrix.from_values([0, 1, 1], [0, 0, 1], [0, 10, 20])
+    result = Matrix.from_coo([0, 1, 1], [0, 0, 1], [0, 10, 20])
     assert C.isequal(result)
 
     # col assign
     C = A.dup()
     C(B.S)[:, 0] = v2
-    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [10, 1, 20])
+    result = Matrix.from_coo([0, 0, 1], [0, 1, 0], [10, 1, 20])
     assert C.isequal(result)
 
     C = A.dup()
     C(B.S, accum=binary.plus)[:, 1] << v2
-    result = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 2, 20])
+    result = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 2, 20])
     assert C.isequal(result)
 
     C = A.dup()
     C(B.S, replace=True)[:, 1] = v2
-    result = Matrix.from_values([0, 1, 1], [0, 0, 1], [0, 2, 20])
+    result = Matrix.from_coo([0, 1, 1], [0, 0, 1], [0, 2, 20])
     assert C.isequal(result)
 
     # row assign scalar (as a sanity check)
     C = A.dup()
     C(B.S)[0, :] = 100
-    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    result = Matrix.from_coo([0, 0, 1], [0, 1, 0], [100, 1, 2])
     assert C.isequal(result)
 
     C = A.dup()
     C(B.S, accum=binary.plus)[1, :] << 100
-    result = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 102, 100])
+    result = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 102, 100])
     assert C.isequal(result)
 
     C = A.dup()
     C(B.S, replace=True)[1, :] = 100
-    result = Matrix.from_values([0, 1, 1], [0, 0, 1], [0, 100, 100])
+    result = Matrix.from_coo([0, 1, 1], [0, 0, 1], [0, 100, 100])
     assert C.isequal(result)
 
     # col assign scalar (as a sanity check)
     C = A.dup()
     C(B.S)[:, 0] << 100
-    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 100])
+    result = Matrix.from_coo([0, 0, 1], [0, 1, 0], [100, 1, 100])
     assert C.isequal(result)
 
     C = A.dup()
     C(B.S, accum=binary.plus)[:, 1] = 100
-    result = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 2, 100])
+    result = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [0, 1, 2, 100])
     assert C.isequal(result)
 
     C = A.dup()
     C(B.S, replace=True)[:, 1] << 100
-    result = Matrix.from_values([0, 1, 1], [0, 0, 1], [0, 2, 100])
+    result = Matrix.from_coo([0, 1, 1], [0, 0, 1], [0, 2, 100])
     assert C.isequal(result)
 
     # row subassign
     C = A.dup()
     C[0, :](v2.S) << v2
-    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [10, 20, 2])
+    result = Matrix.from_coo([0, 0, 1], [0, 1, 0], [10, 20, 2])
     assert C.isequal(result)
 
     C = A.dup()
     C[0, [0]](v1.S) << v1
-    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    result = Matrix.from_coo([0, 0, 1], [0, 1, 0], [100, 1, 2])
     assert C.isequal(result)
 
     with pytest.raises(
@@ -906,12 +904,12 @@ def test_assign_row_col_matrix_mask():
     # col subassign
     C = A.dup()
     C[:, 0](v2.S) << v2
-    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [10, 1, 20])
+    result = Matrix.from_coo([0, 0, 1], [0, 1, 0], [10, 1, 20])
     assert C.isequal(result)
 
     C = A.dup()
     C[[0], 0](v1.S) << v1
-    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    result = Matrix.from_coo([0, 0, 1], [0, 1, 0], [100, 1, 2])
     assert C.isequal(result)
 
     with pytest.raises(
@@ -922,12 +920,12 @@ def test_assign_row_col_matrix_mask():
     # row subassign scalar
     C = A.dup()
     C[0, :](v2.S) << 100
-    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 100, 2])
+    result = Matrix.from_coo([0, 0, 1], [0, 1, 0], [100, 100, 2])
     assert C.isequal(result)
 
     C = A.dup()
     C[0, [0]](v1.S) << 100
-    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    result = Matrix.from_coo([0, 0, 1], [0, 1, 0], [100, 1, 2])
     assert C.isequal(result)
 
     with pytest.raises(
@@ -938,12 +936,12 @@ def test_assign_row_col_matrix_mask():
     # col subassign scalar
     C = A.dup()
     C[:, 0](v2.S) << 100
-    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 100])
+    result = Matrix.from_coo([0, 0, 1], [0, 1, 0], [100, 1, 100])
     assert C.isequal(result)
 
     C = A.dup()
     C[[0], 0](v1.S) << 100
-    result = Matrix.from_values([0, 0, 1], [0, 1, 0], [100, 1, 2])
+    result = Matrix.from_coo([0, 0, 1], [0, 1, 0], [100, 1, 2])
     assert C.isequal(result)
 
     with pytest.raises(
@@ -962,11 +960,11 @@ def test_subassign_combos(index):
     # mask    1  1  1  1  0  0  0  0  _  _  _  _
     # val     1  2  _  _  3  4  _  _  5  6  _  _
     # self   10  _ 20  _ 30  _ 40  _ 50  _ 60  _ 70  _
-    mask_base = Vector.from_values(
+    mask_base = Vector.from_coo(
         [0, 1, 2, 3, 4, 5, 6, 7], [1, 1, 1, 1, 0, 0, 0, 0], size=12, name="mask"
     )
-    val_base = Vector.from_values([0, 1, 4, 5, 8, 9], [1, 2, 3, 4, 5, 6], size=12)
-    self_base = Vector.from_values([0, 2, 4, 6, 8, 10, 12], [10, 20, 30, 40, 50, 60, 70], size=14)
+    val_base = Vector.from_coo([0, 1, 4, 5, 8, 9], [1, 2, 3, 4, 5, 6], size=12)
+    self_base = Vector.from_coo([0, 2, 4, 6, 8, 10, 12], [10, 20, 30, 40, 50, 60, 70], size=14)
 
     S = gb.core.mask.StructuralMask
     V = gb.core.mask.ValueMask
@@ -988,7 +986,7 @@ def test_subassign_combos(index):
         mask = mask_type(mask_base)
         val = val_base
         self[index](binary.plus, mask, replace=replace) << val
-        expected = Vector.from_values(indices, values, size=14, name="expected")
+        expected = Vector.from_coo(indices, values, size=14, name="expected")
         if not self.isequal(expected):  # pragma: no cover (debug)
             print(mask_type, replace)
             print(expected)
@@ -1006,7 +1004,7 @@ def test_subassign_combos(index):
         mask = mask_type(mask_base)
         val = val_base
         self[0, index](binary.plus, mask, replace=replace) << val
-        expected = Vector.from_values(indices, values, size=14, name="expected")
+        expected = Vector.from_coo(indices, values, size=14, name="expected")
         expected = asrow(expected)
         if not self.isequal(expected):  # pragma: no cover (debug)
             print(mask_type, replace)
@@ -1025,7 +1023,7 @@ def test_subassign_combos(index):
         mask = mask_type(mask_base)
         val = val_base
         self[index, 0](binary.plus, mask, replace=replace) << val
-        expected = Vector.from_values(indices, values, size=14, name="expected")
+        expected = Vector.from_coo(indices, values, size=14, name="expected")
         expected = ascol(expected)
         if not self.isequal(expected):  # pragma: no cover (debug)
             print(mask_type, replace)
@@ -1039,7 +1037,7 @@ def test_subassign_combos(index):
         mask = mask_type(asrow(mask_base))
         val = asrow(val_base)
         self[[0], index](binary.plus, mask, replace=replace) << val
-        expected = Vector.from_values(indices, values, size=14, name="expected")
+        expected = Vector.from_coo(indices, values, size=14, name="expected")
         expected = asrow(expected)
         if not self.isequal(expected):  # pragma: no cover (debug)
             print(mask_type, replace)
@@ -1058,7 +1056,7 @@ def test_assign_column_scalar(A, v):
     C = A.dup()
     C[:, 1] = v
     C(v.S)[:, 1] = 10
-    result = Matrix.from_values(
+    result = Matrix.from_coo(
         [3, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1, 1, 3, 4, 6],
         [0, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 1, 1, 1, 1],
         [3, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4, 10, 10, 10, 10],
@@ -1066,7 +1064,7 @@ def test_assign_column_scalar(A, v):
     assert C.isequal(result)
 
     C(v.V, replace=True, accum=binary.plus)[:, 1] = 20
-    result = Matrix.from_values(
+    result = Matrix.from_coo(
         [3, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1, 1, 3, 4],
         [0, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 1, 1, 1],
         [3, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4, 30, 30, 30],
@@ -1076,7 +1074,7 @@ def test_assign_column_scalar(A, v):
 
 def test_assign_scalar(A):
     # Test block
-    result_block = Matrix.from_values(
+    result_block = Matrix.from_coo(
         [3, 0, 6, 0, 6, 6, 2, 4, 1, 1, 3, 5, 1, 3, 5],
         [0, 1, 2, 3, 3, 4, 5, 5, 6, 2, 2, 2, 4, 4, 4],
         [3, 2, 5, 3, 7, 3, 1, 7, 4, 0, 0, 0, 0, 0, 0],
@@ -1094,7 +1092,7 @@ def test_assign_scalar(A):
     C[1::2, 2:5:2] = Scalar.from_value(0)
     assert C.isequal(result_block)
     # Test row
-    result_row = Matrix.from_values(
+    result_row = Matrix.from_coo(
         [3, 0, 6, 0, 6, 6, 2, 4, 1, 3, 5, 1, 1],
         [0, 1, 2, 3, 3, 4, 5, 5, 6, 2, 2, 2, 4],
         [3, 2, 5, 3, 7, 3, 1, 7, 4, 3, 1, 0, 0],
@@ -1110,7 +1108,7 @@ def test_assign_scalar(A):
     C[1, 2:5:2] = 0
     assert C.isequal(result_row)
     # Test column
-    result_column = Matrix.from_values(
+    result_column = Matrix.from_coo(
         [3, 0, 6, 0, 6, 6, 2, 4, 1, 1, 1, 3, 5],
         [0, 1, 2, 3, 3, 4, 5, 5, 6, 4, 2, 2, 2],
         [3, 2, 5, 3, 7, 3, 1, 7, 4, 8, 0, 0, 0],
@@ -1121,9 +1119,9 @@ def test_assign_scalar(A):
     C = A.dup()
     C[1::2, 2] = 0
     assert C.isequal(result_column)
-    B = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], 1)
+    B = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], 1)
     B[1, 1] = Scalar(B.dtype)
-    expected = Matrix.from_values([0, 0, 1], [0, 1, 0], 1)
+    expected = Matrix.from_coo([0, 0, 1], [0, 1, 0], 1)
     assert B.isequal(expected)
 
 
@@ -1150,7 +1148,7 @@ def test_assign_bad(A):
 
 
 def test_apply(A):
-    result = Matrix.from_values(
+    result = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [-3, -2, -3, -1, -5, -3, -7, -8, -3, -1, -7, -4],
@@ -1160,7 +1158,7 @@ def test_apply(A):
 
 
 def test_apply_binary(A):
-    result_right = Matrix.from_values(
+    result_right = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1],
@@ -1170,7 +1168,7 @@ def test_apply_binary(A):
     w_right2 = A.apply(binary.gt, right=Scalar.from_value(1)).new()
     assert w_right.isequal(result_right)
     assert w_right2.isequal(result_right)
-    result_left = Matrix.from_values(
+    result_left = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [5, 6, 5, 7, 3, 5, 1, 0, 5, 7, 1, 4],
@@ -1197,7 +1195,7 @@ def test_apply_binary(A):
 def test_apply_indexunary(A):
     ridx = [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1]
     cidx = [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6]
-    Ar = Matrix.from_values(ridx, cidx, ridx)
+    Ar = Matrix.from_coo(ridx, cidx, ridx)
     r1 = A.apply("rowindex").new()
     r2 = A.apply(indexunary.rowindex).new()
     r3 = indexunary.rowindex(A).new()
@@ -1205,7 +1203,7 @@ def test_apply_indexunary(A):
     assert r2.isequal(Ar)
     assert r3.isequal(Ar)
 
-    Ac = Matrix.from_values(ridx, cidx, [c + 2 for c in cidx])
+    Ac = Matrix.from_coo(ridx, cidx, [c + 2 for c in cidx])
     c1 = A.apply("colindex", 2).new()
     c2 = A.apply(indexunary.colindex, 2).new()
     c3 = indexunary.colindex(A, thunk=2).new()
@@ -1213,7 +1211,7 @@ def test_apply_indexunary(A):
     assert c2.isequal(Ac)
     assert c3.isequal(Ac)
 
-    A3 = Matrix.from_values(ridx, cidx, [1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0], dtype=bool)
+    A3 = Matrix.from_coo(ridx, cidx, [1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0], dtype=bool)
     s3 = Scalar.from_value(3, dtypes.INT64)
     w1 = A.apply(indexunary.valueeq, s3).new()
     w2 = A.apply(select.valueeq, s3).new()
@@ -1228,7 +1226,7 @@ def test_apply_indexunary(A):
 
 
 def test_select(A):
-    A3 = Matrix.from_values([0, 3, 3, 6], [3, 0, 2, 4], [3, 3, 3, 3], nrows=7, ncols=7)
+    A3 = Matrix.from_coo([0, 3, 3, 6], [3, 0, 2, 4], [3, 3, 3, 3], nrows=7, ncols=7)
     w1 = A.select(select.valueeq, 3).new()
     w1b = A.select(indexunary.valueeq, 3).new()
     w2 = A.select("==", 3).new()
@@ -1238,7 +1236,7 @@ def test_select(A):
     assert w2.isequal(A3)
     assert w3.isequal(A3)
 
-    A2cols = Matrix.from_values([3, 0, 3, 5, 6], [0, 1, 2, 2, 2], [3, 2, 3, 1, 5], nrows=7, ncols=7)
+    A2cols = Matrix.from_coo([3, 0, 3, 5, 6], [0, 1, 2, 2, 2], [3, 2, 3, 1, 5], nrows=7, ncols=7)
     w4 = select.colle(A, 2).new()
     w5 = A.select("col<=", 2).new()
     w6 = select.column(A < 3).new()
@@ -1246,7 +1244,7 @@ def test_select(A):
     assert w5.isequal(A2cols)
     assert w6.isequal(A2cols)
 
-    Aupper = Matrix.from_values(
+    Aupper = Matrix.from_coo(
         [0, 0, 1, 2, 4, 1], [1, 3, 4, 5, 5, 6], [2, 3, 8, 1, 7, 4], nrows=7, ncols=7
     )
     w7 = A.select("TRIU").new()
@@ -1257,7 +1255,7 @@ def test_select(A):
 
 @autocompute
 def test_select_bools_and_masks(A):
-    A3 = Matrix.from_values([0, 3, 3, 6], [3, 0, 2, 4], [3, 3, 3, 3], nrows=7, ncols=7)
+    A3 = Matrix.from_coo([0, 3, 3, 6], [3, 0, 2, 4], [3, 3, 3, 3], nrows=7, ncols=7)
     # Select with boolean and masks
     w8 = A.select((A == 3).new()).new()
     assert w8.isequal(A3)
@@ -1288,7 +1286,7 @@ def test_indexunary_udf(A):
     assert not hasattr(select, "threex_minusthunk")
     with pytest.raises(ValueError):
         select.register_anonymous(threex_minusthunk)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [5, 2, 5, -1, 11, 5, 17, 20, 5, -1, 17, 8],
@@ -1304,7 +1302,7 @@ def test_indexunary_udf(A):
     assert hasattr(indexunary, "iii")
     assert hasattr(select, "iii")
     iii_apply = indexunary.register_anonymous(iii)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [False, False, True, True, True, False, True, True, True, True, True, True],
@@ -1312,7 +1310,7 @@ def test_indexunary_udf(A):
     result = iii_apply(A, 2).new()
     assert result.isequal(expected)
     iii_select = select.register_anonymous(iii)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [3, 5, 6, 6, 1, 6, 2, 4, 1], [2, 2, 2, 3, 4, 4, 5, 5, 6], [3, 1, 5, 7, 8, 3, 1, 7, 4]
     )
     result = iii_select(A, 2).new()
@@ -1322,7 +1320,7 @@ def test_indexunary_udf(A):
 
 
 def test_reduce_row(A):
-    result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
+    result = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
     w = A.reduce_rowwise(monoid.plus).new()
     assert w.isequal(result)
     w2 = A.reduce_rowwise(binary.plus).new()
@@ -1331,7 +1329,7 @@ def test_reduce_row(A):
 
 @pytest.mark.slow
 def test_reduce_agg(A):
-    result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
+    result = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
     w1 = A.reduce_rowwise(agg.sum).new()
     assert w1.isequal(result)
     w2 = A.T.reduce_columnwise(agg.sum).new()
@@ -1358,7 +1356,7 @@ def test_reduce_agg(A):
     expected = A.reduce_rowwise(monoid.numpy.logaddexp[float]).new()
     assert w8.isclose(w8)
 
-    result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 9, 10, 11, 8, 4])
+    result = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 2, 9, 10, 11, 8, 4])
     w9 = A.reduce_columnwise(agg.sum).new()
     assert w9.isequal(result)
     w10 = A.T.reduce_rowwise(agg.sum).new()
@@ -1371,15 +1369,15 @@ def test_reduce_agg(A):
     assert w12.isequal(counts)
 
     w13 = A.reduce_rowwise(agg.mean).new()
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [2.5, 6, 1, 3, 7, 1, 5])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [2.5, 6, 1, 3, 7, 1, 5])
     assert w13.isequal(expected)
     w14 = A.reduce_columnwise(agg.mean).new()
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 3, 5, 5.5, 4, 4])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 2, 3, 5, 5.5, 4, 4])
     assert w14.isequal(expected)
 
     w15 = A.reduce_rowwise(agg.exists).new()
     w16 = A.reduce_columnwise(agg.exists).new()
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [1, 1, 1, 1, 1, 1, 1])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [1, 1, 1, 1, 1, 1, 1])
     assert w15.isequal(expected)
     assert w16.isequal(expected)
 
@@ -1423,24 +1421,24 @@ def test_reduce_agg(A):
 
 def test_reduce_agg_argminmax(A):
     # reduce_rowwise
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [1, 6, 5, 0, 5, 2, 4])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [1, 6, 5, 0, 5, 2, 4])
     w1b = A.reduce_rowwise(agg.argmin).new()
     assert w1b.isequal(expected)
     w1c = A.T.reduce_columnwise(agg.argmin).new()
     assert w1c.isequal(expected)
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 4, 5, 0, 5, 2, 3])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 4, 5, 0, 5, 2, 3])
     w2b = A.reduce_rowwise(agg.argmax).new()
     assert w2b.isequal(expected)
     w2c = A.T.reduce_columnwise(agg.argmax).new()
     assert w2c.isequal(expected)
 
     # reduce_cols
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 5, 0, 6, 2, 1])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 0, 5, 0, 6, 2, 1])
     w7b = A.reduce_columnwise(agg.argmin).new()
     assert w7b.isequal(expected)
     w7c = A.T.reduce_rowwise(agg.argmin).new()
     assert w7c.isequal(expected)
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 6, 6, 1, 4, 1])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 0, 6, 6, 1, 4, 1])
     w8b = A.reduce_columnwise(agg.argmax).new()
     assert w8b.isequal(expected)
     w8c = A.T.reduce_rowwise(agg.argmax).new()
@@ -1475,24 +1473,24 @@ def test_reduce_agg_argminmax(A):
 def test_reduce_agg_firstlast(A):
     # reduce_rowwise
     w1 = A.reduce_rowwise(agg.first).new()
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [2, 8, 1, 3, 7, 1, 5])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [2, 8, 1, 3, 7, 1, 5])
     assert w1.isequal(expected)
     w1b = A.T.reduce_columnwise(agg.first).new()
     assert w1b.isequal(expected)
     w2 = A.reduce_rowwise(agg.last).new()
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 4, 1, 3, 7, 1, 3])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 4, 1, 3, 7, 1, 3])
     assert w2.isequal(expected)
     w2b = A.T.reduce_columnwise(agg.last).new()
     assert w2b.isequal(expected)
 
     # reduce_columnwise
     w3 = A.reduce_columnwise(agg.first).new()
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 3, 3, 8, 1, 4])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 2, 3, 3, 8, 1, 4])
     assert w3.isequal(expected)
     w3b = A.T.reduce_rowwise(agg.first).new()
     assert w3b.isequal(expected)
     w4 = A.reduce_columnwise(agg.last).new()
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 5, 7, 3, 7, 4])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 2, 5, 7, 3, 7, 4])
     assert w4.isequal(expected)
     w4b = A.T.reduce_rowwise(agg.last).new()
     assert w4b.isequal(expected)
@@ -1530,24 +1528,24 @@ def test_reduce_agg_firstlast(A):
 def test_reduce_agg_firstlast_index(A):
     # reduce_rowwise
     w1 = A.reduce_rowwise(agg.first_index).new()
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [1, 4, 5, 0, 5, 2, 2])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [1, 4, 5, 0, 5, 2, 2])
     assert w1.isequal(expected)
     w1b = A.T.reduce_columnwise(agg.first_index).new()
     assert w1b.isequal(expected)
     w2 = A.reduce_rowwise(agg.last_index).new()
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 6, 5, 2, 5, 2, 4])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 6, 5, 2, 5, 2, 4])
     assert w2.isequal(expected)
     w2b = A.T.reduce_columnwise(agg.last_index).new()
     assert w2b.isequal(expected)
 
     # reduce_columnwise
     w3 = A.reduce_columnwise(agg.first_index).new()
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 3, 0, 1, 2, 1])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 0, 3, 0, 1, 2, 1])
     assert w3.isequal(expected)
     w3b = A.T.reduce_rowwise(agg.first_index).new()
     assert w3b.isequal(expected)
     w4 = A.reduce_columnwise(agg.last_index).new()
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 0, 6, 6, 6, 4, 1])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 0, 6, 6, 6, 4, 1])
     assert w4.isequal(expected)
     w4b = A.T.reduce_rowwise(agg.last_index).new()
     assert w4b.isequal(expected)
@@ -1591,7 +1589,7 @@ def test_reduce_agg_empty():
 
 
 def test_reduce_row_udf(A):
-    result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
+    result = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
 
     def plus(x, y):  # pragma: no cover (numba)
         return x + y
@@ -1609,7 +1607,7 @@ def test_reduce_row_udf(A):
 
 
 def test_reduce_column(A):
-    result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 2, 9, 10, 11, 8, 4])
+    result = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 2, 9, 10, 11, 8, 4])
     w = A.reduce_columnwise(monoid.plus).new()
     assert w.isequal(result)
     w2 = A.reduce_columnwise(binary.plus).new()
@@ -1651,7 +1649,7 @@ def test_reduce_call_agg(A):
     result = agg.max[float](A).new()  # typed agg is callable too
     assert result.dtype == "FP64"
     assert result == 8
-    expected = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
+    expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
     result = agg.sum(A, rowwise=True)
     assert result.isequal(expected)
     result = agg.sum(A.T, columnwise=True)
@@ -1662,8 +1660,8 @@ def test_reduce_call_agg(A):
 
 def test_transpose(A):
     # C << A.T
-    rows, cols, vals = A.to_values()
-    result = Matrix.from_values(cols, rows, vals)
+    rows, cols, vals = A.to_coo()
+    result = Matrix.from_coo(cols, rows, vals)
     C = Matrix(A.dtype, A.ncols, A.nrows)
     C << A.T
     assert C.isequal(result)
@@ -1684,9 +1682,9 @@ def test_kronecker():
     # 1 [8  -  4  -  -  - ]
     # 2 [-  4  6  -  6  9 ]
     # 3 [16 -  8  24 -  12]
-    A = Matrix.from_values([0, 1, 1], [0, 0, 1], [1, 2, 3])
-    B = Matrix.from_values([0, 0, 1, 1], [1, 2, 0, 2], [2, 3, 8, 4])
-    result = Matrix.from_values(
+    A = Matrix.from_coo([0, 1, 1], [0, 0, 1], [1, 2, 3])
+    B = Matrix.from_coo([0, 0, 1, 1], [1, 2, 0, 2], [2, 3, 8, 4])
+    result = Matrix.from_coo(
         [0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
         [1, 2, 0, 2, 1, 2, 4, 5, 0, 2, 3, 5],
         [2, 3, 8, 4, 4, 6, 6, 9, 16, 8, 24, 12],
@@ -1722,13 +1720,13 @@ def test_assign_transpose(A):
 def test_assign_list():
     A = Matrix(int, 3, 3)
     A[[0, 1], [1, 2]] = [[3, 4], [5, 6]]
-    expected = Matrix.from_values([0, 0, 1, 1], [1, 2, 1, 2], [3, 4, 5, 6], nrows=3, ncols=3)
+    expected = Matrix.from_coo([0, 0, 1, 1], [1, 2, 1, 2], [3, 4, 5, 6], nrows=3, ncols=3)
     assert A.isequal(expected)
     A[[0, 1], 1] = np.arange(2)
-    expected = Matrix.from_values([0, 0, 1, 1], [1, 2, 1, 2], [0, 4, 1, 6], nrows=3, ncols=3)
+    expected = Matrix.from_coo([0, 0, 1, 1], [1, 2, 1, 2], [0, 4, 1, 6], nrows=3, ncols=3)
     assert A.isequal(expected)
     A[0, 1:3] = [10, 20]
-    expected = Matrix.from_values([0, 0, 1, 1], [1, 2, 1, 2], [10, 20, 1, 6], nrows=3, ncols=3)
+    expected = Matrix.from_coo([0, 0, 1, 1], [1, 2, 1, 2], [10, 20, 1, 6], nrows=3, ncols=3)
     assert A.isequal(expected)
     with pytest.raises(TypeError):
         A[0, 1] = [0]
@@ -1752,21 +1750,21 @@ def test_isequal(A, v):
     assert A.isequal(A)
     with pytest.raises(TypeError, match="Matrix"):
         A.isequal(v)  # equality is not type-checking
-    C = Matrix.from_values([1], [1], [1])
+    C = Matrix.from_coo([1], [1], [1])
     assert not C.isequal(A)
-    D = Matrix.from_values([1], [2], [1])
+    D = Matrix.from_coo([1], [2], [1])
     assert not C.isequal(D)
-    D2 = Matrix.from_values([0], [2], [1], nrows=D.nrows, ncols=D.ncols)
+    D2 = Matrix.from_coo([0], [2], [1], nrows=D.nrows, ncols=D.ncols)
     assert not D2.isequal(D)
-    C2 = Matrix.from_values([1], [1], [1], nrows=7, ncols=7)
+    C2 = Matrix.from_coo([1], [1], [1], nrows=7, ncols=7)
     assert not C2.isequal(A)
-    C3 = Matrix.from_values(
+    C3 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3.0, 2.0, 3.0, 1.0, 5.0, 3.0, 7.0, 8.0, 3.0, 1.0, 7.0, 4.0],
     )
     assert not C3.isequal(A, check_dtype=True), "different datatypes are not equal"
-    C4 = Matrix.from_values(
+    C4 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3.0, 2.0, 3.0, 1.0, 5.0, 3.000000000000000001, 7.0, 8.0, 3.0, 1 - 1e-11, 7.0, 4.0],
@@ -1779,35 +1777,35 @@ def test_isclose(A, v):
     assert A.isclose(A)
     with pytest.raises(TypeError, match="Matrix"):
         A.isclose(v)  # equality is not type-checking
-    C = Matrix.from_values([1], [1], [1])  # wrong size
+    C = Matrix.from_coo([1], [1], [1])  # wrong size
     assert not C.isclose(A)
-    D = Matrix.from_values([1], [2], [1])
+    D = Matrix.from_coo([1], [2], [1])
     assert not C.isclose(D)
-    D2 = Matrix.from_values([0], [2], [1], nrows=D.nrows, ncols=D.ncols)
+    D2 = Matrix.from_coo([0], [2], [1], nrows=D.nrows, ncols=D.ncols)
     assert not D2.isclose(D)
-    C2 = Matrix.from_values([1], [1], [1], nrows=7, ncols=7)  # missing values
+    C2 = Matrix.from_coo([1], [1], [1], nrows=7, ncols=7)  # missing values
     assert not C2.isclose(A)
-    C3 = Matrix.from_values(
+    C3 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1, 0],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 2],
         [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4, 3],
     )  # extra values
     assert not C3.isclose(A)
-    C4 = Matrix.from_values(
+    C4 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3.0, 2.0, 3.0, 1.0, 5.0, 3.0, 7.0, 8.0, 3.0, 1.0, 7.0, 4.0],
     )
     assert not C4.isclose(A, check_dtype=True), "different datatypes are not equal"
     # fmt: off
-    C5 = Matrix.from_values(
+    C5 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3.0, 2.0, 3.0, 1.0, 5.0, 3.000000000000000001, 7.0, 8.0, 3.0, 1 - 1e-11, 7.0, 4.0],
     )
     # fmt: on
     assert C5.isclose(A)
-    C6 = Matrix.from_values(
+    C6 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3.0, 2.000001, 3.0, 1.0, 5.0, 3.0, 7.0, 7.9999999, 3.0, 1.0, 7.0, 4.0],
@@ -1822,7 +1820,7 @@ def test_transpose_equals(A):
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4],
     ]
-    B = Matrix.from_values(*data)
+    B = Matrix.from_coo(*data)
     assert A.isequal(B.T)
     assert B.isequal(A.T)
     assert A.T.isequal(B)
@@ -1835,8 +1833,8 @@ def test_transpose_equals(A):
 
 
 def test_transpose_exceptional():
-    A = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [True, True, False, True])
-    B = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
+    A = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [True, True, False, True])
+    B = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
 
     with pytest.raises(TypeError, match="not callable"):
         B.T(mask=A.V) << B.ewise_mult(B, op=binary.plus)
@@ -1858,7 +1856,7 @@ def test_transpose_exceptional():
     D = B.T.new()
     D = D.dup(mask=A.V)
     assert C.isequal(D)
-    assert C.isequal(Matrix.from_values([0, 0, 1], [0, 1, 1], [1, 3, 4]))
+    assert C.isequal(Matrix.from_coo([0, 0, 1], [0, 1, 1], [1, 3, 4]))
 
 
 def test_nested_matrix_operations():
@@ -1900,7 +1898,7 @@ def test_del(capsys):
     shell_A = object.__new__(Matrix)
     del shell_A
     # A has `gb_obj` of NULL
-    A = Matrix.from_values([0, 1], [0, 1], [0, 1])
+    A = Matrix.from_coo([0, 1], [0, 1], [0, 1])
     gb_obj = A.gb_obj
     A.gb_obj = gb.core.NULL
     del A
@@ -2142,7 +2140,7 @@ def test_ss_import_export(A, do_iso, methods):
         assert A9.isequal(A)
         assert A9.ss.is_iso is do_iso
 
-    C = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
+    C = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
     if do_iso:
         C(C.S) << 1
     C1 = C.dup()
@@ -2254,7 +2252,7 @@ def test_ss_import_export(A, do_iso, methods):
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_import_on_view():
-    A = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
+    A = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
     B = Matrix.ss.import_any(nrows=2, ncols=2, values=np.array([1, 2, 3, 4, 99, 99, 99])[:4])
     assert A.isequal(B)
 
@@ -2422,7 +2420,7 @@ def test_ss_import_export_auto(A, do_iso, methods):
     assert A.ss.is_iso is do_iso
     assert A_orig.ss.is_iso is do_iso
 
-    C = Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], [1, 2, 3, 4, 5, 6])
+    C = Matrix.from_coo([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], [1, 2, 3, 4, 5, 6])
     if do_iso:
         C(C.S) << 1
     C_orig = C.dup()
@@ -2460,7 +2458,7 @@ def test_ss_import_export_auto(A, do_iso, methods):
                 else:
                     values = [1, 3, 5, 2, 4, 6]
                 assert other.isequal(
-                    Matrix.from_values([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], values)
+                    Matrix.from_coo([0, 0, 1, 1, 2, 2], [0, 1, 0, 1, 0, 1], values)
                 )
             else:
                 assert other.isequal(C_orig)
@@ -2616,7 +2614,7 @@ def test_not_to_array(A):
 )
 def test_diag(A, params):
     k, indices, values = params
-    expected = Vector.from_values(indices, values, dtype=A.dtype, size=max(0, A.nrows - abs(k)))
+    expected = Vector.from_coo(indices, values, dtype=A.dtype, size=max(0, A.nrows - abs(k)))
     v = A.diag(k)
     assert expected.isequal(v)
     v = A.T.diag(-k)
@@ -2960,7 +2958,7 @@ def test_ss_flatten(A):
     ]
     # row-wise
     indices = [row * A.ncols + col for row, col in zip(data[0], data[1])]
-    expected = Vector.from_values(indices, data[2], size=A.nrows * A.ncols)
+    expected = Vector.from_coo(indices, data[2], size=A.nrows * A.ncols)
     for fmt in ["csr", "hypercsr", "bitmapr"]:
         B = Matrix.ss.import_any(**A.ss.export(format=fmt))
         v = B.ss.flatten()
@@ -2979,7 +2977,7 @@ def test_ss_flatten(A):
 
     # column-wise
     indices = [col * A.nrows + row for row, col in zip(data[0], data[1])]
-    expected = Vector.from_values(indices, data[2], size=A.nrows * A.ncols)
+    expected = Vector.from_coo(indices, data[2], size=A.nrows * A.ncols)
     for fmt in ["csc", "hypercsc", "bitmapc"]:
         B = Matrix.ss.import_any(**A.ss.export(format=fmt))
         v = B.ss.flatten(order="col")
@@ -3006,9 +3004,9 @@ def test_ss_flatten(A):
 @pytest.mark.skipif("not suitesparse")
 def test_ss_reshape(A):
     A.resize(8, 8)
-    r, c, v = A.to_values()
+    r, c, v = A.to_coo()
     idx = c + 8 * r
-    expected = Matrix.from_values(idx // 16, idx % 16, v, nrows=4, ncols=16)
+    expected = Matrix.from_coo(idx // 16, idx % 16, v, nrows=4, ncols=16)
     rv = A.ss.reshape(4, 16)
     assert rv.isequal(expected)
     rv = A.ss.reshape(4, -1, order="row")
@@ -3033,7 +3031,7 @@ def test_ss_reshape(A):
         A.ss.reshape(4, 16, order="bad_order")
 
     idx = r + 8 * c
-    expected = Matrix.from_values(idx % 4, idx // 4, v, nrows=4, ncols=16)
+    expected = Matrix.from_coo(idx % 4, idx // 4, v, nrows=4, ncols=16)
     rv = A.ss.reshape(4, 16, order="col")
     assert rv.isequal(expected)
 
@@ -3178,12 +3176,12 @@ def test_infix_sugar(A):
 def test_ss_random(A):
     R = A.ss.selectk_rowwise("random", 1)
     counts = R.reduce_rowwise(agg.count).new()
-    expected = Vector.from_values(range(A.ncols), 1)
+    expected = Vector.from_coo(range(A.ncols), 1)
     assert counts.isequal(expected)
 
     R = A.ss.selectk_columnwise("random", 1)
     counts = R.reduce_columnwise(agg.count).new()
-    expected = Vector.from_values(range(A.nrows), 1)
+    expected = Vector.from_coo(range(A.nrows), 1)
     assert counts.isequal(expected)
 
     R = A.ss.selectk_rowwise("random", 2)
@@ -3195,7 +3193,7 @@ def test_ss_random(A):
     A(A.S) << 1
     R = A.ss.selectk_rowwise("random", 1)
     counts = R.reduce_rowwise(agg.count).new()
-    expected = Vector.from_values(range(A.ncols), 1)
+    expected = Vector.from_coo(range(A.ncols), 1)
     assert counts.isequal(expected)
 
     with pytest.raises(ValueError):
@@ -3209,7 +3207,7 @@ def test_ss_random(A):
 @pytest.mark.skipif("not suitesparse")
 def test_ss_firstk(A):
     B = A.ss.selectk_rowwise("first", 1)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [0, 1, 2, 3, 4, 5, 6],
         [1, 4, 5, 0, 5, 2, 2],
         [2, 8, 1, 3, 7, 1, 5],
@@ -3219,7 +3217,7 @@ def test_ss_firstk(A):
     assert B.isequal(expected)
 
     B = A.ss.selectk_rowwise("first", 2)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 5, 5, 6],
         [3, 2, 3, 1, 5, 3, 7, 8, 1, 7, 4],
@@ -3232,7 +3230,7 @@ def test_ss_firstk(A):
     assert B.isequal(A)
 
     B = A.ss.selectk_columnwise("first", 1)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [3, 0, 3, 0, 1, 2, 1],
         [0, 1, 2, 3, 4, 5, 6],
         [3, 2, 3, 3, 8, 1, 4],
@@ -3242,7 +3240,7 @@ def test_ss_firstk(A):
     assert B.isequal(expected)
 
     B = A.ss.selectk_columnwise("first", 2)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [3, 0, 3, 5, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3, 2, 3, 1, 3, 7, 8, 3, 1, 7, 4],
@@ -3258,7 +3256,7 @@ def test_ss_firstk(A):
 @pytest.mark.skipif("not suitesparse")
 def test_ss_lastk(A):
     B = A.ss.selectk_rowwise("last", 1)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [0, 3, 5, 6, 2, 4, 1],
         [3, 2, 2, 4, 5, 5, 6],
         [3, 3, 1, 3, 1, 7, 4],
@@ -3268,7 +3266,7 @@ def test_ss_lastk(A):
     assert B.isequal(expected)
 
     B = A.ss.selectk_rowwise("last", 2)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [3, 0, 3, 5, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3, 2, 3, 1, 3, 7, 8, 3, 1, 7, 4],
@@ -3281,7 +3279,7 @@ def test_ss_lastk(A):
     assert B.isequal(A)
 
     B = A.ss.selectk_columnwise("last", 1)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [3, 0, 6, 6, 6, 4, 1],
         [0, 1, 2, 3, 4, 5, 6],
         [3, 2, 5, 7, 3, 7, 4],
@@ -3291,7 +3289,7 @@ def test_ss_lastk(A):
     assert B.isequal(expected)
 
     B = A.ss.selectk_columnwise("last", 2)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [3, 0, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3, 2, 1, 5, 3, 7, 8, 3, 1, 7, 4],
@@ -3309,8 +3307,8 @@ def test_ss_lastk(A):
 @pytest.mark.slow
 def test_ss_compactify(A, do_iso):
     if do_iso:
-        r, c, v = A.to_values()
-        A = Matrix.from_values(r, c, 1)
+        r, c, v = A.to_coo()
+        A = Matrix.from_coo(r, c, 1)
     rows = [0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6]
     new_cols = [0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 2]
     orig_cols = [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]
@@ -3335,7 +3333,7 @@ def test_ss_compactify(A, do_iso):
             B = A.ss.compactify_rowwise(*args, ncols=n, reverse=True, **kwargs)
             assert B.isequal(C)
 
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         rows,
         new_cols,
         1 if do_iso else [2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3],
@@ -3347,7 +3345,7 @@ def test_ss_compactify(A, do_iso):
     check(A, reverse(expected), "last")
     check_reverse(A, reverse(expected), "last")
 
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         rows,
         new_cols,
         orig_cols,
@@ -3359,7 +3357,7 @@ def test_ss_compactify(A, do_iso):
     check(A, reverse(expected), "last", asindex=True)
     check_reverse(A, reverse(expected), "last", asindex=True)
 
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         rows,
         new_cols,
         1 if do_iso else [2, 3, 4, 8, 1, 3, 3, 7, 1, 3, 5, 7],
@@ -3372,7 +3370,7 @@ def test_ss_compactify(A, do_iso):
     check_reverse(A, reverse(expected), "largest")
 
     if not do_iso:
-        expected = Matrix.from_values(
+        expected = Matrix.from_coo(
             rows,
             new_cols,
             [1, 3, 6, 4, 5, 0, 2, 5, 2, 4, 2, 3],
@@ -3422,14 +3420,14 @@ def test_ss_compactify(A, do_iso):
         compare(A, A.ss.compactify_rowwise("first", 0, asindex=asindex), ncols=0, asindex=asindex)
 
     B = A.ss.compactify_columnwise("first", nrows=1)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [0, 0, 0, 0, 0, 0, 0],
         [0, 1, 2, 3, 4, 5, 6],
         1 if do_iso else [3, 2, 3, 3, 8, 1, 4],
     )
     assert B.isequal(expected)
     B = A.ss.compactify_columnwise("last", nrows=1, asindex=True)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [0, 0, 0, 0, 0, 0, 0],
         [0, 1, 2, 3, 4, 5, 6],
         [3, 0, 6, 6, 6, 4, 1],
@@ -3456,6 +3454,12 @@ def test_deprecated(A):
         A.S.mask
     with pytest.warns(DeprecationWarning):
         binary.plus(A | A, require_monoid=True)
+    with pytest.warns(DeprecationWarning):
+        A.to_values()
+    with pytest.warns(DeprecationWarning):
+        A.T.to_values()
+    with pytest.warns(DeprecationWarning):
+        A.from_values([1], [2], [3])
 
 
 def test_ndim(A):
@@ -3474,10 +3478,10 @@ def test_sizeof(A):
 
 
 def test_ewise_union():
-    A1 = Matrix.from_values([0], [0], [1], nrows=1, ncols=3)
-    A2 = Matrix.from_values([0], [1], [2], nrows=1, ncols=3)
+    A1 = Matrix.from_coo([0], [0], [1], nrows=1, ncols=3)
+    A2 = Matrix.from_coo([0], [1], [2], nrows=1, ncols=3)
     result = A1.ewise_union(A2, binary.plus, 10, 20).new()
-    expected = Matrix.from_values([0, 0], [0, 1], [21, 12], nrows=1, ncols=3)
+    expected = Matrix.from_coo([0, 0], [0, 1], [21, 12], nrows=1, ncols=3)
     assert result.isequal(expected)
 
     # Test transposed
@@ -3492,11 +3496,11 @@ def test_ewise_union():
     assert result.isequal(expected)
     # Upcast if scalars are floats
     result = A1.ewise_union(A2, monoid.plus, 10.1, 20.2).new()
-    expected = Matrix.from_values([0, 0], [0, 1], [21.2, 12.1], nrows=1, ncols=3)
+    expected = Matrix.from_coo([0, 0], [0, 1], [21.2, 12.1], nrows=1, ncols=3)
     assert result.isclose(expected)
 
     result = A1.ewise_union(A2, binary.minus, 0, 0).new()
-    expected = Matrix.from_values([0, 0], [0, 1], [1, -2], nrows=1, ncols=3)
+    expected = Matrix.from_coo([0, 0], [0, 1], [1, -2], nrows=1, ncols=3)
     assert result.isequal(expected)
     result = (A1 - A2).new()
     assert result.isequal(expected)
@@ -3528,7 +3532,7 @@ def test_ss_iteration(A):
     assert list(B.ss.iterkeys()) == []
     assert list(B.ss.itervalues()) == []
     assert list(B.ss.iteritems()) == []
-    rows, columns, values = A.to_values()
+    rows, columns, values = A.to_coo()
     assert sorted(zip(rows, columns)) == sorted(A.ss.iterkeys())
     assert sorted(values) == sorted(A.ss.itervalues())
     assert sorted(zip(rows, columns, values)) == sorted(A.ss.iteritems())
@@ -3559,18 +3563,18 @@ def test_udt():
     A = Matrix(udt, nrows=2, ncols=2)
     a = np.zeros(1, dtype=record_dtype)
     A[0, 0] = a[0]
-    expected = Matrix.from_values([0], [0], a, nrows=2, ncols=2, dtype=udt)
+    expected = Matrix.from_coo([0], [0], a, nrows=2, ncols=2, dtype=udt)
     assert A.isequal(expected)
     A[0, 1] = (1, 2)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [0, 0], [0, 1], np.array([(0, 0), (1, 2)], dtype=record_dtype), nrows=2, ncols=2, dtype=udt
     )
     assert A.isequal(expected)
     A << 0
-    zeros = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], 0, dtype=udt)
+    zeros = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], 0, dtype=udt)
     assert A.isequal(zeros)
     A(A.S)[:, :] = 1
-    ones = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 1, 1, 1], dtype=udt)
+    ones = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [1, 1, 1, 1], dtype=udt)
     assert A.isequal(ones)
     A[:, :](A.S) << 0
     assert A.isequal(zeros)
@@ -3602,12 +3606,12 @@ def test_udt():
     assert A.isequal(zeros)
     assert A[0, 0].new() == s
     assert A[:, :].new().isequal(A)
-    expected = Vector.from_values([0, 1], s)
+    expected = Vector.from_coo([0, 1], s)
     assert A[0, :].new().isequal(expected)
     assert A.reduce_rowwise(monoid.any).new().isequal(expected)
-    rows, cols, values = A.to_values()
-    assert A.isequal(Matrix.from_values(rows, cols, values))
-    assert A.isequal(Matrix.from_values(rows, cols, values, dtype=A.dtype))
+    rows, cols, values = A.to_coo()
+    assert A.isequal(Matrix.from_coo(rows, cols, values))
+    assert A.isequal(Matrix.from_coo(rows, cols, values, dtype=A.dtype))
     if suitesparse:
         info = A.ss.export()
         result = A.ss.import_any(**info)
@@ -3616,7 +3620,7 @@ def test_udt():
         result = A.ss.import_any(**info)
         assert result.isequal(A)
     result = unary.positioni(A).new()
-    expected = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [0, 0, 1, 1])
+    expected = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [0, 0, 1, 1])
     assert result.isequal(expected)
     AB = unary.one(select.tril(A).new()).new()
     BA = select.tril(unary.one(A).new()).new()
@@ -3633,7 +3637,7 @@ def test_udt():
         A.reduce_columnwise(aggop).new()
     A.clear()
     A[[0, 1], 1] = [(2, 3), (4, 5)]
-    expected = Matrix.from_values([0, 1], [1, 1], [(2, 3), (4, 5)], dtype=udt)
+    expected = Matrix.from_coo([0, 1], [1, 1], [(2, 3), (4, 5)], dtype=udt)
     assert A.isequal(expected)
     A.clear()
     A[[0, 1], [1]] = [[(2, 3)], [(4, 5)]]
@@ -3651,12 +3655,12 @@ def test_udt():
     udt = dtypes.register_anonymous(np_dtype, "has_subdtype")
     A = Matrix(udt, nrows=2, ncols=2)
     A[:, :] = (1, 2, 3)
-    rows, cols, values = A.to_values()
+    rows, cols, values = A.to_coo()
     assert_array_equal(values, np.array([[1, 2, 3]] * 4))
-    result = Matrix.from_values(rows, cols, values)
+    result = Matrix.from_coo(rows, cols, values)
     assert A.isequal(result)
     assert result.isequal(A)
-    result = Matrix.from_values(rows, cols, values, dtype=udt)
+    result = Matrix.from_coo(rows, cols, values, dtype=udt)
     assert result.isequal(A)
     if suitesparse:
         info = A.ss.export()
@@ -3668,7 +3672,7 @@ def test_udt():
     assert Matrix.from_csr(*A.to_csr()).isequal(A)
     A.clear()
     A[[0, 1], 1] = [(2, 3, 4), [5, 6, 7]]
-    expected = Matrix.from_values([0, 1], [1, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt)
+    expected = Matrix.from_coo([0, 1], [1, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt)
     assert A.isequal(expected)
     A[[0, 1], [1]] = [[[2, 3, 4]], [[5, 6, 7]]]
     if suitesparse:
@@ -3684,7 +3688,7 @@ def test_udt():
 
 
 def test_reposition(A):
-    rows, cols, values = A.to_values()
+    rows, cols, values = A.to_coo()
     rows = rows.astype(int)
     cols = cols.astype(int)
 
@@ -3696,7 +3700,7 @@ def test_reposition(A):
         r = r + row_offset
         c = c + col_offset
         mask = (r >= 0) & (r < nrows) & (c >= 0) & (c < ncols)
-        return Matrix.from_values(r[mask], c[mask], values[mask], nrows=nrows, ncols=ncols)
+        return Matrix.from_coo(r[mask], c[mask], values[mask], nrows=nrows, ncols=ncols)
 
     for row_offset in range(-A.nrows - 2, A.nrows + 3, 3):
         for col_offset in range(-A.ncols - 2, A.ncols + 3, 3):
@@ -3712,7 +3716,7 @@ def test_reposition(A):
                 assert result.isequal(expected)
 
     result = A.reposition(3, 1).new(mask=A.S)
-    expected = Matrix.from_values([3, 4, 6], [2, 5, 3], [2, 8, 3], nrows=A.nrows, ncols=A.ncols)
+    expected = Matrix.from_coo([3, 4, 6], [2, 5, 3], [2, 8, 3], nrows=A.nrows, ncols=A.ncols)
     assert result.isequal(expected)
 
     result(A.S, binary.plus) << A.reposition(3, 1)
@@ -3720,7 +3724,7 @@ def test_reposition(A):
     assert result.isequal(expected)
 
     result = A.T.reposition(-1, 1).new(mask=A.S)
-    expected = Matrix.from_values(
+    expected = Matrix.from_coo(
         [0, 1, 1, 3, 4, 5], [1, 4, 6, 2, 5, 2], [2, 3, 1, 8, 7, 4], nrows=A.ncols, ncols=A.nrows
     )
     assert result.isequal(expected)
@@ -3730,7 +3734,7 @@ def test_reposition(A):
     assert result.isequal(expected)
 
 
-def test_to_values_sort():
+def test_to_coo_sort():
     # How can we get a matrix to a jumbled state in SS so that export won't be sorted?
     N = 1000000
     r = np.unique(np.random.randint(N, size=100))
@@ -3740,19 +3744,19 @@ def test_to_values_sort():
     expected_rows = r.copy()
     np.random.shuffle(r)
     np.random.shuffle(c)
-    A = Matrix.from_values(r, c, r, nrows=N, ncols=N)
-    rows, cols, values = A.to_values(sort=False)
-    A = Matrix.from_values(r, c, r, nrows=N, ncols=N)
-    rows, cols, values = A.to_values(sort=True)
+    A = Matrix.from_coo(r, c, r, nrows=N, ncols=N)
+    rows, cols, values = A.to_coo(sort=False)
+    A = Matrix.from_coo(r, c, r, nrows=N, ncols=N)
+    rows, cols, values = A.to_coo(sort=True)
     assert_array_equal(rows, expected_rows)
-    rows, cols, values = A.T.to_values(sort=True)
+    rows, cols, values = A.T.to_coo(sort=True)
     assert_array_equal(cols, expected_rows)
 
 
-def test_to_values_subset(A):
-    rows, cols, vals = A.to_values()
+def test_to_coo_subset(A):
+    rows, cols, vals = A.to_coo()
     for do_rows, do_cols, do_vals in itertools.product([True, False], [True, False], [True, False]):
-        r, c, v = A.to_values(rows=do_rows, columns=do_cols, values=do_vals)
+        r, c, v = A.to_coo(rows=do_rows, columns=do_cols, values=do_vals)
         if do_rows:
             assert_array_equal(r, rows)
         else:
@@ -3766,12 +3770,12 @@ def test_to_values_subset(A):
             assert v.dtype == np.int64
         else:
             assert v is None
-    r, c, v = A.to_values(rows=None, columns=None, values=True, dtype=float)
+    r, c, v = A.to_coo(rows=None, columns=None, values=True, dtype=float)
     assert r is None
     assert c is None
     assert_array_equal(v, vals)
     assert v.dtype == float
-    r, c, v = A.to_values(values=True, dtype=A.dtype, sort=False)
+    r, c, v = A.to_coo(values=True, dtype=A.dtype, sort=False)
     assert v.dtype == np.int64
 
 
@@ -3866,14 +3870,14 @@ def test_to_csr_from_csc(A):
     # 0 [- 1 -]
     # 1 [2 - -]
     B = Matrix.from_csr([0, 1, 2], [1, 0], [10, 20], ncols=3)
-    expected = Matrix.from_values([0, 1], [1, 0], [10, 20], nrows=2, ncols=3)
+    expected = Matrix.from_coo([0, 1], [1, 0], [10, 20], nrows=2, ncols=3)
     assert expected.isequal(B, check_dtype=True)
 
     B = Matrix.from_csc([0, 1, 2, 2], [1, 0], [20, 10])
     assert expected.isequal(B, check_dtype=True)
 
     B = Matrix.from_csr([0, 1, 2], [1, 0], 100)
-    expected = Matrix.from_values([0, 1], [1, 0], [100, 100], nrows=2, ncols=2)
+    expected = Matrix.from_coo([0, 1], [1, 0], [100, 100], nrows=2, ncols=2)
     assert expected.isequal(B, check_dtype=True)
 
     B = Matrix.from_csc([0, 1, 2], [1, 0], 100)
@@ -3911,14 +3915,14 @@ def test_to_dcsr_from_dcsc(A):
     # 1 [- - -]
     # 2 [2 - -]
     B = Matrix.from_dcsr([0, 2], [0, 1, 2], [1, 0], [10, 20], ncols=3)
-    expected = Matrix.from_values([0, 2], [1, 0], [10, 20], nrows=3, ncols=3)
+    expected = Matrix.from_coo([0, 2], [1, 0], [10, 20], nrows=3, ncols=3)
     assert expected.isequal(B, check_dtype=True)
 
     B = Matrix.from_dcsc([0, 1], [0, 1, 2], [2, 0], [20, 10], ncols=3)
     assert expected.isequal(B, check_dtype=True)
 
     B = Matrix.from_dcsr([0, 2], [0, 1, 2], [1, 0], 100)
-    expected = Matrix.from_values([0, 2], [1, 0], [100, 100], nrows=3, ncols=2)
+    expected = Matrix.from_coo([0, 2], [1, 0], [100, 100], nrows=3, ncols=2)
     assert expected.isequal(B, check_dtype=True)
 
     # Test empty
@@ -3999,7 +4003,7 @@ def test_to_dicts_from_dicts(A):
 def test_from_list_of_dicts():
     list_of_dicts = [{1: 1}, {}, {0: 10, 2: 3}, {}]
     A1 = Matrix.from_dicts(list_of_dicts)
-    expected = Matrix.from_values([0, 2, 2], [1, 0, 2], [1, 10, 3], nrows=4)
+    expected = Matrix.from_coo([0, 2, 2], [1, 0, 2], [1, 10, 3], nrows=4)
     assert A1.isequal(expected)
     A2 = Matrix.from_dicts(list_of_dicts, nrows=4)
     assert A2.isequal(expected)

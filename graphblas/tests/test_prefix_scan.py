@@ -72,14 +72,14 @@ def test_scan_vector(length, do_random):
 
 @pytest.mark.skipif("not suitesparse")
 def test_cumprod():
-    v = Vector.from_values([1, 3, 4, 6], [2, 3, 4, 5])
-    expected = Vector.from_values([1, 3, 4, 6], [2, 6, 24, 120])
+    v = Vector.from_coo([1, 3, 4, 6], [2, 3, 4, 5])
+    expected = Vector.from_coo([1, 3, 4, 6], [2, 6, 24, 120])
     r = v.ss.scan(monoid.times)
     assert r.isequal(expected)
 
 
 @pytest.mark.skipif("not suitesparse")
 def test_bad_scan():
-    v = Vector.from_values(range(10), range(10))
+    v = Vector.from_coo(range(10), range(10))
     with pytest.raises(TypeError, match="Bad type for argument `op`"):
         v.ss.scan(op=binary.first)

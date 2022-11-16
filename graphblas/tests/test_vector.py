@@ -34,13 +34,13 @@ def A():
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4],
     ]
-    return Matrix.from_values(*data)
+    return Matrix.from_coo(*data)
 
 
 @pytest.fixture
 def v():
     data = [[1, 3, 4, 6], [1, 1, 2, 0]]
-    return Vector.from_values(*data)
+    return Vector.from_coo(*data)
 
 
 def test_new():
@@ -51,13 +51,13 @@ def test_new():
 
 
 def test_large_vector():
-    u = Vector.from_values([0, 2**59], [0, 1])
+    u = Vector.from_coo([0, 2**59], [0, 1])
     assert u.size == 2**59 + 1
     assert u[2**59].new() == 1
     with pytest.raises(InvalidValue):
-        Vector.from_values([0, 2**64 - 2], [0, 1])
+        Vector.from_coo([0, 2**64 - 2], [0, 1])
     with pytest.raises(OverflowError):
-        Vector.from_values([0, 2**64], [0, 1])
+        Vector.from_coo([0, 2**64], [0, 1])
 
 
 def test_dup(v):
@@ -70,13 +70,13 @@ def test_dup(v):
     v[0] = 1000
     assert u[0].new() != 1000
     # extended functionality
-    w = Vector.from_values([0, 1], [0, 2.5], dtype=dtypes.FP64)
+    w = Vector.from_coo([0, 1], [0, 2.5], dtype=dtypes.FP64)
     x = w.dup(dtype=dtypes.INT64)
-    assert x.isequal(Vector.from_values([0, 1], [0, 2], dtype=dtypes.INT64), check_dtype=True)
+    assert x.isequal(Vector.from_coo([0, 1], [0, 2], dtype=dtypes.INT64), check_dtype=True)
     x = w.dup(mask=w.V)
-    assert x.isequal(Vector.from_values([1], [2.5], dtype=dtypes.FP64), check_dtype=True)
+    assert x.isequal(Vector.from_coo([1], [2.5], dtype=dtypes.FP64), check_dtype=True)
     x = w.dup(dtype=dtypes.INT64, mask=w.V)
-    assert x.isequal(Vector.from_values([1], [2], dtype=dtypes.INT64), check_dtype=True)
+    assert x.isequal(Vector.from_coo([1], [2], dtype=dtypes.INT64), check_dtype=True)
 
 
 def test_dup_clear(v):
@@ -90,53 +90,53 @@ def test_dup_clear(v):
     assert x.size == v.size
 
 
-def test_from_values():
-    u = Vector.from_values([0, 1, 3], [True, False, True])
+def test_from_coo():
+    u = Vector.from_coo([0, 1, 3], [True, False, True])
     assert u.size == 4
     assert u.nvals == 3
     assert u.dtype == bool
-    u2 = Vector.from_values([0, 1, 3], [12.3, 12.4, 12.5], size=17)
+    u2 = Vector.from_coo([0, 1, 3], [12.3, 12.4, 12.5], size=17)
     assert u2.size == 17
     assert u2.nvals == 3
     assert u2.dtype == float
-    u3 = Vector.from_values([0, 1, 1], [1, 2, 3], size=10, dup_op=binary.times)
+    u3 = Vector.from_coo([0, 1, 1], [1, 2, 3], size=10, dup_op=binary.times)
     assert u3.size == 10
     assert u3.nvals == 2  # duplicates were combined
     assert u3.dtype == int
     assert u3[1].new() == 6  # 2*3
     with pytest.raises(ValueError, match="Duplicate indices found"):
         # Duplicate indices requires a dup_op
-        Vector.from_values([0, 1, 1], [True, True, True])
+        Vector.from_coo([0, 1, 1], [True, True, True])
     with pytest.raises(ValueError, match="No indices provided. Unable to infer size."):
-        Vector.from_values([], [])
+        Vector.from_coo([], [])
 
     # Changed: Assume empty value is float64 (like numpy)
     # with pytest.raises(ValueError, match="No values provided. Unable to determine type"):
-    w = Vector.from_values([], [], size=10)
+    w = Vector.from_coo([], [], size=10)
     assert w.size == 10
     assert w.nvals == 0
     assert w.dtype == dtypes.FP64
 
     with pytest.raises(ValueError, match="No indices provided. Unable to infer size"):
-        Vector.from_values([], [], dtype=dtypes.INT64)
-    u4 = Vector.from_values([], [], size=10, dtype=dtypes.INT64)
+        Vector.from_coo([], [], dtype=dtypes.INT64)
+    u4 = Vector.from_coo([], [], size=10, dtype=dtypes.INT64)
     u5 = Vector(dtypes.INT64, size=10)
     assert u4.isequal(u5, check_dtype=True)
 
     # we check index dtype if given numpy array
     with pytest.raises(ValueError, match="indices must be integers, not float64"):
-        Vector.from_values(np.array([1.2, 3.4]), [1, 2])
+        Vector.from_coo(np.array([1.2, 3.4]), [1, 2])
     # but coerce index if given Python lists (we defer to numpy casting)
-    u6 = Vector.from_values([1.2, 3.4], [1, 2])
-    assert u6.isequal(Vector.from_values([1, 3], [1, 2]))
+    u6 = Vector.from_coo([1.2, 3.4], [1, 2])
+    assert u6.isequal(Vector.from_coo([1, 3], [1, 2]))
 
     # mis-matched sizes
     with pytest.raises(ValueError, match="`indices` and `values` lengths must match"):
-        Vector.from_values([0], [1, 2])
+        Vector.from_coo([0], [1, 2])
 
 
-def test_from_values_scalar():
-    u = Vector.from_values([0, 1, 3], 7)
+def test_from_coo_scalar():
+    u = Vector.from_coo([0, 1, 3], 7)
     assert u.size == 4
     assert u.nvals == 3
     assert u.dtype == dtypes.INT64
@@ -146,7 +146,7 @@ def test_from_values_scalar():
     assert u.reduce(monoid.any).new() == 7
 
     # ignore duplicate indices; iso trumps duplicates!
-    u = Vector.from_values([0, 1, 1, 3], 7)
+    u = Vector.from_coo([0, 1, 1, 3], 7)
     assert u.size == 4
     assert u.nvals == 3
     if suitesparse:
@@ -154,7 +154,7 @@ def test_from_values_scalar():
         assert u.ss.iso_value == 7
     assert u.reduce(monoid.any).new() == 7
     with pytest.raises(ValueError, match="dup_op must be None"):
-        Vector.from_values([0, 1, 1, 3], 7, dup_op=binary.plus)
+        Vector.from_coo([0, 1, 1, 3], 7, dup_op=binary.plus)
     u[0] = 0
     if suitesparse:
         with pytest.raises(ValueError, match="not iso"):
@@ -203,7 +203,7 @@ def test_build(v):
         v.build([0, 11], [1, 1])
     w = Vector(int, size=3)
     w.build([0, 11], [1, 1], size=12)
-    assert w.isequal(Vector.from_values([0, 11], [1, 1]))
+    assert w.isequal(Vector.from_coo([0, 11], [1, 1]))
 
 
 @pytest.mark.skipif("not suitesparse")
@@ -217,19 +217,19 @@ def test_ss_build_scalar(v):
 
 
 def test_extract_values(v):
-    idx, vals = v.to_values()
+    idx, vals = v.to_coo()
     np.testing.assert_array_equal(idx, (1, 3, 4, 6))
     np.testing.assert_array_equal(vals, (1, 1, 2, 0))
     assert idx.dtype == np.uint64
     assert vals.dtype == np.int64
 
-    idx, vals = v.to_values(dtype=int)
+    idx, vals = v.to_coo(dtype=int)
     np.testing.assert_array_equal(idx, (1, 3, 4, 6))
     np.testing.assert_array_equal(vals, (1, 1, 2, 0))
     assert idx.dtype == np.uint64
     assert vals.dtype == np.int64
 
-    idx, vals = v.to_values(dtype=float)
+    idx, vals = v.to_coo(dtype=float)
     np.testing.assert_array_equal(idx, (1, 3, 4, 6))
     np.testing.assert_array_equal(vals, (1, 1, 2, 0))
     assert idx.dtype == np.uint64
@@ -237,10 +237,10 @@ def test_extract_values(v):
 
 
 def test_extract_input_mask():
-    v = Vector.from_values([0, 1, 2], [0, 1, 2])
-    m = Vector.from_values([0, 2], [0, 2])
+    v = Vector.from_coo([0, 1, 2], [0, 1, 2])
+    m = Vector.from_coo([0, 2], [0, 2])
     result = v[[0, 1]].new(input_mask=m.S)
-    expected = Vector.from_values([0], [0], size=2)
+    expected = Vector.from_coo([0], [0], size=2)
     assert result.isequal(expected)
     # again
     result.clear()
@@ -286,47 +286,47 @@ def test_remove_element(v):
 
 def test_vxm(v, A):
     w = v.vxm(A, semiring.plus_times).new()
-    result = Vector.from_values([0, 2, 3, 4, 5, 6], [3, 3, 0, 8, 14, 4])
+    result = Vector.from_coo([0, 2, 3, 4, 5, 6], [3, 3, 0, 8, 14, 4])
     assert w.isequal(result)
 
 
 def test_vxm_transpose(v, A):
     w = v.vxm(A.T, semiring.plus_times).new()
-    result = Vector.from_values([0, 1, 6], [5, 16, 13])
+    result = Vector.from_coo([0, 1, 6], [5, 16, 13])
     assert w.isequal(result)
 
 
 def test_vxm_nonsquare(v):
-    A = Matrix.from_values([0, 3], [0, 1], [10, 20], nrows=7, ncols=2)
+    A = Matrix.from_coo([0, 3], [0, 1], [10, 20], nrows=7, ncols=2)
     u = Vector(v.dtype, size=2)
     u().update(v.vxm(A, semiring.min_plus))
-    result = Vector.from_values([1], [21])
+    result = Vector.from_coo([1], [21])
     assert u.isequal(result)
     w1 = v.vxm(A, semiring.min_plus).new()
     assert w1.isequal(u)
     # Test the transpose case
-    v2 = Vector.from_values([0, 1], [1, 2])
+    v2 = Vector.from_coo([0, 1], [1, 2])
     w2 = v2.vxm(A.T, semiring.min_plus).new()
     assert w2.size == 7
 
 
 def test_vxm_mask(v, A):
-    val_mask = Vector.from_values([0, 1, 2, 3, 4], [True, False, False, True, True], size=7)
-    struct_mask = Vector.from_values([0, 3, 4], [False, False, False], size=7)
+    val_mask = Vector.from_coo([0, 1, 2, 3, 4], [True, False, False, True, True], size=7)
+    struct_mask = Vector.from_coo([0, 3, 4], [False, False, False], size=7)
     u = v.dup()
     u(struct_mask.S) << v.vxm(A, semiring.plus_times)
-    result = Vector.from_values([0, 1, 3, 4, 6], [3, 1, 0, 8, 0], size=7)
+    result = Vector.from_coo([0, 1, 3, 4, 6], [3, 1, 0, 8, 0], size=7)
     assert u.isequal(result)
     u = v.dup()
     u(~~struct_mask.S) << v.vxm(A, semiring.plus_times)
     assert u.isequal(result)
     u = v.dup()
     u(~struct_mask.S) << v.vxm(A, semiring.plus_times)
-    result2 = Vector.from_values([2, 3, 4, 5, 6], [3, 1, 2, 14, 4], size=7)
+    result2 = Vector.from_coo([2, 3, 4, 5, 6], [3, 1, 2, 14, 4], size=7)
     assert u.isequal(result2)
     u = v.dup()
     u(replace=True, mask=val_mask.V) << v.vxm(A, semiring.plus_times)
-    result3 = Vector.from_values([0, 3, 4], [3, 0, 8], size=7)
+    result3 = Vector.from_coo([0, 3, 4], [3, 0, 8], size=7)
     assert u.isequal(result3)
     u = v.dup()
     u(replace=True, mask=~~val_mask.V) << v.vxm(A, semiring.plus_times)
@@ -338,7 +338,7 @@ def test_vxm_mask(v, A):
 def test_vxm_accum(v, A):
     w1 = v.dup()
     w1(binary.plus) << v.vxm(A, semiring.plus_times)
-    result = Vector.from_values([0, 1, 2, 3, 4, 5, 6], [3, 1, 3, 1, 10, 14, 4], size=7)
+    result = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 1, 3, 1, 10, 14, 4], size=7)
     assert w1.isequal(result)
     # Allow monoids
     w2 = v.dup()
@@ -358,8 +358,8 @@ def test_vxm_accum(v, A):
 
 def test_ewise_mult(v):
     # Binary, Monoid, and Semiring
-    v2 = Vector.from_values([0, 3, 5, 6], [2, 3, 2, 1])
-    result = Vector.from_values([3, 6], [3, 0])
+    v2 = Vector.from_coo([0, 3, 5, 6], [2, 3, 2, 1])
+    result = Vector.from_coo([3, 6], [3, 0])
     w = v.ewise_mult(v2, binary.times).new()
     assert w.isequal(result)
     w << v.ewise_mult(v2, monoid.times)
@@ -370,27 +370,27 @@ def test_ewise_mult(v):
 
 def test_ewise_mult_change_dtype(v):
     # We want to divide by 2, converting ints to floats
-    v2 = Vector.from_values([1, 3, 4, 6], [2, 2, 2, 2])
+    v2 = Vector.from_coo([1, 3, 4, 6], [2, 2, 2, 2])
     assert v.dtype == dtypes.INT64
     assert v2.dtype == dtypes.INT64
-    result = Vector.from_values([1, 3, 4, 6], [0.5, 0.5, 1.0, 0], dtype=dtypes.FP64)
+    result = Vector.from_coo([1, 3, 4, 6], [0.5, 0.5, 1.0, 0], dtype=dtypes.FP64)
     w = v.ewise_mult(v2, binary.cdiv[dtypes.FP64]).new()
     assert w.isequal(result), w
     # Here is the potentially surprising way to do things
     # Division is still done with ints, but results are then stored as floats
-    result2 = Vector.from_values([1, 3, 4, 6], [0.0, 0.0, 1.0, 0.0], dtype=dtypes.FP64)
+    result2 = Vector.from_coo([1, 3, 4, 6], [0.0, 0.0, 1.0, 0.0], dtype=dtypes.FP64)
     w2 = v.ewise_mult(v2, binary.cdiv).new(dtype=dtypes.FP64)
     assert w2.isequal(result2), w2
     # Try with boolean dtype via auto-conversion
-    result3 = Vector.from_values([1, 3, 4, 6], [True, True, False, True])
+    result3 = Vector.from_coo([1, 3, 4, 6], [True, True, False, True])
     w3 = v.ewise_mult(v2, binary.lt).new()
     assert w3.isequal(result3), w3
 
 
 def test_ewise_add(v):
     # Binary, Monoid, and Semiring
-    v2 = Vector.from_values([0, 3, 5, 6], [2, 3, 2, 1])
-    result = Vector.from_values([0, 1, 3, 4, 5, 6], [2, 1, 3, 2, 2, 1])
+    v2 = Vector.from_coo([0, 3, 5, 6], [2, 3, 2, 1])
+    result = Vector.from_coo([0, 1, 3, 4, 5, 6], [2, 1, 3, 2, 2, 1])
     # with pytest.raises(TypeError, match="require_monoid"):
     v.ewise_add(v2, binary.minus)  # okay now
     w = v.ewise_add(v2, binary.max).new()  # ok if the binaryop is part of a monoid
@@ -406,8 +406,8 @@ def test_ewise_add(v):
     result = v.ewise_add(v2, monoid.plus).new()
     assert w.isequal(result)
     # what about default for bool?
-    b1 = Vector.from_values([0, 1, 2, 3], [True, False, True, False])
-    b2 = Vector.from_values([0, 1, 2, 3], [True, True, False, False])
+    b1 = Vector.from_coo([0, 1, 2, 3], [True, False, True, False])
+    b2 = Vector.from_coo([0, 1, 2, 3], [True, True, False, False])
     with pytest.raises(KeyError, match="plus does not work"):
         b1.ewise_add(b2).new()
     # with pytest.raises(TypeError, match="for BOOL datatype"):
@@ -416,7 +416,7 @@ def test_ewise_add(v):
 
 def test_extract(v):
     w = Vector(v.dtype, 3)
-    result = Vector.from_values([0, 1], [1, 1], size=3)
+    result = Vector.from_coo([0, 1], [1, 1], size=3)
     w << v[[1, 3, 5]]
     assert w.isequal(result)
     w() << v[1::2]
@@ -427,7 +427,7 @@ def test_extract(v):
 
 def test_extract_array(v):
     w = Vector(v.dtype, 3)
-    result = Vector.from_values(np.array([0, 1]), np.array([1, 1]), size=3)
+    result = Vector.from_coo(np.array([0, 1]), np.array([1, 1]), size=3)
     w << v[np.array([1, 3, 5])]
     assert w.isequal(result)
 
@@ -476,7 +476,7 @@ def test_extract_negative_indices(v):
     assert v[[-v.size]].new().nvals == 0
     assert v[Scalar.from_value(-4)].new() == 1
     w = v[[-1, -3]].new()
-    assert w.isequal(Vector.from_values([0, 1], [0, 2]))
+    assert w.isequal(Vector.from_coo([0, 1], [0, 2]))
     with pytest.raises(IndexError):
         v[-v.size - 1]
     with pytest.raises(IndexError):
@@ -486,8 +486,8 @@ def test_extract_negative_indices(v):
 
 
 def test_assign(v):
-    u = Vector.from_values([0, 2], [9, 8])
-    result = Vector.from_values([0, 1, 3, 4, 6], [9, 1, 1, 8, 0])
+    u = Vector.from_coo([0, 2], [9, 8])
+    result = Vector.from_coo([0, 1, 3, 4, 6], [9, 1, 1, 8, 0])
     w = v.dup()
     w[[0, 2, 4]] = u
     assert w.isequal(result)
@@ -501,32 +501,32 @@ def test_assign(v):
 
 
 def test_assign_scalar(v):
-    result = Vector.from_values([1, 3, 4, 5, 6], [9, 9, 2, 9, 0])
+    result = Vector.from_coo([1, 3, 4, 5, 6], [9, 9, 2, 9, 0])
     w = v.dup()
     w[[1, 3, 5]] = 9
     assert w.isequal(result)
     w = v.dup()
     w[1::2] = 9
     assert w.isequal(result)
-    w = Vector.from_values([0, 1, 2], [1, 1, 1])
+    w = Vector.from_coo([0, 1, 2], [1, 1, 1])
     s = Scalar.from_value(9)
     w[0] = s
-    assert w.isequal(Vector.from_values([0, 1, 2], [9, 1, 1]))
+    assert w.isequal(Vector.from_coo([0, 1, 2], [9, 1, 1]))
     w[:] = s
-    assert w.isequal(Vector.from_values([0, 1, 2], [9, 9, 9]))
+    assert w.isequal(Vector.from_coo([0, 1, 2], [9, 9, 9]))
     with pytest.raises(TypeError, match="Bad type for arg"):
         w[:] = object()
     with pytest.raises(TypeError, match="Bad type for arg"):
         w[1] = object()
     w << 2
-    assert w.isequal(Vector.from_values([0, 1, 2], [2, 2, 2]))
+    assert w.isequal(Vector.from_coo([0, 1, 2], [2, 2, 2]))
     w[0] = Scalar(int)
-    assert w.isequal(Vector.from_values([1, 2], [2, 2]))
+    assert w.isequal(Vector.from_coo([1, 2], [2, 2]))
 
 
 def test_assign_scalar_mask(v):
-    mask = Vector.from_values([1, 2, 5, 6], [0, 0, 1, 0])
-    result = Vector.from_values([1, 3, 4, 5, 6], [1, 1, 2, 5, 0])
+    mask = Vector.from_coo([1, 2, 5, 6], [0, 0, 1, 0])
+    result = Vector.from_coo([1, 3, 4, 5, 6], [1, 1, 2, 5, 0])
     w = v.dup()
     w[:](mask.V) << 5
     assert w.isequal(result)
@@ -536,7 +536,7 @@ def test_assign_scalar_mask(v):
     w = v.dup()
     w(mask.V)[:] << 5
     assert w.isequal(result)
-    result2 = Vector.from_values([0, 1, 2, 3, 4, 6], [5, 5, 5, 5, 5, 5])
+    result2 = Vector.from_coo([0, 1, 2, 3, 4, 6], [5, 5, 5, 5, 5, 5])
     w = v.dup()
     w[:](~mask.V) << 5
     assert w.isequal(result2)
@@ -546,7 +546,7 @@ def test_assign_scalar_mask(v):
     w = v.dup()
     w(~mask.V)[:] << 5
     assert w.isequal(result2)
-    result3 = Vector.from_values([1, 2, 3, 4, 5, 6], [5, 5, 1, 2, 5, 5])
+    result3 = Vector.from_coo([1, 2, 3, 4, 5, 6], [5, 5, 1, 2, 5, 5])
     w = v.dup()
     w[:](mask.S) << 5
     assert w.isequal(result3)
@@ -556,7 +556,7 @@ def test_assign_scalar_mask(v):
     w = v.dup()
     w(mask.S)[:] << 5
     assert w.isequal(result3)
-    result4 = Vector.from_values([0, 1, 3, 4, 6], [5, 1, 5, 5, 0])
+    result4 = Vector.from_coo([0, 1, 3, 4, 6], [5, 1, 5, 5, 0])
     w = v.dup()
     w[:](~mask.S) << 5
     assert w.isequal(result4)
@@ -569,11 +569,11 @@ def test_assign_scalar_mask(v):
 
 
 def test_subassign(A):
-    v = Vector.from_values([0, 1, 2], [0, 1, 2])
-    w = Vector.from_values([0, 1], [10, 20])
-    m = Vector.from_values([1], [True])
+    v = Vector.from_coo([0, 1, 2], [0, 1, 2])
+    w = Vector.from_coo([0, 1], [10, 20])
+    m = Vector.from_coo([1], [True])
     v[[0, 1]](m.S) << w
-    result1 = Vector.from_values([0, 1, 2], [0, 20, 2])
+    result1 = Vector.from_coo([0, 1, 2], [0, 20, 2])
     assert v.isequal(result1)
     with pytest.raises(DimensionMismatch):
         v[[0, 1]](v.S) << w
@@ -581,7 +581,7 @@ def test_subassign(A):
         v[[0, 1]](m.S) << v
 
     v[[0, 1]](m.S) << 100
-    result2 = Vector.from_values([0, 1, 2], [0, 100, 2])
+    result2 = Vector.from_coo([0, 1, 2], [0, 100, 2])
     assert v.isequal(result2)
     with pytest.raises(DimensionMismatch):
         v[[0, 1]](v.S) << 99
@@ -597,21 +597,21 @@ def test_subassign(A):
 
 
 def test_assign_scalar_with_mask():
-    v = Vector.from_values([0, 1, 2], [1, 2, 3])
-    m = Vector.from_values([0, 2], [False, True])
-    w1 = Vector.from_values([0], [50])
-    w3 = Vector.from_values([0, 1, 2], [10, 20, 30])
+    v = Vector.from_coo([0, 1, 2], [1, 2, 3])
+    m = Vector.from_coo([0, 2], [False, True])
+    w1 = Vector.from_coo([0], [50])
+    w3 = Vector.from_coo([0, 1, 2], [10, 20, 30])
 
     v(m.V)[:] << w3
-    result = Vector.from_values([0, 1, 2], [1, 2, 30])
+    result = Vector.from_coo([0, 1, 2], [1, 2, 30])
     assert v.isequal(result)
 
     v(m.V)[:] << 100
-    result = Vector.from_values([0, 1, 2], [1, 2, 100])
+    result = Vector.from_coo([0, 1, 2], [1, 2, 100])
     assert v.isequal(result)
 
     v(m.V, accum=binary.plus)[2] << 1000
-    result = Vector.from_values([0, 1, 2], [1, 2, 1100])
+    result = Vector.from_coo([0, 1, 2], [1, 2, 1100])
     assert v.isequal(result)
 
     with pytest.raises(TypeError, match="Single element assign does not accept a submask"):
@@ -621,17 +621,17 @@ def test_assign_scalar_with_mask():
         v[2](w1.S) << 7
 
     v[[2]](w1.S) << 7
-    result = Vector.from_values([0, 1, 2], [1, 2, 7])
+    result = Vector.from_coo([0, 1, 2], [1, 2, 7])
     assert v.isequal(result)
 
 
 def test_assign_list():
     v = Vector(int, 4)
     v[[0, 1]] = [2, 3]
-    expected = Vector.from_values([0, 1], [2, 3], size=4)
+    expected = Vector.from_coo([0, 1], [2, 3], size=4)
     assert v.isequal(expected)
     v[::2] = np.arange(2)
-    expected = Vector.from_values([0, 1, 2], [0, 3, 1], size=4)
+    expected = Vector.from_coo([0, 1, 2], [0, 3, 1], size=4)
     assert v.isequal(expected)
     with pytest.raises(TypeError):
         v[0] = [1]
@@ -648,7 +648,7 @@ def test_assign_list():
 
 
 def test_apply(v):
-    result = Vector.from_values([1, 3, 4, 6], [-1, -1, -2, 0])
+    result = Vector.from_coo([1, 3, 4, 6], [-1, -1, -2, 0])
     w = v.apply(unary.ainv).new()
     assert w.isequal(result)
     with pytest.raises(TypeError, match="apply only accepts UnaryOp with no scalars or BinaryOp"):
@@ -656,12 +656,12 @@ def test_apply(v):
 
 
 def test_apply_binary(v):
-    result_right = Vector.from_values([1, 3, 4, 6], [False, False, True, False])
+    result_right = Vector.from_coo([1, 3, 4, 6], [False, False, True, False])
     w_right = v.apply(binary.gt, right=1).new()
     w_right2 = v.apply(binary.gt, right=Scalar.from_value(1)).new()
     assert w_right.isequal(result_right)
     assert w_right2.isequal(result_right)
-    result_left = Vector.from_values([1, 3, 4, 6], [1, 1, 0, 2])
+    result_left = Vector.from_coo([1, 3, 4, 6], [1, 1, 0, 2])
     w_left = v.apply(binary.minus, left=2).new()
     w_left2 = v.apply(binary.minus, left=Scalar.from_value(2)).new()
     assert w_left.isequal(result_left)
@@ -688,7 +688,7 @@ def test_apply_empty(v):
 
 def test_apply_indexunary(v):
     idx = [1, 3, 4, 6]
-    vr = Vector.from_values(idx, idx)
+    vr = Vector.from_coo(idx, idx)
     r1 = v.apply(indexunary.index).new()
     r2 = v.apply("index").new()
     r3 = indexunary.index(v).new()
@@ -696,7 +696,7 @@ def test_apply_indexunary(v):
     assert r2.isequal(vr)
     assert r3.isequal(vr)
 
-    v2 = Vector.from_values(idx, [False, False, True, False])
+    v2 = Vector.from_coo(idx, [False, False, True, False])
     s2 = Scalar(dtypes.INT64)
     s2.value = 2
     w1 = v.apply("==", s2).new()
@@ -712,7 +712,7 @@ def test_apply_indexunary(v):
 
 
 def test_select(v):
-    result = Vector.from_values([1, 3], [1, 1], size=7)
+    result = Vector.from_coo([1, 3], [1, 1], size=7)
     w1 = v.select(select.valueeq, 1).new()
     w2 = v.select("==", 1).new()
     w3 = select.rowle(v, 3).new()
@@ -728,14 +728,14 @@ def test_select(v):
     with pytest.raises(TypeError, match="thunk"):
         v.select(select.valueeq, object())
     w7 = v.select("==").new()
-    expected = Vector.from_values([6], 0)
+    expected = Vector.from_coo([6], 0)
     assert w7.isequal(expected)
 
 
 @autocompute
 def test_select_bools_and_masks(v):
     # Select with boolean and masks
-    result = Vector.from_values([1, 3], [1, 1], size=7)
+    result = Vector.from_coo([1, 3], [1, 1], size=7)
     w7 = v.select((v == 1).new()).new()
     assert w7.isequal(result)
     w7b = v.select(v == 1).new()  # we rewrite!
@@ -761,7 +761,7 @@ def test_select_bools_and_masks(v):
     w9 << 1
     w9[1] = 0
     w9(w9.V) << v.select(w7.V)
-    result2 = Vector.from_values([1, 3], [0, 1], size=7)
+    result2 = Vector.from_coo([1, 3], [0, 1], size=7)
     assert w9.isequal(result2)
     w9 << 1
     w9[1] = 0
@@ -794,7 +794,7 @@ def test_indexunary_udf(v):
         select.register_anonymous(twox_minusthunk)
     with pytest.raises(TypeError, match="must be a function"):
         select.register_anonymous(object())
-    expected = Vector.from_values([1, 3, 4, 6], [-2, -2, 0, -4], size=7)
+    expected = Vector.from_coo([1, 3, 4, 6], [-2, -2, 0, -4], size=7)
     result = indexunary.twox_minusthunk(v, 4).new()
     assert result.isequal(expected)
     delattr(indexunary, "twox_minusthunk")
@@ -806,11 +806,11 @@ def test_indexunary_udf(v):
     assert hasattr(indexunary, "ii")
     assert hasattr(select, "ii")
     ii_apply = indexunary.register_anonymous(ii)
-    expected = Vector.from_values([1, 3, 4, 6], [False, False, True, True], size=7)
+    expected = Vector.from_coo([1, 3, 4, 6], [False, False, True, True], size=7)
     result = ii_apply(v, 2).new()
     assert result.isequal(expected)
     ii_select = select.register_anonymous(ii)
-    expected = Vector.from_values([4, 6], [2, 0], size=7)
+    expected = Vector.from_coo([4, 6], [2, 0], size=7)
     result = ii_select(v, 2).new()
     assert result.isequal(expected)
     delattr(indexunary, "ii")
@@ -835,7 +835,7 @@ def test_reduce(v):
     # Test default for non-bool
     assert v.reduce().new() == 4
     # Test default for bool
-    b1 = Vector.from_values([0, 1], [True, False])
+    b1 = Vector.from_coo([0, 1], [True, False])
     with pytest.raises(KeyError, match="plus does not work"):
         # KeyError here is kind of weird
         b1.reduce()
@@ -1003,37 +1003,37 @@ def test_simple_assignment(v):
 
 def test_isequal(v):
     assert v.isequal(v)
-    u = Vector.from_values([1], [1])
+    u = Vector.from_coo([1], [1])
     assert not u.isequal(v)
-    u2 = Vector.from_values([1], [1], size=7)
+    u2 = Vector.from_coo([1], [1], size=7)
     assert not u2.isequal(v)
-    u3 = Vector.from_values([1, 3, 4, 6], [1.0, 1.0, 2.0, 0.0])
+    u3 = Vector.from_coo([1, 3, 4, 6], [1.0, 1.0, 2.0, 0.0])
     assert not u3.isequal(v, check_dtype=True), "different datatypes are not equal"
-    u4 = Vector.from_values([1, 3, 4, 6], [1.0, 1 + 1e-9, 1.999999999999, 0.0])
+    u4 = Vector.from_coo([1, 3, 4, 6], [1.0, 1 + 1e-9, 1.999999999999, 0.0])
     assert not u4.isequal(v)
-    u5 = Vector.from_values([1, 3, 4, 5], [1.0, 1.0, 2.0, 3], size=u4.size)
+    u5 = Vector.from_coo([1, 3, 4, 5], [1.0, 1.0, 2.0, 3], size=u4.size)
     assert not u4.isequal(u5)
 
 
 @pytest.mark.slow
 def test_isclose(v):
     assert v.isclose(v)
-    u = Vector.from_values([1], [1])  # wrong size
+    u = Vector.from_coo([1], [1])  # wrong size
     assert not u.isclose(v)
-    u2 = Vector.from_values([1], [1], size=7)  # missing values
+    u2 = Vector.from_coo([1], [1], size=7)  # missing values
     assert not u2.isclose(v)
-    u3 = Vector.from_values([1, 2, 3, 4, 6], [1, 1, 1, 2, 0], size=7)  # extra values
+    u3 = Vector.from_coo([1, 2, 3, 4, 6], [1, 1, 1, 2, 0], size=7)  # extra values
     assert not u3.isclose(v)
-    u4 = Vector.from_values([1, 3, 4, 6], [1.0, 1.0, 2.0, 0.0])
+    u4 = Vector.from_coo([1, 3, 4, 6], [1.0, 1.0, 2.0, 0.0])
     assert not u4.isclose(v, check_dtype=True), "different datatypes are not equal"
-    u5 = Vector.from_values([1, 3, 4, 6], [1.0, 1 + 1e-9, 1.999999999999, 0.0])
+    u5 = Vector.from_coo([1, 3, 4, 6], [1.0, 1 + 1e-9, 1.999999999999, 0.0])
     assert u5.isclose(v)
-    u6 = Vector.from_values([1, 3, 4, 6], [1.0, 1 + 1e-4, 1.99999, 0.0])
+    u6 = Vector.from_coo([1, 3, 4, 6], [1.0, 1 + 1e-4, 1.99999, 0.0])
     assert u6.isclose(v, rel_tol=1e-3)
     # isclose should consider `inf == inf`
-    u7 = Vector.from_values([1, 3], [-np.inf, np.inf])
+    u7 = Vector.from_coo([1, 3], [-np.inf, np.inf])
     assert u7.isclose(u7, rel_tol=1e-8)
-    u4b = Vector.from_values([1, 3, 4, 5], [1.0, 1.0, 2.0, 0.0], size=u4.size)
+    u4b = Vector.from_coo([1, 3, 4, 5], [1.0, 1.0, 2.0, 0.0], size=u4.size)
     assert not u4.isclose(u4b)
 
 
@@ -1041,7 +1041,7 @@ def test_binary_op(v):
     v2 = v.dup()
     v2[1] = 0
     w = v.ewise_mult(v2, binary.gt).new()
-    result = Vector.from_values([1, 3, 4, 6], [True, False, False, False])
+    result = Vector.from_coo([1, 3, 4, 6], [True, False, False, False])
     assert w.dtype == "BOOL"
     assert w.isequal(result)
 
@@ -1084,7 +1084,7 @@ def test_del(capsys):
     shell_v = object.__new__(Vector)
     del shell_v
     # v has `gb_obj` of NULL
-    v = Vector.from_values([0, 1], [0, 1])
+    v = Vector.from_coo([0, 1], [0, 1])
     gb_obj = v.gb_obj
     v.gb_obj = gb.core.NULL
     del v
@@ -1165,7 +1165,7 @@ def test_ss_import_export(v, do_iso, methods):
         assert v2.isequal(v)
         assert v2.ss.is_iso is do_iso
 
-    v3 = Vector.from_values([0, 1, 2], [1, 3, 5])
+    v3 = Vector.from_coo([0, 1, 2], [1, 3, 5])
     if do_iso:
         v3(v3.S) << 1
     v3_copy = v3.dup()
@@ -1293,7 +1293,7 @@ def test_ss_import_export_auto(v, do_iso, methods):
     assert v.ss.is_iso is do_iso
     assert v_orig.ss.is_iso is do_iso
 
-    w = Vector.from_values([0, 1, 2], [10, 20, 30])
+    w = Vector.from_coo([0, 1, 2], [10, 20, 30])
     if do_iso:
         w(w.S) << 1
     w_orig = w.dup()
@@ -1374,8 +1374,8 @@ def test_not_to_array(v):
 
 
 def test_vector_index_with_scalar():
-    v = Vector.from_values([0, 1, 2], [10, 20, 30])
-    expected = Vector.from_values([0, 1], [20, 10])
+    v = Vector.from_coo([0, 1, 2], [10, 20, 30])
+    expected = Vector.from_coo([0, 1], [20, 10])
     for dtype in ["int8", "uint8", "int16", "uint16", "int32", "uint32"]:
         s1 = Scalar.from_value(1, dtype=dtype)
         assert v[s1].new() == 20
@@ -1389,12 +1389,12 @@ def test_vector_index_with_scalar():
 
 
 def test_diag(v):
-    indices, values = v.to_values()
+    indices, values = v.to_coo()
     for k in range(-5, 5):
         size = v.size + abs(k)
         rows = indices + max(0, -k)
         cols = indices + max(0, k)
-        expected = Matrix.from_values(rows, cols, values, nrows=size, ncols=size, dtype=v.dtype)
+        expected = Matrix.from_coo(rows, cols, values, nrows=size, ncols=size, dtype=v.dtype)
         # Construct diagonal matrix A
         if suitesparse:
             A = gb.ss.diag(v, k=k)
@@ -1503,8 +1503,8 @@ def test_auto(v):
         assert expr[0].value == expected[0].value
         assert expr[1].value == expected[1].value
         assert list(expr) == list(expected)
-        k1, v1 = expected.to_values()
-        k2, v2 = expr.to_values()
+        k1, v1 = expected.to_coo()
+        k2, v2 = expr.to_coo()
         assert_array_equal(k1, k2)
         assert_array_equal(v1, v2)
         unary.sqrt(expected).isequal(unary.sqrt(expr))
@@ -1592,6 +1592,7 @@ def test_expr_is_like_vector(v):
         "_update",
         "build",
         "clear",
+        "from_coo",
         "from_dict",
         "from_pygraphblas",
         "from_values",
@@ -1628,6 +1629,7 @@ def test_index_expr_is_like_vector(v):
         "_update",
         "build",
         "clear",
+        "from_coo",
         "from_dict",
         "from_pygraphblas",
         "from_values",
@@ -1643,10 +1645,10 @@ def test_index_expr_is_like_vector(v):
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_random(v):
-    r1 = Vector.from_values([1], [1], size=v.size)
-    r2 = Vector.from_values([3], [1], size=v.size)
-    r3 = Vector.from_values([4], [2], size=v.size)
-    r4 = Vector.from_values([6], [0], size=v.size)
+    r1 = Vector.from_coo([1], [1], size=v.size)
+    r2 = Vector.from_coo([3], [1], size=v.size)
+    r3 = Vector.from_coo([4], [2], size=v.size)
+    r4 = Vector.from_coo([6], [0], size=v.size)
     seen = set()
     for _i in range(1000000):  # pragma: no branch (sanity)
         r = v.ss.selectk("random", 1)
@@ -1685,7 +1687,7 @@ def test_ss_firstk(v):
     for w, data in [(v, mixed_data), (iso_v, iso_data)]:
         for k in range(w.nvals + 1):
             x = w.ss.selectk("first", k)
-            expected = Vector.from_values(data[0][:k], data[1][:k], size=w.size)
+            expected = Vector.from_coo(data[0][:k], data[1][:k], size=w.size)
             assert x.isequal(expected)
     with pytest.raises(ValueError):
         v.ss.selectk("first", -1)
@@ -1700,39 +1702,39 @@ def test_ss_lastk(v):
     for w, data in [(v, mixed_data), (iso_v, iso_data)]:
         for k in range(w.nvals + 1):
             x = w.ss.selectk("last", k)
-            expected = Vector.from_values(data[0][-k:], data[1][-k:], size=w.size)
+            expected = Vector.from_coo(data[0][-k:], data[1][-k:], size=w.size)
             assert x.isequal(expected)
 
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_largestk(v):
     w = v.ss.selectk("largest", 1)
-    expected = Vector.from_values([4], [2], size=v.size)
+    expected = Vector.from_coo([4], [2], size=v.size)
     assert w.isequal(expected)
 
     w = v.ss.selectk("largest", 2)
-    expected1 = Vector.from_values([1, 4], [1, 2], size=v.size)
-    expected2 = Vector.from_values([3, 4], [1, 2], size=v.size)
+    expected1 = Vector.from_coo([1, 4], [1, 2], size=v.size)
+    expected2 = Vector.from_coo([3, 4], [1, 2], size=v.size)
     assert w.isequal(expected1) or w.isequal(expected2)
 
     w = v.ss.selectk("largest", 3)
-    expected = Vector.from_values([1, 3, 4], [1, 1, 2], size=v.size)
+    expected = Vector.from_coo([1, 3, 4], [1, 1, 2], size=v.size)
     assert w.isequal(expected)
 
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_smallestk(v):
     w = v.ss.selectk("smallest", 1)
-    expected = Vector.from_values([6], [0], size=v.size)
+    expected = Vector.from_coo([6], [0], size=v.size)
     assert w.isequal(expected)
 
     w = v.ss.selectk("smallest", 2)
-    expected1 = Vector.from_values([1, 6], [1, 0], size=v.size)
-    expected2 = Vector.from_values([3, 6], [1, 0], size=v.size)
+    expected1 = Vector.from_coo([1, 6], [1, 0], size=v.size)
+    expected2 = Vector.from_coo([3, 6], [1, 0], size=v.size)
     assert w.isequal(expected1) or w.isequal(expected2)
 
     w = v.ss.selectk("smallest", 3)
-    expected = Vector.from_values([1, 3, 6], [1, 1, 0], size=v.size)
+    expected = Vector.from_coo([1, 3, 6], [1, 1, 0], size=v.size)
     assert w.isequal(expected)
 
 
@@ -1742,9 +1744,9 @@ def test_ss_compactify(do_iso):
     orig_indices = [1, 3, 4, 6]
     new_indices = [0, 1, 2, 3]
     if do_iso:
-        v = Vector.from_values(orig_indices, 1)
+        v = Vector.from_coo(orig_indices, 1)
     else:
-        v = Vector.from_values(orig_indices, [1, 4, 2, 0])
+        v = Vector.from_coo(orig_indices, [1, 4, 2, 0])
 
     def check(v, expected, *args, stop=0, **kwargs):
         w = v.ss.compactify(*args, **kwargs)
@@ -1766,7 +1768,7 @@ def test_ss_compactify(do_iso):
             w = v.ss.compactify(*args, size=n, reverse=True, **kwargs)
             assert w.isequal(x)
 
-    expected = Vector.from_values(
+    expected = Vector.from_coo(
         new_indices,
         1 if do_iso else [1, 4, 2, 0],
         size=4,
@@ -1776,7 +1778,7 @@ def test_ss_compactify(do_iso):
     check(v, reverse(expected), "last")
     check_reverse(v, reverse(expected), "last")
 
-    expected = Vector.from_values(
+    expected = Vector.from_coo(
         new_indices,
         orig_indices,
         size=4,
@@ -1786,7 +1788,7 @@ def test_ss_compactify(do_iso):
     check(v, reverse(expected), "last", asindex=True)
     check_reverse(v, reverse(expected), "last", asindex=True)
 
-    expected = Vector.from_values(
+    expected = Vector.from_coo(
         new_indices,
         1 if do_iso else [0, 1, 2, 4],
         size=4,
@@ -1797,7 +1799,7 @@ def test_ss_compactify(do_iso):
     check_reverse(v, reverse(expected), "largest")
 
     if not do_iso:
-        expected = Vector.from_values(
+        expected = Vector.from_coo(
             new_indices,
             [6, 1, 4, 3],
             size=4,
@@ -1836,16 +1838,16 @@ def test_ss_compactify(do_iso):
 
 
 def test_slice():
-    v = Vector.from_values(np.arange(5), np.arange(5))
+    v = Vector.from_coo(np.arange(5), np.arange(5))
     w = v[0:0].new()
     assert w.size == 0
     w = v[2:0].new()
     assert w.size == 0
     w = v[::-1].new()
-    expected = Vector.from_values(np.arange(5), np.arange(5)[::-1])
+    expected = Vector.from_coo(np.arange(5), np.arange(5)[::-1])
     assert w.isequal(expected)
     w = v[4:-3:-1].new()
-    expected = Vector.from_values(np.arange(2), np.arange(5)[4:-3:-1])
+    expected = Vector.from_coo(np.arange(2), np.arange(5)[4:-3:-1])
     assert w.isequal(expected)
 
 
@@ -1869,8 +1871,8 @@ def test_ss_concat(v):
 @pytest.mark.skipif("not suitesparse")
 def test_ss_split(v):
     w1, w2 = v.ss.split(4)
-    expected1 = Vector.from_values([1, 3], 1)
-    expected2 = Vector.from_values([0, 2], [2, 0])
+    expected1 = Vector.from_coo([1, 3], 1)
+    expected2 = Vector.from_coo([0, 2], [2, 0])
     assert w1.isequal(expected1)
     assert w2.isequal(expected2)
     x1, x2 = v.ss.split([4, 3], name="split")
@@ -1878,6 +1880,13 @@ def test_ss_split(v):
     assert x2.isequal(expected2)
     assert x1.name == "split_0"
     assert x2.name == "split_1"
+
+
+def test_deprecated(v):
+    with pytest.warns(DeprecationWarning):
+        v.to_values()
+    with pytest.warns(DeprecationWarning):
+        Vector.from_values([1], [2])
 
 
 def test_ndim(A, v):
@@ -1896,21 +1905,21 @@ def test_sizeof(v):
 
 
 def test_ewise_union():
-    v1 = Vector.from_values([0], [1], size=3)
-    v2 = Vector.from_values([1], [2], size=3)
+    v1 = Vector.from_coo([0], [1], size=3)
+    v2 = Vector.from_coo([1], [2], size=3)
     result = v1.ewise_union(v2, binary.plus, 10, 20).new()
-    expected = Vector.from_values([0, 1], [21, 12], size=3)
+    expected = Vector.from_coo([0, 1], [21, 12], size=3)
     assert result.isequal(expected)
     # Handle Scalars
     result = v1.ewise_union(v2, binary.plus, Scalar.from_value(10), Scalar.from_value(20)).new()
     assert result.isequal(expected)
     # Upcast if scalars are floats
     result = v1.ewise_union(v2, monoid.plus, 10.1, 20.2).new()
-    expected = Vector.from_values([0, 1], [21.2, 12.1], size=3)
+    expected = Vector.from_coo([0, 1], [21.2, 12.1], size=3)
     assert result.isclose(expected)
 
     result = v1.ewise_union(v2, binary.minus, 0, 0).new()
-    expected = Vector.from_values([0, 1], [1, -2], size=3)
+    expected = Vector.from_coo([0, 1], [1, -2], size=3)
     assert result.isequal(expected)
     result = (v1 - v2).new()
     assert result.isequal(expected)
@@ -1926,7 +1935,7 @@ def test_ewise_union():
 
 def test_delete_via_scalar(v):
     del v[[1, 3]]
-    assert v.isequal(Vector.from_values([4, 6], [2, 0]))
+    assert v.isequal(Vector.from_coo([4, 6], [2, 0]))
     del v[:]
     assert v.nvals == 0
 
@@ -1938,18 +1947,18 @@ def test_udt():
     v = Vector(udt, size=3)
     a = np.zeros(1, dtype=record_dtype)
     v[0] = a[0]
-    expected = Vector.from_values([0], a, size=3, dtype=udt)
+    expected = Vector.from_coo([0], a, size=3, dtype=udt)
     assert v.isequal(expected)
     v[1] = (1, 2)
-    expected = Vector.from_values(
+    expected = Vector.from_coo(
         [0, 1], np.array([(0, 0), (1, 2)], dtype=record_dtype), size=3, dtype=udt
     )
     assert v.isequal(expected)
     v[:] = 0
-    zeros = Vector.from_values([0, 1, 2], np.zeros(3, dtype=record_dtype), dtype=udt)
+    zeros = Vector.from_coo([0, 1, 2], np.zeros(3, dtype=record_dtype), dtype=udt)
     assert v.isequal(zeros)
     v(v.S)[:] = 1
-    ones = Vector.from_values([0, 1, 2], np.ones(3, dtype=record_dtype), dtype=udt)
+    ones = Vector.from_coo([0, 1, 2], np.ones(3, dtype=record_dtype), dtype=udt)
     assert v.isequal(ones)
     v[:](v.S) << 0
     assert v.isequal(zeros)
@@ -1974,10 +1983,10 @@ def test_udt():
     assert v.isequal(zeros)
     assert v[0].new() == s
     assert v[:].new().isequal(v)
-    indices, values = v.to_values()
-    assert v.isequal(Vector.from_values(indices, values))
+    indices, values = v.to_coo()
+    assert v.isequal(Vector.from_coo(indices, values))
     result = unary.positioni(v).new()
-    expected = Vector.from_values([0, 1, 2], [0, 1, 2])
+    expected = Vector.from_coo([0, 1, 2], [0, 1, 2])
     assert result.isequal(expected)
     result = binary.firsti(v & v).new()
     assert result.isequal(expected)
@@ -1998,7 +2007,7 @@ def test_udt():
         v.reduce(aggop).new()
     v.clear()
     v[[0, 1]] = [(2, 3), (4, 5)]
-    expected = Vector.from_values([0, 1], [(2, 3), (4, 5)], dtype=udt, size=v.size)
+    expected = Vector.from_coo([0, 1], [(2, 3), (4, 5)], dtype=udt, size=v.size)
     if suitesparse:
         vv = Vector.ss.deserialize(v.ss.serialize())
         assert v.isequal(vv, check_dtype=True)
@@ -2035,10 +2044,10 @@ def test_udt():
     v << (1, 1, 1)
     assert v.isequal(w)
 
-    indices, values = v.to_values()
+    indices, values = v.to_coo()
     assert_array_equal(values, np.ones((2, 3), dtype=np.uint16))
-    assert v.isequal(Vector.from_values(indices, values, dtype=v.dtype))
-    assert v.isequal(Vector.from_values(indices, values))
+    assert v.isequal(Vector.from_coo(indices, values, dtype=v.dtype))
+    assert v.isequal(Vector.from_coo(indices, values))
     if suitesparse:
         info = v.ss.export()
         result = Vector.ss.import_any(**info)
@@ -2060,7 +2069,7 @@ def test_udt():
         v.reduce(aggop).new()
     v.clear()
     v[[0, 1]] = [[2, 3, 4], [5, 6, 7]]
-    expected = Vector.from_values([0, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt2, size=v.size)
+    expected = Vector.from_coo([0, 1], [[2, 3, 4], [5, 6, 7]], dtype=udt2, size=v.size)
     assert v.isequal(expected)
     if suitesparse:
         vv = Vector.ss.deserialize(v.ss.serialize())
@@ -2129,7 +2138,7 @@ def test_ss_iteration(v):
     assert list(w.ss.itervalues()) == []
     assert list(w.ss.iteritems()) == []
 
-    indices, values = v.to_values()
+    indices, values = v.to_coo()
     # This is what I would expect
     assert sorted(indices) == sorted(v.ss.iterkeys())
     assert sorted(values) == sorted(v.ss.itervalues())
@@ -2217,7 +2226,7 @@ def test_ewise_union_infix():
     v[0] = 1
     w[1] = 2
     result = binary.plus(v | w, left_default=10, right_default=20).new()
-    expected = Vector.from_values([0, 1], [21, 12], size=3)
+    expected = Vector.from_coo([0, 1], [21, 12], size=3)
     assert expected.isequal(result)
     result = monoid.plus(v | w, left_default=10, right_default=20).new()
     assert expected.isequal(result)
@@ -2243,13 +2252,13 @@ def test_ewise_union_infix():
 
 
 def test_reposition(v):
-    indices, values = v.to_values()
+    indices, values = v.to_coo()
     indices = indices.astype(int)
 
     def get_expected(offset, size):
         ind = indices + offset
         mask = (ind >= 0) & (ind < size)
-        return Vector.from_values(ind[mask], values[mask], size=size)
+        return Vector.from_coo(ind[mask], values[mask], size=size)
 
     for offset in range(-v.size - 2, v.size + 3):
         result = v.reposition(offset).new()
@@ -2263,24 +2272,24 @@ def test_reposition(v):
         assert result.isequal(expected)
 
 
-def test_to_values_sort():
+def test_to_coo_sort():
     # How can we get a vector to a jumbled state in SS so that export won't be sorted?
     N = 1000000
     a = np.unique(np.random.randint(N, size=100))
     expected = a.copy()
     np.random.shuffle(a)
-    v = Vector.from_values(a, a, size=N)
-    indices, values = v.to_values(sort=False)
-    v = Vector.from_values(a, a, size=N)
-    indices, values = v.to_values(sort=True)
+    v = Vector.from_coo(a, a, size=N)
+    indices, values = v.to_coo(sort=False)
+    v = Vector.from_coo(a, a, size=N)
+    indices, values = v.to_coo(sort=True)
     assert_array_equal(indices, expected)
     assert_array_equal(values, expected)
 
 
-def test_to_values_subset(v):
-    indices, values = v.to_values()
+def test_to_coo_subset(v):
+    indices, values = v.to_coo()
     for do_indices, do_vals in itertools.product([True, False], [True, False]):
-        idx, vals = v.to_values(indices=do_indices, values=do_vals)
+        idx, vals = v.to_coo(indices=do_indices, values=do_vals)
         if do_indices:
             assert_array_equal(idx, indices)
         else:
@@ -2290,11 +2299,11 @@ def test_to_values_subset(v):
             assert vals.dtype == np.int64
         else:
             assert vals is None
-    idx, vals = v.to_values(indices=None, values=True, dtype=float)
+    idx, vals = v.to_coo(indices=None, values=True, dtype=float)
     assert idx is None
     assert_array_equal(vals, values)
     assert vals.dtype == float
-    idx, vals = v.to_values(values=True, dtype=v.dtype, sort=False)
+    idx, vals = v.to_coo(values=True, dtype=v.dtype, sort=False)
     assert vals.dtype == np.int64
 
 

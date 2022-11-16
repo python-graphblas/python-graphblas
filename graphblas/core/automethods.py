@@ -392,6 +392,7 @@ def _main():
         "reposition",
         "select",
         "ss",
+        "to_coo",
         "to_values",
     }
     vector = {
@@ -411,7 +412,6 @@ def _main():
         "reduce_columnwise",
         "reduce_rowwise",
         "reduce_scalar",
-        "to_coo",
         "to_csc",
         "to_csr",
         "to_dcsc",

@@ -502,7 +502,7 @@ class BaseType:
     def __array__(self, dtype=None):
         raise TypeError(
             f"{type(self).__name__} can't be directly converted to a numpy array; "
-            f"perhaps use `{self.name}.to_values()` method instead."
+            f"perhaps use `{self.name}.to_coo()` method instead."
         )
 
 

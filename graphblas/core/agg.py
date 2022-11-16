@@ -557,10 +557,10 @@ def _first_last(agg, updater, expr, *, in_composite, semiring_):
         init = expr._new_vector(bool, size=A._ncols)
         init[...] = False  # O(1) dense vector in SuiteSparse 5
         step1 = semiring_(A @ init).new()
-        Is, Js = step1.to_values()
+        Is, Js = step1.to_coo()
 
         Matrix_ = type(expr._new_matrix(bool))
-        P = Matrix_.from_values(Js, Is, 1, nrows=A._ncols, ncols=A._nrows)
+        P = Matrix_.from_coo(Js, Is, 1, nrows=A._ncols, ncols=A._nrows)
         mask = step1.diag()
         result = semiring.any_first(A @ P).new(mask=mask.S).diag()
 
