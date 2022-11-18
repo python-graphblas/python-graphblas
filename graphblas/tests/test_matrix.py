@@ -2570,6 +2570,10 @@ def test_wait(A):
     A2 = A.dup()
     A2.wait()
     assert A2.isequal(A)
+    A2.wait("materialize")
+    A2.wait("complete")
+    with pytest.raises(ValueError):
+        A2.wait("badmode")
 
 
 def test_pickle(A):

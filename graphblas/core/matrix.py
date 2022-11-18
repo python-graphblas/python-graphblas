@@ -13,6 +13,7 @@ from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, Updat
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
 from .scalar import (
+    _COMPLETE,
     _MATERIALIZE,
     Scalar,
     ScalarExpression,
@@ -661,8 +662,15 @@ class Matrix(BaseType):
                 rv << d[: rv._size]
         return rv
 
-    def wait(self):
-        """Wait for a computation to complete.
+    def wait(self, how="materialize"):
+        """Wait for a computation to complete or establish a "happens-before" relation
+
+        Parameters
+        ----------
+        how : {"materialize", "complete"}
+            "materialize" fully computes an object.
+            "complete" establishes a "happens-before" relation useful with multi-threading.
+            See GraphBLAS documentation for more details.
 
         In `non-blocking mode <../user_guide/init.html#graphblas-modes>`__,
         the computations may be delayed and not yet safe to use by multiple threads.
@@ -670,8 +678,14 @@ class Matrix(BaseType):
 
         Has no effect in `blocking mode <../user_guide/init.html#graphblas-modes>`__.
         """
-        # TODO: expose COMPLETE or MATERIALIZE options to the user
-        call("GrB_Matrix_wait", [self, _MATERIALIZE])
+        how = how.lower()
+        if how == "materialize":
+            mode = _MATERIALIZE
+        elif how == "complete":
+            mode = _COMPLETE
+        else:
+            raise ValueError(f'`how` argument must be "materialize" or "complete"; got {how!r}')
+        call("GrB_Matrix_wait", [self, mode])
 
     def get(self, row, col, default=None):
         """Get an element at (``row``, ``col``) indices as a Python scalar.

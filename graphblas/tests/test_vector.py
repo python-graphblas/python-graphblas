@@ -1350,6 +1350,10 @@ def test_wait(v):
     v2 = v.dup()
     v2.wait()
     assert v2.isequal(v)
+    v2.wait("materialize")
+    v2.wait("complete")
+    with pytest.raises(ValueError):
+        v2.wait("badmode")
 
 
 def test_pickle(v):
