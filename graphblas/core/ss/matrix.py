@@ -9,11 +9,13 @@ from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_b
 
 import graphblas as gb
 
-from ... import monoid
-from ...dtypes import _INDEX, BOOL, INT64, _string_to_dtype, lookup_dtype
+from ... import binary, monoid
+from ...dtypes import _INDEX, BOOL, INT64, UINT64, _string_to_dtype, lookup_dtype
 from ...exceptions import _error_code_lookup, check_status, check_status_carg
 from .. import NULL, ffi, lib
 from ..base import call
+from ..descriptor import lookup as descriptor_lookup
+from ..operator import get_typed_op
 from ..scalar import Scalar, _as_scalar, _scalar_index
 from ..utils import (
     _CArray,
@@ -29,7 +31,7 @@ from ..utils import (
     wrapdoc,
 )
 from .config import BaseConfig
-from .descriptor import get_compression_descriptor, get_nthreads_descriptor
+from .descriptor import get_compression_descriptor, get_nthreads_descriptor, set_nthreads
 
 ffi_new = ffi.new
 
@@ -3835,6 +3837,48 @@ class ss:
             take_ownership=True,
             name=name,
         )
+
+    def sort_rowwise(self, op=binary.lt, *, permutation=True, values=True, nthreads=None):
+        return self._sort(
+            op, order="rowwise", permutation=permutation, values=values, nthreads=nthreads
+        )
+
+    def sort_columnwise(self, op=binary.lt, *, permutation=True, values=True, nthreads=None):
+        return self._sort(
+            op, order="columnwise", permutation=permutation, values=values, nthreads=nthreads
+        )
+
+    def _sort(self, op=binary.lt, *, order="rowwise", permutation=True, values=True, nthreads=None):
+        from ..matrix import Matrix
+
+        order = get_order(order)
+        parent = self._parent
+        op = get_typed_op(op, parent.dtype, kind="binary")
+        if op.opclass == "Monoid":
+            op = op.binaryop
+        else:
+            parent._expect_op(op, "BinaryOp", within="sort", argname="op")
+        if values:
+            C = Matrix(parent.dtype, parent._nrows, parent._ncols)
+        else:
+            C = None
+        if permutation:
+            P = Matrix(UINT64, parent._nrows, parent._ncols)
+        else:
+            P = None
+        # TODO: clean this up once we expose backend descriptors
+        if nthreads is not None:
+            if order == "rowwise":
+                desc = get_nthreads_descriptor(nthreads)
+            else:
+                desc = descriptor_lookup(transpose_first=True, create=True)
+                set_nthreads(desc, nthreads)
+        elif order == "rowwise":
+            desc = None
+        else:
+            desc = descriptor_lookup(transpose_first=True)
+        call("GxB_Matrix_sort", [C, P, op, parent, desc])
+        return P, C
 
     def serialize(self, compression="default", level=None, *, nthreads=None):
         """Serialize a Matrix to bytes (as numpy array) using SuiteSparse GxB_Matrix_serialize.

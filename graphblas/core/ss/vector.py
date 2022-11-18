@@ -8,11 +8,12 @@ from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
 
 import graphblas as gb
 
-from ... import monoid
+from ... import binary, monoid
 from ...dtypes import _INDEX, INT64, UINT64, _string_to_dtype, lookup_dtype
 from ...exceptions import _error_code_lookup, check_status, check_status_carg
 from .. import NULL, ffi, lib
 from ..base import call
+from ..operator import get_typed_op
 from ..scalar import Scalar, _as_scalar
 from ..utils import (
     _CArray,
@@ -1489,6 +1490,30 @@ class ss:
             take_ownership=True,
             name=name,
         )
+
+    def sort(self, op=binary.lt, *, permutation=True, values=True, nthreads=None):
+        from ..vector import Vector
+
+        parent = self._parent
+        op = get_typed_op(op, parent.dtype, kind="binary")
+        if op.opclass == "Monoid":
+            op = op.binaryop
+        else:
+            parent._expect_op(op, "BinaryOp", within="sort", argname="op")
+        if values:
+            w = Vector(parent.dtype, parent._size)
+        else:
+            w = None
+        if permutation:
+            p = Vector(UINT64, parent._size)
+        else:
+            p = None
+        if nthreads is not None:
+            desc = get_nthreads_descriptor(nthreads)
+        else:
+            desc = None
+        call("GxB_Vector_sort", [w, p, op, parent, desc])
+        return p, w
 
     def serialize(self, compression="default", level=None, *, nthreads=None):
         """Serialize a Vector to bytes (as numpy array) using SuiteSparse GxB_Vector_serialize.
