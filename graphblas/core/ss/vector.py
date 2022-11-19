@@ -1492,6 +1492,34 @@ class ss:
         )
 
     def sort(self, op=binary.lt, *, permutation=True, values=True, nthreads=None):
+        """GxB_Vector_sort to sort values of the Vector
+
+        Sorting moves all the elements to the left just like `compactify`.
+        The returned vectors will be the same size as the input Vector.
+
+        Parameters
+        ----------
+        op : :class:`~graphblas.core.operator.BinaryOp`, optional
+            Binary operator with a bool return type used to sort the values.
+            For example, `binary.lt` (the default) sorts the smallest elements first.
+        permutation : bool, default=True
+            Whether to compute the permutation Vector that has the original indices of the
+            sorted values. Will return None if `False`.
+        values : bool, default=True
+            Whether to return values; will return `None` for values if `False`.
+        nthreads : int, optional
+            The maximum number of threads to use for this operation.
+            None, 0 or negative nthreads means to use the default number of threads.
+
+        Returns
+        -------
+        Vector[dtype=UINT64] : permutation
+        Vector : values
+
+        See Also
+        --------
+        Vector.ss.compactify
+        """
         from ..vector import Vector
 
         parent = self._parent
@@ -1501,18 +1529,29 @@ class ss:
         else:
             parent._expect_op(op, "BinaryOp", within="sort", argname="op")
         if values:
-            w = Vector(parent.dtype, parent._size)
+            w = Vector(parent.dtype, parent._size, name="values")
+        elif not permutation:
+            return None, None
         else:
             w = None
         if permutation:
-            p = Vector(UINT64, parent._size)
+            p = Vector(UINT64, parent._size, name="permutation")
         else:
             p = None
         if nthreads is not None:
             desc = get_nthreads_descriptor(nthreads)
         else:
             desc = None
-        call("GxB_Vector_sort", [w, p, op, parent, desc])
+        check_status(
+            lib.GxB_Vector_sort(
+                w._carg if w is not None else NULL,
+                p._carg if p is not None else NULL,
+                op._carg,
+                parent._carg,
+                desc._carg if desc is not None else NULL,
+            ),
+            parent,
+        )
         return p, w
 
     def serialize(self, compression="default", level=None, *, nthreads=None):

@@ -12,6 +12,7 @@ import graphblas as gb
 from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
 from graphblas.exceptions import (
     DimensionMismatch,
+    DomainMismatch,
     EmptyObject,
     IndexOutOfBound,
     InvalidObject,
@@ -2399,3 +2400,26 @@ def test_to_dict(v):
     assert v.to_dict() == {1: 1, 3: 1, 4: 2, 6: 0}
     empty = Vector(int, 2)
     assert empty.to_dict() == {}
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_sort(v):
+    # For equal values, are indices guaranteed to be sorted?
+    expected_p1 = Vector.from_coo([0, 1, 2, 3], [6, 1, 3, 4], size=7)
+    expected_p2 = Vector.from_coo([0, 1, 2, 3], [6, 1, 3, 4], size=7)
+    expected_w = Vector.from_coo([0, 1, 2, 3], [0, 1, 1, 2], size=7)
+    for permutation, values, nthreads in itertools.product([True, False], [True, False], [None, 4]):
+        p, w = v.ss.sort(permutation=permutation, values=values, nthreads=nthreads)
+        if permutation:
+            assert p.isequal(expected_p1) or p.isequal(expected_p2)
+        else:
+            assert p is None
+        if values:
+            assert w.isequal(expected_w)
+        else:
+            assert w is None
+    _, w = v.ss.sort(">", permutation=False)
+    expected = Vector.from_coo([0, 1, 2, 3], [2, 1, 1, 0], size=7)
+    assert w.isequal(expected)
+    with pytest.raises(DomainMismatch):
+        v.ss.sort(binary.plus)

@@ -3731,6 +3731,9 @@ class ss:
 
         **THIS API IS EXPERIMENTAL AND MAY CHANGE**
 
+        See Also
+        --------
+        Matrix.ss.sort
         """
         return self._compactify(
             how, reverse, asindex, "ncols", ncols, "hypercsr", "col_indices", name
@@ -3765,6 +3768,9 @@ class ss:
 
         **THIS API IS EXPERIMENTAL AND MAY CHANGE**
 
+        See Also
+        --------
+        Matrix.ss.sort
         """
         return self._compactify(
             how, reverse, asindex, "nrows", nrows, "hypercsc", "row_indices", name
@@ -3838,17 +3844,39 @@ class ss:
             name=name,
         )
 
-    def sort_rowwise(self, op=binary.lt, *, permutation=True, values=True, nthreads=None):
-        return self._sort(
-            op, order="rowwise", permutation=permutation, values=values, nthreads=nthreads
-        )
+    def sort(self, op=binary.lt, *, order="rowwise", permutation=True, values=True, nthreads=None):
+        """GxB_Matrix_sort to sort values along the rows (default) or columns of the Matrix
 
-    def sort_columnwise(self, op=binary.lt, *, permutation=True, values=True, nthreads=None):
-        return self._sort(
-            op, order="columnwise", permutation=permutation, values=values, nthreads=nthreads
-        )
+        Sorting moves all the elements to the left (if rowwise) or top (if columnwise) just
+        like `compactify`. The returned matrices will be the same shape as the input Matrix.
 
-    def _sort(self, op=binary.lt, *, order="rowwise", permutation=True, values=True, nthreads=None):
+        Parameters
+        ----------
+        op : :class:`~graphblas.core.operator.BinaryOp`, optional
+            Binary operator with a bool return type used to sort the values.
+            For example, `binary.lt` (the default) sorts the smallest elements first.
+        order : {"rowwise", "columnwise"}, optional
+            Whether to sort rowwise or columnwise. Rowwise shifts all values to the left,
+            and columnwise shifts all values to the top. The default is "rowwise".
+        permutation : bool, default=True
+            Whether to compute the permutation Matrix that has the original column
+            indices (if rowwise) or row indices (if columnwise) of the sorted values.
+            Will return None if `False`.
+        values : bool, default=True
+            Whether to return values; will return `None` for values if `False`.
+        nthreads : int, optional
+            The maximum number of threads to use for this operation.
+            None, 0 or negative nthreads means to use the default number of threads.
+
+        Returns
+        -------
+        Matrix[dtype=UINT64] : Permutation
+        Matrix : Values
+
+        See Also
+        --------
+        Matrix.ss.compactify
+        """
         from ..matrix import Matrix
 
         order = get_order(order)
@@ -3859,11 +3887,13 @@ class ss:
         else:
             parent._expect_op(op, "BinaryOp", within="sort", argname="op")
         if values:
-            C = Matrix(parent.dtype, parent._nrows, parent._ncols)
+            C = Matrix(parent.dtype, parent._nrows, parent._ncols, name="Values")
+        elif not permutation:
+            return None, None
         else:
             C = None
         if permutation:
-            P = Matrix(UINT64, parent._nrows, parent._ncols)
+            P = Matrix(UINT64, parent._nrows, parent._ncols, name="Permutation")
         else:
             P = None
         # TODO: clean this up once we expose backend descriptors
@@ -3877,7 +3907,16 @@ class ss:
             desc = None
         else:
             desc = descriptor_lookup(transpose_first=True)
-        call("GxB_Matrix_sort", [C, P, op, parent, desc])
+        check_status(
+            lib.GxB_Matrix_sort(
+                C._carg if C is not None else NULL,
+                P._carg if P is not None else NULL,
+                op._carg,
+                parent._carg,
+                desc._carg if desc is not None else NULL,
+            ),
+            parent,
+        )
         return P, C
 
     def serialize(self, compression="default", level=None, *, nthreads=None):
