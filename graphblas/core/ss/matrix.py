@@ -3844,7 +3844,7 @@ class ss:
             name=name,
         )
 
-    def sort(self, op=binary.lt, *, order="rowwise", permutation=True, values=True, nthreads=None):
+    def sort(self, op=binary.lt, order="rowwise", *, permutation=True, values=True, nthreads=None):
         """GxB_Matrix_sort to sort values along the rows (default) or columns of the Matrix
 
         Sorting moves all the elements to the left (if rowwise) or top (if columnwise) just
