@@ -33,10 +33,10 @@ def test_scan_matrix(method, length, do_random):
         expected = A.cumsum(axis=1)
 
     if method == "scan_rowwise":
-        R = M.ss.scan_rowwise()
+        R = M.ss.scan()
     else:
         M = M.T.new(name="A")
-        R = M.ss.scan_columnwise(binary.plus).T.new()
+        R = M.ss.scan(binary.plus, order="col").T.new()
 
     result = gb.io.to_numpy(R)
     try:
