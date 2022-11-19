@@ -3855,6 +3855,7 @@ class ss:
         op : :class:`~graphblas.core.operator.BinaryOp`, optional
             Binary operator with a bool return type used to sort the values.
             For example, `binary.lt` (the default) sorts the smallest elements first.
+            Ties are broken according to indices (smaller first).
         order : {"rowwise", "columnwise"}, optional
             Whether to sort rowwise or columnwise. Rowwise shifts all values to the left,
             and columnwise shifts all values to the top. The default is "rowwise".

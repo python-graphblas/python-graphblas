@@ -1502,6 +1502,7 @@ class ss:
         op : :class:`~graphblas.core.operator.BinaryOp`, optional
             Binary operator with a bool return type used to sort the values.
             For example, `binary.lt` (the default) sorts the smallest elements first.
+            Ties are broken according to indices (smaller first).
         permutation : bool, default=True
             Whether to compute the permutation Vector that has the original indices of the
             sorted values. Will return None if `False`.
