@@ -3686,7 +3686,7 @@ class ss:
             k, fmt, indices, sort_axis, choose_func, is_random, do_sort, name
         )
 
-    def selectk_rowwise(self, how, k, *, name=None):
+    def selectk_rowwise(self, how, k, *, name=None):  # pragma: no cover (deprecated)
         """Select (up to) k elements from each row.
 
         .. deprecated:: 2022.11.1
@@ -3731,7 +3731,7 @@ class ss:
             k, fmt, indices, sort_axis, choose_func, is_random, do_sort, name
         )
 
-    def selectk_columnwise(self, how, k, *, name=None):
+    def selectk_columnwise(self, how, k, *, name=None):  # pragma: no cover (deprecated)
         """Select (up to) k elements from each column.
 
         .. deprecated:: 2022.11.1
