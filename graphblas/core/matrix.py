@@ -62,6 +62,17 @@ def _m_mult_v(updater, left, right, op):
     updater << left.mxm(right.diag(name="M_temp"), get_semiring(monoid.any, op))
 
 
+def _m_union_m(updater, left, right, left_default, right_default, op, dtype):
+    mask = updater.kwargs.get("mask")
+    new_left = left.dup(dtype, clear=True)
+    new_left(mask=mask) << binary.second(right, left_default)
+    new_left(mask=mask) << binary.first(left | new_left)
+    new_right = right.dup(dtype, clear=True)
+    new_right(mask=mask) << binary.second(left, right_default)
+    new_right(mask=mask) << binary.first(right | new_right)
+    updater << op(new_left & new_right)
+
+
 def _m_union_v(updater, left, right, left_default, right_default, op):
     full = Vector(right.dtype, left._nrows, name="v_full")
     full[:] = 0
@@ -1785,23 +1796,15 @@ class Matrix(BaseType):
             )
         else:
             dtype = unify(scalar_dtype, nonscalar_dtype, is_left_scalar=True)
-            new_left = other.dup(dtype, clear=True)
-            new_right = self.dup(dtype, clear=True)
-            if self._is_transposed:
-                new_right << binary.second(self, right)
-            else:
-                new_right(self.S) << right
-            if other._is_transposed:
-                new_left << binary.second(other, left)
-                new_right << binary.first(other | new_right)
-            else:
-                new_left(other.S) << left
-                new_right(other.S) << other
-            if self._is_transposed:
-                new_left << binary.first(self | new_left)
-            else:
-                new_left(self.S) << self
-            expr = op(new_left & new_right)
+            expr = MatrixExpression(
+                method_name,
+                None,
+                [self, left, other, right, _m_union_m, (self, other, left, right, op, dtype)],
+                expr_repr=expr_repr,
+                nrows=self._nrows,
+                ncols=self._ncols,
+                op=op,
+            )
         if self.shape != other.shape:
             expr.new(name="")  # incompatible shape; raise now
         return expr
