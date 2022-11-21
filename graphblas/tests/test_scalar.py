@@ -312,6 +312,10 @@ def test_invert():
 
 def test_wait(s):
     s.wait()
+    s.wait("materialize")
+    s.wait("complete")
+    with pytest.raises(ValueError):
+        s.wait("badmode")
 
 
 @autocompute

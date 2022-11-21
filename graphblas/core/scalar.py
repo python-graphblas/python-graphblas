@@ -448,8 +448,15 @@ class Scalar(BaseType):
                     new_scalar.value = self.value
         return new_scalar
 
-    def wait(self):
-        """Wait for a computation to complete.
+    def wait(self, how="materialize"):
+        """Wait for a computation to complete or establish a "happens-before" relation
+
+        Parameters
+        ----------
+        how : {"materialize", "complete"}
+            "materialize" fully computes an object.
+            "complete" establishes a "happens-before" relation useful with multi-threading.
+            See GraphBLAS documentation for more details.
 
         In `non-blocking mode <../user_guide/init.html#graphblas-modes>`__,
         the computations may be delayed and not yet safe to use by multiple threads.
@@ -457,9 +464,15 @@ class Scalar(BaseType):
 
         Has no effect in `blocking mode <../user_guide/init.html#graphblas-modes>`__.
         """
-        # TODO: expose COMPLETE or MATERIALIZE options to the user
+        how = how.lower()
+        if how == "materialize":
+            mode = _MATERIALIZE
+        elif how == "complete":
+            mode = _COMPLETE
+        else:
+            raise ValueError(f'`how` argument must be "materialize" or "complete"; got {how!r}')
         if not self._is_cscalar:
-            call("GrB_Scalar_wait", [self, _MATERIALIZE])
+            call("GrB_Scalar_wait", [self, mode])
 
     def get(self, default=None):
         """Get the internal value of the Scalar as a Python scalar.
@@ -770,6 +783,7 @@ def _dict_to_record(np_type, d):
 
 
 _MATERIALIZE = Scalar.from_value(lib.GrB_MATERIALIZE, is_cscalar=True, name="GrB_MATERIALIZE")
+_COMPLETE = Scalar.from_value(lib.GrB_COMPLETE, is_cscalar=True, name="GrB_COMPLETE")
 
 utils._output_types[Scalar] = Scalar
 utils._output_types[ScalarIndexExpr] = Scalar
