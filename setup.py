@@ -34,7 +34,7 @@ setup(
     license="Apache License 2.0",
     keywords=["graphblas", "graph", "sparse", "matrix", "lagraph", "suitesparse"],
     classifiers=[
-        "Development Status :: 4 - Beta",
+        "Development Status :: 5 - Production/Stable",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: MacOS :: MacOS X",
         "Operating System :: POSIX :: Linux",
