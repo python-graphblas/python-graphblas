@@ -3844,7 +3844,7 @@ class ss:
             name=name,
         )
 
-    def sort(self, op=binary.lt, order="rowwise", *, permutation=True, values=True, nthreads=None):
+    def sort(self, op=binary.lt, order="rowwise", *, values=True, permutation=True, nthreads=None):
         """GxB_Matrix_sort to sort values along the rows (default) or columns of the Matrix
 
         Sorting moves all the elements to the left (if rowwise) or top (if columnwise) just
@@ -3859,20 +3859,20 @@ class ss:
         order : {"rowwise", "columnwise"}, optional
             Whether to sort rowwise or columnwise. Rowwise shifts all values to the left,
             and columnwise shifts all values to the top. The default is "rowwise".
+        values : bool, default=True
+            Whether to return values; will return `None` for values if `False`.
         permutation : bool, default=True
             Whether to compute the permutation Matrix that has the original column
             indices (if rowwise) or row indices (if columnwise) of the sorted values.
             Will return None if `False`.
-        values : bool, default=True
-            Whether to return values; will return `None` for values if `False`.
         nthreads : int, optional
             The maximum number of threads to use for this operation.
             None, 0 or negative nthreads means to use the default number of threads.
 
         Returns
         -------
-        Matrix[dtype=UINT64] : Permutation
         Matrix : Values
+        Matrix[dtype=UINT64] : Permutation
 
         See Also
         --------
@@ -3918,7 +3918,7 @@ class ss:
             ),
             parent,
         )
-        return P, C
+        return C, P
 
     def serialize(self, compression="default", level=None, *, nthreads=None):
         """Serialize a Matrix to bytes (as numpy array) using SuiteSparse GxB_Matrix_serialize.

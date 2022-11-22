@@ -1491,7 +1491,7 @@ class ss:
             name=name,
         )
 
-    def sort(self, op=binary.lt, *, permutation=True, values=True, nthreads=None):
+    def sort(self, op=binary.lt, *, values=True, permutation=True, nthreads=None):
         """GxB_Vector_sort to sort values of the Vector
 
         Sorting moves all the elements to the left just like `compactify`.
@@ -1503,19 +1503,19 @@ class ss:
             Binary operator with a bool return type used to sort the values.
             For example, `binary.lt` (the default) sorts the smallest elements first.
             Ties are broken according to indices (smaller first).
+        values : bool, default=True
+            Whether to return values; will return `None` for values if `False`.
         permutation : bool, default=True
             Whether to compute the permutation Vector that has the original indices of the
             sorted values. Will return None if `False`.
-        values : bool, default=True
-            Whether to return values; will return `None` for values if `False`.
         nthreads : int, optional
             The maximum number of threads to use for this operation.
             None, 0 or negative nthreads means to use the default number of threads.
 
         Returns
         -------
-        Vector[dtype=UINT64] : permutation
         Vector : values
+        Vector[dtype=UINT64] : permutation
 
         See Also
         --------
@@ -1553,7 +1553,7 @@ class ss:
             ),
             parent,
         )
-        return p, w
+        return w, p
 
     def serialize(self, compression="default", level=None, *, nthreads=None):
         """Serialize a Vector to bytes (as numpy array) using SuiteSparse GxB_Vector_serialize.

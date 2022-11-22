@@ -4040,15 +4040,15 @@ def test_ss_sort(A):
         ncols=A.ncols,
     )
     for permutation, values, nthreads in itertools.product([True, False], [True, False], [None, 4]):
-        P, C = A.ss.sort(permutation=permutation, values=values, nthreads=nthreads)
-        if permutation:
-            assert P.isequal(expected_P)
-        else:
-            assert P is None
+        C, P = A.ss.sort(permutation=permutation, values=values, nthreads=nthreads)
         if values:
             assert C.isequal(expected_C)
         else:
             assert C is None
+        if permutation:
+            assert P.isequal(expected_P)
+        else:
+            assert P is None
 
     expected_P = Matrix.from_coo(
         [0, 0, 0, 1, 2, 0, 1, 0, 1, 0, 1, 0],
@@ -4065,15 +4065,15 @@ def test_ss_sort(A):
         ncols=A.ncols,
     )
     for permutation, values, nthreads in itertools.product([True, False], [True, False], [None, 4]):
-        P, C = A.ss.sort(order="col", permutation=permutation, values=values, nthreads=nthreads)
-        if permutation:
-            assert P.isequal(expected_P)
-        else:
-            assert P is None
+        C, P = A.ss.sort(order="col", permutation=permutation, values=values, nthreads=nthreads)
         if values:
             assert C.isequal(expected_C)
         else:
             assert C is None
+        if permutation:
+            assert P.isequal(expected_P)
+        else:
+            assert P is None
 
     with pytest.raises(DomainMismatch):
         A.ss.sort("+")
@@ -4092,6 +4092,6 @@ def test_ss_sort(A):
         nrows=A.nrows,
         ncols=A.ncols,
     )
-    P, C = A.ss.sort(binary.gt, order="col")
+    C, P = A.ss.sort(binary.gt, order="col")
     assert P.isequal(expected_P)
     assert C.isequal(expected_C)

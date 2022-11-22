@@ -2412,26 +2412,26 @@ def test_ss_sort(v):
     expected_p = Vector.from_coo([0, 1, 2, 3], [6, 1, 3, 4], size=7)
     expected_w = Vector.from_coo([0, 1, 2, 3], [0, 1, 1, 2], size=7)
     for permutation, values, nthreads in itertools.product([True, False], [True, False], [None, 4]):
-        p, w = v.ss.sort(permutation=permutation, values=values, nthreads=nthreads)
-        if permutation:
-            assert p.isequal(expected_p)
-        else:
-            assert p is None
+        w, p = v.ss.sort(permutation=permutation, values=values, nthreads=nthreads)
         if values:
             assert w.isequal(expected_w)
         else:
             assert w is None
-    _, w = v.ss.sort(">", permutation=False)
+        if permutation:
+            assert p.isequal(expected_p)
+        else:
+            assert p is None
+    w, _ = v.ss.sort(">", permutation=False)
     expected = Vector.from_coo([0, 1, 2, 3], [2, 1, 1, 0], size=7)
     assert w.isequal(expected)
     with pytest.raises(DomainMismatch):
         v.ss.sort(binary.plus)
 
     # Like compactify
-    p, _ = v.ss.sort(lambda x, y: False, values=False)
+    _, p = v.ss.sort(lambda x, y: False, values=False)
     expected_p = Vector.from_coo([0, 1, 2, 3], [1, 3, 4, 6], size=7)
     assert p.isequal(expected_p)
     # reversed
-    p, _ = v.ss.sort(binary.pair[bool], values=False)
+    _, p = v.ss.sort(binary.pair[bool], values=False)
     expected_p = Vector.from_coo([0, 1, 2, 3], [6, 4, 3, 1], size=7)
     assert p.isequal(expected_p)
