@@ -99,7 +99,7 @@ def init(backend="suitesparse", blocking=False):
 
     Parameters
     ----------
-    backend : str, one of {"suitesparse"}
+    backend : str, one of {"suitesparse", "suitesparse-vanilla"}
     blocking : bool
         Whether to call GrB_init with GrB_BLOCKING or GrB_NONBLOCKING
 
@@ -159,9 +159,12 @@ def _init(backend_arg, blocking, automatic=False):
                 if callable(val) and key.startswith("GxB") or "FC32" in key or "FC64" in key:
                     continue
                 setattr(lib, key, getattr(orig_lib, key))
-
+            for key in {"GxB_BACKWARDS", "GxB_STRIDE"}:
+                delattr(lib, key)
     else:
-        raise ValueError(f'Bad backend name.  Must be "suitesparse".  Got: {backend}')
+        raise ValueError(
+            f'Bad backend name.  Must be "suitesparse" or "suitesparse-vanilla".  Got: {backend}'
+        )
     _init_params = passed_params
 
     from . import core
