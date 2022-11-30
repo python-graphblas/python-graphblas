@@ -3179,39 +3179,39 @@ def test_infix_sugar(A):
 @pytest.mark.skipif("not suitesparse")
 @pytest.mark.slow
 def test_ss_random(A):
-    R = A.ss.selectk_rowwise("random", 1)
+    R = A.ss.selectk("random", 1)
     counts = R.reduce_rowwise(agg.count).new()
     expected = Vector.from_coo(range(A.ncols), 1)
     assert counts.isequal(expected)
 
-    R = A.ss.selectk_columnwise("random", 1)
+    R = A.ss.selectk("random", 1, order="col")
     counts = R.reduce_columnwise(agg.count).new()
     expected = Vector.from_coo(range(A.nrows), 1)
     assert counts.isequal(expected)
 
-    R = A.ss.selectk_rowwise("random", 2)
+    R = A.ss.selectk("random", 2)
     counts = R.reduce_rowwise(agg.count).new()
     assert counts.reduce(monoid.min).new() == 1
     assert counts.reduce(monoid.max).new() == 2
 
     # test iso
     A(A.S) << 1
-    R = A.ss.selectk_rowwise("random", 1)
+    R = A.ss.selectk("random", 1)
     counts = R.reduce_rowwise(agg.count).new()
     expected = Vector.from_coo(range(A.ncols), 1)
     assert counts.isequal(expected)
 
     with pytest.raises(ValueError):
-        A.ss.selectk_rowwise("bad", 1)
+        A.ss.selectk("bad", 1)
     with pytest.raises(ValueError):
-        A.ss.selectk_columnwise("bad", 1)
+        A.ss.selectk("bad", 1, order="col")
     with pytest.raises(ValueError):
-        A.ss.selectk_columnwise("random", -1)
+        A.ss.selectk("random", -1, order="columnwise")
 
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_firstk(A):
-    B = A.ss.selectk_rowwise("first", 1)
+    B = A.ss.selectk("first", 1)
     expected = Matrix.from_coo(
         [0, 1, 2, 3, 4, 5, 6],
         [1, 4, 5, 0, 5, 2, 2],
@@ -3221,7 +3221,7 @@ def test_ss_firstk(A):
     )
     assert B.isequal(expected)
 
-    B = A.ss.selectk_rowwise("first", 2)
+    B = A.ss.selectk("first", 2)
     expected = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 5, 5, 6],
@@ -3231,10 +3231,10 @@ def test_ss_firstk(A):
     )
     assert B.isequal(expected)
 
-    B = A.ss.selectk_rowwise("first", 3)
+    B = A.ss.selectk("first", 3)
     assert B.isequal(A)
 
-    B = A.ss.selectk_columnwise("first", 1)
+    B = A.ss.selectk("first", 1, order="col")
     expected = Matrix.from_coo(
         [3, 0, 3, 0, 1, 2, 1],
         [0, 1, 2, 3, 4, 5, 6],
@@ -3244,7 +3244,7 @@ def test_ss_firstk(A):
     )
     assert B.isequal(expected)
 
-    B = A.ss.selectk_columnwise("first", 2)
+    B = A.ss.selectk("first", 2, order="col")
     expected = Matrix.from_coo(
         [3, 0, 3, 5, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6],
@@ -3254,13 +3254,13 @@ def test_ss_firstk(A):
     )
     assert B.isequal(expected)
 
-    B = A.ss.selectk_columnwise("first", 3)
+    B = A.ss.selectk("first", 3, order="col")
     assert B.isequal(A)
 
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_lastk(A):
-    B = A.ss.selectk_rowwise("last", 1)
+    B = A.ss.selectk("last", 1)
     expected = Matrix.from_coo(
         [0, 3, 5, 6, 2, 4, 1],
         [3, 2, 2, 4, 5, 5, 6],
@@ -3270,7 +3270,7 @@ def test_ss_lastk(A):
     )
     assert B.isequal(expected)
 
-    B = A.ss.selectk_rowwise("last", 2)
+    B = A.ss.selectk("last", 2)
     expected = Matrix.from_coo(
         [3, 0, 3, 5, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6],
@@ -3280,10 +3280,10 @@ def test_ss_lastk(A):
     )
     assert B.isequal(expected)
 
-    B = A.ss.selectk_rowwise("last", 3)
+    B = A.ss.selectk("last", 3)
     assert B.isequal(A)
 
-    B = A.ss.selectk_columnwise("last", 1)
+    B = A.ss.selectk("last", 1, order="col")
     expected = Matrix.from_coo(
         [3, 0, 6, 6, 6, 4, 1],
         [0, 1, 2, 3, 4, 5, 6],
@@ -3293,7 +3293,7 @@ def test_ss_lastk(A):
     )
     assert B.isequal(expected)
 
-    B = A.ss.selectk_columnwise("last", 2)
+    B = A.ss.selectk("last", 2, order="col")
     expected = Matrix.from_coo(
         [3, 0, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6],
@@ -3303,7 +3303,7 @@ def test_ss_lastk(A):
     )
     assert B.isequal(expected)
 
-    B = A.ss.selectk_columnwise("last", 3)
+    B = A.ss.selectk("last", 3, order="col")
     assert B.isequal(A)
 
 
@@ -3319,23 +3319,23 @@ def test_ss_compactify(A, do_iso):
     orig_cols = [1, 3, 4, 6, 5, 0, 2, 5, 2, 2, 3, 4]
 
     def check(A, expected, *args, stop=0, **kwargs):
-        B = A.ss.compactify_rowwise(*args, **kwargs)
+        B = A.ss.compactify(*args, **kwargs)
         assert B.isequal(expected)
         for n in reversed(range(stop, 4)):
             expected = expected[:, :n].new()
-            B = A.ss.compactify_rowwise(*args, ncols=n, **kwargs)
+            B = A.ss.compactify(*args, n, **kwargs)
             assert B.isequal(expected)
 
     def reverse(A):
-        return A[:, ::-1].new().ss.compactify_rowwise("first", A.ncols)
+        return A[:, ::-1].new().ss.compactify("first", A.ncols)
 
     def check_reverse(A, expected, *args, stop=0, **kwargs):
-        B = A.ss.compactify_rowwise(*args, reverse=True, **kwargs)
+        B = A.ss.compactify(*args, reverse=True, **kwargs)
         C = reverse(expected)
         assert B.isequal(C)
         for n in reversed(range(stop, 4)):
             C = reverse(expected[:, :n].new())
-            B = A.ss.compactify_rowwise(*args, ncols=n, reverse=True, **kwargs)
+            B = A.ss.compactify(*args, n, reverse=True, **kwargs)
             assert B.isequal(C)
 
     expected = Matrix.from_coo(
@@ -3389,7 +3389,7 @@ def test_ss_compactify(A, do_iso):
 
     def compare(A, expected, isequal=True, **kwargs):
         for _ in range(1000):
-            B = A.ss.compactify_rowwise("random", **kwargs)
+            B = A.ss.compactify("random", **kwargs)
             if B.isequal(expected) == isequal:
                 break
         else:
@@ -3399,39 +3399,37 @@ def test_ss_compactify(A, do_iso):
         compare(A, A[:, ::-1].new())
 
     for asindex in [False, True]:
-        compare(A, A.ss.compactify_rowwise("first", asindex=asindex), asindex=asindex)
-        compare(A, A.ss.compactify_rowwise("first", 3, asindex=asindex), ncols=3, asindex=asindex)
-        compare(A, A.ss.compactify_rowwise("first", 2, asindex=asindex), ncols=2, asindex=asindex)
+        compare(A, A.ss.compactify("first", asindex=asindex), asindex=asindex)
+        compare(A, A.ss.compactify("first", 3, asindex=asindex), k=3, asindex=asindex)
+        compare(A, A.ss.compactify("first", 2, asindex=asindex), k=2, asindex=asindex)
         compare(
             A,
-            A.ss.compactify_rowwise("first", 2, asindex=asindex),
-            ncols=2,
+            A.ss.compactify("first", 2, asindex=asindex),
+            k=2,
             asindex=asindex,
             isequal=do_iso,
         )
-        compare(A, A.ss.compactify_rowwise("first", 1, asindex=asindex), ncols=1, asindex=asindex)
+        compare(A, A.ss.compactify("first", 1, asindex=asindex), k=1, asindex=asindex)
         compare(
             A,
-            A.ss.compactify_rowwise("first", 1, asindex=asindex),
-            ncols=1,
+            A.ss.compactify("first", 1, asindex=asindex),
+            k=1,
             asindex=asindex,
             isequal=do_iso,
         )
-        compare(A, A.ss.compactify_rowwise("last", 1, asindex=asindex), ncols=1, asindex=asindex)
-        compare(
-            A, A.ss.compactify_rowwise("smallest", 1, asindex=asindex), ncols=1, asindex=asindex
-        )
-        compare(A, A.ss.compactify_rowwise("largest", 1, asindex=asindex), ncols=1, asindex=asindex)
-        compare(A, A.ss.compactify_rowwise("first", 0, asindex=asindex), ncols=0, asindex=asindex)
+        compare(A, A.ss.compactify("last", 1, asindex=asindex), k=1, asindex=asindex)
+        compare(A, A.ss.compactify("smallest", 1, asindex=asindex), k=1, asindex=asindex)
+        compare(A, A.ss.compactify("largest", 1, asindex=asindex), k=1, asindex=asindex)
+        compare(A, A.ss.compactify("first", 0, asindex=asindex), k=0, asindex=asindex)
 
-    B = A.ss.compactify_columnwise("first", nrows=1)
+    B = A.ss.compactify("first", k=1, order="col")
     expected = Matrix.from_coo(
         [0, 0, 0, 0, 0, 0, 0],
         [0, 1, 2, 3, 4, 5, 6],
         1 if do_iso else [3, 2, 3, 3, 8, 1, 4],
     )
     assert B.isequal(expected)
-    B = A.ss.compactify_columnwise("last", nrows=1, asindex=True)
+    B = A.ss.compactify("last", k=1, asindex=True, order="col")
     expected = Matrix.from_coo(
         [0, 0, 0, 0, 0, 0, 0],
         [0, 1, 2, 3, 4, 5, 6],
@@ -3439,7 +3437,7 @@ def test_ss_compactify(A, do_iso):
     )
     assert B.isequal(expected)
     with pytest.raises(ValueError):
-        A.ss.compactify_rowwise("bad_how")
+        A.ss.compactify("bad_how")
 
 
 def test_deprecated(A):
@@ -3449,6 +3447,18 @@ def test_deprecated(A):
             A.ss.diag(v)
         with pytest.warns(DeprecationWarning):
             v.ss.diag(A)
+        with pytest.warns(DeprecationWarning):
+            A.ss.compactify_rowwise()
+        with pytest.warns(DeprecationWarning):
+            A.ss.compactify_columnwise()
+        with pytest.warns(DeprecationWarning):
+            A.ss.scan_rowwise()
+        with pytest.warns(DeprecationWarning):
+            A.ss.scan_columnwise()
+        with pytest.warns(DeprecationWarning):
+            A.ss.selectk_rowwise("first", 3)
+        with pytest.warns(DeprecationWarning):
+            A.ss.selectk_columnwise("first", 3)
     with pytest.warns(DeprecationWarning):
         Matrix.new(int)
     with pytest.warns(DeprecationWarning):
