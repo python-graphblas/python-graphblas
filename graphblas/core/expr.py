@@ -1,5 +1,6 @@
 import numpy as np
 
+from .. import backend
 from ..dtypes import _INDEX
 from . import lib, utils
 from .utils import _CArray, output_type
@@ -57,18 +58,21 @@ class AxisIndex:
             return self.index.value
         if self.index is _ALL_INDICES:
             return slice(None)
-        from .slice import gxb_backwards, gxb_range, gxb_stride
+        if backend != "suitesparse":
+            return self.index.array
 
-        if self.cscalar is gxb_backwards:
+        from .slice import _gxb_backwards, _gxb_range, _gxb_stride
+
+        if self.cscalar is _gxb_backwards:
             start, stop, step = self.index.array.tolist()
             size = self.dimsize
             stop -= size + 1
             step = -step
-        elif self.cscalar is gxb_range:
+        elif self.cscalar is _gxb_range:
             start, stop = self.index.array.tolist()
             step = None
             stop += 1
-        elif self.cscalar is gxb_stride:
+        elif self.cscalar is _gxb_stride:
             start, stop, step = self.index.array.tolist()
             stop += 1
         else:
