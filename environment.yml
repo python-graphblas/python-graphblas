@@ -36,6 +36,8 @@ dependencies:
     # For debugging
     - icecream
     - ipython
+    # For type annotations
+    - mypy
     # For building docs
     - nbsphinx
     - numpydoc
