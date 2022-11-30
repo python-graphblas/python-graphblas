@@ -55,6 +55,17 @@ def _v_union_m(updater, left, right, left_default, right_default, op):
     updater << temp.ewise_union(right, op, left_default=left_default, right_default=right_default)
 
 
+def _v_union_v(updater, left, right, left_default, right_default, op, dtype):
+    mask = updater.kwargs.get("mask")
+    new_left = left.dup(dtype, clear=True)
+    new_left(mask=mask) << binary.second(right, left_default)
+    new_left(mask=mask) << binary.first(left | new_left)
+    new_right = right.dup(dtype, clear=True)
+    new_right(mask=mask) << binary.second(left, right_default)
+    new_right(mask=mask) << binary.first(right | new_right)
+    updater << op(new_left & new_right)
+
+
 def _reposition(updater, indices, chunk):
     updater[indices] = chunk
 
@@ -992,13 +1003,14 @@ class Vector(BaseType):
             )
         else:
             dtype = unify(scalar_dtype, nonscalar_dtype, is_left_scalar=True)
-            new_left = other.dup(dtype, clear=True)
-            new_left(other.S) << left
-            new_left(self.S) << self
-            new_right = self.dup(dtype, clear=True)
-            new_right(self.S) << right
-            new_right(other.S) << other
-            expr = op(new_left & new_right)
+            expr = VectorExpression(
+                method_name,
+                None,
+                [self, left, other, right, _v_union_v, (self, other, left, right, op, dtype)],
+                expr_repr=expr_repr,
+                size=self._size,
+                op=op,
+            )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
         return expr

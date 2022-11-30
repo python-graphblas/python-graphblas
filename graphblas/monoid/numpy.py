@@ -85,6 +85,7 @@ if _supports_complex:
 
 # To increase import speed, only call njit when `_config.get("mapnumpy")` is False
 if _config.get("mapnumpy") or type(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2)) is not float:
+    # Incorrect behavior was introduced in numba 0.56.2 and numpy 1.23
     # See: https://github.com/numba/numba/issues/8478
     _monoid_identities["fmax"].update(
         {

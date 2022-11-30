@@ -8,11 +8,12 @@ from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
 
 import graphblas as gb
 
-from ... import monoid
+from ... import binary, monoid
 from ...dtypes import _INDEX, INT64, UINT64, _string_to_dtype, lookup_dtype
 from ...exceptions import _error_code_lookup, check_status, check_status_carg
 from .. import NULL, ffi, lib
 from ..base import call
+from ..operator import get_typed_op
 from ..scalar import Scalar, _as_scalar
 from ..utils import (
     _CArray,
@@ -1489,6 +1490,70 @@ class ss:
             take_ownership=True,
             name=name,
         )
+
+    def sort(self, op=binary.lt, *, values=True, permutation=True, nthreads=None):
+        """GxB_Vector_sort to sort values of the Vector
+
+        Sorting moves all the elements to the left just like `compactify`.
+        The returned vectors will be the same size as the input Vector.
+
+        Parameters
+        ----------
+        op : :class:`~graphblas.core.operator.BinaryOp`, optional
+            Binary operator with a bool return type used to sort the values.
+            For example, `binary.lt` (the default) sorts the smallest elements first.
+            Ties are broken according to indices (smaller first).
+        values : bool, default=True
+            Whether to return values; will return `None` for values if `False`.
+        permutation : bool, default=True
+            Whether to compute the permutation Vector that has the original indices of the
+            sorted values. Will return None if `False`.
+        nthreads : int, optional
+            The maximum number of threads to use for this operation.
+            None, 0 or negative nthreads means to use the default number of threads.
+
+        Returns
+        -------
+        Vector : values
+        Vector[dtype=UINT64] : permutation
+
+        See Also
+        --------
+        Vector.ss.compactify
+        """
+        from ..vector import Vector
+
+        parent = self._parent
+        op = get_typed_op(op, parent.dtype, kind="binary")
+        if op.opclass == "Monoid":
+            op = op.binaryop
+        else:
+            parent._expect_op(op, "BinaryOp", within="sort", argname="op")
+        if values:
+            w = Vector(parent.dtype, parent._size, name="values")
+        elif not permutation:
+            return None, None
+        else:
+            w = None
+        if permutation:
+            p = Vector(UINT64, parent._size, name="permutation")
+        else:
+            p = None
+        if nthreads is not None:
+            desc = get_nthreads_descriptor(nthreads)
+        else:
+            desc = None
+        check_status(
+            lib.GxB_Vector_sort(
+                w._carg if w is not None else NULL,
+                p._carg if p is not None else NULL,
+                op._carg,
+                parent._carg,
+                desc._carg if desc is not None else NULL,
+            ),
+            parent,
+        )
+        return w, p
 
     def serialize(self, compression="default", level=None, *, nthreads=None):
         """Serialize a Vector to bytes (as numpy array) using SuiteSparse GxB_Vector_serialize.

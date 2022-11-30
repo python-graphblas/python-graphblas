@@ -72,6 +72,7 @@ def lookup(
     mask_structure=False,
     transpose_first=False,
     transpose_second=False,
+    create=False,
 ):
     key = (
         output_replace,
@@ -80,7 +81,7 @@ def lookup(
         transpose_first,
         transpose_second,
     )
-    if key not in _desc_map:  # pragma: no cover (unnecessary)
+    if create or key not in _desc_map:
         # We currently don't need this block of code!
         # All 32 possible descriptors are currently already added to _desc_map.
         # Nevertheless, this code may be useful some day, because we will want
@@ -102,5 +103,8 @@ def lookup(
                     check_status_carg(
                         lib.GrB_Descriptor_set(desc[0], field, val), "Descriptor", desc[0]
                     )
-        _desc_map[key] = Descriptor(desc[0], "custom_descriptor", *key)
+        rv = Descriptor(desc[0], "custom_descriptor", *key)
+        if not create:  # pragma: no cover (unnecessary)
+            _desc_map[key] = rv
+        return rv
     return _desc_map[key]

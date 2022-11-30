@@ -1454,7 +1454,7 @@ class IndexUnaryOp(OpBase):
             op = getattr(indexunary, name)
             typed_op = op._typed_ops[BOOL]
             output_type = op.types[BOOL]
-            if UINT64 not in op.types:
+            if UINT64 not in op.types:  # pragma: no branch (safety)
                 op.types[UINT64] = output_type
                 op._typed_ops[UINT64] = typed_op
                 op.coercions[UINT64] = BOOL
@@ -1462,7 +1462,7 @@ class IndexUnaryOp(OpBase):
             op = getattr(indexunary, name)
             typed_op = op._typed_ops[INT64]
             output_type = op.types[INT64]
-            if UINT64 not in op.types:
+            if UINT64 not in op.types:  # pragma: no branch (safety)
                 op.types[UINT64] = output_type
                 op._typed_ops[UINT64] = typed_op
                 op.coercions[UINT64] = INT64

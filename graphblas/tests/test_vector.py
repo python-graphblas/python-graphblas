@@ -12,6 +12,7 @@ import graphblas as gb
 from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
 from graphblas.exceptions import (
     DimensionMismatch,
+    DomainMismatch,
     EmptyObject,
     IndexOutOfBound,
     InvalidObject,
@@ -2403,3 +2404,34 @@ def test_to_dict(v):
     assert v.to_dict() == {1: 1, 3: 1, 4: 2, 6: 0}
     empty = Vector(int, 2)
     assert empty.to_dict() == {}
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_sort(v):
+    # For equal values, indices are guaranteed to be sorted
+    expected_p = Vector.from_coo([0, 1, 2, 3], [6, 1, 3, 4], size=7)
+    expected_w = Vector.from_coo([0, 1, 2, 3], [0, 1, 1, 2], size=7)
+    for permutation, values, nthreads in itertools.product([True, False], [True, False], [None, 4]):
+        w, p = v.ss.sort(permutation=permutation, values=values, nthreads=nthreads)
+        if values:
+            assert w.isequal(expected_w)
+        else:
+            assert w is None
+        if permutation:
+            assert p.isequal(expected_p)
+        else:
+            assert p is None
+    w, _ = v.ss.sort(">", permutation=False)
+    expected = Vector.from_coo([0, 1, 2, 3], [2, 1, 1, 0], size=7)
+    assert w.isequal(expected)
+    with pytest.raises(DomainMismatch):
+        v.ss.sort(binary.plus)
+
+    # Like compactify
+    _, p = v.ss.sort(lambda x, y: False, values=False)
+    expected_p = Vector.from_coo([0, 1, 2, 3], [1, 3, 4, 6], size=7)
+    assert p.isequal(expected_p)
+    # reversed
+    _, p = v.ss.sort(binary.pair[bool], values=False)
+    expected_p = Vector.from_coo([0, 1, 2, 3], [6, 4, 3, 1], size=7)
+    assert p.isequal(expected_p)
