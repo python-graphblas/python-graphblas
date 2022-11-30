@@ -4,14 +4,13 @@ from .. import backend, config
 from .. import replace as replace_singleton
 from ..dtypes import BOOL
 from ..exceptions import check_status
-from . import NULL, ffi
+from . import NULL
 from .descriptor import lookup as descriptor_lookup
 from .expr import AmbiguousAssignOrExtract, Updater
 from .mask import Mask
 from .operator import UNKNOWN_OPCLASS, binary_from_string, find_opclass, get_typed_op
 from .utils import _Pointer, libget, output_type
 
-CData = ffi.CData
 _recorder = ContextVar("recorder")
 _prev_recorder = None
 

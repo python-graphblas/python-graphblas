@@ -13,14 +13,7 @@ str_to_compression = {
 }
 
 
-def get_nthreads_descriptor(nthreads, _cache=True):
-    nthreads = max(0, int(nthreads))
-    key = ("nthreads", nthreads)
-    if _cache and key in _desc_map:
-        return _desc_map[key]
-    desc_obj = ffi.new("GrB_Descriptor*")
-    lib.GrB_Descriptor_new(desc_obj)
-    desc = Descriptor(desc_obj[0], f"nthreads{nthreads}")
+def set_nthreads(desc, nthreads):
     check_status(
         lib.GxB_Desc_set(
             desc._carg,
@@ -29,6 +22,17 @@ def get_nthreads_descriptor(nthreads, _cache=True):
         ),
         desc,
     )
+
+
+def get_nthreads_descriptor(nthreads, _cache=True):
+    nthreads = max(0, int(nthreads))
+    key = ("nthreads", nthreads)
+    if _cache and key in _desc_map:
+        return _desc_map[key]
+    desc_obj = ffi.new("GrB_Descriptor*")
+    lib.GrB_Descriptor_new(desc_obj)
+    desc = Descriptor(desc_obj[0], f"nthreads{nthreads}")
+    set_nthreads(desc, nthreads)
     if _cache:
         _desc_map[key] = desc
     return desc

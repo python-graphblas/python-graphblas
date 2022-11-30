@@ -9,11 +9,13 @@ from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_b
 
 import graphblas as gb
 
-from ... import monoid
-from ...dtypes import _INDEX, BOOL, INT64, _string_to_dtype, lookup_dtype
+from ... import binary, monoid
+from ...dtypes import _INDEX, BOOL, INT64, UINT64, _string_to_dtype, lookup_dtype
 from ...exceptions import _error_code_lookup, check_status, check_status_carg
 from .. import NULL, ffi, lib
 from ..base import call
+from ..descriptor import lookup as descriptor_lookup
+from ..operator import get_typed_op
 from ..scalar import Scalar, _as_scalar, _scalar_index
 from ..utils import (
     _CArray,
@@ -29,7 +31,7 @@ from ..utils import (
     wrapdoc,
 )
 from .config import BaseConfig
-from .descriptor import get_compression_descriptor, get_nthreads_descriptor
+from .descriptor import get_compression_descriptor, get_nthreads_descriptor, set_nthreads
 
 ffi_new = ffi.new
 
@@ -3729,6 +3731,9 @@ class ss:
 
         **THIS API IS EXPERIMENTAL AND MAY CHANGE**
 
+        See Also
+        --------
+        Matrix.ss.sort
         """
         return self._compactify(
             how, reverse, asindex, "ncols", ncols, "hypercsr", "col_indices", name
@@ -3763,6 +3768,9 @@ class ss:
 
         **THIS API IS EXPERIMENTAL AND MAY CHANGE**
 
+        See Also
+        --------
+        Matrix.ss.sort
         """
         return self._compactify(
             how, reverse, asindex, "nrows", nrows, "hypercsc", "row_indices", name
@@ -3835,6 +3843,82 @@ class ss:
             take_ownership=True,
             name=name,
         )
+
+    def sort(self, op=binary.lt, order="rowwise", *, values=True, permutation=True, nthreads=None):
+        """GxB_Matrix_sort to sort values along the rows (default) or columns of the Matrix
+
+        Sorting moves all the elements to the left (if rowwise) or top (if columnwise) just
+        like `compactify`. The returned matrices will be the same shape as the input Matrix.
+
+        Parameters
+        ----------
+        op : :class:`~graphblas.core.operator.BinaryOp`, optional
+            Binary operator with a bool return type used to sort the values.
+            For example, `binary.lt` (the default) sorts the smallest elements first.
+            Ties are broken according to indices (smaller first).
+        order : {"rowwise", "columnwise"}, optional
+            Whether to sort rowwise or columnwise. Rowwise shifts all values to the left,
+            and columnwise shifts all values to the top. The default is "rowwise".
+        values : bool, default=True
+            Whether to return values; will return `None` for values if `False`.
+        permutation : bool, default=True
+            Whether to compute the permutation Matrix that has the original column
+            indices (if rowwise) or row indices (if columnwise) of the sorted values.
+            Will return None if `False`.
+        nthreads : int, optional
+            The maximum number of threads to use for this operation.
+            None, 0 or negative nthreads means to use the default number of threads.
+
+        Returns
+        -------
+        Matrix : Values
+        Matrix[dtype=UINT64] : Permutation
+
+        See Also
+        --------
+        Matrix.ss.compactify
+        """
+        from ..matrix import Matrix
+
+        order = get_order(order)
+        parent = self._parent
+        op = get_typed_op(op, parent.dtype, kind="binary")
+        if op.opclass == "Monoid":
+            op = op.binaryop
+        else:
+            parent._expect_op(op, "BinaryOp", within="sort", argname="op")
+        if values:
+            C = Matrix(parent.dtype, parent._nrows, parent._ncols, name="Values")
+        elif not permutation:
+            return None, None
+        else:
+            C = None
+        if permutation:
+            P = Matrix(UINT64, parent._nrows, parent._ncols, name="Permutation")
+        else:
+            P = None
+        # TODO: clean this up once we expose backend descriptors
+        if nthreads is not None:
+            if order == "rowwise":
+                desc = get_nthreads_descriptor(nthreads)
+            else:
+                desc = descriptor_lookup(transpose_first=True, create=True)
+                set_nthreads(desc, nthreads)
+        elif order == "rowwise":
+            desc = None
+        else:
+            desc = descriptor_lookup(transpose_first=True)
+        check_status(
+            lib.GxB_Matrix_sort(
+                C._carg if C is not None else NULL,
+                P._carg if P is not None else NULL,
+                op._carg,
+                parent._carg,
+                desc._carg if desc is not None else NULL,
+            ),
+            parent,
+        )
+        return C, P
 
     def serialize(self, compression="default", level=None, *, nthreads=None):
         """Serialize a Matrix to bytes (as numpy array) using SuiteSparse GxB_Matrix_serialize.

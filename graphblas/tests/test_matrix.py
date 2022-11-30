@@ -13,6 +13,7 @@ from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, 
 from graphblas.core import lib
 from graphblas.exceptions import (
     DimensionMismatch,
+    DomainMismatch,
     EmptyObject,
     IndexOutOfBound,
     InvalidObject,
@@ -4019,3 +4020,78 @@ def test_from_list_of_dicts():
         Matrix.from_dicts(list_of_dicts, order="colwise", ncols=5)
     with pytest.raises(InvalidObject):
         Matrix.from_dicts(list_of_dicts, ncols=1)
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_sort(A):
+    A[3, 0] = 9
+    expected_P = Matrix.from_coo(
+        [0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6],
+        [0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 2],
+        [1, 3, 6, 4, 5, 2, 0, 5, 2, 4, 2, 3],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    expected_C = Matrix.from_coo(
+        [0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6],
+        [0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 2],
+        [2, 3, 4, 8, 1, 3, 9, 7, 1, 3, 5, 7],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    for permutation, values, nthreads in itertools.product([True, False], [True, False], [None, 4]):
+        C, P = A.ss.sort(permutation=permutation, values=values, nthreads=nthreads)
+        if values:
+            assert C.isequal(expected_C)
+        else:
+            assert C is None
+        if permutation:
+            assert P.isequal(expected_P)
+        else:
+            assert P is None
+
+    expected_P = Matrix.from_coo(
+        [0, 0, 0, 1, 2, 0, 1, 0, 1, 0, 1, 0],
+        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [3, 0, 5, 3, 6, 0, 6, 6, 1, 2, 4, 1],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    expected_C = Matrix.from_coo(
+        [0, 0, 0, 1, 2, 0, 1, 0, 1, 0, 1, 0],
+        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [9, 2, 1, 3, 5, 3, 7, 3, 8, 1, 7, 4],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    for permutation, values, nthreads in itertools.product([True, False], [True, False], [None, 4]):
+        C, P = A.ss.sort(order="col", permutation=permutation, values=values, nthreads=nthreads)
+        if values:
+            assert C.isequal(expected_C)
+        else:
+            assert C is None
+        if permutation:
+            assert P.isequal(expected_P)
+        else:
+            assert P is None
+
+    with pytest.raises(DomainMismatch):
+        A.ss.sort("+")
+
+    expected_P = Matrix.from_coo(
+        [0, 0, 0, 1, 2, 0, 1, 0, 1, 0, 1, 0],
+        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [3, 0, 6, 3, 5, 6, 0, 1, 6, 4, 2, 1],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    expected_C = Matrix.from_coo(
+        [0, 0, 0, 1, 2, 0, 1, 0, 1, 0, 1, 0],
+        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [9, 2, 5, 3, 1, 7, 3, 8, 3, 7, 1, 4],
+        nrows=A.nrows,
+        ncols=A.ncols,
+    )
+    C, P = A.ss.sort(binary.gt, order="col")
+    assert P.isequal(expected_P)
+    assert C.isequal(expected_C)
