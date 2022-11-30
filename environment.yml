@@ -1,0 +1,45 @@
+# To use:
+#   $ conda env create -f environment.yml
+#   $ conda activate graphblas-dev
+#
+# Or use mamba instead of conda.
+#
+# pre-commit should be set up once after the repo is cloned (see .pre-commit-config.yaml).
+# In the `graphblas-dev` environment, run:
+#   $ pre-commit install
+#
+# It is okay to comment out sections below that you don't need such as viz or building docs.
+name: graphblas-dev
+channels:
+    - conda-forge
+    - nodefaults  # Only install packages from conda-forge for faster solving
+dependencies:
+    - python
+    - donfig
+    - numba
+    - python-suitesparse-graphblas
+    - pyyaml
+    # For repr
+    - pandas
+    # For I/O
+    - awkward
+    - networkx
+    - scipy
+    # For viz
+    - datashader
+    - hvplot
+    - matplotlib
+    # For linting
+    - pre-commit
+    # For testing
+    - pytest-cov
+    # For debugging
+    - icecream
+    - ipython
+    # For type annotations
+    - mypy
+    # For building docs
+    - nbsphinx
+    - numpydoc
+    - pydata-sphinx-theme
+    - sphinx-panels
