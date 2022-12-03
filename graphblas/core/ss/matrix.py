@@ -244,20 +244,6 @@ class ss:
             return "columnwise"
         return "rowwise"
 
-    def diag(self, vector, k=0):
-        """
-        GxB_Matrix_diag
-
-        **This function is deprecated.  Use ``Vector.diag`` or ``Matrix.ss.build_diag`` instead.**
-
-        """
-        warnings.warn(
-            "`Matrix.ss.diag` is deprecated; "
-            "please use `Vector.diag` or `Matrix.ss.build_diag` instead",
-            DeprecationWarning,
-        )
-        self.build_diag(vector, k)
-
     def build_diag(self, vector, k=0):
         """
         GxB_Matrix_diag

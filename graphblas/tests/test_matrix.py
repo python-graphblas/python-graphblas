@@ -3441,12 +3441,7 @@ def test_ss_compactify(A, do_iso):
 
 
 def test_deprecated(A):
-    v = A.diag()
     if suitesparse:
-        with pytest.warns(DeprecationWarning):
-            A.ss.diag(v)
-        with pytest.warns(DeprecationWarning):
-            v.ss.diag(A)
         with pytest.warns(DeprecationWarning):
             A.ss.compactify_rowwise()
         with pytest.warns(DeprecationWarning):

@@ -1,5 +1,4 @@
 import itertools
-import warnings
 
 import numpy as np
 from numba import njit
@@ -146,20 +145,6 @@ class ss:
         else:  # pragma: no cover (sanity)
             raise NotImplementedError(f"Unknown sparsity status: {sparsity_status}")
         return format
-
-    def diag(self, matrix, k=0):
-        """
-        GxB_Vector_diag
-
-        **This function is deprecated.  Use ``Matrix.diag`` or ``Vector.ss.build_diag`` instead.**
-
-        """
-        warnings.warn(
-            "`Vector.ss.diag` is deprecated; "
-            "please use `Matrix.diag` or `Vector.ss.build_diag` instead",
-            DeprecationWarning,
-        )
-        self.build_diag(matrix, k)
 
     def build_diag(self, matrix, k=0):
         """
