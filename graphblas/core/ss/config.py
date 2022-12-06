@@ -117,9 +117,11 @@ class BaseConfig(MutableMapping):
         else:
             info = self._set_function(self._parent._carg, key_obj, vararg(val_obj))
         if info != lib.GrB_SUCCESS:
-            if self._parent is not None:
+            if self._parent is not None:  # pragma: no branch (safety)
                 check_status(info, self._parent)
-            raise _error_code_lookup[info](f"Failed to set info for {key!r}")
+            raise _error_code_lookup[info](  # pragma: no cover (safety)
+                f"Failed to set info for {key!r}"
+            )
 
     def __iter__(self):
         return iter(sorted(self._options))

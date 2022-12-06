@@ -33,7 +33,7 @@ class Descriptor:
 
     def __del__(self):
         gb_obj = getattr(self, "gb_obj", None)
-        if gb_obj is not None and lib is not None:
+        if gb_obj is not None and lib is not None:  # pragma: no branch (safety)
             # it's difficult/dangerous to record the call, b/c `self.name` may not exist
             check_status(lib.GrB_Descriptor_free(gb_obj), self)
 
@@ -43,7 +43,7 @@ class BuiltinDescriptor(Descriptor):
     def _carg(self):
         return self.gb_obj
 
-    def __del__(self):
+    def __del__(self):  # pragma: no cover (safety)
         pass
 
 
