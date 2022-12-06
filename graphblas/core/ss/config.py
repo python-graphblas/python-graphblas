@@ -4,7 +4,7 @@ from numbers import Integral
 from suitesparse_graphblas import vararg
 
 from ...dtypes import lookup_dtype
-from ...exceptions import _error_code_lookup
+from ...exceptions import _error_code_lookup, check_status
 from .. import NULL, ffi, lib
 from ..utils import values_to_numpy_buffer
 
@@ -22,6 +22,7 @@ class BaseConfig(MutableMapping):
     _read_only = set()
     _set_ctypes = {
         "GxB_Format_Value": "int",
+        "GrB_Desc_Value": "int",
         "bool": "int",
     }
 
@@ -77,6 +78,8 @@ class BaseConfig(MutableMapping):
         if key in self._enumerations and isinstance(val, str):
             val = val.lower()
             val = self._enumerations[key][val]
+        elif key in self._enumerations and isinstance(val, bool):
+            val = self._enumerations[key][val]
         elif key in self._bitwise and val is not None and not isinstance(val, Integral):
             bitwise = self._bitwise[key]
             if isinstance(val, str):
@@ -114,6 +117,8 @@ class BaseConfig(MutableMapping):
         else:
             info = self._set_function(self._parent._carg, key_obj, vararg(val_obj))
         if info != lib.GrB_SUCCESS:
+            if self._parent is not None:
+                check_status(info, self._parent)
             raise _error_code_lookup[info](f"Failed to set info for {key!r}")
 
     def __iter__(self):

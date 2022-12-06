@@ -1397,7 +1397,7 @@ def test_reduce_agg(A):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.varp, agg.stdp],
-        finalize=lambda x, y: binary.times(x & y),
+        finalize=lambda x, y, opts: binary.times(x & y),
         types=[agg.varp],
     )
     v1 = A.reduce_rowwise(agg.varp).new()
@@ -1454,7 +1454,7 @@ def test_reduce_agg_argminmax(A):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.argmin, agg.argmax],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.argmin],
     )
     v1 = A.reduce_rowwise(agg.argmin).new()
@@ -1512,7 +1512,7 @@ def test_reduce_agg_firstlast(A):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.first, agg.last],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.first],
     )
     v1 = A.reduce_rowwise(agg.first).new()
@@ -1560,7 +1560,7 @@ def test_reduce_agg_firstlast_index(A):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.first_index, agg.last_index],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.first_index],
     )
     v1 = A.reduce_rowwise(agg.first_index).new()
@@ -3441,12 +3441,7 @@ def test_ss_compactify(A, do_iso):
 
 
 def test_deprecated(A):
-    v = A.diag()
     if suitesparse:
-        with pytest.warns(DeprecationWarning):
-            A.ss.diag(v)
-        with pytest.warns(DeprecationWarning):
-            v.ss.diag(A)
         with pytest.warns(DeprecationWarning):
             A.ss.compactify_rowwise()
         with pytest.warns(DeprecationWarning):
@@ -4105,3 +4100,17 @@ def test_ss_sort(A):
     C, P = A.ss.sort(binary.gt, order="col")
     assert P.isequal(expected_P)
     assert C.isequal(expected_C)
+
+
+def test_ss_descriptors(A):
+    if suitesparse:
+        C1 = (A @ A).new()
+        C2 = (A @ A).new(nthreads=4, axb_method="dot", sort=True)
+        assert C1.isequal(C2)
+        A(nthreads=4, axb_method="dot", sort=True) << A @ A
+        assert A.isequal(C2)
+        with pytest.raises(ValueError, match="escriptor"):
+            C1(bad_opt=True) << A
+    else:
+        with pytest.raises(ValueError, match="escriptor"):
+            (A @ A).new(nthreads=4, axb_method="dot", sort=True)

@@ -895,7 +895,7 @@ def test_reduce_agg(v):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.varp, agg.stdp],
-        finalize=lambda x, y: binary.times(x & y),
+        finalize=lambda x, y, opts: binary.times(x & y),
         types=[agg.varp],
     )
     s = v.reduce(silly).new()
@@ -912,7 +912,7 @@ def test_reduce_agg_argminmax(v):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.argmin, agg.argmax],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.argmin],
     )
     s = v.reduce(silly).new()
@@ -930,7 +930,7 @@ def test_reduce_agg_firstlast(v):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.first, agg.last],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.first],
     )
     s = v.reduce(silly).new()
@@ -944,7 +944,7 @@ def test_reduce_agg_firstlast_index(v):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.first_index, agg.last_index],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.first_index],
     )
     s = v.reduce(silly).new()
