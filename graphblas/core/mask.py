@@ -1,5 +1,3 @@
-import warnings
-
 from .. import backend, monoid
 from ..binary import land, lor, pair
 from ..dtypes import BOOL
