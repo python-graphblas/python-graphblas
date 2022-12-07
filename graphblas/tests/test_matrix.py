@@ -3466,8 +3466,6 @@ def test_deprecated(A):
     with pytest.warns(DeprecationWarning):
         Scalar.new(int)
     with pytest.warns(DeprecationWarning):
-        A.S.mask
-    with pytest.warns(DeprecationWarning):
         binary.plus(A | A, require_monoid=True)
     with pytest.warns(DeprecationWarning):
         A.to_values()

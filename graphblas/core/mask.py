@@ -1,5 +1,3 @@
-import warnings
-
 from .. import backend, monoid
 from ..binary import land, lor, pair
 from ..dtypes import BOOL
@@ -32,14 +30,6 @@ class Mask:
     @property
     def _carg(self):
         return self.parent.gb_obj[0]
-
-    @property
-    def mask(self):
-        warnings.warn(
-            "`mask.mask` is deprecated; please use `mask.parent` instead.",
-            DeprecationWarning,
-        )
-        return self.parent
 
     def new(self, dtype=None, *, complement=False, mask=None, name=None):
         """Return a new object with True values determined by the mask(s).
