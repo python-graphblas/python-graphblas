@@ -393,7 +393,9 @@ def test_awkward_errors():
 
 @pytest.mark.skipif("not sp")
 def test_vector_to_from_pydata_sparse():
-    coords = [[0, 1, 2, 3, 4],]
+    coords = [
+        [0, 1, 2, 3, 4],
+    ]
     data = [10, 20, 30, 40, 50]
     s = sp.COO(coords, data, shape=(5,))
     v = gb.io.from_pydata_sparse(s)
