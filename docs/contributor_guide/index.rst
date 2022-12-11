@@ -1,6 +1,12 @@
+.. _contributor_guide:
 
 Contributor Guide
 =================
+
+.. _dev_workflow:
+
+Development Workflow
+--------------------
 
 # 1. Creating a fork and a local copy:
 
