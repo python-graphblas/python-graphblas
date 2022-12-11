@@ -10,10 +10,16 @@ try:
     import networkx as nx
 except ImportError:  # pragma: no cover (import)
     nx = None
+
 try:
     import scipy.sparse as ss
 except ImportError:  # pragma: no cover (import)
     ss = None
+
+try:
+    import sparse as sp
+except ImportError:  # pragma: no cover (import)
+    sp = None
 
 try:
     import awkward._v2 as ak
@@ -383,3 +389,25 @@ def test_awkward_errors():
         gb.io.to_awkward(m, format="dcsr")
     with pytest.raises(TypeError):
         gb.io.to_awkward(gb.Scalar.from_value(5))
+
+@pytest.mark.skipif("not sp")
+def test_vector_to_from_pydata_sparse():
+    coords = [[0, 1, 2, 3, 4],]
+    data = [10, 20, 30, 40, 50]
+    s = sp.COO(coords, data, shape=(5,))
+    v = gb.io.from_pydata_sparse(s)
+    assert v.isequal(gb.Vector.from_coo(coords, data), check_dtype=True)
+
+    t = gb.io.to_pydata_sparse(v)
+    assert t == s
+
+@pytest.mark.skipif("not sp")
+def test_maxtrix_to_from_pydata_sparse():
+    coords = [[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]]
+    data = [10, 20, 30, 40, 50]
+    s = sp.COO(coords, data, shape=(5, 5))
+    v = gb.io.from_pydata_sparse(s)
+    assert v.isequal(gb.Matrix.from_coo(*coords, data), check_dtype=True)
+
+    t = gb.io.to_pydata_sparse(v)
+    assert t == s
