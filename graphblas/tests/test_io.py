@@ -390,6 +390,7 @@ def test_awkward_errors():
     with pytest.raises(TypeError):
         gb.io.to_awkward(gb.Scalar.from_value(5))
 
+
 @pytest.mark.skipif("not sp")
 def test_vector_to_from_pydata_sparse():
     coords = [[0, 1, 2, 3, 4],]
@@ -400,6 +401,7 @@ def test_vector_to_from_pydata_sparse():
 
     t = gb.io.to_pydata_sparse(v)
     assert t == s
+
 
 @pytest.mark.skipif("not sp")
 def test_maxtrix_to_from_pydata_sparse():
