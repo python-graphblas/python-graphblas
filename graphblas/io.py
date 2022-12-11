@@ -220,6 +220,41 @@ def from_awkward(A, *, name=None):
     raise ValueError(f"Invalid format for Matrix: {format}")
 
 
+def from_pydata_sparse(A, *, dup_op=None, name=None):
+    """Create a Vector or a Matrix from a pydata.sparse array or matrix.
+
+    Input data in "csr" or "csc" format will be efficient when importing with SuiteSparse:GraphBLAS.
+
+    Parameters
+    ----------
+    A : sparse
+        Scipy sparse array or matrix
+    dup_op : BinaryOp, optional
+        Aggregation function for formats that allow duplicate entries (e.g. coo)
+    name : str, optional
+        Name of resulting Matrix
+
+    Returns
+    -------
+    :class:`~graphblas.Vector`
+    :class:`~graphblas.Matrix`
+    """
+    if A.ndim > 2:
+        raise _GraphblasException("m.ndim must be <= 2")
+
+    if A.ndim == 1:
+        # pass the dense version to existing `from_numpy` function
+        return from_numpy(A.todense())
+
+    # handle two-dimensional arrays
+    # first convert to scipy sparse
+    # .asformat("gcxs") ensures that .to_scipy_sparse method is available
+    B = A.asformat("gcxs").to_scipy_sparse()
+
+    # pass the converted object to existing function
+    return from_scipy_sparse(B, dup_op=dup_op, name=name)
+
+
 # TODO: add parameters to allow different networkx classes and attribute names
 def to_networkx(m, edge_attribute="weight"):
     """Create a networkx DiGraph from a square adjacency Matrix
@@ -472,6 +507,42 @@ def to_awkward(A, format=None):
     if classname:
         ret = ak.with_name(ret, classname)
     return ret
+
+
+def to_pydata_sparse(A, format="coo"):
+    """Create a pydata.sparse array from a GraphBLAS Matrix or Vector
+    via scipy.sparse intermediate object
+
+    Parameters
+    ----------
+    A : Matrix or Vector
+        GraphBLAS object to be converted
+    format : str
+        {'coo', 'dok', 'gcxs'}
+
+    Returns
+    -------
+    scipy.sparse array
+
+    """
+
+    try:
+        from sparse import COO
+    except ImportError:  # pragma: no cover (import)
+        raise ImportError("sparse is required to export to pydata sparse") from None
+
+    format = format.lower()
+    if format not in {"coo", "dok", "gcxs"}:
+        raise ValueError(f"Invalid format: {format}")
+
+    # obtain an intermediate conversion via hardcoded 'coo' intermediate object
+    B = to_scipy_sparse(A, format="coo")
+
+    # convert to pydata.sparse
+    s = COO.from_scipy_sparse(B)
+
+    # express in the desired format
+    return s.asformat(format)
 
 
 def mmread(source, *, dup_op=None, name=None):
