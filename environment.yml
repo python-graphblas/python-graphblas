@@ -25,6 +25,7 @@ dependencies:
     - awkward
     - networkx
     - scipy
+    - sparse
     # For viz
     - datashader
     - hvplot
@@ -36,6 +37,7 @@ dependencies:
     # For debugging
     - icecream
     - ipython
+    - ipykernel
     # For type annotations
     - mypy
     # For building docs
