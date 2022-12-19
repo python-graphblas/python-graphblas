@@ -58,8 +58,8 @@ jobs:
           auto-activate-base: false
       - name: Update env
         run: |
-          mamba install -c conda-forge pytest coverage 'black>=20.8b1' flake8 \
-          coveralls pytest-randomly flake8-comprehensions flake8-bugbear
+          mamba install -c conda-forge pytest coverage black flake8 \
+          coveralls>=3.3.1 pytest-randomly flake8-comprehensions flake8-bugbear
       - name: Style Checks
         run: |
           flake8
@@ -156,7 +156,7 @@ jobs:
           source "$CONDA/etc/profile.d/conda.sh"
           conda config --set always_yes yes --set changeps1 no
           conda update -q conda
-          conda create -n coveralls_final -c conda-forge python=3.9 coveralls
+          conda create -n coveralls_final -c conda-forge python=3.9 coveralls>=3.3.1
       - name: Coveralls Finished
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
