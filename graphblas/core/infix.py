@@ -98,7 +98,6 @@ class VectorInfixExpr(InfixExprBase):
         ss = wrapdoc(Vector.ss)(property(automethods.ss))
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
-    to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
     wait = wrapdoc(Vector.wait)(property(automethods.wait))
@@ -226,7 +225,6 @@ class MatrixInfixExpr(InfixExprBase):
     to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
     to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
     to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
-    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
     # These raise exceptions
@@ -335,7 +333,6 @@ class ScalarMatMulExpr(InfixExprBase):
     name = wrapdoc(Scalar.name)(property(automethods.name))
     name = name.setter(automethods._set_name)
     nvals = wrapdoc(Scalar.nvals)(property(automethods.nvals))
-    to_pygraphblas = wrapdoc(Scalar.to_pygraphblas)(property(automethods.to_pygraphblas))
     value = wrapdoc(Scalar.value)(property(automethods.value))
     wait = wrapdoc(Scalar.wait)(property(automethods.wait))
     # These raise exceptions

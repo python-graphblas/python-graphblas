@@ -273,10 +273,6 @@ def to_dicts(self):
     return self._get_value("to_dicts")
 
 
-def to_pygraphblas(self):
-    return self._get_value("to_pygraphblas")
-
-
 def to_values(self):
     return self._get_value("to_values")
 
@@ -352,7 +348,6 @@ def _main():
         "isequal",
         "name",
         "nvals",
-        "to_pygraphblas",
         "wait",
     }
     scalar = {

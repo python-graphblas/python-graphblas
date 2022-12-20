@@ -2889,7 +2889,6 @@ def test_expr_is_like_matrix(A):
         "from_dcsc",
         "from_dcsr",
         "from_dicts",
-        "from_pygraphblas",
         "from_values",
         "resize",
         "update",
@@ -2905,7 +2904,7 @@ def test_expr_is_like_matrix(A):
     # so maybe it shouldn't support everything.
     if suitesparse:
         expected.add("ss")
-    assert attrs - transposed_attrs == (expected | {"_as_vector", "S", "V", "to_pygraphblas"}) - {
+    assert attrs - transposed_attrs == (expected | {"_as_vector", "S", "V"}) - {
         "_prep_for_extract",
         "_extract_element",
     }
@@ -2942,7 +2941,6 @@ def test_index_expr_is_like_matrix(A):
         "from_dcsc",
         "from_dcsr",
         "from_dicts",
-        "from_pygraphblas",
         "from_values",
         "resize",
     }

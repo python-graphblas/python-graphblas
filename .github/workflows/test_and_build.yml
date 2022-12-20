@@ -87,18 +87,11 @@ jobs:
               mamba install -c conda-forge python-suitesparse-graphblas
           fi
           python setup.py develop --no-deps
-      # - name: Optional pygraphblas
-      #   if: contains(matrix.cfg.testopts, 'pygraphblas') && (matrix.cfg.pyver != 3.9)
-      #   run: |
-      #     source "$CONDA/etc/profile.d/conda.sh"
-      #     conda activate graphblas
-      #     mamba install -c conda-forge pygraphblas
       - name: Verify build
         run: |
           # Make sure all top-level imports work
           ./scripts/test_imports.sh
       - name: Unit tests
-        # if: (! contains(matrix.cfg.testopts, 'pygraphblas')) || (matrix.cfg.pyver != 3.9)
         run: |
           coverage run --branch -m pytest ${{ matrix.cfg.testopts }} -v
           # Run tests again with Scalars being C scalars by default
@@ -130,7 +123,6 @@ jobs:
           git diff --exit-code
           coverage xml
       - name: Coverage
-        # if: (! contains(matrix.cfg.testopts, 'pygraphblas')) || (matrix.cfg.pyver != 3.9)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COVERALLS_FLAG_NAME: ${{ matrix.cfg.pyver}}/${{ matrix.cfg.testopts }}
@@ -141,7 +133,6 @@ jobs:
       - name: codecov
         uses: codecov/codecov-action@v3
       - name: Notebooks Execution check
-        # if: (! contains(matrix.cfg.testopts, 'pygraphblas')) || (matrix.cfg.pyver != 3.9)
         run: |
           mamba install -c conda-forge matplotlib nbconvert jupyter 'ipython>=7'
           jupyter nbconvert --to notebook --execute notebooks/*ipynb

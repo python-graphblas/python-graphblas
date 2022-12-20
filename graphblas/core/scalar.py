@@ -549,41 +549,6 @@ class Scalar(BaseType):
     def _deserialize(value, dtype, is_cscalar, name):
         return Scalar.from_value(value, dtype, is_cscalar=is_cscalar, name=name)
 
-    def to_pygraphblas(self):  # pragma: no cover (outdated)
-        """Convert to a ``pygraphblas.Scalar`` by making a copy of the internal value.
-
-        This method requires the
-        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
-        library to be installed.
-        """
-        if backend != "suitesparse":
-            raise RuntimeError(
-                f"to_pygraphblas only works with 'suitesparse' backend, not {backend}"
-            )
-        import pygraphblas as pg
-
-        return pg.Scalar.from_value(self.value)
-
-    @classmethod
-    def from_pygraphblas(cls, scalar):  # pragma: no cover (outdated)
-        """Convert a ``pygraphblas.Scalar`` to a new :class:`Scalar` by making
-        a copy of the internal value.
-
-        This method requires the
-        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
-        library to be installed.
-        """
-        if backend != "suitesparse":
-            raise RuntimeError(
-                f"from_pygraphblas only works with 'suitesparse' backend, not {backend!r}"
-            )
-        import pygraphblas as pg
-
-        if not isinstance(scalar, pg.Scalar):
-            raise TypeError(f"Expected pygraphblas.Scalar object.  Got type: {type(scalar)}")
-        dtype = lookup_dtype(scalar.gb_type)
-        return cls.from_value(scalar[0], dtype)
-
     def _as_vector(self, *, name=None):
         """Copy or cast this Scalar to a Vector
 
@@ -688,7 +653,6 @@ class ScalarExpression(BaseExpression):
     name = wrapdoc(Scalar.name)(property(automethods.name))
     name = name.setter(automethods._set_name)
     nvals = wrapdoc(Scalar.nvals)(property(automethods.nvals))
-    to_pygraphblas = wrapdoc(Scalar.to_pygraphblas)(property(automethods.to_pygraphblas))
     value = wrapdoc(Scalar.value)(property(automethods.value))
     wait = wrapdoc(Scalar.wait)(property(automethods.wait))
     # These raise exceptions
@@ -749,7 +713,6 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     name = wrapdoc(Scalar.name)(property(automethods.name))
     name = name.setter(automethods._set_name)
     nvals = wrapdoc(Scalar.nvals)(property(automethods.nvals))
-    to_pygraphblas = wrapdoc(Scalar.to_pygraphblas)(property(automethods.to_pygraphblas))
     value = wrapdoc(Scalar.value)(property(automethods.value))
     wait = wrapdoc(Scalar.wait)(property(automethods.wait))
     # These raise exceptions
