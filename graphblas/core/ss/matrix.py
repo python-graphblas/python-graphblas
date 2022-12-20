@@ -622,13 +622,13 @@ class ss:
                     - The number of cols present in the data structure
             - "bitmapr" format
                 - ``raw=False``
-                    - bitmap : ndarray(dtype=bool8, ndim=2, shape=(nrows, ncols), order="C")
+                    - bitmap : ndarray(dtype=bool, ndim=2, shape=(nrows, ncols), order="C")
                     - values : ndarray(ndim=2, shape=(nrows, ncols), order="C")
                         - Elements where bitmap is False are undefined
                     - nvals : int
                         - The number of True elements in the bitmap
                 - ``raw=True``
-                    - bitmap : ndarray(dtype=bool8, ndim=1, size=nrows * ncols)
+                    - bitmap : ndarray(dtype=bool, ndim=1, size=nrows * ncols)
                         - Stored row-oriented
                     - values : ndarray(ndim=1, size=nrows * ncols)
                         - Elements where bitmap is False are undefined
@@ -639,13 +639,13 @@ class ss:
                     - ncols : int
             - "bitmapc" format
                 - ``raw=False``
-                    - bitmap : ndarray(dtype=bool8, ndim=2, shape=(nrows, ncols), order="F")
+                    - bitmap : ndarray(dtype=bool, ndim=2, shape=(nrows, ncols), order="F")
                     - values : ndarray(ndim=2, shape=(nrows, ncols), order="F")
                         - Elements where bitmap is False are undefined
                     - nvals : int
                         - The number of True elements in the bitmap
                 - ``raw=True``
-                    - bitmap : ndarray(dtype=bool8, ndim=1, size=nrows * ncols)
+                    - bitmap : ndarray(dtype=bool, ndim=1, size=nrows * ncols)
                         - Stored column-oriented
                     - values : ndarray(ndim=1, size=nrows * ncols)
                         - Elements where bitmap is False are undefined
@@ -1065,7 +1065,7 @@ class ss:
                 parent,
             )
             is_iso = is_iso[0]
-            bool_dtype = np.dtype(np.bool8)
+            bool_dtype = np.dtype(np.bool_)
             if raw:
                 bitmap = claim_buffer(ffi, Ab[0], Ab_size[0] // bool_dtype.itemsize, bool_dtype)
                 values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
@@ -1943,7 +1943,7 @@ class ss:
             to GraphBLAS if possible.  To give ownership of the underlying
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
-                - have the correct dtype (bool8 for bitmap)
+                - have the correct dtype (bool for bitmap)
                 - own its own data
                 - be writeable
             If all of these conditions are not met, then the data will be
@@ -2028,7 +2028,7 @@ class ss:
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapr'.")
         copy = not take_ownership
         bitmap = ints_to_numpy_buffer(
-            bitmap, np.bool8, copy=copy, ownable=True, order="C", name="bitmap"
+            bitmap, np.bool_, copy=copy, ownable=True, order="C", name="bitmap"
         )
         if method == "pack":
             dtype = matrix.dtype
@@ -2119,7 +2119,7 @@ class ss:
             to GraphBLAS if possible.  To give ownership of the underlying
             memory buffers to GraphBLAS, the arrays must:
                 - be FORTRAN contiguous
-                - have the correct dtype (bool8 for bitmap)
+                - have the correct dtype (bool for bitmap)
                 - own its own data
                 - be writeable
             If all of these conditions are not met, then the data will be
@@ -2204,7 +2204,7 @@ class ss:
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapc'.")
         copy = not take_ownership
         bitmap = ints_to_numpy_buffer(
-            bitmap, np.bool8, copy=copy, ownable=True, order="F", name="bitmap"
+            bitmap, np.bool_, copy=copy, ownable=True, order="F", name="bitmap"
         )
         if method == "pack":
             dtype = matrix.dtype
