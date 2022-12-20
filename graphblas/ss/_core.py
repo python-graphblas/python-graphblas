@@ -164,13 +164,13 @@ class GlobalConfig(BaseConfig):
     }
     _enumerations = {
         "format": {
-            lib.GxB_BY_ROW: "by_row",
-            lib.GxB_BY_COL: "by_col",
-            # lib.GxB_NO_FORMAT: "no_format",  # Used by iterators; not valid here
+            "by_row": lib.GxB_BY_ROW,
+            "by_col": lib.GxB_BY_COL,
+            # "no_format": lib.GxB_NO_FORMAT,  # Used by iterators; not valid here
         },
         "gpu_control": {
-            lib.GxB_GPU_ALWAYS: "always",
-            lib.GxB_GPU_NEVER: "never",
+            "always": lib.GxB_GPU_ALWAYS,
+            "never": lib.GxB_GPU_NEVER,
         },
     }
 

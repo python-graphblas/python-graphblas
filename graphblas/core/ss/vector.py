@@ -74,24 +74,24 @@ class VectorConfig(BaseConfig):
     }
     _bitwise = {
         "sparsity_control": {
-            # lib.GxB_HYPERSPARSE: "hypersparse",  # For matrices, not vectors
-            lib.GxB_SPARSE: "sparse",
-            lib.GxB_BITMAP: "bitmap",
-            lib.GxB_FULL: "full",
-            lib.GxB_AUTO_SPARSITY: "auto",
+            # "hypersparse": lib.GxB_HYPERSPARSE,  # For matrices, not vectors
+            "sparse": lib.GxB_SPARSE,
+            "bitmap": lib.GxB_BITMAP,
+            "full": lib.GxB_FULL,
+            "auto": lib.GxB_AUTO_SPARSITY,
         },
     }
     _enumerations = {
         "format": {
-            lib.GxB_BY_ROW: "by_row",
-            lib.GxB_BY_COL: "by_col",
-            # lib.GxB_NO_FORMAT: "no_format",  # Used by iterators; not valid here
+            "by_row": lib.GxB_BY_ROW,
+            "by_col": lib.GxB_BY_COL,
+            # "no_format": lib.GxB_NO_FORMAT,  # Used by iterators; not valid here
         },
         "sparsity_status": {
-            lib.GxB_HYPERSPARSE: "hypersparse",
-            lib.GxB_SPARSE: "sparse",
-            lib.GxB_BITMAP: "bitmap",
-            lib.GxB_FULL: "full",
+            "hypersparse": lib.GxB_HYPERSPARSE,
+            "sparse": lib.GxB_SPARSE,
+            "bitmap": lib.GxB_BITMAP,
+            "full": lib.GxB_FULL,
         },
     }
     _defaults = {
@@ -723,7 +723,7 @@ class ss:
         bitmap=None,
         # Bitmap/Sparse
         nvals=None,  # optional
-        # Unused for pack
+        # Unused for pack, ignored
         size=None,
         dtype=None,
         name=None,
@@ -921,7 +921,10 @@ class ss:
         take_ownership=False,
         secure_import=False,
         format=None,
-        size=None,  # ignored
+        # Unused for pack, ignored
+        size=None,
+        dtype=None,
+        name=None,
         **opts,
     ):
         """
@@ -1099,7 +1102,10 @@ class ss:
         take_ownership=False,
         secure_import=False,
         format=None,
-        size=None,  # ignored
+        # Unused for pack, ignored
+        size=None,
+        dtype=None,
+        name=None,
         **opts,
     ):
         """
@@ -1271,7 +1277,10 @@ class ss:
         take_ownership=False,
         secure_import=False,
         format=None,
-        size=None,  # ignored
+        # Unused for pack, ignored
+        size=None,
+        dtype=None,
+        name=None,
         **opts,
     ):
         """

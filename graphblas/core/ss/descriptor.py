@@ -38,44 +38,44 @@ class _DescriptorConfig(BaseConfig):
     _enumerations = {
         # GrB
         "output_replace": {
-            True: True,  # lib.GrB_REPLACE == 1
+            True: lib.GrB_REPLACE,
             False: False,
         },
         "mask_complement": {
-            lib.GrB_COMP: True,
+            True: lib.GrB_COMP,
             False: False,
         },
         "mask_structure": {
-            lib.GrB_STRUCTURE: True,
+            True: lib.GrB_STRUCTURE,
             False: False,
         },
         "transpose_first": {
-            lib.GrB_TRAN: True,
+            True: lib.GrB_TRAN,
             False: False,
         },
         "transpose_second": {
-            lib.GrB_TRAN: True,
+            True: lib.GrB_TRAN,
             False: False,
         },
         # GxB
         "axb_method": {
-            lib.GxB_AxB_GUSTAVSON: "gustavson",
-            lib.GxB_AxB_DOT: "dot",
-            lib.GxB_AxB_HASH: "hash",
-            lib.GxB_AxB_SAXPY: "saxpy",
-            lib.GxB_DEFAULT: "default",
+            "gustavson": lib.GxB_AxB_GUSTAVSON,
+            "dot": lib.GxB_AxB_DOT,
+            "hash": lib.GxB_AxB_HASH,
+            "saxpy": lib.GxB_AxB_SAXPY,
+            "default": lib.GxB_DEFAULT,
         },
         "secure_import": {
-            lib.GxB_SECURE_IMPORT: True,
+            True: lib.GxB_SECURE_IMPORT,
             False: False,
         },
         "sort": {
             False: False,
-            True: True,
+            True: lib.GxB_SORT,
         },
         # "gpu_control": {  # Coming soon...
-        #     lib.GxB_GPU_ALWAYS: "always",
-        #     lib.GxB_GPU_NEVER: "never",
+        #     "always": lib.GxB_GPU_ALWAYS,
+        #     "never": lib.GxB_GPU_NEVER,
         # },
     }
     _defaults = {
@@ -92,23 +92,23 @@ class _DescriptorConfig(BaseConfig):
         "sort": False,
         "secure_import": False,
     }
-    _initialized = False
+    _count = 0
 
     def __init__(self, parent=None):
         if parent is None:
             gb_obj = ffi_new("GrB_Descriptor*")
             check_status_carg(lib.GrB_Descriptor_new(gb_obj), "Descriptor", gb_obj[0])
             parent = Descriptor(gb_obj)
-        if not self._initialized:
-            super().__init__(parent)
+        initialized = self._initialized
+        super().__init__(parent)
+        if not initialized:
             # These are actually bitwise, but we treat them as boolean, add extra mappings for get
-            self._enumerations["mask_complement"][lib.GrB_COMP | lib.GrB_STRUCTURE] = True
-            self._enumerations["mask_structure"][lib.GrB_COMP | lib.GrB_STRUCTURE] = True
+            self._enumerations["mask_complement"][lib.GrB_COMP | lib.GrB_STRUCTURE] = lib.GrB_COMP
+            self._enumerations["mask_structure"][
+                lib.GrB_COMP | lib.GrB_STRUCTURE
+            ] = lib.GrB_STRUCTURE
             self._enumerations["mask_complement"][lib.GrB_STRUCTURE] = False
             self._enumerations["mask_structure"][lib.GrB_COMP] = False
-            type(self)._initialized = True
-        else:
-            self._parent = parent
 
 
 def get_descriptor(**opts):

@@ -10,6 +10,7 @@ from ..utils import values_to_numpy_buffer
 
 
 class BaseConfig(MutableMapping):
+    _initialized = False
     # Subclasses should redefine these
     _get_function = None
     _set_function = None
@@ -27,12 +28,27 @@ class BaseConfig(MutableMapping):
     }
 
     def __init__(self, parent=None):
-        for d in self._enumerations.values():
-            for k, v in list(d.items()):
-                d[v] = k
-        for d in self._bitwise.values():
-            for k, v in list(d.items()):
-                d[v] = k
+        cls = type(self)
+        if not cls._initialized:
+            cls._reverse_enumerations = {}
+            for key, d in self._enumerations.items():
+                cls._reverse_enumerations[key] = rd = {}
+                for k, v in list(d.items()):
+                    if v not in d:
+                        d[v] = v
+                    rd[v] = k
+                    if k not in rd:
+                        rd[k] = k
+            cls._reverse_bitwise = {}
+            for key, d in self._bitwise.items():
+                cls._reverse_bitwise[key] = rd = {}
+                for k, v in list(d.items()):
+                    if v not in d:
+                        d[v] = v
+                    rd[v] = k
+                    if k not in rd:
+                        rd[k] = k
+            cls._initialized = True
         self._parent = parent
 
     def __delitem__(self, key):
@@ -52,15 +68,14 @@ class BaseConfig(MutableMapping):
         if info == lib.GrB_SUCCESS:  # pragma: no branch (safety)
             if is_array:
                 return list(val_ptr)
-            if key in self._enumerations:
-                return self._enumerations[key][val_ptr[0]]
-            if key in self._bitwise:
-                bitwise = self._bitwise[key]
+            if key in self._reverse_enumerations:
+                return self._reverse_enumerations[key][val_ptr[0]]
+            if key in self._reverse_bitwise:
                 val = val_ptr[0]
-                if val in bitwise:
-                    return {bitwise[val]}
+                if val in (reverse_bitwise := self._reverse_bitwise[key]):
+                    return {reverse_bitwise[val]}
                 rv = set()
-                for k, v in bitwise.items():
+                for k, v in self._bitwise[key].items():
                     if isinstance(k, str) and val & v and bin(v).count("1") == 1:
                         rv.add(k)
                 return rv
@@ -75,15 +90,20 @@ class BaseConfig(MutableMapping):
             raise ValueError(f"Config option {key!r} is read-only")
         key_obj, ctype = self._options[key]
         ctype = self._set_ctypes.get(ctype, ctype)
-        if key in self._enumerations and isinstance(val, str):
-            val = val.lower()
-            val = self._enumerations[key][val]
-        elif key in self._enumerations and isinstance(val, bool):
-            val = self._enumerations[key][val]
-        elif key in self._bitwise and val is not None and not isinstance(val, Integral):
+        if val is None:
+            pass
+        elif key in self._enumerations:
+            if isinstance(val, str):
+                val = val.lower()
+                val = self._enumerations[key][val]
+            else:
+                val = self._enumerations[key].get(val, val)
+        elif key in self._bitwise:
             bitwise = self._bitwise[key]
             if isinstance(val, str):
                 val = bitwise[val.lower()]
+            elif isinstance(val, Integral):
+                val = bitwise.get(val, val)
             else:
                 bits = 0
                 for x in val:
@@ -93,10 +113,9 @@ class BaseConfig(MutableMapping):
                         bits |= x
                 val = bits
         if val is None:
-            if key in self._defaults:
-                val = self._defaults[key]
-            else:
+            if key not in self._defaults:
                 raise ValueError(f"Unable to set default value for {key!r}")
+            val = self._defaults[key]
         if val is None:
             val_obj = NULL
         elif "[" in ctype:
