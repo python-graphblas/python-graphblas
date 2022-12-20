@@ -1714,51 +1714,6 @@ class Vector(BaseType):
         idx = resolved_indexes.indices[0]
         call("GrB_Vector_removeElement", [self, idx.index])
 
-    def to_pygraphblas(self):  # pragma: no cover (outdated)
-        """Convert to a ``pygraphblas.Vector`` without copying data.
-
-        This gives control of the underlying GraphBLAS memory to pygraphblas,
-        meaning further operations on the current :class:`Vector` object will fail!
-
-        This method requires the
-        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
-        library to be installed.
-        """
-        if backend != "suitesparse":
-            raise RuntimeError(
-                f"to_pygraphblas only works with 'suitesparse' backend, not {backend}"
-            )
-        import pygraphblas as pg
-
-        vector = pg.Vector(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
-        self.gb_obj = ffi_new("GrB_Vector*")
-        return vector
-
-    @classmethod
-    def from_pygraphblas(cls, vector):  # pragma: no cover (outdated)
-        """Convert a ``pygraphblas.Vector`` to a new :class:`Vector` without copying data.
-
-        This gives control of the underlying GraphBLAS memory to python-graphblas,
-        meaning further operations on the original ``pygraphblas`` vector object will fail!
-
-        This method requires the
-        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
-        library to be installed.
-        """
-        if backend != "suitesparse":
-            raise RuntimeError(
-                f"from_pygraphblas only works with 'suitesparse' backend, not {backend!r}"
-            )
-        import pygraphblas as pg
-
-        if not isinstance(vector, pg.Vector):
-            raise TypeError(f"Expected pygraphblas.Vector object.  Got type: {type(vector)}")
-        dtype = lookup_dtype(vector.gb_type)
-        rv = cls(vector._vector, dtype)
-        rv._size = vector.size
-        vector._vector = ffi_new("GrB_Vector*")
-        return rv
-
     @classmethod
     def from_dict(cls, d, dtype=None, *, size=None, name=None):
         """Create a new Vector from a dict with keys as indices and values as values.
@@ -1919,7 +1874,6 @@ class VectorExpression(BaseExpression):
         ss = wrapdoc(Vector.ss)(property(automethods.ss))
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
-    to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
     wait = wrapdoc(Vector.wait)(property(automethods.wait))
@@ -1995,7 +1949,6 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
         ss = wrapdoc(Vector.ss)(property(automethods.ss))
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
-    to_pygraphblas = wrapdoc(Vector.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
     wait = wrapdoc(Vector.wait)(property(automethods.wait))

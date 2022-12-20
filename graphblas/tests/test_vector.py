@@ -1599,7 +1599,6 @@ def test_expr_is_like_vector(v):
         "clear",
         "from_coo",
         "from_dict",
-        "from_pygraphblas",
         "from_values",
         "resize",
         "update",
@@ -1636,7 +1635,6 @@ def test_index_expr_is_like_vector(v):
         "clear",
         "from_coo",
         "from_dict",
-        "from_pygraphblas",
         "from_values",
         "resize",
     }

@@ -338,7 +338,6 @@ def test_expr_is_like_scalar(s):
         "_name_counter",
         "_update",
         "clear",
-        "from_pygraphblas",
         "from_value",
         "update",
     }
@@ -370,7 +369,6 @@ def test_index_expr_is_like_scalar(s):
         "_name_counter",
         "_update",
         "clear",
-        "from_pygraphblas",
         "from_value",
     }
     if s.is_cscalar:

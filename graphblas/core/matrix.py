@@ -2915,52 +2915,6 @@ class Matrix(BaseType):
         rowidx, colidx = resolved_indexes.indices
         call("GrB_Matrix_removeElement", [self, rowidx.index, colidx.index])
 
-    def to_pygraphblas(self):  # pragma: no cover (outdated)
-        """Convert to a ``pygraphblas.Matrix`` without copying data.
-
-        This gives control of the underlying GraphBLAS memory to pygraphblas,
-        meaning further operations on the current :class:`Matrix` object will fail!
-
-        This method requires the
-        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
-        library to be installed.
-        """
-        if backend != "suitesparse":
-            raise RuntimeError(
-                f"to_pygraphblas only works with 'suitesparse' backend, not {backend}"
-            )
-        import pygraphblas as pg
-
-        matrix = pg.Matrix(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
-        self.gb_obj = ffi_new("GrB_Matrix*")
-        return matrix
-
-    @classmethod
-    def from_pygraphblas(cls, matrix):  # pragma: no cover (outdated)
-        """Convert a ``pygraphblas.Matrix`` to a new :class:`Matrix` without copying data.
-
-        This gives control of the underlying GraphBLAS memory to python-graphblas,
-        meaning further operations on the original ``pygraphblas`` matrix object will fail!
-
-        This method requires the
-        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
-        library to be installed.
-        """
-        if backend != "suitesparse":
-            raise RuntimeError(
-                f"from_pygraphblas only works with 'suitesparse' backend, not {backend!r}"
-            )
-        import pygraphblas as pg
-
-        if not isinstance(matrix, pg.Matrix):
-            raise TypeError(f"Expected pygraphblas.Matrix object.  Got type: {type(matrix)}")
-        dtype = lookup_dtype(matrix.gb_type)
-        rv = cls(matrix._matrix, dtype)
-        rv._nrows = matrix.nrows
-        rv._ncols = matrix.ncols
-        matrix._matrix = ffi_new("GrB_Matrix*")
-        return rv
-
 
 if backend == "suitesparse":
     Matrix.ss = class_property(Matrix.ss, ss)
@@ -3121,7 +3075,6 @@ class MatrixExpression(BaseExpression):
     to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
     to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
     to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
-    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
     # These raise exceptions
@@ -3211,7 +3164,6 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
     to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
     to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
-    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
     # These raise exceptions
