@@ -454,7 +454,7 @@ class ss:
                 - size : int
                 - nvals : int, only present if raw == True
             - "bitmap" format
-                - bitmap : ndarray(dtype=bool8, size=size)
+                - bitmap : ndarray(dtype=bool, size=size)
                 - values : ndarray(size=size)
                     - Elements where bitmap is False are undefined
                 - nvals : int
@@ -565,7 +565,7 @@ class ss:
                 parent,
             )
             is_iso = is_iso[0]
-            bool_dtype = np.dtype(np.bool8)
+            bool_dtype = np.dtype(np.bool_)
             bitmap = claim_buffer(ffi, vb[0], vb_size[0] // bool_dtype.itemsize, bool_dtype)
             values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
             if not raw:
@@ -999,7 +999,7 @@ class ss:
             to GraphBLAS if possible.  To give ownership of the underlying
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
-                - have the correct dtype (bool8 for bitmap)
+                - have the correct dtype (bool for bitmap)
                 - own its own data
                 - be writeable
             If all of these conditions are not met, then the data will be
@@ -1081,7 +1081,7 @@ class ss:
         if format is not None and format.lower() != "bitmap":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'bitmap'.")
         copy = not take_ownership
-        bitmap = ints_to_numpy_buffer(bitmap, np.bool8, copy=copy, ownable=True, name="bitmap")
+        bitmap = ints_to_numpy_buffer(bitmap, np.bool_, copy=copy, ownable=True, name="bitmap")
         if method == "pack":
             dtype = vector.dtype
             size = vector._size
@@ -1164,7 +1164,7 @@ class ss:
             to GraphBLAS if possible.  To give ownership of the underlying
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
-                - have the correct dtype (bool8 for bitmap)
+                - have the correct dtype (bool for bitmap)
                 - own its own data
                 - be writeable
             If all of these conditions are not met, then the data will be
