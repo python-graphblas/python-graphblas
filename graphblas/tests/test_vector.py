@@ -2426,10 +2426,11 @@ def test_ss_sort(v):
         v.ss.sort(binary.plus)
 
     # Like compactify
-    _, p = v.ss.sort(lambda x, y: False, values=False)
+    _, p = v.ss.sort(lambda x, y: False, values=False)  # pragma: no branch (numba)
     expected_p = Vector.from_coo([0, 1, 2, 3], [1, 3, 4, 6], size=7)
     assert p.isequal(expected_p)
     # reversed
     _, p = v.ss.sort(binary.pair[bool], values=False)
     expected_p = Vector.from_coo([0, 1, 2, 3], [6, 4, 3, 1], size=7)
     assert p.isequal(expected_p)
+    w, p = v.ss.sort(monoid.lxor)  # Weird, but user-defined monoids may not commute, so okay

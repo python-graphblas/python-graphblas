@@ -4096,6 +4096,7 @@ def test_ss_sort(A):
     C, P = A.ss.sort(binary.gt, order="col")
     assert P.isequal(expected_P)
     assert C.isequal(expected_C)
+    C, P = A.ss.sort(monoid.lxnor)  # Weird, but user-defined monoids may not commute, so okay
 
 
 @autocompute

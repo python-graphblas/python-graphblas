@@ -272,9 +272,9 @@ def test_monoid_parameterized():
 
     # signatures must match
     with pytest.raises(ValueError, match="Signatures"):
-        Monoid.register_anonymous(bin_op, lambda x: -x)  # pragma: no cover (numba)
+        Monoid.register_anonymous(bin_op, lambda x: -x)  # pragma: no branch (numba)
     with pytest.raises(ValueError, match="Signatures"):
-        Monoid.register_anonymous(bin_op, lambda y=0: -y)  # pragma: no cover (numba)
+        Monoid.register_anonymous(bin_op, lambda y=0: -y)  # pragma: no branch (numba)
     with pytest.raises(TypeError, match="binaryop must be parameterized"):
         operator.ParameterizedMonoid("bad_monoid", binary.plus, 0)
 

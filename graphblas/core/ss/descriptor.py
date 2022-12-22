@@ -94,11 +94,10 @@ class _DescriptorConfig(BaseConfig):
     }
     _count = 0
 
-    def __init__(self, parent=None):
-        if parent is None:
-            gb_obj = ffi_new("GrB_Descriptor*")
-            check_status_carg(lib.GrB_Descriptor_new(gb_obj), "Descriptor", gb_obj[0])
-            parent = Descriptor(gb_obj)
+    def __init__(self):
+        gb_obj = ffi_new("GrB_Descriptor*")
+        check_status_carg(lib.GrB_Descriptor_new(gb_obj), "Descriptor", gb_obj[0])
+        parent = Descriptor(gb_obj)
         initialized = self._initialized
         super().__init__(parent)
         if not initialized:

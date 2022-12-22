@@ -43,10 +43,10 @@ class BaseConfig(MutableMapping):
             for key, d in self._bitwise.items():
                 cls._reverse_bitwise[key] = rd = {}
                 for k, v in list(d.items()):
-                    if v not in d:
+                    if v not in d:  # pragma: no branch (safety)
                         d[v] = v
                     rd[v] = k
-                    if k not in rd:
+                    if k not in rd:  # pragma: no branch (safety)
                         rd[k] = k
             cls._initialized = True
         self._parent = parent
