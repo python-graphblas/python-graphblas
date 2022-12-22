@@ -85,7 +85,7 @@ def reset_name_counters():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def ic():
+def ic():  # pragma: no cover (debug)
     """Make `ic` available everywhere during testing for easier debugging"""
     try:
         import icecream

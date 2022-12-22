@@ -1,20 +1,26 @@
-from ..exceptions import check_status_carg
+import itertools
+
+from .. import backend
+from ..exceptions import check_status, check_status_carg
 from . import NULL, ffi, lib
 
 
 class Descriptor:
+    _name_counter = itertools.count()
+
     def __init__(
         self,
         gb_obj,
-        name,
         output_replace=False,
         mask_complement=False,
         mask_structure=False,
         transpose_first=False,
         transpose_second=False,
+        *,
+        name=None,
     ):
         self.gb_obj = gb_obj
-        self.name = name
+        self.name = f"Desc_{next(Descriptor._name_counter)}" if name is None else name
         self.output_replace = output_replace
         self.mask_complement = mask_complement
         self.mask_structure = mask_structure
@@ -23,7 +29,22 @@ class Descriptor:
 
     @property
     def _carg(self):
+        return self.gb_obj[0]
+
+    def __del__(self):
+        gb_obj = getattr(self, "gb_obj", None)
+        if gb_obj is not None and lib is not None:  # pragma: no branch (safety)
+            # it's difficult/dangerous to record the call, b/c `self.name` may not exist
+            check_status(lib.GrB_Descriptor_free(gb_obj), self)
+
+
+class BuiltinDescriptor(Descriptor):
+    @property
+    def _carg(self):
         return self.gb_obj
+
+    def __del__(self):  # pragma: no cover (safety)
+        pass
 
 
 _desc_names = {
@@ -60,7 +81,9 @@ _desc_names = {
     (True, True, True, True, False): "GrB_DESC_RSCT0",
     (True, True, True, True, True): "GrB_DESC_RSCT0T1",
 }
-_desc_map = {key: Descriptor(getattr(lib, val), val, *key) for key, val in _desc_names.items()}
+_desc_map = {
+    key: BuiltinDescriptor(getattr(lib, val), *key, name=val) for key, val in _desc_names.items()
+}
 _desc_names[(False, False, False, False, False)] = "NULL"
 _desc_map[(False, False, False, False, False)] = None
 
@@ -72,8 +95,33 @@ def lookup(
     mask_structure=False,
     transpose_first=False,
     transpose_second=False,
-    create=False,
+    **opts,
 ):
+    if opts:
+        # Normalize opts by making all keys lowercase and raise if duplicates
+        new_opts = {key.lower(): val for key, val in opts.items()}
+        if len(opts) != len(new_opts):
+            extra = opts.keys() - new_opts.keys()
+            extra |= opts.keys() & {x.lower() for x in extra}
+            raise ValueError(
+                "Duplicate descriptor options given (descriptor options are case-insensitive): "
+                + ", ".join(sorted(extra, key=lambda x: (x.lower(), x)))
+            )
+        if backend == "suitesparse":
+            from .ss.descriptor import get_descriptor
+
+            return get_descriptor(
+                output_replace=output_replace,
+                mask_complement=mask_complement,
+                mask_structure=mask_structure,
+                transpose_first=transpose_first,
+                transpose_second=transpose_second,
+                **opts,
+            )
+        raise ValueError(
+            f"Extra descriptor options not possible with {backend!r} backend; "
+            f"got {', '.join(str(x) for x in opts)}"
+        )
     key = (
         output_replace,
         mask_complement,
@@ -81,7 +129,7 @@ def lookup(
         transpose_first,
         transpose_second,
     )
-    if create or key not in _desc_map:
+    if key not in _desc_map:  # pragma: no cover (unnecessary)
         # We currently don't need this block of code!
         # All 32 possible descriptors are currently already added to _desc_map.
         # Nevertheless, this code may be useful some day, because we will want
@@ -91,7 +139,7 @@ def lookup(
             # Default descriptor stays a NULL pointer
             desc[0] = NULL
         else:
-            lib.GrB_Descriptor_new(desc)
+            check_status_carg(lib.GrB_Descriptor_new(desc), "Descriptor", desc[0])
             for cond, field, val in [
                 (output_replace, lib.GrB_OUTP, lib.GrB_REPLACE),
                 (mask_complement, lib.GrB_MASK, lib.GrB_COMP),
@@ -103,8 +151,5 @@ def lookup(
                     check_status_carg(
                         lib.GrB_Descriptor_set(desc[0], field, val), "Descriptor", desc[0]
                     )
-        rv = Descriptor(desc[0], "custom_descriptor", *key)
-        if not create:  # pragma: no cover (unnecessary)
-            _desc_map[key] = rv
-        return rv
+        _desc_map[key] = Descriptor(desc, *key)
     return _desc_map[key]

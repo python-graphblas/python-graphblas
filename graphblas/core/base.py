@@ -189,7 +189,13 @@ class BaseType:
     _is_scalar = False
 
     def __call__(
-        self, *optional_mask_accum_replace, mask=None, accum=None, replace=False, input_mask=None
+        self,
+        *optional_mask_accum_replace,
+        mask=None,
+        accum=None,
+        replace=False,
+        input_mask=None,
+        **opts,
     ):
         # Pick out mask and accum from positional arguments
         mask_arg = None
@@ -251,7 +257,9 @@ class BaseType:
                 accum = accum.binaryop
             else:
                 self._expect_op(accum, "BinaryOp", within="__call__", keyword_name="accum")
-        return Updater(self, mask=mask, accum=accum, replace=replace, input_mask=input_mask)
+        return Updater(
+            self, mask=mask, accum=accum, replace=replace, input_mask=input_mask, opts=opts
+        )
 
     def __or__(self, other):
         if self._is_scalar:
@@ -307,16 +315,16 @@ class BaseType:
             "Perhaps use .nvals attribute instead."
         )
 
-    def __lshift__(self, expr):
-        return self._update(expr)
+    def __lshift__(self, expr, **opts):
+        return self._update(expr, opts=opts)
 
-    def update(self, expr):
+    def update(self, expr, **opts):
         """
         Convenience function when no output arguments (mask, accum, replace) are used
         """
-        return self._update(expr)
+        return self._update(expr, opts=opts)
 
-    def _update(self, expr, mask=None, accum=None, replace=False, input_mask=None):
+    def _update(self, expr, mask=None, accum=None, replace=False, input_mask=None, *, opts):
         if not isinstance(expr, BaseExpression):
             if isinstance(expr, AmbiguousAssignOrExtract):
                 if expr._is_scalar and self._is_scalar:
@@ -327,7 +335,11 @@ class BaseType:
                             "--such as `s(accum=accum) << v[0]`--is not supported"
                         )
                     expr.parent._extract_element(
-                        expr.resolved_indexes, self.dtype, is_cscalar=self._is_cscalar, result=self
+                        expr.resolved_indexes,
+                        self.dtype,
+                        opts,
+                        is_cscalar=self._is_cscalar,
+                        result=self,
                     )
                     return
 
@@ -347,13 +359,18 @@ class BaseType:
                             "Scalar update with accumulation--such as `s(accum=accum) << t`"
                             "--is not supported"
                         )
+                    if opts:
+                        # Ignore opts for now
+                        descriptor_lookup(**opts)
                     self.value = expr
                     return
 
                 # Two choices here: apply identity `expr = expr.apply(identity)`, or assign.
                 # Choose assign for now, since it works better for iso-valued objects.
                 # Perhaps we should benchmark to see which is faster and has less Python overhead.
-                self(mask=mask, accum=accum, replace=replace, input_mask=input_mask)[...] = expr
+                self(mask=mask, accum=accum, replace=replace, input_mask=input_mask, **opts)[
+                    ...
+                ] = expr
                 return
             elif self._is_scalar:
                 from .infix import InfixExprBase
@@ -367,6 +384,9 @@ class BaseType:
                         "--is not supported"
                     )
                 else:
+                    if opts:
+                        # Ignore opts for now
+                        descriptor_lookup(**opts)
                     self.value = expr
                     return
             else:
@@ -403,13 +423,15 @@ class BaseType:
                                 f"{type(self).__name__}, {type(self).__name__}Expression, "
                                 "AmbiguousAssignOrExtract, and scalars."
                             ) from None
-                    updater = self(mask=mask, accum=accum, replace=replace, input_mask=input_mask)
+                    updater = self(
+                        mask=mask, accum=accum, replace=replace, input_mask=input_mask, **opts
+                    )
                     updater[...] = scalar
                     return
 
         if type(self) is not expr.output_type:
             if expr.output_type._is_scalar and config.get("autocompute"):
-                self._update(expr.new(), mask, accum, replace, input_mask)
+                self._update(expr.new(), mask, accum, replace, input_mask, opts=opts)
                 return
             from .scalar import Scalar
 
@@ -420,11 +442,11 @@ class BaseType:
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
         if expr.op is not None and expr.op.opclass == "Aggregator":
-            updater = self(mask=mask, accum=accum, replace=replace)
+            updater = self(mask=mask, accum=accum, replace=replace, **opts)
             expr.op._new(updater, expr)
             return
         if expr.cfunc_name is None:  # Custom recipe
-            updater = self(mask=mask, accum=accum, replace=replace)
+            updater = self(mask=mask, accum=accum, replace=replace, **opts)
             expr.args[-2](updater, *expr.args[-1])
             return
 
@@ -444,6 +466,7 @@ class BaseType:
             mask_complement=complement,
             mask_structure=structure,
             output_replace=replace,
+            **opts,
         )
         if self._is_scalar:
             scalar_as_vector = expr.method_name == "inner"
@@ -553,33 +576,39 @@ class BaseExpression:
             self.dtype = dtype
         self._value = None
 
-    def new(self, dtype=None, *, mask=None, name=None):
-        return self._new(dtype, mask, name)
+    def new(self, dtype=None, *, mask=None, name=None, **opts):
+        return self._new(dtype, mask, name, **opts)
 
-    def _new(self, dtype, mask, name, **kwargs):
+    def _new(self, dtype, mask, name, is_cscalar=None, **opts):
         if (
             mask is None
             and self._value is not None
             and (dtype is None or self._value.dtype == dtype)
         ):
-            if self._is_scalar and self._value._is_cscalar != kwargs["is_cscalar"]:
-                return self._value.dup(is_cscalar=kwargs["is_cscalar"], name=name)
+            if opts:
+                # Ignore opts for now
+                descriptor_lookup(**opts)
+            if self._is_scalar and self._value._is_cscalar != is_cscalar:
+                return self._value.dup(is_cscalar=is_cscalar, name=name)
             rv = self._value
             if name is not None:
                 rv.name = name
             self._value = None
             return rv
-        output = self.construct_output(dtype, name=name, **kwargs)
+        if is_cscalar is None:
+            output = self.construct_output(dtype, name=name)
+        else:
+            output = self.construct_output(dtype, name=name, is_cscalar=is_cscalar)
         if self.op is not None and self.op.opclass == "Aggregator":
-            updater = output(mask=mask)
+            updater = output(mask=mask, **opts)
             self.op._new(updater, self)
         elif self.cfunc_name is None:  # Custom recipe
-            self.args[-2](output(mask=mask), *self.args[-1])
+            self.args[-2](output(mask=mask, **opts), *self.args[-1])
         elif mask is None:
-            output.update(self)
+            output.update(self, **opts)
         else:
             mask = _check_mask(mask, output)
-            output(mask=mask).update(self)
+            output(mask=mask, **opts).update(self)
         return output
 
     dup = new

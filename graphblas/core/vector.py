@@ -8,6 +8,7 @@ from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, NoValue, check_status
 from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
+from .descriptor import lookup as descriptor_lookup
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
@@ -39,8 +40,10 @@ ffi_new = ffi.new
 # Custom recipes
 def _v_add_m(updater, left, right, op):
     full = Vector(left.dtype, right._ncols, name="v_full")
-    full[:] = 0
-    temp = left.outer(full, binary.first).new(name="M_temp", mask=updater.kwargs.get("mask"))
+    full(**updater.opts)[:] = 0
+    temp = left.outer(full, binary.first).new(
+        name="M_temp", mask=updater.kwargs.get("mask"), **updater.opts
+    )
     updater << temp.ewise_add(right, op)
 
 
@@ -50,19 +53,22 @@ def _v_mult_m(updater, left, right, op):
 
 def _v_union_m(updater, left, right, left_default, right_default, op):
     full = Vector(left.dtype, right._ncols, name="v_full")
-    full[:] = 0
-    temp = left.outer(full, binary.first).new(name="M_temp", mask=updater.kwargs.get("mask"))
+    full(**updater.opts)[:] = 0
+    temp = left.outer(full, binary.first).new(
+        name="M_temp", mask=updater.kwargs.get("mask"), **updater.opts
+    )
     updater << temp.ewise_union(right, op, left_default=left_default, right_default=right_default)
 
 
 def _v_union_v(updater, left, right, left_default, right_default, op, dtype):
     mask = updater.kwargs.get("mask")
+    opts = updater.opts
     new_left = left.dup(dtype, clear=True)
-    new_left(mask=mask) << binary.second(right, left_default)
-    new_left(mask=mask) << binary.first(left | new_left)
+    new_left(mask=mask, **opts) << binary.second(right, left_default)
+    new_left(mask=mask, **opts) << binary.first(left | new_left)
     new_right = right.dup(dtype, clear=True)
-    new_right(mask=mask) << binary.second(left, right_default)
-    new_right(mask=mask) << binary.first(right | new_right)
+    new_right(mask=mask, **opts) << binary.second(left, right_default)
+    new_right(mask=mask, **opts) << binary.first(right | new_right)
     updater << op(new_left & new_right)
 
 
@@ -207,7 +213,7 @@ class Vector(BaseType):
         """Create a Mask based on the values in the Vector (treating each value as truthy)."""
         return ValueMask(self)
 
-    def __delitem__(self, keys):
+    def __delitem__(self, keys, **opts):
         """Delete a single element or subvector.
 
         Examples
@@ -215,7 +221,7 @@ class Vector(BaseType):
 
             >>> del v[1:-1]
         """
-        del Updater(self)[keys]
+        del Updater(self, opts=opts)[keys]
 
     def __getitem__(self, keys):
         """Extract a single element or subvector.
@@ -236,7 +242,7 @@ class Vector(BaseType):
             return ScalarIndexExpr(self, resolved_indexes)
         return VectorIndexExpr(self, resolved_indexes, *shape)
 
-    def __setitem__(self, keys, expr):
+    def __setitem__(self, keys, expr, **opts):
         """Assign values to a single element or subvector.
 
         See the `Assign section <../user_guide/operations.html#assign>`__
@@ -250,7 +256,7 @@ class Vector(BaseType):
             # This makes a dense iso-value vector
             v[:] = 1
         """
-        Updater(self)[keys] = expr
+        Updater(self, opts=opts)[keys] = expr
 
     def __contains__(self, index):
         """Indicates whether a value is present at the index.
@@ -284,7 +290,7 @@ class Vector(BaseType):
             return size[0] + object.__sizeof__(self)
         raise TypeError("Unable to get size of Vector with backend: {backend}")
 
-    def isequal(self, other, *, check_dtype=False):
+    def isequal(self, other, *, check_dtype=False, **opts):
         """Check for exact equality (same size, same structure)
 
         Parameters
@@ -316,15 +322,15 @@ class Vector(BaseType):
             op = get_typed_op(binary.eq, self.dtype, other.dtype, kind="binary")
 
         matches = Vector(bool, self._size, name="v_isequal")
-        matches << self.ewise_mult(other, op)
+        matches(**opts) << self.ewise_mult(other, op)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
             return False
 
         # Check if all results are True
-        return matches.reduce(monoid.land, allow_empty=False).new().value
+        return matches.reduce(monoid.land, allow_empty=False).new(**opts).value
 
-    def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
+    def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False, **opts):
         """Check for approximate equality (including same size and same structure).
 
         Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
@@ -353,14 +359,14 @@ class Vector(BaseType):
             return False
 
         matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(
-            bool, name="M_isclose"
+            bool, name="M_isclose", **opts
         )
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
             return False
 
         # Check if all results are True
-        return matches.reduce(monoid.land, allow_empty=False).new().value
+        return matches.reduce(monoid.land, allow_empty=False).new(**opts).value
 
     @property
     def size(self):
@@ -535,7 +541,7 @@ class Vector(BaseType):
         if not dup_op_given and self._nvals < n:
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
 
-    def dup(self, dtype=None, *, clear=False, mask=None, name=None):
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
         """Create a duplicate of the Vector.
 
         This is a full copy, not a view on the original.
@@ -560,8 +566,11 @@ class Vector(BaseType):
                 dtype = self.dtype
             rv = Vector(dtype, size=self._size, name=name)
             if not clear:
-                rv(mask=mask)[...] = self
+                rv(mask=mask, **opts)[...] = self
         else:
+            if opts:
+                # Ignore opts for now
+                descriptor_lookup(**opts)
             rv = Vector._from_obj(ffi_new("GrB_Vector*"), self.dtype, self._size, name=name)
             call("GrB_Vector_dup", [_Pointer(rv), self])
         return rv
@@ -1510,7 +1519,9 @@ class Vector(BaseType):
     ##################################
     # Extract and Assign index methods
     ##################################
-    def _extract_element(self, resolved_indexes, dtype=None, *, is_cscalar, name=None, result=None):
+    def _extract_element(
+        self, resolved_indexes, dtype, opts, *, is_cscalar, name=None, result=None
+    ):
         if dtype is None:
             dtype = self.dtype
         else:
@@ -1518,6 +1529,9 @@ class Vector(BaseType):
         idx = resolved_indexes.indices[0]
         if result is None:
             result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
+        if opts:
+            # Ignore opts for now
+            descriptor_lookup(**opts)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (
@@ -1568,7 +1582,7 @@ class Vector(BaseType):
             cfunc_name = "GrB_Vector_setElement_Scalar"
         call(cfunc_name, [self, value, idx.index])
 
-    def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False, replace=False):
+    def _prep_for_assign(self, resolved_indexes, value, mask, is_submask, replace, opts):
         method_name = "__setitem__"
         idx = resolved_indexes.indices[0]
         size = idx.size
@@ -1591,7 +1605,7 @@ class Vector(BaseType):
                     cfunc_name = "GxB_Vector_subassign"
                 else:
                     cfunc_name = "GrB_Vector_assign"
-                    mask = _vanilla_subassign_mask(self, mask, idx, replace)
+                    mask = _vanilla_subassign_mask(self, mask, idx, replace, opts)
                 expr_repr = "[[{2._expr_name} elements]](%s) = {0.name}" % mask.name
             else:
                 # v(m)[I] << w
@@ -1648,9 +1662,10 @@ class Vector(BaseType):
                             return self._prep_for_assign(
                                 resolved_indexes,
                                 vals,
-                                mask=mask,
-                                is_submask=is_submask,
-                                replace=False,
+                                mask,
+                                is_submask,
+                                replace,
+                                opts,
                             )
                     else:
                         extra_message = "Literal scalars also accepted."
@@ -1676,13 +1691,13 @@ class Vector(BaseType):
                         cfunc_name = f"GxB_Vector_subassign_{dtype_name}"
                     else:
                         cfunc_name = f"GrB_Vector_assign_{dtype_name}"
-                        mask = _vanilla_subassign_mask(self, mask, idx, replace)
+                        mask = _vanilla_subassign_mask(self, mask, idx, replace, opts)
                 else:
                     if backend == "suitesparse":
                         cfunc_name = "GxB_Vector_subassign_Scalar"
                     else:
                         cfunc_name = "GrB_Vector_assign_Scalar"
-                        mask = _vanilla_subassign_mask(self, mask, idx, replace)
+                        mask = _vanilla_subassign_mask(self, mask, idx, replace, opts)
                 expr_repr = "[[{2._expr_name} elements]](%s) = {0._expr_name}" % mask.name
             else:
                 # v(m)[I] << c
@@ -1766,18 +1781,18 @@ else:
     )
 
 
-def _vanilla_subassign_mask(self, mask, indices, replace):
+def _vanilla_subassign_mask(self, mask, indices, replace, opts):
     _check_mask(mask, self)
     if not replace and indices.index is _ALL_INDICES:
         return mask
     indices = indices._py_index()
     val = Vector(mask.parent.dtype, size=self._size, name="v_temp")
-    val[indices] = mask.parent
+    val(**opts)[indices] = mask.parent
     mask = type(mask)(val)
     if replace:
         val = self.dup()
-        del val[indices]
-        mask |= val.S
+        val.__delitem__(indices, **opts)  # del val[indices]
+        mask = mask.__or__(val.S, **opts)  # mask |= val.S
     return mask
 
 

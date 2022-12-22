@@ -21,7 +21,7 @@ _graphblas_ss.__name__ = "graphblas.ss"
 _graphblas_ss = _graphblas_ss()
 
 
-def diag(x, k=0, dtype=None, *, name=None):
+def diag(x, k=0, dtype=None, *, name=None, **opts):
     """
     GxB_Matrix_diag, GxB_Vector_diag
 
@@ -66,11 +66,11 @@ def diag(x, k=0, dtype=None, *, name=None):
         if size < 0:
             size = 0
         rv = Vector(dtype, size=size, name=name)
-        rv.ss.build_diag(x, k)
+        rv.ss.build_diag(x, k, **opts)
     return rv
 
 
-def concat(tiles, dtype=None, *, name=None):
+def concat(tiles, dtype=None, *, name=None, **opts):
     """
     GxB_Matrix_concat
 
@@ -97,13 +97,13 @@ def concat(tiles, dtype=None, *, name=None):
         nrows = sum(row_tiles[0]._nrows for row_tiles in tiles)
         ncols = sum(tile._ncols for tile in tiles[0])
         rv = Matrix(dtype, nrows=nrows, ncols=ncols, name=name)
-        rv.ss._concat(tiles, m, n)
+        rv.ss._concat(tiles, m, n, opts)
     else:
         if dtype is None:
             dtype = tiles[0].dtype
         size = sum(tile._nrows for tile in tiles)
         rv = Vector(dtype, size=size, name=name)
-        rv.ss._concat(tiles, m)
+        rv.ss._concat(tiles, m, opts)
     return rv
 
 
@@ -164,13 +164,13 @@ class GlobalConfig(BaseConfig):
     }
     _enumerations = {
         "format": {
-            lib.GxB_BY_ROW: "by_row",
-            lib.GxB_BY_COL: "by_col",
-            # lib.GxB_NO_FORMAT: "no_format",  # Used by iterators; not valid here
+            "by_row": lib.GxB_BY_ROW,
+            "by_col": lib.GxB_BY_COL,
+            # "no_format": lib.GxB_NO_FORMAT,  # Used by iterators; not valid here
         },
         "gpu_control": {
-            lib.GxB_GPU_ALWAYS: "always",
-            lib.GxB_GPU_NEVER: "never",
+            "always": lib.GxB_GPU_ALWAYS,
+            "never": lib.GxB_GPU_NEVER,
         },
     }
 

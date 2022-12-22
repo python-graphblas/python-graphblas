@@ -609,10 +609,10 @@ class ScalarExpression(BaseExpression):
             is_cscalar = self._is_cscalar
         return Scalar(dtype, is_cscalar=is_cscalar, name=name)
 
-    def new(self, dtype=None, *, is_cscalar=None, name=None):
+    def new(self, dtype=None, *, is_cscalar=None, name=None, **opts):
         if is_cscalar is None:
             is_cscalar = self._is_cscalar
-        return super()._new(dtype, None, name, is_cscalar=is_cscalar)
+        return super()._new(dtype, None, name, is_cscalar=is_cscalar, **opts)
 
     dup = new
 
@@ -672,11 +672,11 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     _is_scalar = True
     _is_cscalar = False
 
-    def new(self, dtype=None, *, is_cscalar=None, name=None):
+    def new(self, dtype=None, *, is_cscalar=None, name=None, **opts):
         if is_cscalar is None:
             is_cscalar = False
         return self.parent._extract_element(
-            self.resolved_indexes, dtype, is_cscalar=is_cscalar, name=name
+            self.resolved_indexes, dtype, opts, is_cscalar=is_cscalar, name=name
         )
 
     dup = new

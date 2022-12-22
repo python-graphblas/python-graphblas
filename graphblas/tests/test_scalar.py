@@ -477,3 +477,25 @@ def test_get(s):
     s.clear()
     assert compute(s.get()) is None
     assert s.get("mittens") == "mittens"
+
+
+def test_ss_descriptors(s):
+    v = Vector.from_coo([0, 2], [10, 20])
+    if suitesparse:
+        with pytest.raises(ValueError, match="escriptor"):
+            v[0].new(bad_opt=True)
+        assert v[0].new(nthreads=4) == 10  # ignored, but okay
+        with pytest.raises(ValueError, match="escriptor"):
+            v.dup(bad_opt=True)
+        v.dup(nthreads=4)
+        with pytest.raises(ValueError, match="escriptor"):
+            s(bad_opt=True) << 1
+        s(nthreads=4) << 1  # ignored, but okay
+        with pytest.raises(ValueError, match="escriptor"):
+            s(bad_opt=True) << s
+        s(nthreads=4) << s  # ignored, but okay
+    else:
+        with pytest.raises(ValueError, match="escriptor"):
+            v[0].new(nthreads=4)
+        with pytest.raises(ValueError, match="escriptor"):
+            s(nthreads=4) << 1

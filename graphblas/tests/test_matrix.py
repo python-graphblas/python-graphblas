@@ -537,7 +537,7 @@ def test_extract_input_mask():
         TypeError, match="Got Vector `input_mask` when extracting a submatrix from a Matrix"
     ):
         A(input_mask=expected.S) << A[[0], [0]]
-    with pytest.raises(TypeError, match="unexpected keyword argument"):
+    with pytest.raises(ValueError, match="input_mask"):
         A[0, 0].new(input_mask=M.S)
     with pytest.raises(TypeError, match="mask and input_mask arguments cannot both be given"):
         A[0, [0, 1]].new(input_mask=M.S, mask=expected.S)
@@ -1397,7 +1397,7 @@ def test_reduce_agg(A):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.varp, agg.stdp],
-        finalize=lambda x, y: binary.times(x & y),
+        finalize=lambda x, y, opts: binary.times(x & y),
         types=[agg.varp],
     )
     v1 = A.reduce_rowwise(agg.varp).new()
@@ -1454,7 +1454,7 @@ def test_reduce_agg_argminmax(A):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.argmin, agg.argmax],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.argmin],
     )
     v1 = A.reduce_rowwise(agg.argmin).new()
@@ -1512,7 +1512,7 @@ def test_reduce_agg_firstlast(A):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.first, agg.last],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.first],
     )
     v1 = A.reduce_rowwise(agg.first).new()
@@ -1560,7 +1560,7 @@ def test_reduce_agg_firstlast_index(A):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.first_index, agg.last_index],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.first_index],
     )
     v1 = A.reduce_rowwise(agg.first_index).new()
@@ -4096,3 +4096,44 @@ def test_ss_sort(A):
     C, P = A.ss.sort(binary.gt, order="col")
     assert P.isequal(expected_P)
     assert C.isequal(expected_C)
+    C, P = A.ss.sort(monoid.lxnor)  # Weird, but user-defined monoids may not commute, so okay
+
+
+@autocompute
+def test_ss_descriptors(A):
+    if suitesparse:
+        C1 = (A @ A).new()
+        C2 = (A @ A).new(nthreads=4, axb_method="dot", sort=True)
+        assert C1.isequal(C2)
+        C2 = (A @ A).new(Nthreads=4, AxB_method="dot", sort=True)
+        assert C1.isequal(C2)
+        A(nthreads=4, axb_method="dot", sort=True) << A @ A
+        assert A.isequal(C2)
+        with pytest.raises(ValueError, match="escriptor"):
+            C1(bad_opt=True) << A
+        with pytest.raises(ValueError, match="Duplicate descriptor"):
+            (A @ A).new(nthreads=4, Nthreads=5)
+
+        with pytest.raises(ValueError, match="escriptor"):
+            A[0, 0].new(bad_opt=True)
+        A[0, 0].new(nthreads=4)  # ignored, but okay
+        with pytest.raises(ValueError, match="escriptor"):
+            A.__setitem__((0, 0), 1, bad_opt=True)
+        A.__setitem__((0, 0), 1, nthreads=4)  # ignored, but okay
+        with pytest.raises(ValueError, match="escriptor"):
+            A.dup(bad_opt=True)
+        A.dup(nthreads=4)
+        # These are interesting cases: we auto-compute a value, then provide custom descriptor
+        expr = A.reduce_scalar()
+        expr.value
+        with pytest.raises(ValueError, match="escriptor"):
+            expr.new(bad_opt=True)
+        expr.new(nthreads=4)  # ignored, but okay
+        expr = A.reduce_rowwise()
+        expr[0].value
+        with pytest.raises(ValueError, match="escriptor"):
+            expr.new(bad_opt=True)
+        expr.new(nthreads=4)  # ignored, but okay
+    else:
+        with pytest.raises(ValueError, match="escriptor"):
+            (A @ A).new(nthreads=4, axb_method="dot", sort=True)

@@ -9,6 +9,7 @@ from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, InvalidValue, NoValue, check_status
 from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
+from .descriptor import lookup as descriptor_lookup
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
@@ -53,8 +54,10 @@ _CSC_FORMAT = Scalar.from_value(
 # Custom recipes
 def _m_add_v(updater, left, right, op):
     full = Vector(right.dtype, left._nrows, name="v_full")
-    full[:] = 0
-    temp = full.outer(right, binary.second).new(name="M_temp", mask=updater.kwargs.get("mask"))
+    full(**updater.opts)[:] = 0
+    temp = full.outer(right, binary.second).new(
+        name="M_temp", mask=updater.kwargs.get("mask"), **updater.opts
+    )
     updater << left.ewise_add(temp, op)
 
 
@@ -64,19 +67,22 @@ def _m_mult_v(updater, left, right, op):
 
 def _m_union_m(updater, left, right, left_default, right_default, op, dtype):
     mask = updater.kwargs.get("mask")
+    opts = updater.opts
     new_left = left.dup(dtype, clear=True)
-    new_left(mask=mask) << binary.second(right, left_default)
-    new_left(mask=mask) << binary.first(left | new_left)
+    new_left(mask=mask, **opts) << binary.second(right, left_default)
+    new_left(mask=mask, **opts) << binary.first(left | new_left)
     new_right = right.dup(dtype, clear=True)
-    new_right(mask=mask) << binary.second(left, right_default)
-    new_right(mask=mask) << binary.first(right | new_right)
+    new_right(mask=mask, **opts) << binary.second(left, right_default)
+    new_right(mask=mask, **opts) << binary.first(right | new_right)
     updater << op(new_left & new_right)
 
 
 def _m_union_v(updater, left, right, left_default, right_default, op):
     full = Vector(right.dtype, left._nrows, name="v_full")
-    full[:] = 0
-    temp = full.outer(right, binary.second).new(name="M_temp", mask=updater.kwargs.get("mask"))
+    full(**updater.opts)[:] = 0
+    temp = full.outer(right, binary.second).new(
+        name="M_temp", mask=updater.kwargs.get("mask"), **updater.opts
+    )
     updater << left.ewise_union(temp, op, left_default=left_default, right_default=right_default)
 
 
@@ -212,7 +218,7 @@ class Matrix(BaseType):
         """Create a Mask based on the values in the Matrix (treating each value as truthy)."""
         return ValueMask(self)
 
-    def __delitem__(self, keys):
+    def __delitem__(self, keys, **opts):
         """Delete a single element, row/column, or submatrix.
 
         Examples
@@ -220,7 +226,7 @@ class Matrix(BaseType):
 
             >>> del M[1, 5]
         """
-        del Updater(self)[keys]
+        del Updater(self, opts=opts)[keys]
 
     def __getitem__(self, keys):
         """Extract a single element, row/column, or submatrix.
@@ -243,7 +249,7 @@ class Matrix(BaseType):
             return VectorIndexExpr(self, resolved_indexes, *shape)
         return MatrixIndexExpr(self, resolved_indexes, *shape)
 
-    def __setitem__(self, keys, expr):
+    def __setitem__(self, keys, expr, **opts):
         """Assign values to a single element, row/column, or submatrix.
 
         See the `Assign section <../user_guide/operations.html#assign>`__
@@ -256,7 +262,7 @@ class Matrix(BaseType):
 
             M[0, 0:3] = 17
         """
-        Updater(self)[keys] = expr
+        Updater(self, opts=opts)[keys] = expr
 
     def __contains__(self, index):
         """Indicates whether the (row, col) index has a value present.
@@ -289,7 +295,7 @@ class Matrix(BaseType):
             return size[0] + object.__sizeof__(self)
         raise TypeError("Unable to get size of Matrix with backend: {backend}")
 
-    def isequal(self, other, *, check_dtype=False):
+    def isequal(self, other, *, check_dtype=False, **opts):
         """Check for exact equality (same size, same structure).
 
         Parameters
@@ -324,15 +330,15 @@ class Matrix(BaseType):
             op = get_typed_op(binary.eq, self.dtype, other.dtype, kind="binary")
 
         matches = Matrix(bool, self._nrows, self._ncols, name="M_isequal")
-        matches << self.ewise_mult(other, op)
+        matches(**opts) << self.ewise_mult(other, op)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
             return False
 
         # Check if all results are True
-        return matches.reduce_scalar(monoid.land, allow_empty=False).new().value
+        return matches.reduce_scalar(monoid.land, allow_empty=False).new(**opts).value
 
-    def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
+    def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False, **opts):
         """Check for approximate equality (including same size and same structure).
 
         Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
@@ -366,14 +372,14 @@ class Matrix(BaseType):
             return False
 
         matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(
-            bool, name="M_isclose"
+            bool, name="M_isclose", **opts
         )
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
             return False
 
         # Check if all results are True
-        return matches.reduce_scalar(monoid.land, allow_empty=False).new().value
+        return matches.reduce_scalar(monoid.land, allow_empty=False).new(**opts).value
 
     @property
     def nrows(self):
@@ -595,7 +601,7 @@ class Matrix(BaseType):
         if not dup_op_given and self._nvals < n:
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
 
-    def dup(self, dtype=None, *, clear=False, mask=None, name=None):
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
         """Create a duplicate of the Matrix.
 
         This is a full copy, not a view on the original.
@@ -621,14 +627,17 @@ class Matrix(BaseType):
                 dtype = self.dtype
             rv = Matrix(dtype, nrows=self._nrows, ncols=self._ncols, name=name)
             if not clear:
-                rv(mask=mask)[...] = self
+                rv(mask=mask, **opts)[...] = self
         else:
+            if opts:
+                # Ignore opts for now
+                descriptor_lookup(**opts)
             new_mat = ffi_new("GrB_Matrix*")
             rv = Matrix._from_obj(new_mat, self.dtype, self._nrows, self._ncols, name=name)
             call("GrB_Matrix_dup", [_Pointer(rv), self])
         return rv
 
-    def diag(self, k=0, dtype=None, *, name=None):
+    def diag(self, k=0, dtype=None, *, name=None, **opts):
         """Return a Vector built from the diagonal values of the Matrix.
 
         Parameters
@@ -654,7 +663,7 @@ class Matrix(BaseType):
             dtype = self.dtype
         if type(k) is not Scalar:
             k = Scalar.from_value(k, INT64, is_cscalar=True, name="")
-        D = select.diag(self, k).new(dtype, name="Diag_temp")
+        D = select.diag(self, k).new(dtype, name="Diag_temp", **opts)
         k = k.value
         if k < 0:
             size = min(self._nrows + k, self._ncols)
@@ -664,13 +673,13 @@ class Matrix(BaseType):
             size = 0
         rv = Vector(dtype, size=size, name=name)
         if k == 0:
-            rv << D.reduce_rowwise(monoid.any)
+            rv(**opts) << D.reduce_rowwise(monoid.any)
         else:
-            d = D.reduce_rowwise(monoid.any).new(name="diag_temp")
+            d = D.reduce_rowwise(monoid.any).new(name="diag_temp", **opts)
             if k < 0:
-                rv << d[d._size - rv._size :]
+                rv(**opts) << d[d._size - rv._size :]
             else:
-                rv << d[: rv._size]
+                rv(**opts) << d[: rv._size]
         return rv
 
     def wait(self, how="materialize"):
@@ -2412,7 +2421,9 @@ class Matrix(BaseType):
     ##################################
     # Extract and Assign index methods
     ##################################
-    def _extract_element(self, resolved_indexes, dtype=None, *, is_cscalar, name=None, result=None):
+    def _extract_element(
+        self, resolved_indexes, dtype, opts, *, is_cscalar, name=None, result=None
+    ):
         if dtype is None:
             dtype = self.dtype
         else:
@@ -2422,6 +2433,9 @@ class Matrix(BaseType):
             rowidx, colidx = colidx, rowidx
         if result is None:
             result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
+        if opts:
+            # Ignore opts for now
+            descriptor_lookup(**opts)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (
@@ -2501,7 +2515,7 @@ class Matrix(BaseType):
             cfunc_name = "GrB_Matrix_setElement_Scalar"
         call(cfunc_name, [self, value, rowidx.index, colidx.index])
 
-    def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False, replace=False):
+    def _prep_for_assign(self, resolved_indexes, value, mask, is_submask, replace, opts):
         method_name = "__setitem__"
         rowidx, colidx = resolved_indexes.indices
         rowsize = rowidx.size
@@ -2558,7 +2572,9 @@ class Matrix(BaseType):
                         else:
                             # Recipe: create a new mask by expanding the old mask
                             cfunc_name = "GrB_Row_assign"
-                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                            mask = _vanilla_subassign_mask(
+                                self, mask, rowidx, colidx, replace, opts
+                            )
                     else:
                         # C(m)[i, J] << v
                         # C[i, J] << v
@@ -2606,7 +2622,9 @@ class Matrix(BaseType):
                         else:
                             # Recipe: create a new mask by expanding the old mask
                             cfunc_name = "GrB_Col_assign"
-                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                            mask = _vanilla_subassign_mask(
+                                self, mask, rowidx, colidx, replace, opts
+                            )
                     else:
                         # C(m)[I, j] << v
                         # C[I, j] << v
@@ -2671,7 +2689,7 @@ class Matrix(BaseType):
                     cfunc_name = "GxB_Matrix_subassign"
                 else:
                     cfunc_name = "GrB_Matrix_assign"
-                    mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                    mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace, opts)
             else:
                 # C[I, J] << A
                 # C(M)[I, J] << A
@@ -2759,9 +2777,10 @@ class Matrix(BaseType):
                             return self._prep_for_assign(
                                 resolved_indexes,
                                 vals,
-                                mask=mask,
-                                is_submask=is_submask,
-                                replace=replace,
+                                mask,
+                                is_submask,
+                                replace,
+                                opts,
                             )
                     if rowsize is None or colsize is None:
                         types = (Scalar, Vector)
@@ -2779,7 +2798,7 @@ class Matrix(BaseType):
                     if is_submask:
                         # C[i, J](m) << c
                         value_vector = Vector(value.dtype, size=mask.parent._size, name="v_temp")
-                        value_vector << value
+                        value_vector(**opts) << value
                         expr_repr = (
                             "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
                         )
@@ -2787,14 +2806,16 @@ class Matrix(BaseType):
                             cfunc_name = "GxB_Row_subassign"
                         else:
                             cfunc_name = "GrB_Row_assign"
-                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                            mask = _vanilla_subassign_mask(
+                                self, mask, rowidx, colidx, replace, opts
+                            )
                     else:
                         # C(m)[i, J] << c
                         # C[i, J] << c
                         cfunc_name = "GrB_Row_assign"
                         value_vector = Vector(value.dtype, size=colsize, name="v_temp")
                         expr_repr = "[{1._expr_name}, [{3._expr_name} cols]] = {0.name}"
-                        value_vector << value
+                        value_vector(**opts) << value
 
                     # Row-only selection
                     expr = MatrixExpression(
@@ -2810,18 +2831,20 @@ class Matrix(BaseType):
                     if is_submask:
                         # C[I, j](m) << c
                         value_vector = Vector(value.dtype, size=mask.parent._size, name="v_temp")
-                        value_vector << value
+                        value_vector(**opts) << value
                         if backend == "suitesparse":
                             cfunc_name = "GxB_Col_subassign"
                         else:
                             cfunc_name = "GrB_Col_assign"
-                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                            mask = _vanilla_subassign_mask(
+                                self, mask, rowidx, colidx, replace, opts
+                            )
                     else:
                         # C(m)[I, j] << c
                         # C[I, j] << c
                         cfunc_name = "GrB_Col_assign"
                         value_vector = Vector(value.dtype, size=rowsize, name="v_temp")
-                        value_vector << value
+                        value_vector(**opts) << value
 
                     # Column-only selection
                     expr = MatrixExpression(
@@ -2868,13 +2891,17 @@ class Matrix(BaseType):
                             cfunc_name = f"GxB_Matrix_subassign_{dtype_name}"
                         else:
                             cfunc_name = f"GrB_Matrix_assign_{dtype_name}"
-                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                            mask = _vanilla_subassign_mask(
+                                self, mask, rowidx, colidx, replace, opts
+                            )
                     else:
                         if backend == "suitesparse":
                             cfunc_name = "GxB_Matrix_subassign_Scalar"
                         else:
                             cfunc_name = "GrB_Matrix_assign_Scalar"
-                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                            mask = _vanilla_subassign_mask(
+                                self, mask, rowidx, colidx, replace, opts
+                            )
                     expr_repr = (
                         "[[{2._expr_name} rows], [{4._expr_name} cols]](%s) = {0._expr_name}"
                         % mask.name
@@ -2924,7 +2951,7 @@ else:
     )
 
 
-def _vanilla_subassign_mask(self, mask, rows, cols, replace):
+def _vanilla_subassign_mask(self, mask, rows, cols, replace, opts):
     is_rowwise = rows.size is None and cols.size is not None
     is_colwise = rows.size is not None and cols.size is None
     is_matrix = not is_rowwise and not is_colwise
@@ -2934,33 +2961,33 @@ def _vanilla_subassign_mask(self, mask, rows, cols, replace):
         rows = rows._py_index()
         cols = cols._py_index()
         val = Matrix(mask.parent.dtype, nrows=self._nrows, ncols=self._ncols, name="M_temp")
-        val[rows, cols] = mask.parent
+        val(**opts)[rows, cols] = mask.parent
     elif is_rowwise:
         if not replace and cols.index is _ALL_INDICES:
             return mask
         cols = cols._py_index()
         val = Vector(mask.parent.dtype, size=self._ncols, name="m_temp")
-        val[cols] = mask.parent
+        val(**opts)[cols] = mask.parent
     elif is_colwise:
         if not replace and rows.index is _ALL_INDICES:
             return mask
         rows = rows._py_index()
         val = Vector(mask.parent.dtype, size=self._nrows, name="m_temp")
-        val[rows] = mask.parent
+        val(**opts)[rows] = mask.parent
     else:  # pragma: no cover (sanity)
         raise RuntimeError("oops! Submask does not work on scalars")
     mask = type(mask)(val)
     if replace:
         if is_matrix:
             val = self.dup()
-            del val[rows, cols]
+            val.__delitem__((rows, cols), **opts)  # del val[rows, cols]
         elif is_rowwise:
-            val = self[rows.index, :].new()
-            del val[cols]
+            val = self[rows.index, :].new(**opts)
+            val.__delitem__(cols, **opts)  # del val[cols]
         else:  # is_colwise:
-            val = self[:, cols.index].new()
-            del val[rows]
-        mask |= val.S
+            val = self[:, cols.index].new(**opts)
+            val.__delitem__(rows, **opts)  # del val[rows]
+        mask = mask.__or__(val.S, **opts)  # mask |= val.S
     return mask
 
 
@@ -3205,22 +3232,19 @@ class TransposedMatrix:
 
         return format_matrix_html(self, collapse=collapse)
 
-    def new(self, dtype=None, *, mask=None, name=None):
+    def new(self, dtype=None, *, mask=None, name=None, **opts):
         if dtype is None:
             dtype = self.dtype
         output = Matrix(dtype, self._nrows, self._ncols, name=name)
-        if mask is None:
-            output.update(self)
-        else:
-            output(mask=mask).update(self)
+        output(mask=mask, **opts) << self
         return output
 
-    def dup(self, dtype=None, *, clear=False, mask=None, name=None):
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
         if dtype is None:
             dtype = self.dtype
         if clear:
             return Matrix(dtype, self._nrows, self._ncols, name=name)
-        return self.new(dtype, mask=mask, name=name)
+        return self.new(dtype, mask=mask, name=name, **opts)
 
     @property
     def T(self):
@@ -3249,8 +3273,8 @@ class TransposedMatrix:
         return cols, rows, vals
 
     @wrapdoc(Matrix.diag)
-    def diag(self, k=0, dtype=None, *, name=None):
-        return self._matrix.diag(-k, dtype, name=name)
+    def diag(self, k=0, dtype=None, *, name=None, **opts):
+        return self._matrix.diag(-k, dtype, name=name, **opts)
 
     @property
     def _carg(self):

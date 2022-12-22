@@ -289,10 +289,10 @@ class ScalarMatMulExpr(InfixExprBase):
     _infix = "@"
     _is_scalar = True
 
-    def new(self, dtype=None, *, is_cscalar=None, name=None):
+    def new(self, dtype=None, *, is_cscalar=None, name=None, **opts):
         # Rely on the default operator for the method
         expr = getattr(self.left, self.method_name)(self.right)
-        return expr.new(dtype, is_cscalar=is_cscalar, name=name)
+        return expr.new(dtype, is_cscalar=is_cscalar, name=name, **opts)
 
     dup = new
 

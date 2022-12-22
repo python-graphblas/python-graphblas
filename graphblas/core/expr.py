@@ -3,6 +3,7 @@ import numpy as np
 from .. import backend
 from ..dtypes import _INDEX
 from . import lib, utils
+from .descriptor import lookup as descriptor_lookup
 from .utils import _CArray, output_type
 
 
@@ -300,17 +301,17 @@ class AmbiguousAssignOrExtract:
         is_submask = updater.kwargs.get("mask") is not None
         return Assigner(updater, self.resolved_indexes, is_submask=is_submask)
 
-    def __lshift__(self, obj):
+    def __lshift__(self, obj, **opts):
         # Occurs when user calls `C[index] << obj`
-        self.update(obj)
+        self.update(obj, **opts)
 
-    def update(self, obj):
+    def update(self, obj, **opts):
         # Occurs when user calls `C[index].update(obj)`
         if getattr(self.parent, "_is_transposed", False):
             raise TypeError("'TransposedMatrix' object does not support item assignment")
-        Updater(self.parent)._setitem(self.resolved_indexes, obj, is_submask=False)
+        Updater(self.parent, opts=opts)._setitem(self.resolved_indexes, obj, is_submask=False)
 
-    def new(self, dtype=None, *, mask=None, input_mask=None, name=None):
+    def new(self, dtype=None, *, mask=None, input_mask=None, name=None, **opts):
         """
         Force extraction of the indexes into a new object
         dtype and mask are the only controllable parameters.
@@ -321,9 +322,9 @@ class AmbiguousAssignOrExtract:
             from .base import _check_mask
 
             input_mask = _check_mask(input_mask, self.parent)
-            mask = self._input_mask_to_mask(input_mask)
+            mask = self._input_mask_to_mask(input_mask, **opts)
         delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
-        return delayed_extractor.new(dtype, mask=mask, name=name)
+        return delayed_extractor.new(dtype, mask=mask, name=name, **opts)
 
     dup = new
 
@@ -331,7 +332,7 @@ class AmbiguousAssignOrExtract:
         """Return an Expression object, treating this as an extract call"""
         return self.parent._prep_for_extract(self.resolved_indexes)
 
-    def _input_mask_to_mask(self, input_mask):
+    def _input_mask_to_mask(self, input_mask, **opts):
         from .vector import Vector
 
         if type(input_mask.parent) is Vector and type(self.parent) is not Vector:
@@ -374,7 +375,7 @@ class AmbiguousAssignOrExtract:
             )
         else:
             mask_expr = input_mask.parent._prep_for_extract(self.resolved_indexes)
-        mask_value = mask_expr.new(name="mask_temp")
+        mask_value = mask_expr.new(name="mask_temp", **opts)
         return type(input_mask)(mask_value)
 
     def _repr_html_(self):
@@ -401,11 +402,12 @@ class AmbiguousAssignOrExtract:
 
 
 class Updater:
-    __slots__ = "parent", "kwargs", "__weakref__"
+    __slots__ = "parent", "kwargs", "opts", "__weakref__"
 
-    def __init__(self, parent, **kwargs):
+    def __init__(self, parent, *, opts, **kwargs):
         self.parent = parent
         self.kwargs = kwargs
+        self.opts = opts
 
     def __getitem__(self, keys):
         # Occurs when user calls `C(params)[index]`
@@ -419,18 +421,26 @@ class Updater:
         # Occurs when user calls C(params)[index] = expr
         if resolved_indexes.is_single_element and not self.kwargs:
             # Fast path using assignElement
+            if self.opts:
+                # Ignore opts for now
+                descriptor_lookup(**self.opts)
             self.parent._assign_element(resolved_indexes, obj)
         else:
             mask = self.kwargs.get("mask")
             replace = self.kwargs.get("replace", False)
             expr, alt_mask = self.parent._prep_for_assign(
-                resolved_indexes, obj, mask=mask, is_submask=is_submask, replace=replace
+                resolved_indexes,
+                obj,
+                mask,
+                is_submask,
+                replace,
+                self.opts,
             )
             if alt_mask is mask:
                 self.update(expr)
             else:
                 kwargs = dict(self.kwargs, mask=alt_mask)
-                Updater(self.parent, **kwargs).update(expr)
+                Updater(self.parent, opts=self.opts, **kwargs).update(expr)
 
     def __setitem__(self, keys, obj):
         if self.parent._is_scalar:
@@ -456,11 +466,11 @@ class Updater:
 
     def __lshift__(self, expr):
         # Occurs when user calls `C(params) << expr`
-        self.parent._update(expr, **self.kwargs)
+        self.parent._update(expr, opts=self.opts, **self.kwargs)
 
     def update(self, expr):
         # Occurs when user calls `C(params).update(expr)`
-        self.parent._update(expr, **self.kwargs)
+        self.parent._update(expr, opts=self.opts, **self.kwargs)
 
     def __eq__(self, other):
         raise TypeError(f"__eq__ not defined for objects of type {type(self)}.")
@@ -478,7 +488,7 @@ class InfixExprBase:
         self.right = right
         self._value = None
 
-    def new(self, dtype=None, *, mask=None, name=None):
+    def new(self, dtype=None, *, mask=None, name=None, **opts):
         if (
             mask is None
             and self._value is not None
@@ -490,7 +500,7 @@ class InfixExprBase:
             self._value = None
             return rv
         expr = self._to_expr()
-        return expr.new(dtype, mask=mask, name=name)
+        return expr.new(dtype, mask=mask, name=name, **opts)
 
     dup = new
 
