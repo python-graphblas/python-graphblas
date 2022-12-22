@@ -8,6 +8,7 @@ from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, NoValue, check_status
 from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
+from .descriptor import lookup as descriptor_lookup
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
@@ -567,7 +568,9 @@ class Vector(BaseType):
             if not clear:
                 rv(mask=mask, **opts)[...] = self
         else:
-            # Ignore opts
+            if opts:
+                # Ignore opts for now
+                descriptor_lookup(**opts)
             rv = Vector._from_obj(ffi_new("GrB_Vector*"), self.dtype, self._size, name=name)
             call("GrB_Vector_dup", [_Pointer(rv), self])
         return rv
@@ -1516,7 +1519,9 @@ class Vector(BaseType):
     ##################################
     # Extract and Assign index methods
     ##################################
-    def _extract_element(self, resolved_indexes, dtype, *, is_cscalar, name=None, result=None):
+    def _extract_element(
+        self, resolved_indexes, dtype, opts, *, is_cscalar, name=None, result=None
+    ):
         if dtype is None:
             dtype = self.dtype
         else:
@@ -1524,6 +1529,9 @@ class Vector(BaseType):
         idx = resolved_indexes.indices[0]
         if result is None:
             result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
+        if opts:
+            # Ignore opts for now
+            descriptor_lookup(**opts)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (

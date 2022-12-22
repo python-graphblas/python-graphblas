@@ -170,7 +170,7 @@ def test_bad_extract_with_updater():
         u << u(mask=u.S)[[1, 2]]
     with pytest.raises(TypeError, match="Assignment value must be a valid expression"):
         u << u()[[1, 2]]
-    with pytest.raises(TypeError, match="unexpected keyword argument"):
+    with pytest.raises(ValueError, match="escriptor"):
         u[0].new(mask=u.S)
     s = Scalar.from_value(10)
     with pytest.raises(TypeError, match="Indexing not supported for Scalars"):

@@ -334,11 +334,10 @@ class BaseType:
                             "Scalar accumulation with extract element"
                             "--such as `s(accum=accum) << v[0]`--is not supported"
                         )
-                    # No descriptor in GrB_extractElement
-                    # Ignore opts for now
                     expr.parent._extract_element(
                         expr.resolved_indexes,
                         self.dtype,
+                        opts,
                         is_cscalar=self._is_cscalar,
                         result=self,
                     )
@@ -360,7 +359,9 @@ class BaseType:
                             "Scalar update with accumulation--such as `s(accum=accum) << t`"
                             "--is not supported"
                         )
-                    # Ignore opts for now
+                    if opts:
+                        # Ignore opts for now
+                        descriptor_lookup(**opts)
                     self.value = expr
                     return
 
@@ -383,7 +384,9 @@ class BaseType:
                         "--is not supported"
                     )
                 else:
-                    # Ignore opts for now
+                    if opts:
+                        # Ignore opts for now
+                        descriptor_lookup(**opts)
                     self.value = expr
                     return
             else:
@@ -582,7 +585,9 @@ class BaseExpression:
             and self._value is not None
             and (dtype is None or self._value.dtype == dtype)
         ):
-            # Ignore opts for now
+            if opts:
+                # Ignore opts for now
+                descriptor_lookup(**opts)
             if self._is_scalar and self._value._is_cscalar != is_cscalar:
                 return self._value.dup(is_cscalar=is_cscalar, name=name)
             rv = self._value

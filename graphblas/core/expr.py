@@ -3,6 +3,7 @@ import numpy as np
 from .. import backend
 from ..dtypes import _INDEX
 from . import lib, utils
+from .descriptor import lookup as descriptor_lookup
 from .utils import _CArray, output_type
 
 
@@ -420,7 +421,9 @@ class Updater:
         # Occurs when user calls C(params)[index] = expr
         if resolved_indexes.is_single_element and not self.kwargs:
             # Fast path using assignElement
-            # Ignore opts for now
+            if self.opts:
+                # Ignore opts for now
+                descriptor_lookup(**self.opts)
             self.parent._assign_element(resolved_indexes, obj)
         else:
             mask = self.kwargs.get("mask")

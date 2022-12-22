@@ -98,6 +98,15 @@ def lookup(
     **opts,
 ):
     if opts:
+        # Normalize opts by making all keys lowercase and raise if duplicates
+        new_opts = {key.lower(): val for key, val in opts.items()}
+        if len(opts) != len(new_opts):
+            extra = opts.keys() - new_opts.keys()
+            extra |= opts.keys() & {x.lower() for x in extra}
+            raise ValueError(
+                "Duplicate descriptor options given (descriptor options are case-insensitive): "
+                + ", ".join(sorted(extra, key=lambda x: (x.lower(), x)))
+            )
         if backend == "suitesparse":
             from .ss.descriptor import get_descriptor
 

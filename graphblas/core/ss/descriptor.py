@@ -158,7 +158,7 @@ def get_descriptor(**opts):
         level = opts.pop("compression_level", None)
         _set_compression(desc, compression, level)
     if (nthreads := opts.pop("nthreads", None)) is not None:
-        config["nthreads"] = max(0, int(nthreads))
+        config["nthreads"] = max(0, nthreads)
     for key, val in opts.items():
         if val is False or val is None:
             continue
@@ -168,8 +168,6 @@ def get_descriptor(**opts):
             raise ValueError(
                 f"Descriptor option {key!r} not understood with suitesparse backend"
             ) from None
-    for k, v in opts.items():
-        assert config[k] == v, (k, v, config[k])
     return desc
 
 

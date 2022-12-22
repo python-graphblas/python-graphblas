@@ -9,6 +9,7 @@ from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, InvalidValue, NoValue, check_status
 from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
+from .descriptor import lookup as descriptor_lookup
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
@@ -628,7 +629,9 @@ class Matrix(BaseType):
             if not clear:
                 rv(mask=mask, **opts)[...] = self
         else:
-            # Ignore opts
+            if opts:
+                # Ignore opts for now
+                descriptor_lookup(**opts)
             new_mat = ffi_new("GrB_Matrix*")
             rv = Matrix._from_obj(new_mat, self.dtype, self._nrows, self._ncols, name=name)
             call("GrB_Matrix_dup", [_Pointer(rv), self])
@@ -2418,7 +2421,9 @@ class Matrix(BaseType):
     ##################################
     # Extract and Assign index methods
     ##################################
-    def _extract_element(self, resolved_indexes, dtype, *, is_cscalar, name=None, result=None):
+    def _extract_element(
+        self, resolved_indexes, dtype, opts, *, is_cscalar, name=None, result=None
+    ):
         if dtype is None:
             dtype = self.dtype
         else:
@@ -2428,6 +2433,9 @@ class Matrix(BaseType):
             rowidx, colidx = colidx, rowidx
         if result is None:
             result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
+        if opts:
+            # Ignore opts for now
+            descriptor_lookup(**opts)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (
