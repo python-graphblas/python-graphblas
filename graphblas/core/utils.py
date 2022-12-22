@@ -57,7 +57,7 @@ def ints_to_numpy_buffer(array, dtype, *, name="array", copy=False, ownable=Fals
     if (
         isinstance(array, np.ndarray)
         and not np.issubdtype(array.dtype, np.integer)
-        and not np.issubdtype(array.dtype, np.bool8)
+        and not np.issubdtype(array.dtype, np.bool_)
     ):
         raise ValueError(f"{name} must be integers, not {array.dtype.name}")
     array = np.array(array, dtype, copy=copy, order=order)
