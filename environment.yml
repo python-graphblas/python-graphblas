@@ -52,6 +52,7 @@ dependencies:
     # - codespell
     # - cython
     # - cytoolz
+    # - distributed
     # - flake8
     # - flake8-bugbear
     # - flake8-comprehensions
@@ -78,6 +79,7 @@ dependencies:
     # - pygraphviz
     # - pytest-runner
     # - pytest-xdist
+    # - python-graphviz
     # - python-igraph
     # - python-louvain
     # - pyupgrade
@@ -85,3 +87,4 @@ dependencies:
     # - snakeviz
     # - sympy
     # - yesqa
+    # - zarr
