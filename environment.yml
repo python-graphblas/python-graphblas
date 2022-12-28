@@ -2,7 +2,7 @@
 #   $ conda env create -f environment.yml
 #   $ conda activate graphblas-dev
 #
-# Or use mamba instead of conda.
+# Or use mamba instead of conda. Creating the environment may take several minutes.
 #
 # pre-commit should be set up once after the repo is cloned (see .pre-commit-config.yaml).
 # In the `graphblas-dev` environment, run:
@@ -36,8 +36,8 @@ dependencies:
     - pytest-cov
     # For debugging
     - icecream
-    - ipython
     - ipykernel
+    - ipython
     # For type annotations
     - mypy
     # For building docs
@@ -45,3 +45,46 @@ dependencies:
     - numpydoc
     - pydata-sphinx-theme
     - sphinx-panels
+    # EXTRA (optional; uncomment as desired)
+    # - autoflake
+    # - black
+    # - black-jupyter
+    # - codespell
+    # - cython
+    # - cytoolz
+    # - distributed
+    # - flake8
+    # - flake8-bugbear
+    # - flake8-comprehensions
+    # - gcc
+    # - gh
+    # - graph-tool
+    # - xorg-libxcursor  # for graph-tool
+    # - grayskull
+    # - h5py
+    # - hiveplot
+    # - igraph
+    # - ipycytoscape
+    # - isort
+    # - jupyter
+    # - jupyterlab
+    # - line_profiler
+    # - lxml
+    # - memory_profiler
+    # - netcdf4
+    # - networkit
+    # - nxviz
+    # - pycodestyle
+    # - pydot
+    # - pygraphviz
+    # - pytest-runner
+    # - pytest-xdist
+    # - python-graphviz
+    # - python-igraph
+    # - python-louvain
+    # - pyupgrade
+    # - scalene
+    # - snakeviz
+    # - sympy
+    # - yesqa
+    # - zarr
