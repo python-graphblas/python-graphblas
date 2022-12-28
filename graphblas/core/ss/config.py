@@ -107,9 +107,9 @@ class BaseConfig(MutableMapping):
             set_function = getattr(lib, f"{self._set_function}_INT32")
         elif ctype == "double":
             set_function = getattr(lib, f"{self._set_function}_FP64")
-        elif ctype.startswith("int64_t"):
+        elif ctype.startswith("int64_t["):
             set_function = getattr(lib, f"{self._set_function}_INT64_ARRAY")
-        elif ctype.startswith("double"):
+        elif ctype.startswith("double["):
             set_function = getattr(lib, f"{self._set_function}_FP64_ARRAY")
         else:  # pragma: no cover (sanity)
             raise ValueError(ctype)
