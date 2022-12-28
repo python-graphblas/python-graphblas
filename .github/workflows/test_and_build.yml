@@ -70,7 +70,7 @@ jobs:
           if [[ ${{ matrix.cfg.sourcetype }} == "wheel" ]]; then
               pip install suitesparse-graphblas
           else
-              mamba install -c conda-forge "graphblas>=7.3.0"
+              mamba install -c conda-forge "graphblas>=7.4.0"
           fi
           if [[ ${{ matrix.cfg.sourcetype }} == "source" ]]; then
               pip install --no-binary=all suitesparse-graphblas

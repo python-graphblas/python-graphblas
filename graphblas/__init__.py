@@ -1,8 +1,6 @@
 import sys as _sys
 from importlib import import_module as _import_module
 
-from suitesparse_graphblas import vararg as _vararg
-
 from ._version import get_versions
 
 
@@ -132,8 +130,8 @@ def _init(backend_arg, blocking, automatic=False):
         from suitesparse_graphblas import ffi, initialize, is_initialized, lib
 
         if is_initialized():
-            mode = ffi.new("GrB_Mode*")
-            assert lib.GxB_Global_Option_get(lib.GxB_MODE, _vararg(mode)) == 0
+            mode = ffi.new("int32_t*")
+            assert lib.GxB_Global_Option_get_INT32(lib.GxB_MODE, mode) == 0
             is_blocking = mode[0] == lib.GrB_BLOCKING
             if blocking is None:
                 passed_params["blocking"] = is_blocking

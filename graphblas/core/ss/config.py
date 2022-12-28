@@ -1,8 +1,6 @@
 from collections.abc import MutableMapping
 from numbers import Integral
 
-from suitesparse_graphblas import vararg
-
 from ...dtypes import lookup_dtype
 from ...exceptions import _error_code_lookup, check_status
 from .. import NULL, ffi, lib
@@ -21,10 +19,13 @@ class BaseConfig(MutableMapping):
     _bitwise = {}
     _enumerations = {}
     _read_only = set()
-    _set_ctypes = {
-        "GxB_Format_Value": "int",
-        "GrB_Desc_Value": "int",
-        "bool": "int",
+    _int32_ctypes = {
+        "bool",
+        "int",
+        "int32_t",
+        "GrB_Desc_Value",
+        "GrB_Mode",
+        "GxB_Format_Value",
     }
 
     def __init__(self, parent=None):
@@ -59,12 +60,23 @@ class BaseConfig(MutableMapping):
         if key not in self._options:
             raise KeyError(key)
         key_obj, ctype = self._options[key]
+        is_bool = ctype == "bool"
+        if ctype in self._int32_ctypes:
+            ctype = "int32_t"
+            get_function_name = f"{self._get_function}_INT32"
+        elif ctype.startswith("int64_t"):
+            get_function_name = f"{self._get_function}_INT64"
+        elif ctype.startswith("double"):
+            get_function_name = f"{self._get_function}_FP64"
+        else:  # pragma: no cover (sanity)
+            raise ValueError(ctype)
+        get_function = getattr(lib, get_function_name)
         is_array = "[" in ctype
         val_ptr = ffi.new(ctype if is_array else f"{ctype}*")
         if self._parent is None:
-            info = self._get_function(key_obj, vararg(val_ptr))
+            info = get_function(key_obj, val_ptr)
         else:
-            info = self._get_function(self._parent._carg, key_obj, vararg(val_ptr))
+            info = get_function(self._parent._carg, key_obj, val_ptr)
         if info == lib.GrB_SUCCESS:  # pragma: no branch (safety)
             if is_array:
                 return list(val_ptr)
@@ -79,6 +91,8 @@ class BaseConfig(MutableMapping):
                     if isinstance(k, str) and val & v and bin(v).count("1") == 1:
                         rv.add(k)
                 return rv
+            if is_bool:
+                return bool(val_ptr[0])
             return val_ptr[0]
         raise _error_code_lookup[info](f"Failed to get info for {key!r}")  # pragma: no cover
 
@@ -89,7 +103,18 @@ class BaseConfig(MutableMapping):
         if key in self._read_only:
             raise ValueError(f"Config option {key!r} is read-only")
         key_obj, ctype = self._options[key]
-        ctype = self._set_ctypes.get(ctype, ctype)
+        if ctype in self._int32_ctypes:
+            ctype = "int32_t"
+            set_function_name = f"{self._set_function}_INT32"
+        elif ctype == "double":
+            set_function_name = f"{self._set_function}_FP64"
+        elif ctype.startswith("int64_t["):
+            set_function_name = f"{self._set_function}_INT64_ARRAY"
+        elif ctype.startswith("double["):
+            set_function_name = f"{self._set_function}_FP64_ARRAY"
+        else:  # pragma: no cover (sanity)
+            raise ValueError(ctype)
+        set_function = getattr(lib, set_function_name)
         if val is None:
             pass
         elif key in self._enumerations:
@@ -132,9 +157,9 @@ class BaseConfig(MutableMapping):
         else:
             val_obj = ffi.cast(ctype, val)
         if self._parent is None:
-            info = self._set_function(key_obj, vararg(val_obj))
+            info = set_function(key_obj, val_obj)
         else:
-            info = self._set_function(self._parent._carg, key_obj, vararg(val_obj))
+            info = set_function(self._parent._carg, key_obj, val_obj)
         if info != lib.GrB_SUCCESS:
             if self._parent is not None:  # pragma: no branch (safety)
                 check_status(info, self._parent)
