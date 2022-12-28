@@ -63,13 +63,14 @@ class BaseConfig(MutableMapping):
         is_bool = ctype == "bool"
         if ctype in self._int32_ctypes:
             ctype = "int32_t"
-            get_function = getattr(lib, f"{self._get_function}_INT32")
+            get_function_name = f"{self._get_function}_INT32"
         elif ctype.startswith("int64_t"):
-            get_function = getattr(lib, f"{self._get_function}_INT64")
+            get_function_name = f"{self._get_function}_INT64"
         elif ctype.startswith("double"):
-            get_function = getattr(lib, f"{self._get_function}_FP64")
+            get_function_name = f"{self._get_function}_FP64"
         else:  # pragma: no cover (sanity)
             raise ValueError(ctype)
+        get_function = getattr(lib, get_function_name)
         is_array = "[" in ctype
         val_ptr = ffi.new(ctype if is_array else f"{ctype}*")
         if self._parent is None:
@@ -104,15 +105,16 @@ class BaseConfig(MutableMapping):
         key_obj, ctype = self._options[key]
         if ctype in self._int32_ctypes:
             ctype = "int32_t"
-            set_function = getattr(lib, f"{self._set_function}_INT32")
+            set_function_name = f"{self._set_function}_INT32"
         elif ctype == "double":
-            set_function = getattr(lib, f"{self._set_function}_FP64")
+            set_function_name = f"{self._set_function}_FP64"
         elif ctype.startswith("int64_t["):
-            set_function = getattr(lib, f"{self._set_function}_INT64_ARRAY")
+            set_function_name = f"{self._set_function}_INT64_ARRAY"
         elif ctype.startswith("double["):
-            set_function = getattr(lib, f"{self._set_function}_FP64_ARRAY")
+            set_function_name = f"{self._set_function}_FP64_ARRAY"
         else:  # pragma: no cover (sanity)
             raise ValueError(ctype)
+        set_function = getattr(lib, set_function_name)
         if val is None:
             pass
         elif key in self._enumerations:
