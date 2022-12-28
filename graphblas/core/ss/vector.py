@@ -2,7 +2,6 @@ import itertools
 
 import numpy as np
 from numba import njit
-from suitesparse_graphblas import vararg
 from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
 
 import graphblas as gb
@@ -63,8 +62,8 @@ class VectorConfig(BaseConfig):
         Current sparsity format
     """
 
-    _get_function = lib.GxB_Vector_Option_get
-    _set_function = lib.GxB_Vector_Option_set
+    _get_function = "GxB_Vector_Option_get"
+    _set_function = "GxB_Vector_Option_set"
     _options = {
         "bitmap_switch": (lib.GxB_BITMAP_SWITCH, "double"),
         "sparsity_control": (lib.GxB_SPARSITY_CONTROL, "int"),
@@ -129,9 +128,9 @@ class ss:
     @property
     def format(self):
         parent = self._parent
-        sparsity_ptr = ffi_new("GxB_Option_Field*")
+        sparsity_ptr = ffi_new("int32_t*")
         check_status(
-            lib.GxB_Vector_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, vararg(sparsity_ptr)),
+            lib.GxB_Vector_Option_get_INT32(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
             parent,
         )
         sparsity_status = sparsity_ptr[0]

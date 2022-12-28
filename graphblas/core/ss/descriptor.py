@@ -1,5 +1,3 @@
-from suitesparse_graphblas import vararg
-
 from ...exceptions import check_status, check_status_carg
 from .. import ffi, lib
 from ..descriptor import Descriptor
@@ -18,8 +16,8 @@ _str_to_compression = {
 
 # It would be great if we could make Descriptor class more like this
 class _DescriptorConfig(BaseConfig):
-    _get_function = lib.GxB_Desc_get
-    _set_function = lib.GxB_Desc_set
+    _get_function = "GxB_Desc_get"
+    _set_function = "GxB_Desc_set"
     _options = {
         # GrB
         "output_replace": (lib.GrB_OUTP, "GrB_Desc_Value"),
@@ -192,10 +190,10 @@ def _set_compression(desc, compression, level):
             )
         comp += level
     check_status(
-        lib.GxB_Desc_set(
+        lib.GxB_Desc_set_INT32(
             desc._carg,
             lib.GxB_COMPRESSION,
-            vararg(ffi.cast("int", comp)),
+            ffi.cast("int32_t", comp),
         ),
         desc,
     )

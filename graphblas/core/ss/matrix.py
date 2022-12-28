@@ -4,7 +4,6 @@ import warnings
 import numba
 import numpy as np
 from numba import njit
-from suitesparse_graphblas import vararg
 from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
 
 import graphblas as gb
@@ -133,8 +132,8 @@ class MatrixConfig(BaseConfig):
         Current sparsity format
     """
 
-    _get_function = lib.GxB_Matrix_Option_get
-    _set_function = lib.GxB_Matrix_Option_set
+    _get_function = "GxB_Matrix_Option_get"
+    _set_function = "GxB_Matrix_Option_set"
     _options = {
         "format": (lib.GxB_FORMAT, "GxB_Format_Value"),
         "hyper_switch": (lib.GxB_HYPER_SWITCH, "double"),
@@ -203,14 +202,14 @@ class ss:
     def format(self):
         # Determine current format
         parent = self._parent
-        format_ptr = ffi_new("GxB_Option_Field*")
-        sparsity_ptr = ffi_new("GxB_Option_Field*")
+        format_ptr = ffi_new("int32_t*")
+        sparsity_ptr = ffi_new("int32_t*")
         check_status(
-            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, vararg(format_ptr)),
+            lib.GxB_Matrix_Option_get_INT32(parent._carg, lib.GxB_FORMAT, format_ptr),
             parent,
         )
         check_status(
-            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, vararg(sparsity_ptr)),
+            lib.GxB_Matrix_Option_get_INT32(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
             parent,
         )
         sparsity_status = sparsity_ptr[0]
@@ -233,9 +232,9 @@ class ss:
     @property
     def orientation(self):
         parent = self._parent
-        format_ptr = ffi_new("GxB_Option_Field*")
+        format_ptr = ffi_new("int32_t*")
         check_status(
-            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, vararg(format_ptr)),
+            lib.GxB_Matrix_Option_get_INT32(parent._carg, lib.GxB_FORMAT, format_ptr),
             parent,
         )
         if format_ptr[0] == lib.GxB_BY_COL:

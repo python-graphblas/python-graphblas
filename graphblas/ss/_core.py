@@ -1,7 +1,5 @@
 from collections.abc import Mapping
 
-from suitesparse_graphblas import vararg
-
 from ..core import ffi, lib
 from ..core.base import _expect_type
 from ..core.matrix import Matrix, TransposedMatrix
@@ -132,8 +130,8 @@ class GlobalConfig(BaseConfig):
     Setting values to None restores the default value for most configurations.
     """
 
-    _get_function = lib.GxB_Global_Option_get
-    _set_function = lib.GxB_Global_Option_set
+    _get_function = "GxB_Global_Option_get"
+    _set_function = "GxB_Global_Option_set"
     _null_valid = {"bitmap_switch"}
     _options = {
         # Matrix/Vector format
@@ -210,28 +208,28 @@ class About(Mapping):
     def __getitem__(self, key):
         key = key.lower()
         if key in self._mode_options:
-            val_ptr = ffi.new("GrB_Mode*")
-            info = lib.GxB_Global_Option_get(self._mode_options[key], vararg(val_ptr))
+            val_ptr = ffi.new("int32_t*")
+            info = lib.GxB_Global_Option_get_INT32(self._mode_options[key], val_ptr)
             if info == lib.GrB_SUCCESS:  # pragma: no branch (safety)
                 val = val_ptr[0]
                 if val not in self._modes:  # pragma: no cover (sanity)
                     raise ValueError(f"Unknown mode: {val}")
                 return self._modes[val]
         elif key in self._int3_options:
-            val_ptr = ffi.new("int[3]")
-            info = lib.GxB_Global_Option_get(self._int3_options[key], vararg(val_ptr))
+            val_ptr = ffi.new("int32_t[3]")
+            info = lib.GxB_Global_Option_get_INT32(self._int3_options[key], val_ptr)
             if info == lib.GrB_SUCCESS:  # pragma: no branch (safety)
                 return (val_ptr[0], val_ptr[1], val_ptr[2])
         elif key in self._str_options:
             val_ptr = ffi.new("char**")
-            info = lib.GxB_Global_Option_get(self._str_options[key], vararg(val_ptr))
+            info = lib.GxB_Global_Option_get_CHAR(self._str_options[key], val_ptr)
             if info == lib.GrB_SUCCESS:  # pragma: no branch (safety)
                 return ffi.string(val_ptr[0]).decode()
         elif key in self._bool_options:
-            val_ptr = ffi.new("bool*")
-            info = lib.GxB_Global_Option_get(self._bool_options[key], vararg(val_ptr))
+            val_ptr = ffi.new("int32_t*")
+            info = lib.GxB_Global_Option_get_INT32(self._bool_options[key], val_ptr)
             if info == lib.GrB_SUCCESS:  # pragma: no branch (safety)
-                return val_ptr[0]
+                return bool(val_ptr[0])
         else:
             raise KeyError(key)
         raise _error_code_lookup[info](f"Failed to get info for {key}")  # pragma: no cover (safety)
