@@ -131,7 +131,8 @@ def _init(backend_arg, blocking, automatic=False):
 
         if is_initialized():
             mode = ffi.new("int32_t*")
-            assert lib.GxB_Global_Option_get_INT32(lib.GxB_MODE, mode) == 0
+            if lib.GxB_Global_Option_get_INT32(lib.GxB_MODE, mode) != 0:
+                raise RuntimeError("Could not get GraphBLAS mode")  # pragma: no cover (safety)
             is_blocking = mode[0] == lib.GrB_BLOCKING
             if blocking is None:
                 passed_params["blocking"] = is_blocking
