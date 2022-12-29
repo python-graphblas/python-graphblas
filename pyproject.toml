@@ -9,8 +9,8 @@ line-length = 100
 target-version = "py38"
 select = [
     "F",  # pyflakes
-    "E",  # pycodestyle
-    "W",  # pycodestyle
+    "E",  # pycodestyle Error
+    "W",  # pycodestyle Warning
     "UP",  # pyupgrade
     "YTT",  # flake8-2020
     "S",  # bandit
@@ -22,10 +22,10 @@ select = [
     "SIM",  # flake8-simplify
     "DTZ",  # flake8-datetimez
     "PGH",  # pygrep-hooks
-    "PLC",  # pylint C
-    "PLE",  # pylint E
-    "PLR",  # pylint R
-    "PLW",  # pylint W
+    "PLC",  # pylint Convention
+    "PLE",  # pylint Error
+    "PLR",  # pylint Refactor
+    "PLW",  # pylint Warning
     "RUF",  # ruff-specific rules
 ]
 exclude = [
