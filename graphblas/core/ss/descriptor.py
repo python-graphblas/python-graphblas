@@ -162,8 +162,25 @@ def get_descriptor(**opts):
         try:
             config[key] = val
         except KeyError:
+            if key in config._enumerations:
+                values = {x for x in config._enumerations[key] if isinstance(x, (bool, str))}
+                raise ValueError(
+                    f"Invalid value for {key!r} descriptor option: {val!r}. "
+                    f"Must be one of {', '.join(repr(x) for x in sorted(values))}"
+                ) from None
+            if key in config:  # pragma: no cover (safety)
+                raise ValueError(f"Invalid value for {key!r} descriptor option") from None
+            valid = set(config) | {"compression", "compression_level"}
+            valid -= {
+                "mask_complement",
+                "mask_structure",
+                "output_replace",
+                "transpose_first",
+                "transpose_second",
+            }
             raise ValueError(
-                f"Descriptor option {key!r} not understood with suitesparse backend"
+                f"Descriptor option {key!r} not understood with suitesparse backend. "
+                f"Valid options: {', '.join(sorted(valid))}"
             ) from None
     return desc
 

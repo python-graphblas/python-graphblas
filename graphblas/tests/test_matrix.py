@@ -4109,11 +4109,11 @@ def test_ss_descriptors(A):
         assert C1.isequal(C2)
         A(nthreads=4, axb_method="dot", sort=True) << A @ A
         assert A.isequal(C2)
-        with pytest.raises(ValueError, match="escriptor"):
+        # Bad option should show list of valid options
+        with pytest.raises(ValueError, match="nthreads"):
             C1(bad_opt=True) << A
         with pytest.raises(ValueError, match="Duplicate descriptor"):
             (A @ A).new(nthreads=4, Nthreads=5)
-
         with pytest.raises(ValueError, match="escriptor"):
             A[0, 0].new(bad_opt=True)
         A[0, 0].new(nthreads=4)  # ignored, but okay
@@ -4134,6 +4134,11 @@ def test_ss_descriptors(A):
         with pytest.raises(ValueError, match="escriptor"):
             expr.new(bad_opt=True)
         expr.new(nthreads=4)  # ignored, but okay
+        # These show the valid options
+        with pytest.raises(ValueError, match="False, True"):
+            A(sort="hi") << A
+        with pytest.raises(ValueError, match="saxpy"):
+            A(axb_method="bad") << A @ A
     else:
         with pytest.raises(ValueError, match="escriptor"):
             (A @ A).new(nthreads=4, axb_method="dot", sort=True)
