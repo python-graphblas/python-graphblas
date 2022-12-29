@@ -330,7 +330,7 @@ def _default_name(dtype):
         args = ", ".join(
             f"{name!r}: {_default_name(dtype.fields[name][0])}" for name in dtype.names
         )
-        return "{%s}" % args
+        return f"{{{args}}}"
     return repr(dtype)
 
 
@@ -357,10 +357,9 @@ def _dtype_to_string(dtype):
             return s
     except Exception:
         pass
-    if _np.dtype(np_type.str) == np_type:
-        return repr(np_type.str)
-    else:  # pragma: no cover (safety)
+    if _np.dtype(np_type.str) != np_type:  # pragma: no cover (safety)
         raise ValueError(f"Unable to reliably convert dtype to string and back: {dtype}")
+    return repr(np_type.str)
 
 
 def _string_to_dtype(s):

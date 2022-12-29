@@ -3,3 +3,88 @@ requires = ["setuptools", "wheel"]
 
 [tool.black]
 line-length = 100
+
+[tool.pylint.messages_control]
+max-line-length = 100
+ignore-paths = ["graphblas/_version.py", "versioneer.py"]
+disable = [
+    # Error
+    "assigning-non-slot",
+    "assignment-from-no-return",
+    "function-redefined",
+    "missing-kwoa",
+    "no-value-for-parameter",
+    "not-callable",
+    "repeated-keyword",
+    "unexpected-special-method-signature",
+    "unsupported-delete-operation",
+    "used-before-assignment",
+
+    # Warning
+    "arguments-differ",
+    "arguments-out-of-order",
+    "exec-used",
+    "expression-not-assigned",
+    "fixme",
+    "global-statement",
+    "non-parent-init-called",
+    "protected-access",
+    "redefined-builtin",
+    "redefined-outer-name",
+    "super-init-not-called",
+    "unbalanced-tuple-unpacking",
+    "unnecessary-lambda",
+    "unspecified-encoding",
+    "unused-argument",
+    "unused-variable",
+    "unused-wildcard-import",
+    "wildcard-import",
+
+    # Refactor
+    "cyclic-import",
+    "duplicate-code",
+    "inconsistent-return-statements",
+    "too-few-public-methods",
+
+    # Convention
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "missing-module-docstring",
+    "too-many-lines",
+
+    # Intentionally turned off
+    # error
+    "class-variable-slots-conflict",
+    "invalid-unary-operand-type",
+    "no-member",
+    "no-name-in-module",
+    "not-an-iterable",
+    "too-many-function-args",
+    "unexpected-keyword-arg",
+    # warning
+    "broad-except",
+    "pointless-statement",
+    "undefined-loop-variable",
+    "unused-import",
+    # refactor
+    "comparison-with-itself",
+    "too-many-arguments",
+    "too-many-boolean-expressions",
+    "too-many-branches",
+    "too-many-instance-attributes",
+    "too-many-locals",
+    "too-many-nested-blocks",
+    "too-many-public-methods",
+    "too-many-return-statements",
+    "too-many-statements",
+    # convention
+    "import-outside-toplevel",
+    "invalid-name",
+    "line-too-long",
+    "singleton-comparison",
+    "single-string-used-for-slots",
+    "unidiomatic-typecheck",
+    "unnecessary-dunder-call",
+    "wrong-import-order",
+    "wrong-import-position",
+]

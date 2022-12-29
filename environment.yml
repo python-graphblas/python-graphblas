@@ -77,6 +77,7 @@ dependencies:
     # - pycodestyle
     # - pydot
     # - pygraphviz
+    # - pylint
     # - pytest-runner
     # - pytest-xdist
     # - python-graphviz

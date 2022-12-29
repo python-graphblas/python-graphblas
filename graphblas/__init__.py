@@ -81,8 +81,8 @@ def __getattr__(name):
     if name == "_autoinit":
         if _init_params is None:
             _init("suitesparse", None, automatic=True)
-    else:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+        return
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__():
@@ -157,7 +157,7 @@ def _init(backend_arg, blocking, automatic=False):
                 if callable(val) and key.startswith("GxB") or "FC32" in key or "FC64" in key:
                     continue
                 setattr(lib, key, getattr(orig_lib, key))
-            for key in {"GxB_BACKWARDS", "GxB_STRIDE"}:
+            for key in ["GxB_BACKWARDS", "GxB_STRIDE"]:
                 delattr(lib, key)
     else:
         raise ValueError(

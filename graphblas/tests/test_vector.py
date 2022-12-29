@@ -2137,9 +2137,9 @@ def test_infix_outer():
 @pytest.mark.skipif("not suitesparse")
 def test_ss_iteration(v):
     w = Vector(int, 2)
-    assert list(w.ss.iterkeys()) == []
-    assert list(w.ss.itervalues()) == []
-    assert list(w.ss.iteritems()) == []
+    assert not list(w.ss.iterkeys())
+    assert not list(w.ss.itervalues())
+    assert not list(w.ss.iteritems())
 
     indices, values = v.to_coo()
     # This is what I would expect

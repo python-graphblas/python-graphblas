@@ -308,7 +308,7 @@ def test_matrix_market_sparse_duplicates():
 def test_scipy_sparse():
     a = np.arange(12).reshape(3, 4)
     for a in [np.arange(12).reshape(3, 4), np.ones((3, 4)), np.zeros((3, 4))]:
-        for fmt in {"bsr", "csr", "csc", "coo", "lil", "dia", "dok"}:
+        for fmt in ["bsr", "csr", "csc", "coo", "lil", "dia", "dok"]:
             sa = getattr(ss, f"{fmt}_array")(a)
             A = gb.io.from_scipy_sparse(sa)
             for M in [A, A.T.new().T]:
