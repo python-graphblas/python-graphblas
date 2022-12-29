@@ -124,6 +124,6 @@ def index(expr):
     return _resolve_expr(expr, "index", "index")
 
 
-from ..core import operator  # noqa isort:skip
+from ..core import operator  # noqa: E402 isort:skip
 
 del operator

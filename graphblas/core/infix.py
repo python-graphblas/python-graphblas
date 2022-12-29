@@ -432,4 +432,4 @@ def _matmul_infix_expr(left, right, *, within):
 
 
 # Import infixmethods, which has side effects
-from . import infixmethods  # noqa isort:skip
+from . import infixmethods  # noqa: E402, F401 isort:skip

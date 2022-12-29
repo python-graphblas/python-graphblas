@@ -4612,4 +4612,4 @@ def indptr_to_indices(indptr):  # pragma: no cover (numba)
     return indices
 
 
-from .prefix_scan import prefix_scan  # noqa isort:skip
+from .prefix_scan import prefix_scan  # noqa: E402 isort:skip

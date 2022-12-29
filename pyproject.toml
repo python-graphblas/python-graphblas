@@ -4,6 +4,29 @@ requires = ["setuptools", "wheel"]
 [tool.black]
 line-length = 100
 
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+select = [
+    "F",  # pyflakes
+    "E",  # pycodestyle
+    "W",  # pycodestyle
+    "YTT",  # flake8-2020
+    "B",  # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "T10",  # flake8-debugger
+    "Q",  # flake8-quotes
+    "SIM",  # flake8-simplify
+    "DTZ",  # flake8-datetimez
+    "PGH",  # pygrep-hooks
+    "RUF",  # ruff-specific rules
+]
+exclude = [
+    "versioneer.py",
+    "graphblas/tests/test_formatting.py",
+]
+per-file-ignores = { "scripts/create_pickle.py" = ["F403", "F405"] }
+
 [tool.pylint.messages_control]
 max-line-length = 100
 ignore-paths = ["graphblas/_version.py", "versioneer.py"]

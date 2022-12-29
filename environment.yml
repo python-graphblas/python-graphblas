@@ -84,6 +84,7 @@ dependencies:
     # - python-igraph
     # - python-louvain
     # - pyupgrade
+    # - ruff
     # - scalene
     # - snakeviz
     # - sympy

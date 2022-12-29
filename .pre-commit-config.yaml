@@ -17,6 +17,11 @@ repos:
       - id: end-of-file-fixer
       - id: mixed-line-ending
       - id: trailing-whitespace
+  - repo: https://github.com/abravalheri/validate-pyproject
+    rev: v0.10.1
+    hooks:
+      - id: validate-pyproject
+        name: Validate pyproject.toml
   - repo: https://github.com/myint/autoflake
     rev: v2.0.0
     hooks:
@@ -50,7 +55,7 @@ repos:
         # These versions need updated manually
         - flake8==6.0.0
         - flake8-comprehensions==3.10.1
-        - flake8-bugbear==22.10.27
+        - flake8-bugbear==22.12.6
   - repo: https://github.com/asottile/yesqa
     rev: v1.4.0
     hooks:
@@ -63,6 +68,11 @@ repos:
         types_or: [python, rst, markdown]
         files: ^(graphblas|docs)/
         args: ["--ignore-words-list=coo,ba"]
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.0.200
+    hooks:
+      - id: ruff
+        args: ["--force-exclude"]
   - repo: local
     hooks:
       # Add `--hook-stage manual` to pre-commit command to run (very slow)
@@ -78,4 +88,4 @@ repos:
     rev: v4.4.0
     hooks:
       - id: no-commit-to-branch  # no commit directly to main
-# Maybe: black-jupyter, blacken-docs, blackdoc mypy, velin
+# Maybe: black-jupyter, blacken-docs, blackdoc mypy, pydocstyle, rstcheck, pydocstringformatter, velin

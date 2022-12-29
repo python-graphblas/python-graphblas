@@ -219,7 +219,7 @@ def test_record_repr_html():
     rec.start()
     A[0, 0].new(name="c")
     try:
-        import IPython  # noqa
+        import IPython  # noqa: F401
     except ImportError:
         with pytest.raises(NotImplementedError):
             rec._repr_html_()

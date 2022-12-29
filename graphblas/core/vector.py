@@ -1989,4 +1989,4 @@ utils._output_types[VectorIndexExpr] = Vector
 utils._output_types[VectorExpression] = Vector
 
 # Import matrix to import infix to import infixmethods, which has side effects
-from . import matrix  # noqa isort:skip
+from . import matrix  # noqa: E402, F401 isort:skip

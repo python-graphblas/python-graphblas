@@ -579,7 +579,7 @@ def _first_last(agg, updater, expr, opts, *, in_composite, semiring_):
         step1 = semiring_(v @ init).new(**opts)
         index = step1[0].new().value
         # `==` instead of `is` automatically triggers index.compute() in dask-graphblas:
-        if index == None:  # noqa
+        if index == None:  # noqa: E711
             index = 0
         if in_composite:
             return v[[index]].new(**opts)
@@ -594,7 +594,7 @@ def _first_last(agg, updater, expr, opts, *, in_composite, semiring_):
         step2 = semiring_(step1.T @ init2).new(**opts)
         i = step2[0].new().value
         # `==` instead of `is` automatically triggers i.compute() in dask-graphblas:
-        if i == None:  # noqa
+        if i == None:  # noqa: E711
             i = j = 0
         else:
             j = step1[i, 0].new().value
@@ -657,4 +657,4 @@ agg.last_index = Aggregator(
 agg.Aggregator = Aggregator
 agg.TypedAggregator = TypedAggregator
 
-from .operator import get_typed_op  # noqa isort:skip
+from .operator import get_typed_op  # noqa: E402 isort:skip

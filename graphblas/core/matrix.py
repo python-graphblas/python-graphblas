@@ -3379,4 +3379,4 @@ utils._output_types[MatrixExpression] = Matrix
 utils._output_types[TransposedMatrix] = TransposedMatrix
 
 # Import infix to import infixmethods, which has side effects
-from . import infix  # noqa isort:skip
+from . import infix  # noqa: E402, F401 isort:skip

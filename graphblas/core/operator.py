@@ -3406,6 +3406,6 @@ def aggregator_from_string(string):
     return _from_string(string, agg, _str_to_agg, "sum[int]")
 
 
-from .. import agg  # noqa isort:skip
+from .. import agg  # noqa: E402 isort:skip
 
 agg.from_string = aggregator_from_string
