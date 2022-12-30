@@ -18,7 +18,6 @@ select = [
     "B",  # flake8-bugbear
     "C4",  # flake8-comprehensions
     "T10",  # flake8-debugger
-    "ICN",  # flake8-import-conventions
     "Q",  # flake8-quotes
     "SIM",  # flake8-simplify
     "DTZ",  # flake8-datetimez
@@ -34,15 +33,10 @@ exclude = [
 ]
 [tool.ruff.per-file-ignores]
 "graphblas/_version.py" = ["S101"]
-"graphblas/binary/numpy.py" = ["ICN001"]
 "graphblas/core/operator.py" = ["S102"]
-"graphblas/dtypes.py" = ["ICN001"]
-"graphblas/io.py" = ["ICN001"]
-"graphblas/monoid/numpy.py" = ["ICN001"]
 "graphblas/tests/*py" = ["S101"]
 "graphblas/tests/test_dtype.py" = ["UP003"]
 "graphblas/tests/test_formatting.py" = ["E501"]
-"graphblas/unary/numpy.py" = ["ICN001"]
 "scripts/create_pickle.py" = ["F403", "F405"]
 
 [tool.pylint.messages_control]
