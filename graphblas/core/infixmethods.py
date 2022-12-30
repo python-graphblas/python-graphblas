@@ -339,7 +339,7 @@ def _main():
     lines = []
     for method, op in sorted(comparisons.items()):
         lines.append(
-            f"def __{method}__(self, other):\n" f"    return call_op(self, other, binary.{op})\n\n"
+            f"def __{method}__(self, other):\n    return call_op(self, other, binary.{op})\n\n"
         )
     for method, op in sorted(operations.items()):
         if method in outer:
