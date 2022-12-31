@@ -52,7 +52,6 @@ class ScalarInfixExpr(InfixExprBase):
     _is_scalar = True
     _is_cscalar = False
     is_cscalar = False
-    is_grbscalar = True
 
     def new(self, dtype=None, *, is_cscalar=False, name=None, **opts):
         expr = self._to_expr()
@@ -64,6 +63,10 @@ class ScalarInfixExpr(InfixExprBase):
         if clear:
             return Scalar(dtype, is_cscalar=is_cscalar, name=name)
         return self.new(dtype, is_cscalar=is_cscalar, name=name, **opts)
+
+    @property
+    def is_grbscalar(self):
+        return not self.is_cscalar
 
     # Begin auto-generated code: Scalar
     __and__ = wrapdoc(Scalar.__and__)(property(automethods.__and__))
