@@ -58,7 +58,8 @@ jobs:
           auto-activate-base: false
       - name: Update env
         run: |
-          mamba install -c conda-forge -c nodefaults \
+          mamba config --show
+          mamba install \
               pytest coverage 'coveralls>=3.3.1' pytest-randomly black \
               pandas numba scipy networkx cffi donfig pyyaml awkward
       - name: Build extension module
@@ -66,15 +67,15 @@ jobs:
           if [[ ${{ matrix.cfg.sourcetype }} == "wheel" ]]; then
               pip install suitesparse-graphblas
           else
-              mamba install -c conda-forge -c nodefaults "graphblas>=7.4.0"
+              mamba install "graphblas>=7.4.0"
           fi
           if [[ ${{ matrix.cfg.sourcetype }} == "source" ]]; then
               pip install --no-binary=all suitesparse-graphblas
           elif [[ ${{ matrix.cfg.sourcetype }} == "upstream" ]]; then
-              mamba install -c conda-forge -c nodefaults cython
+              mamba install cython
               pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
           elif [[ ${{ matrix.cfg.sourcetype }} == "conda-forge" ]]; then
-              mamba install -c conda-forge -c nodefaults python-suitesparse-graphblas
+              mamba install python-suitesparse-graphblas
           fi
           pip install --no-deps -e .
       - name: Unit tests
@@ -120,7 +121,7 @@ jobs:
         uses: codecov/codecov-action@v3
       - name: Notebooks Execution check
         run: |
-          mamba install -c conda-forge -c nodefaults matplotlib nbconvert jupyter 'ipython>=7'
+          mamba install matplotlib nbconvert jupyter 'ipython>=7'
           jupyter nbconvert --to notebook --execute notebooks/*ipynb
 
   finish:
@@ -133,7 +134,7 @@ jobs:
           source "$CONDA/etc/profile.d/conda.sh"
           conda config --set always_yes yes --set changeps1 no
           conda update -q conda
-          conda create -n coveralls_final -c conda-forge -c nodefaults python=3.10 'coveralls>=3.3.1'
+          conda create -n coveralls_final python=3.10 'coveralls>=3.3.1'
       - name: Coveralls Finished
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
