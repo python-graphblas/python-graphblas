@@ -71,19 +71,11 @@ jobs:
           if [[ ${{ matrix.cfg.sourcetype }} == "source" ]]; then
               pip install --no-binary=all suitesparse-graphblas
           elif [[ ${{ matrix.cfg.sourcetype }} == "upstream" ]]; then
-              # I can't get pip install from git to work, so git clone instead.
-              # pip install git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
               mamba install -c conda-forge cython
-              git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
-              pip install --no-deps ssgb/
-              #pushd ssgb
-              #python setup.py install  # deprecated?
-              # pip install .  # doesn't work
-              #popd
+              pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
           elif [[ ${{ matrix.cfg.sourcetype }} == "conda-forge" ]]; then
               mamba install -c conda-forge python-suitesparse-graphblas
           fi
-          # python setup.py develop --no-deps
           pip install --no-deps -e .
       - name: Unit tests
         run: |
