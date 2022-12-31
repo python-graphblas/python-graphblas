@@ -83,10 +83,6 @@ jobs:
               mamba install -c conda-forge python-suitesparse-graphblas
           fi
           python setup.py develop --no-deps
-      - name: Verify build
-        run: |
-          # Make sure all top-level imports work
-          ./scripts/test_imports.sh
       - name: Unit tests
         run: |
           coverage run --branch -m pytest ${{ matrix.cfg.testopts }} -v
