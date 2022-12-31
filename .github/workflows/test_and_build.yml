@@ -75,14 +75,16 @@ jobs:
               # pip install git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
               mamba install -c conda-forge cython
               git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
-              pushd ssgb
-              python setup.py install  # deprecated?
+              pip install --no-deps ssgb/
+              #pushd ssgb
+              #python setup.py install  # deprecated?
               # pip install .  # doesn't work
-              popd
+              #popd
           elif [[ ${{ matrix.cfg.sourcetype }} == "conda-forge" ]]; then
               mamba install -c conda-forge python-suitesparse-graphblas
           fi
-          python setup.py develop --no-deps
+          # python setup.py develop --no-deps
+          pip install --no-deps -e .
       - name: Unit tests
         run: |
           coverage run --branch -m pytest ${{ matrix.cfg.testopts }} -v
