@@ -89,12 +89,33 @@ def _call_op(op, left, right=None, thunk=None, **kwargs):
     from .matrix import Matrix, TransposedMatrix
     from .vector import Vector
 
-    if output_type(left) in {Vector, Matrix, TransposedMatrix}:
+    left_type = output_type(left)
+    if left_type in {Vector, Matrix, TransposedMatrix}:
         if thunk is not None:
             return left.select(op, thunk=thunk, **kwargs)
         return left.apply(op, right=right, **kwargs)
-    if output_type(right) in {Vector, Matrix, TransposedMatrix}:
+    right_type = output_type(right)
+    if right_type in {Vector, Matrix, TransposedMatrix}:
         return right.apply(op, left=left, **kwargs)
+
+    from .scalar import Scalar, _as_scalar
+
+    if left_type is Scalar:
+        if thunk is not None:
+            1 / 0  # XXX TODO
+            return left.select(op, thunk=thunk, **kwargs)
+        return left.apply(op, right=right, **kwargs)
+    if right_type is Scalar:
+        return right.apply(op, left=left, **kwargs)
+    try:
+        left_scalar = _as_scalar(left, is_cscalar=False)
+    except Exception:
+        pass
+    else:
+        if thunk is not None:
+            1 / 0  # XXX TODO
+            return left_scalar.select(op, thunk=thunk, **kwargs)
+        return left_scalar.apply(op, right=right, **kwargs)
     raise TypeError(
         f"Bad types when calling {op!r}.  Got types: {type(left)}, {type(right)}.\n"
         "Expected an infix expression or an apply with a Vector or Matrix and a scalar:\n"
@@ -183,11 +204,21 @@ class TypedBuiltinUnaryOp(TypedOpBase):
         from .matrix import Matrix, TransposedMatrix
         from .vector import Vector
 
-        if output_type(val) in {Vector, Matrix, TransposedMatrix}:
+        if (typ := output_type(val)) in {Vector, Matrix, TransposedMatrix}:
             return val.apply(self)
+        from .scalar import Scalar, _as_scalar
+
+        if typ is Scalar:
+            return val.apply(self)
+        try:
+            scalar = _as_scalar(val, is_cscalar=False)
+        except Exception:
+            pass
+        else:
+            return scalar.apply(self)
         raise TypeError(
             f"Bad type when calling {self!r}.\n"
-            "    - Expected type: Vector, Matrix, TransposedMatrix.\n"
+            "    - Expected type: Scalar, Vector, Matrix, TransposedMatrix.\n"
             f"    - Got: {type(val)}.\n"
             "Calling a UnaryOp is syntactic sugar for calling apply.  "
             f"For example, `A.apply({self!r})` is the same as `{self!r}(A)`."

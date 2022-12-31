@@ -2,13 +2,14 @@ import inspect
 import pickle
 import random
 import sys
+import types
 import weakref
 
 import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import backend, binary, dtypes, replace
+from graphblas import backend, binary, dtypes, replace, unary
 
 from .conftest import autocompute, compute
 
@@ -321,9 +322,11 @@ def test_wait(s):
 @autocompute
 def test_expr_is_like_scalar(s):
     v = Vector.from_coo([1], [2])
+    t = s.dup(bool)
     attrs = {attr for attr, val in inspect.getmembers(s)}
     expr_attrs = {attr for attr, val in inspect.getmembers(v.inner(v))}
     infix_attrs = {attr for attr, val in inspect.getmembers(v @ v)}
+    scalar_infix_attrs = {attr for attr, val in inspect.getmembers(t & t)}
     # Should we make any of these raise informative errors?
     expected = {
         "__call__",
@@ -350,6 +353,17 @@ def test_expr_is_like_scalar(s):
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
     assert attrs - infix_attrs == expected
+    assert attrs - scalar_infix_attrs == expected
+    # Make sure signatures actually match. `expr.dup` has `**opts`
+    skip = {"__init__", "__repr__", "_repr_html_", "new", "dup"}
+    for expr in [v.inner(v), v @ v, t & t]:
+        print(type(expr).__name__)
+        for attr, val in inspect.getmembers(expr):
+            if attr in skip or not isinstance(val, types.MethodType) or not hasattr(s, attr):
+                continue
+            val2 = getattr(s, attr)
+            assert inspect.signature(val) == inspect.signature(val2), attr
+            assert val.__doc__ == val2.__doc__
 
 
 @autocompute
@@ -379,6 +393,43 @@ def test_index_expr_is_like_scalar(s):
         "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
+    # Make sure signatures actually match. `update` has different docstring.
+    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "new", "update", "dup"}
+    for attr, val in inspect.getmembers(v[0]):
+        if attr in skip or not isinstance(val, types.MethodType) or not hasattr(s, attr):
+            continue
+        val2 = getattr(s, attr)
+        assert inspect.signature(val) == inspect.signature(val2), attr
+        assert val.__doc__ == val2.__doc__
+
+
+@autocompute
+def test_dup_expr(s):
+    v = Vector.from_coo([1], [2])
+    result = (s + s).dup()
+    assert result.isequal(2 * s)
+    result = (s + s).dup(is_cscalar=not s._is_cscalar)
+    assert result.isequal(2 * s)
+    assert result._is_cscalar != s._is_cscalar
+    result = (s + s).dup(dtype=float)
+    assert result.isequal(10.0, check_dtype=True)
+    result = (s + s).dup(clear=True)
+    assert result.isequal(s.dup(clear=True))
+    b = s.dup(bool)
+    result = (b | b).dup()
+    assert result.isequal(b, check_dtype=True)
+    result = (b | b).dup(clear=True)
+    assert result.isequal(b.dup(clear=True), check_dtype=True)
+    result = (b | b).dup(float)
+    assert result.isequal(b.dup(float), check_dtype=True)
+    result = (v @ v).dup()
+    assert result.isequal(4)
+    result = v[1].dup()
+    assert result.isequal(2, check_dtype=True)
+    result = v[1].dup(float)
+    assert result.isequal(2.0, check_dtype=True)
+    result = v[1].dup(clear=True)
+    assert result.isequal(v[0])
 
 
 def test_ndim(s):
@@ -499,3 +550,26 @@ def test_ss_descriptors(s):
             v[0].new(nthreads=4)
         with pytest.raises(ValueError, match="escriptor"):
             s(nthreads=4) << 1
+
+
+@autocompute
+def test_scalar_operators(s):
+    assert -s == -5
+    assert s + 1 == 6
+    assert 1 + s == 6
+    assert s - 1 == 4
+    assert 1 - s == -4
+    assert s * 2 == 10
+    assert 2 * s == 10
+    assert s * s == 25
+    assert s**2 == 25
+    assert unary.cos(0) == 1
+    assert binary.plus(s | 2) == 7
+    assert binary.plus(s, 2) == 7
+    assert binary.plus(5, 2) == 7
+    assert binary.plus(2, s) == 7
+    assert (-s).apply(unary.abs) == 5
+    with pytest.raises(TypeError):
+        unary.sin(object())
+    with pytest.raises(TypeError):
+        binary.plus(object(), object())

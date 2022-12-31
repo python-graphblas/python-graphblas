@@ -105,6 +105,10 @@ def __matmul__(self):
     return self._get_value("__matmul__")
 
 
+def __ne__(self):
+    return self._get_value("__ne__")
+
+
 def __neg__(self):
     return self._get_value("__neg__")
 
@@ -349,6 +353,17 @@ def _main():
         "name",
         "nvals",
         "wait",
+        # For infix
+        "__and__",
+        "__or__",
+        "__rand__",
+        "__ror__",
+        # Delayed methods
+        "apply",
+        "ewise_add",
+        "ewise_mult",
+        "ewise_union",
+        "select",
     }
     scalar = {
         "__array__",
@@ -359,6 +374,7 @@ def _main():
         "__index__",
         "__int__",
         "__invert__",
+        "__ne__",
         "__neg__",
         "_as_matrix",
         "_as_vector",
@@ -369,23 +385,14 @@ def _main():
     vector_matrix = {
         "S",
         "V",
-        "__and__",
         "__contains__",
         "__getitem__",
         "__iter__",
         "__matmul__",
-        "__or__",
-        "__rand__",
         "__rmatmul__",
-        "__ror__",
         "_carg",
-        "apply",
         "diag",
-        "ewise_add",
-        "ewise_mult",
-        "ewise_union",
         "reposition",
-        "select",
         "ss",
         "to_coo",
         "to_values",
@@ -415,12 +422,8 @@ def _main():
     }
     common_raises = set()
     scalar_raises = {
-        "__and__",
         "__matmul__",
-        "__or__",
-        "__rand__",
         "__rmatmul__",
-        "__ror__",
     }
     vector_matrix_raises = {
         "__array__",
@@ -469,6 +472,10 @@ def _main():
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | scalar_raises):
         lines.append(f"    {name} = Scalar.{name}")
+    for name in sorted(bad_sugar):
+        if name == "__imatmul__":
+            continue
+        lines.append(f"    {name} = automethods.{name}")
 
     thisdir = os.path.dirname(__file__)
     infix_exclude = {"_get_value"}

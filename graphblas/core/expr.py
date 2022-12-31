@@ -270,13 +270,13 @@ class Assigner:
         if updater.kwargs.get("input_mask") is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
 
-    def update(self, obj):
-        # Occurs when user calls `C[index](...).update(obj)` or `C(...)[index].update(obj)`
-        self.updater._setitem(self.resolved_indexes, obj, is_submask=self.is_submask)
+    def update(self, expr):
+        # Occurs when user calls `C[index](...).update(expr)` or `C(...)[index].update(expr)`
+        self.updater._setitem(self.resolved_indexes, expr, is_submask=self.is_submask)
 
-    def __lshift__(self, obj):
-        # Occurs when user calls `C[index](...) << obj` or `C(...)[index] << obj`
-        self.updater._setitem(self.resolved_indexes, obj, is_submask=self.is_submask)
+    def __lshift__(self, expr):
+        # Occurs when user calls `C[index](...) << expr` or `C(...)[index] << expr`
+        self.updater._setitem(self.resolved_indexes, expr, is_submask=self.is_submask)
 
     def __eq__(self, other):
         raise TypeError(f"__eq__ not defined for objects of type {type(self)}.")
@@ -301,15 +301,15 @@ class AmbiguousAssignOrExtract:
         is_submask = updater.kwargs.get("mask") is not None
         return Assigner(updater, self.resolved_indexes, is_submask=is_submask)
 
-    def __lshift__(self, obj, **opts):
-        # Occurs when user calls `C[index] << obj`
-        self.update(obj, **opts)
+    def __lshift__(self, expr, **opts):
+        # Occurs when user calls `C[index] << expr`
+        self.update(expr, **opts)
 
-    def update(self, obj, **opts):
-        # Occurs when user calls `C[index].update(obj)`
+    def update(self, expr, **opts):
+        # Occurs when user calls `C[index].update(expr)`
         if getattr(self.parent, "_is_transposed", False):
             raise TypeError("'TransposedMatrix' object does not support item assignment")
-        Updater(self.parent, opts=opts)._setitem(self.resolved_indexes, obj, is_submask=False)
+        Updater(self.parent, opts=opts)._setitem(self.resolved_indexes, expr, is_submask=False)
 
     def new(self, dtype=None, *, mask=None, input_mask=None, name=None, **opts):
         """
@@ -325,8 +325,6 @@ class AmbiguousAssignOrExtract:
             mask = self._input_mask_to_mask(input_mask, **opts)
         delayed_extractor = self.parent._prep_for_extract(self.resolved_indexes)
         return delayed_extractor.new(dtype, mask=mask, name=name, **opts)
-
-    dup = new
 
     def _extract_delayed(self):
         """Return an Expression object, treating this as an extract call"""
@@ -501,8 +499,6 @@ class InfixExprBase:
             return rv
         expr = self._to_expr()
         return expr.new(dtype, mask=mask, name=name, **opts)
-
-    dup = new
 
     def _to_expr(self):
         if self._value is None:

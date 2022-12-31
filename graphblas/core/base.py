@@ -262,29 +262,21 @@ class BaseType:
         )
 
     def __or__(self, other):
-        if self._is_scalar:
-            return NotImplemented
         from .infix import _ewise_infix_expr
 
         return _ewise_infix_expr(self, other, method="ewise_add", within="__or__")
 
     def __ror__(self, other):
-        if self._is_scalar:
-            return NotImplemented
         from .infix import _ewise_infix_expr
 
         return _ewise_infix_expr(other, self, method="ewise_add", within="__ror__")
 
     def __and__(self, other):
-        if self._is_scalar:
-            return NotImplemented
         from .infix import _ewise_infix_expr
 
         return _ewise_infix_expr(self, other, method="ewise_mult", within="__and__")
 
     def __rand__(self, other):
-        if self._is_scalar:
-            return NotImplemented
         from .infix import _ewise_infix_expr
 
         return _ewise_infix_expr(other, self, method="ewise_mult", within="__rand__")
@@ -469,8 +461,7 @@ class BaseType:
             **opts,
         )
         if self._is_scalar:
-            scalar_as_vector = expr.method_name == "inner"
-            if scalar_as_vector:
+            if expr._scalar_as_vector:
                 fake_self = self._as_vector()
                 cfunc_name = expr.cfunc_name
                 args = [fake_self, mask, accum]
@@ -498,7 +489,7 @@ class BaseType:
         # Make the GraphBLAS call
         call(cfunc_name, args)
         if self._is_scalar:
-            if scalar_as_vector:
+            if expr._scalar_as_vector:
                 if self._is_cscalar or backend != "suitesparse":
                     self.value = fake_self[0].new(is_cscalar=True, name="")
                 # SS: this assumes GrB_Scalar was cast to Vector
@@ -610,8 +601,6 @@ class BaseExpression:
             mask = _check_mask(mask, output)
             output(mask=mask, **opts).update(self)
         return output
-
-    dup = new
 
     def _format_expr(self):
         args = self.args[:-2] if self.cfunc_name is None else self.args

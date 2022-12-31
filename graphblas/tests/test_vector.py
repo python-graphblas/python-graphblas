@@ -2,6 +2,7 @@ import inspect
 import itertools
 import pickle
 import sys
+import types
 import weakref
 
 import numpy as np
@@ -1610,6 +1611,16 @@ def test_expr_is_like_vector(v):
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
     assert attrs - infix_attrs == expected
+    # Make sure signatures actually match
+    skip = {"__init__", "__repr__", "_repr_html_", "new"}
+    for expr in [binary.times(w & w), w & w]:
+        print(type(expr).__name__)
+        for attr, val in inspect.getmembers(expr):
+            if attr in skip or not isinstance(val, types.MethodType) or not hasattr(w, attr):
+                continue
+            val2 = getattr(w, attr)
+            assert inspect.signature(val) == inspect.signature(val2), attr
+            assert val.__doc__ == val2.__doc__
 
 
 @autocompute
@@ -1644,6 +1655,35 @@ def test_index_expr_is_like_vector(v):
         "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
+    # Make sure signatures actually match. `update` has different docstring.
+    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "new", "update"}
+    for attr, val in inspect.getmembers(w[[0, 1]]):
+        if attr in skip or not isinstance(val, types.MethodType) or not hasattr(w, attr):
+            continue
+        val2 = getattr(w, attr)
+        assert inspect.signature(val) == inspect.signature(val2), attr
+        assert val.__doc__ == val2.__doc__
+
+
+@autocompute
+def test_dup_expr(v):
+    result = (v + v).dup()
+    assert result.isequal(2 * v)
+    result = (v + v).dup(clear=True)
+    assert result.isequal(v.dup(clear=True))
+    result = (v * v).dup(mask=v.V)
+    assert result.isequal((v**2).new(mask=v.V))
+    result = v[:].dup()
+    assert result.isequal(v)
+    result = v[:].dup(clear=True)
+    assert result.isequal(v.dup(clear=True), check_dtype=True)
+    result = v[:].dup(float, clear=True)
+    assert result.isequal(v.dup(float, clear=True), check_dtype=True)
+    b = v.dup(bool)
+    result = (b | b).dup()
+    assert result.isequal(b)
+    result = (b | b).dup(clear=True)
+    assert result.isequal(b.dup(clear=True))
 
 
 @pytest.mark.skipif("not suitesparse")

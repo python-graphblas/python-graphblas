@@ -3,9 +3,9 @@ import warnings
 
 import numpy as np
 
-from .. import backend, config
+from .. import backend, binary, config, monoid
 from ..binary import isclose
-from ..dtypes import _INDEX, BOOL, FP64, lookup_dtype
+from ..dtypes import _INDEX, BOOL, FP64, lookup_dtype, unify
 from ..exceptions import EmptyObject, check_status
 from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
@@ -120,6 +120,9 @@ class Scalar(BaseType):
         what is considered equal.
         """
         return self.isequal(other)
+
+    def __ne__(self, other):
+        return not self.isequal(other)
 
     def __bool__(self):
         """Truthiness check.
@@ -531,7 +534,7 @@ class Scalar(BaseType):
         if typ is Scalar and type(value) is not Scalar:
             if config.get("autocompute"):
                 return value.new(dtype=dtype, is_cscalar=is_cscalar, name=name)
-            cls._expect_type(
+            cls()._expect_type(
                 value,
                 Scalar,
                 within="from_value",
@@ -590,17 +593,169 @@ class Scalar(BaseType):
             rv[0, 0] = self
         return rv
 
+    #########################################################
+    # Delayed methods
+    #
+    # These return a delayed expression object which must be passed
+    # to update to trigger a call to GraphBLAS
+    #########################################################
+
+    def ewise_add(self, other, op=monoid.plus):
+        method_name = "ewise_add"
+        if type(other) is not Scalar:
+            dtype = self.dtype if self.dtype._is_udt else None
+            try:
+                other = Scalar.from_value(other, dtype, is_cscalar=False, name="")
+            except TypeError:
+                other = self._expect_type(
+                    other,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="other",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
+        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        return ScalarExpression(
+            method_name,
+            f"GrB_Vector_eWiseAdd_{op.opclass}",
+            [self._as_vector(), other._as_vector()],
+            op=op,
+            is_cscalar=False,
+            scalar_as_vector=True,
+        )
+
+    def ewise_mult(self, other, op=binary.times):
+        method_name = "ewise_mult"
+        if type(other) is not Scalar:
+            dtype = self.dtype if self.dtype._is_udt else None
+            try:
+                other = Scalar.from_value(other, dtype, is_cscalar=False, name="")
+            except TypeError:
+                other = self._expect_type(
+                    other,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="other",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
+        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        return ScalarExpression(
+            method_name,
+            f"GrB_Vector_eWiseMult_{op.opclass}",
+            [self._as_vector(), other._as_vector()],
+            op=op,
+            is_cscalar=False,
+            scalar_as_vector=True,
+        )
+
+    def ewise_union(self, other, op, left_default, right_default):
+        method_name = "ewise_union"
+        dtype = self.dtype if self.dtype._is_udt else None
+        if type(other) is not Scalar:
+            try:
+                other = Scalar.from_value(other, dtype, is_cscalar=False, name="")
+            except TypeError:
+                other = self._expect_type(
+                    other,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="other",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        if type(left_default) is not Scalar:
+            try:
+                left = Scalar.from_value(
+                    left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
+                )
+            except TypeError:
+                left = self._expect_type(
+                    left_default,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="left_default",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        else:
+            left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
+        if type(right_default) is not Scalar:
+            try:
+                right = Scalar.from_value(
+                    right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
+                )
+            except TypeError:
+                right = self._expect_type(
+                    right_default,
+                    Scalar,
+                    within=method_name,
+                    keyword_name="right_default",
+                    extra_message="Literal scalars also accepted.",
+                    op=op,
+                )
+        else:
+            right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
+        defaults_dtype = unify(left.dtype, right.dtype)
+        args_dtype = unify(self.dtype, other.dtype)
+        op = get_typed_op(op, defaults_dtype, args_dtype, kind="binary")
+        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if op.opclass == "Monoid":
+            op = op.binaryop
+        expr_repr = "{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})"
+        if backend == "suitesparse":
+            expr = ScalarExpression(
+                method_name,
+                "GxB_Vector_eWiseUnion",
+                [self._as_vector(), left, other._as_vector(), right],
+                op=op,
+                expr_repr=expr_repr,
+                is_cscalar=False,
+                scalar_as_vector=True,
+            )
+        return expr
+
+    def apply(self, op, right=None, *, left=None):
+        expr = self._as_vector().apply(op, right, left=left)
+        return ScalarExpression(
+            expr.method_name,
+            expr.cfunc_name,
+            expr.args,
+            op=expr.op,
+            dtype=expr.dtype,
+            expr_repr=expr.expr_repr,
+            is_cscalar=False,
+            scalar_as_vector=True,
+        )
+
+    def select(self, op, thunk=None):
+        expr = self._as_vector().select(op, thunk)
+        return ScalarExpression(
+            expr.method_name,
+            expr.cfunc_name,
+            expr.args,
+            op=expr.op,
+            dtype=expr.dtype,
+            expr_repr=expr.expr_repr,
+            is_cscalar=False,
+            scalar_as_vector=True,
+        )
+
 
 class ScalarExpression(BaseExpression):
-    __slots__ = "_is_cscalar"
+    __slots__ = "_is_cscalar", "_scalar_as_vector"
     output_type = Scalar
     ndim = 0
     shape = ()
     _is_scalar = True
 
-    def __init__(self, *args, is_cscalar, **kwargs):
+    def __init__(self, *args, is_cscalar, scalar_as_vector=False, **kwargs):
         super().__init__(*args, **kwargs)
         self._is_cscalar = is_cscalar
+        self._scalar_as_vector = scalar_as_vector
 
     def construct_output(self, dtype=None, *, is_cscalar=None, name=None):
         if dtype is None:
@@ -614,7 +769,15 @@ class ScalarExpression(BaseExpression):
             is_cscalar = self._is_cscalar
         return super()._new(dtype, None, name, is_cscalar=is_cscalar, **opts)
 
-    dup = new
+    @wrapdoc(Scalar.dup)
+    def dup(self, dtype=None, *, clear=False, is_cscalar=None, name=None, **opts):
+        if dtype is None:
+            dtype = self.dtype
+        if is_cscalar is None:
+            is_cscalar = self._is_cscalar
+        if clear:
+            return Scalar(dtype, is_cscalar=is_cscalar, name=name)
+        return self.new(dtype, is_cscalar=is_cscalar, name=name, **opts)
 
     def __repr__(self):
         from .formatting import format_scalar_expression
@@ -631,6 +794,7 @@ class ScalarExpression(BaseExpression):
 
     # Begin auto-generated code: Scalar
     _get_value = automethods._get_value
+    __and__ = wrapdoc(Scalar.__and__)(property(automethods.__and__))
     __array__ = wrapdoc(Scalar.__array__)(property(automethods.__array__))
     __bool__ = wrapdoc(Scalar.__bool__)(property(automethods.__bool__))
     __complex__ = wrapdoc(Scalar.__complex__)(property(automethods.__complex__))
@@ -639,12 +803,20 @@ class ScalarExpression(BaseExpression):
     __index__ = wrapdoc(Scalar.__index__)(property(automethods.__index__))
     __int__ = wrapdoc(Scalar.__int__)(property(automethods.__int__))
     __invert__ = wrapdoc(Scalar.__invert__)(property(automethods.__invert__))
+    __ne__ = wrapdoc(Scalar.__ne__)(property(automethods.__ne__))
     __neg__ = wrapdoc(Scalar.__neg__)(property(automethods.__neg__))
+    __or__ = wrapdoc(Scalar.__or__)(property(automethods.__or__))
+    __rand__ = wrapdoc(Scalar.__rand__)(property(automethods.__rand__))
+    __ror__ = wrapdoc(Scalar.__ror__)(property(automethods.__ror__))
     _as_matrix = wrapdoc(Scalar._as_matrix)(property(automethods._as_matrix))
     _as_vector = wrapdoc(Scalar._as_vector)(property(automethods._as_vector))
     _is_empty = wrapdoc(Scalar._is_empty)(property(automethods._is_empty))
     _name_html = wrapdoc(Scalar._name_html)(property(automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(automethods._nvals))
+    apply = wrapdoc(Scalar.apply)(property(automethods.apply))
+    ewise_add = wrapdoc(Scalar.ewise_add)(property(automethods.ewise_add))
+    ewise_mult = wrapdoc(Scalar.ewise_mult)(property(automethods.ewise_mult))
+    ewise_union = wrapdoc(Scalar.ewise_union)(property(automethods.ewise_union))
     gb_obj = wrapdoc(Scalar.gb_obj)(property(automethods.gb_obj))
     get = wrapdoc(Scalar.get)(property(automethods.get))
     is_empty = wrapdoc(Scalar.is_empty)(property(automethods.is_empty))
@@ -653,15 +825,22 @@ class ScalarExpression(BaseExpression):
     name = wrapdoc(Scalar.name)(property(automethods.name))
     name = name.setter(automethods._set_name)
     nvals = wrapdoc(Scalar.nvals)(property(automethods.nvals))
+    select = wrapdoc(Scalar.select)(property(automethods.select))
     value = wrapdoc(Scalar.value)(property(automethods.value))
     wait = wrapdoc(Scalar.wait)(property(automethods.wait))
     # These raise exceptions
-    __and__ = Scalar.__and__
     __matmul__ = Scalar.__matmul__
-    __or__ = Scalar.__or__
-    __rand__ = Scalar.__rand__
     __rmatmul__ = Scalar.__rmatmul__
-    __ror__ = Scalar.__ror__
+    __iadd__ = automethods.__iadd__
+    __iand__ = automethods.__iand__
+    __ifloordiv__ = automethods.__ifloordiv__
+    __imod__ = automethods.__imod__
+    __imul__ = automethods.__imul__
+    __ior__ = automethods.__ior__
+    __ipow__ = automethods.__ipow__
+    __isub__ = automethods.__isub__
+    __itruediv__ = automethods.__itruediv__
+    __ixor__ = automethods.__ixor__
     # End auto-generated code: Scalar
 
 
@@ -679,18 +858,20 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
             self.resolved_indexes, dtype, opts, is_cscalar=is_cscalar, name=name
         )
 
-    dup = new
+    @wrapdoc(Scalar.dup)
+    def dup(self, dtype=None, *, clear=False, is_cscalar=False, name=None, **opts):
+        if dtype is None:
+            dtype = self.dtype
+        if clear:
+            return Scalar(dtype, is_cscalar=is_cscalar, name=name)
+        return self.new(dtype, is_cscalar=is_cscalar, name=name, **opts)
 
-    @property
-    def is_cscalar(self):
-        return self._is_cscalar
-
-    @property
-    def is_grbscalar(self):
-        return not self._is_cscalar
+    is_cscalar = Scalar.is_cscalar
+    is_grbscalar = Scalar.is_grbscalar
 
     # Begin auto-generated code: Scalar
     _get_value = automethods._get_value
+    __and__ = wrapdoc(Scalar.__and__)(property(automethods.__and__))
     __array__ = wrapdoc(Scalar.__array__)(property(automethods.__array__))
     __bool__ = wrapdoc(Scalar.__bool__)(property(automethods.__bool__))
     __complex__ = wrapdoc(Scalar.__complex__)(property(automethods.__complex__))
@@ -699,12 +880,20 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     __index__ = wrapdoc(Scalar.__index__)(property(automethods.__index__))
     __int__ = wrapdoc(Scalar.__int__)(property(automethods.__int__))
     __invert__ = wrapdoc(Scalar.__invert__)(property(automethods.__invert__))
+    __ne__ = wrapdoc(Scalar.__ne__)(property(automethods.__ne__))
     __neg__ = wrapdoc(Scalar.__neg__)(property(automethods.__neg__))
+    __or__ = wrapdoc(Scalar.__or__)(property(automethods.__or__))
+    __rand__ = wrapdoc(Scalar.__rand__)(property(automethods.__rand__))
+    __ror__ = wrapdoc(Scalar.__ror__)(property(automethods.__ror__))
     _as_matrix = wrapdoc(Scalar._as_matrix)(property(automethods._as_matrix))
     _as_vector = wrapdoc(Scalar._as_vector)(property(automethods._as_vector))
     _is_empty = wrapdoc(Scalar._is_empty)(property(automethods._is_empty))
     _name_html = wrapdoc(Scalar._name_html)(property(automethods._name_html))
     _nvals = wrapdoc(Scalar._nvals)(property(automethods._nvals))
+    apply = wrapdoc(Scalar.apply)(property(automethods.apply))
+    ewise_add = wrapdoc(Scalar.ewise_add)(property(automethods.ewise_add))
+    ewise_mult = wrapdoc(Scalar.ewise_mult)(property(automethods.ewise_mult))
+    ewise_union = wrapdoc(Scalar.ewise_union)(property(automethods.ewise_union))
     gb_obj = wrapdoc(Scalar.gb_obj)(property(automethods.gb_obj))
     get = wrapdoc(Scalar.get)(property(automethods.get))
     is_empty = wrapdoc(Scalar.is_empty)(property(automethods.is_empty))
@@ -713,15 +902,22 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     name = wrapdoc(Scalar.name)(property(automethods.name))
     name = name.setter(automethods._set_name)
     nvals = wrapdoc(Scalar.nvals)(property(automethods.nvals))
+    select = wrapdoc(Scalar.select)(property(automethods.select))
     value = wrapdoc(Scalar.value)(property(automethods.value))
     wait = wrapdoc(Scalar.wait)(property(automethods.wait))
     # These raise exceptions
-    __and__ = Scalar.__and__
     __matmul__ = Scalar.__matmul__
-    __or__ = Scalar.__or__
-    __rand__ = Scalar.__rand__
     __rmatmul__ = Scalar.__rmatmul__
-    __ror__ = Scalar.__ror__
+    __iadd__ = automethods.__iadd__
+    __iand__ = automethods.__iand__
+    __ifloordiv__ = automethods.__ifloordiv__
+    __imod__ = automethods.__imod__
+    __imul__ = automethods.__imul__
+    __ior__ = automethods.__ior__
+    __ipow__ = automethods.__ipow__
+    __isub__ = automethods.__isub__
+    __itruediv__ = automethods.__itruediv__
+    __ixor__ = automethods.__ixor__
     # End auto-generated code: Scalar
 
 
@@ -751,3 +947,6 @@ _COMPLETE = Scalar.from_value(lib.GrB_COMPLETE, is_cscalar=True, name="GrB_COMPL
 utils._output_types[Scalar] = Scalar
 utils._output_types[ScalarIndexExpr] = Scalar
 utils._output_types[ScalarExpression] = Scalar
+
+# Import vector to import matrix to import infix to import infixmethods, which has side effects
+from . import vector  # noqa: E402, F401 isort:skip

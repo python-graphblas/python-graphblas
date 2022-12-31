@@ -3061,6 +3061,14 @@ class MatrixExpression(BaseExpression):
     def shape(self):
         return (self._nrows, self._ncols)
 
+    @wrapdoc(Matrix.dup)
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
+        if dtype is None:
+            dtype = self.dtype
+        if clear:
+            return Matrix(dtype, self._nrows, self._ncols, name=name)
+        return self._new(dtype, mask, name, **opts)
+
     # Begin auto-generated code: Matrix
     _get_value = automethods._get_value
     S = wrapdoc(Matrix.S)(property(automethods.S))
@@ -3149,6 +3157,14 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     @property
     def shape(self):
         return (self._nrows, self._ncols)
+
+    @wrapdoc(Matrix.dup)
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
+        if clear:
+            if dtype is None:
+                dtype = self.dtype
+            return self.output_type(dtype, *self.shape, name=name)
+        return self.new(dtype, mask=mask, name=name, **opts)
 
     # Begin auto-generated code: Matrix
     _get_value = automethods._get_value
@@ -3244,6 +3260,7 @@ class TransposedMatrix:
         output(mask=mask, **opts) << self
         return output
 
+    @wrapdoc(Matrix.dup)
     def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
         if dtype is None:
             dtype = self.dtype
@@ -3301,11 +3318,11 @@ class TransposedMatrix:
     def to_csc(self, dtype=None):
         return self._matrix.to_csr(dtype)
 
-    @wrapdoc(Matrix.to_csr)
+    @wrapdoc(Matrix.to_dcsr)
     def to_dcsr(self, dtype=None):
         return self._matrix.to_dcsc(dtype)
 
-    @wrapdoc(Matrix.to_csc)
+    @wrapdoc(Matrix.to_dcsc)
     def to_dcsc(self, dtype=None):
         return self._matrix.to_dcsr(dtype)
 

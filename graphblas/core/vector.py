@@ -1417,6 +1417,7 @@ class Vector(BaseType):
             [self, other._as_matrix()],
             op=op,
             is_cscalar=False,
+            scalar_as_vector=True,
         )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
@@ -1851,6 +1852,12 @@ class VectorExpression(BaseExpression):
     def shape(self):
         return (self._size,)
 
+    @wrapdoc(Vector.dup)
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
+        if clear:
+            return Vector(self.dtype if dtype is None else dtype, self.size, name=name)
+        return self._new(dtype, mask, name)
+
     # Begin auto-generated code: Vector
     _get_value = automethods._get_value
     S = wrapdoc(Vector.S)(property(automethods.S))
@@ -1925,6 +1932,14 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     @property
     def shape(self):
         return (self._size,)
+
+    @wrapdoc(Vector.dup)
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
+        if clear:
+            if dtype is None:
+                dtype = self.dtype
+            return self.output_type(dtype, *self.shape, name=name)
+        return self.new(dtype, mask=mask, name=name, **opts)
 
     # Begin auto-generated code: Vector
     _get_value = automethods._get_value
