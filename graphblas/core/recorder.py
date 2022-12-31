@@ -139,8 +139,8 @@ class Recorder:
     def _repr_html_(self):  # pragma: no cover
         try:
             from IPython.display import Code
-        except ImportError:
-            raise NotImplementedError()
+        except ImportError as exc:
+            raise NotImplementedError() from exc
         lines = self._get_repr_lines()
         code = Code("\n".join(lines), language="C")
         head, tail = self._repr_base_()

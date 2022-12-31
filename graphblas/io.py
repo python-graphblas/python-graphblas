@@ -266,7 +266,7 @@ def to_numpy(m):
     np.ndarray
     """
     try:
-        import scipy  # noqa
+        import scipy  # noqa: F401
     except ImportError:  # pragma: no cover (import)
         raise ImportError("scipy is required to export to numpy") from None
     if _output_type(m) is _Vector:

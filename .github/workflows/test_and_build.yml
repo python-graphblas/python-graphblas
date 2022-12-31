@@ -60,10 +60,6 @@ jobs:
         run: |
           mamba install -c conda-forge pytest coverage black flake8 \
           coveralls=3.3.1 pytest-randomly flake8-comprehensions flake8-bugbear
-      - name: Style Checks
-        run: |
-          flake8
-          black . --check --diff
       - name: Build extension module
         run: |
           mamba install -c conda-forge pandas numba scipy networkx cffi donfig pyyaml awkward
@@ -122,6 +118,10 @@ jobs:
           coverage run -a --branch -m graphblas.core.infixmethods
           git diff --exit-code
           coverage xml
+      - name: Style Checks
+        run: |
+          flake8
+          black . --check --diff
       - name: Coverage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

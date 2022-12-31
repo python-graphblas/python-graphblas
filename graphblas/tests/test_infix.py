@@ -281,7 +281,7 @@ def test_apply_binary(v1, A1):
     assert expected.isequal(op.minus(2, A1).new())
 
 
-def test_apply_binary_bad(s1, v1):
+def test_apply_binary_bad(v1):
     with raises(TypeError, match="Bad types when calling binary.plus"):
         op.plus(1, 1)
     with raises(TypeError, match="Bad type when calling binary.plus"):

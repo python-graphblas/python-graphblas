@@ -878,12 +878,12 @@ class OpBase:
         delete_exact = cls._parse_config.get("delete_exact", None)
         num_underscores = cls._parse_config["num_underscores"]
 
-        for re_str, return_prefix in (
+        for re_str, return_prefix in [
             ("re_exprs", None),
             ("re_exprs_return_bool", "BOOL"),
             ("re_exprs_return_float", "FP"),
             ("re_exprs_return_complex", "FC"),
-        ):
+        ]:
             if re_str not in cls._parse_config:
                 continue
             if "complex" in re_str and not _supports_complex:
@@ -1162,7 +1162,7 @@ class UnaryOp(OpBase):
         ]
         if _supports_complex:
             position_dtypes.extend([FC32, FC64])
-        for names, *types in (
+        for names, *types in [
             # fmt: off
             (
                 (
@@ -1182,7 +1182,7 @@ class UnaryOp(OpBase):
                 ),
             ),
             # fmt: on
-        ):
+        ]:
             for name in names:
                 op = getattr(unary, name)
                 for input_types, target_type in types:
@@ -1450,7 +1450,7 @@ class IndexUnaryOp(OpBase):
             return
         super()._initialize(include_in_ops=False)
         # Update type information to include UINT64 for positional ops
-        for name in ("tril", "triu", "diag", "offdiag", "colle", "colgt", "rowle", "rowgt"):
+        for name in ["tril", "triu", "diag", "offdiag", "colle", "colgt", "rowle", "rowgt"]:
             op = getattr(indexunary, name)
             typed_op = op._typed_ops[BOOL]
             output_type = op.types[BOOL]
@@ -1458,7 +1458,7 @@ class IndexUnaryOp(OpBase):
                 op.types[UINT64] = output_type
                 op._typed_ops[UINT64] = typed_op
                 op.coercions[UINT64] = BOOL
-        for name in ("rowindex", "colindex"):
+        for name in ["rowindex", "colindex"]:
             op = getattr(indexunary, name)
             typed_op = op._typed_ops[INT64]
             output_type = op.types[INT64]
@@ -1472,9 +1472,9 @@ class IndexUnaryOp(OpBase):
         indexunary.index = indexunary.rowindex
         # fmt: off
         # Add SelectOp when it makes sense
-        for name in ("tril", "triu", "diag", "offdiag",
+        for name in ["tril", "triu", "diag", "offdiag",
                      "colle", "colgt", "rowle", "rowgt", "indexle", "indexgt",
-                     "valueeq", "valuene", "valuegt", "valuege", "valuelt", "valuele"):
+                     "valueeq", "valuene", "valuegt", "valuege", "valuelt", "valuele"]:
             iop = getattr(indexunary, name)
             setattr(select, name, SelectOp._from_indexunary(iop))
         # fmt: on
@@ -1813,7 +1813,7 @@ class BinaryOp(OpBase):
                 "_(BOOL|INT8|UINT8|INT16|UINT16|INT32|UINT32|INT64|UINT64|FP32|FP64|FC32|FC64)$"
             ),
             re.compile(
-                "GrB_(BOR|BAND|BXOR|BXNOR)" "_(INT8|INT16|INT32|INT64|UINT8|UINT16|UINT32|UINT64)$"
+                "GrB_(BOR|BAND|BXOR|BXNOR)_(INT8|INT16|INT32|INT64|UINT8|UINT16|UINT32|UINT64)$"
             ),
             re.compile(
                 "^GxB_(POW|RMINUS|RDIV|PAIR|ANY|ISEQ|ISNE|ISGT|ISLT|ISGE|ISLE|LOR|LAND|LXOR)"
@@ -2392,7 +2392,7 @@ class Monoid(OpBase):
             else:
                 identities = {lookup_dtype(key): val for key, val in identity.items()}
                 explicit_identities = True
-            for type_, identity in identities.items():
+            for type_, ident in identities.items():
                 ret_type = binaryop[type_].return_type
                 # If there is a domain mismatch, then DomainMismatch will be raised
                 # below if identities were explicitly given.
@@ -2400,7 +2400,7 @@ class Monoid(OpBase):
                     continue
                 new_monoid = ffi_new("GrB_Monoid*")
                 func = libget(f"GrB_Monoid_new_{type_.name}")
-                zcast = ffi.cast(type_.c_type, identity)
+                zcast = ffi.cast(type_.c_type, ident)
                 check_status_carg(
                     func(new_monoid, binaryop[type_].gb_obj, zcast), "Monoid", new_monoid[0]
                 )
@@ -2411,7 +2411,7 @@ class Monoid(OpBase):
                     ret_type,
                     new_monoid[0],
                     binaryop[type_],
-                    identity,
+                    ident,
                 )
                 new_type_obj._add(op)
         return new_type_obj
@@ -2555,9 +2555,9 @@ class Monoid(OpBase):
                 cur_op.coercions[BOOL] = BOOL
                 cur_op._typed_ops[BOOL] = typed_op
 
-        for cur_op in (monoid.lor, monoid.land, monoid.lxnor, monoid.lxor):
+        for cur_op in [monoid.lor, monoid.land, monoid.lxnor, monoid.lxor]:
             bool_op = cur_op._typed_ops[BOOL]
-            for dtype in (
+            for dtype in [
                 FP32,
                 FP64,
                 INT8,
@@ -2568,7 +2568,7 @@ class Monoid(OpBase):
                 UINT16,
                 UINT32,
                 UINT64,
-            ):
+            ]:
                 if dtype in cur_op.types:  # pragma: no cover (safety)
                     continue
                 cur_op.types[dtype] = BOOL
@@ -2802,7 +2802,7 @@ class Semiring(OpBase):
         cls.register_new("max_abssecond", monoid.max, "abssecond", lazy=True)
 
         # Update type information with sane coercion
-        for lname in ("any", "eq", "land", "lor", "lxnor", "lxor"):
+        for lname in ["any", "eq", "land", "lor", "lxnor", "lxor"]:
             target_name = f"{lname}_ne"
             source_name = f"{lname}_lxor"
             if not hasattr(semiring, target_name):
@@ -2841,7 +2841,7 @@ class Semiring(OpBase):
         if _supports_complex:
             position_dtypes.extend([FC32, FC64])
             notbool_dtypes.extend([FC32, FC64])
-        for lnames, rnames, *types in (
+        for lnames, rnames, *types in [
             # fmt: off
             (
                 ("any", "max", "min", "plus", "times"),
@@ -2883,7 +2883,7 @@ class Semiring(OpBase):
                 ),
             ),
             # fmt: on
-        ):
+        ]:
             for left, right in itertools.product(lnames, rnames):
                 name = f"{left}_{right}"
                 if not hasattr(semiring, name):
@@ -2899,7 +2899,7 @@ class Semiring(OpBase):
                             cur_op.coercions[dtype] = target_type
 
         # Handle a few boolean cases
-        for opname, targetname in (
+        for opname, targetname in [
             ("max_first", "lor_first"),
             ("max_second", "lor_second"),
             ("max_land", "lor_land"),
@@ -2910,7 +2910,7 @@ class Semiring(OpBase):
             ("min_land", "land_land"),
             ("min_lor", "land_lor"),
             ("min_lxor", "land_lxor"),
-        ):
+        ]:
             cur_op = getattr(semiring, opname)
             target = getattr(semiring, targetname)
             if BOOL in cur_op.types or BOOL not in target.types:  # pragma: no cover (safety)
@@ -3406,6 +3406,6 @@ def aggregator_from_string(string):
     return _from_string(string, agg, _str_to_agg, "sum[int]")
 
 
-from .. import agg  # noqa isort:skip
+from .. import agg  # noqa: E402 isort:skip
 
 agg.from_string = aggregator_from_string

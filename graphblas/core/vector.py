@@ -1511,7 +1511,7 @@ class Vector(BaseType):
             "reposition",
             None,
             [self, _reposition, (indices, chunk)],  # [*expr_args, func, args]
-            expr_repr="{0.name}.reposition(%d)" % offset,
+            expr_repr=f"{{0.name}}.reposition({offset})",
             size=size,
             dtype=self.dtype,
         )
@@ -1606,7 +1606,7 @@ class Vector(BaseType):
                 else:
                     cfunc_name = "GrB_Vector_assign"
                     mask = _vanilla_subassign_mask(self, mask, idx, replace, opts)
-                expr_repr = "[[{2._expr_name} elements]](%s) = {0.name}" % mask.name
+                expr_repr = "[[{2._expr_name} elements]]" f"({mask.name})" " = {0.name}"
             else:
                 # v(m)[I] << w
                 # v[I] << w
@@ -1698,7 +1698,7 @@ class Vector(BaseType):
                     else:
                         cfunc_name = "GrB_Vector_assign_Scalar"
                         mask = _vanilla_subassign_mask(self, mask, idx, replace, opts)
-                expr_repr = "[[{2._expr_name} elements]](%s) = {0._expr_name}" % mask.name
+                expr_repr = "[[{2._expr_name} elements]]" f"({mask.name})" " = {0._expr_name}"
             else:
                 # v(m)[I] << c
                 # v[I] << c
@@ -1989,4 +1989,4 @@ utils._output_types[VectorIndexExpr] = Vector
 utils._output_types[VectorExpression] = Vector
 
 # Import matrix to import infix to import infixmethods, which has side effects
-from . import matrix  # noqa isort:skip
+from . import matrix  # noqa: E402, F401 isort:skip

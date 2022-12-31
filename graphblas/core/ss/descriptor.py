@@ -147,7 +147,7 @@ def get_descriptor(**opts):
     Descriptor or None
     """
     if not opts or all(val is False or val is None for val in opts.values()):
-        return None
+        return
     config = _DescriptorConfig()
     desc = config._parent
     if "compression" in opts or "compression_level" in opts:

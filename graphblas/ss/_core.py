@@ -58,11 +58,9 @@ def diag(x, k=0, dtype=None, *, name=None, **opts):
         rv.ss.build_diag(x, k)
     else:
         if k.value < 0:
-            size = min(x._nrows + k.value, x._ncols)
+            size = max(0, min(x._nrows + k.value, x._ncols))
         else:
-            size = min(x._ncols - k.value, x._nrows)
-        if size < 0:
-            size = 0
+            size = max(0, min(x._ncols - k.value, x._nrows))
         rv = Vector(dtype, size=size, name=name)
         rv.ss.build_diag(x, k, **opts)
     return rv

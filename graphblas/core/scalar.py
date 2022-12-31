@@ -322,7 +322,7 @@ class Scalar(BaseType):
             16
         """
         if self._is_empty:
-            return None
+            return
         is_udt = self.dtype._is_udt
         if self._is_cscalar:
             scalar = self

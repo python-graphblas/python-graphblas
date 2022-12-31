@@ -3535,9 +3535,9 @@ def test_delete_via_scalar(A):
 @pytest.mark.skipif("not suitesparse")
 def test_ss_iteration(A):
     B = Matrix(int, 2, 2)
-    assert list(B.ss.iterkeys()) == []
-    assert list(B.ss.itervalues()) == []
-    assert list(B.ss.iteritems()) == []
+    assert not list(B.ss.iterkeys())
+    assert not list(B.ss.itervalues())
+    assert not list(B.ss.iteritems())
     rows, columns, values = A.to_coo()
     assert sorted(zip(rows, columns)) == sorted(A.ss.iterkeys())
     assert sorted(values) == sorted(A.ss.itervalues())
@@ -3553,9 +3553,9 @@ def test_ss_iteration(A):
     assert A.ss.format == "csr"
     assert len(list(A.ss.iterkeys(3))) == N - 3
     assert len(list(A.ss.iterkeys(-3))) == 3
-    assert len(list(A.ss.itervalues(N))) == 0
-    assert len(list(A.ss.iteritems(N + 1))) == 0
-    assert len(list(A.ss.iterkeys(N + 2))) == 0
+    assert not list(A.ss.itervalues(N))
+    assert not list(A.ss.iteritems(N + 1))
+    assert not list(A.ss.iterkeys(N + 2))
     assert len(list(A.ss.iterkeys(-N))) == N
     assert len(list(A.ss.itervalues(-N - 1))) == N
     assert next(A.ss.iterkeys()) in A

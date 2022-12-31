@@ -411,10 +411,7 @@ class ss:
             lib.GxB_Iterator_free(it_ptr)
             raise _error_code_lookup[info]("Matrix iterator failed to attach")
         if seek < 0:
-            p = lib.GxB_Matrix_Iterator_getpmax(it)
-            seek += p
-            if seek < 0:
-                seek = 0
+            seek = max(0, seek + lib.GxB_Matrix_Iterator_getpmax(it))
         info = lib.GxB_Matrix_Iterator_seek(it, seek)
         if info != success:
             lib.GxB_Iterator_free(it_ptr)
@@ -1061,7 +1058,7 @@ class ss:
             }
             if raw:
                 rv["nvec"] = nvec
-        elif format == "bitmapr" or format == "bitmapc":
+        elif format in {"bitmapr", "bitmapc"}:
             if format == "bitmapr":
                 cfunc = getattr(lib, f"GxB_Matrix_{method}_BitmapR")
             else:
@@ -1117,7 +1114,7 @@ class ss:
             if raw:
                 rv["nrows"] = nrows
                 rv["ncols"] = ncols
-        elif format == "fullr" or format == "fullc":
+        elif format in {"fullr", "fullc"}:
             if format == "fullr":
                 cfunc = getattr(lib, f"GxB_Matrix_{method}_FullR")
             else:
@@ -3417,7 +3414,7 @@ class ss:
                     raise TypeError("Cannot provide both `row_indices` and `col_indices`")
                 if rows is not None and cols is not None:
                     raise TypeError("Cannot provide both `rows` and `cols`")
-                elif rows is None and cols is None:
+                if rows is None and cols is None:
                     if row_indices is None:
                         format = "csr"
                     else:
@@ -4586,10 +4583,9 @@ def issorted(arr):  # pragma: no cover (numba)
             cur = arr[i]
             if cur == prev:
                 continue
-            elif cur < prev:
+            if cur < prev:
                 return False
-            else:
-                prev = cur
+            prev = cur
     return True
 
 
@@ -4616,4 +4612,4 @@ def indptr_to_indices(indptr):  # pragma: no cover (numba)
     return indices
 
 
-from .prefix_scan import prefix_scan  # noqa isort:skip
+from .prefix_scan import prefix_scan  # noqa: E402 isort:skip

@@ -77,12 +77,14 @@ dependencies:
     # - pycodestyle
     # - pydot
     # - pygraphviz
+    # - pylint
     # - pytest-runner
     # - pytest-xdist
     # - python-graphviz
     # - python-igraph
     # - python-louvain
     # - pyupgrade
+    # - ruff
     # - scalene
     # - snakeviz
     # - sympy

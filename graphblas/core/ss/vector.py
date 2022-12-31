@@ -299,10 +299,7 @@ class ss:
             lib.GxB_Iterator_free(it_ptr)
             raise _error_code_lookup[info]("Vector iterator failed to attach")
         if seek < 0:
-            p = lib.GxB_Vector_Iterator_getpmax(it)
-            seek += p
-            if seek < 0:
-                seek = 0
+            seek = max(0, seek + lib.GxB_Vector_Iterator_getpmax(it))
         info = lib.GxB_Vector_Iterator_seek(it, seek)
         if info != success:
             lib.GxB_Iterator_free(it_ptr)

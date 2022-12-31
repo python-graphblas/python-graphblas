@@ -666,11 +666,9 @@ class Matrix(BaseType):
         D = select.diag(self, k).new(dtype, name="Diag_temp", **opts)
         k = k.value
         if k < 0:
-            size = min(self._nrows + k, self._ncols)
+            size = max(0, min(self._nrows + k, self._ncols))
         else:
-            size = min(self._ncols - k, self._nrows)
-        if size < 0:
-            size = 0
+            size = max(0, min(self._ncols - k, self._nrows))
         rv = Vector(dtype, size=size, name=name)
         if k == 0:
             rv(**opts) << D.reduce_rowwise(monoid.any)
@@ -2412,7 +2410,7 @@ class Matrix(BaseType):
             "reposition",
             None,
             [self, _reposition, (indices, chunk)],  # [*expr_args, func, args]
-            expr_repr="{0.name}.reposition(%d, %d)" % (row_offset, column_offset),
+            expr_repr=f"{{0.name}}.reposition({row_offset}, {column_offset})",
             nrows=nrows,
             ncols=ncols,
             dtype=self.dtype,
@@ -2565,7 +2563,9 @@ class Matrix(BaseType):
                     if is_submask:
                         # C[i, J](m) << v
                         expr_repr = (
-                            "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
+                            "[{1._expr_name}, [{3._expr_name} cols]]"
+                            f"({mask.name})"
+                            " << {0.name}"
                         )
                         if backend == "suitesparse":
                             cfunc_name = "GxB_Row_subassign"
@@ -2615,7 +2615,9 @@ class Matrix(BaseType):
                     if is_submask:
                         # C[I, j](m) << v
                         expr_repr = (
-                            "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
+                            "[{1._expr_name}, [{3._expr_name} cols]]"
+                            f"({mask.name})"
+                            " << {0.name}"
                         )
                         if backend == "suitesparse":
                             cfunc_name = "GxB_Col_subassign"
@@ -2683,7 +2685,7 @@ class Matrix(BaseType):
             if is_submask:
                 # C[I, J](M) << A
                 expr_repr = (
-                    "[[{2._expr_name} rows], [{4._expr_name} cols]](%s) << {0.name}" % mask.name
+                    "[[{2._expr_name} rows], [{4._expr_name} cols]]" f"({mask.name})" " << {0.name}"
                 )
                 if backend == "suitesparse":
                     cfunc_name = "GxB_Matrix_subassign"
@@ -2800,7 +2802,9 @@ class Matrix(BaseType):
                         value_vector = Vector(value.dtype, size=mask.parent._size, name="v_temp")
                         value_vector(**opts) << value
                         expr_repr = (
-                            "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
+                            "[{1._expr_name}, [{3._expr_name} cols]]"
+                            f"({mask.name})"
+                            " << {0.name}"
                         )
                         if backend == "suitesparse":
                             cfunc_name = "GxB_Row_subassign"
@@ -2903,8 +2907,9 @@ class Matrix(BaseType):
                                 self, mask, rowidx, colidx, replace, opts
                             )
                     expr_repr = (
-                        "[[{2._expr_name} rows], [{4._expr_name} cols]](%s) = {0._expr_name}"
-                        % mask.name
+                        "[[{2._expr_name} rows], [{4._expr_name} cols]]"
+                        f"({mask.name})"
+                        " = {0._expr_name}"
                     )
                 else:
                     # C(M)[I, J] << c
@@ -3374,4 +3379,4 @@ utils._output_types[MatrixExpression] = Matrix
 utils._output_types[TransposedMatrix] = TransposedMatrix
 
 # Import infix to import infixmethods, which has side effects
-from . import infix  # noqa isort:skip
+from . import infix  # noqa: E402, F401 isort:skip
