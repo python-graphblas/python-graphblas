@@ -10,6 +10,7 @@ import pytest
 
 import graphblas as gb
 from graphblas import backend, binary, dtypes, replace, unary
+from graphblas.exceptions import EmptyObject
 
 from .conftest import autocompute, compute
 
@@ -498,6 +499,20 @@ def test_sizeof(s):
     else:
         with pytest.raises(TypeError):
             sys.getsizeof(s)
+
+
+def test_ewise_union(s):
+    t = Scalar(int)
+    result = s.ewise_union(t, binary.plus, 10, 20).new()
+    assert result == 25
+    with pytest.raises(EmptyObject):
+        s.ewise_union(t, binary.plus, 10, t).new()
+    result = s.ewise_union(s, binary.plus, 10, 20).new()
+    assert result == 10
+    result = t.ewise_union(t, binary.plus, 10, 20).new()
+    assert result.is_empty
+    with pytest.raises(EmptyObject):
+        t.ewise_union(t, binary.plus, t, t).new()
 
 
 @pytest.mark.skipif("not suitesparse")

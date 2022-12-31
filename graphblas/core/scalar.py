@@ -27,6 +27,17 @@ def _scalar_index(name):
     return self
 
 
+def _s_union_s(updater, left, right, left_default, right_default, op, dtype):
+    opts = updater.opts
+    new_left = left.dup(dtype, clear=True)
+    new_left(**opts) << binary.second(right, left_default)
+    new_left(**opts) << binary.first(left | new_left)
+    new_right = right.dup(dtype, clear=True)
+    new_right(**opts) << binary.second(left, right_default)
+    new_right(**opts) << binary.first(right | new_right)
+    updater << op(new_left & new_right)
+
+
 class Scalar(BaseType):
     """Create a new GraphBLAS Sparse Scalar.
 
@@ -711,6 +722,17 @@ class Scalar(BaseType):
                 method_name,
                 "GxB_Vector_eWiseUnion",
                 [self._as_vector(), left, other._as_vector(), right],
+                op=op,
+                expr_repr=expr_repr,
+                is_cscalar=False,
+                scalar_as_vector=True,
+            )
+        else:
+            dtype = unify(defaults_dtype, args_dtype)
+            expr = ScalarExpression(
+                method_name,
+                None,
+                [self, left, other, right, _s_union_s, (self, other, left, right, op, dtype)],
                 op=op,
                 expr_repr=expr_repr,
                 is_cscalar=False,
