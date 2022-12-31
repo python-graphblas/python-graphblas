@@ -58,11 +58,11 @@ jobs:
           auto-activate-base: false
       - name: Update env
         run: |
-          mamba install -c conda-forge pytest coverage black flake8 \
-          coveralls=3.3.1 pytest-randomly flake8-comprehensions flake8-bugbear
+          mamba install -c conda-forge \
+              pytest coverage coveralls=3.3.1 pytest-randomly black \
+              pandas numba scipy networkx cffi donfig pyyaml awkward
       - name: Build extension module
         run: |
-          mamba install -c conda-forge pandas numba scipy networkx cffi donfig pyyaml awkward
           if [[ ${{ matrix.cfg.sourcetype }} == "wheel" ]]; then
               pip install suitesparse-graphblas
           else
@@ -114,10 +114,6 @@ jobs:
           coverage run -a --branch -m graphblas.core.infixmethods
           git diff --exit-code
           coverage xml
-      - name: Style Checks
-        run: |
-          flake8
-          black . --check --diff
       - name: Coverage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
