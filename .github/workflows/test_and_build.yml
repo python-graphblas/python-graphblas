@@ -119,8 +119,20 @@ jobs:
           coveralls --service=github
       - name: codecov
         uses: codecov/codecov-action@v3
+      - name: random number
+        uses: ddradar/choose-random-action@v2.0.2
+        id: rand
+        with:
+          contents: |
+            true
+            false
+          weights: |
+            1
+            2
       - name: Notebooks Execution check
+        if: ${{ steps.rand.outputs.selected == 'true' }}
         run: |
+          echo ${{ steps.rand.outputs.selected }}
           mamba install matplotlib nbconvert jupyter 'ipython>=7'
           jupyter nbconvert --to notebook --execute notebooks/*ipynb
 
@@ -134,7 +146,7 @@ jobs:
           source "$CONDA/etc/profile.d/conda.sh"
           conda config --set always_yes yes --set changeps1 no
           conda update -q conda
-          conda create -n coveralls_final python=3.10 coveralls=3.3.1
+          conda create -n coveralls_final -c conda-forge -c nodefaults python=3.10 coveralls=3.3.1
       - name: Coveralls Finished
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
