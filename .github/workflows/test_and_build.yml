@@ -58,8 +58,8 @@ jobs:
           auto-activate-base: false
       - name: Update env
         run: |
-          mamba install pytest coverage coveralls=3.3.1 pytest-randomly black \
-              pandas numba scipy networkx cffi donfig pyyaml awkward
+          mamba install pytest coverage "coveralls>=3.3.1" pytest-randomly black \
+            pandas numba scipy networkx cffi donfig pyyaml awkward
       - name: Build extension module
         run: |
           if [[ ${{ matrix.cfg.sourcetype }} == "wheel" ]]; then
@@ -129,9 +129,8 @@ jobs:
             1
             2
       - name: Notebooks Execution check
-        if: ${{ steps.rand.outputs.selected }}
+        if: ${{ steps.rand.outputs.selected == 'true' }}
         run: |
-          echo ${{ steps.rand.outputs.selected }}
           mamba install matplotlib nbconvert jupyter 'ipython>=7'
           jupyter nbconvert --to notebook --execute notebooks/*ipynb
 
