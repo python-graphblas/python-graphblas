@@ -122,8 +122,12 @@ jobs:
         uses: ddradar/choose-random-action@v2.0.2
         id: rand
         with:
-          contents: [true, false]
-          weights: [1, 2]
+          contents: |
+            true
+            false
+          weights: |
+            1
+            2
       - name: Notebooks Execution check
         if: ${{ steps.rand.outputs.selected }}
         run: |
