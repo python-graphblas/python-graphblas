@@ -60,7 +60,7 @@ jobs:
         run: |
           mamba config --show
           mamba install \
-              pytest coverage 'coveralls>=3.3.1' pytest-randomly black \
+              pytest coverage coveralls=3.3.1 pytest-randomly black \
               pandas numba scipy networkx cffi donfig pyyaml awkward
       - name: Build extension module
         run: |
@@ -134,7 +134,7 @@ jobs:
           source "$CONDA/etc/profile.d/conda.sh"
           conda config --set always_yes yes --set changeps1 no
           conda update -q conda
-          conda create -n coveralls_final python=3.10 'coveralls>=3.3.1'
+          conda create -n coveralls_final python=3.10 coveralls=3.3.1
       - name: Coveralls Finished
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -142,3 +142,4 @@ jobs:
           source "$CONDA/etc/profile.d/conda.sh"
           conda activate coveralls_final
           coveralls --finish
+          which mamba  # Do we have mamba available?
