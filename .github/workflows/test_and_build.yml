@@ -58,8 +58,7 @@ jobs:
           auto-activate-base: false
       - name: Update env
         run: |
-          mamba install pytest coverage "coveralls>=3.3.1" pytest-randomly black \
-            pandas numba scipy networkx cffi donfig pyyaml awkward
+          mamba install pytest coverage "coveralls>=3.3.1" pytest-randomly black pandas numba scipy networkx cffi donfig pyyaml awkward
       - name: Build extension module
         run: |
           if [[ ${{ matrix.cfg.sourcetype }} == "wheel" ]]; then
