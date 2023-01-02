@@ -57,6 +57,7 @@ class ScalarInfixExpr(InfixExprBase):
         expr = self._to_expr()
         return expr.new(dtype, is_cscalar=is_cscalar, name=name, **opts)
 
+    @wrapdoc(Scalar.dup)
     def dup(self, dtype=None, *, clear=False, is_cscalar=False, name=None, **opts):
         if dtype is None:
             dtype = self.dtype
