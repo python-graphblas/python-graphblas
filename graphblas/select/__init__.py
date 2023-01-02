@@ -45,10 +45,14 @@ def _resolve_expr(expr, callname, opname):
             thunk -= 1
         if method not in globals():
             raise ValueError(f"Unknown or unregistered select method: {method}")
-    if tensor._parent is not None:
+    if expr._is_scalar:
         # Handle ScalarExpressions that change their arguments to Vector
-        tensor = tensor._parent
-        thunk = thunk._parent
+        if tensor._parent is not None:  # e.g., suitesparse
+            tensor = tensor._parent
+            thunk = thunk._parent
+        else:  # e.g., suitesparse-vanilla
+            tensor = tensor[0].new()
+            thunk = thunk[0].new()
     return globals()[method](tensor, thunk)
 
 

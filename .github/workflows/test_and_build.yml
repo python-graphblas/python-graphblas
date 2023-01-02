@@ -117,8 +117,8 @@ jobs:
           coveralls --service=github
       - name: codecov
         uses: codecov/codecov-action@v3
-      # Randomly test notebooks 1/3 of the time
-      - name: random number
+      # Randomly test notebooks 1/4 of the time
+      - name: RNG for running notebooks
         uses: ddradar/choose-random-action@v2.0.2
         id: rand
         with:
@@ -127,7 +127,7 @@ jobs:
             false
           weights: |
             1
-            2
+            3
       - name: Notebooks Execution check
         if: ${{ steps.rand.outputs.selected == 'true' }}
         run: |
