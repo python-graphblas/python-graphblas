@@ -102,7 +102,6 @@ def _call_op(op, left, right=None, thunk=None, **kwargs):
 
     if left_type is Scalar:
         if thunk is not None:
-            1 / 0  # XXX TODO
             return left.select(op, thunk=thunk, **kwargs)
         return left.apply(op, right=right, **kwargs)
     if right_type is Scalar:
@@ -113,7 +112,6 @@ def _call_op(op, left, right=None, thunk=None, **kwargs):
         pass
     else:
         if thunk is not None:
-            1 / 0  # XXX TODO
             return left_scalar.select(op, thunk=thunk, **kwargs)
         return left_scalar.apply(op, right=right, **kwargs)
     raise TypeError(

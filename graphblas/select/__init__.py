@@ -21,13 +21,12 @@ def __getattr__(key):
 
 
 def _resolve_expr(expr, callname, opname):
-    from ..core.matrix import MatrixExpression
-    from ..core.vector import VectorExpression
+    from ..core.base import BaseExpression
 
-    if not isinstance(expr, (VectorExpression, MatrixExpression)):
+    if not isinstance(expr, BaseExpression):
         raise TypeError(
-            f"Expected VectorExpression or MatrixExpression; found {type(expr)}\n"
-            f"Typical usage: select.{callname}(x <= 5)"
+            f"Expected ScalarExpression, VectorExpression, or MatrixExpression; "
+            f"found {type(expr)}\nTypical usage: select.{callname}(x <= 5)"
         )
     tensor = expr.args[0]
     thunk = expr.args[1]
@@ -46,6 +45,10 @@ def _resolve_expr(expr, callname, opname):
             thunk -= 1
         if method not in globals():
             raise ValueError(f"Unknown or unregistered select method: {method}")
+    if tensor._parent is not None:
+        # Handle ScalarExpressions that change their arguments to Vector
+        tensor = tensor._parent
+        thunk = thunk._parent
     return globals()[method](tensor, thunk)
 
 

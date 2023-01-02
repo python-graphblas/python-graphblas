@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import backend, binary, dtypes, replace, unary
+from graphblas import backend, binary, dtypes, monoid, replace, select, unary
 from graphblas.exceptions import EmptyObject
 
 from .conftest import autocompute, compute
@@ -507,12 +507,26 @@ def test_ewise_union(s):
     assert result == 25
     with pytest.raises(EmptyObject):
         s.ewise_union(t, binary.plus, 10, t).new()
-    result = s.ewise_union(s, binary.plus, 10, 20).new()
+    result = s.ewise_union(s, monoid.plus, 10, 20).new()
     assert result == 10
     result = t.ewise_union(t, binary.plus, 10, 20).new()
     assert result.is_empty
     with pytest.raises(EmptyObject):
         t.ewise_union(t, binary.plus, t, t).new()
+    v = Vector(int, 2)
+    with pytest.raises(TypeError, match="Literal scalars also"):
+        s.ewise_union(v, binary.plus, 10, 20)
+    with pytest.raises(TypeError, match="Literal scalars also"):
+        s.ewise_union(t, binary.plus, v, 20)
+    with pytest.raises(TypeError, match="Literal scalars also"):
+        s.ewise_union(t, binary.plus, 10, v)
+
+
+def test_select(s):
+    assert select.value(s < 10).new() == s
+    assert select.value(s > 10).new().is_empty
+    assert select.valueeq(s, 5).new() == s
+    assert select.valuene(5, s).new().is_empty
 
 
 @pytest.mark.skipif("not suitesparse")

@@ -2741,7 +2741,7 @@ class Matrix(BaseType):
                                         vals = Vector.from_coo(
                                             np.arange(shape[0]), values, dtype, size=shape[0]
                                         )
-                                except Exception:
+                                except Exception:  # pragma: no cover (safety)
                                     vals = None
                                 else:
                                     if dtype.np_type.subdtype is not None:
