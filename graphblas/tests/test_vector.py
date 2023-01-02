@@ -732,6 +732,9 @@ def test_select(v):
     w7 = v.select("==").new()
     expected = Vector.from_coo([6], 0)
     assert w7.isequal(expected)
+    w8 = select.index(v >= 4).new()
+    expected = Vector.from_coo([4, 6], [2, 0], size=7)
+    assert w8.isequal(expected)
 
 
 @autocompute

@@ -522,11 +522,23 @@ def test_ewise_union(s):
         s.ewise_union(t, binary.plus, 10, v)
 
 
+def test_ewise_mult_add(s):
+    assert s.ewise_add(s).new() == 10
+    assert s.ewise_mult(s).new() == 25
+    v = Vector(int, 2)
+    with pytest.raises(TypeError, match="Literal scalars also"):
+        s.ewise_add(v)
+    with pytest.raises(TypeError, match="Literal scalars also"):
+        s.ewise_mult(v)
+
+
 def test_select(s):
     assert select.value(s < 10).new() == s
     assert select.value(s > 10).new().is_empty
     assert select.valueeq(s, 5).new() == s
     assert select.valuene(5, s).new().is_empty
+    with pytest.raises(TypeError):
+        select.value(s | s)
 
 
 @pytest.mark.skipif("not suitesparse")

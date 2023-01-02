@@ -43,7 +43,7 @@ def _resolve_expr(expr, callname, opname):
         elif expr.op.name == "ge":
             method = f"{opname}gt"
             thunk -= 1
-        if method not in globals():
+        if method not in globals():  # pragma: no cover (sanity)
             raise ValueError(f"Unknown or unregistered select method: {method}")
     if expr._is_scalar:
         # Handle ScalarExpressions that change their arguments to Vector
