@@ -4,6 +4,7 @@ version: 2
 
 sphinx:
   configuration: docs/conf.py
+  fail_on_warning: True
 
 # Try to make build faster with mamba. See:
 # https://docs.readthedocs.io/en/stable/guides/conda.html#making-builds-faster-with-mamba
