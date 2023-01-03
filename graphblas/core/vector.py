@@ -1607,7 +1607,11 @@ class Vector(BaseType):
                 else:
                     cfunc_name = "GrB_Vector_assign"
                     mask = _vanilla_subassign_mask(self, mask, idx, replace, opts)
-                expr_repr = "[[{2._expr_name} elements]]" f"({mask.name})" " = {0.name}"
+                expr_repr = (
+                    "[[{2._expr_name} elements]]"
+                    f"({mask.name})"  # fmt: skip
+                    " = {0.name}"
+                )
             else:
                 # v(m)[I] << w
                 # v[I] << w
@@ -1699,7 +1703,11 @@ class Vector(BaseType):
                     else:
                         cfunc_name = "GrB_Vector_assign_Scalar"
                         mask = _vanilla_subassign_mask(self, mask, idx, replace, opts)
-                expr_repr = "[[{2._expr_name} elements]]" f"({mask.name})" " = {0._expr_name}"
+                expr_repr = (
+                    "[[{2._expr_name} elements]]"
+                    f"({mask.name})"  # fmt: skip
+                    " = {0._expr_name}"
+                )
             else:
                 # v(m)[I] << c
                 # v[I] << c
@@ -1885,8 +1893,7 @@ class VectorExpression(BaseExpression):
     inner = wrapdoc(Vector.inner)(property(automethods.inner))
     isclose = wrapdoc(Vector.isclose)(property(automethods.isclose))
     isequal = wrapdoc(Vector.isequal)(property(automethods.isequal))
-    name = wrapdoc(Vector.name)(property(automethods.name))
-    name = name.setter(automethods._set_name)
+    name = wrapdoc(Vector.name)(property(automethods.name)).setter(automethods._set_name)
     nvals = wrapdoc(Vector.nvals)(property(automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(automethods.reduce))
@@ -1968,8 +1975,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     inner = wrapdoc(Vector.inner)(property(automethods.inner))
     isclose = wrapdoc(Vector.isclose)(property(automethods.isclose))
     isequal = wrapdoc(Vector.isequal)(property(automethods.isequal))
-    name = wrapdoc(Vector.name)(property(automethods.name))
-    name = name.setter(automethods._set_name)
+    name = wrapdoc(Vector.name)(property(automethods.name)).setter(automethods._set_name)
     nvals = wrapdoc(Vector.nvals)(property(automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(automethods.reduce))

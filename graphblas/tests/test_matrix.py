@@ -1799,13 +1799,11 @@ def test_isclose(A, v):
         [3.0, 2.0, 3.0, 1.0, 5.0, 3.0, 7.0, 8.0, 3.0, 1.0, 7.0, 4.0],
     )
     assert not C4.isclose(A, check_dtype=True), "different datatypes are not equal"
-    # fmt: off
     C5 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
-        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],  # fmt: skip
         [3.0, 2.0, 3.0, 1.0, 5.0, 3.000000000000000001, 7.0, 8.0, 3.0, 1 - 1e-11, 7.0, 4.0],
     )
-    # fmt: on
     assert C5.isclose(A)
     C6 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],

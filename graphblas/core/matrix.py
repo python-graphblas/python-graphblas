@@ -2685,7 +2685,9 @@ class Matrix(BaseType):
             if is_submask:
                 # C[I, J](M) << A
                 expr_repr = (
-                    "[[{2._expr_name} rows], [{4._expr_name} cols]]" f"({mask.name})" " << {0.name}"
+                    "[[{2._expr_name} rows], [{4._expr_name} cols]]"
+                    f"({mask.name})"  # fmt: skip
+                    " << {0.name}"
                 )
                 if backend == "suitesparse":
                     cfunc_name = "GxB_Matrix_subassign"
@@ -3099,8 +3101,7 @@ class MatrixExpression(BaseExpression):
     kronecker = wrapdoc(Matrix.kronecker)(property(automethods.kronecker))
     mxm = wrapdoc(Matrix.mxm)(property(automethods.mxm))
     mxv = wrapdoc(Matrix.mxv)(property(automethods.mxv))
-    name = wrapdoc(Matrix.name)(property(automethods.name))
-    name = name.setter(automethods._set_name)
+    name = wrapdoc(Matrix.name)(property(automethods.name)).setter(automethods._set_name)
     nvals = wrapdoc(Matrix.nvals)(property(automethods.nvals))
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(automethods.reduce_rowwise))
@@ -3196,8 +3197,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     kronecker = wrapdoc(Matrix.kronecker)(property(automethods.kronecker))
     mxm = wrapdoc(Matrix.mxm)(property(automethods.mxm))
     mxv = wrapdoc(Matrix.mxv)(property(automethods.mxv))
-    name = wrapdoc(Matrix.name)(property(automethods.name))
-    name = name.setter(automethods._set_name)
+    name = wrapdoc(Matrix.name)(property(automethods.name)).setter(automethods._set_name)
     nvals = wrapdoc(Matrix.nvals)(property(automethods.nvals))
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(automethods.reduce_rowwise))

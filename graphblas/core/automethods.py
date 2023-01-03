@@ -466,9 +466,13 @@ def _main():
     lines = []
     lines.append("    _get_value = automethods._get_value")
     for name in sorted(common | scalar):
-        lines.append(f"    {name} = wrapdoc(Scalar.{name})(property(automethods.{name}))")
         if name == "name":
-            lines.append("    name = name.setter(automethods._set_name)")
+            lines.append(
+                "    name = wrapdoc(Scalar.name)(property(automethods.name))"
+                ".setter(automethods._set_name)"
+            )
+        else:
+            lines.append(f"    {name} = wrapdoc(Scalar.{name})(property(automethods.{name}))")
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | scalar_raises):
         lines.append(f"    {name} = Scalar.{name}")
@@ -497,9 +501,15 @@ def _main():
             indent = "    "
         else:
             indent = ""
-        lines.append(f"    {indent}{name} = wrapdoc(Vector.{name})(property(automethods.{name}))")
         if name == "name":
-            lines.append("    name = name.setter(automethods._set_name)")
+            lines.append(
+                "    name = wrapdoc(Vector.name)(property(automethods.name))"
+                ".setter(automethods._set_name)"
+            )
+        else:
+            lines.append(
+                f"    {indent}{name} = wrapdoc(Vector.{name})(property(automethods.{name}))"
+            )
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | vector_matrix_raises):
         lines.append(f"    {name} = Vector.{name}")
@@ -520,9 +530,15 @@ def _main():
             indent = "    "
         else:
             indent = ""
-        lines.append(f"    {indent}{name} = wrapdoc(Matrix.{name})(property(automethods.{name}))")
         if name == "name":
-            lines.append("    name = name.setter(automethods._set_name)")
+            lines.append(
+                "    name = wrapdoc(Matrix.name)(property(automethods.name))"
+                ".setter(automethods._set_name)"
+            )
+        else:
+            lines.append(
+                f"    {indent}{name} = wrapdoc(Matrix.{name})(property(automethods.{name}))"
+            )
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | vector_matrix_raises):
         lines.append(f"    {name} = Matrix.{name}")

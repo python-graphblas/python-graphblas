@@ -1297,10 +1297,8 @@ class IndexUnaryOp(OpBase):
             re.compile("^GxB_(VALUEEQ|VALUENE)_(FC32|FC64)$"),
         ],
     }
-    # fmt: off
     _positional = {"tril", "triu", "diag", "offdiag", "colle", "colgt", "rowle", "rowgt",
-                   "rowindex", "colindex"}
-    # fmt: on
+                   "rowindex", "colindex"}  # fmt: skip
 
     @classmethod
     def _build(cls, name, func, *, is_udt=False, anonymous=False):

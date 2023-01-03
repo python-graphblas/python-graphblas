@@ -6,35 +6,55 @@ line-length = 100
 target-version = ["py38", "py39", "py310", "py311"]
 
 [tool.ruff]
+# https://github.com/charliermarsh/ruff/
 line-length = 100
 target-version = "py38"
 select = [
     "F",  # pyflakes
     "E",  # pycodestyle Error
     "W",  # pycodestyle Warning
+    # "C90",  # mccabe
+    # "I",  # isort
+    # "D",  # pydocstyle
     "UP",  # pyupgrade
+    # "N",  # pep8-naming
     "YTT",  # flake8-2020
+    # "ANN",  # flake8-annotations
     "S",  # bandit
+    # "BLE",  # flake8-blind-except
+    # "FBT",  # flake8-boolean-trap
     "B",  # flake8-bugbear
+    # "A",  # flake8-builtins
     "C4",  # flake8-comprehensions
     "T10",  # flake8-debugger
+    "ISC",  # flake8-implicit-str-concat
+    # "ICN",  # flake8-import-conventions
+    "T20",   # flake8-print
+    # "PT",  # flake8-pytest-style
     "Q",  # flake8-quotes
+    # "RET",  # flake8-return
     "SIM",  # flake8-simplify
+    # "TID",  # flake8-tidy-imports
+    # "ARG",  # flake8-unused-arguments
     "DTZ",  # flake8-datetimez
+    # "ERA",  # eradicate
+    # "PD",  # pandas-vet
     "PGH",  # pygrep-hooks
     "PLC",  # pylint Convention
     "PLE",  # pylint Error
     "PLR",  # pylint Refactor
     "PLW",  # pylint Warning
+    "PIE",  # flake8-pie
     "RUF",  # ruff-specific rules
 ]
 exclude = [
     "versioneer.py",
+    "graphblas/_version.py",
 ]
 [tool.ruff.per-file-ignores]
 "graphblas/_version.py" = ["S101"]
 "graphblas/core/operator.py" = ["S102"]
-"graphblas/tests/*py" = ["S101"]
+"graphblas/tests/*py" = ["S101", "T201"]
 "graphblas/tests/test_dtype.py" = ["UP003"]
 "graphblas/tests/test_formatting.py" = ["E501"]
 "scripts/create_pickle.py" = ["F403", "F405"]
