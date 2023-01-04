@@ -2440,17 +2440,17 @@ def test_ss_import_export_auto(A, do_iso, methods):
                 d = C2.ss.unpack(format, raw=raw)
             if in_method == "import":
 
-                def import_func(x, import_name, **kwargs):
+                def import_func2(x, import_name, **kwargs):
                     return getattr(Matrix.ss, f"import_{import_name}")(**kwargs)
 
             else:
 
-                def import_func(x, import_name, **kwargs):
+                def import_func2(x, import_name, **kwargs):
                     getattr(x.ss, f"pack_{import_name}")(**kwargs)
                     return x
 
             d["format"] = import_format
-            other = import_func(C2, import_name, take_ownership=take_ownership, **d)
+            other = import_func2(C2, import_name, take_ownership=take_ownership, **d)
             if format == "fullc" and raw and import_format is None and import_name == "any":
                 # It's 1d, so we can't tell we're column-oriented w/o format keyword
                 if do_iso:

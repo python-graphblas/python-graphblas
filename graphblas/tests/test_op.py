@@ -1182,10 +1182,10 @@ def test_udt():
     assert udt not in badunary
     assert int not in badunary
 
-    def badfunc(x, y):  # pragma: no cover (numba)
+    def badfunc2(x, y):  # pragma: no cover (numba)
         return BreakCompile(x)
 
-    badbinary = BinaryOp.register_anonymous(badfunc, is_udt=True)
+    badbinary = BinaryOp.register_anonymous(badfunc2, is_udt=True)
     assert udt not in badbinary
     assert int not in badbinary
 

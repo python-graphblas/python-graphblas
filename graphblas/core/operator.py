@@ -650,7 +650,7 @@ class ParameterizedBinaryOp(ParameterizedUdf):
             binop._monoid = binop  # temporary!
             try:
                 # If this call is successful, then it will set `binop._monoid`
-                self._monoid(*args, **kwargs)
+                self._monoid(*args, **kwargs)  # pylint: disable=not-callable
             except Exception:
                 binop._monoid = None
             # assert binop._monoid is not binop
@@ -1807,7 +1807,7 @@ def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None, *, include_ind
         f"{zarray}{xarray}{yarray}"
         f"    {zname} = {BL}numba_func({xname}{rcidx}{yname}){BR}\n"
     )
-    exec(text, d)
+    exec(text, d)  # pylint: disable=exec-used
     return d["wrapper"], wrapper_sig
 
 

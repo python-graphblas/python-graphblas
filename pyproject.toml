@@ -65,21 +65,13 @@ py-version = "3.8"
 ignore-paths = ["graphblas/_version.py", "versioneer.py"]
 disable = [
     # Error
-    "assigning-non-slot",
+    "assigning-non-slot",  # almost passes
     "assignment-from-no-return",
-    "function-redefined",
-    "missing-kwoa",
-    "no-value-for-parameter",
-    "not-callable",
-    "repeated-keyword",
-    "unexpected-special-method-signature",
-    "unsupported-delete-operation",
-    "used-before-assignment",
+    "unexpected-special-method-signature",  # almost passes
 
     # Warning
     "arguments-differ",
     "arguments-out-of-order",
-    "exec-used",
     "expression-not-assigned",
     "fixme",
     "global-statement",
@@ -93,8 +85,6 @@ disable = [
     "unspecified-encoding",
     "unused-argument",
     "unused-variable",
-    "unused-wildcard-import",
-    "wildcard-import",
 
     # Refactor
     "cyclic-import",
@@ -114,7 +104,6 @@ disable = [
     "invalid-unary-operand-type",
     "no-member",
     "no-name-in-module",
-    "not-an-iterable",
     "too-many-function-args",
     "unexpected-keyword-arg",
     # warning

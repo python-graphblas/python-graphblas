@@ -157,8 +157,8 @@ def _expect_op_message(
     )
 
 
-def _expect_op(self, op, values, **kwargs):
-    if (message := _expect_op_message(self, op, values, **kwargs)) is not None:
+def _expect_op(self, op, values, *, within, **kwargs):
+    if (message := _expect_op_message(self, op, values, within=within, **kwargs)) is not None:
         raise TypeError(message) from None
 
 

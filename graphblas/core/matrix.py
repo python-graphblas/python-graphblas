@@ -247,7 +247,8 @@ class Matrix(BaseType):
             return ScalarIndexExpr(self, resolved_indexes)
         if len(shape) == 1:
             return VectorIndexExpr(self, resolved_indexes, *shape)
-        return MatrixIndexExpr(self, resolved_indexes, *shape)
+        nrows, ncols = shape
+        return MatrixIndexExpr(self, resolved_indexes, nrows, ncols)
 
     def __setitem__(self, keys, expr, **opts):
         """Assign values to a single element, row/column, or submatrix.
