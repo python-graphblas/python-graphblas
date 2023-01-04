@@ -2118,8 +2118,7 @@ class Matrix(BaseType):
 
         Parameters
         ----------
-        op : :class:`~graphblas.core.operator.SelectOp`or
-             :class:`~graphblas.core.operator.IndexUnaryOp`
+        op : :class:`~graphblas.core.operator.SelectOp`
             Operator to apply
         thunk :
             Scalar passed to operator

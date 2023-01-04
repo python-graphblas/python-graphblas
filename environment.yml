@@ -50,6 +50,7 @@ dependencies:
     # - black
     # - black-jupyter
     # - codespell
+    # - commonmark
     # - cython
     # - cytoolz
     # - distributed
@@ -70,6 +71,7 @@ dependencies:
     # - jupyterlab
     # - line_profiler
     # - lxml
+    # - make
     # - memory_profiler
     # - netcdf4
     # - networkit
