@@ -79,6 +79,8 @@ jobs:
       - name: Unit tests
         run: |
           coverage run --branch -m pytest ${{ matrix.cfg.testopts }} -v
+      - name: Unit tests (bizarro scalars)
+        run: |
           # Run tests again with Scalars being C scalars by default
           find graphblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
             -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
@@ -87,7 +89,8 @@ jobs:
             -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
           coverage run -a --branch -m pytest ${{ matrix.cfg.testopts }} -v
           git checkout .  # Undo changes to scalar default
-
+      - name: Miscellaneous tests
+        run: |
           # Test (and cover) automatic initialization
           coverage run -a --branch graphblas/tests/test_auto_init.py
           coverage run -a --branch graphblas/tests/test_external_init.py
