@@ -20,7 +20,7 @@ try:
 except ImportError:
     try:
         import awkward as ak
-    except ImportError:
+    except ImportError:  # pragma: no cover (import)
         ak = None
 
 
