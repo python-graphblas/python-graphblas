@@ -56,9 +56,24 @@ jobs:
           channel-priority: strict
           activate-environment: graphblas
           auto-activate-base: false
+      # Randomly test up to one slow task per job (about 5% chance one group isn't run)
+      - name: RNG for tests
+        uses: ddradar/choose-random-action@v2.0.2
+        id: rand
+        with:
+          contents: |
+            slow_fast_fast
+            fast_slow_fast
+            fast_fast_slow
+            fast_fast_fast
+          weights: |
+            1
+            1
+            1
+            1
       - name: Update env
         run: |
-          mamba install pytest coverage coveralls=3.3.1 pytest-randomly black \
+          mamba install pytest coverage coveralls=3.3.1 pytest-randomly ${{ steps.rand.outputs.selected == 'fast_fast_fast' && 'black' || '' }} \
             pandas numba scipy networkx cffi donfig pyyaml awkward
       - name: Build extension module
         run: |
@@ -76,21 +91,6 @@ jobs:
               mamba install python-suitesparse-graphblas
           fi
           pip install --no-deps -e .
-      # Randomly test up to one slow task per job
-      - name: RNG for tests
-        uses: ddradar/choose-random-action@v2.0.2
-        id: rand
-        with:
-          contents: |
-            slow_fast_fast
-            fast_slow_fast
-            fast_fast_slow
-            fast_fast_fast
-          weights: |
-            1
-            1
-            1
-            1
       - name: Unit tests
         run: |
           coverage run --branch -m pytest ${{ matrix.cfg.testopts }} -v ${{ steps.rand.outputs.selected == 'slow_fast_fast' && '--runslow' || '' }}
@@ -105,6 +105,7 @@ jobs:
           coverage run -a --branch -m pytest ${{ matrix.cfg.testopts }} -v ${{ steps.rand.outputs.selected == 'fast_slow_fast' && '--runslow' || ''}}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
+        if: steps.rand.outputs.selected == 'fast_fast_fast'
         run: |
           # Test (and cover) automatic initialization
           coverage run -a --branch graphblas/tests/test_auto_init.py
@@ -120,17 +121,19 @@ jobs:
           coverage run -a --branch script.py
           rm script.py
       - name: Auto-generated code check
+        if: steps.rand.outputs.selected == 'fast_fast_fast'
         run: |
+          # This step uses `black`
           coverage run -a --branch -m graphblas.core.automethods
           coverage run -a --branch -m graphblas.core.infixmethods
           git diff --exit-code
-          coverage xml
       - name: Coverage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COVERALLS_FLAG_NAME: ${{ matrix.cfg.pyver}}/${{ matrix.cfg.testopts }}
           COVERALLS_PARALLEL: true
         run: |
+          coverage xml
           coverage report --show-missing
           coveralls --service=github
       - name: codecov
