@@ -85,7 +85,8 @@ def __ixor__(self, other):
     if (
         other_type is Vector
         and self.ndim == 2
-        or other_type not in {Vector, Matrix, TransposedMatrix}
+        or self.ndim != 0
+        and other_type not in {Vector, Matrix, TransposedMatrix}
     ):
         self << __xor__(self, other)
     elif other.dtype != BOOL:
@@ -103,7 +104,8 @@ def __ior__(self, other):
     if (
         other_type is Vector
         and self.ndim == 2
-        or other_type not in {Vector, Matrix, TransposedMatrix}
+        or self.ndim != 0
+        and other_type not in {Vector, Matrix, TransposedMatrix}
     ):
         expr = call_op(self, other, binary.lor, outer=True)
         if expr.dtype != BOOL:
@@ -171,7 +173,8 @@ def __iadd__(self, other):
     if (
         other_type is Vector
         and self.ndim == 2
-        or other_type not in {Vector, Matrix, TransposedMatrix}
+        or self.ndim != 0
+        and other_type not in {Vector, Matrix, TransposedMatrix}
     ):
         self << __add__(self, other)
     else:
@@ -385,7 +388,8 @@ def _main():
                 "    if (\n"
                 "        other_type is Vector\n"
                 "        and self.ndim == 2\n"
-                "        or other_type not in {Vector, Matrix, TransposedMatrix}\n"
+                "        or self.ndim != 0\n"
+                "        and other_type not in {Vector, Matrix, TransposedMatrix}\n"
                 "    ):\n"
                 f"        self << __{method}__(self, other)\n"
                 "    else:\n"

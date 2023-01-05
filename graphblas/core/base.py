@@ -322,10 +322,8 @@ class BaseType:
                 if expr._is_scalar and self._is_scalar:
                     # Extract element (s << v[1])
                     if accum is not None:
-                        raise TypeError(
-                            "Scalar accumulation with extract element"
-                            "--such as `s(accum=accum) << v[0]`--is not supported"
-                        )
+                        self(**opts) << self.ewise_add(expr, accum)
+                        return
                     expr.parent._extract_element(
                         expr.resolved_indexes,
                         self.dtype,
@@ -347,10 +345,8 @@ class BaseType:
                 # Simple assignment (w << v)
                 if self._is_scalar:
                     if accum is not None:
-                        raise TypeError(
-                            "Scalar update with accumulation--such as `s(accum=accum) << t`"
-                            "--is not supported"
-                        )
+                        self(**opts) << self.ewise_add(expr, accum)
+                        return
                     if opts:
                         # Ignore opts for now
                         descriptor_lookup(**opts)
@@ -371,10 +367,8 @@ class BaseType:
                     # s << (v @ v)
                     expr = expr._to_expr()
                 elif accum is not None:
-                    raise TypeError(
-                        "Scalar update with accumulation--such as `s(accum=accum) << t`"
-                        "--is not supported"
-                    )
+                    self(**opts) << self.ewise_add(expr, accum)
+                    return
                 else:
                     if opts:
                         # Ignore opts for now

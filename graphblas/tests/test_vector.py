@@ -453,10 +453,12 @@ def test_extract_fancy_scalars(v):
     assert s.dtype == dtypes.FP64
 
     t = Scalar(float)
-    with pytest.raises(TypeError, match="is not supported"):
-        t(accum=binary.plus) << s
-    with pytest.raises(TypeError, match="is not supported"):
-        t(accum=binary.plus) << 1
+    # with pytest.raises(TypeError, match="is not supported"):
+    t(accum=binary.plus) << s  # Now okay
+    assert t == 1.0
+    # with pytest.raises(TypeError, match="is not supported"):
+    t(accum=binary.plus) << 1  # Now okay
+    assert t == 2.0
     with pytest.raises(TypeError, match="Mask not allowed for Scalars"):
         t(mask=t) << s
 
@@ -468,8 +470,12 @@ def test_extract_fancy_scalars(v):
     t = Scalar(float)
     t() << v[1]
     assert t.value == 1.0
-    with pytest.raises(TypeError, match="Scalar accumulation with extract element"):
-        t(accum=binary.plus) << v[0]
+    # with pytest.raises(TypeError, match="Scalar accumulation with extract element"):
+    with pytest.raises(TypeError, match="autocompute"):
+        t(accum=binary.plus) << v[1]  # Now okay, but autocomputes
+    with gb.config.set(autocompute=True):
+        t(accum=binary.plus) << v[1]  # Now okay, but autocomputes
+    assert t == 2.0
 
 
 def test_extract_negative_indices(v):

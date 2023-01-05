@@ -231,8 +231,9 @@ def test_update(s):
         assert s == 4
     s() << 5
     assert s == 5
-    with pytest.raises(TypeError, match="is not supported"):
-        s(accum=binary.plus) << 6
+    # with pytest.raises(TypeError, match="is not supported"):
+    s(accum=binary.plus) << 6  # Now okay
+    assert s == 11
     with pytest.raises(TypeError, match="Mask not allowed for Scalars"):
         s(s)
     with pytest.raises(TypeError, match="input_mask not allowed for Scalars"):

@@ -89,13 +89,11 @@ def _call_op(op, left, right=None, thunk=None, **kwargs):
     from .matrix import Matrix, TransposedMatrix
     from .vector import Vector
 
-    left_type = output_type(left)
-    if left_type in {Vector, Matrix, TransposedMatrix}:
+    if (left_type := output_type(left)) in {Vector, Matrix, TransposedMatrix}:
         if thunk is not None:
             return left.select(op, thunk=thunk, **kwargs)
         return left.apply(op, right=right, **kwargs)
-    right_type = output_type(right)
-    if right_type in {Vector, Matrix, TransposedMatrix}:
+    if (right_type := output_type(right)) in {Vector, Matrix, TransposedMatrix}:
         return right.apply(op, left=left, **kwargs)
 
     from .scalar import Scalar, _as_scalar
