@@ -104,6 +104,7 @@ disable = [
     "invalid-unary-operand-type",
     "no-member",
     "no-name-in-module",
+    "not-an-iterable",
     "too-many-function-args",
     "unexpected-keyword-arg",
     # warning

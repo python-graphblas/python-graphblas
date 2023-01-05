@@ -4361,7 +4361,7 @@ class ss:
 @numba.njit(parallel=True)
 def argsort_values(indptr, indices, values):  # pragma: no cover (numba)
     rv = np.empty(indptr[-1], dtype=np.uint64)
-    for i in numba.prange(indptr.size - 1):  # pylint: disable=not-an-iterable
+    for i in numba.prange(indptr.size - 1):
         rv[indptr[i] : indptr[i + 1]] = indices[
             np.int64(indptr[i]) + np.argsort(values[indptr[i] : indptr[i + 1]])
         ]
@@ -4371,7 +4371,7 @@ def argsort_values(indptr, indices, values):  # pragma: no cover (numba)
 @numba.njit(parallel=True)
 def sort_values(indptr, values):  # pragma: no cover (numba)
     rv = np.empty(indptr[-1], dtype=values.dtype)
-    for i in numba.prange(indptr.size - 1):  # pylint: disable=not-an-iterable
+    for i in numba.prange(indptr.size - 1):
         rv[indptr[i] : indptr[i + 1]] = np.sort(values[indptr[i] : indptr[i + 1]])
     return rv
 
@@ -4379,7 +4379,7 @@ def sort_values(indptr, values):  # pragma: no cover (numba)
 @numba.njit(parallel=True)
 def compact_values(old_indptr, new_indptr, values):  # pragma: no cover (numba)
     rv = np.empty(new_indptr[-1], dtype=values.dtype)
-    for i in numba.prange(new_indptr.size - 1):  # pylint: disable=not-an-iterable
+    for i in numba.prange(new_indptr.size - 1):
         start = np.int64(new_indptr[i])
         offset = np.int64(old_indptr[i]) - start
         for j in range(start, new_indptr[i + 1]):
@@ -4390,7 +4390,7 @@ def compact_values(old_indptr, new_indptr, values):  # pragma: no cover (numba)
 @numba.njit(parallel=True)
 def reverse_values(indptr, values):  # pragma: no cover (numba)
     rv = np.empty(indptr[-1], dtype=values.dtype)
-    for i in numba.prange(indptr.size - 1):  # pylint: disable=not-an-iterable
+    for i in numba.prange(indptr.size - 1):
         offset = np.int64(indptr[i]) + np.int64(indptr[i + 1]) - 1
         for j in range(indptr[i], indptr[i + 1]):
             rv[j] = values[offset - j]
@@ -4407,7 +4407,7 @@ def compact_indices(indptr, k):  # pragma: no cover (numba)
         indptr = create_indptr(indptr, k)
     col_indices = np.empty(indptr[-1], dtype=np.uint64)
     N = np.int64(0)
-    for i in numba.prange(indptr.size - 1):  # pylint: disable=not-an-iterable
+    for i in numba.prange(indptr.size - 1):
         start = np.int64(indptr[i])
         deg = np.int64(indptr[i + 1]) - start
         N = max(N, deg)
@@ -4420,7 +4420,7 @@ def compact_indices(indptr, k):  # pragma: no cover (numba)
 def choose_random1(indptr):  # pragma: no cover (numba)
     choices = np.empty(indptr.size - 1, dtype=indptr.dtype)
     new_indptr = np.arange(indptr.size, dtype=indptr.dtype)
-    for i in numba.prange(indptr.size - 1):  # pylint: disable=not-an-iterable
+    for i in numba.prange(indptr.size - 1):
         idx = np.int64(indptr[i])
         deg = np.int64(indptr[i + 1]) - idx
         if deg == 1:
@@ -4457,7 +4457,7 @@ def choose_random(indptr, k):  # pragma: no cover (numba)
     # be nice to have them sorted if convenient to do so.
     new_indptr = create_indptr(indptr, k)
     choices = np.empty(new_indptr[-1], dtype=indptr.dtype)
-    for i in numba.prange(indptr.size - 1):  # pylint: disable=not-an-iterable
+    for i in numba.prange(indptr.size - 1):
         idx = np.int64(indptr[i])
         deg = np.int64(indptr[i + 1]) - idx
         if k < deg:
@@ -4538,7 +4538,7 @@ def choose_first(indptr, k):  # pragma: no cover (numba)
 
     new_indptr = create_indptr(indptr, k)
     choices = np.empty(new_indptr[-1], dtype=indptr.dtype)
-    for i in numba.prange(indptr.size - 1):  # pylint: disable=not-an-iterable
+    for i in numba.prange(indptr.size - 1):
         idx = np.int64(indptr[i])
         deg = np.int64(indptr[i + 1]) - idx
         if k < deg:
@@ -4562,7 +4562,7 @@ def choose_last(indptr, k):  # pragma: no cover (numba)
 
     new_indptr = create_indptr(indptr, k)
     choices = np.empty(new_indptr[-1], dtype=indptr.dtype)
-    for i in numba.prange(indptr.size - 1):  # pylint: disable=not-an-iterable
+    for i in numba.prange(indptr.size - 1):
         idx = np.int64(indptr[i])
         deg = np.int64(indptr[i + 1]) - idx
         if k < deg:
@@ -4607,7 +4607,7 @@ def indices_to_indptr(indices, size):  # pragma: no cover (numba)
 @njit(parallel=True)
 def indptr_to_indices(indptr):  # pragma: no cover (numba)
     indices = np.empty(indptr[-1], dtype=indptr.dtype)
-    for i in numba.prange(indptr.size - 1):  # pylint: disable=not-an-iterable
+    for i in numba.prange(indptr.size - 1):
         for j in range(indptr[i], indptr[i + 1]):
             indices[j] = i
     return indices
