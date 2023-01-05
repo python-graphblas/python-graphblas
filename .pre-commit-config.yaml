@@ -72,7 +72,12 @@ repos:
     rev: v0.0.211
     hooks:
       - id: ruff
-        args: ["--force-exclude"]
+        args: [--force-exclude]
+  - repo: https://github.com/sphinx-contrib/sphinx-lint
+    rev: v0.6.7
+    hooks:
+    - id: sphinx-lint
+      args: [--enable, all, "--disable=line-too-long,leaked-markup"]
   - repo: local
     hooks:
       # Add `--hook-stage manual` to pre-commit command to run (very slow)
@@ -82,7 +87,7 @@ repos:
         language: system
         types: [python]
         stages: [manual]
-        args: ["graphblas/"]
+        args: [graphblas/]
         pass_filenames: false
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0

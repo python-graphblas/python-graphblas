@@ -55,7 +55,7 @@ as their start and end point.
 Common ways to store a graph
 ----------------------------
 
-The most common way to store a graph is as an edge list, containing the `(start_node, end_node, weight)`.
+The most common way to store a graph is as an edge list, containing the ``(start_node, end_node, weight)``.
 
 The following graph and its edge list are shown below.
 

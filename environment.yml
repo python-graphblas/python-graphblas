@@ -92,6 +92,7 @@ dependencies:
     # - ruff
     # - scalene
     # - snakeviz
+    # - sphinx-lint
     # - sympy
     # - vim
     # - yesqa
