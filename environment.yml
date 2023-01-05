@@ -90,5 +90,6 @@ dependencies:
     # - scalene
     # - snakeviz
     # - sympy
+    # - vim
     # - yesqa
     # - zarr

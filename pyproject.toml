@@ -21,6 +21,29 @@ markers = [
     "slow: Skipped unless --runslow passed",
 ]
 
+[tool.coverage.run]
+branch = true
+source = ["graphblas"]
+omit = [
+    "graphblas/_version.py",
+    "graphblas/viz.py",  # TODO: test and get coverage for viz.py
+]
+
+[tool.coverage.report]
+ignore_errors = false
+precision = 1
+fail_under = 0
+skip_covered = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]
+
+[tool.codespell]
+ignore-words-list = "coo,ba"
+
 [tool.ruff]
 # https://github.com/charliermarsh/ruff/
 line-length = 100

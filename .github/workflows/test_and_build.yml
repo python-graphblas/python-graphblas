@@ -93,7 +93,7 @@ jobs:
           pip install --no-deps -e .
       - name: Unit tests
         run: |
-          coverage run --branch -m pytest ${{ matrix.cfg.testopts }} -v ${{ steps.rand.outputs.selected == 'slow_fast_fast' && '--runslow' || '' }}
+          coverage run -m pytest ${{ matrix.cfg.testopts }} -v ${{ steps.rand.outputs.selected == 'slow_fast_fast' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
         run: |
           # Run tests again with Scalars being C scalars by default
@@ -102,30 +102,30 @@ jobs:
             -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
             -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
             -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
-          coverage run -a --branch -m pytest ${{ matrix.cfg.testopts }} -v ${{ steps.rand.outputs.selected == 'fast_slow_fast' && '--runslow' || ''}}
+          coverage run -a -m pytest ${{ matrix.cfg.testopts }} -v ${{ steps.rand.outputs.selected == 'fast_slow_fast' && '--runslow' || ''}}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
         if: steps.rand.outputs.selected == 'fast_fast_fast'
         run: |
           # Test (and cover) automatic initialization
-          coverage run -a --branch graphblas/tests/test_auto_init.py
-          coverage run -a --branch graphblas/tests/test_external_init.py
+          coverage run -a graphblas/tests/test_auto_init.py
+          coverage run -a graphblas/tests/test_external_init.py
           # Test (and cover) lazy module loader
           echo "from graphblas.agg import count" > script.py
-          coverage run -a --branch script.py
+          coverage run -a script.py
           echo "from graphblas import agg" > script.py  # Does this still cover?
           echo "from graphblas.core import agg" >> script.py
-          coverage run -a --branch script.py
+          coverage run -a script.py
           # Tests lazy loading of lib, ffi, and NULL in gb.core
           echo "from graphblas.core import base" > script.py
-          coverage run -a --branch script.py
+          coverage run -a script.py
           rm script.py
       - name: Auto-generated code check
         if: steps.rand.outputs.selected == 'fast_fast_fast'
         run: |
           # This step uses `black`
-          coverage run -a --branch -m graphblas.core.automethods
-          coverage run -a --branch -m graphblas.core.infixmethods
+          coverage run -a -m graphblas.core.automethods
+          coverage run -a -m graphblas.core.infixmethods
           git diff --exit-code
       - name: Coverage
         env:

@@ -65,8 +65,8 @@ repos:
     hooks:
       - id: codespell
         types_or: [python, rst, markdown]
+        additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
-        args: ["--ignore-words-list=coo,ba"]
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: v0.0.211
     hooks:
