@@ -137,8 +137,16 @@ class ScalarEwiseMultExpr(ScalarInfixExpr):
     _to_expr = _ewise_mult_to_expr
 
 
+class ScalarMatMulExpr(ScalarInfixExpr):
+    __slots__ = ()
+    method_name = "inner"
+    _example_op = "plus_times"
+    _infix = "@"
+
+
 utils._output_types[ScalarEwiseAddExpr] = Scalar
 utils._output_types[ScalarEwiseMultExpr] = Scalar
+utils._output_types[ScalarMatMulExpr] = Scalar
 
 
 class VectorInfixExpr(InfixExprBase):
@@ -386,65 +394,6 @@ class MatrixMatMulExpr(MatrixInfixExpr):
 utils._output_types[MatrixEwiseAddExpr] = Matrix
 utils._output_types[MatrixEwiseMultExpr] = Matrix
 utils._output_types[MatrixMatMulExpr] = Matrix
-
-
-class ScalarMatMulExpr(ScalarInfixExpr):
-    __slots__ = ()
-    method_name = "inner"
-    _example_op = "plus_times"
-    _infix = "@"
-
-    # Begin auto-generated code: Scalar
-    __and__ = wrapdoc(Scalar.__and__)(property(automethods.__and__))
-    __array__ = wrapdoc(Scalar.__array__)(property(automethods.__array__))
-    __bool__ = wrapdoc(Scalar.__bool__)(property(automethods.__bool__))
-    __complex__ = wrapdoc(Scalar.__complex__)(property(automethods.__complex__))
-    __eq__ = wrapdoc(Scalar.__eq__)(property(automethods.__eq__))
-    __float__ = wrapdoc(Scalar.__float__)(property(automethods.__float__))
-    __index__ = wrapdoc(Scalar.__index__)(property(automethods.__index__))
-    __int__ = wrapdoc(Scalar.__int__)(property(automethods.__int__))
-    __invert__ = wrapdoc(Scalar.__invert__)(property(automethods.__invert__))
-    __ne__ = wrapdoc(Scalar.__ne__)(property(automethods.__ne__))
-    __neg__ = wrapdoc(Scalar.__neg__)(property(automethods.__neg__))
-    __or__ = wrapdoc(Scalar.__or__)(property(automethods.__or__))
-    __rand__ = wrapdoc(Scalar.__rand__)(property(automethods.__rand__))
-    __ror__ = wrapdoc(Scalar.__ror__)(property(automethods.__ror__))
-    _as_matrix = wrapdoc(Scalar._as_matrix)(property(automethods._as_matrix))
-    _as_vector = wrapdoc(Scalar._as_vector)(property(automethods._as_vector))
-    _is_empty = wrapdoc(Scalar._is_empty)(property(automethods._is_empty))
-    _name_html = wrapdoc(Scalar._name_html)(property(automethods._name_html))
-    _nvals = wrapdoc(Scalar._nvals)(property(automethods._nvals))
-    apply = wrapdoc(Scalar.apply)(property(automethods.apply))
-    ewise_add = wrapdoc(Scalar.ewise_add)(property(automethods.ewise_add))
-    ewise_mult = wrapdoc(Scalar.ewise_mult)(property(automethods.ewise_mult))
-    ewise_union = wrapdoc(Scalar.ewise_union)(property(automethods.ewise_union))
-    gb_obj = wrapdoc(Scalar.gb_obj)(property(automethods.gb_obj))
-    get = wrapdoc(Scalar.get)(property(automethods.get))
-    is_empty = wrapdoc(Scalar.is_empty)(property(automethods.is_empty))
-    isclose = wrapdoc(Scalar.isclose)(property(automethods.isclose))
-    isequal = wrapdoc(Scalar.isequal)(property(automethods.isequal))
-    name = wrapdoc(Scalar.name)(property(automethods.name)).setter(automethods._set_name)
-    nvals = wrapdoc(Scalar.nvals)(property(automethods.nvals))
-    select = wrapdoc(Scalar.select)(property(automethods.select))
-    value = wrapdoc(Scalar.value)(property(automethods.value))
-    wait = wrapdoc(Scalar.wait)(property(automethods.wait))
-    # These raise exceptions
-    __matmul__ = Scalar.__matmul__
-    __rmatmul__ = Scalar.__rmatmul__
-    __iadd__ = automethods.__iadd__
-    __iand__ = automethods.__iand__
-    __ifloordiv__ = automethods.__ifloordiv__
-    __imod__ = automethods.__imod__
-    __imul__ = automethods.__imul__
-    __ior__ = automethods.__ior__
-    __ipow__ = automethods.__ipow__
-    __isub__ = automethods.__isub__
-    __itruediv__ = automethods.__itruediv__
-    __ixor__ = automethods.__ixor__
-    # End auto-generated code: Scalar
-
-
-utils._output_types[ScalarMatMulExpr] = Scalar
 
 
 def _ewise_infix_expr(left, right, *, method, within):
