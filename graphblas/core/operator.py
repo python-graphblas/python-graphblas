@@ -3008,9 +3008,8 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
         if dtype2 is None:
             return op[dtype]
         # Handle special cases such as first and second (may have UDTs)
-        if op._custom_dtype is not None:
-            if (rv := op._custom_dtype(op, dtype, dtype2)) is not None:
-                return rv
+        if op._custom_dtype is not None and (rv := op._custom_dtype(op, dtype, dtype2)) is not None:
+            return rv
         # Generic case: try to unify the two dtypes
         try:
             return op[
