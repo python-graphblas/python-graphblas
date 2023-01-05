@@ -306,7 +306,9 @@ def test_invert():
     s = Scalar.from_value(1, dtype=bool)
     assert ~s == not_s
     assert (~s).value == not_s.value
-    assert not (s.value) == not_s.value
+    compare = s.value == not_s.value
+    assert not compare
+    assert s.value != not_s.value
     bad = Scalar(int)
     with pytest.raises(TypeError, match="The invert operator"):
         ~bad
