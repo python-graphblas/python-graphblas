@@ -5,6 +5,22 @@ requires = ["setuptools", "wheel"]
 line-length = 100
 target-version = ["py38", "py39", "py310", "py311"]
 
+[tool.isort]
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+profile = "black"
+skip_gitignore = true
+float_to_top = true
+default_section = "THIRDPARTY"
+known_first_party = "graphblas"
+line_length = 100
+
+[tool.pytest.ini_options]
+testpaths = "graphblas/tests"
+xfail_strict = true
+markers = [
+    "slow: Skipped unless --runslow passed",
+]
+
 [tool.ruff]
 # https://github.com/charliermarsh/ruff/
 line-length = 100
@@ -46,6 +62,9 @@ select = [
     "PLW",  # pylint Warning
     "PIE",  # flake8-pie
     "RUF",  # ruff-specific rules
+]
+ignore = [
+    "D203",  # 1 blank line required before class docstring
 ]
 exclude = [
     "versioneer.py",
