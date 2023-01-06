@@ -278,18 +278,23 @@ def test_scalar_to_numpy(s):
         assert a.shape == b.shape
 
 
+@autocompute
 def test_neg():
     for dtype in sorted(
-        (dtype for dtype in vars(dtypes).values() if isinstance(dtype, dtypes.DataType)),
+        (
+            dtype
+            for attr, dtype in vars(dtypes).items()
+            if isinstance(dtype, dtypes.DataType) and attr not in {"_INDEX"}
+        ),
         key=lambda x: x.name,
         reverse=random.choice([False, True]),  # used to segfault when False
     ):
         s = Scalar.from_value(1, dtype=dtype)
         empty = Scalar(dtype)
-        if dtype.name == "BOOL" or dtype.name.startswith("U") or dtype._is_udt:
-            with pytest.raises(TypeError, match="The negative operator, `-`, is not supported"):
+        if dtype._is_udt:
+            with pytest.raises(KeyError, match="ainv does not work with"):
                 -s
-            with pytest.raises(TypeError, match="The negative operator, `-`, is not supported"):
+            with pytest.raises(KeyError, match="ainv does not work with"):
                 -empty
         else:
             minus_s = Scalar.from_value(-1, dtype=dtype)
@@ -299,6 +304,7 @@ def test_neg():
             assert compute((-empty).value) is None
 
 
+@autocompute
 def test_invert():
     empty = Scalar(bool)
     assert empty == ~empty

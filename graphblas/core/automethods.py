@@ -93,10 +93,6 @@ def __int__(self):
     return self._get_value("__int__")
 
 
-def __invert__(self):
-    return self._get_value("__invert__")
-
-
 def __iter__(self):
     return self._get_value("__iter__")
 
@@ -107,10 +103,6 @@ def __matmul__(self):
 
 def __ne__(self):
     return self._get_value("__ne__")
-
-
-def __neg__(self):
-    return self._get_value("__neg__")
 
 
 def __or__(self):
@@ -373,9 +365,7 @@ def _main():
         "__float__",
         "__index__",
         "__int__",
-        "__invert__",
         "__ne__",
-        "__neg__",
         "_as_matrix",
         "_as_vector",
         "_is_empty",

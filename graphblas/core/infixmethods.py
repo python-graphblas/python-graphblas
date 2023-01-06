@@ -85,7 +85,7 @@ def __ixor__(self, other):
     if (
         other_type is Vector
         and self.ndim == 2
-        or self.ndim != 0
+        or not self._is_scalar
         and other_type not in {Vector, Matrix, TransposedMatrix}
     ):
         self << __xor__(self, other)
@@ -104,7 +104,7 @@ def __ior__(self, other):
     if (
         other_type is Vector
         and self.ndim == 2
-        or self.ndim != 0
+        or not self._is_scalar
         and other_type not in {Vector, Matrix, TransposedMatrix}
     ):
         expr = call_op(self, other, binary.lor, outer=True)
@@ -173,7 +173,7 @@ def __iadd__(self, other):
     if (
         other_type is Vector
         and self.ndim == 2
-        or self.ndim != 0
+        or not self._is_scalar
         and other_type not in {Vector, Matrix, TransposedMatrix}
     ):
         self << __add__(self, other)
@@ -301,9 +301,9 @@ for name in [
     "__xor__",
 ]:
     val = d[name]
-    if name not in {"__bool__", "__eq__", "__invert__", "__ne__", "__neg__"}:
+    if name not in {"__eq__", "__ne__"}:
         setattr(Scalar, name, val)
-        if not name.startswith("__i"):
+        if not name.startswith("__i") or name == "__invert__":
             setattr(ScalarExpression, name, val)
             setattr(ScalarInfixExpr, name, val)
             setattr(ScalarIndexExpr, name, val)
@@ -388,7 +388,7 @@ def _main():
                 "    if (\n"
                 "        other_type is Vector\n"
                 "        and self.ndim == 2\n"
-                "        or self.ndim != 0\n"
+                "        or not self._is_scalar\n"
                 "        and other_type not in {Vector, Matrix, TransposedMatrix}\n"
                 "    ):\n"
                 f"        self << __{method}__(self, other)\n"
@@ -409,9 +409,9 @@ def _main():
         "d = globals()\n"
         f"for name in {methods}:\n"
         "    val = d[name]\n"
-        "    if name not in {'__bool__', '__eq__', '__invert__', '__ne__', '__neg__'}:\n"
+        "    if name not in {'__eq__', '__ne__'}:\n"
         "        setattr(Scalar, name, val)\n"
-        "        if not name.startswith('__i'):\n"
+        "        if not name.startswith('__i') or name == '__invert__':\n"
         "            setattr(ScalarExpression, name, val)\n"
         "            setattr(ScalarInfixExpr, name, val)\n"
         "            setattr(ScalarIndexExpr, name, val)\n"

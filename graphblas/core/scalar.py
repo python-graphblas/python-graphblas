@@ -5,7 +5,7 @@ import numpy as np
 
 from .. import backend, binary, config, monoid
 from ..binary import isclose
-from ..dtypes import _INDEX, BOOL, FP64, lookup_dtype, unify
+from ..dtypes import _INDEX, FP64, lookup_dtype, unify
 from ..exceptions import EmptyObject, check_status
 from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
@@ -154,28 +154,6 @@ class Scalar(BaseType):
 
     def __complex__(self):
         return complex(self.value)
-
-    def __neg__(self):
-        dtype = self.dtype
-        if dtype.name[0] == "U" or dtype == BOOL or dtype._is_udt:
-            raise TypeError(f"The negative operator, `-`, is not supported for {dtype.name} dtype")
-        rv = Scalar(dtype, is_cscalar=self._is_cscalar, name=f"-{self.name or 's_temp'}")
-        if self._is_empty:
-            return rv
-        rv.value = -self.value
-        return rv
-
-    def __invert__(self):
-        if self.dtype != BOOL:
-            raise TypeError(
-                f"The invert operator, `~`, is not supported for {self.dtype.name} dtype.  "
-                "It is only supported for BOOL dtype."
-            )
-        rv = Scalar(BOOL, is_cscalar=self._is_cscalar, name=f"~{self.name or 's_temp'}")
-        if self._is_empty:
-            return rv
-        rv.value = not self.value
-        return rv
 
     __index__ = __int__
 
@@ -824,9 +802,7 @@ class ScalarExpression(BaseExpression):
     __float__ = wrapdoc(Scalar.__float__)(property(automethods.__float__))
     __index__ = wrapdoc(Scalar.__index__)(property(automethods.__index__))
     __int__ = wrapdoc(Scalar.__int__)(property(automethods.__int__))
-    __invert__ = wrapdoc(Scalar.__invert__)(property(automethods.__invert__))
     __ne__ = wrapdoc(Scalar.__ne__)(property(automethods.__ne__))
-    __neg__ = wrapdoc(Scalar.__neg__)(property(automethods.__neg__))
     __or__ = wrapdoc(Scalar.__or__)(property(automethods.__or__))
     __rand__ = wrapdoc(Scalar.__rand__)(property(automethods.__rand__))
     __ror__ = wrapdoc(Scalar.__ror__)(property(automethods.__ror__))
@@ -900,9 +876,7 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     __float__ = wrapdoc(Scalar.__float__)(property(automethods.__float__))
     __index__ = wrapdoc(Scalar.__index__)(property(automethods.__index__))
     __int__ = wrapdoc(Scalar.__int__)(property(automethods.__int__))
-    __invert__ = wrapdoc(Scalar.__invert__)(property(automethods.__invert__))
     __ne__ = wrapdoc(Scalar.__ne__)(property(automethods.__ne__))
-    __neg__ = wrapdoc(Scalar.__neg__)(property(automethods.__neg__))
     __or__ = wrapdoc(Scalar.__or__)(property(automethods.__or__))
     __rand__ = wrapdoc(Scalar.__rand__)(property(automethods.__rand__))
     __ror__ = wrapdoc(Scalar.__ror__)(property(automethods.__ror__))

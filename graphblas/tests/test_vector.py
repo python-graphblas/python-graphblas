@@ -1402,6 +1402,7 @@ def test_vector_index_with_scalar():
             v[s]
 
 
+@autocompute
 def test_diag(v):
     indices, values = v.to_coo()
     for k in range(-5, 5):

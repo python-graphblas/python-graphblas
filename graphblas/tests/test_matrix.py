@@ -2616,6 +2616,7 @@ def test_not_to_array(A):
         (-10, [], []),
     ],
 )
+@autocompute
 def test_diag(A, params):
     k, indices, values = params
     expected = Vector.from_coo(indices, values, dtype=A.dtype, size=max(0, A.nrows - abs(k)))
