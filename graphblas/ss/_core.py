@@ -3,7 +3,7 @@ from collections.abc import Mapping
 from ..core import ffi, lib
 from ..core.base import _expect_type
 from ..core.matrix import Matrix, TransposedMatrix
-from ..core.scalar import Scalar
+from ..core.scalar import _as_scalar
 from ..core.ss.config import BaseConfig
 from ..core.ss.matrix import _concat_mn
 from ..core.vector import Vector
@@ -47,8 +47,7 @@ def diag(x, k=0, dtype=None, *, name=None, **opts):
     x = _expect_type(
         _graphblas_ss, x, (Matrix, TransposedMatrix, Vector), within="diag", argname="x"
     )
-    if type(k) is not Scalar:
-        k = Scalar.from_value(k, INT64, is_cscalar=True, name="")
+    k = _as_scalar(k, INT64, is_cscalar=True)
     if dtype is None:
         dtype = x.dtype
     typ = type(x)

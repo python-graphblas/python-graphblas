@@ -297,7 +297,7 @@ def test_neg():
             with pytest.raises(KeyError, match="ainv does not work with"):
                 -empty
         else:
-            minus_s = Scalar.from_value(-1, dtype=dtype)
+            minus_s = Scalar.from_value(-1, dtype=dtype, is_cscalar=False)  # pragma: is_grbscalar
             assert s == -minus_s
             assert (-s).value == minus_s.value
             assert empty == -empty
