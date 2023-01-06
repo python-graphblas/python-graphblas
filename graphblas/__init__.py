@@ -2,15 +2,7 @@ import sys as _sys
 from importlib import import_module as _import_module
 from importlib.metadata import version
 
-try:
-    __version__ = version("python-graphblas")
-except Exception:
-    from warnings import warn
-
-    warn("Unable to get version for python-graphblas")
-    del warn
-    __version__ = None
-
+__version__ = version("python-graphblas")
 del version
 
 
@@ -92,6 +84,10 @@ def __getattr__(name):
         if _init_params is None:
             _init("suitesparse", None, automatic=True)
         return
+    if name == "__version__":
+        from importlib.metadata import version
+
+        return globals().setdefault("__version__", version("python-graphblas"))
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -99,6 +95,7 @@ def __dir__():
     names = globals().keys() | _SPECIAL_ATTRS
     if backend is not None and backend != "suitesparse":
         names.remove("ss")
+    names.add("__version__")
     return list(names)
 
 

@@ -51,3 +51,7 @@ def test_bad_call():
         TypeError, match=r"Call objects: GrB_Matrix_apply\(bad, bad, bad, bad, bad, bad\)"
     ):
         gb.core.base.call("GrB_Matrix_apply", [bad, bad, bad, bad, bad, bad])
+
+
+def test_version():
+    assert gb.__version__ > "2022.11.0"
