@@ -91,6 +91,7 @@ dependencies:
     # - pyupgrade
     # - ruff
     # - scalene
+    # - setuptools-git-versioning
     # - snakeviz
     # - sphinx-lint
     # - sympy
