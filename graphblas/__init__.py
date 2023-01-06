@@ -1,9 +1,5 @@
 import sys as _sys
 from importlib import import_module as _import_module
-from importlib.metadata import version
-
-__version__ = version("python-graphblas")
-del version
 
 
 class replace:
