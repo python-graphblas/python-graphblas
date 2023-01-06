@@ -184,6 +184,7 @@ def _check_mask(mask, output=None):
 
 
 class BaseType:
+    # pylint: disable=assigning-non-slot
     __slots__ = "gb_obj", "dtype", "name", "__weakref__"
     # Flag for operations which depend on scalar vs vector/matrix
     _is_scalar = False

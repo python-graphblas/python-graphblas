@@ -254,7 +254,7 @@ class class_property:
         return self.member_property.__get__(obj, type)
 
     @property
-    def __set__(self):
+    def __set__(self):  # pylint: disable=unexpected-special-method-signature
         return self.member_property.__set__
 
 

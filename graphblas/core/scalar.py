@@ -184,7 +184,7 @@ class Scalar(BaseType):
 
         Returns
         -------
-        Bool
+        bool
 
         See Also
         --------
@@ -590,6 +590,35 @@ class Scalar(BaseType):
     #########################################################
 
     def ewise_add(self, other, op=monoid.plus):
+        """Perform element-wise computation on the union of sparse values, similar to how
+        one expects addition to work for sparse data.
+
+        See the `Element-wise Union <../user_guide/operations.html#element-wise-union>`__
+        section in the User Guide for more details, especially about the difference between
+        ewise_add and :meth:`ewise_union`.
+
+        Parameters
+        ----------
+        other : Scalar
+            The other scalar in the computation; Python scalars also accepted
+        op : :class:`~graphblas.core.operator.Monoid` or :class:`~graphblas.core.operator.BinaryOp`
+            Operator to use on intersecting values
+
+        Returns
+        -------
+        ScalarExpression that will be non-empty if any of the inputs is non-empty
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # Method syntax
+            c << a.ewise_add(b, op=monoid.max)
+
+            # Functional syntax
+            c << monoid.max(a | b)
+        """
         method_name = "ewise_add"
         if type(other) is not Scalar:
             dtype = self.dtype if self.dtype._is_udt else None
@@ -616,6 +645,35 @@ class Scalar(BaseType):
         )
 
     def ewise_mult(self, other, op=binary.times):
+        """Perform element-wise computation on the intersection of sparse values,
+        similar to how one expects multiplication to work for sparse data.
+
+        See the
+        `Element-wise Intersection <../user_guide/operations.html#element-wise-intersection>`__
+        section in the User Guide for more details.
+
+        Parameters
+        ----------
+        other : Scalar
+            The other scalar in the computation; Python scalars also accepted
+        op : :class:`~graphblas.core.operator.Monoid` or :class:`~graphblas.core.operator.BinaryOp`
+            Operator to use on intersecting values
+
+        Returns
+        -------
+        ScalarExpression that will be empty if any of the inputs is empty
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # Method syntax
+            c << a.ewise_mult(b, op=binary.gt)
+
+            # Functional syntax
+            c << binary.gt(a & b)
+        """
         method_name = "ewise_mult"
         if type(other) is not Scalar:
             dtype = self.dtype if self.dtype._is_udt else None
@@ -642,6 +700,39 @@ class Scalar(BaseType):
         )
 
     def ewise_union(self, other, op, left_default, right_default):
+        """Perform element-wise computation on the union of sparse values,
+        similar to how one expects subtraction to work for sparse data.
+
+        See the `Element-wise Union <../user_guide/operations.html#element-wise-union>`__
+        section in the User Guide for more details, especially about the difference between
+        ewise_union and :meth:`ewise_add`.
+
+        Parameters
+        ----------
+        other : Scalar
+            The other scalar in the computation; Python scalars also accepted
+        op : :class:`~graphblas.core.operator.Monoid` or :class:`~graphblas.core.operator.BinaryOp`
+            Operator to use
+        left_default :
+            Scalar value to use when the index on the left is missing
+        right_default :
+            Scalar value to use when the index on the right is missing
+
+        Returns
+        -------
+        ScalarExpression with a structure formed as the union of the input structures
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # Method syntax
+            c << a.ewise_union(b, op=binary.div, left_default=1, right_default=1)
+
+            # Functional syntax
+            c << binary.div(a | b, left_default=1, right_default=1)
+        """
         method_name = "ewise_union"
         dtype = self.dtype if self.dtype._is_udt else None
         if type(other) is not Scalar:
@@ -719,6 +810,44 @@ class Scalar(BaseType):
         return expr
 
     def apply(self, op, right=None, *, left=None):
+        """Create a new Scalar by applying ``op``
+
+        See the `Apply <../user_guide/operations.html#apply>`__
+        section in the User Guide for more details.
+
+        Common usage is to pass a :class:`~graphblas.core.operator.UnaryOp`,
+        in which case ``right`` and ``left`` may not be defined.
+
+        A :class:`~graphblas.core.operator.BinaryOp` can also be used, in
+        which case a scalar must be passed as ``left`` or ``right``.
+
+        An :class:`~graphblas.core.operator.IndexUnaryOp` can also be used
+        with the thunk passed in as ``right``.
+
+        Parameters
+        ----------
+        op : UnaryOp or BinaryOp or IndexUnaryOp
+            Operator to apply
+        right :
+            Scalar used with BinaryOp or IndexUnaryOp
+        left :
+            Scalar used with BinaryOp
+
+        Returns
+        -------
+        ScalarExpression
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # Method syntax
+            b << a.apply(op.abs)
+
+            # Functional syntax
+            b << op.abs(a)
+        """
         expr = self._as_vector().apply(op, right, left=left)
         return ScalarExpression(
             expr.method_name,

@@ -205,6 +205,8 @@ class VectorInfixExpr(InfixExprBase):
     select = wrapdoc(Vector.select)(property(automethods.select))
     if backend == "suitesparse":
         ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    else:
+        ss = Vector.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
@@ -334,6 +336,8 @@ class MatrixInfixExpr(InfixExprBase):
     select = wrapdoc(Matrix.select)(property(automethods.select))
     if backend == "suitesparse":
         ss = wrapdoc(Matrix.ss)(property(automethods.ss))
+    else:
+        ss = Matrix.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))

@@ -500,6 +500,8 @@ def _main():
             lines.append(
                 f"    {indent}{name} = wrapdoc(Vector.{name})(property(automethods.{name}))"
             )
+        if name == "ss":
+            lines.append('    else:\n        ss = Vector.__dict__["ss"]  # raise if used')
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | vector_matrix_raises):
         lines.append(f"    {name} = Vector.{name}")
@@ -529,6 +531,8 @@ def _main():
             lines.append(
                 f"    {indent}{name} = wrapdoc(Matrix.{name})(property(automethods.{name}))"
             )
+        if name == "ss":
+            lines.append('    else:\n        ss = Matrix.__dict__["ss"]  # raise if used')
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | vector_matrix_raises):
         lines.append(f"    {name} = Matrix.{name}")

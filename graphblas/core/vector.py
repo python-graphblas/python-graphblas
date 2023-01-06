@@ -773,7 +773,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector with a structure formed as the union of the input structures
+        VectorExpression with a structure formed as the union of the input structures
 
         Examples
         --------
@@ -857,7 +857,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector with a structure formed as the intersection of the input structures
+        VectorExpression with a structure formed as the intersection of the input structures
 
         Examples
         --------
@@ -907,7 +907,7 @@ class Vector(BaseType):
 
     def ewise_union(self, other, op, left_default, right_default):
         """Perform element-wise computation on the union of sparse values,
-        similar to how one expects subtraction to work for sparse matrices.
+        similar to how one expects subtraction to work for sparse vectors.
 
         See the `Element-wise Union <../user_guide/operations.html#element-wise-union>`__
         section in the User Guide for more details, especially about the difference between
@@ -926,7 +926,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector with a structure formed as the union of the input structures
+        VectorExpression with a structure formed as the union of the input structures
 
         Examples
         --------
@@ -1041,7 +1041,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector
+        VectorExpression
 
         Examples
         --------
@@ -1100,7 +1100,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector
+        VectorExpression
 
         Examples
         --------
@@ -1246,7 +1246,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector
+        VectorExpression
 
         Examples
         --------
@@ -1344,7 +1344,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Scalar
+        ScalarExpression
 
         Examples
         --------
@@ -1389,7 +1389,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Scalar
+        ScalarExpression
 
         Examples
         --------
@@ -1434,7 +1434,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -1485,7 +1485,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector
+        VectorExpression
 
         Examples
         --------
@@ -1900,6 +1900,8 @@ class VectorExpression(BaseExpression):
     select = wrapdoc(Vector.select)(property(automethods.select))
     if backend == "suitesparse":
         ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    else:
+        ss = Vector.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
@@ -1982,6 +1984,8 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     select = wrapdoc(Vector.select)(property(automethods.select))
     if backend == "suitesparse":
         ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    else:
+        ss = Vector.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))

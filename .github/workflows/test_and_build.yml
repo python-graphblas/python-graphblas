@@ -56,16 +56,20 @@ jobs:
           channel-priority: strict
           activate-environment: graphblas
           auto-activate-base: false
-      # Randomly test up to one slow task per job (about 5% chance one group isn't run)
+      # Randomly test one slow task per job (about 5% chance one group isn't run).
+      #
+      # TODO: have build matrix be [slowtask]x[os] and randomly choose [pyver] and [sourcetype].
+      # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky).
+      # If important in the future, we could also randomize dependency versions.
       - name: RNG for tests
         uses: ddradar/choose-random-action@v2.0.2
-        id: rand
+        id: slowtask
         with:
           contents: |
-            slow_fast_fast
-            fast_slow_fast
-            fast_fast_slow
-            fast_fast_fast
+            pytest_normal
+            pytest_bizarro
+            pylint
+            notebooks
           weights: |
             1
             1
@@ -73,7 +77,8 @@ jobs:
             1
       - name: Update env
         run: |
-          mamba install pytest coverage coveralls=3.3.1 pytest-randomly ${{ steps.rand.outputs.selected == 'fast_fast_fast' && 'black' || '' }} \
+          mamba install pytest coverage coveralls=3.3.1 pytest-randomly \
+            ${{ steps.slowtask.outputs.selected == 'pylint' && 'black pylint' || '' }} \
             pandas numba scipy networkx cffi donfig pyyaml awkward
       - name: Build extension module
         run: |
@@ -93,7 +98,8 @@ jobs:
           pip install --no-deps -e .
       - name: Unit tests
         run: |
-          coverage run -m pytest ${{ matrix.cfg.testopts }} -v ${{ steps.rand.outputs.selected == 'slow_fast_fast' && '--runslow' || '' }}
+          coverage run -m pytest ${{ matrix.cfg.testopts }} -v \
+            ${{ steps.slowtask.outputs.selected == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
         run: |
           # Run tests again with Scalars being C scalars by default
@@ -102,10 +108,11 @@ jobs:
             -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
             -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
             -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
-          coverage run -a -m pytest ${{ matrix.cfg.testopts }} -v ${{ steps.rand.outputs.selected == 'fast_slow_fast' && '--runslow' || ''}}
+          coverage run -a -m pytest ${{ matrix.cfg.testopts }} -v \
+            ${{ steps.slowtask.outputs.selected == 'pytest_bizarro' && '--runslow' || ''}}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
-        if: steps.rand.outputs.selected == 'fast_fast_fast'
+        if: steps.slowtask.outputs.selected == 'pylint'
         run: |
           # Test (and cover) automatic initialization
           coverage run -a graphblas/tests/test_auto_init.py
@@ -121,12 +128,15 @@ jobs:
           coverage run -a script.py
           rm script.py
       - name: Auto-generated code check
-        if: steps.rand.outputs.selected == 'fast_fast_fast'
+        if: steps.slowtask.outputs.selected == 'pylint'
         run: |
           # This step uses `black`
           coverage run -a -m graphblas.core.automethods
           coverage run -a -m graphblas.core.infixmethods
           git diff --exit-code
+      - name: Pylint (informational only; never fails)
+        if: steps.slowtask.outputs.selected == 'pylint'
+        run: pylint --exit-zero graphblas/
       - name: Coverage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -139,7 +149,7 @@ jobs:
       - name: codecov
         uses: codecov/codecov-action@v3
       - name: Notebooks Execution check
-        if: steps.rand.outputs.selected == 'fast_fast_slow'
+        if: steps.slowtask.outputs.selected == 'notebooks'
         run: |
           mamba install matplotlib nbconvert jupyter 'ipython>=7'
           jupyter nbconvert --to notebook --execute notebooks/*ipynb

@@ -49,6 +49,7 @@ ignore-words-list = "coo,ba"
 line-length = 100
 target-version = "py38"
 select = [
+    # Have we enabled too many checks that they'll become a nuisance? We'll see...
     "F",  # pyflakes
     "E",  # pycodestyle Error
     "W",  # pycodestyle Warning
@@ -103,14 +104,14 @@ exclude = [
 "scripts/create_pickle.py" = ["F403", "F405"]
 
 [tool.pylint.messages_control]
+# To run a single check, do: pylint graphblas --disable E,W,R,C,I --enable assignment-from-no-return
 max-line-length = 100
 py-version = "3.8"
 ignore-paths = ["graphblas/_version.py", "versioneer.py"]
+enable = ["I"]
 disable = [
     # Error
-    "assigning-non-slot",  # almost passes
     "assignment-from-no-return",
-    "unexpected-special-method-signature",  # almost passes
 
     # Warning
     "arguments-differ",
@@ -119,7 +120,6 @@ disable = [
     "fixme",
     "global-statement",
     "non-parent-init-called",
-    "protected-access",
     "redefined-builtin",
     "redefined-outer-name",
     "super-init-not-called",
@@ -153,6 +153,7 @@ disable = [
     # warning
     "broad-except",
     "pointless-statement",
+    "protected-access",
     "undefined-loop-variable",
     "unused-import",
     # refactor
@@ -176,4 +177,7 @@ disable = [
     "unnecessary-dunder-call",
     "wrong-import-order",
     "wrong-import-position",
+    # informative
+    "locally-disabled",
+    "suppressed-message",
 ]

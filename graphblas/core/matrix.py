@@ -1562,7 +1562,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix with a structure formed as the union of the input structures
+        MatrixExpression with a structure formed as the union of the input structures
 
         Examples
         --------
@@ -1649,7 +1649,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix with a structure formed as the intersection of the input structures
+        MatrixExpression with a structure formed as the intersection of the input structures
 
         Examples
         --------
@@ -1718,7 +1718,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix with a structure formed as the union of the input structures
+        MatrixExpression with a structure formed as the union of the input structures
 
         Examples
         --------
@@ -1832,7 +1832,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        :class:`~graphblas.Vector`
+        VectorExpression
 
         Examples
         --------
@@ -1876,7 +1876,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -1924,7 +1924,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -1977,7 +1977,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -2126,7 +2126,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -2224,7 +2224,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Vector
+        VectorExpression
 
         Examples
         --------
@@ -2262,7 +2262,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        :class:`~graphblas.Vector`
+        VectorExpression
 
         Examples
         --------
@@ -2304,7 +2304,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        :class:`~graphblas.Scalar`
+        ScalarExpression
 
         Examples
         --------
@@ -2365,7 +2365,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -3110,6 +3110,8 @@ class MatrixExpression(BaseExpression):
     select = wrapdoc(Matrix.select)(property(automethods.select))
     if backend == "suitesparse":
         ss = wrapdoc(Matrix.ss)(property(automethods.ss))
+    else:
+        ss = Matrix.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
@@ -3206,6 +3208,8 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     select = wrapdoc(Matrix.select)(property(automethods.select))
     if backend == "suitesparse":
         ss = wrapdoc(Matrix.ss)(property(automethods.ss))
+    else:
+        ss = Matrix.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
