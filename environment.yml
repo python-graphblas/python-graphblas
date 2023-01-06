@@ -88,6 +88,7 @@ dependencies:
     # - pyupgrade
     # - ruff
     # - scalene
+    # - setuptools-git-versioning
     # - snakeviz
     # - sympy
     # - yesqa
