@@ -157,8 +157,8 @@ def _expect_op_message(
     )
 
 
-def _expect_op(self, op, values, **kwargs):
-    if (message := _expect_op_message(self, op, values, **kwargs)) is not None:
+def _expect_op(self, op, values, *, within, **kwargs):
+    if (message := _expect_op_message(self, op, values, within=within, **kwargs)) is not None:
         raise TypeError(message) from None
 
 
@@ -184,6 +184,7 @@ def _check_mask(mask, output=None):
 
 
 class BaseType:
+    # pylint: disable=assigning-non-slot
     __slots__ = "gb_obj", "dtype", "name", "__weakref__"
     # Flag for operations which depend on scalar vs vector/matrix
     _is_scalar = False
@@ -262,29 +263,21 @@ class BaseType:
         )
 
     def __or__(self, other):
-        if self._is_scalar:
-            return NotImplemented
         from .infix import _ewise_infix_expr
 
         return _ewise_infix_expr(self, other, method="ewise_add", within="__or__")
 
     def __ror__(self, other):
-        if self._is_scalar:
-            return NotImplemented
         from .infix import _ewise_infix_expr
 
         return _ewise_infix_expr(other, self, method="ewise_add", within="__ror__")
 
     def __and__(self, other):
-        if self._is_scalar:
-            return NotImplemented
         from .infix import _ewise_infix_expr
 
         return _ewise_infix_expr(self, other, method="ewise_mult", within="__and__")
 
     def __rand__(self, other):
-        if self._is_scalar:
-            return NotImplemented
         from .infix import _ewise_infix_expr
 
         return _ewise_infix_expr(other, self, method="ewise_mult", within="__rand__")
@@ -330,10 +323,8 @@ class BaseType:
                 if expr._is_scalar and self._is_scalar:
                     # Extract element (s << v[1])
                     if accum is not None:
-                        raise TypeError(
-                            "Scalar accumulation with extract element"
-                            "--such as `s(accum=accum) << v[0]`--is not supported"
-                        )
+                        self(**opts) << self.ewise_add(expr, accum)
+                        return
                     expr.parent._extract_element(
                         expr.resolved_indexes,
                         self.dtype,
@@ -355,10 +346,8 @@ class BaseType:
                 # Simple assignment (w << v)
                 if self._is_scalar:
                     if accum is not None:
-                        raise TypeError(
-                            "Scalar update with accumulation--such as `s(accum=accum) << t`"
-                            "--is not supported"
-                        )
+                        self(**opts) << self.ewise_add(expr, accum)
+                        return
                     if opts:
                         # Ignore opts for now
                         descriptor_lookup(**opts)
@@ -379,10 +368,8 @@ class BaseType:
                     # s << (v @ v)
                     expr = expr._to_expr()
                 elif accum is not None:
-                    raise TypeError(
-                        "Scalar update with accumulation--such as `s(accum=accum) << t`"
-                        "--is not supported"
-                    )
+                    self(**opts) << self.ewise_add(expr, accum)
+                    return
                 else:
                     if opts:
                         # Ignore opts for now
@@ -469,8 +456,7 @@ class BaseType:
             **opts,
         )
         if self._is_scalar:
-            scalar_as_vector = expr.method_name == "inner"
-            if scalar_as_vector:
+            if expr._scalar_as_vector:
                 fake_self = self._as_vector()
                 cfunc_name = expr.cfunc_name
                 args = [fake_self, mask, accum]
@@ -498,7 +484,7 @@ class BaseType:
         # Make the GraphBLAS call
         call(cfunc_name, args)
         if self._is_scalar:
-            if scalar_as_vector:
+            if expr._scalar_as_vector:
                 if self._is_cscalar or backend != "suitesparse":
                     self.value = fake_self[0].new(is_cscalar=True, name="")
                 # SS: this assumes GrB_Scalar was cast to Vector
@@ -610,8 +596,6 @@ class BaseExpression:
             mask = _check_mask(mask, output)
             output(mask=mask, **opts).update(self)
         return output
-
-    dup = new
 
     def _format_expr(self):
         args = self.args[:-2] if self.cfunc_name is None else self.args

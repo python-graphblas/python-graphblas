@@ -773,7 +773,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector with a structure formed as the union of the input structures
+        VectorExpression with a structure formed as the union of the input structures
 
         Examples
         --------
@@ -857,7 +857,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector with a structure formed as the intersection of the input structures
+        VectorExpression with a structure formed as the intersection of the input structures
 
         Examples
         --------
@@ -907,7 +907,7 @@ class Vector(BaseType):
 
     def ewise_union(self, other, op, left_default, right_default):
         """Perform element-wise computation on the union of sparse values,
-        similar to how one expects subtraction to work for sparse matrices.
+        similar to how one expects subtraction to work for sparse vectors.
 
         See the `Element-wise Union <../user_guide/operations.html#element-wise-union>`__
         section in the User Guide for more details, especially about the difference between
@@ -926,7 +926,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector with a structure formed as the union of the input structures
+        VectorExpression with a structure formed as the union of the input structures
 
         Examples
         --------
@@ -1041,7 +1041,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector
+        VectorExpression
 
         Examples
         --------
@@ -1100,7 +1100,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector
+        VectorExpression
 
         Examples
         --------
@@ -1246,7 +1246,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector
+        VectorExpression
 
         Examples
         --------
@@ -1344,7 +1344,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Scalar
+        ScalarExpression
 
         Examples
         --------
@@ -1389,7 +1389,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Scalar
+        ScalarExpression
 
         Examples
         --------
@@ -1416,6 +1416,7 @@ class Vector(BaseType):
             [self, other._as_matrix()],
             op=op,
             is_cscalar=False,
+            scalar_as_vector=True,
         )
         if self._size != other._size:
             expr.new(name="")  # incompatible shape; raise now
@@ -1433,7 +1434,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -1484,7 +1485,7 @@ class Vector(BaseType):
 
         Returns
         -------
-        Vector
+        VectorExpression
 
         Examples
         --------
@@ -1605,7 +1606,11 @@ class Vector(BaseType):
                 else:
                     cfunc_name = "GrB_Vector_assign"
                     mask = _vanilla_subassign_mask(self, mask, idx, replace, opts)
-                expr_repr = "[[{2._expr_name} elements]]" f"({mask.name})" " = {0.name}"
+                expr_repr = (
+                    "[[{2._expr_name} elements]]"
+                    f"({mask.name})"  # fmt: skip
+                    " = {0.name}"
+                )
             else:
                 # v(m)[I] << w
                 # v[I] << w
@@ -1640,7 +1645,7 @@ class Vector(BaseType):
                                     vals = Vector.from_coo(
                                         np.arange(shape[0]), values, dtype, size=shape[0]
                                     )
-                            except Exception:
+                            except Exception:  # pragma: no cover (safety)
                                 vals = None
                             else:
                                 if dtype.np_type.subdtype is not None:
@@ -1697,7 +1702,11 @@ class Vector(BaseType):
                     else:
                         cfunc_name = "GrB_Vector_assign_Scalar"
                         mask = _vanilla_subassign_mask(self, mask, idx, replace, opts)
-                expr_repr = "[[{2._expr_name} elements]]" f"({mask.name})" " = {0._expr_name}"
+                expr_repr = (
+                    "[[{2._expr_name} elements]]"
+                    f"({mask.name})"  # fmt: skip
+                    " = {0._expr_name}"
+                )
             else:
                 # v(m)[I] << c
                 # v[I] << c
@@ -1850,6 +1859,12 @@ class VectorExpression(BaseExpression):
     def shape(self):
         return (self._size,)
 
+    @wrapdoc(Vector.dup)
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
+        if clear:
+            return Vector(self.dtype if dtype is None else dtype, self.size, name=name)
+        return self._new(dtype, mask, name)
+
     # Begin auto-generated code: Vector
     _get_value = automethods._get_value
     S = wrapdoc(Vector.S)(property(automethods.S))
@@ -1877,8 +1892,7 @@ class VectorExpression(BaseExpression):
     inner = wrapdoc(Vector.inner)(property(automethods.inner))
     isclose = wrapdoc(Vector.isclose)(property(automethods.isclose))
     isequal = wrapdoc(Vector.isequal)(property(automethods.isequal))
-    name = wrapdoc(Vector.name)(property(automethods.name))
-    name = name.setter(automethods._set_name)
+    name = wrapdoc(Vector.name)(property(automethods.name)).setter(automethods._set_name)
     nvals = wrapdoc(Vector.nvals)(property(automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(automethods.reduce))
@@ -1886,6 +1900,8 @@ class VectorExpression(BaseExpression):
     select = wrapdoc(Vector.select)(property(automethods.select))
     if backend == "suitesparse":
         ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    else:
+        ss = Vector.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
@@ -1925,6 +1941,14 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     def shape(self):
         return (self._size,)
 
+    @wrapdoc(Vector.dup)
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
+        if clear:
+            if dtype is None:
+                dtype = self.dtype
+            return self.output_type(dtype, *self.shape, name=name)
+        return self.new(dtype, mask=mask, name=name, **opts)
+
     # Begin auto-generated code: Vector
     _get_value = automethods._get_value
     S = wrapdoc(Vector.S)(property(automethods.S))
@@ -1952,8 +1976,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     inner = wrapdoc(Vector.inner)(property(automethods.inner))
     isclose = wrapdoc(Vector.isclose)(property(automethods.isclose))
     isequal = wrapdoc(Vector.isequal)(property(automethods.isequal))
-    name = wrapdoc(Vector.name)(property(automethods.name))
-    name = name.setter(automethods._set_name)
+    name = wrapdoc(Vector.name)(property(automethods.name)).setter(automethods._set_name)
     nvals = wrapdoc(Vector.nvals)(property(automethods.nvals))
     outer = wrapdoc(Vector.outer)(property(automethods.outer))
     reduce = wrapdoc(Vector.reduce)(property(automethods.reduce))
@@ -1961,6 +1984,8 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     select = wrapdoc(Vector.select)(property(automethods.select))
     if backend == "suitesparse":
         ss = wrapdoc(Vector.ss)(property(automethods.ss))
+    else:
+        ss = Vector.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))

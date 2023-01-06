@@ -164,14 +164,15 @@ def test_bad_ewise(s1, v1, A1, A2):
     with raises(DimensionMismatch):
         A1.T & A1
 
-    with raises(TypeError):
-        s1 | 1
-    with raises(TypeError):
-        1 | s1
-    with raises(TypeError):
-        s1 & 1
-    with raises(TypeError):
-        1 & s1
+    # These are okay now
+    # with raises(TypeError):
+    s1 | 1
+    # with raises(TypeError):
+    1 | s1
+    # with raises(TypeError):
+    s1 & 1
+    # with raises(TypeError):
+    1 & s1
 
     with raises(TypeError, match="not supported for FP64"):
         v1 |= v1
@@ -254,10 +255,10 @@ def test_apply_unary_bad(s1, v1):
         op.exp(v1, 1)
     with raises(TypeError, match="__call__"):
         op.exp(1, v1)
-    with raises(TypeError, match="Bad type when calling unary.exp"):
-        op.exp(s1)
-    with raises(TypeError, match="Bad type when calling unary.exp"):
-        op.exp(1)
+    # with raises(TypeError, match="Bad type when calling unary.exp"):
+    op.exp(s1)  # Okay now
+    # with raises(TypeError, match="Bad type when calling unary.exp"):
+    op.exp(1)  # Okay now
     with raises(TypeError, match="Bad dtype"):
         op.exp(v1 | v1)
 
@@ -282,8 +283,8 @@ def test_apply_binary(v1, A1):
 
 
 def test_apply_binary_bad(v1):
-    with raises(TypeError, match="Bad types when calling binary.plus"):
-        op.plus(1, 1)
+    # with raises(TypeError, match="Bad types when calling binary.plus"):
+    op.plus(1, 1)  # Okay now
     with raises(TypeError, match="Bad type when calling binary.plus"):
         op.plus(v1)
     with raises(TypeError, match="Bad type for keyword argument `right="):

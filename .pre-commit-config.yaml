@@ -55,6 +55,7 @@ repos:
         - flake8==6.0.0
         - flake8-comprehensions==3.10.1
         - flake8-bugbear==22.12.6
+        - flake8-simplify==0.19.3
   - repo: https://github.com/asottile/yesqa
     rev: v1.4.0
     hooks:
@@ -65,13 +66,18 @@ repos:
     hooks:
       - id: codespell
         types_or: [python, rst, markdown]
+        additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
-        args: ["--ignore-words-list=coo,ba"]
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.205
+    rev: v0.0.212
     hooks:
       - id: ruff
-        args: ["--force-exclude"]
+        args: [--force-exclude]
+  - repo: https://github.com/sphinx-contrib/sphinx-lint
+    rev: v0.6.7
+    hooks:
+    - id: sphinx-lint
+      args: [--enable, all, "--disable=line-too-long,leaked-markup"]
   - repo: local
     hooks:
       # Add `--hook-stage manual` to pre-commit command to run (very slow)
@@ -81,7 +87,7 @@ repos:
         language: system
         types: [python]
         stages: [manual]
-        args: ["graphblas/"]
+        args: [graphblas/]
         pass_filenames: false
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0

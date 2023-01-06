@@ -42,7 +42,7 @@ moment.
 Default Initialization
 ----------------------
 
-If submodules are imported before calling `graphblas.init`, a default initialization occurs.
+If submodules are imported before calling ``graphblas.init``, a default initialization occurs.
 The default backend is ``suitesparse`` and the default mode is ``nonblocking``.
 
 If ``graphblas.init`` is called after the default initialization with different parameters,

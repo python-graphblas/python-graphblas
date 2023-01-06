@@ -4180,7 +4180,8 @@ class ss:
             values = compact_values(orig_indptr, new_indptr, values)
         if reverse:
             values = reverse_values(new_indptr, values)
-        newinfo = dict(info, indptr=new_indptr, values=values)
+        newinfo = dict(info, indptr=new_indptr)
+        newinfo["values"] = values
         newinfo[indices_name] = new_indices
         newinfo[nkey] = nval
         return self.import_any(

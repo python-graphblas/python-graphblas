@@ -247,7 +247,8 @@ class Matrix(BaseType):
             return ScalarIndexExpr(self, resolved_indexes)
         if len(shape) == 1:
             return VectorIndexExpr(self, resolved_indexes, *shape)
-        return MatrixIndexExpr(self, resolved_indexes, *shape)
+        nrows, ncols = shape
+        return MatrixIndexExpr(self, resolved_indexes, nrows, ncols)
 
     def __setitem__(self, keys, expr, **opts):
         """Assign values to a single element, row/column, or submatrix.
@@ -1561,7 +1562,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix with a structure formed as the union of the input structures
+        MatrixExpression with a structure formed as the union of the input structures
 
         Examples
         --------
@@ -1648,7 +1649,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix with a structure formed as the intersection of the input structures
+        MatrixExpression with a structure formed as the intersection of the input structures
 
         Examples
         --------
@@ -1717,7 +1718,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix with a structure formed as the union of the input structures
+        MatrixExpression with a structure formed as the union of the input structures
 
         Examples
         --------
@@ -1831,7 +1832,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        :class:`~graphblas.Vector`
+        VectorExpression
 
         Examples
         --------
@@ -1875,7 +1876,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -1923,7 +1924,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -1976,7 +1977,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -2125,7 +2126,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -2223,7 +2224,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Vector
+        VectorExpression
 
         Examples
         --------
@@ -2261,7 +2262,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        :class:`~graphblas.Vector`
+        VectorExpression
 
         Examples
         --------
@@ -2303,7 +2304,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        :class:`~graphblas.Scalar`
+        ScalarExpression
 
         Examples
         --------
@@ -2364,7 +2365,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -2684,7 +2685,9 @@ class Matrix(BaseType):
             if is_submask:
                 # C[I, J](M) << A
                 expr_repr = (
-                    "[[{2._expr_name} rows], [{4._expr_name} cols]]" f"({mask.name})" " << {0.name}"
+                    "[[{2._expr_name} rows], [{4._expr_name} cols]]"
+                    f"({mask.name})"  # fmt: skip
+                    " << {0.name}"
                 )
                 if backend == "suitesparse":
                     cfunc_name = "GxB_Matrix_subassign"
@@ -2740,7 +2743,7 @@ class Matrix(BaseType):
                                         vals = Vector.from_coo(
                                             np.arange(shape[0]), values, dtype, size=shape[0]
                                         )
-                                except Exception:
+                                except Exception:  # pragma: no cover (safety)
                                     vals = None
                                 else:
                                     if dtype.np_type.subdtype is not None:
@@ -3060,6 +3063,14 @@ class MatrixExpression(BaseExpression):
     def shape(self):
         return (self._nrows, self._ncols)
 
+    @wrapdoc(Matrix.dup)
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
+        if dtype is None:
+            dtype = self.dtype
+        if clear:
+            return Matrix(dtype, self._nrows, self._ncols, name=name)
+        return self._new(dtype, mask, name, **opts)
+
     # Begin auto-generated code: Matrix
     _get_value = automethods._get_value
     S = wrapdoc(Matrix.S)(property(automethods.S))
@@ -3090,8 +3101,7 @@ class MatrixExpression(BaseExpression):
     kronecker = wrapdoc(Matrix.kronecker)(property(automethods.kronecker))
     mxm = wrapdoc(Matrix.mxm)(property(automethods.mxm))
     mxv = wrapdoc(Matrix.mxv)(property(automethods.mxv))
-    name = wrapdoc(Matrix.name)(property(automethods.name))
-    name = name.setter(automethods._set_name)
+    name = wrapdoc(Matrix.name)(property(automethods.name)).setter(automethods._set_name)
     nvals = wrapdoc(Matrix.nvals)(property(automethods.nvals))
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(automethods.reduce_rowwise))
@@ -3100,6 +3110,8 @@ class MatrixExpression(BaseExpression):
     select = wrapdoc(Matrix.select)(property(automethods.select))
     if backend == "suitesparse":
         ss = wrapdoc(Matrix.ss)(property(automethods.ss))
+    else:
+        ss = Matrix.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
@@ -3149,6 +3161,14 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     def shape(self):
         return (self._nrows, self._ncols)
 
+    @wrapdoc(Matrix.dup)
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
+        if clear:
+            if dtype is None:
+                dtype = self.dtype
+            return self.output_type(dtype, *self.shape, name=name)
+        return self.new(dtype, mask=mask, name=name, **opts)
+
     # Begin auto-generated code: Matrix
     _get_value = automethods._get_value
     S = wrapdoc(Matrix.S)(property(automethods.S))
@@ -3179,8 +3199,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     kronecker = wrapdoc(Matrix.kronecker)(property(automethods.kronecker))
     mxm = wrapdoc(Matrix.mxm)(property(automethods.mxm))
     mxv = wrapdoc(Matrix.mxv)(property(automethods.mxv))
-    name = wrapdoc(Matrix.name)(property(automethods.name))
-    name = name.setter(automethods._set_name)
+    name = wrapdoc(Matrix.name)(property(automethods.name)).setter(automethods._set_name)
     nvals = wrapdoc(Matrix.nvals)(property(automethods.nvals))
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(automethods.reduce_rowwise))
@@ -3189,6 +3208,8 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     select = wrapdoc(Matrix.select)(property(automethods.select))
     if backend == "suitesparse":
         ss = wrapdoc(Matrix.ss)(property(automethods.ss))
+    else:
+        ss = Matrix.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
@@ -3243,6 +3264,7 @@ class TransposedMatrix:
         output(mask=mask, **opts) << self
         return output
 
+    @wrapdoc(Matrix.dup)
     def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
         if dtype is None:
             dtype = self.dtype
@@ -3300,11 +3322,11 @@ class TransposedMatrix:
     def to_csc(self, dtype=None):
         return self._matrix.to_csr(dtype)
 
-    @wrapdoc(Matrix.to_csr)
+    @wrapdoc(Matrix.to_dcsr)
     def to_dcsr(self, dtype=None):
         return self._matrix.to_dcsc(dtype)
 
-    @wrapdoc(Matrix.to_csc)
+    @wrapdoc(Matrix.to_dcsc)
     def to_dcsc(self, dtype=None):
         return self._matrix.to_dcsr(dtype)
 
