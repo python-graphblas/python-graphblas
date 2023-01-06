@@ -1,5 +1,9 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=41", "wheel", "setuptools-git-versioning<2"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools-git-versioning]
+enabled = true
 
 [tool.black]
 line-length = 100
@@ -28,11 +32,7 @@ select = [
     "PLW",  # pylint Warning
     "RUF",  # ruff-specific rules
 ]
-exclude = [
-    "versioneer.py",
-]
 [tool.ruff.per-file-ignores]
-"graphblas/_version.py" = ["S101"]
 "graphblas/core/operator.py" = ["S102"]
 "graphblas/tests/*py" = ["S101"]
 "graphblas/tests/test_dtype.py" = ["UP003"]
@@ -42,7 +42,6 @@ exclude = [
 [tool.pylint.messages_control]
 max-line-length = 100
 py-version = "3.8"
-ignore-paths = ["graphblas/_version.py", "versioneer.py"]
 disable = [
     # Error
     "assigning-non-slot",

@@ -1,7 +1,9 @@
 import sys as _sys
 from importlib import import_module as _import_module
+from importlib.metadata import version
 
-from ._version import get_versions
+__version__ = version("python-graphblas")
+del version
 
 
 class replace:
@@ -185,8 +187,5 @@ def _load(name):
         # Everything else is a module
         globals()[name] = _import_module(f".{name}", __name__)
 
-
-__version__ = get_versions()["version"]
-del get_versions
 
 __all__ = [key for key in __dir__() if not key.startswith("_")]

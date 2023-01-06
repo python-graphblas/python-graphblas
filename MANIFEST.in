@@ -3,7 +3,5 @@ include setup.py
 include README.md
 include LICENSE
 include MANIFEST.in
-include versioneer.py
-include graphblas/_version.py
 include graphblas/graphblas.yaml
 include graphblas/tests/pickle*.pkl

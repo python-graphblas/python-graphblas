@@ -1,12 +1,10 @@
 from setuptools import find_packages, setup
 
-import versioneer
-
 extras_require = {
     "repr": ["pandas"],
     "io": ["networkx", "scipy >=1.7.0", "awkward"],
     "viz": ["matplotlib"],
-    "test": ["pytest", "pandas", "scipy"],
+    "test": ["pytest", "pandas", "scipy >=1.7.0"],
 }
 extras_require["complete"] = sorted({v for req in extras_require.values() for v in req})
 
@@ -15,8 +13,6 @@ with open("README.md") as f:
 
 setup(
     name="python-graphblas",
-    version=versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass(),
     description=(
         "Python library for GraphBLAS: high-performance sparse linear algebra "
         "for scalable graph analytics"
