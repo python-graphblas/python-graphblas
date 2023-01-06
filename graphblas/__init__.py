@@ -83,7 +83,14 @@ def __getattr__(name):
     if name == "__version__":
         from importlib.metadata import version
 
-        return globals().setdefault("__version__", version("python-graphblas"))
+        try:
+            return globals().setdefault("__version__", version("python-graphblas"))
+        except Exception as exc:  # pragma: no cover (safety)
+            raise AttributeError(
+                "`graphblas.__version__` not available. This may mean python-graphblas was "
+                "incorrectly installed or not installed at all. For local development, you may "
+                "want to do an editable install via `python -m pip install -e path/to/graphblas`."
+            ) from exc
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
