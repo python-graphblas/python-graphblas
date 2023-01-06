@@ -134,7 +134,7 @@ Element-wise Intersection
 Two identically shaped collections can be intersected element-wise. Locations where only one of the
 two collections contains a value will be missing in the output.
 
-The GraphBLAS spec calls this operation `eWiseMult` because it has the same behavior as sparse
+The GraphBLAS spec calls this operation ``eWiseMult`` because it has the same behavior as sparse
 multiplication when missing values are treated as zero. As a result, ``binary.times`` is the
 default operator for element-wise intersection.
 

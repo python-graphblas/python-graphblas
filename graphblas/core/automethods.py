@@ -93,10 +93,6 @@ def __int__(self):
     return self._get_value("__int__")
 
 
-def __invert__(self):
-    return self._get_value("__invert__")
-
-
 def __iter__(self):
     return self._get_value("__iter__")
 
@@ -105,8 +101,8 @@ def __matmul__(self):
     return self._get_value("__matmul__")
 
 
-def __neg__(self):
-    return self._get_value("__neg__")
+def __ne__(self):
+    return self._get_value("__ne__")
 
 
 def __or__(self):
@@ -349,6 +345,17 @@ def _main():
         "name",
         "nvals",
         "wait",
+        # For infix
+        "__and__",
+        "__or__",
+        "__rand__",
+        "__ror__",
+        # Delayed methods
+        "apply",
+        "ewise_add",
+        "ewise_mult",
+        "ewise_union",
+        "select",
     }
     scalar = {
         "__array__",
@@ -358,8 +365,7 @@ def _main():
         "__float__",
         "__index__",
         "__int__",
-        "__invert__",
-        "__neg__",
+        "__ne__",
         "_as_matrix",
         "_as_vector",
         "_is_empty",
@@ -369,23 +375,14 @@ def _main():
     vector_matrix = {
         "S",
         "V",
-        "__and__",
         "__contains__",
         "__getitem__",
         "__iter__",
         "__matmul__",
-        "__or__",
-        "__rand__",
         "__rmatmul__",
-        "__ror__",
         "_carg",
-        "apply",
         "diag",
-        "ewise_add",
-        "ewise_mult",
-        "ewise_union",
         "reposition",
-        "select",
         "ss",
         "to_coo",
         "to_values",
@@ -415,12 +412,8 @@ def _main():
     }
     common_raises = set()
     scalar_raises = {
-        "__and__",
         "__matmul__",
-        "__or__",
-        "__rand__",
         "__rmatmul__",
-        "__ror__",
     }
     vector_matrix_raises = {
         "__array__",
@@ -463,12 +456,20 @@ def _main():
     lines = []
     lines.append("    _get_value = automethods._get_value")
     for name in sorted(common | scalar):
-        lines.append(f"    {name} = wrapdoc(Scalar.{name})(property(automethods.{name}))")
         if name == "name":
-            lines.append("    name = name.setter(automethods._set_name)")
+            lines.append(
+                "    name = wrapdoc(Scalar.name)(property(automethods.name))"
+                ".setter(automethods._set_name)"
+            )
+        else:
+            lines.append(f"    {name} = wrapdoc(Scalar.{name})(property(automethods.{name}))")
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | scalar_raises):
         lines.append(f"    {name} = Scalar.{name}")
+    for name in sorted(bad_sugar):
+        if name == "__imatmul__":
+            continue
+        lines.append(f"    {name} = automethods.{name}")
 
     thisdir = os.path.dirname(__file__)
     infix_exclude = {"_get_value"}
@@ -490,9 +491,17 @@ def _main():
             indent = "    "
         else:
             indent = ""
-        lines.append(f"    {indent}{name} = wrapdoc(Vector.{name})(property(automethods.{name}))")
         if name == "name":
-            lines.append("    name = name.setter(automethods._set_name)")
+            lines.append(
+                "    name = wrapdoc(Vector.name)(property(automethods.name))"
+                ".setter(automethods._set_name)"
+            )
+        else:
+            lines.append(
+                f"    {indent}{name} = wrapdoc(Vector.{name})(property(automethods.{name}))"
+            )
+        if name == "ss":
+            lines.append('    else:\n        ss = Vector.__dict__["ss"]  # raise if used')
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | vector_matrix_raises):
         lines.append(f"    {name} = Vector.{name}")
@@ -513,9 +522,17 @@ def _main():
             indent = "    "
         else:
             indent = ""
-        lines.append(f"    {indent}{name} = wrapdoc(Matrix.{name})(property(automethods.{name}))")
         if name == "name":
-            lines.append("    name = name.setter(automethods._set_name)")
+            lines.append(
+                "    name = wrapdoc(Matrix.name)(property(automethods.name))"
+                ".setter(automethods._set_name)"
+            )
+        else:
+            lines.append(
+                f"    {indent}{name} = wrapdoc(Matrix.{name})(property(automethods.{name}))"
+            )
+        if name == "ss":
+            lines.append('    else:\n        ss = Matrix.__dict__["ss"]  # raise if used')
     lines.append("    # These raise exceptions")
     for name in sorted(common_raises | vector_matrix_raises):
         lines.append(f"    {name} = Matrix.{name}")

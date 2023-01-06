@@ -21,10 +21,7 @@ def __getattr__(key):
         globals()[key] = rv
         if key in _delayed_commutes_to:
             other_key = _delayed_commutes_to[key]
-            if other_key in globals():
-                other = globals()[other_key]
-            else:
-                other = other_key
+            other = globals().get(other_key, other_key)
             rv._commutes_to = other
         return rv
     raise AttributeError(f"module {__name__!r} has no attribute {key!r}")

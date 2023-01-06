@@ -53,15 +53,10 @@ def draw(m):  # pragma: no cover
 
     .. image:: /_static/img/draw-example.png
     """
-    try:
-        nx, plt = _get_imports(["nx", "plt"], "draw")
-    except ImportError as exc:
-        print(exc.msg)
-        return
+    nx, plt = _get_imports(["nx", "plt"], "draw")
     typ = _output_type(m)
     if typ is not _Matrix and typ is not _TransposedMatrix:
-        print(f"Can only draw a Matrix, not {type(m)}")
-        return
+        raise TypeError(f"Can only draw a Matrix, not {type(m)}")
 
     g = to_networkx(m)
     pos = nx.spring_layout(g)

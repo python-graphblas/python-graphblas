@@ -1,7 +1,8 @@
 from .. import binary, unary
 from ..dtypes import BOOL
-from .infix import MatrixInfixExpr, VectorInfixExpr
+from .infix import MatrixInfixExpr, ScalarInfixExpr, VectorInfixExpr
 from .matrix import Matrix, MatrixExpression, MatrixIndexExpr, TransposedMatrix
+from .scalar import Scalar, ScalarExpression, ScalarIndexExpr
 from .utils import output_type
 from .vector import Vector, VectorExpression, VectorIndexExpr
 
@@ -10,13 +11,28 @@ def call_op(self, other, op, *, outer=False, union=False):
     type1 = output_type(self)
     type2 = output_type(other)
     types = {Matrix, TransposedMatrix, Vector}
-    if type1 in types and type2 in types:
-        if outer:
+    if type1 in types:
+        if type2 in types:
+            if outer:
+                return self.ewise_add(other, op)
+            if union:
+                return self.ewise_union(other, op, False, False)
+            return self.ewise_mult(other, op)
+        return op(self, other)
+    if type2 in types:
+        return op(self, other)
+    # Scalars
+    if outer:
+        if type1 is Scalar:
             return self.ewise_add(other, op)
-        if union:
+        return other.ewise_add(self, op.commutes_to)
+    if union:
+        if type1 is Scalar:
             return self.ewise_union(other, op, False, False)
+        return other.ewise_union(self, op.commutes_to, False, False)
+    if type1 is Scalar:
         return self.ewise_mult(other, op)
-    return op(self, other)
+    return other.ewise_mult(self, op.commutes_to)
 
 
 def __divmod__(self, other):
@@ -69,7 +85,8 @@ def __ixor__(self, other):
     if (
         other_type is Vector
         and self.ndim == 2
-        or other_type not in {Vector, Matrix, TransposedMatrix}
+        or not self._is_scalar
+        and other_type not in {Vector, Matrix, TransposedMatrix}
     ):
         self << __xor__(self, other)
     elif other.dtype != BOOL:
@@ -87,7 +104,8 @@ def __ior__(self, other):
     if (
         other_type is Vector
         and self.ndim == 2
-        or other_type not in {Vector, Matrix, TransposedMatrix}
+        or not self._is_scalar
+        and other_type not in {Vector, Matrix, TransposedMatrix}
     ):
         expr = call_op(self, other, binary.lor, outer=True)
         if expr.dtype != BOOL:
@@ -155,7 +173,8 @@ def __iadd__(self, other):
     if (
         other_type is Vector
         and self.ndim == 2
-        or other_type not in {Vector, Matrix, TransposedMatrix}
+        or not self._is_scalar
+        and other_type not in {Vector, Matrix, TransposedMatrix}
     ):
         self << __add__(self, other)
     else:
@@ -282,6 +301,12 @@ for name in [
     "__xor__",
 ]:
     val = d[name]
+    if name not in {"__eq__", "__ne__"}:
+        setattr(Scalar, name, val)
+        if not name.startswith("__i") or name == "__invert__":
+            setattr(ScalarExpression, name, val)
+            setattr(ScalarInfixExpr, name, val)
+            setattr(ScalarIndexExpr, name, val)
     setattr(Vector, name, val)
     setattr(Matrix, name, val)
     if not name.startswith("__i") or name == "__invert__":
@@ -363,7 +388,8 @@ def _main():
                 "    if (\n"
                 "        other_type is Vector\n"
                 "        and self.ndim == 2\n"
-                "        or other_type not in {Vector, Matrix, TransposedMatrix}\n"
+                "        or not self._is_scalar\n"
+                "        and other_type not in {Vector, Matrix, TransposedMatrix}\n"
                 "    ):\n"
                 f"        self << __{method}__(self, other)\n"
                 "    else:\n"
@@ -383,6 +409,12 @@ def _main():
         "d = globals()\n"
         f"for name in {methods}:\n"
         "    val = d[name]\n"
+        "    if name not in {'__eq__', '__ne__'}:\n"
+        "        setattr(Scalar, name, val)\n"
+        "        if not name.startswith('__i') or name == '__invert__':\n"
+        "            setattr(ScalarExpression, name, val)\n"
+        "            setattr(ScalarInfixExpr, name, val)\n"
+        "            setattr(ScalarIndexExpr, name, val)\n"
         "    setattr(Vector, name, val)\n"
         "    setattr(Matrix, name, val)\n"
         "    if not name.startswith('__i') or name == '__invert__':\n"

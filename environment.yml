@@ -57,6 +57,9 @@ dependencies:
     # - flake8
     # - flake8-bugbear
     # - flake8-comprehensions
+    # - flake8-print
+    # - flake8-quotes
+    # - flake8-simplify
     # - gcc
     # - gh
     # - graph-tool
@@ -89,6 +92,8 @@ dependencies:
     # - ruff
     # - scalene
     # - snakeviz
+    # - sphinx-lint
     # - sympy
+    # - vim
     # - yesqa
     # - zarr

@@ -56,9 +56,29 @@ jobs:
           channel-priority: strict
           activate-environment: graphblas
           auto-activate-base: false
+      # Randomly test one slow task per job (about 5% chance one group isn't run).
+      #
+      # TODO: have build matrix be [slowtask]x[os] and randomly choose [pyver] and [sourcetype].
+      # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky).
+      # If important in the future, we could also randomize dependency versions.
+      - name: RNG for tests
+        uses: ddradar/choose-random-action@v2.0.2
+        id: slowtask
+        with:
+          contents: |
+            pytest_normal
+            pytest_bizarro
+            pylint
+            notebooks
+          weights: |
+            1
+            1
+            1
+            1
       - name: Update env
         run: |
-          mamba install pytest coverage coveralls=3.3.1 pytest-randomly black \
+          mamba install pytest coverage coveralls=3.3.1 pytest-randomly \
+            ${{ steps.slowtask.outputs.selected == 'pylint' && 'black pylint' || '' }} \
             pandas numba scipy networkx cffi donfig pyyaml awkward
       - name: Build extension module
         run: |
@@ -78,58 +98,58 @@ jobs:
           pip install --no-deps -e .
       - name: Unit tests
         run: |
-          coverage run --branch -m pytest ${{ matrix.cfg.testopts }} -v
+          coverage run -m pytest ${{ matrix.cfg.testopts }} -v \
+            ${{ steps.slowtask.outputs.selected == 'pytest_normal' && '--runslow' || '' }}
+      - name: Unit tests (bizarro scalars)
+        run: |
           # Run tests again with Scalars being C scalars by default
           find graphblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
             -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
             -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
             -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
             -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
-          coverage run -a --branch -m pytest ${{ matrix.cfg.testopts }} -v
+          coverage run -a -m pytest ${{ matrix.cfg.testopts }} -v \
+            ${{ steps.slowtask.outputs.selected == 'pytest_bizarro' && '--runslow' || ''}}
           git checkout .  # Undo changes to scalar default
-
+      - name: Miscellaneous tests
+        if: steps.slowtask.outputs.selected == 'pylint'
+        run: |
           # Test (and cover) automatic initialization
-          coverage run -a --branch graphblas/tests/test_auto_init.py
-          coverage run -a --branch graphblas/tests/test_external_init.py
+          coverage run -a graphblas/tests/test_auto_init.py
+          coverage run -a graphblas/tests/test_external_init.py
           # Test (and cover) lazy module loader
           echo "from graphblas.agg import count" > script.py
-          coverage run -a --branch script.py
+          coverage run -a script.py
           echo "from graphblas import agg" > script.py  # Does this still cover?
           echo "from graphblas.core import agg" >> script.py
-          coverage run -a --branch script.py
+          coverage run -a script.py
           # Tests lazy loading of lib, ffi, and NULL in gb.core
           echo "from graphblas.core import base" > script.py
-          coverage run -a --branch script.py
+          coverage run -a script.py
           rm script.py
       - name: Auto-generated code check
+        if: steps.slowtask.outputs.selected == 'pylint'
         run: |
-          coverage run -a --branch -m graphblas.core.automethods
-          coverage run -a --branch -m graphblas.core.infixmethods
+          # This step uses `black`
+          coverage run -a -m graphblas.core.automethods
+          coverage run -a -m graphblas.core.infixmethods
           git diff --exit-code
-          coverage xml
+      - name: Pylint (informational only; never fails)
+        if: steps.slowtask.outputs.selected == 'pylint'
+        run: pylint --exit-zero graphblas/
       - name: Coverage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COVERALLS_FLAG_NAME: ${{ matrix.cfg.pyver}}/${{ matrix.cfg.testopts }}
           COVERALLS_PARALLEL: true
         run: |
+          coverage xml
           coverage report --show-missing
           coveralls --service=github
       - name: codecov
         uses: codecov/codecov-action@v3
-      # Randomly test notebooks 1/3 of the time
-      - name: random number
-        uses: ddradar/choose-random-action@v2.0.2
-        id: rand
-        with:
-          contents: |
-            true
-            false
-          weights: |
-            1
-            2
       - name: Notebooks Execution check
-        if: ${{ steps.rand.outputs.selected == 'true' }}
+        if: steps.slowtask.outputs.selected == 'notebooks'
         run: |
           mamba install matplotlib nbconvert jupyter 'ipython>=7'
           jupyter nbconvert --to notebook --execute notebooks/*ipynb

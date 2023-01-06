@@ -17,8 +17,11 @@ except ImportError:  # pragma: no cover (import)
 
 try:
     import awkward._v2 as ak
-except ImportError:  # pragma: no cover (import)
-    ak = None
+except ImportError:
+    try:
+        import awkward as ak
+    except ImportError:  # pragma: no cover (import)
+        ak = None
 
 
 suitesparse = gb.backend == "suitesparse"

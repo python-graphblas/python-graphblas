@@ -89,12 +89,29 @@ def _call_op(op, left, right=None, thunk=None, **kwargs):
     from .matrix import Matrix, TransposedMatrix
     from .vector import Vector
 
-    if output_type(left) in {Vector, Matrix, TransposedMatrix}:
+    if (left_type := output_type(left)) in {Vector, Matrix, TransposedMatrix}:
         if thunk is not None:
             return left.select(op, thunk=thunk, **kwargs)
         return left.apply(op, right=right, **kwargs)
-    if output_type(right) in {Vector, Matrix, TransposedMatrix}:
+    if (right_type := output_type(right)) in {Vector, Matrix, TransposedMatrix}:
         return right.apply(op, left=left, **kwargs)
+
+    from .scalar import Scalar, _as_scalar
+
+    if left_type is Scalar:
+        if thunk is not None:
+            return left.select(op, thunk=thunk, **kwargs)
+        return left.apply(op, right=right, **kwargs)
+    if right_type is Scalar:
+        return right.apply(op, left=left, **kwargs)
+    try:
+        left_scalar = _as_scalar(left, is_cscalar=False)
+    except Exception:
+        pass
+    else:
+        if thunk is not None:
+            return left_scalar.select(op, thunk=thunk, **kwargs)
+        return left_scalar.apply(op, right=right, **kwargs)
     raise TypeError(
         f"Bad types when calling {op!r}.  Got types: {type(left)}, {type(right)}.\n"
         "Expected an infix expression or an apply with a Vector or Matrix and a scalar:\n"
@@ -183,11 +200,21 @@ class TypedBuiltinUnaryOp(TypedOpBase):
         from .matrix import Matrix, TransposedMatrix
         from .vector import Vector
 
-        if output_type(val) in {Vector, Matrix, TransposedMatrix}:
+        if (typ := output_type(val)) in {Vector, Matrix, TransposedMatrix}:
             return val.apply(self)
+        from .scalar import Scalar, _as_scalar
+
+        if typ is Scalar:
+            return val.apply(self)
+        try:
+            scalar = _as_scalar(val, is_cscalar=False)
+        except Exception:
+            pass
+        else:
+            return scalar.apply(self)
         raise TypeError(
             f"Bad type when calling {self!r}.\n"
-            "    - Expected type: Vector, Matrix, TransposedMatrix.\n"
+            "    - Expected type: Scalar, Vector, Matrix, TransposedMatrix.\n"
             f"    - Got: {type(val)}.\n"
             "Calling a UnaryOp is syntactic sugar for calling apply.  "
             f"For example, `A.apply({self!r})` is the same as `{self!r}(A)`."
@@ -621,7 +648,7 @@ class ParameterizedBinaryOp(ParameterizedUdf):
             binop._monoid = binop  # temporary!
             try:
                 # If this call is successful, then it will set `binop._monoid`
-                self._monoid(*args, **kwargs)
+                self._monoid(*args, **kwargs)  # pylint: disable=not-callable
             except Exception:
                 binop._monoid = None
             # assert binop._monoid is not binop
@@ -1268,10 +1295,8 @@ class IndexUnaryOp(OpBase):
             re.compile("^GxB_(VALUEEQ|VALUENE)_(FC32|FC64)$"),
         ],
     }
-    # fmt: off
     _positional = {"tril", "triu", "diag", "offdiag", "colle", "colgt", "rowle", "rowgt",
-                   "rowindex", "colindex"}
-    # fmt: on
+                   "rowindex", "colindex"}  # fmt: skip
 
     @classmethod
     def _build(cls, name, func, *, is_udt=False, anonymous=False):
@@ -1780,7 +1805,7 @@ def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None, *, include_ind
         f"{zarray}{xarray}{yarray}"
         f"    {zname} = {BL}numba_func({xname}{rcidx}{yname}){BR}\n"
     )
-    exec(text, d)
+    exec(text, d)  # pylint: disable=exec-used
     return d["wrapper"], wrapper_sig
 
 
@@ -2981,9 +3006,8 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
         if dtype2 is None:
             return op[dtype]
         # Handle special cases such as first and second (may have UDTs)
-        if op._custom_dtype is not None:
-            if (rv := op._custom_dtype(op, dtype, dtype2)) is not None:
-                return rv
+        if op._custom_dtype is not None and (rv := op._custom_dtype(op, dtype, dtype2)) is not None:
+            return rv
         # Generic case: try to unify the two dtypes
         try:
             return op[
