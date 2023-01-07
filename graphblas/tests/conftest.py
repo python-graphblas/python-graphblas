@@ -17,7 +17,7 @@ def pytest_configure(config):
     if backend is None:
         if randomly:
             backend = "suitesparse" if np.random.rand() < 0.5 else "suitesparse-vanilla"
-        else:  # pragma: no cover
+        else:
             backend = "suitesparse"
     blocking = config.getoption("--blocking", True)
     if blocking is None:  # pragma: no branch
@@ -30,8 +30,8 @@ def pytest_configure(config):
         mapnumpy = np.random.rand() < 0.5 if randomly else False
     runslow = config.getoption("--runslow", False)
     if runslow is None:
-        runslow = np.random.rand() < 0.25 if randomly else False
-        # runslow = False  # XXX TODO
+        # Add a small amount of randomization to be safer
+        runslow = np.random.rand() < 0.05 if randomly else False
     config.runslow = runslow
 
     gb.config.set(autocompute=False, mapnumpy=mapnumpy)
