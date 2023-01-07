@@ -33,9 +33,9 @@ jobs:
         id: pyver
         with:
           contents: |
-            "3.8"
-            "3.9"
-            "3.10"
+            3.8
+            3.9
+            3.10
           weights: |
             1
             1
