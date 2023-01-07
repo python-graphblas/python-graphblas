@@ -40,7 +40,7 @@ jobs:
             1
             1
             1
-      - name: RNG for source type of python-suitesparse-graphblas
+      - name: RNG for source of python-suitesparse-graphblas
         uses: ddradar/choose-random-action@v2.0.2
         id: sourcetype
         with:
@@ -52,6 +52,26 @@ jobs:
           weights: |
             1
             1
+            1
+            1
+      - name: RNG for SciPy version
+        uses: ddradar/choose-random-action@v2.0.2
+        id: spver
+        with:
+          contents: |
+            '=1.7.0'
+            '>1.7.0'
+          weights: |
+            1
+            1
+      - name: RNG for Awkward version
+        uses: ddradar/choose-random-action@v2.0.2
+        id: akver
+        with:
+          contents: |
+            '<2'
+            '>=2'
+          weights: |
             1
             1
       - name: Setup conda
@@ -71,7 +91,9 @@ jobs:
           # Don't be overwhelmed! This may look scary at a glance, but each line makes sense.
           # Once we have wheels for all OSes, we can delete the last two lines.
           mamba install pytest coverage coveralls=3.3.1 pytest-randomly \
-            pandas numba scipy networkx cffi donfig pyyaml awkward \
+            pandas numba networkx cffi donfig pyyaml \
+            scipy${{ steps.spver.outputs.selected }} \
+            awkward${{ steps.akver.outputs.selected }} \
             ${{ matrix.slowtask == 'pylint' && 'black pylint' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \

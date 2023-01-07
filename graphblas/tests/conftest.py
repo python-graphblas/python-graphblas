@@ -17,7 +17,7 @@ def pytest_configure(config):
     if backend is None:  # pragma: no branch
         if randomly:
             backend = "suitesparse" if np.random.rand() < 0.5 else "suitesparse-vanilla"
-        else:
+        else:  # pragma: no cover
             backend = "suitesparse"
     blocking = config.getoption("--blocking", True)
     if blocking is None:  # pragma: no branch
