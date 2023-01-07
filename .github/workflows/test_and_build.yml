@@ -27,6 +27,7 @@ jobs:
     #               +-----------------------+
     runs-on: ubuntu-latest
     outputs:
+      # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idoutputs
       rng: ${{ steps.random.outputs.selected }}
     steps:
       - name: RNG for mapnumpy
@@ -127,14 +128,24 @@ jobs:
           pip install --no-deps -e .
       - name: Unit tests
         run: |
+          echo ${{ needs.mapnumpy.outputs.rng }} ${{ matrix.slowtask }} ${{ matrix.os }}
+          echo ${{ needs.mapnumpy.outputs.rng == 'A' }}
+          echo ${{ needs.mapnumpy.outputs.rng == 'B' }}
+          echo ${{ needs.mapnumpy.outputs.rng == 'C' }}
+          echo ${{ needs.mapnumpy.outputs.rng == 'D' }}
+          echo ${{ matrix.slowtask == 'pytest_normal' }}
+          echo ${{ matrix.slowtask == 'pytest_bizarro' }}
+          echo ${{ matrix.os == 'ubuntu-latest' }}
+          echo ${{ matrix.os == 'windows-latest' }}
+          echo ${{ matrix.os == 'macos-latest' }}
           coverage run -m pytest --randomly -v \
             ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows' && '--no-mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
             ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows' && '--mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
             ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows' && '--mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
             ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--no-mapnumpy' || '' }} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
@@ -147,12 +158,12 @@ jobs:
             -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
           coverage run -a -m pytest --randomly -v \
             ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows' && '--mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
             ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows' && '--no-mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
             ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows' && '--no-mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
             ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--mapnumpy' || '' }} \
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
