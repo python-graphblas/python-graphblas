@@ -9,7 +9,42 @@ on:
       - main
 
 jobs:
+  mapnumpy:
+    # To achieve consistent coverage, we need a little bit of correlated collaboration.
+    # Specifically, we need to make sure we run with and without `--mapnumpy` on slow tests.
+    # TODO: determine if we *also* need to run both backends on slow tests.
+    #
+    #                   linux   windows osx
+    #               +-----------------------+
+    #   A   normal  |   yes     no          |
+    #   A   bizarro |   no      yes         |
+    #   B   normal  |           no      yes |
+    #   B   bizarro |           yes     no  |
+    #   C   normal  |   no      yes         |
+    #   C   bizarro |   yes     no          |
+    #   D   normal  |           yes     no  |
+    #   D   bizarro |           no      yes |
+    #               +-----------------------+
+    runs-on: ubuntu-latest
+    outputs:
+      rng: ${{ steps.random.outputs.selected }}
+    steps:
+      - name: RNG for mapnumpy
+        uses: ddradar/choose-random-action@v2.0.2
+        id: random
+        with:
+          contents: |
+            A
+            B
+            C
+            D
+          weights: |
+            1
+            1
+            1
+            1
   build_and_test:
+    needs: mapnumpy
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -76,7 +111,7 @@ jobs:
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
-            ${{ steps.sourcetype.outputs.selected == 'conda-forge' && 'python-suitesparse-graphblas' || ''}} \
+            ${{ steps.sourcetype.outputs.selected == 'conda-forge' && 'python-suitesparse-graphblas' || '' }} \
             ${{ matrix.os != 'ubuntu-latest' && '"graphblas>=7.4.0"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'wheel' && matrix.os != 'ubuntu-latest' && 'python-suitesparse-graphblas' || '' }}
       - name: Build extension module
@@ -93,6 +128,14 @@ jobs:
       - name: Unit tests
         run: |
           coverage run -m pytest --randomly -v \
+            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows' && '--no-mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows' && '--no-mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows' && '--mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows' && '--mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--no-mapnumpy' || '' }} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
         run: |
@@ -103,7 +146,15 @@ jobs:
             -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
             -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
           coverage run -a -m pytest --randomly -v \
-            ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || ''}}
+            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows' && '--mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows' && '--mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows' && '--no-mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows' && '--no-mapnumpy' || '' }} \
+            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--mapnumpy' || '' }} \
+            ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
         if: matrix.slowtask == 'pylint'
