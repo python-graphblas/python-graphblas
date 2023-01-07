@@ -54,16 +54,6 @@ jobs:
             1
             1
             1
-      - name: RNG for Awkward version
-        uses: ddradar/choose-random-action@v2.0.2
-        id: akver
-        with:
-          contents: |
-            <2
-            >=2
-          weights: |
-            1
-            1
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
@@ -81,8 +71,7 @@ jobs:
           # Don't be overwhelmed! This may look scary at a glance, but each line makes sense.
           # Once we have wheels for all OSes, we can delete the last two lines.
           mamba install pytest coverage coveralls=3.3.1 pytest-randomly \
-            pandas numba scipy networkx cffi donfig pyyaml \
-            "awkward${{ steps.akver.outputs.selected }}" \
+            pandas numba scipy networkx cffi donfig pyyaml awkward \
             ${{ matrix.slowtask == 'pylint' && 'black pylint' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
