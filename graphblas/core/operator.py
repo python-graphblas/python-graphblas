@@ -462,6 +462,7 @@ class TypedUserBinaryOp(TypedOpBase):
         if self._monoid is None:
             monoid = self.parent.monoid
             if monoid is not None and self.type in monoid:
+                1 / 0  # XXX: how is this covered?!
                 self._monoid = monoid[self.type]
         return self._monoid
 
