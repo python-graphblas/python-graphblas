@@ -69,7 +69,7 @@ repos:
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.212
+    rev: v0.0.213
     hooks:
       - id: ruff
         args: [--force-exclude]
