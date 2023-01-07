@@ -9,30 +9,36 @@ on:
       - main
 
 jobs:
-  mapnumpy:
+  rngs:
     # To achieve consistent coverage, we need a little bit of correlated collaboration.
     # Specifically, we need to make sure we run with and without `--mapnumpy` on slow tests.
-    # TODO: determine if we *also* need to run both backends on slow tests.
+    # We also use correlated RNG to run both backends on slow tests.
+    #
+    # {A,B,C,D},yes = --mapnumpy
+    # {A,B,C,D},no = --no-mapnumpy
+    # {D,E,F,G},yes = --backend=suitesparse
+    # {D,E,F,G},no = --backend=suitesparse-vanilla
     #
     #                   linux   windows osx
     #               +-----------------------+
-    #   A   normal  |   yes     no          |
-    #   A   bizarro |   no      yes         |
-    #   B   normal  |           no      yes |
-    #   B   bizarro |           yes     no  |
-    #   C   normal  |   no      yes         |
-    #   C   bizarro |   yes     no          |
-    #   D   normal  |           yes     no  |
-    #   D   bizarro |           no      yes |
+    # A  E  normal  |   yes     no          |
+    # A  E  bizarro |   no      yes         |
+    # B  F  normal  |           no      yes |
+    # B  F  bizarro |           yes     no  |
+    # C  G  normal  |   no      yes         |
+    # C  G  bizarro |   yes     no          |
+    # D  H  normal  |           yes     no  |
+    # D  H  bizarro |           no      yes |
     #               +-----------------------+
     runs-on: ubuntu-latest
     outputs:
       # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idoutputs
-      rng: ${{ steps.random.outputs.selected }}
+      mapnumpy: ${{ steps.mapnumpy.outputs.selected }}
+      backend: ${{ steps.backend.outputs.selected }}
     steps:
       - name: RNG for mapnumpy
         uses: ddradar/choose-random-action@v2.0.2
-        id: random
+        id: mapnumpy
         with:
           contents: |
             A
@@ -44,8 +50,22 @@ jobs:
             1
             1
             1
+      - name: RNG for backend
+        uses: ddradar/choose-random-action@v2.0.2
+        id: backend
+        with:
+          contents: |
+            E
+            F
+            G
+            H
+          weights: |
+            1
+            1
+            1
+            1
   build_and_test:
-    needs: mapnumpy
+    needs: rngs
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -129,27 +149,41 @@ jobs:
       - name: Unit tests
         run: |
           coverage run -m pytest --randomly -v \
-            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'A' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'A' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'B' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'B' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'C' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'C' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'D' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'D' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'E' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'E' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'E' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'E' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'F' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'F' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'F' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'F' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'G' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'G' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'G' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'G' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'H' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'H' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'H' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'H' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--backend=suitesparse-vanilla' || '' }} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
         run: |
-          is_A=${{ needs.mapnumpy.outputs.rng == 'A' }}
-          echo $is_A
           # Run tests again with Scalars being C scalars by default
           find graphblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
             -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
@@ -157,22 +191,38 @@ jobs:
             -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
             -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
           coverage run -a -m pytest --randomly -v \
-            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'C' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--no-mapnumpy' || '' }} \
-            ${{ needs.mapnumpy.outputs.rng == 'D' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'A' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'A' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'A' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'B' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'B' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'B' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'C' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'C' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'C' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'D' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'D' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--no-mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.mapnumpy == 'D' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--mapnumpy' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'E' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'E' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'E' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'E' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'F' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'F' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'F' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'F' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'G' && matrix.slowtask == 'pytest_normal' && matrix.os == 'ubuntu-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'G' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'G' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'ubuntu-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'G' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'H' && matrix.slowtask == 'pytest_normal' && matrix.os == 'macos-latest' && '--backend=suitesparse' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'H' && matrix.slowtask == 'pytest_normal' && matrix.os == 'windows-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'H' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'macos-latest' && '--backend=suitesparse-vanilla' || '' }} \
+            ${{ needs.rngs.outputs.backend == 'H' && matrix.slowtask == 'pytest_bizarro' && matrix.os == 'windows-latest' && '--backend=suitesparse' || '' }} \
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
