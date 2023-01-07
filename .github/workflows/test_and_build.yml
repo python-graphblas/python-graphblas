@@ -125,7 +125,7 @@ jobs:
       - name: Update env
         run: |
           # Install dependencies based on the needs of the job.
-          # Don't be overwhelmed! This may look scary at a glance, but each line makes sense.
+          # Don't panic! This may look scary at a glance, but each line makes sense.
           # Once we have wheels for all OSes, we can delete the last two lines.
           mamba install pytest coverage coveralls=3.3.1 pytest-randomly \
             pandas numba scipy networkx cffi donfig pyyaml awkward \
@@ -229,7 +229,9 @@ jobs:
           coverage run -a script.py
           rm script.py
           # Tests whose coverage depend on order of tests :/
-          coverage run -a -m pytest -x -k test_binaryop_attributes_numpy --no-mapnumpy -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
+          # TODO: understand why these are order-dependent and try to fix
+          coverage run -a -m pytest -x --no-mapnumpy -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
+          # coverage run -a -m pytest -x --no-mapnumpy -k test_npmonoid graphblas/tests/test_numpyops.py --runslow
       - name: Auto-generated code check
         if: matrix.slowtask == 'pylint'
         run: |
