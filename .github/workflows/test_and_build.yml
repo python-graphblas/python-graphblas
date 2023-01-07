@@ -59,8 +59,8 @@ jobs:
         id: spver
         with:
           contents: |
-            '=1.7.0'
-            '>1.7.0'
+            =1.7.0
+            >1.7.0
           weights: |
             1
             1
@@ -69,8 +69,8 @@ jobs:
         id: akver
         with:
           contents: |
-            '<2'
-            '>=2'
+            <2
+            >=2
           weights: |
             1
             1
@@ -92,8 +92,8 @@ jobs:
           # Once we have wheels for all OSes, we can delete the last two lines.
           mamba install pytest coverage coveralls=3.3.1 pytest-randomly \
             pandas numba networkx cffi donfig pyyaml \
-            scipy${{ steps.spver.outputs.selected }} \
-            awkward${{ steps.akver.outputs.selected }} \
+            'scipy${{ steps.spver.outputs.selected }}' \
+            'awkward${{ steps.akver.outputs.selected }}' \
             ${{ matrix.slowtask == 'pylint' && 'black pylint' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
