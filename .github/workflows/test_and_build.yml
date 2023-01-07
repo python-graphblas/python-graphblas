@@ -82,7 +82,7 @@ jobs:
       - name: Build extension module
         run: |
           # We only have wheels for Linux right now
-          if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" && ${{ matrix.os }} == "ubuntu-latest" }} ]]; then
+          if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" && ${{ matrix.os }} == "ubuntu-latest" ]]; then
               pip install --no-deps suitesparse-graphblas
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               pip install --no-deps --no-binary=all suitesparse-graphblas
