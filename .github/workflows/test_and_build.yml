@@ -150,7 +150,6 @@ jobs:
         run: |
           is_A=${{ needs.mapnumpy.outputs.rng == 'A' }}
           echo $is_A
-          echo ${{ $is_A && matrix.slowtask == 'pytest_normal' }}
           # Run tests again with Scalars being C scalars by default
           find graphblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
             -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
