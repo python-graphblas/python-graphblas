@@ -155,7 +155,6 @@ jobs:
           normal=${{ matrix.slowtask == 'pytest_normal' || '' }} ; bizarro=${{ matrix.slowtask == 'pytest_bizarro' || '' }}
           ubuntu=${{ matrix.os == 'ubuntu-latest' || '' }} ; windows=${{ matrix.os == 'windows-latest' || '' }} ; macos=${{ matrix.os == 'macos-latest' || '' }}
           suitesparse=--backend=suitesparse ; vanilla=--backend=suitesparse-vanilla
-          echo $A $B $C $D $E %F $G $H
           coverage run -m pytest --randomly -v \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }} \
             $(if [[ $A && $normal  ]] ; then if [[ $ubuntu ]] ; then echo '--mapnumpy'    ; elif [[ $windows ]] ; then echo '--no-mapnumpy' ; fi ; fi) \
@@ -177,12 +176,18 @@ jobs:
       - name: Unit tests (bizarro scalars)
         run: |
           # Run tests again with Scalars being C scalars by default
-          echo $A $B $C $D $E %F $G $H
           find graphblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
             -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
             -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
             -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
             -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
+          A=${{ needs.rngs.outputs.mapnumpy == 'A' || '' }} ; B=${{ needs.rngs.outputs.mapnumpy == 'B' || '' }}
+          C=${{ needs.rngs.outputs.mapnumpy == 'C' || '' }} ; D=${{ needs.rngs.outputs.mapnumpy == 'D' || '' }}
+          E=${{ needs.rngs.outputs.backend == 'E' || '' }} ; F=${{ needs.rngs.outputs.backend == 'F' || '' }}
+          G=${{ needs.rngs.outputs.backend == 'G' || '' }} ; H=${{ needs.rngs.outputs.backend == 'H' || '' }}
+          normal=${{ matrix.slowtask == 'pytest_normal' || '' }} ; bizarro=${{ matrix.slowtask == 'pytest_bizarro' || '' }}
+          ubuntu=${{ matrix.os == 'ubuntu-latest' || '' }} ; windows=${{ matrix.os == 'windows-latest' || '' }} ; macos=${{ matrix.os == 'macos-latest' || '' }}
+          suitesparse=--backend=suitesparse ; vanilla=--backend=suitesparse-vanilla
           coverage run -a -m pytest --randomly -v \
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }} \
             $(if [[ $A && $normal  ]] ; then if [[ $ubuntu ]] ; then echo '--no-mapnumpy' ; elif [[ $windows ]] ; then echo '--mapnumpy'    ; fi ; fi) \
