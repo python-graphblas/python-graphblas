@@ -100,6 +100,7 @@ jobs:
         uses: ddradar/choose-random-action@v2.0.2
         id: sourcetype
         with:
+          # Set weight to 0 to skip (such as if 'upstream' is known to not work)
           contents: |
             conda-forge
             wheel
@@ -155,22 +156,23 @@ jobs:
           normal=${{ matrix.slowtask == 'pytest_normal' || '' }} ; bizarro=${{ matrix.slowtask == 'pytest_bizarro' || '' }}
           ubuntu=${{ matrix.os == 'ubuntu-latest' || '' }} ; windows=${{ matrix.os == 'windows-latest' || '' }} ; macos=${{ matrix.os == 'macos-latest' || '' }}
           mapnumpy='--mapnumpy' ; nomapnumpy='--no-mapnumpy' ; suitesparse='--backend=suitesparse' ; vanilla='--backend=suitesparse-vanilla'
-          args=$(if [[ $A && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
-                 if [[ $A && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
-                 if [[ $B && $normal  ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
-                 if [[ $B && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
-                 if [[ $C && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
-                 if [[ $C && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
-                 if [[ $D && $normal  ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
-                 if [[ $D && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
-                 if [[ $E && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
-                 if [[ $E && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
-                 if [[ $F && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
-                 if [[ $F && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
-                 if [[ $G && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
-                 if [[ $G && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
-                 if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
-                 if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
+          args=$(
+            if [[ $A && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $A && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $B && $normal  ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $B && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $C && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $C && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $D && $normal  ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $D && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $E && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $E && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $F && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $F && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $G && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $G && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo $args
           coverage run -m pytest --randomly -v $args \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
@@ -189,22 +191,23 @@ jobs:
           normal=${{ matrix.slowtask == 'pytest_normal' || '' }} ; bizarro=${{ matrix.slowtask == 'pytest_bizarro' || '' }}
           ubuntu=${{ matrix.os == 'ubuntu-latest' || '' }} ; windows=${{ matrix.os == 'windows-latest' || '' }} ; macos=${{ matrix.os == 'macos-latest' || '' }}
           mapnumpy='--mapnumpy' ; nomapnumpy='--no-mapnumpy' ; suitesparse='--backend=suitesparse' ; vanilla='--backend=suitesparse-vanilla'
-          args=$(if [[ $A && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
-                 if [[ $A && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
-                 if [[ $B && $normal  ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
-                 if [[ $B && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
-                 if [[ $C && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
-                 if [[ $C && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
-                 if [[ $D && $normal  ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
-                 if [[ $D && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
-                 if [[ $E && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
-                 if [[ $E && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
-                 if [[ $F && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
-                 if [[ $F && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
-                 if [[ $G && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
-                 if [[ $G && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
-                 if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
-                 if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
+          args=$(
+            if [[ $A && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $A && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $B && $normal  ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $B && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $C && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $C && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $D && $normal  ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $D && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $E && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $E && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $F && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $F && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $G && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $G && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
           echo $args
           coverage run -a -m pytest --randomly -v $args \
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
