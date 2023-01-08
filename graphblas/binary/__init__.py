@@ -22,7 +22,8 @@ def __getattr__(key):
         warnings.warn(
             f"`gb.binary.{key}` is deprecated; please use `gb.binary.ss.{key}` instead. "
             f"`{key}` is specific to SuiteSparse:GraphBLAS. "
-            f"`gb.binary.{key}` will be removed in version 2023.9.0 or later."
+            f"`gb.binary.{key}` will be removed in version 2023.9.0 or later.",
+            DeprecationWarning,
         )
         rv = _deprecated[key]
         globals()[key] = rv

@@ -1529,6 +1529,7 @@ def test_reduce_agg_firstlast(A):
     assert s3.isequal(s1.value + s2.value)
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_reduce_agg_firstlast_index(A):
     # reduce_rowwise
     w1 = A.reduce_rowwise(agg.ss.first_index).new()

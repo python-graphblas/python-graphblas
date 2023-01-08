@@ -15,7 +15,8 @@ def __getattr__(key):
         warnings.warn(
             f"`gb.op.{key}` is deprecated; please use `gb.op.ss.{key}` instead. "
             f"`{key}` is specific to SuiteSparse:GraphBLAS. "
-            f"`gb.op.{key}` will be removed in version 2023.9.0 or later."
+            f"`gb.op.{key}` will be removed in version 2023.9.0 or later.",
+            DeprecationWarning,
         )
         rv = _deprecated[key]
         globals()[key] = rv

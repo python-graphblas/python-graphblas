@@ -961,7 +961,10 @@ class OpBase:
     def _find(cls, funcname):
         rv = cls._module
         for attr in funcname.split("."):
-            rv = getattr(rv, attr, None)
+            if attr in getattr(rv, "_deprecated", ()):
+                rv = rv._deprecated[attr]
+            else:
+                rv = getattr(rv, attr, None)
             if rv is None:
                 break
         return rv
@@ -2392,17 +2395,19 @@ class BinaryOp(OpBase):
                 left = binary._deprecated[left_name]
             else:
                 left = getattr(binary, left_name)
+            if backend == "suitesparse" and right_name in _SS_OPERATORS:
+                left._commutes_to = f"ss.{right_name}"
+            else:
+                left._commutes_to = right_name
             if right_name not in binary._delayed:
                 if right_name in _SS_OPERATORS:
                     right = binary._deprecated[right_name]
                 else:
                     right = getattr(binary, right_name)
-            if backend == "suitesparse" and left_name in _SS_OPERATORS:
-                left._commutes_to = f"ss.{right_name}"
-                right._commutes_to = f"ss.{left_name}"
-            else:
-                left._commutes_to = right_name
-                right._commutes_to = left_name
+                if backend == "suitesparse" and left_name in _SS_OPERATORS:
+                    right._commutes_to = f"ss.{left_name}"
+                else:
+                    right._commutes_to = left_name
         for name in cls._commutative:
             cur_op = getattr(binary, name)
             cur_op._commutes_to = name
@@ -3306,14 +3311,14 @@ def get_semiring(monoid, binaryop, name=None):
         rv = (
             getattr(module, funcname)
             if funcname in module.__dict__ or funcname in module._delayed
-            else None
+            else getattr(module, "_deprecated", {}).get(funcname)
         )
         if rv is None and name != canonical_name:
             module, funcname = Semiring._remove_nesting(name, strict=False)
             rv = (
                 getattr(module, funcname)
                 if funcname in module.__dict__ or funcname in module._delayed
-                else None
+                else getattr(module, "_deprecated", {}).get(funcname)
             )
         if rv is None:
             rv = Semiring.register_new(canonical_name, monoid, binaryop)

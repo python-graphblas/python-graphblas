@@ -84,7 +84,8 @@ def __getattr__(key):
         warnings.warn(
             f"`gb.agg.{key}` is deprecated; please use `gb.agg.ss.{key}` instead. "
             f"`{key}` is specific to SuiteSparse:GraphBLAS. "
-            f"`gb.agg.{key}` will be removed in version 2023.9.0 or later."
+            f"`gb.agg.{key}` will be removed in version 2023.9.0 or later.",
+            DeprecationWarning,
         )
         rv = _deprecated[key]
         globals()[key] = rv

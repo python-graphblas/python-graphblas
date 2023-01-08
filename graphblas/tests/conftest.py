@@ -54,7 +54,8 @@ def pytest_configure(config):
     orig_semirings.update(
         key
         for key in dir(gb.semiring)
-        if isinstance(
+        if key != "ss"
+        and isinstance(
             getattr(gb.semiring, key)
             if key not in gb.semiring._deprecated
             else gb.semiring._deprecated[key],
@@ -64,7 +65,8 @@ def pytest_configure(config):
     orig_binaryops.update(
         key
         for key in dir(gb.binary)
-        if isinstance(
+        if key != "ss"
+        and isinstance(
             getattr(gb.binary, key)
             if key not in gb.binary._deprecated
             else gb.binary._deprecated[key],

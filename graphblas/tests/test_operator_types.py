@@ -56,7 +56,8 @@ UNARY = {
     (NOFC, FP): {"cbrt", "erf", "erfc", "lgamma", "tgamma"},
     (NOFC, NOFC): {"lnot"},
 }
-if suitesparse:
+# Remove "suitesparse-vailla" once these deprecations are removed
+if backend in {"suitesparse", "suitesparse-vanilla"}:
     UNARY[(ALL, POS)] = {"positioni", "positioni1", "positionj", "positionj1"}
 
 BINARY = {
@@ -77,7 +78,8 @@ BINARY = {
     (NOFC, FPINT): {"floordiv", "rfloordiv"},
     (NOFC, NOFC): {"isge", "isgt", "isle", "islt", "land", "lor", "lxor", "max", "min"},
 }
-if suitesparse:
+# Remove "suitesparse-vailla" once these deprecations are removed
+if backend in {"suitesparse", "suitesparse-vanilla"}:
     BINARY[(ALL, POS)] = {
         "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1",
     }
@@ -153,7 +155,8 @@ _SEMIRING1 = {
         {"land", "lor", "lxor", "first", "second"},
     ],
 }
-if suitesparse:
+# Remove "suitesparse-vailla" once these deprecations are removed
+if backend in {"suitesparse", "suitesparse-vanilla"}:
     _SEMIRING1[(ALL, POS)] = [  # POS, extra->INT64
         {"any", "max", "min", "plus", "times"},
         {"firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1"},
@@ -163,7 +166,7 @@ _SEMIRING2 = defaultdict(lambda: (set(), set()))  # {semiring: [input_types, out
 for key, (leftvals, rightvals) in _SEMIRING1.items():
     for left, right in itertools.product(leftvals, rightvals):
         name = f"{left}_{right}"
-        if (not suitesparse or not hasattr(semiring.ss, name)) and not hasattr(semiring, name):
+        if name not in dir(semiring):
             continue
         _SEMIRING2[name][0].update(key[0])
         _SEMIRING2[name][1].update(key[1])
@@ -319,6 +322,8 @@ def _run_test(module, typ, expected):
         expected = d
     seen = defaultdict(set)
     for name in dir(module):
+        if name == "ss":
+            continue
         if name in getattr(module, "_deprecated", ()):
             val = module._deprecated[name]
         else:

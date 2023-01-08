@@ -85,6 +85,7 @@ def test_agg():
     with pytest.raises(KeyError, match="BOOL"):
         agg.sum_of_inverses["BOOL"]
     assert agg.varp["INT64"].return_type == "FP64"
+    assert set(dir(agg)).issuperset({"count", "mean", "ss"})
 
 
 def test_find_opclass_unaryop():
@@ -910,7 +911,7 @@ def test_get_semiring():
 def test_create_semiring():
     # stress test / sanity check
     monoid_names = {x for x in dir(monoid) if not x.startswith("_")}
-    binary_names = {x for x in dir(binary) if not x.startswith("_")}
+    binary_names = {x for x in dir(binary) if not x.startswith("_") and x != "ss"}
     for monoid_name, binary_name in itertools.product(monoid_names, binary_names):
         cur_monoid = getattr(monoid, monoid_name)
         if not isinstance(cur_monoid, Monoid):
@@ -984,6 +985,8 @@ def test_commutes():
     for name in names:
         if name in semiring._deprecated:
             val = semiring._deprecated[name]
+        elif name == "ss":
+            continue
         else:
             val = getattr(semiring, name)
         if not hasattr(val, "commutes_to"):
@@ -1278,3 +1281,36 @@ def test_builtins():
     v1(max) << v2
     expected = Vector.from_coo([0, 1, 2], [3, 2, 3])
     assert v1.isequal(expected)
+
+
+def test_op_ss():
+    if suitesparse:
+        gb.unary.ss.positioni
+        gb.binary.ss.firsti
+        gb.semiring.ss.max_secondj
+        gb.op.ss.positionj
+        gb.agg.ss.argmin
+    else:
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.unary.ss
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.binary.ss
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.semiring.ss
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.op.ss
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.agg.ss
+
+
+def test_deprecated():
+    with pytest.warns(DeprecationWarning, match="please use"):
+        gb.unary.positioni
+    with pytest.warns(DeprecationWarning, match="please use"):
+        gb.binary.firsti
+    with pytest.warns(DeprecationWarning, match="please use"):
+        gb.semiring.min_firsti
+    with pytest.warns(DeprecationWarning, match="please use"):
+        gb.op.secondj
+    with pytest.warns(DeprecationWarning, match="please use"):
+        gb.agg.argmin

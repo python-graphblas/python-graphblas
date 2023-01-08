@@ -15,7 +15,8 @@ def __getattr__(key):
         warnings.warn(
             f"`gb.semiring.{key}` is deprecated; please use `gb.semiring.ss.{key}` instead. "
             f"`{key}` is specific to SuiteSparse:GraphBLAS. "
-            f"`gb.semiring.{key}` will be removed in version 2023.9.0 or later."
+            f"`gb.semiring.{key}` will be removed in version 2023.9.0 or later.",
+            DeprecationWarning,
         )
         rv = _deprecated[key]
         globals()[key] = rv
