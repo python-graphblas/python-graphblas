@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import agg, binary, dtypes, indexunary, monoid, op, select, semiring, unary
+from graphblas import agg, backend, binary, dtypes, indexunary, monoid, op, select, semiring, unary
 from graphblas.core import lib, operator
 from graphblas.core.operator import BinaryOp, IndexUnaryOp, Monoid, Semiring, UnaryOp, get_semiring
 from graphblas.dtypes import (
@@ -26,6 +26,8 @@ if dtypes._supports_complex:
     from graphblas.dtypes import FC32, FC64
 
 from graphblas import Matrix, Vector  # isort:skip (for dask-graphblas)
+
+suitesparse = backend == "suitesparse"
 
 
 def orig_types(op):
@@ -49,15 +51,17 @@ def test_op_repr():
 def test_unaryop():
     assert unary.ainv["INT32"].gb_obj == lib.GrB_AINV_INT32
     assert unary.ainv[dtypes.UINT16].gb_obj == lib.GrB_AINV_UINT16
-    assert orig_types(unary.positioni) == {INT32, INT64}
-    assert orig_types(unary.positionj1) == {INT32, INT64}
+    if suitesparse:
+        assert orig_types(unary.ss.positioni) == {INT32, INT64}
+        assert orig_types(unary.ss.positionj1) == {INT32, INT64}
 
 
 def test_binaryop():
     assert binary.plus["INT32"].gb_obj == lib.GrB_PLUS_INT32
     assert binary.plus[dtypes.UINT16].gb_obj == lib.GrB_PLUS_UINT16
-    assert orig_types(binary.firsti) == {INT32, INT64}
-    assert orig_types(binary.secondj1) == {INT32, INT64}
+    if suitesparse:
+        assert orig_types(binary.ss.firsti) == {INT32, INT64}
+        assert orig_types(binary.ss.secondj1) == {INT32, INT64}
 
 
 def test_monoid():
@@ -68,7 +72,8 @@ def test_monoid():
 def test_semiring():
     assert semiring.min_plus["INT32"].gb_obj == lib.GrB_MIN_PLUS_SEMIRING_INT32
     assert semiring.min_plus[dtypes.UINT16].gb_obj == lib.GrB_MIN_PLUS_SEMIRING_UINT16
-    assert orig_types(semiring.min_firsti) == {INT32, INT64}
+    if suitesparse:
+        assert orig_types(semiring.ss.min_firsti) == {INT32, INT64}
 
 
 def test_agg():
@@ -910,7 +915,11 @@ def test_create_semiring():
         cur_monoid = getattr(monoid, monoid_name)
         if not isinstance(cur_monoid, Monoid):
             continue
-        cur_binary = getattr(binary, binary_name)
+        cur_binary = (
+            getattr(binary, binary_name)
+            if binary_name not in binary._deprecated
+            else binary._deprecated[binary_name]
+        )
         if not isinstance(cur_binary, BinaryOp):
             continue
         Semiring.register_anonymous(cur_monoid, cur_binary)
@@ -931,7 +940,8 @@ def test_commutes():
     assert semiring.plus_times.is_commutative
     assert semiring.any_first.commutes_to is semiring.any_second
     assert semiring.plus_times.is_commutative
-    assert semiring.min_secondi.commutes_to is semiring.min_firstj
+    if suitesparse:
+        assert semiring.ss.min_secondi.commutes_to is semiring.ss.min_firstj
     assert semiring.plus_pow.commutes_to is semiring.plus_rpow
     assert not semiring.plus_pow.is_commutative
     assert binary.isclose.commutes_to is binary.isclose
@@ -957,7 +967,8 @@ def test_commutes():
     assert semiring.plus_times[int].is_commutative
     assert semiring.any_first[int].commutes_to is semiring.any_second[int]
     assert semiring.plus_times[int].is_commutative
-    assert semiring.min_secondi[int].commutes_to is semiring.min_firstj[int]
+    if suitesparse:
+        assert semiring.ss.min_secondi[int].commutes_to is semiring.ss.min_firstj[int]
     assert semiring.plus_pow[int].commutes_to is semiring.plus_rpow[int]
     assert not semiring.plus_pow[int].is_commutative
     assert binary.isclose(0.1)[int].commutes_to is binary.isclose(0.1)[int]
@@ -971,7 +982,10 @@ def test_commutes():
     # Stress test (this can create extra semirings)
     names = dir(semiring)
     for name in names:
-        val = getattr(semiring, name)
+        if name in semiring._deprecated:
+            val = semiring._deprecated[name]
+        else:
+            val = getattr(semiring, name)
         if not hasattr(val, "commutes_to"):
             continue
         assert val.commutes_to is None or isinstance(val.commutes_to, type(val))
@@ -1064,25 +1078,23 @@ def test_lazy_op():
 
 
 def test_positional():
-    assert unary.positioni.is_positional
-    assert unary.positioni1[int].is_positional
-    assert unary.positionj1.is_positional
-    assert unary.positionj[float].is_positional
     assert not unary.exp.is_positional
     assert not unary.abs[bool].is_positional
-
-    assert binary.firsti.is_positional
-    assert binary.secondj1[int].is_positional
     assert not binary.plus.is_positional
     assert not binary.minus[float].is_positional
-
     assert not monoid.plus.is_positional
     assert not monoid.plus[int].is_positional
-
-    assert semiring.any_firsti.is_positional
-    assert semiring.any_secondj[int].is_positional
     assert not semiring.any_first.is_positional
     assert not semiring.any_second[int].is_positional
+    if suitesparse:
+        assert unary.ss.positioni.is_positional
+        assert unary.ss.positioni1[int].is_positional
+        assert unary.ss.positionj1.is_positional
+        assert unary.ss.positionj[float].is_positional
+        assert binary.ss.firsti.is_positional
+        assert binary.ss.secondj1[int].is_positional
+        assert semiring.ss.any_firsti.is_positional
+        assert semiring.ss.any_secondj[int].is_positional
 
 
 def test_udt():
@@ -1166,9 +1178,10 @@ def test_udt():
     expected = Vector(int, size=v.size)
     expected(result.S) << 1
     assert result.isequal(expected)
-    result = v.apply(gb.unary.positioni).new()
-    expected = expected.apply(gb.unary.positioni).new()
-    assert result.isequal(expected)
+    if suitesparse:
+        result = v.apply(gb.unary.ss.positioni).new()
+        expected = expected.apply(gb.unary.ss.positioni).new()
+        assert result.isequal(expected)
 
     result = indexunary.rowindex(v).new()
     assert result.isequal(Vector.from_coo([0, 1, 2], [0, 1, 2]))
@@ -1194,8 +1207,9 @@ def test_udt():
 
     assert binary.first[udt].return_type is udt
     assert binary.first[udt].commutes_to is binary.second[udt]
-    assert semiring.any_firsti[int].commutes_to is semiring.any_secondj[int]
-    assert semiring.any_firsti[udt].commutes_to is semiring.any_secondj[udt]
+    if suitesparse:
+        assert semiring.ss.any_firsti[int].commutes_to is semiring.ss.any_secondj[int]
+        assert semiring.ss.any_firsti[udt].commutes_to is semiring.ss.any_secondj[udt]
 
     assert binary.second[udt].type is udt
     assert binary.second[udt].type2 is udt
@@ -1216,10 +1230,13 @@ def test_dir():
 def test_semiring_commute_exists():
     from .conftest import orig_semirings
 
-    vals = {getattr(semiring, key) for key in orig_semirings}
+    vals = {
+        semiring._deprecated[key] if key in semiring._deprecated else getattr(semiring, key)
+        for key in orig_semirings
+    }
     missing = set()
     for key in orig_semirings:
-        val = getattr(semiring, key)
+        val = semiring._deprecated[key] if key in semiring._deprecated else getattr(semiring, key)
         commutes_to = val.commutes_to
         if commutes_to is not None and commutes_to not in vals:  # pragma: no cover (debug)
             missing.add(commutes_to.name)
@@ -1230,10 +1247,13 @@ def test_semiring_commute_exists():
 def test_binaryop_commute_exists():
     from .conftest import orig_binaryops
 
-    vals = {getattr(binary, key) for key in orig_binaryops}
+    vals = {
+        binary._deprecated[key] if key in binary._deprecated else getattr(binary, key)
+        for key in orig_binaryops
+    }
     missing = set()
     for key in orig_binaryops:
-        val = getattr(binary, key)
+        val = binary._deprecated[key] if key in binary._deprecated else getattr(binary, key)
         commutes_to = val.commutes_to
         if commutes_to is not None and commutes_to not in vals:  # pragma: no cover (debug)
             missing.add(commutes_to.name)

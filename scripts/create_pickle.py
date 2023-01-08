@@ -53,7 +53,7 @@ def pickle1(filename):
         "monoid.numpy.logaddexp[float]": gb.monoid.numpy.logaddexp[float],
         "semiring.numpy.logaddexp2_hypot[float]": gb.semiring.numpy.logaddexp2_hypot[float],
         "agg.sum": gb.agg.sum,
-        "agg.first[int]": gb.agg.first[int],
+        # "agg.ss.first[int]": gb.agg.ss.first[int],
         "binary.absfirst": gb.binary.absfirst,
         "binary.absfirst[float]": gb.binary.absfirst[float],
         "binary.isclose": gb.binary.isclose,

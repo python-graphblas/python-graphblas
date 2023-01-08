@@ -1,1 +1,1 @@
-from ._core import about, concat, config, diag  # noqa: F401
+from ._core import about, concat, config, diag

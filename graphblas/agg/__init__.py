@@ -70,6 +70,40 @@ Custom recipes:
 """
 # All items are dynamically added by classes in core/agg.py
 # This module acts as a container of Aggregator instances
-from .core import agg
+_deprecated = {}
+
+
+def __dir__():
+    return globals().keys() | _deprecated.keys() | {"ss"}
+
+
+def __getattr__(key):
+    if key in _deprecated:
+        import warnings
+
+        warnings.warn(
+            f"`gb.agg.{key}` is deprecated; please use `gb.agg.ss.{key}` instead. "
+            f"`{key}` is specific to SuiteSparse:GraphBLAS. "
+            f"`gb.agg.{key}` will be removed in version 2023.9.0 or later."
+        )
+        rv = _deprecated[key]
+        globals()[key] = rv
+        return rv
+    if key == "ss":
+        from .. import backend
+
+        if backend != "suitesparse":
+            raise AttributeError(
+                f'module {__name__!r} only has attribute "ss" when backend is "suitesparse"'
+            )
+        from importlib import import_module
+
+        ss = import_module(".ss", __name__)
+        globals()["ss"] = ss
+        return ss
+    raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
+
+
+from ..core import agg  # noqa: E402 isort:skip
 
 del agg

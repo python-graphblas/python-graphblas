@@ -55,7 +55,9 @@ def pytest_configure(config):
         key
         for key in dir(gb.semiring)
         if isinstance(
-            getattr(gb.semiring, key),
+            getattr(gb.semiring, key)
+            if key not in gb.semiring._deprecated
+            else gb.semiring._deprecated[key],
             (gb.core.operator.Semiring, gb.core.operator.ParameterizedSemiring),
         )
     )
@@ -63,7 +65,9 @@ def pytest_configure(config):
         key
         for key in dir(gb.binary)
         if isinstance(
-            getattr(gb.binary, key),
+            getattr(gb.binary, key)
+            if key not in gb.binary._deprecated
+            else gb.binary._deprecated[key],
             (gb.core.operator.BinaryOp, gb.core.operator.ParameterizedBinaryOp),
         )
     )

@@ -3,7 +3,7 @@ from operator import getitem
 
 import numpy as np
 
-from .. import agg, binary, monoid, semiring, unary
+from .. import agg, backend, binary, monoid, semiring, unary
 from ..dtypes import INT64, lookup_dtype
 from .utils import output_type
 
@@ -95,9 +95,13 @@ class Aggregator:
         return self._any_dtype or dtype in self.types
 
     def __repr__(self):
+        if self.name in agg._deprecated:
+            return f"agg.ss.{self.name}"
         return f"agg.{self.name}"
 
     def __reduce__(self):
+        if self.name in agg._deprecated:
+            return f"agg.ss.{self.name}"
         return f"agg.{self.name}"
 
     def __call__(self, val, *, rowwise=False, columnwise=False):
@@ -512,8 +516,8 @@ def _argminmax(agg, updater, expr, opts, *, in_composite, monoid):
                 opts,
                 in_composite=in_composite,
                 monoid=monoid,
-                row_semiring=semiring.min_firstj,
-                col_semiring=semiring.min_secondj,
+                row_semiring=semiring._deprecated["min_firstj"],
+                col_semiring=semiring._deprecated["min_secondj"],
             )
         return _argminmaxij(
             agg,
@@ -522,8 +526,8 @@ def _argminmax(agg, updater, expr, opts, *, in_composite, monoid):
             opts,
             in_composite=in_composite,
             monoid=monoid,
-            row_semiring=semiring.min_firsti,
-            col_semiring=semiring.min_secondi,
+            row_semiring=semiring._deprecated["min_firsti"],
+            col_semiring=semiring._deprecated["min_secondi"],
         )
     if expr.cfunc_name.startswith("GrB_Vector_reduce"):
         return _argminmaxij(
@@ -533,8 +537,8 @@ def _argminmax(agg, updater, expr, opts, *, in_composite, monoid):
             opts,
             in_composite=in_composite,
             monoid=monoid,
-            row_semiring=semiring.min_firsti,
-            col_semiring=semiring.min_secondi,
+            row_semiring=semiring._deprecated["min_firsti"],
+            col_semiring=semiring._deprecated["min_secondi"],
         )
     if expr.cfunc_name.startswith("GrB_Matrix_reduce"):
         raise ValueError(f"Aggregator {agg.name} may not be used with Matrix.reduce_scalar.")
@@ -542,15 +546,15 @@ def _argminmax(agg, updater, expr, opts, *, in_composite, monoid):
 
 
 # These "do the right thing", but don't work with `reduce_scalar`
-agg.argmin = Aggregator(
+_argmin = Aggregator(
     "argmin",
     custom=partial(_argminmax, monoid=monoid.min),
-    types=[semiring.min_firsti],
+    types=[semiring._deprecated["min_firsti"]],
 )
-agg.argmax = Aggregator(
+_argmax = Aggregator(
     "argmax",
     custom=partial(_argminmax, monoid=monoid.max),
-    types=[semiring.min_firsti],
+    types=[semiring._deprecated["min_firsti"]],
 )
 
 
@@ -603,15 +607,15 @@ def _first_last(agg, updater, expr, opts, *, in_composite, semiring_):
         updater << A[i, j]
 
 
-agg.first = Aggregator(
+_first = Aggregator(
     "first",
-    custom=partial(_first_last, semiring_=semiring.min_secondi),
+    custom=partial(_first_last, semiring_=semiring._deprecated["min_secondi"]),
     types=[binary.first],
     any_dtype=True,
 )
-agg.last = Aggregator(
+_last = Aggregator(
     "last",
-    custom=partial(_first_last, semiring_=semiring.max_secondi),
+    custom=partial(_first_last, semiring_=semiring._deprecated["max_secondi"]),
     types=[binary.second],
     any_dtype=True,
 )
@@ -642,18 +646,34 @@ def _first_last_index(agg, updater, expr, opts, *, in_composite, semiring):
         raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
 
 
-agg.first_index = Aggregator(
+_first_index = Aggregator(
     "first_index",
-    custom=partial(_first_last_index, semiring=semiring.min_secondi),
-    types=[semiring.min_secondi],
+    custom=partial(_first_last_index, semiring=semiring._deprecated["min_secondi"]),
+    types=[semiring._deprecated["min_secondi"]],
     any_dtype=INT64,
 )
-agg.last_index = Aggregator(
+_last_index = Aggregator(
     "last_index",
-    custom=partial(_first_last_index, semiring=semiring.max_secondi),
-    types=[semiring.min_secondi],
+    custom=partial(_first_last_index, semiring=semiring._deprecated["max_secondi"]),
+    types=[semiring._deprecated["min_secondi"]],
     any_dtype=INT64,
 )
+agg._deprecated = {
+    "argmin": _argmin,
+    "argmax": _argmax,
+    "first": _first,
+    "last": _last,
+    "first_index": _first_index,
+    "last_index": _last_index,
+}
+if backend == "suitesparse":
+    agg.ss.argmin = _argmin
+    agg.ss.argmax = _argmax
+    agg.ss.first = _first
+    agg.ss.last = _last
+    agg.ss.first_index = _first_index
+    agg.ss.last_index = _last_index
+
 agg.Aggregator = Aggregator
 agg.TypedAggregator = TypedAggregator
 

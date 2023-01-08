@@ -1,7 +1,7 @@
 import itertools
 from collections import defaultdict
 
-from graphblas import binary, dtypes, monoid, semiring, unary
+from graphblas import backend, binary, dtypes, monoid, semiring, unary
 from graphblas.core import operator
 from graphblas.dtypes import (
     BOOL,
@@ -22,6 +22,8 @@ if dtypes._supports_complex:
 else:
     FC32 = "FC32"
     FC64 = "FC64"
+
+suitesparse = backend == "suitesparse"
 
 BOOL = frozenset({BOOL})
 UINT = frozenset({UINT8, UINT16, UINT32, UINT64})
@@ -46,7 +48,6 @@ UNARY = {
         "sin", "sinh", "sqrt", "tan", "tanh", "trunc",
     },
     (ALL, NOFC): {"abs"},
-    (ALL, POS): {"positioni", "positioni1", "positionj", "positionj1"},
     (FCFP, BOOL): {"isfinite", "isinf", "isnan"},
     (FC, FC): {"conj"},
     (FC, FP): {"carg", "cimag", "creal"},
@@ -55,6 +56,9 @@ UNARY = {
     (NOFC, FP): {"cbrt", "erf", "erfc", "lgamma", "tgamma"},
     (NOFC, NOFC): {"lnot"},
 }
+if suitesparse:
+    UNARY[(ALL, POS)] = {"positioni", "positioni1", "positionj", "positionj1"}
+
 BINARY = {
     (ALL, ALL): {
         "any", "cdiv", "first", "iseq", "isne", "minus", "pair", "plus", "pow", "rdiv",
@@ -64,9 +68,6 @@ BINARY = {
     (ALL, FCFP): {"truediv", "rtruediv"},
     (ALL, NOBOOL): {"rpow"},  # different for pow, b/c rpow is a UDF
     (ALL, NOFC): {"absfirst", "abssecond"},
-    (ALL, POS): {
-        "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1",
-    },
     (BOOLINT, FP): {"ldexp"},
     (INT, INT): {"band", "bclr", "bget", "bor", "bset", "bshift", "bxnor", "bxor"},
     (INT, INT64): {"binom"},
@@ -76,6 +77,11 @@ BINARY = {
     (NOFC, FPINT): {"floordiv", "rfloordiv"},
     (NOFC, NOFC): {"isge", "isgt", "isle", "islt", "land", "lor", "lxor", "max", "min"},
 }
+if suitesparse:
+    BINARY[(ALL, POS)] = {
+        "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1",
+    }
+
 MONOID = {
     (UINT, UINT): {"band", "bor", "bxnor", "bxor"},
     (BOOL, BOOL): {"eq"},
@@ -101,10 +107,6 @@ _SEMIRING1 = {
     (ALL, NOFC): [
         {"max"},
         {"absfirst", "abssecond"},
-    ],
-    (ALL, POS): [  # POS, extra->INT64
-        {"any", "max", "min", "plus", "times"},
-        {"firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1"},
     ],
     (ALL, BOOL): [  # BOOL, extra->BOOL
         {"eq", "land", "lor", "lxnor", "lxor"},
@@ -151,12 +153,17 @@ _SEMIRING1 = {
         {"land", "lor", "lxor", "first", "second"},
     ],
 }
+if suitesparse:
+    _SEMIRING1[(ALL, POS)] = [  # POS, extra->INT64
+        {"any", "max", "min", "plus", "times"},
+        {"firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1"},
+    ]
 # fmt: on
 _SEMIRING2 = defaultdict(lambda: (set(), set()))  # {semiring: [input_types, output_types]}
 for key, (leftvals, rightvals) in _SEMIRING1.items():
     for left, right in itertools.product(leftvals, rightvals):
         name = f"{left}_{right}"
-        if not hasattr(semiring, name):
+        if (not suitesparse or not hasattr(semiring.ss, name)) and not hasattr(semiring, name):
             continue
         _SEMIRING2[name][0].update(key[0])
         _SEMIRING2[name][1].update(key[1])
@@ -312,7 +319,10 @@ def _run_test(module, typ, expected):
         expected = d
     seen = defaultdict(set)
     for name in dir(module):
-        val = getattr(module, name)
+        if name in getattr(module, "_deprecated", ()):
+            val = module._deprecated[name]
+        else:
+            val = getattr(module, name)
         if not isinstance(val, typ) or name in IGNORE:
             continue
         key = (frozenset(val.types.keys()), frozenset(val.types.values()))
