@@ -14,7 +14,7 @@ orig_semirings = set()
 def pytest_configure(config):
     randomly = config.getoption("--randomly", False)
     backend = config.getoption("--backend", None)
-    if backend is None:  # pragma: no branch
+    if backend is None:
         if randomly:
             backend = "suitesparse" if np.random.rand() < 0.5 else "suitesparse-vanilla"
         else:
@@ -26,11 +26,12 @@ def pytest_configure(config):
     if record is None:  # pragma: no branch
         record = np.random.rand() < 0.5 if randomly else False
     mapnumpy = config.getoption("--mapnumpy", False)
-    if mapnumpy is None:  # pragma: no branch
+    if mapnumpy is None:
         mapnumpy = np.random.rand() < 0.5 if randomly else False
     runslow = config.getoption("--runslow", False)
-    if runslow is None:  # pragma: no branch
-        runslow = np.random.rand() < 0.25 if randomly else False
+    if runslow is None:
+        # Add a small amount of randomization to be safer
+        runslow = np.random.rand() < 0.05 if randomly else False
     config.runslow = runslow
 
     gb.config.set(autocompute=False, mapnumpy=mapnumpy)

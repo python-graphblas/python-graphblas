@@ -228,7 +228,7 @@ def test_npmonoid():
             assert len(op.types) > 0, op.name
             if gb_left.dtype not in op.types or binary_name in blocklist.get(
                 gb_left.dtype.name, ()
-            ):
+            ):  # pragma: no cover (flaky)
                 continue
             with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
                 gb_result = gb_left.ewise_mult(gb_right, op).new()

@@ -9,97 +9,173 @@ on:
       - main
 
 jobs:
+  rngs:
+    # To achieve consistent coverage, we need a little bit of correlated collaboration.
+    # Specifically, we need to make sure we run with and without `--mapnumpy` on slow tests.
+    # We also use correlated RNG to run both backends on slow tests.
+    #
+    # {A,B,C,D},yes = --mapnumpy
+    # {A,B,C,D},no = --no-mapnumpy
+    # {D,E,F,G},yes = --backend=suitesparse
+    # {D,E,F,G},no = --backend=suitesparse-vanilla
+    #
+    #                   linux   windows osx
+    #               +-----------------------+
+    # A  E  normal  |   yes     no          |
+    # A  E  bizarro |   no      yes         |
+    # B  F  normal  |           no      yes |
+    # B  F  bizarro |           yes     no  |
+    # C  G  normal  |   no      yes         |
+    # C  G  bizarro |   yes     no          |
+    # D  H  normal  |           yes     no  |
+    # D  H  bizarro |           no      yes |
+    #               +-----------------------+
+    runs-on: ubuntu-latest
+    outputs:
+      # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idoutputs
+      mapnumpy: ${{ steps.mapnumpy.outputs.selected }}
+      backend: ${{ steps.backend.outputs.selected }}
+    steps:
+      - name: RNG for mapnumpy
+        uses: ddradar/choose-random-action@v2.0.2
+        id: mapnumpy
+        with:
+          contents: |
+            A
+            B
+            C
+            D
+          weights: |
+            1
+            1
+            1
+            1
+      - name: RNG for backend
+        uses: ddradar/choose-random-action@v2.0.2
+        id: backend
+        with:
+          contents: |
+            E
+            F
+            G
+            H
+          weights: |
+            1
+            1
+            1
+            1
   build_and_test:
-    runs-on: ${{ matrix.cfg.os }}
+    needs: rngs
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash -l {0}
     strategy:
       fail-fast: false
+      # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
+      # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
+      # since we need to run all slow tests on Windows and non-Windoes OSes.
+      # If important in the future, we can also randomize dependency versions.
       matrix:
-        cfg:
-          # Begin with fast, vanilla test
-          - { pyver: "3.10", os: "ubuntu-latest", testopts: "", sourcetype: "conda-forge" }
-          # Test ubuntu with conda-forge
-          - { pyver: "3.8", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.9", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.10", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          # Test macos with conda-forge
-          - { pyver: "3.8", os: "macos-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.9", os: "macos-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.10", os: "macos-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          # Test windows with conda-forge
-          - { pyver: "3.8", os: "windows-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.9", os: "windows-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.10", os: "windows-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          # Test ubuntu with alternative methods to install dependencies
-          - { pyver: "3.10", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "wheel" }
-          - { pyver: "3.10", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "source" }
-          - { pyver: "3.10", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "upstream" }
-          # Test misc
-          - { pyver: "3.8", os: "macos-latest", testopts: "--randomly", sourcetype: "upstream" }
-          - { pyver: "3.9", os: "windows-latest", testopts: "--randomly", sourcetype: "upstream" }
-
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        slowtask: ["pytest_normal", "pytest_bizarro", "pylint", "notebooks"]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
+      - name: RNG for Python version
+        uses: ddradar/choose-random-action@v2.0.2
+        id: pyver
+        with:
+          contents: |
+            3.8
+            3.9
+            3.10
+          weights: |
+            1
+            1
+            1
+      - name: RNG for source of python-suitesparse-graphblas
+        uses: ddradar/choose-random-action@v2.0.2
+        id: sourcetype
+        with:
+          # Set weight to 0 to skip (such as if 'upstream' is known to not work)
+          contents: |
+            conda-forge
+            wheel
+            source
+            upstream
+          weights: |
+            1
+            1
+            1
+            1
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
           miniforge-variant: Mambaforge
           miniforge-version: latest
           use-mamba: true
-          python-version: ${{ matrix.cfg.pyver }}
+          python-version: ${{ steps.pyver.outputs.selected }}
           channels: conda-forge,nodefaults
           channel-priority: strict
           activate-environment: graphblas
           auto-activate-base: false
-      # Randomly test one slow task per job (about 5% chance one group isn't run).
-      #
-      # TODO: have build matrix be [slowtask]x[os] and randomly choose [pyver] and [sourcetype].
-      # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky).
-      # If important in the future, we could also randomize dependency versions.
-      - name: RNG for tests
-        uses: ddradar/choose-random-action@v2.0.2
-        id: slowtask
-        with:
-          contents: |
-            pytest_normal
-            pytest_bizarro
-            pylint
-            notebooks
-          weights: |
-            1
-            1
-            1
-            1
       - name: Update env
         run: |
+          # Install dependencies based on the needs of the job.
+          # Don't panic! This may look scary at a glance, but each line makes sense.
+          # Once we have wheels for all OSes, we can delete the last two lines.
           mamba install pytest coverage coveralls=3.3.1 pytest-randomly \
-            ${{ steps.slowtask.outputs.selected == 'pylint' && 'black pylint' || '' }} \
-            pandas numba scipy networkx cffi donfig pyyaml awkward
+            pandas numba scipy networkx cffi donfig pyyaml awkward \
+            ${{ matrix.slowtask == 'pylint' && 'black pylint' || '' }} \
+            ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
+            ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
+            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
+            ${{ steps.sourcetype.outputs.selected == 'conda-forge' && 'python-suitesparse-graphblas' || '' }} \
+            ${{ matrix.os != 'ubuntu-latest' && '"graphblas>=7.4.0"' || '' }} \
+            ${{ steps.sourcetype.outputs.selected == 'wheel' && matrix.os != 'ubuntu-latest' && 'python-suitesparse-graphblas' || '' }}
       - name: Build extension module
         run: |
-          if [[ ${{ matrix.cfg.sourcetype }} == "wheel" ]]; then
-              pip install suitesparse-graphblas
-          else
-              mamba install "graphblas>=7.4.0"
-          fi
-          if [[ ${{ matrix.cfg.sourcetype }} == "source" ]]; then
-              pip install --no-binary=all suitesparse-graphblas
-          elif [[ ${{ matrix.cfg.sourcetype }} == "upstream" ]]; then
-              mamba install cython
+          # We only have wheels for Linux right now
+          if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" && ${{ matrix.os }} == "ubuntu-latest" ]]; then
+              pip install --no-deps suitesparse-graphblas
+          elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
+              pip install --no-deps --no-binary=all suitesparse-graphblas
+          elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
               pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
-          elif [[ ${{ matrix.cfg.sourcetype }} == "conda-forge" ]]; then
-              mamba install python-suitesparse-graphblas
           fi
           pip install --no-deps -e .
       - name: Unit tests
         run: |
-          coverage run -m pytest ${{ matrix.cfg.testopts }} -v \
-            ${{ steps.slowtask.outputs.selected == 'pytest_normal' && '--runslow' || '' }}
+          A=${{ needs.rngs.outputs.mapnumpy == 'A' || '' }} ; B=${{ needs.rngs.outputs.mapnumpy == 'B' || '' }}
+          C=${{ needs.rngs.outputs.mapnumpy == 'C' || '' }} ; D=${{ needs.rngs.outputs.mapnumpy == 'D' || '' }}
+          E=${{ needs.rngs.outputs.backend == 'E' || '' }} ; F=${{ needs.rngs.outputs.backend == 'F' || '' }}
+          G=${{ needs.rngs.outputs.backend == 'G' || '' }} ; H=${{ needs.rngs.outputs.backend == 'H' || '' }}
+          normal=${{ matrix.slowtask == 'pytest_normal' || '' }} ; bizarro=${{ matrix.slowtask == 'pytest_bizarro' || '' }}
+          ubuntu=${{ matrix.os == 'ubuntu-latest' || '' }} ; windows=${{ matrix.os == 'windows-latest' || '' }} ; macos=${{ matrix.os == 'macos-latest' || '' }}
+          mapnumpy='--mapnumpy' ; nomapnumpy='--no-mapnumpy' ; suitesparse='--backend=suitesparse' ; vanilla='--backend=suitesparse-vanilla'
+          args=$(
+            if [[ $A && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $A && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $B && $normal  ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $B && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $C && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $C && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $D && $normal  ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $D && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $E && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $E && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $F && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $F && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $G && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $G && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
+          echo $args
+          coverage run -m pytest --randomly -v $args \
+            ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
         run: |
           # Run tests again with Scalars being C scalars by default
@@ -108,11 +184,36 @@ jobs:
             -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
             -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
             -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
-          coverage run -a -m pytest ${{ matrix.cfg.testopts }} -v \
-            ${{ steps.slowtask.outputs.selected == 'pytest_bizarro' && '--runslow' || ''}}
+          A=${{ needs.rngs.outputs.mapnumpy == 'A' || '' }} ; B=${{ needs.rngs.outputs.mapnumpy == 'B' || '' }}
+          C=${{ needs.rngs.outputs.mapnumpy == 'C' || '' }} ; D=${{ needs.rngs.outputs.mapnumpy == 'D' || '' }}
+          E=${{ needs.rngs.outputs.backend == 'E' || '' }} ; F=${{ needs.rngs.outputs.backend == 'F' || '' }}
+          G=${{ needs.rngs.outputs.backend == 'G' || '' }} ; H=${{ needs.rngs.outputs.backend == 'H' || '' }}
+          normal=${{ matrix.slowtask == 'pytest_normal' || '' }} ; bizarro=${{ matrix.slowtask == 'pytest_bizarro' || '' }}
+          ubuntu=${{ matrix.os == 'ubuntu-latest' || '' }} ; windows=${{ matrix.os == 'windows-latest' || '' }} ; macos=${{ matrix.os == 'macos-latest' || '' }}
+          mapnumpy='--mapnumpy' ; nomapnumpy='--no-mapnumpy' ; suitesparse='--backend=suitesparse' ; vanilla='--backend=suitesparse-vanilla'
+          args=$(
+            if [[ $A && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $A && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $B && $normal  ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $B && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $C && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $C && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $D && $normal  ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $D && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $E && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $E && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $F && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $F && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $G && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $G && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
+          echo $args
+          coverage run -a -m pytest --randomly -v $args \
+            ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
-        if: steps.slowtask.outputs.selected == 'pylint'
+        if: matrix.slowtask == 'pylint'
         run: |
           # Test (and cover) automatic initialization
           coverage run -a graphblas/tests/test_auto_init.py
@@ -127,20 +228,21 @@ jobs:
           echo "from graphblas.core import base" > script.py
           coverage run -a script.py
           rm script.py
+          # Tests whose coverage depend on order of tests :/
+          # TODO: understand why these are order-dependent and try to fix
+          coverage run -a -m pytest -x --no-mapnumpy -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
+          # coverage run -a -m pytest -x --no-mapnumpy -k test_npmonoid graphblas/tests/test_numpyops.py --runslow
       - name: Auto-generated code check
-        if: steps.slowtask.outputs.selected == 'pylint'
+        if: matrix.slowtask == 'pylint'
         run: |
           # This step uses `black`
           coverage run -a -m graphblas.core.automethods
           coverage run -a -m graphblas.core.infixmethods
           git diff --exit-code
-      - name: Pylint (informational only; never fails)
-        if: steps.slowtask.outputs.selected == 'pylint'
-        run: pylint --exit-zero graphblas/
       - name: Coverage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COVERALLS_FLAG_NAME: ${{ matrix.cfg.pyver}}/${{ matrix.cfg.testopts }}
+          COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
           COVERALLS_PARALLEL: true
         run: |
           coverage xml
@@ -148,11 +250,12 @@ jobs:
           coveralls --service=github
       - name: codecov
         uses: codecov/codecov-action@v3
+      - name: Pylint (informational only; never fails)
+        if: matrix.slowtask == 'pylint'
+        run: pylint --exit-zero graphblas/
       - name: Notebooks Execution check
-        if: steps.slowtask.outputs.selected == 'notebooks'
-        run: |
-          mamba install matplotlib nbconvert jupyter 'ipython>=7'
-          jupyter nbconvert --to notebook --execute notebooks/*ipynb
+        if: matrix.slowtask == 'notebooks'
+        run: jupyter nbconvert --to notebook --execute notebooks/*ipynb
 
   finish:
     needs: build_and_test
