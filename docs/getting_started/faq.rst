@@ -64,7 +64,7 @@ and documented in `GitHub issues <https://github.com/python-graphblas/python-gra
 .. TODO: Notes from our community meetings are here.
 
 As our community grows, we would welcome additional core developers, a Steering Committee,
-and other roles to help direct ``python-graphblas``.
+and other roles to help manage and direct ``python-graphblas``.
 We aspire to have (and formalize) governance such as
 `NetworkX <https://networkx.org/documentation/stable/developer/nxeps/nxep-0001.html>`_
 and `Dask <https://github.com/dask/governance/blob/main/governance.md>`_ have.
