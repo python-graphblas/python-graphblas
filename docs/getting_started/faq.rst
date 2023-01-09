@@ -78,6 +78,41 @@ instructions for how to report complaints or potential CoC violations is here:
 
 https://github.com/python-graphblas/python-graphblas/blob/main/CODE_OF_CONDUCT.md
 
+What is the deprecation policy?
++++++++++++++++++++++++++++++++
+
+``python-graphblas`` uses a time-based deprecation policy:
+deprecations must last at least eight months, and may be removed after eight months.
+
+We care deeply about stability and want other libraries and applications
+to be able to depend on ``python-graphblas`` with minimal disruption.
+We try hard "to get things right" the first time.
+Nevertheless, backwards-incompatible changes are inevitable in most software projects.
+
+If possible, API or behavior changes should be done in a backwards-compatible way
+that allows a transition to the new way. Using the previous (deprecated) way should
+give a ``DeprecationWarning`` that identifies what is deprecated,
+how the user should update, and when the deprecation may be removed.
+Changes must also be documented in the release notes and docstrings if appropriate.
+
+.. Note: should we mention e.g. ``python -Werror::DeprecationWarning``?
+
+Bugs are not considered deprecations and may be fixed immediately.
+
+What is the version support policy?
++++++++++++++++++++++++++++++++++++
+
+Each major Python version will be supported for at least 36 to 42 months.
+Major dependencies such as NumPy should be supported for at least 24 months.
+This is motivated by these guidelines:
+
+- https://numpy.org/neps/nep-0029-deprecation_policy.html
+- https://scientific-python.org/specs/spec-0000/
+
+``python-graphblas`` itself follows a "single trunk" versioning strategy.
+For example, if a CVE is discovered, we won't retroactively apply the fix to previous releases.
+Instead, the fix will only be available starting with the next release.
+
 What is the relationship between python-graphblas and pygraphblas?
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -116,7 +151,7 @@ together with the output.
     # python-graphblas
     C(A, accum=binary.plus) << semiring.min_plus(A @ B.T)
 
-``python-graphblas`` also contains additional features, such as the ``Recorder`` and advanced aggregators.
+``python-graphblas`` also contains many additional features such as the ``Recorder`` and advanced aggregators.
 
 What is the performance penalty of writing algorithms with python-graphblas vs writing them directly in C?
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
