@@ -89,7 +89,7 @@ to be able to depend on ``python-graphblas`` with minimal disruption.
 We try hard "to get things right" the first time.
 Nevertheless, backwards-incompatible changes are inevitable in most software projects.
 
-If possible, API or behavior changes should be done in a backwards-compatible way
+If possible, API or behavioral changes should be done in a backwards-compatible way
 that allows a transition to the new way. Using the previous (deprecated) way should
 give a ``DeprecationWarning`` that identifies what is deprecated,
 how the user should update, and when the deprecation may be removed.
