@@ -51,7 +51,7 @@ We seek consensus and input from all members of the community.
 Anyone with an interest in the project can join the community, contribute to the project
 design, and participate in the decision making process. We want to hear from you!
 
-We are currently a small team, and major decisions must be agreed upon by both co-creators
+We are currently a small team, and decisions must be agreed upon by both co-creators
 `Erik Welch <https://github.com/eriknw>`_ and `Jim Kitchen <https://github.com/jim22k>`_.
 PRs must be approved by at least one core developer, and Erik and Jim must both approve
 new releases.
@@ -69,10 +69,12 @@ We aspire to have (and formalize) governance such as
 `NetworkX <https://networkx.org/documentation/stable/developer/nxeps/nxep-0001.html>`_
 and `Dask <https://github.com/dask/governance/blob/main/governance.md>`_ have.
 
-How do I report a potential Code of Conduct violation?
-++++++++++++++++++++++++++++++++++++++++++++++++++++++
+What is the Code of Conduct?
+++++++++++++++++++++++++++++
 
-See our code of conduct and instructions for reporting complaints here:
+The Code of Conduct describes expected behavior for interactions within our community
+and by individuals when they represent the project. Our full Code of Conduct with
+instructions for how to report complaints or potential CoC violations is here:
 
 https://github.com/python-graphblas/python-graphblas/blob/main/CODE_OF_CONDUCT.md
 
