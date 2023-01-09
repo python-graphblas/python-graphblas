@@ -2667,8 +2667,6 @@ class Monoid(OpBase):
         if self._binaryop is not None:
             return self._binaryop
         # Must be builtin
-        if self.name in _SS_OPERATORS:
-            return binary._deprecated[self.name]
         return getattr(binary, self.name)
 
     @property
@@ -2950,15 +2948,9 @@ class Semiring(OpBase):
             source_name = f"{lname}_lxor"
             if not _hasop(semiring, target_name):
                 continue
-            if target_name in _SS_OPERATORS:
-                target_op = semiring._deprecated[target_name]
-            else:
-                target_op = getattr(semiring, target_name)
+            target_op = getattr(semiring, target_name)
             if BOOL not in target_op.types:  # pragma: no branch (safety)
-                if source_name in _SS_OPERATORS:
-                    source_op = semiring._deprecated[source_name]
-                else:
-                    source_op = getattr(semiring, source_name)
+                source_op = getattr(semiring, source_name)
                 typed_op = source_op._typed_ops[BOOL]
                 target_op.types[BOOL] = BOOL
                 target_op._typed_ops[BOOL] = typed_op

@@ -250,9 +250,15 @@ jobs:
           coveralls --service=github
       - name: codecov
         uses: codecov/codecov-action@v3
-      - name: Pylint (informational only; never fails)
+      - name: Pylint
         if: matrix.slowtask == 'pylint'
-        run: pylint --exit-zero graphblas/
+        run: |
+          # If this fails, read the report and try to improve the code.
+          # You can run `pylint` locally: `pre-commit run --all-files --hook-stage manual`
+          # If you think we ought to always ignore a specific pylint code, you can add
+          # it to the `[tool.pylint.messages_control]` section in `pyproject.toml`.
+          # To ignore a pylint error for a single line, add `# pylint: disable=CODE`.
+          pylint --exit-zero graphblas/
       - name: Notebooks Execution check
         if: matrix.slowtask == 'notebooks'
         run: jupyter nbconvert --to notebook --execute notebooks/*ipynb
