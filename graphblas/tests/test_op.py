@@ -79,6 +79,8 @@ def test_semiring():
 def test_agg():
     assert repr(agg.count) == "agg.count"
     assert repr(agg.count["INT32"]) == "agg.count[INT32]"
+    if suitesparse:
+        assert repr(agg.ss.first) == "agg.ss.first"
     assert "INT64" in agg.sum_of_inverses
     assert agg.sum_of_inverses["INT64"].return_type == FP64
     assert "BOOL" not in agg.sum_of_inverses

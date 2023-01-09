@@ -1020,7 +1020,7 @@ class OpBase:
                                 if backend == "suitesparse":
                                     setattr(cls._module.ss, name, obj)
                                 cls._module._deprecated[name] = obj
-                                if include_in_ops and not _hasop(op, name):
+                                if include_in_ops and not _hasop(op, name):  # pragma: no branch
                                     op._deprecated[name] = obj
                                     if backend == "suitesparse":
                                         setattr(op.ss, name, obj)
@@ -2414,11 +2414,11 @@ class BinaryOp(OpBase):
         for left_name, right_name in cls._commutes_to_in_semiring.items():
             if left_name in _SS_OPERATORS:
                 left = binary._deprecated[left_name]
-            else:
+            else:  # pragma: no cover (safety)
                 left = getattr(binary, left_name)
             if right_name in _SS_OPERATORS:
                 right = binary._deprecated[right_name]
-            else:
+            else:  # pragma: no cover (safety)
                 right = getattr(binary, right_name)
             left._semiring_commutes_to = right
             right._semiring_commutes_to = left
