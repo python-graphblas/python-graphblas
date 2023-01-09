@@ -713,11 +713,17 @@ def test_op_namespace():
         for key, val in vars(select).items()
         if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
     }
-    assert not unarynames - opnames, unarynames - opnames
-    assert not binarynames - opnames, binarynames - opnames
+    extra_unary = unarynames - opnames - unary._deprecated.keys()
+    assert not extra_unary
+    extra_binary = binarynames - opnames - binary._deprecated.keys()
+    assert not extra_binary
     assert not monoidnames - opnames, monoidnames - opnames
-    assert not semiringnames - opnames, semiringnames - opnames
-    assert not opnames - (unarynames | binarynames | monoidnames | semiringnames)
+    extra_semiring = semiringnames - opnames - semiring._deprecated.keys()
+    assert not extra_semiring
+    extra_ops = (
+        opnames - (unarynames | binarynames | monoidnames | semiringnames) - op._deprecated.keys()
+    )
+    assert not extra_ops
     # These are not part of the `op` namespace
     assert indexunarynames - opnames == indexunarynames, indexunarynames - opnames
     assert selectnames - opnames == selectnames, selectnames - opnames
