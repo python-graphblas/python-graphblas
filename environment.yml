@@ -32,6 +32,7 @@ dependencies:
     - matplotlib
     # For linting
     - pre-commit
+    - pylint
     # For testing
     - pytest-cov
     # For debugging
@@ -82,7 +83,6 @@ dependencies:
     # - pycodestyle
     # - pydot
     # - pygraphviz
-    # - pylint
     # - pytest-runner
     # - pytest-xdist
     # - python-graphviz

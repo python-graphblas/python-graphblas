@@ -57,7 +57,7 @@ UNARY = {
     (NOFC, NOFC): {"lnot"},
 }
 # Remove "suitesparse-vailla" once these deprecations are removed
-if backend in {"suitesparse", "suitesparse-vanilla"}:
+if backend in {"suitesparse", "suitesparse-vanilla"}:  # pragma: no branch (future)
     UNARY[(ALL, POS)] = {"positioni", "positioni1", "positionj", "positionj1"}
 
 BINARY = {
@@ -79,7 +79,7 @@ BINARY = {
     (NOFC, NOFC): {"isge", "isgt", "isle", "islt", "land", "lor", "lxor", "max", "min"},
 }
 # Remove "suitesparse-vailla" once these deprecations are removed
-if backend in {"suitesparse", "suitesparse-vanilla"}:
+if backend in {"suitesparse", "suitesparse-vanilla"}:  # pragma: no branch (future)
     BINARY[(ALL, POS)] = {
         "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1",
     }
@@ -156,7 +156,7 @@ _SEMIRING1 = {
     ],
 }
 # Remove "suitesparse-vailla" once these deprecations are removed
-if backend in {"suitesparse", "suitesparse-vanilla"}:
+if backend in {"suitesparse", "suitesparse-vanilla"}:  # pragma: no branch (future)
     _SEMIRING1[(ALL, POS)] = [  # POS, extra->INT64
         {"any", "max", "min", "plus", "times"},
         {"firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1"},

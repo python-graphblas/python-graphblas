@@ -254,7 +254,8 @@ jobs:
         if: matrix.slowtask == 'pylint'
         run: |
           # If this fails, read the report and try to improve the code.
-          # You can run `pylint` locally: `pre-commit run --all-files --hook-stage manual`
+          # You can run `pylint` locally: `pre-commit run --all-files --hook-stage manual`.
+          # It's faster to run on a single file: `pylint graphblas/path/to/file.py`.
           # If you think we ought to always ignore a specific pylint code, you can add
           # it to the `[tool.pylint.messages_control]` section in `pyproject.toml`.
           # To ignore a pylint error for a single line, add `# pylint: disable=CODE`.
