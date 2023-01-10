@@ -2,9 +2,9 @@ from setuptools import find_packages, setup
 
 extras_require = {
     "repr": ["pandas >=1.2"],
-    "io": ["networkx >=2.8", "scipy >=1.7", "awkward >=1.10"],
+    "io": ["networkx >=2.8", "scipy >=1.8", "awkward >=1.10"],
     "viz": ["matplotlib"],
-    "test": ["pytest", "pandas >=1.2", "scipy >=1.7"],
+    "test": ["pytest", "pandas >=1.2", "scipy >=1.8"],
 }
 extras_require["complete"] = sorted({v for req in extras_require.values() for v in req})
 
