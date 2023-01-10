@@ -1,10 +1,10 @@
 from setuptools import find_packages, setup
 
 extras_require = {
-    "repr": ["pandas"],
-    "io": ["networkx >=2.8", "scipy >=1.7.0", "awkward >=1.10"],
+    "repr": ["pandas >=1.2"],
+    "io": ["networkx >=2.8", "scipy >=1.7", "awkward >=1.10"],
     "viz": ["matplotlib"],
-    "test": ["pytest", "pandas", "scipy >=1.7.0"],
+    "test": ["pytest", "pandas >=1.2", "scipy >=1.7"],
 }
 extras_require["complete"] = sorted({v for req in extras_require.values() for v in req})
 
@@ -28,7 +28,7 @@ setup(
         "suitesparse-graphblas >=7.4.0.0, <7.5",
         "numpy >=1.21",
         "numba",
-        "donfig",
+        "donfig >=0.6",
         "pyyaml",
     ],
     extras_require=extras_require,
