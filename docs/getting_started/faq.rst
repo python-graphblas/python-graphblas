@@ -58,10 +58,9 @@ new releases.
 
 We strive for openness, transparency, and institutional neutrality.
 Discussions typically occur in our
-`weekly community calls <https://github.com/python-graphblas/python-graphblas/issues/247>`_
-and documented in `GitHub issues <https://github.com/python-graphblas/python-graphblas/issues>`_.
-
-.. TODO: Notes from our community meetings are here.
+`weekly community calls <https://github.com/python-graphblas/python-graphblas/issues/247>`_ and
+documented in `meeting notes <https://github.com/python-graphblas/archive/tree/main/meetings>`_
+and relevant `GitHub issues <https://github.com/python-graphblas/python-graphblas/issues>`_.
 
 As our community grows, we would welcome additional core developers, a Steering Committee,
 and other roles to help manage and direct ``python-graphblas``.
