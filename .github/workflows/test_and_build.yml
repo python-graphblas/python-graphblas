@@ -153,7 +153,7 @@ jobs:
           # TODO: there are currently issues with some numpy versions when
           # installing python-suitesparse-grphblas from source or upstream.
           #
-          if [[ ${{ steps.sourcetype.outputs.selected == 'source' || steps.sourcetype.outputs.selected == 'upstream' || '' }} ]]; then
+          if [[ ${{ steps.sourcetype.outputs.selected == 'source' || steps.sourcetype.outputs.selected == 'upstream' || '""' }} ]]; then
             echo BRANCH1
             npver=""
           elif [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
