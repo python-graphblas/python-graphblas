@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 extras_require = {
     "repr": ["pandas"],
-    "io": ["networkx >=2.8", "scipy >=1.7.0", "awkward"],
+    "io": ["networkx >=2.8", "scipy >=1.7.0", "awkward >=1.10"],
     "viz": ["matplotlib"],
     "test": ["pytest", "pandas", "scipy >=1.7.0"],
 }

@@ -117,7 +117,7 @@ jobs:
         with:
           contents: |
             1.10
-            2
+            2.0
           weights: |
             1
             1
@@ -128,7 +128,7 @@ jobs:
           contents: |
             2.7
             2.8
-            3
+            3.0
           weights: |
             1
             1
@@ -151,22 +151,29 @@ jobs:
           #
           # First let's randomly get the numpy version to install
           # TODO: there are currently issues with some numpy versions when
-          # installing python-suitesparse-grphblas from source.
+          # installing python-suitesparse-grphblas from source or upstream.
           #
-          # if [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
-          #   npver=$(python -c 'import random ; print(random.choice(["1.21", "1.22", "1.23"]))')
-          # elif [[ ${{ steps.pyver.outputs.selected }} == "3.9" ]]; then
-          #   npver=$(python -c 'import random ; print(random.choice(["1.21", "1.22", "1.23"]))')
-          # elif [[ ${{ steps.pyver.outputs.selected }} == "3.10" ]]; then
-          #   npver=$(python -c 'import random ; print(random.choice(["1.21", "1.22", "1.23"]))')
-          # else  # Python 3.11
-          #   npver=$(python -c 'import random ; print(random.choice(["1.23"]))')
-          # fi
-          # echo "npver $npver"
+          if [[ ${{ steps.sourcetype.outputs.selected == 'source' || steps.sourcetype.outputs.selected == 'upstream' || '' }} ]]; then
+            echo BRANCH1
+            npver=""
+          elif [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
+            echo BRANCH2
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23"]))')
+          elif [[ ${{ steps.pyver.outputs.selected }} == "3.9" ]]; then
+            echo BRANCH3
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23"]))')
+          elif [[ ${{ steps.pyver.outputs.selected }} == "3.10" ]]; then
+            echo BRANCH4
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23"]))')
+          else  # Python 3.11
+            echo BRANCH5
+            npver=$(python -c 'import random ; print(random.choice(["=1.23"]))')
+          fi
+          echo "npver${npver}"
           #
           # Once we have wheels for all OSes, we can delete the last two lines.
           mamba install pytest coverage coveralls=3.3.1 pytest-randomly \
-            pandas numba scipy cffi donfig pyyaml \
+            pandas numba scipy cffi donfig pyyaml numpy${npver} \
             networkx=${{ steps.nxver.outputs.selected }} awkward=${{ steps.akver.outputs.selected }} \
             ${{ matrix.slowtask == 'pylint' && 'black pylint' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
