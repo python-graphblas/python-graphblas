@@ -148,20 +148,25 @@ jobs:
         run: |
           # Install dependencies based on the needs of the job.
           # Don't panic! This may look scary at a glance, but each line makes sense.
+          #
           # First let's randomly get the numpy version to install
-          if [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["1.21", "1.22", "1.23"]))')
-          elif [[ ${{ steps.pyver.outputs.selected }} == "3.9" ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["1.21", "1.22", "1.23"]))')
-          elif [[ ${{ steps.pyver.outputs.selected }} == "3.10" ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["1.21", "1.22", "1.23"]))')
-          else  # Python 3.11
-            npver=$(python -c 'import random ; print(random.choice(["1.23"]))')
-          fi
-          echo "npver $npver"
+          # TODO: there are currently issues with some numpy versions when
+          # installing python-suitesparse-grphblas from source.
+          #
+          # if [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
+          #   npver=$(python -c 'import random ; print(random.choice(["1.21", "1.22", "1.23"]))')
+          # elif [[ ${{ steps.pyver.outputs.selected }} == "3.9" ]]; then
+          #   npver=$(python -c 'import random ; print(random.choice(["1.21", "1.22", "1.23"]))')
+          # elif [[ ${{ steps.pyver.outputs.selected }} == "3.10" ]]; then
+          #   npver=$(python -c 'import random ; print(random.choice(["1.21", "1.22", "1.23"]))')
+          # else  # Python 3.11
+          #   npver=$(python -c 'import random ; print(random.choice(["1.23"]))')
+          # fi
+          # echo "npver $npver"
+          #
           # Once we have wheels for all OSes, we can delete the last two lines.
           mamba install pytest coverage coveralls=3.3.1 pytest-randomly \
-            pandas numba scipy cffi donfig pyyaml numpy=$npver \
+            pandas numba scipy cffi donfig pyyaml \
             networkx=${{ steps.nxver.outputs.selected }} awkward=${{ steps.akver.outputs.selected }} \
             ${{ matrix.slowtask == 'pylint' && 'black pylint' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
