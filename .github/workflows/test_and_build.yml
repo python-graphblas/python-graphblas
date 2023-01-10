@@ -111,6 +111,30 @@ jobs:
             1
             1
             1
+      - name: RNG for Awkward version
+        uses: ddradar/choose-random-action@v2.0.2
+        id: akver
+        with:
+          contents: |
+            1.10
+            2
+          weights: |
+            1
+            1
+      - name: RNG for NetworkX version
+        uses: ddradar/choose-random-action@v2.0.2
+        id: nxver
+        with:
+          contents: |
+            2.6
+            2.7
+            2.8
+            3
+          weights: |
+            1
+            1
+            1
+            1
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
@@ -126,9 +150,21 @@ jobs:
         run: |
           # Install dependencies based on the needs of the job.
           # Don't panic! This may look scary at a glance, but each line makes sense.
+          # First let's randomly get the numpy version to install
+          if [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
+            npver=$(python -c 'import random ; print(random.choice(["1.20", "1.21", "1.22", "1.23"]))')
+          elif [[ ${{ steps.pyver.outputs.selected }} == "3.9" ]]; then
+            npver=$(python -c 'import random ; print(random.choice(["1.20", "1.21", "1.22", "1.23"]))')
+          elif [[ ${{ steps.pyver.outputs.selected }} == "3.10" ]]; then
+            npver=$(python -c 'import random ; print(random.choice(["1.21", "1.22", "1.23"]))')
+          else  # Python 3.11
+            npver=$(python -c 'import random ; print(random.choice(["1.23"]))')
+          fi
+          echo "npver $npver"
           # Once we have wheels for all OSes, we can delete the last two lines.
           mamba install pytest coverage coveralls=3.3.1 pytest-randomly \
-            pandas numba scipy networkx cffi donfig pyyaml awkward \
+            pandas numba scipy cffi donfig pyyaml numpy=$npver \
+            networkx=${{ steps.nxver.outputs.selected }} awkward=${{ steps.akver.outputs.selected }} \
             ${{ matrix.slowtask == 'pylint' && 'black pylint' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
