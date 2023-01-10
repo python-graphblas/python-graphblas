@@ -167,7 +167,7 @@ jobs:
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10"]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5"]))')
           fi
-          if [[ ${{ steps.sourcetype.outputs.selected == 'source' || steps.sourcetype.outputs.selected == 'upstream' || '""' }} ]]; then
+          if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
               # TODO: there are currently issues with some numpy versions when
               # installing python-suitesparse-grphblas from source or upstream.
             npver=""
