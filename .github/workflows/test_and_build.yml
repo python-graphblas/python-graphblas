@@ -126,12 +126,10 @@ jobs:
         id: nxver
         with:
           contents: |
-            2.6
             2.7
             2.8
             3
           weights: |
-            1
             1
             1
             1
@@ -152,9 +150,9 @@ jobs:
           # Don't panic! This may look scary at a glance, but each line makes sense.
           # First let's randomly get the numpy version to install
           if [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["1.20", "1.21", "1.22", "1.23"]))')
+            npver=$(python -c 'import random ; print(random.choice(["1.21", "1.22", "1.23"]))')
           elif [[ ${{ steps.pyver.outputs.selected }} == "3.9" ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["1.20", "1.21", "1.22", "1.23"]))')
+            npver=$(python -c 'import random ; print(random.choice(["1.21", "1.22", "1.23"]))')
           elif [[ ${{ steps.pyver.outputs.selected }} == "3.10" ]]; then
             npver=$(python -c 'import random ; print(random.choice(["1.21", "1.22", "1.23"]))')
           else  # Python 3.11
