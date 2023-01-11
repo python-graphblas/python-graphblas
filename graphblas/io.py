@@ -243,16 +243,19 @@ def from_pydata_sparse(A, *, dup_op=None, name=None):
         raise _GraphblasException("m.ndim must be <= 2")
 
     if A.ndim == 1:
-        # pass the dense version to existing `from_numpy` function
-        return from_numpy(A.todense())
+        # the .asformat('coo') makes it easier to convert dok/gcxs using a single approach
+        _A = A.asformat('coo')
+        return _Vector.from_coo(_A.coords, _A.data, dtype=_A.dtype, size=_A.shape[0], dup_op=dup_op, name=name)
 
     # handle two-dimensional arrays
-    # first convert to scipy sparse
-    # .asformat("gcxs") ensures that .to_scipy_sparse method is available
-    B = A.asformat("gcxs").to_scipy_sparse()
+    if A.format == 'gcxs':
+        return from_scipy_sparse(A, dup_op=dup_op, name=name)
 
-    # pass the converted object to existing function
-    return from_scipy_sparse(B, dup_op=dup_op, name=name)
+    if A.format == 'dok':
+        _A = A.asformat('coo')
+        return _Matrix.from_coo(
+            *_A.coords, _A.data, nrows=_A.shape[0], ncols=_A.shape[1], dtype=_A.dtype, dup_op=dup_op, name=name
+        )
 
 
 # TODO: add parameters to allow different networkx classes and attribute names
