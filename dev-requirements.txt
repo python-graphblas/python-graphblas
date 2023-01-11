@@ -1,6 +1,6 @@
 donfig
 numba
-python-suitesparse-graphblas
+suitesparse-graphblas
 pyyaml
 # For repr
 pandas
