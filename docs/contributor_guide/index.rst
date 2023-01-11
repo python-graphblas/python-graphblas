@@ -16,9 +16,13 @@ Development Workflow
 
 * Clone the project to your local computer::
 
+::
+
   git clone git@github.com:your-username/python-graphblas.git
 
-* Navigate to the folder networkx and add the upstream repository::
+* Navigate to the folder with python-graphblas and add the upstream repository::
+
+::
 
   git remote add upstream git@github.com:python-graphblas/python-graphblas.git
 
@@ -49,10 +53,10 @@ Here are instructions for two popular environment managers:
   # and what that involves differs on various systems.
   # pip install -r requirements/extra.txt
   #
-  # Build and install networkx from source
-  pip install -e .
+  # Build and install python-graphblas from source
+  pip install -e . --no-deps
   # Test your installation
-  PYTHONPATH=. pytest networkx
+  pytest graphblas
 
 * ``conda`` (Anaconda or Miniconda)
 
@@ -63,9 +67,9 @@ Here are instructions for two popular environment managers:
   # Activate it
   conda activate graphblas-dev
   # Install python-graphblas from source
-  pip install -e .
+  pip install -e . --no-deps
   # Test your installation
-  PYTHONPATH=. pytest graphblas
+  pytest graphblas
 
 * Finally, we recommend you use a pre-commit hook, which runs a number of tests when
 you type ``git commit``::
