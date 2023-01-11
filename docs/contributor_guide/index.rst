@@ -14,13 +14,13 @@ Development Workflow
   <https://github.com/python-graphblas/python-graphblas>`_ and click the
   "fork" button to create your own copy of the project.
 
-* Clone the project to your local computer::
+* Clone the project to your local computer:
 
 ::
 
   git clone git@github.com:your-username/python-graphblas.git
 
-* Navigate to the folder with python-graphblas and add the upstream repository::
+* Navigate to the folder with python-graphblas and add the upstream repository:
 
 ::
 
@@ -34,6 +34,7 @@ Development Workflow
 # 2. Setting up a local development environment:
 
 * Next, you need to set up your build environment.
+
 Here are instructions for two popular environment managers:
 
 * ``venv`` (pip based)
@@ -71,8 +72,9 @@ Here are instructions for two popular environment managers:
   # Test your installation
   pytest graphblas
 
-* Finally, we recommend you use a pre-commit hook, which runs a number of tests when
-you type ``git commit``::
+* Finally, we recommend you use a pre-commit hook, which runs a number of tests when you type ``git commit``:
+
+::
 
   pre-commit install
   # to trigger manual check use:
