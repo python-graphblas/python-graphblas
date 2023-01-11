@@ -424,7 +424,7 @@ def test_matrix_to_from_pydata_sparse():
     indices = np.array([0, 2, 2, 0, 1, 2])
     data = np.array([1, 2, 3, 4, 5, 6])
 
-    g = sp.GCXS((data, indices, indptr), shape=(3,3))
+    g = sp.GCXS((data, indices, indptr), shape=(3, 3))
     w = gb.io.from_pydata_sparse(g)
     coords = g.asformat("coo").coords
     data = g.asformat("coo").data
