@@ -1,10 +1,6 @@
 import sys as _sys
 from importlib import import_module as _import_module
 
-from suitesparse_graphblas import vararg as _vararg
-
-from ._version import get_versions
-
 
 class replace:
     """Singleton to indicate ``replace=True`` when updating objects.
@@ -83,14 +79,26 @@ def __getattr__(name):
     if name == "_autoinit":
         if _init_params is None:
             _init("suitesparse", None, automatic=True)
-    else:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+        return
+    if name == "__version__":
+        from importlib.metadata import version
+
+        try:
+            return globals().setdefault("__version__", version("python-graphblas"))
+        except Exception as exc:  # pragma: no cover (safety)
+            raise AttributeError(
+                "`graphblas.__version__` not available. This may mean python-graphblas was "
+                "incorrectly installed or not installed at all. For local development, you may "
+                "want to do an editable install via `python -m pip install -e path/to/graphblas`."
+            ) from exc
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__():
     names = globals().keys() | _SPECIAL_ATTRS
     if backend is not None and backend != "suitesparse":
         names.remove("ss")
+    names.add("__version__")
     return list(names)
 
 
@@ -132,8 +140,9 @@ def _init(backend_arg, blocking, automatic=False):
         from suitesparse_graphblas import ffi, initialize, is_initialized, lib
 
         if is_initialized():
-            mode = ffi.new("GrB_Mode*")
-            assert lib.GxB_Global_Option_get(lib.GxB_MODE, _vararg(mode)) == 0
+            mode = ffi.new("int32_t*")
+            if lib.GxB_Global_Option_get_INT32(lib.GxB_MODE, mode) != 0:
+                raise RuntimeError("Could not get GraphBLAS mode")  # pragma: no cover (safety)
             is_blocking = mode[0] == lib.GrB_BLOCKING
             if blocking is None:
                 passed_params["blocking"] = is_blocking
@@ -159,7 +168,7 @@ def _init(backend_arg, blocking, automatic=False):
                 if callable(val) and key.startswith("GxB") or "FC32" in key or "FC64" in key:
                     continue
                 setattr(lib, key, getattr(orig_lib, key))
-            for key in {"GxB_BACKWARDS", "GxB_STRIDE"}:
+            for key in ["GxB_BACKWARDS", "GxB_STRIDE"]:
                 delattr(lib, key)
     else:
         raise ValueError(
@@ -186,8 +195,5 @@ def _load(name):
         # Everything else is a module
         globals()[name] = _import_module(f".{name}", __name__)
 
-
-__version__ = get_versions()["version"]
-del get_versions
 
 __all__ = [key for key in __dir__() if not key.startswith("_")]

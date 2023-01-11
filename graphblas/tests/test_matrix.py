@@ -2,6 +2,7 @@ import inspect
 import itertools
 import pickle
 import sys
+import types
 import weakref
 
 import numpy as np
@@ -537,7 +538,7 @@ def test_extract_input_mask():
         TypeError, match="Got Vector `input_mask` when extracting a submatrix from a Matrix"
     ):
         A(input_mask=expected.S) << A[[0], [0]]
-    with pytest.raises(TypeError, match="unexpected keyword argument"):
+    with pytest.raises(ValueError, match="input_mask"):
         A[0, 0].new(input_mask=M.S)
     with pytest.raises(TypeError, match="mask and input_mask arguments cannot both be given"):
         A[0, [0, 1]].new(input_mask=M.S, mask=expected.S)
@@ -1397,7 +1398,7 @@ def test_reduce_agg(A):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.varp, agg.stdp],
-        finalize=lambda x, y: binary.times(x & y),
+        finalize=lambda x, y, opts: binary.times(x & y),
         types=[agg.varp],
     )
     v1 = A.reduce_rowwise(agg.varp).new()
@@ -1454,7 +1455,7 @@ def test_reduce_agg_argminmax(A):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.argmin, agg.argmax],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.argmin],
     )
     v1 = A.reduce_rowwise(agg.argmin).new()
@@ -1512,7 +1513,7 @@ def test_reduce_agg_firstlast(A):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.first, agg.last],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.first],
     )
     v1 = A.reduce_rowwise(agg.first).new()
@@ -1560,7 +1561,7 @@ def test_reduce_agg_firstlast_index(A):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.first_index, agg.last_index],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.first_index],
     )
     v1 = A.reduce_rowwise(agg.first_index).new()
@@ -1798,13 +1799,11 @@ def test_isclose(A, v):
         [3.0, 2.0, 3.0, 1.0, 5.0, 3.0, 7.0, 8.0, 3.0, 1.0, 7.0, 4.0],
     )
     assert not C4.isclose(A, check_dtype=True), "different datatypes are not equal"
-    # fmt: off
     C5 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
-        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+        [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],  # fmt: skip
         [3.0, 2.0, 3.0, 1.0, 5.0, 3.000000000000000001, 7.0, 8.0, 3.0, 1 - 1e-11, 7.0, 4.0],
     )
-    # fmt: on
     assert C5.isclose(A)
     C6 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
@@ -2441,17 +2440,17 @@ def test_ss_import_export_auto(A, do_iso, methods):
                 d = C2.ss.unpack(format, raw=raw)
             if in_method == "import":
 
-                def import_func(x, import_name, **kwargs):
+                def import_func2(x, import_name, **kwargs):
                     return getattr(Matrix.ss, f"import_{import_name}")(**kwargs)
 
             else:
 
-                def import_func(x, import_name, **kwargs):
+                def import_func2(x, import_name, **kwargs):
                     getattr(x.ss, f"pack_{import_name}")(**kwargs)
                     return x
 
             d["format"] = import_format
-            other = import_func(C2, import_name, take_ownership=take_ownership, **d)
+            other = import_func2(C2, import_name, take_ownership=take_ownership, **d)
             if format == "fullc" and raw and import_format is None and import_name == "any":
                 # It's 1d, so we can't tell we're column-oriented w/o format keyword
                 if do_iso:
@@ -2617,6 +2616,7 @@ def test_not_to_array(A):
         (-10, [], []),
     ],
 )
+@autocompute
 def test_diag(A, params):
     k, indices, values = params
     expected = Vector.from_coo(indices, values, dtype=A.dtype, size=max(0, A.nrows - abs(k)))
@@ -2889,7 +2889,6 @@ def test_expr_is_like_matrix(A):
         "from_dcsc",
         "from_dcsr",
         "from_dicts",
-        "from_pygraphblas",
         "from_values",
         "resize",
         "update",
@@ -2905,10 +2904,20 @@ def test_expr_is_like_matrix(A):
     # so maybe it shouldn't support everything.
     if suitesparse:
         expected.add("ss")
-    assert attrs - transposed_attrs == (expected | {"_as_vector", "S", "V", "to_pygraphblas"}) - {
+    assert attrs - transposed_attrs == (expected | {"_as_vector", "S", "V"}) - {
         "_prep_for_extract",
         "_extract_element",
     }
+    # Make sure signatures actually match
+    skip = {"__init__", "__repr__", "_repr_html_", "new"}
+    for expr in [binary.times(B & B), B & B, B.T]:
+        print(type(expr).__name__)
+        for attr, val in inspect.getmembers(expr):
+            if attr in skip or not isinstance(val, types.MethodType) or not hasattr(B, attr):
+                continue
+            val2 = getattr(B, attr)
+            assert inspect.signature(val) == inspect.signature(val2), attr
+            assert val.__doc__ == val2.__doc__
 
 
 @autocompute
@@ -2942,7 +2951,6 @@ def test_index_expr_is_like_matrix(A):
         "from_dcsc",
         "from_dcsr",
         "from_dicts",
-        "from_pygraphblas",
         "from_values",
         "resize",
     }
@@ -2952,6 +2960,37 @@ def test_index_expr_is_like_matrix(A):
         "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
+    # Make sure signatures actually match. `update` has different docstring.
+    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "new", "update"}
+    for attr, val in inspect.getmembers(B[[0, 1], [0, 1]]):
+        if attr in skip or not isinstance(val, types.MethodType) or not hasattr(B, attr):
+            continue
+        val2 = getattr(B, attr)
+        assert inspect.signature(val) == inspect.signature(val2), attr
+        assert val.__doc__ == val2.__doc__
+
+
+@autocompute
+def test_dup_expr(A):
+    result = (A + A).dup()
+    assert result.isequal(2 * A)
+    result = (A + A).dup(clear=True)
+    assert result.isequal(A.dup(clear=True), check_dtype=True)
+    result = (A + A).dup(float, clear=True)
+    assert result.isequal(A.dup(float, clear=True), check_dtype=True)
+    result = (A * A).dup(mask=A.V)
+    assert result.isequal((A**2).new(mask=A.V))
+    result = A[:, :].dup()
+    assert result.isequal(A)
+    result = A[:, :].dup(clear=True)
+    assert result.isequal(A.dup(clear=True), check_dtype=True)
+    result = A[:, :].dup(float, clear=True)
+    assert result.isequal(A.dup(float, clear=True), check_dtype=True)
+    B = A.dup(bool)
+    result = (B | B).dup()
+    assert result.isequal(B)
+    result = (B | B).dup(clear=True)
+    assert result.isequal(B.dup(clear=True))
 
 
 @pytest.mark.skipif("not suitesparse")
@@ -3441,12 +3480,7 @@ def test_ss_compactify(A, do_iso):
 
 
 def test_deprecated(A):
-    v = A.diag()
     if suitesparse:
-        with pytest.warns(DeprecationWarning):
-            A.ss.diag(v)
-        with pytest.warns(DeprecationWarning):
-            v.ss.diag(A)
         with pytest.warns(DeprecationWarning):
             A.ss.compactify_rowwise()
         with pytest.warns(DeprecationWarning):
@@ -3465,8 +3499,6 @@ def test_deprecated(A):
         Vector.new(int)
     with pytest.warns(DeprecationWarning):
         Scalar.new(int)
-    with pytest.warns(DeprecationWarning):
-        A.S.mask
     with pytest.warns(DeprecationWarning):
         binary.plus(A | A, require_monoid=True)
     with pytest.warns(DeprecationWarning):
@@ -3544,9 +3576,9 @@ def test_delete_via_scalar(A):
 @pytest.mark.skipif("not suitesparse")
 def test_ss_iteration(A):
     B = Matrix(int, 2, 2)
-    assert list(B.ss.iterkeys()) == []
-    assert list(B.ss.itervalues()) == []
-    assert list(B.ss.iteritems()) == []
+    assert not list(B.ss.iterkeys())
+    assert not list(B.ss.itervalues())
+    assert not list(B.ss.iteritems())
     rows, columns, values = A.to_coo()
     assert sorted(zip(rows, columns)) == sorted(A.ss.iterkeys())
     assert sorted(values) == sorted(A.ss.itervalues())
@@ -3562,9 +3594,9 @@ def test_ss_iteration(A):
     assert A.ss.format == "csr"
     assert len(list(A.ss.iterkeys(3))) == N - 3
     assert len(list(A.ss.iterkeys(-3))) == 3
-    assert len(list(A.ss.itervalues(N))) == 0
-    assert len(list(A.ss.iteritems(N + 1))) == 0
-    assert len(list(A.ss.iterkeys(N + 2))) == 0
+    assert not list(A.ss.itervalues(N))
+    assert not list(A.ss.iteritems(N + 1))
+    assert not list(A.ss.iterkeys(N + 2))
     assert len(list(A.ss.iterkeys(-N))) == N
     assert len(list(A.ss.itervalues(-N - 1))) == N
     assert next(A.ss.iterkeys()) in A
@@ -4105,3 +4137,49 @@ def test_ss_sort(A):
     C, P = A.ss.sort(binary.gt, order="col")
     assert P.isequal(expected_P)
     assert C.isequal(expected_C)
+    C, P = A.ss.sort(monoid.lxnor)  # Weird, but user-defined monoids may not commute, so okay
+
+
+@autocompute
+def test_ss_descriptors(A):
+    if suitesparse:
+        C1 = (A @ A).new()
+        C2 = (A @ A).new(nthreads=4, axb_method="dot", sort=True)
+        assert C1.isequal(C2)
+        C2 = (A @ A).new(Nthreads=4, AxB_method="dot", sort=True)
+        assert C1.isequal(C2)
+        A(nthreads=4, axb_method="dot", sort=True) << A @ A
+        assert A.isequal(C2)
+        # Bad option should show list of valid options
+        with pytest.raises(ValueError, match="nthreads"):
+            C1(bad_opt=True) << A
+        with pytest.raises(ValueError, match="Duplicate descriptor"):
+            (A @ A).new(nthreads=4, Nthreads=5)
+        with pytest.raises(ValueError, match="escriptor"):
+            A[0, 0].new(bad_opt=True)
+        A[0, 0].new(nthreads=4)  # ignored, but okay
+        with pytest.raises(ValueError, match="escriptor"):
+            A.__setitem__((0, 0), 1, bad_opt=True)
+        A.__setitem__((0, 0), 1, nthreads=4)  # ignored, but okay
+        with pytest.raises(ValueError, match="escriptor"):
+            A.dup(bad_opt=True)
+        A.dup(nthreads=4)
+        # These are interesting cases: we auto-compute a value, then provide custom descriptor
+        expr = A.reduce_scalar()
+        expr.value
+        with pytest.raises(ValueError, match="escriptor"):
+            expr.new(bad_opt=True)
+        expr.new(nthreads=4)  # ignored, but okay
+        expr = A.reduce_rowwise()
+        expr[0].value
+        with pytest.raises(ValueError, match="escriptor"):
+            expr.new(bad_opt=True)
+        expr.new(nthreads=4)  # ignored, but okay
+        # These show the valid options
+        with pytest.raises(ValueError, match="False, True"):
+            A(sort="hi") << A
+        with pytest.raises(ValueError, match="saxpy"):
+            A(axb_method="bad") << A @ A
+    else:
+        with pytest.raises(ValueError, match="escriptor"):
+            (A @ A).new(nthreads=4, axb_method="dot", sort=True)

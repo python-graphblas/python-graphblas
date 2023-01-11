@@ -20,7 +20,7 @@ def __getattr__(key):
     raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
 
 
-from ..core import operator  # noqa isort:skip
-from . import numpy  # noqa isort:skip
+from ..core import operator  # noqa: E402 isort:skip
+from . import numpy  # noqa: E402, F401 isort:skip
 
 del operator

@@ -34,37 +34,37 @@ Operators
 UnaryOp
 ~~~~~~~
 
-.. autoclass:: graphblas.operator.UnaryOp()
+.. autoclass:: graphblas.core.operator.UnaryOp()
     :members:
 
 BinaryOp
 ~~~~~~~~
 
-.. autoclass:: graphblas.operator.BinaryOp()
+.. autoclass:: graphblas.core.operator.BinaryOp()
     :members:
 
 Monoid
 ~~~~~~
 
-.. autoclass:: graphblas.operator.Monoid()
+.. autoclass:: graphblas.core.operator.Monoid()
     :members:
 
 Semiring
 ~~~~~~~~
 
-.. autoclass:: graphblas.operator.Semiring()
+.. autoclass:: graphblas.core.operator.Semiring()
     :members:
 
 IndexUnaryOp
 ~~~~~~~~~~~~
 
-.. autoclass:: graphblas.operator.IndexUnaryOp()
+.. autoclass:: graphblas.core.operator.IndexUnaryOp()
     :members:
 
 SelectOp
 ~~~~~~~~
 
-.. autoclass:: graphblas.operator.SelectOp()
+.. autoclass:: graphblas.core.operator.SelectOp()
     :members:
 
 

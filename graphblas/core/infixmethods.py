@@ -1,22 +1,38 @@
 from .. import binary, unary
 from ..dtypes import BOOL
-from .infix import MatrixInfixExpr, VectorInfixExpr
+from .infix import MatrixInfixExpr, ScalarInfixExpr, VectorInfixExpr
 from .matrix import Matrix, MatrixExpression, MatrixIndexExpr, TransposedMatrix
+from .scalar import Scalar, ScalarExpression, ScalarIndexExpr
 from .utils import output_type
 from .vector import Vector, VectorExpression, VectorIndexExpr
 
 
-def call_op(self, other, method, op, *, outer=False, union=False):
+def call_op(self, other, op, *, outer=False, union=False):
     type1 = output_type(self)
     type2 = output_type(other)
     types = {Matrix, TransposedMatrix, Vector}
-    if type1 in types and type2 in types:
-        if outer:
+    if type1 in types:
+        if type2 in types:
+            if outer:
+                return self.ewise_add(other, op)
+            if union:
+                return self.ewise_union(other, op, False, False)
+            return self.ewise_mult(other, op)
+        return op(self, other)
+    if type2 in types:
+        return op(self, other)
+    # Scalars
+    if outer:
+        if type1 is Scalar:
             return self.ewise_add(other, op)
-        if union:
+        return other.ewise_add(self, op.commutes_to)
+    if union:
+        if type1 is Scalar:
             return self.ewise_union(other, op, False, False)
+        return other.ewise_union(self, op.commutes_to, False, False)
+    if type1 is Scalar:
         return self.ewise_mult(other, op)
-    return op(self, other)
+    return other.ewise_mult(self, op.commutes_to)
 
 
 def __divmod__(self, other):
@@ -45,7 +61,7 @@ def __neg__(self):
 
 
 def __xor__(self, other):
-    expr = call_op(self, other, "__xor__", binary.lxor, outer=True)
+    expr = call_op(self, other, binary.lxor, outer=True)
     if expr.dtype != BOOL:
         raise TypeError(
             f"The __xor__ infix operator, `x ^ y`, is not supported for {expr.dtype.name} dtype."
@@ -55,7 +71,7 @@ def __xor__(self, other):
 
 
 def __rxor__(self, other):
-    expr = call_op(other, self, "__rxor__", binary.lxor, outer=True)
+    expr = call_op(other, self, binary.lxor, outer=True)
     if expr.dtype != BOOL:
         raise TypeError(
             f"The __xor__ infix operator, `x ^ y`, is not supported for {expr.dtype.name} dtype."
@@ -69,7 +85,8 @@ def __ixor__(self, other):
     if (
         other_type is Vector
         and self.ndim == 2
-        or other_type not in {Vector, Matrix, TransposedMatrix}
+        or not self._is_scalar
+        and other_type not in {Vector, Matrix, TransposedMatrix}
     ):
         self << __xor__(self, other)
     elif other.dtype != BOOL:
@@ -87,9 +104,10 @@ def __ior__(self, other):
     if (
         other_type is Vector
         and self.ndim == 2
-        or other_type not in {Vector, Matrix, TransposedMatrix}
+        or not self._is_scalar
+        and other_type not in {Vector, Matrix, TransposedMatrix}
     ):
-        expr = call_op(self, other, "__ior__", binary.lor, outer=True)
+        expr = call_op(self, other, binary.lor, outer=True)
         if expr.dtype != BOOL:
             raise TypeError(
                 f"The __ior__ infix operator, `x |= y`, is not supported for {expr.dtype.name} "
@@ -107,7 +125,7 @@ def __ior__(self, other):
 
 
 def __iand__(self, other):
-    expr = call_op(self, other, "__iand__", binary.land)
+    expr = call_op(self, other, binary.land)
     if expr.dtype != BOOL:
         raise TypeError(
             f"The __iand__ infix operator, `x &= y`, is not supported for {expr.dtype.name} dtype."
@@ -119,35 +137,35 @@ def __iand__(self, other):
 
 # Begin auto-generated code
 def __eq__(self, other):
-    return call_op(self, other, "__eq__", binary.eq)
+    return call_op(self, other, binary.eq)
 
 
 def __ge__(self, other):
-    return call_op(self, other, "__ge__", binary.ge)
+    return call_op(self, other, binary.ge)
 
 
 def __gt__(self, other):
-    return call_op(self, other, "__gt__", binary.gt)
+    return call_op(self, other, binary.gt)
 
 
 def __le__(self, other):
-    return call_op(self, other, "__le__", binary.le)
+    return call_op(self, other, binary.le)
 
 
 def __lt__(self, other):
-    return call_op(self, other, "__lt__", binary.lt)
+    return call_op(self, other, binary.lt)
 
 
 def __ne__(self, other):
-    return call_op(self, other, "__ne__", binary.ne)
+    return call_op(self, other, binary.ne)
 
 
 def __add__(self, other):
-    return call_op(self, other, "__add__", binary.plus, outer=True)
+    return call_op(self, other, binary.plus, outer=True)
 
 
 def __radd__(self, other):
-    return call_op(other, self, "__radd__", binary.plus, outer=True)
+    return call_op(other, self, binary.plus, outer=True)
 
 
 def __iadd__(self, other):
@@ -155,7 +173,8 @@ def __iadd__(self, other):
     if (
         other_type is Vector
         and self.ndim == 2
-        or other_type not in {Vector, Matrix, TransposedMatrix}
+        or not self._is_scalar
+        and other_type not in {Vector, Matrix, TransposedMatrix}
     ):
         self << __add__(self, other)
     else:
@@ -164,11 +183,11 @@ def __iadd__(self, other):
 
 
 def __floordiv__(self, other):
-    return call_op(self, other, "__floordiv__", binary.floordiv)
+    return call_op(self, other, binary.floordiv)
 
 
 def __rfloordiv__(self, other):
-    return call_op(other, self, "__rfloordiv__", binary.floordiv)
+    return call_op(other, self, binary.floordiv)
 
 
 def __ifloordiv__(self, other):
@@ -177,11 +196,11 @@ def __ifloordiv__(self, other):
 
 
 def __mod__(self, other):
-    return call_op(self, other, "__mod__", binary.numpy.mod)
+    return call_op(self, other, binary.numpy.mod)
 
 
 def __rmod__(self, other):
-    return call_op(other, self, "__rmod__", binary.numpy.mod)
+    return call_op(other, self, binary.numpy.mod)
 
 
 def __imod__(self, other):
@@ -190,11 +209,11 @@ def __imod__(self, other):
 
 
 def __mul__(self, other):
-    return call_op(self, other, "__mul__", binary.times)
+    return call_op(self, other, binary.times)
 
 
 def __rmul__(self, other):
-    return call_op(other, self, "__rmul__", binary.times)
+    return call_op(other, self, binary.times)
 
 
 def __imul__(self, other):
@@ -203,11 +222,11 @@ def __imul__(self, other):
 
 
 def __pow__(self, other):
-    return call_op(self, other, "__pow__", binary.pow)
+    return call_op(self, other, binary.pow)
 
 
 def __rpow__(self, other):
-    return call_op(other, self, "__rpow__", binary.pow)
+    return call_op(other, self, binary.pow)
 
 
 def __ipow__(self, other):
@@ -216,11 +235,11 @@ def __ipow__(self, other):
 
 
 def __sub__(self, other):
-    return call_op(self, other, "__sub__", binary.minus, union=True)
+    return call_op(self, other, binary.minus, union=True)
 
 
 def __rsub__(self, other):
-    return call_op(other, self, "__rsub__", binary.minus, union=True)
+    return call_op(other, self, binary.minus, union=True)
 
 
 def __isub__(self, other):
@@ -229,11 +248,11 @@ def __isub__(self, other):
 
 
 def __truediv__(self, other):
-    return call_op(self, other, "__truediv__", binary.truediv)
+    return call_op(self, other, binary.truediv)
 
 
 def __rtruediv__(self, other):
-    return call_op(other, self, "__rtruediv__", binary.truediv)
+    return call_op(other, self, binary.truediv)
 
 
 def __itruediv__(self, other):
@@ -282,6 +301,12 @@ for name in [
     "__xor__",
 ]:
     val = d[name]
+    if name not in {"__eq__", "__ne__"}:
+        setattr(Scalar, name, val)
+        if not name.startswith("__i") or name == "__invert__":
+            setattr(ScalarExpression, name, val)
+            setattr(ScalarInfixExpr, name, val)
+            setattr(ScalarIndexExpr, name, val)
     setattr(Vector, name, val)
     setattr(Matrix, name, val)
     if not name.startswith("__i") or name == "__invert__":
@@ -339,8 +364,7 @@ def _main():
     lines = []
     for method, op in sorted(comparisons.items()):
         lines.append(
-            f"def __{method}__(self, other):\n"
-            f'    return call_op(self, other, "__{method}__", binary.{op})\n\n'
+            f"def __{method}__(self, other):\n    return call_op(self, other, binary.{op})\n\n"
         )
     for method, op in sorted(operations.items()):
         if method in outer:
@@ -351,11 +375,11 @@ def _main():
             out = ""
         lines.append(
             f"def __{method}__(self, other):\n"
-            f'    return call_op(self, other, "__{method}__", binary.{op}{out})\n\n'
+            f"    return call_op(self, other, binary.{op}{out})\n\n"
         )
         lines.append(
             f"def __r{method}__(self, other):\n"
-            f'    return call_op(other, self, "__r{method}__", binary.{op}{out})\n\n'
+            f"    return call_op(other, self, binary.{op}{out})\n\n"
         )
         lines.append(f"def __i{method}__(self, other):")
         if method in outer:
@@ -364,7 +388,8 @@ def _main():
                 "    if (\n"
                 "        other_type is Vector\n"
                 "        and self.ndim == 2\n"
-                "        or other_type not in {Vector, Matrix, TransposedMatrix}\n"
+                "        or not self._is_scalar\n"
+                "        and other_type not in {Vector, Matrix, TransposedMatrix}\n"
                 "    ):\n"
                 f"        self << __{method}__(self, other)\n"
                 "    else:\n"
@@ -384,6 +409,12 @@ def _main():
         "d = globals()\n"
         f"for name in {methods}:\n"
         "    val = d[name]\n"
+        "    if name not in {'__eq__', '__ne__'}:\n"
+        "        setattr(Scalar, name, val)\n"
+        "        if not name.startswith('__i') or name == '__invert__':\n"
+        "            setattr(ScalarExpression, name, val)\n"
+        "            setattr(ScalarInfixExpr, name, val)\n"
+        "            setattr(ScalarIndexExpr, name, val)\n"
         "    setattr(Vector, name, val)\n"
         "    setattr(Matrix, name, val)\n"
         "    if not name.startswith('__i') or name == '__invert__':\n"

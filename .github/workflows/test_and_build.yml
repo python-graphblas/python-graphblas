@@ -9,158 +9,304 @@ on:
       - main
 
 jobs:
+  rngs:
+    # To achieve consistent coverage, we need a little bit of correlated collaboration.
+    # Specifically, we need to make sure we run with and without `--mapnumpy` on slow tests.
+    # We also use correlated RNG to run both backends on slow tests.
+    #
+    # {A,B,C,D},yes = --mapnumpy
+    # {A,B,C,D},no = --no-mapnumpy
+    # {D,E,F,G},yes = --backend=suitesparse
+    # {D,E,F,G},no = --backend=suitesparse-vanilla
+    #
+    #                   linux   windows osx
+    #               +-----------------------+
+    # A  E  normal  |   yes     no          |
+    # A  E  bizarro |   no      yes         |
+    # B  F  normal  |           no      yes |
+    # B  F  bizarro |           yes     no  |
+    # C  G  normal  |   no      yes         |
+    # C  G  bizarro |   yes     no          |
+    # D  H  normal  |           yes     no  |
+    # D  H  bizarro |           no      yes |
+    #               +-----------------------+
+    runs-on: ubuntu-latest
+    outputs:
+      # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idoutputs
+      mapnumpy: ${{ steps.mapnumpy.outputs.selected }}
+      backend: ${{ steps.backend.outputs.selected }}
+    steps:
+      - name: RNG for mapnumpy
+        uses: ddradar/choose-random-action@v2.0.2
+        id: mapnumpy
+        with:
+          contents: |
+            A
+            B
+            C
+            D
+          weights: |
+            1
+            1
+            1
+            1
+      - name: RNG for backend
+        uses: ddradar/choose-random-action@v2.0.2
+        id: backend
+        with:
+          contents: |
+            E
+            F
+            G
+            H
+          weights: |
+            1
+            1
+            1
+            1
   build_and_test:
-    runs-on: ${{ matrix.cfg.os }}
+    needs: rngs
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash -l {0}
     strategy:
       fail-fast: false
+      # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
+      # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
+      # since we need to run all slow tests on Windows and non-Windoes OSes.
+      # If important in the future, we can also randomize dependency versions.
       matrix:
-        cfg:
-          # Begin with fast, vanilla test
-          - { pyver: "3.10", os: "ubuntu-latest", testopts: "", sourcetype: "conda-forge" }
-          # Test ubuntu with conda-forge
-          - { pyver: "3.8", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.9", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.10", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          # Test macos with conda-forge
-          - { pyver: "3.8", os: "macos-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.9", os: "macos-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.10", os: "macos-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          # Test windows with conda-forge
-          - { pyver: "3.8", os: "windows-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.9", os: "windows-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          - { pyver: "3.10", os: "windows-latest", testopts: "--randomly", sourcetype: "conda-forge" }
-          # Test ubuntu with alternative methods to install dependencies
-          - { pyver: "3.10", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "wheel" }
-          - { pyver: "3.10", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "source" }
-          - { pyver: "3.10", os: "ubuntu-latest", testopts: "--randomly", sourcetype: "upstream" }
-          # Test misc
-          - { pyver: "3.8", os: "macos-latest", testopts: "--randomly", sourcetype: "upstream" }
-          - { pyver: "3.9", os: "windows-latest", testopts: "--randomly", sourcetype: "upstream" }
-
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        slowtask: ["pytest_normal", "pytest_bizarro", "pylint", "notebooks"]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
+      - name: RNG for Python version
+        uses: ddradar/choose-random-action@v2.0.2
+        id: pyver
+        with:
+          contents: |
+            3.8
+            3.9
+            3.10
+          weights: |
+            1
+            1
+            1
+      - name: RNG for source of python-suitesparse-graphblas
+        uses: ddradar/choose-random-action@v2.0.2
+        id: sourcetype
+        with:
+          # Set weight to 0 to skip (such as if 'upstream' is known to not work)
+          contents: |
+            conda-forge
+            wheel
+            source
+            upstream
+          weights: |
+            1
+            1
+            1
+            1
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
           miniforge-variant: Mambaforge
           miniforge-version: latest
           use-mamba: true
-          python-version: ${{ matrix.cfg.pyver }}
-          channels: conda-forge,defaults
+          python-version: ${{ steps.pyver.outputs.selected }}
+          channels: conda-forge,nodefaults
           channel-priority: strict
           activate-environment: graphblas
           auto-activate-base: false
       - name: Update env
         run: |
-          mamba install -c conda-forge pytest coverage 'black>=20.8b1' flake8 \
-          coveralls pytest-randomly flake8-comprehensions flake8-bugbear
-      - name: Style Checks
-        run: |
-          flake8
-          black . --check --diff
+          # Install dependencies based on the needs of the job.
+          # Don't panic! This may look scary at a glance, but each line makes sense.
+          #
+          # First let's randomly get versions of dependencies to install
+          nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", ""]))')
+          yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
+          if [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
+            spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
+            pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", ""]))')
+          elif [[ ${{ steps.pyver.outputs.selected }} == "3.9" ]]; then
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
+            spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
+            pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", ""]))')
+          elif [[ ${{ steps.pyver.outputs.selected }} == "3.10" ]]; then
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
+            spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
+            pdver=$(python -c 'import random ; print(random.choice(["=1.3", "=1.4", "=1.5", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", ""]))')
+          else  # Python 3.11
+            npver=$(python -c 'import random ; print(random.choice(["=1.23", ""]))')
+            spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", ""]))')
+            pdver=$(python -c 'import random ; print(random.choice(["=1.5", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", ""]))')
+          fi
+          if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
+            # TODO: there are currently issues with some numpy versions when
+            # installing python-suitesparse-grphblas from source or upstream.
+            npver=""
+            spver=""
+            pdver=""
+          fi
+          if [[ $npver == "=1.21" ]] ; then
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.55", "=0.56", ""]))')
+          else
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.56", ""]))')
+          fi
+          echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver}"
+
+          # Once we have wheels for all OSes, we can delete the last two lines.
+          mamba install pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig pyyaml${yamlver} \
+            pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} numba${numbaver} \
+            ${{ matrix.slowtask == 'pylint' && 'black pylint' || '' }} \
+            ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
+            ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
+            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
+            ${{ steps.sourcetype.outputs.selected == 'conda-forge' && 'python-suitesparse-graphblas' || '' }} \
+            ${{ matrix.os != 'ubuntu-latest' && '"graphblas>=7.4.0"' || '' }} \
+            ${{ steps.sourcetype.outputs.selected == 'wheel' && matrix.os != 'ubuntu-latest' && 'python-suitesparse-graphblas' || '' }}
       - name: Build extension module
         run: |
-          mamba install -c conda-forge pandas numba scipy networkx cffi donfig pyyaml awkward
-          if [[ ${{ matrix.cfg.sourcetype }} == "wheel" ]]; then
-              pip install suitesparse-graphblas
-          else
-              mamba install -c conda-forge "graphblas>=7.3.0"
+          # We only have wheels for Linux right now
+          if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" && ${{ matrix.os }} == "ubuntu-latest" ]]; then
+              pip install --no-deps suitesparse-graphblas
+          elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
+              pip install --no-deps --no-binary=all suitesparse-graphblas
+          elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
+              pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
           fi
-          if [[ ${{ matrix.cfg.sourcetype }} == "source" ]]; then
-              pip install --no-binary=all suitesparse-graphblas
-          elif [[ ${{ matrix.cfg.sourcetype }} == "upstream" ]]; then
-              # I can't get pip install from git to work, so git clone instead.
-              # pip install git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
-              mamba install -c conda-forge cython
-              git clone --depth=1 https://github.com/GraphBLAS/python-suitesparse-graphblas.git ssgb
-              pushd ssgb
-              python setup.py install  # deprecated?
-              # pip install .  # doesn't work
-              popd
-          elif [[ ${{ matrix.cfg.sourcetype }} == "conda-forge" ]]; then
-              mamba install -c conda-forge python-suitesparse-graphblas
-          fi
-          python setup.py develop --no-deps
-      # - name: Optional pygraphblas
-      #   if: contains(matrix.cfg.testopts, 'pygraphblas') && (matrix.cfg.pyver != 3.9)
-      #   run: |
-      #     source "$CONDA/etc/profile.d/conda.sh"
-      #     conda activate graphblas
-      #     mamba install -c conda-forge pygraphblas
-      - name: Verify build
-        run: |
-          # Make sure all top-level imports work
-          ./scripts/test_imports.sh
+          pip install --no-deps -e .
       - name: Unit tests
-        # if: (! contains(matrix.cfg.testopts, 'pygraphblas')) || (matrix.cfg.pyver != 3.9)
         run: |
-          coverage run --branch -m pytest ${{ matrix.cfg.testopts }} -v
+          A=${{ needs.rngs.outputs.mapnumpy == 'A' || '' }} ; B=${{ needs.rngs.outputs.mapnumpy == 'B' || '' }}
+          C=${{ needs.rngs.outputs.mapnumpy == 'C' || '' }} ; D=${{ needs.rngs.outputs.mapnumpy == 'D' || '' }}
+          E=${{ needs.rngs.outputs.backend == 'E' || '' }} ; F=${{ needs.rngs.outputs.backend == 'F' || '' }}
+          G=${{ needs.rngs.outputs.backend == 'G' || '' }} ; H=${{ needs.rngs.outputs.backend == 'H' || '' }}
+          normal=${{ matrix.slowtask == 'pytest_normal' || '' }} ; bizarro=${{ matrix.slowtask == 'pytest_bizarro' || '' }}
+          ubuntu=${{ matrix.os == 'ubuntu-latest' || '' }} ; windows=${{ matrix.os == 'windows-latest' || '' }} ; macos=${{ matrix.os == 'macos-latest' || '' }}
+          mapnumpy='--mapnumpy' ; nomapnumpy='--no-mapnumpy' ; suitesparse='--backend=suitesparse' ; vanilla='--backend=suitesparse-vanilla'
+          args=$(
+            if [[ $A && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $A && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $B && $normal  ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $B && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $C && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $C && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $D && $normal  ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $D && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $E && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $E && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $F && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $F && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $G && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $G && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
+          echo $args
+          coverage run -m pytest --randomly -v $args \
+            ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
+      - name: Unit tests (bizarro scalars)
+        run: |
           # Run tests again with Scalars being C scalars by default
           find graphblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
             -e '/# pragma: is_grbscalar/! s/is_cscalar=False/is_cscalar=True/g' \
             -e '/# pragma: is_grbscalar/! s/is_cscalar = False/is_cscalar = True/g' \
             -e '/# pragma: to_grb/ s/is_cscalar=True/is_cscalar=False/g' \
             -e '/# pragma: to_grb/ s/is_cscalar = True/is_cscalar = False/g'
-          coverage run -a --branch -m pytest ${{ matrix.cfg.testopts }} -v
+          A=${{ needs.rngs.outputs.mapnumpy == 'A' || '' }} ; B=${{ needs.rngs.outputs.mapnumpy == 'B' || '' }}
+          C=${{ needs.rngs.outputs.mapnumpy == 'C' || '' }} ; D=${{ needs.rngs.outputs.mapnumpy == 'D' || '' }}
+          E=${{ needs.rngs.outputs.backend == 'E' || '' }} ; F=${{ needs.rngs.outputs.backend == 'F' || '' }}
+          G=${{ needs.rngs.outputs.backend == 'G' || '' }} ; H=${{ needs.rngs.outputs.backend == 'H' || '' }}
+          normal=${{ matrix.slowtask == 'pytest_normal' || '' }} ; bizarro=${{ matrix.slowtask == 'pytest_bizarro' || '' }}
+          ubuntu=${{ matrix.os == 'ubuntu-latest' || '' }} ; windows=${{ matrix.os == 'windows-latest' || '' }} ; macos=${{ matrix.os == 'macos-latest' || '' }}
+          mapnumpy='--mapnumpy' ; nomapnumpy='--no-mapnumpy' ; suitesparse='--backend=suitesparse' ; vanilla='--backend=suitesparse-vanilla'
+          args=$(
+            if [[ $A && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $A && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $B && $normal  ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $B && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $C && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $C && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $D && $normal  ]] ; then if [[ $macos  ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
+            if [[ $D && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
+            if [[ $E && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $E && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $F && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $F && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $G && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $G && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
+            if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
+            if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
+          echo $args
+          coverage run -a -m pytest --randomly -v $args \
+            ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
-
+      - name: Miscellaneous tests
+        if: matrix.slowtask == 'pylint'
+        run: |
           # Test (and cover) automatic initialization
-          coverage run -a --branch graphblas/tests/test_auto_init.py
-          coverage run -a --branch graphblas/tests/test_external_init.py
+          coverage run -a graphblas/tests/test_auto_init.py
+          coverage run -a graphblas/tests/test_external_init.py
           # Test (and cover) lazy module loader
           echo "from graphblas.agg import count" > script.py
-          coverage run -a --branch script.py
+          coverage run -a script.py
           echo "from graphblas import agg" > script.py  # Does this still cover?
           echo "from graphblas.core import agg" >> script.py
-          coverage run -a --branch script.py
+          coverage run -a script.py
           # Tests lazy loading of lib, ffi, and NULL in gb.core
           echo "from graphblas.core import base" > script.py
-          coverage run -a --branch script.py
+          coverage run -a script.py
           rm script.py
+          # Tests whose coverage depend on order of tests :/
+          # TODO: understand why these are order-dependent and try to fix
+          coverage run -a -m pytest -x --no-mapnumpy -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
+          # coverage run -a -m pytest -x --no-mapnumpy -k test_npmonoid graphblas/tests/test_numpyops.py --runslow
       - name: Auto-generated code check
+        if: matrix.slowtask == 'pylint'
         run: |
-          coverage run -a --branch -m graphblas.core.automethods
-          coverage run -a --branch -m graphblas.core.infixmethods
+          # This step uses `black`
+          coverage run -a -m graphblas.core.automethods
+          coverage run -a -m graphblas.core.infixmethods
           git diff --exit-code
-          coverage xml
       - name: Coverage
-        # if: (! contains(matrix.cfg.testopts, 'pygraphblas')) || (matrix.cfg.pyver != 3.9)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COVERALLS_FLAG_NAME: ${{ matrix.cfg.pyver}}/${{ matrix.cfg.testopts }}
+          COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
           COVERALLS_PARALLEL: true
         run: |
+          coverage xml
           coverage report --show-missing
           coveralls --service=github
       - name: codecov
         uses: codecov/codecov-action@v3
+      - name: Pylint (informational only; never fails)
+        if: matrix.slowtask == 'pylint'
+        run: pylint --exit-zero graphblas/
       - name: Notebooks Execution check
-        # if: (! contains(matrix.cfg.testopts, 'pygraphblas')) || (matrix.cfg.pyver != 3.9)
-        run: |
-          mamba install -c conda-forge matplotlib nbconvert jupyter 'ipython>=7'
-          jupyter nbconvert --to notebook --execute notebooks/*ipynb
+        if: matrix.slowtask == 'notebooks'
+        run: jupyter nbconvert --to notebook --execute notebooks/*ipynb
 
   finish:
     needs: build_and_test
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Setup conda env
-        run: |
-          source "$CONDA/etc/profile.d/conda.sh"
-          conda config --set always_yes yes --set changeps1 no
-          conda update -q conda
-          conda create -n coveralls_final -c conda-forge python=3.9 coveralls
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - run: python -m pip install --upgrade pip
+      - run: pip install coveralls
       - name: Coveralls Finished
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          source "$CONDA/etc/profile.d/conda.sh"
-          conda activate coveralls_final
-          coveralls --finish
+        run: coveralls --finish

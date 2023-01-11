@@ -2,7 +2,7 @@
 #   $ conda env create -f environment.yml
 #   $ conda activate graphblas-dev
 #
-# Or use mamba instead of conda.
+# Or use mamba instead of conda. Creating the environment may take several minutes.
 #
 # pre-commit should be set up once after the repo is cloned (see .pre-commit-config.yaml).
 # In the `graphblas-dev` environment, run:
@@ -25,6 +25,7 @@ dependencies:
     - awkward
     - networkx
     - scipy
+    - sparse
     # For viz
     - datashader
     - hvplot
@@ -35,6 +36,7 @@ dependencies:
     - pytest-cov
     # For debugging
     - icecream
+    - ipykernel
     - ipython
     # For type annotations
     - mypy
@@ -43,3 +45,56 @@ dependencies:
     - numpydoc
     - pydata-sphinx-theme
     - sphinx-panels
+    # EXTRA (optional; uncomment as desired)
+    # - autoflake
+    # - black
+    # - black-jupyter
+    # - codespell
+    # - commonmark
+    # - cython
+    # - cytoolz
+    # - distributed
+    # - flake8
+    # - flake8-bugbear
+    # - flake8-comprehensions
+    # - flake8-print
+    # - flake8-quotes
+    # - flake8-simplify
+    # - gcc
+    # - gh
+    # - graph-tool
+    # - xorg-libxcursor  # for graph-tool
+    # - grayskull
+    # - h5py
+    # - hiveplot
+    # - igraph
+    # - ipycytoscape
+    # - isort
+    # - jupyter
+    # - jupyterlab
+    # - line_profiler
+    # - lxml
+    # - make
+    # - memory_profiler
+    # - netcdf4
+    # - networkit
+    # - nxviz
+    # - pycodestyle
+    # - pydot
+    # - pygraphviz
+    # - pylint
+    # - pytest-runner
+    # - pytest-xdist
+    # - python-graphviz
+    # - python-igraph
+    # - python-louvain
+    # - pyupgrade
+    # - ruff
+    # - scalene
+    # - setuptools-git-versioning
+    # - snakeviz
+    # - sphinx-lint
+    # - sympy
+    # - vim
+    # - yesqa
+    # - zarr

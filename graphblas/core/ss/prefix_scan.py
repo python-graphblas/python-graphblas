@@ -9,7 +9,7 @@ from .matrix import compact_indices
 
 # By default, scans on matrices are done along rows.
 # To perform scans along columns, pass a transposed matrix.
-def prefix_scan(A, monoid, *, name=None, within):
+def prefix_scan(A, monoid, *, name=None, within, **opts):
     from ..matrix import Matrix, TransposedMatrix
     from ..vector import Vector
 
@@ -81,7 +81,7 @@ def prefix_scan(A, monoid, *, name=None, within):
         take_ownership=True,
         name="Up_0",
     )
-    B = semiring(A @ S).new(name="B")
+    B = semiring(A @ S).new(name="B", **opts)
     if is_vector:
         mask = None
     else:
@@ -106,7 +106,7 @@ def prefix_scan(A, monoid, *, name=None, within):
             take_ownership=True,
             name=f"Up_{index}",
         )
-        B(binaryop, mask=mask) << semiring(B @ S)
+        B(binaryop, mask=mask, **opts) << semiring(B @ S)
         index += 1
         stride = stride2
         stride2 *= 2
@@ -136,7 +136,7 @@ def prefix_scan(A, monoid, *, name=None, within):
                 take_ownership=True,
                 name=f"Down_{index}",
             )
-            B(binaryop, mask=mask) << semiring(B @ S)
+            B(binaryop, mask=mask, **opts) << semiring(B @ S)
             index += 1
             stride2 = stride
             stride //= 2
@@ -156,7 +156,7 @@ def prefix_scan(A, monoid, *, name=None, within):
         take_ownership=True,
         name=f"Down_{index}",
     )
-    RV = semiring(B @ S).new(mask=A.S, name="RV")
+    RV = semiring(B @ S).new(mask=A.S, name="RV", **opts)
 
     indices = np.arange(0, N_cols, 2, dtype=index_t)
     d = Vector.ss.import_sparse(
@@ -169,7 +169,7 @@ def prefix_scan(A, monoid, *, name=None, within):
         name="d",
     )
     D = d.diag(name="D")
-    RV(binaryop) << semiring(A @ D)
+    RV(binaryop, **opts) << semiring(A @ D)
     # De-compactify into final result
     if is_vector:
         rv_info = RV.ss.export("sparse", sort=True, give_ownership=True)
