@@ -292,7 +292,7 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
             if num_rows < nonzero._nvals:
                 df.loc["..."] = ["..."] * 3
             return df
-    return df.where(pd.notnull(df), "")
+    return df.where(pd.notna(df), "")
 
 
 def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None):
@@ -342,7 +342,7 @@ def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None)
             if num_rows < nonzero._nvals:
                 df.loc["..."] = ["..."] * 2
             return df
-    return df.where(pd.notnull(df), "")
+    return df.where(pd.notna(df), "")
 
 
 def get_format(x, is_transposed=False):

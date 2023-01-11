@@ -9,6 +9,7 @@ from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, InvalidValue, NoValue, check_status
 from . import automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
+from .descriptor import lookup as descriptor_lookup
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
@@ -53,8 +54,10 @@ _CSC_FORMAT = Scalar.from_value(
 # Custom recipes
 def _m_add_v(updater, left, right, op):
     full = Vector(right.dtype, left._nrows, name="v_full")
-    full[:] = 0
-    temp = full.outer(right, binary.second).new(name="M_temp", mask=updater.kwargs.get("mask"))
+    full(**updater.opts)[:] = 0
+    temp = full.outer(right, binary.second).new(
+        name="M_temp", mask=updater.kwargs.get("mask"), **updater.opts
+    )
     updater << left.ewise_add(temp, op)
 
 
@@ -64,19 +67,22 @@ def _m_mult_v(updater, left, right, op):
 
 def _m_union_m(updater, left, right, left_default, right_default, op, dtype):
     mask = updater.kwargs.get("mask")
+    opts = updater.opts
     new_left = left.dup(dtype, clear=True)
-    new_left(mask=mask) << binary.second(right, left_default)
-    new_left(mask=mask) << binary.first(left | new_left)
+    new_left(mask=mask, **opts) << binary.second(right, left_default)
+    new_left(mask=mask, **opts) << binary.first(left | new_left)
     new_right = right.dup(dtype, clear=True)
-    new_right(mask=mask) << binary.second(left, right_default)
-    new_right(mask=mask) << binary.first(right | new_right)
+    new_right(mask=mask, **opts) << binary.second(left, right_default)
+    new_right(mask=mask, **opts) << binary.first(right | new_right)
     updater << op(new_left & new_right)
 
 
 def _m_union_v(updater, left, right, left_default, right_default, op):
     full = Vector(right.dtype, left._nrows, name="v_full")
-    full[:] = 0
-    temp = full.outer(right, binary.second).new(name="M_temp", mask=updater.kwargs.get("mask"))
+    full(**updater.opts)[:] = 0
+    temp = full.outer(right, binary.second).new(
+        name="M_temp", mask=updater.kwargs.get("mask"), **updater.opts
+    )
     updater << left.ewise_union(temp, op, left_default=left_default, right_default=right_default)
 
 
@@ -212,7 +218,7 @@ class Matrix(BaseType):
         """Create a Mask based on the values in the Matrix (treating each value as truthy)."""
         return ValueMask(self)
 
-    def __delitem__(self, keys):
+    def __delitem__(self, keys, **opts):
         """Delete a single element, row/column, or submatrix.
 
         Examples
@@ -220,7 +226,7 @@ class Matrix(BaseType):
 
             >>> del M[1, 5]
         """
-        del Updater(self)[keys]
+        del Updater(self, opts=opts)[keys]
 
     def __getitem__(self, keys):
         """Extract a single element, row/column, or submatrix.
@@ -241,9 +247,10 @@ class Matrix(BaseType):
             return ScalarIndexExpr(self, resolved_indexes)
         if len(shape) == 1:
             return VectorIndexExpr(self, resolved_indexes, *shape)
-        return MatrixIndexExpr(self, resolved_indexes, *shape)
+        nrows, ncols = shape
+        return MatrixIndexExpr(self, resolved_indexes, nrows, ncols)
 
-    def __setitem__(self, keys, expr):
+    def __setitem__(self, keys, expr, **opts):
         """Assign values to a single element, row/column, or submatrix.
 
         See the `Assign section <../user_guide/operations.html#assign>`__
@@ -256,7 +263,7 @@ class Matrix(BaseType):
 
             M[0, 0:3] = 17
         """
-        Updater(self)[keys] = expr
+        Updater(self, opts=opts)[keys] = expr
 
     def __contains__(self, index):
         """Indicates whether the (row, col) index has a value present.
@@ -289,7 +296,7 @@ class Matrix(BaseType):
             return size[0] + object.__sizeof__(self)
         raise TypeError("Unable to get size of Matrix with backend: {backend}")
 
-    def isequal(self, other, *, check_dtype=False):
+    def isequal(self, other, *, check_dtype=False, **opts):
         """Check for exact equality (same size, same structure).
 
         Parameters
@@ -324,15 +331,15 @@ class Matrix(BaseType):
             op = get_typed_op(binary.eq, self.dtype, other.dtype, kind="binary")
 
         matches = Matrix(bool, self._nrows, self._ncols, name="M_isequal")
-        matches << self.ewise_mult(other, op)
+        matches(**opts) << self.ewise_mult(other, op)
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
             return False
 
         # Check if all results are True
-        return matches.reduce_scalar(monoid.land, allow_empty=False).new().value
+        return matches.reduce_scalar(monoid.land, allow_empty=False).new(**opts).value
 
-    def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
+    def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False, **opts):
         """Check for approximate equality (including same size and same structure).
 
         Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
@@ -366,14 +373,14 @@ class Matrix(BaseType):
             return False
 
         matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(
-            bool, name="M_isclose"
+            bool, name="M_isclose", **opts
         )
         # ewise_mult performs intersection, so nvals will indicate mismatched empty values
         if matches._nvals != self._nvals:
             return False
 
         # Check if all results are True
-        return matches.reduce_scalar(monoid.land, allow_empty=False).new().value
+        return matches.reduce_scalar(monoid.land, allow_empty=False).new(**opts).value
 
     @property
     def nrows(self):
@@ -595,7 +602,7 @@ class Matrix(BaseType):
         if not dup_op_given and self._nvals < n:
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
 
-    def dup(self, dtype=None, *, clear=False, mask=None, name=None):
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
         """Create a duplicate of the Matrix.
 
         This is a full copy, not a view on the original.
@@ -621,14 +628,17 @@ class Matrix(BaseType):
                 dtype = self.dtype
             rv = Matrix(dtype, nrows=self._nrows, ncols=self._ncols, name=name)
             if not clear:
-                rv(mask=mask)[...] = self
+                rv(mask=mask, **opts)[...] = self
         else:
+            if opts:
+                # Ignore opts for now
+                descriptor_lookup(**opts)
             new_mat = ffi_new("GrB_Matrix*")
             rv = Matrix._from_obj(new_mat, self.dtype, self._nrows, self._ncols, name=name)
             call("GrB_Matrix_dup", [_Pointer(rv), self])
         return rv
 
-    def diag(self, k=0, dtype=None, *, name=None):
+    def diag(self, k=0, dtype=None, *, name=None, **opts):
         """Return a Vector built from the diagonal values of the Matrix.
 
         Parameters
@@ -654,23 +664,21 @@ class Matrix(BaseType):
             dtype = self.dtype
         if type(k) is not Scalar:
             k = Scalar.from_value(k, INT64, is_cscalar=True, name="")
-        D = select.diag(self, k).new(dtype, name="Diag_temp")
+        D = select.diag(self, k).new(dtype, name="Diag_temp", **opts)
         k = k.value
         if k < 0:
-            size = min(self._nrows + k, self._ncols)
+            size = max(0, min(self._nrows + k, self._ncols))
         else:
-            size = min(self._ncols - k, self._nrows)
-        if size < 0:
-            size = 0
+            size = max(0, min(self._ncols - k, self._nrows))
         rv = Vector(dtype, size=size, name=name)
         if k == 0:
-            rv << D.reduce_rowwise(monoid.any)
+            rv(**opts) << D.reduce_rowwise(monoid.any)
         else:
-            d = D.reduce_rowwise(monoid.any).new(name="diag_temp")
+            d = D.reduce_rowwise(monoid.any).new(name="diag_temp", **opts)
             if k < 0:
-                rv << d[d._size - rv._size :]
+                rv(**opts) << d[d._size - rv._size :]
             else:
-                rv << d[: rv._size]
+                rv(**opts) << d[: rv._size]
         return rv
 
     def wait(self, how="materialize"):
@@ -1554,7 +1562,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix with a structure formed as the union of the input structures
+        MatrixExpression with a structure formed as the union of the input structures
 
         Examples
         --------
@@ -1641,7 +1649,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix with a structure formed as the intersection of the input structures
+        MatrixExpression with a structure formed as the intersection of the input structures
 
         Examples
         --------
@@ -1710,7 +1718,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix with a structure formed as the union of the input structures
+        MatrixExpression with a structure formed as the union of the input structures
 
         Examples
         --------
@@ -1824,7 +1832,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        :class:`~graphblas.Vector`
+        VectorExpression
 
         Examples
         --------
@@ -1868,7 +1876,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -1916,7 +1924,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -1969,7 +1977,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -2111,15 +2119,14 @@ class Matrix(BaseType):
 
         Parameters
         ----------
-        op : :class:`~graphblas.core.operator.SelectOp`or
-             :class:`~graphblas.core.operator.IndexUnaryOp`
+        op : :class:`~graphblas.core.operator.SelectOp`
             Operator to apply
         thunk :
             Scalar passed to operator
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -2217,7 +2224,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Vector
+        VectorExpression
 
         Examples
         --------
@@ -2255,7 +2262,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        :class:`~graphblas.Vector`
+        VectorExpression
 
         Examples
         --------
@@ -2297,7 +2304,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        :class:`~graphblas.Scalar`
+        ScalarExpression
 
         Examples
         --------
@@ -2358,7 +2365,7 @@ class Matrix(BaseType):
 
         Returns
         -------
-        Matrix
+        MatrixExpression
 
         Examples
         --------
@@ -2403,7 +2410,7 @@ class Matrix(BaseType):
             "reposition",
             None,
             [self, _reposition, (indices, chunk)],  # [*expr_args, func, args]
-            expr_repr="{0.name}.reposition(%d, %d)" % (row_offset, column_offset),
+            expr_repr=f"{{0.name}}.reposition({row_offset}, {column_offset})",
             nrows=nrows,
             ncols=ncols,
             dtype=self.dtype,
@@ -2412,7 +2419,9 @@ class Matrix(BaseType):
     ##################################
     # Extract and Assign index methods
     ##################################
-    def _extract_element(self, resolved_indexes, dtype=None, *, is_cscalar, name=None, result=None):
+    def _extract_element(
+        self, resolved_indexes, dtype, opts, *, is_cscalar, name=None, result=None
+    ):
         if dtype is None:
             dtype = self.dtype
         else:
@@ -2422,6 +2431,9 @@ class Matrix(BaseType):
             rowidx, colidx = colidx, rowidx
         if result is None:
             result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
+        if opts:
+            # Ignore opts for now
+            descriptor_lookup(**opts)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (
@@ -2501,7 +2513,7 @@ class Matrix(BaseType):
             cfunc_name = "GrB_Matrix_setElement_Scalar"
         call(cfunc_name, [self, value, rowidx.index, colidx.index])
 
-    def _prep_for_assign(self, resolved_indexes, value, mask=None, is_submask=False, replace=False):
+    def _prep_for_assign(self, resolved_indexes, value, mask, is_submask, replace, opts):
         method_name = "__setitem__"
         rowidx, colidx = resolved_indexes.indices
         rowsize = rowidx.size
@@ -2551,14 +2563,18 @@ class Matrix(BaseType):
                     if is_submask:
                         # C[i, J](m) << v
                         expr_repr = (
-                            "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
+                            "[{1._expr_name}, [{3._expr_name} cols]]"
+                            f"({mask.name})"
+                            " << {0.name}"
                         )
                         if backend == "suitesparse":
                             cfunc_name = "GxB_Row_subassign"
                         else:
                             # Recipe: create a new mask by expanding the old mask
                             cfunc_name = "GrB_Row_assign"
-                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                            mask = _vanilla_subassign_mask(
+                                self, mask, rowidx, colidx, replace, opts
+                            )
                     else:
                         # C(m)[i, J] << v
                         # C[i, J] << v
@@ -2599,14 +2615,18 @@ class Matrix(BaseType):
                     if is_submask:
                         # C[I, j](m) << v
                         expr_repr = (
-                            "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
+                            "[{1._expr_name}, [{3._expr_name} cols]]"
+                            f"({mask.name})"
+                            " << {0.name}"
                         )
                         if backend == "suitesparse":
                             cfunc_name = "GxB_Col_subassign"
                         else:
                             # Recipe: create a new mask by expanding the old mask
                             cfunc_name = "GrB_Col_assign"
-                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                            mask = _vanilla_subassign_mask(
+                                self, mask, rowidx, colidx, replace, opts
+                            )
                     else:
                         # C(m)[I, j] << v
                         # C[I, j] << v
@@ -2665,13 +2685,15 @@ class Matrix(BaseType):
             if is_submask:
                 # C[I, J](M) << A
                 expr_repr = (
-                    "[[{2._expr_name} rows], [{4._expr_name} cols]](%s) << {0.name}" % mask.name
+                    "[[{2._expr_name} rows], [{4._expr_name} cols]]"
+                    f"({mask.name})"  # fmt: skip
+                    " << {0.name}"
                 )
                 if backend == "suitesparse":
                     cfunc_name = "GxB_Matrix_subassign"
                 else:
                     cfunc_name = "GrB_Matrix_assign"
-                    mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                    mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace, opts)
             else:
                 # C[I, J] << A
                 # C(M)[I, J] << A
@@ -2721,7 +2743,7 @@ class Matrix(BaseType):
                                         vals = Vector.from_coo(
                                             np.arange(shape[0]), values, dtype, size=shape[0]
                                         )
-                                except Exception:
+                                except Exception:  # pragma: no cover (safety)
                                     vals = None
                                 else:
                                     if dtype.np_type.subdtype is not None:
@@ -2759,9 +2781,10 @@ class Matrix(BaseType):
                             return self._prep_for_assign(
                                 resolved_indexes,
                                 vals,
-                                mask=mask,
-                                is_submask=is_submask,
-                                replace=replace,
+                                mask,
+                                is_submask,
+                                replace,
+                                opts,
                             )
                     if rowsize is None or colsize is None:
                         types = (Scalar, Vector)
@@ -2779,22 +2802,26 @@ class Matrix(BaseType):
                     if is_submask:
                         # C[i, J](m) << c
                         value_vector = Vector(value.dtype, size=mask.parent._size, name="v_temp")
-                        value_vector << value
+                        value_vector(**opts) << value
                         expr_repr = (
-                            "[{1._expr_name}, [{3._expr_name} cols]](%s) << {0.name}" % mask.name
+                            "[{1._expr_name}, [{3._expr_name} cols]]"
+                            f"({mask.name})"
+                            " << {0.name}"
                         )
                         if backend == "suitesparse":
                             cfunc_name = "GxB_Row_subassign"
                         else:
                             cfunc_name = "GrB_Row_assign"
-                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                            mask = _vanilla_subassign_mask(
+                                self, mask, rowidx, colidx, replace, opts
+                            )
                     else:
                         # C(m)[i, J] << c
                         # C[i, J] << c
                         cfunc_name = "GrB_Row_assign"
                         value_vector = Vector(value.dtype, size=colsize, name="v_temp")
                         expr_repr = "[{1._expr_name}, [{3._expr_name} cols]] = {0.name}"
-                        value_vector << value
+                        value_vector(**opts) << value
 
                     # Row-only selection
                     expr = MatrixExpression(
@@ -2810,18 +2837,20 @@ class Matrix(BaseType):
                     if is_submask:
                         # C[I, j](m) << c
                         value_vector = Vector(value.dtype, size=mask.parent._size, name="v_temp")
-                        value_vector << value
+                        value_vector(**opts) << value
                         if backend == "suitesparse":
                             cfunc_name = "GxB_Col_subassign"
                         else:
                             cfunc_name = "GrB_Col_assign"
-                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                            mask = _vanilla_subassign_mask(
+                                self, mask, rowidx, colidx, replace, opts
+                            )
                     else:
                         # C(m)[I, j] << c
                         # C[I, j] << c
                         cfunc_name = "GrB_Col_assign"
                         value_vector = Vector(value.dtype, size=rowsize, name="v_temp")
-                        value_vector << value
+                        value_vector(**opts) << value
 
                     # Column-only selection
                     expr = MatrixExpression(
@@ -2868,16 +2897,21 @@ class Matrix(BaseType):
                             cfunc_name = f"GxB_Matrix_subassign_{dtype_name}"
                         else:
                             cfunc_name = f"GrB_Matrix_assign_{dtype_name}"
-                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                            mask = _vanilla_subassign_mask(
+                                self, mask, rowidx, colidx, replace, opts
+                            )
                     else:
                         if backend == "suitesparse":
                             cfunc_name = "GxB_Matrix_subassign_Scalar"
                         else:
                             cfunc_name = "GrB_Matrix_assign_Scalar"
-                            mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace)
+                            mask = _vanilla_subassign_mask(
+                                self, mask, rowidx, colidx, replace, opts
+                            )
                     expr_repr = (
-                        "[[{2._expr_name} rows], [{4._expr_name} cols]](%s) = {0._expr_name}"
-                        % mask.name
+                        "[[{2._expr_name} rows], [{4._expr_name} cols]]"
+                        f"({mask.name})"
+                        " = {0._expr_name}"
                     )
                 else:
                     # C(M)[I, J] << c
@@ -2915,52 +2949,6 @@ class Matrix(BaseType):
         rowidx, colidx = resolved_indexes.indices
         call("GrB_Matrix_removeElement", [self, rowidx.index, colidx.index])
 
-    def to_pygraphblas(self):  # pragma: no cover (outdated)
-        """Convert to a ``pygraphblas.Matrix`` without copying data.
-
-        This gives control of the underlying GraphBLAS memory to pygraphblas,
-        meaning further operations on the current :class:`Matrix` object will fail!
-
-        This method requires the
-        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
-        library to be installed.
-        """
-        if backend != "suitesparse":
-            raise RuntimeError(
-                f"to_pygraphblas only works with 'suitesparse' backend, not {backend}"
-            )
-        import pygraphblas as pg
-
-        matrix = pg.Matrix(self.gb_obj, pg.types._gb_type_to_type(self.dtype.gb_obj))
-        self.gb_obj = ffi_new("GrB_Matrix*")
-        return matrix
-
-    @classmethod
-    def from_pygraphblas(cls, matrix):  # pragma: no cover (outdated)
-        """Convert a ``pygraphblas.Matrix`` to a new :class:`Matrix` without copying data.
-
-        This gives control of the underlying GraphBLAS memory to python-graphblas,
-        meaning further operations on the original ``pygraphblas`` matrix object will fail!
-
-        This method requires the
-        `pygraphblas <https://graphegon.github.io/pygraphblas/pygraphblas/index.html>`_
-        library to be installed.
-        """
-        if backend != "suitesparse":
-            raise RuntimeError(
-                f"from_pygraphblas only works with 'suitesparse' backend, not {backend!r}"
-            )
-        import pygraphblas as pg
-
-        if not isinstance(matrix, pg.Matrix):
-            raise TypeError(f"Expected pygraphblas.Matrix object.  Got type: {type(matrix)}")
-        dtype = lookup_dtype(matrix.gb_type)
-        rv = cls(matrix._matrix, dtype)
-        rv._nrows = matrix.nrows
-        rv._ncols = matrix.ncols
-        matrix._matrix = ffi_new("GrB_Matrix*")
-        return rv
-
 
 if backend == "suitesparse":
     Matrix.ss = class_property(Matrix.ss, ss)
@@ -2970,7 +2958,7 @@ else:
     )
 
 
-def _vanilla_subassign_mask(self, mask, rows, cols, replace):
+def _vanilla_subassign_mask(self, mask, rows, cols, replace, opts):
     is_rowwise = rows.size is None and cols.size is not None
     is_colwise = rows.size is not None and cols.size is None
     is_matrix = not is_rowwise and not is_colwise
@@ -2980,33 +2968,33 @@ def _vanilla_subassign_mask(self, mask, rows, cols, replace):
         rows = rows._py_index()
         cols = cols._py_index()
         val = Matrix(mask.parent.dtype, nrows=self._nrows, ncols=self._ncols, name="M_temp")
-        val[rows, cols] = mask.parent
+        val(**opts)[rows, cols] = mask.parent
     elif is_rowwise:
         if not replace and cols.index is _ALL_INDICES:
             return mask
         cols = cols._py_index()
         val = Vector(mask.parent.dtype, size=self._ncols, name="m_temp")
-        val[cols] = mask.parent
+        val(**opts)[cols] = mask.parent
     elif is_colwise:
         if not replace and rows.index is _ALL_INDICES:
             return mask
         rows = rows._py_index()
         val = Vector(mask.parent.dtype, size=self._nrows, name="m_temp")
-        val[rows] = mask.parent
+        val(**opts)[rows] = mask.parent
     else:  # pragma: no cover (sanity)
         raise RuntimeError("oops! Submask does not work on scalars")
     mask = type(mask)(val)
     if replace:
         if is_matrix:
             val = self.dup()
-            del val[rows, cols]
+            val.__delitem__((rows, cols), **opts)  # del val[rows, cols]
         elif is_rowwise:
-            val = self[rows.index, :].new()
-            del val[cols]
+            val = self[rows.index, :].new(**opts)
+            val.__delitem__(cols, **opts)  # del val[cols]
         else:  # is_colwise:
-            val = self[:, cols.index].new()
-            del val[rows]
-        mask |= val.S
+            val = self[:, cols.index].new(**opts)
+            val.__delitem__(rows, **opts)  # del val[rows]
+        mask = mask.__or__(val.S, **opts)  # mask |= val.S
     return mask
 
 
@@ -3075,6 +3063,14 @@ class MatrixExpression(BaseExpression):
     def shape(self):
         return (self._nrows, self._ncols)
 
+    @wrapdoc(Matrix.dup)
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
+        if dtype is None:
+            dtype = self.dtype
+        if clear:
+            return Matrix(dtype, self._nrows, self._ncols, name=name)
+        return self._new(dtype, mask, name, **opts)
+
     # Begin auto-generated code: Matrix
     _get_value = automethods._get_value
     S = wrapdoc(Matrix.S)(property(automethods.S))
@@ -3105,8 +3101,7 @@ class MatrixExpression(BaseExpression):
     kronecker = wrapdoc(Matrix.kronecker)(property(automethods.kronecker))
     mxm = wrapdoc(Matrix.mxm)(property(automethods.mxm))
     mxv = wrapdoc(Matrix.mxv)(property(automethods.mxv))
-    name = wrapdoc(Matrix.name)(property(automethods.name))
-    name = name.setter(automethods._set_name)
+    name = wrapdoc(Matrix.name)(property(automethods.name)).setter(automethods._set_name)
     nvals = wrapdoc(Matrix.nvals)(property(automethods.nvals))
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(automethods.reduce_rowwise))
@@ -3115,13 +3110,14 @@ class MatrixExpression(BaseExpression):
     select = wrapdoc(Matrix.select)(property(automethods.select))
     if backend == "suitesparse":
         ss = wrapdoc(Matrix.ss)(property(automethods.ss))
+    else:
+        ss = Matrix.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
     to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
     to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
     to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
-    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
     # These raise exceptions
@@ -3165,6 +3161,14 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     def shape(self):
         return (self._nrows, self._ncols)
 
+    @wrapdoc(Matrix.dup)
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
+        if clear:
+            if dtype is None:
+                dtype = self.dtype
+            return self.output_type(dtype, *self.shape, name=name)
+        return self.new(dtype, mask=mask, name=name, **opts)
+
     # Begin auto-generated code: Matrix
     _get_value = automethods._get_value
     S = wrapdoc(Matrix.S)(property(automethods.S))
@@ -3195,8 +3199,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     kronecker = wrapdoc(Matrix.kronecker)(property(automethods.kronecker))
     mxm = wrapdoc(Matrix.mxm)(property(automethods.mxm))
     mxv = wrapdoc(Matrix.mxv)(property(automethods.mxv))
-    name = wrapdoc(Matrix.name)(property(automethods.name))
-    name = name.setter(automethods._set_name)
+    name = wrapdoc(Matrix.name)(property(automethods.name)).setter(automethods._set_name)
     nvals = wrapdoc(Matrix.nvals)(property(automethods.nvals))
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(automethods.reduce_rowwise))
@@ -3205,13 +3208,14 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     select = wrapdoc(Matrix.select)(property(automethods.select))
     if backend == "suitesparse":
         ss = wrapdoc(Matrix.ss)(property(automethods.ss))
+    else:
+        ss = Matrix.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Matrix.to_coo)(property(automethods.to_coo))
     to_csc = wrapdoc(Matrix.to_csc)(property(automethods.to_csc))
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
     to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
     to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
     to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
-    to_pygraphblas = wrapdoc(Matrix.to_pygraphblas)(property(automethods.to_pygraphblas))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
     # These raise exceptions
@@ -3253,22 +3257,20 @@ class TransposedMatrix:
 
         return format_matrix_html(self, collapse=collapse)
 
-    def new(self, dtype=None, *, mask=None, name=None):
+    def new(self, dtype=None, *, mask=None, name=None, **opts):
         if dtype is None:
             dtype = self.dtype
         output = Matrix(dtype, self._nrows, self._ncols, name=name)
-        if mask is None:
-            output.update(self)
-        else:
-            output(mask=mask).update(self)
+        output(mask=mask, **opts) << self
         return output
 
-    def dup(self, dtype=None, *, clear=False, mask=None, name=None):
+    @wrapdoc(Matrix.dup)
+    def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
         if dtype is None:
             dtype = self.dtype
         if clear:
             return Matrix(dtype, self._nrows, self._ncols, name=name)
-        return self.new(dtype, mask=mask, name=name)
+        return self.new(dtype, mask=mask, name=name, **opts)
 
     @property
     def T(self):
@@ -3297,8 +3299,8 @@ class TransposedMatrix:
         return cols, rows, vals
 
     @wrapdoc(Matrix.diag)
-    def diag(self, k=0, dtype=None, *, name=None):
-        return self._matrix.diag(-k, dtype, name=name)
+    def diag(self, k=0, dtype=None, *, name=None, **opts):
+        return self._matrix.diag(-k, dtype, name=name, **opts)
 
     @property
     def _carg(self):
@@ -3320,11 +3322,11 @@ class TransposedMatrix:
     def to_csc(self, dtype=None):
         return self._matrix.to_csr(dtype)
 
-    @wrapdoc(Matrix.to_csr)
+    @wrapdoc(Matrix.to_dcsr)
     def to_dcsr(self, dtype=None):
         return self._matrix.to_dcsc(dtype)
 
-    @wrapdoc(Matrix.to_csc)
+    @wrapdoc(Matrix.to_dcsc)
     def to_dcsc(self, dtype=None):
         return self._matrix.to_dcsr(dtype)
 
@@ -3398,4 +3400,4 @@ utils._output_types[MatrixExpression] = Matrix
 utils._output_types[TransposedMatrix] = TransposedMatrix
 
 # Import infix to import infixmethods, which has side effects
-from . import infix  # noqa isort:skip
+from . import infix  # noqa: E402, F401 isort:skip

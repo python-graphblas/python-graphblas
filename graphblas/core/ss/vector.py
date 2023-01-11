@@ -1,9 +1,7 @@
 import itertools
-import warnings
 
 import numpy as np
 from numba import njit
-from suitesparse_graphblas import vararg
 from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
 
 import graphblas as gb
@@ -19,13 +17,12 @@ from ..utils import (
     _CArray,
     _MatrixArray,
     ints_to_numpy_buffer,
-    libget,
     normalize_chunks,
     values_to_numpy_buffer,
     wrapdoc,
 )
 from .config import BaseConfig
-from .descriptor import get_compression_descriptor, get_nthreads_descriptor
+from .descriptor import get_descriptor
 from .matrix import _concat_mn
 from .prefix_scan import prefix_scan
 
@@ -65,8 +62,8 @@ class VectorConfig(BaseConfig):
         Current sparsity format
     """
 
-    _get_function = lib.GxB_Vector_Option_get
-    _set_function = lib.GxB_Vector_Option_set
+    _get_function = "GxB_Vector_Option_get"
+    _set_function = "GxB_Vector_Option_set"
     _options = {
         "bitmap_switch": (lib.GxB_BITMAP_SWITCH, "double"),
         "sparsity_control": (lib.GxB_SPARSITY_CONTROL, "int"),
@@ -76,24 +73,24 @@ class VectorConfig(BaseConfig):
     }
     _bitwise = {
         "sparsity_control": {
-            # lib.GxB_HYPERSPARSE: "hypersparse",  # For matrices, not vectors
-            lib.GxB_SPARSE: "sparse",
-            lib.GxB_BITMAP: "bitmap",
-            lib.GxB_FULL: "full",
-            lib.GxB_AUTO_SPARSITY: "auto",
+            # "hypersparse": lib.GxB_HYPERSPARSE,  # For matrices, not vectors
+            "sparse": lib.GxB_SPARSE,
+            "bitmap": lib.GxB_BITMAP,
+            "full": lib.GxB_FULL,
+            "auto": lib.GxB_AUTO_SPARSITY,
         },
     }
     _enumerations = {
         "format": {
-            lib.GxB_BY_ROW: "by_row",
-            lib.GxB_BY_COL: "by_col",
-            # lib.GxB_NO_FORMAT: "no_format",  # Used by iterators; not valid here
+            "by_row": lib.GxB_BY_ROW,
+            "by_col": lib.GxB_BY_COL,
+            # "no_format": lib.GxB_NO_FORMAT,  # Used by iterators; not valid here
         },
         "sparsity_status": {
-            lib.GxB_HYPERSPARSE: "hypersparse",
-            lib.GxB_SPARSE: "sparse",
-            lib.GxB_BITMAP: "bitmap",
-            lib.GxB_FULL: "full",
+            "hypersparse": lib.GxB_HYPERSPARSE,
+            "sparse": lib.GxB_SPARSE,
+            "bitmap": lib.GxB_BITMAP,
+            "full": lib.GxB_FULL,
         },
     }
     _defaults = {
@@ -131,9 +128,9 @@ class ss:
     @property
     def format(self):
         parent = self._parent
-        sparsity_ptr = ffi_new("GxB_Option_Field*")
+        sparsity_ptr = ffi_new("int32_t*")
         check_status(
-            lib.GxB_Vector_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, vararg(sparsity_ptr)),
+            lib.GxB_Vector_Option_get_INT32(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
             parent,
         )
         sparsity_status = sparsity_ptr[0]
@@ -147,21 +144,7 @@ class ss:
             raise NotImplementedError(f"Unknown sparsity status: {sparsity_status}")
         return format
 
-    def diag(self, matrix, k=0):
-        """
-        GxB_Vector_diag
-
-        **This function is deprecated.  Use ``Matrix.diag`` or ``Vector.ss.build_diag`` instead.**
-
-        """
-        warnings.warn(
-            "`Vector.ss.diag` is deprecated; "
-            "please use `Matrix.diag` or `Vector.ss.build_diag` instead",
-            DeprecationWarning,
-        )
-        self.build_diag(matrix, k)
-
-    def build_diag(self, matrix, k=0):
+    def build_diag(self, matrix, k=0, **opts):
         """
         GxB_Vector_diag
 
@@ -194,9 +177,12 @@ class ss:
             # Transpose descriptor doesn't do anything, so use the parent
             k = -k
             matrix = matrix._matrix
-        call("GxB_Vector_diag", [self._parent, matrix, _as_scalar(k, INT64, is_cscalar=True), None])
+        call(
+            "GxB_Vector_diag",
+            [self._parent, matrix, _as_scalar(k, INT64, is_cscalar=True), get_descriptor(**opts)],
+        )
 
-    def split(self, chunks, *, name=None):
+    def split(self, chunks, *, name=None, **opts):
         """
         GxB_Matrix_split
 
@@ -232,7 +218,7 @@ class ss:
                 _CArray(tile_nrows),
                 _CArray([1]),
                 parent,
-                None,
+                get_descriptor(**opts),
             ],
         )
         rv = []
@@ -247,7 +233,7 @@ class ss:
             rv.append(tile)
         return rv
 
-    def _concat(self, tiles, m):
+    def _concat(self, tiles, m, opts):
         ctiles = ffi_new("GrB_Matrix[]", m)
         for i, tile in enumerate(tiles):
             ctiles[i] = tile.gb_obj[0]
@@ -258,11 +244,11 @@ class ss:
                 _MatrixArray(ctiles, name="tiles"),
                 _as_scalar(m, _INDEX, is_cscalar=True),
                 _as_scalar(1, _INDEX, is_cscalar=True),
-                None,
+                get_descriptor(**opts),
             ],
         )
 
-    def concat(self, tiles):
+    def concat(self, tiles, **opts):
         """
         GxB_Matrix_concat
 
@@ -278,7 +264,7 @@ class ss:
         graphblas.ss.concat
         """
         tiles, m, n, is_matrix = _concat_mn(tiles, is_matrix=False)
-        self._concat(tiles, m)
+        self._concat(tiles, m, opts)
 
     def build_scalar(self, indices, value):
         """
@@ -313,10 +299,7 @@ class ss:
             lib.GxB_Iterator_free(it_ptr)
             raise _error_code_lookup[info]("Vector iterator failed to attach")
         if seek < 0:
-            p = lib.GxB_Vector_Iterator_getpmax(it)
-            seek += p
-            if seek < 0:
-                seek = 0
+            seek = max(0, seek + lib.GxB_Vector_Iterator_getpmax(it))
         info = lib.GxB_Vector_Iterator_seek(it, seek)
         if info != success:
             lib.GxB_Iterator_free(it_ptr)
@@ -426,7 +409,7 @@ class ss:
         finally:
             lib.GxB_Iterator_free(it_ptr)
 
-    def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
+    def export(self, format=None, *, sort=False, give_ownership=False, raw=False, **opts):
         """
         GxB_Vextor_export_xxx
 
@@ -469,7 +452,7 @@ class ss:
                 - size : int
                 - nvals : int, only present if raw == True
             - "bitmap" format
-                - bitmap : ndarray(dtype=bool8, size=size)
+                - bitmap : ndarray(dtype=bool, size=size)
                 - values : ndarray(size=size)
                     - Elements where bitmap is False are undefined
                 - nvals : int
@@ -487,10 +470,15 @@ class ss:
         >>> v2 = Vector.ss.import_any(**pieces)
         """
         return self._export(
-            format=format, sort=sort, give_ownership=give_ownership, raw=raw, method="export"
+            format=format,
+            sort=sort,
+            give_ownership=give_ownership,
+            raw=raw,
+            method="export",
+            opts=opts,
         )
 
-    def unpack(self, format=None, *, sort=False, raw=False):
+    def unpack(self, format=None, *, sort=False, raw=False, **opts):
         """
         GxB_Vector_unpack_xxx
 
@@ -499,9 +487,11 @@ class ss:
 
         See `Vector.ss.export` documentation for more details.
         """
-        return self._export(format=format, sort=sort, give_ownership=True, raw=raw, method="unpack")
+        return self._export(
+            format=format, sort=sort, give_ownership=True, raw=raw, method="unpack", opts=opts
+        )
 
-    def _export(self, format=None, *, sort=False, give_ownership=False, raw=False, method):
+    def _export(self, format=None, *, sort=False, give_ownership=False, raw=False, method, opts):
         if give_ownership:
             parent = self._parent
         else:
@@ -530,12 +520,14 @@ class ss:
         else:
             jumbled = ffi_new("bool*")
         is_iso = ffi_new("bool*")
+        desc = get_descriptor(**opts)
+        desc_obj = NULL if desc is None else desc._carg
         if format == "sparse":
             vi = ffi_new("GrB_Index**")
             vi_size = ffi_new("GrB_Index*")
             nvals = ffi_new("GrB_Index*")
             check_status(
-                libget(f"GxB_Vector_{method}_CSC")(
+                getattr(lib, f"GxB_Vector_{method}_CSC")(
                     vhandle,
                     *args,
                     vi,
@@ -545,7 +537,7 @@ class ss:
                     is_iso,
                     nvals,
                     jumbled,
-                    NULL,
+                    desc_obj,
                 ),
                 parent,
             )
@@ -574,13 +566,21 @@ class ss:
             vb_size = ffi_new("GrB_Index*")
             nvals = ffi_new("GrB_Index*")
             check_status(
-                libget(f"GxB_Vector_{method}_Bitmap")(
-                    vhandle, *args, vb, vx, vb_size, vx_size, is_iso, nvals, NULL
+                getattr(lib, f"GxB_Vector_{method}_Bitmap")(
+                    vhandle,
+                    *args,
+                    vb,
+                    vx,
+                    vb_size,
+                    vx_size,
+                    is_iso,
+                    nvals,
+                    desc_obj,
                 ),
                 parent,
             )
             is_iso = is_iso[0]
-            bool_dtype = np.dtype(np.bool8)
+            bool_dtype = np.dtype(np.bool_)
             bitmap = claim_buffer(ffi, vb[0], vb_size[0] // bool_dtype.itemsize, bool_dtype)
             values = claim_buffer(ffi, vx[0], vx_size[0] // dtype.itemsize, dtype)
             if not raw:
@@ -600,7 +600,14 @@ class ss:
                 rv["size"] = size
         elif format == "full":
             check_status(
-                libget(f"GxB_Vector_{method}_Full")(vhandle, *args, vx, vx_size, is_iso, NULL),
+                getattr(lib, f"GxB_Vector_{method}_Full")(
+                    vhandle,
+                    *args,
+                    vx,
+                    vx_size,
+                    is_iso,
+                    desc_obj,
+                ),
                 parent,
             )
             is_iso = is_iso[0]
@@ -638,6 +645,7 @@ class ss:
         size=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
         dtype=None,
         name=None,
@@ -648,6 +656,7 @@ class ss:
         bitmap=None,
         # Bitmap/Sparse
         nvals=None,  # optional
+        **opts,
     ):
         """
         GxB_Vector_import_xxx
@@ -679,6 +688,7 @@ class ss:
             size=size,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             dtype=dtype,
             name=name,
@@ -690,6 +700,7 @@ class ss:
             # Bitmap/Sparse
             nvals=nvals,
             method="import",
+            opts=opts,
         )
 
     def pack_any(
@@ -699,6 +710,7 @@ class ss:
         values,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
         # Sparse
         indices=None,
@@ -707,10 +719,11 @@ class ss:
         bitmap=None,
         # Bitmap/Sparse
         nvals=None,  # optional
-        # Unused for pack
+        # Unused for pack, ignored
         size=None,
         dtype=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Vector_pack_xxx
@@ -724,6 +737,7 @@ class ss:
             values=values,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             # Sparse
             indices=indices,
@@ -734,6 +748,7 @@ class ss:
             nvals=nvals,
             method="pack",
             vector=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -745,6 +760,7 @@ class ss:
         size=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
         dtype=None,
         name=None,
@@ -757,6 +773,7 @@ class ss:
         nvals=None,  # optional
         method,
         vector=None,
+        opts,
     ):
         if format is None:
             if indices is not None:
@@ -782,8 +799,10 @@ class ss:
                 is_iso=is_iso,
                 sorted_index=sorted_index,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         if format == "bitmap":
             return getattr(obj, f"{method}_bitmap")(
@@ -793,8 +812,10 @@ class ss:
                 size=size,
                 is_iso=is_iso,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         if format == "full":
             return getattr(obj, f"{method}_full")(
@@ -802,8 +823,10 @@ class ss:
                 size=size,
                 is_iso=is_iso,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         raise ValueError(f"Invalid format: {format}")
 
@@ -818,9 +841,11 @@ class ss:
         is_iso=False,
         sorted_index=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Vector_import_CSC
@@ -873,10 +898,12 @@ class ss:
             is_iso=is_iso,
             sorted_index=sorted_index,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_sparse(
@@ -888,8 +915,13 @@ class ss:
         is_iso=False,
         sorted_index=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **ignored_kwargs,
+        # Unused for pack, ignored
+        size=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GxB_Vector_pack_CSC
@@ -906,9 +938,11 @@ class ss:
             is_iso=is_iso,
             sorted_index=sorted_index,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             vector=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -922,11 +956,13 @@ class ss:
         is_iso=False,
         sorted_index=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         vector=None,
+        opts,
     ):
         if format is not None and format.lower() != "sparse":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'sparse'.")
@@ -952,7 +988,8 @@ class ss:
         else:
             vhandle = vector._carg
             args = ()
-        status = libget(f"GxB_Vector_{method}_CSC")(
+        desc = get_descriptor(secure_import=secure_import, **opts)
+        status = getattr(lib, f"GxB_Vector_{method}_CSC")(
             vhandle,
             *args,
             vi,
@@ -962,7 +999,7 @@ class ss:
             is_iso,
             nvals,
             not sorted_index,
-            NULL,
+            NULL if desc is None else desc._carg,
         )
         if method == "import":
             check_status_carg(
@@ -987,9 +1024,11 @@ class ss:
         size=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Vector_import_Bitmap
@@ -1014,7 +1053,7 @@ class ss:
             to GraphBLAS if possible.  To give ownership of the underlying
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
-                - have the correct dtype (bool8 for bitmap)
+                - have the correct dtype (bool for bitmap)
                 - own its own data
                 - be writeable
             If all of these conditions are not met, then the data will be
@@ -1041,10 +1080,12 @@ class ss:
             size=size,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_bitmap(
@@ -1055,8 +1096,13 @@ class ss:
         nvals=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **unused_kwargs,
+        # Unused for pack, ignored
+        size=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GxB_Vector_pack_Bitmap
@@ -1072,9 +1118,11 @@ class ss:
             nvals=nvals,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             vector=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -1087,16 +1135,18 @@ class ss:
         size=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         vector=None,
+        opts,
     ):
         if format is not None and format.lower() != "bitmap":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'bitmap'.")
         copy = not take_ownership
-        bitmap = ints_to_numpy_buffer(bitmap, np.bool8, copy=copy, ownable=True, name="bitmap")
+        bitmap = ints_to_numpy_buffer(bitmap, np.bool_, copy=copy, ownable=True, name="bitmap")
         if method == "pack":
             dtype = vector.dtype
             size = vector._size
@@ -1124,7 +1174,8 @@ class ss:
         else:
             vhandle = vector._carg
             args = ()
-        status = libget(f"GxB_Vector_{method}_Bitmap")(
+        desc = get_descriptor(secure_import=secure_import, **opts)
+        status = getattr(lib, f"GxB_Vector_{method}_Bitmap")(
             vhandle,
             *args,
             vb,
@@ -1133,7 +1184,7 @@ class ss:
             values.nbytes,
             is_iso,
             nvals,
-            NULL,
+            NULL if desc is None else desc._carg,
         )
         if method == "import":
             check_status_carg(
@@ -1156,9 +1207,11 @@ class ss:
         size=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Vector_import_Full
@@ -1179,7 +1232,7 @@ class ss:
             to GraphBLAS if possible.  To give ownership of the underlying
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
-                - have the correct dtype (bool8 for bitmap)
+                - have the correct dtype (bool for bitmap)
                 - own its own data
                 - be writeable
             If all of these conditions are not met, then the data will be
@@ -1204,10 +1257,12 @@ class ss:
             size=size,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_full(
@@ -1216,8 +1271,13 @@ class ss:
         *,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **unused_kwargs,
+        # Unused for pack, ignored
+        size=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GxB_Vector_pack_Full
@@ -1231,9 +1291,11 @@ class ss:
             values=values,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             vector=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -1244,11 +1306,13 @@ class ss:
         size=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         vector=None,
+        opts,
     ):
         if format is not None and format.lower() != "full":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'full'.")
@@ -1270,13 +1334,14 @@ class ss:
         else:
             vhandle = vector._carg
             args = ()
-        status = libget(f"GxB_Vector_{method}_Full")(
+        desc = get_descriptor(secure_import=secure_import, **opts)
+        status = getattr(lib, f"GxB_Vector_{method}_Full")(
             vhandle,
             *args,
             vx,
             values.nbytes,
             is_iso,
-            NULL,
+            NULL if desc is None else desc._carg,
         )
         if method == "import":
             check_status_carg(
@@ -1294,7 +1359,7 @@ class ss:
     def head(self, n=10, dtype=None, *, sort=False):
         return head(self._parent, n, dtype, sort=sort)
 
-    def scan(self, op=monoid.plus, *, name=None):
+    def scan(self, op=monoid.plus, *, name=None, **opts):
         """Perform a prefix scan with the given monoid.
 
         For example, use `monoid.plus` (the default) to perform a cumulative sum,
@@ -1304,9 +1369,9 @@ class ss:
         -------
         Scalar
         """
-        return prefix_scan(self._parent, op, name=name, within="scan")
+        return prefix_scan(self._parent, op, name=name, within="scan", **opts)
 
-    def reshape(self, nrows, ncols=None, order="rowwise", *, name=None):
+    def reshape(self, nrows, ncols=None, order="rowwise", *, name=None, **opts):
         """Return a copy of the Vector as a Matrix of the given shape.
 
         The shape of the Matrix must be compatible with the original shape.
@@ -1334,7 +1399,7 @@ class ss:
         --------
         Matrix.ss.flatten : flatten a Matrix into a Vector.
         """
-        return self._parent._as_matrix().ss.reshape(nrows, ncols, order, name=name)
+        return self._parent._as_matrix().ss.reshape(nrows, ncols, order, name=name, **opts)
 
     def selectk(self, how, k, *, name=None):
         """Select (up to) k elements.
@@ -1491,7 +1556,7 @@ class ss:
             name=name,
         )
 
-    def sort(self, op=binary.lt, *, values=True, permutation=True, nthreads=None):
+    def sort(self, op=binary.lt, *, values=True, permutation=True, **opts):
         """GxB_Vector_sort to sort values of the Vector
 
         Sorting moves all the elements to the left just like `compactify`.
@@ -1539,23 +1604,20 @@ class ss:
             p = Vector(UINT64, parent._size, name="permutation")
         else:
             p = None
-        if nthreads is not None:
-            desc = get_nthreads_descriptor(nthreads)
-        else:
-            desc = None
+        desc = get_descriptor(**opts)
         check_status(
             lib.GxB_Vector_sort(
-                w._carg if w is not None else NULL,
-                p._carg if p is not None else NULL,
+                NULL if w is None else w._carg,
+                NULL if p is None else p._carg,
                 op._carg,
                 parent._carg,
-                desc._carg if desc is not None else NULL,
+                NULL if desc is None else desc._carg,
             ),
             parent,
         )
         return w, p
 
-    def serialize(self, compression="default", level=None, *, nthreads=None):
+    def serialize(self, compression="default", level=None, **opts):
         """Serialize a Vector to bytes (as numpy array) using SuiteSparse GxB_Vector_serialize.
 
         Parameters
@@ -1584,7 +1646,7 @@ class ss:
 
         *Warning*: Behavior of serializing UDTs is experimental and may change in a future release.
         """
-        desc = get_compression_descriptor(compression, level=level, nthreads=nthreads)
+        desc = get_descriptor(compression=compression, compression_level=level, **opts)
         blob_handle = ffi_new("void**")
         blob_size_handle = ffi_new("GrB_Index*")
         parent = self._parent
@@ -1593,14 +1655,14 @@ class ss:
                 blob_handle,
                 blob_size_handle,
                 parent._carg,
-                desc._carg,
+                NULL if desc is None else desc._carg,
             ),
             parent,
         )
         return claim_buffer(ffi, blob_handle[0], blob_size_handle[0], np.dtype(np.uint8))
 
     @classmethod
-    def deserialize(cls, data, dtype=None, *, nthreads=None, name=None):
+    def deserialize(cls, data, dtype=None, *, name=None, **opts):
         """Deserialize a Vector from bytes, buffer, or numpy array using GxB_Vector_deserialize.
 
         The data should have been previously serialized with a compatible version of
@@ -1642,13 +1704,12 @@ class ss:
             dtype = _string_to_dtype(dtype_name)
         else:
             dtype = lookup_dtype(dtype)
-        if nthreads is not None:
-            desc_obj = get_nthreads_descriptor(nthreads)._carg
-        else:
-            desc_obj = NULL
+        desc = get_descriptor(**opts)
         gb_obj = ffi_new("GrB_Vector*")
         check_status_carg(
-            lib.GxB_Vector_deserialize(gb_obj, dtype._carg, data_obj, data.nbytes, desc_obj),
+            lib.GxB_Vector_deserialize(
+                gb_obj, dtype._carg, data_obj, data.nbytes, NULL if desc is None else desc._carg
+            ),
             "Vector",
             gb_obj[0],
         )

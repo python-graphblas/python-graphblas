@@ -4,7 +4,6 @@ import warnings
 import numba
 import numpy as np
 from numba import njit
-from suitesparse_graphblas import vararg
 from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
 
 import graphblas as gb
@@ -14,7 +13,6 @@ from ...dtypes import _INDEX, BOOL, INT64, UINT64, _string_to_dtype, lookup_dtyp
 from ...exceptions import _error_code_lookup, check_status, check_status_carg
 from .. import NULL, ffi, lib
 from ..base import call
-from ..descriptor import lookup as descriptor_lookup
 from ..operator import get_typed_op
 from ..scalar import Scalar, _as_scalar, _scalar_index
 from ..utils import (
@@ -24,14 +22,13 @@ from ..utils import (
     get_order,
     get_shape,
     ints_to_numpy_buffer,
-    libget,
     normalize_chunks,
     output_type,
     values_to_numpy_buffer,
     wrapdoc,
 )
 from .config import BaseConfig
-from .descriptor import get_compression_descriptor, get_nthreads_descriptor, set_nthreads
+from .descriptor import get_descriptor
 
 ffi_new = ffi.new
 
@@ -135,8 +132,8 @@ class MatrixConfig(BaseConfig):
         Current sparsity format
     """
 
-    _get_function = lib.GxB_Matrix_Option_get
-    _set_function = lib.GxB_Matrix_Option_set
+    _get_function = "GxB_Matrix_Option_get"
+    _set_function = "GxB_Matrix_Option_set"
     _options = {
         "format": (lib.GxB_FORMAT, "GxB_Format_Value"),
         "hyper_switch": (lib.GxB_HYPER_SWITCH, "double"),
@@ -147,24 +144,24 @@ class MatrixConfig(BaseConfig):
     }
     _bitwise = {
         "sparsity_control": {
-            lib.GxB_HYPERSPARSE: "hypersparse",
-            lib.GxB_SPARSE: "sparse",
-            lib.GxB_BITMAP: "bitmap",
-            lib.GxB_FULL: "full",
-            lib.GxB_AUTO_SPARSITY: "auto",
+            "hypersparse": lib.GxB_HYPERSPARSE,
+            "sparse": lib.GxB_SPARSE,
+            "bitmap": lib.GxB_BITMAP,
+            "full": lib.GxB_FULL,
+            "auto": lib.GxB_AUTO_SPARSITY,
         },
     }
     _enumerations = {
         "format": {
-            lib.GxB_BY_ROW: "by_row",
-            lib.GxB_BY_COL: "by_col",
-            # lib.GxB_NO_FORMAT: "no_format",  # Used by iterators; not valid here
+            "by_row": lib.GxB_BY_ROW,
+            "by_col": lib.GxB_BY_COL,
+            # "no_format": lib.GxB_NO_FORMAT,  # Used by iterators; not valid here
         },
         "sparsity_status": {
-            lib.GxB_HYPERSPARSE: "hypersparse",
-            lib.GxB_SPARSE: "sparse",
-            lib.GxB_BITMAP: "bitmap",
-            lib.GxB_FULL: "full",
+            "hypersparse": lib.GxB_HYPERSPARSE,
+            "sparse": lib.GxB_SPARSE,
+            "bitmap": lib.GxB_BITMAP,
+            "full": lib.GxB_FULL,
         },
     }
     _defaults = {
@@ -205,14 +202,14 @@ class ss:
     def format(self):
         # Determine current format
         parent = self._parent
-        format_ptr = ffi_new("GxB_Option_Field*")
-        sparsity_ptr = ffi_new("GxB_Option_Field*")
+        format_ptr = ffi_new("int32_t*")
+        sparsity_ptr = ffi_new("int32_t*")
         check_status(
-            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, vararg(format_ptr)),
+            lib.GxB_Matrix_Option_get_INT32(parent._carg, lib.GxB_FORMAT, format_ptr),
             parent,
         )
         check_status(
-            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_SPARSITY_STATUS, vararg(sparsity_ptr)),
+            lib.GxB_Matrix_Option_get_INT32(parent._carg, lib.GxB_SPARSITY_STATUS, sparsity_ptr),
             parent,
         )
         sparsity_status = sparsity_ptr[0]
@@ -235,30 +232,16 @@ class ss:
     @property
     def orientation(self):
         parent = self._parent
-        format_ptr = ffi_new("GxB_Option_Field*")
+        format_ptr = ffi_new("int32_t*")
         check_status(
-            lib.GxB_Matrix_Option_get(parent._carg, lib.GxB_FORMAT, vararg(format_ptr)),
+            lib.GxB_Matrix_Option_get_INT32(parent._carg, lib.GxB_FORMAT, format_ptr),
             parent,
         )
         if format_ptr[0] == lib.GxB_BY_COL:
             return "columnwise"
         return "rowwise"
 
-    def diag(self, vector, k=0):
-        """
-        GxB_Matrix_diag
-
-        **This function is deprecated.  Use ``Vector.diag`` or ``Matrix.ss.build_diag`` instead.**
-
-        """
-        warnings.warn(
-            "`Matrix.ss.diag` is deprecated; "
-            "please use `Vector.diag` or `Matrix.ss.build_diag` instead",
-            DeprecationWarning,
-        )
-        self.build_diag(vector, k)
-
-    def build_diag(self, vector, k=0):
+    def build_diag(self, vector, k=0, **opts):
         """
         GxB_Matrix_diag
 
@@ -282,9 +265,12 @@ class ss:
         vector = self._parent._expect_type(
             vector, gb.Vector, within="ss.build_diag", argname="vector"
         )
-        call("GxB_Matrix_diag", [self._parent, vector, _as_scalar(k, INT64, is_cscalar=True), None])
+        call(
+            "GxB_Matrix_diag",
+            [self._parent, vector, _as_scalar(k, INT64, is_cscalar=True), get_descriptor(**opts)],
+        )
 
-    def split(self, chunks, *, name=None):
+    def split(self, chunks, *, name=None, **opts):
         """
         GxB_Matrix_split
 
@@ -324,7 +310,7 @@ class ss:
                 _CArray(tile_nrows),
                 _CArray(tile_ncols),
                 self._parent,
-                None,
+                get_descriptor(**opts),
             ],
         )
         rv = []
@@ -344,7 +330,7 @@ class ss:
             rv.append(cur)
         return rv
 
-    def _concat(self, tiles, m, n):
+    def _concat(self, tiles, m, n, opts):
         from ..matrix import TransposedMatrix
 
         ctiles = ffi.new("GrB_Matrix[]", m * n)
@@ -362,11 +348,11 @@ class ss:
                 _MatrixArray(ctiles, name="tiles"),
                 _as_scalar(m, _INDEX, is_cscalar=True),
                 _as_scalar(n, _INDEX, is_cscalar=True),
-                None,
+                get_descriptor(**opts),
             ],
         )
 
-    def concat(self, tiles):
+    def concat(self, tiles, **opts):
         """
         GxB_Matrix_concat
 
@@ -384,7 +370,7 @@ class ss:
         graphblas.ss.concat
         """
         tiles, m, n, is_matrix = _concat_mn(tiles, is_matrix=True)
-        self._concat(tiles, m, n)
+        self._concat(tiles, m, n, opts)
 
     def build_scalar(self, rows, columns, value):
         """
@@ -425,10 +411,7 @@ class ss:
             lib.GxB_Iterator_free(it_ptr)
             raise _error_code_lookup[info]("Matrix iterator failed to attach")
         if seek < 0:
-            p = lib.GxB_Matrix_Iterator_getpmax(it)
-            seek += p
-            if seek < 0:
-                seek = 0
+            seek = max(0, seek + lib.GxB_Matrix_Iterator_getpmax(it))
         info = lib.GxB_Matrix_Iterator_seek(it, seek)
         if info != success:
             lib.GxB_Iterator_free(it_ptr)
@@ -544,7 +527,7 @@ class ss:
         finally:
             lib.GxB_Iterator_free(it_ptr)
 
-    def export(self, format=None, *, sort=False, give_ownership=False, raw=False):
+    def export(self, format=None, *, sort=False, give_ownership=False, raw=False, **opts):
         """
         GxB_Matrix_export_xxx
 
@@ -636,13 +619,13 @@ class ss:
                     - The number of cols present in the data structure
             - "bitmapr" format
                 - ``raw=False``
-                    - bitmap : ndarray(dtype=bool8, ndim=2, shape=(nrows, ncols), order="C")
+                    - bitmap : ndarray(dtype=bool, ndim=2, shape=(nrows, ncols), order="C")
                     - values : ndarray(ndim=2, shape=(nrows, ncols), order="C")
                         - Elements where bitmap is False are undefined
                     - nvals : int
                         - The number of True elements in the bitmap
                 - ``raw=True``
-                    - bitmap : ndarray(dtype=bool8, ndim=1, size=nrows * ncols)
+                    - bitmap : ndarray(dtype=bool, ndim=1, size=nrows * ncols)
                         - Stored row-oriented
                     - values : ndarray(ndim=1, size=nrows * ncols)
                         - Elements where bitmap is False are undefined
@@ -653,13 +636,13 @@ class ss:
                     - ncols : int
             - "bitmapc" format
                 - ``raw=False``
-                    - bitmap : ndarray(dtype=bool8, ndim=2, shape=(nrows, ncols), order="F")
+                    - bitmap : ndarray(dtype=bool, ndim=2, shape=(nrows, ncols), order="F")
                     - values : ndarray(ndim=2, shape=(nrows, ncols), order="F")
                         - Elements where bitmap is False are undefined
                     - nvals : int
                         - The number of True elements in the bitmap
                 - ``raw=True``
-                    - bitmap : ndarray(dtype=bool8, ndim=1, size=nrows * ncols)
+                    - bitmap : ndarray(dtype=bool, ndim=1, size=nrows * ncols)
                         - Stored column-oriented
                     - values : ndarray(ndim=1, size=nrows * ncols)
                         - Elements where bitmap is False are undefined
@@ -729,10 +712,15 @@ class ss:
         >>> A2 = Matrix.ss.import_any(**pieces)
         """
         return self._export(
-            format, sort=sort, give_ownership=give_ownership, raw=raw, method="export"
+            format,
+            sort=sort,
+            give_ownership=give_ownership,
+            raw=raw,
+            method="export",
+            opts=opts,
         )
 
-    def unpack(self, format=None, *, sort=False, raw=False):
+    def unpack(self, format=None, *, sort=False, raw=False, **opts):
         """
         GxB_Matrix_unpack_xxx
 
@@ -741,9 +729,11 @@ class ss:
 
         See `Matrix.ss.export` documentation for more details.
         """
-        return self._export(format, sort=sort, raw=raw, give_ownership=True, method="unpack")
+        return self._export(
+            format, sort=sort, raw=raw, give_ownership=True, method="unpack", opts=opts
+        )
 
-    def _export(self, format=None, *, sort=False, give_ownership=False, raw=False, method):
+    def _export(self, format=None, *, sort=False, give_ownership=False, raw=False, method, opts):
         if format is None:
             format = self.format
         else:
@@ -763,6 +753,8 @@ class ss:
             parent = self._parent.dup(name=f"M_{method}")
         dtype = parent.dtype.np_type
         index_dtype = np.dtype(np.uint64)
+        desc = get_descriptor(**opts)
+        desc_obj = NULL if desc is None else desc._carg
 
         nrows = parent._nrows
         ncols = parent._ncols
@@ -823,7 +815,12 @@ class ss:
                         parent.clear()
             elif format == "coor":
                 rv = self._export(
-                    "csr", sort=sort, give_ownership=give_ownership, raw=False, method=method
+                    "csr",
+                    sort=sort,
+                    give_ownership=give_ownership,
+                    raw=False,
+                    method=method,
+                    opts=opts,
                 )
                 rv["rows"] = indptr_to_indices(rv.pop("indptr"))
                 rv["cols"] = rv.pop("col_indices")
@@ -831,7 +828,12 @@ class ss:
                 rv["format"] = "coor"
             elif format == "cooc":
                 rv = self._export(
-                    "csc", sort=sort, give_ownership=give_ownership, raw=False, method=method
+                    "csc",
+                    sort=sort,
+                    give_ownership=give_ownership,
+                    raw=False,
+                    method=method,
+                    opts=opts,
                 )
                 rv["cols"] = indptr_to_indices(rv.pop("indptr"))
                 rv["rows"] = rv.pop("row_indices")
@@ -866,7 +868,7 @@ class ss:
             Aj = ffi_new("GrB_Index**")
             Aj_size = ffi_new("GrB_Index*")
             check_status(
-                libget(f"GxB_Matrix_{method}_CSR")(
+                getattr(lib, f"GxB_Matrix_{method}_CSR")(
                     mhandle,
                     *args,
                     Ap,
@@ -877,7 +879,7 @@ class ss:
                     Ax_size,
                     is_iso,
                     jumbled,
-                    NULL,
+                    desc_obj,
                 ),
                 parent,
             )
@@ -908,7 +910,7 @@ class ss:
             Ai = ffi_new("GrB_Index**")
             Ai_size = ffi_new("GrB_Index*")
             check_status(
-                libget(f"GxB_Matrix_{method}_CSC")(
+                getattr(lib, f"GxB_Matrix_{method}_CSC")(
                     mhandle,
                     *args,
                     Ap,
@@ -919,7 +921,7 @@ class ss:
                     Ax_size,
                     is_iso,
                     jumbled,
-                    NULL,
+                    desc_obj,
                 ),
                 parent,
             )
@@ -953,7 +955,7 @@ class ss:
             Ah_size = ffi_new("GrB_Index*")
             Aj_size = ffi_new("GrB_Index*")
             check_status(
-                libget(f"GxB_Matrix_{method}_HyperCSR")(
+                getattr(lib, f"GxB_Matrix_{method}_HyperCSR")(
                     mhandle,
                     *args,
                     Ap,
@@ -967,7 +969,7 @@ class ss:
                     is_iso,
                     nvec,
                     jumbled,
-                    NULL,
+                    desc_obj,
                 ),
                 parent,
             )
@@ -1008,7 +1010,7 @@ class ss:
             Ah_size = ffi_new("GrB_Index*")
             Ai_size = ffi_new("GrB_Index*")
             check_status(
-                libget(f"GxB_Matrix_{method}_HyperCSC")(
+                getattr(lib, f"GxB_Matrix_{method}_HyperCSC")(
                     mhandle,
                     *args,
                     Ap,
@@ -1022,7 +1024,7 @@ class ss:
                     is_iso,
                     nvec,
                     jumbled,
-                    NULL,
+                    desc_obj,
                 ),
                 parent,
             )
@@ -1056,11 +1058,11 @@ class ss:
             }
             if raw:
                 rv["nvec"] = nvec
-        elif format == "bitmapr" or format == "bitmapc":
+        elif format in {"bitmapr", "bitmapc"}:
             if format == "bitmapr":
-                cfunc = libget(f"GxB_Matrix_{method}_BitmapR")
+                cfunc = getattr(lib, f"GxB_Matrix_{method}_BitmapR")
             else:
-                cfunc = libget(f"GxB_Matrix_{method}_BitmapC")
+                cfunc = getattr(lib, f"GxB_Matrix_{method}_BitmapC")
             Ab = ffi_new("int8_t**")
             Ab_size = ffi_new("GrB_Index*")
             nvals_ = ffi_new("GrB_Index*")
@@ -1074,12 +1076,12 @@ class ss:
                     Ax_size,
                     is_iso,
                     nvals_,
-                    NULL,
+                    desc_obj,
                 ),
                 parent,
             )
             is_iso = is_iso[0]
-            bool_dtype = np.dtype(np.bool8)
+            bool_dtype = np.dtype(np.bool_)
             if raw:
                 bitmap = claim_buffer(ffi, Ab[0], Ab_size[0] // bool_dtype.itemsize, bool_dtype)
                 values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
@@ -1112,11 +1114,11 @@ class ss:
             if raw:
                 rv["nrows"] = nrows
                 rv["ncols"] = ncols
-        elif format == "fullr" or format == "fullc":
+        elif format in {"fullr", "fullc"}:
             if format == "fullr":
-                cfunc = libget(f"GxB_Matrix_{method}_FullR")
+                cfunc = getattr(lib, f"GxB_Matrix_{method}_FullR")
             else:
-                cfunc = libget(f"GxB_Matrix_{method}_FullC")
+                cfunc = getattr(lib, f"GxB_Matrix_{method}_FullC")
             check_status(
                 cfunc(
                     mhandle,
@@ -1124,7 +1126,7 @@ class ss:
                     Ax,
                     Ax_size,
                     is_iso,
-                    NULL,
+                    desc_obj,
                 ),
                 parent,
             )
@@ -1167,9 +1169,11 @@ class ss:
         is_iso=False,
         sorted_cols=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Matrix_import_CSR
@@ -1222,10 +1226,12 @@ class ss:
             is_iso=is_iso,
             sorted_cols=sorted_cols,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_csr(
@@ -1237,8 +1243,14 @@ class ss:
         is_iso=False,
         sorted_cols=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **ignored_kwargs,
+        # Unused for pack, ignored
+        nrows=None,
+        ncols=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GxB_Matrix_pack_CSR
@@ -1255,9 +1267,11 @@ class ss:
             is_iso=is_iso,
             sorted_cols=sorted_cols,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             matrix=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -1272,11 +1286,13 @@ class ss:
         is_iso=False,
         sorted_cols=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         matrix=None,
+        opts,
     ):
         if format is not None and format.lower() != "csr":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'csr'.")
@@ -1301,7 +1317,8 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
-        status = libget(f"GxB_Matrix_{method}_CSR")(
+        desc = get_descriptor(secure_import=secure_import, **opts)
+        status = getattr(lib, f"GxB_Matrix_{method}_CSR")(
             mhandle,
             *args,
             Ap,
@@ -1312,7 +1329,7 @@ class ss:
             values.nbytes,
             is_iso,
             not sorted_cols,
-            NULL,
+            NULL if desc is None else desc._carg,
         )
         if method == "import":
             check_status_carg(
@@ -1340,9 +1357,11 @@ class ss:
         is_iso=False,
         sorted_rows=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Matrix_import_CSC
@@ -1395,10 +1414,12 @@ class ss:
             is_iso=is_iso,
             sorted_rows=sorted_rows,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_csc(
@@ -1410,8 +1431,14 @@ class ss:
         is_iso=False,
         sorted_rows=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **ignored_kwargs,
+        # Unused for pack, ignored
+        nrows=None,
+        ncols=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GxB_Matrix_pack_CSC
@@ -1428,9 +1455,11 @@ class ss:
             is_iso=is_iso,
             sorted_rows=sorted_rows,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             matrix=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -1445,11 +1474,13 @@ class ss:
         is_iso=False,
         sorted_rows=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         matrix=None,
+        opts,
     ):
         if format is not None and format.lower() != "csc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'csc'.")
@@ -1474,7 +1505,8 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
-        status = libget(f"GxB_Matrix_{method}_CSC")(
+        desc = get_descriptor(secure_import=secure_import, **opts)
+        status = getattr(lib, f"GxB_Matrix_{method}_CSC")(
             mhandle,
             *args,
             Ap,
@@ -1485,7 +1517,7 @@ class ss:
             values.nbytes,
             is_iso,
             not sorted_rows,
-            NULL,
+            NULL if desc is None else desc._carg,
         )
         if method == "import":
             check_status_carg(
@@ -1515,9 +1547,11 @@ class ss:
         is_iso=False,
         sorted_cols=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Matrix_import_HyperCSR
@@ -1576,10 +1610,12 @@ class ss:
             is_iso=is_iso,
             sorted_cols=sorted_cols,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_hypercsr(
@@ -1593,8 +1629,14 @@ class ss:
         is_iso=False,
         sorted_cols=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **ignored_kwargs,
+        # Unused for pack, ignored
+        nrows=None,
+        ncols=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GxB_Matrix_pack_HyperCSR
@@ -1613,9 +1655,11 @@ class ss:
             is_iso=is_iso,
             sorted_cols=sorted_cols,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             matrix=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -1632,11 +1676,13 @@ class ss:
         is_iso=False,
         sorted_cols=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         matrix=None,
+        opts,
     ):
         if format is not None and format.lower() != "hypercsr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsr'.")
@@ -1677,7 +1723,8 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
-        status = libget(f"GxB_Matrix_{method}_HyperCSR")(
+        desc = get_descriptor(secure_import=secure_import, **opts)
+        status = getattr(lib, f"GxB_Matrix_{method}_HyperCSR")(
             mhandle,
             *args,
             Ap,
@@ -1691,7 +1738,7 @@ class ss:
             is_iso,
             nvec,
             not sorted_cols,
-            NULL,
+            NULL if desc is None else desc._carg,
         )
         if method == "import":
             check_status_carg(
@@ -1722,9 +1769,11 @@ class ss:
         is_iso=False,
         sorted_rows=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Matrix_import_HyperCSC
@@ -1782,10 +1831,12 @@ class ss:
             is_iso=is_iso,
             sorted_rows=sorted_rows,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_hypercsc(
@@ -1799,8 +1850,14 @@ class ss:
         is_iso=False,
         sorted_rows=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **ignored_kwargs,
+        # Unused for pack, ignored
+        nrows=None,
+        ncols=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GxB_Matrix_pack_HyperCSC
@@ -1819,9 +1876,11 @@ class ss:
             is_iso=is_iso,
             sorted_rows=sorted_rows,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             matrix=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -1838,11 +1897,13 @@ class ss:
         is_iso=False,
         sorted_rows=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         matrix=None,
+        opts,
     ):
         if format is not None and format.lower() != "hypercsc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsc'.")
@@ -1883,7 +1944,8 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
-        status = libget(f"GxB_Matrix_{method}_HyperCSC")(
+        desc = get_descriptor(secure_import=secure_import, **opts)
+        status = getattr(lib, f"GxB_Matrix_{method}_HyperCSC")(
             mhandle,
             *args,
             Ap,
@@ -1897,7 +1959,7 @@ class ss:
             is_iso,
             nvec,
             not sorted_rows,
-            NULL,
+            NULL if desc is None else desc._carg,
         )
         if method == "import":
             check_status_carg(
@@ -1925,9 +1987,11 @@ class ss:
         ncols=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Matrix_import_BitmapR
@@ -1957,7 +2021,7 @@ class ss:
             to GraphBLAS if possible.  To give ownership of the underlying
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
-                - have the correct dtype (bool8 for bitmap)
+                - have the correct dtype (bool for bitmap)
                 - own its own data
                 - be writeable
             If all of these conditions are not met, then the data will be
@@ -1985,10 +2049,12 @@ class ss:
             ncols=ncols,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_bitmapr(
@@ -1999,8 +2065,14 @@ class ss:
         nvals=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **unused_kwargs,
+        # Unused for pack, ignored
+        nrows=None,
+        ncols=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GxB_Matrix_pack_BitmapR
@@ -2016,9 +2088,11 @@ class ss:
             nvals=nvals,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             matrix=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -2032,17 +2106,19 @@ class ss:
         ncols=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         matrix=None,
+        opts,
     ):
         if format is not None and format.lower() != "bitmapr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapr'.")
         copy = not take_ownership
         bitmap = ints_to_numpy_buffer(
-            bitmap, np.bool8, copy=copy, ownable=True, order="C", name="bitmap"
+            bitmap, np.bool_, copy=copy, ownable=True, order="C", name="bitmap"
         )
         if method == "pack":
             dtype = matrix.dtype
@@ -2066,7 +2142,8 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
-        status = libget(f"GxB_Matrix_{method}_BitmapR")(
+        desc = get_descriptor(secure_import=secure_import, **opts)
+        status = getattr(lib, f"GxB_Matrix_{method}_BitmapR")(
             mhandle,
             *args,
             Ab,
@@ -2075,7 +2152,7 @@ class ss:
             values.nbytes,
             is_iso,
             nvals,
-            NULL,
+            NULL if desc is None else desc._carg,
         )
         if method == "import":
             check_status_carg(
@@ -2101,9 +2178,11 @@ class ss:
         ncols=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Matrix_import_BitmapC
@@ -2133,7 +2212,7 @@ class ss:
             to GraphBLAS if possible.  To give ownership of the underlying
             memory buffers to GraphBLAS, the arrays must:
                 - be FORTRAN contiguous
-                - have the correct dtype (bool8 for bitmap)
+                - have the correct dtype (bool for bitmap)
                 - own its own data
                 - be writeable
             If all of these conditions are not met, then the data will be
@@ -2161,10 +2240,12 @@ class ss:
             ncols=ncols,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_bitmapc(
@@ -2175,8 +2256,14 @@ class ss:
         nvals=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **unused_kwargs,
+        # Unused for pack, ignored
+        nrows=None,
+        ncols=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GxB_Matrix_pack_BitmapC
@@ -2192,9 +2279,11 @@ class ss:
             nvals=nvals,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             matrix=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -2208,17 +2297,19 @@ class ss:
         ncols=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         matrix=None,
+        opts,
     ):
         if format is not None and format.lower() != "bitmapc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapc'.")
         copy = not take_ownership
         bitmap = ints_to_numpy_buffer(
-            bitmap, np.bool8, copy=copy, ownable=True, order="F", name="bitmap"
+            bitmap, np.bool_, copy=copy, ownable=True, order="F", name="bitmap"
         )
         if method == "pack":
             dtype = matrix.dtype
@@ -2242,7 +2333,8 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
-        status = libget(f"GxB_Matrix_{method}_BitmapC")(
+        desc = get_descriptor(secure_import=secure_import, **opts)
+        status = getattr(lib, f"GxB_Matrix_{method}_BitmapC")(
             mhandle,
             *args,
             Ab,
@@ -2251,7 +2343,7 @@ class ss:
             values.nbytes,
             is_iso,
             nvals,
-            NULL,
+            NULL if desc is None else desc._carg,
         )
         if method == "import":
             check_status_carg(
@@ -2275,9 +2367,11 @@ class ss:
         ncols=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Matrix_import_FullR
@@ -2328,10 +2422,12 @@ class ss:
             ncols=ncols,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_fullr(
@@ -2340,8 +2436,14 @@ class ss:
         *,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **unused_kwargs,
+        # Unused for pack, ignored
+        nrows=None,
+        ncols=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GxB_Matrix_pack_FullR
@@ -2355,9 +2457,11 @@ class ss:
             values=values,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             matrix=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -2369,11 +2473,13 @@ class ss:
         ncols=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         matrix=None,
+        opts,
     ):
         if format is not None and format.lower() != "fullr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'fullr'.")
@@ -2393,13 +2499,9 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
-        status = libget(f"GxB_Matrix_{method}_FullR")(
-            mhandle,
-            *args,
-            Ax,
-            values.nbytes,
-            is_iso,
-            NULL,
+        desc = get_descriptor(secure_import=secure_import, **opts)
+        status = getattr(lib, f"GxB_Matrix_{method}_FullR")(
+            mhandle, *args, Ax, values.nbytes, is_iso, NULL if desc is None else desc._carg
         )
         if method == "import":
             check_status_carg(
@@ -2422,9 +2524,11 @@ class ss:
         ncols=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Matrix_import_FullC
@@ -2475,10 +2579,12 @@ class ss:
             ncols=ncols,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_fullc(
@@ -2487,8 +2593,14 @@ class ss:
         *,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **unused_kwargs,
+        # Unused for pack, ignored
+        nrows=None,
+        ncols=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GxB_Matrix_pack_FullC
@@ -2502,9 +2614,11 @@ class ss:
             values=values,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             matrix=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -2516,11 +2630,13 @@ class ss:
         ncols=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         matrix=None,
+        opts,
     ):
         if format is not None and format.lower() != "fullc":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'fullc'.")
@@ -2539,13 +2655,9 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
-        status = libget(f"GxB_Matrix_{method}_FullC")(
-            mhandle,
-            *args,
-            Ax,
-            values.nbytes,
-            is_iso,
-            NULL,
+        desc = get_descriptor(secure_import=secure_import, **opts)
+        status = getattr(lib, f"GxB_Matrix_{method}_FullC")(
+            mhandle, *args, Ax, values.nbytes, is_iso, NULL if desc is None else desc._carg
         )
         if method == "import":
             check_status_carg(
@@ -2572,9 +2684,11 @@ class ss:
         sorted_rows=False,
         sorted_cols=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GrB_Matrix_build_XXX and GxB_Matrix_build_Scalar
@@ -2622,10 +2736,12 @@ class ss:
             sorted_rows=sorted_rows,
             sorted_cols=sorted_cols,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_coo(
@@ -2638,8 +2754,14 @@ class ss:
         sorted_rows=False,
         sorted_cols=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **unused_kwargs,
+        # Unused for pack, ignored
+        nrows=None,
+        ncols=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GrB_Matrix_build_XXX and GxB_Matrix_build_Scalar
@@ -2659,9 +2781,11 @@ class ss:
             sorted_rows=sorted_rows,
             sorted_cols=sorted_cols,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             matrix=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -2677,11 +2801,13 @@ class ss:
         sorted_rows=False,
         sorted_cols=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         matrix=None,
+        opts,
     ):
         if format is not None and format.lower() != "coo":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'coo'.")
@@ -2695,10 +2821,12 @@ class ss:
                 is_iso=is_iso,
                 sorted_cols=sorted_cols,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
                 method=method,
                 matrix=matrix,
+                opts=opts,
             )
         if sorted_cols and (not sorted_rows or issorted(cols)):
             return cls._import_cooc(
@@ -2710,10 +2838,12 @@ class ss:
                 is_iso=is_iso,
                 sorted_rows=sorted_rows,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
                 method=method,
                 matrix=matrix,
+                opts=opts,
             )
 
         if method == "pack":
@@ -2740,9 +2870,11 @@ class ss:
         sorted_rows=True,
         sorted_cols=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Matrix_import_CSR
@@ -2800,10 +2932,12 @@ class ss:
             sorted_rows=sorted_rows,
             sorted_cols=sorted_cols,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_coor(
@@ -2816,8 +2950,14 @@ class ss:
         sorted_rows=True,
         sorted_cols=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **unused_kwargs,
+        # Unused for pack, ignored
+        nrows=None,
+        ncols=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GxB_Matrix_pack_CSR
@@ -2836,9 +2976,11 @@ class ss:
             sorted_rows=sorted_rows,
             sorted_cols=sorted_cols,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             matrix=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -2854,11 +2996,13 @@ class ss:
         sorted_rows=True,
         sorted_cols=False,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         matrix=None,
+        opts,
     ):
         if format is not None and format.lower() != "coor":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'coor'.")
@@ -2874,10 +3018,12 @@ class ss:
             is_iso=is_iso,
             sorted_cols=sorted_cols,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             name=name,
             method=method,
             matrix=matrix,
+            opts=opts,
         )
 
     @classmethod
@@ -2893,9 +3039,11 @@ class ss:
         sorted_rows=False,
         sorted_cols=True,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Matrix_import_CSC
@@ -2953,10 +3101,12 @@ class ss:
             sorted_rows=sorted_rows,
             sorted_cols=sorted_cols,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             format=format,
             name=name,
             method="import",
+            opts=opts,
         )
 
     def pack_cooc(
@@ -2969,8 +3119,14 @@ class ss:
         sorted_rows=False,
         sorted_cols=True,
         take_ownership=False,
+        secure_import=False,
         format=None,
-        **unused_kwargs,
+        # Unused for pack, ignored
+        nrows=None,
+        ncols=None,
+        dtype=None,
+        name=None,
+        **opts,
     ):
         """
         GxB_Matrix_pack_CSC
@@ -2989,9 +3145,11 @@ class ss:
             sorted_rows=sorted_rows,
             sorted_cols=sorted_cols,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             method="pack",
             matrix=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -3007,11 +3165,13 @@ class ss:
         sorted_rows=False,
         sorted_cols=True,
         take_ownership=False,
+        secure_import=False,
         dtype=None,
         format=None,
         name=None,
         method,
         matrix=None,
+        opts,
     ):
         if format is not None and format.lower() != "cooc":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'cooc'.")
@@ -3027,10 +3187,12 @@ class ss:
             is_iso=is_iso,
             sorted_rows=sorted_rows,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             dtype=dtype,
             name=name,
             method=method,
             matrix=matrix,
+            opts=opts,
         )
 
     @classmethod
@@ -3043,6 +3205,7 @@ class ss:
         ncols=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
         dtype=None,
         name=None,
@@ -3065,6 +3228,7 @@ class ss:
         # BitmapR/BitmapC
         bitmap=None,
         nvals=None,  # optional
+        **opts,
     ):
         """
         GxB_Matrix_import_xxx
@@ -3102,6 +3266,7 @@ class ss:
             ncols=ncols,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             dtype=dtype,
             name=name,
@@ -3125,6 +3290,7 @@ class ss:
             bitmap=bitmap,
             nvals=nvals,
             method="import",
+            opts=opts,
         )
 
     def pack_any(
@@ -3134,6 +3300,7 @@ class ss:
         values,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
         # CSR/CSC/HyperCSR/HyperCSC
         indptr=None,
@@ -3154,11 +3321,12 @@ class ss:
         # BitmapR/BitmapC
         bitmap=None,
         nvals=None,  # optional
-        # Unused for pack
+        # Unused for pack, ignored
         nrows=None,
         ncols=None,
         dtype=None,
         name=None,
+        **opts,
     ):
         """
         GxB_Matrix_pack_xxx
@@ -3172,6 +3340,7 @@ class ss:
             values=values,
             is_iso=is_iso,
             take_ownership=take_ownership,
+            secure_import=secure_import,
             format=format,
             # CSR/CSC/HyperCSR/HyperCSC
             indptr=indptr,
@@ -3194,6 +3363,7 @@ class ss:
             nvals=nvals,
             method="pack",
             matrix=self._parent,
+            opts=opts,
         )
 
     @classmethod
@@ -3206,6 +3376,7 @@ class ss:
         ncols=None,
         is_iso=False,
         take_ownership=False,
+        secure_import=False,
         format=None,
         dtype=None,
         name=None,
@@ -3230,6 +3401,7 @@ class ss:
         nvals=None,  # optional
         method,
         matrix=None,
+        opts,
     ):
         if format is None:
             # Determine format based on provided inputs
@@ -3242,7 +3414,7 @@ class ss:
                     raise TypeError("Cannot provide both `row_indices` and `col_indices`")
                 if rows is not None and cols is not None:
                     raise TypeError("Cannot provide both `rows` and `cols`")
-                elif rows is None and cols is None:
+                if rows is None and cols is None:
                     if row_indices is None:
                         format = "csr"
                     else:
@@ -3317,8 +3489,10 @@ class ss:
                 is_iso=is_iso,
                 sorted_cols=sorted_cols,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         if format == "csc":
             return getattr(obj, f"{method}_csc")(
@@ -3330,8 +3504,10 @@ class ss:
                 is_iso=is_iso,
                 sorted_rows=sorted_rows,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         if format == "hypercsr":
             return getattr(obj, f"{method}_hypercsr")(
@@ -3345,8 +3521,10 @@ class ss:
                 is_iso=is_iso,
                 sorted_cols=sorted_cols,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         if format == "hypercsc":
             return getattr(obj, f"{method}_hypercsc")(
@@ -3360,8 +3538,10 @@ class ss:
                 is_iso=is_iso,
                 sorted_rows=sorted_rows,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         if format == "bitmapr":
             return getattr(obj, f"{method}_bitmapr")(
@@ -3372,8 +3552,10 @@ class ss:
                 bitmap=bitmap,
                 is_iso=is_iso,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         if format == "bitmapc":
             return getattr(obj, f"{method}_bitmapc")(
@@ -3384,8 +3566,10 @@ class ss:
                 bitmap=bitmap,
                 is_iso=is_iso,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         if format == "fullr":
             return getattr(obj, f"{method}_fullr")(
@@ -3394,8 +3578,10 @@ class ss:
                 values=values,
                 is_iso=is_iso,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         if format == "fullc":
             return getattr(obj, f"{method}_fullc")(
@@ -3404,8 +3590,10 @@ class ss:
                 values=values,
                 is_iso=is_iso,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         if format == "coo":
             return getattr(obj, f"{method}_coo")(
@@ -3418,8 +3606,10 @@ class ss:
                 sorted_rows=sorted_rows,
                 sorted_cols=sorted_cols,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         if format == "coor":
             return getattr(obj, f"{method}_coor")(
@@ -3432,8 +3622,10 @@ class ss:
                 sorted_rows=sorted_rows,
                 sorted_cols=sorted_cols,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         if format == "cooc":
             return getattr(obj, f"{method}_cooc")(
@@ -3446,12 +3638,14 @@ class ss:
                 sorted_rows=sorted_rows,
                 sorted_cols=sorted_cols,
                 take_ownership=take_ownership,
+                secure_import=secure_import,
                 dtype=dtype,
                 name=name,
+                **opts,
             )
         raise ValueError(f"Invalid format: {format}")
 
-    def unpack_hyperhash(self, *, compute=False, name=None):
+    def unpack_hyperhash(self, *, compute=False, name=None, **opts):
         """Unpacks the hyper_hash of a hypersparse matrix if possible.
 
         Will return None if the matrix is not hypersparse or if the hash is not computed.
@@ -3468,27 +3662,27 @@ class ss:
         if compute and self.format.startswith("hypercs"):
             self._parent.wait()
         rv = Matrix._from_obj(ffi_new("GrB_Matrix*"), INT64, 0, 0, name=name)
-        call("GxB_unpack_HyperHash", [self._parent, _Pointer(rv), None])
+        call("GxB_unpack_HyperHash", [self._parent, _Pointer(rv), get_descriptor(**opts)])
         if rv.gb_obj[0] == NULL:
             return
         rv._nrows = rv.nrows
         rv._ncols = rv.ncols
         return rv
 
-    def pack_hyperhash(self, Y):
+    def pack_hyperhash(self, Y, **opts):
         """Pack a hyper_hash matrix Y into the current hypersparse matrix.
 
         The hyper_hash matrix Y should be from ``unpack_hyperhash`` and unmodified.
 
         This uses move semantics. Y will become an invalid matrix.
         """
-        call("GxB_pack_HyperHash", [self._parent, _Pointer(Y), None])
+        call("GxB_pack_HyperHash", [self._parent, _Pointer(Y), get_descriptor(**opts)])
 
     @wrapdoc(head)
     def head(self, n=10, dtype=None, *, sort=False):
         return head(self._parent, n, dtype, sort=sort)
 
-    def scan(self, op=monoid.plus, order="rowwise", *, name=None):
+    def scan(self, op=monoid.plus, order="rowwise", *, name=None, **opts):
         """Perform a prefix scan across rows (default) or columns with the given monoid.
 
         For example, use `monoid.plus` (the default) to perform a cumulative sum,
@@ -3502,9 +3696,9 @@ class ss:
         parent = self._parent
         if order == "columnwise":
             parent = parent.T
-        return prefix_scan(parent, op, name=name, within="scan")
+        return prefix_scan(parent, op, name=name, within="scan", **opts)
 
-    def scan_columnwise(self, op=monoid.plus, *, name=None):
+    def scan_columnwise(self, op=monoid.plus, *, name=None, **opts):
         """Perform a prefix scan across columns with the given monoid.
 
         .. deprecated:: 2022.11.1
@@ -3524,9 +3718,9 @@ class ss:
             'please use `Matrix.ss.scan(order="columnwise")` instead.',
             DeprecationWarning,
         )
-        return prefix_scan(self._parent.T, op, name=name, within="scan_columnwise")
+        return prefix_scan(self._parent.T, op, name=name, within="scan_columnwise", **opts)
 
-    def scan_rowwise(self, op=monoid.plus, *, name=None):
+    def scan_rowwise(self, op=monoid.plus, *, name=None, **opts):
         """Perform a prefix scan across rows with the given monoid.
 
         .. deprecated:: 2022.11.1
@@ -3545,9 +3739,9 @@ class ss:
             "`Matrix.ss.scan_rowwise` is deprecated; please use `Matrix.ss.scan` instead.",
             DeprecationWarning,
         )
-        return prefix_scan(self._parent, op, name=name, within="scan_rowwise")
+        return prefix_scan(self._parent, op, name=name, within="scan_rowwise", **opts)
 
-    def flatten(self, order="rowwise", *, name=None):
+    def flatten(self, order="rowwise", *, name=None, **opts):
         """Return a copy of the Matrix collapsed into a Vector.
 
         Parameters
@@ -3569,10 +3763,10 @@ class ss:
         --------
         Vector.ss.reshape : copy a Vector to a Matrix.
         """
-        rv = self.reshape(-1, 1, order=order, name=name)
+        rv = self.reshape(-1, 1, order=order, name=name, **opts)
         return rv._as_vector()
 
-    def reshape(self, nrows, ncols=None, order="rowwise", *, inplace=False, name=None):
+    def reshape(self, nrows, ncols=None, order="rowwise", *, inplace=False, name=None, **opts):
         """Return a copy of Matrix with a new shape without changing its data.
 
         The shape of the Matrix must be compatible with the original shape.
@@ -3625,7 +3819,7 @@ class ss:
                     _as_scalar(order == "columnwise", BOOL, is_cscalar=True),
                     _as_scalar(nrows, _INDEX, is_cscalar=True),
                     _as_scalar(ncols, _INDEX, is_cscalar=True),
-                    None,
+                    get_descriptor(**opts),
                 ],
             )
             parent._nrows = nrows
@@ -3640,7 +3834,7 @@ class ss:
                 _as_scalar(order == "columnwise", BOOL, is_cscalar=True),
                 _as_scalar(nrows, _INDEX, is_cscalar=True),
                 _as_scalar(ncols, _INDEX, is_cscalar=True),
-                None,
+                get_descriptor(**opts),
             ],
         )
         return rv
@@ -3986,7 +4180,8 @@ class ss:
             values = compact_values(orig_indptr, new_indptr, values)
         if reverse:
             values = reverse_values(new_indptr, values)
-        newinfo = dict(info, indptr=new_indptr, values=values)
+        newinfo = dict(info, indptr=new_indptr)
+        newinfo["values"] = values
         newinfo[indices_name] = new_indices
         newinfo[nkey] = nval
         return self.import_any(
@@ -3995,7 +4190,7 @@ class ss:
             name=name,
         )
 
-    def sort(self, op=binary.lt, order="rowwise", *, values=True, permutation=True, nthreads=None):
+    def sort(self, op=binary.lt, order="rowwise", *, values=True, permutation=True, **opts):
         """GxB_Matrix_sort to sort values along the rows (default) or columns of the Matrix
 
         Sorting moves all the elements to the left (if rowwise) or top (if columnwise) just
@@ -4048,30 +4243,20 @@ class ss:
             P = Matrix(UINT64, parent._nrows, parent._ncols, name="Permutation")
         else:
             P = None
-        # TODO: clean this up once we expose backend descriptors
-        if nthreads is not None:
-            if order == "rowwise":
-                desc = get_nthreads_descriptor(nthreads)
-            else:
-                desc = descriptor_lookup(transpose_first=True, create=True)
-                set_nthreads(desc, nthreads)
-        elif order == "rowwise":
-            desc = None
-        else:
-            desc = descriptor_lookup(transpose_first=True)
+        desc = get_descriptor(transpose_first=order == "columnwise", **opts)
         check_status(
             lib.GxB_Matrix_sort(
-                C._carg if C is not None else NULL,
-                P._carg if P is not None else NULL,
+                NULL if C is None else C._carg,
+                NULL if P is None else P._carg,
                 op._carg,
                 parent._carg,
-                desc._carg if desc is not None else NULL,
+                NULL if desc is None else desc._carg,
             ),
             parent,
         )
         return C, P
 
-    def serialize(self, compression="default", level=None, *, nthreads=None):
+    def serialize(self, compression="default", level=None, **opts):
         """Serialize a Matrix to bytes (as numpy array) using SuiteSparse GxB_Matrix_serialize.
 
         Parameters
@@ -4100,7 +4285,7 @@ class ss:
 
         *Warning*: Behavior of serializing UDTs is experimental and may change in a future release.
         """
-        desc = get_compression_descriptor(compression, level=level, nthreads=nthreads)
+        desc = get_descriptor(compression=compression, compression_level=level, **opts)
         blob_handle = ffi_new("void**")
         blob_size_handle = ffi_new("GrB_Index*")
         parent = self._parent
@@ -4109,14 +4294,14 @@ class ss:
                 blob_handle,
                 blob_size_handle,
                 parent._carg,
-                desc._carg,
+                NULL if desc is None else desc._carg,
             ),
             parent,
         )
         return claim_buffer(ffi, blob_handle[0], blob_size_handle[0], np.dtype(np.uint8))
 
     @classmethod
-    def deserialize(cls, data, dtype=None, *, nthreads=None, name=None):
+    def deserialize(cls, data, dtype=None, *, name=None, **opts):
         """Deserialize a Matrix from bytes, buffer, or numpy array using GxB_Matrix_deserialize.
 
         The data should have been previously serialized with a compatible version of
@@ -4158,13 +4343,12 @@ class ss:
             dtype = _string_to_dtype(dtype_name)
         else:
             dtype = lookup_dtype(dtype)
-        if nthreads is not None:
-            desc_obj = get_nthreads_descriptor(nthreads)._carg
-        else:
-            desc_obj = NULL
+        desc = get_descriptor(**opts)
         gb_obj = ffi_new("GrB_Matrix*")
         check_status_carg(
-            lib.GxB_Matrix_deserialize(gb_obj, dtype._carg, data_obj, data.nbytes, desc_obj),
+            lib.GxB_Matrix_deserialize(
+                gb_obj, dtype._carg, data_obj, data.nbytes, NULL if desc is None else desc._carg
+            ),
             "Matrix",
             gb_obj[0],
         )
@@ -4400,10 +4584,9 @@ def issorted(arr):  # pragma: no cover (numba)
             cur = arr[i]
             if cur == prev:
                 continue
-            elif cur < prev:
+            if cur < prev:
                 return False
-            else:
-                prev = cur
+            prev = cur
     return True
 
 
@@ -4430,4 +4613,4 @@ def indptr_to_indices(indptr):  # pragma: no cover (numba)
     return indices
 
 
-from .prefix_scan import prefix_scan  # noqa isort:skip
+from .prefix_scan import prefix_scan  # noqa: E402 isort:skip

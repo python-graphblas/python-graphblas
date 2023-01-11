@@ -135,8 +135,8 @@ def __dir__():
 
 def __getattr__(name):
     if name in _delayed:
-        func, kwargs = _delayed.pop(name)
-        rv = func(**kwargs)
+        delayed_func, kwargs = _delayed.pop(name)
+        rv = delayed_func(**kwargs)
         globals()[name] = rv
         return rv
     if name not in _binary_names:

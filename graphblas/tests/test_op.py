@@ -272,9 +272,9 @@ def test_monoid_parameterized():
 
     # signatures must match
     with pytest.raises(ValueError, match="Signatures"):
-        Monoid.register_anonymous(bin_op, lambda x: -x)  # pragma: no cover (numba)
+        Monoid.register_anonymous(bin_op, lambda x: -x)  # pragma: no branch (numba)
     with pytest.raises(ValueError, match="Signatures"):
-        Monoid.register_anonymous(bin_op, lambda y=0: -y)  # pragma: no cover (numba)
+        Monoid.register_anonymous(bin_op, lambda y=0: -y)  # pragma: no branch (numba)
     with pytest.raises(TypeError, match="binaryop must be parameterized"):
         operator.ParameterizedMonoid("bad_monoid", binary.plus, 0)
 
@@ -717,17 +717,20 @@ def test_op_namespace():
     assert selectnames - opnames == selectnames, selectnames - opnames
 
 
+def test_binaryop_attributes_numpy():
+    # Some coverage from this test depends on order of tests
+    assert binary.numpy.add[int].monoid is monoid.numpy.add[int]
+    assert binary.numpy.subtract[int].monoid is None
+    assert binary.numpy.add.monoid is monoid.numpy.add
+    assert binary.numpy.subtract.monoid is None
+
+
 @pytest.mark.slow
 def test_binaryop_attributes():
     assert binary.plus[int].monoid is monoid.plus[int]
     assert binary.minus[int].monoid is None
     assert binary.plus.monoid is monoid.plus
     assert binary.minus.monoid is None
-
-    assert binary.numpy.add[int].monoid is monoid.numpy.add[int]
-    assert binary.numpy.subtract[int].monoid is None
-    assert binary.numpy.add.monoid is monoid.numpy.add
-    assert binary.numpy.subtract.monoid is None
 
     def plus(x, y):
         return x + y  # pragma: no cover (numba)
@@ -1182,10 +1185,10 @@ def test_udt():
     assert udt not in badunary
     assert int not in badunary
 
-    def badfunc(x, y):  # pragma: no cover (numba)
+    def badfunc2(x, y):  # pragma: no cover (numba)
         return BreakCompile(x)
 
-    badbinary = BinaryOp.register_anonymous(badfunc, is_udt=True)
+    badbinary = BinaryOp.register_anonymous(badfunc2, is_udt=True)
     assert udt not in badbinary
     assert int not in badbinary
 

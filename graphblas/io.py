@@ -301,7 +301,7 @@ def to_numpy(m):
     np.ndarray
     """
     try:
-        import scipy  # noqa
+        import scipy  # noqa: F401
     except ImportError:  # pragma: no cover (import)
         raise ImportError("scipy is required to export to numpy") from None
     if _output_type(m) is _Vector:
@@ -417,10 +417,18 @@ def to_awkward(A, format=None):
     awkward.Array
 
     """
-    import awkward._v2 as ak
-    from awkward._v2.forms.listoffsetform import ListOffsetForm
-    from awkward._v2.forms.numpyform import NumpyForm
-    from awkward._v2.forms.recordform import RecordForm
+    try:
+        # awkward version 1
+        import awkward._v2 as ak
+        from awkward._v2.forms.listoffsetform import ListOffsetForm
+        from awkward._v2.forms.numpyform import NumpyForm
+        from awkward._v2.forms.recordform import RecordForm
+    except ImportError:
+        # awkward version 2
+        import awkward as ak
+        from awkward.forms.listoffsetform import ListOffsetForm
+        from awkward.forms.numpyform import NumpyForm
+        from awkward.forms.recordform import RecordForm
 
     out_type = _output_type(A)
     if format is None:
@@ -477,7 +485,7 @@ def to_awkward(A, format=None):
         )
         if format.startswith("hyper"):
             global _AwkwardDoublyCompressedMatrix
-            if _AwkwardDoublyCompressedMatrix is None:
+            if _AwkwardDoublyCompressedMatrix is None:  # pylint: disable=used-before-assignment
                 # Define behaviors to make all fields function at the top-level
                 @ak.behaviors.mixins.mixin_class(ak.behavior)
                 class _AwkwardDoublyCompressedMatrix:

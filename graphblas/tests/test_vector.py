@@ -2,6 +2,7 @@ import inspect
 import itertools
 import pickle
 import sys
+import types
 import weakref
 
 import numpy as np
@@ -452,10 +453,12 @@ def test_extract_fancy_scalars(v):
     assert s.dtype == dtypes.FP64
 
     t = Scalar(float)
-    with pytest.raises(TypeError, match="is not supported"):
-        t(accum=binary.plus) << s
-    with pytest.raises(TypeError, match="is not supported"):
-        t(accum=binary.plus) << 1
+    # with pytest.raises(TypeError, match="is not supported"):
+    t(accum=binary.plus) << s  # Now okay
+    assert t == 1.0
+    # with pytest.raises(TypeError, match="is not supported"):
+    t(accum=binary.plus) << 1  # Now okay
+    assert t == 2.0
     with pytest.raises(TypeError, match="Mask not allowed for Scalars"):
         t(mask=t) << s
 
@@ -467,8 +470,12 @@ def test_extract_fancy_scalars(v):
     t = Scalar(float)
     t() << v[1]
     assert t.value == 1.0
-    with pytest.raises(TypeError, match="Scalar accumulation with extract element"):
-        t(accum=binary.plus) << v[0]
+    # with pytest.raises(TypeError, match="Scalar accumulation with extract element"):
+    with pytest.raises(TypeError, match="autocompute"):
+        t(accum=binary.plus) << v[1]  # Now okay, but autocomputes
+    with gb.config.set(autocompute=True):
+        t(accum=binary.plus) << v[1]  # Now okay, but autocomputes
+    assert t == 2.0
 
 
 def test_extract_negative_indices(v):
@@ -731,6 +738,9 @@ def test_select(v):
     w7 = v.select("==").new()
     expected = Vector.from_coo([6], 0)
     assert w7.isequal(expected)
+    w8 = select.index(v >= 4).new()
+    expected = Vector.from_coo([4, 6], [2, 0], size=7)
+    assert w8.isequal(expected)
 
 
 @autocompute
@@ -895,7 +905,7 @@ def test_reduce_agg(v):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.varp, agg.stdp],
-        finalize=lambda x, y: binary.times(x & y),
+        finalize=lambda x, y, opts: binary.times(x & y),
         types=[agg.varp],
     )
     s = v.reduce(silly).new()
@@ -912,7 +922,7 @@ def test_reduce_agg_argminmax(v):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.argmin, agg.argmax],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.argmin],
     )
     s = v.reduce(silly).new()
@@ -930,7 +940,7 @@ def test_reduce_agg_firstlast(v):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.first, agg.last],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.first],
     )
     s = v.reduce(silly).new()
@@ -944,7 +954,7 @@ def test_reduce_agg_firstlast_index(v):
     silly = agg.Aggregator(
         "silly",
         composite=[agg.first_index, agg.last_index],
-        finalize=lambda x, y: binary.plus(x & y),
+        finalize=lambda x, y, opts: binary.plus(x & y),
         types=[agg.first_index],
     )
     s = v.reduce(silly).new()
@@ -1272,7 +1282,6 @@ def test_ss_import_export_auto(v, do_iso, methods):
             else:
                 d = v2.ss.unpack(format, sort=sort, raw=raw)
             if in_method == "import":
-                import_func = getattr(Vector.ss, f"import_{import_name}")
 
                 def import_func(x, import_name, **kwargs):
                     return getattr(Vector.ss, f"import_{import_name}")(**kwargs)
@@ -1313,22 +1322,22 @@ def test_ss_import_export_auto(v, do_iso, methods):
             d = w2.ss.unpack(format, raw=raw)
         if in_method == "import":
 
-            def import_func(x, import_name, **kwargs):
+            def import_func2(x, import_name, **kwargs):
                 return getattr(Vector.ss, f"import_{import_name}")(**kwargs)
 
         else:
 
-            def import_func(x, import_name, **kwargs):
+            def import_func2(x, import_name, **kwargs):
                 getattr(x.ss, f"pack_{import_name}")(**kwargs)
                 return x
 
         d["format"] = import_format
-        other = import_func(w2, import_name, take_ownership=take_ownership, **d)
+        other = import_func2(w2, import_name, take_ownership=take_ownership, **d)
         assert other.isequal(w_orig)
         assert other.ss.is_iso is do_iso
         d["format"] = "bad_format"
         with pytest.raises(ValueError, match="Invalid format"):
-            import_func(w2, import_name, **d)
+            import_func2(w2, import_name, **d)
     assert w.isequal(w_orig)
     assert w.ss.is_iso is do_iso
     assert w_orig.ss.is_iso is do_iso
@@ -1393,6 +1402,7 @@ def test_vector_index_with_scalar():
             v[s]
 
 
+@autocompute
 def test_diag(v):
     indices, values = v.to_coo()
     for k in range(-5, 5):
@@ -1599,7 +1609,6 @@ def test_expr_is_like_vector(v):
         "clear",
         "from_coo",
         "from_dict",
-        "from_pygraphblas",
         "from_values",
         "resize",
         "update",
@@ -1611,6 +1620,16 @@ def test_expr_is_like_vector(v):
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
     assert attrs - infix_attrs == expected
+    # Make sure signatures actually match
+    skip = {"__init__", "__repr__", "_repr_html_", "new"}
+    for expr in [binary.times(w & w), w & w]:
+        print(type(expr).__name__)
+        for attr, val in inspect.getmembers(expr):
+            if attr in skip or not isinstance(val, types.MethodType) or not hasattr(w, attr):
+                continue
+            val2 = getattr(w, attr)
+            assert inspect.signature(val) == inspect.signature(val2), attr
+            assert val.__doc__ == val2.__doc__
 
 
 @autocompute
@@ -1636,7 +1655,6 @@ def test_index_expr_is_like_vector(v):
         "clear",
         "from_coo",
         "from_dict",
-        "from_pygraphblas",
         "from_values",
         "resize",
     }
@@ -1646,6 +1664,35 @@ def test_index_expr_is_like_vector(v):
         "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
+    # Make sure signatures actually match. `update` has different docstring.
+    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "new", "update"}
+    for attr, val in inspect.getmembers(w[[0, 1]]):
+        if attr in skip or not isinstance(val, types.MethodType) or not hasattr(w, attr):
+            continue
+        val2 = getattr(w, attr)
+        assert inspect.signature(val) == inspect.signature(val2), attr
+        assert val.__doc__ == val2.__doc__
+
+
+@autocompute
+def test_dup_expr(v):
+    result = (v + v).dup()
+    assert result.isequal(2 * v)
+    result = (v + v).dup(clear=True)
+    assert result.isequal(v.dup(clear=True))
+    result = (v * v).dup(mask=v.V)
+    assert result.isequal((v**2).new(mask=v.V))
+    result = v[:].dup()
+    assert result.isequal(v)
+    result = v[:].dup(clear=True)
+    assert result.isequal(v.dup(clear=True), check_dtype=True)
+    result = v[:].dup(float, clear=True)
+    assert result.isequal(v.dup(float, clear=True), check_dtype=True)
+    b = v.dup(bool)
+    result = (b | b).dup()
+    assert result.isequal(b)
+    result = (b | b).dup(clear=True)
+    assert result.isequal(b.dup(clear=True))
 
 
 @pytest.mark.skipif("not suitesparse")
@@ -2139,9 +2186,9 @@ def test_infix_outer():
 @pytest.mark.skipif("not suitesparse")
 def test_ss_iteration(v):
     w = Vector(int, 2)
-    assert list(w.ss.iterkeys()) == []
-    assert list(w.ss.itervalues()) == []
-    assert list(w.ss.iteritems()) == []
+    assert not list(w.ss.iterkeys())
+    assert not list(w.ss.itervalues())
+    assert not list(w.ss.iteritems())
 
     indices, values = v.to_coo()
     # This is what I would expect
@@ -2428,10 +2475,11 @@ def test_ss_sort(v):
         v.ss.sort(binary.plus)
 
     # Like compactify
-    _, p = v.ss.sort(lambda x, y: False, values=False)
+    _, p = v.ss.sort(lambda x, y: False, values=False)  # pragma: no branch (numba)
     expected_p = Vector.from_coo([0, 1, 2, 3], [1, 3, 4, 6], size=7)
     assert p.isequal(expected_p)
     # reversed
     _, p = v.ss.sort(binary.pair[bool], values=False)
     expected_p = Vector.from_coo([0, 1, 2, 3], [6, 4, 3, 1], size=7)
     assert p.isequal(expected_p)
+    w, p = v.ss.sort(monoid.lxor)  # Weird, but user-defined monoids may not commute, so okay

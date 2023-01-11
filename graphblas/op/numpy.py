@@ -21,7 +21,7 @@ def __getattr__(name):
         return rv
     try:
         rv = getattr(_op_to_mod[name], name)
-    except KeyError:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
     globals()[name] = rv
     return rv

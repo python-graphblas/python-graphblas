@@ -29,7 +29,7 @@ For simple expressions, the two libraries are very similar.
     A += 1
 
 For more complex expressions, however, the two libraries diverge significantly.
-`pygraphblas` tends towards the `numpy` style of immediate execution and using
+``pygraphblas`` tends towards the ``numpy`` style of immediate execution and using
 keyword arguments to affect the output.
 
 .. code-block:: python
@@ -37,7 +37,7 @@ keyword arguments to affect the output.
     # pygraphblas
     A.mxm(B.transpose(), mask=A, out=C, accum=FP64.PLUS, semiring=FP64.MIN_PLUS)
 
-`python-graphblas` uses delayed expressions and keeps the output-affecting arguments
+``python-graphblas`` uses delayed expressions and keeps the output-affecting arguments
 together with the output.
 
 .. code-block:: python
@@ -45,7 +45,7 @@ together with the output.
     # python-graphblas
     C(A, accum=binary.plus) << semiring.min_plus(A @ B.T)
 
-`python-graphblas` also contains additional features, such as the `Recorder` and advanced aggregators.
+``python-graphblas`` also contains additional features, such as the ``Recorder`` and advanced aggregators.
 
 What is the performance penalty of writing algorithms with python-graphblas vs writing them directly in C?
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

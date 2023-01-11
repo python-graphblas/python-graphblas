@@ -333,14 +333,11 @@ def _run_test(module, typ, expected):
             raise AssertionError("graphblas has less than expected:", sorted(missing))
 
         for key in sorted(seen.keys() - expected.keys()):
-            print(
-                "Item not expected: (%s, %s): %s"
-                % (sorted(key[0]), sorted(key[1]), sorted(seen[key]))
-            )
+            print(f"Item not expected: ({sorted(key[0])}, {sorted(key[1])}): {sorted(seen[key])}")
         for key in sorted(expected.keys() - seen.keys()):
             print(
-                "Item expected, but not seen: (%s, %s): %s"
-                % (sorted(key[0]), sorted(key[1]), sorted(expected[key]))
+                "Item expected, but not seen: "
+                f"({sorted(key[0])}, {sorted(key[1])}): {sorted(expected[key])}"
             )
         for key in sorted(expected.keys() & seen.keys()):
             if expected[key] != seen[key]:

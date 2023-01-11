@@ -36,7 +36,7 @@ def test_recorder():
         "GrB_Matrix_eWiseMult_BinaryOp(C, D, NULL, GrB_TIMES_INT64, A, B, GrB_DESC_ST0);",
     ]
     rec.clear()
-    assert list(rec) == []
+    assert not list(rec)
 
 
 def test_record_novalue(switch):
@@ -213,13 +213,13 @@ def test_record_repr_markdown(switch):
     )
 
 
-def test_record_repr_html(switch):
+def test_record_repr_html():
     A = gb.Matrix(int, 3, 3, name="A")
     rec = gb.Recorder()
     rec.start()
     A[0, 0].new(name="c")
     try:
-        import IPython  # noqa
+        import IPython  # noqa: F401
     except ImportError:
         with pytest.raises(NotImplementedError):
             rec._repr_html_()

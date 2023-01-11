@@ -194,7 +194,7 @@ def test_about():
         about["badkey"]
     assert "SuiteSparse" in about["library_name"]
     with pytest.raises(TypeError):
-        del about["library_name"]
+        del about["library_name"]  # pylint: disable=unsupported-delete-operation
     assert "library_name" in repr(about)
 
 

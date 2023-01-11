@@ -159,7 +159,7 @@ def test_no_pandas_repr(A, C, v, w):
         )
         repr_printer(v, "v", indent=8)
         assert repr(v) == (
-            '"v"        nvals  size  dtype  format\n' "gb.Vector      3     5   FP64  bitmap"
+            '"v"        nvals  size  dtype  format\ngb.Vector      3     5   FP64  bitmap'
         )
         repr_printer(~w.V, "~w.V", indent=8)
         assert repr(~w.V) == (
@@ -503,8 +503,8 @@ def test_vector_mask_repr_large(w):
 
 def test_scalar_repr(s, t):
     repr_printer(s, "s")
-    assert repr(s) == ('"s_1"      value  dtype\n' "gb.Scalar     42  INT64")
-    assert repr(t) == ('"t"        value  dtype\n' "gb.Scalar   None  INT64")
+    assert repr(s) == ('"s_1"      value  dtype\ngb.Scalar     42  INT64')
+    assert repr(t) == ('"t"        value  dtype\ngb.Scalar   None  INT64')
 
 
 def test_no_pandas_repr_html(A, C, v, w):
