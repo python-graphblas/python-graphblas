@@ -223,12 +223,12 @@ def from_awkward(A, *, name=None):
 def from_pydata_sparse(A, *, dup_op=None, name=None):
     """Create a Vector or a Matrix from a pydata.sparse array or matrix.
 
-    Input data in "csr" or "csc" format will be efficient when importing with SuiteSparse:GraphBLAS.
+    Input data in "gcxs" format will be efficient when importing with SuiteSparse:GraphBLAS.
 
     Parameters
     ----------
     A : sparse
-        Scipy sparse array or matrix
+        PyData sparse array or matrix
     dup_op : BinaryOp, optional
         Aggregation function for formats that allow duplicate entries (e.g. coo)
     name : str, optional
