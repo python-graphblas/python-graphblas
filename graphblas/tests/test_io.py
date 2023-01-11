@@ -409,7 +409,7 @@ def test_vector_to_from_pydata_sparse():
 
 
 @pytest.mark.skipif("not sp")
-def test_maxtrix_to_from_pydata_sparse():
+def test_matrix_to_from_pydata_sparse():
     coords = [[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]]
     data = [10, 20, 30, 40, 50]
     s = sp.COO(coords, data, shape=(5, 5))
