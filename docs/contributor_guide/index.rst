@@ -37,7 +37,7 @@ Development Workflow
 
 Here are instructions for two popular environment managers:
 
-* ``venv`` (pip based)
+* ``venv`` (pip-based, only Linux supported currently)
 
 ::
 
@@ -47,13 +47,7 @@ Here are instructions for two popular environment managers:
   # Activate it
   source graphblas-dev/bin/activate
   # Install main development and runtime dependencies of python-graphblas
-  pip install -r requirements/default.txt -r requirements/test.txt -r requirements/developer.txt
-  #
-  # (Optional) Install pygraphviz and pydot packages
-  # These packages require that you have your system properly configured
-  # and what that involves differs on various systems.
-  # pip install -r requirements/extra.txt
-  #
+  pip install -r dev-requirements.txt
   # Build and install python-graphblas from source
   pip install -e . --no-deps
   # Test your installation
