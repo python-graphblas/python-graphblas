@@ -77,8 +77,8 @@ jobs:
       # since we need to run all slow tests on Windows and non-Windoes OSes.
       # If important in the future, we can also randomize dependency versions.
       matrix:
-        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
-        slowtask: ["pytest_normal", "pytest_bizarro", "pylint", "notebooks"]
+        os: ["ubuntu-latest", "macos-latest", "windows-latest", "ubuntu-22.04", "ubuntu-20.04", "macos-12", "macos-11", "windows-2022", "windows-2019"]
+        slowtask: ["pytest_normal", "pytest_bizarro", "pylint", "notebooks", "none", "nothing", "xxx"]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -111,28 +111,6 @@ jobs:
             1
             1
             1
-      - name: RNG for Awkward version
-        uses: ddradar/choose-random-action@v2.0.2
-        id: akver
-        with:
-          contents: |
-            1.10
-            2.0
-          weights: |
-            1
-            1
-      - name: RNG for NetworkX version
-        uses: ddradar/choose-random-action@v2.0.2
-        id: nxver
-        with:
-          contents: |
-            2.7
-            2.8
-            3.0
-          weights: |
-            1
-            1
-            1
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
@@ -149,36 +127,41 @@ jobs:
           # Install dependencies based on the needs of the job.
           # Don't panic! This may look scary at a glance, but each line makes sense.
           #
-          # First let's randomly get the numpy/scipy/pandas versions to install
-          if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
-              # TODO: there are currently issues with some numpy versions when
-              # installing python-suitesparse-grphblas from source or upstream.
-            npver=""
-            spver=""
-            pdver=""
-          elif [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
+          # First let's randomly get versions of dependencies to install
+          nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", ""]))')
+          if [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", "=1.6", "=1.7", "=1.8", "=1.9", "=1.10", "=2.0", ""]))')
           elif [[ ${{ steps.pyver.outputs.selected }} == "3.9" ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", "=1.6", "=1.7", "=1.8", "=1.9", "=1.10", "=2.0", ""]))')
           elif [[ ${{ steps.pyver.outputs.selected }} == "3.10" ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.3", "=1.4", "=1.5", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.5", "=1.6", "=1.7", "=1.8", "=1.9", "=1.10", "=2.0", ""]))')
           else  # Python 3.11
             npver=$(python -c 'import random ; print(random.choice(["=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", ""]))')
           fi
-          echo "npver${npver} spver${spver} pdver${pdver}"
+          if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
+            # TODO: there are currently issues with some numpy versions when
+            # installing python-suitesparse-grphblas from source or upstream.
+            npver=""
+            spver=""
+            pdver=""
+          fi
+          echo "npver${npver} spver${spver} pdver${pdver} akver${akver} nxver${nxver}"
 
           # Once we have wheels for all OSes, we can delete the last two lines.
-          mamba install pytest coverage coveralls=3.3.1 pytest-randomly \
-            numba cffi donfig pyyaml pandas${pdver} scipy${spver} numpy${npver} \
-            networkx=${{ steps.nxver.outputs.selected }} awkward=${{ steps.akver.outputs.selected }} \
+          mamba install pytest coverage coveralls=3.3.1 pytest-randomly numba cffi donfig pyyaml \
+            pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} \
             ${{ matrix.slowtask == 'pylint' && 'black pylint' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
