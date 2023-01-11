@@ -1,10 +1,10 @@
 from setuptools import find_packages, setup
 
 extras_require = {
-    "repr": ["pandas"],
-    "io": ["networkx", "scipy >=1.7.0", "awkward"],
+    "repr": ["pandas >=1.2"],
+    "io": ["networkx >=2.8", "scipy >=1.8", "awkward >=1.9"],
     "viz": ["matplotlib"],
-    "test": ["pytest", "pandas", "scipy >=1.7.0"],
+    "test": ["pytest", "pandas >=1.2", "scipy >=1.8"],
 }
 extras_require["complete"] = sorted({v for req in extras_require.values() for v in req})
 
@@ -24,7 +24,13 @@ setup(
     url="https://github.com/python-graphblas/python-graphblas",
     packages=find_packages(),
     python_requires=">=3.8",
-    install_requires=["suitesparse-graphblas >=7.4.0.0, <7.5", "numba", "donfig", "pyyaml"],
+    install_requires=[
+        "suitesparse-graphblas >=7.4.0.0, <7.5",
+        "numpy >=1.21",
+        "numba >=0.55",
+        "donfig >=0.6",
+        "pyyaml >=5.4",
+    ],
     extras_require=extras_require,
     include_package_data=True,
     license="Apache License 2.0",

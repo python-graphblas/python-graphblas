@@ -382,7 +382,7 @@ def to_awkward(A, format=None):
     awkward.Array
 
     """
-    try:  # pragma: no cover (import)
+    try:
         # awkward version 1
         import awkward._v2 as ak
         from awkward._v2.forms.listoffsetform import ListOffsetForm
