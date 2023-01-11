@@ -129,6 +129,7 @@ jobs:
           #
           # First let's randomly get versions of dependencies to install
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", ""]))')
+          yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           if [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
@@ -157,11 +158,16 @@ jobs:
             spver=""
             pdver=""
           fi
-          echo "npver${npver} spver${spver} pdver${pdver} akver${akver} nxver${nxver}"
+          if [[ $npver == "=1.21" ]] ; then
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.55", "=0.56", ""]))')
+          else
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.56", ""]))')
+          fi
+          echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver}"
 
           # Once we have wheels for all OSes, we can delete the last two lines.
-          mamba install pytest coverage coveralls=3.3.1 pytest-randomly numba cffi donfig pyyaml \
-            pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} \
+          mamba install pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig pyyaml${yamlver} \
+            pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} numba${numbaver} \
             ${{ matrix.slowtask == 'pylint' && 'black pylint' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \

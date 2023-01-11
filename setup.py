@@ -27,9 +27,9 @@ setup(
     install_requires=[
         "suitesparse-graphblas >=7.4.0.0, <7.5",
         "numpy >=1.21",
-        "numba",
+        "numba >=0.55",
         "donfig >=0.6",
-        "pyyaml",
+        "pyyaml >=5.4",
     ],
     extras_require=extras_require,
     include_package_data=True,
