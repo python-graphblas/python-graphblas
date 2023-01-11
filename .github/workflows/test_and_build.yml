@@ -125,9 +125,7 @@ jobs:
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
-          miniforge-variant: Mambaforge
-          miniforge-version: latest
-          use-mamba: true
+          auto-update-conda: true
           python-version: ${{ steps.pyver.outputs.selected }}
           channels: conda-forge,nodefaults
           channel-priority: strict
@@ -178,7 +176,7 @@ jobs:
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver}"
 
           # Once we have wheels for all OSes, we can delete the last two lines.
-          mamba install pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig pyyaml${yamlver} \
+          conda install pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig pyyaml${yamlver} \
             pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} numba${numbaver} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
