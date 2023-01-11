@@ -244,17 +244,25 @@ def from_pydata_sparse(A, *, dup_op=None, name=None):
 
     if A.ndim == 1:
         # the .asformat('coo') makes it easier to convert dok/gcxs using a single approach
-        _A = A.asformat('coo')
-        return _Vector.from_coo(_A.coords, _A.data, dtype=_A.dtype, size=_A.shape[0], dup_op=dup_op, name=name)
+        _A = A.asformat("coo")
+        return _Vector.from_coo(
+            _A.coords, _A.data, dtype=_A.dtype, size=_A.shape[0], dup_op=dup_op, name=name
+        )
 
     # handle two-dimensional arrays
-    if A.format == 'gcxs':
+    if A.format == "gcxs":
         return from_scipy_sparse(A, dup_op=dup_op, name=name)
 
-    if A.format == 'dok':
-        _A = A.asformat('coo')
+    if A.format == "dok":
+        _A = A.asformat("coo")
         return _Matrix.from_coo(
-            *_A.coords, _A.data, nrows=_A.shape[0], ncols=_A.shape[1], dtype=_A.dtype, dup_op=dup_op, name=name
+            *_A.coords,
+            _A.data,
+            nrows=_A.shape[0],
+            ncols=_A.shape[1],
+            dtype=_A.dtype,
+            dup_op=dup_op,
+            name=name,
         )
 
 
