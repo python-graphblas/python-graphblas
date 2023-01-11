@@ -1,3 +1,12 @@
+# There are three things in this file that need regular maintenance:
+#
+# 1) Updating GraphBLAS version
+#   - We should probably make this a variable to make it easier to change
+# 2) Updating dependency versions in "Update env"
+#   - This typically means adding new major versions of packages
+#   - `scripts/check_versions.sh` may be helpful to get version info
+# 3) Updating Python versions (search for "Python version" or "pyver")
+
 name: Tests
 
 on:
@@ -88,6 +97,7 @@ jobs:
         uses: ddradar/choose-random-action@v2.0.2
         id: pyver
         with:
+          # We should support major Python versions for at least 36-42 months
           contents: |
             3.8
             3.9
@@ -127,7 +137,8 @@ jobs:
           # Install dependencies based on the needs of the job.
           # Don't panic! This may look scary at a glance, but each line makes sense.
           #
-          # First let's randomly get versions of dependencies to install
+          # First let's randomly get versions of dependencies to install.
+          # Consider removing old versions when they become problematic or very old (>=2 years).
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           if [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
