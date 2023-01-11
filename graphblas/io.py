@@ -251,7 +251,7 @@ def from_pydata_sparse(A, *, dup_op=None, name=None):
 
     # handle two-dimensional arrays
     if A.format == "gcxs":
-        return from_scipy_sparse(A, dup_op=dup_op, name=name)
+        return from_scipy_sparse(A.to_scipy_sparse(), dup_op=dup_op, name=name)
 
     if A.format == "dok":
         _A = A.asformat("coo")
