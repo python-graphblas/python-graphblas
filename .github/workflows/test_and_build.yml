@@ -1,3 +1,12 @@
+# There are three things in this file that need regular maintenance:
+#
+# 1) Updating GraphBLAS version
+#   - We should probably make this a variable to make it easier to change
+# 2) Updating dependency versions in "Update env"
+#   - This typically means adding new major versions of packages
+#   - `scripts/check_versions.sh` may be helpful to get version info
+# 3) Updating Python versions (search for "Python version" or "pyver")
+
 name: Tests
 
 on:
@@ -71,14 +80,14 @@ jobs:
       run:
         shell: bash -l {0}
     strategy:
-      fail-fast: false
+      # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
+      fail-fast: true
       # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
-      # If important in the future, we can also randomize dependency versions.
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
-        slowtask: ["pytest_normal", "pytest_bizarro", "pylint", "notebooks"]
+        slowtask: ["pytest_normal", "pytest_bizarro", "notebooks"]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -88,6 +97,7 @@ jobs:
         uses: ddradar/choose-random-action@v2.0.2
         id: pyver
         with:
+          # We should support major Python versions for at least 36-42 months
           contents: |
             3.8
             3.9
@@ -100,14 +110,15 @@ jobs:
         uses: ddradar/choose-random-action@v2.0.2
         id: sourcetype
         with:
-          # Set weight to 0 to skip (such as if 'upstream' is known to not work)
+          # Set weight to 0 to skip (such as if 'upstream' is known to not work).
+          # Have slightly higher weight for `conda-forge` for faster CI.
           contents: |
             conda-forge
             wheel
             source
             upstream
           weights: |
-            1
+            2
             1
             1
             1
@@ -127,7 +138,8 @@ jobs:
           # Install dependencies based on the needs of the job.
           # Don't panic! This may look scary at a glance, but each line makes sense.
           #
-          # First let's randomly get versions of dependencies to install
+          # First let's randomly get versions of dependencies to install.
+          # Consider removing old versions when they become problematic or very old (>=2 years).
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           if [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
@@ -168,7 +180,7 @@ jobs:
           # Once we have wheels for all OSes, we can delete the last two lines.
           mamba install pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig pyyaml${yamlver} \
             pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} numba${numbaver} \
-            ${{ matrix.slowtask == 'pylint' && 'black pylint' || '' }} \
+            ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
@@ -252,7 +264,7 @@ jobs:
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
-        if: matrix.slowtask == 'pylint'
+        if: matrix.slowtask == 'pytest_normal'
         run: |
           # Test (and cover) automatic initialization
           coverage run -a graphblas/tests/test_auto_init.py
@@ -272,7 +284,7 @@ jobs:
           coverage run -a -m pytest -x --no-mapnumpy -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
           # coverage run -a -m pytest -x --no-mapnumpy -k test_npmonoid graphblas/tests/test_numpyops.py --runslow
       - name: Auto-generated code check
-        if: matrix.slowtask == 'pylint'
+        if: matrix.slowtask == 'pytest_bizarro'
         run: |
           # This step uses `black`
           coverage run -a -m graphblas.core.automethods
@@ -289,9 +301,6 @@ jobs:
           coveralls --service=github
       - name: codecov
         uses: codecov/codecov-action@v3
-      - name: Pylint (informational only; never fails)
-        if: matrix.slowtask == 'pylint'
-        run: pylint --exit-zero graphblas/
       - name: Notebooks Execution check
         if: matrix.slowtask == 'notebooks'
         run: jupyter nbconvert --to notebook --execute notebooks/*ipynb
