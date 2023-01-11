@@ -49,14 +49,19 @@ Composite aggregators (require multiple aggregation steps):
     - harmonic_mean
     - root_mean_square
 
-Custom recipes:
-    - first
-    - last
+Custom recipes (specific to SuiteSparse:GraphBLAS):
+    - ss.first
+    - ss.last
     # These don't work with Matrix.reduce_scalar
-    - first_index
-    - last_index
-    - argmin
-    - argmax
+    - ss.first_index
+    - ss.last_index
+    - ss.argmin
+    - ss.argmax
+
+.. deprecated:: 2023.1.0
+    Aggregators `first`, `last`, `first_index`, `last_index`, `argmin`, and `argmax` are
+    deprecated in the `agg` namespace such as `agg.first`. Use them from `agg.ss` namespace
+    instead such as `agg.ss.first`. Will be removed in version 2023.9.0 or later.
 
 # Possible aggregators:
 #   - absolute_deviation, sum(abs(x - mean(x))),  sum_absminus(x, mean(x))
