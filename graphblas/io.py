@@ -253,7 +253,7 @@ def from_pydata_sparse(A, *, dup_op=None, name=None):
     if A.format == "gcxs":
         return from_scipy_sparse(A.to_scipy_sparse(), dup_op=dup_op, name=name)
 
-    if A.format == "dok":
+    if A.format in ["dok", "coo"]:
         _A = A.asformat("coo")
         return _Matrix.from_coo(
             *_A.coords,
