@@ -2,28 +2,28 @@ donfig
 numba
 python-suitesparse-graphblas
 pyyaml
-For repr
+# For repr
 pandas
-For I/O
+# For I/O
 awkward
 networkx
 scipy
 sparse
-For viz
+# For viz
 datashader
 hvplot
 matplotlib
-For linting
+# For linting
 pre-commit
-For testing
+# For testing
 pytest-cov
-For debugging
+# For debugging
 icecream
 ipykernel
 ipython
-For type annotations
+# For type annotations
 mypy
-For building docs
+# For building docs
 nbsphinx
 numpydoc
 pydata-sphinx-theme
