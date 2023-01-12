@@ -170,12 +170,20 @@ jobs:
             spver=""
             pdver=""
           fi
+          # We can have a tight coupling with python-suitesparse-graphblas.
+          # That is, we don't need to support versions of it that are two years old.
+          # But, it's still useful for us to test with different versions!
+          if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
+            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", ""]))')
+          else
+            psgver=""
+          fi
           if [[ $npver == "=1.21" ]] ; then
             numbaver=$(python -c 'import random ; print(random.choice(["=0.55", "=0.56", ""]))')
           else
             numbaver=$(python -c 'import random ; print(random.choice(["=0.56", ""]))')
           fi
-          echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver}"
+          echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} psgver${psgver}"
 
           # Once we have wheels for all OSes, we can delete the last two lines.
           mamba install pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig pyyaml${yamlver} \
@@ -184,7 +192,7 @@ jobs:
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
-            ${{ steps.sourcetype.outputs.selected == 'conda-forge' && 'python-suitesparse-graphblas' || '' }} \
+            ${{ steps.sourcetype.outputs.selected == 'conda-forge' && 'python-suitesparse-graphblas' || '' }}${psgver} \
             ${{ matrix.os != 'ubuntu-latest' && '"graphblas>=7.4.0"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'wheel' && matrix.os != 'ubuntu-latest' && 'python-suitesparse-graphblas' || '' }}
       - name: Build extension module
