@@ -250,10 +250,12 @@ def from_pydata_sparse(A, *, dup_op=None, name=None):
         )
 
     # handle two-dimensional arrays
-    if A.format == "gcxs":
+    import sparse as _sp
+    
+    if isinstance(A, _sp.GCXS):
         return from_scipy_sparse(A.to_scipy_sparse(), dup_op=dup_op, name=name)
 
-    if A.format in ["dok", "coo"]:
+    if isinstance(A, (_sp.DOK, _sp.COO)):
         _A = A.asformat("coo")
         return _Matrix.from_coo(
             *_A.coords,
