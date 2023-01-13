@@ -408,8 +408,8 @@ def test_vector_to_from_pydata_sparse():
 
 @pytest.mark.skipif("not sp")
 def test_matrix_to_from_pydata_sparse():
-    coords = [[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]]
-    data = [10, 20, 30, 40, 50]
+    coords = np.array([[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]], dtype="int64")
+    data = np.array([10, 20, 30, 40, 50], dtype="int64")
     s = sp.COO(coords, data, shape=(5, 5))
     v = gb.io.from_pydata_sparse(s)
     assert v.isequal(gb.Matrix.from_coo(*coords, data, dtype=dtypes.INT64), check_dtype=False)
