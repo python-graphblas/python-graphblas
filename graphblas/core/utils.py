@@ -327,7 +327,7 @@ def _autogenerate_code(
     end="# End auto-generated code",
 ):
     """Super low-tech auto-code generation used by automethods.py and infixmethods.py"""
-    with open(filename) as f:
+    with open(filename) as f:  # pragma: no branch (flaky)
         orig_text = f.read()
     if specializer:
         begin = f"{begin}: {specializer}"
@@ -347,7 +347,7 @@ def _autogenerate_code(
     new_text = orig_text
     for start, stop in reversed(boundaries):
         new_text = f"{new_text[:start]}{begin}{text}{new_text[stop:]}"
-    with open(filename, "w") as f:
+    with open(filename, "w") as f:  # pragma: no branch (flaky)
         f.write(new_text)
     import subprocess
 
