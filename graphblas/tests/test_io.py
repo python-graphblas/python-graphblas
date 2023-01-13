@@ -17,9 +17,9 @@ except ImportError:  # pragma: no cover (import)
     ss = None
 
 try:
-    import sparse as sp
+    import sparse
 except ImportError:  # pragma: no cover (import)
-    sp = None
+    sparse = None
 
 try:
     import awkward._v2 as ak
@@ -394,11 +394,11 @@ def test_awkward_errors():
         gb.io.to_awkward(gb.Scalar.from_value(5))
 
 
-@pytest.mark.skipif("not sp")
+@pytest.mark.skipif("not sparse")
 def test_vector_to_from_pydata_sparse():
     coords = np.array([0, 1, 2, 3, 4], dtype="int64")
     data = np.array([10, 20, 30, 40, 50], dtype="int64")
-    s = sp.COO(coords, data, shape=(5,))
+    s = sparse.COO(coords, data, shape=(5,))
     v = gb.io.from_pydata_sparse(s)
     assert v.isequal(gb.Vector.from_coo(coords, data, dtype=dtypes.INT64), check_dtype=True)
 
@@ -406,11 +406,11 @@ def test_vector_to_from_pydata_sparse():
     assert t == s
 
 
-@pytest.mark.skipif("not sp")
+@pytest.mark.skipif("not sparse")
 def test_matrix_to_from_pydata_sparse():
     coords = np.array([[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]], dtype="int64")
     data = np.array([10, 20, 30, 40, 50], dtype="int64")
-    s = sp.COO(coords, data, shape=(5, 5))
+    s = sparse.COO(coords, data, shape=(5, 5))
     v = gb.io.from_pydata_sparse(s)
     assert v.isequal(gb.Matrix.from_coo(*coords, data, dtype=dtypes.INT64), check_dtype=False)
 
@@ -422,7 +422,7 @@ def test_matrix_to_from_pydata_sparse():
     indices = np.array([0, 2, 2, 0, 1, 2], dtype="int64")
     data = np.array([1, 2, 3, 4, 5, 6], dtype="int64")
 
-    g = sp.GCXS((data, indices, indptr), shape=(3, 3), compressed_axes=[0])
+    g = sparse.GCXS((data, indices, indptr), shape=(3, 3), compressed_axes=[0])
     w = gb.io.from_pydata_sparse(g)
     coords = g.asformat("coo").coords
     data = g.asformat("coo").data
@@ -430,3 +430,7 @@ def test_matrix_to_from_pydata_sparse():
 
     r = gb.io.to_pydata_sparse(w, format="gcxs")
     assert r == g
+    with pytest.raises(ValueError, match="format"):
+        gb.io.to_pydata_sparse(w, format="badformat")
+    with pytest.raises(TypeError, match="sparse.pydata"):
+        gb.io.from_pydata_sparse(w)

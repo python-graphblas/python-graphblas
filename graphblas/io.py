@@ -220,15 +220,15 @@ def from_awkward(A, *, name=None):
     raise ValueError(f"Invalid format for Matrix: {format}")
 
 
-def from_pydata_sparse(A, *, dup_op=None, name=None):
+def from_pydata_sparse(s, *, dup_op=None, name=None):
     """Create a Vector or a Matrix from a pydata.sparse array or matrix.
 
     Input data in "gcxs" format will be efficient when importing with SuiteSparse:GraphBLAS.
 
     Parameters
     ----------
-    A : sparse
-        PyData sparse array or matrix
+    s : sparse
+        PyData sparse array or matrix (see https://sparse.pydata.org)
     dup_op : BinaryOp, optional
         Aggregation function for formats that allow duplicate entries (e.g. coo)
     name : str, optional
@@ -239,33 +239,39 @@ def from_pydata_sparse(A, *, dup_op=None, name=None):
     :class:`~graphblas.Vector`
     :class:`~graphblas.Matrix`
     """
-    if A.ndim > 2:
+    try:
+        import sparse
+    except ImportError:  # pragma: no cover (import)
+        raise ImportError("sparse is required to import from pydata sparse") from None
+    if not isinstance(s, sparse.SparseArray):
+        raise TypeError(
+            "from_pydata_sparse only accepts objects from the `sparse` library; "
+            "see https://sparse.pydata.org"
+        )
+    if s.ndim > 2:
         raise _GraphblasException("m.ndim must be <= 2")
 
-    if A.ndim == 1:
+    if s.ndim == 1:
         # the .asformat('coo') makes it easier to convert dok/gcxs using a single approach
-        _A = A.asformat("coo")
+        _s = s.asformat("coo")
         return _Vector.from_coo(
-            _A.coords, _A.data, dtype=_A.dtype, size=_A.shape[0], dup_op=dup_op, name=name
+            _s.coords, _s.data, dtype=_s.dtype, size=_s.shape[0], dup_op=dup_op, name=name
         )
-
     # handle two-dimensional arrays
-    import sparse as _sp
-
-    if isinstance(A, _sp.GCXS):
-        return from_scipy_sparse(A.to_scipy_sparse(), dup_op=dup_op, name=name)
-
-    if isinstance(A, (_sp.DOK, _sp.COO)):
-        _A = A.asformat("coo")
+    if isinstance(s, sparse.GCXS):
+        return from_scipy_sparse(s.to_scipy_sparse(), dup_op=dup_op, name=name)
+    if isinstance(s, (sparse.DOK, sparse.COO)):
+        _s = s.asformat("coo")
         return _Matrix.from_coo(
-            *_A.coords,
-            _A.data,
-            nrows=_A.shape[0],
-            ncols=_A.shape[1],
-            dtype=_A.dtype,
+            *_s.coords,
+            _s.data,
+            nrows=_s.shape[0],
+            ncols=_s.shape[1],
+            dtype=_s.dtype,
             dup_op=dup_op,
             name=name,
         )
+    raise ValueError(f"Unknown sparse array type: {type(s).__name__}")  # pragma: no cover (safety)
 
 
 # TODO: add parameters to allow different networkx classes and attribute names
@@ -532,7 +538,6 @@ def to_awkward(A, format=None):
 
 def to_pydata_sparse(A, format="coo"):
     """Create a pydata.sparse array from a GraphBLAS Matrix or Vector
-    via scipy.sparse intermediate object
 
     Parameters
     ----------
@@ -543,10 +548,9 @@ def to_pydata_sparse(A, format="coo"):
 
     Returns
     -------
-    scipy.sparse array
+    sparse array (see https://sparse.pydata.org)
 
     """
-
     try:
         from sparse import COO
     except ImportError:  # pragma: no cover (import)
