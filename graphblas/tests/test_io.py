@@ -396,13 +396,11 @@ def test_awkward_errors():
 
 @pytest.mark.skipif("not sp")
 def test_vector_to_from_pydata_sparse():
-    coords = [
-        [0, 1, 2, 3, 4],
-    ]
-    data = [10, 20, 30, 40, 50]
+    coords = np.array([0, 1, 2, 3, 4], dtype="int64")
+    data = np.array([10, 20, 30, 40, 50], dtype="int64")
     s = sp.COO(coords, data, shape=(5,))
     v = gb.io.from_pydata_sparse(s)
-    assert v.isequal(gb.Vector.from_coo(coords, data), check_dtype=True)
+    assert v.isequal(gb.Vector.from_coo(coords, data, dtype=dtypes.INT64), check_dtype=True)
 
     t = gb.io.to_pydata_sparse(v)
     assert t == s
@@ -414,21 +412,21 @@ def test_matrix_to_from_pydata_sparse():
     data = [10, 20, 30, 40, 50]
     s = sp.COO(coords, data, shape=(5, 5))
     v = gb.io.from_pydata_sparse(s)
-    assert v.isequal(gb.Matrix.from_coo(*coords, data), check_dtype=True)
+    assert v.isequal(gb.Matrix.from_coo(*coords, data, dtype=dtypes.INT64), check_dtype=False)
 
     t = gb.io.to_pydata_sparse(v)
     assert t == s
 
     # test GCXS array conversion
-    indptr = np.array([0, 2, 3, 6])
-    indices = np.array([0, 2, 2, 0, 1, 2])
-    data = np.array([1, 2, 3, 4, 5, 6])
+    indptr = np.array([0, 2, 3, 6], dtype="int64")
+    indices = np.array([0, 2, 2, 0, 1, 2], dtype="int64")
+    data = np.array([1, 2, 3, 4, 5, 6], dtype="int64")
 
     g = sp.GCXS((data, indices, indptr), shape=(3, 3), compressed_axes=[0])
     w = gb.io.from_pydata_sparse(g)
     coords = g.asformat("coo").coords
     data = g.asformat("coo").data
-    assert w.isequal(gb.Matrix.from_coo(*coords, data), check_dtype=True)
+    assert w.isequal(gb.Matrix.from_coo(*coords, data, dtype=dtypes.INT64), check_dtype=False)
 
     r = gb.io.to_pydata_sparse(w, format="gcxs")
     assert r == g
