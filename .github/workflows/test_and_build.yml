@@ -142,7 +142,7 @@ jobs:
           # Consider removing old versions when they become problematic or very old (>=2 years).
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
-          sparsever=$(python -c 'import random ; print(random.choice(["=0.12", "=0.13", ""]))')
+          sparsever=$(python -c 'import random ; print(random.choice(["=0.13", ""]))')
           if [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
