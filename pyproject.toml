@@ -96,6 +96,7 @@ ignore = [
     "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
     "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
     # "SIM401",  # Use dict.get ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
+    "PLR2004",  # Magic number used in comparison, consider replacing magic with a constant variable
 ]
 [tool.ruff.per-file-ignores]
 "graphblas/core/operator.py" = ["S102"]
