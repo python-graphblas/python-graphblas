@@ -69,7 +69,7 @@ zero-weighted edges, but the user should be aware of the potential for errors oc
 edges are handled by scipy.sparse.
 
 PyData.Sparse
-------------
+-------------
 
 A python-graphblas Matrix can be created from a 2-D (PyData) sparse array or matrix using
 ``gb.io.from_pydata_sparse()``.
