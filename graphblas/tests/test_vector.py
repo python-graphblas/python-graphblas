@@ -2149,7 +2149,7 @@ def test_udt():
     if suitesparse:
         vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
         assert v.isequal(vv, check_dtype=True)
-        with pytest.raises(Exception):
+        with pytest.raises(SyntaxError):
             # The size of the UDT name is limited
             Vector.ss.deserialize(v.ss.serialize())
     # May be able to look up non-anonymous dtypes by name if their names are too long

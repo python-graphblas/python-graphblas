@@ -626,7 +626,7 @@ def format_scalar_expression(expr):
 def create_header(type_name, keys, vals, *, lower_border=False, name="", quote=True):
     vals = [str(x) for x in vals]
     if name and quote:
-        name = f'"{name}"'
+        name = f'"{name}"'  # noqa: B028
     key_text = []
     val_text = []
     for key, val in zip(keys, vals):

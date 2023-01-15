@@ -137,7 +137,7 @@ def test_get_typed_op():
     )
     with pytest.raises(ValueError, match="Unknown binary or aggregator"):
         operator.get_typed_op("bad_op_name", dtypes.INT64, kind="binary|aggregator")
-    with pytest.raises(Exception):
+    with pytest.raises(AttributeError):
         # get_typed_op expects dtypes to already be dtypes
         operator.get_typed_op(binary.plus, dtypes.INT64, "bad dtype")
 

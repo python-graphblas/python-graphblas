@@ -38,7 +38,7 @@ def pytest_configure(config):
 
     gb.init(backend, blocking=blocking)
     print(
-        f'Running tests with "{backend}" backend, blocking={blocking}, '
+        f"Running tests with {backend!r} backend, blocking={blocking}, "
         f"record={record}, mapnumpy={mapnumpy}, runslow={runslow}"
     )
     if record:

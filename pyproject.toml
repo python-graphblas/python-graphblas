@@ -92,6 +92,7 @@ select = [
     "RUF",  # ruff-specific rules
 ]
 ignore = [
+    "RUF100",  # Unused `noqa` directive (unknown: `code`) (Note: I like requiring `noqa` to have codes, but ruff does not know all codes)
     "D203",  # 1 blank line required before class docstring (Note: conflicts with D211, which is preferred)
     "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
     "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
