@@ -1313,6 +1313,8 @@ def test_op_ss():
 
 def test_deprecated():
     with pytest.warns(DeprecationWarning, match="please use"):
+        gb.unary.erf
+    with pytest.warns(DeprecationWarning, match="please use"):
         gb.unary.positioni
     with pytest.warns(DeprecationWarning, match="please use"):
         gb.binary.firsti

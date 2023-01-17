@@ -53,6 +53,14 @@ UNKNOWN_OPCLASS = "UnknownOpClass"
 # Deprecations such as `gb.unary.positioni` will be removed in 2023.9.0 or later.
 _SS_OPERATORS = {
     # unary
+    "erf",  # scipy.special.erf
+    "erfc",  # scipy.special.erfc
+    "frexpe",  # np.frexp[1]
+    "frexpx",  # np.frexp[0]
+    "lgamma",  # scipy.special.loggamma
+    "tgamma",  # scipy.special.gamma
+    # Positional
+    # unary
     "positioni",
     "positioni1",
     "positionj",
@@ -2346,7 +2354,7 @@ class BinaryOp(OpBase):
             (
                 (
                     "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1",
-                    "secondj", "secondj1",),
+                    "secondj", "secondj1"),
                 (
                     position_dtypes,
                     INT64,
