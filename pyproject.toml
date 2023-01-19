@@ -41,9 +41,11 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3 :: Only",
     "Intended Audience :: Developers",
+    "Intended Audience :: Other Audience",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = [
     "suitesparse-graphblas >=7.4.0.0, <7.5",
@@ -108,6 +110,8 @@ packages = [
 
 [tool.setuptools-git-versioning]
 enabled = true
+dev_template = "{tag}+{ccount}.g{sha}"
+dirty_template = "{tag}+{ccount}.g{sha}.dirty"
 
 [tool.black]
 line-length = 100
