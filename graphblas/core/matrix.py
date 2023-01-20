@@ -1229,7 +1229,7 @@ class Matrix(BaseType):
         rows = rows.ravel()
         cols = cols.ravel()
         if values.ndim > 2:
-            values = values.reshape([nrows * ncols] + rest)
+            values = values.reshape([nrows * ncols, *rest])
         else:
             values = values.ravel()
         return cls.from_coo(rows, cols, values, dtype, nrows=nrows, ncols=ncols, name=name)

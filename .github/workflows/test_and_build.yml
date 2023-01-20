@@ -174,7 +174,7 @@ jobs:
           # That is, we don't need to support versions of it that are two years old.
           # But, it's still useful for us to test with different versions!
           if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
-            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", ""]))')
           else
             psgver=""
           fi

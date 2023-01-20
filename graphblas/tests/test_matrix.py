@@ -3045,7 +3045,7 @@ def test_ss_flatten(A):
     with pytest.raises(ValueError, match="cannot reshape"):
         v.ss.reshape(100, 100)
     with pytest.raises(ValueError):
-        v.ss.reshape(A.shape + (1,))
+        v.ss.reshape((*A.shape, 1))
 
 
 @pytest.mark.skipif("not suitesparse")
