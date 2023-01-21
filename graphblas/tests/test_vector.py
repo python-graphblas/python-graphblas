@@ -801,7 +801,7 @@ def test_indexunary_udf(v):
     indexunary.register_new("twox_minusthunk", twox_minusthunk)
     assert hasattr(indexunary, "twox_minusthunk")
     assert not hasattr(select, "twox_minusthunk")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="SelectOp must have BOOL return type"):
         select.register_anonymous(twox_minusthunk)
     with pytest.raises(TypeError, match="must be a function"):
         select.register_anonymous(object())
@@ -868,7 +868,7 @@ def test_reduce_empty():
     assert w.reduce(agg.sum, allow_empty=True).new().is_empty
     assert w.reduce(agg.sum, allow_empty=False).new() == 0
     assert w.reduce(agg.mean, allow_empty=True).new().is_empty
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="allow_empty=False not allowed when using Aggregators"):
         w.reduce(agg.mean, allow_empty=False)
 
 
@@ -1365,7 +1365,7 @@ def test_wait(v):
     assert v2.isequal(v)
     v2.wait("materialize")
     v2.wait("complete")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="`how` argument must be"):
         v2.wait("badmode")
 
 
@@ -1729,7 +1729,7 @@ def test_ss_random(v):
         r = v.ss.selectk("random", k)
         assert r.nvals == k
         assert monoid.any(v & r).new().nvals == k
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="`how` argument must be one of"):
         v.ss.selectk("bad", 1)
 
 
@@ -1744,7 +1744,7 @@ def test_ss_firstk(v):
             x = w.ss.selectk("first", k)
             expected = Vector.from_coo(data[0][:k], data[1][:k], size=w.size)
             assert x.isequal(expected)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="negative k is not allowed"):
         v.ss.selectk("first", -1)
 
 
@@ -1888,7 +1888,7 @@ def test_ss_compactify(do_iso):
                 compare(v, w, size=i, asindex=asindex, sort=sort)
                 if not do_iso:
                     compare(v, w, size=i, asindex=asindex, isequal=True, sort=sort)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="`how` argument must be one of"):
         v.ss.compactify("bad_how")
 
 
@@ -2390,7 +2390,7 @@ def test_get(v):
     assert v.get(1) == 1
     assert v.get(1, "mittens") == 1
     assert type(compute(v.get(1))) is int
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Bad index in Vector.get"):
         # Not yet supported
         v.get([0, 1])
 
@@ -2430,7 +2430,7 @@ def test_ss_config(v):
     assert v.ss.config == d
     for key, val in d.items():
         if key in v.ss.config._read_only:
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match="Config option .* is read-only"):
                 v.ss.config[key] = val
         else:
             v.ss.config[key] = val

@@ -1286,7 +1286,7 @@ def test_indexunary_udf(A):
     indexunary.register_new("threex_minusthunk", threex_minusthunk)
     assert hasattr(indexunary, "threex_minusthunk")
     assert not hasattr(select, "threex_minusthunk")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="SelectOp must have BOOL return type"):
         select.register_anonymous(threex_minusthunk)
     expected = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
@@ -1417,7 +1417,7 @@ def test_reduce_agg(A):
     assert B.reduce_scalar(agg.sum, allow_empty=True).new().is_empty
     assert B.reduce_scalar(agg.sum, allow_empty=False).new() == 0
     assert B.reduce_scalar(agg.vars, allow_empty=True).new().is_empty
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="allow_empty=False not allowed when using Aggregators"):
         B.reduce_scalar(agg.vars, allow_empty=False)
 
 
@@ -1863,7 +1863,7 @@ def test_transpose_exceptional():
 
 
 def test_nested_matrix_operations():
-    """Make sure temporaries aren't garbage-collected too soon"""
+    """Make sure temporaries aren't garbage-collected too soon."""
     A = Matrix(int, 8, 8)
     A.ewise_mult(A.mxm(A.T).new()).new().reduce_scalar().new()
     A.ewise_mult(A.ewise_mult(A.ewise_mult(A.ewise_mult(A).new()).new()).new())
@@ -2575,7 +2575,7 @@ def test_wait(A):
     assert A2.isequal(A)
     A2.wait("materialize")
     A2.wait("complete")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="`how` argument must be"):
         A2.wait("badmode")
 
 
@@ -3044,7 +3044,7 @@ def test_ss_flatten(A):
         A.ss.flatten(order="bad")
     with pytest.raises(ValueError, match="cannot reshape"):
         v.ss.reshape(100, 100)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Shape tuple must be of length 2"):
         v.ss.reshape((*A.shape, 1))
 
 
@@ -3064,17 +3064,17 @@ def test_ss_reshape(A):
     assert rv.isequal(expected)
     assert rv.ss.reshape(8, 8, inplace=True) is None
     assert rv.isequal(A)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="cannot reshape array"):
         A.ss.reshape(5, 5)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="cannot reshape array"):
         A.ss.reshape(4)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="cannot reshape array"):
         A.ss.reshape((4,))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="cannot reshape array"):
         A.ss.reshape((4, 5))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Shape tuple must be of length 2"):
         A.ss.reshape((4, 4, 4))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Bad value for order"):
         A.ss.reshape(4, 16, order="bad_order")
 
     idx = r + 8 * c
@@ -3243,11 +3243,11 @@ def test_ss_random(A):
     expected = Vector.from_coo(range(A.ncols), 1)
     assert counts.isequal(expected)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="`how` argument must be one of:"):
         A.ss.selectk("bad", 1)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="`how` argument must be one of:"):
         A.ss.selectk("bad", 1, order="col")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="negative k is not allowed"):
         A.ss.selectk("random", -1, order="columnwise")
 
 
@@ -3478,7 +3478,7 @@ def test_ss_compactify(A, do_iso):
         [3, 0, 6, 6, 6, 4, 1],
     )
     assert B.isequal(expected)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="`how` argument must be one of:"):
         A.ss.compactify("bad_how")
 
 
@@ -3842,7 +3842,7 @@ def test_get(A):
     assert A.T.get(1, 0) == 2
     assert A.get(0, 1, "mittens") == 2
     assert type(compute(A.get(0, 1))) is int
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Bad row, col"):
         # Not yet supported
         A.get(0, [0, 1])
 
@@ -3890,7 +3890,7 @@ def test_ss_config(A):
     assert A.ss.config == d
     for key, val in d.items():
         if key in A.ss.config._read_only:
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match="Config option .* is read-only"):
                 A.ss.config[key] = val
         else:
             A.ss.config[key] = val
@@ -4007,7 +4007,7 @@ def test_to_dcsr_from_dcsc(A):
 
 @autocompute
 def test_as_vector(A):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Matrix must have a single column"):
         A._as_vector()
     v = A[:, [1]]._as_vector()
     expected = A[:, 1].new()

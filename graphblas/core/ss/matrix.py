@@ -55,7 +55,7 @@ def head(matrix, n=10, dtype=None, *, sort=False):
 
 
 def _concat_mn(tiles, *, is_matrix=None):
-    """Argument checking for `Matrix.ss.concat` and returns number of tiles in each dimension"""
+    """Argument checking for `Matrix.ss.concat` and returns number of tiles in each dimension."""
     from ..matrix import Matrix, TransposedMatrix
     from ..vector import Vector
 
@@ -243,7 +243,7 @@ class ss:
 
     def build_diag(self, vector, k=0, **opts):
         """
-        GxB_Matrix_diag
+        GxB_Matrix_diag.
 
         Construct a diagonal Matrix from the given vector.
         Existing entries in the Matrix are discarded.
@@ -272,7 +272,7 @@ class ss:
 
     def split(self, chunks, *, name=None, **opts):
         """
-        GxB_Matrix_split
+        GxB_Matrix_split.
 
         Split a Matrix into a 2D array of sub-matrices according to `chunks`.
 
@@ -354,7 +354,7 @@ class ss:
 
     def concat(self, tiles, **opts):
         """
-        GxB_Matrix_concat
+        GxB_Matrix_concat.
 
         Concatenate a 2D list of Matrix objects into the current Matrix.
         Any existing values in the current Matrix will be discarded.
@@ -374,7 +374,7 @@ class ss:
 
     def build_scalar(self, rows, columns, value):
         """
-        GxB_Matrix_build_Scalar
+        GxB_Matrix_build_Scalar.
 
         Like ``build``, but uses a scalar for all the values.
 
@@ -529,7 +529,7 @@ class ss:
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False, **opts):
         """
-        GxB_Matrix_export_xxx
+        GxB_Matrix_export_xxx.
 
         Parameters
         ----------
@@ -722,7 +722,7 @@ class ss:
 
     def unpack(self, format=None, *, sort=False, raw=False, **opts):
         """
-        GxB_Matrix_unpack_xxx
+        GxB_Matrix_unpack_xxx.
 
         `unpack` is like `export`, except that the Matrix remains valid but empty.
         `pack_*` methods are the opposite of `unpack`.
@@ -1176,7 +1176,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_import_CSR
+        GxB_Matrix_import_CSR.
 
         Create a new Matrix from standard CSR format.
 
@@ -1253,7 +1253,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_pack_CSR
+        GxB_Matrix_pack_CSR.
 
         `pack_csr` is like `import_csr` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("csr")``
@@ -1364,7 +1364,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_import_CSC
+        GxB_Matrix_import_CSC.
 
         Create a new Matrix from standard CSC format.
 
@@ -1441,7 +1441,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_pack_CSC
+        GxB_Matrix_pack_CSC.
 
         `pack_csc` is like `import_csc` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("csc")``
@@ -1554,7 +1554,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_import_HyperCSR
+        GxB_Matrix_import_HyperCSR.
 
         Create a new Matrix from standard HyperCSR format.
 
@@ -1639,7 +1639,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_pack_HyperCSR
+        GxB_Matrix_pack_HyperCSR.
 
         `pack_hypercsr` is like `import_hypercsr` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("hypercsr")``
@@ -1776,7 +1776,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_import_HyperCSC
+        GxB_Matrix_import_HyperCSC.
 
         Create a new Matrix from standard HyperCSC format.
 
@@ -1860,7 +1860,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_pack_HyperCSC
+        GxB_Matrix_pack_HyperCSC.
 
         `pack_hypercsc` is like `import_hypercsc` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("hypercsc")``
@@ -1994,7 +1994,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_import_BitmapR
+        GxB_Matrix_import_BitmapR.
 
         Create a new Matrix from values and bitmap (as mask) arrays.
 
@@ -2075,7 +2075,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_pack_BitmapR
+        GxB_Matrix_pack_BitmapR.
 
         `pack_bitmapr` is like `import_bitmapr` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("bitmapr")``
@@ -2185,7 +2185,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_import_BitmapC
+        GxB_Matrix_import_BitmapC.
 
         Create a new Matrix from values and bitmap (as mask) arrays.
 
@@ -2266,7 +2266,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_pack_BitmapC
+        GxB_Matrix_pack_BitmapC.
 
         `pack_bitmapc` is like `import_bitmapc` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("bitmapc")``
@@ -2374,7 +2374,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_import_FullR
+        GxB_Matrix_import_FullR.
 
         Create a new Matrix from values.
 
@@ -2446,7 +2446,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_pack_FullR
+        GxB_Matrix_pack_FullR.
 
         `pack_fullr` is like `import_fullr` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("fullr")``
@@ -2531,7 +2531,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_import_FullC
+        GxB_Matrix_import_FullC.
 
         Create a new Matrix from values.
 
@@ -2603,7 +2603,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_pack_FullC
+        GxB_Matrix_pack_FullC.
 
         `pack_fullc` is like `import_fullc` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("fullc")``
@@ -2691,7 +2691,7 @@ class ss:
         **opts,
     ):
         """
-        GrB_Matrix_build_XXX and GxB_Matrix_build_Scalar
+        GrB_Matrix_build_XXX and GxB_Matrix_build_Scalar.
 
         Create a new Matrix from indices and values in coordinate format.
 
@@ -2764,7 +2764,7 @@ class ss:
         **opts,
     ):
         """
-        GrB_Matrix_build_XXX and GxB_Matrix_build_Scalar
+        GrB_Matrix_build_XXX and GxB_Matrix_build_Scalar.
 
         `pack_coo` is like `import_coo` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("coo")``
@@ -2877,7 +2877,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_import_CSR
+        GxB_Matrix_import_CSR.
 
         Create a new Matrix from indices and values in coordinate format.
         Rows must be sorted.
@@ -2960,7 +2960,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_pack_CSR
+        GxB_Matrix_pack_CSR.
 
         `pack_coor` is like `import_coor` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("coor")``
@@ -3046,7 +3046,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_import_CSC
+        GxB_Matrix_import_CSC.
 
         Create a new Matrix from indices and values in coordinate format.
         Rows must be sorted.
@@ -3129,7 +3129,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_pack_CSC
+        GxB_Matrix_pack_CSC.
 
         `pack_cooc` is like `import_cooc` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("cooc")``
@@ -3231,7 +3231,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_import_xxx
+        GxB_Matrix_import_xxx.
 
         Dispatch to appropriate import method inferred from inputs.
         See the other import functions and `Matrix.ss.export`` for details.
@@ -3329,7 +3329,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Matrix_pack_xxx
+        GxB_Matrix_pack_xxx.
 
         `pack_any` is like `import_any` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack()``
@@ -4191,7 +4191,7 @@ class ss:
         )
 
     def sort(self, op=binary.lt, order="rowwise", *, values=True, permutation=True, **opts):
-        """GxB_Matrix_sort to sort values along the rows (default) or columns of the Matrix
+        """GxB_Matrix_sort to sort values along the rows (default) or columns of the Matrix.
 
         Sorting moves all the elements to the left (if rowwise) or top (if columnwise) just
         like `compactify`. The returned matrices will be the same shape as the input Matrix.

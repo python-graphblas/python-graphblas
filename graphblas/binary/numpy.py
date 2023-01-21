@@ -1,4 +1,4 @@
-""" Create UDFs of numpy functions supported by numba.
+"""Create UDFs of numpy functions supported by numba.
 
 See list of numpy ufuncs supported by numpy here:
 

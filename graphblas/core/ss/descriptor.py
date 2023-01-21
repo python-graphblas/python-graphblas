@@ -109,7 +109,7 @@ class _DescriptorConfig(BaseConfig):
 
 
 def get_descriptor(**opts):
-    """Create descriptor with SuiteSparse:GraphBLAS options
+    """Create descriptor with SuiteSparse:GraphBLAS options.
 
     See SuiteSparse:GraphBLAS documentation for more details.
 

@@ -12,7 +12,7 @@ from ..exceptions import _error_code_lookup
 
 
 class _graphblas_ss:
-    """Used in `_expect_type`"""
+    """Used in `_expect_type`."""
 
 
 _graphblas_ss.__name__ = "graphblas.ss"
@@ -21,7 +21,7 @@ _graphblas_ss = _graphblas_ss()
 
 def diag(x, k=0, dtype=None, *, name=None, **opts):
     """
-    GxB_Matrix_diag, GxB_Vector_diag
+    GxB_Matrix_diag, GxB_Vector_diag.
 
     Extract a diagonal Vector from a Matrix, or construct a diagonal Matrix
     from a Vector.  Unlike ``Matrix.diag`` and ``Vector.diag``, this function
@@ -67,7 +67,7 @@ def diag(x, k=0, dtype=None, *, name=None, **opts):
 
 def concat(tiles, dtype=None, *, name=None, **opts):
     """
-    GxB_Matrix_concat
+    GxB_Matrix_concat.
 
     Concatenate a 2D list of Matrix objects into a new Matrix, or a 1D list of
     Vector objects into a new Vector.  To concatenate into existing objects,
@@ -103,7 +103,7 @@ def concat(tiles, dtype=None, *, name=None, **opts):
 
 
 class GlobalConfig(BaseConfig):
-    """Get and set global configuration options for SuiteSparse:GraphBLAS
+    """Get and set global configuration options for SuiteSparse:GraphBLAS.
 
     See SuiteSparse:GraphBLAS documentation for more details.
 

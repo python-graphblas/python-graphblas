@@ -84,8 +84,8 @@ def pytest_runtest_setup(item):
 
 
 @pytest.fixture(autouse=True, scope="function")
-def reset_name_counters():
-    """Reset automatic names for each test for easier comparison of record.txt"""
+def _reset_name_counters():
+    """Reset automatic names for each test for easier comparison of record.txt."""
     gb.Matrix._name_counter = itertools.count()
     gb.Vector._name_counter = itertools.count()
     gb.Scalar._name_counter = itertools.count()
@@ -93,7 +93,7 @@ def reset_name_counters():
 
 @pytest.fixture(scope="session", autouse=True)
 def ic():  # pragma: no cover (debug)
-    """Make `ic` available everywhere during testing for easier debugging"""
+    """Make `ic` available everywhere during testing for easier debugging."""
     try:
         import icecream
     except ImportError:

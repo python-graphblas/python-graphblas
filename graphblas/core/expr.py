@@ -54,7 +54,7 @@ class AxisIndex:
         return f"[{', '.join(map(str, idx[:3]))}, ...]"
 
     def _py_index(self):
-        """Convert resolved index back into a valid Python index"""
+        """Convert resolved index back into a valid Python index."""
         if self.size is None:
             return self.index.value
         if self.index is _ALL_INDICES:
@@ -149,6 +149,7 @@ class IndexerResolver:
     def parse_indices(self, indices, shape):
         """
         Returns
+        -------
             [(rows, rowsize), (cols, colsize)] for Matrix
             [(idx, idx_size)] for Vector
 
@@ -251,7 +252,7 @@ class IndexerResolver:
         return self.parse_index(np.array(index), np.ndarray, size)
 
     def get_index(self, dim):
-        """Return a new IndexerResolver with index for the selected dimension"""
+        """Return a new IndexerResolver with index for the selected dimension."""
         rv = object.__new__(IndexerResolver)
         rv.obj = self.obj
         rv.indices = (self.indices[dim],)
@@ -327,7 +328,7 @@ class AmbiguousAssignOrExtract:
         return delayed_extractor.new(dtype, mask=mask, name=name, **opts)
 
     def _extract_delayed(self):
-        """Return an Expression object, treating this as an extract call"""
+        """Return an Expression object, treating this as an extract call."""
         return self.parent._prep_for_extract(self.resolved_indexes)
 
     def _input_mask_to_mask(self, input_mask, **opts):

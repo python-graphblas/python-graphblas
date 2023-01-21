@@ -42,9 +42,10 @@ class DataType:
         try:
             t1 = self.np_type
             t2 = lookup_dtype(other).np_type
-            return (t1.kind, t1.itemsize, t1.name) < (t2.kind, t2.itemsize, t2.name)
         except ValueError:
             raise TypeError(f"Invalid or unknown datatype: {other}") from None
+        else:
+            return (t1.kind, t1.itemsize, t1.name) < (t2.kind, t2.itemsize, t2.name)
 
     def __reduce__(self):
         if self._is_udt:
@@ -291,7 +292,7 @@ def lookup_dtype(key, value=None):
 
 def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
     """
-    Returns a type that can hold both type1 and type2
+    Returns a type that can hold both type1 and type2.
 
     For example:
     unify(INT32, INT64) -> INT64
@@ -363,7 +364,11 @@ def _dtype_to_string(dtype):
 
 
 def _string_to_dtype(s):
-    """_string_to_dtype(_dtype_to_string(dtype)) == dtype"""
+    """Convert a string back to a dtype.
+
+    >>> _string_to_dtype(_dtype_to_string(dtype)) == dtype
+    True
+    """
     try:
         return lookup_dtype(s)
     except Exception:

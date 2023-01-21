@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""This script is used to auto-generate code.
+"""Run this script to auto-generate code after modifying automethods or infixmethods.
 
 This can also be done via:
 

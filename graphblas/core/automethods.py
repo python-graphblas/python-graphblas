@@ -1,4 +1,4 @@
-""" Define functions to use as property methods on expressions.
+"""Define functions to use as property methods on expressions.
 
 These will automatically compute the value and avoid the need for `.new()`.
 

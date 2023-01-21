@@ -312,9 +312,7 @@ class BaseType:
         return self._update(expr, opts=opts)
 
     def update(self, expr, **opts):
-        """
-        Convenience function when no output arguments (mask, accum, replace) are used
-        """
+        """Convenience function when no output arguments (mask, accum, replace) are used."""
         return self._update(expr, opts=opts)
 
     def _update(self, expr, mask=None, accum=None, replace=False, input_mask=None, *, opts):
@@ -497,7 +495,7 @@ class BaseType:
 
     @property
     def _name_html(self):
-        """Treat characters after _ as subscript"""
+        """Treat characters after _ as subscript."""
         split = self.name.split("_", 1)
         if len(split) == 1:
             return self.name

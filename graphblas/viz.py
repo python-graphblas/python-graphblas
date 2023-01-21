@@ -67,7 +67,7 @@ def draw(m):  # pragma: no cover
 
 
 def spy(M, *, centered=False, show=True, figure=None, axes=None, figsize=None, **kwargs):
-    """Plot the sparsity pattern of a Matrix using `matplotlib.spy`
+    """Plot the sparsity pattern of a Matrix using `matplotlib.spy`.
 
     See:
     - https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.spy.html
@@ -104,7 +104,7 @@ def spy(M, *, centered=False, show=True, figure=None, axes=None, figsize=None, *
 
 
 def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kwargs):
-    """Interactive plot of the sparsity pattern of a Matrix using hvplot and datashader
+    """Interactive plot of the sparsity pattern of a Matrix using hvplot and datashader.
 
     The `datashader` library rasterizes large data into a 2d grid of pixels.  Each pixel
     may contain multiple data points, which are combined by an aggregator (`agg="count"`).
