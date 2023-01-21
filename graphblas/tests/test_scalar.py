@@ -71,7 +71,8 @@ def test_dup(s):
         ("INT32", -2),
         ("BOOL", True),
         ("FP32", -2.5),
-    ] + uint_data:
+        *uint_data,
+    ]:
         s5 = s4.dup(dtype=dtype, name="s5")
         assert s5.dtype == dtype and s5.value == val
         s6 = s_empty.dup(dtype=dtype, name="s6")

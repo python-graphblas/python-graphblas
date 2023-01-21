@@ -161,7 +161,7 @@ jobs:
             npver=$(python -c 'import random ; print(random.choice(["=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0.5", "=2.0.6", ""]))')
           fi
           if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
             # TODO: there are currently issues with some numpy versions when
@@ -174,7 +174,7 @@ jobs:
           # That is, we don't need to support versions of it that are two years old.
           # But, it's still useful for us to test with different versions!
           if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
-            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", ""]))')
           else
             psgver=""
           fi
@@ -233,7 +233,7 @@ jobs:
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo $args
-          coverage run -m pytest --randomly -v $args \
+          coverage run -m pytest --color=yes -Werror --randomly -v $args \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
         run: |
@@ -268,7 +268,7 @@ jobs:
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
           echo $args
-          coverage run -a -m pytest --randomly -v $args \
+          coverage run -a -m pytest --color=yes -Werror --randomly -v $args \
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
@@ -289,8 +289,8 @@ jobs:
           rm script.py
           # Tests whose coverage depend on order of tests :/
           # TODO: understand why these are order-dependent and try to fix
-          coverage run -a -m pytest -x --no-mapnumpy -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
-          # coverage run -a -m pytest -x --no-mapnumpy -k test_npmonoid graphblas/tests/test_numpyops.py --runslow
+          coverage run -a -m pytest --color=yes -Werror -x --no-mapnumpy -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
+          # coverage run -a -m pytest --color=yes -Werror -x --no-mapnumpy -k test_npmonoid graphblas/tests/test_numpyops.py --runslow
       - name: Auto-generated code check
         if: matrix.slowtask == 'pytest_bizarro'
         run: |

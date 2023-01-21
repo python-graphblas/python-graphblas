@@ -11,6 +11,7 @@ import numpy as np
 
 from .. import (
     _STANDARD_OPERATOR_NAMES,
+    backend,
     binary,
     config,
     indexunary,
@@ -48,9 +49,81 @@ if _supports_complex:
 ffi_new = ffi.new
 UNKNOWN_OPCLASS = "UnknownOpClass"
 
+# These now live as e.g. `gb.unary.ss.positioni`
+# Deprecations such as `gb.unary.positioni` will be removed in 2023.9.0 or later.
+_SS_OPERATORS = {
+    # unary
+    "erf",  # scipy.special.erf
+    "erfc",  # scipy.special.erfc
+    "frexpe",  # np.frexp[1]
+    "frexpx",  # np.frexp[0]
+    "lgamma",  # scipy.special.loggamma
+    "tgamma",  # scipy.special.gamma
+    # Positional
+    # unary
+    "positioni",
+    "positioni1",
+    "positionj",
+    "positionj1",
+    # binary
+    "firsti",
+    "firsti1",
+    "firstj",
+    "firstj1",
+    "secondi",
+    "secondi1",
+    "secondj",
+    "secondj1",
+    # semiring
+    "any_firsti",
+    "any_firsti1",
+    "any_firstj",
+    "any_firstj1",
+    "any_secondi",
+    "any_secondi1",
+    "any_secondj",
+    "any_secondj1",
+    "max_firsti",
+    "max_firsti1",
+    "max_firstj",
+    "max_firstj1",
+    "max_secondi",
+    "max_secondi1",
+    "max_secondj",
+    "max_secondj1",
+    "min_firsti",
+    "min_firsti1",
+    "min_firstj",
+    "min_firstj1",
+    "min_secondi",
+    "min_secondi1",
+    "min_secondj",
+    "min_secondj1",
+    "plus_firsti",
+    "plus_firsti1",
+    "plus_firstj",
+    "plus_firstj1",
+    "plus_secondi",
+    "plus_secondi1",
+    "plus_secondj",
+    "plus_secondj1",
+    "times_firsti",
+    "times_firsti1",
+    "times_firstj",
+    "times_firstj1",
+    "times_secondi",
+    "times_secondi1",
+    "times_secondj",
+    "times_secondj1",
+}
+
 
 def _hasop(module, name):
-    return name in module.__dict__ or name in module._delayed
+    return (
+        name in module.__dict__
+        or name in module._delayed
+        or name in getattr(module, "_deprecated", ())
+    )
 
 
 class OpPath:
@@ -369,12 +442,21 @@ class TypedBuiltinSemiring(TypedOpBase):
 
     @property
     def binaryop(self):
-        return getattr(binary, self.name.split("_", 1)[1])[self.type]
+        name = self.name.split("_", 1)[1]
+        if name in _SS_OPERATORS:
+            binop = binary._deprecated[name]
+        else:
+            binop = getattr(binary, name)
+        return binop[self.type]
 
     @property
     def monoid(self):
         monoid_name, binary_name = self.name.split("_", 1)
-        binop = getattr(binary, binary_name)[self.type]
+        if binary_name in _SS_OPERATORS:
+            binop = binary._deprecated[binary_name]
+        else:
+            binop = getattr(binary, binary_name)
+        binop = binop[self.type]
         val = getattr(monoid, monoid_name)
         return val[binop.return_type]
 
@@ -866,12 +948,12 @@ class OpBase:
         if modname is None:
             modname = cls._modname
         if "." not in funcname:
-            if strict and hasattr(module, funcname):
+            if strict and _hasop(module, funcname):
                 raise AttributeError(f"{modname}.{funcname} is already defined")
         else:
             path, funcname = funcname.rsplit(".", 1)
             for folder in path.split("."):
-                if not hasattr(module, folder):
+                if not _hasop(module, folder):
                     setattr(module, folder, OpPath(module, folder))
                 module = getattr(module, folder)
                 modname = f"{modname}.{folder}"
@@ -887,7 +969,10 @@ class OpBase:
     def _find(cls, funcname):
         rv = cls._module
         for attr in funcname.split("."):
-            rv = getattr(rv, attr, None)
+            if attr in getattr(rv, "_deprecated", ()):
+                rv = rv._deprecated[attr]
+            else:
+                rv = getattr(rv, attr, None)
             if rv is None:
                 break
         return rv
@@ -930,15 +1015,30 @@ class OpBase:
                             type_ = None
                         name = "_".join(splitname).lower()
                         # Create object for name unless it already exists
-                        if not hasattr(cls._module, name):
-                            if cls._positional is None:
-                                obj = cls(name)
+                        if not _hasop(cls._module, name):
+                            if backend == "suitesparse" and name in _SS_OPERATORS:
+                                fullname = f"ss.{name}"
                             else:
-                                obj = cls(name, is_positional=name in cls._positional)
-                            setattr(cls._module, name, obj)
-                            _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{name}")
-                            if include_in_ops and not hasattr(op, name):
-                                setattr(op, name, obj)
+                                fullname = name
+                            if cls._positional is None:
+                                obj = cls(fullname)
+                            else:
+                                obj = cls(fullname, is_positional=name in cls._positional)
+                            if name in _SS_OPERATORS:
+                                if backend == "suitesparse":
+                                    setattr(cls._module.ss, name, obj)
+                                cls._module._deprecated[name] = obj
+                                if include_in_ops and not _hasop(op, name):  # pragma: no branch
+                                    op._deprecated[name] = obj
+                                    if backend == "suitesparse":
+                                        setattr(op.ss, name, obj)
+                            else:
+                                setattr(cls._module, name, obj)
+                                if include_in_ops and not _hasop(op, name):
+                                    setattr(op, name, obj)
+                            _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{fullname}")
+                        elif name in _SS_OPERATORS:
+                            obj = cls._module._deprecated[name]
                         else:
                             obj = getattr(cls._module, name)
                         gb_obj = getattr(lib, varname)
@@ -1211,7 +1311,10 @@ class UnaryOp(OpBase):
             # fmt: on
         ]:
             for name in names:
-                op = getattr(unary, name)
+                if name in _SS_OPERATORS:
+                    op = unary._deprecated[name]
+                else:
+                    op = getattr(unary, name)
                 for input_types, target_type in types:
                     typed_op = op._typed_ops[target_type]
                     output_type = op.types[target_type]
@@ -2251,7 +2354,7 @@ class BinaryOp(OpBase):
             (
                 (
                     "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1",
-                    "secondj", "secondj1",),
+                    "secondj", "secondj1"),
                 (
                     position_dtypes,
                     INT64,
@@ -2279,7 +2382,10 @@ class BinaryOp(OpBase):
             )
         for names, *types in name_types:
             for name in names:
-                cur_op = getattr(binary, name)
+                if name in _SS_OPERATORS:
+                    cur_op = binary._deprecated[name]
+                else:
+                    cur_op = getattr(binary, name)
                 for input_types, target_type in types:
                     typed_op = cur_op._typed_ops[target_type]
                     output_type = cur_op.types[target_type]
@@ -2293,17 +2399,35 @@ class BinaryOp(OpBase):
         del binary.ldexp[FP64]
         # Fill in commutes info
         for left_name, right_name in cls._commutes.items():
-            left = getattr(binary, left_name)
-            left._commutes_to = right_name
+            if left_name in _SS_OPERATORS:
+                left = binary._deprecated[left_name]
+            else:
+                left = getattr(binary, left_name)
+            if backend == "suitesparse" and right_name in _SS_OPERATORS:
+                left._commutes_to = f"ss.{right_name}"
+            else:
+                left._commutes_to = right_name
             if right_name not in binary._delayed:
-                right = getattr(binary, right_name)
-                right._commutes_to = left_name
+                if right_name in _SS_OPERATORS:
+                    right = binary._deprecated[right_name]
+                else:
+                    right = getattr(binary, right_name)
+                if backend == "suitesparse" and left_name in _SS_OPERATORS:
+                    right._commutes_to = f"ss.{left_name}"
+                else:
+                    right._commutes_to = left_name
         for name in cls._commutative:
             cur_op = getattr(binary, name)
             cur_op._commutes_to = name
-        for left, right in cls._commutes_to_in_semiring.items():
-            left = getattr(binary, left)
-            right = getattr(binary, right)
+        for left_name, right_name in cls._commutes_to_in_semiring.items():
+            if left_name in _SS_OPERATORS:
+                left = binary._deprecated[left_name]
+            else:  # pragma: no cover (safety)
+                left = getattr(binary, left_name)
+            if right_name in _SS_OPERATORS:
+                right = binary._deprecated[right_name]
+            else:  # pragma: no cover (safety)
+                right = getattr(binary, right_name)
             left._semiring_commutes_to = right
             right._semiring_commutes_to = left
         # Allow some functions to work on UDTs
@@ -2830,7 +2954,7 @@ class Semiring(OpBase):
         for lname in ["any", "eq", "land", "lor", "lxnor", "lxor"]:
             target_name = f"{lname}_ne"
             source_name = f"{lname}_lxor"
-            if not hasattr(semiring, target_name):
+            if not _hasop(semiring, target_name):
                 continue
             target_op = getattr(semiring, target_name)
             if BOOL not in target_op.types:  # pragma: no branch (safety)
@@ -2911,9 +3035,12 @@ class Semiring(OpBase):
         ]:
             for left, right in itertools.product(lnames, rnames):
                 name = f"{left}_{right}"
-                if not hasattr(semiring, name):
+                if not _hasop(semiring, name):
                     continue
-                cur_op = getattr(semiring, name)
+                if name in _SS_OPERATORS:
+                    cur_op = semiring._deprecated[name]
+                else:
+                    cur_op = getattr(semiring, name)
                 for input_types, target_type in types:
                     typed_op = cur_op._typed_ops[target_type]
                     output_type = cur_op.types[target_type]
@@ -2970,7 +3097,10 @@ class Semiring(OpBase):
         if self._binaryop is not None:
             return self._binaryop
         # Must be builtin
-        return getattr(binary, self.name.split("_")[1])
+        name = self.name.split("_")[1]
+        if name in _SS_OPERATORS:
+            return binary._deprecated[name]
+        return getattr(binary, name)
 
     @property
     def monoid(self):
@@ -2978,7 +3108,7 @@ class Semiring(OpBase):
         if self._monoid is not None:
             return self._monoid
         # Must be builtin
-        return getattr(monoid, self.name.split("_")[0])
+        return getattr(monoid, self.name.split("_")[0].split(".")[-1])
 
     @property
     def is_positional(self):
@@ -3166,6 +3296,8 @@ def get_semiring(monoid, binaryop, name=None):
                 or binary_prefix == ["numpy"]
                 and not monoid_prefix
             )
+            or backend == "suitesparse"
+            and binary_name in _SS_OPERATORS
         ):
             canonical_name = (
                 ".".join(monoid_prefix or binary_prefix) + f".{monoid_name}_{binary_name}"
@@ -3179,14 +3311,14 @@ def get_semiring(monoid, binaryop, name=None):
         rv = (
             getattr(module, funcname)
             if funcname in module.__dict__ or funcname in module._delayed
-            else None
+            else getattr(module, "_deprecated", {}).get(funcname)
         )
         if rv is None and name != canonical_name:
             module, funcname = Semiring._remove_nesting(name, strict=False)
             rv = (
                 getattr(module, funcname)
                 if funcname in module.__dict__ or funcname in module._delayed
-                else None
+                else getattr(module, "_deprecated", {}).get(funcname)
             )
         if rv is None:
             rv = Semiring.register_new(canonical_name, monoid, binaryop)

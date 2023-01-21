@@ -915,47 +915,50 @@ def test_reduce_agg(v):
     assert s.is_empty
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_reduce_agg_argminmax(v):
-    assert v.reduce(agg.argmin).new() == 6
-    assert v.reduce(agg.argmax).new() == 4
+    assert v.reduce(agg.ss.argmin).new() == 6
+    assert v.reduce(agg.ss.argmax).new() == 4
 
     silly = agg.Aggregator(
         "silly",
-        composite=[agg.argmin, agg.argmax],
+        composite=[agg.ss.argmin, agg.ss.argmax],
         finalize=lambda x, y, opts: binary.plus(x & y),
-        types=[agg.argmin],
+        types=[agg.ss.argmin],
     )
     s = v.reduce(silly).new()
     assert s == 10
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_reduce_agg_firstlast(v):
     empty = Vector(int, size=4)
-    assert empty.reduce(agg.first).new().is_empty
-    assert empty.reduce(agg.last).new().is_empty
+    assert empty.reduce(agg.ss.first).new().is_empty
+    assert empty.reduce(agg.ss.last).new().is_empty
 
-    assert v.reduce(agg.first).new() == 1
-    assert v.reduce(agg.last).new() == 0
+    assert v.reduce(agg.ss.first).new() == 1
+    assert v.reduce(agg.ss.last).new() == 0
 
     silly = agg.Aggregator(
         "silly",
-        composite=[agg.first, agg.last],
+        composite=[agg.ss.first, agg.ss.last],
         finalize=lambda x, y, opts: binary.plus(x & y),
-        types=[agg.first],
+        types=[agg.ss.first],
     )
     s = v.reduce(silly).new()
     assert s == 1
 
 
+@pytest.mark.skipif("not suitesparse")
 def test_reduce_agg_firstlast_index(v):
-    assert v.reduce(agg.first_index).new() == 1
-    assert v.reduce(agg.last_index).new() == 6
+    assert v.reduce(agg.ss.first_index).new() == 1
+    assert v.reduce(agg.ss.last_index).new() == 6
 
     silly = agg.Aggregator(
         "silly",
-        composite=[agg.first_index, agg.last_index],
+        composite=[agg.ss.first_index, agg.ss.last_index],
         finalize=lambda x, y, opts: binary.plus(x & y),
-        types=[agg.first_index],
+        types=[agg.ss.first_index],
     )
     s = v.reduce(silly).new()
     assert s == 7
@@ -1308,7 +1311,7 @@ def test_ss_import_export_auto(v, do_iso, methods):
         w(w.S) << 1
     w_orig = w.dup()
     format = "full"
-    for (raw, import_format, give_ownership, take_ownership, import_name,) in itertools.product(
+    for (raw, import_format, give_ownership, take_ownership, import_name) in itertools.product(
         [False, True],
         [format, None],
         [False, True],
@@ -2037,25 +2040,28 @@ def test_udt():
     assert v[:].new().isequal(v)
     indices, values = v.to_coo()
     assert v.isequal(Vector.from_coo(indices, values))
-    result = unary.positioni(v).new()
-    expected = Vector.from_coo([0, 1, 2], [0, 1, 2])
-    assert result.isequal(expected)
-    result = binary.firsti(v & v).new()
-    assert result.isequal(expected)
-    result = semiring.min_firsti(v @ v).new()
-    assert result == 0
     assert v.reduce(agg.any_value).new() == s
-    assert v.reduce(agg.first).new() == s
-    assert v.reduce(agg.last).new() == s
     assert v.reduce(agg.exists).new() == 1
-    assert v.reduce(agg.first_index).new() == 0
-    assert v.reduce(agg.last_index).new() == 2
     assert v.reduce(agg.count).new() == 3
     if suitesparse:
+        result = unary.ss.positioni(v).new()
+        expected = Vector.from_coo([0, 1, 2], [0, 1, 2])
+        assert result.isequal(expected)
+        assert v.reduce(agg.ss.first).new() == s
+        assert v.reduce(agg.ss.last).new() == s
+        assert v.reduce(agg.ss.first_index).new() == 0
+        assert v.reduce(agg.ss.last_index).new() == 2
+        result = binary.ss.firsti(v & v).new()
+        assert result.isequal(expected)
+        result = semiring.ss.min_firsti(v @ v).new()
+        assert result == 0
         info = v.ss.export()
         result = Vector.ss.import_any(**info)
         assert result.isequal(v)
-    for aggop in [agg.any_value, agg.first, agg.last, agg.count, agg.first_index, agg.last_index]:
+    aggs = [agg.any_value, agg.count]
+    if suitesparse:
+        aggs.extend([agg.ss.first, agg.ss.last, agg.ss.first_index, agg.ss.last_index])
+    for aggop in aggs:
         v.reduce(aggop).new()
     v.clear()
     v[[0, 1]] = [(2, 3), (4, 5)]
@@ -2117,7 +2123,10 @@ def test_udt():
     assert s == t
     assert t == s
     # Just make sure these work
-    for aggop in [agg.any_value, agg.first, agg.last, agg.count, agg.first_index, agg.last_index]:
+    aggs = [agg.any_value, agg.count]
+    if suitesparse:
+        aggs.extend([agg.ss.first, agg.ss.last, agg.ss.first_index, agg.ss.last_index])
+    for aggop in aggs:
         v.reduce(aggop).new()
     v.clear()
     v[[0, 1]] = [[2, 3, 4], [5, 6, 7]]
@@ -2140,7 +2149,7 @@ def test_udt():
     if suitesparse:
         vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
         assert v.isequal(vv, check_dtype=True)
-        with pytest.raises(Exception):
+        with pytest.raises(SyntaxError):
             # The size of the UDT name is limited
             Vector.ss.deserialize(v.ss.serialize())
     # May be able to look up non-anonymous dtypes by name if their names are too long

@@ -13,6 +13,7 @@ from graphblas.tests.test_pickle import *
 
 
 def pickle1(filename):
+    suitesparse = gb.backend == "suitesparse"
     v = gb.Vector.from_coo([1], 2)
 
     unary_pickle = gb.core.operator.UnaryOp.register_new("unary_pickle", unarypickle)
@@ -53,7 +54,6 @@ def pickle1(filename):
         "monoid.numpy.logaddexp[float]": gb.monoid.numpy.logaddexp[float],
         "semiring.numpy.logaddexp2_hypot[float]": gb.semiring.numpy.logaddexp2_hypot[float],
         "agg.sum": gb.agg.sum,
-        "agg.first[int]": gb.agg.first[int],
         "binary.absfirst": gb.binary.absfirst,
         "binary.absfirst[float]": gb.binary.absfirst[float],
         "binary.isclose": gb.binary.isclose,
@@ -72,6 +72,8 @@ def pickle1(filename):
         "all_indices": gb.core.expr._ALL_INDICES,
         "replace": gb.replace,
     }
+    if suitesparse:
+        d["agg.ss.first[int]"] = gb.agg.ss.first[int]
     with open(filename, "wb") as f:
         pickle.dump(d, f)
 

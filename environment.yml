@@ -49,6 +49,7 @@ dependencies:
     # - autoflake
     # - black
     # - black-jupyter
+    # - build
     # - codespell
     # - commonmark
     # - cython
@@ -95,6 +96,7 @@ dependencies:
     # - snakeviz
     # - sphinx-lint
     # - sympy
+    # - twine
     # - vim
     # - yesqa
     # - zarr

@@ -20,7 +20,7 @@ repos:
       - id: mixed-line-ending
       - id: trailing-whitespace
   - repo: https://github.com/abravalheri/validate-pyproject
-    rev: v0.10.1
+    rev: v0.11
     hooks:
       - id: validate-pyproject
         name: Validate pyproject.toml
@@ -41,11 +41,13 @@ repos:
   - repo: https://github.com/MarcoGorelli/auto-walrus
     rev: v0.2.2
     hooks:
-    - id: auto-walrus
+      - id: auto-walrus
+        args: [--line-length, "100"]
   - repo: https://github.com/psf/black
     rev: 22.12.0
     hooks:
       - id: black
+      - id: black-jupyter
   - repo: https://github.com/PyCQA/flake8
     rev: 6.0.0
     hooks:
@@ -54,7 +56,7 @@ repos:
         # These versions need updated manually
         - flake8==6.0.0
         - flake8-comprehensions==3.10.1
-        - flake8-bugbear==22.12.6
+        - flake8-bugbear==23.1.17
         - flake8-simplify==0.19.3
   - repo: https://github.com/asottile/yesqa
     rev: v1.4.0
@@ -69,18 +71,19 @@ repos:
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.213
+    rev: v0.0.227
     hooks:
       - id: ruff
         args: [--force-exclude]
   - repo: https://github.com/sphinx-contrib/sphinx-lint
     rev: v0.6.7
     hooks:
-    - id: sphinx-lint
-      args: [--enable, all, "--disable=line-too-long,leaked-markup"]
+      - id: sphinx-lint
+        args: [--enable, all, "--disable=line-too-long,leaked-markup"]
   - repo: local
     hooks:
       # Add `--hook-stage manual` to pre-commit command to run (very slow)
+      # It's probably better (and faster!) to simply run `pylint graphblas/some/file.py`
       - id: pylint
         name: pylint
         entry: pylint
@@ -93,4 +96,24 @@ repos:
     rev: v4.4.0
     hooks:
       - id: no-commit-to-branch  # no commit directly to main
-# Maybe: black-jupyter, blacken-docs, blackdoc mypy, pydocstyle, rstcheck, pydocstringformatter, velin
+#
+# Maybe:
+#
+#  - repo: https://github.com/rstcheck/rstcheck
+#    rev: v6.1.1
+#    hooks:
+#      - id: rstcheck
+#        additional_dependencies: [nbsphinx]
+#
+#  - repo: https://github.com/PyCQA/pydocstyle
+#    rev: 6.3.0
+#    hooks:
+#      - id: pydocstyle
+#        additional_dependencies: [tomli]
+#
+#  - repo: https://github.com/PyCQA/bandit
+#    rev: 1.7.4
+#    hooks:
+#      - id: bandit
+#
+# blacken-docs, blackdoc mypy, pydocstringformatter, velin, flynt, yamllint

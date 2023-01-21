@@ -1,9 +1,117 @@
 [build-system]
-requires = ["setuptools>=41", "wheel", "setuptools-git-versioning<2"]
 build-backend = "setuptools.build_meta"
+requires = [
+    "setuptools >=61",
+    "setuptools-git-versioning",
+]
+
+[project]
+name = "python-graphblas"
+dynamic = ["version"]
+description = "Python library for GraphBLAS: high-performance sparse linear algebra for scalable graph analytics"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Erik Welch"},
+    {name = "Jim Kitchen"},
+]
+maintainers = [
+    {name = "Erik Welch", email = "erik.n.welch@gmail.com"},
+    {name = "Jim Kitchen", email = "jim22k@gmail.com"},
+]
+keywords = [
+    "graphblas",
+    "graph",
+    "sparse",
+    "matrix",
+    "lagraph",
+    "suitesparse",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3 :: Only",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Other Audience",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+    "suitesparse-graphblas >=7.4.0.0, <7.5",
+    "numpy >=1.21",
+    "numba >=0.55",
+    "donfig >=0.6",
+    "pyyaml >=5.4",
+]
+
+[project.urls]
+homepage = "https://github.com/python-graphblas/python-graphblas"
+documentation = "https://python-graphblas.readthedocs.io"
+repository = "https://github.com/python-graphblas/python-graphblas"
+changelog = "https://github.com/python-graphblas/python-graphblas/releases"
+
+[project.optional-dependencies]
+repr = [
+    "pandas >=1.2",
+]
+io = [
+    "networkx >=2.8",
+    "scipy >=1.8",
+    "awkward >=1.9",
+]
+viz = [
+    "matplotlib",
+]
+test = [
+    "pytest",
+    "pandas >=1.2",
+    "scipy >=1.8",
+]
+complete = [
+    "pandas >=1.2",
+    "networkx >=2.8",
+    "scipy >=1.8",
+    "awkward >=1.9",
+    "matplotlib",
+    "pytest",
+]
+
+[tool.setuptools]
+# Let's be explicit
+# $ python -c 'from setuptools import find_packages ; [print(x) for x in sorted(find_packages())]'
+# $ find graphblas/ -name __init__.py -print | sort | sed -e 's/\/__init__.py//g' -e 's/\//./g'
+# $ python -c 'import tomli ; [print(x) for x in sorted(tomli.load(open("pyproject.toml", "rb"))["tool"]["setuptools"]["packages"])]'
+packages = [
+    "graphblas",
+    "graphblas.agg",
+    "graphblas.binary",
+    "graphblas.core",
+    "graphblas.core.ss",
+    "graphblas.indexunary",
+    "graphblas.monoid",
+    "graphblas.op",
+    "graphblas.semiring",
+    "graphblas.select",
+    "graphblas.ss",
+    "graphblas.tests",
+    "graphblas.unary",
+]
 
 [tool.setuptools-git-versioning]
 enabled = true
+dev_template = "{tag}+{ccount}.g{sha}"
+dirty_template = "{tag}+{ccount}.g{sha}.dirty"
 
 [tool.black]
 line-length = 100
@@ -71,6 +179,7 @@ select = [
     # "A",  # flake8-builtins
     "C4",  # flake8-comprehensions
     "T10",  # flake8-debugger
+    # "EM",  # flake8-errmsg
     "ISC",  # flake8-implicit-str-concat
     # "ICN",  # flake8-import-conventions
     "T20",   # flake8-print
@@ -89,18 +198,27 @@ select = [
     "PLR",  # pylint Refactor
     "PLW",  # pylint Warning
     "PIE",  # flake8-pie
+    "COM",  # flake8-commas
+    # "INP",  # flake8-no-pep420
     "RUF",  # ruff-specific rules
+]
+external = [
+    # noqa codes that ruff doesn't know about: https://github.com/charliermarsh/ruff#external
 ]
 ignore = [
     "D203",  # 1 blank line required before class docstring (Note: conflicts with D211, which is preferred)
     "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
     "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
+    # "SIM401",  # Use dict.get ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
+    "PLR2004",  # Magic number used in comparison, consider replacing magic with a constant variable
+    "COM812",  # Trailing comma missing
 ]
 [tool.ruff.per-file-ignores]
 "graphblas/core/operator.py" = ["S102"]
 "graphblas/tests/*py" = ["S101", "T201"]
 "graphblas/tests/test_dtype.py" = ["UP003"]
 "graphblas/tests/test_formatting.py" = ["E501"]
+"graphblas/**/__init__.py" = ["F401"]
 "scripts/create_pickle.py" = ["F403", "F405"]
 
 [tool.pylint.messages_control]

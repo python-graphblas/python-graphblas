@@ -228,7 +228,7 @@ def test_dtype_to_from_string():
         try:
             dtype2 = dtypes._string_to_dtype(s)
         except Exception:
-            with pytest.raises(Exception):
+            with pytest.raises(ValueError):
                 lookup_dtype(dtype)
         else:
             assert dtype == dtype2
