@@ -560,8 +560,11 @@ def to_pydata_sparse(A, format="coo"):
     if format not in {"coo", "dok", "gcxs"}:
         raise ValueError(f"Invalid format: {format}")
 
-    # obtain an intermediate conversion via hardcoded 'coo' intermediate object
-    B = to_scipy_sparse(A, format="coo")
+    if format == "gcxs":
+        B = to_scipy_sparse(A, format="csr")    
+    else:
+        # obtain an intermediate conversion via hardcoded 'coo' intermediate object
+        B = to_scipy_sparse(A, format="coo")
 
     # convert to pydata.sparse
     s = COO.from_scipy_sparse(B)
