@@ -450,6 +450,11 @@ class Vector(BaseType):
         sort : bool, default=True
             Whether to require sorted indices.
 
+        See Also
+        --------
+        to_dict
+        from_coo
+
         Returns
         -------
         np.ndarray[dtype=uint64] : Indices
@@ -708,6 +713,11 @@ class Vector(BaseType):
             Leaving ``dup_op=None`` will raise an error if duplicates are found.
         name : str, optional
             Name to give the Vector.
+
+        See Also
+        --------
+        from_dict
+        to_coo
 
         Returns
         -------
@@ -1740,6 +1750,11 @@ class Vector(BaseType):
         name : str, optional
             Name to give the Vector.
 
+        See Also
+        --------
+        from_coo
+        to_dict
+
         Returns
         -------
         Vector
@@ -1758,6 +1773,11 @@ class Vector(BaseType):
 
     def to_dict(self):
         """Return Vector as a dict in the form ``{index: val}``.
+
+        See Also
+        --------
+        to_coo
+        from_dict
 
         Returns
         -------

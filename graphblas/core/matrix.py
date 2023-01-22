@@ -497,6 +497,7 @@ class Matrix(BaseType):
         See Also
         --------
         to_edgelist
+        from_coo
 
         Returns
         -------
@@ -566,6 +567,7 @@ class Matrix(BaseType):
         See Also
         --------
         to_coo
+        from_edgelist
 
         Returns
         -------
@@ -862,6 +864,7 @@ class Matrix(BaseType):
         See Also
         --------
         from_edgelist
+        to_coo
 
         Returns
         -------
@@ -941,6 +944,7 @@ class Matrix(BaseType):
         See Also
         --------
         from_coo
+        to_edgelist
 
         Returns
         -------
@@ -1097,6 +1101,7 @@ class Matrix(BaseType):
         from_coo
         from_csc
         from_dcsr
+        to_csr
         Matrix.ss.import_csr
         io.from_scipy_sparse
         """
@@ -1143,6 +1148,7 @@ class Matrix(BaseType):
         from_coo
         from_csr
         from_dcsc
+        to_csc
         Matrix.ss.import_csc
         io.from_scipy_sparse
         """
@@ -1202,6 +1208,7 @@ class Matrix(BaseType):
         from_coo
         from_csr
         from_dcsc
+        to_dcsr
         Matrix.ss.import_hypercsr
         io.from_scipy_sparse
         """
@@ -1285,6 +1292,7 @@ class Matrix(BaseType):
         from_coo
         from_csc
         from_dcsr
+        to_dcsc
         Matrix.ss.import_hypercsc
         io.from_scipy_sparse
         """
@@ -1374,6 +1382,10 @@ class Matrix(BaseType):
             from the maximum column index found in the dicts.
         name : str, optional
             Name to give the Matrix.
+
+        See Also
+        --------
+        to_dicts
 
         Returns
         -------
@@ -1470,6 +1482,7 @@ class Matrix(BaseType):
         to_coo
         to_csc
         to_dcsr
+        from_csr
         Matrix.ss.export
         io.to_scipy_sparse
         """
@@ -1495,6 +1508,7 @@ class Matrix(BaseType):
         to_coo
         to_csr
         to_dcsc
+        from_csc
         Matrix.ss.export
         io.to_scipy_sparse
         """
@@ -1523,6 +1537,7 @@ class Matrix(BaseType):
         to_coo
         to_csr
         to_dcsc
+        from_dcsc
         Matrix.ss.export
         io.to_scipy_sparse
         """
@@ -1569,6 +1584,7 @@ class Matrix(BaseType):
         to_coo
         to_csc
         to_dcsr
+        from_dcsc
         Matrix.ss.export
         io.to_scipy_sparse
         """
@@ -1605,6 +1621,10 @@ class Matrix(BaseType):
             "rowwise" returns dict of dicts as ``{row: {col: val}}``.
             "columnwise" returns dict of dicts as ``{col: {row: val}}``.
             The default is "rowwise".
+
+        See Also
+        --------
+        from_dicts
 
         Returns
         -------
