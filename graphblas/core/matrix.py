@@ -223,7 +223,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
             >>> del M[1, 5]
         """
         del Updater(self, opts=opts)[keys]
@@ -236,7 +235,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             subM = M[[1, 3, 5], :].new()
@@ -258,7 +256,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             M[0, 0:3] = 17
@@ -270,7 +267,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             (10, 15) in M
@@ -410,7 +406,7 @@ class Matrix(BaseType):
 
     @property
     def _nvals(self):
-        """Like nvals, but doesn't record calls"""
+        """Like nvals, but doesn't record calls."""
         n = ffi_new("GrB_Index*")
         check_status(lib.GrB_Matrix_nvals(n, self.gb_obj[0]), self)
         return n[0]
@@ -682,7 +678,7 @@ class Matrix(BaseType):
         return rv
 
     def wait(self, how="materialize"):
-        """Wait for a computation to complete or establish a "happens-before" relation
+        """Wait for a computation to complete or establish a "happens-before" relation.
 
         Parameters
         ----------
@@ -1210,7 +1206,7 @@ class Matrix(BaseType):
 
     @classmethod
     def _from_dense(cls, values, dtype=None, *, name=None):
-        """Create a new Matrix from a dense numpy array"""
+        """Create a new Matrix from a dense numpy array."""
         # TODO: GraphBLAS needs a way to import or assign dense
         # We could also handle F-contiguous data w/o a copy
         # TODO: handle `Matrix._from_dense(np.arange(3*4*5).reshape(3, 4, 5))` as 3x4 Matrix
@@ -1238,7 +1234,7 @@ class Matrix(BaseType):
     def from_dicts(
         cls, nested_dicts, dtype=None, *, order="rowwise", nrows=None, ncols=None, name=None
     ):
-        """Create a new Matrix from a dict of dicts or list of dicts
+        """Create a new Matrix from a dict of dicts or list of dicts.
 
         A dict of dicts is of the form ``{row: {col: val}}`` if order is "rowwise" and
         of the form ``{col: {row: val}}`` if order is "columnwise".
@@ -1345,7 +1341,7 @@ class Matrix(BaseType):
         return Ap, Ai, Ax
 
     def to_csr(self, dtype=None):
-        """Returns three arrays of the standard CSR representation: indptr, col_indices, values
+        """Returns three arrays of the standard CSR representation: indptr, col_indices, values.
 
         In CSR, the column indices for row i are stored in ``col_indices[indptr[i]:indptr[i+1]]``
         and the values are stored in ``values[indptr[i]:indptr[i+1]]``.
@@ -1370,7 +1366,7 @@ class Matrix(BaseType):
         return self._to_csx(_CSR_FORMAT, dtype)
 
     def to_csc(self, dtype=None):
-        """Returns three arrays of the standard CSC representation: indptr, row_indices, values
+        """Returns three arrays of the standard CSC representation: indptr, row_indices, values.
 
         In CSC, the row indices for column i are stored in ``row_indices[indptr[i]:indptr[i+1]]``
         and the values are stored in ``values[indptr[i]:indptr[i+1]]``.
@@ -1395,7 +1391,7 @@ class Matrix(BaseType):
         return self._to_csx(_CSC_FORMAT, dtype)
 
     def to_dcsr(self, dtype=None):
-        """Returns four arrays of DCSR representation: compressed_rows, indptr, col_indices, values
+        """Returns four arrays of DCSR representation: compressed_rows, indptr, col_indices, values.
 
         In DCSR, we store the index of each non-empty row in ``compressed_rows``.
         The column indices for row ``compressed_rows[i]`` are stored in
@@ -1441,7 +1437,7 @@ class Matrix(BaseType):
         return compressed_rows, indptr, cols, values
 
     def to_dcsc(self, dtype=None):
-        """Returns four arrays of DCSC representation: compressed_cols, indptr, row_indices, values
+        """Returns four arrays of DCSC representation: compressed_cols, indptr, row_indices, values.
 
         In DCSC, we store the index of each non-empty column in ``compressed_cols``.
         The row indices for column ``compressed_cols[i]`` are stored in
@@ -1491,7 +1487,7 @@ class Matrix(BaseType):
         return compressed_cols, indptr, rows, values
 
     def to_dicts(self, order="rowwise"):
-        """Return Matrix as a dict of dicts in the form ``{row: {col: val}}``
+        """Return Matrix as a dict of dicts in the form ``{row: {col: val}}``.
 
         Parameters
         ----------
@@ -1566,7 +1562,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -1653,7 +1648,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -1722,7 +1716,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -1836,7 +1829,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -1880,7 +1872,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -1928,7 +1919,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             C << A.kronecker(B, op=binary.times)
@@ -1981,7 +1971,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -2130,7 +2119,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -2228,7 +2216,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             w << A.reduce_rowwise(monoid.plus)
@@ -2266,7 +2253,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             w << A.reduce_columnwise(monoid.plus)
@@ -2308,7 +2294,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             total << A.reduce_scalar(monoid.plus)
@@ -2369,7 +2354,6 @@ class Matrix(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             C = A.reposition(1, 2).new()

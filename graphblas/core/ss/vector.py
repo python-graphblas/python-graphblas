@@ -146,7 +146,7 @@ class ss:
 
     def build_diag(self, matrix, k=0, **opts):
         """
-        GxB_Vector_diag
+        GxB_Vector_diag.
 
         Extract a diagonal from a Matrix or TransposedMatrix into a Vector.
         Existing entries in the Vector are discarded.
@@ -184,7 +184,7 @@ class ss:
 
     def split(self, chunks, *, name=None, **opts):
         """
-        GxB_Matrix_split
+        GxB_Matrix_split.
 
         Split a Vector into a 1D array of sub-vectors according to `chunks`.
 
@@ -250,7 +250,7 @@ class ss:
 
     def concat(self, tiles, **opts):
         """
-        GxB_Matrix_concat
+        GxB_Matrix_concat.
 
         Concatenate a 1D list of Vector objects into the current Vector.
         Any existing values in the current Vector will be discarded.
@@ -268,7 +268,7 @@ class ss:
 
     def build_scalar(self, indices, value):
         """
-        GxB_Vector_build_Scalar
+        GxB_Vector_build_Scalar.
 
         Like ``build``, but uses a scalar for all the values.
 
@@ -411,7 +411,7 @@ class ss:
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False, **opts):
         """
-        GxB_Vextor_export_xxx
+        GxB_Vextor_export_xxx.
 
         Parameters
         ----------
@@ -480,7 +480,7 @@ class ss:
 
     def unpack(self, format=None, *, sort=False, raw=False, **opts):
         """
-        GxB_Vector_unpack_xxx
+        GxB_Vector_unpack_xxx.
 
         `unpack` is like `export`, except that the Vector remains valid but empty.
         `pack_*` methods are the opposite of `unpack`.
@@ -659,7 +659,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Vector_import_xxx
+        GxB_Vector_import_xxx.
 
         Dispatch to appropriate import method inferred from inputs.
         See the other import functions and `Vector.ss.export`` for details.
@@ -726,7 +726,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Vector_pack_xxx
+        GxB_Vector_pack_xxx.
 
         `pack_any` is like `import_any` except it "packs" data into an
         existing Vector.  This is the opposite of ``unpack()``
@@ -848,7 +848,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Vector_import_CSC
+        GxB_Vector_import_CSC.
 
         Create a new Vector from sparse input.
 
@@ -924,7 +924,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Vector_pack_CSC
+        GxB_Vector_pack_CSC.
 
         `pack_sparse` is like `import_sparse` except it "packs" data into an
         existing Vector.  This is the opposite of ``unpack("sparse")``
@@ -1031,7 +1031,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Vector_import_Bitmap
+        GxB_Vector_import_Bitmap.
 
         Create a new Vector from values and bitmap (as mask) arrays.
 
@@ -1105,7 +1105,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Vector_pack_Bitmap
+        GxB_Vector_pack_Bitmap.
 
         `pack_bitmap` is like `import_bitmap` except it "packs" data into an
         existing Vector.  This is the opposite of ``unpack("bitmap")``
@@ -1214,7 +1214,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Vector_import_Full
+        GxB_Vector_import_Full.
 
         Create a new Vector from values.
 
@@ -1280,7 +1280,7 @@ class ss:
         **opts,
     ):
         """
-        GxB_Vector_pack_Full
+        GxB_Vector_pack_Full.
 
         `pack_full` is like `import_full` except it "packs" data into an
         existing Vector.  This is the opposite of ``unpack("full")``
@@ -1557,7 +1557,7 @@ class ss:
         )
 
     def sort(self, op=binary.lt, *, values=True, permutation=True, **opts):
-        """GxB_Vector_sort to sort values of the Vector
+        """GxB_Vector_sort to sort values of the Vector.
 
         Sorting moves all the elements to the left just like `compactify`.
         The returned vectors will be the same size as the input Vector.

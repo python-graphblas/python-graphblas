@@ -105,13 +105,13 @@ class Scalar(BaseType):
 
     @property
     def _expr_name(self):
-        """The name used in the text for expressions"""
+        """The name used in the text for expressions."""
         # Always using `repr(self.value)` may also be reasonable
         return self.name or repr(self.value)
 
     @property
     def _expr_name_html(self):
-        """The name used in the text for expressions in HTML formatting"""
+        """The name used in the text for expressions in HTML formatting."""
         return self._name_html or repr(self.value)
 
     def __repr__(self, expr=None):
@@ -293,7 +293,7 @@ class Scalar(BaseType):
 
     @property
     def _is_empty(self):
-        """Like is_empty, but doesn't record calls"""
+        """Like is_empty, but doesn't record calls."""
         if self._is_cscalar:
             return self._empty
         return self._nvals == 0
@@ -374,7 +374,7 @@ class Scalar(BaseType):
 
     @property
     def _nvals(self):
-        """Like nvals, but doesn't record calls"""
+        """Like nvals, but doesn't record calls."""
         if self._is_cscalar:
             return 0 if self._empty else 1
         n = ffi_new("GrB_Index*")
@@ -441,7 +441,7 @@ class Scalar(BaseType):
         return new_scalar
 
     def wait(self, how="materialize"):
-        """Wait for a computation to complete or establish a "happens-before" relation
+        """Wait for a computation to complete or establish a "happens-before" relation.
 
         Parameters
         ----------
@@ -542,7 +542,7 @@ class Scalar(BaseType):
         return Scalar.from_value(value, dtype, is_cscalar=is_cscalar, name=name)
 
     def _as_vector(self, *, name=None):
-        """Copy or cast this Scalar to a Vector
+        """Copy or cast this Scalar to a Vector.
 
         This casts to a Vector when using GrB_Scalar from SuiteSparse.
         """
@@ -562,7 +562,7 @@ class Scalar(BaseType):
         return rv
 
     def _as_matrix(self, *, name=None):
-        """Copy or cast this Scalar to a Matrix
+        """Copy or cast this Scalar to a Matrix.
 
         This casts to a Matrix when using GrB_Scalar from SuiteSparse.
         """
@@ -610,7 +610,6 @@ class Scalar(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -665,7 +664,6 @@ class Scalar(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -724,7 +722,6 @@ class Scalar(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -810,7 +807,7 @@ class Scalar(BaseType):
         return expr
 
     def apply(self, op, right=None, *, left=None):
-        """Create a new Scalar by applying ``op``
+        """Create a new Scalar by applying ``op``.
 
         See the `Apply <../user_guide/operations.html#apply>`__
         section in the User Guide for more details.
@@ -839,7 +836,6 @@ class Scalar(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -1053,7 +1049,7 @@ def _as_scalar(scalar, dtype=None, *, is_cscalar):
 
 
 def _dict_to_record(np_type, d):
-    """Converts e.g. `{"x": 1, "y": 2.3}` to `(1, 2.3)`"""
+    """Converts e.g. `{"x": 1, "y": 2.3}` to `(1, 2.3)`."""
     rv = []
     for name, (dtype, _) in np_type.fields.items():
         val = d[name]

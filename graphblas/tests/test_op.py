@@ -254,11 +254,11 @@ def test_binaryop_parameterized():
     with pytest.raises(TypeError, match="UDF argument must be a function"):
         BinaryOp.register_new("bad", object())
     assert not hasattr(binary, "bad")
+
+    def bad(x, y):  # pragma: no cover (numba)
+        return v
+
     with pytest.raises(UdfParseError, match="Unable to parse function using Numba"):
-
-        def bad(x, y):  # pragma: no cover (numba)
-            return v
-
         BinaryOp.register_new("bad", bad)
 
     def my_add(x, y):
@@ -1082,7 +1082,7 @@ def test_lazy_op():
     assert isinstance(unary.misc.lazy, UnaryOp)
     with pytest.raises(AttributeError):
         unary.misc.bad
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Unknown unary string:"):
         unary.from_string("misc.lazy.badpath")
     assert op.from_string("lazy") is unary.lazy
     assert op.from_string("numpy.lazy") is unary.numpy.lazy
@@ -1129,9 +1129,9 @@ def test_udt():
     assert udt in udt_identity
     assert int in udt_identity
     assert operator.get_typed_op(udt_identity, udt) is udt_identity[udt]
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Unknown dtype:"):
         assert "badname" in binary.eq
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Unknown dtype:"):
         assert "badname" in udt_identity
 
     def _udt_getx(val):

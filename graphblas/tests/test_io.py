@@ -372,13 +372,13 @@ def test_awkward_errors():
     m = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 1, 1, 1], nrows=7, ncols=6)
     with pytest.raises(ValueError, match="Missing parameters"):
         gb.io.from_awkward(ak.Array([1, 2, 3]))
+    kv = gb.io.to_awkward(v)
+    kv = ak.with_parameter(kv, "format", "csr")
     with pytest.raises(ValueError, match="Invalid format for Vector"):
-        kv = gb.io.to_awkward(v)
-        kv = ak.with_parameter(kv, "format", "csr")
         gb.io.from_awkward(kv)
+    km = gb.io.to_awkward(m)
+    km = ak.with_parameter(km, "format", "dcsr")
     with pytest.raises(ValueError, match="Invalid format for Matrix"):
-        km = gb.io.to_awkward(m)
-        km = ak.with_parameter(km, "format", "dcsr")
         gb.io.from_awkward(km)
     with pytest.raises(ValueError, match="Invalid format for Vector"):
         gb.io.to_awkward(v, format="csr")

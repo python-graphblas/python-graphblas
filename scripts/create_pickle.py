@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-""" Script used to create the pickle files used in tests/test_pickle.py
+"""Script used to create the pickle files used in tests/test_pickle.py.
 
 Note that the exact binary of the pickle files may differ depending on which
 Python version is used to create them.

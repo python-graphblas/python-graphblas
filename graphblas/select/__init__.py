@@ -57,7 +57,7 @@ def _resolve_expr(expr, callname, opname):
 
 
 def _match_expr(parent, expr):
-    """Match expressions to rewrite `A.select(A < 5)` into select expression
+    """Match expressions to rewrite `A.select(A < 5)` into select expression.
 
     The argument must match the parent, so this _won't_ be rewritten: `A.select(B < 5)`
     """

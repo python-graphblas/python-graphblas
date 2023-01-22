@@ -198,7 +198,7 @@ _udt_mask_cache = {}
 
 
 def _udt_mask(dtype):
-    """Create mask to determine which bytes of UDTs to use for equality check"""
+    """Create mask to determine which bytes of UDTs to use for equality check."""
     if dtype in _udt_mask_cache:
         return _udt_mask_cache[dtype]
     if dtype.subdtype is not None:

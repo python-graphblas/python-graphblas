@@ -218,7 +218,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
             >>> del v[1:-1]
         """
         del Updater(self, opts=opts)[keys]
@@ -231,7 +230,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             sub_v = v[[1, 3, 5]].new()
@@ -250,7 +248,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # This makes a dense iso-value vector
@@ -263,7 +260,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Check if v[15] is non-empty
@@ -291,7 +287,7 @@ class Vector(BaseType):
         raise TypeError("Unable to get size of Vector with backend: {backend}")
 
     def isequal(self, other, *, check_dtype=False, **opts):
-        """Check for exact equality (same size, same structure)
+        """Check for exact equality (same size, same structure).
 
         Parameters
         ----------
@@ -389,7 +385,7 @@ class Vector(BaseType):
 
     @property
     def _nvals(self):
-        """Like nvals, but doesn't record calls"""
+        """Like nvals, but doesn't record calls."""
         n = ffi_new("GrB_Index*")
         check_status(lib.GrB_Vector_nvals(n, self.gb_obj[0]), self)
         return n[0]
@@ -600,7 +596,7 @@ class Vector(BaseType):
         return rv
 
     def wait(self, how="materialize"):
-        """Wait for a computation to complete or establish a "happens-before" relation
+        """Wait for a computation to complete or establish a "happens-before" relation.
 
         Parameters
         ----------
@@ -777,7 +773,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -861,7 +856,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -930,7 +924,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -1045,7 +1038,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -1104,7 +1096,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -1250,7 +1241,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -1348,7 +1338,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             total << v.reduce(monoid.plus)
@@ -1393,7 +1382,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             # Method syntax
@@ -1438,7 +1426,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             C << v.outer(w, op=binary.times)
@@ -1489,7 +1476,6 @@ class Vector(BaseType):
 
         Examples
         --------
-
         .. code-block:: python
 
             w = v.reposition(20).new()
@@ -1771,7 +1757,7 @@ class Vector(BaseType):
         return cls.from_coo(indices, values, dtype, size=size, name=name)
 
     def to_dict(self):
-        """Return Vector as a dict in the form ``{index: val}``
+        """Return Vector as a dict in the form ``{index: val}``.
 
         Returns
         -------

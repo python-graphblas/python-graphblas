@@ -7,7 +7,7 @@ from . import ffi, lib
 
 
 def libget(name):
-    """Helper to get items from GraphBLAS which might be GrB or GxB"""
+    """Helper to get items from GraphBLAS which might be GrB or GxB."""
     try:
         return getattr(lib, name)
     except AttributeError:
@@ -22,7 +22,7 @@ def libget(name):
 
 
 def wrapdoc(func_with_doc):
-    """Decorator to copy `__doc__` from a function onto the wrapped function"""
+    """Decorator to copy `__doc__` from a function onto the wrapped function."""
 
     def inner(func_wo_doc):
         func_wo_doc.__doc__ = func_with_doc.__doc__
@@ -326,7 +326,7 @@ def _autogenerate_code(
     begin="# Begin auto-generated code",
     end="# End auto-generated code",
 ):
-    """Super low-tech auto-code generation used by automethods.py and infixmethods.py"""
+    """Super low-tech auto-code generation used by automethods.py and infixmethods.py."""
     with open(filename) as f:  # pragma: no branch (flaky)
         orig_text = f.read()
     if specializer:

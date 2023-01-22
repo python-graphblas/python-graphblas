@@ -9,7 +9,7 @@ from .utils import output_type
 
 
 def _get_types(ops, initdtype):
-    """Determine the input and output types of an aggregator based on a list of ops"""
+    """Determine the input and output types of an aggregator based on a list of ops."""
     if initdtype is None:
         prev = dict(ops[0].types)
     else:
