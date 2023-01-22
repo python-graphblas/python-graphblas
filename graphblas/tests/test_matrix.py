@@ -2892,6 +2892,7 @@ def test_expr_is_like_matrix(A):
         "from_dcsc",
         "from_dcsr",
         "from_dicts",
+        "from_edgelist",
         "from_values",
         "resize",
         "update",
@@ -2954,6 +2955,7 @@ def test_index_expr_is_like_matrix(A):
         "from_dcsc",
         "from_dcsr",
         "from_dicts",
+        "from_edgelist",
         "from_values",
         "resize",
     }
@@ -4070,6 +4072,29 @@ def test_from_list_of_dicts():
         Matrix.from_dicts(list_of_dicts, order="colwise", ncols=5)
     with pytest.raises(InvalidObject):
         Matrix.from_dicts(list_of_dicts, ncols=1)
+
+
+def test_to_from_edgelist(A):
+    edgelist, values = A.to_edgelist()
+    result = Matrix.from_edgelist(edgelist, values)
+    assert result.isequal(A, check_dtype=True)
+
+    result = Matrix.from_edgelist([[0, 1], [2, 3]])
+    expected = Matrix.from_coo([0, 2], [1, 3], [1.0, 1.0])
+    assert expected.isequal(result, check_dtype=True)
+
+    result = Matrix.from_edgelist([], nrows=2, ncols=3, dtype=int)
+    expected = Matrix(int, nrows=2, ncols=3)
+    assert expected.isequal(result, check_dtype=True)
+
+    with pytest.raises(ValueError, match="Unable to infer nrows"):
+        Matrix.from_edgelist([])
+    with pytest.raises(ValueError, match="edgelist must have two elements"):
+        Matrix.from_edgelist([[1, 2, 3], [4, 5, 6]])
+    with pytest.raises(ValueError, match="edgelist array must have 2 dimensions"):
+        Matrix.from_edgelist(np.arange(5))
+    with pytest.raises(ValueError, match="edgelist array must be length 2"):
+        Matrix.from_edgelist(np.arange(24).reshape(8, 3))
 
 
 @pytest.mark.skipif("not suitesparse")
