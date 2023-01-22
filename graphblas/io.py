@@ -561,7 +561,7 @@ def to_pydata_sparse(A, format="coo"):
         raise ValueError(f"Invalid format: {format}")
 
     if format == "gcxs":
-        B = to_scipy_sparse(A, format="csr")    
+        B = to_scipy_sparse(A, format="csr")
     else:
         # obtain an intermediate conversion via hardcoded 'coo' intermediate object
         B = to_scipy_sparse(A, format="coo")
