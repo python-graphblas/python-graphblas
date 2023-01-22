@@ -77,10 +77,6 @@ A python-graphblas Matrix can be created from a 2-D (PyData) sparse array or mat
 ``gb.io.to_pydata_sparse()`` will output a 2-D (PyData) sparse array given a python-graphblas Matrix.
 The sparse format can be specified. It defaults to "coo".
 
-*Note about zero-weighted edges in (PyData) sparse:* sparse treats missing values and zeros identically,
-the user should be aware of the potential for errors occurring when zero-weighted edges are handled by
-(PyData) sparse.
-
 Numpy (Dense)
 -------------
 
