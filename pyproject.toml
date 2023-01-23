@@ -203,6 +203,7 @@ select = [
     "EXE",  # flake8-executable
     "TYP",  # flake8-type-checking
     "TRY",  # tryceratops
+    # "PTH",  # flake8-use-pathlib
     "RUF",  # ruff-specific rules
 ]
 external = [
@@ -234,6 +235,7 @@ ignore = [
     "PT001",  # Use `@pytest.fixture()` over `@pytest.fixture` (Note: why?)
     "PT003",  # `scope='function'` is implied in `@pytest.fixture()` (Note: no harm in being explicit)
     "PT023",  # Use `@pytest.mark.slow()` over `@pytest.mark.slow` (Note: why?)
+    "TRY004",  # Prefer `TypeError` exception for invalid type (Note: good advice, but not worth the nuisance)
 ]
 [tool.ruff.per-file-ignores]
 "graphblas/core/operator.py" = ["S102"]

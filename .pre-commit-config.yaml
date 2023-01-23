@@ -71,10 +71,9 @@ repos:
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.229
+    rev: v0.0.230
     hooks:
       - id: ruff
-        args: [--force-exclude]
   - repo: https://github.com/sphinx-contrib/sphinx-lint
     rev: v0.6.7
     hooks:

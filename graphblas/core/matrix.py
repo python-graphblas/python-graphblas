@@ -907,7 +907,7 @@ class Matrix(BaseType):
     def from_edgelist(
         cls,
         edgelist,
-        values=1.0,
+        values=None,
         dtype=None,
         *,
         nrows=None,
@@ -915,17 +915,17 @@ class Matrix(BaseType):
         dup_op=None,
         name=None,
     ):
-        """Create a new Matrix from edgelist of row-column pairs and values.
+        """Create a new Matrix from edgelist of (row, col) pairs or (row, col, value) triples.
 
         This transforms the data and calls ``Matrix.from_coo``.
 
         Parameters
         ----------
         edgelist : list or np.ndarray or iterable
-            A sequence of ``(row, index)`` pairs
+            A sequence of ``(row, column)`` pairs or ``(row, column, value)`` triples
         values : list or np.ndarray or scalar, optional
             List of values. If a scalar is provided, all values will be set to this single value.
-            The default is 1.0
+            The default is 1.0 if ``edgelist`` is a sequence of ``(row, column)`` pairs.
         dtype :
             Data type of the Matrix. If not provided, the values will be inspected
             to choose an appropriate dtype.
@@ -950,15 +950,18 @@ class Matrix(BaseType):
         -------
         Matrix
         """
+        edgelist_values = None
         if isinstance(edgelist, np.ndarray):
             if edgelist.ndim != 2:
                 raise ValueError(
                     f"edgelist array must have 2 dimensions (nvals x 2); got {edgelist.ndim}"
                 )
-            if edgelist.shape[1] != 2:
+            if edgelist.shape[1] == 3:
+                edgelist_values = edgelist[:, 2]
+            elif edgelist.shape[1] != 2:
                 raise ValueError(
-                    "Last dimension of edgelist array must be length 2 (for row and column index); "
-                    f"got {edgelist.shape[1]}"
+                    "Last dimension of edgelist array must be length 2 or 3 "
+                    f"(for row, column, and maybe values); got {edgelist.shape[1]}"
                 )
             rows = edgelist[:, 0]
             cols = edgelist[:, 1]
@@ -966,6 +969,8 @@ class Matrix(BaseType):
             unzipped = list(zip(*edgelist))
             if len(unzipped) == 2:
                 rows, cols = unzipped
+            elif len(unzipped) == 3:
+                rows, cols, edgelist_values = unzipped
             elif not unzipped:
                 # Empty edgelist (nrows and ncols should be given)
                 rows = cols = unzipped
@@ -974,6 +979,15 @@ class Matrix(BaseType):
                     "Each item in the edgelist must have two elements (for row and column index); "
                     f"got {len(unzipped)}"
                 )
+        if values is None:
+            if edgelist_values is None:
+                values = 1.0
+            else:
+                values = edgelist_values
+        elif edgelist_values is not None:
+            raise TypeError(
+                "Too many sources of values: from `edgelist` triples and from `values=` argument"
+            )
         return cls.from_coo(
             rows, cols, values, dtype, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
         )

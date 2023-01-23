@@ -4082,6 +4082,16 @@ def test_to_from_edgelist(A):
     result = Matrix.from_edgelist([[0, 1], [2, 3]])
     expected = Matrix.from_coo([0, 2], [1, 3], [1.0, 1.0])
     assert expected.isequal(result, check_dtype=True)
+    result = Matrix.from_edgelist([[0, 1], [2, 3]], [1.0, 1.0])
+    assert expected.isequal(result, check_dtype=True)
+    result = Matrix.from_edgelist([[0, 1, 1.0], [2, 3, 1.0]])
+    assert expected.isequal(result, check_dtype=True)
+
+    result = Matrix.from_edgelist([[0, 1, 10], [2, 3, 20]])
+    expected = Matrix.from_coo([0, 2], [1, 3], [10, 20])
+    assert expected.isequal(result, check_dtype=True)
+    result = Matrix.from_edgelist(np.array([[0, 1, 10], [2, 3, 20]]))
+    assert expected.isequal(result, check_dtype=True)
 
     result = Matrix.from_edgelist([], nrows=2, ncols=3, dtype=int)
     expected = Matrix(int, nrows=2, ncols=3)
@@ -4090,11 +4100,13 @@ def test_to_from_edgelist(A):
     with pytest.raises(ValueError, match="Unable to infer nrows"):
         Matrix.from_edgelist([])
     with pytest.raises(ValueError, match="edgelist must have two elements"):
-        Matrix.from_edgelist([[1, 2, 3], [4, 5, 6]])
+        Matrix.from_edgelist([[0, 1, 2, 3], [4, 5, 6, 7]])
     with pytest.raises(ValueError, match="edgelist array must have 2 dimensions"):
         Matrix.from_edgelist(np.arange(5))
     with pytest.raises(ValueError, match="edgelist array must be length 2"):
-        Matrix.from_edgelist(np.arange(24).reshape(8, 3))
+        Matrix.from_edgelist(np.arange(24).reshape(6, 4))
+    with pytest.raises(TypeError, match="Too many sources of values"):
+        Matrix.from_edgelist([[0, 1, 10], [2, 3, 20]], values=0)
 
 
 @pytest.mark.skipif("not suitesparse")
