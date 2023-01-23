@@ -537,7 +537,7 @@ def to_awkward(A, format=None):
 
 
 def to_pydata_sparse(A, format="coo"):
-    """Create a pydata.sparse array from a GraphBLAS Matrix or Vector
+    """Create a pydata.sparse array from a GraphBLAS Matrix or Vector.
 
     Parameters
     ----------
