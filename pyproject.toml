@@ -69,7 +69,7 @@ io = [
     "networkx >=2.8",
     "scipy >=1.8",
     "awkward >=1.9",
-    "sparse >=0.12",
+    "sparse >=0.13",
 ]
 viz = [
     "matplotlib >=3.5",
