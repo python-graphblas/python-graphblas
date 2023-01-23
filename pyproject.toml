@@ -69,9 +69,10 @@ io = [
     "networkx >=2.8",
     "scipy >=1.8",
     "awkward >=1.9",
+    "sparse >=0.12",
 ]
 viz = [
-    "matplotlib",
+    "matplotlib >=3.5",
 ]
 test = [
     "pytest",
@@ -83,7 +84,8 @@ complete = [
     "networkx >=2.8",
     "scipy >=1.8",
     "awkward >=1.9",
-    "matplotlib",
+    "sparse >=0.12",
+    "matplotlib >=3.5",
     "pytest",
 ]
 
@@ -131,6 +133,12 @@ testpaths = "graphblas/tests"
 xfail_strict = true
 markers = [
     "slow: Skipped unless --runslow passed",
+]
+filterwarnings = [
+    # See: https://docs.python.org/3/library/warnings.html#describing-warning-filters
+    # and: https://docs.pytest.org/en/7.2.x/how-to/capture-warnings.html#controlling-warnings
+    "error",
+    "ignore:`np.bool` is a deprecated alias:DeprecationWarning:sparse._umath",  # sparse <0.13
 ]
 
 [tool.coverage.run]

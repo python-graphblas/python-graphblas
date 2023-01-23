@@ -68,6 +68,14 @@ that drop zero-weighted edges. The conversion from python-graphblas to scipy.spa
 zero-weighted edges, but the user should be aware of the potential for errors occurring when zero-weighted
 edges are handled by scipy.sparse.
 
+PyData.Sparse
+-------------
+
+A python-graphblas Matrix can be created from a 2-D (PyData) sparse array or matrix using
+``gb.io.from_pydata_sparse()``.
+
+``gb.io.to_pydata_sparse()`` will output a 2-D (PyData) sparse array given a python-graphblas Matrix.
+The sparse format can be specified. It defaults to "coo".
 
 Numpy (Dense)
 -------------
