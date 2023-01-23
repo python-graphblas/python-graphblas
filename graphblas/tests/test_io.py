@@ -418,8 +418,9 @@ def test_matrix_to_from_pydata_sparse():
     assert t == s
 
     # test ndim
+    from ..exceptions import GraphblasException
     e = sparse.COO(shape=(5, 5, 5))
-    with pytest.raises(_GraphblasException):
+    with pytest.raises(GraphblasException):
         gb.io.from_pydata_sparse(e)
 
     # test GCXS array conversion
