@@ -134,6 +134,8 @@ markers = [
     "slow: Skipped unless --runslow passed",
 ]
 filterwarnings = [
+    # See: https://docs.python.org/3/library/warnings.html#describing-warning-filters
+    # and: https://docs.pytest.org/en/7.2.x/how-to/capture-warnings.html#controlling-warnings
     "error",
     "ignore::DeprecationWarning:sparse._umath",  # sparse <0.13
 ]
