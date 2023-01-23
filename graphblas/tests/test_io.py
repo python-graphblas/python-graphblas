@@ -417,6 +417,11 @@ def test_matrix_to_from_pydata_sparse():
     t = gb.io.to_pydata_sparse(v)
     assert t == s
 
+    # test ndim
+    e = sparse.COO(shape=(5, 5, 5))
+    with pytest.raises(_GraphblasException):
+        gb.io.from_pydata_sparse(e)
+
     # test GCXS array conversion
     indptr = np.array([0, 2, 3, 6], dtype="int64")
     indices = np.array([0, 2, 2, 0, 1, 2], dtype="int64")
