@@ -133,6 +133,10 @@ xfail_strict = true
 markers = [
     "slow: Skipped unless --runslow passed",
 ]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:sparse._umath",  # sparse <0.13
+]
 
 [tool.coverage.run]
 branch = true
