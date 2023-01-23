@@ -69,9 +69,10 @@ io = [
     "networkx >=2.8",
     "scipy >=1.8",
     "awkward >=1.9",
+    "sparse >=0.12",
 ]
 viz = [
-    "matplotlib",
+    "matplotlib >=3.5",
 ]
 test = [
     "pytest",
@@ -83,7 +84,7 @@ complete = [
     "networkx >=2.8",
     "scipy >=1.8",
     "awkward >=1.9",
-    "matplotlib",
+    "matplotlib >=3.5",
     "pytest",
 ]
 
