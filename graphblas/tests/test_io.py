@@ -5,6 +5,7 @@ import pytest
 
 import graphblas as gb
 from graphblas import Matrix, dtypes
+from graphblas.exceptions import GraphblasException
 
 try:
     import networkx as nx
@@ -95,7 +96,7 @@ def test_matrix_to_from_numpy():
     with pytest.raises(ValueError, match="Invalid format"):
         gb.io.to_scipy_sparse(M, "bad format")
 
-    with pytest.raises(gb.exceptions.GraphblasException, match="ndim must be"):
+    with pytest.raises(GraphblasException, match="ndim must be"):
         gb.io.from_numpy(np.array([[[1.0, 0.0], [2.0, 3.7]]]))
 
 
@@ -418,8 +419,6 @@ def test_matrix_to_from_pydata_sparse():
     assert t == s
 
     # test ndim
-    from ..exceptions import GraphblasException
-
     e = sparse.random(shape=(5, 5, 5), density=0)
     with pytest.raises(GraphblasException):
         gb.io.from_pydata_sparse(e)
