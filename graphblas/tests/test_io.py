@@ -420,7 +420,7 @@ def test_matrix_to_from_pydata_sparse():
     # test ndim
     from ..exceptions import GraphblasException
 
-    e = sparse.COO(shape=(5, 5, 5))
+    e = sparse.random(shape=(5, 5, 5), density=0)
     with pytest.raises(GraphblasException):
         gb.io.from_pydata_sparse(e)
 
