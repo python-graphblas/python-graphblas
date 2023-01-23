@@ -9,14 +9,27 @@ on:
 jobs:
   test_imports:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.8", "3.9", "3.10"]
+    # strategy:
+    #   matrix:
+    #     python-version: ["3.8", "3.9", "3.10"]
     steps:
       - uses: actions/checkout@v3
+      - name: RNG for Python version
+        uses: ddradar/choose-random-action@v2.0.2
+        id: pyver
+        with:
+          contents: |
+            3.8
+            3.9
+            3.10
+          weights: |
+            1
+            1
+            1
       - uses: actions/setup-python@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ steps.pyver.outputs.selected }}
+          # python-version: ${{ matrix.python-version }}
       - run: python -m pip install --upgrade pip
       - run: pip install -e .
       - run: ./scripts/test_imports.sh

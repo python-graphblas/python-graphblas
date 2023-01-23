@@ -208,22 +208,22 @@ class ComplementedValueMask(Mask):
 #    CS: complemented structural
 #    CV: complemented value
 def _combine_S_S(m1, m2, dtype, name, opts):
-    """S-S"""
+    """S-S."""
     return pair(m1.parent & m2.parent).new(dtype, name=name, **opts)
 
 
 def _combine_S_A(m1, m2, dtype, name, opts):
-    """S-S, S-V, S-CS, S-CV"""
+    """S-S, S-V, S-CS, S-CV."""
     return one(m1.parent).new(dtype, mask=m2, name=name, **opts)
 
 
 def _combine_A_S(m1, m2, dtype, name, opts):
-    """S-S, V-S, CS-S, CV-S"""
+    """S-S, V-S, CS-S, CV-S."""
     return one(m2.parent).new(dtype, mask=m1, name=name, **opts)
 
 
 def _combine_V_A(m1, m2, dtype, name, opts):
-    """V-S, V-V, V-CS, V-CV"""
+    """V-S, V-V, V-CS, V-CV."""
     if isinstance(m2, ValueMask) and m1.parent._nvals > m2.parent._nvals:
         m1, m2 = m2, m1
     val = valuene(m1.parent).new(dtype, mask=m2, name=name, **opts)
@@ -233,7 +233,7 @@ def _combine_V_A(m1, m2, dtype, name, opts):
 
 
 def _combine_A_V(m1, m2, dtype, name, opts):
-    """S-V, V-V, CS-V, CV-V"""
+    """S-V, V-V, CS-V, CV-V."""
     val = valuene(m2.parent).new(dtype, mask=m1, name=name, **opts)
     if dtype != BOOL or backend != "suitesparse" or not val.ss.is_iso:
         val(val.S, **opts) << True
@@ -241,28 +241,28 @@ def _combine_A_V(m1, m2, dtype, name, opts):
 
 
 def _combine_CS_CS(m1, m2, dtype, name, opts):
-    """CS-CS"""
+    """CS-CS."""
     val = pair(m1.parent | m2.parent).new(dtype, name=name, **opts)
     val(~val.S, replace=True, **opts) << True
     return val
 
 
 def _combine_CS_CV(m1, m2, dtype, name, opts):
-    """CS-CV"""
+    """CS-CV."""
     val = pair(one(m1.parent).new(**opts) | m2.parent).new(dtype, name=name, **opts)
     val(~val.V, replace=True, **opts) << True
     return val
 
 
 def _combine_CV_CS(m1, m2, dtype, name, opts):
-    """CV-CS"""
+    """CV-CS."""
     val = pair(m1.parent | one(m2.parent).new(**opts)).new(dtype, name=name, **opts)
     val(~val.V, replace=True, **opts) << True
     return val
 
 
 def _combine_CV_CV(m1, m2, dtype, name, opts):
-    """CV-CV"""
+    """CV-CV."""
     val = lor(m1.parent | m2.parent).new(dtype, name=name, **opts)
     val(~val.V, replace=True, **opts) << True
     return val
@@ -300,84 +300,84 @@ _COMBINE_MASKS = {
 
 # Recipes to return the *complement* of combining two masks
 def _complement_S_S(m1, m2, dtype, name, opts):
-    """S-S"""
+    """S-S."""
     val = pair(m1.parent & m2.parent).new(dtype, name=name, **opts)
     val(~val.S, replace=True, **opts) << True
     return val
 
 
 def _complement_S_A(m1, m2, dtype, name, opts):
-    """S-S, S-V, S-CS, S-CV"""
+    """S-S, S-V, S-CS, S-CV."""
     val = one(m1.parent).new(dtype, mask=m2, name=name, **opts)
     val(~val.S, replace=True, **opts) << True
     return val
 
 
 def _complement_A_S(m1, m2, dtype, name, opts):
-    """S-S, V-S, CS-S, CV-S"""
+    """S-S, V-S, CS-S, CV-S."""
     val = one(m2.parent).new(dtype, mask=m1, name=name, **opts)
     val(~val.S, replace=True, **opts) << True
     return val
 
 
 def _complement_V_V(m1, m2, dtype, name, opts):
-    """V-V"""
+    """V-V."""
     val = land(m1.parent & m2.parent).new(dtype, name=name, **opts)
     val(~val.V, replace=True, **opts) << True
     return val
 
 
 def _complement_CS_CS(m1, m2, dtype, name, opts):
-    """CS-CS"""
+    """CS-CS."""
     return pair(one(m1.parent).new(**opts) | one(m2.parent).new(**opts)).new(
         dtype, name=name, **opts
     )
 
 
 def _complement_CS_A(m1, m2, dtype, name, opts):
-    """CS-S, CS-V, CS-CS, CS-CV"""
+    """CS-S, CS-V, CS-CS, CS-CV."""
     val = one(m1.parent).new(dtype, name=name, **opts)
     val(~m2, **opts) << True
     return val
 
 
 def _complement_A_CS(m1, m2, dtype, name, opts):
-    """S-CS, V-CS, CS-CS, CV-CS"""
+    """S-CS, V-CS, CS-CS, CV-CS."""
     val = one(m2.parent).new(dtype, name=name, **opts)
     val(~m1, **opts) << True
     return val
 
 
 def _complement_CS_CV(m1, m2, dtype, name, opts):
-    """CS-CV"""
+    """CS-CV."""
     val = pair(one(m1.parent).new(**opts) | m2.parent).new(dtype, name=name, **opts)
     val(val.V, replace=True, **opts) << True
     return val
 
 
 def _complement_CV_CS(m1, m2, dtype, name, opts):
-    """CV-CS"""
+    """CV-CS."""
     val = pair(m1.parent | one(m2.parent).new(**opts)).new(dtype, name=name, **opts)
     val(val.V, replace=True, **opts) << True
     return val
 
 
 def _complement_CV_CV(m1, m2, dtype, name, opts):
-    """CV-CV"""
+    """CV-CV."""
     val = lor(m1.parent | m2.parent).new(dtype, name=name, **opts)
     val(val.V, replace=True, **opts) << True
     return val
 
 
 def _complement_CV_A(m1, m2, dtype, name, opts):
-    """CV-S, CV-V, CV-CS, CV-CV"""
+    """CV-S, CV-V, CV-CS, CV-CV."""
     val = one(m1.parent).new(dtype, mask=~m1, name=name, **opts)
     val(~m2, **opts) << True
     return val
 
 
 def _complement_A_CV(m1, m2, dtype, name, opts):
-    """S-CV, V-CV, CS-CV, CV-CV"""
+    """S-CV, V-CV, CS-CV, CV-CV."""
     val = one(m2.parent).new(dtype, mask=~m2, name=name, **opts)
     val(~m1, **opts) << True
     return val
@@ -414,7 +414,7 @@ _COMPLEMENT_MASKS = {
 
 
 def _combine_S_S_mask_or(m1, m2, opts):
-    """S-S"""
+    """S-S."""
     val = monoid.any(one(m1.parent).new(bool, **opts) | one(m2.parent).new(bool, **opts)).new(
         **opts
     )
@@ -422,7 +422,7 @@ def _combine_S_S_mask_or(m1, m2, opts):
 
 
 def _combine_S_SV_mask_or(m1, m2, opts):
-    """S-V"""
+    """S-V."""
     val = monoid.any(
         one(m1.parent).new(bool, **opts) | one(m2.parent).new(bool, mask=m2, **opts)
     ).new(**opts)
@@ -430,7 +430,7 @@ def _combine_S_SV_mask_or(m1, m2, opts):
 
 
 def _combine_SV_S_mask_or(m1, m2, opts):
-    """V-S"""
+    """V-S."""
     val = monoid.any(
         one(m1.parent).new(bool, mask=m1, **opts) | one(m2.parent).new(bool, **opts)
     ).new(**opts)
@@ -438,31 +438,31 @@ def _combine_SV_S_mask_or(m1, m2, opts):
 
 
 def _complement_A_CS_mask_or(m1, m2, opts):
-    """~S-CS, ~V-CS, ~CV-CS"""
+    """~S-CS, ~V-CS, ~CV-CS."""
     val = one(m2.parent).new(bool, mask=~m1, **opts)
     return ComplementedStructuralMask(val)
 
 
 def _complement_CS_A_mask_or(m1, m2, opts):
-    """~CS-S, ~CS-V, ~CS-CV"""
+    """~CS-S, ~CS-V, ~CS-CV."""
     val = one(m1.parent).new(bool, mask=~m2, **opts)
     return ComplementedStructuralMask(val)
 
 
 def _complement_A_CV_mask_or(m1, m2, opts):
-    """~S-CV, ~V-CV"""
+    """~S-CV, ~V-CV."""
     val = valuene(m2.parent).new(bool, mask=~m1, **opts)
     return ComplementedStructuralMask(val)
 
 
 def _complement_CV_A_mask_or(m1, m2, opts):
-    """~CV-S, ~CV-V"""
+    """~CV-S, ~CV-V."""
     val = valuene(m1.parent).new(bool, mask=~m2, **opts)
     return ComplementedStructuralMask(val)
 
 
 def _combine_V_V_mask_or(m1, m2, opts):
-    """V-V"""
+    """V-V."""
     val = monoid.any(valuene(m1.parent).new(**opts) | valuene(m2.parent).new(**opts)).new(
         bool, **opts
     )
@@ -470,13 +470,13 @@ def _combine_V_V_mask_or(m1, m2, opts):
 
 
 def _complement_CS_CS_mask_or(m1, m2, opts):
-    """~CS-CS"""
+    """~CS-CS."""
     val = pair(m1.parent & m2.parent).new(bool, **opts)
     return ComplementedStructuralMask(val)
 
 
 def _complement_CV_CV_mask_or(m1, m2, opts):
-    """~CV-CV"""
+    """~CV-CV."""
     val = valuene(land(m1.parent & m2.parent).new(bool, **opts)).new(**opts)
     return ComplementedStructuralMask(val)
 

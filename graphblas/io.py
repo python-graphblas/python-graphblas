@@ -96,7 +96,7 @@ def from_numpy(m):
 
 
 def from_scipy_sparse_matrix(m, *, dup_op=None, name=None):
-    """dtype is inferred from m.dtype"""
+    """Matrix  dtype is inferred from m.dtype."""
     _warn(
         "`from_scipy_sparse_matrix` is deprecated; please use `from_scipy_sparse` instead.",
         DeprecationWarning,
@@ -276,7 +276,7 @@ def from_pydata_sparse(s, *, dup_op=None, name=None):
 
 # TODO: add parameters to allow different networkx classes and attribute names
 def to_networkx(m, edge_attribute="weight"):
-    """Create a networkx DiGraph from a square adjacency Matrix
+    """Create a networkx DiGraph from a square adjacency Matrix.
 
     Parameters
     ----------
@@ -330,7 +330,7 @@ def to_numpy(m):
 
 
 def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover (deprecated)
-    """format: str in {'bsr', 'csr', 'csc', 'coo', 'lil', 'dia', 'dok'}"""
+    """format: str in {'bsr', 'csr', 'csc', 'coo', 'lil', 'dia', 'dok'}."""
     import scipy.sparse as ss
 
     _warn(
@@ -356,7 +356,7 @@ def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover (deprecated)
 
 
 def to_scipy_sparse(A, format="csr"):
-    """Create a scipy.sparse array from a GraphBLAS Matrix or Vector
+    """Create a scipy.sparse array from a GraphBLAS Matrix or Vector.
 
     Parameters
     ----------
@@ -416,7 +416,7 @@ _AwkwardDoublyCompressedMatrix = None
 
 
 def to_awkward(A, format=None):
-    """Create an Awkward Array from a GraphBLAS Matrix
+    """Create an Awkward Array from a GraphBLAS Matrix.
 
     Parameters
     ----------

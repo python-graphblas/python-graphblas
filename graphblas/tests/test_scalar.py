@@ -71,9 +71,11 @@ def test_dup(s):
         ("INT32", -2),
         ("BOOL", True),
         ("FP32", -2.5),
-    ] + uint_data:
+        *uint_data,
+    ]:
         s5 = s4.dup(dtype=dtype, name="s5")
-        assert s5.dtype == dtype and s5.value == val
+        assert s5.dtype == dtype
+        assert s5.value == val
         s6 = s_empty.dup(dtype=dtype, name="s6")
         assert s6.is_empty
         assert compute(s6.value) is None
@@ -325,7 +327,7 @@ def test_wait(s):
     s.wait()
     s.wait("materialize")
     s.wait("complete")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="`how` argument must be"):
         s.wait("badmode")
 
 

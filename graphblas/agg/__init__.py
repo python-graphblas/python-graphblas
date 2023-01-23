@@ -49,14 +49,19 @@ Composite aggregators (require multiple aggregation steps):
     - harmonic_mean
     - root_mean_square
 
-Custom recipes:
-    - first
-    - last
+Custom recipes (specific to SuiteSparse:GraphBLAS):
+    - ss.first
+    - ss.last
     # These don't work with Matrix.reduce_scalar
-    - first_index
-    - last_index
-    - argmin
-    - argmax
+    - ss.first_index
+    - ss.last_index
+    - ss.argmin
+    - ss.argmax
+
+.. deprecated:: 2023.1.0
+    Aggregators `first`, `last`, `first_index`, `last_index`, `argmin`, and `argmax` are
+    deprecated in the `agg` namespace such as `agg.first`. Use them from `agg.ss` namespace
+    instead such as `agg.ss.first`. Will be removed in version 2023.9.0 or later.
 
 # Possible aggregators:
 #   - absolute_deviation, sum(abs(x - mean(x))),  sum_absminus(x, mean(x))
@@ -70,6 +75,41 @@ Custom recipes:
 """
 # All items are dynamically added by classes in core/agg.py
 # This module acts as a container of Aggregator instances
-from .core import agg
+_deprecated = {}
+
+
+def __dir__():
+    return globals().keys() | _deprecated.keys() | {"ss"}
+
+
+def __getattr__(key):
+    if key in _deprecated:
+        import warnings
+
+        warnings.warn(
+            f"`gb.agg.{key}` is deprecated; please use `gb.agg.ss.{key}` instead. "
+            f"`{key}` is specific to SuiteSparse:GraphBLAS. "
+            f"`gb.agg.{key}` will be removed in version 2023.9.0 or later.",
+            DeprecationWarning,
+        )
+        rv = _deprecated[key]
+        globals()[key] = rv
+        return rv
+    if key == "ss":
+        from .. import backend
+
+        if backend != "suitesparse":
+            raise AttributeError(
+                f'module {__name__!r} only has attribute "ss" when backend is "suitesparse"'
+            )
+        from importlib import import_module
+
+        ss = import_module(".ss", __name__)
+        globals()["ss"] = ss
+        return ss
+    raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
+
+
+from ..core import agg  # noqa: E402 isort:skip
 
 del agg

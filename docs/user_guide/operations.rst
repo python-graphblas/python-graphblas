@@ -376,7 +376,7 @@ Matrix-Matrix Assignment Example:
 
     A = gb.Matrix.from_coo([0, 0, 1, 1, 2, 2], [1, 2, 0, 1, 0, 2],
                            [2.0, 5.0, 1.5, 4.0, 0.5, -7.0])
-    B = gb.Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1]
+    B = gb.Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1],
                            [-99., -98., -97., -96.])
 
     A[::2, ::2] << B

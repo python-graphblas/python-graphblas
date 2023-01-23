@@ -1,4 +1,4 @@
-from pytest import fixture, raises
+import pytest
 
 from graphblas import monoid, op
 from graphblas.exceptions import DimensionMismatch
@@ -8,27 +8,27 @@ from .conftest import autocompute
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 
-@fixture
+@pytest.fixture
 def v1():
     return Vector.from_coo([0, 2], [2.0, 5.0], name="v_1")
 
 
-@fixture
+@pytest.fixture
 def v2():
     return Vector.from_coo([1, 2], [3.0, 7.0], name="v_2")
 
 
-@fixture
+@pytest.fixture
 def A1():
     return Matrix.from_coo([0, 0], [0, 1], [0.0, 4.0], ncols=3, name="A_1")
 
 
-@fixture
+@pytest.fixture
 def A2():
     return Matrix.from_coo([0, 2], [0, 0], [6.0, 8.0], name="A_2")
 
 
-@fixture
+@pytest.fixture
 def s1():
     return Scalar.from_value(3, name="s_1")
 
@@ -120,9 +120,9 @@ def test_bad_ewise(s1, v1, A1, A2):
         (A1, 1),
         (1, A1),
     ]:
-        with raises(TypeError, match="Bad type for argument"):
+        with pytest.raises(TypeError, match="Bad type for argument"):
             left | right
-        with raises(TypeError, match="Bad type for argument"):
+        with pytest.raises(TypeError, match="Bad type for argument"):
             left & right
     # These are okay now
     for left, right in [
@@ -139,55 +139,55 @@ def test_bad_ewise(s1, v1, A1, A2):
         (v1, A1),
         (A1.T, v1),
     ]:
-        with raises(DimensionMismatch):
+        with pytest.raises(DimensionMismatch):
             left | right
-        with raises(DimensionMismatch):
+        with pytest.raises(DimensionMismatch):
             left & right
-        with raises(DimensionMismatch):
+        with pytest.raises(DimensionMismatch):
             left.ewise_add(right)
-        with raises(DimensionMismatch):
+        with pytest.raises(DimensionMismatch):
             left.ewise_mult(right)
-        with raises(DimensionMismatch):
+        with pytest.raises(DimensionMismatch):
             left.ewise_union(right, op.plus, 0, 0)
 
     w = v1[: v1.size - 1].new()
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         v1 | w
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         v1 & w
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         A2 | A1
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         A2 & A1
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         A1.T | A1
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         A1.T & A1
 
     # These are okay now
-    # with raises(TypeError):
+    # with pytest.raises(TypeError):
     s1 | 1
-    # with raises(TypeError):
+    # with pytest.raises(TypeError):
     1 | s1
-    # with raises(TypeError):
+    # with pytest.raises(TypeError):
     s1 & 1
-    # with raises(TypeError):
+    # with pytest.raises(TypeError):
     1 & s1
 
-    with raises(TypeError, match="not supported for FP64"):
+    with pytest.raises(TypeError, match="not supported for FP64"):
         v1 |= v1
-    with raises(TypeError, match="not supported for FP64"):
+    with pytest.raises(TypeError, match="not supported for FP64"):
         A1 |= A1
-    with raises(TypeError, match="not supported for FP64"):
+    with pytest.raises(TypeError, match="not supported for FP64"):
         v1 &= v1
-    with raises(TypeError, match="not supported for FP64"):
+    with pytest.raises(TypeError, match="not supported for FP64"):
         A1 &= A1
 
-    # with raises(TypeError, match="require_monoid"):
+    # with pytest.raises(TypeError, match="require_monoid"):
     op.minus(v1 | v1)  # ok now
-    with raises(TypeError):
+    with pytest.raises(TypeError):
         op.minus(v1 & v1, require_monoid=False)
-    with raises(TypeError, match="Bad dtype"):
+    with pytest.raises(TypeError, match="Bad dtype"):
         op.plus(v1 & v1, 1)
 
 
@@ -204,39 +204,39 @@ def test_bad_matmul(s1, v1, A1, A2):
         (A1, 1),
         (1, A1),
     ]:
-        with raises(TypeError, match="Bad type for argument"):
+        with pytest.raises(TypeError, match="Bad type for argument"):
             left @ right
 
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         v1 @ A1
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         A1.T @ v1
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         A2 @ v1
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         v1 @ A2.T
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         A1 @ A1
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         A1.T @ A1.T
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         A1 @= A1
-    with raises(TypeError):
+    with pytest.raises(TypeError):
         s1 @ 1
-    with raises(TypeError):
+    with pytest.raises(TypeError):
         1 @ s1
 
     w = v1[:1].new()
-    with raises(DimensionMismatch):
+    with pytest.raises(DimensionMismatch):
         w @ v1
-    with raises(TypeError):
+    with pytest.raises(TypeError):
         v1 @= v1
 
-    with raises(TypeError, match="Bad type when calling semiring.plus_times"):
+    with pytest.raises(TypeError, match="Bad type when calling semiring.plus_times"):
         op.plus_times(A1)
-    with raises(TypeError, match="Bad types when calling semiring.plus_times."):
+    with pytest.raises(TypeError, match="Bad types when calling semiring.plus_times."):
         op.plus_times(A1, A2)
-    with raises(TypeError, match="Bad types when calling semiring.plus_times."):
+    with pytest.raises(TypeError, match="Bad types when calling semiring.plus_times."):
         op.plus_times(A1 @ A2, 1)
 
 
@@ -251,15 +251,15 @@ def test_apply_unary(v1, A1):
 
 @autocompute
 def test_apply_unary_bad(s1, v1):
-    with raises(TypeError, match="__call__"):
+    with pytest.raises(TypeError, match="__call__"):
         op.exp(v1, 1)
-    with raises(TypeError, match="__call__"):
+    with pytest.raises(TypeError, match="__call__"):
         op.exp(1, v1)
-    # with raises(TypeError, match="Bad type when calling unary.exp"):
+    # with pytest.raises(TypeError, match="Bad type when calling unary.exp"):
     op.exp(s1)  # Okay now
-    # with raises(TypeError, match="Bad type when calling unary.exp"):
+    # with pytest.raises(TypeError, match="Bad type when calling unary.exp"):
     op.exp(1)  # Okay now
-    with raises(TypeError, match="Bad dtype"):
+    with pytest.raises(TypeError, match="Bad dtype"):
         op.exp(v1 | v1)
 
 
@@ -283,20 +283,20 @@ def test_apply_binary(v1, A1):
 
 
 def test_apply_binary_bad(v1):
-    # with raises(TypeError, match="Bad types when calling binary.plus"):
+    # with pytest.raises(TypeError, match="Bad types when calling binary.plus"):
     op.plus(1, 1)  # Okay now
-    with raises(TypeError, match="Bad type when calling binary.plus"):
+    with pytest.raises(TypeError, match="Bad type when calling binary.plus"):
         op.plus(v1)
-    with raises(TypeError, match="Bad type for keyword argument `right="):
+    with pytest.raises(TypeError, match="Bad type for keyword argument `right="):
         op.plus(v1, v1)
-    with raises(TypeError, match="may only be used when performing an ewise_add"):
+    with pytest.raises(TypeError, match="may only be used when performing an ewise_add"):
         op.plus(v1, 1, require_monoid=False)
 
 
 def test_infix_nonscalars(v1, v2):
-    # with raises(TypeError, match="refuse to guess"):
+    # with pytest.raises(TypeError, match="refuse to guess"):
     assert (v1 + v2).new().isequal(op.plus(v1 | v2).new())
-    # with raises(TypeError, match="refuse to guess"):
+    # with pytest.raises(TypeError, match="refuse to guess"):
     assert (v1 - v2).new().isequal(v1.ewise_union(v2, "-", 0, 0).new())
 
 
@@ -308,9 +308,9 @@ def test_inplace_infix(s1, v1, v2, A1, A2):
     x @= A
     assert isinstance(x, Vector)
     assert x.isequal(v1 @ A)
-    with raises(TypeError, match="not supported for FP64"):
+    with pytest.raises(TypeError, match="not supported for FP64"):
         v1 |= v2
-    with raises(TypeError, match="not supported for FP64"):
+    with pytest.raises(TypeError, match="not supported for FP64"):
         A1 &= A2.T
 
     v1 = v1.dup(bool)
@@ -335,11 +335,11 @@ def test_inplace_infix(s1, v1, v2, A1, A2):
     assert x.isequal(A1 & A2.T)
 
     expr = v1 | v2
-    with raises(TypeError, match="not supported"):
+    with pytest.raises(TypeError, match="not supported"):
         expr |= v1
-    with raises(TypeError, match="not supported"):
+    with pytest.raises(TypeError, match="not supported"):
         expr &= v1
-    with raises(TypeError, match="not supported"):
+    with pytest.raises(TypeError, match="not supported"):
         expr @= A
-    with raises(TypeError, match="not supported"):
+    with pytest.raises(TypeError, match="not supported"):
         s1 @= v1

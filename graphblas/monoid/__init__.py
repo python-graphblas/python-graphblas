@@ -21,6 +21,6 @@ def __getattr__(key):
 
 
 from ..core import operator  # noqa: E402 isort:skip
-from . import numpy  # noqa: E402, F401 isort:skip
+from . import numpy  # noqa: E402 isort:skip
 
 del operator

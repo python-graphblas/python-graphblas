@@ -224,7 +224,7 @@ def test_global_config():
         if k in config._defaults:
             config[k] = None
         else:
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match="Unable to set default value for"):
                 config[k] = None
     with pytest.raises(ValueError, match="Wrong number"):
         config["memory_pool"] = [1, 2]

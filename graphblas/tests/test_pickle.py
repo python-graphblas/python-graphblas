@@ -6,6 +6,8 @@ import pytest
 
 import graphblas as gb
 
+suitesparse = gb.backend == "suitesparse"
+
 
 def unarypickle(x):
     return x + 1  # pragma: no cover (numba)
@@ -104,7 +106,6 @@ def test_serialize():
         "monoid.numpy.logaddexp[float]": gb.monoid.numpy.logaddexp[float],
         "semiring.numpy.logaddexp2_hypot[float]": gb.semiring.numpy.logaddexp2_hypot[float],
         "agg.sum": gb.agg.sum,
-        "agg.first[int]": gb.agg.first[int],
         "binary.absfirst": gb.binary.absfirst,
         "binary.absfirst[float]": gb.binary.absfirst[float],
         "binary.isclose": gb.binary.isclose,
@@ -125,6 +126,8 @@ def test_serialize():
         "all_indices": gb.core.expr._ALL_INDICES,
         "replace": gb.replace,
     }
+    if suitesparse:
+        d["agg.ss.first[int]"] = gb.agg.ss.first[int]
     try:
         pkl = pickle.dumps(d)
     except Exception:  # pragma: no cover (debug)
@@ -171,7 +174,8 @@ def check_values(d):
     assert d["monoid.numpy.logaddexp[float]"] is gb.monoid.numpy.logaddexp[float]
     assert d["semiring.numpy.logaddexp2_hypot[float]"] is gb.semiring.numpy.logaddexp2_hypot[float]
     assert d["agg.sum"] is gb.agg.sum
-    assert d["agg.first[int]"] is gb.agg.first[int]
+    if suitesparse and "agg.ss.first[int]" in d:
+        assert d["agg.ss.first[int]"] is gb.agg.ss.first[int]
     assert d["binary.absfirst"] is gb.binary.absfirst
     assert d["binary.absfirst[float]"] is gb.binary.absfirst[float]
     assert d["binary.isclose"] is gb.binary.isclose

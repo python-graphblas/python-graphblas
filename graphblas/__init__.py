@@ -61,7 +61,7 @@ _SPECIAL_ATTRS = {
 
 
 def __getattr__(name):
-    """Auto-initialize if special attrs used without explicit init call by user"""
+    """Auto-initialize if special attrs used without explicit init call by user."""
     if name in _SPECIAL_ATTRS:
         if _init_params is None:
             _init("suitesparse", None, automatic=True)
