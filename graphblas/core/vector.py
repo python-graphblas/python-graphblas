@@ -688,14 +688,14 @@ class Vector(BaseType):
         return cls.from_coo(indices, values, dtype, size=size, dup_op=dup_op, name=name)
 
     @classmethod
-    def from_coo(cls, indices, values, dtype=None, *, size=None, dup_op=None, name=None):
+    def from_coo(cls, indices, values=1.0, dtype=None, *, size=None, dup_op=None, name=None):
         """Create a new Vector from indices and values.
 
         Parameters
         ----------
         indices : list or np.ndarray
             Vector indices.
-        values : list or np.ndarray or scalar
+        values : list or np.ndarray or scalar, default 1.0
             List of values. If a scalar is provided, all values will be set to this single value.
         dtype :
             Data type of the Vector. If not provided, the values will be inspected
