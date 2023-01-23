@@ -99,6 +99,15 @@ These methods require `scipy <https://scipy.org/>`_ to be installed.
 
 .. autofunction:: graphblas.io.to_scipy_sparse
 
+PyData Sparse
+~~~~~~~~~~~~~
+
+These methods require `sparse <https://sparse.pydata.org/>`_ to be installed.
+
+.. autofunction:: graphblas.io.from_pydata_sparse
+
+.. autofunction:: graphblas.io.to_pydata_sparse
+
 Matrix Market
 ~~~~~~~~~~~~~
 
