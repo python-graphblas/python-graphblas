@@ -731,6 +731,7 @@ def test_op_namespace():
     assert selectnames - opnames == selectnames, selectnames - opnames
 
 
+@pytest.mark.slow
 def test_binaryop_attributes_numpy():
     # Some coverage from this test depends on order of tests
     assert binary.numpy.add[int].monoid is monoid.numpy.add[int]
