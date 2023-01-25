@@ -759,8 +759,8 @@ class Vector(BaseType):
 
         Parameters
         ----------
-        pairs : list or np.ndarray or iterable
-            A sequence of ``(index, value)`` pairs
+        pairs : list or iterable
+            A sequence of ``(index, value)`` pairs.
         dtype :
             Data type of the Vector. If not provided, the values will be inspected
             to choose an appropriate dtype.
@@ -784,29 +784,18 @@ class Vector(BaseType):
         Vector
         """
         if isinstance(pairs, np.ndarray):
-            if pairs.ndim != 2:
-                raise ValueError(
-                    f"pairs array must have 2 dimensions (nvals x 2); got {pairs.ndim}"
-                )
-            if pairs.shape[1] != 2:
-                raise ValueError(
-                    "Last dimension of pairs array must be length 2 "
-                    f"(for index and values); got {pairs.shape[1]}"
-                )
-            indices = pairs[:, 0]
-            values = pairs[:, 1]
+            raise TypeError("pairs as NumPy array is not supported; use `Vector.from_coo` instead")
+        unzipped = list(zip(*pairs))
+        if len(unzipped) == 2:
+            indices, values = unzipped
+        elif not unzipped:
+            # Empty pairs (size should be given)
+            indices = values = unzipped
         else:
-            unzipped = list(zip(*pairs))
-            if len(unzipped) == 2:
-                indices, values = unzipped
-            elif not unzipped:
-                # Empty pairs (size should be given)
-                indices = values = unzipped
-            else:
-                raise ValueError(
-                    "Each item in the pairs must have two elements (for index and value); "
-                    f"got {len(unzipped)}"
-                )
+            raise ValueError(
+                "Each item in the pairs must have two elements (for index and value); "
+                f"got {len(unzipped)}"
+            )
         return cls.from_coo(indices, values, dtype, size=size, dup_op=dup_op, name=name)
 
     @property

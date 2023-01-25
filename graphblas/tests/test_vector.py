@@ -2468,8 +2468,8 @@ def test_from_pairs():
     w = Vector.from_pairs([[0, 1], [2, 3]])
     expected = Vector.from_coo([0, 2], [1, 3])
     assert w.isequal(expected, check_dtype=True)
-    w = Vector.from_pairs(np.array([[0, 1], [2, 3]], dtype=np.int64))
-    assert w.isequal(expected, check_dtype=True)
+    with pytest.raises(TypeError, match="use `Vector.from_coo`"):
+        Vector.from_pairs(np.array([[0, 1], [2, 3]], dtype=np.int64))
 
     w = Vector.from_pairs([], size=4)
     expected = Vector(float, size=4)
@@ -2479,10 +2479,6 @@ def test_from_pairs():
         Vector.from_pairs([])
     with pytest.raises(ValueError, match="Each item in the pair"):
         Vector.from_pairs([[1, 2, 3], [4, 5, 6]])
-    with pytest.raises(ValueError, match="pairs array must have 2 dimensions"):
-        Vector.from_pairs(np.array(5))
-    with pytest.raises(ValueError, match="Last dimension of pairs"):
-        Vector.from_pairs(np.arange(12).reshape(4, 3))
 
 
 @pytest.mark.skipif("not suitesparse")

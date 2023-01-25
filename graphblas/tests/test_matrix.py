@@ -4090,8 +4090,8 @@ def test_to_from_edgelist(A):
     result = Matrix.from_edgelist([[0, 1, 10], [2, 3, 20]])
     expected = Matrix.from_coo([0, 2], [1, 3], [10, 20])
     assert expected.isequal(result, check_dtype=True)
-    result = Matrix.from_edgelist(np.array([[0, 1, 10], [2, 3, 20]], dtype=np.int64))
-    assert expected.isequal(result, check_dtype=True)
+    with pytest.raises(ValueError, match="values must be passed separately"):
+        Matrix.from_edgelist(np.array([[0, 1, 10], [2, 3, 20]], dtype=np.int64))
 
     result = Matrix.from_edgelist([], nrows=2, ncols=3, dtype=int)
     expected = Matrix(int, nrows=2, ncols=3)

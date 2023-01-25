@@ -922,7 +922,8 @@ class Matrix(BaseType):
         Parameters
         ----------
         edgelist : list or np.ndarray or iterable
-            A sequence of ``(row, column)`` pairs or ``(row, column, value)`` triples
+            A sequence of ``(row, column)`` pairs or ``(row, column, value)`` triples.
+            NumPy edgelist only supports ``(row, column)``; values must be passed separately.
         values : list or np.ndarray or scalar, optional
             List of values. If a scalar is provided, all values will be set to this single value.
             The default is 1.0 if ``edgelist`` is a sequence of ``(row, column)`` pairs.
@@ -957,11 +958,14 @@ class Matrix(BaseType):
                     f"edgelist array must have 2 dimensions (nvals x 2); got {edgelist.ndim}"
                 )
             if edgelist.shape[1] == 3:
-                edgelist_values = edgelist[:, 2]
-            elif edgelist.shape[1] != 2:
                 raise ValueError(
-                    "Last dimension of edgelist array must be length 2 or 3 "
-                    f"(for row, column, and maybe values); got {edgelist.shape[1]}"
+                    "edgelist as NumPy array only supports ``(row, column)``; "
+                    "values must be passed separately."
+                )
+            if edgelist.shape[1] != 2:
+                raise ValueError(
+                    "Last dimension of edgelist array must be length 2 "
+                    f"(for row and column); got {edgelist.shape[1]}"
                 )
             rows = edgelist[:, 0]
             cols = edgelist[:, 1]
