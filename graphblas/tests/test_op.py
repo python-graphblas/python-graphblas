@@ -574,6 +574,7 @@ def test_monoid_udf():
         Monoid.register_anonymous(binary.plus_plus_one, {"BOOL": -1})
 
 
+@pytest.mark.slow
 def test_semiring_udf():
     def plus_plus_two(x, y):
         return x + y + 2  # pragma: no cover (numba)
@@ -1109,6 +1110,7 @@ def test_positional():
         assert semiring.ss.any_secondj[int].is_positional
 
 
+@pytest.mark.slow
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
     udt = dtypes.register_new("TestUDT", record_dtype)

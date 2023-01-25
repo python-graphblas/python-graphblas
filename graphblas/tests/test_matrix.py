@@ -4099,7 +4099,7 @@ def test_to_from_edgelist(A):
 
     with pytest.raises(ValueError, match="Unable to infer nrows"):
         Matrix.from_edgelist([])
-    with pytest.raises(ValueError, match="edgelist must have two elements"):
+    with pytest.raises(ValueError, match="edgelist must have two"):
         Matrix.from_edgelist([[0, 1, 2, 3], [4, 5, 6, 7]])
     with pytest.raises(ValueError, match="edgelist array must have 2 dimensions"):
         Matrix.from_edgelist(np.arange(5))
