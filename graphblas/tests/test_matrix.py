@@ -411,7 +411,6 @@ def test_ewise_add(A):
         [2, 0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [4, 3, 5, 3, 8, 5, 3, 7, 8, 3, 1, 7, 4],
     )
-    # with pytest.raises(TypeError, match="require_monoid"):
     A.ewise_add(B, binary.second)  # okay now
     # surprising that SECOND(x, empty) == x
     C = A.ewise_add(B, binary.second).new()
@@ -3510,8 +3509,6 @@ def test_deprecated(A):
         Vector.new(int)
     with pytest.warns(DeprecationWarning):
         Scalar.new(int)
-    with pytest.warns(DeprecationWarning):
-        binary.plus(A | A, require_monoid=True)
     with pytest.warns(DeprecationWarning):
         A.to_values()
     with pytest.warns(DeprecationWarning):

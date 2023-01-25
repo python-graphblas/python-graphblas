@@ -809,7 +809,7 @@ class Vector(BaseType):
     # to update to trigger a call to GraphBLAS
     #########################################################
 
-    def ewise_add(self, other, op=monoid.plus, *, require_monoid=None):
+    def ewise_add(self, other, op=monoid.plus):
         """Perform element-wise computation on the union of sparse values, similar to how
         one expects addition to work for sparse vectors.
 
@@ -823,7 +823,6 @@ class Vector(BaseType):
             The other vector in the computation
         op : :class:`~graphblas.core.operator.Monoid` or :class:`~graphblas.core.operator.BinaryOp`
             Operator to use on intersecting values
-        require_monoid : deprecated
 
         Returns
         -------
@@ -841,31 +840,13 @@ class Vector(BaseType):
         """
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
-        if require_monoid is not None:  # pragma: no cover (deprecated)
-            warnings.warn(
-                "require_monoid keyword is deprecated; "
-                "future behavior will be like `require_monoid=False`",
-                DeprecationWarning,
-            )
-        else:
-            require_monoid = False
         method_name = "ewise_add"
         other = self._expect_type(
             other, (Vector, Matrix, TransposedMatrix), within=method_name, argname="other", op=op
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
-        if require_monoid:  # pragma: no cover (deprecated)
-            if op.opclass != "BinaryOp" or op.monoid is None:
-                self._expect_op(
-                    op,
-                    "Monoid",
-                    within=method_name,
-                    argname="op",
-                    extra_message="A BinaryOp may be given if require_monoid keyword is False.",
-                )
-        else:
-            self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if other.ndim == 2:
             # Broadcast columnwise from the left
             if other._nrows != self._size:

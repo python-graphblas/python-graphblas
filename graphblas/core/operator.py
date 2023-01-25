@@ -318,14 +318,11 @@ class TypedBuiltinBinaryOp(TypedOpBase):
     __slots__ = ()
     opclass = "BinaryOp"
 
-    def __call__(
-        self, left, right=None, *, require_monoid=None, left_default=None, right_default=None
-    ):
+    def __call__(self, left, right=None, *, left_default=None, right_default=None):
         if left_default is not None or right_default is not None:
             if (
                 left_default is None
                 or right_default is None
-                or require_monoid is not None
                 or right is not None
                 or not isinstance(left, InfixExprBase)
                 or left.method_name != "ewise_add"
@@ -338,14 +335,6 @@ class TypedBuiltinBinaryOp(TypedOpBase):
                     "are Vectors or Matrices, and left_default and right_default are scalars."
                 )
             return left.left.ewise_union(left.right, self, left_default, right_default)
-        if require_monoid is not None:
-            if right is not None:
-                raise TypeError(
-                    f"Bad keyword argument `require_monoid=` when calling {self!r}.\n"
-                    "require_monoid keyword may only be used when performing an ewise_add.\n"
-                    f"For example: {self!r}(A | B, require_monoid=False)."
-                )
-            return _call_op(self, left, require_monoid=require_monoid)
         return _call_op(self, left, right)
 
     @property
