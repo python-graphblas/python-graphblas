@@ -176,6 +176,12 @@ def test_from_coo_scalar():
             C.ss.iso_value
 
 
+def test_from_coo_default_values():
+    B = Matrix.from_coo([1, 3], [2, 4])
+    C = Matrix.from_coo([1, 3], [2, 4], [1.0, 1.0])
+    assert B.isequal(C, check_dtype=True)
+
+
 def test_clear(A):
     A.clear()
     assert A.nvals == 0

@@ -163,6 +163,12 @@ def test_from_coo_scalar():
             u.ss.iso_value
 
 
+def test_from_coo_default_values():
+    u = Vector.from_coo([1, 3])
+    v = Vector.from_coo([1, 3], [1.0, 1.0])
+    assert v.isequal(u, check_dtype=True)
+
+
 def test_clear(v):
     v.clear()
     assert v.nvals == 0

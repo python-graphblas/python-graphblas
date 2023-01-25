@@ -794,7 +794,7 @@ class Matrix(BaseType):
         cls,
         rows,
         columns,
-        values,
+        values=1.0,
         dtype=None,
         *,
         nrows=None,
@@ -810,7 +810,7 @@ class Matrix(BaseType):
             Row indices.
         columns : list or np.ndarray
             Column indices.
-        values : list or np.ndarray or scalar
+        values : list or np.ndarray or scalar, default 1.0
             List of values. If a scalar is provided, all values will be set to this single value.
         dtype :
             Data type of the Matrix. If not provided, the values will be inspected
@@ -948,7 +948,7 @@ class Matrix(BaseType):
 
     @classmethod
     def from_csr(
-        cls, indptr, col_indices, values, dtype=None, *, nrows=None, ncols=None, name=None
+        cls, indptr, col_indices, values=1.0, dtype=None, *, nrows=None, ncols=None, name=None
     ):
         """Create a new Matrix from standard CSR representation of data.
 
@@ -964,7 +964,7 @@ class Matrix(BaseType):
             Pointers for each row into col_indices and values; `indptr.size == nrows + 1`.
         col_indices : list or np.ndarray
             Column indices.
-        values : list or np.ndarray or scalar
+        values : list or np.ndarray or scalar, default 1.0
             List of values. If a scalar is provided, all values will be set to this single value.
         dtype :
             Data type of the Matrix. If not provided, the values will be inspected
@@ -994,7 +994,7 @@ class Matrix(BaseType):
 
     @classmethod
     def from_csc(
-        cls, indptr, row_indices, values, dtype=None, *, nrows=None, ncols=None, name=None
+        cls, indptr, row_indices, values=1.0, dtype=None, *, nrows=None, ncols=None, name=None
     ):
         """Create a new Matrix from standard CSC representation of data.
 
@@ -1010,7 +1010,7 @@ class Matrix(BaseType):
             Pointers for each column into row_indices and values; `indptr.size == ncols + 1`.
         col_indices : list or np.ndarray
             Column indices.
-        values : list or np.ndarray or scalar
+        values : list or np.ndarray or scalar, default 1.0
             List of values. If a scalar is provided, all values will be set to this single value.
         dtype :
             Data type of the Matrix. If not provided, the values will be inspected
@@ -1044,7 +1044,7 @@ class Matrix(BaseType):
         compressed_rows,
         indptr,
         col_indices,
-        values,
+        values=1.0,
         dtype=None,
         *,
         nrows=None,
@@ -1069,7 +1069,7 @@ class Matrix(BaseType):
             Pointers for each non-empty row into col_indices and values.
         col_indices : list or np.ndarray
             Column indices.
-        values : list or np.ndarray or scalar
+        values : list or np.ndarray or scalar, default 1.0
             List of values. If a scalar is provided, all values will be set to this single value.
         dtype :
             Data type of the Matrix. If not provided, the values will be inspected
@@ -1127,7 +1127,7 @@ class Matrix(BaseType):
         compressed_cols,
         indptr,
         row_indices,
-        values,
+        values=1.0,
         dtype=None,
         *,
         nrows=None,
@@ -1152,7 +1152,7 @@ class Matrix(BaseType):
             Pointers for each non-empty columns into row_indices and values.
         row_indices : list or np.ndarray
             Row indices.
-        values : list or np.ndarray or scalar
+        values : list or np.ndarray or scalar, default 1.0
             List of values. If a scalar is provided, all values will be set to this single value.
         dtype :
             Data type of the Matrix. If not provided, the values will be inspected
