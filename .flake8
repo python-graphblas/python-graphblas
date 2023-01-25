@@ -1,6 +1,3 @@
-[aliases]
-test=pytest
-
 [flake8]
 max-line-length = 100
 inline-quotes = "
@@ -17,9 +14,3 @@ per-file-ignores =
     graphblas/tests/*.py:T201,
     graphblas/core/ss/matrix.py:SIM113,
     graphblas/**/__init__.py:F401,
-
-[build_sphinx]
-all-files = 1
-source-dir = docs
-build-dir = docs/_build
-warning-is-error = 1

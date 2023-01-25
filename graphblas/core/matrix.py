@@ -976,8 +976,8 @@ class Matrix(BaseType):
                 rows = cols = unzipped
             else:
                 raise ValueError(
-                    "Each item in the edgelist must have two elements (for row and column index); "
-                    f"got {len(unzipped)}"
+                    "Each item in the edgelist must have two or three elements "
+                    f"(for row and column index, and maybe values); got {len(unzipped)}"
                 )
         if values is None:
             if edgelist_values is None:
