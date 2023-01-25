@@ -450,6 +450,11 @@ class Vector(BaseType):
         sort : bool, default=True
             Whether to require sorted indices.
 
+        See Also
+        --------
+        to_dict
+        from_coo
+
         Returns
         -------
         np.ndarray[dtype=uint64] : Indices
@@ -709,6 +714,12 @@ class Vector(BaseType):
         name : str, optional
             Name to give the Vector.
 
+        See Also
+        --------
+        from_dict
+        from_pairs
+        to_coo
+
         Returns
         -------
         Vector
@@ -739,6 +750,53 @@ class Vector(BaseType):
             # This needs to be the original data to get proper error messages
             w.build(indices, values, dup_op=dup_op)
         return w
+
+    @classmethod
+    def from_pairs(cls, pairs, dtype=None, *, size=None, dup_op=None, name=None):
+        """Create a new Vector from indices and values.
+
+        This transforms the data and calls ``Vector.from_coo``.
+
+        Parameters
+        ----------
+        pairs : list or iterable
+            A sequence of ``(index, value)`` pairs.
+        dtype :
+            Data type of the Vector. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        size : int, optional
+            Size of the Vector. If not provided, ``size`` is computed from
+            the maximum index found in ``pairs``.
+        dup_op : BinaryOp, optional
+            Function used to combine values if duplicate indices are found.
+            Leaving ``dup_op=None`` will raise an error if duplicates are found.
+        name : str, optional
+            Name to give the Vector.
+
+        See Also
+        --------
+        from_coo
+        from_dict
+        to_coo
+
+        Returns
+        -------
+        Vector
+        """
+        if isinstance(pairs, np.ndarray):
+            raise TypeError("pairs as NumPy array is not supported; use `Vector.from_coo` instead")
+        unzipped = list(zip(*pairs))
+        if len(unzipped) == 2:
+            indices, values = unzipped
+        elif not unzipped:
+            # Empty pairs (size should be given)
+            indices = values = unzipped
+        else:
+            raise ValueError(
+                "Each item in the pairs must have two elements (for index and value); "
+                f"got {len(unzipped)}"
+            )
+        return cls.from_coo(indices, values, dtype, size=size, dup_op=dup_op, name=name)
 
     @property
     def _carg(self):
@@ -1740,6 +1798,12 @@ class Vector(BaseType):
         name : str, optional
             Name to give the Vector.
 
+        See Also
+        --------
+        from_coo
+        from_pairs
+        to_dict
+
         Returns
         -------
         Vector
@@ -1758,6 +1822,11 @@ class Vector(BaseType):
 
     def to_dict(self):
         """Return Vector as a dict in the form ``{index: val}``.
+
+        See Also
+        --------
+        to_coo
+        from_dict
 
         Returns
         -------

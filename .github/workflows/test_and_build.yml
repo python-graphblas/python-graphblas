@@ -290,7 +290,7 @@ jobs:
           rm script.py
           # Tests whose coverage depend on order of tests :/
           # TODO: understand why these are order-dependent and try to fix
-          coverage run -a -m pytest --color=yes -x --no-mapnumpy -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
+          coverage run -a -m pytest --color=yes -x --no-mapnumpy --runslow -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
           # coverage run -a -m pytest --color=yes -x --no-mapnumpy -k test_npmonoid graphblas/tests/test_numpyops.py --runslow
       - name: Auto-generated code check
         if: matrix.slowtask == 'pytest_bizarro'

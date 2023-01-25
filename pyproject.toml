@@ -211,6 +211,7 @@ select = [
     "EXE",  # flake8-executable
     "TYP",  # flake8-type-checking
     "TRY",  # tryceratops
+    # "PTH",  # flake8-use-pathlib
     "RUF",  # ruff-specific rules
 ]
 external = [
@@ -230,6 +231,10 @@ ignore = [
     "D213",  # Multi-line docstring summary should start at the second line
     "D401",  # First line of docstring should be in imperative mood:
     "D417",  # Missing argument description in the docstring:
+
+    # Maybe consider
+    "TRY004",  # Prefer `TypeError` exception for invalid type (Note: good advice, but not worth the nuisance)
+    "TRY200",  # Use `raise from` to specify exception cause (Note: sometimes okay to raise original exception)
 
     # Intentionally ignored
     "D203",  # 1 blank line required before class docstring (Note: conflicts with D211, which is preferred)

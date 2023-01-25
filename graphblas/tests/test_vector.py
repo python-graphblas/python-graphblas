@@ -1618,6 +1618,7 @@ def test_expr_is_like_vector(v):
         "clear",
         "from_coo",
         "from_dict",
+        "from_pairs",
         "from_values",
         "resize",
         "update",
@@ -1664,6 +1665,7 @@ def test_index_expr_is_like_vector(v):
         "clear",
         "from_coo",
         "from_dict",
+        "from_pairs",
         "from_values",
         "resize",
     }
@@ -2466,6 +2468,23 @@ def test_to_dict(v):
     assert v.to_dict() == {1: 1, 3: 1, 4: 2, 6: 0}
     empty = Vector(int, 2)
     assert empty.to_dict() == {}
+
+
+def test_from_pairs():
+    w = Vector.from_pairs([[0, 1], [2, 3]])
+    expected = Vector.from_coo([0, 2], [1, 3])
+    assert w.isequal(expected, check_dtype=True)
+    with pytest.raises(TypeError, match="use `Vector.from_coo`"):
+        Vector.from_pairs(np.array([[0, 1], [2, 3]], dtype=np.int64))
+
+    w = Vector.from_pairs([], size=4)
+    expected = Vector(float, size=4)
+    assert w.isequal(expected, check_dtype=True)
+
+    with pytest.raises(ValueError, match="Unable to infer size"):
+        Vector.from_pairs([])
+    with pytest.raises(ValueError, match="Each item in the pair"):
+        Vector.from_pairs([[1, 2, 3], [4, 5, 6]])
 
 
 @pytest.mark.skipif("not suitesparse")

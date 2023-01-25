@@ -269,6 +269,10 @@ def to_dicts(self):
     return self._get_value("to_dicts")
 
 
+def to_edgelist(self):
+    return self._get_value("to_edgelist")
+
+
 def to_values(self):
     return self._get_value("to_values")
 
@@ -409,6 +413,7 @@ def _main():
         "to_dcsc",
         "to_dcsr",
         "to_dicts",
+        "to_edgelist",
     }
     common_raises = set()
     scalar_raises = {

@@ -494,6 +494,11 @@ class Matrix(BaseType):
             If internally stored rowwise, the sorting will be first by rows, then by column.
             If internally stored columnwise, the sorting will be first by column, then by row.
 
+        See Also
+        --------
+        to_edgelist
+        from_coo
+
         Returns
         -------
         np.ndarray[dtype=uint64] : Rows
@@ -542,6 +547,35 @@ class Matrix(BaseType):
             c_columns.array if columns else None,
             c_values if values else None,
         )
+
+    def to_edgelist(self, dtype=None, *, values=True, sort=True):
+        """Extract the indices and values as a 2-tuple of numpy arrays.
+
+        This calls ``to_coo`` then transforms the data into an edgelist.
+
+        Parameters
+        ----------
+        dtype :
+            Requested dtype for the output values array.
+        values : bool, default=True
+            Whether to return values; will return `None` for values if `False`
+        sort : bool, default=True
+            Whether to require sorted indices.
+            If internally stored rowwise, the sorting will be first by rows, then by column.
+            If internally stored columnwise, the sorting will be first by column, then by row.
+
+        See Also
+        --------
+        to_coo
+        from_edgelist
+
+        Returns
+        -------
+        np.ndarray[dtype=uint64] : Edgelist
+        np.ndarray : Values
+        """
+        rows, columns, values = self.to_coo(dtype, values=values, sort=sort)
+        return (np.column_stack([rows, columns]), values)
 
     def build(self, rows, columns, values, *, dup_op=None, clear=False, nrows=None, ncols=None):
         """Rarely used method to insert values into an existing Matrix.
@@ -827,6 +861,11 @@ class Matrix(BaseType):
         name : str, optional
             Name to give the Matrix.
 
+        See Also
+        --------
+        from_edgelist
+        to_coo
+
         Returns
         -------
         Matrix
@@ -863,6 +902,99 @@ class Matrix(BaseType):
             # This needs to be the original data to get proper error messages
             C.build(rows, columns, values, dup_op=dup_op)
         return C
+
+    @classmethod
+    def from_edgelist(
+        cls,
+        edgelist,
+        values=None,
+        dtype=None,
+        *,
+        nrows=None,
+        ncols=None,
+        dup_op=None,
+        name=None,
+    ):
+        """Create a new Matrix from edgelist of (row, col) pairs or (row, col, value) triples.
+
+        This transforms the data and calls ``Matrix.from_coo``.
+
+        Parameters
+        ----------
+        edgelist : list or np.ndarray or iterable
+            A sequence of ``(row, column)`` pairs or ``(row, column, value)`` triples.
+            NumPy edgelist only supports ``(row, column)``; values must be passed separately.
+        values : list or np.ndarray or scalar, optional
+            List of values. If a scalar is provided, all values will be set to this single value.
+            The default is 1.0 if ``edgelist`` is a sequence of ``(row, column)`` pairs.
+        dtype :
+            Data type of the Matrix. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        nrows : int, optional
+            Number of rows in the Matrix. If not provided, ``nrows`` is computed
+            from the maximum row index found in the edgelist.
+        ncols : int, optional
+            Number of columns in the Matrix. If not provided, ``ncols`` is computed
+            from the maximum column index found in the edgelist.
+        dup_op : :class:`~graphblas.core.operator.BinaryOp`, optional
+            Function used to combine values if duplicate indices are found.
+            Leaving ``dup_op=None`` will raise an error if duplicates are found.
+        name : str, optional
+            Name to give the Matrix.
+
+        See Also
+        --------
+        from_coo
+        to_edgelist
+
+        Returns
+        -------
+        Matrix
+        """
+        edgelist_values = None
+        if isinstance(edgelist, np.ndarray):
+            if edgelist.ndim != 2:
+                raise ValueError(
+                    f"edgelist array must have 2 dimensions (nvals x 2); got {edgelist.ndim}"
+                )
+            if edgelist.shape[1] == 3:
+                raise ValueError(
+                    "edgelist as NumPy array only supports ``(row, column)``; "
+                    "values must be passed separately."
+                )
+            if edgelist.shape[1] != 2:
+                raise ValueError(
+                    "Last dimension of edgelist array must be length 2 "
+                    f"(for row and column); got {edgelist.shape[1]}"
+                )
+            rows = edgelist[:, 0]
+            cols = edgelist[:, 1]
+        else:
+            unzipped = list(zip(*edgelist))
+            if len(unzipped) == 2:
+                rows, cols = unzipped
+            elif len(unzipped) == 3:
+                rows, cols, edgelist_values = unzipped
+            elif not unzipped:
+                # Empty edgelist (nrows and ncols should be given)
+                rows = cols = unzipped
+            else:
+                raise ValueError(
+                    "Each item in the edgelist must have two or three elements "
+                    f"(for row and column index, and maybe values); got {len(unzipped)}"
+                )
+        if values is None:
+            if edgelist_values is None:
+                values = 1.0
+            else:
+                values = edgelist_values
+        elif edgelist_values is not None:
+            raise TypeError(
+                "Too many sources of values: from `edgelist` triples and from `values=` argument"
+            )
+        return cls.from_coo(
+            rows, cols, values, dtype, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
+        )
 
     @classmethod
     def _from_csx(cls, fmt, indptr, indices, values, dtype, num, check_num, name):
@@ -987,6 +1119,7 @@ class Matrix(BaseType):
         from_coo
         from_csc
         from_dcsr
+        to_csr
         Matrix.ss.import_csr
         io.from_scipy_sparse
         """
@@ -1033,6 +1166,7 @@ class Matrix(BaseType):
         from_coo
         from_csr
         from_dcsc
+        to_csc
         Matrix.ss.import_csc
         io.from_scipy_sparse
         """
@@ -1092,6 +1226,7 @@ class Matrix(BaseType):
         from_coo
         from_csr
         from_dcsc
+        to_dcsr
         Matrix.ss.import_hypercsr
         io.from_scipy_sparse
         """
@@ -1175,6 +1310,7 @@ class Matrix(BaseType):
         from_coo
         from_csc
         from_dcsr
+        to_dcsc
         Matrix.ss.import_hypercsc
         io.from_scipy_sparse
         """
@@ -1264,6 +1400,10 @@ class Matrix(BaseType):
             from the maximum column index found in the dicts.
         name : str, optional
             Name to give the Matrix.
+
+        See Also
+        --------
+        to_dicts
 
         Returns
         -------
@@ -1360,6 +1500,7 @@ class Matrix(BaseType):
         to_coo
         to_csc
         to_dcsr
+        from_csr
         Matrix.ss.export
         io.to_scipy_sparse
         """
@@ -1385,6 +1526,7 @@ class Matrix(BaseType):
         to_coo
         to_csr
         to_dcsc
+        from_csc
         Matrix.ss.export
         io.to_scipy_sparse
         """
@@ -1413,6 +1555,7 @@ class Matrix(BaseType):
         to_coo
         to_csr
         to_dcsc
+        from_dcsc
         Matrix.ss.export
         io.to_scipy_sparse
         """
@@ -1459,6 +1602,7 @@ class Matrix(BaseType):
         to_coo
         to_csc
         to_dcsr
+        from_dcsc
         Matrix.ss.export
         io.to_scipy_sparse
         """
@@ -1495,6 +1639,10 @@ class Matrix(BaseType):
             "rowwise" returns dict of dicts as ``{row: {col: val}}``.
             "columnwise" returns dict of dicts as ``{col: {row: val}}``.
             The default is "rowwise".
+
+        See Also
+        --------
+        from_dicts
 
         Returns
         -------
@@ -3102,6 +3250,7 @@ class MatrixExpression(BaseExpression):
     to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
     to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
     to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
+    to_edgelist = wrapdoc(Matrix.to_edgelist)(property(automethods.to_edgelist))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
     # These raise exceptions
@@ -3200,6 +3349,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
     to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
     to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
+    to_edgelist = wrapdoc(Matrix.to_edgelist)(property(automethods.to_edgelist))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
     # These raise exceptions
@@ -3365,6 +3515,7 @@ class TransposedMatrix:
     get = Matrix.get
     isequal = Matrix.isequal
     isclose = Matrix.isclose
+    to_edgelist = Matrix.to_edgelist
     wait = Matrix.wait
     _extract_element = Matrix._extract_element
     _prep_for_extract = Matrix._prep_for_extract
