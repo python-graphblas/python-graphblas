@@ -1,28 +1,27 @@
 from collections.abc import Mapping
 
-from graphblas import ffi, lib
-
-from .._ss.config import BaseConfig
-from .._ss.matrix import _concat_mn
-from ..base import _expect_type
+from ..core import ffi, lib
+from ..core.base import _expect_type
+from ..core.matrix import Matrix, TransposedMatrix
+from ..core.scalar import _as_scalar
+from ..core.ss.config import BaseConfig
+from ..core.ss.matrix import _concat_mn
+from ..core.vector import Vector
 from ..dtypes import INT64
 from ..exceptions import _error_code_lookup
-from ..matrix import Matrix, TransposedMatrix
-from ..scalar import Scalar
-from ..vector import Vector
 
 
 class _graphblas_ss:
-    """Used in `_expect_type`"""
+    """Used in `_expect_type`."""
 
 
 _graphblas_ss.__name__ = "graphblas.ss"
 _graphblas_ss = _graphblas_ss()
 
 
-def diag(x, k=0, dtype=None, *, name=None):
+def diag(x, k=0, dtype=None, *, name=None, **opts):
     """
-    GxB_Matrix_diag, GxB_Vector_diag
+    GxB_Matrix_diag, GxB_Vector_diag.
 
     Extract a diagonal Vector from a Matrix, or construct a diagonal Matrix
     from a Vector.  Unlike ``Matrix.diag`` and ``Vector.diag``, this function
@@ -48,8 +47,7 @@ def diag(x, k=0, dtype=None, *, name=None):
     x = _expect_type(
         _graphblas_ss, x, (Matrix, TransposedMatrix, Vector), within="diag", argname="x"
     )
-    if type(k) is not Scalar:
-        k = Scalar.from_value(k, INT64, is_cscalar=True, name="")
+    k = _as_scalar(k, INT64, is_cscalar=True)
     if dtype is None:
         dtype = x.dtype
     typ = type(x)
@@ -59,19 +57,17 @@ def diag(x, k=0, dtype=None, *, name=None):
         rv.ss.build_diag(x, k)
     else:
         if k.value < 0:
-            size = min(x._nrows + k.value, x._ncols)
+            size = max(0, min(x._nrows + k.value, x._ncols))
         else:
-            size = min(x._ncols - k.value, x._nrows)
-        if size < 0:
-            size = 0
+            size = max(0, min(x._ncols - k.value, x._nrows))
         rv = Vector(dtype, size=size, name=name)
-        rv.ss.build_diag(x, k)
+        rv.ss.build_diag(x, k, **opts)
     return rv
 
 
-def concat(tiles, dtype=None, *, name=None):
+def concat(tiles, dtype=None, *, name=None, **opts):
     """
-    GxB_Matrix_concat
+    GxB_Matrix_concat.
 
     Concatenate a 2D list of Matrix objects into a new Matrix, or a 1D list of
     Vector objects into a new Vector.  To concatenate into existing objects,
@@ -96,18 +92,18 @@ def concat(tiles, dtype=None, *, name=None):
         nrows = sum(row_tiles[0]._nrows for row_tiles in tiles)
         ncols = sum(tile._ncols for tile in tiles[0])
         rv = Matrix(dtype, nrows=nrows, ncols=ncols, name=name)
-        rv.ss._concat(tiles, m, n)
+        rv.ss._concat(tiles, m, n, opts)
     else:
         if dtype is None:
             dtype = tiles[0].dtype
         size = sum(tile._nrows for tile in tiles)
         rv = Vector(dtype, size=size, name=name)
-        rv.ss._concat(tiles, m)
+        rv.ss._concat(tiles, m, opts)
     return rv
 
 
 class GlobalConfig(BaseConfig):
-    """Get and set global configuration options for SuiteSparse:GraphBLAS
+    """Get and set global configuration options for SuiteSparse:GraphBLAS.
 
     See SuiteSparse:GraphBLAS documentation for more details.
 
@@ -131,8 +127,8 @@ class GlobalConfig(BaseConfig):
     Setting values to None restores the default value for most configurations.
     """
 
-    _get_function = lib.GxB_Global_Option_get
-    _set_function = lib.GxB_Global_Option_set
+    _get_function = "GxB_Global_Option_get"
+    _set_function = "GxB_Global_Option_set"
     _null_valid = {"bitmap_switch"}
     _options = {
         # Matrix/Vector format
@@ -163,13 +159,13 @@ class GlobalConfig(BaseConfig):
     }
     _enumerations = {
         "format": {
-            lib.GxB_BY_ROW: "by_row",
-            lib.GxB_BY_COL: "by_col",
-            # lib.GxB_NO_FORMAT: "no_format",  # Used by iterators; not valid here
+            "by_row": lib.GxB_BY_ROW,
+            "by_col": lib.GxB_BY_COL,
+            # "no_format": lib.GxB_NO_FORMAT,  # Used by iterators; not valid here
         },
         "gpu_control": {
-            lib.GxB_GPU_ALWAYS: "always",
-            lib.GxB_GPU_NEVER: "never",
+            "always": lib.GxB_GPU_ALWAYS,
+            "never": lib.GxB_GPU_NEVER,
         },
     }
 
@@ -202,38 +198,56 @@ class About(Mapping):
         "api_url": lib.GxB_API_URL,
         "compiler_name": lib.GxB_COMPILER_NAME,
     }
+    _bool_options = {
+        "openmp": lib.GxB_LIBRARY_OPENMP,
+    }
 
     def __getitem__(self, key):
         key = key.lower()
         if key in self._mode_options:
-            val_ptr = ffi.new("GrB_Mode*")
-            info = lib.GxB_Global_Option_get(self._mode_options[key], val_ptr)
-            if info == lib.GrB_SUCCESS:  # pragma: no branch
+            val_ptr = ffi.new("int32_t*")
+            info = lib.GxB_Global_Option_get_INT32(self._mode_options[key], val_ptr)
+            if info == lib.GrB_SUCCESS:  # pragma: no branch (safety)
                 val = val_ptr[0]
-                if val not in self._modes:  # pragma: no cover
+                if val not in self._modes:  # pragma: no cover (sanity)
                     raise ValueError(f"Unknown mode: {val}")
                 return self._modes[val]
         elif key in self._int3_options:
-            val_ptr = ffi.new("int[3]")
-            info = lib.GxB_Global_Option_get(self._int3_options[key], val_ptr)
-            if info == lib.GrB_SUCCESS:  # pragma: no branch
+            val_ptr = ffi.new("int32_t[3]")
+            info = lib.GxB_Global_Option_get_INT32(self._int3_options[key], val_ptr)
+            if info == lib.GrB_SUCCESS:  # pragma: no branch (safety)
                 return (val_ptr[0], val_ptr[1], val_ptr[2])
         elif key in self._str_options:
             val_ptr = ffi.new("char**")
-            info = lib.GxB_Global_Option_get(self._str_options[key], val_ptr)
-            if info == lib.GrB_SUCCESS:  # pragma: no branch
+            info = lib.GxB_Global_Option_get_CHAR(self._str_options[key], val_ptr)
+            if info == lib.GrB_SUCCESS:  # pragma: no branch (safety)
                 return ffi.string(val_ptr[0]).decode()
+        elif key in self._bool_options:
+            val_ptr = ffi.new("int32_t*")
+            info = lib.GxB_Global_Option_get_INT32(self._bool_options[key], val_ptr)
+            if info == lib.GrB_SUCCESS:  # pragma: no branch (safety)
+                return bool(val_ptr[0])
         else:
             raise KeyError(key)
-        raise _error_code_lookup[info](f"Failed to get info for {key}")  # pragma: no cover
+        raise _error_code_lookup[info](f"Failed to get info for {key}")  # pragma: no cover (safety)
 
     def __iter__(self):
         return iter(
-            sorted(self._mode_options.keys() | self._int3_options.keys() | self._str_options.keys())
+            sorted(
+                self._mode_options.keys()
+                | self._int3_options.keys()
+                | self._str_options.keys()
+                | self._bool_options.keys()
+            )
         )
 
     def __len__(self):
-        return len(self._mode_options) + len(self._int3_options) + len(self._str_options)
+        return (
+            len(self._mode_options)
+            + len(self._int3_options)
+            + len(self._str_options)
+            + len(self._bool_options)
+        )
 
     __repr__ = GlobalConfig.__repr__
     _ipython_key_completions_ = GlobalConfig._ipython_key_completions_

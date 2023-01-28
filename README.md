@@ -6,12 +6,33 @@
 [![Tests](https://github.com/python-graphblas/python-graphblas/workflows/Tests/badge.svg?branch=main)](https://github.com/python-graphblas/python-graphblas/actions)
 [![Docs](https://readthedocs.org/projects/python-graphblas/badge/?version=latest)](https://python-graphblas.readthedocs.io/en/latest/)
 [![Coverage](https://coveralls.io/repos/python-graphblas/python-graphblas/badge.svg?branch=main)](https://coveralls.io/r/python-graphblas/python-graphblas)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7328791.svg)](https://doi.org/10.5281/zenodo.7328791)
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/python-graphblas/python-graphblas/HEAD?filepath=notebooks%2FIntro%20to%20GraphBLAS%20%2B%20SSSP%20example.ipynb)
+[![Discord](https://img.shields.io/badge/Chat-Discord-blue)](https://discord.com/invite/vur45CbwMz)
 
-Python wrapper around GraphBLAS
+Python library for GraphBLAS: high-performance sparse linear algebra for scalable graph analytics.
 
-To install, `conda install -c conda-forge python-graphblas` or `pip install python-graphblas`. This will also install the SuiteSparse `graphblas` compiled C library.
+- **Documentation:** [https://python-graphblas.readthedocs.io/](https://python-graphblas.readthedocs.io/)
+  - **GraphBLAS C API:** [https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf](https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf)
+  - **SuiteSparse:GraphBLAS User Guide:** [https://github.com/DrTimothyAldenDavis/GraphBLAS/raw/stable/Doc/GraphBLAS_UserGuide.pdf](https://github.com/DrTimothyAldenDavis/GraphBLAS/raw/stable/Doc/GraphBLAS_UserGuide.pdf)
+- **Source:** [https://github.com/python-graphblas/python-graphblas](https://github.com/python-graphblas/python-graphblas)
+- **Bug reports:** [https://github.com/python-graphblas/python-graphblas/issues](https://github.com/python-graphblas/python-graphblas/issues)
+- **Github discussions:** [https://github.com/python-graphblas/python-graphblas/discussions](https://github.com/python-graphblas/python-graphblas/discussions)
+- **Weekly community call:** [https://github.com/python-graphblas/python-graphblas/issues/247](https://github.com/python-graphblas/python-graphblas/issues/247)
+- **Chat via Discord:** [https://discord.com/invite/vur45CbwMz](https://discord.com/invite/vur45CbwMz) in the [#graphblas channel](https://discord.com/channels/786703927705862175/1024732940233605190)
 
+## Install
+Install the latest version of Python-graphblas via conda:
+```
+$ conda install -c conda-forge python-graphblas
+```
+or pip:
+```
+$ pip install python-graphblas
+```
+This will also install the [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS) compiled C library.
+
+## Description
 Currently works with [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS), but the goal is to make it work with all implementations of the GraphBLAS spec.
 
 The approach taken with this library is to follow the C-API specification as closely as possible while making improvements
@@ -112,7 +133,7 @@ s(accum) << v.reduce(op)
 ```python
 A = Matrix.new(dtype, num_rows, num_cols)   # new_type
 B = A.dup()                                 # dup
-A = Matrix.from_values([row_indices], [col_indices], [values])  # build
+A = Matrix.from_coo([row_indices], [col_indices], [values])  # build
 ```
 ## New from delayed
 Delayed objects can be used to create a new object using `.new()` method
@@ -125,7 +146,7 @@ size = v.size                               # size
 nrows = M.nrows                             # nrows
 ncols = M.ncols                             # ncols
 nvals = M.nvals                             # nvals
-rindices, cindices, vals = M.to_values()    # extractTuples
+rindices, cindices, vals = M.to_coo()       # extractTuples
 ```
 ## Initialization
 There is a mechanism to initialize `graphblas` with a context prior to use. This allows for setting the backend to
@@ -146,16 +167,15 @@ Python-graphblas requires `numba` which enables compiling user-defined Python fu
 Example customized UnaryOp:
 ```python
 from graphblas import unary
-from graphblas.operator import UnaryOp
 
 def force_odd_func(x):
     if x % 2 == 0:
         return x + 1
     return x
 
-UnaryOp.register_new('force_odd', force_odd_func)
+unary.register_new('force_odd', force_odd_func)
 
-v = Vector.from_values([0, 1, 3], [1, 2, 3])
+v = Vector.from_coo([0, 1, 3], [1, 2, 3])
 w = v.apply(unary.force_odd).new()
 w  # indexes=[0, 1, 3], values=[1, 3, 3]
 ```

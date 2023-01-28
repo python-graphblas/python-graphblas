@@ -55,7 +55,7 @@ as their start and end point.
 Common ways to store a graph
 ----------------------------
 
-The most common way to store a graph is as an edge list, containing the `(start_node, end_node, weight)`.
+The most common way to store a graph is as an edge list, containing the ``(start_node, end_node, weight)``.
 
 The following graph and its edge list are shown below.
 
@@ -236,12 +236,12 @@ node 0.
 
     # Create the graph and starting vector
     start_node = 0
-    G = Matrix.from_values(
+    G = Matrix.from_coo(
         [0, 0, 1, 1, 2],
         [1, 2, 2, 3, 3],
         [2.0, 5.0, 1.5, 4.25, 0.5],
         nrows=4, ncols=4)
-    v = Vector.from_values([start_node], [0.0], size=4)
+    v = Vector.from_coo([start_node], [0.0], size=4)
 
     # Compute SSSP
     while True:

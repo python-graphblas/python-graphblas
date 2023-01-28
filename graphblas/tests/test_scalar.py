@@ -2,17 +2,21 @@ import inspect
 import pickle
 import random
 import sys
+import types
 import weakref
 
 import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import binary, dtypes, replace
+from graphblas import backend, binary, dtypes, monoid, replace, select, unary
+from graphblas.exceptions import EmptyObject
 
 from .conftest import autocompute, compute
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
+
+suitesparse = backend == "suitesparse"
 
 
 @pytest.fixture
@@ -67,9 +71,11 @@ def test_dup(s):
         ("INT32", -2),
         ("BOOL", True),
         ("FP32", -2.5),
-    ] + uint_data:
+        *uint_data,
+    ]:
         s5 = s4.dup(dtype=dtype, name="s5")
-        assert s5.dtype == dtype and s5.value == val
+        assert s5.dtype == dtype
+        assert s5.value == val
         s6 = s_empty.dup(dtype=dtype, name="s6")
         assert s6.is_empty
         assert compute(s6.value) is None
@@ -227,8 +233,9 @@ def test_update(s):
         assert s == 4
     s() << 5
     assert s == 5
-    with pytest.raises(TypeError, match="is not supported"):
-        s(accum=binary.plus) << 6
+    # with pytest.raises(TypeError, match="is not supported"):
+    s(accum=binary.plus) << 6  # Now okay
+    assert s == 11
     with pytest.raises(TypeError, match="Mask not allowed for Scalars"):
         s(s)
     with pytest.raises(TypeError, match="input_mask not allowed for Scalars"):
@@ -273,27 +280,33 @@ def test_scalar_to_numpy(s):
         assert a.shape == b.shape
 
 
+@autocompute
 def test_neg():
     for dtype in sorted(
-        (dtype for dtype in vars(dtypes).values() if isinstance(dtype, dtypes.DataType)),
+        (
+            dtype
+            for attr, dtype in vars(dtypes).items()
+            if isinstance(dtype, dtypes.DataType) and attr not in {"_INDEX"}
+        ),
         key=lambda x: x.name,
         reverse=random.choice([False, True]),  # used to segfault when False
     ):
         s = Scalar.from_value(1, dtype=dtype)
         empty = Scalar(dtype)
-        if dtype.name == "BOOL" or dtype.name.startswith("U") or dtype._is_udt:
-            with pytest.raises(TypeError, match="The negative operator, `-`, is not supported"):
+        if dtype._is_udt:
+            with pytest.raises(KeyError, match="ainv does not work with"):
                 -s
-            with pytest.raises(TypeError, match="The negative operator, `-`, is not supported"):
+            with pytest.raises(KeyError, match="ainv does not work with"):
                 -empty
         else:
-            minus_s = Scalar.from_value(-1, dtype=dtype)
+            minus_s = Scalar.from_value(-1, dtype=dtype, is_cscalar=False)  # pragma: is_grbscalar
             assert s == -minus_s
             assert (-s).value == minus_s.value
             assert empty == -empty
             assert compute((-empty).value) is None
 
 
+@autocompute
 def test_invert():
     empty = Scalar(bool)
     assert empty == ~empty
@@ -302,7 +315,9 @@ def test_invert():
     s = Scalar.from_value(1, dtype=bool)
     assert ~s == not_s
     assert (~s).value == not_s.value
-    assert not (s.value) == not_s.value
+    compare = s.value == not_s.value
+    assert not compare
+    assert s.value != not_s.value
     bad = Scalar(int)
     with pytest.raises(TypeError, match="The invert operator"):
         ~bad
@@ -310,14 +325,20 @@ def test_invert():
 
 def test_wait(s):
     s.wait()
+    s.wait("materialize")
+    s.wait("complete")
+    with pytest.raises(ValueError, match="`how` argument must be"):
+        s.wait("badmode")
 
 
 @autocompute
 def test_expr_is_like_scalar(s):
-    v = Vector.from_values([1], [2])
+    v = Vector.from_coo([1], [2])
+    t = s.dup(bool)
     attrs = {attr for attr, val in inspect.getmembers(s)}
     expr_attrs = {attr for attr, val in inspect.getmembers(v.inner(v))}
     infix_attrs = {attr for attr, val in inspect.getmembers(v @ v)}
+    scalar_infix_attrs = {attr for attr, val in inspect.getmembers(t & t)}
     # Should we make any of these raise informative errors?
     expected = {
         "__call__",
@@ -332,7 +353,6 @@ def test_expr_is_like_scalar(s):
         "_name_counter",
         "_update",
         "clear",
-        "from_pygraphblas",
         "from_value",
         "update",
     }
@@ -340,16 +360,27 @@ def test_expr_is_like_scalar(s):
         expected.add("_empty")
     assert attrs - expr_attrs == expected, (
         "If you see this message, you probably added a method to Scalar.  You may need to "
-        "add an entry to `scalar` set in `graphblas._automethods.py` "
-        "and then run `python -m graphblas._automethods`.  If you're messing with infix "
-        "methods, then you may need to run `python -m graphblas._infixmethods`."
+        "add an entry to `scalar` set in `graphblas.core.automethods` "
+        "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
+        "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
     assert attrs - infix_attrs == expected
+    assert attrs - scalar_infix_attrs == expected
+    # Make sure signatures actually match. `expr.dup` has `**opts`
+    skip = {"__init__", "__repr__", "_repr_html_", "new", "dup"}
+    for expr in [v.inner(v), v @ v, t & t]:
+        print(type(expr).__name__)
+        for attr, val in inspect.getmembers(expr):
+            if attr in skip or not isinstance(val, types.MethodType) or not hasattr(s, attr):
+                continue
+            val2 = getattr(s, attr)
+            assert inspect.signature(val) == inspect.signature(val2), attr
+            assert val.__doc__ == val2.__doc__
 
 
 @autocompute
 def test_index_expr_is_like_scalar(s):
-    v = Vector.from_values([1], [2])
+    v = Vector.from_coo([1], [2])
     attrs = {attr for attr, val in inspect.getmembers(s)}
     expr_attrs = {attr for attr, val in inspect.getmembers(v[0])}
     # Should we make any of these raise informative errors?
@@ -364,22 +395,58 @@ def test_index_expr_is_like_scalar(s):
         "_name_counter",
         "_update",
         "clear",
-        "from_pygraphblas",
         "from_value",
     }
     if s.is_cscalar:
         expected.add("_empty")
     assert attrs - expr_attrs == expected, (
         "If you see this message, you probably added a method to Scalar.  You may need to "
-        "add an entry to `scalar` set in `graphblas._automethods.py` "
-        "and then run `python -m graphblas._automethods`.  If you're messing with infix "
-        "methods, then you may need to run `python -m graphblas._infixmethods`."
+        "add an entry to `scalar` set in `graphblas.core.automethods` "
+        "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
+        "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
+    # Make sure signatures actually match. `update` has different docstring.
+    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "new", "update", "dup"}
+    for attr, val in inspect.getmembers(v[0]):
+        if attr in skip or not isinstance(val, types.MethodType) or not hasattr(s, attr):
+            continue
+        val2 = getattr(s, attr)
+        assert inspect.signature(val) == inspect.signature(val2), attr
+        assert val.__doc__ == val2.__doc__
+
+
+@autocompute
+def test_dup_expr(s):
+    v = Vector.from_coo([1], [2])
+    result = (s + s).dup()
+    assert result.isequal(2 * s)
+    result = (s + s).dup(is_cscalar=not s._is_cscalar)
+    assert result.isequal(2 * s)
+    assert result._is_cscalar != s._is_cscalar
+    result = (s + s).dup(dtype=float)
+    assert result.isequal(10.0, check_dtype=True)
+    result = (s + s).dup(clear=True)
+    assert result.isequal(s.dup(clear=True))
+    b = s.dup(bool)
+    result = (b | b).dup()
+    assert result.isequal(b, check_dtype=True)
+    result = (b | b).dup(clear=True)
+    assert result.isequal(b.dup(clear=True), check_dtype=True)
+    result = (b | b).dup(float)
+    assert result.isequal(b.dup(float), check_dtype=True)
+    result = (v @ v).dup()
+    assert result.isequal(4)
+    result = v[1].dup()
+    assert result.isequal(2, check_dtype=True)
+    result = v[1].dup(float)
+    assert result.isequal(2.0, check_dtype=True)
+    result = v[1].dup(clear=True)
+    assert result.isequal(v[0])
 
 
 def test_ndim(s):
     assert s.ndim == 0
-    v = Vector.from_values([1], [2])
+    v = Vector.from_coo([1], [2])
     assert v.inner(v).ndim == 0
     assert (v @ v).ndim == 0
 
@@ -420,7 +487,7 @@ def test_scalar_complex(dtype):
 
 @autocompute
 def test_scalar_expr(s):
-    v = Vector.from_values([1], [2])
+    v = Vector.from_coo([1], [2])
     expr = v.inner(v)
     t = expr._new_scalar(s.dtype)
     assert t.is_cscalar is s.is_cscalar
@@ -438,19 +505,64 @@ def test_scalar_expr(s):
 
 
 def test_sizeof(s):
-    assert 1 < sys.getsizeof(s) < 1000
+    if suitesparse or s._is_cscalar:
+        assert 1 < sys.getsizeof(s) < 1000
+    else:
+        with pytest.raises(TypeError):
+            sys.getsizeof(s)
 
 
-def test_concat(s):
+def test_ewise_union(s):
+    t = Scalar(int)
+    result = s.ewise_union(t, binary.plus, 10, 20).new()
+    assert result == 25
+    with pytest.raises(EmptyObject):
+        s.ewise_union(t, binary.plus, 10, t).new()
+    result = s.ewise_union(s, monoid.plus, 10, 20).new()
+    assert result == 10
+    result = t.ewise_union(t, binary.plus, 10, 20).new()
+    assert result.is_empty
+    with pytest.raises(EmptyObject):
+        t.ewise_union(t, binary.plus, t, t).new()
+    v = Vector(int, 2)
+    with pytest.raises(TypeError, match="Literal scalars also"):
+        s.ewise_union(v, binary.plus, 10, 20)
+    with pytest.raises(TypeError, match="Literal scalars also"):
+        s.ewise_union(t, binary.plus, v, 20)
+    with pytest.raises(TypeError, match="Literal scalars also"):
+        s.ewise_union(t, binary.plus, 10, v)
+
+
+def test_ewise_mult_add(s):
+    assert s.ewise_add(s).new() == 10
+    assert s.ewise_mult(s).new() == 25
+    v = Vector(int, 2)
+    with pytest.raises(TypeError, match="Literal scalars also"):
+        s.ewise_add(v)
+    with pytest.raises(TypeError, match="Literal scalars also"):
+        s.ewise_mult(v)
+
+
+def test_select(s):
+    assert select.value(s < 10).new() == s
+    assert select.value(s > 10).new().is_empty
+    assert select.valueeq(s, 5).new() == s
+    assert select.valuene(5, s).new().is_empty
+    with pytest.raises(TypeError):
+        select.value(s | s)
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_concat(s):
     empty = Scalar(int)
     v = gb.ss.concat([s, s, empty])
-    expected = Vector.from_values([0, 1], 5, size=3)
+    expected = Vector.from_coo([0, 1], 5, size=3)
     assert v.isequal(expected)
     A = gb.ss.concat([[s, s, empty]])
-    expected = Matrix.from_values([0, 0], [0, 1], 5, nrows=1, ncols=3)
+    expected = Matrix.from_coo([0, 0], [0, 1], 5, nrows=1, ncols=3)
     assert A.isequal(expected)
     A = gb.ss.concat([[s], [s], [empty]])
-    expected = Matrix.from_values([0, 1], [0, 0], 5, nrows=3, ncols=1)
+    expected = Matrix.from_coo([0, 1], [0, 0], 5, nrows=3, ncols=1)
     assert A.isequal(expected)
 
 
@@ -468,3 +580,48 @@ def test_get(s):
     s.clear()
     assert compute(s.get()) is None
     assert s.get("mittens") == "mittens"
+
+
+def test_ss_descriptors(s):
+    v = Vector.from_coo([0, 2], [10, 20])
+    if suitesparse:
+        with pytest.raises(ValueError, match="escriptor"):
+            v[0].new(bad_opt=True)
+        assert v[0].new(nthreads=4) == 10  # ignored, but okay
+        with pytest.raises(ValueError, match="escriptor"):
+            v.dup(bad_opt=True)
+        v.dup(nthreads=4)
+        with pytest.raises(ValueError, match="escriptor"):
+            s(bad_opt=True) << 1
+        s(nthreads=4) << 1  # ignored, but okay
+        with pytest.raises(ValueError, match="escriptor"):
+            s(bad_opt=True) << s
+        s(nthreads=4) << s  # ignored, but okay
+    else:
+        with pytest.raises(ValueError, match="escriptor"):
+            v[0].new(nthreads=4)
+        with pytest.raises(ValueError, match="escriptor"):
+            s(nthreads=4) << 1
+
+
+@autocompute
+def test_scalar_operators(s):
+    assert -s == -5
+    assert s + 1 == 6
+    assert 1 + s == 6
+    assert s - 1 == 4
+    assert 1 - s == -4
+    assert s * 2 == 10
+    assert 2 * s == 10
+    assert s * s == 25
+    assert s**2 == 25
+    assert unary.cos(0) == 1
+    assert binary.plus(s | 2) == 7
+    assert binary.plus(s, 2) == 7
+    assert binary.plus(5, 2) == 7
+    assert binary.plus(2, s) == 7
+    assert (-s).apply(unary.abs) == 5
+    with pytest.raises(TypeError):
+        unary.sin(object())
+    with pytest.raises(TypeError):
+        binary.plus(object(), object())

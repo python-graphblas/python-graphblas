@@ -3,7 +3,10 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas as gb
-from graphblas import Matrix, Vector
+from graphblas import Matrix, Vector, backend
+
+if backend != "suitesparse":
+    pytest.skip("gb.ss and A.ss only available with suitesparse backend", allow_module_level=True)
 
 
 @pytest.mark.parametrize("do_iso", [False, True])
@@ -15,9 +18,9 @@ def test_vector_head(do_iso):
         values1 = [10, 20, 30]
         values2 = [2, 4, 6]
         values3 = [1, 2, 3]
-    v1 = Vector.from_values([0, 1, 2], values1)  # full
-    v2 = Vector.from_values([1, 3, 5], values2)  # bitmap
-    v3 = Vector.from_values([100, 200, 300], values3)  # sparse
+    v1 = Vector.from_coo([0, 1, 2], values1)  # full
+    v2 = Vector.from_coo([1, 3, 5], values2)  # bitmap
+    v3 = Vector.from_coo([100, 200, 300], values3)  # sparse
     assert v1.ss.export()["format"] == "full"
     assert v2.ss.export()["format"] == "bitmap"
     assert v3.ss.export()["format"] == "sparse"
@@ -45,6 +48,11 @@ def test_vector_head(do_iso):
             assert indices.dtype == np.uint64
             assert vals.dtype == expected_dtype
 
+            indices, vals = v3.ss.head(2, sort=False, dtype=dtype)
+            assert indices.size == vals.size == 2
+            assert indices.dtype == np.uint64
+            assert vals.dtype == expected_dtype
+
             indices, vals = v3.ss.head(2, sort=True, dtype=dtype)
             assert_array_equal(indices, [100, 200])
             assert_array_equal(vals, values3[:2])
@@ -63,10 +71,10 @@ def test_matrix_head(do_iso):
         values2 = [1, 2, 4]
         values3 = values4 = [1, 2, 3]
 
-    A1 = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], values1)  # fullr
-    A2 = Matrix.from_values([0, 0, 1], [0, 1, 1], values2)  # Bitmap
-    A3 = Matrix.from_values([5, 5, 10], [4, 5, 10], values3)  # CSR
-    A4 = Matrix.from_values([500, 500, 1000], [400, 500, 1000], values4)  # HyperCSR
+    A1 = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], values1)  # fullr
+    A2 = Matrix.from_coo([0, 0, 1], [0, 1, 1], values2)  # Bitmap
+    A3 = Matrix.from_coo([5, 5, 10], [4, 5, 10], values3)  # CSR
+    A4 = Matrix.from_coo([500, 500, 1000], [400, 500, 1000], values4)  # HyperCSR
     d = A1.ss.export(raw=True)
     assert d["format"] == "fullr"
     d["format"] = "fullc"
@@ -161,6 +169,11 @@ def test_matrix_head(do_iso):
             assert rows.dtype == cols.dtype == np.uint64
             assert vals.dtype == expected_dtype
 
+            rows, cols, vals = A8.ss.head(2, sort=False, dtype=dtype)
+            assert rows.size == cols.size == vals.size == 2
+            assert rows.dtype == cols.dtype == np.uint64
+            assert vals.dtype == expected_dtype
+
             rows, cols, vals = A8.ss.head(2, sort=True, dtype=dtype)
             assert_array_equal(rows, [400, 500])
             assert_array_equal(cols, [500, 500])
@@ -174,13 +187,14 @@ def test_about():
     about = gb.ss.about
     for k in about:
         d[k] = about[k]
+    assert "openmp" in about
     assert d == about
     assert len(d) == len(about)
     with pytest.raises(KeyError):
         about["badkey"]
     assert "SuiteSparse" in about["library_name"]
     with pytest.raises(TypeError):
-        del about["library_name"]
+        del about["library_name"]  # pylint: disable=unsupported-delete-operation
     assert "library_name" in repr(about)
 
 
@@ -210,7 +224,7 @@ def test_global_config():
         if k in config._defaults:
             config[k] = None
         else:
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match="Unable to set default value for"):
                 config[k] = None
     with pytest.raises(ValueError, match="Wrong number"):
         config["memory_pool"] = [1, 2]

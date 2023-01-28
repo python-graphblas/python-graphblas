@@ -1,4 +1,4 @@
-""" Create UDFs of numpy functions supported by numba.
+"""Create UDFs of numpy functions supported by numba.
 
 See list of numpy ufuncs supported by numpy here:
 
@@ -135,15 +135,15 @@ def __dir__():
 
 def __getattr__(name):
     if name in _delayed:
-        func, kwargs = _delayed.pop(name)
-        rv = func(**kwargs)
+        delayed_func, kwargs = _delayed.pop(name)
+        rv = delayed_func(**kwargs)
         globals()[name] = rv
         return rv
     if name not in _binary_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         if name == "float_power":
-            from .. import operator
+            from ..core import operator
 
             new_op = operator.BinaryOp(f"numpy.{name}")
             builtin_op = _binary.pow
@@ -166,11 +166,11 @@ def __getattr__(name):
         else:
             globals()[name] = getattr(_binary, _numpy_to_graphblas[name])
     else:
-        from .. import operator
+        from ..core import operator
 
         numpy_func = getattr(_np, name)
 
-        def func(x, y):  # pragma: no cover
+        def func(x, y):  # pragma: no cover (numba)
             return numpy_func(x, y)
 
         operator.BinaryOp.register_new(f"numpy.{name}", func)

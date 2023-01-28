@@ -34,37 +34,37 @@ Operators
 UnaryOp
 ~~~~~~~
 
-.. autoclass:: graphblas.operator.UnaryOp()
+.. autoclass:: graphblas.core.operator.UnaryOp()
     :members:
 
 BinaryOp
 ~~~~~~~~
 
-.. autoclass:: graphblas.operator.BinaryOp()
+.. autoclass:: graphblas.core.operator.BinaryOp()
     :members:
 
 Monoid
 ~~~~~~
 
-.. autoclass:: graphblas.operator.Monoid()
+.. autoclass:: graphblas.core.operator.Monoid()
     :members:
 
 Semiring
 ~~~~~~~~
 
-.. autoclass:: graphblas.operator.Semiring()
+.. autoclass:: graphblas.core.operator.Semiring()
     :members:
 
 IndexUnaryOp
 ~~~~~~~~~~~~
 
-.. autoclass:: graphblas.operator.IndexUnaryOp()
+.. autoclass:: graphblas.core.operator.IndexUnaryOp()
     :members:
 
 SelectOp
 ~~~~~~~~
 
-.. autoclass:: graphblas.operator.SelectOp()
+.. autoclass:: graphblas.core.operator.SelectOp()
     :members:
 
 
@@ -98,6 +98,15 @@ These methods require `scipy <https://scipy.org/>`_ to be installed.
 .. autofunction:: graphblas.io.from_scipy_sparse
 
 .. autofunction:: graphblas.io.to_scipy_sparse
+
+PyData Sparse
+~~~~~~~~~~~~~
+
+These methods require `sparse <https://sparse.pydata.org/>`_ to be installed.
+
+.. autofunction:: graphblas.io.from_pydata_sparse
+
+.. autofunction:: graphblas.io.to_pydata_sparse
 
 Matrix Market
 ~~~~~~~~~~~~~

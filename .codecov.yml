@@ -1,0 +1,3 @@
+comment: off
+ignore:
+  - graphblas/viz.py

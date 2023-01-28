@@ -2,55 +2,117 @@
 #
 # Before first use: `pre-commit install`
 # To run: `pre-commit run --all-files`
+# To update: `pre-commit autoupdate`
+#  - &flake8_dependencies below needs updated manually
+fail_fast: true
+default_language_version:
+    python: python3
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.3.0
+    rev: v4.4.0
     hooks:
       - id: check-added-large-files
+      - id: check-ast
+      - id: check-toml
       - id: check-yaml
       - id: debug-statements
       - id: end-of-file-fixer
       - id: mixed-line-ending
       - id: trailing-whitespace
+  - repo: https://github.com/abravalheri/validate-pyproject
+    rev: v0.12.1
+    hooks:
+      - id: validate-pyproject
+        name: Validate pyproject.toml
   - repo: https://github.com/myint/autoflake
-    rev: v1.4
+    rev: v2.0.0
     hooks:
       - id: autoflake
         args: [--in-place]
   - repo: https://github.com/pycqa/isort
-    rev: 5.10.1
+    rev: 5.12.0
     hooks:
       - id: isort
-        language_version: python3
   - repo: https://github.com/asottile/pyupgrade
-    rev: v2.34.0
+    rev: v3.3.1
     hooks:
       - id: pyupgrade
         args: [--py38-plus]
+  - repo: https://github.com/MarcoGorelli/auto-walrus
+    rev: v0.2.2
+    hooks:
+      - id: auto-walrus
+        args: [--line-length, "100"]
   - repo: https://github.com/psf/black
-    rev: 22.6.0
+    rev: 22.12.0
     hooks:
       - id: black
-        language_version: python3
-        args: [--target-version=py38]
+      - id: black-jupyter
   - repo: https://github.com/PyCQA/flake8
-    rev: 4.0.1
+    rev: 6.0.0
     hooks:
       - id: flake8
         additional_dependencies: &flake8_dependencies
-        - flake8==4.0.1
-        - flake8-comprehensions==3.8.0
-        - flake8-bugbear==22.3.23
+        # These versions need updated manually
+        - flake8==6.0.0
+        - flake8-comprehensions==3.10.1
+        - flake8-bugbear==23.1.20
+        - flake8-simplify==0.19.3
   - repo: https://github.com/asottile/yesqa
-    rev: v1.3.0
+    rev: v1.4.0
     hooks:
       - id: yesqa
         additional_dependencies: *flake8_dependencies
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.1.0
+    rev: v2.2.2
     hooks:
       - id: codespell
         types_or: [python, rst, markdown]
+        additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
-        args: ["--ignore-words-list=coo,ba"]
-# Maybe: black-jupyter, blacken-docs, blackdoc mypy, velin
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.0.237
+    hooks:
+      - id: ruff
+  - repo: https://github.com/sphinx-contrib/sphinx-lint
+    rev: v0.6.7
+    hooks:
+      - id: sphinx-lint
+        args: [--enable, all, "--disable=line-too-long,leaked-markup"]
+  - repo: local
+    hooks:
+      # Add `--hook-stage manual` to pre-commit command to run (very slow)
+      # It's probably better (and faster!) to simply run `pylint graphblas/some/file.py`
+      - id: pylint
+        name: pylint
+        entry: pylint
+        language: system
+        types: [python]
+        stages: [manual]
+        args: [graphblas/]
+        pass_filenames: false
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: no-commit-to-branch  # no commit directly to main
+#
+# Maybe:
+#
+#  - repo: https://github.com/rstcheck/rstcheck
+#    rev: v6.1.1
+#    hooks:
+#      - id: rstcheck
+#        additional_dependencies: [nbsphinx]
+#
+#  - repo: https://github.com/PyCQA/pydocstyle
+#    rev: 6.3.0
+#    hooks:
+#      - id: pydocstyle
+#        additional_dependencies: [tomli]
+#
+#  - repo: https://github.com/PyCQA/bandit
+#    rev: 1.7.4
+#    hooks:
+#      - id: bandit
+#
+# blacken-docs, blackdoc mypy, pydocstringformatter, velin, flynt, yamllint

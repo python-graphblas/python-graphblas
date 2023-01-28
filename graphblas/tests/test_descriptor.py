@@ -1,4 +1,4 @@
-from graphblas import descriptor, lib
+from graphblas.core import descriptor, lib
 
 
 def test_caching():
@@ -17,8 +17,6 @@ def test_caching():
 
 
 def test_null_desc():
-    """
-    The default descriptor is not actually defined, but should be NULL
-    """
+    """The default descriptor is not actually defined, but should be NULL."""
     default = descriptor.lookup()
     assert default is None

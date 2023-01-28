@@ -6,35 +6,44 @@ import pytest
 
 import graphblas as gb
 
+suitesparse = gb.backend == "suitesparse"
+
 
 def unarypickle(x):
-    return x + 1  # pragma: no cover
+    return x + 1  # pragma: no cover (numba)
 
 
 def binarypickle(x, y):
-    return x + y  # pragma: no cover
+    return x + y  # pragma: no cover (numba)
 
 
 def unaryanon(x):
-    return x + 2  # pragma: no cover
+    return x + 2  # pragma: no cover (numba)
 
 
 def binaryanon(x, y):
-    return x + y  # pragma: no cover
+    return x + y  # pragma: no cover (numba)
 
 
 def indexunaryanon(x, row, col, thunk):
-    return x >= thunk  # pragma: no cover
+    return x >= thunk  # pragma: no cover (numba)
+
+
+@pytest.fixture
+def extra():
+    if gb.backend == "suitesparse-vanilla":
+        return "-vanilla"
+    return ""
 
 
 @pytest.mark.slow
-def test_deserialize():
+def test_deserialize(extra):
     thisdir = os.path.dirname(__file__)
-    with open(os.path.join(thisdir, "pickle1.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle1{extra}.pkl"), "rb") as f:
         d = pickle.load(f)
     check_values(d)
     # Again!
-    with open(os.path.join(thisdir, "pickle1.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle1{extra}.pkl"), "rb") as f:
         d = pickle.load(f)
     check_values(d)
 
@@ -55,27 +64,27 @@ def test_deserialize():
 
 @pytest.mark.slow
 def test_serialize():
-    v = gb.Vector.from_values([1], 2)
+    v = gb.Vector.from_coo([1], 2)
 
-    # unary_pickle = gb.operator.UnaryOp.register_new("unary_pickle", unarypickle)
-    # binary_pickle = gb.operator.BinaryOp.register_new("binary_pickle", binarypickle)
-    # monoid_pickle = gb.operator.Monoid.register_new("monoid_pickle", binary_pickle, 0)
-    # semiring_pickle = gb.operator.Semiring.register_new(
+    # unary_pickle = gb.core.operator.UnaryOp.register_new("unary_pickle", unarypickle)
+    # binary_pickle = gb.core.operator.BinaryOp.register_new("binary_pickle", binarypickle)
+    # monoid_pickle = gb.core.operator.Monoid.register_new("monoid_pickle", binary_pickle, 0)
+    # semiring_pickle = gb.core.operator.Semiring.register_new(
     #     "semiring_pickle", monoid_pickle, binary_pickle
     # )
 
-    unary_anon = gb.operator.UnaryOp.register_anonymous(unaryanon)
-    binary_anon = gb.operator.BinaryOp.register_anonymous(binaryanon)
-    indexunary_anon = gb.operator.IndexUnaryOp.register_anonymous(indexunaryanon)
-    select_anon = gb.operator.SelectOp.register_anonymous(indexunaryanon)
-    monoid_anon = gb.operator.Monoid.register_anonymous(binary_anon, 0)
-    semiring_anon = gb.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
+    unary_anon = gb.core.operator.UnaryOp.register_anonymous(unaryanon)
+    binary_anon = gb.core.operator.BinaryOp.register_anonymous(binaryanon)
+    indexunary_anon = gb.core.operator.IndexUnaryOp.register_anonymous(indexunaryanon)
+    select_anon = gb.core.operator.SelectOp.register_anonymous(indexunaryanon)
+    monoid_anon = gb.core.operator.Monoid.register_anonymous(binary_anon, 0)
+    semiring_anon = gb.core.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
     d = {
         "scalar": gb.Scalar.from_value(2),
         "empty_scalar": gb.Scalar(bool),
         "vector": v,
-        "matrix": gb.Matrix.from_values([2], [3], 4),
-        "matrix.T": gb.Matrix.from_values([3], [4], 5).T,
+        "matrix": gb.Matrix.from_coo([2], [3], 4),
+        "matrix.T": gb.Matrix.from_coo([3], [4], 5).T,
         "vector.S": v.S,
         "vector.V": v.V,
         "~vector.S": ~v.S,
@@ -97,7 +106,6 @@ def test_serialize():
         "monoid.numpy.logaddexp[float]": gb.monoid.numpy.logaddexp[float],
         "semiring.numpy.logaddexp2_hypot[float]": gb.semiring.numpy.logaddexp2_hypot[float],
         "agg.sum": gb.agg.sum,
-        "agg.first[int]": gb.agg.first[int],
         "binary.absfirst": gb.binary.absfirst,
         "binary.absfirst[float]": gb.binary.absfirst[float],
         "binary.isclose": gb.binary.isclose,
@@ -115,12 +123,14 @@ def test_serialize():
         "semiring_anon": semiring_anon,
         "dtypes.BOOL": gb.dtypes.BOOL,
         "dtypes._INDEX": gb.dtypes._INDEX,
-        "all_indices": gb.expr._ALL_INDICES,
+        "all_indices": gb.core.expr._ALL_INDICES,
         "replace": gb.replace,
     }
+    if suitesparse:
+        d["agg.ss.first[int]"] = gb.agg.ss.first[int]
     try:
         pkl = pickle.dumps(d)
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover (debug)
         for key, val in d.items():
             try:
                 pickle.dumps(val)
@@ -133,19 +143,19 @@ def test_serialize():
 
 
 def check_values(d):
-    v = gb.Vector.from_values([1], 2)
+    v = gb.Vector.from_coo([1], 2)
     assert d["scalar"].isequal(gb.Scalar.from_value(2), check_dtype=True)
     assert d["empty_scalar"].isequal(gb.Scalar(bool), check_dtype=True)
     assert d["vector"].isequal(v, check_dtype=True)
-    assert d["matrix"].isequal(gb.Matrix.from_values([2], [3], 4), check_dtype=True)
-    assert d["matrix.T"].isequal(gb.Matrix.from_values([3], [4], 5).T, check_dtype=True)
-    assert type(d["vector.S"]) is gb.mask.StructuralMask
+    assert d["matrix"].isequal(gb.Matrix.from_coo([2], [3], 4), check_dtype=True)
+    assert d["matrix.T"].isequal(gb.Matrix.from_coo([3], [4], 5).T, check_dtype=True)
+    assert type(d["vector.S"]) is gb.core.mask.StructuralMask
     assert d["vector.S"].parent.isequal(v, check_dtype=True)
-    assert type(d["vector.V"]) is gb.mask.ValueMask
+    assert type(d["vector.V"]) is gb.core.mask.ValueMask
     assert d["vector.V"].parent.isequal(v, check_dtype=True)
-    assert type(d["~vector.S"]) is gb.mask.ComplementedStructuralMask
+    assert type(d["~vector.S"]) is gb.core.mask.ComplementedStructuralMask
     assert d["~vector.S"].parent.isequal(v, check_dtype=True)
-    assert type(d["~vector.V"]) is gb.mask.ComplementedValueMask
+    assert type(d["~vector.V"]) is gb.core.mask.ComplementedValueMask
     assert d["~vector.V"].parent.isequal(v, check_dtype=True)
     assert d["unary.abs"] is gb.unary.abs
     assert d["binary.minus"] is gb.binary.minus
@@ -164,7 +174,8 @@ def check_values(d):
     assert d["monoid.numpy.logaddexp[float]"] is gb.monoid.numpy.logaddexp[float]
     assert d["semiring.numpy.logaddexp2_hypot[float]"] is gb.semiring.numpy.logaddexp2_hypot[float]
     assert d["agg.sum"] is gb.agg.sum
-    assert d["agg.first[int]"] is gb.agg.first[int]
+    if suitesparse and "agg.ss.first[int]" in d:
+        assert d["agg.ss.first[int]"] is gb.agg.ss.first[int]
     assert d["binary.absfirst"] is gb.binary.absfirst
     assert d["binary.absfirst[float]"] is gb.binary.absfirst[float]
     assert d["binary.isclose"] is gb.binary.isclose
@@ -185,34 +196,34 @@ def check_values(d):
     d["semiring_anon"]
     assert d["dtypes.BOOL"] is gb.dtypes.BOOL
     assert d["dtypes._INDEX"] is gb.dtypes._INDEX
-    assert d["all_indices"] is gb.expr._ALL_INDICES
+    assert d["all_indices"] is gb.core.expr._ALL_INDICES
     assert d["replace"] is gb.replace
 
 
 def unarypickle_par(x):
     def inner(y):
-        return x + y  # pragma: no cover
+        return x + y  # pragma: no cover (numba)
 
     return inner
 
 
 def binarypickle_par(z):
     def inner(x, y):
-        return x + y + z  # pragma: no cover
+        return x + y + z  # pragma: no cover (numba)
 
     return inner
 
 
 def unaryanon_par(x):
     def inner(y):
-        return y + x  # pragma: no cover
+        return y + x  # pragma: no cover (numba)
 
     return inner
 
 
 def binaryanon_par(z):
     def inner(x, y):
-        return x + y + z  # pragma: no cover
+        return x + y + z  # pragma: no cover (numba)
 
     return inner
 
@@ -223,22 +234,22 @@ def identity_par(z):
 
 @pytest.mark.slow
 def test_serialize_parameterized():
-    # unary_pickle = gb.operator.UnaryOp.register_new(
+    # unary_pickle = gb.core.operator.UnaryOp.register_new(
     #     "unary_pickle_par", unarypickle_par, parameterized=True
     # )
-    # binary_pickle = gb.operator.BinaryOp.register_new(
+    # binary_pickle = gb.core.operator.BinaryOp.register_new(
     #     "binary_pickle_par", binarypickle_par, parameterized=True
     # )
-    # monoid_pickle = gb.operator.Monoid.register_new("monoid_pickle_par", binary_pickle, 0)
-    # semiring_pickle = gb.operator.Semiring.register_new(
+    # monoid_pickle = gb.core.operator.Monoid.register_new("monoid_pickle_par", binary_pickle, 0)
+    # semiring_pickle = gb.core.operator.Semiring.register_new(
     #     "semiring_pickle_par", monoid_pickle, binary_pickle
     # )
 
-    unary_anon = gb.operator.UnaryOp.register_anonymous(unaryanon_par, parameterized=True)
-    binary_anon = gb.operator.BinaryOp.register_anonymous(binaryanon_par, parameterized=True)
-    monoid_anon = gb.operator.Monoid.register_anonymous(binary_anon, 0)
-    monoid2_anon = gb.operator.Monoid.register_anonymous(binary_anon, identity_par)
-    semiring_anon = gb.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
+    unary_anon = gb.core.operator.UnaryOp.register_anonymous(unaryanon_par, parameterized=True)
+    binary_anon = gb.core.operator.BinaryOp.register_anonymous(binaryanon_par, parameterized=True)
+    monoid_anon = gb.core.operator.Monoid.register_anonymous(binary_anon, 0)
+    monoid2_anon = gb.core.operator.Monoid.register_anonymous(binary_anon, identity_par)
+    semiring_anon = gb.core.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
     d = {
         "binary.isclose(rel_tol=1., abs_tol=1.)": gb.binary.isclose(rel_tol=1.0, abs_tol=1.0),
         "unary_anon": unary_anon,
@@ -264,7 +275,7 @@ def test_serialize_parameterized():
     }
     try:
         pkl = pickle.dumps(d)
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover (debug)
         for key, val in d.items():
             try:
                 pickle.dumps(val)
@@ -275,16 +286,16 @@ def test_serialize_parameterized():
 
 
 @pytest.mark.slow
-def test_deserialize_parameterized():
+def test_deserialize_parameterized(extra):
     thisdir = os.path.dirname(__file__)
-    with open(os.path.join(thisdir, "pickle2.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle2{extra}.pkl"), "rb") as f:
         pickle.load(f)  # TODO: check results
     # Again!
-    with open(os.path.join(thisdir, "pickle2.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle2{extra}.pkl"), "rb") as f:
         pickle.load(f)  # TODO: check results
 
 
-def test_udt():
+def test_udt(extra):
     record_dtype = np.dtype([("x", np.bool_), ("y", np.int64)], align=True)
     udt = gb.dtypes.register_new("PickleUDT", record_dtype)
     assert not udt._is_anonymous
@@ -296,7 +307,7 @@ def test_udt():
     assert pickle.loads(pickle.dumps(udt2)).np_type == udt2.np_type
 
     thisdir = os.path.dirname(__file__)
-    with open(os.path.join(thisdir, "pickle3.pkl"), "rb") as f:
+    with open(os.path.join(thisdir, f"pickle3{extra}.pkl"), "rb") as f:
         d = pickle.load(f)
     udt3 = d["PickledUDT"]
     v = d["v"]

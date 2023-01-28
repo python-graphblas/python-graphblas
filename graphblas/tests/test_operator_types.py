@@ -1,7 +1,8 @@
 import itertools
 from collections import defaultdict
 
-from graphblas import binary, dtypes, monoid, operator, semiring, unary
+from graphblas import backend, binary, dtypes, monoid, semiring, unary
+from graphblas.core import operator
 from graphblas.dtypes import (
     BOOL,
     FP32,
@@ -21,6 +22,8 @@ if dtypes._supports_complex:
 else:
     FC32 = "FC32"
     FC64 = "FC64"
+
+suitesparse = backend == "suitesparse"
 
 BOOL = frozenset({BOOL})
 UINT = frozenset({UINT8, UINT16, UINT32, UINT64})
@@ -45,7 +48,6 @@ UNARY = {
         "sin", "sinh", "sqrt", "tan", "tanh", "trunc",
     },
     (ALL, NOFC): {"abs"},
-    (ALL, POS): {"positioni", "positioni1", "positionj", "positionj1"},
     (FCFP, BOOL): {"isfinite", "isinf", "isnan"},
     (FC, FC): {"conj"},
     (FC, FP): {"carg", "cimag", "creal"},
@@ -54,6 +56,10 @@ UNARY = {
     (NOFC, FP): {"cbrt", "erf", "erfc", "lgamma", "tgamma"},
     (NOFC, NOFC): {"lnot"},
 }
+# Remove "suitesparse-vailla" once these deprecations are removed
+if backend in {"suitesparse", "suitesparse-vanilla"}:  # pragma: no branch (future)
+    UNARY[(ALL, POS)] = {"positioni", "positioni1", "positionj", "positionj1"}
+
 BINARY = {
     (ALL, ALL): {
         "any", "cdiv", "first", "iseq", "isne", "minus", "pair", "plus", "pow", "rdiv",
@@ -63,9 +69,6 @@ BINARY = {
     (ALL, FCFP): {"truediv", "rtruediv"},
     (ALL, NOBOOL): {"rpow"},  # different for pow, b/c rpow is a UDF
     (ALL, NOFC): {"absfirst", "abssecond"},
-    (ALL, POS): {
-        "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1",
-    },
     (BOOLINT, FP): {"ldexp"},
     (INT, INT): {"band", "bclr", "bget", "bor", "bset", "bshift", "bxnor", "bxor"},
     (INT, INT64): {"binom"},
@@ -75,6 +78,12 @@ BINARY = {
     (NOFC, FPINT): {"floordiv", "rfloordiv"},
     (NOFC, NOFC): {"isge", "isgt", "isle", "islt", "land", "lor", "lxor", "max", "min"},
 }
+# Remove "suitesparse-vailla" once these deprecations are removed
+if backend in {"suitesparse", "suitesparse-vanilla"}:  # pragma: no branch (future)
+    BINARY[(ALL, POS)] = {
+        "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1",
+    }
+
 MONOID = {
     (UINT, UINT): {"band", "bor", "bxnor", "bxor"},
     (BOOL, BOOL): {"eq"},
@@ -100,10 +109,6 @@ _SEMIRING1 = {
     (ALL, NOFC): [
         {"max"},
         {"absfirst", "abssecond"},
-    ],
-    (ALL, POS): [  # POS, extra->INT64
-        {"any", "max", "min", "plus", "times"},
-        {"firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1"},
     ],
     (ALL, BOOL): [  # BOOL, extra->BOOL
         {"eq", "land", "lor", "lxnor", "lxor"},
@@ -150,12 +155,18 @@ _SEMIRING1 = {
         {"land", "lor", "lxor", "first", "second"},
     ],
 }
+# Remove "suitesparse-vailla" once these deprecations are removed
+if backend in {"suitesparse", "suitesparse-vanilla"}:  # pragma: no branch (future)
+    _SEMIRING1[(ALL, POS)] = [  # POS, extra->INT64
+        {"any", "max", "min", "plus", "times"},
+        {"firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1"},
+    ]
 # fmt: on
 _SEMIRING2 = defaultdict(lambda: (set(), set()))  # {semiring: [input_types, output_types]}
 for key, (leftvals, rightvals) in _SEMIRING1.items():
     for left, right in itertools.product(leftvals, rightvals):
         name = f"{left}_{right}"
-        if not hasattr(semiring, name):
+        if name not in dir(semiring):
             continue
         _SEMIRING2[name][0].update(key[0])
         _SEMIRING2[name][1].update(key[1])
@@ -311,13 +322,18 @@ def _run_test(module, typ, expected):
         expected = d
     seen = defaultdict(set)
     for name in dir(module):
-        val = getattr(module, name)
+        if name == "ss":
+            continue
+        if name in getattr(module, "_deprecated", ()):
+            val = module._deprecated[name]
+        else:
+            val = getattr(module, name)
         if not isinstance(val, typ) or name in IGNORE:
             continue
         key = (frozenset(val.types.keys()), frozenset(val.types.values()))
         seen[key].add(name)
     seen = dict(seen)
-    if seen != expected:  # pragma: no cover
+    if seen != expected:  # pragma: no cover (debug)
         seen_names = set()
         for names in seen.values():
             seen_names.update(names)
@@ -332,14 +348,11 @@ def _run_test(module, typ, expected):
             raise AssertionError("graphblas has less than expected:", sorted(missing))
 
         for key in sorted(seen.keys() - expected.keys()):
-            print(
-                "Item not expected: (%s, %s): %s"
-                % (sorted(key[0]), sorted(key[1]), sorted(seen[key]))
-            )
+            print(f"Item not expected: ({sorted(key[0])}, {sorted(key[1])}): {sorted(seen[key])}")
         for key in sorted(expected.keys() - seen.keys()):
             print(
-                "Item expected, but not seen: (%s, %s): %s"
-                % (sorted(key[0]), sorted(key[1]), sorted(expected[key]))
+                "Item expected, but not seen: "
+                f"({sorted(key[0])}, {sorted(key[1])}): {sorted(expected[key])}"
             )
         for key in sorted(expected.keys() & seen.keys()):
             if expected[key] != seen[key]:

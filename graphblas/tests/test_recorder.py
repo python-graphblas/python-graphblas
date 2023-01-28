@@ -1,8 +1,10 @@
 import pytest
 
 import graphblas as gb
+from graphblas.core.formatting import CSS_STYLE
 from graphblas.exceptions import OutOfMemory
-from graphblas.formatting import CSS_STYLE
+
+suitesparse = gb.backend == "suitesparse"
 
 
 @pytest.fixture
@@ -11,8 +13,8 @@ def switch():
 
 
 def test_recorder():
-    A = gb.Matrix.from_values([0, 1], [1, 1], [1, 2], name="A")
-    B = gb.Matrix.from_values([0, 1], [0, 1], [3, 4], name="B")
+    A = gb.Matrix.from_coo([0, 1], [1, 1], [1, 2], name="A")
+    B = gb.Matrix.from_coo([0, 1], [0, 1], [3, 4], name="B")
     with gb.Recorder() as rec:
         assert rec.is_recording
         C = A.mxm(B).new(name="C")
@@ -34,7 +36,7 @@ def test_recorder():
         "GrB_Matrix_eWiseMult_BinaryOp(C, D, NULL, GrB_TIMES_INT64, A, B, GrB_DESC_ST0);",
     ]
     rec.clear()
-    assert list(rec) == []
+    assert not list(rec)
 
 
 def test_record_novalue(switch):
@@ -211,17 +213,17 @@ def test_record_repr_markdown(switch):
     )
 
 
-def test_record_repr_html(switch):
+def test_record_repr_html():
     A = gb.Matrix(int, 3, 3, name="A")
     rec = gb.Recorder()
     rec.start()
     A[0, 0].new(name="c")
     try:
-        import IPython  # noqa
+        import IPython  # noqa: F401
     except ImportError:
         with pytest.raises(NotImplementedError):
             rec._repr_html_()
-    else:  # pragma: no cover
+    else:  # pragma: no cover (import)
         assert isinstance(rec._repr_html_(), str)
 
 
@@ -238,8 +240,9 @@ def test_record_failed_call():
     assert "ERROR: OutOfMemory" in rec.data[-1]
 
 
-def test_record_inner(switch):
-    v = gb.Vector.from_values([0, 1, 2], 1, size=3)
+@pytest.mark.skipif("not suitesparse")
+def test_ss_record_inner(switch):
+    v = gb.Vector.from_coo([0, 1, 2], 1, size=3)
     with gb.Recorder() as rec:
         (v @ v).new(name="s_0")
     if switch:

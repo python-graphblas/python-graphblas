@@ -1,4 +1,4 @@
-""" Create UDFs of numpy functions supported by numba.
+"""Create UDFs of numpy functions supported by numba.
 
 See list of numpy ufuncs supported by numpy here:
 
@@ -83,11 +83,13 @@ if _supports_complex:
     )
     _monoid_identities["minimum"].update(dict.fromkeys(_complex_dtypes, complex(_np.inf, _np.inf)))
 
-if _config.get("mapnumpy") or not (
-    # To increase import speed, only call njit when `_config.get("mapnumpy")` is False
-    type(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2))
-    is float
+# To increase import speed, only call njit when `_config.get("mapnumpy")` is False
+if (
+    _config.get("mapnumpy")
+    or type(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2))  # pragma: no branch (numba)
+    is not float
 ):
+    # Incorrect behavior was introduced in numba 0.56.2 and numpy 1.23
     # See: https://github.com/numba/numba/issues/8478
     _monoid_identities["fmax"].update(
         {
@@ -157,7 +159,7 @@ def __getattr__(name):
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         globals()[name] = getattr(_monoid, _numpy_to_graphblas[name])
     else:
-        from .. import operator
+        from ..core import operator
 
         func = getattr(_binary.numpy, name)
         operator.Monoid.register_new(f"numpy.{name}", func, _monoid_identities[name])

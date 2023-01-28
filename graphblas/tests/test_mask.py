@@ -3,7 +3,7 @@ import itertools
 import pytest
 
 from graphblas import Vector
-from graphblas.mask import Mask
+from graphblas.core.mask import Mask
 
 
 @pytest.mark.parametrize("as_matrix", [False, True])

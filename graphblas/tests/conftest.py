@@ -13,7 +13,12 @@ orig_semirings = set()
 
 def pytest_configure(config):
     randomly = config.getoption("--randomly", False)
-    backend = config.getoption("--backend", "suitesparse")
+    backend = config.getoption("--backend", None)
+    if backend is None:
+        if randomly:
+            backend = "suitesparse" if np.random.rand() < 0.5 else "suitesparse-vanilla"
+        else:
+            backend = "suitesparse"
     blocking = config.getoption("--blocking", True)
     if blocking is None:  # pragma: no branch
         blocking = np.random.rand() < 0.5 if randomly else True
@@ -21,18 +26,19 @@ def pytest_configure(config):
     if record is None:  # pragma: no branch
         record = np.random.rand() < 0.5 if randomly else False
     mapnumpy = config.getoption("--mapnumpy", False)
-    if mapnumpy is None:  # pragma: no branch
+    if mapnumpy is None:
         mapnumpy = np.random.rand() < 0.5 if randomly else False
     runslow = config.getoption("--runslow", False)
-    if runslow is None:  # pragma: no branch
-        runslow = np.random.rand() < 0.25 if randomly else False
+    if runslow is None:
+        # Add a small amount of randomization to be safer
+        runslow = np.random.rand() < 0.05 if randomly else False
     config.runslow = runslow
 
     gb.config.set(autocompute=False, mapnumpy=mapnumpy)
 
     gb.init(backend, blocking=blocking)
     print(
-        f'Running tests with "{backend}" backend, blocking={blocking}, '
+        f"Running tests with {backend!r} backend, blocking={blocking}, "
         f"record={record}, mapnumpy={mapnumpy}, runslow={runslow}"
     )
     if record:
@@ -48,15 +54,23 @@ def pytest_configure(config):
     orig_semirings.update(
         key
         for key in dir(gb.semiring)
-        if isinstance(
-            getattr(gb.semiring, key), (gb.operator.Semiring, gb.operator.ParameterizedSemiring)
+        if key != "ss"
+        and isinstance(
+            getattr(gb.semiring, key)
+            if key not in gb.semiring._deprecated
+            else gb.semiring._deprecated[key],
+            (gb.core.operator.Semiring, gb.core.operator.ParameterizedSemiring),
         )
     )
     orig_binaryops.update(
         key
         for key in dir(gb.binary)
-        if isinstance(
-            getattr(gb.binary, key), (gb.operator.BinaryOp, gb.operator.ParameterizedBinaryOp)
+        if key != "ss"
+        and isinstance(
+            getattr(gb.binary, key)
+            if key not in gb.binary._deprecated
+            else gb.binary._deprecated[key],
+            (gb.core.operator.BinaryOp, gb.core.operator.ParameterizedBinaryOp),
         )
     )
     for mod in [gb.unary, gb.binary, gb.monoid, gb.semiring, gb.op]:
@@ -70,11 +84,23 @@ def pytest_runtest_setup(item):
 
 
 @pytest.fixture(autouse=True, scope="function")
-def reset_name_counters():
-    """Reset automatic names for each test for easier comparison of record.txt"""
+def _reset_name_counters():
+    """Reset automatic names for each test for easier comparison of record.txt."""
     gb.Matrix._name_counter = itertools.count()
     gb.Vector._name_counter = itertools.count()
     gb.Scalar._name_counter = itertools.count()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def ic():  # pragma: no cover (debug)
+    """Make `ic` available everywhere during testing for easier debugging."""
+    try:
+        import icecream
+    except ImportError:
+        return
+    icecream.install()
+    # icecream.ic.disable()  # This disables icecream; do ic.enable() to re-enable
+    return icecream.ic
 
 
 def autocompute(func):

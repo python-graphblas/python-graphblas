@@ -1,4 +1,4 @@
-""" Create UDFs of numpy functions supported by numba.
+"""Create UDFs of numpy functions supported by numba.
 
 See list of numpy ufuncs supported by numpy here:
 
@@ -136,7 +136,7 @@ def __dir__():
 
 
 def __getattr__(name):
-    from .. import operator
+    from ..core import operator
 
     if name in _delayed:
         func, kwargs = _delayed.pop(name)

@@ -13,7 +13,7 @@ A **Matrix** is a 2-dimensional sparse array.
 
 .. code-block:: python
 
-    M = gb.Matrix.from_values(
+    M = gb.Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4],
@@ -49,7 +49,7 @@ A **Vector** is a 1-dimensional sparse array.
 
 .. code-block:: python
 
-    v = gb.Vector.from_values([0, 3, 4, 6], [12.1, -5.4, 2.9, 2.2], size=8)
+    v = gb.Vector.from_coo([0, 3, 4, 6], [12.1, -5.4, 2.9, 2.2], size=8)
 
 Viewing the ``__repr__`` for ``v`` in a notebook will look like the following, although
 the name, dtype, and format might be different than what is shown here.
@@ -142,22 +142,22 @@ The shape and dtype remain unchanged, but the collection will be fully sparse (i
     >>> M.nvals
     0
 
-to_values
-~~~~~~~~~
+to_coo
+~~~~~~
 
-To go from a collection back to the index and values, ``.to_values()`` can be called. Numpy arrays
+To go from a collection back to the index and values, ``.to_coo()`` can be called. Numpy arrays
 will be returned in a tuple.
 
 .. code-block:: python
 
-    >>> v = gb.Vector.from_values([0, 3, 5], [2.0, 3.1, 4.7])
-    >>> idx, vals = v.to_values()
+    >>> v = gb.Vector.from_coo([0, 3, 5], [2.0, 3.1, 4.7])
+    >>> idx, vals = v.to_coo()
     >>> idx
     array([0, 3, 5], dtype=uint64)
     >>> vals
     array([2.0, 3.1, 4.7])
 
-Note that Scalar does not have ``.to_values()``. Instead, the ``.value`` attribute will extract
+Note that Scalar does not have ``.to_coo()``. Instead, the ``.value`` attribute will extract
 the underlying value or return ``None`` if the Scalar is empty.
 
 Empty Constructors

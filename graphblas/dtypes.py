@@ -5,8 +5,10 @@ import numpy as _np
 from numpy import find_common_type as _find_common_type
 from numpy import promote_types as _promote_types
 
-from . import ffi as _ffi
-from . import lib as _lib
+from . import backend
+from .core import NULL as _NULL
+from .core import ffi as _ffi
+from .core import lib as _lib
 
 # Default assumption unless FC32/FC64 are found in lib
 _supports_complex = hasattr(_lib, "GrB_FC64") or hasattr(_lib, "GxB_FC64")
@@ -40,9 +42,10 @@ class DataType:
         try:
             t1 = self.np_type
             t2 = lookup_dtype(other).np_type
-            return (t1.kind, t1.itemsize, t1.name) < (t2.kind, t2.itemsize, t2.name)
         except ValueError:
             raise TypeError(f"Invalid or unknown datatype: {other}") from None
+        else:
+            return (t1.kind, t1.itemsize, t1.name) < (t2.kind, t2.itemsize, t2.name)
 
     def __reduce__(self):
         if self._is_udt:
@@ -90,6 +93,12 @@ def register_anonymous(dtype, name=None):
         if isinstance(dtype, dict):
             # Allow dtypes such as `{'x': int, 'y': float}` for convenience
             dtype = _np.dtype([(key, lookup_dtype(val).np_type) for key, val in dtype.items()])
+        elif isinstance(dtype, str) and "[" in dtype and dtype.endswith("]"):
+            # Allow dtypes such as `"INT64[3, 4]"` for convenience
+            base_dtype, shape = dtype.split("[", 1)
+            base_dtype = lookup_dtype(base_dtype)
+            shape = _np.lib.format.safe_eval(f"[{shape}")
+            dtype = _np.dtype((base_dtype.np_type, shape))
         else:
             raise
     if dtype in _registry:
@@ -100,34 +109,34 @@ def register_anonymous(dtype, name=None):
                 raise ValueError("dtype must not be a builtin type")
             rv.name = name  # Rename an existing object (a little weird, but okay)
         return rv
-    elif dtype.hasobject:
+    if dtype.hasobject:
         raise ValueError("dtype must not allow Python objects")
-    else:
-        from .exceptions import check_status_carg
 
-        gb_obj = _ffi.new("GrB_Type*")
-        if hasattr(_lib, "GxB_MAX_NAME_LEN"):
-            # SS, SuiteSparse-specific: naming dtypes
-            # We name this so that we can serialize and deserialize UDTs
-            # We don't yet have C definitions
-            np_repr = _dtype_to_string(dtype).encode()
-            if len(np_repr) > _lib.GxB_MAX_NAME_LEN:
-                msg = (
-                    f"UDT repr is too large to serialize ({len(repr(dtype).encode())} > "
-                    f"{_lib.GxB_MAX_NAME_LEN})."
-                )
-                if name is not None:
-                    np_repr = name.encode()[: _lib.GxB_MAX_NAME_LEN]
-                else:
-                    np_repr = np_repr[: _lib.GxB_MAX_NAME_LEN]
-                _warnings.warn(
-                    f"{msg}.  It will use the following name, "
-                    f"and the dtype may need to be specified when deserializing: {np_repr}"
-                )
-            status = _lib.GxB_Type_new(gb_obj, dtype.itemsize, np_repr, _ffi.NULL)
-        else:  # pragma: no cover
-            status = _lib.GrB_Type_new(gb_obj, dtype.itemsize)
-        check_status_carg(status, "Type", gb_obj[0])
+    from .exceptions import check_status_carg
+
+    gb_obj = _ffi.new("GrB_Type*")
+    if backend == "suitesparse":
+        # We name this so that we can serialize and deserialize UDTs
+        # We don't yet have C definitions
+        np_repr = _dtype_to_string(dtype).encode()
+        if len(np_repr) > _lib.GxB_MAX_NAME_LEN:
+            msg = (
+                f"UDT repr is too large to serialize ({len(repr(dtype).encode())} > "
+                f"{_lib.GxB_MAX_NAME_LEN})."
+            )
+            if name is not None:
+                np_repr = name.encode()[: _lib.GxB_MAX_NAME_LEN]
+            else:
+                np_repr = np_repr[: _lib.GxB_MAX_NAME_LEN]
+            _warnings.warn(
+                f"{msg}.  It will use the following name, "
+                f"and the dtype may need to be specified when deserializing: {np_repr}"
+            )
+        status = _lib.GxB_Type_new(gb_obj, dtype.itemsize, np_repr, _NULL)
+    else:
+        status = _lib.GrB_Type_new(gb_obj, dtype.itemsize)
+    check_status_carg(status, "Type", gb_obj[0])
+
     # For now, let's use "opaque" unsigned bytes for the c type.
     if name is None:
         name = _default_name(dtype)
@@ -166,7 +175,7 @@ if _supports_complex and hasattr(_lib, "GxB_FC32"):
     FC32 = DataType(
         "FC32", _lib.GxB_FC32, "GxB_FC32", "float _Complex", _numba.types.complex64, _np.complex64
     )
-if _supports_complex and hasattr(_lib, "GrB_FC32"):  # pragma: no coverage
+if _supports_complex and hasattr(_lib, "GrB_FC32"):  # pragma: no cover (unused)
     FC32 = DataType(
         "FC32", _lib.GrB_FC32, "GrB_FC32", "float _Complex", _numba.types.complex64, _np.complex64
     )
@@ -179,7 +188,7 @@ if _supports_complex and hasattr(_lib, "GxB_FC64"):
         _numba.types.complex128,
         _np.complex128,
     )
-if _supports_complex and hasattr(_lib, "GrB_FC64"):  # pragma: no coverage
+if _supports_complex and hasattr(_lib, "GrB_FC64"):  # pragma: no cover (unused)
     FC64 = DataType(
         "FC64",
         _lib.GrB_FC64,
@@ -242,7 +251,7 @@ for dtype in _dtypes_to_register:
     val = _sample_values[dtype]
     _registry[val.dtype] = dtype
     _registry[val.dtype.name] = dtype
-del val
+del dtype, val
 
 # Add some common Python types as lookup keys
 _registry[bool] = BOOL
@@ -283,7 +292,7 @@ def lookup_dtype(key, value=None):
 
 def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
     """
-    Returns a type that can hold both type1 and type2
+    Returns a type that can hold both type1 and type2.
 
     For example:
     unify(INT32, INT64) -> INT64
@@ -318,13 +327,12 @@ def _default_name(dtype):
         subdtype = _default_name(dtype.subdtype[0])
         shape = ", ".join(map(str, dtype.subdtype[1]))
         return f"{subdtype}[{shape}]"
-    elif dtype.names:
+    if dtype.names:
         args = ", ".join(
             f"{name!r}: {_default_name(dtype.fields[name][0])}" for name in dtype.names
         )
-        return "{%s}" % args
-    else:
-        return repr(dtype)
+        return f"{{{args}}}"
+    return repr(dtype)
 
 
 def _dtype_to_string(dtype):
@@ -346,18 +354,21 @@ def _dtype_to_string(dtype):
         np_type = dtype.np_type
     s = str(np_type)
     try:
-        if _np.dtype(_np.lib.format.safe_eval(s)) == np_type:
+        if _np.dtype(_np.lib.format.safe_eval(s)) == np_type:  # pragma: no branch (safety)
             return s
     except Exception:
         pass
-    if _np.dtype(np_type.str) == np_type:
-        return repr(np_type.str)
-    else:  # pragma: no cover
+    if _np.dtype(np_type.str) != np_type:  # pragma: no cover (safety)
         raise ValueError(f"Unable to reliably convert dtype to string and back: {dtype}")
+    return repr(np_type.str)
 
 
 def _string_to_dtype(s):
-    """_string_to_dtype(_dtype_to_string(dtype)) == dtype"""
+    """Convert a string back to a dtype.
+
+    >>> _string_to_dtype(_dtype_to_string(dtype)) == dtype
+    True
+    """
     try:
         return lookup_dtype(s)
     except Exception:

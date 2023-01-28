@@ -5,7 +5,8 @@ import string
 import numpy as np
 import pytest
 
-from graphblas import dtypes, lib
+from graphblas import dtypes
+from graphblas.core import lib
 from graphblas.dtypes import lookup_dtype
 
 all_dtypes = [
@@ -227,7 +228,7 @@ def test_dtype_to_from_string():
         try:
             dtype2 = dtypes._string_to_dtype(s)
         except Exception:
-            with pytest.raises(Exception):
+            with pytest.raises(ValueError, match="Unknown dtype"):
                 lookup_dtype(dtype)
         else:
             assert dtype == dtype2

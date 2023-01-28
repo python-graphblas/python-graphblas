@@ -21,13 +21,12 @@ def __getattr__(key):
 
 
 def _resolve_expr(expr, callname, opname):
-    from graphblas.matrix import MatrixExpression
-    from graphblas.vector import VectorExpression
+    from ..core.base import BaseExpression
 
-    if not isinstance(expr, (VectorExpression, MatrixExpression)):
+    if not isinstance(expr, BaseExpression):
         raise TypeError(
-            f"Expected VectorExpression or MatrixExpression; found {type(expr)}\n"
-            f"Typical usage: select.{callname}(x <= 5)"
+            f"Expected ScalarExpression, VectorExpression, or MatrixExpression; "
+            f"found {type(expr)}\nTypical usage: select.{callname}(x <= 5)"
         )
     tensor = expr.args[0]
     thunk = expr.args[1]
@@ -44,13 +43,21 @@ def _resolve_expr(expr, callname, opname):
         elif expr.op.name == "ge":
             method = f"{opname}gt"
             thunk -= 1
-        if method not in globals():
+        if method not in globals():  # pragma: no cover (sanity)
             raise ValueError(f"Unknown or unregistered select method: {method}")
+    if expr._is_scalar:
+        # Handle ScalarExpressions that change their arguments to Vector
+        if tensor._parent is not None:  # e.g., suitesparse
+            tensor = tensor._parent
+            thunk = thunk._parent
+        else:  # e.g., suitesparse-vanilla
+            tensor = tensor[0].new()
+            thunk = thunk[0].new()
     return globals()[method](tensor, thunk)
 
 
 def _match_expr(parent, expr):
-    """Match expressions to rewrite `A.select(A < 5)` into select expression
+    """Match expressions to rewrite `A.select(A < 5)` into select expression.
 
     The argument must match the parent, so this _won't_ be rewritten: `A.select(B < 5)`
     """
@@ -124,6 +131,6 @@ def index(expr):
     return _resolve_expr(expr, "index", "index")
 
 
-from .. import operator  # noqa isort:skip
+from ..core import operator  # noqa: E402 isort:skip
 
 del operator

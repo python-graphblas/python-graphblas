@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-""" Script used to create the pickle files used in tests/test_pickle.py
+"""Script used to create the pickle files used in tests/test_pickle.py.
 
 Note that the exact binary of the pickle files may differ depending on which
 Python version is used to create them.
 """
+import argparse
 import os
 import pickle
 
@@ -12,25 +13,26 @@ from graphblas.tests.test_pickle import *
 
 
 def pickle1(filename):
-    v = gb.Vector.from_values([1], 2)
+    suitesparse = gb.backend == "suitesparse"
+    v = gb.Vector.from_coo([1], 2)
 
-    unary_pickle = gb.operator.UnaryOp.register_new("unary_pickle", unarypickle)
-    binary_pickle = gb.operator.BinaryOp.register_new("binary_pickle", binarypickle)
-    monoid_pickle = gb.operator.Monoid.register_new("monoid_pickle", binary_pickle, 0)
-    semiring_pickle = gb.operator.Semiring.register_new(
+    unary_pickle = gb.core.operator.UnaryOp.register_new("unary_pickle", unarypickle)
+    binary_pickle = gb.core.operator.BinaryOp.register_new("binary_pickle", binarypickle)
+    monoid_pickle = gb.core.operator.Monoid.register_new("monoid_pickle", binary_pickle, 0)
+    semiring_pickle = gb.core.operator.Semiring.register_new(
         "semiring_pickle", monoid_pickle, binary_pickle
     )
 
-    unary_anon = gb.operator.UnaryOp.register_anonymous(unaryanon)
-    binary_anon = gb.operator.BinaryOp.register_anonymous(binaryanon)
-    monoid_anon = gb.operator.Monoid.register_anonymous(binary_anon, 0)
-    semiring_anon = gb.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
+    unary_anon = gb.core.operator.UnaryOp.register_anonymous(unaryanon)
+    binary_anon = gb.core.operator.BinaryOp.register_anonymous(binaryanon)
+    monoid_anon = gb.core.operator.Monoid.register_anonymous(binary_anon, 0)
+    semiring_anon = gb.core.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
     d = {
         "scalar": gb.Scalar.from_value(2),
         "empty_scalar": gb.Scalar.new(bool),
         "vector": v,
-        "matrix": gb.Matrix.from_values([2], [3], 4),
-        "matrix.T": gb.Matrix.from_values([3], [4], 5).T,
+        "matrix": gb.Matrix.from_coo([2], [3], 4),
+        "matrix.T": gb.Matrix.from_coo([3], [4], 5).T,
         "vector.S": v.S,
         "vector.V": v.V,
         "~vector.S": ~v.S,
@@ -52,7 +54,6 @@ def pickle1(filename):
         "monoid.numpy.logaddexp[float]": gb.monoid.numpy.logaddexp[float],
         "semiring.numpy.logaddexp2_hypot[float]": gb.semiring.numpy.logaddexp2_hypot[float],
         "agg.sum": gb.agg.sum,
-        "agg.first[int]": gb.agg.first[int],
         "binary.absfirst": gb.binary.absfirst,
         "binary.absfirst[float]": gb.binary.absfirst[float],
         "binary.isclose": gb.binary.isclose,
@@ -68,30 +69,32 @@ def pickle1(filename):
         "semiring_anon": semiring_anon,
         "dtypes.BOOL": gb.dtypes.BOOL,
         "dtypes._INDEX": gb.dtypes._INDEX,
-        "all_indices": gb.expr._ALL_INDICES,
+        "all_indices": gb.core.expr._ALL_INDICES,
         "replace": gb.replace,
     }
+    if suitesparse:
+        d["agg.ss.first[int]"] = gb.agg.ss.first[int]
     with open(filename, "wb") as f:
         pickle.dump(d, f)
 
 
 def pickle2(filename):
-    unary_pickle = gb.operator.UnaryOp.register_new(
+    unary_pickle = gb.core.operator.UnaryOp.register_new(
         "unary_pickle_par", unarypickle_par, parameterized=True
     )
-    binary_pickle = gb.operator.BinaryOp.register_new(
+    binary_pickle = gb.core.operator.BinaryOp.register_new(
         "binary_pickle_par", binarypickle_par, parameterized=True
     )
-    monoid_pickle = gb.operator.Monoid.register_new("monoid_pickle_par", binary_pickle, 0)
-    semiring_pickle = gb.operator.Semiring.register_new(
+    monoid_pickle = gb.core.operator.Monoid.register_new("monoid_pickle_par", binary_pickle, 0)
+    semiring_pickle = gb.core.operator.Semiring.register_new(
         "semiring_pickle_par", monoid_pickle, binary_pickle
     )
 
-    unary_anon = gb.operator.UnaryOp.register_anonymous(unaryanon_par, parameterized=True)
-    binary_anon = gb.operator.BinaryOp.register_anonymous(binaryanon_par, parameterized=True)
-    monoid_anon = gb.operator.Monoid.register_anonymous(binary_anon, 0)
-    monoid2_anon = gb.operator.Monoid.register_anonymous(binary_anon, identity_par)
-    semiring_anon = gb.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
+    unary_anon = gb.core.operator.UnaryOp.register_anonymous(unaryanon_par, parameterized=True)
+    binary_anon = gb.core.operator.BinaryOp.register_anonymous(binaryanon_par, parameterized=True)
+    monoid_anon = gb.core.operator.Monoid.register_anonymous(binary_anon, 0)
+    monoid2_anon = gb.core.operator.Monoid.register_anonymous(binary_anon, identity_par)
+    semiring_anon = gb.core.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
     d = {
         "binary.isclose(rel_tol=1., abs_tol=1.)": gb.binary.isclose(rel_tol=1.0, abs_tol=1.0),
         "unary_anon": unary_anon,
@@ -145,7 +148,17 @@ def pickle3(filename):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--backend", choices={"suitesparse", "suitesparse-vanilla"}, default="suitesparse"
+    )
+    args = parser.parse_args()
+    gb.init(args.backend)
+    if args.backend == "suitesparse-vanilla":
+        extra = "-vanilla"
+    else:
+        extra = ""
     basedir = os.path.dirname(gb.tests.__file__)
-    pickle1(os.path.join(basedir, "pickle1.pkl"))
-    pickle2(os.path.join(basedir, "pickle2.pkl"))
-    pickle3(os.path.join(basedir, "pickle3.pkl"))
+    pickle1(os.path.join(basedir, f"pickle1{extra}.pkl"))
+    pickle2(os.path.join(basedir, f"pickle2{extra}.pkl"))
+    pickle3(os.path.join(basedir, f"pickle3{extra}.pkl"))

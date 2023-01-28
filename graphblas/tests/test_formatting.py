@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-import graphblas
-from graphblas import dtypes, formatting, unary
-from graphblas.formatting import CSS_STYLE
+from graphblas import backend, dtypes, unary
+from graphblas.core import formatting
+from graphblas.core.formatting import CSS_STYLE
 
 from .conftest import autocompute
 
@@ -12,8 +12,12 @@ from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 try:
     import pandas as pd
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover (import)
     pd = None
+
+
+if backend != "suitesparse":
+    pytest.skip("Formatting tests only work with suitesparse backend", allow_module_level=True)
 
 
 def repr_html(x):
@@ -36,7 +40,7 @@ def _printer(text, name, repr_name, indent):
                 # line = f"f'{{CSS_STYLE}}'"
                 in_style = False
                 is_style = True
-            else:  # pragma: no cover
+            else:  # pragma: no cover (???)
                 # This definitely gets covered, but why is it not picked up?
                 continue
         if repr_name == "repr_html" and line.startswith("<style>"):
@@ -81,17 +85,17 @@ def html_printer(x, name="", indent=4):
 
 @pytest.fixture
 def A():
-    return Matrix.from_values([0, 0, 0], [0, 2, 4], [0, 1, 2], nrows=1, ncols=5, name="A_1")
+    return Matrix.from_coo([0, 0, 0], [0, 2, 4], [0, 1, 2], nrows=1, ncols=5, name="A_1")
 
 
 @pytest.fixture
 def B():
-    return Matrix.from_values([0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1, name="B_1")
+    return Matrix.from_coo([0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1, name="B_1")
 
 
 @pytest.fixture
 def C():
-    return Matrix.from_values(
+    return Matrix.from_coo(
         [0, 9, 60, 69, 0, 9, 60, 69],
         [4, 4, 4, 4, 72, 72, 72, 72],
         [0, 2, 3, 4, 5, 6, 7, 8],
@@ -103,7 +107,7 @@ def C():
 
 @pytest.fixture
 def D():
-    return Matrix.from_values(
+    return Matrix.from_coo(
         [0, 9, 60, 69],
         [4, 4, 4, 4],
         [True, False, True, False],
@@ -114,12 +118,12 @@ def D():
 
 @pytest.fixture
 def v():
-    return Vector.from_values([0, 2, 4], [0.0, 1.1, 2.2], name="v")
+    return Vector.from_coo([0, 2, 4], [0.0, 1.1, 2.2], name="v")
 
 
 @pytest.fixture
 def w():
-    return Vector.from_values([0, 5, 64, 69], [1, 2, 3, 4], size=77, name="w")
+    return Vector.from_coo([0, 5, 64, 69], [1, 2, 3, 4], size=77, name="w")
 
 
 @pytest.fixture
@@ -155,7 +159,7 @@ def test_no_pandas_repr(A, C, v, w):
         )
         repr_printer(v, "v", indent=8)
         assert repr(v) == (
-            '"v"        nvals  size  dtype  format\n' "gb.Vector      3     5   FP64  bitmap"
+            '"v"        nvals  size  dtype  format\ngb.Vector      3     5   FP64  bitmap'
         )
         repr_printer(~w.V, "~w.V", indent=8)
         assert repr(~w.V) == (
@@ -499,8 +503,8 @@ def test_vector_mask_repr_large(w):
 
 def test_scalar_repr(s, t):
     repr_printer(s, "s")
-    assert repr(s) == ('"s_1"      value  dtype\n' "gb.Scalar     42  INT64")
-    assert repr(t) == ('"t"        value  dtype\n' "gb.Scalar   None  INT64")
+    assert repr(s) == ('"s_1"      value  dtype\ngb.Scalar     42  INT64')
+    assert repr(t) == ('"t"        value  dtype\ngb.Scalar   None  INT64')
 
 
 def test_no_pandas_repr_html(A, C, v, w):
@@ -3396,7 +3400,7 @@ def test_vector_huge_html():
 
 @pytest.mark.skipif("not pd")
 def test_sparse_vector_repr():
-    v = Vector.from_values([100 * i for i in range(100)], [10 * i for i in range(100)], name="v")
+    v = Vector.from_coo([100 * i for i in range(100)], [10 * i for i in range(100)], name="v")
     repr_printer(v, "v")
     assert repr(v) == (
         '"v"        nvals  size  dtype  format\n'
@@ -3550,7 +3554,7 @@ def test_sparse_vector_repr():
 
 @pytest.mark.skipif("not pd")
 def test_sparse_matrix_repr():
-    A = Matrix.from_values(
+    A = Matrix.from_coo(
         [100 * i for i in range(100)], [10 * i for i in range(100)], list(range(100)), name="A"
     )
     repr_printer(A, "A")
@@ -4060,8 +4064,8 @@ def test_inner_outer_repr(v):
 
 @autocompute
 def test_autocompute(A, B, v):
-    if not pd:  # pragma: no cover
-        return
+    if not pd:  # pragma: no cover (import)
+        pytest.skip("needs pandas")
     repr_printer(A & A, "A & A")
     assert repr(A & A) == (
         "gb.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
@@ -4075,9 +4079,9 @@ def test_autocompute(A, B, v):
         "gb.MatrixExpression                        nrows  ncols  dtype\n"
         "A_1.ewise_add(A_1, op=monoid.plus[INT64])      1      5  INT64\n"
         "\n"
-        '"Result"   nvals  nrows  ncols  dtype   format\n'
-        "gb.Matrix      3      1      5  INT64  bitmapr\n"
-        "----------------------------------------------\n"
+        '"Result"   nvals  nrows  ncols  dtype\n'
+        "gb.Matrix      3      1      5  INT64\n"
+        "-------------------------------------\n"
         "   0 1  2 3  4\n"
         "0  0    2    4\n"
         "\n"
@@ -4093,9 +4097,9 @@ def test_autocompute(A, B, v):
         "gb.VectorExpression                                       size  dtype\n"
         "v_0.ewise_mult(v_1, op=binary.times[INT64])  36028797018963968  INT64\n"
         "\n"
-        '"Result"   nvals               size  dtype        format\n'
-        "gb.Vector      1  36028797018963968  INT64  sparse (iso)\n"
-        "--------------------------------------------------------\n"
+        '"Result"   nvals               size  dtype\n'
+        "gb.Vector      1  36028797018963968  INT64\n"
+        "------------------------------------------\n"
         "index 0                 1                  ... 36028797018963966 36028797018963967\n"
         "value                 2                    ...                                    \n"
         "\n"
@@ -4129,9 +4133,9 @@ def test_autocompute(A, B, v):
         "gb.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
         "M_2 & M_2                   1      5        BOOL         BOOL\n"
         "\n"
-        '"Result"   nvals  nrows  ncols  dtype   format\n'
-        "gb.Matrix      3      1      5   BOOL  bitmapr\n"
-        "----------------------------------------------\n"
+        '"Result"   nvals  nrows  ncols  dtype\n'
+        "gb.Matrix      3      1      5   BOOL\n"
+        "-------------------------------------\n"
         "       0 1     2 3     4\n"
         "0  False    True    True\n"
         "\n"
@@ -4142,8 +4146,8 @@ def test_autocompute(A, B, v):
 
 @autocompute
 def test_autocompute_html(A, B, v):
-    if not pd:  # pragma: no cover
-        return
+    if not pd:  # pragma: no cover (import)
+        pytest.skip("needs pandas")
     html_printer(A & A, "A & A")
     assert repr_html(A & A) == (
         "<div>"
@@ -4467,7 +4471,7 @@ def test_autocompute_html(A, B, v):
 
 @pytest.mark.skipif("not pd")
 def test_display_nan():
-    v = Vector.from_values([0, 1], [1.0, np.nan], size=3, name="v")
+    v = Vector.from_coo([0, 1], [1.0, np.nan], size=3, name="v")
     repr_printer(v, "v")
     assert repr(v) == (
         '"v"        nvals  size  dtype  format\n'
@@ -4531,7 +4535,7 @@ def test_display_nan():
         "</table>\n"
         "</div></details></div>"
     )
-    A = Matrix.from_values([0, 0], [0, 1], [1.0, np.nan], ncols=3, nrows=2, name="A")
+    A = Matrix.from_coo([0, 0], [0, 1], [1.0, np.nan], ncols=3, nrows=2, name="A")
     repr_printer(A, "A")
     assert repr(A) == (
         '"A"        nvals  nrows  ncols  dtype   format\n'
@@ -4828,6 +4832,7 @@ def test_index_expr_matrix_html(A):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_scalar_as_vector():
     s = Scalar.from_value(5, is_cscalar=False)  # pragma: is_grbscalar
     v = s._as_vector()
@@ -4886,6 +4891,8 @@ def test_scalar_as_vector():
 
 @autocompute
 def test_index_expr_autocompute(v):
+    if not pd:  # pragma: no cover (import)
+        pytest.skip("needs pandas")
     html_printer(v[[0, 1]], "v[[0, 1]]")
     assert repr_html(v[[0, 1]]) == (
         "<div>"
@@ -4939,6 +4946,7 @@ def test_index_expr_autocompute(v):
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.int64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "record_dtype")
@@ -4988,6 +4996,7 @@ def test_udt():
     )
 
 
+@pytest.mark.skipif("not pd")
 def test_empty():
     v = Vector(int, 0)
     repr_printer(v, "v")

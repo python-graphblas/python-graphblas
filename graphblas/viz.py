@@ -1,8 +1,9 @@
 from importlib import import_module as _import_module
 
-from .matrix import Matrix as _Matrix
-from .matrix import TransposedMatrix as _TransposedMatrix
-from .utils import output_type as _output_type
+from .core.matrix import Matrix as _Matrix
+from .core.matrix import TransposedMatrix as _TransposedMatrix
+from .core.utils import output_type as _output_type
+from .io import to_networkx, to_scipy_sparse
 
 _LAZY_IMPORTS = {
     "bk": "bokeh",
@@ -24,7 +25,7 @@ def _get_imports(names, within):
         names = [names]
     rv = []
     for name in names:
-        if name not in _LAZY_IMPORTS:  # pragma: no cover
+        if name not in _LAZY_IMPORTS:  # pragma: no cover (safety)
             raise KeyError(f"Unknown library to import: {name}")
         if name in globals():
             val = globals()[name]
@@ -52,16 +53,10 @@ def draw(m):  # pragma: no cover
 
     .. image:: /_static/img/draw-example.png
     """
-    from .io import to_networkx
-
-    try:
-        nx, plt = _get_imports(["nx", "plt"], "draw")
-    except ImportError as exc:
-        print(exc.msg)
-        return
-    if not isinstance(_output_type(m), (_Matrix, _TransposedMatrix)):
-        print(f"Can only draw a Matrix, not {type(m)}")
-        return
+    nx, plt = _get_imports(["nx", "plt"], "draw")
+    typ = _output_type(m)
+    if typ is not _Matrix and typ is not _TransposedMatrix:
+        raise TypeError(f"Can only draw a Matrix, not {type(m)}")
 
     g = to_networkx(m)
     pos = nx.spring_layout(g)
@@ -72,7 +67,7 @@ def draw(m):  # pragma: no cover
 
 
 def spy(M, *, centered=False, show=True, figure=None, axes=None, figsize=None, **kwargs):
-    """Plot the sparsity pattern of a Matrix using `matplotlib.spy`
+    """Plot the sparsity pattern of a Matrix using `matplotlib.spy`.
 
     See:
     - https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.spy.html
@@ -86,8 +81,6 @@ def spy(M, *, centered=False, show=True, figure=None, axes=None, figsize=None, *
     --------
     datashade
     """
-    from .io import to_scipy_sparse
-
     mpl, plt, ss = _get_imports(["mpl", "plt", "ss"], "spy")
     A = to_scipy_sparse(M, "coo")
     if show:
@@ -111,7 +104,7 @@ def spy(M, *, centered=False, show=True, figure=None, axes=None, figsize=None, *
 
 
 def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kwargs):
-    """Interactive plot of the sparsity pattern of a Matrix using hvplot and datashader
+    """Interactive plot of the sparsity pattern of a Matrix using hvplot and datashader.
 
     The `datashader` library rasterizes large data into a 2d grid of pixels.  Each pixel
     may contain multiple data points, which are combined by an aggregator (`agg="count"`).
@@ -140,7 +133,7 @@ def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kw
     """
     np, pd, bk, hv, hp, ds = _get_imports(["np", "pd", "bk", "hv", "hp", "ds"], "datashade")
     if "df" not in kwargs:
-        rows, cols, vals = M.to_values()
+        rows, cols, vals = M.to_coo()
         max_int = np.iinfo(np.int64).max
         if M.nrows > max_int and rows.max() > max_int:
             rows = rows.astype(np.float64)
@@ -189,7 +182,7 @@ def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kw
             images.extend(image_row)
         return hv.Layout(images).cols(ncols)
 
-    kwds = dict(  # noqa
+    kwds = dict(  # noqa: C408
         x="col",
         y="row",
         c="val",

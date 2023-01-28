@@ -1,4 +1,4 @@
-""" Create UDFs of numpy functions supported by numba.
+"""Create UDFs of numpy functions supported by numba.
 
 See list of numpy ufuncs supported by numpy here:
 
@@ -124,8 +124,8 @@ def __dir__():
 
 def __getattr__(name):
     if name in _delayed:
-        func, kwargs = _delayed.pop(name)
-        rv = func(**kwargs)
+        delayed_func, kwargs = _delayed.pop(name)
+        rv = delayed_func(**kwargs)
         globals()[name] = rv
         return rv
     if name not in _unary_names:
@@ -133,17 +133,17 @@ def __getattr__(name):
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         globals()[name] = getattr(_unary, _numpy_to_graphblas[name])
     else:
-        from .. import operator
+        from ..core import operator
 
         numpy_func = getattr(_np, name)
 
-        def func(x):  # pragma: no cover
+        def func(x):  # pragma: no cover (numba)
             return numpy_func(x)
 
         operator.UnaryOp.register_new(f"numpy.{name}", func)
         if name == "reciprocal":
             # numba doesn't match numpy here
-            def reciprocal(x):
+            def reciprocal(x):  # pragma: no cover (numba)
                 return 1 if x else 0
 
             op = operator.UnaryOp.register_anonymous(reciprocal)

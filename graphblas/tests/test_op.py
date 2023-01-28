@@ -4,19 +4,9 @@ import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import (
-    agg,
-    binary,
-    dtypes,
-    indexunary,
-    lib,
-    monoid,
-    op,
-    operator,
-    select,
-    semiring,
-    unary,
-)
+from graphblas import agg, backend, binary, dtypes, indexunary, monoid, op, select, semiring, unary
+from graphblas.core import lib, operator
+from graphblas.core.operator import BinaryOp, IndexUnaryOp, Monoid, Semiring, UnaryOp, get_semiring
 from graphblas.dtypes import (
     BOOL,
     FP32,
@@ -31,12 +21,13 @@ from graphblas.dtypes import (
     UINT64,
 )
 from graphblas.exceptions import DomainMismatch, UdfParseError
-from graphblas.operator import BinaryOp, IndexUnaryOp, Monoid, Semiring, UnaryOp, get_semiring
 
 if dtypes._supports_complex:
     from graphblas.dtypes import FC32, FC64
 
 from graphblas import Matrix, Vector  # isort:skip (for dask-graphblas)
+
+suitesparse = backend == "suitesparse"
 
 
 def orig_types(op):
@@ -60,15 +51,17 @@ def test_op_repr():
 def test_unaryop():
     assert unary.ainv["INT32"].gb_obj == lib.GrB_AINV_INT32
     assert unary.ainv[dtypes.UINT16].gb_obj == lib.GrB_AINV_UINT16
-    assert orig_types(unary.positioni) == {INT32, INT64}
-    assert orig_types(unary.positionj1) == {INT32, INT64}
+    if suitesparse:
+        assert orig_types(unary.ss.positioni) == {INT32, INT64}
+        assert orig_types(unary.ss.positionj1) == {INT32, INT64}
 
 
 def test_binaryop():
     assert binary.plus["INT32"].gb_obj == lib.GrB_PLUS_INT32
     assert binary.plus[dtypes.UINT16].gb_obj == lib.GrB_PLUS_UINT16
-    assert orig_types(binary.firsti) == {INT32, INT64}
-    assert orig_types(binary.secondj1) == {INT32, INT64}
+    if suitesparse:
+        assert orig_types(binary.ss.firsti) == {INT32, INT64}
+        assert orig_types(binary.ss.secondj1) == {INT32, INT64}
 
 
 def test_monoid():
@@ -79,18 +72,22 @@ def test_monoid():
 def test_semiring():
     assert semiring.min_plus["INT32"].gb_obj == lib.GrB_MIN_PLUS_SEMIRING_INT32
     assert semiring.min_plus[dtypes.UINT16].gb_obj == lib.GrB_MIN_PLUS_SEMIRING_UINT16
-    assert orig_types(semiring.min_firsti) == {INT32, INT64}
+    if suitesparse:
+        assert orig_types(semiring.ss.min_firsti) == {INT32, INT64}
 
 
 def test_agg():
     assert repr(agg.count) == "agg.count"
     assert repr(agg.count["INT32"]) == "agg.count[INT32]"
+    if suitesparse:
+        assert repr(agg.ss.first) == "agg.ss.first"
     assert "INT64" in agg.sum_of_inverses
     assert agg.sum_of_inverses["INT64"].return_type == FP64
     assert "BOOL" not in agg.sum_of_inverses
     with pytest.raises(KeyError, match="BOOL"):
         agg.sum_of_inverses["BOOL"]
     assert agg.varp["INT64"].return_type == "FP64"
+    assert set(dir(agg)).issuperset({"count", "mean", "ss"})
 
 
 def test_find_opclass_unaryop():
@@ -140,14 +137,14 @@ def test_get_typed_op():
     )
     with pytest.raises(ValueError, match="Unknown binary or aggregator"):
         operator.get_typed_op("bad_op_name", dtypes.INT64, kind="binary|aggregator")
-    with pytest.raises(Exception):
+    with pytest.raises(AttributeError):
         # get_typed_op expects dtypes to already be dtypes
         operator.get_typed_op(binary.plus, dtypes.INT64, "bad dtype")
 
 
 def test_unaryop_udf():
     def plus_one(x):
-        return x + 1  # pragma: no cover
+        return x + 1  # pragma: no cover (numba)
 
     unary.register_new("plus_one", plus_one)
     assert hasattr(unary, "plus_one")
@@ -169,9 +166,9 @@ def test_unaryop_udf():
     if dtypes._supports_complex:
         comp_set.update({FC32, FC64})
     assert set(unary.plus_one.types) == comp_set
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.plus_one)
-    result = Vector.from_values([0, 1, 3], [2, 3, -3], dtype=dtypes.INT32)
+    result = Vector.from_coo([0, 1, 3], [2, 3, -3], dtype=dtypes.INT32)
     assert v.isequal(result)
     assert "INT8" in unary.plus_one
     assert INT8 in unary.plus_one.types
@@ -189,19 +186,19 @@ def test_unaryop_udf():
 def test_unaryop_parameterized():
     def plus_x(x=0):
         def inner(val):
-            return val + x  # pragma: no cover
+            return val + x  # pragma: no cover (numba)
 
         return inner
 
     op = UnaryOp.register_anonymous(plus_x, parameterized=True)
     assert not op.is_positional
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v0 = v.apply(op).new()
     assert v.isequal(v0, check_dtype=True)
     v0 = v.apply(op(0)).new()
     assert v.isequal(v0, check_dtype=True)
     v10 = v.apply(op(x=10)).new()
-    r10 = Vector.from_values([0, 1, 3], [11, 12, 6], dtype=dtypes.INT32)
+    r10 = Vector.from_coo([0, 1, 3], [11, 12, 6], dtype=dtypes.INT32)
     assert r10.isequal(v10, check_dtype=True)
     UnaryOp._initialize()  # no-op
     UnaryOp.register_new("plus_x_parameterized", plus_x, parameterized=True)
@@ -214,7 +211,7 @@ def test_unaryop_parameterized():
 def test_binaryop_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
-            return left + right + x  # pragma: no cover
+            return left + right + x  # pragma: no cover (numba)
 
         return inner
 
@@ -222,15 +219,15 @@ def test_binaryop_parameterized():
     assert not op.is_positional
     assert op.monoid is None
     assert op(1).monoid is None
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v0 = v.ewise_mult(v, op).new()
-    r0 = Vector.from_values([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
+    r0 = Vector.from_coo([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
     assert v0.isequal(r0, check_dtype=True)
     v1 = v.ewise_add(v, op(1)).new()
-    r1 = Vector.from_values([0, 1, 3], [3, 5, -7], dtype=dtypes.INT32)
+    r1 = Vector.from_coo([0, 1, 3], [3, 5, -7], dtype=dtypes.INT32)
     assert v1.isequal(r1, check_dtype=True)
 
-    w = Vector.from_values([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=op)
+    w = Vector.from_coo([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=op)
     assert v.isequal(w, check_dtype=True)
     with pytest.raises(TypeError, match="Monoid"):
         assert v.reduce(op).new() == -1
@@ -247,9 +244,9 @@ def test_binaryop_parameterized():
     x = x.ewise_mult(x, op(1)).new()
     assert v.isequal(x)
 
-    assert v.isequal(Vector.from_values([0, 1, 3], [19, 35, -61], dtype=dtypes.INT32))
+    assert v.isequal(Vector.from_coo([0, 1, 3], [19, 35, -61], dtype=dtypes.INT32))
     v11 = v.apply(op(1), left=10).new()
-    r11 = Vector.from_values([0, 1, 3], [30, 46, -50], dtype=dtypes.INT32)
+    r11 = Vector.from_coo([0, 1, 3], [30, 46, -50], dtype=dtypes.INT32)
     # Should we check for dtype here?
     # Is it okay if the literal scalar is an INT64, which causes the output to default to INT64?
     assert v11.isequal(r11, check_dtype=False)
@@ -257,15 +254,15 @@ def test_binaryop_parameterized():
     with pytest.raises(TypeError, match="UDF argument must be a function"):
         BinaryOp.register_new("bad", object())
     assert not hasattr(binary, "bad")
+
+    def bad(x, y):  # pragma: no cover (numba)
+        return v
+
     with pytest.raises(UdfParseError, match="Unable to parse function using Numba"):
-
-        def bad(x, y):  # pragma: no cover
-            return v
-
         BinaryOp.register_new("bad", bad)
 
     def my_add(x, y):
-        return x + y  # pragma: no cover
+        return x + y  # pragma: no cover (numba)
 
     op = BinaryOp.register_anonymous(my_add)
     assert op.name == "my_add"
@@ -275,7 +272,7 @@ def test_binaryop_parameterized():
 def test_monoid_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
-            return left + right + x  # pragma: no cover
+            return left + right + x  # pragma: no cover (numba)
 
         return inner
 
@@ -283,9 +280,9 @@ def test_monoid_parameterized():
 
     # signatures must match
     with pytest.raises(ValueError, match="Signatures"):
-        Monoid.register_anonymous(bin_op, lambda x: -x)  # pragma: no cover
+        Monoid.register_anonymous(bin_op, lambda x: -x)  # pragma: no branch (numba)
     with pytest.raises(ValueError, match="Signatures"):
-        Monoid.register_anonymous(bin_op, lambda y=0: -y)  # pragma: no cover
+        Monoid.register_anonymous(bin_op, lambda y=0: -y)  # pragma: no branch (numba)
     with pytest.raises(TypeError, match="binaryop must be parameterized"):
         operator.ParameterizedMonoid("bad_monoid", binary.plus, 0)
 
@@ -307,25 +304,25 @@ def test_monoid_parameterized():
     assert bin_op1.monoid is None
 
     assert monoid.name == "my_monoid"
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v0 = v.ewise_add(v, monoid).new()
-    r0 = Vector.from_values([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
+    r0 = Vector.from_coo([0, 1, 3], [2, 4, -8], dtype=dtypes.INT32)
     assert v0.isequal(r0, check_dtype=True)
     v1 = v.ewise_mult(v, monoid(1)).new()
-    r1 = Vector.from_values([0, 1, 3], [3, 5, -7], dtype=dtypes.INT32)
+    r1 = Vector.from_coo([0, 1, 3], [3, 5, -7], dtype=dtypes.INT32)
     assert v1.isequal(r1, check_dtype=True)
 
     assert v.reduce(monoid).new() == -1
     assert v.reduce(monoid(1)).new() == 1
     # with pytest.raises(TypeError, match="BinaryOp"):  # NOW OKAY
-    w1 = Vector.from_values([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=monoid)
-    w2 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    w1 = Vector.from_coo([0, 0, 1, 3], [1, 0, 2, -4], dtype=dtypes.INT32, dup_op=monoid)
+    w2 = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     assert w1.isequal(w2)
 
     # identity may be a value
     def logaddexp(base):
         def inner(x, y):
-            return np.log(base**x + base**y) / np.log(base)  # pragma: no cover
+            return np.log(base**x + base**y) / np.log(base)  # pragma: no cover (numba)
 
         return inner
 
@@ -335,7 +332,7 @@ def test_monoid_parameterized():
     monoid = gb.monoid._user_defined_monoid
     fv2 = fv.ewise_mult(fv, monoid(2)).new()
 
-    def plus1(x):  # pragma: no cover
+    def plus1(x):  # pragma: no cover (numba)
         return x + 1
 
     plus1 = UnaryOp.register_anonymous(plus1)
@@ -346,7 +343,7 @@ def test_monoid_parameterized():
 
     def plus_times_x(x=0):
         def inner(left, right):
-            return (left + right) * x  # pragma: no cover
+            return (left + right) * x  # pragma: no cover (numba)
 
         return inner
 
@@ -365,7 +362,7 @@ def test_monoid_parameterized():
 def test_semiring_parameterized():
     def plus_plus_x(x=0):
         def inner(left, right):
-            return left + right + x  # pragma: no cover
+            return left + right + x  # pragma: no cover (numba)
 
         return inner
 
@@ -381,42 +378,42 @@ def test_semiring_parameterized():
     assert not mysemiring.is_positional
     assert mysemiring.name == "my_semiring"
 
-    A = Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
-    x = Vector.from_values([0, 1], [10, 20])
+    A = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
+    x = Vector.from_coo([0, 1], [10, 20])
 
     y = A.mxv(x, mysemiring).new()
     assert y.isequal(A.mxv(x, semiring.plus_plus).new())
     assert y.isequal(x.vxm(A.T, semiring.plus_plus).new())
-    assert y.isequal(Vector.from_values([0, 1], [33, 37]))
+    assert y.isequal(Vector.from_coo([0, 1], [33, 37]))
 
     y = A.mxv(x, mysemiring(1)).new()
-    assert y.isequal(Vector.from_values([0, 1], [36, 40]))  # three extra pluses
+    assert y.isequal(Vector.from_coo([0, 1], [36, 40]))  # three extra pluses
 
     y = x.vxm(A.T, mysemiring(1)).new()  # same as previous
-    assert y.isequal(Vector.from_values([0, 1], [36, 40]))
+    assert y.isequal(Vector.from_coo([0, 1], [36, 40]))
 
     y = x.vxm(A.T, mysemiring).new()
-    assert y.isequal(Vector.from_values([0, 1], [33, 37]))
+    assert y.isequal(Vector.from_coo([0, 1], [33, 37]))
 
     B = A.mxm(A, mysemiring).new()
     assert B.isequal(A.mxm(A, semiring.plus_plus).new())
-    assert B.isequal(Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [7, 9, 11, 13]))
+    assert B.isequal(Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [7, 9, 11, 13]))
 
     B = A.mxm(A, mysemiring(1)).new()  # three extra pluses
-    assert B.isequal(Matrix.from_values([0, 0, 1, 1], [0, 1, 0, 1], [10, 12, 14, 16]))
+    assert B.isequal(Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [10, 12, 14, 16]))
 
     with pytest.raises(TypeError, match="Expected type: BinaryOp, Monoid"):
         A.ewise_add(A, mysemiring)
 
     # mismatched signatures.
-    def other_binary(y=0):  # pragma: no cover
+    def other_binary(y=0):  # pragma: no cover (numba)
         def inner(left, right):
             return left + right - y
 
         return inner
 
     def other_identity(y=0):
-        return x  # pragma: no cover
+        return x  # pragma: no cover (numba)
 
     other_op = BinaryOp.register_anonymous(other_binary, parameterized=True)
     other_monoid = Monoid.register_anonymous(other_op, other_identity)
@@ -458,15 +455,13 @@ def test_semiring_parameterized():
         operator.ParameterizedSemiring("bad_semiring", monoid.plus, monoid.plus)
 
     # While we're here, let's check misc Matrix operations
-    Adup = Matrix.from_values([0, 0, 0, 1, 1], [0, 0, 1, 0, 1], [100, 1, 2, 3, 4], dup_op=bin_op)
-    Adup2 = Matrix.from_values(
-        [0, 0, 0, 1, 1], [0, 0, 1, 0, 1], [100, 1, 2, 3, 4], dup_op=binary.plus
-    )
+    Adup = Matrix.from_coo([0, 0, 0, 1, 1], [0, 0, 1, 0, 1], [100, 1, 2, 3, 4], dup_op=bin_op)
+    Adup2 = Matrix.from_coo([0, 0, 0, 1, 1], [0, 0, 1, 0, 1], [100, 1, 2, 3, 4], dup_op=binary.plus)
     assert Adup.isequal(Adup2)
 
     def plus_x(x=0):
         def inner(y):
-            return x + y  # pragma: no cover
+            return x + y  # pragma: no cover (numba)
 
         return inner
 
@@ -493,7 +488,7 @@ def test_semiring_parameterized():
 def test_unaryop_udf_bool_result():
     # numba has trouble compiling this, but we have a work-around
     def is_positive(x):
-        return x > 0  # pragma: no cover
+        return x > 0  # pragma: no cover (numba)
 
     UnaryOp.register_new("is_positive", is_positive)
     assert hasattr(unary, "is_positive")
@@ -510,15 +505,15 @@ def test_unaryop_udf_bool_result():
         FP64,
         BOOL,
     }
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     w = v.apply(unary.is_positive).new()
-    result = Vector.from_values([0, 1, 3], [True, True, False], dtype=dtypes.BOOL)
+    result = Vector.from_coo([0, 1, 3], [True, True, False], dtype=dtypes.BOOL)
     assert w.isequal(result)
 
 
 def test_binaryop_udf():
     def times_minus_sum(x, y):
-        return x * y - (x + y)  # pragma: no cover
+        return x * y - (x + y)  # pragma: no cover (numba)
 
     BinaryOp.register_new("bin_test_func", times_minus_sum)
     assert hasattr(binary, "bin_test_func")
@@ -538,16 +533,16 @@ def test_binaryop_udf():
     if dtypes._supports_complex:
         comp_set.update({FC32, FC64})
     assert set(binary.bin_test_func.types) == comp_set
-    v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
-    v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
+    v1 = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v2 = Vector.from_coo([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
     w = v1.ewise_add(v2, binary.bin_test_func).new()
-    result = Vector.from_values([0, 1, 2, 3], [-1, 2, 3, -31], dtype=dtypes.INT32)
+    result = Vector.from_coo([0, 1, 2, 3], [-1, 2, 3, -31], dtype=dtypes.INT32)
     assert w.isequal(result)
 
 
 def test_monoid_udf():
     def plus_plus_one(x, y):
-        return x + y + 1  # pragma: no cover
+        return x + y + 1  # pragma: no cover (numba)
 
     BinaryOp.register_new("plus_plus_one", plus_plus_one)
     Monoid.register_new("plus_plus_one", binary.plus_plus_one, -1)
@@ -567,10 +562,10 @@ def test_monoid_udf():
     if dtypes._supports_complex:
         comp_set.update({FC32, FC64})
     assert set(monoid.plus_plus_one.types) == comp_set
-    v1 = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
-    v2 = Vector.from_values([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
+    v1 = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v2 = Vector.from_coo([0, 2, 3], [2, 3, 7], dtype=dtypes.INT32)
     w = v1.ewise_add(v2, monoid.plus_plus_one).new()
-    result = Vector.from_values([0, 1, 2, 3], [4, 2, 3, 4], dtype=dtypes.INT32)
+    result = Vector.from_coo([0, 1, 2, 3], [4, 2, 3, 4], dtype=dtypes.INT32)
     assert w.isequal(result)
 
     with pytest.raises(DomainMismatch):
@@ -579,42 +574,43 @@ def test_monoid_udf():
         Monoid.register_anonymous(binary.plus_plus_one, {"BOOL": -1})
 
 
+@pytest.mark.slow
 def test_semiring_udf():
     def plus_plus_two(x, y):
-        return x + y + 2  # pragma: no cover
+        return x + y + 2  # pragma: no cover (numba)
 
     BinaryOp.register_new("plus_plus_two", plus_plus_two)
     Semiring.register_new("extra_twos", monoid.plus, binary.plus_plus_two)
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
-    A = Matrix.from_values(
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    A = Matrix.from_coo(
         [0, 0, 0, 0, 3, 3, 3, 3],
         [0, 1, 2, 3, 0, 1, 2, 3],
         [2, 3, 4, 5, 6, 7, 8, 9],
         dtype=dtypes.INT32,
     )
     w = v.vxm(A, semiring.extra_twos).new()
-    result = Vector.from_values([0, 1, 2, 3], [9, 11, 13, 15], dtype=dtypes.INT32)
+    result = Vector.from_coo([0, 1, 2, 3], [9, 11, 13, 15], dtype=dtypes.INT32)
     assert w.isequal(result)
 
 
 def test_binary_updates():
     assert not hasattr(binary, "div")
     assert binary.cdiv["INT64"].gb_obj == lib.GrB_DIV_INT64
-    vec1 = Vector.from_values([0], [1], dtype=dtypes.INT64)
-    vec2 = Vector.from_values([0], [2], dtype=dtypes.INT64)
+    vec1 = Vector.from_coo([0], [1], dtype=dtypes.INT64)
+    vec2 = Vector.from_coo([0], [2], dtype=dtypes.INT64)
     result = vec1.ewise_mult(vec2, binary.truediv).new()
-    assert result.isclose(Vector.from_values([0], [0.5], dtype=dtypes.FP64), check_dtype=True)
-    vec4 = Vector.from_values([0], [-3], dtype=dtypes.INT64)
+    assert result.isclose(Vector.from_coo([0], [0.5], dtype=dtypes.FP64), check_dtype=True)
+    vec4 = Vector.from_coo([0], [-3], dtype=dtypes.INT64)
     result2 = vec4.ewise_mult(vec2, binary.cdiv).new()
-    assert result2.isequal(Vector.from_values([0], [-1], dtype=dtypes.INT64), check_dtype=True)
+    assert result2.isequal(Vector.from_coo([0], [-1], dtype=dtypes.INT64), check_dtype=True)
     result3 = vec4.ewise_mult(vec2, binary.floordiv).new()
-    assert result3.isequal(Vector.from_values([0], [-2], dtype=dtypes.INT64), check_dtype=True)
+    assert result3.isequal(Vector.from_coo([0], [-2], dtype=dtypes.INT64), check_dtype=True)
 
 
 @pytest.mark.slow
 def test_nested_names():
     def plus_three(x):
-        return x + 3  # pragma: no cover
+        return x + 3  # pragma: no cover (numba)
 
     UnaryOp.register_new("incrementers.plus_three", plus_three)
     assert hasattr(unary, "incrementers")
@@ -637,23 +633,23 @@ def test_nested_names():
         comp_set.update({FC32, FC64})
     assert set(unary.incrementers.plus_three.types) == comp_set
 
-    v = Vector.from_values([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
+    v = Vector.from_coo([0, 1, 3], [1, 2, -4], dtype=dtypes.INT32)
     v << v.apply(unary.incrementers.plus_three)
-    result = Vector.from_values([0, 1, 3], [4, 5, -1], dtype=dtypes.INT32)
+    result = Vector.from_coo([0, 1, 3], [4, 5, -1], dtype=dtypes.INT32)
     assert v.isequal(result), v
 
     def plus_four(x):
-        return x + 4  # pragma: no cover
+        return x + 4  # pragma: no cover (numba)
 
     UnaryOp.register_new("incrementers.plus_four", plus_four)
     assert hasattr(unary.incrementers, "plus_four")
     assert hasattr(op.incrementers, "plus_four")  # Also save it to `graphblas.op`!
     v << v.apply(unary.incrementers.plus_four)  # this is in addition to the plus_three earlier
-    result2 = Vector.from_values([0, 1, 3], [8, 9, 3], dtype=dtypes.INT32)
+    result2 = Vector.from_coo([0, 1, 3], [8, 9, 3], dtype=dtypes.INT32)
     assert v.isequal(result2), v
 
     def bad_will_overwrite_path(x):
-        return x + 7  # pragma: no cover
+        return x + 7  # pragma: no cover (numba)
 
     with pytest.raises(AttributeError):
         UnaryOp.register_new("incrementers", bad_will_overwrite_path)
@@ -683,14 +679,13 @@ def test_op_namespace():
         op.numpy.bad_attr
 
     # Make sure all have been initialized so `vars` below works
-    for key in list(op._delayed):  # pragma: no cover
+    for key in list(op._delayed):  # pragma: no cover (safety)
         getattr(op, key)
-    known_aliases = {"index", "indexle", "indexgt"}
     opnames = {
         key
         for key, val in vars(op).items()
         if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
-    } | known_aliases
+    }
     unarynames = {
         key
         for key, val in vars(unary).items()
@@ -721,15 +716,29 @@ def test_op_namespace():
         for key, val in vars(select).items()
         if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
     }
-    assert not unarynames - opnames, unarynames - opnames
-    assert not binarynames - opnames, binarynames - opnames
+    extra_unary = unarynames - opnames - unary._deprecated.keys()
+    assert not extra_unary
+    extra_binary = binarynames - opnames - binary._deprecated.keys()
+    assert not extra_binary
     assert not monoidnames - opnames, monoidnames - opnames
-    assert not semiringnames - opnames, semiringnames - opnames
-    assert not indexunarynames - opnames, indexunarynames - opnames
-    assert not selectnames - opnames, selectnames - opnames
-    assert not opnames - (
-        unarynames | binarynames | monoidnames | semiringnames | indexunarynames | selectnames
+    extra_semiring = semiringnames - opnames - semiring._deprecated.keys()
+    assert not extra_semiring
+    extra_ops = (
+        opnames - (unarynames | binarynames | monoidnames | semiringnames) - op._deprecated.keys()
     )
+    assert not extra_ops
+    # These are not part of the `op` namespace
+    assert indexunarynames - opnames == indexunarynames, indexunarynames - opnames
+    assert selectnames - opnames == selectnames, selectnames - opnames
+
+
+@pytest.mark.slow
+def test_binaryop_attributes_numpy():
+    # Some coverage from this test depends on order of tests
+    assert binary.numpy.add[int].monoid is monoid.numpy.add[int]
+    assert binary.numpy.subtract[int].monoid is None
+    assert binary.numpy.add.monoid is monoid.numpy.add
+    assert binary.numpy.subtract.monoid is None
 
 
 @pytest.mark.slow
@@ -739,13 +748,8 @@ def test_binaryop_attributes():
     assert binary.plus.monoid is monoid.plus
     assert binary.minus.monoid is None
 
-    assert binary.numpy.add[int].monoid is monoid.numpy.add[int]
-    assert binary.numpy.subtract[int].monoid is None
-    assert binary.numpy.add.monoid is monoid.numpy.add
-    assert binary.numpy.subtract.monoid is None
-
     def plus(x, y):
-        return x + y  # pragma: no cover
+        return x + y  # pragma: no cover (numba)
 
     op = BinaryOp.register_anonymous(plus, name="plus")
     assert op.monoid is None
@@ -786,7 +790,7 @@ def test_monoid_attributes():
     assert monoid.numpy.add.binaryop is binary.numpy.add
     assert monoid.numpy.add.identities == {typ: 0 for typ in monoid.numpy.add.types}
 
-    def plus(x, y):  # pragma: no cover
+    def plus(x, y):  # pragma: no cover (numba)
         return x + y
 
     binop = BinaryOp.register_anonymous(plus, name="plus")
@@ -823,7 +827,7 @@ def test_semiring_attributes():
     assert semiring.numpy.add_subtract.binaryop is binary.numpy.subtract
 
     def plus(x, y):
-        return x + y  # pragma: no cover
+        return x + y  # pragma: no cover (numba)
 
     binop = BinaryOp.register_anonymous(plus, name="plus")
     mymonoid = Monoid.register_anonymous(binop, 0, name="plus")
@@ -862,8 +866,8 @@ def test_binaryop_superset_monoids():
 
 def test_div_semirings():
     assert not hasattr(semiring, "plus_div")
-    A1 = Matrix.from_values([0, 1], [0, 0], [-1, -3])
-    A2 = Matrix.from_values([0, 1], [0, 0], [2, 2])
+    A1 = Matrix.from_coo([0, 1], [0, 0], [-1, -3])
+    A2 = Matrix.from_coo([0, 1], [0, 0], [2, 2])
     result = A1.T.mxm(A2, semiring.plus_cdiv).new()
     assert result[0, 0].new() == -1
     assert result.dtype == dtypes.INT64
@@ -891,7 +895,7 @@ def test_get_semiring():
         get_semiring(binary.plus, monoid.times)
 
     def myplus(x, y):
-        return x + y  # pragma: no cover
+        return x + y  # pragma: no cover (numba)
 
     binop = BinaryOp.register_anonymous(myplus, name="myplus")
     st = get_semiring(monoid.plus, binop)
@@ -917,12 +921,16 @@ def test_get_semiring():
 def test_create_semiring():
     # stress test / sanity check
     monoid_names = {x for x in dir(monoid) if not x.startswith("_")}
-    binary_names = {x for x in dir(binary) if not x.startswith("_")}
+    binary_names = {x for x in dir(binary) if not x.startswith("_") and x != "ss"}
     for monoid_name, binary_name in itertools.product(monoid_names, binary_names):
         cur_monoid = getattr(monoid, monoid_name)
         if not isinstance(cur_monoid, Monoid):
             continue
-        cur_binary = getattr(binary, binary_name)
+        cur_binary = (
+            getattr(binary, binary_name)
+            if binary_name not in binary._deprecated
+            else binary._deprecated[binary_name]
+        )
         if not isinstance(cur_binary, BinaryOp):
             continue
         Semiring.register_anonymous(cur_monoid, cur_binary)
@@ -943,7 +951,8 @@ def test_commutes():
     assert semiring.plus_times.is_commutative
     assert semiring.any_first.commutes_to is semiring.any_second
     assert semiring.plus_times.is_commutative
-    assert semiring.min_secondi.commutes_to is semiring.min_firstj
+    if suitesparse:
+        assert semiring.ss.min_secondi.commutes_to is semiring.ss.min_firstj
     assert semiring.plus_pow.commutes_to is semiring.plus_rpow
     assert not semiring.plus_pow.is_commutative
     assert binary.isclose.commutes_to is binary.isclose
@@ -969,7 +978,8 @@ def test_commutes():
     assert semiring.plus_times[int].is_commutative
     assert semiring.any_first[int].commutes_to is semiring.any_second[int]
     assert semiring.plus_times[int].is_commutative
-    assert semiring.min_secondi[int].commutes_to is semiring.min_firstj[int]
+    if suitesparse:
+        assert semiring.ss.min_secondi[int].commutes_to is semiring.ss.min_firstj[int]
     assert semiring.plus_pow[int].commutes_to is semiring.plus_rpow[int]
     assert not semiring.plus_pow[int].is_commutative
     assert binary.isclose(0.1)[int].commutes_to is binary.isclose(0.1)[int]
@@ -983,7 +993,12 @@ def test_commutes():
     # Stress test (this can create extra semirings)
     names = dir(semiring)
     for name in names:
-        val = getattr(semiring, name)
+        if name in semiring._deprecated:
+            val = semiring._deprecated[name]
+        elif name == "ss":
+            continue
+        else:
+            val = getattr(semiring, name)
         if not hasattr(val, "commutes_to"):
             continue
         assert val.commutes_to is None or isinstance(val.commutes_to, type(val))
@@ -1035,10 +1050,10 @@ def test_from_string():
 
 @pytest.mark.slow
 def test_lazy_op():
-    UnaryOp.register_new("lazy", lambda x: x, lazy=True)  # pragma: no branch
+    UnaryOp.register_new("lazy", lambda x: x, lazy=True)  # pragma: no branch (numba)
     assert isinstance(op.lazy, UnaryOp)
     assert isinstance(unary.lazy, UnaryOp)
-    BinaryOp.register_new("lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch
+    BinaryOp.register_new("lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch (numba)
     Monoid.register_new("lazy", "lazy", 0, lazy=True)
     assert isinstance(monoid.lazy, Monoid)
     assert isinstance(binary.lazy, BinaryOp)
@@ -1050,9 +1065,9 @@ def test_lazy_op():
     Semiring.register_new("lazy_lazy", monoid.lazy, binary.lazy, lazy=True)
     assert isinstance(semiring.lazy_lazy, Semiring)
     # numpy
-    UnaryOp.register_new("numpy.lazy", lambda x: x, lazy=True)  # pragma: no branch
+    UnaryOp.register_new("numpy.lazy", lambda x: x, lazy=True)  # pragma: no branch (numba)
     assert isinstance(unary.numpy.lazy, UnaryOp)
-    BinaryOp.register_new("numpy.lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch
+    BinaryOp.register_new("numpy.lazy", lambda x, y: x + y, lazy=True)  # pragma: no branch (numba)
     Monoid.register_new("numpy.lazy", "numpy.lazy", 0, lazy=True)
     assert isinstance(monoid.numpy.lazy, Monoid)
     assert isinstance(binary.numpy.lazy, BinaryOp)
@@ -1065,38 +1080,37 @@ def test_lazy_op():
     Semiring.register_new("numpy.lazy_lazy", monoid.numpy.lazy, binary.numpy.lazy, lazy=True)
     assert isinstance(semiring.numpy.lazy_lazy, Semiring)
     # misc
-    UnaryOp.register_new("misc.lazy", lambda x: x, lazy=True)  # pragma: no branch
+    UnaryOp.register_new("misc.lazy", lambda x: x, lazy=True)  # pragma: no branch (numba)
     assert isinstance(unary.misc.lazy, UnaryOp)
     with pytest.raises(AttributeError):
         unary.misc.bad
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Unknown unary string:"):
         unary.from_string("misc.lazy.badpath")
     assert op.from_string("lazy") is unary.lazy
     assert op.from_string("numpy.lazy") is unary.numpy.lazy
 
 
 def test_positional():
-    assert unary.positioni.is_positional
-    assert unary.positioni1[int].is_positional
-    assert unary.positionj1.is_positional
-    assert unary.positionj[float].is_positional
     assert not unary.exp.is_positional
     assert not unary.abs[bool].is_positional
-
-    assert binary.firsti.is_positional
-    assert binary.secondj1[int].is_positional
     assert not binary.plus.is_positional
     assert not binary.minus[float].is_positional
-
     assert not monoid.plus.is_positional
     assert not monoid.plus[int].is_positional
-
-    assert semiring.any_firsti.is_positional
-    assert semiring.any_secondj[int].is_positional
     assert not semiring.any_first.is_positional
     assert not semiring.any_second[int].is_positional
+    if suitesparse:
+        assert unary.ss.positioni.is_positional
+        assert unary.ss.positioni1[int].is_positional
+        assert unary.ss.positionj1.is_positional
+        assert unary.ss.positionj[float].is_positional
+        assert binary.ss.firsti.is_positional
+        assert binary.ss.secondj1[int].is_positional
+        assert semiring.ss.any_firsti.is_positional
+        assert semiring.ss.any_secondj[int].is_positional
 
 
+@pytest.mark.slow
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
     udt = dtypes.register_new("TestUDT", record_dtype)
@@ -1107,7 +1121,7 @@ def test_udt():
     w[:] = 1
 
     def _udt_identity(val):
-        return val  # pragma: no cover
+        return val  # pragma: no cover (numba)
 
     udt_identity = UnaryOp.register_new("udt_identity", _udt_identity, is_udt=True)
     assert udt in udt_identity
@@ -1118,33 +1132,33 @@ def test_udt():
     assert udt in udt_identity
     assert int in udt_identity
     assert operator.get_typed_op(udt_identity, udt) is udt_identity[udt]
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Unknown dtype:"):
         assert "badname" in binary.eq
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Unknown dtype:"):
         assert "badname" in udt_identity
 
     def _udt_getx(val):
-        return val["x"]  # pragma: no cover
+        return val["x"]  # pragma: no cover (numba)
 
     udt_getx = UnaryOp.register_anonymous(_udt_getx, "udt_getx", is_udt=True)
     assert udt in udt_getx
     result = v.apply(udt_getx).new()
-    expected = Vector.from_values([0, 1, 2], 0)
+    expected = Vector.from_coo([0, 1, 2], 0)
     assert result.isequal(expected)
 
-    def _udt_index(val, idx, _, thunk):
-        if idx == 0:  # pragma: no cover
+    def _udt_index(val, idx, _, thunk):  # pragma: no cover (numba)
+        if idx == 0:
             return thunk["y"]
-        return -thunk["y"]  # pragma: no cover
+        return -thunk["y"]
 
     _udt_index = IndexUnaryOp.register_anonymous(_udt_index, "_udt_index", is_udt=True)
     assert udt in _udt_index
     result = v.apply(_udt_index, 3).new()
-    expected = Vector.from_values([0, 1, 2], [3, -3, -3])
+    expected = Vector.from_coo([0, 1, 2], [3, -3, -3])
     assert result.isequal(expected)
 
     def _udt_first(x, y):
-        return x  # pragma: no cover
+        return x  # pragma: no cover (numba)
 
     udt_first = BinaryOp.register_anonymous(_udt_first, "udt_first", is_udt=True)
     assert udt in udt_first
@@ -1178,45 +1192,47 @@ def test_udt():
     expected = Vector(int, size=v.size)
     expected(result.S) << 1
     assert result.isequal(expected)
-    result = v.apply(gb.unary.positioni).new()
-    expected = expected.apply(gb.unary.positioni).new()
-    assert result.isequal(expected)
+    if suitesparse:
+        result = v.apply(gb.unary.ss.positioni).new()
+        expected = expected.apply(gb.unary.ss.positioni).new()
+        assert result.isequal(expected)
 
     result = indexunary.rowindex(v).new()
-    assert result.isequal(Vector.from_values([0, 1, 2], [0, 1, 2]))
+    assert result.isequal(Vector.from_coo([0, 1, 2], [0, 1, 2]))
     result = select.rowle(v, 2).new()
     assert result.isequal(v)
 
     class BreakCompile:
         pass
 
-    def badfunc(x):  # pragma: no cover
+    def badfunc(x):  # pragma: no cover (numba)
         return BreakCompile(x)
 
     badunary = UnaryOp.register_anonymous(badfunc, is_udt=True)
     assert udt not in badunary
     assert int not in badunary
 
-    def badfunc(x, y):  # pragma: no cover
+    def badfunc2(x, y):  # pragma: no cover (numba)
         return BreakCompile(x)
 
-    badbinary = BinaryOp.register_anonymous(badfunc, is_udt=True)
+    badbinary = BinaryOp.register_anonymous(badfunc2, is_udt=True)
     assert udt not in badbinary
     assert int not in badbinary
 
     assert binary.first[udt].return_type is udt
     assert binary.first[udt].commutes_to is binary.second[udt]
-    assert semiring.any_firsti[int].commutes_to is semiring.any_secondj[int]
-    assert semiring.any_firsti[udt].commutes_to is semiring.any_secondj[udt]
+    if suitesparse:
+        assert semiring.ss.any_firsti[int].commutes_to is semiring.ss.any_secondj[int]
+        assert semiring.ss.any_firsti[udt].commutes_to is semiring.ss.any_secondj[udt]
 
     assert binary.second[udt].type is udt
     assert binary.second[udt].type2 is udt
-    assert binary.second[udt, dtypes.INT8].type is dtypes.INT8  # ignore first arg
+    assert binary.second[udt, dtypes.INT8].type is udt
     assert binary.second[udt, dtypes.INT8].type2 is dtypes.INT8
-    assert semiring.any_second[udt, dtypes.INT8].type is dtypes.INT8  # ignore first arg
+    assert semiring.any_second[udt, dtypes.INT8].type is udt
     assert semiring.any_second[udt, dtypes.INT8].type2 is dtypes.INT8
     assert binary.first[udt, dtypes.INT8].type is udt
-    assert binary.first[udt, dtypes.INT8].type2 is dtypes.INT8  # include second arg!
+    assert binary.first[udt, dtypes.INT8].type2 is dtypes.INT8
     assert monoid.any[udt].type2 is udt
 
 
@@ -1228,12 +1244,15 @@ def test_dir():
 def test_semiring_commute_exists():
     from .conftest import orig_semirings
 
-    vals = {getattr(semiring, key) for key in orig_semirings}
+    vals = {
+        semiring._deprecated[key] if key in semiring._deprecated else getattr(semiring, key)
+        for key in orig_semirings
+    }
     missing = set()
     for key in orig_semirings:
-        val = getattr(semiring, key)
+        val = semiring._deprecated[key] if key in semiring._deprecated else getattr(semiring, key)
         commutes_to = val.commutes_to
-        if commutes_to is not None and commutes_to not in vals:  # pragma: no cover
+        if commutes_to is not None and commutes_to not in vals:  # pragma: no cover (debug)
             missing.add(commutes_to.name)
     if missing:
         raise AssertionError("Missing semirings: " + ", ".join(sorted(missing)))
@@ -1242,20 +1261,69 @@ def test_semiring_commute_exists():
 def test_binaryop_commute_exists():
     from .conftest import orig_binaryops
 
-    vals = {getattr(binary, key) for key in orig_binaryops}
+    vals = {
+        binary._deprecated[key] if key in binary._deprecated else getattr(binary, key)
+        for key in orig_binaryops
+    }
     missing = set()
     for key in orig_binaryops:
-        val = getattr(binary, key)
+        val = binary._deprecated[key] if key in binary._deprecated else getattr(binary, key)
         commutes_to = val.commutes_to
-        if commutes_to is not None and commutes_to not in vals:  # pragma: no cover
+        if commutes_to is not None and commutes_to not in vals:  # pragma: no cover (debug)
             missing.add(commutes_to.name)
     if missing:
         raise AssertionError("Missing binaryops: " + ", ".join(sorted(missing)))
 
 
 def test_binom():
-    v = Vector.from_values([0, 1, 2], [3, 4, 5])
+    v = Vector.from_coo([0, 1, 2], [3, 4, 5])
     result = v.apply(binary.binom, 2).new()
-    expected = Vector.from_values([0, 1, 2], [3, 6, 10])
+    expected = Vector.from_coo([0, 1, 2], [3, 6, 10])
     assert result.isequal(expected)
     assert op.binom is binary.binom
+
+
+def test_builtins():
+    v1 = Vector.from_coo([0, 1, 2], [1, 2, 3])
+    v2 = Vector.from_coo([0, 1, 2], [3, 2, 1])
+    result = v1.ewise_mult(v2, min).new()
+    expected = Vector.from_coo([0, 1, 2], [1, 2, 1])
+    assert result.isequal(expected)
+    v1(max) << v2
+    expected = Vector.from_coo([0, 1, 2], [3, 2, 3])
+    assert v1.isequal(expected)
+
+
+def test_op_ss():
+    if suitesparse:
+        gb.unary.ss.positioni
+        gb.binary.ss.firsti
+        gb.semiring.ss.max_secondj
+        gb.op.ss.positionj
+        gb.agg.ss.argmin
+    else:
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.unary.ss
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.binary.ss
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.semiring.ss
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.op.ss
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.agg.ss
+
+
+def test_deprecated():
+    with pytest.warns(DeprecationWarning, match="please use"):
+        gb.unary.erf
+    with pytest.warns(DeprecationWarning, match="please use"):
+        gb.unary.positioni
+    with pytest.warns(DeprecationWarning, match="please use"):
+        gb.binary.firsti
+    with pytest.warns(DeprecationWarning, match="please use"):
+        gb.semiring.min_firsti
+    with pytest.warns(DeprecationWarning, match="please use"):
+        gb.op.secondj
+    with pytest.warns(DeprecationWarning, match="please use"):
+        gb.agg.argmin
