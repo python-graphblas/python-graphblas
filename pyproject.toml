@@ -233,6 +233,7 @@ ignore = [
     "D213",  # Multi-line docstring summary should start at the second line
     "D401",  # First line of docstring should be in imperative mood:
     "D417",  # Missing argument description in the docstring:
+    "PLE0605",  # Invalid format for `__all__`, must be `tuple` or `list` (Note: broken in v0.0.237)
 
     # Maybe consider
     "TRY004",  # Prefer `TypeError` exception for invalid type (Note: good advice, but not worth the nuisance)
@@ -245,9 +246,11 @@ ignore = [
     "PT001",  # Use `@pytest.fixture()` over `@pytest.fixture` (Note: why?)
     "PT003",  # `scope='function'` is implied in `@pytest.fixture()` (Note: no harm in being explicit)
     "PT023",  # Use `@pytest.mark.slow()` over `@pytest.mark.slow` (Note: why?)
+    "S110",  # `try`-`except`-`pass` detected, consider logging the exception (Note: good advice, but we don't log)
     "SIM102",  # Use a single `if` statement instead of nested `if` statements (Note: often necessary)
     "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
     "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
+    "SIM300",  # Yoda conditions are discouraged, use ... instead (Note: we're not this picky)
     # "SIM401",  # Use dict.get ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
     "TRY003",  # Avoid specifying long messages outside the exception class (Note: why?)
 ]
