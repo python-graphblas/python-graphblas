@@ -399,7 +399,6 @@ def test_ewise_add(v):
     # Binary, Monoid, and Semiring
     v2 = Vector.from_coo([0, 3, 5, 6], [2, 3, 2, 1])
     result = Vector.from_coo([0, 1, 3, 4, 5, 6], [2, 1, 3, 2, 2, 1])
-    # with pytest.raises(TypeError, match="require_monoid"):
     v.ewise_add(v2, binary.minus)  # okay now
     w = v.ewise_add(v2, binary.max).new()  # ok if the binaryop is part of a monoid
     assert w.isequal(result)
@@ -2308,11 +2307,11 @@ def test_ewise_union_infix():
             op(v | w, right_default=20)
         with pytest.raises(TypeError):
             op(v | w, left_default=20)
-        with pytest.raises(TypeError):
+        with pytest.raises(TypeError, match="unexpected keyword argument 'require_monoid'"):
             op(v | w, left_default=10, right_default=20, require_monoid=True)
-        with pytest.raises(TypeError):
+        with pytest.raises(TypeError, match="unexpected keyword argument 'require_monoid'"):
             op(v | w, left_default=10, right_default=20, require_monoid=False)
-        with pytest.raises(TypeError):
+        with pytest.raises(TypeError, match="unexpected keyword argument 'require_monoid'"):
             op(v | w, right_default=20, require_monoid=True)
         with pytest.raises(TypeError):
             op(v & w, 5, left_default=10, right_default=20)

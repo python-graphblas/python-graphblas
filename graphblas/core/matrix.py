@@ -1688,7 +1688,7 @@ class Matrix(BaseType):
     # to __setitem__ to trigger a call to GraphBLAS
     #########################################################
 
-    def ewise_add(self, other, op=monoid.plus, *, require_monoid=None):
+    def ewise_add(self, other, op=monoid.plus):
         """Perform element-wise computation on the union of sparse values,
         similar to how one expects addition to work for sparse matrices.
 
@@ -1702,7 +1702,6 @@ class Matrix(BaseType):
             The other matrix in the computation
         op : Monoid or BinaryOp
             Operator to use on intersecting values
-        require_monoid : deprecated
 
         Returns
         -------
@@ -1718,14 +1717,6 @@ class Matrix(BaseType):
             # Functional syntax
             C << monoid.max(A | B)
         """
-        if require_monoid is not None:
-            warnings.warn(
-                "require_monoid keyword is deprecated; "
-                "future behavior will be like `require_monoid=False`",
-                DeprecationWarning,
-            )
-        else:
-            require_monoid = False
         method_name = "ewise_add"
         other = self._expect_type(
             other,
@@ -1736,17 +1727,7 @@ class Matrix(BaseType):
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
-        if require_monoid:  # pragma: no cover (deprecated)
-            if op.opclass != "BinaryOp" or op.monoid is None:
-                self._expect_op(
-                    op,
-                    "Monoid",
-                    within=method_name,
-                    argname="op",
-                    extra_message="A BinaryOp may be given if require_monoid keyword is False.",
-                )
-        else:
-            self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if other.ndim == 1:
             # Broadcast rowwise from the right
             if self._ncols != other._size:

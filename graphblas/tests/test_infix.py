@@ -183,9 +183,8 @@ def test_bad_ewise(s1, v1, A1, A2):
     with pytest.raises(TypeError, match="not supported for FP64"):
         A1 &= A1
 
-    # with pytest.raises(TypeError, match="require_monoid"):
     op.minus(v1 | v1)  # ok now
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="unexpected keyword argument 'require_monoid'"):
         op.minus(v1 & v1, require_monoid=False)
     with pytest.raises(TypeError, match="Bad dtype"):
         op.plus(v1 & v1, 1)
@@ -289,7 +288,7 @@ def test_apply_binary_bad(v1):
         op.plus(v1)
     with pytest.raises(TypeError, match="Bad type for keyword argument `right="):
         op.plus(v1, v1)
-    with pytest.raises(TypeError, match="may only be used when performing an ewise_add"):
+    with pytest.raises(TypeError, match="unexpected keyword argument 'require_monoid'"):
         op.plus(v1, 1, require_monoid=False)
 
 
