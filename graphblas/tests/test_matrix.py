@@ -4231,3 +4231,9 @@ def test_ss_descriptors(A):
     else:
         with pytest.raises(ValueError, match="escriptor"):
             (A @ A).new(nthreads=4, axb_method="dot", sort=True)
+
+
+@autocompute
+def test_wait_chains(A):
+    result = A.wait().T.wait().reduce_rowwise().wait().reduce().wait()
+    assert result == 47

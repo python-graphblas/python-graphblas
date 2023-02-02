@@ -1316,7 +1316,7 @@ def test_ss_import_export_auto(v, do_iso, methods):
         w(w.S) << 1
     w_orig = w.dup()
     format = "full"
-    for (raw, import_format, give_ownership, take_ownership, import_name) in itertools.product(
+    for raw, import_format, give_ownership, take_ownership, import_name in itertools.product(
         [False, True],
         [format, None],
         [False, True],

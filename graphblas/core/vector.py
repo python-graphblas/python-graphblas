@@ -624,6 +624,7 @@ class Vector(BaseType):
         else:
             raise ValueError(f'`how` argument must be "materialize" or "complete"; got {how!r}')
         call("GrB_Vector_wait", [self, mode])
+        return self
 
     def get(self, index, default=None):
         """Get an element at ``index`` as a Python scalar.
