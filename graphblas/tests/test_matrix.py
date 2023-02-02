@@ -557,7 +557,7 @@ def test_extract_input_mask():
         expected[[0, 1]].new(input_mask=M.S)
     with pytest.raises(TypeError, match="Mask object must be type Vector"):
         expected(input_mask=M.S) << expected[[0, 1]]
-    with pytest.raises(TypeError, match=r"new\(\) got an unexpected keyword argument 'input_mask'"):
+    with pytest.raises(AttributeError, match="new"):
         A.new(input_mask=M.S)
     with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
         A(input_mask=M.S) << A.apply(unary.ainv)
@@ -2918,7 +2918,7 @@ def test_expr_is_like_matrix(A):
         "_extract_element",
     }
     # Make sure signatures actually match
-    skip = {"__init__", "__repr__", "_repr_html_", "new"}
+    skip = {"__init__", "__repr__", "_repr_html_"}
     for expr in [binary.times(B & B), B & B, B.T]:
         print(type(expr).__name__)
         for attr, val in inspect.getmembers(expr):
@@ -2971,7 +2971,7 @@ def test_index_expr_is_like_matrix(A):
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
     # Make sure signatures actually match. `update` has different docstring.
-    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "new", "update"}
+    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "update"}
     for attr, val in inspect.getmembers(B[[0, 1], [0, 1]]):
         if attr in skip or not isinstance(val, types.MethodType) or not hasattr(B, attr):
             continue
@@ -3503,12 +3503,6 @@ def test_deprecated(A):
             A.ss.selectk_rowwise("first", 3)
         with pytest.warns(DeprecationWarning):
             A.ss.selectk_columnwise("first", 3)
-    with pytest.warns(DeprecationWarning):
-        Matrix.new(int)
-    with pytest.warns(DeprecationWarning):
-        Vector.new(int)
-    with pytest.warns(DeprecationWarning):
-        Scalar.new(int)
     with pytest.warns(DeprecationWarning):
         A.to_values()
     with pytest.warns(DeprecationWarning):

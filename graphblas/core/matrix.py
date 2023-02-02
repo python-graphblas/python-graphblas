@@ -762,14 +762,6 @@ class Matrix(BaseType):
         )
 
     @classmethod
-    def new(cls, dtype, nrows=0, ncols=0, *, name=None):
-        warnings.warn(
-            "`Matrix.new(...)` is deprecated; please use `Matrix(...)` instead.",
-            DeprecationWarning,
-        )
-        return Matrix(dtype, nrows, ncols, name=name)
-
-    @classmethod
     def from_values(
         cls,
         rows,

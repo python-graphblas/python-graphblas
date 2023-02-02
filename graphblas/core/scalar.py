@@ -1,5 +1,4 @@
 import itertools
-import warnings
 
 import numpy as np
 
@@ -479,14 +478,6 @@ class Scalar(BaseType):
         Python scalar
         """
         return default if self._is_empty else self.value
-
-    @classmethod
-    def new(cls, dtype, *, is_cscalar=False, name=None):
-        warnings.warn(
-            "`Scalar.new(...)` is deprecated; please use `Scalar(...)` instead.",
-            DeprecationWarning,
-        )
-        return Scalar(dtype, is_cscalar=is_cscalar, name=name)
 
     @classmethod
     def from_value(cls, value, dtype=None, *, is_cscalar=False, name=None):
