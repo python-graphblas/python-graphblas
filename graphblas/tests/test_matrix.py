@@ -4235,7 +4235,7 @@ def test_ss_descriptors(A):
 
 
 def test_subarray_dtypes():
-    a = np.arange(3 * 4).reshape(3, 4)
+    a = np.arange(3 * 4, dtype=np.int64).reshape(3, 4)
     A = Matrix.from_coo([1, 3, 5], [0, 1, 3], a)
     B = Matrix("INT64[4]", nrows=6, ncols=4)
     B[1, 0] = [0, 1, 2, 3]
@@ -4249,8 +4249,8 @@ def test_subarray_dtypes():
     B = Matrix.from_dicts(A.to_dicts(), A.dtype)
     assert A.isequal(B, check_dtype=True)
 
-    b1 = np.arange(2 * 3 * 4).reshape(2 * 3, 4)
-    b2 = np.arange(2 * 3 * 4).reshape(2, 3, 4)
+    b1 = np.arange(2 * 3 * 4, dtype=np.int64).reshape(2 * 3, 4)
+    b2 = np.arange(2 * 3 * 4, dtype=np.int64).reshape(2, 3, 4)
     Full1 = Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], b1)
     Full2 = Matrix("INT64[4]", nrows=2, ncols=3)
     Full2[0, 0] = [0, 1, 2, 3]

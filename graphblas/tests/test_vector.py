@@ -2519,7 +2519,7 @@ def test_ss_sort(v):
 
 
 def test_subarray_dtypes():
-    a = np.arange(3 * 4).reshape(3, 4)
+    a = np.arange(3 * 4, dtype=np.int64).reshape(3, 4)
     v = Vector.from_coo([1, 3, 5], a)
     w = Vector("INT64[4]", size=6)
     w[1] = [0, 1, 2, 3]
