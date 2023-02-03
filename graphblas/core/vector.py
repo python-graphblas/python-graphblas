@@ -1792,7 +1792,10 @@ class Vector(BaseType):
         else:
             # If we know the dtype, then using `np.fromiter` is much faster
             dtype = lookup_dtype(dtype)
-            values = np.fromiter(d.values(), dtype.np_type)
+            if dtype.np_type.subdtype is not None and np.__version__.startswith("1.21."):
+                values, dtype = values_to_numpy_buffer(list(d.values()), dtype)
+            else:
+                values = np.fromiter(d.values(), dtype.np_type)
         if size is None and indices.size == 0:
             size = 0
         return cls.from_coo(indices, values, dtype, size=size, name=name)
