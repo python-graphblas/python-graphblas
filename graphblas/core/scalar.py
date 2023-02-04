@@ -278,11 +278,12 @@ class Scalar(BaseType):
         After the call, :attr:`nvals` will return 0.
         """
         if self._is_empty:
-            return
+            return self
         if self._is_cscalar:
             self._empty = True
         else:
             call("GrB_Scalar_clear", [self])
+        return self
 
     @property
     def is_empty(self):

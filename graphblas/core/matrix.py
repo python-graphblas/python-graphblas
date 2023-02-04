@@ -426,6 +426,7 @@ class Matrix(BaseType):
         After the call, :attr:`nvals` will return 0. The :attr:`shape` will not change.
         """
         call("GrB_Matrix_clear", [self])
+        return self
 
     def resize(self, nrows, ncols):
         """In-place operation which changes the :attr:`shape`.
@@ -439,6 +440,7 @@ class Matrix(BaseType):
         call("GrB_Matrix_resize", [self, nrows, ncols])
         self._nrows = nrows.value
         self._ncols = ncols.value
+        return self
 
     def to_values(self, dtype=None, *, rows=True, columns=True, values=True, sort=True):
         """Extract the indices and values as a 3-tuple of numpy arrays
@@ -605,7 +607,7 @@ class Matrix(BaseType):
                 ncols = self._ncols
             self.resize(nrows, ncols)
         if n == 0:
-            return
+            return self
 
         dup_op_given = dup_op is not None
         if not dup_op_given:
@@ -631,6 +633,7 @@ class Matrix(BaseType):
         # Check for duplicates when dup_op was not provided
         if not dup_op_given and self._nvals < n:
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
+        return self
 
     def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
         """Create a duplicate of the Matrix.
