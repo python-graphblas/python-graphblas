@@ -872,7 +872,7 @@ class Matrix(BaseType):
         """
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
-        values, new_dtype = values_to_numpy_buffer(values, dtype)
+        values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
         # Compute nrows and ncols if not provided
         if nrows is None:
             if rows.size == 0:
@@ -882,11 +882,8 @@ class Matrix(BaseType):
             if columns.size == 0:
                 raise ValueError("No column indices provided. Unable to infer ncols.")
             ncols = int(columns.max()) + 1
-        if dtype is None and values.ndim > 1:
-            # Look for array-subtdype
-            new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
         # Create the new matrix
-        C = cls(new_dtype, nrows, ncols, name=name)
+        C = cls(dtype, nrows, ncols, name=name)
         if values.ndim == 0:
             if dup_op is not None:
                 raise ValueError(
@@ -1004,7 +1001,7 @@ class Matrix(BaseType):
             indices_name = "row indices"
         indptr = ints_to_numpy_buffer(indptr, np.uint64, name="index pointers")
         indices = ints_to_numpy_buffer(indices, np.uint64, name=indices_name)
-        values, new_dtype = values_to_numpy_buffer(values, dtype)
+        values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
         if num is None:
             if indices.size > 0:
                 num = int(indices.max()) + 1
@@ -1026,9 +1023,6 @@ class Matrix(BaseType):
                     "ncols must be None or equal to len(indptr) - 1; "
                     f"expected {check_num}, got {ncols}"
                 )
-        if dtype is None and values.ndim > 1:
-            # Look for array-subtdype
-            new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
         if values.ndim == 0:
             if backend == "suitesparse":
                 # SuiteSparse GxB can handle iso-value
@@ -1055,21 +1049,21 @@ class Matrix(BaseType):
                 )
             values = np.broadcast_to(values, indices.size)
         new_mat = ffi_new("GrB_Matrix*")
-        rv = Matrix._from_obj(new_mat, new_dtype, nrows, ncols, name=name)
-        if new_dtype._is_udt:
+        rv = Matrix._from_obj(new_mat, dtype, nrows, ncols, name=name)
+        if dtype._is_udt:
             dtype_name = "UDT"
         else:
-            dtype_name = new_dtype.name
+            dtype_name = dtype.name
         call(
             f"GrB_Matrix_import_{dtype_name}",
             [
                 _Pointer(rv),
-                new_dtype,
+                dtype,
                 _as_scalar(nrows, _INDEX, is_cscalar=True),
                 _as_scalar(ncols, _INDEX, is_cscalar=True),
                 _CArray(indptr),
                 _CArray(indices),
-                _CArray(values, dtype=new_dtype),
+                _CArray(values, dtype=dtype),
                 _as_scalar(indptr.size, _INDEX, is_cscalar=True),
                 _as_scalar(indices.size, _INDEX, is_cscalar=True),
                 _as_scalar(values.shape[0], _INDEX, is_cscalar=True),
@@ -1436,12 +1430,14 @@ class Matrix(BaseType):
         col_indices = np.fromiter(itertools.chain.from_iterable(dicts), np.uint64)
         iter_values = itertools.chain.from_iterable(v.values() for v in dicts)
         if dtype is None:
-            values = np.array(list(iter_values))
-            dtype = lookup_dtype(values.dtype)
+            values, dtype = values_to_numpy_buffer(list(iter_values), subarray_after=1)
         else:
             # If we know the dtype, then using `np.fromiter` is much faster
             dtype = lookup_dtype(dtype)
-            values = np.fromiter(iter_values, dtype.np_type)
+            if dtype.np_type.subdtype is not None and np.__version__[:5] in {"1.21.", "1.22."}:
+                values, dtype = values_to_numpy_buffer(list(iter_values), dtype)
+            else:
+                values = np.fromiter(iter_values, dtype.np_type)
         return getattr(cls, methodname)(
             *args, indptr, col_indices, values, dtype, nrows=nrows, ncols=ncols, name=name
         )

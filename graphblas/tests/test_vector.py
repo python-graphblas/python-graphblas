@@ -1316,7 +1316,7 @@ def test_ss_import_export_auto(v, do_iso, methods):
         w(w.S) << 1
     w_orig = w.dup()
     format = "full"
-    for (raw, import_format, give_ownership, take_ownership, import_name) in itertools.product(
+    for raw, import_format, give_ownership, take_ownership, import_name in itertools.product(
         [False, True],
         [format, None],
         [False, True],
@@ -2516,3 +2516,38 @@ def test_ss_sort(v):
     expected_p = Vector.from_coo([0, 1, 2, 3], [6, 4, 3, 1], size=7)
     assert p.isequal(expected_p)
     w, p = v.ss.sort(monoid.lxor)  # Weird, but user-defined monoids may not commute, so okay
+
+
+def test_subarray_dtypes():
+    a = np.arange(3 * 4, dtype=np.int64).reshape(3, 4)
+    v = Vector.from_coo([1, 3, 5], a)
+    w = Vector("INT64[4]", size=6)
+    w[1] = [0, 1, 2, 3]
+    w[3] = [4, 5, 6, 7]
+    w[5] = [8, 9, 10, 11]
+    assert v.isequal(w, check_dtype=True)
+    w = Vector.from_coo(*v.to_coo())
+    assert v.isequal(w, check_dtype=True)
+    w = Vector.from_dict(v.to_dict())
+    assert v.isequal(w, check_dtype=True)
+    w = Vector.from_dict(v.to_dict(), v.dtype)
+    assert v.isequal(w, check_dtype=True)
+    w = Vector.from_pairs([[1, [0, 1, 2, 3]], [3, [4, 5, 6, 7]], [5, [8, 9, 10, 11]]])
+    assert v.isequal(w, check_dtype=True)
+
+    full1 = Vector.from_coo([0, 1, 2], a)
+    full2 = Vector("INT64[4]", size=3)
+    full2[0] = [0, 1, 2, 3]
+    full2[1] = [4, 5, 6, 7]
+    full2[2] = [8, 9, 10, 11]
+    assert full1.isequal(full2, check_dtype=True)
+    full2 = Vector("INT64[4]", size=3)
+    full2[:] = a
+    assert full1.isequal(full2, check_dtype=True)
+    if suitesparse:
+        w = Vector.ss.import_sparse(indices=[1, 3, 5], values=a, size=6)
+        assert v.isequal(w, check_dtype=True)
+        full2 = Vector.ss.import_full(a)
+        assert full1.isequal(full2, check_dtype=True)
+        full2 = Vector.ss.import_bitmap(values=a, bitmap=[True, True, True])
+        assert full1.isequal(full2, check_dtype=True)

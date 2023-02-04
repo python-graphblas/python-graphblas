@@ -725,17 +725,14 @@ class Vector(BaseType):
         Vector
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
-        values, new_dtype = values_to_numpy_buffer(values, dtype)
+        values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
         # Compute size if not provided
         if size is None:
             if indices.size == 0:
                 raise ValueError("No indices provided. Unable to infer size.")
             size = int(indices.max()) + 1
-        if dtype is None and values.ndim > 1:
-            # Look for array-subtdype
-            new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
         # Create the new vector
-        w = cls(new_dtype, size, name=name)
+        w = cls(dtype, size, name=name)
         if values.ndim == 0:
             if dup_op is not None:
                 raise ValueError(
@@ -1791,12 +1788,14 @@ class Vector(BaseType):
         """
         indices = np.fromiter(d.keys(), np.uint64)
         if dtype is None:
-            values = np.array(list(d.values()))  # let numpy infer dtype
-            dtype = lookup_dtype(values.dtype)
+            values, dtype = values_to_numpy_buffer(list(d.values()), subarray_after=1)
         else:
             # If we know the dtype, then using `np.fromiter` is much faster
             dtype = lookup_dtype(dtype)
-            values = np.fromiter(d.values(), dtype.np_type)
+            if dtype.np_type.subdtype is not None and np.__version__[:5] in {"1.21.", "1.22."}:
+                values, dtype = values_to_numpy_buffer(list(d.values()), dtype)
+            else:
+                values = np.fromiter(d.values(), dtype.np_type)
         if size is None and indices.size == 0:
             size = 0
         return cls.from_coo(indices, values, dtype, size=size, name=name)

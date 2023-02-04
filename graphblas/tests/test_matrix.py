@@ -3612,6 +3612,7 @@ def test_ss_iteration(A):
     assert next(A.ss.iteritems()) is not None
 
 
+@pytest.mark.slow
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "MatrixUDT")
@@ -4231,3 +4232,37 @@ def test_ss_descriptors(A):
     else:
         with pytest.raises(ValueError, match="escriptor"):
             (A @ A).new(nthreads=4, axb_method="dot", sort=True)
+
+
+def test_subarray_dtypes():
+    a = np.arange(3 * 4, dtype=np.int64).reshape(3, 4)
+    A = Matrix.from_coo([1, 3, 5], [0, 1, 3], a)
+    B = Matrix("INT64[4]", nrows=6, ncols=4)
+    B[1, 0] = [0, 1, 2, 3]
+    B[3, 1] = [4, 5, 6, 7]
+    B[5, 3] = [8, 9, 10, 11]
+    assert A.isequal(B, check_dtype=True)
+    for method in ["coo", "csr", "csc", "dcsr", "dcsc", "edgelist"]:
+        B = getattr(A, f"from_{method}")(*getattr(A, f"to_{method}")())
+    B = Matrix.from_dicts(A.to_dicts())
+    assert A.isequal(B, check_dtype=True)
+    B = Matrix.from_dicts(A.to_dicts(), A.dtype)
+    assert A.isequal(B, check_dtype=True)
+
+    b1 = np.arange(2 * 3 * 4, dtype=np.int64).reshape(2 * 3, 4)
+    b2 = np.arange(2 * 3 * 4, dtype=np.int64).reshape(2, 3, 4)
+    Full1 = Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], b1)
+    Full2 = Matrix("INT64[4]", nrows=2, ncols=3)
+    Full2[0, 0] = [0, 1, 2, 3]
+    Full2[0, 1] = [4, 5, 6, 7]
+    Full2[0, 2] = [8, 9, 10, 11]
+    Full2[1, 0] = [12, 13, 14, 15]
+    Full2[1, 1] = [16, 17, 18, 19]
+    Full2[1, 2] = [20, 21, 22, 23]
+    assert Full1.isequal(Full2, check_dtype=True)
+    Full2 = Matrix("INT64[4]", nrows=2, ncols=3)
+    Full2[:, :] = b2
+    assert Full1.isequal(Full2, check_dtype=True)
+    if suitesparse:
+        Full2 = Matrix.ss.import_fullr(b2)
+        assert Full1.isequal(Full2, check_dtype=True)

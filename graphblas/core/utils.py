@@ -72,7 +72,21 @@ def _get_subdtype(dtype):
     return dtype
 
 
-def values_to_numpy_buffer(array, dtype=None, *, copy=False, ownable=False, order="C"):
+def values_to_numpy_buffer(
+    array, dtype=None, *, copy=False, ownable=False, order="C", subarray_after=None
+):
+    """Convert an array-like object to a numpy array and infer the dtype if necessary.
+
+    Parameters
+    ----------
+    subarray_after : int, optional
+        If dtype is not provided, infer "sub-array" dtype if the array has extra dimensions.
+
+    Returns
+    -------
+    np.ndarray
+    dtype
+    """
     if dtype is not None:
         dtype = lookup_dtype(dtype)
         array = np.array(array, _get_subdtype(dtype.np_type), copy=copy, order=order)
@@ -85,6 +99,8 @@ def values_to_numpy_buffer(array, dtype=None, *, copy=False, ownable=False, orde
             # fix for win64 numpy handling of ints
             array = array.astype(np.int64)
         dtype = lookup_dtype(array.dtype)
+        if subarray_after is not None and array.ndim > subarray_after:
+            dtype = lookup_dtype(np.dtype((dtype.np_type, array.shape[subarray_after:])))
     if ownable and (not array.flags.owndata or not array.flags.writeable):
         array = array.copy(order)
     return array, dtype

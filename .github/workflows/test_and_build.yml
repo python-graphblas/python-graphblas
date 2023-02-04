@@ -162,7 +162,7 @@ jobs:
             npver=$(python -c 'import random ; print(random.choice(["=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0.5", "=2.0.6", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0.5", "=2.0.6", "=2.0.7", ""]))')
           fi
           if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
             # TODO: there are currently issues with some numpy versions when

@@ -25,7 +25,7 @@ repos:
       - id: validate-pyproject
         name: Validate pyproject.toml
   - repo: https://github.com/myint/autoflake
-    rev: v2.0.0
+    rev: v2.0.1
     hooks:
       - id: autoflake
         args: [--in-place]
@@ -44,7 +44,7 @@ repos:
       - id: auto-walrus
         args: [--line-length, "100"]
   - repo: https://github.com/psf/black
-    rev: 22.12.0
+    rev: 23.1.0
     hooks:
       - id: black
       - id: black-jupyter
@@ -71,7 +71,7 @@ repos:
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.237
+    rev: v0.0.241
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint
