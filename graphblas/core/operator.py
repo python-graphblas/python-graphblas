@@ -1313,7 +1313,7 @@ class UnaryOp(OpBase):
                             op._typed_ops[dtype] = typed_op
                             op.coercions[dtype] = target_type
         # Allow some functions to work on UDTs
-        for (unop, func) in [
+        for unop, func in [
             (unary.identity, _identity),
             (unary.one, _one),
         ]:
@@ -2287,7 +2287,7 @@ class BinaryOp(OpBase):
         # If the inputs are FP32, we use DIV_FP32; use DIV_FP64 for all other input dtypes
         truediv = binary.truediv = op.truediv = BinaryOp("truediv")
         rtruediv = binary.rtruediv = op.rtruediv = BinaryOp("rtruediv")
-        for (new_op, builtin_op) in [(truediv, binary.cdiv), (rtruediv, binary.rdiv)]:
+        for new_op, builtin_op in [(truediv, binary.cdiv), (rtruediv, binary.rdiv)]:
             for dtype in builtin_op.types:
                 if dtype.name in {"FP32", "FC32", "FC64"}:
                     orig_dtype = dtype
@@ -2420,7 +2420,7 @@ class BinaryOp(OpBase):
             left._semiring_commutes_to = right
             right._semiring_commutes_to = left
         # Allow some functions to work on UDTs
-        for (binop, func) in [
+        for binop, func in [
             (binary.first, _first),
             (binary.second, _second),
             (binary.pair, _pair),

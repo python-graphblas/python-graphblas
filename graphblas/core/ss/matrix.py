@@ -1305,7 +1305,9 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, subarray_after=1
+        )
         if col_indices is values:
             values = np.copy(values)
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
@@ -1493,7 +1495,9 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, subarray_after=1
+        )
         if row_indices is values:
             values = np.copy(values)
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
@@ -1696,7 +1700,9 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, subarray_after=1
+        )
         if not is_iso and values.ndim == 0:
             is_iso = True
         if col_indices is values:
@@ -1917,7 +1923,9 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, subarray_after=1
+        )
         if row_indices is values:
             values = np.copy(values)
         if not is_iso and values.ndim == 0:
@@ -2122,7 +2130,9 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True, order="C")
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, order="C", subarray_after=2
+        )
         if bitmap is values:
             values = np.copy(values)
         if method == "import":
@@ -2313,7 +2323,9 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True, order="F")
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, order="F", subarray_after=2
+        )
         if bitmap is values:
             values = np.copy(values)
         if method == "import":
@@ -2486,7 +2498,9 @@ class ss:
         copy = not take_ownership
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, order="C", ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, order="C", ownable=True, subarray_after=2
+        )
         if method == "import":
             nrows, ncols = get_shape(nrows, ncols, dtype, values=values)
         else:
@@ -2643,7 +2657,9 @@ class ss:
         copy = not take_ownership
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, order="F", ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, order="F", ownable=True, subarray_after=2
+        )
         if method == "import":
             nrows, ncols = get_shape(nrows, ncols, dtype, values=values)
         else:
@@ -2848,7 +2864,7 @@ class ss:
 
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype)
+        values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
         if method == "import":
             matrix = gb.Matrix(dtype, nrows=nrows, ncols=ncols, name=name)
         if is_iso:
