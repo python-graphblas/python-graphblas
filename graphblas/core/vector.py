@@ -799,8 +799,8 @@ class Vector(BaseType):
             if size is None:
                 raise TypeError("size must be given when creating a dense Vector from a scalar")
             if backend == "suitesparse":
-                return Vector.ss.import_full(values, dtype=dtype, size=size, is_iso=True, name=name)
-            rv = Vector(dtype, size=size, name=name)
+                return cls.ss.import_full(values, dtype=dtype, size=size, is_iso=True, name=name)
+            rv = cls(dtype, size=size, name=name)
             rv << values
             return rv
         if values.ndim == 1 and dtype.np_type.subdtype is not None:
@@ -808,10 +808,10 @@ class Vector(BaseType):
         if values.ndim > 1 and dtype.np_type.subdtype is None:
             raise ValueError(f"values array must be 1d to create dense Vector with dtype {dtype}")
         if backend == "suitesparse":
-            rv = Vector.ss.import_full(values, dtype=dtype, name=name)
+            rv = cls.ss.import_full(values, dtype=dtype, name=name)
         else:
             # TODO: GraphBLAS needs a better way to import or assign dense
-            rv = Vector.from_coo(
+            rv = cls.from_coo(
                 np.arange(values.shape[0], dtype=np.uint64),
                 values,
                 dtype,

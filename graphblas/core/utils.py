@@ -383,4 +383,7 @@ def _autogenerate_code(
         f.write(new_text)
     import subprocess
 
-    subprocess.check_call(["black", filename])
+    try:
+        subprocess.check_call(["black", filename])
+    except FileNotFoundError:  # pragma: no cover (safety)
+        pass  # It's okay if `black` isn't installed; pre-commit hooks will do linting

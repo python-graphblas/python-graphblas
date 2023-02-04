@@ -1046,7 +1046,7 @@ class Matrix(BaseType):
                 )
             values = np.broadcast_to(values, indices.size)
         new_mat = ffi_new("GrB_Matrix*")
-        rv = Matrix._from_obj(new_mat, dtype, nrows, ncols, name=name)
+        rv = cls._from_obj(new_mat, dtype, nrows, ncols, name=name)
         if dtype._is_udt:
             dtype_name = "UDT"
         else:
@@ -1332,7 +1332,7 @@ class Matrix(BaseType):
         return cls.from_coo(row_indices, cols, values, dtype, nrows=nrows, ncols=ncols, name=name)
 
     @classmethod
-    def from_dense(self, values, dtype=None, *, nrows=None, ncols=None, name=None):
+    def from_dense(cls, values, dtype=None, *, nrows=None, ncols=None, name=None):
         values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=2)
         if values.ndim == 0:
             if nrows is None or ncols is None:
@@ -1341,10 +1341,10 @@ class Matrix(BaseType):
                 )
             if backend == "suitesparse":
                 # Should we try to handle F-contiguous data w/o a copy?
-                return Matrix.ss.import_fullr(
+                return cls.ss.import_fullr(
                     values, dtype=dtype, nrows=nrows, ncols=ncols, is_iso=True, name=name
                 )
-            rv = Matrix(dtype, nrows=nrows, ncols=ncols, name=name)
+            rv = cls(dtype, nrows=nrows, ncols=ncols, name=name)
             rv << values
             return rv
         if values.ndim == 1:
@@ -1354,7 +1354,7 @@ class Matrix(BaseType):
         if values.ndim > 2 and dtype.np_type.subdtype is None:
             raise ValueError(f"values array must be 2d to create dense Matrix with dtype {dtype}")
         if backend == "suitesparse":
-            rv = Matrix.ss.import_fullr(values, dtype=dtype, name=name)
+            rv = cls.ss.import_fullr(values, dtype=dtype, name=name)
             nrows2, ncols2 = rv.shape
         else:
             nrows2, ncols2, *rest = values.shape
@@ -1364,7 +1364,7 @@ class Matrix(BaseType):
                 values = values.reshape(nrows2 * ncols2, *rest)
             else:
                 values = values.ravel()
-            rv = Matrix.from_csr(
+            rv = cls.from_csr(
                 indptr,
                 cols,
                 values,
