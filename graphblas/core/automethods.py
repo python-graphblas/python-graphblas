@@ -261,6 +261,10 @@ def to_dcsr(self):
     return self._get_value("to_dcsr")
 
 
+def to_dense(self):
+    return self._get_value("to_dense")
+
+
 def to_dict(self):
     return self._get_value("to_dict")
 
@@ -389,6 +393,7 @@ def _main():
         "reposition",
         "ss",
         "to_coo",
+        "to_dense",
         "to_values",
     }
     vector = {

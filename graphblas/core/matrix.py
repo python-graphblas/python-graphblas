@@ -28,6 +28,7 @@ from .utils import (
     class_property,
     get_order,
     ints_to_numpy_buffer,
+    normalize_values,
     output_type,
     values_to_numpy_buffer,
     wrapdoc,
@@ -528,11 +529,7 @@ class Matrix(BaseType):
             [c_rows, c_columns, c_values, _Pointer(scalar), self],
         )
         if values:
-            c_values = c_values.array
-            if dtype is not None:
-                dtype = lookup_dtype(dtype)
-                if dtype != self.dtype:
-                    c_values = c_values.astype(dtype.np_type)  # copies
+            c_values = normalize_values(self, c_values.array, dtype)
         if sort and backend != "suitesparse":
             col = c_columns.array
             row = c_rows.array
@@ -1335,30 +1332,81 @@ class Matrix(BaseType):
         return cls.from_coo(row_indices, cols, values, dtype, nrows=nrows, ncols=ncols, name=name)
 
     @classmethod
-    def _from_dense(cls, values, dtype=None, *, name=None):
-        """Create a new Matrix from a dense numpy array."""
-        # TODO: GraphBLAS needs a way to import or assign dense
-        # We could also handle F-contiguous data w/o a copy
-        # TODO: handle `Matrix._from_dense(np.arange(3*4*5).reshape(3, 4, 5))` as 3x4 Matrix
-        if backend == "suitesparse":  # pragma: no cover (unused)
-            return Matrix.ss.import_fullr(values, dtype=dtype, name=name)
-        values, dtype = values_to_numpy_buffer(values, dtype)
-        if values.ndim < 2:
-            raise ValueError("A 2d array is required to create a dense Matrix")
-        if dtype.np_type.subdtype is not None and values.ndim < 3:
+    def from_dense(self, values, dtype=None, *, nrows=None, ncols=None, name=None):
+        values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=2)
+        if values.ndim == 0:
+            if nrows is None or ncols is None:
+                raise TypeError(
+                    "nrows and ncols must be given when creating a dense Matrix from a scalar"
+                )
+            if backend == "suitesparse":
+                # Should we try to handle F-contiguous data w/o a copy?
+                return Matrix.ss.import_fullr(
+                    values, dtype=dtype, nrows=nrows, ncols=ncols, is_iso=True, name=name
+                )
+            rv = Matrix(dtype, nrows=nrows, ncols=ncols, name=name)
+            rv << values
+            return rv
+        if values.ndim == 1:
+            raise ValueError("A 2d array or scalar is required to create a dense Matrix")
+        if values.ndim == 2 and dtype.np_type.subdtype is not None:
             raise ValueError("A >2d array is required to create a dense Matrix with subdtype")
-        nrows, ncols, *rest = values.shape
-        cols, rows = np.meshgrid(
-            np.arange(ncols, dtype=np.uint64),
-            np.arange(nrows, dtype=np.uint64),
-        )
-        rows = rows.ravel()
-        cols = cols.ravel()
-        if values.ndim > 2:
-            values = values.reshape([nrows * ncols, *rest])
+        if values.ndim > 2 and dtype.np_type.subdtype is None:
+            raise ValueError(f"values array must be 2d to create dense Matrix with dtype {dtype}")
+        if backend == "suitesparse":
+            rv = Matrix.ss.import_fullr(values, dtype=dtype, name=name)
+            nrows2, ncols2 = rv.shape
         else:
-            values = values.ravel()
-        return cls.from_coo(rows, cols, values, dtype, nrows=nrows, ncols=ncols, name=name)
+            nrows2, ncols2, *rest = values.shape
+            indptr = np.arange(0, nrows2 * ncols2 + 1, ncols2, dtype=np.uint64)
+            cols = np.repeat(np.arange(ncols2, dtype=np.uint64)[None, :], nrows2, 0).ravel()
+            if rest:  # sub-array dtype
+                values = values.reshape(nrows2 * ncols2, *rest)
+            else:
+                values = values.ravel()
+            rv = Matrix.from_csr(
+                indptr,
+                cols,
+                values,
+                dtype,
+                ncols=ncols2,
+                name=name,
+            )
+        if nrows is not None and nrows != nrows2 or ncols is not None and ncols != ncols2:
+            rv.resize(nrows2 if nrows is None else nrows, ncols2 if ncols is None else ncols)
+        return rv
+
+    def to_dense(self, fill_value=None, dtype=None):
+        max_nvals = self._nrows * self._ncols
+        if fill_value is None or self._nvals == max_nvals:
+            if self._nvals != max_nvals:
+                raise TypeError(
+                    "fill_value must be given in `to_dense` when there are missing values"
+                )
+            if backend == "suitesparse":
+                info = self.ss.export("fullr")
+                return normalize_values(self, info["values"], dtype, self.shape, info["is_iso"])
+            values = self.to_csr(dtype, sort=True)[2]
+            return values.reshape(self._nrows, self._ncols, *values.shape[1:])
+
+        if dtype is None and not self.dtype._is_udt:
+            # dtype of fill_value can upcast the dtype
+            if type(fill_value) is not Scalar:
+                try:
+                    fill_value = Scalar.from_value(fill_value, is_cscalar=None, name="")
+                except TypeError:
+                    fill_value = self._expect_type(
+                        fill_value,
+                        Scalar,
+                        within="to_dense",
+                        keyword_name="fill_value",
+                        extra_message="Literal scalars also accepted.",
+                    )
+            dtype = unify(fill_value.dtype, self.dtype, is_left_scalar=True)
+
+        rv = self.dup(dtype, name="to_dense")
+        rv(~rv.S) << fill_value
+        return rv.to_dense()
 
     @classmethod
     def from_dicts(
@@ -1442,7 +1490,7 @@ class Matrix(BaseType):
             *args, indptr, col_indices, values, dtype, nrows=nrows, ncols=ncols, name=name
         )
 
-    def _to_csx(self, fmt, dtype=None):
+    def _to_csx(self, fmt, dtype, sort):
         Ap_len = _scalar_index("Ap_len")
         Ai_len = _scalar_index("Ai_len")
         Ax_len = _scalar_index("Ax_len")
@@ -1471,12 +1519,24 @@ class Matrix(BaseType):
             Ax = Ax[:Ax_len]
 
         if dtype is not None:
-            dtype = lookup_dtype(dtype)
-            if dtype != self.dtype:
-                Ax = Ax.astype(dtype.np_type)
+            Ax = normalize_values(self, Ax, dtype)
+        if sort:
+            # indices may not be sorted within each Ai (i.e., row), so sort them
+            num = self._ncols if fmt is _CSR_FORMAT else self._nrows
+            if Ap[-1] == self._ncols * self._nrows:
+                # Fully dense matrix
+                indices = np.argsort(Ai + np.repeat(Ap[:-1], num))
+            else:
+                offsets = np.repeat(
+                    np.arange(0, (Ap.size - 1) * num, num, dtype=np.uint64),
+                    np.diff(Ap.astype(np.int64)),
+                )
+                indices = np.argsort(Ai + offsets)
+            Ai = Ai[indices]
+            Ax = Ax[indices]
         return Ap, Ai, Ax
 
-    def to_csr(self, dtype=None):
+    def to_csr(self, dtype=None, *, sort=True):
         """Returns three arrays of the standard CSR representation: indptr, col_indices, values.
 
         In CSR, the column indices for row i are stored in ``col_indices[indptr[i]:indptr[i+1]]``
@@ -1500,9 +1560,14 @@ class Matrix(BaseType):
         Matrix.ss.export
         io.to_scipy_sparse
         """
-        return self._to_csx(_CSR_FORMAT, dtype)
+        if backend == "suitesparse":
+            info = self.ss.export("csr", sort=sort)
+            cols = info["col_indices"]
+            values = normalize_values(self, info["values"], dtype, (cols.size,), info["is_iso"])
+            return info["indptr"], cols, values
+        return self._to_csx(_CSR_FORMAT, dtype, sort)
 
-    def to_csc(self, dtype=None):
+    def to_csc(self, dtype=None, *, sort=True):
         """Returns three arrays of the standard CSC representation: indptr, row_indices, values.
 
         In CSC, the row indices for column i are stored in ``row_indices[indptr[i]:indptr[i+1]]``
@@ -1526,9 +1591,14 @@ class Matrix(BaseType):
         Matrix.ss.export
         io.to_scipy_sparse
         """
-        return self._to_csx(_CSC_FORMAT, dtype)
+        if backend == "suitesparse":
+            info = self.ss.export("csc", sort=sort)
+            rows = info["row_indices"]
+            values = normalize_values(self, info["values"], dtype, (rows.size,), info["is_iso"])
+            return info["indptr"], rows, values
+        return self._to_csx(_CSC_FORMAT, dtype, sort)
 
-    def to_dcsr(self, dtype=None):
+    def to_dcsr(self, dtype=None, *, sort=True):
         """Returns four arrays of DCSR representation: compressed_rows, indptr, col_indices, values.
 
         In DCSR, we store the index of each non-empty row in ``compressed_rows``.
@@ -1556,26 +1626,21 @@ class Matrix(BaseType):
         io.to_scipy_sparse
         """
         if backend == "suitesparse":
-            info = self.ss.export("hypercsr", sort=True)
+            info = self.ss.export("hypercsr", sort=sort)
             compressed_rows = info["rows"]
             indptr = info["indptr"]
             cols = info["col_indices"]
-            values = info["values"]
-            if info["is_iso"]:
-                values = np.broadcast_to(values, cols.size)
+            values = normalize_values(self, info["values"], dtype, (cols.size,), info["is_iso"])
         else:
-            rows, cols, values = self.to_coo()  # sorted by row then col
+            rows, cols, values = self.to_coo(sort=True)  # sorted by row then col
             compressed_rows, indices = np.unique(rows, return_index=True)
             indptr = np.empty(indices.size + 1, np.uint64)
             indptr[:-1] = indices
             indptr[-1] = rows.size
-        if dtype is not None:
-            dtype = lookup_dtype(dtype)
-            if dtype != self.dtype:
-                values = values.astype(dtype.np_type)
+            values = normalize_values(self, values, dtype)
         return compressed_rows, indptr, cols, values
 
-    def to_dcsc(self, dtype=None):
+    def to_dcsc(self, dtype=None, *, sort=True):
         """Returns four arrays of DCSC representation: compressed_cols, indptr, row_indices, values.
 
         In DCSC, we store the index of each non-empty column in ``compressed_cols``.
@@ -1603,13 +1668,11 @@ class Matrix(BaseType):
         io.to_scipy_sparse
         """
         if backend == "suitesparse":
-            info = self.ss.export("hypercsc", sort=True)
+            info = self.ss.export("hypercsc", sort=sort)
             compressed_cols = info["cols"]
             indptr = info["indptr"]
             rows = info["row_indices"]
-            values = info["values"]
-            if info["is_iso"]:
-                values = np.broadcast_to(values, rows.size)
+            values = normalize_values(self, info["values"], dtype, (rows.size,), info["is_iso"])
         else:
             rows, cols, values = self.to_coo(sort=False)
             ind = np.lexsort((rows, cols))  # sort by columns, then rows
@@ -1620,10 +1683,7 @@ class Matrix(BaseType):
             indptr = np.empty(indices.size + 1, np.uint64)
             indptr[:-1] = indices
             indptr[-1] = cols.size
-        if dtype is not None:
-            dtype = lookup_dtype(dtype)
-            if dtype != self.dtype:
-                values = values.astype(dtype.np_type)
+            values = normalize_values(self, values, dtype)
         return compressed_cols, indptr, rows, values
 
     def to_dicts(self, order="rowwise"):
@@ -2281,8 +2341,8 @@ class Matrix(BaseType):
                     None,
                     [self, mask, _select_mask, (self, mask)],  # [*expr_args, func, args]
                     expr_repr="{0.name}.select({1.name})",
-                    nrows=self.nrows,
-                    ncols=self.ncols,
+                    nrows=self._nrows,
+                    ncols=self._ncols,
                     dtype=self.dtype,
                 )
 
@@ -2826,10 +2886,7 @@ class Matrix(BaseType):
                 except (TypeError, ValueError):
                     if rowsize is not None or colsize is not None:
                         try:
-                            # Do a copy for suitesparse so we can give ownership to suitesparse
-                            values, dtype = values_to_numpy_buffer(
-                                value, dtype, copy=backend == "suitesparse"
-                            )
+                            values, dtype = values_to_numpy_buffer(value, dtype)
                         except Exception:
                             pass
                         else:
@@ -2843,15 +2900,7 @@ class Matrix(BaseType):
                                 # C[i, J](m) << [1, 2, 3]
                                 expected_shape = (rowsize or colsize,)
                                 try:
-                                    if backend == "suitesparse":
-                                        vals = Vector.ss.import_full(
-                                            values, dtype=dtype, take_ownership=True
-                                        )
-                                    else:
-                                        # TODO: GraphBLAS needs a way to import or assign dense
-                                        vals = Vector.from_coo(
-                                            np.arange(shape[0]), values, dtype, size=shape[0]
-                                        )
+                                    vals = Vector.from_dense(values, dtype)
                                 except Exception:  # pragma: no cover (safety)
                                     vals = None
                                 else:
@@ -2863,12 +2912,7 @@ class Matrix(BaseType):
                                 # C[I, J](M) << [[1, 2, 3], [4, 5, 6]]
                                 expected_shape = (rowsize, colsize)
                                 try:
-                                    if backend == "suitesparse":
-                                        vals = Matrix.ss.import_fullr(
-                                            values, dtype=dtype, take_ownership=True
-                                        )
-                                    else:
-                                        vals = Matrix._from_dense(values, dtype)
+                                    vals = Matrix.from_dense(values, dtype)
                                 except Exception:
                                     vals = None
                                 else:
@@ -3226,6 +3270,7 @@ class MatrixExpression(BaseExpression):
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
     to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
     to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
+    to_dense = wrapdoc(Matrix.to_dense)(property(automethods.to_dense))
     to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
     to_edgelist = wrapdoc(Matrix.to_edgelist)(property(automethods.to_edgelist))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
@@ -3325,6 +3370,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
     to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
     to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
+    to_dense = wrapdoc(Matrix.to_dense)(property(automethods.to_dense))
     to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
     to_edgelist = wrapdoc(Matrix.to_edgelist)(property(automethods.to_edgelist))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
@@ -3426,20 +3472,25 @@ class TransposedMatrix:
         return f"{self._matrix._name_html}.T"
 
     @wrapdoc(Matrix.to_csr)
-    def to_csr(self, dtype=None):
-        return self._matrix.to_csc(dtype)
+    def to_csr(self, dtype=None, *, sort=True):
+        return self._matrix.to_csc(dtype, sort=sort)
 
     @wrapdoc(Matrix.to_csc)
-    def to_csc(self, dtype=None):
-        return self._matrix.to_csr(dtype)
+    def to_csc(self, dtype=None, *, sort=True):
+        return self._matrix.to_csr(dtype, sort=sort)
 
     @wrapdoc(Matrix.to_dcsr)
-    def to_dcsr(self, dtype=None):
-        return self._matrix.to_dcsc(dtype)
+    def to_dcsr(self, dtype=None, *, sort=True):
+        return self._matrix.to_dcsc(dtype, sort=sort)
 
     @wrapdoc(Matrix.to_dcsc)
-    def to_dcsc(self, dtype=None):
-        return self._matrix.to_dcsr(dtype)
+    def to_dcsc(self, dtype=None, *, sort=True):
+        return self._matrix.to_dcsr(dtype, sort=sort)
+
+    @wrapdoc(Matrix.to_dense)
+    def to_dense(self, fill_value=None, dtype=None):
+        rv = self._matrix.to_dense(fill_value, dtype)
+        return rv.swapaxes(0, 1)
 
     @wrapdoc(Matrix.to_dicts)
     def to_dicts(self, order="rowwise"):

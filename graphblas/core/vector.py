@@ -26,6 +26,7 @@ from .utils import (
     _Pointer,
     class_property,
     ints_to_numpy_buffer,
+    normalize_values,
     output_type,
     values_to_numpy_buffer,
     wrapdoc,
@@ -478,11 +479,7 @@ class Vector(BaseType):
             f"GrB_Vector_extractTuples_{dtype_name}", [c_indices, c_values, _Pointer(scalar), self]
         )
         if values:
-            c_values = c_values.array
-            if dtype is not None:
-                dtype = lookup_dtype(dtype)
-                if dtype != self.dtype:
-                    c_values = c_values.astype(dtype.np_type)  # copies
+            c_values = normalize_values(self, c_values.array, dtype)
         if sort and backend != "suitesparse":
             c_indices = c_indices.array
             ind = np.argsort(c_indices)
@@ -794,6 +791,66 @@ class Vector(BaseType):
                 f"got {len(unzipped)}"
             )
         return cls.from_coo(indices, values, dtype, size=size, dup_op=dup_op, name=name)
+
+    @classmethod
+    def from_dense(cls, values, dtype=None, *, size=None, name=None):
+        values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
+        if values.ndim == 0:
+            if size is None:
+                raise TypeError("size must be given when creating a dense Vector from a scalar")
+            if backend == "suitesparse":
+                return Vector.ss.import_full(values, dtype=dtype, size=size, is_iso=True, name=name)
+            rv = Vector(dtype, size=size, name=name)
+            rv << values
+            return rv
+        if values.ndim == 1 and dtype.np_type.subdtype is not None:
+            raise ValueError("A >1d array is required to create a dense Vector with subdtype")
+        if values.ndim > 1 and dtype.np_type.subdtype is None:
+            raise ValueError(f"values array must be 1d to create dense Vector with dtype {dtype}")
+        if backend == "suitesparse":
+            rv = Vector.ss.import_full(values, dtype=dtype, name=name)
+        else:
+            # TODO: GraphBLAS needs a better way to import or assign dense
+            rv = Vector.from_coo(
+                np.arange(values.shape[0], dtype=np.uint64),
+                values,
+                dtype,
+                size=values.shape[0],
+                name=name,
+            )
+        if size is not None and size != rv._size:
+            rv.resize(size)
+        return rv
+
+    def to_dense(self, fill_value=None, dtype=None):
+        if fill_value is None or self._nvals == self._size:
+            if self._nvals != self._size:
+                raise TypeError(
+                    "fill_value must be given in `to_dense` when there are missing values"
+                )
+            if backend == "suitesparse":
+                info = self.ss.export("full")
+                return normalize_values(self, info["values"], dtype, self._size, info["is_iso"])
+            return self.to_coo(dtype, indices=False)[1]
+
+        if dtype is None and not self.dtype._is_udt:
+            # dtype of fill_value can upcast the dtype
+            if type(fill_value) is not Scalar:
+                try:
+                    fill_value = Scalar.from_value(fill_value, is_cscalar=None, name="")
+                except TypeError:
+                    fill_value = self._expect_type(
+                        fill_value,
+                        Scalar,
+                        within="to_dense",
+                        keyword_name="fill_value",
+                        extra_message="Literal scalars also accepted.",
+                    )
+            dtype = unify(fill_value.dtype, self.dtype, is_left_scalar=True)
+
+        rv = self.dup(dtype, name="to_dense")
+        rv(~rv.S) << fill_value
+        return rv.to_dense()
 
     @property
     def _carg(self):
@@ -1314,7 +1371,7 @@ class Vector(BaseType):
                     None,
                     [self, mask, _select_mask, (self, mask)],  # [*expr_args, func, args]
                     expr_repr="{0.name}.select({1.name})",
-                    size=self.size,
+                    size=self._size,
                     dtype=self.dtype,
                 )
 
@@ -1649,24 +1706,13 @@ class Vector(BaseType):
                         # v(m)[I] << [1, 2, 3]
                         # v[I](m) << [1, 2, 3]
                         try:
-                            # Do a copy for suitesparse so we can give ownership to suitesparse
-                            values, dtype = values_to_numpy_buffer(
-                                value, dtype, copy=backend == "suitesparse"
-                            )
+                            values, dtype = values_to_numpy_buffer(value, dtype)
                         except Exception:
                             extra_message = "Literal scalars and lists also accepted."
                         else:
                             shape = values.shape
                             try:
-                                if backend == "suitesparse":
-                                    vals = Vector.ss.import_full(
-                                        values, dtype=dtype, take_ownership=True
-                                    )
-                                else:
-                                    # TODO: GraphBLAS needs a way to import or assign dense
-                                    vals = Vector.from_coo(
-                                        np.arange(shape[0]), values, dtype, size=shape[0]
-                                    )
+                                vals = Vector.from_dense(values, dtype)
                             except Exception:  # pragma: no cover (safety)
                                 vals = None
                             else:
@@ -1897,7 +1943,7 @@ class VectorExpression(BaseExpression):
     @wrapdoc(Vector.dup)
     def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
         if clear:
-            return Vector(self.dtype if dtype is None else dtype, self.size, name=name)
+            return Vector(self.dtype if dtype is None else dtype, self._size, name=name)
         return self._new(dtype, mask, name)
 
     # Begin auto-generated code: Vector
@@ -1938,6 +1984,7 @@ class VectorExpression(BaseExpression):
     else:
         ss = Vector.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
+    to_dense = wrapdoc(Vector.to_dense)(property(automethods.to_dense))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
@@ -2022,6 +2069,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     else:
         ss = Vector.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
+    to_dense = wrapdoc(Vector.to_dense)(property(automethods.to_dense))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))

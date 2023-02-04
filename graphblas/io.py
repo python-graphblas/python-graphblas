@@ -4,6 +4,7 @@ import numpy as _np
 
 from . import backend as _backend
 from .core.matrix import Matrix as _Matrix
+from .core.utils import normalize_values as _normalize_values
 from .core.utils import output_type as _output_type
 from .core.vector import Vector as _Vector
 from .dtypes import lookup_dtype as _lookup_dtype
@@ -391,13 +392,10 @@ def to_scipy_sparse(A, format="csr"):
                 info["col_indices"] = info["row_indices"]
         else:
             info = A.ss.export(format, sort=True)
-        if info["is_iso"]:
-            info["values"] = _np.broadcast_to(info["values"], A._nvals)
+        values = _normalize_values(A, info["values"], None, (A._nvals,), info["is_iso"])
         if format == "csr":
-            return ss.csr_array(
-                (info["values"], info["col_indices"], info["indptr"]), shape=A.shape
-            )
-        return ss.csc_array((info["values"], info["row_indices"], info["indptr"]), shape=A.shape)
+            return ss.csr_array((values, info["col_indices"], info["indptr"]), shape=A.shape)
+        return ss.csc_array((values, info["row_indices"], info["indptr"]), shape=A.shape)
     elif format == "csr":
         indptr, cols, vals = A.to_csr()
         return ss.csr_array((vals, cols, indptr), shape=A.shape)
@@ -603,11 +601,7 @@ def mmread(source, *, dup_op=None, name=None):
         return _Matrix.from_coo(
             array.row, array.col, array.data, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
         )
-    if _backend == "suitesparse":
-        return _Matrix.ss.import_fullr(values=array, take_ownership=True, name=name)
-    rv = _Matrix(array.dtype, *array.shape, name=name)
-    rv[...] = array
-    return rv
+    return _Matrix.from_dense(array, name=name)
 
 
 def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=None):
