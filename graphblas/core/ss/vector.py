@@ -970,7 +970,9 @@ class ss:
         indices = ints_to_numpy_buffer(indices, np.uint64, copy=copy, ownable=True, name="indices")
         if method == "pack":
             dtype = vector.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, subarray_after=1
+        )
         if indices is values:
             values = np.copy(values)
         vi = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indices))
@@ -1150,7 +1152,9 @@ class ss:
         if method == "pack":
             dtype = vector.dtype
             size = vector._size
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, subarray_after=1
+        )
         if bitmap is values:
             values = np.copy(values)
         vhandle = ffi_new("GrB_Vector*")
@@ -1320,7 +1324,9 @@ class ss:
         if method == "pack":
             dtype = vector.dtype
             size = vector._size
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, subarray_after=1
+        )
         vhandle = ffi_new("GrB_Vector*")
         vx = ffi_new("void**", ffi.from_buffer("void*", values))
         if size is None:
