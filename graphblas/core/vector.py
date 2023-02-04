@@ -396,7 +396,6 @@ class Vector(BaseType):
         After the call, :attr:`nvals` will return 0. The :attr:`size` will not change.
         """
         call("GrB_Vector_clear", [self])
-        return self
 
     def resize(self, size):
         """In-place operation which changes the :attr:`size`.
@@ -407,7 +406,6 @@ class Vector(BaseType):
         size = _as_scalar(size, _INDEX, is_cscalar=True)
         call("GrB_Vector_resize", [self, size])
         self._size = size.value
-        return self
 
     def to_values(self, dtype=None, *, indices=True, values=True, sort=True):
         """Extract the indices and values as a 2-tuple of numpy arrays.
@@ -517,7 +515,7 @@ class Vector(BaseType):
         if size is not None:
             self.resize(size)
         if n == 0:
-            return self
+            return
 
         dup_op_given = dup_op is not None
         if not dup_op_given:
@@ -543,7 +541,6 @@ class Vector(BaseType):
         # Check for duplicates when dup_op was not provided
         if not dup_op_given and self._nvals < n:
             raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
-        return self
 
     def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
         """Create a duplicate of the Vector.
