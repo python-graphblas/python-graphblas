@@ -497,6 +497,7 @@ class Matrix(BaseType):
 
         See Also
         --------
+        to_dense
         to_edgelist
         from_coo
 
@@ -564,6 +565,7 @@ class Matrix(BaseType):
         See Also
         --------
         to_coo
+        to_dense
         from_edgelist
 
         Returns
@@ -860,6 +862,7 @@ class Matrix(BaseType):
 
         See Also
         --------
+        from_dense
         from_edgelist
         to_coo
 
@@ -939,6 +942,7 @@ class Matrix(BaseType):
         See Also
         --------
         from_coo
+        from_dense
         to_edgelist
 
         Returns
@@ -1333,6 +1337,35 @@ class Matrix(BaseType):
 
     @classmethod
     def from_dense(cls, values, dtype=None, *, nrows=None, ncols=None, name=None):
+        """Create a fully dense Matrix from a NumPy array or scalar.
+
+        Parameters
+        ----------
+        values : list or np.ndarray or scalar
+            List of values. If a scalar is provided, all values will be set to this single value.
+        dtype :
+            Data type of the Matrix. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        nrows : int, optional
+            Number of rows of the Matrix. By default, nrows is determined from
+            the shape of the input array.  Nrows is required for scalar inputs.
+        ncols : int, optional
+            Number of cols of the Matrix. By default, ncols is determined from
+            the shape of the input array.  Ncols is required for scalar inputs.
+        name : str, optional
+            Name to give the Matrix.
+
+        See Also
+        --------
+        from_coo
+        from_edgelist
+        to_dense
+        io.from_numpy
+
+        Returns
+        -------
+        Matrix
+        """
         values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=2)
         if values.ndim == 0:
             if nrows is None or ncols is None:
@@ -1377,6 +1410,27 @@ class Matrix(BaseType):
         return rv
 
     def to_dense(self, fill_value=None, dtype=None):
+        """Convert Matrix to NumPy array of the same shape with missing values filled.
+
+        Parameters
+        ----------
+        fill_value : scalar, optional
+            Value used to fill missing values. This is required if there are missing values.
+        dtype :
+            Requested dtype for the output values array.
+
+        See Also
+        --------
+        to_coo
+        to_dicts
+        to_edgelist
+        from_dense
+        io.to_numpy
+
+        Returns
+        -------
+        np.ndarray
+        """
         max_nvals = self._nrows * self._ncols
         if fill_value is None or self._nvals == max_nvals:
             if self._nvals != max_nvals:

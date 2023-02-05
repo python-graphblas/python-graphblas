@@ -75,6 +75,11 @@ def from_numpy(m):
     m : np.ndarray
         Input array
 
+    See Also
+    --------
+    Matrix.from_dense
+    Vector.from_dense
+
     Returns
     -------
     Vector or Matrix
@@ -315,6 +320,12 @@ def to_numpy(m):
     ----------
     m : Vector or Matrix
         GraphBLAS Vector or Matrix
+
+    See Also
+    --------
+    to_scipy_sparse
+    Matrix.to_dense
+    Vector.to_dense
 
     Returns
     -------

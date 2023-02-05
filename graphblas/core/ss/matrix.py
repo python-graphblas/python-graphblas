@@ -559,7 +559,7 @@ class ss:
             "coo", "coor", or "cooc".
         give_ownership : bool, default False
             Perform a zero-copy data transfer to Python if possible.  This gives ownership of
-            the underlying memory buffers to Numpy.
+            the underlying memory buffers to NumPy.
             ** If True, this nullifies the current object, which should no longer be used! **
         raw : bool, default False
             If True, always return 1d arrays the same size as returned by SuiteSparse.

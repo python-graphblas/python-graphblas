@@ -453,6 +453,7 @@ class Vector(BaseType):
 
         See Also
         --------
+        to_dense
         to_dict
         from_coo
 
@@ -713,6 +714,7 @@ class Vector(BaseType):
 
         See Also
         --------
+        from_dense
         from_dict
         from_pairs
         to_coo
@@ -770,6 +772,7 @@ class Vector(BaseType):
         See Also
         --------
         from_coo
+        from_dense
         from_dict
         to_coo
 
@@ -794,6 +797,33 @@ class Vector(BaseType):
 
     @classmethod
     def from_dense(cls, values, dtype=None, *, size=None, name=None):
+        """Create a fully dense Vector from a NumPy array or scalar.
+
+        Parameters
+        ----------
+        values : list or np.ndarray or scalar
+            List of values. If a scalar is provided, all values will be set to this single value.
+        dtype :
+            Data type of the Vector. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        size : int, optional
+            Size of the Vector. By default, the size of the Vector is the size of the input array.
+            Size is required for scalar inputs.
+        name : str, optional
+            Name to give the Vector.
+
+        See Also
+        --------
+        from_coo
+        from_dict
+        from_pairs
+        to_dense
+        io.from_numpy
+
+        Returns
+        -------
+        Vector
+        """
         values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
         if values.ndim == 0:
             if size is None:
@@ -823,6 +853,26 @@ class Vector(BaseType):
         return rv
 
     def to_dense(self, fill_value=None, dtype=None):
+        """Convert Vector to NumPy array of the same shape with missing values filled.
+
+        Parameters
+        ----------
+        fill_value : scalar, optional
+            Value used to fill missing values. This is required if there are missing values.
+        dtype :
+            Requested dtype for the output values array.
+
+        See Also
+        --------
+        to_coo
+        to_dict
+        from_dense
+        io.to_numpy
+
+        Returns
+        -------
+        np.ndarray
+        """
         if fill_value is None or self._nvals == self._size:
             if self._nvals != self._size:
                 raise TypeError(
@@ -1825,6 +1875,7 @@ class Vector(BaseType):
         See Also
         --------
         from_coo
+        from_dense
         from_pairs
         to_dict
 
@@ -1852,6 +1903,7 @@ class Vector(BaseType):
         See Also
         --------
         to_coo
+        to_dense
         from_dict
 
         Returns
