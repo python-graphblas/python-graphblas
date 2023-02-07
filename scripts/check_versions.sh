@@ -3,7 +3,7 @@
 # Use, adjust, copy/paste, etc. as necessary to answer your questions.
 # This may be helpful when updating dependency versions in CI.
 # Tip: add `--json` for more information.
-conda search 'numpy[channel=conda-forge]>=1.24.1'
+conda search 'numpy[channel=conda-forge]>=1.24.2'
 conda search 'pandas[channel=conda-forge]>=1.5.3'
 conda search 'scipy[channel=conda-forge]>=1.10.0'
 conda search 'networkx[channel=conda-forge]>=3.0'
