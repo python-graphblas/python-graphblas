@@ -1412,6 +1412,9 @@ class Matrix(BaseType):
     def to_dense(self, fill_value=None, dtype=None):
         """Convert Matrix to NumPy array of the same shape with missing values filled.
 
+        .. warning::
+            This can create very large arrays that require a lot of memory; please use caution.
+
         Parameters
         ----------
         fill_value : scalar, optional
@@ -1458,8 +1461,9 @@ class Matrix(BaseType):
                     )
             dtype = unify(fill_value.dtype, self.dtype, is_left_scalar=True)
 
-        rv = self.dup(dtype, name="to_dense")
-        rv(~rv.S) << fill_value
+        rv = self.dup(dtype, clear=True, name="to_dense")
+        rv << fill_value
+        rv(self.S) << self
         return rv.to_dense()
 
     @classmethod
