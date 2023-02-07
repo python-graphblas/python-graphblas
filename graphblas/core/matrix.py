@@ -1372,7 +1372,8 @@ class Matrix(BaseType):
                 raise TypeError(
                     "nrows and ncols must be given when creating a dense Matrix from a scalar"
                 )
-            if backend == "suitesparse":
+            if backend == "suitesparse" and not dtype._is_udt:
+                # `Matrix.ss.import_fullr` does not yet handle all cases with UDTs
                 # Should we try to handle F-contiguous data w/o a copy?
                 return cls.ss.import_fullr(
                     values, dtype=dtype, nrows=nrows, ncols=ncols, is_iso=True, name=name

@@ -4145,6 +4145,10 @@ def test_to_dense_from_dense():
         Matrix.from_dense(np.arange(24).reshape(2, 3, 4), int)
     with pytest.raises(ValueError, match=">2d array"):
         Matrix.from_dense(np.arange(6).reshape(2, 3), "INT64[2]")
+    A = Matrix.from_dense(1, "INT64[2]", nrows=3, ncols=4)
+    B = Matrix("INT64[2]", nrows=3, ncols=4)
+    B << [1, 1]
+    assert A.isequal(B, check_dtype=True)
 
 
 @pytest.mark.skipif("not suitesparse")

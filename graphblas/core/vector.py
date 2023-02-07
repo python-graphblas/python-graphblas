@@ -828,7 +828,8 @@ class Vector(BaseType):
         if values.ndim == 0:
             if size is None:
                 raise TypeError("size must be given when creating a dense Vector from a scalar")
-            if backend == "suitesparse":
+            if backend == "suitesparse" and not dtype._is_udt:
+                # `Vector.ss.import_full` does not yet handle all cases with UDTs
                 return cls.ss.import_full(values, dtype=dtype, size=size, is_iso=True, name=name)
             rv = cls(dtype, size=size, name=name)
             rv << values

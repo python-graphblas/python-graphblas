@@ -2517,6 +2517,10 @@ def test_to_dense_from_dense():
         Vector.from_dense(np.arange(6).reshape(2, 3), int)
     with pytest.raises(ValueError, match=">1d array"):
         Vector.from_dense(np.arange(6), "INT64[2]")
+    v = Vector.from_dense(1, "INT64[2]", size=3)
+    w = Vector("INT64[2]", size=3)
+    w << [1, 1]
+    assert v.isequal(w, check_dtype=True)
 
 
 @pytest.mark.skipif("not suitesparse")
