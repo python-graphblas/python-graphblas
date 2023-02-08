@@ -649,14 +649,6 @@ class Vector(BaseType):
         )
 
     @classmethod
-    def new(cls, dtype, size=0, *, name=None):
-        warnings.warn(
-            "`Vector.new(...)` is deprecated; please use `Vector(...)` instead.",
-            DeprecationWarning,
-        )
-        return Vector(dtype, size, name=name)
-
-    @classmethod
     def from_values(cls, indices, values, dtype=None, *, size=None, dup_op=None, name=None):
         """Create a new Vector from indices and values.
 

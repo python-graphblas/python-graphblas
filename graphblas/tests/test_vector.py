@@ -1630,7 +1630,7 @@ def test_expr_is_like_vector(v):
     )
     assert attrs - infix_attrs == expected
     # Make sure signatures actually match
-    skip = {"__init__", "__repr__", "_repr_html_", "new"}
+    skip = {"__init__", "__repr__", "_repr_html_"}
     for expr in [binary.times(w & w), w & w]:
         print(type(expr).__name__)
         for attr, val in inspect.getmembers(expr):
@@ -1675,7 +1675,7 @@ def test_index_expr_is_like_vector(v):
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
     # Make sure signatures actually match. `update` has different docstring.
-    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "new", "update"}
+    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "update"}
     for attr, val in inspect.getmembers(w[[0, 1]]):
         if attr in skip or not isinstance(val, types.MethodType) or not hasattr(w, attr):
             continue
