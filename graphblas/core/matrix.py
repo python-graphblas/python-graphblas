@@ -735,6 +735,7 @@ class Matrix(BaseType):
         else:
             raise ValueError(f'`how` argument must be "materialize" or "complete"; got {how!r}')
         call("GrB_Matrix_wait", [self, mode])
+        return self
 
     def get(self, row, col, default=None):
         """Get an element at (``row``, ``col``) indices as a Python scalar.

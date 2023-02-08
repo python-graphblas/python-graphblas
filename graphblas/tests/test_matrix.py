@@ -4228,6 +4228,12 @@ def test_ss_descriptors(A):
             (A @ A).new(nthreads=4, axb_method="dot", sort=True)
 
 
+@autocompute
+def test_wait_chains(A):
+    result = A.wait().T.wait().reduce_rowwise().wait().reduce().wait()
+    assert result == 47
+
+
 def test_subarray_dtypes():
     a = np.arange(3 * 4, dtype=np.int64).reshape(3, 4)
     A = Matrix.from_coo([1, 3, 5], [0, 1, 3], a)

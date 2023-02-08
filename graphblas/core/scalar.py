@@ -464,6 +464,7 @@ class Scalar(BaseType):
             raise ValueError(f'`how` argument must be "materialize" or "complete"; got {how!r}')
         if not self._is_cscalar:
             call("GrB_Scalar_wait", [self, mode])
+        return self
 
     def get(self, default=None):
         """Get the internal value of the Scalar as a Python scalar.
