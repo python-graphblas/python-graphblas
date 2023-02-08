@@ -734,6 +734,7 @@ class Matrix(BaseType):
         else:
             raise ValueError(f'`how` argument must be "materialize" or "complete"; got {how!r}')
         call("GrB_Matrix_wait", [self, mode])
+        return self
 
     def get(self, row, col, default=None):
         """Get an element at (``row``, ``col``) indices as a Python scalar.
@@ -759,14 +760,6 @@ class Matrix(BaseType):
             "Bad row, col arguments in Matrix.get(...).  "
             "Indices should get a single element, which will be extracted as a Python scalar."
         )
-
-    @classmethod
-    def new(cls, dtype, nrows=0, ncols=0, *, name=None):
-        warnings.warn(
-            "`Matrix.new(...)` is deprecated; please use `Matrix(...)` instead.",
-            DeprecationWarning,
-        )
-        return Matrix(dtype, nrows, ncols, name=name)
 
     @classmethod
     def from_values(

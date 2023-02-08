@@ -622,6 +622,7 @@ class Vector(BaseType):
         else:
             raise ValueError(f'`how` argument must be "materialize" or "complete"; got {how!r}')
         call("GrB_Vector_wait", [self, mode])
+        return self
 
     def get(self, index, default=None):
         """Get an element at ``index`` as a Python scalar.
@@ -645,14 +646,6 @@ class Vector(BaseType):
             "Bad index in Vector.get(...).  "
             "A single index should be given, and the result will be a Python scalar."
         )
-
-    @classmethod
-    def new(cls, dtype, size=0, *, name=None):
-        warnings.warn(
-            "`Vector.new(...)` is deprecated; please use `Vector(...)` instead.",
-            DeprecationWarning,
-        )
-        return Vector(dtype, size, name=name)
 
     @classmethod
     def from_values(cls, indices, values, dtype=None, *, size=None, dup_op=None, name=None):
