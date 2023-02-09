@@ -1618,6 +1618,7 @@ def test_expr_is_like_vector(v):
         "from_coo",
         "from_dense",
         "from_dict",
+        "from_iso_value",
         "from_pairs",
         "from_values",
         "resize",
@@ -1666,6 +1667,7 @@ def test_index_expr_is_like_vector(v):
         "from_coo",
         "from_dense",
         "from_dict",
+        "from_iso_value",
         "from_pairs",
         "from_values",
         "resize",
@@ -2489,7 +2491,7 @@ def test_from_pairs():
 
 
 def test_to_dense_from_dense():
-    v = Vector.from_dense(1, size=3)
+    v = Vector.from_iso_value(1, size=3)
     w = Vector.from_coo([0, 1, 2], 1)
     assert v.isequal(w, check_dtype=True)
     assert_array_equal(v.to_dense(), [1, 1, 1])
@@ -2497,7 +2499,8 @@ def test_to_dense_from_dense():
     w = Vector.from_coo([0, 1, 2], [1, 2, 3])
     assert v.isequal(w, check_dtype=True)
     assert_array_equal(v.to_dense(dtype=int), [1, 2, 3])
-    v = Vector.from_dense([1, 2, 3], size=4)
+    v = Vector.from_dense([1, 2, 3])
+    v.resize(4)
     w = Vector.from_coo([0, 1, 2], [1, 2, 3], size=4)
     assert v.isequal(w, check_dtype=True)
     assert_array_equal(v.to_dense(4.5, dtype=float), [1, 2, 3, 4.5])
@@ -2507,17 +2510,19 @@ def test_to_dense_from_dense():
         v.to_dense()
     with pytest.raises(TypeError, match="Bad type for keyword argument `fill_value"):
         v.to_dense(object())
-    v = Vector.from_dense([1, 2], size=2)
+    v = Vector.from_dense([1, 2])
     w = Vector.from_coo([0, 1], [1, 2], size=2)
     assert v.isequal(w, check_dtype=True)
     assert_array_equal(v.to_dense(dtype=float), [1.0, 2])
-    with pytest.raises(TypeError, match="size must be given"):
-        Vector.from_dense(1)
+    with pytest.raises(TypeError, match="missing"):
+        Vector.from_iso_value(1)
     with pytest.raises(ValueError, match="must be 1d"):
-        Vector.from_dense(np.arange(6).reshape(2, 3), int)
+        Vector.from_dense(np.arange(6).reshape(2, 3), dtype=int)
     with pytest.raises(ValueError, match=">1d array"):
-        Vector.from_dense(np.arange(6), "INT64[2]")
-    v = Vector.from_dense(1, "INT64[2]", size=3)
+        Vector.from_dense(np.arange(6), dtype="INT64[2]")
+    with pytest.raises(TypeError, match="from_iso_value"):
+        Vector.from_dense(1)
+    v = Vector.from_iso_value(1, dtype="INT64[2]", size=3)
     w = Vector("INT64[2]", size=3)
     w << [1, 1]
     assert v.isequal(w, check_dtype=True)

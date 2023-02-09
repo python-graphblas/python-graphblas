@@ -789,19 +789,26 @@ class Vector(BaseType):
         return cls.from_coo(indices, values, dtype, size=size, dup_op=dup_op, name=name)
 
     @classmethod
-    def from_dense(cls, values, dtype=None, *, size=None, name=None):
+    def from_iso_value(cls, value, size, dtype=None, *, name=None):
+        value, dtype = values_to_numpy_buffer(value, dtype, subarray_after=0)
+        if backend == "suitesparse" and not dtype._is_udt:
+            # `Vector.ss.import_full` does not yet handle all cases with UDTs
+            return cls.ss.import_full(value, dtype=dtype, size=size, is_iso=True, name=name)
+        rv = cls(dtype, size, name=name)
+        rv << value
+        return rv
+
+    @classmethod
+    def from_dense(cls, values, missing_value=None, *, dtype=None, name=None):
         """Create a fully dense Vector from a NumPy array or scalar.
 
         Parameters
         ----------
-        values : list or np.ndarray or scalar
-            List of values. If a scalar is provided, all values will be set to this single value.
+        values : list or np.ndarray
+            List of values.
         dtype :
             Data type of the Vector. If not provided, the values will be inspected
             to choose an appropriate dtype.
-        size : int, optional
-            Size of the Vector. By default, the size of the Vector is the size of the input array.
-            Size is required for scalar inputs.
         name : str, optional
             Name to give the Vector.
 
@@ -811,7 +818,6 @@ class Vector(BaseType):
         from_dict
         from_pairs
         to_dense
-        io.from_numpy
 
         Returns
         -------
@@ -819,14 +825,10 @@ class Vector(BaseType):
         """
         values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
         if values.ndim == 0:
-            if size is None:
-                raise TypeError("size must be given when creating a dense Vector from a scalar")
-            if backend == "suitesparse" and not dtype._is_udt:
-                # `Vector.ss.import_full` does not yet handle all cases with UDTs
-                return cls.ss.import_full(values, dtype=dtype, size=size, is_iso=True, name=name)
-            rv = cls(dtype, size=size, name=name)
-            rv << values
-            return rv
+            raise TypeError(
+                "values must be an array or list, not a scalar. "
+                "To create a dense Vector from a scalar, use `Vector.from_iso_value`."
+            )
         if values.ndim == 1 and dtype.np_type.subdtype is not None:
             raise ValueError("A >1d array is required to create a dense Vector with subdtype")
         if values.ndim > 1 and dtype.np_type.subdtype is None:
@@ -842,8 +844,8 @@ class Vector(BaseType):
                 size=values.shape[0],
                 name=name,
             )
-        if size is not None and size != rv._size:
-            rv.resize(size)
+        if missing_value is not None:
+            rv << select.valuene(rv, missing_value)
         return rv
 
     def to_dense(self, fill_value=None, dtype=None):
@@ -864,7 +866,6 @@ class Vector(BaseType):
         to_coo
         to_dict
         from_dense
-        io.to_numpy
 
         Returns
         -------
@@ -1760,7 +1761,7 @@ class Vector(BaseType):
                         else:
                             shape = values.shape
                             try:
-                                vals = Vector.from_dense(values, dtype)
+                                vals = Vector.from_dense(values, dtype=dtype)
                             except Exception:  # pragma: no cover (safety)
                                 vals = None
                             else:

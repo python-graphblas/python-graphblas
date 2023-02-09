@@ -62,6 +62,9 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
 def from_numpy(m):
     """Create a sparse Vector or Matrix from a dense numpy array.
 
+    .. deprecated:: 2023.2.0
+        TODO
+
     A value of 0 is considered as "missing".
 
     - m.ndim == 1 returns a `Vector`
@@ -84,6 +87,11 @@ def from_numpy(m):
     -------
     Vector or Matrix
     """
+    _warn(
+        "`graphblas.io.from_numpy` is deprecated; "
+        "use `Matrix.from_dense` and `Vector.from_dense` instead.",
+        DeprecationWarning,
+    )
     if m.ndim > 2:
         raise _GraphblasException("m.ndim must be <= 2")
 
@@ -312,6 +320,9 @@ def to_networkx(m, edge_attribute="weight"):
 def to_numpy(m):
     """Create a dense numpy array from a sparse Vector or Matrix.
 
+    .. deprecated:: 2023.2.0
+        TODO
+
     Missing values will become 0 in the output.
 
     numpy dtype will match the GraphBLAS dtype
@@ -331,6 +342,11 @@ def to_numpy(m):
     -------
     np.ndarray
     """
+    _warn(
+        "`graphblas.io.to_numpy` is deprecated; "
+        "use `Matrix.to_dense` and `Vector.to_dense` instead.",
+        DeprecationWarning,
+    )
     try:
         import scipy  # noqa: F401
     except ImportError:  # pragma: no cover (import)

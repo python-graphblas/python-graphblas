@@ -1329,22 +1329,28 @@ class Matrix(BaseType):
         return cls.from_coo(row_indices, cols, values, dtype, nrows=nrows, ncols=ncols, name=name)
 
     @classmethod
-    def from_dense(cls, values, dtype=None, *, nrows=None, ncols=None, name=None):
-        """Create a fully dense Matrix from a NumPy array or scalar.
+    def from_iso_value(cls, value, nrows, ncols, dtype=None, *, name=None):
+        value, dtype = values_to_numpy_buffer(value, dtype, subarray_after=0)
+        if backend == "suitesparse" and not dtype._is_udt:
+            # `Matrix.ss.import_fullr` does not yet handle all cases with UDTs
+            return cls.ss.import_fullr(
+                value, dtype=dtype, nrows=nrows, ncols=ncols, is_iso=True, name=name
+            )
+        rv = cls(dtype, nrows=nrows, ncols=ncols, name=name)
+        rv << value
+        return rv
+
+    @classmethod
+    def from_dense(cls, values, missing_value=None, *, dtype=None, name=None):
+        """Create a fully dense Matrix from a NumPy array or list of lists.
 
         Parameters
         ----------
-        values : list or np.ndarray or scalar
-            List of values. If a scalar is provided, all values will be set to this single value.
+        values : list or np.ndarray
+            List of values.
         dtype :
             Data type of the Matrix. If not provided, the values will be inspected
             to choose an appropriate dtype.
-        nrows : int, optional
-            Number of rows of the Matrix. By default, nrows is determined from
-            the shape of the input array.  Nrows is required for scalar inputs.
-        ncols : int, optional
-            Number of cols of the Matrix. By default, ncols is determined from
-            the shape of the input array.  Ncols is required for scalar inputs.
         name : str, optional
             Name to give the Matrix.
 
@@ -1353,7 +1359,6 @@ class Matrix(BaseType):
         from_coo
         from_edgelist
         to_dense
-        io.from_numpy
 
         Returns
         -------
@@ -1361,19 +1366,10 @@ class Matrix(BaseType):
         """
         values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=2)
         if values.ndim == 0:
-            if nrows is None or ncols is None:
-                raise TypeError(
-                    "nrows and ncols must be given when creating a dense Matrix from a scalar"
-                )
-            if backend == "suitesparse" and not dtype._is_udt:
-                # `Matrix.ss.import_fullr` does not yet handle all cases with UDTs
-                # Should we try to handle F-contiguous data w/o a copy?
-                return cls.ss.import_fullr(
-                    values, dtype=dtype, nrows=nrows, ncols=ncols, is_iso=True, name=name
-                )
-            rv = cls(dtype, nrows=nrows, ncols=ncols, name=name)
-            rv << values
-            return rv
+            raise TypeError(
+                "values must be an array or list, not a scalar. "
+                "To create a dense Matrix from a scalar, use `Matrix.from_iso_value`."
+            )
         if values.ndim == 1:
             raise ValueError("A 2d array or scalar is required to create a dense Matrix")
         if values.ndim == 2 and dtype.np_type.subdtype is not None:
@@ -1381,14 +1377,14 @@ class Matrix(BaseType):
         if values.ndim > 2 and dtype.np_type.subdtype is None:
             raise ValueError(f"values array must be 2d to create dense Matrix with dtype {dtype}")
         if backend == "suitesparse":
+            # Should we try to handle F-contiguous data w/o a copy?
             rv = cls.ss.import_fullr(values, dtype=dtype, name=name)
-            nrows2, ncols2 = rv.shape
         else:
-            nrows2, ncols2, *rest = values.shape
-            indptr = np.arange(0, nrows2 * ncols2 + 1, ncols2, dtype=np.uint64)
-            cols = np.repeat(np.arange(ncols2, dtype=np.uint64)[None, :], nrows2, 0).ravel()
+            nrows, ncols, *rest = values.shape
+            indptr = np.arange(0, nrows * ncols + 1, ncols, dtype=np.uint64)
+            cols = np.repeat(np.arange(ncols, dtype=np.uint64)[None, :], nrows, 0).ravel()
             if rest:  # sub-array dtype
-                values = values.reshape(nrows2 * ncols2, *rest)
+                values = values.reshape(nrows * ncols, *rest)
             else:
                 values = values.ravel()
             rv = cls.from_csr(
@@ -1396,11 +1392,11 @@ class Matrix(BaseType):
                 cols,
                 values,
                 dtype,
-                ncols=ncols2,
+                ncols=ncols,
                 name=name,
             )
-        if nrows is not None and nrows != nrows2 or ncols is not None and ncols != ncols2:
-            rv.resize(nrows2 if nrows is None else nrows, ncols2 if ncols is None else ncols)
+        if missing_value is not None:
+            rv << select.valuene(rv, missing_value)
         return rv
 
     def to_dense(self, fill_value=None, dtype=None):
@@ -1422,7 +1418,6 @@ class Matrix(BaseType):
         to_dicts
         to_edgelist
         from_dense
-        io.to_numpy
 
         Returns
         -------
@@ -2952,7 +2947,7 @@ class Matrix(BaseType):
                                 # C[i, J](m) << [1, 2, 3]
                                 expected_shape = (rowsize or colsize,)
                                 try:
-                                    vals = Vector.from_dense(values, dtype)
+                                    vals = Vector.from_dense(values, dtype=dtype)
                                 except Exception:  # pragma: no cover (safety)
                                     vals = None
                                 else:
@@ -2964,7 +2959,7 @@ class Matrix(BaseType):
                                 # C[I, J](M) << [[1, 2, 3], [4, 5, 6]]
                                 expected_shape = (rowsize, colsize)
                                 try:
-                                    vals = Matrix.from_dense(values, dtype)
+                                    vals = Matrix.from_dense(values, dtype=dtype)
                                 except Exception:
                                     vals = None
                                 else:

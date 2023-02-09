@@ -1,21 +1,14 @@
 import numpy as np
 import pytest
 
-import graphblas as gb
 from graphblas import backend, binary, monoid
 
 from graphblas import Matrix, Vector  # isort:skip (for dask-graphblas)
 
-try:
-    # gb.io.to_numpy currently requires scipy
-    import scipy.sparse as ss
-except ImportError:  # pragma: no cover (import)
-    ss = None
-
 suitesparse = backend == "suitesparse"
 
 
-@pytest.mark.skipif("not ss or not suitesparse")
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("method", ["scan_rowwise", "scan_columnwise"])
 @pytest.mark.parametrize("length", list(range(34)))
 @pytest.mark.parametrize("do_random", [False, True])
@@ -38,7 +31,7 @@ def test_scan_matrix(method, length, do_random):
         M = M.T.new(name="A")
         R = M.ss.scan(binary.plus, order="col").T.new()
 
-    result = gb.io.to_numpy(R)
+    result = R.to_dense(0)
     try:
         np.testing.assert_array_equal(result, expected)
     except Exception:  # pragma: no cover (debug)
@@ -46,7 +39,7 @@ def test_scan_matrix(method, length, do_random):
         raise
 
 
-@pytest.mark.skipif("not ss or not suitesparse")
+@pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("length", list(range(34)))
 @pytest.mark.parametrize("do_random", [False, True])
 def test_scan_vector(length, do_random):
@@ -62,7 +55,7 @@ def test_scan_vector(length, do_random):
         v = Vector.ss.import_full(values=a)
         expected = a.cumsum()
     r = v.ss.scan()
-    result = gb.io.to_numpy(r)
+    result = r.to_dense(0)
     try:
         np.testing.assert_array_equal(result, expected)
     except Exception:  # pragma: no cover (debug)

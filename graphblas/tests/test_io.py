@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import Matrix, dtypes
+from graphblas import Matrix, Vector, dtypes
 from graphblas.exceptions import GraphblasException
 
 try:
@@ -35,11 +35,24 @@ suitesparse = gb.backend == "suitesparse"
 
 
 @pytest.mark.skipif("not ss")
+def test_deprecated():
+    a = np.array([0.0, 2.0, 4.1])
+    with pytest.warns(DeprecationWarning):
+        v = gb.io.from_numpy(a)
+    assert v.isequal(gb.Vector.from_coo([1, 2], [2.0, 4.1]), check_dtype=True)
+    with pytest.warns(DeprecationWarning):
+        a2 = gb.io.to_numpy(v)
+    np.testing.assert_array_equal(a, a2)
+    with pytest.warns(DeprecationWarning):
+        gb.io.to_scipy_sparse_matrix(v, "coo")
+
+
+@pytest.mark.skipif("not ss")
 def test_vector_to_from_numpy():
     a = np.array([0.0, 2.0, 4.1])
-    v = gb.io.from_numpy(a)
+    v = Vector.from_dense(a, 0)
     assert v.isequal(gb.Vector.from_coo([1, 2], [2.0, 4.1]), check_dtype=True)
-    a2 = gb.io.to_numpy(v)
+    a2 = v.to_dense(0)
     np.testing.assert_array_equal(a, a2)
 
     csr = gb.io.to_scipy_sparse(v, "csr")
@@ -59,17 +72,14 @@ def test_vector_to_from_numpy():
     assert coo.nnz == 2
     np.testing.assert_array_equal(coo.toarray(), np.array([[0.0, 2.0, 4.1]]))
 
-    with pytest.warns(DeprecationWarning):
-        coo = gb.io.to_scipy_sparse_matrix(v, "coo")
-
 
 @pytest.mark.skipif("not ss")
 @pytest.mark.parametrize("a", [np.array([7, 0]), np.array([0, 0]), np.array([])])
 def test_vector_to_from_numpy_correct_size(a):
     # Make sure we use the right size
-    v = gb.io.from_numpy(a)
+    v = Vector.from_dense(a, 0)
     assert v.shape == a.shape
-    b = gb.io.to_numpy(v)
+    b = v.to_dense(0)
     np.testing.assert_array_equal(a, b)
     csr = gb.io.to_scipy_sparse(v, "csr")
     np.testing.assert_array_equal(a[None, :], csr.toarray())
@@ -80,9 +90,9 @@ def test_vector_to_from_numpy_correct_size(a):
 @pytest.mark.skipif("not ss")
 def test_matrix_to_from_numpy():
     a = np.array([[1.0, 0.0], [2.0, 3.7]])
-    M = gb.io.from_numpy(a)
+    M = Matrix.from_dense(a, 0)
     assert M.isequal(gb.Matrix.from_coo([0, 1, 1], [0, 0, 1], [1.0, 2.0, 3.7]), check_dtype=True)
-    a2 = gb.io.to_numpy(M)
+    a2 = M.to_dense(0)
     np.testing.assert_array_equal(a, a2)
 
     for format in ["csr", "csc", "coo"]:
@@ -95,9 +105,6 @@ def test_matrix_to_from_numpy():
 
     with pytest.raises(ValueError, match="Invalid format"):
         gb.io.to_scipy_sparse(M, "bad format")
-
-    with pytest.raises(GraphblasException, match="ndim must be"):
-        gb.io.from_numpy(np.array([[[1.0, 0.0], [2.0, 3.7]]]))
 
 
 @pytest.mark.skipif("not nx or not ss")
