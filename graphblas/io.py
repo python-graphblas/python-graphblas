@@ -58,12 +58,13 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     return from_scipy_sparse(A, name=name)
 
 
-# TODO: add parameter to indicate empty value (default is 0 and NaN)
-def from_numpy(m):
+def from_numpy(m):  # pragma: no cover (deprecated)
     """Create a sparse Vector or Matrix from a dense numpy array.
 
     .. deprecated:: 2023.2.0
-        TODO
+        `from_numpy` will be removed in a future release.
+        Use `Vector.from_dense` or `Matrix.from_dense` instead.
+        Will be removed in version 2023.10.0 or later
 
     A value of 0 is considered as "missing".
 
@@ -82,6 +83,7 @@ def from_numpy(m):
     --------
     Matrix.from_dense
     Vector.from_dense
+    from_scipy_sparse
 
     Returns
     -------
@@ -317,11 +319,13 @@ def to_networkx(m, edge_attribute="weight"):
     return G
 
 
-def to_numpy(m):
+def to_numpy(m):  # pragma: no cover (deprecated)
     """Create a dense numpy array from a sparse Vector or Matrix.
 
     .. deprecated:: 2023.2.0
-        TODO
+        `to_numpy` will be removed in a future release.
+        Use `Vector.to_dense` or `Matrix.to_dense` instead.
+        Will be removed in version 2023.10.0 or later
 
     Missing values will become 0 in the output.
 

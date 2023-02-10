@@ -789,24 +789,54 @@ class Vector(BaseType):
         return cls.from_coo(indices, values, dtype, size=size, dup_op=dup_op, name=name)
 
     @classmethod
-    def from_iso_value(cls, value, size, dtype=None, *, name=None):
+    def from_iso_value(cls, value, size, dtype=None, *, name=None, **opts):
+        """Create a fully dense Vector filled with a scalar value.
+
+        Parameters
+        ----------
+        value : scalar
+            Scalar value used to fill the Vector.
+        nrows : int
+            Number of rows.
+        ncols : int
+            Number of columns.
+        dtype : DataType, optional
+            Data type of the Vector. If not provided, the scalar value will be
+            inspected to choose an appropriate dtype.
+        name : str, optional
+            Name to give the Vector.
+
+        See Also
+        --------
+        from_coo
+        from_dense
+        from_dict
+        from_pairs
+
+        Returns
+        -------
+        Vector
+        """
         value, dtype = values_to_numpy_buffer(value, dtype, subarray_after=0)
         if backend == "suitesparse" and not dtype._is_udt:
             # `Vector.ss.import_full` does not yet handle all cases with UDTs
             return cls.ss.import_full(value, dtype=dtype, size=size, is_iso=True, name=name)
         rv = cls(dtype, size, name=name)
-        rv << value
+        rv(**opts) << value
         return rv
 
     @classmethod
-    def from_dense(cls, values, missing_value=None, *, dtype=None, name=None):
-        """Create a fully dense Vector from a NumPy array or scalar.
+    def from_dense(cls, values, missing_value=None, *, dtype=None, name=None, **opts):
+        """Create a Vector from a NumPy array or list.
 
         Parameters
         ----------
         values : list or np.ndarray
             List of values.
-        dtype :
+        missing_value : scalar, optional
+            A scalar value to consider "missing"; elements of this value will be dropped.
+            If None, then the resulting Vector will be dense.
+        dtype : DataType, optional
             Data type of the Vector. If not provided, the values will be inspected
             to choose an appropriate dtype.
         name : str, optional
@@ -816,6 +846,7 @@ class Vector(BaseType):
         --------
         from_coo
         from_dict
+        from_iso_value
         from_pairs
         to_dense
 
@@ -845,10 +876,10 @@ class Vector(BaseType):
                 name=name,
             )
         if missing_value is not None:
-            rv << select.valuene(rv, missing_value)
+            rv(**opts) << select.valuene(rv, missing_value)
         return rv
 
-    def to_dense(self, fill_value=None, dtype=None):
+    def to_dense(self, fill_value=None, dtype=None, **opts):
         """Convert Vector to NumPy array of the same shape with missing values filled.
 
         .. warning::
@@ -858,7 +889,7 @@ class Vector(BaseType):
         ----------
         fill_value : scalar, optional
             Value used to fill missing values. This is required if there are missing values.
-        dtype :
+        dtype : DataType, optional
             Requested dtype for the output values array.
 
         See Also
@@ -896,10 +927,10 @@ class Vector(BaseType):
                     )
             dtype = unify(fill_value.dtype, self.dtype, is_left_scalar=True)
 
-        rv = self.dup(dtype, clear=True, name="to_dense")
-        rv << fill_value
-        rv(self.S) << self
-        return rv.to_dense()
+        rv = self.dup(dtype, clear=True, name="to_dense", **opts)
+        rv(**opts) << fill_value
+        rv(self.S, **opts) << self
+        return rv.to_dense(**opts)
 
     @property
     def _carg(self):
