@@ -2490,11 +2490,25 @@ def test_from_pairs():
         Vector.from_pairs([[1, 2, 3], [4, 5, 6]])
 
 
-def test_to_dense_from_dense():
+def test_from_iso_value():
     v = Vector.from_iso_value(1, size=3)
     w = Vector.from_coo([0, 1, 2], 1)
     assert v.isequal(w, check_dtype=True)
     assert_array_equal(v.to_dense(), [1, 1, 1])
+    v = Vector.from_iso_value(Scalar.from_value(1), size=3)
+    assert v.isequal(w, check_dtype=True)
+    v = Vector.from_iso_value(Scalar.from_value(1.0), 3, int)
+    with pytest.raises(TypeError, match="missing"):
+        Vector.from_iso_value(1)
+    with pytest.raises(TypeError, match="Literal scalars also accepted"):
+        Vector.from_iso_value(v, size=2)
+    v = Vector.from_iso_value(1, dtype="INT64[2]", size=3)
+    w = Vector("INT64[2]", size=3)
+    w << [1, 1]
+    assert v.isequal(w, check_dtype=True)
+
+
+def test_to_dense_from_dense():
     v = Vector.from_dense([1, 2, 3])
     w = Vector.from_coo([0, 1, 2], [1, 2, 3])
     assert v.isequal(w, check_dtype=True)
@@ -2514,18 +2528,12 @@ def test_to_dense_from_dense():
     w = Vector.from_coo([0, 1], [1, 2], size=2)
     assert v.isequal(w, check_dtype=True)
     assert_array_equal(v.to_dense(dtype=float), [1.0, 2])
-    with pytest.raises(TypeError, match="missing"):
-        Vector.from_iso_value(1)
     with pytest.raises(ValueError, match="must be 1d"):
         Vector.from_dense(np.arange(6).reshape(2, 3), dtype=int)
     with pytest.raises(ValueError, match=">1d array"):
         Vector.from_dense(np.arange(6), dtype="INT64[2]")
     with pytest.raises(TypeError, match="from_iso_value"):
         Vector.from_dense(1)
-    v = Vector.from_iso_value(1, dtype="INT64[2]", size=3)
-    w = Vector("INT64[2]", size=3)
-    w << [1, 1]
-    assert v.isequal(w, check_dtype=True)
 
 
 @pytest.mark.skipif("not suitesparse")

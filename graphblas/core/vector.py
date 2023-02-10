@@ -817,7 +817,22 @@ class Vector(BaseType):
         -------
         Vector
         """
-        value, dtype = values_to_numpy_buffer(value, dtype, subarray_after=0)
+        if type(value) is not Scalar:
+            try:
+                value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
+            except TypeError:
+                value = cls()._expect_type(
+                    value,
+                    Scalar,
+                    within="from_iso_value",
+                    keyword_name="value",
+                    extra_message="Literal scalars also accepted.",
+                )
+            dtype = value.dtype
+        elif dtype is None:
+            dtype = value.dtype
+        else:
+            dtype = lookup_dtype(dtype)
         if backend == "suitesparse" and not dtype._is_udt:
             # `Vector.ss.import_full` does not yet handle all cases with UDTs
             return cls.ss.import_full(value, dtype=dtype, size=size, is_iso=True, name=name)

@@ -4109,12 +4109,27 @@ def test_to_from_edgelist(A):
         Matrix.from_edgelist([[0, 1, 10], [2, 3, 20]], values=0)
 
 
-def test_to_dense_from_dense():
+def test_from_iso_value():
     A = Matrix.from_iso_value(1, nrows=2, ncols=3)
     B = Matrix(int, nrows=2, ncols=3)
     B << 1
     assert A.isequal(B, check_dtype=True)
     assert_array_equal(A.to_dense(dtype=float), [[1.0, 1, 1], [1, 1, 1]])
+    A = Matrix.from_iso_value(Scalar.from_value(1), nrows=2, ncols=3)
+    assert A.isequal(B, check_dtype=True)
+    A = Matrix.from_iso_value(Scalar.from_value(1.0), 2, 3, int)
+    assert A.isequal(B, check_dtype=True)
+    with pytest.raises(TypeError, match="missing"):
+        Matrix.from_iso_value(1, nrows=2)
+    with pytest.raises(TypeError, match="Literal scalars also accepted"):
+        Matrix.from_iso_value(A, nrows=2, ncols=3)
+    A = Matrix.from_iso_value(1, dtype="INT64[2]", nrows=3, ncols=4)
+    B = Matrix("INT64[2]", nrows=3, ncols=4)
+    B << [1, 1]
+    assert A.isequal(B, check_dtype=True)
+
+
+def test_to_dense_from_dense():
     A = Matrix.from_dense(np.arange(6).reshape(2, 3))
     B = Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], np.arange(6))
     assert A.isequal(B, check_dtype=True)
@@ -4130,8 +4145,6 @@ def test_to_dense_from_dense():
     B.resize(3, 4)
     assert A.isequal(B, check_dtype=True)
     assert_array_equal(A.to_dense(10), [[0, 1, 2, 10], [3, 4, 5, 10], [10, 10, 10, 10]])
-    with pytest.raises(TypeError, match="missing"):
-        Matrix.from_iso_value(1, nrows=2)
     with pytest.raises(ValueError, match="is required to create a dense"):
         Matrix.from_dense([1, 2, 3])
     with pytest.raises(TypeError, match="fill_value must be given"):
@@ -4144,10 +4157,6 @@ def test_to_dense_from_dense():
         Matrix.from_dense(np.arange(6).reshape(2, 3), dtype="INT64[2]")
     with pytest.raises(TypeError, match="from_iso_value"):
         Matrix.from_dense(1)
-    A = Matrix.from_iso_value(1, dtype="INT64[2]", nrows=3, ncols=4)
-    B = Matrix("INT64[2]", nrows=3, ncols=4)
-    B << [1, 1]
-    assert A.isequal(B, check_dtype=True)
 
 
 @pytest.mark.skipif("not suitesparse")
