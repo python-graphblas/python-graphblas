@@ -122,8 +122,8 @@ jobs:
             source
             upstream
           weights: |
-            2
-            2
+            1
+            1
             1
             1
       - name: Setup conda
@@ -205,9 +205,11 @@ jobs:
               # TODO: get this from regular PyPI
               pip install --no-deps --index-url https://test.pypi.org/simple/ suitesparse-graphblas
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
-              pip install --no-deps --no-binary=all suitesparse-graphblas
+              # TODO: get this from regular PyPI
+              pip install --no-deps --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
-              pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
+              # TODO: get from main, not from a specific hash
+              pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@7214254aff5cbe708ddea318a85871244e5d673d#egg=suitesparse-graphblas
           fi
           pip install --no-deps -e .
       - name: Unit tests
