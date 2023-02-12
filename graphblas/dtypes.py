@@ -12,6 +12,8 @@ from .core import lib as _lib
 
 # Default assumption unless FC32/FC64 are found in lib
 _supports_complex = hasattr(_lib, "GrB_FC64") or hasattr(_lib, "GxB_FC64")
+if not _supports_complex:
+    raise RuntimeError("Every OS should support complex dtypes now")
 
 
 class DataType:
