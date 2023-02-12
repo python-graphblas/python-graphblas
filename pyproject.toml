@@ -197,6 +197,7 @@ select = [
     # "INP",  # flake8-no-pep420
     "PIE",  # flake8-pie
     "T20",   # flake8-print
+    # "PYI",  # flake8-pyi
     "PT",  # flake8-pytest-style
     "Q",  # flake8-quotes
     # "RET",  # flake8-return
@@ -253,6 +254,7 @@ ignore = [
     "PT003",  # `scope='function'` is implied in `@pytest.fixture()` (Note: no harm in being explicit)
     "PT023",  # Use `@pytest.mark.slow()` over `@pytest.mark.slow` (Note: why?)
     "S110",  # `try`-`except`-`pass` detected, consider logging the exception (Note: good advice, but we don't log)
+    "S112",  # `try`-`except`-`continue` detected, consider logging the exception (Note: good advice, but we don't log)
     "SIM102",  # Use a single `if` statement instead of nested `if` statements (Note: often necessary)
     "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
     "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
