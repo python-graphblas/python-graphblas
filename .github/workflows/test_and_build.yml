@@ -114,8 +114,8 @@ jobs:
         uses: ddradar/choose-random-action@v2.0.2
         id: sourcetype
         with:
-          # Set weight close to 0 to skip (such as if 'upstream' is known to not work).
-          # Have slightly higher weight for `conda-forge` and `wheel` for faster CI.
+          # Weights must be natural numbers, so set weights to very large to skip one
+          # (such as if 'upstream' is known to not work).
           contents: |
             conda-forge
             wheel
