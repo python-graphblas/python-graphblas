@@ -118,10 +118,10 @@ jobs:
             source
             upstream
           weights: |
-            0
             1
-            0
-            0
+            1000000
+            1
+            1
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
