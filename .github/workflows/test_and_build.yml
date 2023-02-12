@@ -118,10 +118,10 @@ jobs:
             source
             upstream
           weights: |
-            2
+            0
             1
-            1
-            1
+            0
+            0
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
@@ -194,13 +194,11 @@ jobs:
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'conda-forge' && 'python-suitesparse-graphblas' || '' }}${psgver} \
-            ${{ matrix.os != 'ubuntu-latest' && '"graphblas>=7.4.0"' || '' }} \
-            ${{ steps.sourcetype.outputs.selected == 'wheel' && matrix.os != 'ubuntu-latest' && 'python-suitesparse-graphblas' || '' }}
+            ${{ matrix.os != 'ubuntu-latest' && '"graphblas>=7.4.0"' || '' }}
       - name: Build extension module
         run: |
-          # We only have wheels for Linux right now
-          if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" && ${{ matrix.os }} == "ubuntu-latest" ]]; then
-              pip install --no-deps suitesparse-graphblas
+          if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
+              pip install --no-deps --index-url https://test.pypi.org/simple/ suitesparse-graphblas
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               pip install --no-deps --no-binary=all suitesparse-graphblas
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
