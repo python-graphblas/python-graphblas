@@ -114,16 +114,16 @@ jobs:
         uses: ddradar/choose-random-action@v2.0.2
         id: sourcetype
         with:
-          # Set weight to 0 to skip (such as if 'upstream' is known to not work).
-          # Have slightly higher weight for `conda-forge` for faster CI.
+          # Set weight close to 0 to skip (such as if 'upstream' is known to not work).
+          # Have slightly higher weight for `conda-forge` and `wheel` for faster CI.
           contents: |
             conda-forge
             wheel
             source
             upstream
           weights: |
-            1
-            1000000
+            2
+            2
             1
             1
       - name: Setup conda
@@ -202,6 +202,7 @@ jobs:
       - name: Build extension module
         run: |
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
+              # TODO: get this from regular PyPI
               pip install --no-deps --index-url https://test.pypi.org/simple/ suitesparse-graphblas
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               pip install --no-deps --no-binary=all suitesparse-graphblas
