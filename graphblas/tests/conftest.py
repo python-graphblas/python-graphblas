@@ -19,6 +19,7 @@ def pytest_configure(config):
             backend = "suitesparse" if np.random.rand() < 0.5 else "suitesparse-vanilla"
         else:
             backend = "suitesparse"
+    backend = "suitesparse"  # XXX quick hack to force it
     blocking = config.getoption("--blocking", True)
     if blocking is None:  # pragma: no branch
         blocking = np.random.rand() < 0.5 if randomly else True
