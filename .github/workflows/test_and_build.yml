@@ -17,6 +17,9 @@ on:
     branches:
       - main
 
+env:
+  KMP_DUPLICATE_LIB_OK: True
+
 jobs:
   rngs:
     # To achieve consistent coverage, we need a little bit of correlated collaboration.
