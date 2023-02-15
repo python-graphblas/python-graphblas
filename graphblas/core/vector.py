@@ -789,8 +789,12 @@ class Vector(BaseType):
         return cls.from_coo(indices, values, dtype, size=size, dup_op=dup_op, name=name)
 
     @classmethod
-    def from_iso_value(cls, value, size, dtype=None, *, name=None, **opts):
+    def from_scalar(cls, value, size, dtype=None, *, name=None, **opts):
         """Create a fully dense Vector filled with a scalar value.
+
+        For SuiteSparse:GraphBLAS backend, this creates an iso-valued full Vector
+        that stores a single value regardless of the size of the Vector, so large
+        vectors created by ``Vector.from_scalar`` will use very low memory.
 
         Parameters
         ----------
@@ -824,7 +828,7 @@ class Vector(BaseType):
                 value = cls()._expect_type(
                     value,
                     Scalar,
-                    within="from_iso_value",
+                    within="from_scalar",
                     keyword_name="value",
                     extra_message="Literal scalars also accepted.",
                 )
@@ -861,8 +865,8 @@ class Vector(BaseType):
         --------
         from_coo
         from_dict
-        from_iso_value
         from_pairs
+        from_scalar
         to_dense
 
         Returns
@@ -873,7 +877,7 @@ class Vector(BaseType):
         if values.ndim == 0:
             raise TypeError(
                 "values must be an array or list, not a scalar. "
-                "To create a dense Vector from a scalar, use `Vector.from_iso_value`."
+                "To create a dense Vector from a scalar, use `Vector.from_scalar`."
             )
         if values.ndim == 1 and dtype.np_type.subdtype is not None:
             raise ValueError("A >1d array is required to create a dense Vector with subdtype")

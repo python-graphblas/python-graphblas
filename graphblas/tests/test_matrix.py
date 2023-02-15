@@ -2897,8 +2897,8 @@ def test_expr_is_like_matrix(A):
         "from_dcsr",
         "from_dense",
         "from_dicts",
-        "from_iso_value",
         "from_edgelist",
+        "from_scalar",
         "from_values",
         "resize",
         "update",
@@ -2962,8 +2962,8 @@ def test_index_expr_is_like_matrix(A):
         "from_dense",
         "from_dicts",
         "from_edgelist",
-        "from_iso_value",
         "from_values",
+        "from_scalar",
         "resize",
     }
     assert attrs - expr_attrs == expected, (
@@ -4109,21 +4109,21 @@ def test_to_from_edgelist(A):
         Matrix.from_edgelist([[0, 1, 10], [2, 3, 20]], values=0)
 
 
-def test_from_iso_value():
-    A = Matrix.from_iso_value(1, nrows=2, ncols=3)
+def test_from_scalar():
+    A = Matrix.from_scalar(1, nrows=2, ncols=3)
     B = Matrix(int, nrows=2, ncols=3)
     B << 1
     assert A.isequal(B, check_dtype=True)
     assert_array_equal(A.to_dense(dtype=float), [[1.0, 1, 1], [1, 1, 1]])
-    A = Matrix.from_iso_value(Scalar.from_value(1), nrows=2, ncols=3)
+    A = Matrix.from_scalar(Scalar.from_value(1), nrows=2, ncols=3)
     assert A.isequal(B, check_dtype=True)
-    A = Matrix.from_iso_value(Scalar.from_value(1.0), 2, 3, int)
+    A = Matrix.from_scalar(Scalar.from_value(1.0), 2, 3, int)
     assert A.isequal(B, check_dtype=True)
     with pytest.raises(TypeError, match="missing"):
-        Matrix.from_iso_value(1, nrows=2)
+        Matrix.from_scalar(1, nrows=2)
     with pytest.raises(TypeError, match="Literal scalars also accepted"):
-        Matrix.from_iso_value(A, nrows=2, ncols=3)
-    A = Matrix.from_iso_value(1, dtype="INT64[2]", nrows=3, ncols=4)
+        Matrix.from_scalar(A, nrows=2, ncols=3)
+    A = Matrix.from_scalar(1, dtype="INT64[2]", nrows=3, ncols=4)
     B = Matrix("INT64[2]", nrows=3, ncols=4)
     B << [1, 1]
     assert A.isequal(B, check_dtype=True)
@@ -4155,7 +4155,7 @@ def test_to_dense_from_dense():
         Matrix.from_dense(np.arange(24).reshape(2, 3, 4), dtype=int)
     with pytest.raises(ValueError, match=">2d array"):
         Matrix.from_dense(np.arange(6).reshape(2, 3), dtype="INT64[2]")
-    with pytest.raises(TypeError, match="from_iso_value"):
+    with pytest.raises(TypeError, match="from_scalar"):
         Matrix.from_dense(1)
 
 

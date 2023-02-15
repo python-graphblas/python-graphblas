@@ -189,6 +189,7 @@ select = [
     "C4",  # flake8-comprehensions
     "DTZ",  # flake8-datetimez
     "T10",  # flake8-debugger
+    # "DJ",  # flake8-django
     # "EM",  # flake8-errmsg
     "EXE",  # flake8-executable
     "ISC",  # flake8-implicit-str-concat
@@ -217,6 +218,7 @@ select = [
     "TRY",  # tryceratops
     # "RSE",  # flake8-raise
     # "SLF",  # flake8-self
+    # "NPY",  # NumPy-specific rules
     "RUF",  # ruff-specific rules
 ]
 external = [

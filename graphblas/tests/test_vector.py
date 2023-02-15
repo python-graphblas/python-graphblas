@@ -1618,8 +1618,8 @@ def test_expr_is_like_vector(v):
         "from_coo",
         "from_dense",
         "from_dict",
-        "from_iso_value",
         "from_pairs",
+        "from_scalar",
         "from_values",
         "resize",
         "update",
@@ -1667,8 +1667,8 @@ def test_index_expr_is_like_vector(v):
         "from_coo",
         "from_dense",
         "from_dict",
-        "from_iso_value",
         "from_pairs",
+        "from_scalar",
         "from_values",
         "resize",
     }
@@ -2490,19 +2490,19 @@ def test_from_pairs():
         Vector.from_pairs([[1, 2, 3], [4, 5, 6]])
 
 
-def test_from_iso_value():
-    v = Vector.from_iso_value(1, size=3)
+def test_from_scalar():
+    v = Vector.from_scalar(1, size=3)
     w = Vector.from_coo([0, 1, 2], 1)
     assert v.isequal(w, check_dtype=True)
     assert_array_equal(v.to_dense(), [1, 1, 1])
-    v = Vector.from_iso_value(Scalar.from_value(1), size=3)
+    v = Vector.from_scalar(Scalar.from_value(1), size=3)
     assert v.isequal(w, check_dtype=True)
-    v = Vector.from_iso_value(Scalar.from_value(1.0), 3, int)
+    v = Vector.from_scalar(Scalar.from_value(1.0), 3, int)
     with pytest.raises(TypeError, match="missing"):
-        Vector.from_iso_value(1)
+        Vector.from_scalar(1)
     with pytest.raises(TypeError, match="Literal scalars also accepted"):
-        Vector.from_iso_value(v, size=2)
-    v = Vector.from_iso_value(1, dtype="INT64[2]", size=3)
+        Vector.from_scalar(v, size=2)
+    v = Vector.from_scalar(1, dtype="INT64[2]", size=3)
     w = Vector("INT64[2]", size=3)
     w << [1, 1]
     assert v.isequal(w, check_dtype=True)
@@ -2532,7 +2532,7 @@ def test_to_dense_from_dense():
         Vector.from_dense(np.arange(6).reshape(2, 3), dtype=int)
     with pytest.raises(ValueError, match=">1d array"):
         Vector.from_dense(np.arange(6), dtype="INT64[2]")
-    with pytest.raises(TypeError, match="from_iso_value"):
+    with pytest.raises(TypeError, match="from_scalar"):
         Vector.from_dense(1)
 
 

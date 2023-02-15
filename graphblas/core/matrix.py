@@ -1329,8 +1329,12 @@ class Matrix(BaseType):
         return cls.from_coo(row_indices, cols, values, dtype, nrows=nrows, ncols=ncols, name=name)
 
     @classmethod
-    def from_iso_value(cls, value, nrows, ncols, dtype=None, *, name=None, **opts):
+    def from_scalar(cls, value, nrows, ncols, dtype=None, *, name=None, **opts):
         """Create a fully dense Matrix filled with a scalar value.
+
+        For SuiteSparse:GraphBLAS backend, this creates an iso-valued full Matrix
+        that stores a single value regardless of the shape of the Matrix, so large
+        matrices created by ``Matrix.from_scalar`` will use very low memory.
 
         Parameters
         ----------
@@ -1363,7 +1367,7 @@ class Matrix(BaseType):
                 value = cls()._expect_type(
                     value,
                     Scalar,
-                    within="from_iso_value",
+                    within="from_scalar",
                     keyword_name="value",
                     extra_message="Literal scalars also accepted.",
                 )
@@ -1402,7 +1406,7 @@ class Matrix(BaseType):
         --------
         from_coo
         from_edgelist
-        from_iso_value
+        from_scalar
         to_dense
 
         Returns
@@ -1413,7 +1417,7 @@ class Matrix(BaseType):
         if values.ndim == 0:
             raise TypeError(
                 "values must be an array or list, not a scalar. "
-                "To create a dense Matrix from a scalar, use `Matrix.from_iso_value`."
+                "To create a dense Matrix from a scalar, use `Matrix.from_scalar`."
             )
         if values.ndim == 1:
             raise ValueError("A 2d array or scalar is required to create a dense Matrix")
