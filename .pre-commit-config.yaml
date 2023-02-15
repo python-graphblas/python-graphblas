@@ -56,7 +56,7 @@ repos:
         # These versions need updated manually
         - flake8==6.0.0
         - flake8-comprehensions==3.10.1
-        - flake8-bugbear==23.1.20
+        - flake8-bugbear==23.2.13
         - flake8-simplify==0.19.3
   - repo: https://github.com/asottile/yesqa
     rev: v1.4.0

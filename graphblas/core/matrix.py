@@ -473,6 +473,7 @@ class Matrix(BaseType):
         warnings.warn(
             "`Matrix.to_values(...)` is deprecated; please use `Matrix.to_coo(...)` instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         return self.to_coo(dtype, rows=rows, columns=columns, values=values, sort=sort)
 
@@ -810,6 +811,7 @@ class Matrix(BaseType):
         warnings.warn(
             "`Matrix.from_values(...)` is deprecated; please use `Matrix.from_coo(...)` instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         return cls.from_coo(
             rows, columns, values, dtype, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name

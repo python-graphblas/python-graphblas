@@ -3733,6 +3733,7 @@ class ss:
             "`Matrix.ss.scan_columnwise` is deprecated; "
             'please use `Matrix.ss.scan(order="columnwise")` instead.',
             DeprecationWarning,
+            stacklevel=2,
         )
         return prefix_scan(self._parent.T, op, name=name, within="scan_columnwise", **opts)
 
@@ -3754,6 +3755,7 @@ class ss:
         warnings.warn(
             "`Matrix.ss.scan_rowwise` is deprecated; please use `Matrix.ss.scan` instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         return prefix_scan(self._parent, op, name=name, within="scan_rowwise", **opts)
 
@@ -3920,6 +3922,7 @@ class ss:
         warnings.warn(
             "`Matrix.ss.selectk_rowwise` is deprecated; please use `Matrix.ss.selectk` instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         how = how.lower()
         fmt = "hypercsr"
@@ -3966,6 +3969,7 @@ class ss:
             "`Matrix.ss.selectk_columnwise` is deprecated; "
             'please use `Matrix.ss.selectk(order="columnwise")` instead.',
             DeprecationWarning,
+            stacklevel=2,
         )
         how = how.lower()
         fmt = "hypercsc"
@@ -4090,6 +4094,7 @@ class ss:
             "`Matrix.ss.compactify_rowwise` is deprecated; "
             "please use `Matrix.ss.compactify` instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         return self._compactify(
             how, reverse, asindex, "ncols", ncols, "hypercsr", "col_indices", name
@@ -4132,6 +4137,7 @@ class ss:
             "`Matrix.ss.compactify_columnwise` is deprecated; "
             'please use `Matrix.ss.compactify(order="columnwise")` instead.',
             DeprecationWarning,
+            stacklevel=2,
         )
         return self._compactify(
             how, reverse, asindex, "nrows", nrows, "hypercsc", "row_indices", name

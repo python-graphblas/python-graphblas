@@ -434,6 +434,7 @@ class Vector(BaseType):
         warnings.warn(
             "`Vector.to_values(...)` is deprecated; please use `Vector.to_coo(...)` instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         return self.to_coo(dtype, indices=indices, values=values, sort=sort)
 
@@ -680,6 +681,7 @@ class Vector(BaseType):
         warnings.warn(
             "`Vector.from_values(...)` is deprecated; please use `Vector.from_coo(...)` instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         return cls.from_coo(indices, values, dtype, size=size, dup_op=dup_op, name=name)
 
