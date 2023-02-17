@@ -416,6 +416,11 @@ class TypedBuiltinMonoid(TypedOpBase):
     def type2(self):
         return self.type
 
+    @property
+    def is_idempotent(self):
+        """True if ``monoid(x, x) == x`` for any x."""
+        return self.parent.is_idempotent
+
 
 class TypedBuiltinSemiring(TypedOpBase):
     __slots__ = ()
@@ -558,6 +563,7 @@ class TypedUserMonoid(TypedOpBase):
 
     commutes_to = TypedBuiltinMonoid.commutes_to
     type2 = TypedBuiltinMonoid.type2
+    is_idempotent = TypedBuiltinMonoid.is_idempotent
     __call__ = TypedBuiltinMonoid.__call__
 
 
@@ -756,10 +762,10 @@ class ParameterizedBinaryOp(ParameterizedUdf):
 
 
 class ParameterizedMonoid(ParameterizedUdf):
-    __slots__ = "binaryop", "identity", "__signature__"
+    __slots__ = "binaryop", "identity", "_is_idempotent", "__signature__"
     is_commutative = True
 
-    def __init__(self, name, binaryop, identity, *, anonymous=False):
+    def __init__(self, name, binaryop, identity, *, is_idempotent=False, anonymous=False):
         if type(binaryop) is not ParameterizedBinaryOp:
             raise TypeError("binaryop must be parameterized")
         self.binaryop = binaryop
@@ -776,6 +782,7 @@ class ParameterizedMonoid(ParameterizedUdf):
                     f"    identity{sig}"
                 )
         self.identity = identity
+        self._is_idempotent = is_idempotent
         if name is None:
             name = binaryop.name
         super().__init__(name, anonymous)
@@ -788,9 +795,16 @@ class ParameterizedMonoid(ParameterizedUdf):
         identity = self.identity
         if callable(identity):
             identity = identity(*args, **kwargs)
-        return Monoid.register_anonymous(binary, identity, self.name)
+        return Monoid.register_anonymous(
+            binary, identity, self.name, is_idempotent=self._is_idempotent
+        )
 
     commutes_to = TypedBuiltinMonoid.commutes_to
+
+    @property
+    def is_idempotent(self):
+        """True if ``monoid(x, x) == x`` for any x."""
+        return self._is_idempotent
 
     def __reduce__(self):
         name = f"monoid.{self.name}"
@@ -2491,7 +2505,7 @@ class Monoid(OpBase):
     as well as in the ``graphblas.ops`` combined namespace.
     """
 
-    __slots__ = "_binaryop", "_identity"
+    __slots__ = "_binaryop", "_identity", "_is_idempotent"
     is_commutative = True
     is_positional = False
     _custom_dtype = None
@@ -2517,12 +2531,14 @@ class Monoid(OpBase):
     }
 
     @classmethod
-    def _build(cls, name, binaryop, identity, *, anonymous=False):
+    def _build(cls, name, binaryop, identity, *, is_idempotent=False, anonymous=False):
         if type(binaryop) is not BinaryOp:
             raise TypeError(f"binaryop must be a BinaryOp, not {type(binaryop)}")
         if name is None:
             name = binaryop.name
-        new_type_obj = cls(name, binaryop, identity, anonymous=anonymous)
+        new_type_obj = cls(
+            name, binaryop, identity, is_idempotent=is_idempotent, anonymous=anonymous
+        )
         if not binaryop._is_udt:
             if not isinstance(identity, Mapping):
                 identities = dict.fromkeys(binaryop.types, identity)
@@ -2586,7 +2602,7 @@ class Monoid(OpBase):
         return op
 
     @classmethod
-    def register_anonymous(cls, binaryop, identity, name=None):
+    def register_anonymous(cls, binaryop, identity, name=None, *, is_idempotent=False):
         """Register a Monoid without registering it in the ``graphblas.monoid`` namespace.
 
         Because it is not registered in the namespace, the name is optional.
@@ -2599,17 +2615,21 @@ class Monoid(OpBase):
             Identity value of the monoid
         name : str, optional
             Name associated with the monoid
+        is_idempotent : bool, default False
+            Does ``op(x, x) == x`` for any x?
 
         Returns
         -------
         Function handle
         """
         if type(binaryop) is ParameterizedBinaryOp:
-            return ParameterizedMonoid(name, binaryop, identity, anonymous=True)
-        return cls._build(name, binaryop, identity, anonymous=True)
+            return ParameterizedMonoid(
+                name, binaryop, identity, is_idempotent=is_idempotent, anonymous=True
+            )
+        return cls._build(name, binaryop, identity, is_idempotent=is_idempotent, anonymous=True)
 
     @classmethod
-    def register_new(cls, name, binaryop, identity, *, lazy=False):
+    def register_new(cls, name, binaryop, identity, *, is_idempotent=False, lazy=False):
         """Register a Monoid. The name will be used to identify the Monoid in the
         ``graphblas.monoid`` namespace.
 
@@ -2624,10 +2644,10 @@ class Monoid(OpBase):
                 {"name": name, "binaryop": binaryop, "identity": identity},
             )
         elif type(binaryop) is ParameterizedBinaryOp:
-            monoid = ParameterizedMonoid(name, binaryop, identity)
+            monoid = ParameterizedMonoid(name, binaryop, identity, is_idempotent=is_idempotent)
             setattr(module, funcname, monoid)
         else:
-            monoid = cls._build(name, binaryop, identity)
+            monoid = cls._build(name, binaryop, identity, is_idempotent=is_idempotent)
             setattr(module, funcname, monoid)
         # Also save it to `graphblas.op` if not yet defined
         opmodule, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
@@ -2641,10 +2661,11 @@ class Monoid(OpBase):
         if not lazy:
             return monoid
 
-    def __init__(self, name, binaryop=None, identity=None, *, anonymous=False):
+    def __init__(self, name, binaryop=None, identity=None, *, is_idempotent=False, anonymous=False):
         super().__init__(name, anonymous=anonymous)
         self._binaryop = binaryop
         self._identity = identity
+        self._is_idempotent = is_idempotent
         if binaryop is not None:
             binaryop._monoid = self
             if binaryop._is_udt:
@@ -2670,6 +2691,11 @@ class Monoid(OpBase):
     def identities(self):
         """The per-dtype identity values for the Monoid."""
         return {dtype: val.identity for dtype, val in self._typed_ops.items()}
+
+    @property
+    def is_idempotent(self):
+        """True if ``monoid(x, x) == x`` for any x."""
+        return self._is_idempotent
 
     @property
     def _is_udt(self):
@@ -2712,6 +2738,23 @@ class Monoid(OpBase):
                 cur_op.types[dtype] = BOOL
                 cur_op.coercions[dtype] = BOOL
                 cur_op._typed_ops[dtype] = bool_op
+
+        # Builtin monoids that are idempotent; i.e., `op(x, x) == x` for any x
+        for name in {"any", "band", "bor", "land", "lor", "max", "min"}:
+            getattr(monoid, name)._is_idempotent = True
+        for name in {
+            "bitwise_and",
+            "bitwise_or",
+            "fmax",
+            "fmin",
+            "gcd",
+            "logical_and",
+            "logical_or",
+            "maximum",
+            "minimum",
+        }:
+            getattr(monoid.numpy, name)._is_idempotent = True
+
         # Allow some functions to work on UDTs
         any_ = monoid.any
         any_._identity = 0
