@@ -1616,8 +1616,10 @@ def test_expr_is_like_vector(v):
         "build",
         "clear",
         "from_coo",
+        "from_dense",
         "from_dict",
         "from_pairs",
+        "from_scalar",
         "from_values",
         "resize",
         "update",
@@ -1663,8 +1665,10 @@ def test_index_expr_is_like_vector(v):
         "build",
         "clear",
         "from_coo",
+        "from_dense",
         "from_dict",
         "from_pairs",
+        "from_scalar",
         "from_values",
         "resize",
     }
@@ -2486,6 +2490,52 @@ def test_from_pairs():
         Vector.from_pairs([[1, 2, 3], [4, 5, 6]])
 
 
+def test_from_scalar():
+    v = Vector.from_scalar(1, size=3)
+    w = Vector.from_coo([0, 1, 2], 1)
+    assert v.isequal(w, check_dtype=True)
+    assert_array_equal(v.to_dense(), [1, 1, 1])
+    v = Vector.from_scalar(Scalar.from_value(1), size=3)
+    assert v.isequal(w, check_dtype=True)
+    v = Vector.from_scalar(Scalar.from_value(1.0), 3, int)
+    with pytest.raises(TypeError, match="missing"):
+        Vector.from_scalar(1)
+    with pytest.raises(TypeError, match="Literal scalars also accepted"):
+        Vector.from_scalar(v, size=2)
+    v = Vector.from_scalar(1, dtype="INT64[2]", size=3)
+    w = Vector("INT64[2]", size=3)
+    w << [1, 1]
+    assert v.isequal(w, check_dtype=True)
+
+
+def test_to_dense_from_dense():
+    v = Vector.from_dense([1, 2, 3])
+    w = Vector.from_coo([0, 1, 2], [1, 2, 3])
+    assert v.isequal(w, check_dtype=True)
+    assert_array_equal(v.to_dense(dtype=int), [1, 2, 3])
+    v = Vector.from_dense([1, 2, 3])
+    v.resize(4)
+    w = Vector.from_coo([0, 1, 2], [1, 2, 3], size=4)
+    assert v.isequal(w, check_dtype=True)
+    assert_array_equal(v.to_dense(4.5, dtype=float), [1, 2, 3, 4.5])
+    assert_array_equal(v.to_dense(4.5), [1, 2, 3, 4.5])  # Scalar type can upcast
+    assert_array_equal(v.to_dense(Scalar.from_value(4)), [1, 2, 3, 4])
+    with pytest.raises(TypeError, match="fill_value must be given"):
+        v.to_dense()
+    with pytest.raises(TypeError, match="Bad type for keyword argument `fill_value"):
+        v.to_dense(object())
+    v = Vector.from_dense([1, 2])
+    w = Vector.from_coo([0, 1], [1, 2], size=2)
+    assert v.isequal(w, check_dtype=True)
+    assert_array_equal(v.to_dense(dtype=float), [1.0, 2])
+    with pytest.raises(ValueError, match="must be 1d"):
+        Vector.from_dense(np.arange(6).reshape(2, 3), dtype=int)
+    with pytest.raises(ValueError, match=">1d array"):
+        Vector.from_dense(np.arange(6), dtype="INT64[2]")
+    with pytest.raises(TypeError, match="from_scalar"):
+        Vector.from_dense(1)
+
+
 @pytest.mark.skipif("not suitesparse")
 def test_ss_sort(v):
     # For equal values, indices are guaranteed to be sorted
@@ -2535,6 +2585,15 @@ def test_subarray_dtypes():
     w = Vector.from_pairs([[1, [0, 1, 2, 3]], [3, [4, 5, 6, 7]], [5, [8, 9, 10, 11]]])
     assert v.isequal(w, check_dtype=True)
 
+    filled1 = Vector.from_dense(v.to_dense(0))
+    filled2 = v.dup()
+    filled2[[0, 2, 4]] = 0
+    assert filled1.isequal(filled2, check_dtype=True)
+    filled1 = Vector.from_dense(v.to_dense([6, 5, 4, 3]))
+    filled2 = v.dup()
+    filled2[[0, 2, 4]] = [6, 5, 4, 3]
+    assert filled1.isequal(filled2, check_dtype=True)
+
     full1 = Vector.from_coo([0, 1, 2], a)
     full2 = Vector("INT64[4]", size=3)
     full2[0] = [0, 1, 2, 3]
@@ -2543,6 +2602,10 @@ def test_subarray_dtypes():
     assert full1.isequal(full2, check_dtype=True)
     full2 = Vector("INT64[4]", size=3)
     full2[:] = a
+    assert full1.isequal(full2, check_dtype=True)
+    full2 = Vector.from_dense(a)
+    assert full1.isequal(full2, check_dtype=True)
+    full2 = Vector.from_dense(full1.to_dense())
     assert full1.isequal(full2, check_dtype=True)
     if suitesparse:
         w = Vector.ss.import_sparse(indices=[1, 3, 5], values=a, size=6)

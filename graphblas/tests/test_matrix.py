@@ -2881,7 +2881,6 @@ def test_expr_is_like_matrix(A):
         "_deserialize",
         "_extract_element",
         "_from_csx",
-        "_from_dense",
         "_from_obj",
         "_name_counter",
         "_parent",
@@ -2896,8 +2895,10 @@ def test_expr_is_like_matrix(A):
         "from_csr",
         "from_dcsc",
         "from_dcsr",
+        "from_dense",
         "from_dicts",
         "from_edgelist",
+        "from_scalar",
         "from_values",
         "resize",
         "update",
@@ -2944,7 +2945,6 @@ def test_index_expr_is_like_matrix(A):
         "_deserialize",
         "_extract_element",
         "_from_csx",
-        "_from_dense",
         "_from_obj",
         "_name_counter",
         "_parent",
@@ -2959,9 +2959,11 @@ def test_index_expr_is_like_matrix(A):
         "from_csr",
         "from_dcsc",
         "from_dcsr",
+        "from_dense",
         "from_dicts",
         "from_edgelist",
         "from_values",
+        "from_scalar",
         "resize",
     }
     assert attrs - expr_attrs == expected, (
@@ -4107,6 +4109,56 @@ def test_to_from_edgelist(A):
         Matrix.from_edgelist([[0, 1, 10], [2, 3, 20]], values=0)
 
 
+def test_from_scalar():
+    A = Matrix.from_scalar(1, nrows=2, ncols=3)
+    B = Matrix(int, nrows=2, ncols=3)
+    B << 1
+    assert A.isequal(B, check_dtype=True)
+    assert_array_equal(A.to_dense(dtype=float), [[1.0, 1, 1], [1, 1, 1]])
+    A = Matrix.from_scalar(Scalar.from_value(1), nrows=2, ncols=3)
+    assert A.isequal(B, check_dtype=True)
+    A = Matrix.from_scalar(Scalar.from_value(1.0), 2, 3, int)
+    assert A.isequal(B, check_dtype=True)
+    with pytest.raises(TypeError, match="missing"):
+        Matrix.from_scalar(1, nrows=2)
+    with pytest.raises(TypeError, match="Literal scalars also accepted"):
+        Matrix.from_scalar(A, nrows=2, ncols=3)
+    A = Matrix.from_scalar(1, dtype="INT64[2]", nrows=3, ncols=4)
+    B = Matrix("INT64[2]", nrows=3, ncols=4)
+    B << [1, 1]
+    assert A.isequal(B, check_dtype=True)
+
+
+def test_to_dense_from_dense():
+    A = Matrix.from_dense(np.arange(6).reshape(2, 3))
+    B = Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], np.arange(6))
+    assert A.isequal(B, check_dtype=True)
+    assert_array_equal(A.to_dense(dtype=int), [[0, 1, 2], [3, 4, 5]])
+    assert_array_equal(A.T.to_dense(dtype=int), [[0, 3], [1, 4], [2, 5]])
+    del A[0, 0]
+    assert_array_equal(A.to_dense(6.5), [[6.5, 1, 2], [3, 4, 5]])
+    assert_array_equal(A.to_dense(6.5, int), [[6, 1, 2], [3, 4, 5]])
+    assert_array_equal(A.to_dense(Scalar.from_value(6.5)), [[6.5, 1, 2], [3, 4, 5]])
+
+    A = Matrix.from_dense(np.arange(6).reshape(2, 3))
+    A.resize(3, 4)
+    B.resize(3, 4)
+    assert A.isequal(B, check_dtype=True)
+    assert_array_equal(A.to_dense(10), [[0, 1, 2, 10], [3, 4, 5, 10], [10, 10, 10, 10]])
+    with pytest.raises(ValueError, match="is required to create a dense"):
+        Matrix.from_dense([1, 2, 3])
+    with pytest.raises(TypeError, match="fill_value must be given"):
+        A.to_dense()
+    with pytest.raises(TypeError, match="Bad type for keyword argument `fill_value"):
+        A.to_dense(object())
+    with pytest.raises(ValueError, match="must be 2d"):
+        Matrix.from_dense(np.arange(24).reshape(2, 3, 4), dtype=int)
+    with pytest.raises(ValueError, match=">2d array"):
+        Matrix.from_dense(np.arange(6).reshape(2, 3), dtype="INT64[2]")
+    with pytest.raises(TypeError, match="from_scalar"):
+        Matrix.from_dense(1)
+
+
 @pytest.mark.skipif("not suitesparse")
 def test_ss_sort(A):
     A[3, 0] = 9
@@ -4263,6 +4315,10 @@ def test_subarray_dtypes():
     Full2 = Matrix("INT64[4]", nrows=2, ncols=3)
     Full2[:, :] = b2
     assert Full1.isequal(Full2, check_dtype=True)
+    Full2 = Matrix.from_dense(b2)
+    assert Full1.isequal(Full2, check_dtype=True)
+    Full2 = Matrix.from_dense(Full1.to_dense())
+    assert Full2.isequal(Full2, check_dtype=True)
     if suitesparse:
         Full2 = Matrix.ss.import_fullr(b2)
         assert Full1.isequal(Full2, check_dtype=True)

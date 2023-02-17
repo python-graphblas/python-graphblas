@@ -106,6 +106,22 @@ def values_to_numpy_buffer(
     return array, dtype
 
 
+def normalize_values(self, values, dtype, shape=None, is_iso=False):
+    """Expand and/or update dtype of values array."""
+    if dtype is not None:
+        dtype = lookup_dtype(dtype)
+        if dtype != self.dtype:
+            values = values.astype(dtype.np_type)  # copies
+    else:
+        dtype = self.dtype
+    if is_iso:
+        if dtype.np_type.subdtype is None:
+            values = np.broadcast_to(values, shape)
+        else:
+            values = np.broadcast_to(values, shape + values.shape)
+    return values
+
+
 def get_shape(nrows, ncols, dtype=None, **arrays):
     if nrows is None or ncols is None:
         # Get nrows and ncols from the first 2d array
@@ -367,4 +383,7 @@ def _autogenerate_code(
         f.write(new_text)
     import subprocess
 
-    subprocess.check_call(["black", filename])
+    try:
+        subprocess.check_call(["black", filename])
+    except FileNotFoundError:  # pragma: no cover (safety)
+        pass  # It's okay if `black` isn't installed; pre-commit hooks will do linting

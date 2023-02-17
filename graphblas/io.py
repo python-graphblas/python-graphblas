@@ -4,6 +4,7 @@ import numpy as _np
 
 from . import backend as _backend
 from .core.matrix import Matrix as _Matrix
+from .core.utils import normalize_values as _normalize_values
 from .core.utils import output_type as _output_type
 from .core.vector import Vector as _Vector
 from .dtypes import lookup_dtype as _lookup_dtype
@@ -57,9 +58,13 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     return from_scipy_sparse(A, name=name)
 
 
-# TODO: add parameter to indicate empty value (default is 0 and NaN)
-def from_numpy(m):
+def from_numpy(m):  # pragma: no cover (deprecated)
     """Create a sparse Vector or Matrix from a dense numpy array.
+
+    .. deprecated:: 2023.2.0
+        `from_numpy` will be removed in a future release.
+        Use `Vector.from_dense` or `Matrix.from_dense` instead.
+        Will be removed in version 2023.10.0 or later
 
     A value of 0 is considered as "missing".
 
@@ -74,10 +79,21 @@ def from_numpy(m):
     m : np.ndarray
         Input array
 
+    See Also
+    --------
+    Matrix.from_dense
+    Vector.from_dense
+    from_scipy_sparse
+
     Returns
     -------
     Vector or Matrix
     """
+    _warn(
+        "`graphblas.io.from_numpy` is deprecated; "
+        "use `Matrix.from_dense` and `Vector.from_dense` instead.",
+        DeprecationWarning,
+    )
     if m.ndim > 2:
         raise _GraphblasException("m.ndim must be <= 2")
 
@@ -303,8 +319,13 @@ def to_networkx(m, edge_attribute="weight"):
     return G
 
 
-def to_numpy(m):
+def to_numpy(m):  # pragma: no cover (deprecated)
     """Create a dense numpy array from a sparse Vector or Matrix.
+
+    .. deprecated:: 2023.2.0
+        `to_numpy` will be removed in a future release.
+        Use `Vector.to_dense` or `Matrix.to_dense` instead.
+        Will be removed in version 2023.10.0 or later
 
     Missing values will become 0 in the output.
 
@@ -315,10 +336,21 @@ def to_numpy(m):
     m : Vector or Matrix
         GraphBLAS Vector or Matrix
 
+    See Also
+    --------
+    to_scipy_sparse
+    Matrix.to_dense
+    Vector.to_dense
+
     Returns
     -------
     np.ndarray
     """
+    _warn(
+        "`graphblas.io.to_numpy` is deprecated; "
+        "use `Matrix.to_dense` and `Vector.to_dense` instead.",
+        DeprecationWarning,
+    )
     try:
         import scipy  # noqa: F401
     except ImportError:  # pragma: no cover (import)
@@ -391,13 +423,10 @@ def to_scipy_sparse(A, format="csr"):
                 info["col_indices"] = info["row_indices"]
         else:
             info = A.ss.export(format, sort=True)
-        if info["is_iso"]:
-            info["values"] = _np.broadcast_to(info["values"], A._nvals)
+        values = _normalize_values(A, info["values"], None, (A._nvals,), info["is_iso"])
         if format == "csr":
-            return ss.csr_array(
-                (info["values"], info["col_indices"], info["indptr"]), shape=A.shape
-            )
-        return ss.csc_array((info["values"], info["row_indices"], info["indptr"]), shape=A.shape)
+            return ss.csr_array((values, info["col_indices"], info["indptr"]), shape=A.shape)
+        return ss.csc_array((values, info["row_indices"], info["indptr"]), shape=A.shape)
     elif format == "csr":
         indptr, cols, vals = A.to_csr()
         return ss.csr_array((vals, cols, indptr), shape=A.shape)
@@ -603,11 +632,7 @@ def mmread(source, *, dup_op=None, name=None):
         return _Matrix.from_coo(
             array.row, array.col, array.data, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
         )
-    if _backend == "suitesparse":
-        return _Matrix.ss.import_fullr(values=array, take_ownership=True, name=name)
-    rv = _Matrix(array.dtype, *array.shape, name=name)
-    rv[...] = array
-    return rv
+    return _Matrix.from_dense(array, name=name)
 
 
 def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=None):
