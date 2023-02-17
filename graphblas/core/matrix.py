@@ -1338,6 +1338,9 @@ class Matrix(BaseType):
         that stores a single value regardless of the shape of the Matrix, so large
         matrices created by ``Matrix.from_scalar`` will use very low memory.
 
+        If instead you want to create a new iso-valued Matrix with the same structure
+        as an existing Matrix, you may do: ``C = binary.second(A, value).new()``.
+
         Parameters
         ----------
         value : scalar

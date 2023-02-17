@@ -798,6 +798,9 @@ class Vector(BaseType):
         that stores a single value regardless of the size of the Vector, so large
         vectors created by ``Vector.from_scalar`` will use very low memory.
 
+        If instead you want to create a new iso-valued Vector with the same structure
+        as an existing Vector, you may do: ``w = binary.second(v, value).new()``.
+
         Parameters
         ----------
         value : scalar
