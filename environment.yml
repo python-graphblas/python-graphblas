@@ -23,6 +23,7 @@ dependencies:
     - pandas
     # For I/O
     - awkward
+    # - fast_matrix_market  # Coming soon...
     - networkx
     - scipy
     - sparse
@@ -77,6 +78,7 @@ dependencies:
     # - lxml
     # - make
     # - memory_profiler
+    # - nbqa
     # - netcdf4
     # - networkit
     # - nxviz

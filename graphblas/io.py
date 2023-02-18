@@ -467,6 +467,7 @@ def to_awkward(A, format=None):
     """
     try:
         # awkward version 1
+        # MAINT: we can probably drop awkward v1 at the end of 2024 or 2025
         import awkward._v2 as ak
         from awkward._v2.forms.listoffsetform import ListOffsetForm
         from awkward._v2.forms.numpyform import NumpyForm

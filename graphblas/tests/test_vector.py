@@ -1727,7 +1727,7 @@ def test_ss_random(v):
         elif r.isequal(r4):
             seen.add("r4")
         else:  # pragma: no cover (sanity)
-            raise AssertionError()
+            raise AssertionError
         if len(seen) == 4:
             break
     for k in range(1, v.nvals + 1):
