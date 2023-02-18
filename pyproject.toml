@@ -251,6 +251,7 @@ ignore = [
     # Intentionally ignored
     "COM812",  # Trailing comma missing
     "D203",  # 1 blank line required before class docstring (Note: conflicts with D211, which is preferred)
+    "D400",  # First line should end with a period (Note: prefer D415, which also allows "?" and "!")
     "PLR0911",  # Too many return statements
     "PLR0912",  # Too many branches
     "PLR0913",  # Too many arguments to function call

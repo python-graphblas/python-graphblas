@@ -297,6 +297,8 @@ def test_monoid_parameterized():
     assert bin_op.monoid is monoid
     assert bin_op(1).monoid is monoid(1)
     assert monoid(2) is bin_op(2).monoid
+    assert not monoid.is_idempotent
+    assert not monoid(1).is_idempotent
     # However, this still fails.
     # For this to work, we would need `bin_op1` to know it was created from a
     # ParameterizedBinaryOp. It would then need to check to see if the parameterized
@@ -353,9 +355,12 @@ def test_monoid_parameterized():
         raise ValueError("hahaha!")
 
     assert bin_op.monoid is None
-    monoid = Monoid.register_anonymous(bin_op, bad_identity, name="broken_monoid")
+    monoid = Monoid.register_anonymous(
+        bin_op, bad_identity, is_idempotent=True, name="broken_monoid"
+    )
     assert bin_op.monoid is monoid
     assert bin_op(1).monoid is None
+    assert monoid.is_idempotent
 
 
 @pytest.mark.slow
@@ -1327,3 +1332,16 @@ def test_deprecated():
         gb.op.secondj
     with pytest.warns(DeprecationWarning, match="please use"):
         gb.agg.argmin
+
+
+def test_is_idempotent():
+    assert monoid.min.is_idempotent
+    assert monoid.max[int].is_idempotent
+    assert monoid.lor.is_idempotent
+    assert monoid.band.is_idempotent
+    assert monoid.numpy.gcd.is_idempotent
+    assert not monoid.plus.is_idempotent
+    assert not monoid.times[float].is_idempotent
+    assert not monoid.numpy.equal.is_idempotent
+    with pytest.raises(AttributeError):
+        binary.min.is_idempotent
