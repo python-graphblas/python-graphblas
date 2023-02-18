@@ -12,8 +12,11 @@ def __getattr__(key):
     if key in _deprecated:
         import warnings
 
+        alt = {"positioni": "indexunary.rowindex", "positionj": "indexunary.colindex"}.get(key, "")
+        if alt:
+            alt = f"`gb.{alt}` or "
         warnings.warn(
-            f"`gb.unary.{key}` is deprecated; please use `gb.unary.ss.{key}` instead. "
+            f"`gb.unary.{key}` is deprecated; please use {alt}`gb.unary.ss.{key}` instead. "
             f"`{key}` is specific to SuiteSparse:GraphBLAS. "
             f"`gb.unary.{key}` will be removed in version 2023.9.0 or later.",
             DeprecationWarning,
