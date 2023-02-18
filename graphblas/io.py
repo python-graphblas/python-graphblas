@@ -603,16 +603,27 @@ def to_pydata_sparse(A, format="coo"):
     return s.asformat(format)
 
 
-def mmread(source, *, dup_op=None, name=None):
+def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
     """Create a GraphBLAS Matrix from the contents of a Matrix Market file.
 
     This uses `scipy.io.mmread
-    <https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.mmread.html>`_.
+    <https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.mmread.html>`_
+    or `fast_matrix_market.mmread
+    <https://github.com/alugowski/fast_matrix_market/tree/main/python>`_.
+
+    By default, ``fast_matrix_market`` will be used if available, because it
+    is faster. Additional keyword arguments in ``**kwargs`` will be passed
+    to the engine's ``mmread``. For example, ``parallelism=8`` will set the
+    number of threads to use to 8 when using ``fast_matrix_market``.
 
     Parameters
     ----------
-    filename : str or file
+    source : str or file
         Filename (.mtx or .mtz.gz) or file-like object
+    engine : {"auto", "scipy", "fmm", "fast_matrix_market"}, default "auto"
+        How to read the matrix market file. "scipy" uses ``scipy.io.mmread``,
+        "fmm" and "fast_matrix_market" uses ``fast_matrix_market.mmread``,
+        and "auto" will use "fast_matrix_market" if available.
     dup_op : BinaryOp, optional
         Aggregation function for duplicate coordinates (if found)
     name : str, optional
@@ -627,7 +638,21 @@ def mmread(source, *, dup_op=None, name=None):
         from scipy.sparse import isspmatrix_coo
     except ImportError:  # pragma: no cover (import)
         raise ImportError("scipy is required to read Matrix Market files") from None
-    array = mmread(source)
+    engine = engine.lower()
+    if engine in {"auto", "fmm", "fast_matrix_market"}:
+        try:
+            from fast_matrix_market import mmread  # noqa: F811
+        except ImportError:  # pragma: no cover (import)
+            if engine != "auto":
+                raise ImportError(
+                    "fast_matrix_market is required to read Matrix Market files "
+                    f'using the "{engine}" engine'
+                ) from None
+    elif engine != "scipy":
+        raise ValueError(
+            f'Bad engine value: {engine!r}. Must be "auto", "scipy", "fmm", or "fast_matrix_market"'
+        )
+    array = mmread(source, **kwargs)
     if isspmatrix_coo(array):
         nrows, ncols = array.shape
         return _Matrix.from_coo(
@@ -636,7 +661,17 @@ def mmread(source, *, dup_op=None, name=None):
     return _Matrix.from_dense(array, name=name)
 
 
-def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=None):
+def mmwrite(
+    target,
+    matrix,
+    engine="auto",
+    *,
+    comment="",
+    field=None,
+    precision=None,
+    symmetry=None,
+    **kwargs,
+):
     """Write a Matrix Market file from the contents of a GraphBLAS Matrix.
 
     This uses `scipy.io.mmwrite
@@ -644,10 +679,14 @@ def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=
 
     Parameters
     ----------
-    filename : str or file target
+    target : str or file target
         Filename (.mtx) or file-like object opened for writing
     matrix : Matrix
         Matrix to be written
+    engine : {"auto", "scipy", "fmm", "fast_matrix_market"}, default "auto"
+        How to read the matrix market file. "scipy" uses ``scipy.io.mmwrite``,
+        "fmm" and "fast_matrix_market" uses ``fast_matrix_market.mmwrite``,
+        and "auto" will use "fast_matrix_market" if available.
     comment : str, optional
         Comments to be prepended to the Matrix Market file
     field : str
@@ -661,8 +700,30 @@ def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=
         from scipy.io import mmwrite
     except ImportError:  # pragma: no cover (import)
         raise ImportError("scipy is required to write Matrix Market files") from None
+    engine = engine.lower()
+    if engine in {"auto", "fmm", "fast_matrix_market"}:
+        try:
+            from fast_matrix_market import mmwrite  # noqa: F811
+        except ImportError:  # pragma: no cover (import)
+            if engine != "auto":
+                raise ImportError(
+                    "fast_matrix_market is required to write Matrix Market files "
+                    f'using the "{engine}" engine'
+                ) from None
+    elif engine != "scipy":
+        raise ValueError(
+            f'Bad engine value: {engine!r}. Must be "auto", "scipy", "fmm", or "fast_matrix_market"'
+        )
     if _backend == "suitesparse" and matrix.ss.format in {"fullr", "fullc"}:
         array = matrix.ss.export()["values"]
     else:
         array = to_scipy_sparse(matrix, format="coo")
-    mmwrite(target, array, comment=comment, field=field, precision=precision, symmetry=symmetry)
+    mmwrite(
+        target,
+        array,
+        comment=comment,
+        field=field,
+        precision=precision,
+        symmetry=symmetry,
+        **kwargs,
+    )

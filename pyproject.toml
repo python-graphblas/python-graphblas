@@ -70,6 +70,7 @@ io = [
     "scipy >=1.8",
     "awkward >=1.9",
     "sparse >=0.12",
+    "fast-matrix-market >=1.4.5",
 ]
 viz = [
     "matplotlib >=3.5",
@@ -85,6 +86,7 @@ complete = [
     "scipy >=1.8",
     "awkward >=1.9",
     "sparse >=0.12",
+    "fast-matrix-market >=1.4.5",
     "matplotlib >=3.5",
     "pytest",
 ]
