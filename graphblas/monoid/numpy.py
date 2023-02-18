@@ -91,6 +91,7 @@ if (
 ):
     # Incorrect behavior was introduced in numba 0.56.2 and numpy 1.23
     # See: https://github.com/numba/numba/issues/8478
+    # MAINT: we may be able to remove the behavior-based check above in 2025
     _monoid_identities["fmax"].update(
         {
             "BOOL": False,

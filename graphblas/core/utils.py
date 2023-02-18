@@ -278,12 +278,12 @@ class class_property:
         self.member_property = member_property
         self.exceptional = exceptional
 
-    def __get__(self, obj, type=None):
+    def __get__(self, instance, owner=None):
         if self.exceptional:
             raise AttributeError(self.classval)
-        if obj is None:
+        if instance is None:
             return self.classval
-        return self.member_property.__get__(obj, type)
+        return self.member_property.__get__(instance, owner)
 
     @property
     def __set__(self):  # pylint: disable=unexpected-special-method-signature

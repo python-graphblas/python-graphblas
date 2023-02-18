@@ -599,7 +599,7 @@ class ParameterizedUdf:
         self.__call__ = lru_cache(maxsize=1024)(method)
 
     def _call(self, *args, **kwargs):
-        raise NotImplementedError()
+        raise NotImplementedError
 
 
 class ParameterizedUnaryOp(ParameterizedUdf):
@@ -1671,7 +1671,7 @@ class SelectOp(OpBase):
         )
         if not all(x == BOOL for x in iop.types.values()):
             raise ValueError("SelectOp must have BOOL return type")
-        for type, t in iop._typed_ops.items():
+        for type_, t in iop._typed_ops.items():
             if iop.orig_func is not None:
                 op = cls._typed_user_class(
                     obj,
@@ -1691,8 +1691,8 @@ class SelectOp(OpBase):
                 )
             # type is not always equal to t.type, so can't use op._add
             # but otherwise perform the same logic
-            obj._typed_ops[type] = op
-            obj.types[type] = op.return_type
+            obj._typed_ops[type_] = op
+            obj.types[type_] = op.return_type
         return obj
 
     @classmethod

@@ -138,10 +138,11 @@ filterwarnings = [
     # See: https://docs.python.org/3/library/warnings.html#describing-warning-filters
     # and: https://docs.pytest.org/en/7.2.x/how-to/capture-warnings.html#controlling-warnings
     "error",
+    # MAINT: we can drop support for sparse <0.13 at any time
     "ignore:`np.bool` is a deprecated alias:DeprecationWarning:sparse._umath",  # sparse <0.13
     # setuptools v67.3.0 deprecated `pkg_resources.declare_namespace` on 13 Feb 2023. See:
     # https://setuptools.pypa.io/en/latest/history.html#v67-3-0
-    # TODO: check if this is still necessary in 2025
+    # MAINT: check if this is still necessary in 2025
     "ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning:pkg_resources",
 ]
 
@@ -177,42 +178,44 @@ select = [
     "F",  # pyflakes
     "E",  # pycodestyle Error
     "W",  # pycodestyle Warning
-    # "C90",  # mccabe
-    # "I",  # isort
-    # "N",  # pep8-naming
+    # "C90",  # mccabe (Too strict, but maybe we should make things less complex)
+    # "I",  # isort (Should we replace `isort` with this?)
+    "N",  # pep8-naming
     "D",  # pydocstyle
     "UP",  # pyupgrade
     "YTT",  # flake8-2020
-    # "ANN",  # flake8-annotations
-    "S",  # bandit
-    # "BLE",  # flake8-blind-except
-    # "FBT",  # flake8-boolean-trap
+    # "ANN",  # flake8-annotations (We don't use annotations yet)
+    "S",  # x. bandit
+    # "BLE",  # flake8-blind-except (Maybe consider)
+    # "FBT",  # flake8-boolean-trap (Why?)
     "B",  # flake8-bugbear
-    # "A",  # flake8-builtins
+    "A",  # flake8-builtins
     "COM",  # flake8-commas
     "C4",  # flake8-comprehensions
     "DTZ",  # flake8-datetimez
     "T10",  # flake8-debugger
-    # "DJ",  # flake8-django
-    # "EM",  # flake8-errmsg
+    # "DJ",  # flake8-django (We don't use django)
+    # "EM",  # xx. flake8-errmsg (Perhaps nicer, but too much work)
     "EXE",  # flake8-executable
     "ISC",  # flake8-implicit-str-concat
-    # "ICN",  # flake8-import-conventions
+    # "ICN",  # flake8-import-conventions (Doesn't allow "_" prefix such as `_np`)
     "G",  # flake8-logging-format
-    # "INP",  # flake8-no-pep420
+    "INP",  # flake8-no-pep420
     "PIE",  # flake8-pie
     "T20",   # flake8-print
-    # "PYI",  # flake8-pyi
+    # "PYI",  # flake8-pyi (We don't have stub files yet)
     "PT",  # flake8-pytest-style
-    "Q",  # flake8-quotes
-    # "RET",  # flake8-return
+    "Q",  # xxx. flake8-quotes
+    "RSE", # flake8-raise
+    "RET",  # flake8-return
+    # "SLF",  # flake8-self (We can use our own private variables--sheesh!)
     "SIM",  # flake8-simplify
-    # "TID",  # flake8-tidy-imports
+    # "TID",  # flake8-tidy-imports (Rely on isort and our own judgement)
     "TCH",  # flake8-type-checking
-    # "ARG",  # flake8-unused-arguments
-    # "PTH",  # flake8-use-pathlib
-    # "ERA",  # eradicate
-    # "PD",  # pandas-vet
+    # "ARG",  # flake8-unused-arguments (Sometimes helpful, but too strict)
+    # "PTH",  # flake8-use-pathlib (Is there a strong argument for this?)
+    # "ERA",  # eradicate (We like code in comments!)
+    # "PD",  # xl. pandas-vet (Intended for scripts that use pandas, not libraries)
     "PGH",  # pygrep-hooks
     "PL",  # pylint
     "PLC",  # pylint Convention
@@ -220,8 +223,6 @@ select = [
     "PLR",  # pylint Refactor
     "PLW",  # pylint Warning
     "TRY",  # tryceratops
-    # "RSE",  # flake8-raise
-    # "SLF",  # flake8-self
     "NPY",  # NumPy-specific rules
     "RUF",  # ruff-specific rules
 ]
@@ -252,14 +253,21 @@ ignore = [
     "COM812",  # Trailing comma missing
     "D203",  # 1 blank line required before class docstring (Note: conflicts with D211, which is preferred)
     "D400",  # First line should end with a period (Note: prefer D415, which also allows "?" and "!")
+    "N801",  # Class name ... should use CapWords convention (Note:we have a few exceptions to this)
+    "N802",  # Function name ... should be lowercase
+    "N803",  # Argument name ... should be lowercase (Maybe okay--except in tests)
+    "N806",  # Variable ... in function should be lowercase
+    "N807",  # Function name should not start and end with `__`
+    "N818",  # Exception name ... should be named with an Error suffix (Note: good advice)
     "PLR0911",  # Too many return statements
     "PLR0912",  # Too many branches
     "PLR0913",  # Too many arguments to function call
     "PLR0915",  # Too many statements
     "PLR2004",  # Magic number used in comparison, consider replacing magic with a constant variable
-    "PT001",  # Use `@pytest.fixture()` over `@pytest.fixture` (Note: why?)
     "PT003",  # `scope='function'` is implied in `@pytest.fixture()` (Note: no harm in being explicit)
-    "PT023",  # Use `@pytest.mark.slow()` over `@pytest.mark.slow` (Note: why?)
+    "RET502",  # Do not implicitly `return None` in function able to return non-`None` value
+    "RET503",  # Missing explicit `return` at the end of function able to return non-`None` value
+    "RET504",  # Unnecessary variable assignment before `return` statement
     "S110",  # `try`-`except`-`pass` detected, consider logging the exception (Note: good advice, but we don't log)
     "S112",  # `try`-`except`-`continue` detected, consider logging the exception (Note: good advice, but we don't log)
     "SIM102",  # Use a single `if` statement instead of nested `if` statements (Note: often necessary)
@@ -275,7 +283,19 @@ ignore = [
 "graphblas/tests/test_dtype.py" = ["UP003"]
 "graphblas/tests/test_formatting.py" = ["E501"]
 "graphblas/**/__init__.py" = ["F401"]
+"scripts/*.py" = ["INP001"]
 "scripts/create_pickle.py" = ["F403", "F405"]
+"docs/*.py" = ["INP001"]
+
+[tool.ruff.flake8-builtins]
+builtins-ignorelist = ["copyright", "format", "min", "max"]
+
+[tool.ruff.flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false
+
+[tool.ruff.pydocstyle]
+convention = "numpy"
 
 [tool.pylint.messages_control]
 # To run a single check, do: pylint graphblas --disable E,W,R,C,I --enable assignment-from-no-return
