@@ -139,6 +139,10 @@ filterwarnings = [
     # and: https://docs.pytest.org/en/7.2.x/how-to/capture-warnings.html#controlling-warnings
     "error",
     "ignore:`np.bool` is a deprecated alias:DeprecationWarning:sparse._umath",  # sparse <0.13
+    # setuptools v67.3.0 deprecated `pkg_resources.declare_namespace` on 13 Feb 2023. See:
+    # https://setuptools.pypa.io/en/latest/history.html#v67-3-0
+    # TODO: check if this is still necessary in 2025
+    "ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning:pkg_resources",
 ]
 
 [tool.coverage.run]
