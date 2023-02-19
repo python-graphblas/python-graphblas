@@ -273,7 +273,6 @@ def test_mmread_mmwrite(engine):
                 # TODO MAINT: is this a bug in fast_matrix_market, or does scipy.io.mmread
                 # read an invalid file? `fast_matrix_market` v1.4.5 does not handle this.
                 continue
-            print(example)
             M = gb.io.mmread(mm_in, engine)
             if not M.isequal(expected):  # pragma: no cover (debug)
                 print(example)
