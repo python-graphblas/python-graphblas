@@ -1,6 +1,7 @@
 import atexit
 import functools
 import itertools
+import pathlib
 import random
 
 import pytest
@@ -46,7 +47,7 @@ def pytest_configure(config):
         rec.start()
 
         def save_records():
-            with open("record.txt", "w") as f:  # pragma: no cover
+            with pathlib.Path("record").open("record.txt") as f:  # pragma: no cover
                 f.write("\n".join(rec.data))
 
         # I'm sure there's a `pytest` way to do this...

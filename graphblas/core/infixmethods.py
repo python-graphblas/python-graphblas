@@ -426,9 +426,11 @@ def _main():
         "        setattr(VectorIndexExpr, name, val)\n"
         "        setattr(MatrixIndexExpr, name, val)\n"
     )
+    import pathlib
+
     from .utils import _autogenerate_code
 
-    _autogenerate_code(__file__, "\n".join(lines))
+    _autogenerate_code(pathlib.Path(__file__), "\n".join(lines))
 
 
 if __name__ == "__main__":
