@@ -1,8 +1,8 @@
 import atexit
 import functools
 import itertools
+import random
 
-import numpy as np
 import pytest
 
 import graphblas as gb
@@ -16,22 +16,22 @@ def pytest_configure(config):
     backend = config.getoption("--backend", None)
     if backend is None:
         if randomly:
-            backend = "suitesparse" if np.random.rand() < 0.5 else "suitesparse-vanilla"
+            backend = "suitesparse" if random.random() < 0.5 else "suitesparse-vanilla"
         else:
             backend = "suitesparse"
     blocking = config.getoption("--blocking", True)
     if blocking is None:  # pragma: no branch
-        blocking = np.random.rand() < 0.5 if randomly else True
+        blocking = random.random() < 0.5 if randomly else True
     record = config.getoption("--record", False)
     if record is None:  # pragma: no branch
-        record = np.random.rand() < 0.5 if randomly else False
+        record = random.random() < 0.5 if randomly else False
     mapnumpy = config.getoption("--mapnumpy", False)
     if mapnumpy is None:
-        mapnumpy = np.random.rand() < 0.5 if randomly else False
+        mapnumpy = random.random() < 0.5 if randomly else False
     runslow = config.getoption("--runslow", False)
     if runslow is None:
         # Add a small amount of randomization to be safer
-        runslow = np.random.rand() < 0.05 if randomly else False
+        runslow = random.random() < 0.05 if randomly else False
     config.runslow = runslow
 
     gb.config.set(autocompute=False, mapnumpy=mapnumpy)

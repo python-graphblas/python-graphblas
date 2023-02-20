@@ -14,7 +14,8 @@ suitesparse = backend == "suitesparse"
 @pytest.mark.parametrize("do_random", [False, True])
 def test_scan_matrix(method, length, do_random):
     if do_random:
-        A = np.random.randint(10, size=2 * length).reshape((2, length))
+        rng = np.random.default_rng()
+        A = rng.integers(10, size=2 * length).reshape((2, length))
         mask = (A % 2).astype(bool)
         A[~mask] = 0
         M = Matrix.ss.import_bitmapr(values=A, bitmap=mask, name="A")
@@ -44,7 +45,8 @@ def test_scan_matrix(method, length, do_random):
 @pytest.mark.parametrize("do_random", [False, True])
 def test_scan_vector(length, do_random):
     if do_random:
-        a = np.random.randint(10, size=length)
+        rng = np.random.default_rng()
+        a = rng.integers(10, size=length)
         mask = (a % 2).astype(bool)
         a[~mask] = 0
         v = Vector.ss.import_bitmap(values=a, bitmap=mask)
