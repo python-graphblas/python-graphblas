@@ -10,10 +10,10 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-import pathlib
 import sys
+from pathlib import Path
 
-sys.path.insert(0, str(pathlib.Path("..").resolve()))
+sys.path.insert(0, str(Path("..").resolve()))
 
 
 # -- Project information -----------------------------------------------------

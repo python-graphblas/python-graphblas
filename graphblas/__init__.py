@@ -20,13 +20,13 @@ replace = replace()
 
 
 def get_config():
-    import pathlib
+    from pathlib import Path
 
     import donfig
     import yaml
 
     config = donfig.Config("graphblas")
-    path = pathlib.Path(__file__).parent / "graphblas.yaml"
+    path = Path(__file__).parent / "graphblas.yaml"
     with path.open() as f:
         defaults = yaml.safe_load(f)
     config.update_defaults(defaults)

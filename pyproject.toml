@@ -217,7 +217,7 @@ select = [
     # "SLF",  # flake8-self (We can use our own private variables--sheesh!)
     "SIM",  # flake8-simplify
     # "TID",  # flake8-tidy-imports (Rely on isort and our own judgement)
-    "TCH",  # flake8-type-checking
+    # "TCH",  # flake8-type-checking (Note: figure out type checking later)
     # "ARG",  # flake8-unused-arguments (Sometimes helpful, but too strict)
     "PTH",  # flake8-use-pathlib (Often better, but not always)
     # "ERA",  # eradicate (We like code in comments!)
@@ -244,15 +244,15 @@ ignore = [
     "D103",  # Missing docstring in public function
     "D104",  # Missing docstring in public package
     "D105",  # Missing docstring in magic method
-    "D107",  # Missing docstring in `__init__`
+    # "D107",  # Missing docstring in `__init__`
     "D205",  # 1 blank line required between summary line and description
-    "D212",  # Multi-line docstring summary should start at the first line
-    "D213",  # Multi-line docstring summary should start at the second line
     "D401",  # First line of docstring should be in imperative mood:
-    "D417",  # Missing argument description in the docstring:
+    # "D417",  # Missing argument description in the docstring:
     "PLE0605",  # Invalid format for `__all__`, must be `tuple` or `list` (Note: broken in v0.0.237)
 
     # Maybe consider
+    # "SIM300",  # Yoda conditions are discouraged, use ... instead (Note: we're not this picky)
+    # "SIM401",  # Use dict.get ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
     "TRY004",  # Prefer `TypeError` exception for invalid type (Note: good advice, but not worth the nuisance)
     "TRY200",  # Use `raise from` to specify exception cause (Note: sometimes okay to raise original exception)
 
@@ -271,7 +271,6 @@ ignore = [
     "PLR0913",  # Too many arguments to function call
     "PLR0915",  # Too many statements
     "PLR2004",  # Magic number used in comparison, consider replacing magic with a constant variable
-    "PT003",  # `scope='function'` is implied in `@pytest.fixture()` (Note: no harm in being explicit)
     "RET502",  # Do not implicitly `return None` in function able to return non-`None` value
     "RET503",  # Missing explicit `return` at the end of function able to return non-`None` value
     "RET504",  # Unnecessary variable assignment before `return` statement
@@ -280,8 +279,6 @@ ignore = [
     "SIM102",  # Use a single `if` statement instead of nested `if` statements (Note: often necessary)
     "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
     "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
-    "SIM300",  # Yoda conditions are discouraged, use ... instead (Note: we're not this picky)
-    # "SIM401",  # Use dict.get ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
     "TRY003",  # Avoid specifying long messages outside the exception class (Note: why?)
 
     # Ignored categories
@@ -296,16 +293,18 @@ ignore = [
     "PYI",  # flake8-pyi (We don't have stub files yet)
     "SLF",  # flake8-self (We can use our own private variables--sheesh!)
     "TID",  # flake8-tidy-imports (Rely on isort and our own judgement)
+    "TCH",  # flake8-type-checking (Note: figure out type checking later)
     "ARG",  # flake8-unused-arguments (Sometimes helpful, but too strict)
     "ERA",  # eradicate (We like code in comments!)
     "PD",  # pandas-vet (Intended for scripts that use pandas, not libraries)
 ]
+
 [tool.ruff.per-file-ignores]
 "graphblas/core/operator.py" = ["S102"]  # exec is used for UDF
 "graphblas/core/ss/matrix.py" = ["NPY002"]  # numba doesn't support rng generator yet
 "graphblas/core/ss/vector.py" = ["NPY002"]  # numba doesn't support rng generator yet
 "graphblas/ss/_core.py" = ["N999"]  # We want _core.py to be underscopre
-"graphblas/tests/*py" = ["S101", "T201", "D103", "D100"]  # Allow assert, print, and no docstring
+"graphblas/tests/*py" = ["S101", "T201", "D103", "D100", "SIM300"]  # Allow assert, print, no docstring, and yoda
 "graphblas/tests/test_formatting.py" = ["E501"]  # Allow long lines
 "graphblas/**/__init__.py" = ["F401"]  # Allow unused imports (w/o defining `__all__`)
 "scripts/*.py" = ["INP001"]  # Not a package

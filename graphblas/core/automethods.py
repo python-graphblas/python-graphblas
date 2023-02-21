@@ -339,7 +339,7 @@ def __ixor__(self, other):
 
 # End auto-generated code
 def _main():
-    import pathlib
+    from pathlib import Path
 
     from .utils import _autogenerate_code
 
@@ -481,7 +481,7 @@ def _main():
             continue
         lines.append(f"    {name} = automethods.{name}")
 
-    thisdir = pathlib.Path(__file__).parent
+    thisdir = Path(__file__).parent
     infix_exclude = {"_get_value"}
 
     def get_name(line):

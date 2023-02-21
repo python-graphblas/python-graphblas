@@ -5,8 +5,8 @@ Note that the exact binary of the pickle files may differ depending on which
 Python version is used to create them.
 """
 import argparse
-import pathlib
 import pickle
+from pathlib import PurePath
 
 import graphblas as gb
 from graphblas.tests.test_pickle import *
@@ -158,7 +158,7 @@ if __name__ == "__main__":
         extra = "-vanilla"
     else:
         extra = ""
-    path = pathlib.PurePath(gb.tests.__file__).parent
+    path = PurePath(gb.tests.__file__).parent
     pickle1(path / f"pickle1{extra}.pkl")
     pickle2(path / f"pickle2{extra}.pkl")
     pickle3(path / f"pickle3{extra}.pkl")

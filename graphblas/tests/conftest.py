@@ -1,8 +1,8 @@
 import atexit
 import functools
 import itertools
-import pathlib
 import random
+from pathlib import Path
 
 import pytest
 
@@ -47,7 +47,7 @@ def pytest_configure(config):
         rec.start()
 
         def save_records():
-            with pathlib.Path("record").open("record.txt") as f:  # pragma: no cover
+            with Path("record").open("record.txt") as f:  # pragma: no cover
                 f.write("\n".join(rec.data))
 
         # I'm sure there's a `pytest` way to do this...
@@ -84,7 +84,7 @@ def pytest_runtest_setup(item):
         pytest.skip("need --runslow option to run")
 
 
-@pytest.fixture(autouse=True, scope="function")
+@pytest.fixture(autouse=True)
 def _reset_name_counters():
     """Reset automatic names for each test for easier comparison of record.txt."""
     gb.Matrix._name_counter = itertools.count()
