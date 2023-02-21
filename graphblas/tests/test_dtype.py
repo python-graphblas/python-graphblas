@@ -1,6 +1,5 @@
 import itertools
 import pickle
-import random
 import string
 
 import numpy as np
@@ -194,7 +193,8 @@ def test_bad_register():
 
 
 def test_auto_register():
-    n = random.randint(10, 64)
+    rng = np.random.default_rng()
+    n = rng.integers(10, 64, endpoint=True)
     np_type = np.dtype(f"({n},)int16")
     assert lookup_dtype(np_type).np_type == np_type
 
