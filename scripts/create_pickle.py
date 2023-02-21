@@ -5,14 +5,14 @@ Note that the exact binary of the pickle files may differ depending on which
 Python version is used to create them.
 """
 import argparse
-import os
 import pickle
+from pathlib import PurePath
 
 import graphblas as gb
 from graphblas.tests.test_pickle import *
 
 
-def pickle1(filename):
+def pickle1(filepath):
     suitesparse = gb.backend == "suitesparse"
     v = gb.Vector.from_coo([1], 2)
 
@@ -29,7 +29,7 @@ def pickle1(filename):
     semiring_anon = gb.core.operator.Semiring.register_anonymous(monoid_anon, binary_anon)
     d = {
         "scalar": gb.Scalar.from_value(2),
-        "empty_scalar": gb.Scalar.new(bool),
+        "empty_scalar": gb.Scalar(bool),
         "vector": v,
         "matrix": gb.Matrix.from_coo([2], [3], 4),
         "matrix.T": gb.Matrix.from_coo([3], [4], 5).T,
@@ -74,11 +74,11 @@ def pickle1(filename):
     }
     if suitesparse:
         d["agg.ss.first[int]"] = gb.agg.ss.first[int]
-    with open(filename, "wb") as f:
+    with filepath.open("wb") as f:
         pickle.dump(d, f)
 
 
-def pickle2(filename):
+def pickle2(filepath):
     unary_pickle = gb.core.operator.UnaryOp.register_new(
         "unary_pickle_par", unarypickle_par, parameterized=True
     )
@@ -118,22 +118,22 @@ def pickle2(filename):
         "semiring_pickle(0)": semiring_pickle(0),
         "unary_pickle(0)[UINT16]": unary_pickle(0)["UINT16"],
     }
-    with open(filename, "wb") as f:
+    with filepath.open("wb") as f:
         pickle.dump(d, f)
 
 
-def pickle3(filename):
+def pickle3(filepath):
     record_dtype = np.dtype([("a", np.bool_), ("b", np.int32)], align=True)
     udt = gb.dtypes.register_new("PickledUDT", record_dtype)
 
     np_dtype = np.dtype("(2,)uint32")
     udt2 = gb.dtypes.register_anonymous(np_dtype, "pickled_subdtype")
 
-    v = gb.Vector.new(udt, size=2)
+    v = gb.Vector(udt, size=2)
     v[0] = (False, 1)
     v[1] = (True, 3)
 
-    A = gb.Matrix.new(udt2, nrows=1, ncols=2)
+    A = gb.Matrix(udt2, nrows=1, ncols=2)
     A[0, 0] = (1, 2)
     A[0, 1] = (3, 4)
     d = {
@@ -143,7 +143,7 @@ def pickle3(filename):
         "A": A,
         "any[udt]": gb.binary.any[udt],
     }
-    with open(filename, "wb") as f:
+    with filepath.open("wb") as f:
         pickle.dump(d, f)
 
 
@@ -158,7 +158,7 @@ if __name__ == "__main__":
         extra = "-vanilla"
     else:
         extra = ""
-    basedir = os.path.dirname(gb.tests.__file__)
-    pickle1(os.path.join(basedir, f"pickle1{extra}.pkl"))
-    pickle2(os.path.join(basedir, f"pickle2{extra}.pkl"))
-    pickle3(os.path.join(basedir, f"pickle3{extra}.pkl"))
+    path = PurePath(gb.tests.__file__).parent
+    pickle1(path / f"pickle1{extra}.pkl")
+    pickle2(path / f"pickle2{extra}.pkl")
+    pickle3(path / f"pickle3{extra}.pkl")

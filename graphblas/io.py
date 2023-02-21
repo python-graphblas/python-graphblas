@@ -4,6 +4,7 @@ import numpy as _np
 
 from . import backend as _backend
 from .core.matrix import Matrix as _Matrix
+from .core.utils import normalize_values as _normalize_values
 from .core.utils import output_type as _output_type
 from .core.vector import Vector as _Vector
 from .dtypes import lookup_dtype as _lookup_dtype
@@ -57,9 +58,13 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     return from_scipy_sparse(A, name=name)
 
 
-# TODO: add parameter to indicate empty value (default is 0 and NaN)
-def from_numpy(m):
+def from_numpy(m):  # pragma: no cover (deprecated)
     """Create a sparse Vector or Matrix from a dense numpy array.
+
+    .. deprecated:: 2023.2.0
+        `from_numpy` will be removed in a future release.
+        Use `Vector.from_dense` or `Matrix.from_dense` instead.
+        Will be removed in version 2023.10.0 or later
 
     A value of 0 is considered as "missing".
 
@@ -74,10 +79,21 @@ def from_numpy(m):
     m : np.ndarray
         Input array
 
+    See Also
+    --------
+    Matrix.from_dense
+    Vector.from_dense
+    from_scipy_sparse
+
     Returns
     -------
     Vector or Matrix
     """
+    _warn(
+        "`graphblas.io.from_numpy` is deprecated; "
+        "use `Matrix.from_dense` and `Vector.from_dense` instead.",
+        DeprecationWarning,
+    )
     if m.ndim > 2:
         raise _GraphblasException("m.ndim must be <= 2")
 
@@ -93,20 +109,6 @@ def from_numpy(m):
         return _Vector.from_coo(A.indices, A.data, size=size, dtype=dtype)
     A = coo_array(m)
     return from_scipy_sparse(A)
-
-
-def from_scipy_sparse_matrix(m, *, dup_op=None, name=None):
-    """Matrix  dtype is inferred from m.dtype."""
-    _warn(
-        "`from_scipy_sparse_matrix` is deprecated; please use `from_scipy_sparse` instead.",
-        DeprecationWarning,
-    )
-    A = m.tocoo()
-    nrows, ncols = A.shape
-    dtype = _lookup_dtype(m.dtype)
-    return _Matrix.from_coo(
-        A.row, A.col, A.data, nrows=nrows, ncols=ncols, dtype=dtype, dup_op=dup_op, name=name
-    )
 
 
 def from_scipy_sparse(A, *, dup_op=None, name=None):
@@ -303,8 +305,13 @@ def to_networkx(m, edge_attribute="weight"):
     return G
 
 
-def to_numpy(m):
+def to_numpy(m):  # pragma: no cover (deprecated)
     """Create a dense numpy array from a sparse Vector or Matrix.
+
+    .. deprecated:: 2023.2.0
+        `to_numpy` will be removed in a future release.
+        Use `Vector.to_dense` or `Matrix.to_dense` instead.
+        Will be removed in version 2023.10.0 or later
 
     Missing values will become 0 in the output.
 
@@ -315,10 +322,21 @@ def to_numpy(m):
     m : Vector or Matrix
         GraphBLAS Vector or Matrix
 
+    See Also
+    --------
+    to_scipy_sparse
+    Matrix.to_dense
+    Vector.to_dense
+
     Returns
     -------
     np.ndarray
     """
+    _warn(
+        "`graphblas.io.to_numpy` is deprecated; "
+        "use `Matrix.to_dense` and `Vector.to_dense` instead.",
+        DeprecationWarning,
+    )
     try:
         import scipy  # noqa: F401
     except ImportError:  # pragma: no cover (import)
@@ -327,32 +345,6 @@ def to_numpy(m):
         return to_scipy_sparse(m).toarray()[0]
     sparse = to_scipy_sparse(m, "coo")
     return sparse.toarray()
-
-
-def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover (deprecated)
-    """format: str in {'bsr', 'csr', 'csc', 'coo', 'lil', 'dia', 'dok'}."""
-    import scipy.sparse as ss
-
-    _warn(
-        "`to_scipy_sparse_matrix` is deprecated; please use `to_scipy_sparse` instead.",
-        DeprecationWarning,
-    )
-    format = format.lower()
-    if _output_type(m) is _Vector:
-        indices, data = m.to_coo()
-        if format == "csc":
-            return ss.csc_matrix((data, indices, [0, len(data)]), shape=(m._size, 1))
-        rv = ss.csr_matrix((data, indices, [0, len(data)]), shape=(1, m._size))
-        if format == "csr":
-            return rv
-    else:
-        rows, cols, data = m.to_coo()
-        rv = ss.coo_matrix((data, (rows, cols)), shape=m.shape)
-        if format == "coo":
-            return rv
-    if format not in {"bsr", "csr", "csc", "coo", "lil", "dia", "dok"}:
-        raise _GraphblasException(f"Invalid format: {format}")
-    return rv.asformat(format)
 
 
 def to_scipy_sparse(A, format="csr"):
@@ -391,13 +383,10 @@ def to_scipy_sparse(A, format="csr"):
                 info["col_indices"] = info["row_indices"]
         else:
             info = A.ss.export(format, sort=True)
-        if info["is_iso"]:
-            info["values"] = _np.broadcast_to(info["values"], A._nvals)
+        values = _normalize_values(A, info["values"], None, (A._nvals,), info["is_iso"])
         if format == "csr":
-            return ss.csr_array(
-                (info["values"], info["col_indices"], info["indptr"]), shape=A.shape
-            )
-        return ss.csc_array((info["values"], info["row_indices"], info["indptr"]), shape=A.shape)
+            return ss.csr_array((values, info["col_indices"], info["indptr"]), shape=A.shape)
+        return ss.csc_array((values, info["row_indices"], info["indptr"]), shape=A.shape)
     elif format == "csr":
         indptr, cols, vals = A.to_csr()
         return ss.csr_array((vals, cols, indptr), shape=A.shape)
@@ -438,6 +427,7 @@ def to_awkward(A, format=None):
     """
     try:
         # awkward version 1
+        # MAINT: we can probably drop awkward v1 at the end of 2024 or 2025
         import awkward._v2 as ak
         from awkward._v2.forms.listoffsetform import ListOffsetForm
         from awkward._v2.forms.numpyform import NumpyForm
@@ -603,11 +593,7 @@ def mmread(source, *, dup_op=None, name=None):
         return _Matrix.from_coo(
             array.row, array.col, array.data, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
         )
-    if _backend == "suitesparse":
-        return _Matrix.ss.import_fullr(values=array, take_ownership=True, name=name)
-    rv = _Matrix(array.dtype, *array.shape, name=name)
-    rv[...] = array
-    return rv
+    return _Matrix.from_dense(array, name=name)
 
 
 def mmwrite(target, matrix, *, comment="", field=None, precision=None, symmetry=None):

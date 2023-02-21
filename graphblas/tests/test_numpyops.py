@@ -1,6 +1,7 @@
 # These tests are very slow, since they force creation of all
 # numpy unary, binary, monoid, and semiring objects.
 import itertools
+import sys
 
 import numpy as np
 import pytest
@@ -10,10 +11,13 @@ import graphblas.binary.numpy as npbinary
 import graphblas.monoid.numpy as npmonoid
 import graphblas.semiring.numpy as npsemiring
 import graphblas.unary.numpy as npunary
-from graphblas import Vector
+from graphblas import Vector, backend
 from graphblas.dtypes import _supports_complex
 
 from .conftest import compute
+
+is_win = sys.platform.startswith("win")
+suitesparse = backend == "suitesparse"
 
 
 def test_numpyops_dir():
@@ -61,6 +65,11 @@ def test_npunary():
         "INT64": {"reciprocal"},
         "FC64": {"ceil", "floor", "trunc"},
     }
+    if suitesparse and is_win:
+        # asin and asinh are known to be wrong in SuiteSparse:GraphBLAS
+        # due to limitation of MSVC with complex
+        blocklist["FC64"].update({"asin", "asinh"})
+        blocklist["FC32"] = {"asin", "asinh"}
     isclose = gb.binary.isclose(1e-6, 0)
     for gb_input, np_input in data:
         for unary_name in sorted(npunary._unary_names):
@@ -148,18 +157,22 @@ def test_npbinary():
                 gb_left.dtype.name, ()
             ):
                 continue
-            if not _supports_complex and binary_name == "ldexp":
+            if is_win and binary_name == "ldexp":
                 # On Windows, the second argument must be int32 or less (I'm not sure why)
                 np_right = np_right.astype(np.int32)
             with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
                 gb_result = gb_left.ewise_mult(gb_right, op).new()
-                if gb_left.dtype == "BOOL" and gb_result.dtype == "FP32":
-                    np_result = getattr(np, binary_name)(np_left, np_right, dtype="float32")
-                    compare_op = isclose
-                else:
-                    np_result = getattr(np, binary_name)(np_left, np_right)
-                    compare_op = npbinary.equal
-
+                try:
+                    if gb_left.dtype == "BOOL" and gb_result.dtype == "FP32":
+                        np_result = getattr(np, binary_name)(np_left, np_right, dtype="float32")
+                        compare_op = isclose
+                    else:
+                        np_result = getattr(np, binary_name)(np_left, np_right)
+                        compare_op = npbinary.equal
+                except Exception:  # pragma: no cover (debug)
+                    print(f"Error computing numpy result for {binary_name}")
+                    print(f"dtypes: ({gb_left.dtype}, {gb_right.dtype}) -> {gb_result.dtype}")
+                    raise
             np_result = Vector.from_coo(np.arange(np_left.size), np_result, dtype=gb_result.dtype)
 
             assert gb_result.nvals == np_result.size

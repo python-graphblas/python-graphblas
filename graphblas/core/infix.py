@@ -208,6 +208,7 @@ class VectorInfixExpr(InfixExprBase):
     else:
         ss = Vector.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
+    to_dense = wrapdoc(Vector.to_dense)(property(automethods.to_dense))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
@@ -343,6 +344,7 @@ class MatrixInfixExpr(InfixExprBase):
     to_csr = wrapdoc(Matrix.to_csr)(property(automethods.to_csr))
     to_dcsc = wrapdoc(Matrix.to_dcsc)(property(automethods.to_dcsc))
     to_dcsr = wrapdoc(Matrix.to_dcsr)(property(automethods.to_dcsr))
+    to_dense = wrapdoc(Matrix.to_dense)(property(automethods.to_dense))
     to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
     to_edgelist = wrapdoc(Matrix.to_edgelist)(property(automethods.to_edgelist))
     to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
