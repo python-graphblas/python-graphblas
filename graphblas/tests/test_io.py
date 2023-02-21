@@ -43,8 +43,6 @@ def test_deprecated():
     with pytest.warns(DeprecationWarning):
         a2 = gb.io.to_numpy(v)
     np.testing.assert_array_equal(a, a2)
-    with pytest.warns(DeprecationWarning):
-        gb.io.to_scipy_sparse_matrix(v, "coo")
 
 
 @pytest.mark.skipif("not ss")
@@ -298,9 +296,6 @@ def test_from_scipy_sparse_duplicates():
     a2 = gb.io.from_scipy_sparse(a, dup_op=gb.binary.plus)
     expected = gb.Matrix.from_coo([0, 1, 2], [2, 1, 0], [1, 2, 7])
     assert a2.isequal(expected)
-    with pytest.warns(DeprecationWarning):
-        a3 = gb.io.from_scipy_sparse_matrix(a, dup_op=gb.binary.plus)
-    assert a3.isequal(expected)
 
 
 @pytest.mark.skipif("not ss")
