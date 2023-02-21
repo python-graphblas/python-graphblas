@@ -111,20 +111,6 @@ def from_numpy(m):  # pragma: no cover (deprecated)
     return from_scipy_sparse(A)
 
 
-def from_scipy_sparse_matrix(m, *, dup_op=None, name=None):
-    """Matrix  dtype is inferred from m.dtype."""
-    _warn(
-        "`from_scipy_sparse_matrix` is deprecated; please use `from_scipy_sparse` instead.",
-        DeprecationWarning,
-    )
-    A = m.tocoo()
-    nrows, ncols = A.shape
-    dtype = _lookup_dtype(m.dtype)
-    return _Matrix.from_coo(
-        A.row, A.col, A.data, nrows=nrows, ncols=ncols, dtype=dtype, dup_op=dup_op, name=name
-    )
-
-
 def from_scipy_sparse(A, *, dup_op=None, name=None):
     """Create a Matrix from a scipy.sparse array or matrix.
 
@@ -359,32 +345,6 @@ def to_numpy(m):  # pragma: no cover (deprecated)
         return to_scipy_sparse(m).toarray()[0]
     sparse = to_scipy_sparse(m, "coo")
     return sparse.toarray()
-
-
-def to_scipy_sparse_matrix(m, format="csr"):  # pragma: no cover (deprecated)
-    """format: str in {'bsr', 'csr', 'csc', 'coo', 'lil', 'dia', 'dok'}."""
-    import scipy.sparse as ss
-
-    _warn(
-        "`to_scipy_sparse_matrix` is deprecated; please use `to_scipy_sparse` instead.",
-        DeprecationWarning,
-    )
-    format = format.lower()
-    if _output_type(m) is _Vector:
-        indices, data = m.to_coo()
-        if format == "csc":
-            return ss.csc_matrix((data, indices, [0, len(data)]), shape=(m._size, 1))
-        rv = ss.csr_matrix((data, indices, [0, len(data)]), shape=(1, m._size))
-        if format == "csr":
-            return rv
-    else:
-        rows, cols, data = m.to_coo()
-        rv = ss.coo_matrix((data, (rows, cols)), shape=m.shape)
-        if format == "coo":
-            return rv
-    if format not in {"bsr", "csr", "csc", "coo", "lil", "dia", "dok"}:
-        raise _GraphblasException(f"Invalid format: {format}")
-    return rv.asformat(format)
 
 
 def to_scipy_sparse(A, format="csr"):
