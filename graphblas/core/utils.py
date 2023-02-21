@@ -352,14 +352,14 @@ class _MatrixArray:
 
 
 def _autogenerate_code(
-    filename,
+    filepath,
     text,
     specializer=None,
     begin="# Begin auto-generated code",
     end="# End auto-generated code",
 ):
     """Super low-tech auto-code generation used by automethods.py and infixmethods.py."""
-    with open(filename) as f:  # pragma: no branch (flaky)
+    with filepath.open() as f:  # pragma: no branch (flaky)
         orig_text = f.read()
     if specializer:
         begin = f"{begin}: {specializer}"
@@ -379,11 +379,11 @@ def _autogenerate_code(
     new_text = orig_text
     for start, stop in reversed(boundaries):
         new_text = f"{new_text[:start]}{begin}{text}{new_text[stop:]}"
-    with open(filename, "w") as f:  # pragma: no branch (flaky)
+    with filepath.open("w") as f:  # pragma: no branch (flaky)
         f.write(new_text)
     import subprocess
 
     try:
-        subprocess.check_call(["black", filename])
+        subprocess.check_call(["black", filepath])
     except FileNotFoundError:  # pragma: no cover (safety)
         pass  # It's okay if `black` isn't installed; pre-commit hooks will do linting

@@ -1,6 +1,7 @@
 import atexit
 import functools
 import itertools
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -12,26 +13,27 @@ orig_semirings = set()
 
 
 def pytest_configure(config):
+    rng = np.random.default_rng()
     randomly = config.getoption("--randomly", False)
     backend = config.getoption("--backend", None)
     if backend is None:
         if randomly:
-            backend = "suitesparse" if np.random.rand() < 0.5 else "suitesparse-vanilla"
+            backend = "suitesparse" if rng.random() < 0.5 else "suitesparse-vanilla"
         else:
             backend = "suitesparse"
     blocking = config.getoption("--blocking", True)
     if blocking is None:  # pragma: no branch
-        blocking = np.random.rand() < 0.5 if randomly else True
+        blocking = rng.random() < 0.5 if randomly else True
     record = config.getoption("--record", False)
     if record is None:  # pragma: no branch
-        record = np.random.rand() < 0.5 if randomly else False
+        record = rng.random() < 0.5 if randomly else False
     mapnumpy = config.getoption("--mapnumpy", False)
     if mapnumpy is None:
-        mapnumpy = np.random.rand() < 0.5 if randomly else False
+        mapnumpy = rng.random() < 0.5 if randomly else False
     runslow = config.getoption("--runslow", False)
     if runslow is None:
         # Add a small amount of randomization to be safer
-        runslow = np.random.rand() < 0.05 if randomly else False
+        runslow = rng.random() < 0.05 if randomly else False
     config.runslow = runslow
 
     gb.config.set(autocompute=False, mapnumpy=mapnumpy)
@@ -46,7 +48,7 @@ def pytest_configure(config):
         rec.start()
 
         def save_records():
-            with open("record.txt", "w") as f:  # pragma: no cover
+            with Path("record.txt").open("w") as f:  # pragma: no cover
                 f.write("\n".join(rec.data))
 
         # I'm sure there's a `pytest` way to do this...
@@ -83,7 +85,7 @@ def pytest_runtest_setup(item):
         pytest.skip("need --runslow option to run")
 
 
-@pytest.fixture(autouse=True, scope="function")
+@pytest.fixture(autouse=True)
 def _reset_name_counters():
     """Reset automatic names for each test for easier comparison of record.txt."""
     gb.Matrix._name_counter = itertools.count()

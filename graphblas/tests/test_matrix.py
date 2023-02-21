@@ -3794,13 +3794,14 @@ def test_reposition(A):
 def test_to_coo_sort():
     # How can we get a matrix to a jumbled state in SS so that export won't be sorted?
     N = 1000000
-    r = np.unique(np.random.randint(N, size=100))
-    c = np.unique(np.random.randint(N, size=100))
+    rng = np.random.default_rng()
+    r = np.unique(rng.integers(N, size=100))
+    c = np.unique(rng.integers(N, size=100))
     r = r[: c.size].copy()  # make sure same length
     c = c[: r.size].copy()
     expected_rows = r.copy()
-    np.random.shuffle(r)
-    np.random.shuffle(c)
+    rng.shuffle(r)
+    rng.shuffle(c)
     A = Matrix.from_coo(r, c, r, nrows=N, ncols=N)
     rows, cols, values = A.to_coo(sort=False)
     A = Matrix.from_coo(r, c, r, nrows=N, ncols=N)

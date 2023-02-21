@@ -1,5 +1,5 @@
-import os
 import pickle
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -38,12 +38,12 @@ def extra():
 
 @pytest.mark.slow
 def test_deserialize(extra):
-    thisdir = os.path.dirname(__file__)
-    with open(os.path.join(thisdir, f"pickle1{extra}.pkl"), "rb") as f:
+    path = Path(__file__).parent / f"pickle1{extra}.pkl"
+    with path.open("rb") as f:
         d = pickle.load(f)
     check_values(d)
     # Again!
-    with open(os.path.join(thisdir, f"pickle1{extra}.pkl"), "rb") as f:
+    with path.open("rb") as f:
         d = pickle.load(f)
     check_values(d)
 
@@ -287,11 +287,11 @@ def test_serialize_parameterized():
 
 @pytest.mark.slow
 def test_deserialize_parameterized(extra):
-    thisdir = os.path.dirname(__file__)
-    with open(os.path.join(thisdir, f"pickle2{extra}.pkl"), "rb") as f:
+    path = Path(__file__).parent / f"pickle2{extra}.pkl"
+    with path.open("rb") as f:
         pickle.load(f)  # TODO: check results
     # Again!
-    with open(os.path.join(thisdir, f"pickle2{extra}.pkl"), "rb") as f:
+    with path.open("rb") as f:
         pickle.load(f)  # TODO: check results
 
 
@@ -306,8 +306,8 @@ def test_udt(extra):
     assert udt2._is_anonymous
     assert pickle.loads(pickle.dumps(udt2)).np_type == udt2.np_type
 
-    thisdir = os.path.dirname(__file__)
-    with open(os.path.join(thisdir, f"pickle3{extra}.pkl"), "rb") as f:
+    path = Path(__file__).parent / f"pickle3{extra}.pkl"
+    with path.open("rb") as f:
         d = pickle.load(f)
     udt3 = d["PickledUDT"]
     v = d["v"]
