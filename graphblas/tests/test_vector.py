@@ -2347,9 +2347,10 @@ def test_reposition(v):
 def test_to_coo_sort():
     # How can we get a vector to a jumbled state in SS so that export won't be sorted?
     N = 1000000
-    a = np.unique(np.random.randint(N, size=100))
+    rng = np.random.default_rng()
+    a = np.unique(rng.integers(N, size=100))
     expected = a.copy()
-    np.random.shuffle(a)
+    rng.shuffle(a)
     v = Vector.from_coo(a, a, size=N)
     indices, values = v.to_coo(sort=False)
     v = Vector.from_coo(a, a, size=N)

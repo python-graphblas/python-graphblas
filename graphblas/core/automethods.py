@@ -339,7 +339,7 @@ def __ixor__(self, other):
 
 # End auto-generated code
 def _main():
-    import os
+    from pathlib import Path
 
     from .utils import _autogenerate_code
 
@@ -460,7 +460,7 @@ def _main():
             f'    raise TypeError(f"{name!r} not supported for {{type(self).__name__}}")\n\n'
         )
 
-    _autogenerate_code(__file__, "\n".join(lines))
+    _autogenerate_code(Path(__file__), "\n".join(lines))
 
     # Copy to scalar.py and infix.py
     lines = []
@@ -481,16 +481,16 @@ def _main():
             continue
         lines.append(f"    {name} = automethods.{name}")
 
-    thisdir = os.path.dirname(__file__)
+    thisdir = Path(__file__).parent
     infix_exclude = {"_get_value"}
 
     def get_name(line):
         return line.strip().split(" ", 1)[0]
 
     text = "\n".join(lines) + "\n    "
-    _autogenerate_code(os.path.join(thisdir, "scalar.py"), text, "Scalar")
+    _autogenerate_code(thisdir / "scalar.py", text, "Scalar")
     text = "\n".join(line for line in lines if get_name(line) not in infix_exclude) + "\n    "
-    _autogenerate_code(os.path.join(thisdir, "infix.py"), text, "Scalar")
+    _autogenerate_code(thisdir / "infix.py", text, "Scalar")
 
     # Copy to vector.py and infix.py
     lines = []
@@ -519,9 +519,9 @@ def _main():
         lines.append(f"    {name} = automethods.{name}")
 
     text = "\n".join(lines) + "\n    "
-    _autogenerate_code(os.path.join(thisdir, "vector.py"), text, "Vector")
+    _autogenerate_code(thisdir / "vector.py", text, "Vector")
     text = "\n".join(line for line in lines if get_name(line) not in infix_exclude) + "\n    "
-    _autogenerate_code(os.path.join(thisdir, "infix.py"), text, "Vector")
+    _autogenerate_code(thisdir / "infix.py", text, "Vector")
 
     # Copy to matrix.py and infix.py
     lines = []
@@ -550,9 +550,9 @@ def _main():
         lines.append(f"    {name} = automethods.{name}")
 
     text = "\n".join(lines) + "\n    "
-    _autogenerate_code(os.path.join(thisdir, "matrix.py"), text, "Matrix")
+    _autogenerate_code(thisdir / "matrix.py", text, "Matrix")
     text = "\n".join(line for line in lines if get_name(line) not in infix_exclude) + "\n    "
-    _autogenerate_code(os.path.join(thisdir, "infix.py"), text, "Matrix")
+    _autogenerate_code(thisdir / "infix.py", text, "Matrix")
 
 
 if __name__ == "__main__":
