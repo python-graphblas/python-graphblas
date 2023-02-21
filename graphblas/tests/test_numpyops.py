@@ -66,9 +66,10 @@ def test_npunary():
         "FC64": {"ceil", "floor", "trunc"},
     }
     if suitesparse and is_win:
-        # asin is known to be wrong in SuiteSparse:GraphBLAS due to limitation of MSVC with complex
-        blocklist["FC64"].add("asin")
-        blocklist["FC32"] = {"asin"}
+        # asin and asinh are known to be wrong in SuiteSparse:GraphBLAS
+        # due to limitation of MSVC with complex
+        blocklist["FC64"].update({"asin", "asinh"})
+        blocklist["FC32"] = {"asin", "asinh"}
     isclose = gb.binary.isclose(1e-6, 0)
     for gb_input, np_input in data:
         for unary_name in sorted(npunary._unary_names):
