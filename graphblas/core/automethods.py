@@ -460,7 +460,7 @@ def _main():
             f'    raise TypeError(f"{name!r} not supported for {{type(self).__name__}}")\n\n'
         )
 
-    _autogenerate_code(__file__, "\n".join(lines))
+    _autogenerate_code(Path(__file__), "\n".join(lines))
 
     # Copy to scalar.py and infix.py
     lines = []
