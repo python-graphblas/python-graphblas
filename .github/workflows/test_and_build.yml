@@ -121,7 +121,7 @@ jobs:
             2
             1
             1
-            10000
+            1
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
