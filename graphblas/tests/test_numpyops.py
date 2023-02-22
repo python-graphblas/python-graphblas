@@ -65,11 +65,11 @@ def test_npunary():
         "INT64": {"reciprocal"},
         "FC64": {"ceil", "floor", "trunc"},
     }
-    if suitesparse and is_win:
+    if suitesparse and is_win and gb.config["mapnumpy"]:
         # asin and asinh are known to be wrong in SuiteSparse:GraphBLAS
         # due to limitation of MSVC with complex
-        blocklist["FC64"].update({"asin", "asinh"})
-        blocklist["FC32"] = {"asin", "asinh"}
+        blocklist["FC64"].update({"arcsin", "arcsinh"})
+        blocklist["FC32"] = {"arcsin", "arcsinh"}
     isclose = gb.binary.isclose(1e-6, 0)
     for gb_input, np_input in data:
         for unary_name in sorted(npunary._unary_names):
