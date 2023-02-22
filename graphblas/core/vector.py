@@ -34,6 +34,7 @@ from .utils import (
     _Pointer,
     class_property,
     ints_to_numpy_buffer,
+    normalize_values,
     output_type,
     values_to_numpy_buffer,
     wrapdoc,
@@ -441,6 +442,7 @@ class Vector(BaseType):
         warnings.warn(
             "`Vector.to_values(...)` is deprecated; please use `Vector.to_coo(...)` instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         return self.to_coo(dtype, indices=indices, values=values, sort=sort)
 
@@ -460,6 +462,7 @@ class Vector(BaseType):
 
         See Also
         --------
+        to_dense
         to_dict
         from_coo
 
@@ -486,11 +489,7 @@ class Vector(BaseType):
             f"GrB_Vector_extractTuples_{dtype_name}", [c_indices, c_values, _Pointer(scalar), self]
         )
         if values:
-            c_values = c_values.array
-            if dtype is not None:
-                dtype = lookup_dtype(dtype)
-                if dtype != self.dtype:
-                    c_values = c_values.astype(dtype.np_type)  # copies
+            c_values = normalize_values(self, c_values.array, dtype)
         if sort and backend != "suitesparse":
             c_indices = c_indices.array
             ind = np.argsort(c_indices)
@@ -632,6 +631,7 @@ class Vector(BaseType):
         else:
             raise ValueError(f'`how` argument must be "materialize" or "complete"; got {how!r}')
         call("GrB_Vector_wait", [self, mode])
+        return self
 
     def get(self, index, default=None):
         """Get an element at ``index`` as a Python scalar.
@@ -655,14 +655,6 @@ class Vector(BaseType):
             "Bad index in Vector.get(...).  "
             "A single index should be given, and the result will be a Python scalar."
         )
-
-    @classmethod
-    def new(cls, dtype, size=0, *, name=None):
-        warnings.warn(
-            "`Vector.new(...)` is deprecated; please use `Vector(...)` instead.",
-            DeprecationWarning,
-        )
-        return Vector(dtype, size, name=name)
 
     @classmethod
     def from_values(cls, indices, values, dtype=None, *, size=None, dup_op=None, name=None):
@@ -697,6 +689,7 @@ class Vector(BaseType):
         warnings.warn(
             "`Vector.from_values(...)` is deprecated; please use `Vector.from_coo(...)` instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         return cls.from_coo(indices, values, dtype, size=size, dup_op=dup_op, name=name)
 
@@ -724,6 +717,7 @@ class Vector(BaseType):
 
         See Also
         --------
+        from_dense
         from_dict
         from_pairs
         to_coo
@@ -733,17 +727,14 @@ class Vector(BaseType):
         Vector
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
-        values, new_dtype = values_to_numpy_buffer(values, dtype)
+        values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
         # Compute size if not provided
         if size is None:
             if indices.size == 0:
                 raise ValueError("No indices provided. Unable to infer size.")
             size = int(indices.max()) + 1
-        if dtype is None and values.ndim > 1:
-            # Look for array-subtdype
-            new_dtype = lookup_dtype(np.dtype((new_dtype.np_type, values.shape[1:])))
         # Create the new vector
-        w = cls(new_dtype, size, name=name)
+        w = cls(dtype, size, name=name)
         if values.ndim == 0:
             if dup_op is not None:
                 raise ValueError(
@@ -784,6 +775,7 @@ class Vector(BaseType):
         See Also
         --------
         from_coo
+        from_dense
         from_dict
         to_coo
 
@@ -805,6 +797,172 @@ class Vector(BaseType):
                 f"got {len(unzipped)}"
             )
         return cls.from_coo(indices, values, dtype, size=size, dup_op=dup_op, name=name)
+
+    @classmethod
+    def from_scalar(cls, value, size, dtype=None, *, name=None, **opts):
+        """Create a fully dense Vector filled with a scalar value.
+
+        For SuiteSparse:GraphBLAS backend, this creates an iso-valued full Vector
+        that stores a single value regardless of the size of the Vector, so large
+        vectors created by ``Vector.from_scalar`` will use very low memory.
+
+        If instead you want to create a new iso-valued Vector with the same structure
+        as an existing Vector, you may do: ``w = binary.second(v, value).new()``.
+
+        Parameters
+        ----------
+        value : scalar
+            Scalar value used to fill the Vector.
+        nrows : int
+            Number of rows.
+        ncols : int
+            Number of columns.
+        dtype : DataType, optional
+            Data type of the Vector. If not provided, the scalar value will be
+            inspected to choose an appropriate dtype.
+        name : str, optional
+            Name to give the Vector.
+
+        See Also
+        --------
+        from_coo
+        from_dense
+        from_dict
+        from_pairs
+
+        Returns
+        -------
+        Vector
+        """
+        if type(value) is not Scalar:
+            try:
+                value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
+            except TypeError:
+                value = cls()._expect_type(
+                    value,
+                    Scalar,
+                    within="from_scalar",
+                    keyword_name="value",
+                    extra_message="Literal scalars also accepted.",
+                )
+            dtype = value.dtype
+        elif dtype is None:
+            dtype = value.dtype
+        else:
+            dtype = lookup_dtype(dtype)
+        if backend == "suitesparse" and not dtype._is_udt:
+            # `Vector.ss.import_full` does not yet handle all cases with UDTs
+            return cls.ss.import_full(value, dtype=dtype, size=size, is_iso=True, name=name)
+        rv = cls(dtype, size, name=name)
+        rv(**opts) << value
+        return rv
+
+    @classmethod
+    def from_dense(cls, values, missing_value=None, *, dtype=None, name=None, **opts):
+        """Create a Vector from a NumPy array or list.
+
+        Parameters
+        ----------
+        values : list or np.ndarray
+            List of values.
+        missing_value : scalar, optional
+            A scalar value to consider "missing"; elements of this value will be dropped.
+            If None, then the resulting Vector will be dense.
+        dtype : DataType, optional
+            Data type of the Vector. If not provided, the values will be inspected
+            to choose an appropriate dtype.
+        name : str, optional
+            Name to give the Vector.
+
+        See Also
+        --------
+        from_coo
+        from_dict
+        from_pairs
+        from_scalar
+        to_dense
+
+        Returns
+        -------
+        Vector
+        """
+        values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
+        if values.ndim == 0:
+            raise TypeError(
+                "values must be an array or list, not a scalar. "
+                "To create a dense Vector from a scalar, use `Vector.from_scalar`."
+            )
+        if values.ndim == 1 and dtype.np_type.subdtype is not None:
+            raise ValueError("A >1d array is required to create a dense Vector with subdtype")
+        if values.ndim > 1 and dtype.np_type.subdtype is None:
+            raise ValueError(f"values array must be 1d to create dense Vector with dtype {dtype}")
+        if backend == "suitesparse":
+            rv = cls.ss.import_full(values, dtype=dtype, name=name)
+        else:
+            # TODO: GraphBLAS needs a better way to import or assign dense
+            rv = cls.from_coo(
+                np.arange(values.shape[0], dtype=np.uint64),
+                values,
+                dtype,
+                size=values.shape[0],
+                name=name,
+            )
+        if missing_value is not None:
+            rv(**opts) << select.valuene(rv, missing_value)
+        return rv
+
+    def to_dense(self, fill_value=None, dtype=None, **opts):
+        """Convert Vector to NumPy array of the same shape with missing values filled.
+
+        .. warning::
+            This can create very large arrays that require a lot of memory; please use caution.
+
+        Parameters
+        ----------
+        fill_value : scalar, optional
+            Value used to fill missing values. This is required if there are missing values.
+        dtype : DataType, optional
+            Requested dtype for the output values array.
+
+        See Also
+        --------
+        to_coo
+        to_dict
+        from_dense
+
+        Returns
+        -------
+        np.ndarray
+        """
+        if fill_value is None or self._nvals == self._size:
+            if self._nvals != self._size:
+                raise TypeError(
+                    "fill_value must be given in `to_dense` when there are missing values"
+                )
+            if backend == "suitesparse":
+                info = self.ss.export("full")
+                return normalize_values(self, info["values"], dtype, self._size, info["is_iso"])
+            return self.to_coo(dtype, indices=False)[1]
+
+        if dtype is None and not self.dtype._is_udt:
+            # dtype of fill_value can upcast the dtype
+            if type(fill_value) is not Scalar:
+                try:
+                    fill_value = Scalar.from_value(fill_value, is_cscalar=None, name="")
+                except TypeError:
+                    fill_value = self._expect_type(
+                        fill_value,
+                        Scalar,
+                        within="to_dense",
+                        keyword_name="fill_value",
+                        extra_message="Literal scalars also accepted.",
+                    )
+            dtype = unify(fill_value.dtype, self.dtype, is_left_scalar=True)
+
+        rv = self.dup(dtype, clear=True, name="to_dense", **opts)
+        rv(**opts) << fill_value
+        rv(self.S, **opts) << self
+        return rv.to_dense(**opts)
 
     @property
     def _carg(self):
@@ -1329,7 +1487,7 @@ class Vector(BaseType):
                     None,
                     [self, mask, _select_mask, (self, mask)],  # [*expr_args, func, args]
                     expr_repr="{0.name}.select({1.name})",
-                    size=self.size,
+                    size=self._size,
                     dtype=self.dtype,
                 )
 
@@ -1664,24 +1822,13 @@ class Vector(BaseType):
                         # v(m)[I] << [1, 2, 3]
                         # v[I](m) << [1, 2, 3]
                         try:
-                            # Do a copy for suitesparse so we can give ownership to suitesparse
-                            values, dtype = values_to_numpy_buffer(
-                                value, dtype, copy=backend == "suitesparse"
-                            )
+                            values, dtype = values_to_numpy_buffer(value, dtype)
                         except Exception:
                             extra_message = "Literal scalars and lists also accepted."
                         else:
                             shape = values.shape
                             try:
-                                if backend == "suitesparse":
-                                    vals = Vector.ss.import_full(
-                                        values, dtype=dtype, take_ownership=True
-                                    )
-                                else:
-                                    # TODO: GraphBLAS needs a way to import or assign dense
-                                    vals = Vector.from_coo(
-                                        np.arange(shape[0]), values, dtype, size=shape[0]
-                                    )
+                                vals = Vector.from_dense(values, dtype=dtype)
                             except Exception:  # pragma: no cover (safety)
                                 vals = None
                             else:
@@ -1794,6 +1941,7 @@ class Vector(BaseType):
         See Also
         --------
         from_coo
+        from_dense
         from_pairs
         to_dict
 
@@ -1803,12 +1951,14 @@ class Vector(BaseType):
         """
         indices = np.fromiter(d.keys(), np.uint64)
         if dtype is None:
-            values = np.array(list(d.values()))  # let numpy infer dtype
-            dtype = lookup_dtype(values.dtype)
+            values, dtype = values_to_numpy_buffer(list(d.values()), subarray_after=1)
         else:
             # If we know the dtype, then using `np.fromiter` is much faster
             dtype = lookup_dtype(dtype)
-            values = np.fromiter(d.values(), dtype.np_type)
+            if dtype.np_type.subdtype is not None and np.__version__[:5] in {"1.21.", "1.22."}:
+                values, dtype = values_to_numpy_buffer(list(d.values()), dtype)
+            else:
+                values = np.fromiter(d.values(), dtype.np_type)
         if size is None and indices.size == 0:
             size = 0
         return cls.from_coo(indices, values, dtype, size=size, name=name)
@@ -1819,6 +1969,7 @@ class Vector(BaseType):
         See Also
         --------
         to_coo
+        to_dense
         from_dict
 
         Returns
@@ -1910,7 +2061,7 @@ class VectorExpression(BaseExpression):
     @wrapdoc(Vector.dup)
     def dup(self, dtype=None, *, clear=False, mask=None, name=None, **opts):
         if clear:
-            return Vector(self.dtype if dtype is None else dtype, self.size, name=name)
+            return Vector(self.dtype if dtype is None else dtype, self._size, name=name)
         return self._new(dtype, mask, name)
 
     # Begin auto-generated code: Vector
@@ -1951,6 +2102,7 @@ class VectorExpression(BaseExpression):
     else:
         ss = Vector.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
+    to_dense = wrapdoc(Vector.to_dense)(property(automethods.to_dense))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
@@ -2035,6 +2187,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     else:
         ss = Vector.__dict__["ss"]  # raise if used
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
+    to_dense = wrapdoc(Vector.to_dense)(property(automethods.to_dense))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
     to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))

@@ -559,7 +559,7 @@ class ss:
             "coo", "coor", or "cooc".
         give_ownership : bool, default False
             Perform a zero-copy data transfer to Python if possible.  This gives ownership of
-            the underlying memory buffers to Numpy.
+            the underlying memory buffers to NumPy.
             ** If True, this nullifies the current object, which should no longer be used! **
         raw : bool, default False
             If True, always return 1d arrays the same size as returned by SuiteSparse.
@@ -1305,7 +1305,9 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, subarray_after=1
+        )
         if col_indices is values:
             values = np.copy(values)
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
@@ -1493,7 +1495,9 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, subarray_after=1
+        )
         if row_indices is values:
             values = np.copy(values)
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
@@ -1696,7 +1700,9 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, subarray_after=1
+        )
         if not is_iso and values.ndim == 0:
             is_iso = True
         if col_indices is values:
@@ -1917,7 +1923,9 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, subarray_after=1
+        )
         if row_indices is values:
             values = np.copy(values)
         if not is_iso and values.ndim == 0:
@@ -2122,7 +2130,9 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True, order="C")
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, order="C", subarray_after=2
+        )
         if bitmap is values:
             values = np.copy(values)
         if method == "import":
@@ -2313,7 +2323,9 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, ownable=True, order="F")
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, ownable=True, order="F", subarray_after=2
+        )
         if bitmap is values:
             values = np.copy(values)
         if method == "import":
@@ -2486,7 +2498,9 @@ class ss:
         copy = not take_ownership
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, order="C", ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, order="C", ownable=True, subarray_after=2
+        )
         if method == "import":
             nrows, ncols = get_shape(nrows, ncols, dtype, values=values)
         else:
@@ -2643,7 +2657,9 @@ class ss:
         copy = not take_ownership
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype, copy=copy, order="F", ownable=True)
+        values, dtype = values_to_numpy_buffer(
+            values, dtype, copy=copy, order="F", ownable=True, subarray_after=2
+        )
         if method == "import":
             nrows, ncols = get_shape(nrows, ncols, dtype, values=values)
         else:
@@ -2848,7 +2864,7 @@ class ss:
 
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(values, dtype)
+        values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
         if method == "import":
             matrix = gb.Matrix(dtype, nrows=nrows, ncols=ncols, name=name)
         if is_iso:
@@ -3717,6 +3733,7 @@ class ss:
             "`Matrix.ss.scan_columnwise` is deprecated; "
             'please use `Matrix.ss.scan(order="columnwise")` instead.',
             DeprecationWarning,
+            stacklevel=2,
         )
         return prefix_scan(self._parent.T, op, name=name, within="scan_columnwise", **opts)
 
@@ -3738,6 +3755,7 @@ class ss:
         warnings.warn(
             "`Matrix.ss.scan_rowwise` is deprecated; please use `Matrix.ss.scan` instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         return prefix_scan(self._parent, op, name=name, within="scan_rowwise", **opts)
 
@@ -3904,6 +3922,7 @@ class ss:
         warnings.warn(
             "`Matrix.ss.selectk_rowwise` is deprecated; please use `Matrix.ss.selectk` instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         how = how.lower()
         fmt = "hypercsr"
@@ -3950,6 +3969,7 @@ class ss:
             "`Matrix.ss.selectk_columnwise` is deprecated; "
             'please use `Matrix.ss.selectk(order="columnwise")` instead.',
             DeprecationWarning,
+            stacklevel=2,
         )
         how = how.lower()
         fmt = "hypercsc"
@@ -4074,6 +4094,7 @@ class ss:
             "`Matrix.ss.compactify_rowwise` is deprecated; "
             "please use `Matrix.ss.compactify` instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         return self._compactify(
             how, reverse, asindex, "ncols", ncols, "hypercsr", "col_indices", name
@@ -4116,6 +4137,7 @@ class ss:
             "`Matrix.ss.compactify_columnwise` is deprecated; "
             'please use `Matrix.ss.compactify(order="columnwise")` instead.',
             DeprecationWarning,
+            stacklevel=2,
         )
         return self._compactify(
             how, reverse, asindex, "nrows", nrows, "hypercsc", "row_indices", name

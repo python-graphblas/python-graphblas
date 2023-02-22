@@ -367,7 +367,7 @@ def test_expr_is_like_scalar(s):
     assert attrs - infix_attrs == expected
     assert attrs - scalar_infix_attrs == expected
     # Make sure signatures actually match. `expr.dup` has `**opts`
-    skip = {"__init__", "__repr__", "_repr_html_", "new", "dup"}
+    skip = {"__init__", "__repr__", "_repr_html_", "dup"}
     for expr in [v.inner(v), v @ v, t & t]:
         print(type(expr).__name__)
         for attr, val in inspect.getmembers(expr):
@@ -406,7 +406,7 @@ def test_index_expr_is_like_scalar(s):
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
     # Make sure signatures actually match. `update` has different docstring.
-    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "new", "update", "dup"}
+    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "update", "dup"}
     for attr, val in inspect.getmembers(v[0]):
         if attr in skip or not isinstance(val, types.MethodType) or not hasattr(s, attr):
             continue

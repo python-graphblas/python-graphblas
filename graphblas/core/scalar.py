@@ -1,5 +1,4 @@
 import itertools
-import warnings
 
 import numpy as np
 
@@ -465,6 +464,7 @@ class Scalar(BaseType):
             raise ValueError(f'`how` argument must be "materialize" or "complete"; got {how!r}')
         if not self._is_cscalar:
             call("GrB_Scalar_wait", [self, mode])
+        return self
 
     def get(self, default=None):
         """Get the internal value of the Scalar as a Python scalar.
@@ -479,14 +479,6 @@ class Scalar(BaseType):
         Python scalar
         """
         return default if self._is_empty else self.value
-
-    @classmethod
-    def new(cls, dtype, *, is_cscalar=False, name=None):
-        warnings.warn(
-            "`Scalar.new(...)` is deprecated; please use `Scalar(...)` instead.",
-            DeprecationWarning,
-        )
-        return Scalar(dtype, is_cscalar=is_cscalar, name=name)
 
     @classmethod
     def from_value(cls, value, dtype=None, *, is_cscalar=False, name=None):

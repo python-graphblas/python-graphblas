@@ -557,7 +557,7 @@ def test_extract_input_mask():
         expected[[0, 1]].new(input_mask=M.S)
     with pytest.raises(TypeError, match="Mask object must be type Vector"):
         expected(input_mask=M.S) << expected[[0, 1]]
-    with pytest.raises(TypeError, match=r"new\(\) got an unexpected keyword argument 'input_mask'"):
+    with pytest.raises(AttributeError, match="new"):
         A.new(input_mask=M.S)
     with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
         A(input_mask=M.S) << A.apply(unary.ainv)
@@ -2898,7 +2898,6 @@ def test_expr_is_like_matrix(A):
         "_deserialize",
         "_extract_element",
         "_from_csx",
-        "_from_dense",
         "_from_obj",
         "_name_counter",
         "_parent",
@@ -2913,8 +2912,10 @@ def test_expr_is_like_matrix(A):
         "from_csr",
         "from_dcsc",
         "from_dcsr",
+        "from_dense",
         "from_dicts",
         "from_edgelist",
+        "from_scalar",
         "from_values",
         "resize",
         "update",
@@ -2935,7 +2936,7 @@ def test_expr_is_like_matrix(A):
         "_extract_element",
     }
     # Make sure signatures actually match
-    skip = {"__init__", "__repr__", "_repr_html_", "new"}
+    skip = {"__init__", "__repr__", "_repr_html_"}
     for expr in [binary.times(B & B), B & B, B.T]:
         print(type(expr).__name__)
         for attr, val in inspect.getmembers(expr):
@@ -2961,7 +2962,6 @@ def test_index_expr_is_like_matrix(A):
         "_deserialize",
         "_extract_element",
         "_from_csx",
-        "_from_dense",
         "_from_obj",
         "_name_counter",
         "_parent",
@@ -2976,9 +2976,11 @@ def test_index_expr_is_like_matrix(A):
         "from_csr",
         "from_dcsc",
         "from_dcsr",
+        "from_dense",
         "from_dicts",
         "from_edgelist",
         "from_values",
+        "from_scalar",
         "resize",
     }
     assert attrs - expr_attrs == expected, (
@@ -2988,7 +2990,7 @@ def test_index_expr_is_like_matrix(A):
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
     # Make sure signatures actually match. `update` has different docstring.
-    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "new", "update"}
+    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "update"}
     for attr, val in inspect.getmembers(B[[0, 1], [0, 1]]):
         if attr in skip or not isinstance(val, types.MethodType) or not hasattr(B, attr):
             continue
@@ -3521,12 +3523,6 @@ def test_deprecated(A):
         with pytest.warns(DeprecationWarning):
             A.ss.selectk_columnwise("first", 3)
     with pytest.warns(DeprecationWarning):
-        Matrix.new(int)
-    with pytest.warns(DeprecationWarning):
-        Vector.new(int)
-    with pytest.warns(DeprecationWarning):
-        Scalar.new(int)
-    with pytest.warns(DeprecationWarning):
         A.to_values()
     with pytest.warns(DeprecationWarning):
         A.T.to_values()
@@ -3629,6 +3625,7 @@ def test_ss_iteration(A):
     assert next(A.ss.iteritems()) is not None
 
 
+@pytest.mark.slow
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "MatrixUDT")
@@ -3814,13 +3811,14 @@ def test_reposition(A):
 def test_to_coo_sort():
     # How can we get a matrix to a jumbled state in SS so that export won't be sorted?
     N = 1000000
-    r = np.unique(np.random.randint(N, size=100))
-    c = np.unique(np.random.randint(N, size=100))
+    rng = np.random.default_rng()
+    r = np.unique(rng.integers(N, size=100))
+    c = np.unique(rng.integers(N, size=100))
     r = r[: c.size].copy()  # make sure same length
     c = c[: r.size].copy()
     expected_rows = r.copy()
-    np.random.shuffle(r)
-    np.random.shuffle(c)
+    rng.shuffle(r)
+    rng.shuffle(c)
     A = Matrix.from_coo(r, c, r, nrows=N, ncols=N)
     rows, cols, values = A.to_coo(sort=False)
     A = Matrix.from_coo(r, c, r, nrows=N, ncols=N)
@@ -4129,6 +4127,56 @@ def test_to_from_edgelist(A):
         Matrix.from_edgelist([[0, 1, 10], [2, 3, 20]], values=0)
 
 
+def test_from_scalar():
+    A = Matrix.from_scalar(1, nrows=2, ncols=3)
+    B = Matrix(int, nrows=2, ncols=3)
+    B << 1
+    assert A.isequal(B, check_dtype=True)
+    assert_array_equal(A.to_dense(dtype=float), [[1.0, 1, 1], [1, 1, 1]])
+    A = Matrix.from_scalar(Scalar.from_value(1), nrows=2, ncols=3)
+    assert A.isequal(B, check_dtype=True)
+    A = Matrix.from_scalar(Scalar.from_value(1.0), 2, 3, int)
+    assert A.isequal(B, check_dtype=True)
+    with pytest.raises(TypeError, match="missing"):
+        Matrix.from_scalar(1, nrows=2)
+    with pytest.raises(TypeError, match="Literal scalars also accepted"):
+        Matrix.from_scalar(A, nrows=2, ncols=3)
+    A = Matrix.from_scalar(1, dtype="INT64[2]", nrows=3, ncols=4)
+    B = Matrix("INT64[2]", nrows=3, ncols=4)
+    B << [1, 1]
+    assert A.isequal(B, check_dtype=True)
+
+
+def test_to_dense_from_dense():
+    A = Matrix.from_dense(np.arange(6).reshape(2, 3))
+    B = Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], np.arange(6))
+    assert A.isequal(B, check_dtype=True)
+    assert_array_equal(A.to_dense(dtype=int), [[0, 1, 2], [3, 4, 5]])
+    assert_array_equal(A.T.to_dense(dtype=int), [[0, 3], [1, 4], [2, 5]])
+    del A[0, 0]
+    assert_array_equal(A.to_dense(6.5), [[6.5, 1, 2], [3, 4, 5]])
+    assert_array_equal(A.to_dense(6.5, int), [[6, 1, 2], [3, 4, 5]])
+    assert_array_equal(A.to_dense(Scalar.from_value(6.5)), [[6.5, 1, 2], [3, 4, 5]])
+
+    A = Matrix.from_dense(np.arange(6).reshape(2, 3))
+    A.resize(3, 4)
+    B.resize(3, 4)
+    assert A.isequal(B, check_dtype=True)
+    assert_array_equal(A.to_dense(10), [[0, 1, 2, 10], [3, 4, 5, 10], [10, 10, 10, 10]])
+    with pytest.raises(ValueError, match="is required to create a dense"):
+        Matrix.from_dense([1, 2, 3])
+    with pytest.raises(TypeError, match="fill_value must be given"):
+        A.to_dense()
+    with pytest.raises(TypeError, match="Bad type for keyword argument `fill_value"):
+        A.to_dense(object())
+    with pytest.raises(ValueError, match="must be 2d"):
+        Matrix.from_dense(np.arange(24).reshape(2, 3, 4), dtype=int)
+    with pytest.raises(ValueError, match=">2d array"):
+        Matrix.from_dense(np.arange(6).reshape(2, 3), dtype="INT64[2]")
+    with pytest.raises(TypeError, match="from_scalar"):
+        Matrix.from_dense(1)
+
+
 @pytest.mark.skipif("not suitesparse")
 def test_ss_sort(A):
     A[3, 0] = 9
@@ -4248,3 +4296,47 @@ def test_ss_descriptors(A):
     else:
         with pytest.raises(ValueError, match="escriptor"):
             (A @ A).new(nthreads=4, axb_method="dot", sort=True)
+
+
+@autocompute
+def test_wait_chains(A):
+    result = A.wait().T.wait().reduce_rowwise().wait().reduce().wait()
+    assert result == 47
+
+
+def test_subarray_dtypes():
+    a = np.arange(3 * 4, dtype=np.int64).reshape(3, 4)
+    A = Matrix.from_coo([1, 3, 5], [0, 1, 3], a)
+    B = Matrix("INT64[4]", nrows=6, ncols=4)
+    B[1, 0] = [0, 1, 2, 3]
+    B[3, 1] = [4, 5, 6, 7]
+    B[5, 3] = [8, 9, 10, 11]
+    assert A.isequal(B, check_dtype=True)
+    for method in ["coo", "csr", "csc", "dcsr", "dcsc", "edgelist"]:
+        B = getattr(A, f"from_{method}")(*getattr(A, f"to_{method}")())
+    B = Matrix.from_dicts(A.to_dicts())
+    assert A.isequal(B, check_dtype=True)
+    B = Matrix.from_dicts(A.to_dicts(), A.dtype)
+    assert A.isequal(B, check_dtype=True)
+
+    b1 = np.arange(2 * 3 * 4, dtype=np.int64).reshape(2 * 3, 4)
+    b2 = np.arange(2 * 3 * 4, dtype=np.int64).reshape(2, 3, 4)
+    Full1 = Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], b1)
+    Full2 = Matrix("INT64[4]", nrows=2, ncols=3)
+    Full2[0, 0] = [0, 1, 2, 3]
+    Full2[0, 1] = [4, 5, 6, 7]
+    Full2[0, 2] = [8, 9, 10, 11]
+    Full2[1, 0] = [12, 13, 14, 15]
+    Full2[1, 1] = [16, 17, 18, 19]
+    Full2[1, 2] = [20, 21, 22, 23]
+    assert Full1.isequal(Full2, check_dtype=True)
+    Full2 = Matrix("INT64[4]", nrows=2, ncols=3)
+    Full2[:, :] = b2
+    assert Full1.isequal(Full2, check_dtype=True)
+    Full2 = Matrix.from_dense(b2)
+    assert Full1.isequal(Full2, check_dtype=True)
+    Full2 = Matrix.from_dense(Full1.to_dense())
+    assert Full2.isequal(Full2, check_dtype=True)
+    if suitesparse:
+        Full2 = Matrix.ss.import_fullr(b2)
+        assert Full1.isequal(Full2, check_dtype=True)

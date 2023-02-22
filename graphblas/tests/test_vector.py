@@ -1339,7 +1339,7 @@ def test_ss_import_export_auto(v, do_iso, methods):
         w(w.S) << 1
     w_orig = w.dup()
     format = "full"
-    for (raw, import_format, give_ownership, take_ownership, import_name) in itertools.product(
+    for raw, import_format, give_ownership, take_ownership, import_name in itertools.product(
         [False, True],
         [format, None],
         [False, True],
@@ -1639,8 +1639,10 @@ def test_expr_is_like_vector(v):
         "build",
         "clear",
         "from_coo",
+        "from_dense",
         "from_dict",
         "from_pairs",
+        "from_scalar",
         "from_values",
         "resize",
         "update",
@@ -1653,7 +1655,7 @@ def test_expr_is_like_vector(v):
     )
     assert attrs - infix_attrs == expected
     # Make sure signatures actually match
-    skip = {"__init__", "__repr__", "_repr_html_", "new"}
+    skip = {"__init__", "__repr__", "_repr_html_"}
     for expr in [binary.times(w & w), w & w]:
         print(type(expr).__name__)
         for attr, val in inspect.getmembers(expr):
@@ -1686,8 +1688,10 @@ def test_index_expr_is_like_vector(v):
         "build",
         "clear",
         "from_coo",
+        "from_dense",
         "from_dict",
         "from_pairs",
+        "from_scalar",
         "from_values",
         "resize",
     }
@@ -1698,7 +1702,7 @@ def test_index_expr_is_like_vector(v):
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
     # Make sure signatures actually match. `update` has different docstring.
-    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "new", "update"}
+    skip = {"__call__", "__init__", "__repr__", "_repr_html_", "update"}
     for attr, val in inspect.getmembers(w[[0, 1]]):
         if attr in skip or not isinstance(val, types.MethodType) or not hasattr(w, attr):
             continue
@@ -1746,7 +1750,7 @@ def test_ss_random(v):
         elif r.isequal(r4):
             seen.add("r4")
         else:  # pragma: no cover (sanity)
-            raise AssertionError()
+            raise AssertionError
         if len(seen) == 4:
             break
     for k in range(1, v.nvals + 1):
@@ -2366,9 +2370,10 @@ def test_reposition(v):
 def test_to_coo_sort():
     # How can we get a vector to a jumbled state in SS so that export won't be sorted?
     N = 1000000
-    a = np.unique(np.random.randint(N, size=100))
+    rng = np.random.default_rng()
+    a = np.unique(rng.integers(N, size=100))
     expected = a.copy()
-    np.random.shuffle(a)
+    rng.shuffle(a)
     v = Vector.from_coo(a, a, size=N)
     indices, values = v.to_coo(sort=False)
     v = Vector.from_coo(a, a, size=N)
@@ -2509,6 +2514,52 @@ def test_from_pairs():
         Vector.from_pairs([[1, 2, 3], [4, 5, 6]])
 
 
+def test_from_scalar():
+    v = Vector.from_scalar(1, size=3)
+    w = Vector.from_coo([0, 1, 2], 1)
+    assert v.isequal(w, check_dtype=True)
+    assert_array_equal(v.to_dense(), [1, 1, 1])
+    v = Vector.from_scalar(Scalar.from_value(1), size=3)
+    assert v.isequal(w, check_dtype=True)
+    v = Vector.from_scalar(Scalar.from_value(1.0), 3, int)
+    with pytest.raises(TypeError, match="missing"):
+        Vector.from_scalar(1)
+    with pytest.raises(TypeError, match="Literal scalars also accepted"):
+        Vector.from_scalar(v, size=2)
+    v = Vector.from_scalar(1, dtype="INT64[2]", size=3)
+    w = Vector("INT64[2]", size=3)
+    w << [1, 1]
+    assert v.isequal(w, check_dtype=True)
+
+
+def test_to_dense_from_dense():
+    v = Vector.from_dense([1, 2, 3])
+    w = Vector.from_coo([0, 1, 2], [1, 2, 3])
+    assert v.isequal(w, check_dtype=True)
+    assert_array_equal(v.to_dense(dtype=int), [1, 2, 3])
+    v = Vector.from_dense([1, 2, 3])
+    v.resize(4)
+    w = Vector.from_coo([0, 1, 2], [1, 2, 3], size=4)
+    assert v.isequal(w, check_dtype=True)
+    assert_array_equal(v.to_dense(4.5, dtype=float), [1, 2, 3, 4.5])
+    assert_array_equal(v.to_dense(4.5), [1, 2, 3, 4.5])  # Scalar type can upcast
+    assert_array_equal(v.to_dense(Scalar.from_value(4)), [1, 2, 3, 4])
+    with pytest.raises(TypeError, match="fill_value must be given"):
+        v.to_dense()
+    with pytest.raises(TypeError, match="Bad type for keyword argument `fill_value"):
+        v.to_dense(object())
+    v = Vector.from_dense([1, 2])
+    w = Vector.from_coo([0, 1], [1, 2], size=2)
+    assert v.isequal(w, check_dtype=True)
+    assert_array_equal(v.to_dense(dtype=float), [1.0, 2])
+    with pytest.raises(ValueError, match="must be 1d"):
+        Vector.from_dense(np.arange(6).reshape(2, 3), dtype=int)
+    with pytest.raises(ValueError, match=">1d array"):
+        Vector.from_dense(np.arange(6), dtype="INT64[2]")
+    with pytest.raises(TypeError, match="from_scalar"):
+        Vector.from_dense(1)
+
+
 @pytest.mark.skipif("not suitesparse")
 def test_ss_sort(v):
     # For equal values, indices are guaranteed to be sorted
@@ -2539,3 +2590,51 @@ def test_ss_sort(v):
     expected_p = Vector.from_coo([0, 1, 2, 3], [6, 4, 3, 1], size=7)
     assert p.isequal(expected_p)
     w, p = v.ss.sort(monoid.lxor)  # Weird, but user-defined monoids may not commute, so okay
+
+
+def test_subarray_dtypes():
+    a = np.arange(3 * 4, dtype=np.int64).reshape(3, 4)
+    v = Vector.from_coo([1, 3, 5], a)
+    w = Vector("INT64[4]", size=6)
+    w[1] = [0, 1, 2, 3]
+    w[3] = [4, 5, 6, 7]
+    w[5] = [8, 9, 10, 11]
+    assert v.isequal(w, check_dtype=True)
+    w = Vector.from_coo(*v.to_coo())
+    assert v.isequal(w, check_dtype=True)
+    w = Vector.from_dict(v.to_dict())
+    assert v.isequal(w, check_dtype=True)
+    w = Vector.from_dict(v.to_dict(), v.dtype)
+    assert v.isequal(w, check_dtype=True)
+    w = Vector.from_pairs([[1, [0, 1, 2, 3]], [3, [4, 5, 6, 7]], [5, [8, 9, 10, 11]]])
+    assert v.isequal(w, check_dtype=True)
+
+    filled1 = Vector.from_dense(v.to_dense(0))
+    filled2 = v.dup()
+    filled2[[0, 2, 4]] = 0
+    assert filled1.isequal(filled2, check_dtype=True)
+    filled1 = Vector.from_dense(v.to_dense([6, 5, 4, 3]))
+    filled2 = v.dup()
+    filled2[[0, 2, 4]] = [6, 5, 4, 3]
+    assert filled1.isequal(filled2, check_dtype=True)
+
+    full1 = Vector.from_coo([0, 1, 2], a)
+    full2 = Vector("INT64[4]", size=3)
+    full2[0] = [0, 1, 2, 3]
+    full2[1] = [4, 5, 6, 7]
+    full2[2] = [8, 9, 10, 11]
+    assert full1.isequal(full2, check_dtype=True)
+    full2 = Vector("INT64[4]", size=3)
+    full2[:] = a
+    assert full1.isequal(full2, check_dtype=True)
+    full2 = Vector.from_dense(a)
+    assert full1.isequal(full2, check_dtype=True)
+    full2 = Vector.from_dense(full1.to_dense())
+    assert full1.isequal(full2, check_dtype=True)
+    if suitesparse:
+        w = Vector.ss.import_sparse(indices=[1, 3, 5], values=a, size=6)
+        assert v.isequal(w, check_dtype=True)
+        full2 = Vector.ss.import_full(a)
+        assert full1.isequal(full2, check_dtype=True)
+        full2 = Vector.ss.import_bitmap(values=a, bitmap=[True, True, True])
+        assert full1.isequal(full2, check_dtype=True)

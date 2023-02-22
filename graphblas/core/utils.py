@@ -72,7 +72,21 @@ def _get_subdtype(dtype):
     return dtype
 
 
-def values_to_numpy_buffer(array, dtype=None, *, copy=False, ownable=False, order="C"):
+def values_to_numpy_buffer(
+    array, dtype=None, *, copy=False, ownable=False, order="C", subarray_after=None
+):
+    """Convert an array-like object to a numpy array and infer the dtype if necessary.
+
+    Parameters
+    ----------
+    subarray_after : int, optional
+        If dtype is not provided, infer "sub-array" dtype if the array has extra dimensions.
+
+    Returns
+    -------
+    np.ndarray
+    dtype
+    """
     if dtype is not None:
         dtype = lookup_dtype(dtype)
         array = np.array(array, _get_subdtype(dtype.np_type), copy=copy, order=order)
@@ -85,9 +99,27 @@ def values_to_numpy_buffer(array, dtype=None, *, copy=False, ownable=False, orde
             # fix for win64 numpy handling of ints
             array = array.astype(np.int64)
         dtype = lookup_dtype(array.dtype)
+        if subarray_after is not None and array.ndim > subarray_after:
+            dtype = lookup_dtype(np.dtype((dtype.np_type, array.shape[subarray_after:])))
     if ownable and (not array.flags.owndata or not array.flags.writeable):
         array = array.copy(order)
     return array, dtype
+
+
+def normalize_values(self, values, dtype, shape=None, is_iso=False):
+    """Expand and/or update dtype of values array."""
+    if dtype is not None:
+        dtype = lookup_dtype(dtype)
+        if dtype != self.dtype:
+            values = values.astype(dtype.np_type)  # copies
+    else:
+        dtype = self.dtype
+    if is_iso:
+        if dtype.np_type.subdtype is None:
+            values = np.broadcast_to(values, shape)
+        else:
+            values = np.broadcast_to(values, shape + values.shape)
+    return values
 
 
 def get_shape(nrows, ncols, dtype=None, **arrays):
@@ -246,12 +278,12 @@ class class_property:
         self.member_property = member_property
         self.exceptional = exceptional
 
-    def __get__(self, obj, type=None):
+    def __get__(self, instance, owner=None):
         if self.exceptional:
             raise AttributeError(self.classval)
-        if obj is None:
+        if instance is None:
             return self.classval
-        return self.member_property.__get__(obj, type)
+        return self.member_property.__get__(instance, owner)
 
     @property
     def __set__(self):  # pylint: disable=unexpected-special-method-signature
@@ -320,14 +352,14 @@ class _MatrixArray:
 
 
 def _autogenerate_code(
-    filename,
+    filepath,
     text,
     specializer=None,
     begin="# Begin auto-generated code",
     end="# End auto-generated code",
 ):
     """Super low-tech auto-code generation used by automethods.py and infixmethods.py."""
-    with open(filename) as f:  # pragma: no branch (flaky)
+    with filepath.open() as f:  # pragma: no branch (flaky)
         orig_text = f.read()
     if specializer:
         begin = f"{begin}: {specializer}"
@@ -347,8 +379,11 @@ def _autogenerate_code(
     new_text = orig_text
     for start, stop in reversed(boundaries):
         new_text = f"{new_text[:start]}{begin}{text}{new_text[stop:]}"
-    with open(filename, "w") as f:  # pragma: no branch (flaky)
+    with filepath.open("w") as f:  # pragma: no branch (flaky)
         f.write(new_text)
     import subprocess
 
-    subprocess.check_call(["black", filename])
+    try:
+        subprocess.check_call(["black", filepath])
+    except FileNotFoundError:  # pragma: no cover (safety)
+        pass  # It's okay if `black` isn't installed; pre-commit hooks will do linting
