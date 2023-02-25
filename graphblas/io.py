@@ -550,14 +550,17 @@ def to_pydata_sparse(A, format="coo"):
     if format not in {"coo", "dok", "gcxs"}:
         raise ValueError(f"Invalid format: {format}")
 
-    if format == "gcxs":
-        B = to_scipy_sparse(A, format="csr")
+    if _output_type(A) is _Vector:
+        indices, values = A.to_coo(sort=False)
+        s = COO(indices, values, shape=A.shape)
     else:
-        # obtain an intermediate conversion via hardcoded 'coo' intermediate object
-        B = to_scipy_sparse(A, format="coo")
-
-    # convert to pydata.sparse
-    s = COO.from_scipy_sparse(B)
+        if format == "gcxs":
+            B = to_scipy_sparse(A, format="csr")
+        else:
+            # obtain an intermediate conversion via hardcoded 'coo' intermediate object
+            B = to_scipy_sparse(A, format="coo")
+        # convert to pydata.sparse
+        s = COO.from_scipy_sparse(B)
 
     # express in the desired format
     return s.asformat(format)
