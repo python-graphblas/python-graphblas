@@ -14,7 +14,7 @@ Matrix and Vector, instead, have a ``.from_coo()`` and a ``.to_coo()`` method.
 ``.from_coo()`` takes index(es) and values as either:
 
   - Python lists
-  - Numpy arrays
+  - NumPy arrays
 
 If no dtype is provided, the data type is inferred from the values.
 
@@ -77,17 +77,17 @@ A python-graphblas Matrix can be created from a 2-D (PyData) sparse array or mat
 ``gb.io.to_pydata_sparse()`` will output a 2-D (PyData) sparse array given a python-graphblas Matrix.
 The sparse format can be specified. It defaults to "coo".
 
-Numpy (Dense)
+NumPy (Dense)
 -------------
 
 While not useful for very large graphs, converting to and from small dense numpy arrays can be useful.
 
-``gb.io.from_numpy()`` will convert a 1-D array into a Vector and a 2-D array into a Matrix. When converting
-from numpy, zeros are treated as missing values.
+``Vector.from_dense()`` converts a 1-D array into a Vector and
+``Matrix.from_dense()`` a 2-D array into a Matrix. When converting from numpy, a value may be
+chosen to become a missing value, such as ``Matrix.from_dense(a, missing_value=0)``.
 
-``gb.io.to_numpy()`` will convert a Vector or Matrix into the dense equivalent in numpy, filling missing
-values with zero.
-
+``.to_dense()`` converts a Vector or Matrix into a numpy array. If there are missing values, a fill
+value should be given such as ``.to_dense(fill_value=0)``.
 
 SuiteSparse Export/Import
 -------------------------

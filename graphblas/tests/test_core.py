@@ -54,4 +54,6 @@ def test_bad_call():
 
 
 def test_version():
-    assert gb.__version__ > "2022.11.0"
+    from packaging.version import parse
+
+    assert parse(gb.__version__) > parse("2022.11.0")

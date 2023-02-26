@@ -186,11 +186,6 @@ Similar methods exist for BinaryOp, Monoid, and Semiring.
 ```python
 import graphblas as gb
 
-# numpy arrays
-# 1-D array becomes Vector, 2-D array becomes Matrix
-A = gb.io.from_numpy(m)
-m = gb.io.to_numpy(A)
-
 # scipy.sparse matrices
 A = gb.io.from_scipy_sparse(m)
 m = gb.io.to_scipy_sparse(m, format='csr')
@@ -198,4 +193,11 @@ m = gb.io.to_scipy_sparse(m, format='csr')
 # networkx graphs
 A = gb.io.from_networkx(g)
 g = gb.io.to_networkx(A)
+
+# numpy arrays can use `from_dense` and `to_dense` on Vector and Matrix
+v = gb.Vector.from_dense(m)
+m = v.to_dense()
+
+A = gb.Matrix.from_dense(m, missing_value=0)
+m = A.to_dense(fill_value=0)
 ```

@@ -142,7 +142,7 @@ jobs:
           # Consider removing old versions when they become problematic or very old (>=2 years).
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
-          sparsever=$(python -c 'import random ; print(random.choice(["=0.12", "=0.13", ""]))')
+          sparsever=$(python -c 'import random ; print(random.choice(["=0.12", "=0.13", "=0.14", ""]))')
           if [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
@@ -175,7 +175,7 @@ jobs:
           # That is, we don't need to support versions of it that are two years old.
           # But, it's still useful for us to test with different versions!
           if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
-            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", ""]))')
           else
             psgver=""
           fi
@@ -187,7 +187,7 @@ jobs:
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
           # Once we have wheels for all OSes, we can delete the last two lines.
-          mamba install pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig pyyaml${yamlver} sparse${sparsever} \
+          mamba install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig pyyaml${yamlver} sparse${sparsever} \
             pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} numba${numbaver} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \

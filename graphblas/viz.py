@@ -182,7 +182,7 @@ def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kw
             images.extend(image_row)
         return hv.Layout(images).cols(ncols)
 
-    kwds = dict(  # noqa: C408
+    kwds = dict(  # noqa: C408 pylint: disable=use-dict-literal
         x="col",
         y="row",
         c="val",
