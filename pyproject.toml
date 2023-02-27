@@ -84,6 +84,7 @@ viz = [
 ]
 test = [
     "pytest",
+    "packaging",
     "pandas >=1.2",
     "scipy >=1.8",
 ]
@@ -96,6 +97,7 @@ complete = [
     "fast-matrix-market >=1.4.5",
     "matplotlib >=3.5",
     "pytest",
+    "packaging",
 ]
 
 [tool.setuptools]
@@ -149,7 +151,7 @@ filterwarnings = [
     "error",
     # MAINT: we can drop support for sparse <0.13 at any time
     "ignore:`np.bool` is a deprecated alias:DeprecationWarning:sparse._umath",  # sparse <0.13
-    # sparse 0.14.0 (2022-02-24) began raising this warning; we should investigate to understand why.
+    # sparse 0.14.0 (2022-02-24) began raising this warning; it has been reported and fixed upstream.
     "ignore:coords should be an ndarray. This will raise a ValueError:DeprecationWarning:sparse._coo.core",
 
     # setuptools v67.3.0 deprecated `pkg_resources.declare_namespace` on 13 Feb 2023. See:
