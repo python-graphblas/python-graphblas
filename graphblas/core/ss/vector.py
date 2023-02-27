@@ -551,9 +551,8 @@ class ss:
                 if is_iso:
                     if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
-                else:
-                    if values.size > nvals:
-                        values = values[:nvals]
+                elif values.size > nvals:
+                    values = values[:nvals]
             rv = {
                 "size": size,
                 "indices": indices,
@@ -589,9 +588,8 @@ class ss:
                 if is_iso:
                     if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
-                else:
-                    if values.size > size:  # pragma: no branch (suitesparse)
-                        values = values[:size]
+                elif values.size > size:  # pragma: no branch (suitesparse)
+                    values = values[:size]
             rv = {
                 "bitmap": bitmap,
                 "nvals": nvals[0],
@@ -616,9 +614,8 @@ class ss:
                 if is_iso:
                     if values.size > 1:
                         values = values[:1]
-                else:
-                    if values.size > size:  # pragma: no branch (suitesparse)
-                        values = values[:size]
+                elif values.size > size:  # pragma: no branch (suitesparse)
+                    values = values[:size]
             rv = {}
             if raw or is_iso:
                 rv["size"] = size
