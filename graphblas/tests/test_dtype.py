@@ -1,13 +1,18 @@
 import itertools
 import pickle
 import string
+import sys
 
 import numpy as np
 import pytest
 
+import graphblas as gb
 from graphblas import dtypes
 from graphblas.core import lib
 from graphblas.dtypes import lookup_dtype
+
+suitesparse = gb.backend == "suitesparse"
+is_win = sys.platform.startswith("win")
 
 all_dtypes = [
     dtypes.BOOL,
@@ -233,3 +238,21 @@ def test_dtype_to_from_string():
                 lookup_dtype(dtype)
         else:
             assert dtype == dtype2
+
+
+def test_has_complex():
+    """Only SuiteSparse has complex (with Windows support in Python after v7.4.3.1)"""
+    if not suitesparse:
+        assert not dtypes._supports_complex
+        return
+    if not is_win:
+        assert dtypes._supports_complex
+        return
+
+    import suitesparse_graphblas as ssgb
+    from packaging.version import parse
+
+    if parse(ssgb.__version__) < parse("7.4.3.1"):
+        assert not dtypes._supports_complex
+    else:
+        assert dtypes._supports_complex

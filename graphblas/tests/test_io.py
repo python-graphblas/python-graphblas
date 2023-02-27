@@ -406,7 +406,8 @@ def test_vector_to_from_pydata_sparse():
     assert v.isequal(gb.Vector.from_coo(coords, data, dtype=dtypes.INT64), check_dtype=True)
 
     t = gb.io.to_pydata_sparse(v)
-    assert t == s
+    assert t.shape == s.shape
+    assert (t == s).all()
 
 
 @pytest.mark.skipif("not sparse")
@@ -418,7 +419,8 @@ def test_matrix_to_from_pydata_sparse():
     assert v.isequal(gb.Matrix.from_coo(*coords, data, dtype=dtypes.INT64), check_dtype=False)
 
     t = gb.io.to_pydata_sparse(v)
-    assert t == s
+    assert t.shape == s.shape
+    assert (t == s).all()
 
     # test ndim
     e = sparse.random(shape=(5, 5, 5), density=0)
@@ -437,7 +439,8 @@ def test_matrix_to_from_pydata_sparse():
     assert w.isequal(gb.Matrix.from_coo(*coords, data, dtype=dtypes.INT64), check_dtype=False)
 
     r = gb.io.to_pydata_sparse(w, format="gcxs")
-    assert r == g
+    assert r.shape == g.shape
+    assert (r == g).all()
     with pytest.raises(ValueError, match="format"):
         gb.io.to_pydata_sparse(w, format="badformat")
     with pytest.raises(TypeError, match="sparse.pydata"):

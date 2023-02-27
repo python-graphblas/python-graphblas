@@ -44,8 +44,7 @@ class DataType:
             t2 = lookup_dtype(other).np_type
         except ValueError:
             raise TypeError(f"Invalid or unknown datatype: {other}") from None
-        else:
-            return (t1.kind, t1.itemsize, t1.name) < (t2.kind, t2.itemsize, t2.name)
+        return (t1.kind, t1.itemsize, t1.name) < (t2.kind, t2.itemsize, t2.name)
 
     def __reduce__(self):
         if self._is_udt:

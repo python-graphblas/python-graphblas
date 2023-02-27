@@ -34,6 +34,7 @@ dependencies:
     # For linting
     - pre-commit
     # For testing
+    - packaging
     - pytest-cov
     # For debugging
     - icecream
