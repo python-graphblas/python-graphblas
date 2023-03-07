@@ -156,6 +156,9 @@ filterwarnings = [
     # https://setuptools.pypa.io/en/latest/history.html#v67-3-0
     # MAINT: check if this is still necessary in 2025
     "ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning:pkg_resources",
+    # And this deprecation warning was added in setuptools v67.5.0 (8 Mar 2023). See:
+    # https://setuptools.pypa.io/en/latest/history.html#v67-5-0
+    "ignore:pkg_resources is deprecated as an API:DeprecationWarning:pkg_resources",
 ]
 
 [tool.coverage.run]
