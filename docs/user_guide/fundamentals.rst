@@ -37,7 +37,7 @@ The descriptor is a set of bitwise flags.
   - Replace mode indicates that elements outside the mask area should be cleared in the final output.
     When not in replace mode, elements outside the mask are left untouched.
 
-For more details, look at the official API spec at `graphblas.org <https:://graphblas.org>`_.
+For more details, look at the official API spec at `graphblas.org <https://graphblas.org>`_.
 
 C-to-Python Mapping
 -------------------
