@@ -61,8 +61,8 @@ html_theme = "pydata_sphinx_theme"
 html_static_path = ["_static"]
 html_theme_options = {
     "logo": {
-        "image_light": "img/logo-name-light.svg",
-        "image_dark": "img/logo-name-dark.svg",
+        "image_light": "_static/img/logo-name-light.svg",
+        "image_dark": "_static/img/logo-name-dark.svg",
     },
     "github_url": "https://github.com/python-graphblas/python-graphblas",
 }
