@@ -66,6 +66,7 @@ html_theme_options = {
     },
     "github_url": "https://github.com/python-graphblas/python-graphblas",
 }
+html_show_sourcelink = False
 
 autodoc_member_order = "groupwise"
 
