@@ -33,6 +33,15 @@ $ pip install python-graphblas
 ```
 This will also install the [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS) compiled C library.
 
+### Optional Dependencies
+
+The following are not required by python-graphblas, but may be needed for certain functionality to work.
+
+- `pandas` – required for nicer `__repr__`;
+- `matplotlib` – required for basic plotting of graphs;
+- `scipy` – used in io module to read/write `scipy.sparse` format;
+- `networkx` – used in `io` module to interface with `networkx` graphs.
+
 ## Description
 Currently works with [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS), but the goal is to make it work with all implementations of the GraphBLAS spec.
 
