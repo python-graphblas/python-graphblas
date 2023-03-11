@@ -21,6 +21,13 @@ maintainers = [
     {name = "Jim Kitchen", email = "jim22k@gmail.com"},
     {name = "Sultan Orazbayev", email = "contact@econpoint.com"},
 ]
+contributors = [
+    {GitHub_handle = "eriknw"},
+    {GitHub_handle = "jim22k"},
+    {GitHub_handle = "ParticularMiner"},
+    {GitHub_handle = "SultanOrazbayev"},
+    {GitHub_handle = "seibert"},
+]
 keywords = [
     "graphblas",
     "graph",
