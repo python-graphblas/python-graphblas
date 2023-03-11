@@ -19,6 +19,7 @@ authors = [
 maintainers = [
     {name = "Erik Welch", email = "erik.n.welch@gmail.com"},
     {name = "Jim Kitchen", email = "jim22k@gmail.com"},
+    {name = "Sultan Orazbayev", email = "contact@econpoint.com"},
 ]
 keywords = [
     "graphblas",
