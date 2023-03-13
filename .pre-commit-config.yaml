@@ -24,15 +24,19 @@ repos:
     hooks:
       - id: validate-pyproject
         name: Validate pyproject.toml
+  # We can probably remove `autoflake` if we come to trust `ruff --fix`
   - repo: https://github.com/myint/autoflake
     rev: v2.0.2
     hooks:
       - id: autoflake
         args: [--in-place]
+  # We can probably remove `isort` if we come to trust `ruff --fix`,
+  # but we'll need to figure out the configuration to do this in `ruff`
   - repo: https://github.com/pycqa/isort
     rev: 5.12.0
     hooks:
       - id: isort
+  # Let's keep `pyupgrade` even though `ruff --fix` probably does most of it
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.3.1
     hooks:
@@ -53,6 +57,8 @@ repos:
     hooks:
       - id: ruff
         args: [--fix-only]
+  # Let's keep `flake8` even though `ruff` does much of the same.
+  # `flake8-bugbear` and `flake8-simplify` have caught things missed by `ruff`.
   - repo: https://github.com/PyCQA/flake8
     rev: 6.0.0
     hooks:
@@ -60,7 +66,7 @@ repos:
         additional_dependencies: &flake8_dependencies
         # These versions need updated manually
         - flake8==6.0.0
-        - flake8-comprehensions==3.10.1
+        - flake8-comprehensions==3.10.1  # Consider removing and rely on `ruff` instead
         - flake8-bugbear==23.2.13
         - flake8-simplify==0.19.3
   - repo: https://github.com/asottile/yesqa
@@ -84,6 +90,13 @@ repos:
     hooks:
       - id: sphinx-lint
         args: [--enable, all, "--disable=line-too-long,leaked-markup"]
+  # `pyroma` may help keep our package standards up to date if best practices change.
+  # This is probably a "low value" check though and safe to remove if we want faster pre-commit.
+  - repo: https://github.com/regebro/pyroma
+    rev: "4.2"
+    hooks:
+      - id: pyroma
+        args: [-n, "10", .]
   - repo: local
     hooks:
       # Add `--hook-stage manual` to pre-commit command to run (very slow)
