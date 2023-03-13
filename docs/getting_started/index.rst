@@ -34,6 +34,7 @@ to work.
   - `matplotlib <https://matplotlib.org>`__ -- required for basic plotting of graphs
   - `scipy <https://scipy.org/>`__ -- used in ``io`` module to read/write ``scipy.sparse`` format
   - `networkx <https://networkx.org>`__ -- used in ``io`` module to interface with networkx graphs
+  - `fast-matrix-market <https://github.com/alugowski/fast_matrix_market>`__ -- for faster read/write of Matrix Market files with ``gb.io.mmread`` and ``gb.io.mmwrite``
 
 GraphBLAS Fundamentals
 ----------------------

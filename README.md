@@ -40,7 +40,8 @@ The following are not required by python-graphblas, but may be needed for certai
 - `pandas` – required for nicer `__repr__`;
 - `matplotlib` – required for basic plotting of graphs;
 - `scipy` – used in io module to read/write `scipy.sparse` format;
-- `networkx` – used in `io` module to interface with `networkx` graphs.
+- `networkx` – used in `io` module to interface with `networkx` graphs;
+- `fast-matrix-market` - for faster read/write of Matrix Market files with `gb.io.mmread` and `gb.io.mmwrite`.
 
 ## Description
 Currently works with [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS), but the goal is to make it work with all implementations of the GraphBLAS spec.
