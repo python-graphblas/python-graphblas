@@ -2,6 +2,7 @@
 
 [![conda-forge](https://img.shields.io/conda/vn/conda-forge/python-graphblas.svg)](https://anaconda.org/conda-forge/python-graphblas)
 [![pypi](https://img.shields.io/pypi/v/python-graphblas.svg)](https://pypi.python.org/pypi/python-graphblas/)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/python-graphblas)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/python-graphblas/python-graphblas/blob/main/LICENSE)
 [![Tests](https://github.com/python-graphblas/python-graphblas/workflows/Tests/badge.svg?branch=main)](https://github.com/python-graphblas/python-graphblas/actions)
 [![Docs](https://readthedocs.org/projects/python-graphblas/badge/?version=latest)](https://python-graphblas.readthedocs.io/en/latest/)
@@ -31,6 +32,15 @@ or pip:
 $ pip install python-graphblas
 ```
 This will also install the [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS) compiled C library.
+
+### Optional Dependencies
+
+The following are not required by python-graphblas, but may be needed for certain functionality to work.
+
+- `pandas` – required for nicer `__repr__`;
+- `matplotlib` – required for basic plotting of graphs;
+- `scipy` – used in io module to read/write `scipy.sparse` format;
+- `networkx` – used in `io` module to interface with `networkx` graphs.
 
 ## Description
 Currently works with [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS), but the goal is to make it work with all implementations of the GraphBLAS spec.
