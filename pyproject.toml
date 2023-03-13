@@ -15,6 +15,7 @@ license = {file = "LICENSE"}
 authors = [
     {name = "Erik Welch"},
     {name = "Jim Kitchen"},
+    {name = "Python-graphblas contributors"},
 ]
 maintainers = [
     {name = "Erik Welch", email = "erik.n.welch@gmail.com"},
