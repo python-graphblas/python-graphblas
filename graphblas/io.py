@@ -26,6 +26,7 @@ def draw(m):  # pragma: no cover
     _warn(
         "`graphblas.io.draw` is deprecated; it has been moved to `graphblas.viz.draw`",
         DeprecationWarning,
+        stacklevel=2,
     )
     viz.draw(m)
 
@@ -93,6 +94,7 @@ def from_numpy(m):  # pragma: no cover (deprecated)
         "`graphblas.io.from_numpy` is deprecated; "
         "use `Matrix.from_dense` and `Vector.from_dense` instead.",
         DeprecationWarning,
+        stacklevel=2,
     )
     if m.ndim > 2:
         raise _GraphblasException("m.ndim must be <= 2")
@@ -336,6 +338,7 @@ def to_numpy(m):  # pragma: no cover (deprecated)
         "`graphblas.io.to_numpy` is deprecated; "
         "use `Matrix.to_dense` and `Vector.to_dense` instead.",
         DeprecationWarning,
+        stacklevel=2,
     )
     try:
         import scipy  # noqa: F401
