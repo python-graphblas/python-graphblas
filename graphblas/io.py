@@ -600,6 +600,7 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
     :class:`~graphblas.Matrix`
     """
     try:
+        # scipy is currently needed for *all* engines
         from scipy.io import mmread
         from scipy.sparse import isspmatrix_coo
     except ImportError:  # pragma: no cover (import)
@@ -663,6 +664,7 @@ def mmwrite(
         {"general", "symmetric", "skew-symmetric", "hermetian"}
     """
     try:
+        # scipy is currently needed for *all* engines
         from scipy.io import mmwrite
     except ImportError:  # pragma: no cover (import)
         raise ImportError("scipy is required to write Matrix Market files") from None
