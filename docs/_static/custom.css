@@ -1,10 +1,6 @@
 
 /* Main Page Stylings */
 
-.container-xl {
-    max-width: 1400px;
-}
-
 .intro-card {
     background-color: var(--pst-color-background);
     margin-bottom: 30px;
@@ -79,8 +75,4 @@ button span.theme-switch:hover {
 
 .dataframe tbody th, .dataframe tbody td {
     padding: 10px;
-}
-
-.bd-sidebar-primary, .bd-sidebar-secondary {
-    position: sticky;
 }
