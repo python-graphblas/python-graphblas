@@ -30,6 +30,10 @@ except ImportError:
     except ImportError:  # pragma: no cover (import)
         ak = None
 
+try:
+    import fast_matrix_market as fmm
+except ImportError:  # pragma: no cover (import)
+    fmm = None
 
 suitesparse = gb.backend == "suitesparse"
 
@@ -159,7 +163,10 @@ def test_matrix_to_from_networkx():
 
 
 @pytest.mark.skipif("not ss")
-def test_mmread_mmwrite():
+@pytest.mark.parametrize("engine", ["auto", "scipy", "fmm"])
+def test_mmread_mmwrite(engine):
+    if engine == "fmm" and fmm is None:  # pragma: no cover (import)
+        pytest.skip("needs fast_matrix_market")
     from scipy.io.tests import test_mmio
 
     p31 = 2**31
@@ -256,10 +263,15 @@ def test_mmread_mmwrite():
             continue
         mm_in = StringIO(getattr(test_mmio, example))
         if over64:
-            with pytest.raises(OverflowError):
-                M = gb.io.mmread(mm_in)
+            with pytest.raises((OverflowError, ValueError)):
+                # fast_matrix_market v1.4.5 raises ValueError instead of OverflowError
+                M = gb.io.mmread(mm_in, engine)
         else:
-            M = gb.io.mmread(mm_in)
+            if example == "_empty_lines_example" and engine in {"fmm", "auto"} and fmm is not None:
+                # TODO MAINT: is this a bug in fast_matrix_market, or does scipy.io.mmread
+                # read an invalid file? `fast_matrix_market` v1.4.5 does not handle this.
+                continue
+            M = gb.io.mmread(mm_in, engine)
             if not M.isequal(expected):  # pragma: no cover (debug)
                 print(example)
                 print("Expected:")
@@ -268,12 +280,12 @@ def test_mmread_mmwrite():
                 print(M)
                 raise AssertionError("Matrix M not as expected.  See print output above")
             mm_out = BytesIO()
-            gb.io.mmwrite(mm_out, M)
+            gb.io.mmwrite(mm_out, M, engine)
             mm_out.flush()
             mm_out.seek(0)
             mm_out_str = b"".join(mm_out.readlines()).decode()
             mm_out.seek(0)
-            M2 = gb.io.mmread(mm_out)
+            M2 = gb.io.mmread(mm_out, engine)
             if not M2.isequal(expected):  # pragma: no cover (debug)
                 print(example)
                 print("Expected:")
@@ -299,21 +311,36 @@ def test_from_scipy_sparse_duplicates():
 
 
 @pytest.mark.skipif("not ss")
-def test_matrix_market_sparse_duplicates():
-    mm = StringIO(
-        """%%MatrixMarket matrix coordinate real general
+@pytest.mark.parametrize("engine", ["auto", "scipy", "fast_matrix_market"])
+def test_matrix_market_sparse_duplicates(engine):
+    if engine == "fast_matrix_market" and fmm is None:  # pragma: no cover (import)
+        pytest.skip("needs fast_matrix_market")
+    string = """%%MatrixMarket matrix coordinate real general
         3 3 4
         1 3 1
         2 2 2
         3 1 3
         3 1 4"""
-    )
+    mm = StringIO(string)
     with pytest.raises(ValueError, match="Duplicate indices found"):
-        gb.io.mmread(mm)
-    mm.seek(0)
-    a = gb.io.mmread(mm, dup_op=gb.binary.plus)
+        gb.io.mmread(mm, engine)
+    # mm.seek(0)  # Doesn't work with `fast_matrix_market` 1.4.5
+    mm = StringIO(string)
+    a = gb.io.mmread(mm, engine, dup_op=gb.binary.plus)
     expected = gb.Matrix.from_coo([0, 1, 2], [2, 1, 0], [1, 2, 7])
     assert a.isequal(expected)
+
+
+@pytest.mark.skipif("not ss")
+def test_matrix_market_bad_engine():
+    A = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 0, 2, -1], nrows=7, ncols=6)
+    with pytest.raises(ValueError, match="Bad engine value"):
+        gb.io.mmwrite(BytesIO(), A, engine="bad_engine")
+    mm_out = BytesIO()
+    gb.io.mmwrite(mm_out, A)
+    mm_out.seek(0)
+    with pytest.raises(ValueError, match="Bad engine value"):
+        gb.io.mmread(mm_out, engine="bad_engine")
 
 
 @pytest.mark.skipif("not ss")

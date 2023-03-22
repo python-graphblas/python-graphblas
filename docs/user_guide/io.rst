@@ -129,3 +129,19 @@ Note that A is unchanged in the above example.
 The SuiteSparse export has a ``give_ownership`` option. This performs a zero-copy
 move operation and invalidates the original python-graphblas object. When extreme speed is needed or memory is
 too limited to make a copy, this option may be needed.
+
+Matrix Market files
+-------------------
+
+The `Matrix Market file format <https://math.nist.gov/MatrixMarket/formats.html>`_ is a common
+file format for storing sparse arrays in human-readable ASCII.
+Matrix Market files--also called MM files--often use ".mtx" file extension.
+For example, many datasets in MM format can be found in `the SuiteSparse Matrix Collection <https://sparse.tamu.edu/>`_.
+
+Use ``gb.io.mmread()`` to read a Matrix Market file to a python-graphblas Matrix,
+and ``gb.io.mmwrite()`` to write a Matrix to a Matrix Market file.
+These names match the equivalent functions in `scipy.sparse <https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.mmread.html>`_.
+
+``scipy`` is required to be installed to read Matrix Market files.
+If ``fast_matrix_market`` is installed, it will be used by default for
+`much better performance <https://github.com/alugowski/fast_matrix_market>`_.

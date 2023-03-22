@@ -13,8 +13,9 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = {file = "LICENSE"}
 authors = [
-    {name = "Erik Welch"},
+    {name = "Erik Welch", email = "erik.n.welch@gmail.com"},
     {name = "Jim Kitchen"},
+    {name = "Python-graphblas contributors"},
 ]
 maintainers = [
     {name = "Erik Welch", email = "erik.n.welch@gmail.com"},
@@ -78,6 +79,7 @@ io = [
     "scipy >=1.8",
     "awkward >=1.9",
     "sparse >=0.12",
+    "fast-matrix-market >=1.4.5",
 ]
 viz = [
     "matplotlib >=3.5",
@@ -94,6 +96,7 @@ complete = [
     "scipy >=1.8",
     "awkward >=1.9",
     "sparse >=0.12",
+    "fast-matrix-market >=1.4.5",
     "matplotlib >=3.5",
     "pytest",
     "packaging",
@@ -280,6 +283,7 @@ ignore = [
     "PLR0913",  # Too many arguments to function call
     "PLR0915",  # Too many statements
     "PLR2004",  # Magic number used in comparison, consider replacing magic with a constant variable
+    "PLW0603",  # Using the global statement to update ... is discouraged (Note: yeah, discouraged, but too strict)
     "PLW2901",  # Outer for loop variable ... overwritten by inner assignment target (Note: good advice, but too strict)
     "RET502",  # Do not implicitly `return None` in function able to return non-`None` value
     "RET503",  # Missing explicit `return` at the end of function able to return non-`None` value

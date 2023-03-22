@@ -182,30 +182,30 @@ def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kw
             images.extend(image_row)
         return hv.Layout(images).cols(ncols)
 
-    kwds = dict(  # noqa: C408 pylint: disable=use-dict-literal
-        x="col",
-        y="row",
-        c="val",
-        aggregator=agg,
-        frame_width=width,
-        frame_height=height,
-        cmap="fire",
-        cnorm="eq_hist",
-        xlim=(0, M.ncols),
-        ylim=(0, M.nrows),
-        rasterize=True,
-        flip_yaxis=True,
-        hover=True,
-        xlabel="",
-        ylabel="",
-        data_aspect=1,
-        x_sampling=1,
-        y_sampling=1,
-        xaxis="top",
-        xformatter="%d",
-        yformatter="%d",
-        rot=60,
-    )
+    kwds = {
+        "x": "col",
+        "y": "row",
+        "c": "val",
+        "aggregator": agg,
+        "frame_width": width,
+        "frame_height": height,
+        "cmap": "fire",
+        "cnorm": "eq_hist",
+        "xlim": (0, M.ncols),
+        "ylim": (0, M.nrows),
+        "rasterize": True,
+        "flip_yaxis": True,
+        "hover": True,
+        "xlabel": "",
+        "ylabel": "",
+        "data_aspect": 1,
+        "x_sampling": 1,
+        "y_sampling": 1,
+        "xaxis": "top",
+        "xformatter": "%d",
+        "yformatter": "%d",
+        "rot": 60,
+    }
     # Only show axes on outer-most plots
     if kwargs.pop("_col", 0) != 0:
         kwds["yaxis"] = None

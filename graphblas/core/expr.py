@@ -160,9 +160,8 @@ class IndexerResolver:
                 raise TypeError(f"Index for {type(self.obj).__name__} cannot be a tuple")
             # Convert to tuple for consistent processing
             indices = (indices,)
-        else:  # len(shape) == 2
-            if type(indices) is not tuple or len(indices) != 2:
-                raise TypeError(f"Index for {type(self.obj).__name__} must be a 2-tuple")
+        elif type(indices) is not tuple or len(indices) != 2:
+            raise TypeError(f"Index for {type(self.obj).__name__} must be a 2-tuple")
 
         out = []
         for i, idx in enumerate(indices):

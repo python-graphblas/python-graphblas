@@ -24,15 +24,13 @@ repos:
     hooks:
       - id: validate-pyproject
         name: Validate pyproject.toml
-  - repo: https://github.com/myint/autoflake
-    rev: v2.0.1
-    hooks:
-      - id: autoflake
-        args: [--in-place]
+  # We can probably remove `isort` if we come to trust `ruff --fix`,
+  # but we'll need to figure out the configuration to do this in `ruff`
   - repo: https://github.com/pycqa/isort
     rev: 5.12.0
     hooks:
       - id: isort
+  # Let's keep `pyupgrade` even though `ruff --fix` probably does most of it
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.3.1
     hooks:
@@ -48,6 +46,13 @@ repos:
     hooks:
       - id: black
       - id: black-jupyter
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.0.257
+    hooks:
+      - id: ruff
+        args: [--fix-only]
+  # Let's keep `flake8` even though `ruff` does much of the same.
+  # `flake8-bugbear` and `flake8-simplify` have caught things missed by `ruff`.
   - repo: https://github.com/PyCQA/flake8
     rev: 6.0.0
     hooks:
@@ -55,8 +60,7 @@ repos:
         additional_dependencies: &flake8_dependencies
         # These versions need updated manually
         - flake8==6.0.0
-        - flake8-comprehensions==3.10.1
-        - flake8-bugbear==23.2.13
+        - flake8-bugbear==23.3.12
         - flake8-simplify==0.19.3
   - repo: https://github.com/asottile/yesqa
     rev: v1.4.0
@@ -64,14 +68,14 @@ repos:
       - id: yesqa
         additional_dependencies: *flake8_dependencies
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.2
+    rev: v2.2.4
     hooks:
       - id: codespell
         types_or: [python, rst, markdown]
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.252
+    rev: v0.0.257
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint
@@ -79,6 +83,13 @@ repos:
     hooks:
       - id: sphinx-lint
         args: [--enable, all, "--disable=line-too-long,leaked-markup"]
+  # `pyroma` may help keep our package standards up to date if best practices change.
+  # This is probably a "low value" check though and safe to remove if we want faster pre-commit.
+  - repo: https://github.com/regebro/pyroma
+    rev: "4.2"
+    hooks:
+      - id: pyroma
+        args: [-n, "10", .]
   - repo: local
     hooks:
       # Add `--hook-stage manual` to pre-commit command to run (very slow)

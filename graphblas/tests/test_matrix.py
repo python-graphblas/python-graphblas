@@ -2173,15 +2173,14 @@ def test_ss_import_export(A, do_iso, methods):
             C1.ss.pack_any(**d)
             assert C1.isequal(C)
             assert C1.ss.is_iso is do_iso
+    elif in_method == "import":
+        D1 = Matrix.ss.import_any(**d)
+        assert D1.isequal(C)
+        assert D1.ss.is_iso is do_iso
     else:
-        if in_method == "import":
-            D1 = Matrix.ss.import_any(**d)
-            assert D1.isequal(C)
-            assert D1.ss.is_iso is do_iso
-        else:
-            C1.ss.pack_any(**d)
-            assert C1.isequal(C)
-            assert C1.ss.is_iso is do_iso
+        C1.ss.pack_any(**d)
+        assert C1.isequal(C)
+        assert C1.ss.is_iso is do_iso
 
     C2 = C.dup()
     d = getattr(C2.ss, out_method)("fullc")
