@@ -124,8 +124,8 @@ jobs:
           weights: |
             1
             100
-            1
-            1
+            100
+            100
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
@@ -191,26 +191,24 @@ jobs:
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
-          # Once we have wheels for all OSes, we can delete the last two lines.
           mamba install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig pyyaml${yamlver} sparse${sparsever} \
             pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} numba${numbaver} fast_matrix_market${fmmver} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
-            ${{ steps.sourcetype.outputs.selected == 'conda-forge' && 'python-suitesparse-graphblas' || '' }}${psgver} \
-            ${{ matrix.os != 'ubuntu-latest' && '"graphblas>=7.4.0"' || '' }}
+            ${{ steps.sourcetype.outputs.selected == 'conda-forge' && 'python-suitesparse-graphblas' || '' }}${psgver}
       - name: Build extension module
         run: |
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
               # TODO: get this from regular PyPI
-              pip install --no-deps --index-url https://test.pypi.org/simple/ suitesparse-graphblas
+              pip install --no-deps --index-url https://test.pypi.org/simple/ suitesparse-graphblas==0.0.9
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               # TODO: get this from regular PyPI
-              pip install --no-deps --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas
+              pip install --no-deps --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas==0.0.9
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
               # TODO: get from main, not from a specific hash
-              pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@c270d51b2b1f02bede3052f1231124e716ba8c01#egg=suitesparse-graphblas
+              pip install --no-deps git+https://github.com/jim22k/python-suitesparse-graphblas.git@7ced0a308168764cf8f9bad0f40b6630d4e5f04b#egg=suitesparse-graphblas
           fi
           pip install --no-deps -e .
       - name: Unit tests
