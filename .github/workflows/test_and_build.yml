@@ -152,7 +152,7 @@ jobs:
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           sparsever=$(python -c 'import random ; print(random.choice(["=0.12", "=0.13", "=0.14", ""]))')
-          fmmver=$(python -c 'import random ; print(random.choice(["=1.4", ""]))')
+          fmmver=fast_matrix_market$(python -c 'import random ; print(random.choice(["=1.4", ""]))')
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.8') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
@@ -181,6 +181,10 @@ jobs:
             spver=""
             pdver=""
           fi
+          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} == true ]]; then
+            # Not available with PyPy
+            fmmver=""
+          fi
           # We can have a tight coupling with python-suitesparse-graphblas.
           # That is, we don't need to support versions of it that are two years old.
           # But, it's still useful for us to test with different versions!
@@ -197,7 +201,7 @@ jobs:
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
           conda install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig pyyaml${yamlver} sparse${sparsever} \
-            pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} numba${numbaver} fast_matrix_market${fmmver} \
+            pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} numba${numbaver} ${fmmver} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
