@@ -127,9 +127,9 @@ jobs:
             upstream
           weights: |
             1
-            100
-            100
-            100
+            1
+            1
+            1
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
@@ -184,6 +184,14 @@ jobs:
           if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} == true ]]; then
             # Not available with PyPy
             fmmver=""
+            # XXX: temporary!
+            npver=""
+            spver=""
+            pdver=""
+            akver=""
+            nxver=""
+            yamlver=""
+            sparsever=""
           fi
           # We can have a tight coupling with python-suitesparse-graphblas.
           # That is, we don't need to support versions of it that are two years old.
