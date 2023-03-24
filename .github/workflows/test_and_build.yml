@@ -138,7 +138,7 @@ jobs:
           # use-mamba: true
           auto-update-conda: true
           python-version: ${{ steps.pyver.outputs.selected }}
-          channels: conda-forge${{ contains(steps.pyver.outputs.selected, 'pypy') && '' || ',nodefaults' }}
+          channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
           channel-priority: strict
           activate-environment: graphblas
           auto-activate-base: false
