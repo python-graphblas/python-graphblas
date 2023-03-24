@@ -3154,14 +3154,11 @@ class Matrix(BaseType):
                             mask = _vanilla_subassign_mask(
                                 self, mask, rowidx, colidx, replace, opts
                             )
+                    elif backend == "suitesparse":
+                        cfunc_name = "GxB_Matrix_subassign_Scalar"
                     else:
-                        if backend == "suitesparse":
-                            cfunc_name = "GxB_Matrix_subassign_Scalar"
-                        else:
-                            cfunc_name = "GrB_Matrix_assign_Scalar"
-                            mask = _vanilla_subassign_mask(
-                                self, mask, rowidx, colidx, replace, opts
-                            )
+                        cfunc_name = "GrB_Matrix_assign_Scalar"
+                        mask = _vanilla_subassign_mask(self, mask, rowidx, colidx, replace, opts)
                     expr_repr = (
                         "[[{2._expr_name} rows], [{4._expr_name} cols]]"
                         f"({mask.name})"

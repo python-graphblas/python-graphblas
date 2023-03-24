@@ -13,12 +13,14 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = {file = "LICENSE"}
 authors = [
-    {name = "Erik Welch"},
+    {name = "Erik Welch", email = "erik.n.welch@gmail.com"},
     {name = "Jim Kitchen"},
+    {name = "Python-graphblas contributors"},
 ]
 maintainers = [
     {name = "Erik Welch", email = "erik.n.welch@gmail.com"},
     {name = "Jim Kitchen", email = "jim22k@gmail.com"},
+    {name = "Sultan Orazbayev", email = "contact@econpoint.com"},
 ]
 keywords = [
     "graphblas",
@@ -77,12 +79,14 @@ io = [
     "scipy >=1.8",
     "awkward >=1.9",
     "sparse >=0.12",
+    "fast-matrix-market >=1.4.5",
 ]
 viz = [
     "matplotlib >=3.5",
 ]
 test = [
     "pytest",
+    "packaging",
     "pandas >=1.2",
     "scipy >=1.8",
 ]
@@ -92,8 +96,10 @@ complete = [
     "scipy >=1.8",
     "awkward >=1.9",
     "sparse >=0.12",
+    "fast-matrix-market >=1.4.5",
     "matplotlib >=3.5",
     "pytest",
+    "packaging",
 ]
 
 [tool.setuptools]
@@ -147,10 +153,16 @@ filterwarnings = [
     "error",
     # MAINT: we can drop support for sparse <0.13 at any time
     "ignore:`np.bool` is a deprecated alias:DeprecationWarning:sparse._umath",  # sparse <0.13
+    # sparse 0.14.0 (2022-02-24) began raising this warning; it has been reported and fixed upstream.
+    "ignore:coords should be an ndarray. This will raise a ValueError:DeprecationWarning:sparse._coo.core",
+
     # setuptools v67.3.0 deprecated `pkg_resources.declare_namespace` on 13 Feb 2023. See:
     # https://setuptools.pypa.io/en/latest/history.html#v67-3-0
     # MAINT: check if this is still necessary in 2025
     "ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning:pkg_resources",
+    # And this deprecation warning was added in setuptools v67.5.0 (8 Mar 2023). See:
+    # https://setuptools.pypa.io/en/latest/history.html#v67-5-0
+    "ignore:pkg_resources is deprecated as an API:DeprecationWarning:pkg_resources",
 ]
 
 [tool.coverage.run]
@@ -271,6 +283,8 @@ ignore = [
     "PLR0913",  # Too many arguments to function call
     "PLR0915",  # Too many statements
     "PLR2004",  # Magic number used in comparison, consider replacing magic with a constant variable
+    "PLW0603",  # Using the global statement to update ... is discouraged (Note: yeah, discouraged, but too strict)
+    "PLW2901",  # Outer for loop variable ... overwritten by inner assignment target (Note: good advice, but too strict)
     "RET502",  # Do not implicitly `return None` in function able to return non-`None` value
     "RET503",  # Missing explicit `return` at the end of function able to return non-`None` value
     "RET504",  # Unnecessary variable assignment before `return` statement

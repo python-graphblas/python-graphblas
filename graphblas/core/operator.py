@@ -941,8 +941,7 @@ class OpBase:
             self[type_]
         except (TypeError, KeyError, numba.NumbaError):
             return False
-        else:
-            return True
+        return True
 
     @classmethod
     def _remove_nesting(cls, funcname, *, module=None, modname=None, strict=True):
@@ -2740,9 +2739,9 @@ class Monoid(OpBase):
                 cur_op._typed_ops[dtype] = bool_op
 
         # Builtin monoids that are idempotent; i.e., `op(x, x) == x` for any x
-        for name in {"any", "band", "bor", "land", "lor", "max", "min"}:
+        for name in ["any", "band", "bor", "land", "lor", "max", "min"]:
             getattr(monoid, name)._is_idempotent = True
-        for name in {
+        for name in [
             "bitwise_and",
             "bitwise_or",
             "fmax",
@@ -2752,7 +2751,7 @@ class Monoid(OpBase):
             "logical_or",
             "maximum",
             "minimum",
-        }:
+        ]:
             getattr(monoid.numpy, name)._is_idempotent = True
 
         # Allow some functions to work on UDTs

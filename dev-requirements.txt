@@ -6,6 +6,7 @@ pyyaml
 pandas
 # For I/O
 awkward
+fast_matrix_market
 networkx
 scipy
 sparse
@@ -16,6 +17,7 @@ matplotlib
 # For linting
 pre-commit
 # For testing
+packaging
 pytest-cov
 # For debugging
 icecream

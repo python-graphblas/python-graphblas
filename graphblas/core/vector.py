@@ -1868,12 +1868,11 @@ class Vector(BaseType):
                     else:
                         cfunc_name = f"GrB_Vector_assign_{dtype_name}"
                         mask = _vanilla_subassign_mask(self, mask, idx, replace, opts)
+                elif backend == "suitesparse":
+                    cfunc_name = "GxB_Vector_subassign_Scalar"
                 else:
-                    if backend == "suitesparse":
-                        cfunc_name = "GxB_Vector_subassign_Scalar"
-                    else:
-                        cfunc_name = "GrB_Vector_assign_Scalar"
-                        mask = _vanilla_subassign_mask(self, mask, idx, replace, opts)
+                    cfunc_name = "GrB_Vector_assign_Scalar"
+                    mask = _vanilla_subassign_mask(self, mask, idx, replace, opts)
                 expr_repr = (
                     "[[{2._expr_name} elements]]"
                     f"({mask.name})"  # fmt: skip

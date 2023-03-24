@@ -1,11 +1,8 @@
 
 /* Main Page Stylings */
 
-.container-xl {
-    max-width: 1400px;
-}
-
 .intro-card {
+    background-color: var(--pst-color-background);
     margin-bottom: 30px;
 }
 
@@ -51,12 +48,31 @@ p.rubric {
     border-bottom: none;
 }
 
+button.navbar-btn.rounded-circle {
+    padding: 0.25rem;
+}
+
+button.navbar-btn.search-button {
+    color: var(--pst-color-text-muted);
+    padding: 0;
+}
+
+button.navbar-btn:hover
+{
+    color: var(--pst-color-primary);
+}
+
+button.theme-switch-button {
+    font-size: calc(var(--pst-font-size-icon) - .1rem);
+    border: none;
+}
+
+button span.theme-switch:hover {
+    color: var(--pst-color-primary);
+}
+
 /* Styling for Jupyter Notebook ReST Exports */
 
 .dataframe tbody th, .dataframe tbody td {
     padding: 10px;
-}
-
-.bd-sidebar-primary, .bd-sidebar-secondary {
-    position: sticky;
 }

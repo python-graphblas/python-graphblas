@@ -23,7 +23,7 @@ dependencies:
     - pandas
     # For I/O
     - awkward
-    # - fast_matrix_market  # Coming soon...
+    - fast_matrix_market
     - networkx
     - scipy
     - sparse
@@ -34,6 +34,7 @@ dependencies:
     # For linting
     - pre-commit
     # For testing
+    - packaging
     - pytest-cov
     # For debugging
     - icecream

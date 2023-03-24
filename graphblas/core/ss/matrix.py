@@ -895,9 +895,8 @@ class ss:
                 if is_iso:
                     if values.size > 1:  # pragma: no branch (suitesparse)
                         values = values[:1]
-                else:
-                    if values.size > nvals:  # pragma: no branch (suitesparse)
-                        values = values[:nvals]
+                elif values.size > nvals:  # pragma: no branch (suitesparse)
+                    values = values[:nvals]
             # Note: nvals is also at `indptr[nrows]`
             rv = {
                 "indptr": indptr,
@@ -937,9 +936,8 @@ class ss:
                 if is_iso:
                     if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
-                else:
-                    if values.size > nvals:
-                        values = values[:nvals]
+                elif values.size > nvals:
+                    values = values[:nvals]
             # Note: nvals is also at `indptr[ncols]`
             rv = {
                 "indptr": indptr,
@@ -989,9 +987,8 @@ class ss:
                 if is_iso:
                     if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
-                else:
-                    if values.size > nvals:
-                        values = values[:nvals]
+                elif values.size > nvals:
+                    values = values[:nvals]
             # Note: nvals is also at `indptr[nvec]`
             rv = {
                 "indptr": indptr,
@@ -1044,9 +1041,8 @@ class ss:
                 if is_iso:
                     if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
-                else:
-                    if values.size > nvals:
-                        values = values[:nvals]
+                elif values.size > nvals:
+                    values = values[:nvals]
             # Note: nvals is also at `indptr[nvec]`
             rv = {
                 "indptr": indptr,
@@ -3480,15 +3476,10 @@ class ss:
                     format = "cooc"
                 else:
                     format = "coo"
+            elif isinstance(values, np.ndarray) and values.ndim == 2 and values.flags.f_contiguous:
+                format = "fullc"
             else:
-                if (
-                    isinstance(values, np.ndarray)
-                    and values.ndim == 2
-                    and values.flags.f_contiguous
-                ):
-                    format = "fullc"
-                else:
-                    format = "fullr"
+                format = "fullr"
         else:
             format = format.lower()
         if method == "pack":

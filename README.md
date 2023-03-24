@@ -2,6 +2,7 @@
 
 [![conda-forge](https://img.shields.io/conda/vn/conda-forge/python-graphblas.svg)](https://anaconda.org/conda-forge/python-graphblas)
 [![pypi](https://img.shields.io/pypi/v/python-graphblas.svg)](https://pypi.python.org/pypi/python-graphblas/)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/python-graphblas)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/python-graphblas/python-graphblas/blob/main/LICENSE)
 [![Tests](https://github.com/python-graphblas/python-graphblas/workflows/Tests/badge.svg?branch=main)](https://github.com/python-graphblas/python-graphblas/actions)
 [![Docs](https://readthedocs.org/projects/python-graphblas/badge/?version=latest)](https://python-graphblas.readthedocs.io/en/latest/)
@@ -31,6 +32,16 @@ or pip:
 $ pip install python-graphblas
 ```
 This will also install the [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS) compiled C library.
+
+### Optional Dependencies
+
+The following are not required by python-graphblas, but may be needed for certain functionality to work.
+
+- `pandas` – required for nicer `__repr__`;
+- `matplotlib` – required for basic plotting of graphs;
+- `scipy` – used in io module to read/write `scipy.sparse` format;
+- `networkx` – used in `io` module to interface with `networkx` graphs;
+- `fast-matrix-market` - for faster read/write of Matrix Market files with `gb.io.mmread` and `gb.io.mmwrite`.
 
 ## Description
 Currently works with [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS), but the goal is to make it work with all implementations of the GraphBLAS spec.
@@ -186,11 +197,6 @@ Similar methods exist for BinaryOp, Monoid, and Semiring.
 ```python
 import graphblas as gb
 
-# numpy arrays
-# 1-D array becomes Vector, 2-D array becomes Matrix
-A = gb.io.from_numpy(m)
-m = gb.io.to_numpy(A)
-
 # scipy.sparse matrices
 A = gb.io.from_scipy_sparse(m)
 m = gb.io.to_scipy_sparse(m, format='csr')
@@ -198,4 +204,11 @@ m = gb.io.to_scipy_sparse(m, format='csr')
 # networkx graphs
 A = gb.io.from_networkx(g)
 g = gb.io.to_networkx(A)
+
+# numpy arrays can use `from_dense` and `to_dense` on Vector and Matrix
+v = gb.Vector.from_dense(m)
+m = v.to_dense()
+
+A = gb.Matrix.from_dense(m, missing_value=0)
+m = A.to_dense(fill_value=0)
 ```
