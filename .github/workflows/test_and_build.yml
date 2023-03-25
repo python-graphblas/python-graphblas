@@ -88,6 +88,10 @@ jobs:
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
         slowtask: ["pytest_normal", "pytest_bizarro", "notebooks"]
+    env:
+      # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
+      # Setting this is a workaround.
+      KMP_DUPLICATE_LIB_OK: ${{ contains(matrix.os, 'macXXXos') && 'True' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
