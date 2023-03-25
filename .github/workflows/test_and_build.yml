@@ -185,13 +185,13 @@ jobs:
             # Not available with PyPy
             fmmver=""
             # XXX: temporary!
-            npver=""
-            spver=""
-            pdver=""
-            akver=""
-            nxver=""
-            yamlver=""
-            sparsever=""
+            # npver=""
+            # spver=""
+            # pdver=""
+            # akver=""
+            # nxver=""
+            # yamlver=""
+            # sparsever=""
           fi
           # We can have a tight coupling with python-suitesparse-graphblas.
           # That is, we don't need to support versions of it that are two years old.
