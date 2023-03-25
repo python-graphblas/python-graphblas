@@ -81,7 +81,7 @@ jobs:
         shell: bash -l {0}
     strategy:
       # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
-      fail-fast: false
+      fail-fast: true
       # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
@@ -91,7 +91,7 @@ jobs:
     env:
       # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
       # Setting this is a workaround.
-      KMP_DUPLICATE_LIB_OK: True
+      KMP_DUPLICATE_LIB_OK: ${{ contains(matrix.os, 'macos') && 'True' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -102,18 +102,17 @@ jobs:
         id: pyver
         with:
           # We should support major Python versions for at least 36-42 months
+          # We could probably support pypy if numba were optional
+          # 3.8.16 0_73_pypy
+          # 3.9.16 0_73_pypy
           contents: |
             3.8
             3.9
             3.10
-            3.8.16 0_73_pypy
-            3.9.16 0_73_pypy
           weights: |
             1
             1
             1
-            100
-            100
       - name: RNG for source of python-suitesparse-graphblas
         uses: ddradar/choose-random-action@v2.0.2
         id: sourcetype
@@ -133,13 +132,13 @@ jobs:
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
-          miniforge-variant: Mambaforge
-          miniforge-version: latest
-          use-mamba: true
-          # auto-update-conda: true
+          # miniforge-variant: Mambaforge
+          # miniforge-version: latest
+          # use-mamba: true
+          auto-update-conda: true
           python-version: ${{ steps.pyver.outputs.selected }}
-          channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
-          channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
+          channels: conda-forge,nodefaults
+          channel-priority: strict
           activate-environment: graphblas
           auto-activate-base: false
       - name: Update env
@@ -181,25 +180,6 @@ jobs:
             spver=""
             pdver=""
           fi
-          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} == true ]]; then
-            # Not available from conda-forge for PyPy
-            if [[ $(fmmver) ]]; then
-              python -m pip install fast-matrix-market=$(fmmver) --no-deps --only-binary ":all:"
-            else
-              python -m pip install fast-matrix-market --no-deps --only-binary ":all:"
-            fi
-            fmmver=""
-            # XXX: temporary!
-            # npver=""
-            # spver=""
-            # pdver=""
-            # akver=""
-            # nxver=""
-            # yamlver=""
-            # sparsever=""
-          else
-            fmmver=fast_matrix_market$(fmmver)
-          fi
           # We can have a tight coupling with python-suitesparse-graphblas.
           # That is, we don't need to support versions of it that are two years old.
           # But, it's still useful for us to test with different versions!
@@ -215,8 +195,8 @@ jobs:
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
-          mamba install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig pyyaml${yamlver} sparse${sparsever} \
-            pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} numba${numbaver} ${fmmver} \
+          conda install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig pyyaml${yamlver} sparse${sparsever} \
+            pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} numba${numbaver} fast_matrix_market${fmmver} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
