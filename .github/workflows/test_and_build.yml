@@ -129,13 +129,26 @@ jobs:
             1
             1
             1
-      - name: Setup conda
+      - name: Setup mamba
         uses: conda-incubator/setup-miniconda@v2
+        id: setup_mamba
+        continue-on-error: true
         with:
           miniforge-variant: Mambaforge
           miniforge-version: latest
           use-mamba: true
-          # auto-update-conda: true
+          python-version: ${{ steps.pyver.outputs.selected }}
+          channels: conda-forge,nodefaults
+          channel-priority: strict
+          activate-environment: graphblas
+          auto-activate-base: false
+      - name: Setup conda
+        uses: conda-incubator/setup-miniconda@v2
+        id: setup_conda
+        if: steps.setup_mamba.outcome == 'failure'
+        continue-on-error: false
+        with:
+          auto-update-conda: true
           python-version: ${{ steps.pyver.outputs.selected }}
           channels: conda-forge,nodefaults
           channel-priority: strict
@@ -195,8 +208,9 @@ jobs:
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
-          conda install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig pyyaml${yamlver} sparse${sparsever} \
-            pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} numba${numbaver} fast_matrix_market${fmmver} \
+          $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig \
+            pyyaml${yamlver} sparse${sparsever} pandas${pdver} scipy${spver} numpy${npver} awkward${akver} \
+            networkx${nxver} numba${numbaver} fast_matrix_market${fmmver} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
