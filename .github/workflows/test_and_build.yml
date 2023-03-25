@@ -152,7 +152,7 @@ jobs:
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           sparsever=$(python -c 'import random ; print(random.choice(["=0.12", "=0.13", "=0.14", ""]))')
-          fmmver=fast_matrix_market$(python -c 'import random ; print(random.choice(["=1.4", ""]))')
+          fmmver=$(python -c 'import random ; print(random.choice(["=1.4", ""]))')
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.8') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
@@ -182,7 +182,12 @@ jobs:
             pdver=""
           fi
           if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} == true ]]; then
-            # Not available with PyPy
+            # Not available from conda-forge for PyPy
+            if [[ $(fmmver) ]]; then
+              python -m pip install fast-matrix-market=$(fmmver) --no-deps --only-binary ":all:"
+            else
+              python -m pip install fast-matrix-market --no-deps --only-binary ":all:"
+            fi
             fmmver=""
             # XXX: temporary!
             # npver=""
@@ -192,6 +197,8 @@ jobs:
             # nxver=""
             # yamlver=""
             # sparsever=""
+          else
+            fmmver=fast_matrix_market$(fmmver)
           fi
           # We can have a tight coupling with python-suitesparse-graphblas.
           # That is, we don't need to support versions of it that are two years old.
