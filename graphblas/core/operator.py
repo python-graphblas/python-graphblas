@@ -2741,19 +2741,6 @@ class Monoid(OpBase):
         # Builtin monoids that are idempotent; i.e., `op(x, x) == x` for any x
         for name in ["any", "band", "bor", "land", "lor", "max", "min"]:
             getattr(monoid, name)._is_idempotent = True
-        for name in [
-            "bitwise_and",
-            "bitwise_or",
-            "fmax",
-            "fmin",
-            "gcd",
-            "logical_and",
-            "logical_or",
-            "maximum",
-            "minimum",
-        ]:
-            getattr(monoid.numpy, name)._is_idempotent = True
-
         # Allow some functions to work on UDTs
         any_ = monoid.any
         any_._identity = 0
