@@ -221,13 +221,13 @@ jobs:
         run: |
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
               # TODO: get this from regular PyPI
-              pip install --no-deps --index-url https://test.pypi.org/simple/ suitesparse-graphblas==0.0.9
+              pip install --no-deps --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.2
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               # TODO: get this from regular PyPI
-              pip install --no-deps --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas==0.0.9
+              pip install --no-deps --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.2
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
               # TODO: get from main, not from a specific hash
-              pip install --no-deps git+https://github.com/jim22k/python-suitesparse-graphblas.git@7ced0a308168764cf8f9bad0f40b6630d4e5f04b#egg=suitesparse-graphblas
+              pip install --no-deps git+https://github.com/jim22k/python-suitesparse-graphblas.git@884de67687d0af18ec7c3ad1ecf5b9b8bfdb9ff3#egg=suitesparse-graphblas
           fi
           pip install --no-deps -e .
       - name: Unit tests
