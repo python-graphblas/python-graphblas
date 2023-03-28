@@ -478,33 +478,34 @@ class Updater:
 
 
 class InfixExprBase:
-    __slots__ = "left", "right", "_value", "__weakref__"
+    __slots__ = "left", "right", "_expr", "__weakref__"
     _is_scalar = False
 
     def __init__(self, left, right):
         self.left = left
         self.right = right
-        self._value = None
+        self._expr = None
 
     def new(self, dtype=None, *, mask=None, name=None, **opts):
         if (
             mask is None
-            and self._value is not None
-            and (dtype is None or self._value.dtype == dtype)
+            and self._expr is not None
+            and self._expr._value is not None
+            and (dtype is None or self._expr._value.dtype == dtype)
         ):
-            rv = self._value
+            rv = self._expr._value
             if name is not None:
                 rv.name = name
-            self._value = None
+            self._expr._value = None
             return rv
         expr = self._to_expr()
         return expr.new(dtype, mask=mask, name=name, **opts)
 
     def _to_expr(self):
-        if self._value is None:
+        if self._expr is None:
             # Rely on the default operator for `x @ y`
-            self._value = getattr(self.left, self.method_name)(self.right)
-        return self._value
+            self._expr = getattr(self.left, self.method_name)(self.right)
+        return self._expr
 
     def _get_value(self, attr=None, default=None):
         expr = self._to_expr()
@@ -536,9 +537,17 @@ class InfixExprBase:
 
     @property
     def dtype(self):
-        if self._value is not None:
-            return self._value.dtype
         return self._to_expr().dtype
+
+    @property
+    def _value(self):
+        if self._expr is None:
+            return None
+        return self._expr._value
+
+    @_value.setter
+    def _value(self, val):
+        self._to_expr()._value = val
 
 
 # Mistakes

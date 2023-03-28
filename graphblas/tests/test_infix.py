@@ -342,3 +342,21 @@ def test_inplace_infix(s1, v1, v2, A1, A2):
         expr @= A
     with pytest.raises(TypeError, match="not supported"):
         s1 @= v1
+
+
+@autocompute
+def test_infix_expr_value_types():
+    """Test bug where `infix_expr._value` was used as MatrixExpression or Matrix"""
+    from graphblas.core.matrix import MatrixExpression
+
+    A = Matrix(int, 3, 3)
+    A << 1
+    expr = A @ A.T
+    assert expr._expr is None
+    assert expr._value is None
+    assert type(expr._get_value()) is Matrix
+    assert type(expr._expr) is MatrixExpression
+    assert type(expr.new()) is Matrix
+    assert expr._expr is not None
+    assert expr._value is None
+    assert type(expr.new()) is Matrix
