@@ -3,7 +3,6 @@ import collections
 from ..dtypes import DataType
 from . import base, lib
 from .base import _recorder
-from .formatting import CSS_STYLE
 from .mask import Mask
 from .matrix import TransposedMatrix
 from .operator import TypedOpBase
@@ -103,6 +102,8 @@ class Recorder:
         return self._token is not None and _recorder.get(base._prev_recorder) is self
 
     def _repr_base_(self):
+        from .formatting import CSS_STYLE
+
         status = (
             '<div style="'
             "height: 12px; "

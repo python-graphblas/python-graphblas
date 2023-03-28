@@ -16,11 +16,11 @@ InfixExprBase._expect_type = _expect_type
 
 
 def _ewise_add_to_expr(self):
-    if self._value is not None:
-        return self._value
+    if self._expr is not None:
+        return self._expr
     if self.left.dtype == BOOL and self.right.dtype == BOOL:
-        self._value = self.left.ewise_add(self.right, lor)
-        return self._value
+        self._expr = self.left.ewise_add(self.right, lor)
+        return self._expr
     raise TypeError(
         "Bad dtypes for `x | y`!  Automatic computation of `x | y` infix expressions is only valid "
         f"for BOOL dtypes.  The argument dtypes are {self.left.dtype} and {self.right.dtype}.\n\n"
@@ -30,11 +30,11 @@ def _ewise_add_to_expr(self):
 
 
 def _ewise_mult_to_expr(self):
-    if self._value is not None:
-        return self._value
+    if self._expr is not None:
+        return self._expr
     if self.left.dtype == BOOL and self.right.dtype == BOOL:
-        self._value = self.left.ewise_mult(self.right, land)
-        return self._value
+        self._expr = self.left.ewise_mult(self.right, land)
+        return self._expr
     raise TypeError(
         "Bad dtypes for `x & y`!  Automatic computation of `x & y` infix expressions is only valid "
         f"for BOOL dtypes.  The argument dtypes are {self.left.dtype} and {self.right.dtype}.\n\n"
