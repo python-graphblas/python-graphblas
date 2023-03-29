@@ -1232,6 +1232,23 @@ def test_apply_indexunary(A):
         A.apply(select.valueeq, left=s3)
 
 
+def test_apply_dict():
+    rows = [0, 0, 0, 0]
+    cols = [1, 3, 4, 6]
+    vals = [1, 1, 2, 0]
+    V = Matrix.from_coo(rows, cols, vals)
+    # Use right as default
+    W1 = V.apply({1: 10, 2: 20}, 100).new()
+    expected = Matrix.from_coo(rows, cols, [10, 10, 20, 100])
+    assert W1.isequal(expected)
+    # Default is 0 if unspecified
+    W2 = V.apply({0: 10, 2: 20}).new()
+    expected = Matrix.from_coo(rows, cols, [0, 0, 20, 10])
+    assert W2.isequal(expected)
+    with pytest.raises(TypeError, match="left"):
+        V.apply({0: 10, 2: 20}, left=999)
+
+
 def test_select(A):
     A3 = Matrix.from_coo([0, 3, 3, 6], [3, 0, 2, 4], [3, 3, 3, 3], nrows=7, ncols=7)
     w1 = A.select(select.valueeq, 3).new()

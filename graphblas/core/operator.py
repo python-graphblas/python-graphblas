@@ -3583,3 +3583,25 @@ def aggregator_from_string(string):
 from .. import agg  # noqa: E402 isort:skip
 
 agg.from_string = aggregator_from_string
+
+
+def _dict_to_func(d, default):
+    # This probably doesn't work on UDTs, and we could probably be smarter with dtypes
+    if default is None:
+        default = False
+    keys, vals = zip(*d.items())
+    keys = np.array(keys)
+    lookup_dtype(keys.dtype)
+    vals = np.array(vals)
+    lookup_dtype(vals.dtype)
+    p = np.argsort(keys)
+    keys = keys[p]
+    vals = vals[p]
+
+    def func(x):
+        i = np.searchsorted(keys, x)
+        if i < keys.size and keys[i] == x:
+            return vals[i]
+        return default
+
+    return func

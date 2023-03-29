@@ -1,5 +1,6 @@
 import itertools
 import warnings
+from collections.abc import Mapping
 
 import numpy as np
 
@@ -11,7 +12,14 @@ from .base import BaseExpression, BaseType, _check_mask, call
 from .descriptor import lookup as descriptor_lookup
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
-from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
+from .operator import (
+    UNKNOWN_OPCLASS,
+    _dict_to_func,
+    find_opclass,
+    get_semiring,
+    get_typed_op,
+    op_from_string,
+)
 from .scalar import (
     _COMPLETE,
     _MATERIALIZE,
@@ -1315,7 +1323,11 @@ class Vector(BaseType):
                 right = False  # most basic form of 0 when unifying dtypes
             if left is not None:
                 raise TypeError("Do not pass `left` when applying IndexUnaryOp")
-
+        elif opclass == UNKNOWN_OPCLASS and isinstance(op, Mapping):
+            if left is not None:
+                raise TypeError("Do not pass `left` when applying a Mapping")
+            op = _dict_to_func(op, right)
+            right = None
         if left is None and right is None:
             op = get_typed_op(op, self.dtype, kind="unary")
             self._expect_op(
