@@ -19,6 +19,7 @@ pre-commit
 # For testing
 packaging
 pytest-cov
+tomli
 # For debugging
 icecream
 ipykernel
