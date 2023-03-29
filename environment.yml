@@ -99,6 +99,7 @@ dependencies:
     # - snakeviz
     # - sphinx-lint
     # - sympy
+    # - tuna
     # - twine
     # - vim
     # - yesqa

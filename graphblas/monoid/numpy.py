@@ -140,6 +140,19 @@ _numpy_to_graphblas = {
 # _graphblas_to_numpy = {val: key for key, val in _numpy_to_graphblas.items()}  # Soon...
 # Not included: maximum, minimum, gcd, hypot, logaddexp, logaddexp2
 
+# True if ``monoid(x, x) == x`` for any x.
+_idempotent = {
+    "bitwise_and",
+    "bitwise_or",
+    "fmax",
+    "fmin",
+    "gcd",
+    "logical_and",
+    "logical_or",
+    "maximum",
+    "minimum",
+}
+
 
 def __dir__():
     return globals().keys() | _delayed.keys() | _monoid_identities.keys()
@@ -163,5 +176,7 @@ def __getattr__(name):
         from ..core import operator
 
         func = getattr(_binary.numpy, name)
-        operator.Monoid.register_new(f"numpy.{name}", func, _monoid_identities[name])
+        operator.Monoid.register_new(
+            f"numpy.{name}", func, _monoid_identities[name], is_idempotent=name in _idempotent
+        )
     return globals()[name]

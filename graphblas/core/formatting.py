@@ -1,3 +1,4 @@
+# This file imports pandas, so it should only be imported when formatting
 import numpy as np
 
 from .. import backend, config, monoid, unary
