@@ -76,7 +76,7 @@ def test_packages():
     # Currently assume s`pyproject.toml` is at the same level as `graphblas` folder.
     # This probably isn't always True, and we can probably do a better job of finding it.
     path = pathlib.Path(gb.__file__).parent
-    pkgs = [f"graphblas.{x}" for x in setuptools.find_packages(path)]
+    pkgs = [f"graphblas.{x}" for x in setuptools.find_packages(str(path))]
     pkgs.append("graphblas")
     pkgs.sort()
     pyproject = path.parent / "pyproject.toml"
