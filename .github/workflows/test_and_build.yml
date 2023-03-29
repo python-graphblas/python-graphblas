@@ -216,6 +216,7 @@ jobs:
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'conda-forge' && 'python-suitesparse-graphblas' || '' }}${psgver} \
+            ${{ steps.sourcetype.outputs.selected != 'conda-forge' && 'setuptools' || '' }} \
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }}
       - name: Build extension module
         run: |
