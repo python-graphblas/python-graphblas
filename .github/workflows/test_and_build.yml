@@ -198,6 +198,10 @@ jobs:
           # But, it's still useful for us to test with different versions!
           if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
             psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", ""]))')
+          elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
+            psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", ""]))')
+          elif [[ ${{ steps.sourcetype.outputs.selected}} == "source" ]] ; then
+            psgver=$(python -c 'import random ; print(random.choice(["==7.4.0", "==7.4.1", "==7.4.2", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", ""]))')
           else
             psgver=""
           fi
@@ -222,9 +226,11 @@ jobs:
         run: |
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
               # TODO: get this from regular PyPI
+              # pip install --no-deps suitesparse-graphblas${psgver}
               pip install --no-deps --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               # TODO: get this from regular PyPI
+              # pip install --no-deps --no-binary=all suitesparse-graphblas${psgver}
               pip install --no-deps --no-build-isolation --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
               # TODO: get from main, not from a specific hash
