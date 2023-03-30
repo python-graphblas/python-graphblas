@@ -225,10 +225,10 @@ jobs:
               pip install --no-deps --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               # TODO: get this from regular PyPI
-              pip install --no-deps --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
+              pip install --no-deps --no-build-isolation --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
               # TODO: get from main, not from a specific hash
-              pip install --no-deps git+https://github.com/jim22k/python-suitesparse-graphblas.git@dd89007ca750a4d2da352ddff3c12437b86d5946#egg=suitesparse-graphblas
+              pip install --no-deps --no-build-isolation git+https://github.com/jim22k/python-suitesparse-graphblas.git@dd89007ca750a4d2da352ddff3c12437b86d5946#egg=suitesparse-graphblas
           fi
           pip install --no-deps -e .
       - name: Unit tests
