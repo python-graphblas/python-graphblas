@@ -81,7 +81,7 @@ jobs:
         shell: bash -l {0}
     strategy:
       # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
-      fail-fast: true
+      fail-fast: false
       # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
@@ -229,13 +229,15 @@ jobs:
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
               # TODO: get this from regular PyPI
               # pip install --no-deps suitesparse-graphblas${psgver}
-              pip install --no-deps --no-build-isolation --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
+              # pip install --no-deps --no-build-isolation --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
+              pip install --no-deps --extra-index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               # TODO: get this from regular PyPI
               # pip install --no-deps --no-binary=all suitesparse-graphblas${psgver}
               pip install --no-deps --no-build-isolation --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
               # TODO: get from main, not from a specific hash
+              # pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
               pip install --no-deps git+https://github.com/jim22k/python-suitesparse-graphblas.git@dd89007ca750a4d2da352ddff3c12437b86d5946#egg=suitesparse-graphblas
           fi
           pip install --no-deps -e .
