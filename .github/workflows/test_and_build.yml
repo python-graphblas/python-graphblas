@@ -228,9 +228,9 @@ jobs:
         run: |
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
               # TODO: get this from regular PyPI
-              # pip install --no-deps suitesparse-graphblas${psgver}
+              # pip install --no-deps --only-binary ":all:" suitesparse-graphblas${psgver}
               # pip install --no-deps --no-build-isolation --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
-              pip install --no-deps --extra-index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
+              pip install --no-deps --only-binary ":all:" --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               # TODO: get this from regular PyPI
               # pip install --no-deps --no-binary=all suitesparse-graphblas${psgver}
