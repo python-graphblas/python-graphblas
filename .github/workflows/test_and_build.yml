@@ -265,6 +265,7 @@ jobs:
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo $args
+          pytest -v --pyargs suitesparse_graphblas
           coverage run -m pytest --color=yes --randomly -v $args \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
