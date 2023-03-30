@@ -230,7 +230,7 @@ jobs:
               # TODO: get this from regular PyPI
               # pip install --no-deps --only-binary ":all:" suitesparse-graphblas${psgver}
               # pip install --no-deps --no-build-isolation --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
-              pip install --no-deps --only-binary ":all:" --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3
+              pip install --no-deps --only-binary ":all:" --index-url https://test.pypi.org/simple/ "suitesparse-graphblas>=7.4.3"
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               # TODO: get this from regular PyPI
               # pip install --no-deps --no-binary=all suitesparse-graphblas${psgver}
