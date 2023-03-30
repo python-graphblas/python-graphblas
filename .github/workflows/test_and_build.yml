@@ -126,9 +126,9 @@ jobs:
             upstream
           weights: |
             1
-            1
-            1
-            1
+            1000
+            1000
+            1000
       - name: Setup mamba
         uses: conda-incubator/setup-miniconda@v2
         id: setup_mamba
@@ -221,24 +221,21 @@ jobs:
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
-            ${{ steps.sourcetype.outputs.selected == 'source' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \
-            ${{ steps.sourcetype.outputs.selected == 'wheel' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }}
+            # ${{ steps.sourcetype.outputs.selected == 'source' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \
       - name: Build extension module
         run: |
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
-              # TODO: get this from regular PyPI
               # pip install --no-deps --only-binary ":all:" suitesparse-graphblas${psgver}
-              # pip install --no-deps --no-build-isolation --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
-              pip install --no-deps --only-binary ":all:" --index-url https://test.pypi.org/simple/ "suitesparse-graphblas>=7.4.3"
+              pip install --no-deps --pre --only-binary ":all:" suitesparse-graphblas=7.4.3.2a0
+              # pip install --no-deps --only-binary ":all:" --index-url https://test.pypi.org/simple/ "suitesparse-graphblas>=7.4.3"
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
-              # TODO: get this from regular PyPI
               # pip install --no-deps --no-binary=all suitesparse-graphblas${psgver}
-              pip install --no-deps --no-build-isolation --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
+              pip install --no-deps --pre --no-binary=all suitesparse-graphblas=7.4.3.2a0
+              # pip install --no-deps --no-build-isolation --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
-              # TODO: get from main, not from a specific hash
-              # pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
-              pip install --no-deps git+https://github.com/jim22k/python-suitesparse-graphblas.git@dd89007ca750a4d2da352ddff3c12437b86d5946#egg=suitesparse-graphblas
+              pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
+              # pip install --no-deps git+https://github.com/jim22k/python-suitesparse-graphblas.git@dd89007ca750a4d2da352ddff3c12437b86d5946#egg=suitesparse-graphblas
           fi
           pip install --no-deps -e .
       - name: Unit tests
