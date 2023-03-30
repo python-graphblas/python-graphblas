@@ -216,7 +216,7 @@ jobs:
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'conda-forge' && 'python-suitesparse-graphblas' || '' }}${psgver} \
-            ${{ steps.sourcetype.outputs.selected != 'conda-forge' && 'setuptools' || '' }} \
+            ${{ steps.sourcetype.outputs.selected == 'source' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }}
       - name: Build extension module
         run: |
@@ -225,7 +225,7 @@ jobs:
               pip install --no-deps --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               # TODO: get this from regular PyPI
-              pip install --no-deps --no-binary=all --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple suitesparse-graphblas==7.4.3.3
+              pip install --no-deps --no-build-isolation --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
               # TODO: get from main, not from a specific hash
               pip install --no-deps git+https://github.com/jim22k/python-suitesparse-graphblas.git@dd89007ca750a4d2da352ddff3c12437b86d5946#egg=suitesparse-graphblas
