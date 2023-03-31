@@ -127,8 +127,8 @@ jobs:
           weights: |
             1
             1000
-            1000
-            1000
+            500
+            250
       - name: Setup mamba
         uses: conda-incubator/setup-miniconda@v2
         id: setup_mamba
@@ -227,11 +227,11 @@ jobs:
         run: |
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
               # pip install --no-deps --only-binary ":all:" suitesparse-graphblas${psgver}
-              pip install --no-deps --pre --only-binary ":all:" suitesparse-graphblas==7.4.3.2a0
+              pip install --no-deps --pre --only-binary ":all:" suitesparse-graphblas==7.4.3.2a1
               # pip install --no-deps --only-binary ":all:" --index-url https://test.pypi.org/simple/ "suitesparse-graphblas>=7.4.3"
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               # pip install --no-deps --no-binary=all suitesparse-graphblas${psgver}
-              pip install --no-deps --pre --no-binary=all suitesparse-graphblas==7.4.3.2a0
+              pip install --no-deps --pre --no-binary=all suitesparse-graphblas==7.4.3.2a1
               # pip install --no-deps --no-build-isolation --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
               pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
