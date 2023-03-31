@@ -81,7 +81,7 @@ jobs:
         shell: bash -l {0}
     strategy:
       # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
-      fail-fast: true
+      fail-fast: false
       # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
@@ -127,7 +127,7 @@ jobs:
           weights: |
             1
             1
-            1
+            1000
             1
       - name: Setup mamba
         uses: conda-incubator/setup-miniconda@v2
@@ -233,11 +233,11 @@ jobs:
               # pip install --no-deps --only-binary ":all:" --index-url https://test.pypi.org/simple/ "suitesparse-graphblas>=7.4.3"
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               # Add --pre if installing a pre-release
-              pip install --no-deps --no-binary ":all:" suitesparse-graphblas${psgver}
+              pip install --no-deps --no-binary suitesparse-graphblas suitesparse-graphblas${psgver}
 
               # Add the below line to the conda install command above if installing from test.pypi.org
               # ${{ steps.sourcetype.outputs.selected == 'source' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \
-              # pip install --no-deps --no-build-isolation --no-binary=all --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
+              # pip install --no-deps --no-build-isolation --no-binary suitesparse-graphblas --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
               pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
           fi
