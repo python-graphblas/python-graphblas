@@ -126,9 +126,9 @@ jobs:
             upstream
           weights: |
             1
-            1000
-            500
-            250
+            1
+            1
+            1
       - name: Setup mamba
         uses: conda-incubator/setup-miniconda@v2
         id: setup_mamba
@@ -203,8 +203,7 @@ jobs:
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
             psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", ""]))')
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "source" ]] ; then
-            psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", ""]))')
-            # psgver=$(python -c 'import random ; print(random.choice(["==7.4.0", "==7.4.1", "==7.4.2", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["==7.4.0", "==7.4.1", "==7.4.2", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", ""]))')
           else
             psgver=""
           fi
@@ -234,7 +233,7 @@ jobs:
               # pip install --no-deps --only-binary ":all:" --index-url https://test.pypi.org/simple/ "suitesparse-graphblas>=7.4.3"
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
               # Add --pre if installing a pre-release
-              pip install --no-deps --no-binary=all suitesparse-graphblas${psgver}
+              pip install --no-deps --no-binary ":all:" suitesparse-graphblas${psgver}
 
               # Add the below line to the conda install command above if installing from test.pypi.org
               # ${{ steps.sourcetype.outputs.selected == 'source' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \
