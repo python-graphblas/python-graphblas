@@ -88,6 +88,10 @@ jobs:
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
         slowtask: ["pytest_normal", "pytest_bizarro", "notebooks"]
+    env:
+      # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
+      # Setting this is a workaround.
+      KMP_DUPLICATE_LIB_OK: ${{ contains(matrix.os, 'macos') && 'TRUE' || 'FALSE' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -98,6 +102,9 @@ jobs:
         id: pyver
         with:
           # We should support major Python versions for at least 36-42 months
+          # We could probably support pypy if numba were optional
+          # 3.8.16 0_73_pypy
+          # 3.9.16 0_73_pypy
           contents: |
             3.8
             3.9
@@ -110,24 +117,38 @@ jobs:
         uses: ddradar/choose-random-action@v2.0.2
         id: sourcetype
         with:
-          # Set weight to 0 to skip (such as if 'upstream' is known to not work).
-          # Have slightly higher weight for `conda-forge` for faster CI.
+          # Weights must be natural numbers, so set weights to very large to skip one
+          # (such as if 'upstream' is known to not work).
           contents: |
             conda-forge
             wheel
             source
             upstream
           weights: |
-            2
             1
             1
             1
-      - name: Setup conda
+            1
+      - name: Setup mamba
         uses: conda-incubator/setup-miniconda@v2
+        id: setup_mamba
+        continue-on-error: true
         with:
           miniforge-variant: Mambaforge
           miniforge-version: latest
           use-mamba: true
+          python-version: ${{ steps.pyver.outputs.selected }}
+          channels: conda-forge,nodefaults
+          channel-priority: strict
+          activate-environment: graphblas
+          auto-activate-base: false
+      - name: Setup conda
+        uses: conda-incubator/setup-miniconda@v2
+        id: setup_conda
+        if: steps.setup_mamba.outcome == 'failure'
+        continue-on-error: false
+        with:
+          auto-update-conda: true
           python-version: ${{ steps.pyver.outputs.selected }}
           channels: conda-forge,nodefaults
           channel-priority: strict
@@ -144,17 +165,17 @@ jobs:
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           sparsever=$(python -c 'import random ; print(random.choice(["=0.12", "=0.13", "=0.14", ""]))')
           fmmver=$(python -c 'import random ; print(random.choice(["=1.4", ""]))')
-          if [[ ${{ steps.pyver.outputs.selected }} == "3.8" ]]; then
+          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.8') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", ""]))')
-          elif [[ ${{ steps.pyver.outputs.selected }} == "3.9" ]]; then
+          elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.9') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", ""]))')
-          elif [[ ${{ steps.pyver.outputs.selected }} == "3.10" ]]; then
+          elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.10') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.3", "=1.4", "=1.5", ""]))')
@@ -175,8 +196,15 @@ jobs:
           # We can have a tight coupling with python-suitesparse-graphblas.
           # That is, we don't need to support versions of it that are two years old.
           # But, it's still useful for us to test with different versions!
+          psg=""
           if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
-            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2", ""]))')
+            psg=python-suitesparse-graphblas${psgver}
+          elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
+            psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", ""]))')
+          elif [[ ${{ steps.sourcetype.outputs.selected}} == "source" ]] ; then
+            # These should be exact versions
+            psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", ""]))')
           else
             psgver=""
           fi
@@ -187,23 +215,30 @@ jobs:
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
-          # Once we have wheels for all OSes, we can delete the last two lines.
-          mamba install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli pyyaml${yamlver} sparse${sparsever} \
-            pandas${pdver} scipy${spver} numpy${npver} awkward${akver} networkx${nxver} numba${numbaver} fast_matrix_market${fmmver} \
+          $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli \
+            pyyaml${yamlver} sparse${sparsever} pandas${pdver} scipy${spver} numpy${npver} awkward${akver} \
+            networkx${nxver} numba${numbaver} fast_matrix_market${fmmver} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
-            ${{ steps.sourcetype.outputs.selected == 'conda-forge' && 'python-suitesparse-graphblas' || '' }}${psgver} \
-            ${{ matrix.os != 'ubuntu-latest' && '"graphblas>=7.4.0"' || '' }} \
-            ${{ steps.sourcetype.outputs.selected == 'wheel' && matrix.os != 'ubuntu-latest' && 'python-suitesparse-graphblas' || '' }}
+            ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }}
       - name: Build extension module
         run: |
-          # We only have wheels for Linux right now
-          if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" && ${{ matrix.os }} == "ubuntu-latest" ]]; then
-              pip install --no-deps suitesparse-graphblas
+          if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
+              # Add --pre if installing a pre-release
+              pip install --no-deps --only-binary ":all:" suitesparse-graphblas${psgver}
+
+              # Add the below line to the conda install command above if installing from test.pypi.org
+              # ${{ steps.sourcetype.outputs.selected == 'wheel' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \
+              # pip install --no-deps --only-binary ":all:" --index-url https://test.pypi.org/simple/ "suitesparse-graphblas>=7.4.3"
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
-              pip install --no-deps --no-binary=all suitesparse-graphblas
+              # Add --pre if installing a pre-release
+              pip install --no-deps --no-binary suitesparse-graphblas suitesparse-graphblas${psgver}
+
+              # Add the below line to the conda install command above if installing from test.pypi.org
+              # ${{ steps.sourcetype.outputs.selected == 'source' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \
+              # pip install --no-deps --no-build-isolation --no-binary suitesparse-graphblas --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
           elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
               pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
           fi
@@ -235,6 +270,7 @@ jobs:
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo $args
+          pytest -v --pyargs suitesparse_graphblas
           coverage run -m pytest --color=yes --randomly -v $args \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
@@ -300,7 +336,9 @@ jobs:
           coverage run -a -m graphblas.core.automethods
           coverage run -a -m graphblas.core.infixmethods
           git diff --exit-code
-      - name: Coverage
+      - name: Coverage1
+        id: coverageAttempt1
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
@@ -308,6 +346,19 @@ jobs:
         run: |
           coverage xml
           coverage report --show-missing
+          coveralls --service=github
+      # Retry upload if first attempt failed.
+      # This happens somewhat randomly and for irregular reasons.
+      # Logic is a duplicate of previous step.
+      - name: Coverage2
+        id: coverageAttempt2
+        if: steps.coverageAttempt1.outcome == 'failure'
+        continue-on-error: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
+          COVERALLS_PARALLEL: true
+        run: |
           coveralls --service=github
       - name: codecov
         uses: codecov/codecov-action@v3

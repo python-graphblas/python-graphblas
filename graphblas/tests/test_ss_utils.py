@@ -198,6 +198,11 @@ def test_about():
     assert "library_name" in repr(about)
 
 
+def test_openmp_enabled():
+    # SuiteSparse:GraphBLAS without OpenMP enabled is very undesirable
+    assert gb.ss.about["openmp"]
+
+
 def test_global_config():
     d = {}
     config = gb.ss.config

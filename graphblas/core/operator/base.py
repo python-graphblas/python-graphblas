@@ -426,7 +426,7 @@ class OpBase:
             return
         # Read in the parse configs
         trim_from_front = cls._parse_config.get("trim_from_front", 0)
-        delete_exact = cls._parse_config.get("delete_exact", None)
+        delete_exact = cls._parse_config.get("delete_exact")
         num_underscores = cls._parse_config["num_underscores"]
 
         for re_str, return_prefix in [
