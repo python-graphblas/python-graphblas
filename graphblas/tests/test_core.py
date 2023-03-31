@@ -1,6 +1,17 @@
+import pathlib
+
 import pytest
 
 import graphblas as gb
+
+try:
+    import setuptools
+except ImportError:  # pragma: no cover (import)
+    setuptools = None
+try:
+    import tomli
+except ImportError:  # pragma: no cover (import)
+    tomli = None
 
 
 def test_import_special_attrs():
@@ -57,3 +68,22 @@ def test_version():
     from packaging.version import parse
 
     assert parse(gb.__version__) > parse("2022.11.0")
+
+
+@pytest.mark.skipif("not setuptools or not tomli or not gb.__file__")
+def test_packages():
+    """Ensure all packages are declared in pyproject.toml."""
+    # Currently assume s`pyproject.toml` is at the same level as `graphblas` folder.
+    # This probably isn't always True, and we can probably do a better job of finding it.
+    path = pathlib.Path(gb.__file__).parent
+    pkgs = [f"graphblas.{x}" for x in setuptools.find_packages(str(path))]
+    pkgs.append("graphblas")
+    pkgs.sort()
+    pyproject = path.parent / "pyproject.toml"
+    if not pyproject.exists():
+        pytest.skip("Did not find pyproject.toml")
+    with pyproject.open("rb") as f:
+        pkgs2 = sorted(tomli.load(f)["tool"]["setuptools"]["packages"])
+    assert (
+        pkgs == pkgs2
+    ), "If there are extra items on the left, add them to pyproject.toml:tool.setuptools.packages"
