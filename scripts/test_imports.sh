@@ -3,7 +3,7 @@
 # Make sure imports work.  Also, this is a good way to measure import performance.
 if ! python -c "from graphblas import * ; Matrix" ; then exit 1 ; fi
 if ! python -c "from graphblas import agg" ; then exit 1 ; fi
-if ! python -c "from graphblas.core import agg" ; then exit 1 ; fi
+if ! python -c "from graphblas.core.operator import agg" ; then exit 1 ; fi
 if ! python -c "from graphblas.agg import count" ; then exit 1 ; fi
 if ! python -c "from graphblas.binary import plus" ; then exit 1 ; fi
 if ! python -c "from graphblas.indexunary import tril" ; then exit 1 ; fi
@@ -20,7 +20,7 @@ if ! (for attr in Matrix Scalar Vector Recorder agg binary dtypes exceptions \
     fi
   done
 ) ; then exit 1 ; fi
-if ! (for attr in agg base descriptor expr formatting ffi infix lib mask \
+if ! (for attr in base descriptor expr formatting ffi infix lib mask \
   matrix operator scalar vector recorder automethods infixmethods slice ss
   do echo python -c \"from graphblas.core import $attr\"
     if ! python -c "from graphblas.core import $attr"
@@ -44,7 +44,7 @@ if ! (for attr in agg binary binary.numpy dtypes exceptions io monoid monoid.num
     fi
   done
 ) ; then exit 1 ; fi
-if ! (for attr in agg base descriptor expr formatting infix mask matrix \
+if ! (for attr in base descriptor expr formatting infix mask matrix \
   operator scalar vector recorder automethods infixmethods slice ss
   do echo python -c \"import graphblas.core.$attr\"
     if ! python -c "import graphblas.core.$attr"
@@ -60,3 +60,10 @@ if ! python -c "from graphblas import op ; op.plus" ; then exit 1 ; fi
 if ! python -c "from graphblas import select ; select.tril" ; then exit 1 ; fi
 if ! python -c "from graphblas import semiring ; semiring.plus_times" ; then exit 1 ; fi
 if ! python -c "from graphblas import unary ; unary.exp" ; then exit 1 ; fi
+if ! (for attr in agg unary binary monoid semiring select indexunary base utils
+  do echo python -c \"import graphblas.core.operator.$attr\"
+    if ! python -c "import graphblas.core.operator.$attr"
+      then exit 1
+    fi
+  done
+) ; then exit 1 ; fi

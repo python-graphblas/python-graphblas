@@ -143,17 +143,18 @@ def __getattr__(name):
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         if name == "float_power":
-            from ..core import operator
+            from ..core.operator import binary
+            from ..dtypes import FP64
 
-            new_op = operator.BinaryOp(f"numpy.{name}")
+            new_op = binary.BinaryOp(f"numpy.{name}")
             builtin_op = _binary.pow
             for dtype in builtin_op.types:
                 if dtype.name in {"FP32", "FC32", "FC64"}:
                     orig_dtype = dtype
                 else:
-                    orig_dtype = operator.FP64
+                    orig_dtype = FP64
                 orig_op = builtin_op[orig_dtype]
-                cur_op = operator.TypedBuiltinBinaryOp(
+                cur_op = binary.TypedBuiltinBinaryOp(
                     new_op,
                     new_op.name,
                     dtype,
@@ -166,14 +167,12 @@ def __getattr__(name):
         else:
             globals()[name] = getattr(_binary, _numpy_to_graphblas[name])
     else:
-        from ..core import operator
-
         numpy_func = getattr(_np, name)
 
         def func(x, y):  # pragma: no cover (numba)
             return numpy_func(x, y)
 
-        operator.BinaryOp.register_new(f"numpy.{name}", func)
+        _binary.register_new(f"numpy.{name}", func)
     rv = globals()[name]
     if name in _commutative:
         rv._commutes_to = rv

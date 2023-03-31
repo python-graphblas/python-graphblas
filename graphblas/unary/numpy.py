@@ -133,19 +133,17 @@ def __getattr__(name):
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         globals()[name] = getattr(_unary, _numpy_to_graphblas[name])
     else:
-        from ..core import operator
-
         numpy_func = getattr(_np, name)
 
         def func(x):  # pragma: no cover (numba)
             return numpy_func(x)
 
-        operator.UnaryOp.register_new(f"numpy.{name}", func)
+        _unary.register_new(f"numpy.{name}", func)
         if name == "reciprocal":
             # numba doesn't match numpy here
             def reciprocal(x):  # pragma: no cover (numba)
                 return 1 if x else 0
 
-            op = operator.UnaryOp.register_anonymous(reciprocal)
+            op = _unary.register_anonymous(reciprocal)
             globals()[name]._add(op["BOOL"])
     return globals()[name]

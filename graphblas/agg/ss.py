@@ -1,3 +1,3 @@
-from ..core import agg
+from ..core import operator
 
-del agg
+del operator

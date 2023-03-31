@@ -24,6 +24,12 @@ repos:
     hooks:
       - id: validate-pyproject
         name: Validate pyproject.toml
+  # I don't yet trust ruff to do what autoflake does
+  - repo: https://github.com/myint/autoflake
+    rev: v2.0.2
+    hooks:
+      - id: autoflake
+        args: [--in-place]
   # We can probably remove `isort` if we come to trust `ruff --fix`,
   # but we'll need to figure out the configuration to do this in `ruff`
   - repo: https://github.com/pycqa/isort
@@ -42,15 +48,15 @@ repos:
       - id: auto-walrus
         args: [--line-length, "100"]
   - repo: https://github.com/psf/black
-    rev: 23.1.0
+    rev: 23.3.0
     hooks:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.259
+    rev: v0.0.260
     hooks:
       - id: ruff
-        args: [--fix-only]
+        args: [--fix-only, --show-fixes]
   # Let's keep `flake8` even though `ruff` does much of the same.
   # `flake8-bugbear` and `flake8-simplify` have caught things missed by `ruff`.
   - repo: https://github.com/PyCQA/flake8
@@ -60,7 +66,7 @@ repos:
         additional_dependencies: &flake8_dependencies
         # These versions need updated manually
         - flake8==6.0.0
-        - flake8-bugbear==23.3.12
+        - flake8-bugbear==23.3.23
         - flake8-simplify==0.19.3
   - repo: https://github.com/asottile/yesqa
     rev: v1.4.0
@@ -75,7 +81,7 @@ repos:
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.259
+    rev: v0.0.260
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint

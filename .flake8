@@ -12,5 +12,6 @@ extend-ignore =
 per-file-ignores =
     scripts/create_pickle.py:F403,F405,
     graphblas/tests/*.py:T201,
+    graphblas/core/agg.py:F401,F403,
     graphblas/core/ss/matrix.py:SIM113,
     graphblas/**/__init__.py:F401,

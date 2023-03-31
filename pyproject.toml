@@ -89,6 +89,7 @@ test = [
     "packaging",
     "pandas >=1.2",
     "scipy >=1.8",
+    "tomli",
 ]
 complete = [
     "pandas >=1.2",
@@ -100,6 +101,7 @@ complete = [
     "matplotlib >=3.5",
     "pytest",
     "packaging",
+    "tomli",
 ]
 
 [tool.setuptools]
@@ -112,6 +114,7 @@ packages = [
     "graphblas.agg",
     "graphblas.binary",
     "graphblas.core",
+    "graphblas.core.operator",
     "graphblas.core.ss",
     "graphblas.indexunary",
     "graphblas.monoid",
@@ -314,12 +317,13 @@ ignore = [
 ]
 
 [tool.ruff.per-file-ignores]
-"graphblas/core/operator.py" = ["S102"]  # exec is used for UDF
+"graphblas/core/agg.py" = ["F401", "F403"]  # Deprecated
+"graphblas/core/operator/base.py" = ["S102"]  # exec is used for UDF
 "graphblas/core/ss/matrix.py" = ["NPY002"]  # numba doesn't support rng generator yet
 "graphblas/core/ss/vector.py" = ["NPY002"]  # numba doesn't support rng generator yet
 "graphblas/ss/_core.py" = ["N999"]  # We want _core.py to be underscopre
-# Allow assert, pickle, RNG, print, no docstring, and yoda in tests
-"graphblas/tests/*py" = ["S101", "S301", "S311", "T201", "D103", "D100", "SIM300"]
+# Allow useless expressions, assert, pickle, RNG, print, no docstring, and yoda in tests
+"graphblas/tests/*py" = ["B018", "S101", "S301", "S311", "T201", "D103", "D100", "SIM300"]
 "graphblas/tests/test_formatting.py" = ["E501"]  # Allow long lines
 "graphblas/**/__init__.py" = ["F401"]  # Allow unused imports (w/o defining `__all__`)
 "scripts/*.py" = ["INP001"]  # Not a package
