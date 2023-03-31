@@ -336,7 +336,9 @@ jobs:
           coverage run -a -m graphblas.core.automethods
           coverage run -a -m graphblas.core.infixmethods
           git diff --exit-code
-      - name: Coverage
+      - name: Coverage1
+        id: coverageAttempt1
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
@@ -344,6 +346,19 @@ jobs:
         run: |
           coverage xml
           coverage report --show-missing
+          coveralls --service=github
+      # Retry upload if first attempt failed.
+      # This happens somewhat randomly and for irregular reasons.
+      # Logic is a duplicate of previous step.
+      - name: Coverage2
+        id: coverageAttempt2
+        if: steps.coverageAttempt1.outcome == 'failure'
+        continue-on-error: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
+          COVERALLS_PARALLEL: true
+        run: |
           coveralls --service=github
       - name: codecov
         uses: codecov/codecov-action@v3
