@@ -136,7 +136,7 @@ def __dir__():
 
 
 def __getattr__(name):
-    from ..core import operator
+    from ..core.operator import get_semiring
 
     if name in _delayed:
         func, kwargs = _delayed.pop(name)
@@ -161,7 +161,7 @@ def __getattr__(name):
         binary_name = "_".join(words[i:])
         if hasattr(_binary.numpy, binary_name):  # pragma: no branch
             break
-    operator.get_semiring(
+    get_semiring(
         getattr(_monoid.numpy, monoid_name),
         getattr(_binary.numpy, binary_name),
         name=f"numpy.{name}",

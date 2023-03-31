@@ -36,6 +36,7 @@ dependencies:
     # For testing
     - packaging
     - pytest-cov
+    - tomli
     # For debugging
     - icecream
     - ipykernel
@@ -99,6 +100,7 @@ dependencies:
     # - snakeviz
     # - sphinx-lint
     # - sympy
+    # - tuna
     # - twine
     # - vim
     # - yesqa
