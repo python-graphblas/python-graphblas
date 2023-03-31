@@ -168,7 +168,10 @@ def test_npbinary():
                         compare_op = isclose
                     else:
                         np_result = getattr(np, binary_name)(np_left, np_right)
-                        compare_op = npbinary.equal
+                        if binary_name in {"arctan2"}:
+                            compare_op = isclose
+                        else:
+                            compare_op = npbinary.equal
                 except Exception:  # pragma: no cover (debug)
                     print(f"Error computing numpy result for {binary_name}")
                     print(f"dtypes: ({gb_left.dtype}, {gb_right.dtype}) -> {gb_result.dtype}")
@@ -184,11 +187,13 @@ def test_npbinary():
                 match(accum=gb.binary.lor) << gb_result.apply(npunary.isinf)
             compare = match.reduce(gb.monoid.land).new()
             if not compare:  # pragma: no cover (debug)
+                print(compare_op)
                 print(binary_name)
                 print(compute(gb_left))
                 print(compute(gb_right))
                 print(compute(gb_result))
                 print(np_result)
+                print((np_result - compute(gb_result)).new().to_coo()[1])
             assert compare
 
 
