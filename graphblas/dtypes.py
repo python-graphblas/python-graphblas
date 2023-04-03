@@ -1,14 +1,17 @@
 import warnings as _warnings
 
-import numba as _numba
 import numpy as _np
 from numpy import find_common_type as _find_common_type
 from numpy import promote_types as _promote_types
 
 from . import backend
 from .core import NULL as _NULL
+from .core import _has_numba
 from .core import ffi as _ffi
 from .core import lib as _lib
+
+if _has_numba:
+    import numba as _numba
 
 # Default assumption unless FC32/FC64 are found in lib
 _supports_complex = hasattr(_lib, "GrB_FC64") or hasattr(_lib, "GxB_FC64")
@@ -140,44 +143,126 @@ def register_anonymous(dtype, name=None):
     # For now, let's use "opaque" unsigned bytes for the c type.
     if name is None:
         name = _default_name(dtype)
-    numba_type = _numba.typeof(dtype).dtype
+    numba_type = _numba.typeof(dtype).dtype if _has_numba else None
     rv = DataType(name, gb_obj, None, f"uint8_t[{dtype.itemsize}]", numba_type, dtype)
     _registry[gb_obj] = rv
     _registry[dtype] = rv
-    _registry[numba_type] = rv
-    _registry[numba_type.name] = rv
+    if _has_numba:
+        _registry[numba_type] = rv
+        _registry[numba_type.name] = rv
     return rv
 
 
-BOOL = DataType("BOOL", _lib.GrB_BOOL, "GrB_BOOL", "_Bool", _numba.types.bool_, _np.bool_)
-INT8 = DataType("INT8", _lib.GrB_INT8, "GrB_INT8", "int8_t", _numba.types.int8, _np.int8)
-UINT8 = DataType("UINT8", _lib.GrB_UINT8, "GrB_UINT8", "uint8_t", _numba.types.uint8, _np.uint8)
-INT16 = DataType("INT16", _lib.GrB_INT16, "GrB_INT16", "int16_t", _numba.types.int16, _np.int16)
+BOOL = DataType(
+    "BOOL",
+    _lib.GrB_BOOL,
+    "GrB_BOOL",
+    "_Bool",
+    _numba.types.bool_ if _has_numba else None,
+    _np.bool_,
+)
+INT8 = DataType(
+    "INT8", _lib.GrB_INT8, "GrB_INT8", "int8_t", _numba.types.int8 if _has_numba else None, _np.int8
+)
+UINT8 = DataType(
+    "UINT8",
+    _lib.GrB_UINT8,
+    "GrB_UINT8",
+    "uint8_t",
+    _numba.types.uint8 if _has_numba else None,
+    _np.uint8,
+)
+INT16 = DataType(
+    "INT16",
+    _lib.GrB_INT16,
+    "GrB_INT16",
+    "int16_t",
+    _numba.types.int16 if _has_numba else None,
+    _np.int16,
+)
 UINT16 = DataType(
-    "UINT16", _lib.GrB_UINT16, "GrB_UINT16", "uint16_t", _numba.types.uint16, _np.uint16
+    "UINT16",
+    _lib.GrB_UINT16,
+    "GrB_UINT16",
+    "uint16_t",
+    _numba.types.uint16 if _has_numba else None,
+    _np.uint16,
 )
-INT32 = DataType("INT32", _lib.GrB_INT32, "GrB_INT32", "int32_t", _numba.types.int32, _np.int32)
+INT32 = DataType(
+    "INT32",
+    _lib.GrB_INT32,
+    "GrB_INT32",
+    "int32_t",
+    _numba.types.int32 if _has_numba else None,
+    _np.int32,
+)
 UINT32 = DataType(
-    "UINT32", _lib.GrB_UINT32, "GrB_UINT32", "uint32_t", _numba.types.uint32, _np.uint32
+    "UINT32",
+    _lib.GrB_UINT32,
+    "GrB_UINT32",
+    "uint32_t",
+    _numba.types.uint32 if _has_numba else None,
+    _np.uint32,
 )
-INT64 = DataType("INT64", _lib.GrB_INT64, "GrB_INT64", "int64_t", _numba.types.int64, _np.int64)
+INT64 = DataType(
+    "INT64",
+    _lib.GrB_INT64,
+    "GrB_INT64",
+    "int64_t",
+    _numba.types.int64 if _has_numba else None,
+    _np.int64,
+)
 # _Index (like UINT64) is for internal use only and shouldn't be exposed to the user
 _INDEX = DataType(
-    "UINT64", _lib.GrB_UINT64, "GrB_Index", "GrB_Index", _numba.types.uint64, _np.uint64
+    "UINT64",
+    _lib.GrB_UINT64,
+    "GrB_Index",
+    "GrB_Index",
+    _numba.types.uint64 if _has_numba else None,
+    _np.uint64,
 )
 UINT64 = DataType(
-    "UINT64", _lib.GrB_UINT64, "GrB_UINT64", "uint64_t", _numba.types.uint64, _np.uint64
+    "UINT64",
+    _lib.GrB_UINT64,
+    "GrB_UINT64",
+    "uint64_t",
+    _numba.types.uint64 if _has_numba else None,
+    _np.uint64,
 )
-FP32 = DataType("FP32", _lib.GrB_FP32, "GrB_FP32", "float", _numba.types.float32, _np.float32)
-FP64 = DataType("FP64", _lib.GrB_FP64, "GrB_FP64", "double", _numba.types.float64, _np.float64)
+FP32 = DataType(
+    "FP32",
+    _lib.GrB_FP32,
+    "GrB_FP32",
+    "float",
+    _numba.types.float32 if _has_numba else None,
+    _np.float32,
+)
+FP64 = DataType(
+    "FP64",
+    _lib.GrB_FP64,
+    "GrB_FP64",
+    "double",
+    _numba.types.float64 if _has_numba else None,
+    _np.float64,
+)
 
 if _supports_complex and hasattr(_lib, "GxB_FC32"):
     FC32 = DataType(
-        "FC32", _lib.GxB_FC32, "GxB_FC32", "float _Complex", _numba.types.complex64, _np.complex64
+        "FC32",
+        _lib.GxB_FC32,
+        "GxB_FC32",
+        "float _Complex",
+        _numba.types.complex64 if _has_numba else None,
+        _np.complex64,
     )
 if _supports_complex and hasattr(_lib, "GrB_FC32"):  # pragma: no cover (unused)
     FC32 = DataType(
-        "FC32", _lib.GrB_FC32, "GrB_FC32", "float _Complex", _numba.types.complex64, _np.complex64
+        "FC32",
+        _lib.GrB_FC32,
+        "GrB_FC32",
+        "float _Complex",
+        _numba.types.complex64 if _has_numba else None,
+        _np.complex64,
     )
 if _supports_complex and hasattr(_lib, "GxB_FC64"):
     FC64 = DataType(
@@ -185,7 +270,7 @@ if _supports_complex and hasattr(_lib, "GxB_FC64"):
         _lib.GxB_FC64,
         "GxB_FC64",
         "double _Complex",
-        _numba.types.complex128,
+        _numba.types.complex128 if _has_numba else None,
         _np.complex128,
     )
 if _supports_complex and hasattr(_lib, "GrB_FC64"):  # pragma: no cover (unused)
@@ -194,7 +279,7 @@ if _supports_complex and hasattr(_lib, "GrB_FC64"):  # pragma: no cover (unused)
         _lib.GrB_FC64,
         "GrB_FC64",
         "double _Complex",
-        _numba.types.complex128,
+        _numba.types.complex128 if _has_numba else None,
         _np.complex128,
     )
 
@@ -246,8 +331,9 @@ for dtype in _dtypes_to_register:
     _registry[dtype.gb_name.lower()] = dtype
     _registry[dtype.c_type] = dtype
     _registry[dtype.c_type.upper()] = dtype
-    _registry[dtype.numba_type] = dtype
-    _registry[dtype.numba_type.name] = dtype
+    if _has_numba:
+        _registry[dtype.numba_type] = dtype
+        _registry[dtype.numba_type.name] = dtype
     val = _sample_values[dtype]
     _registry[val.dtype] = dtype
     _registry[val.dtype.name] = dtype

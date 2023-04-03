@@ -1,7 +1,6 @@
 import itertools
 
 import numpy as np
-from numba import njit
 from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
 
 import graphblas as gb
@@ -23,7 +22,7 @@ from ..utils import (
 )
 from .config import BaseConfig
 from .descriptor import get_descriptor
-from .matrix import _concat_mn
+from .matrix import _concat_mn, njit
 from .prefix_scan import prefix_scan
 
 ffi_new = ffi.new

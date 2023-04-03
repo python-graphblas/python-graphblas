@@ -1,4 +1,5 @@
 from ..binary import numpy as _np_binary
+from ..core import _supports_udfs
 from ..semiring import numpy as _np_semiring
 from ..unary import numpy as _np_unary
 
@@ -10,7 +11,10 @@ __all__ = list(_op_to_mod)
 
 
 def __dir__():
-    return globals().keys() | _delayed.keys() | _op_to_mod.keys()
+    attrs = _delayed.keys() | _op_to_mod.keys()
+    if not _supports_udfs:
+        attrs &= _np_unary.__dir__() | _np_binary.__dir__() | _np_semiring.__dir__()
+    return attrs | globals().keys()
 
 
 def __getattr__(name):

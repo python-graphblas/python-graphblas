@@ -47,7 +47,10 @@ classifiers = [
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
     "Intended Audience :: Developers",
     "Intended Audience :: Other Audience",
     "Intended Audience :: Science/Research",
@@ -166,6 +169,9 @@ filterwarnings = [
     # And this deprecation warning was added in setuptools v67.5.0 (8 Mar 2023). See:
     # https://setuptools.pypa.io/en/latest/history.html#v67-5-0
     "ignore:pkg_resources is deprecated as an API:DeprecationWarning:pkg_resources",
+
+    # pypy gives this warning
+    "ignore:can't resolve package from __spec__ or __package__:ImportWarning:",
 ]
 
 [tool.coverage.run]

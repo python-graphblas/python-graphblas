@@ -1,5 +1,6 @@
 import inspect
 import pickle
+import platform
 import random
 import sys
 import types
@@ -17,6 +18,7 @@ from .conftest import autocompute, compute
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 suitesparse = backend == "suitesparse"
+pypy = platform.python_implementation() == "PyPy"
 
 
 @pytest.fixture
@@ -209,12 +211,12 @@ def test_unsupported_ops(s):
         s[0]
     with pytest.raises(TypeError, match="does not support"):
         s[0] = 0
-    with pytest.raises(TypeError, match="doesn't support"):
+    with pytest.raises(TypeError, match="doesn't support|does not support"):
         del s[0]
 
 
 def test_is_empty(s):
-    with pytest.raises(AttributeError, match="can't set attribute"):
+    with pytest.raises(AttributeError, match="can't set attribute|object has no setter"):
         s.is_empty = True
 
 
@@ -358,14 +360,15 @@ def test_expr_is_like_scalar(s):
     }
     if s.is_cscalar:
         expected.add("_empty")
-    assert attrs - expr_attrs == expected, (
+    ignore = {"__sizeof__"}
+    assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Scalar.  You may need to "
         "add an entry to `scalar` set in `graphblas.core.automethods` "
         "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
-    assert attrs - infix_attrs == expected
-    assert attrs - scalar_infix_attrs == expected
+    assert attrs - infix_attrs - ignore == expected
+    assert attrs - scalar_infix_attrs - ignore == expected
     # Make sure signatures actually match. `expr.dup` has `**opts`
     skip = {"__init__", "__repr__", "_repr_html_", "dup"}
     for expr in [v.inner(v), v @ v, t & t]:
@@ -399,7 +402,8 @@ def test_index_expr_is_like_scalar(s):
     }
     if s.is_cscalar:
         expected.add("_empty")
-    assert attrs - expr_attrs == expected, (
+    ignore = {"__sizeof__"}
+    assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Scalar.  You may need to "
         "add an entry to `scalar` set in `graphblas.core.automethods` "
         "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
@@ -505,7 +509,7 @@ def test_scalar_expr(s):
 
 
 def test_sizeof(s):
-    if suitesparse or s._is_cscalar:
+    if (suitesparse or s._is_cscalar) and not pypy:
         assert 1 < sys.getsizeof(s) < 1000
     else:
         with pytest.raises(TypeError):

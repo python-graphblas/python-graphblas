@@ -1,6 +1,7 @@
 import inspect
 import itertools
 import pickle
+import platform
 import sys
 import types
 import weakref
@@ -11,6 +12,7 @@ from numpy.testing import assert_array_equal
 
 import graphblas as gb
 from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
+from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.exceptions import (
     DimensionMismatch,
     DomainMismatch,
@@ -27,6 +29,7 @@ from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 
 suitesparse = backend == "suitesparse"
+pypy = platform.python_implementation() == "PyPy"
 
 
 @pytest.fixture
@@ -798,6 +801,7 @@ def test_select_bools_and_masks(v):
     assert w8.isequal(w9)
 
 
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_indexunary_udf(v):
     def twox_minusthunk(x, row, col, thunk):  # pragma: no cover (numba)
@@ -899,9 +903,11 @@ def test_reduce_agg(v):
     assert v.reduce(agg.stdp).new().isclose(0.5**0.5)
     assert v.reduce(agg.stds).new().isclose((2 / 3) ** 0.5)
     assert v.reduce(agg.L0norm).new() == 3
-    assert v.reduce(agg.L1norm).new() == 4
+    if supports_udfs:  # XXX TODO
+        assert v.reduce(agg.L1norm).new() == 4
     assert v.reduce(agg.L2norm).new().isclose(6**0.5)
-    assert v.reduce(agg.Linfnorm).new() == 2
+    if supports_udfs:  # XXX TODO
+        assert v.reduce(agg.Linfnorm).new() == 2
     assert v.reduce(agg.exists).new() == 1
     w = binary.plus(v, 1).new()
     assert w.reduce(agg.geometric_mean).new().isclose(12**0.25)
@@ -1624,13 +1630,14 @@ def test_expr_is_like_vector(v):
         "resize",
         "update",
     }
-    assert attrs - expr_attrs == expected, (
+    ignore = {"__sizeof__"}
+    assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Vector.  You may need to "
         "add an entry to `vector` or `matrix_vector` set in `graphblas.core.automethods` "
         "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
-    assert attrs - infix_attrs == expected
+    assert attrs - infix_attrs - ignore == expected
     # Make sure signatures actually match
     skip = {"__init__", "__repr__", "_repr_html_"}
     for expr in [binary.times(w & w), w & w]:
@@ -1672,7 +1679,8 @@ def test_index_expr_is_like_vector(v):
         "from_values",
         "resize",
     }
-    assert attrs - expr_attrs == expected, (
+    ignore = {"__sizeof__"}
+    assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Vector.  You may need to "
         "add an entry to `vector` or `matrix_vector` set in `graphblas.core.automethods` "
         "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
@@ -1963,7 +1971,7 @@ def test_ndim(A, v):
 
 
 def test_sizeof(v):
-    if suitesparse:
+    if suitesparse and not pypy:
         assert sys.getsizeof(v) > v.nvals * 16
     else:
         with pytest.raises(TypeError):
@@ -2006,6 +2014,7 @@ def test_delete_via_scalar(v):
     assert v.nvals == 0
 
 
+@pytest.mark.skipif("not supports_udfs")
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "VectorUDT")
@@ -2380,6 +2389,7 @@ def test_to_coo_subset(v):
     assert vals.dtype == np.int64
 
 
+@pytest.mark.skipif("not supports_udfs")
 def test_lambda_udfs(v):
     result = v.apply(lambda x: x + 1).new()  # pragma: no branch (numba)
     expected = binary.plus(v, 1).new()
@@ -2506,7 +2516,8 @@ def test_from_scalar():
     v = Vector.from_scalar(1, dtype="INT64[2]", size=3)
     w = Vector("INT64[2]", size=3)
     w << [1, 1]
-    assert v.isequal(w, check_dtype=True)
+    if supports_udfs:  # XXX TODO
+        assert v.isequal(w, check_dtype=True)
 
 
 def test_to_dense_from_dense():
@@ -2559,9 +2570,10 @@ def test_ss_sort(v):
         v.ss.sort(binary.plus)
 
     # Like compactify
-    _, p = v.ss.sort(lambda x, y: False, values=False)  # pragma: no branch (numba)
-    expected_p = Vector.from_coo([0, 1, 2, 3], [1, 3, 4, 6], size=7)
-    assert p.isequal(expected_p)
+    if supports_udfs:
+        _, p = v.ss.sort(lambda x, y: False, values=False)  # pragma: no branch (numba)
+        expected_p = Vector.from_coo([0, 1, 2, 3], [1, 3, 4, 6], size=7)
+        assert p.isequal(expected_p)
     # reversed
     _, p = v.ss.sort(binary.pair[bool], values=False)
     expected_p = Vector.from_coo([0, 1, 2, 3], [6, 4, 3, 1], size=7)
@@ -2569,6 +2581,7 @@ def test_ss_sort(v):
     w, p = v.ss.sort(monoid.lxor)  # Weird, but user-defined monoids may not commute, so okay
 
 
+@pytest.mark.skipif("not supports_udfs")
 def test_subarray_dtypes():
     a = np.arange(3 * 4, dtype=np.int64).reshape(3, 4)
     v = Vector.from_coo([1, 3, 5], a)

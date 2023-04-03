@@ -1,9 +1,7 @@
 import itertools
 import warnings
 
-import numba
 import numpy as np
-from numba import njit
 from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
 
 import graphblas as gb
@@ -11,7 +9,7 @@ import graphblas as gb
 from ... import binary, monoid
 from ...dtypes import _INDEX, BOOL, INT64, UINT64, _string_to_dtype, lookup_dtype
 from ...exceptions import _error_code_lookup, check_status, check_status_carg
-from .. import NULL, ffi, lib
+from .. import NULL, _has_numba, ffi, lib
 from ..base import call
 from ..operator import get_typed_op
 from ..scalar import Scalar, _as_scalar, _scalar_index
@@ -30,6 +28,16 @@ from ..utils import (
 from .config import BaseConfig
 from .descriptor import get_descriptor
 
+if _has_numba:
+    from numba import njit, prange
+else:
+
+    def njit(func=None, **kwargs):
+        if func is not None:
+            return func
+        return njit
+
+    prange = range
 ffi_new = ffi.new
 
 
@@ -4371,28 +4379,28 @@ class ss:
         return rv
 
 
-@numba.njit(parallel=True)
+@njit(parallel=True)
 def argsort_values(indptr, indices, values):  # pragma: no cover (numba)
     rv = np.empty(indptr[-1], dtype=np.uint64)
-    for i in numba.prange(indptr.size - 1):
+    for i in prange(indptr.size - 1):
         rv[indptr[i] : indptr[i + 1]] = indices[
             np.int64(indptr[i]) + np.argsort(values[indptr[i] : indptr[i + 1]])
         ]
     return rv
 
 
-@numba.njit(parallel=True)
+@njit(parallel=True)
 def sort_values(indptr, values):  # pragma: no cover (numba)
     rv = np.empty(indptr[-1], dtype=values.dtype)
-    for i in numba.prange(indptr.size - 1):
+    for i in prange(indptr.size - 1):
         rv[indptr[i] : indptr[i + 1]] = np.sort(values[indptr[i] : indptr[i + 1]])
     return rv
 
 
-@numba.njit(parallel=True)
+@njit(parallel=True)
 def compact_values(old_indptr, new_indptr, values):  # pragma: no cover (numba)
     rv = np.empty(new_indptr[-1], dtype=values.dtype)
-    for i in numba.prange(new_indptr.size - 1):
+    for i in prange(new_indptr.size - 1):
         start = np.int64(new_indptr[i])
         offset = np.int64(old_indptr[i]) - start
         for j in range(start, new_indptr[i + 1]):
@@ -4400,17 +4408,17 @@ def compact_values(old_indptr, new_indptr, values):  # pragma: no cover (numba)
     return rv
 
 
-@numba.njit(parallel=True)
+@njit(parallel=True)
 def reverse_values(indptr, values):  # pragma: no cover (numba)
     rv = np.empty(indptr[-1], dtype=values.dtype)
-    for i in numba.prange(indptr.size - 1):
+    for i in prange(indptr.size - 1):
         offset = np.int64(indptr[i]) + np.int64(indptr[i + 1]) - 1
         for j in range(indptr[i], indptr[i + 1]):
             rv[j] = values[offset - j]
     return rv
 
 
-@numba.njit(parallel=True)
+@njit(parallel=True)
 def compact_indices(indptr, k):  # pragma: no cover (numba)
     """Given indptr from hypercsr, create a new col_indices array that is compact.
 
@@ -4420,7 +4428,7 @@ def compact_indices(indptr, k):  # pragma: no cover (numba)
         indptr = create_indptr(indptr, k)
     col_indices = np.empty(indptr[-1], dtype=np.uint64)
     N = np.int64(0)
-    for i in numba.prange(indptr.size - 1):
+    for i in prange(indptr.size - 1):
         start = np.int64(indptr[i])
         deg = np.int64(indptr[i + 1]) - start
         N = max(N, deg)
@@ -4433,7 +4441,7 @@ def compact_indices(indptr, k):  # pragma: no cover (numba)
 def choose_random1(indptr):  # pragma: no cover (numba)
     choices = np.empty(indptr.size - 1, dtype=indptr.dtype)
     new_indptr = np.arange(indptr.size, dtype=indptr.dtype)
-    for i in numba.prange(indptr.size - 1):
+    for i in prange(indptr.size - 1):
         idx = np.int64(indptr[i])
         deg = np.int64(indptr[i + 1]) - idx
         if deg == 1:
@@ -4470,7 +4478,7 @@ def choose_random(indptr, k):  # pragma: no cover (numba)
     # be nice to have them sorted if convenient to do so.
     new_indptr = create_indptr(indptr, k)
     choices = np.empty(new_indptr[-1], dtype=indptr.dtype)
-    for i in numba.prange(indptr.size - 1):
+    for i in prange(indptr.size - 1):
         idx = np.int64(indptr[i])
         deg = np.int64(indptr[i + 1]) - idx
         if k < deg:
@@ -4551,7 +4559,7 @@ def choose_first(indptr, k):  # pragma: no cover (numba)
 
     new_indptr = create_indptr(indptr, k)
     choices = np.empty(new_indptr[-1], dtype=indptr.dtype)
-    for i in numba.prange(indptr.size - 1):
+    for i in prange(indptr.size - 1):
         idx = np.int64(indptr[i])
         deg = np.int64(indptr[i + 1]) - idx
         if k < deg:
@@ -4575,7 +4583,7 @@ def choose_last(indptr, k):  # pragma: no cover (numba)
 
     new_indptr = create_indptr(indptr, k)
     choices = np.empty(new_indptr[-1], dtype=indptr.dtype)
-    for i in numba.prange(indptr.size - 1):
+    for i in prange(indptr.size - 1):
         idx = np.int64(indptr[i])
         deg = np.int64(indptr[i + 1]) - idx
         if k < deg:
@@ -4608,19 +4616,20 @@ def indices_to_indptr(indices, size):  # pragma: no cover (numba)
     """Calculate the indptr for e.g. CSR from sorted COO rows."""
     indptr = np.zeros(size, dtype=indices.dtype)
     index = np.uint64(0)
+    one = np.uint64(1)
     for i in range(indices.size):
         row = indices[i]
         if row != index:
-            indptr[index + 1] = i
+            indptr[index + one] = i
             index = row
-    indptr[index + 1] = indices.size
+    indptr[index + one] = indices.size
     return indptr
 
 
 @njit(parallel=True)
 def indptr_to_indices(indptr):  # pragma: no cover (numba)
     indices = np.empty(indptr[-1], dtype=indptr.dtype)
-    for i in numba.prange(indptr.size - 1):
+    for i in prange(indptr.size - 1):
         for j in range(indptr[i], indptr[i + 1]):
             indices[j] = i
     return indices

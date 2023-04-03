@@ -5,6 +5,7 @@ import numpy as np
 
 from ... import agg, backend, binary, monoid, semiring, unary
 from ...dtypes import INT64, lookup_dtype
+from .. import _supports_udfs
 from ..utils import output_type
 
 
@@ -341,9 +342,10 @@ agg.logaddexp2 = Aggregator(
 # hypot = Aggregator('hypot', monoid=semiring.numpy.hypot)
 
 agg.L0norm = agg.count_nonzero
-agg.L1norm = Aggregator("L1norm", semiring="plus_absfirst", semiring2=semiring.plus_first)
 agg.L2norm = agg.hypot
-agg.Linfnorm = Aggregator("Linfnorm", semiring="max_absfirst", semiring2=semiring.max_first)
+if _supports_udfs:  # XXX TODO
+    agg.L1norm = Aggregator("L1norm", semiring="plus_absfirst", semiring2=semiring.plus_first)
+    agg.Linfnorm = Aggregator("Linfnorm", semiring="max_absfirst", semiring2=semiring.max_first)
 
 
 # Composite

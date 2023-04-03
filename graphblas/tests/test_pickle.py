@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 import graphblas as gb
+from graphblas.core import _supports_udfs as supports_udfs  # noqa: F401
 
 suitesparse = gb.backend == "suitesparse"
 
@@ -36,6 +37,7 @@ def extra():
     return ""
 
 
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_deserialize(extra):
     path = Path(__file__).parent / f"pickle1{extra}.pkl"
@@ -62,6 +64,7 @@ def test_deserialize(extra):
     assert d3["semiring_pickle"] is gb.semiring.semiring_pickle
 
 
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_serialize():
     v = gb.Vector.from_coo([1], 2)
@@ -232,6 +235,7 @@ def identity_par(z):
     return -z
 
 
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_serialize_parameterized():
     # unary_pickle = gb.core.operator.UnaryOp.register_new(
@@ -285,6 +289,7 @@ def test_serialize_parameterized():
     pickle.loads(pkl)  # TODO: check results
 
 
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_deserialize_parameterized(extra):
     path = Path(__file__).parent / f"pickle2{extra}.pkl"
@@ -295,6 +300,7 @@ def test_deserialize_parameterized(extra):
         pickle.load(f)  # TODO: check results
 
 
+@pytest.mark.skipif("not supports_udfs")
 def test_udt(extra):
     record_dtype = np.dtype([("x", np.bool_), ("y", np.int64)], align=True)
     udt = gb.dtypes.register_new("PickleUDT", record_dtype)

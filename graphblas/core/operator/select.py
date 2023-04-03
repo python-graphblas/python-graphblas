@@ -124,6 +124,7 @@ class SelectOp(OpBase):
 
         Because it is not registered in the namespace, the name is optional.
         """
+        cls._check_supports_udf("register_anonymous")
         if parameterized:
             return ParameterizedSelectOp(name, func, anonymous=True, is_udt=is_udt)
         iop = IndexUnaryOp._build(name, func, anonymous=True, is_udt=is_udt)
@@ -140,6 +141,7 @@ class SelectOp(OpBase):
             >>> dir(gb.select)
             [..., 'upper_left_triangle', ...]
         """
+        cls._check_supports_udf("register_new")
         iop = IndexUnaryOp.register_new(
             name, func, parameterized=parameterized, is_udt=is_udt, lazy=lazy
         )

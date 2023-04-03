@@ -3,10 +3,10 @@ import warnings
 
 import numpy as np
 
-from .. import backend, binary, monoid, select, semiring
+from .. import backend, binary, monoid, select, semiring, unary
 from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, NoValue, check_status
-from . import automethods, ffi, lib, utils
+from . import _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
 from .descriptor import lookup as descriptor_lookup
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, Updater
@@ -91,6 +91,38 @@ def _select_mask(updater, obj, mask):
     else:
         # Can we do any better depending on accum, replace, and type of masks?
         updater << obj.dup(mask=mask)
+
+
+def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
+    #  x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+    isequal = self.ewise_mult(other, binary.eq).new(bool, name="isclose", **opts)
+    if isequal._nvals != self._nvals:
+        return False
+    if type(isequal) is Vector:
+        val = isequal.reduce(monoid.land, allow_empty=False).new(**opts).value
+    else:
+        val = isequal.reduce_scalar(monoid.land, allow_empty=False).new(**opts).value
+    if val:
+        return True
+    # x - y
+    abs_x_y = self.ewise_mult(other, binary.minus).new(FP64, mask=~isequal.V, **opts)
+    # abs(x - y)
+    abs_x_y(**opts) << abs_x_y.apply(unary.abs)
+    # abs(x)
+    x = self.apply(unary.abs).new(FP64, mask=~isequal.V, **opts)
+    # abs(y)
+    y = other.apply(unary.abs).new(FP64, mask=~isequal.V, **opts)
+    # max(abs(x), abs(y))
+    max_x_y = x.ewise_mult(y, binary.max).new(**opts)
+    # rel_tol * max(abs(x), abs(y))
+    max_x_y(**opts) << max_x_y.apply(binary.times, rel_tol)
+    # max(rel_tol * max(abs(x), abs(y)), abs_tol)
+    max_x_y(**opts) << max_x_y.apply(binary.max, abs_tol)
+    # abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+    isequal(**opts) << abs_x_y.ewise_mult(max_x_y, binary.lt)
+    if type(isequal) is Vector:
+        return isequal.reduce(monoid.land, allow_empty=False).new(**opts).value
+    return isequal.reduce_scalar(monoid.land, allow_empty=False).new(**opts).value
 
 
 class Vector(BaseType):
@@ -354,6 +386,8 @@ class Vector(BaseType):
             return False
         if self._nvals != other._nvals:
             return False
+        if not _supports_udfs:
+            return _isclose_recipe(self, other, rel_tol, abs_tol, **opts)
 
         matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(
             bool, name="M_isclose", **opts
@@ -520,14 +554,15 @@ class Vector(BaseType):
         if not dup_op_given:
             if not self.dtype._is_udt:
                 dup_op = binary.plus
-            else:
+            elif backend != "suitesparse":
                 dup_op = binary.any
-        # SS:SuiteSparse-specific: we could use NULL for dup_op
-        dup_op = get_typed_op(dup_op, self.dtype, kind="binary")
-        if dup_op.opclass == "Monoid":
-            dup_op = dup_op.binaryop
-        else:
-            self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
+            # SS:SuiteSparse-specific: we use NULL for dup_op
+        if dup_op is not None:
+            dup_op = get_typed_op(dup_op, self.dtype, kind="binary")
+            if dup_op.opclass == "Monoid":
+                dup_op = dup_op.binaryop
+            else:
+                self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
 
         indices = _CArray(indices)
         values = _CArray(values, self.dtype)

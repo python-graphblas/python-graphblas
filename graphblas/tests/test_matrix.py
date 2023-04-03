@@ -1,6 +1,7 @@
 import inspect
 import itertools
 import pickle
+import platform
 import sys
 import types
 import weakref
@@ -11,6 +12,7 @@ from numpy.testing import assert_array_equal
 
 import graphblas as gb
 from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
+from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core import lib
 from graphblas.exceptions import (
     DimensionMismatch,
@@ -28,6 +30,7 @@ from .conftest import autocompute, compute
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 suitesparse = backend == "suitesparse"
+pypy = platform.python_implementation() == "PyPy"
 
 
 @pytest.fixture
@@ -1283,6 +1286,7 @@ def test_select_bools_and_masks(A):
         A.select(A[0, :].new().S)
 
 
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_indexunary_udf(A):
     def threex_minusthunk(x, row, col, thunk):  # pragma: no cover (numba)
@@ -1353,15 +1357,17 @@ def test_reduce_agg(A):
     expected = unary.sqrt[float](squared).new()
     w5 = A.reduce_rowwise(agg.hypot).new()
     assert w5.isclose(expected)
-    w6 = A.reduce_rowwise(monoid.numpy.hypot[float]).new()
-    assert w6.isclose(expected)
+    if supports_udfs or hasattr(monoid.numpy, "hypot"):
+        w6 = A.reduce_rowwise(monoid.numpy.hypot[float]).new()
+        assert w6.isclose(expected)
     w7 = Vector(w5.dtype, size=w5.size)
     w7 << A.reduce_rowwise(agg.hypot)
     assert w7.isclose(expected)
 
     w8 = A.reduce_rowwise(agg.logaddexp).new()
-    expected = A.reduce_rowwise(monoid.numpy.logaddexp[float]).new()
-    assert w8.isclose(w8)
+    if supports_udfs or hasattr(monoid.numpy, "logaddexp"):
+        expected = A.reduce_rowwise(monoid.numpy.logaddexp[float]).new()
+        assert w8.isclose(w8)
 
     result = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 2, 9, 10, 11, 8, 4])
     w9 = A.reduce_columnwise(agg.sum).new()
@@ -1598,6 +1604,7 @@ def test_reduce_agg_empty():
                 assert compute(s.value) is None
 
 
+@pytest.mark.skipif("not supports_udfs")
 def test_reduce_row_udf(A):
     result = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
 
@@ -2902,18 +2909,19 @@ def test_expr_is_like_matrix(A):
         "resize",
         "update",
     }
-    assert attrs - expr_attrs == expected, (
+    ignore = {"__sizeof__"}
+    assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Matrix.  You may need to "
         "add an entry to `matrix` or `matrix_vector` set in `graphblas.core.automethods` "
         "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
-    assert attrs - infix_attrs == expected
+    assert attrs - infix_attrs - ignore == expected
     # TransposedMatrix is used differently than other expressions,
     # so maybe it shouldn't support everything.
     if suitesparse:
         expected.add("ss")
-    assert attrs - transposed_attrs == (expected | {"_as_vector", "S", "V"}) - {
+    assert attrs - transposed_attrs - ignore == (expected | {"_as_vector", "S", "V"}) - {
         "_prep_for_extract",
         "_extract_element",
     }
@@ -2965,7 +2973,8 @@ def test_index_expr_is_like_matrix(A):
         "from_scalar",
         "resize",
     }
-    assert attrs - expr_attrs == expected, (
+    ignore = {"__sizeof__"}
+    assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Matrix.  You may need to "
         "add an entry to `matrix` or `matrix_vector` set in `graphblas.core.automethods` "
         "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
@@ -3110,10 +3119,12 @@ def test_infix_sugar(A):
     assert binary.times(2, A).isequal(2 * A)
     assert binary.truediv(A, 2).isequal(A / 2)
     assert binary.truediv(5, A).isequal(5 / A)
-    assert binary.floordiv(A, 2).isequal(A // 2)
-    assert binary.floordiv(5, A).isequal(5 // A)
-    assert binary.numpy.mod(A, 2).isequal(A % 2)
-    assert binary.numpy.mod(5, A).isequal(5 % A)
+    if supports_udfs or hasattr(binary, "floordiv"):
+        assert binary.floordiv(A, 2).isequal(A // 2)
+        assert binary.floordiv(5, A).isequal(5 // A)
+    if supports_udfs or hasattr(binary.numpy, "mod"):
+        assert binary.numpy.mod(A, 2).isequal(A % 2)
+        assert binary.numpy.mod(5, A).isequal(5 % A)
     assert binary.pow(A, 2).isequal(A**2)
     assert binary.pow(2, A).isequal(2**A)
     assert binary.pow(A, 2).isequal(pow(A, 2))
@@ -3140,26 +3151,27 @@ def test_infix_sugar(A):
     assert binary.ge(A, 4).isequal(A >= 4)
     assert binary.eq(A, 4).isequal(A == 4)
     assert binary.ne(A, 4).isequal(A != 4)
-    x, y = divmod(A, 3)
-    assert binary.floordiv(A, 3).isequal(x)
-    assert binary.numpy.mod(A, 3).isequal(y)
-    assert binary.fmod(A, 3).isequal(y)
-    assert A.isequal(binary.plus((3 * x) & y))
-    x, y = divmod(-A, 3)
-    assert binary.floordiv(-A, 3).isequal(x)
-    assert binary.numpy.mod(-A, 3).isequal(y)
-    # assert binary.fmod(-A, 3).isequal(y)  # The reason we use numpy.mod
-    assert (-A).isequal(binary.plus((3 * x) & y))
-    x, y = divmod(3, A)
-    assert binary.floordiv(3, A).isequal(x)
-    assert binary.numpy.mod(3, A).isequal(y)
-    assert binary.fmod(3, A).isequal(y)
-    assert binary.plus(binary.times(A & x) & y).isequal(3 * unary.one(A))
-    x, y = divmod(-3, A)
-    assert binary.floordiv(-3, A).isequal(x)
-    assert binary.numpy.mod(-3, A).isequal(y)
-    # assert binary.fmod(-3, A).isequal(y)  # The reason we use numpy.mod
-    assert binary.plus(binary.times(A & x) & y).isequal(-3 * unary.one(A))
+    if supports_udfs or hasattr(binary, "floordiv") and hasattr(binary.numpy, "mod"):
+        x, y = divmod(A, 3)
+        assert binary.floordiv(A, 3).isequal(x)
+        assert binary.numpy.mod(A, 3).isequal(y)
+        assert binary.fmod(A, 3).isequal(y)
+        assert A.isequal(binary.plus((3 * x) & y))
+        x, y = divmod(-A, 3)
+        assert binary.floordiv(-A, 3).isequal(x)
+        assert binary.numpy.mod(-A, 3).isequal(y)
+        # assert binary.fmod(-A, 3).isequal(y)  # The reason we use numpy.mod
+        assert (-A).isequal(binary.plus((3 * x) & y))
+        x, y = divmod(3, A)
+        assert binary.floordiv(3, A).isequal(x)
+        assert binary.numpy.mod(3, A).isequal(y)
+        assert binary.fmod(3, A).isequal(y)
+        assert binary.plus(binary.times(A & x) & y).isequal(3 * unary.one(A))
+        x, y = divmod(-3, A)
+        assert binary.floordiv(-3, A).isequal(x)
+        assert binary.numpy.mod(-3, A).isequal(y)
+        # assert binary.fmod(-3, A).isequal(y)  # The reason we use numpy.mod
+        assert binary.plus(binary.times(A & x) & y).isequal(-3 * unary.one(A))
 
     assert binary.eq(A & A).isequal(A == A)
     assert binary.ne(A.T & A.T).isequal(A.T != A.T)
@@ -3182,14 +3194,16 @@ def test_infix_sugar(A):
     B /= 2
     assert type(B) is Matrix
     assert binary.truediv(A, 2).isequal(B)
-    B = A.dup()
-    B //= 2
-    assert type(B) is Matrix
-    assert binary.floordiv(A, 2).isequal(B)
-    B = A.dup()
-    B %= 2
-    assert type(B) is Matrix
-    assert binary.numpy.mod(A, 2).isequal(B)
+    if supports_udfs or hasattr(binary, "floordiv"):
+        B = A.dup()
+        B //= 2
+        assert type(B) is Matrix
+        assert binary.floordiv(A, 2).isequal(B)
+    if supports_udfs or hasattr(binary.numpy, "mod"):
+        B = A.dup()
+        B %= 2
+        assert type(B) is Matrix
+        assert binary.numpy.mod(A, 2).isequal(B)
     B = A.dup()
     B **= 2
     assert type(B) is Matrix
@@ -3520,7 +3534,7 @@ def test_ndim(A):
 
 
 def test_sizeof(A):
-    if suitesparse:
+    if suitesparse and not pypy:
         assert sys.getsizeof(A) > A.nvals * 16
     else:
         with pytest.raises(TypeError):
@@ -3607,6 +3621,7 @@ def test_ss_iteration(A):
     assert next(A.ss.iteritems()) is not None
 
 
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
@@ -4126,7 +4141,11 @@ def test_from_scalar():
     A = Matrix.from_scalar(1, dtype="INT64[2]", nrows=3, ncols=4)
     B = Matrix("INT64[2]", nrows=3, ncols=4)
     B << [1, 1]
-    assert A.isequal(B, check_dtype=True)
+    if supports_udfs:
+        assert A.isequal(B, check_dtype=True)
+    else:
+        with pytest.raises(KeyError):  # XXX: is this the best type of error?
+            assert A.isequal(B, check_dtype=True)
 
 
 def test_to_dense_from_dense():
@@ -4286,6 +4305,7 @@ def test_wait_chains(A):
     assert result == 47
 
 
+@pytest.mark.skipif("not supports_udfs")
 def test_subarray_dtypes():
     a = np.arange(3 * 4, dtype=np.int64).reshape(3, 4)
     A = Matrix.from_coo([1, 3, 5], [0, 1, 3], a)

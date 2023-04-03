@@ -2,21 +2,16 @@ import inspect
 import re
 from types import FunctionType
 
-import numba
-
 from ... import _STANDARD_OPERATOR_NAMES, indexunary, select
 from ...dtypes import BOOL, FP64, INT8, INT64, UINT64, _sample_values, lookup_dtype
 from ...exceptions import UdfParseError, check_status_carg
-from .. import ffi, lib
-from .base import (
-    OpBase,
-    ParameterizedUdf,
-    TypedOpBase,
-    _call_op,
-    _deserialize_parameterized,
-    _get_udt_wrapper,
-)
+from .. import _has_numba, ffi, lib
+from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op, _deserialize_parameterized
 
+if _has_numba:
+    import numba
+
+    from .base import _get_udt_wrapper
 ffi_new = ffi.new
 
 
@@ -249,6 +244,7 @@ class IndexUnaryOp(OpBase):
 
         Because it is not registered in the namespace, the name is optional.
         """
+        cls._check_supports_udf("register_anonymous")
         if parameterized:
             return ParameterizedIndexUnaryOp(name, func, anonymous=True, is_udt=is_udt)
         return cls._build(name, func, anonymous=True, is_udt=is_udt)
@@ -265,6 +261,7 @@ class IndexUnaryOp(OpBase):
             >>> dir(gb.indexunary)
             [..., 'row_mod', ...]
         """
+        cls._check_supports_udf("register_new")
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (

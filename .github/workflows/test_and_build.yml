@@ -81,7 +81,7 @@ jobs:
         shell: bash -l {0}
     strategy:
       # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
-      fail-fast: true
+      fail-fast: false
       # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
@@ -103,13 +103,17 @@ jobs:
         with:
           # We should support major Python versions for at least 36-42 months
           # We could probably support pypy if numba were optional
-          # 3.8.16 0_73_pypy
-          # 3.9.16 0_73_pypy
           contents: |
             3.8
             3.9
             3.10
+            3.11
+            3.8.16 0_73_pypy
+            3.9.16 0_73_pypy
           weights: |
+            1
+            1
+            1
             1
             1
             1
@@ -138,8 +142,8 @@ jobs:
           miniforge-version: latest
           use-mamba: true
           python-version: ${{ steps.pyver.outputs.selected }}
-          channels: conda-forge,nodefaults
-          channel-priority: strict
+          channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
+          channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
           activate-environment: graphblas
           auto-activate-base: false
       - name: Setup conda
@@ -150,8 +154,8 @@ jobs:
         with:
           auto-update-conda: true
           python-version: ${{ steps.pyver.outputs.selected }}
-          channels: conda-forge,nodefaults
-          channel-priority: strict
+          channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
+          channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
           activate-environment: graphblas
           auto-activate-base: false
       - name: Update env
@@ -213,11 +217,40 @@ jobs:
           else
             numbaver=$(python -c 'import random ; print(random.choice(["=0.56", ""]))')
           fi
+          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} == true || $(python -c 'import random ; print(random.random() < .1)') == True ]]; then
+            # Some packages aren't available for pypy (and 10% chance to not install these otherwise)
+            numba=""
+            sparse=""
+            awkward=""
+            fmm=""
+            numbaver=NA
+            sparsever=NA
+            akver=NA
+            fmmver=NA
+            # XXX: temporarily be more flexible
+            npver=""
+            spver=""
+            pdver=""
+            akver=""
+            nxver=""
+            yamlver=""
+            sparsever=""
+          else
+            numba=numba${numbaver}
+            sparse=sparse${sparsever}
+            awkward=awkward${akver}
+            fmm=fast_matrix_market${fmmver}
+            if [[ ${{ contains(steps.pyver.outputs.selected, '3.11') }} == true ]]; then
+              # Numba is not yet available for Python 3.11
+              numba=""
+              numbaver=NA
+            fi
+          fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
           $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli \
-            pyyaml${yamlver} sparse${sparsever} pandas${pdver} scipy${spver} numpy${npver} awkward${akver} \
-            networkx${nxver} numba${numbaver} fast_matrix_market${fmmver} ${psg} \
+            pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
+            networkx${nxver} ${numba} ${fmm} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
