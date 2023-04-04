@@ -115,8 +115,8 @@ jobs:
             1
             1
             1
-            1
-            1
+            1000
+            1000
       - name: RNG for source of python-suitesparse-graphblas
         uses: ddradar/choose-random-action@v2.0.2
         id: sourcetype
@@ -218,7 +218,7 @@ jobs:
             numbaver=$(python -c 'import random ; print(random.choice(["=0.56", ""]))')
           fi
           if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]]; then
-            # Some packages aren't available for pypy or Python 3.11 (and 10% chance to not install these otherwise)
+            # Some packages aren't available for pypy or Python 3.11
             numba=""
             sparse=""
             awkward=""
@@ -231,10 +231,8 @@ jobs:
             npver=""
             spver=""
             pdver=""
-            akver=""
-            nxver=""
+            # nxver=""
             yamlver=""
-            sparsever=""
           else
             numba=numba${numbaver}
             sparse=sparse${sparsever}
