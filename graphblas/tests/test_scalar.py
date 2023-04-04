@@ -228,7 +228,7 @@ def test_update(s):
     s << Scalar.from_value(3)
     assert s == 3
     if s._is_cscalar:
-        with pytest.raises(TypeError, match="an integer is required"):
+        with pytest.raises(TypeError, match="an integer is required|expected integer"):
             s << Scalar.from_value(4.4)
     else:
         s << Scalar.from_value(4.4)
