@@ -81,7 +81,7 @@ jobs:
         shell: bash -l {0}
     strategy:
       # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
-      fail-fast: false
+      fail-fast: true
       # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
@@ -102,21 +102,19 @@ jobs:
         id: pyver
         with:
           # We should support major Python versions for at least 36-42 months
-          # We could probably support pypy if numba were optional
+          # We may be able to support pypy if anybody asks for it
+          # 3.8.16 0_73_pypy
+          # 3.9.16 0_73_pypy
           contents: |
             3.8
             3.9
             3.10
             3.11
-            3.8.16 0_73_pypy
-            3.9.16 0_73_pypy
           weights: |
             1
             1
             1
             1
-            1000
-            1000
       - name: RNG for source of python-suitesparse-graphblas
         uses: ddradar/choose-random-action@v2.0.2
         id: sourcetype
@@ -217,32 +215,28 @@ jobs:
           else
             numbaver=$(python -c 'import random ; print(random.choice(["=0.56", ""]))')
           fi
-          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]]; then
-            # Some packages aren't available for pypy or Python 3.11
+          fmm=fast_matrix_market${fmmver}
+          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || startsWith(steps.pyver.outputs.selected, '3.11') }} == true || $(python -c 'import random ; print(random.random() < .15)') == True ]]; then
+            # Some packages aren't available for pypy or Python 3.11; 15% otherwise
             numba=""
             sparse=""
             awkward=""
-            fmm=""
             numbaver=NA
             sparsever=NA
             akver=NA
-            fmmver=NA
-            # XXX: temporarily be more flexible
-            npver=""
-            spver=""
-            pdver=""
-            # nxver=""
-            yamlver=""
+            if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} ]]; then
+              fmm=""
+              fmmver=NA
+              # Be more flexible until we determine what versions are supported by pypy
+              npver=""
+              spver=""
+              pdver=""
+              yamlver=""
+            fi
           else
             numba=numba${numbaver}
             sparse=sparse${sparsever}
             awkward=awkward${akver}
-            fmm=fast_matrix_market${fmmver}
-            if [[ ${{ contains(steps.pyver.outputs.selected, '3.11') }} == true ]]; then
-              # Numba is not yet available for Python 3.11
-              numba=""
-              numbaver=NA
-            fi
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
@@ -394,8 +388,12 @@ jobs:
       - name: codecov
         uses: codecov/codecov-action@v3
       - name: Notebooks Execution check
-        if: matrix.slowtask == 'notebooks' && !contains(steps.pyver.outputs.selected, 'pypy') && !startsWith(steps.pyver.outputs.selected, '3.11')
-        run: jupyter nbconvert --to notebook --execute notebooks/*ipynb
+        if: matrix.slowtask == 'notebooks'
+        run: |
+          # Run notebooks only if numba is installed
+          if python -c 'import numba' 2> /dev/null ; then
+            jupyter nbconvert --to notebook --execute notebooks/*ipynb
+          fi
 
   finish:
     needs: build_and_test
