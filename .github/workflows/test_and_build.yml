@@ -133,23 +133,23 @@ jobs:
             1
             1
             1
-#      - name: Setup mamba
-#        uses: conda-incubator/setup-miniconda@v2
-#        id: setup_mamba
-#        continue-on-error: true
-#        with:
-#          miniforge-variant: Mambaforge
-#          miniforge-version: latest
-#          use-mamba: true
-#          python-version: ${{ steps.pyver.outputs.selected }}
-#          channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
-#          channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
-#          activate-environment: graphblas
-#          auto-activate-base: false
+      - name: Setup mamba
+        uses: conda-incubator/setup-miniconda@v2
+        id: setup_mamba
+        continue-on-error: true
+        with:
+          miniforge-variant: Mambaforge
+          miniforge-version: latest
+          use-mamba: true
+          python-version: ${{ steps.pyver.outputs.selected }}
+          channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
+          channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
+          activate-environment: graphblas
+          auto-activate-base: false
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         id: setup_conda
-#        if: steps.setup_mamba.outcome == 'failure'
+        if: steps.setup_mamba.outcome == 'failure'
         continue-on-error: false
         with:
           auto-update-conda: true
@@ -217,7 +217,7 @@ jobs:
           else
             numbaver=$(python -c 'import random ; print(random.choice(["=0.56", ""]))')
           fi
-          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} == true || ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true || $(python -c 'import random ; print(random.random() < .1)') == True ]]; then
+          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]]; then
             # Some packages aren't available for pypy or Python 3.11 (and 10% chance to not install these otherwise)
             numba=""
             sparse=""
@@ -396,7 +396,7 @@ jobs:
       - name: codecov
         uses: codecov/codecov-action@v3
       - name: Notebooks Execution check
-        if: matrix.slowtask == 'notebooks'
+        if: matrix.slowtask == 'notebooks' && !contains(steps.pyver.outputs.selected, 'pypy') && !startsWith(steps.pyver.outputs.selected, '3.11')
         run: jupyter nbconvert --to notebook --execute notebooks/*ipynb
 
   finish:
