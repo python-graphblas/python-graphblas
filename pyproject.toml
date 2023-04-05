@@ -58,11 +58,13 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "suitesparse-graphblas >=7.4.0.0, <7.5",
     "numpy >=1.21",
-    "numba >=0.55",
     "donfig >=0.6",
     "pyyaml >=5.4",
+    # These won't be installed by default after 2024.3.0
+    # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
+    "suitesparse-graphblas >=7.4.0.0, <7.5",
+    "numba >=0.55",
 ]
 
 [project.urls]
@@ -72,37 +74,67 @@ repository = "https://github.com/python-graphblas/python-graphblas"
 changelog = "https://github.com/python-graphblas/python-graphblas/releases"
 
 [project.optional-dependencies]
-repr = [
+suitesparse = [
+    "suitesparse-graphblas >=7.4.0.0, <7.5",
+]
+networkx = [
+    "networkx >=2.8",
+]
+numba = [
+    "numba >=0.55",
+]
+pandas = [
     "pandas >=1.2",
+]
+scipy = [
+    "scipy >=1.8",
+]
+suitesparse-udf = [
+    "python-graphblas[suitesparse]",
+    "python-graphblas[numba]",
+]
+repr = [
+    "python-graphblas[pandas]",
 ]
 io = [
-    "networkx >=2.8",
-    "scipy >=1.8",
+    "python-graphblas[networkx]",
+    "python-graphblas[numba]",
+    "python-graphblas[scipy]",
     "awkward >=1.9",
-    "sparse >=0.12",
     "fast-matrix-market >=1.4.5",
+    "sparse >=0.12",
 ]
 viz = [
+    "python-graphblas[networkx]",
+    "python-graphblas[scipy]",
     "matplotlib >=3.5",
+]
+datashade = [
+    "python-graphblas[numba]",
+    "python-graphblas[pandas]",
+    "python-graphblas[scipy]",
+    "datashader >=0.12",
+    "hvplot >=0.7",
 ]
 test = [
-    "pytest",
-    "packaging",
-    "pandas >=1.2",
-    "scipy >=1.8",
-    "tomli",
+    "python-graphblas[suitesparse]",
+    "python-graphblas[pandas]",
+    "python-graphblas[scipy]",
+    "packaging >=21",
+    "pytest >=6.2",
+    "tomli >=1",
+]
+default = [
+    "python-graphblas[suitesparse-udf]",
+    "python-graphblas[pandas]",
+    "python-graphblas[scipy]",
 ]
 complete = [
-    "pandas >=1.2",
-    "networkx >=2.8",
-    "scipy >=1.8",
-    "awkward >=1.9",
-    "sparse >=0.12",
-    "fast-matrix-market >=1.4.5",
-    "matplotlib >=3.5",
-    "pytest",
-    "packaging",
-    "tomli",
+    "python-graphblas[default]",
+    "python-graphblas[io]",
+    "python-graphblas[viz]",
+    "python-graphblas[test]",
+    "python-graphblas[datashade]",
 ]
 
 [tool.setuptools]
