@@ -163,7 +163,7 @@ jobs:
           #
           # First let's randomly get versions of dependencies to install.
           # Consider removing old versions when they become problematic or very old (>=2 years).
-          nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", ""]))')
+          nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", "=3.1", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           sparsever=$(python -c 'import random ; print(random.choice(["=0.12", "=0.13", "=0.14", ""]))')
           fmmver=$(python -c 'import random ; print(random.choice(["=1.4", ""]))')
