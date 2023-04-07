@@ -15,7 +15,7 @@ Using pip:
 
 ::
 
-    pip install python-graphblas
+    pip install python-graphblas[default]
 
 Whether installing with conda or pip, the underlying package that is imported in Python
 is named ``graphblas``. The convention is to import as:

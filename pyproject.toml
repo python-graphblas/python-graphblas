@@ -64,7 +64,7 @@ dependencies = [
     # These won't be installed by default after 2024.3.0
     # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
     "suitesparse-graphblas >=7.4.0.0, <7.5",
-    "numba >=0.55",
+    "numba >=0.55; python_version<'3.11'",  # make optional where numba is not supported
 ]
 
 [project.urls]
@@ -89,23 +89,24 @@ pandas = [
 scipy = [
     "scipy >=1.8",
 ]
-suitesparse-udf = [
+suitesparse-udf = [  # udf requires numba
     "python-graphblas[suitesparse,numba]",
 ]
 repr = [
     "python-graphblas[pandas]",
 ]
 io = [
-    "python-graphblas[networkx,numba,scipy]",
-    "awkward >=1.9",
+    "python-graphblas[networkx,scipy]",
+    "python-graphblas[numba]; python_version<'3.11'",
+    "awkward >=1.9; python_version<'3.11'",  # make optional, b/c awkward needs numba
+    "sparse >=0.12; python_version<'3.11'",  # make optional, b/c sparse needs numba
     "fast-matrix-market >=1.4.5",
-    "sparse >=0.12",
 ]
 viz = [
     "python-graphblas[networkx,scipy]",
     "matplotlib >=3.5",
 ]
-datashade = [
+datashade = [  # datashade requires numba
     "python-graphblas[numba,pandas,scipy]",
     "datashader >=0.12",
     "hvplot >=0.7",
@@ -117,10 +118,12 @@ test = [
     "tomli >=1",
 ]
 default = [
-    "python-graphblas[suitesparse-udf,pandas,scipy]",
+    "python-graphblas[suitesparse,pandas,scipy]",
+    "python-graphblas[numba]; python_version<'3.11'",  # make optional where numba is not supported
 ]
 complete = [
-    "python-graphblas[default,io,viz,test,datashade]",
+    "python-graphblas[default,io,viz,test]",
+    "python-graphblas[datashade]; python_version<'3.11'",  # make optional, b/c datashade needs numba
 ]
 
 [tool.setuptools]
