@@ -64,7 +64,7 @@ dependencies = [
     # These won't be installed by default after 2024.3.0
     # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
     "suitesparse-graphblas >=7.4.0.0, <7.5",
-    "numba >=0.55; python_version<'3.11'",  # make optional where numba is not supported
+    "numba >=0.55; python_version<'3.12'",  # make optional where numba is not supported
 ]
 
 [project.urls]
@@ -97,9 +97,9 @@ repr = [
 ]
 io = [
     "python-graphblas[networkx,scipy]",
-    "python-graphblas[numba]; python_version<'3.11'",
-    "awkward >=1.9; python_version<'3.11'",  # make optional, b/c awkward needs numba
-    "sparse >=0.12; python_version<'3.11'",  # make optional, b/c sparse needs numba
+    "python-graphblas[numba]; python_version<'3.12'",
+    "awkward >=1.9",
+    "sparse >=0.12; python_version<'3.12'",  # make optional, b/c sparse needs numba
     "fast-matrix-market >=1.4.5",
 ]
 viz = [
@@ -119,11 +119,11 @@ test = [
 ]
 default = [
     "python-graphblas[suitesparse,pandas,scipy]",
-    "python-graphblas[numba]; python_version<'3.11'",  # make optional where numba is not supported
+    "python-graphblas[numba]; python_version<'3.12'",  # make optional where numba is not supported
 ]
 complete = [
     "python-graphblas[default,io,viz,test]",
-    "python-graphblas[datashade]; python_version<'3.11'",  # make optional, b/c datashade needs numba
+    "python-graphblas[datashade]; python_version<'3.12'",  # make optional, b/c datashade needs numba
 ]
 
 [tool.setuptools]
@@ -178,6 +178,7 @@ filterwarnings = [
     "error",
     # MAINT: we can drop support for sparse <0.13 at any time
     "ignore:`np.bool` is a deprecated alias:DeprecationWarning:sparse._umath",  # sparse <0.13
+    "ignore:In the future `np.bool` will be defined as the corresponding NumPy scalar:FutureWarning:sparse._umath",
     # sparse 0.14.0 (2022-02-24) began raising this warning; it has been reported and fixed upstream.
     "ignore:coords should be an ndarray. This will raise a ValueError:DeprecationWarning:sparse._coo.core",
 
