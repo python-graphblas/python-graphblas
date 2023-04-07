@@ -29,7 +29,6 @@ except ImportError:
         import awkward as ak
     except ImportError:  # pragma: no cover (import)
         ak = None
-ak = None  # XXX
 
 try:
     import fast_matrix_market as fmm

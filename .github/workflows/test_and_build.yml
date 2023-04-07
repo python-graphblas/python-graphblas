@@ -81,7 +81,7 @@ jobs:
         shell: bash -l {0}
     strategy:
       # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
-      fail-fast: false
+      fail-fast: true
       # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
