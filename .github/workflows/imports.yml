@@ -27,7 +27,7 @@ jobs:
             1
             1
             1
-            1000
+            1
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ steps.pyver.outputs.selected }}

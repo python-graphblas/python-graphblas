@@ -215,9 +215,10 @@ jobs:
           else
             numbaver=$(python -c 'import random ; print(random.choice(["=0.56", ""]))')
           fi
+          numbaver="0.57.0rc1"  # XXX: testing numba
           fmm=fast_matrix_market${fmmver}
-          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || startsWith(steps.pyver.outputs.selected, '3.11') }} == true || $(python -c 'import random ; print(random.random() < .15)') == True ]]; then
-            # Some packages aren't available for pypy or Python 3.11; 15% otherwise
+          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || startsWith(steps.pyver.outputs.selected, '3.12') }} == true || $(python -c 'import random ; print(random.random() < .15)') == True ]]; then
+            # Some packages aren't available for pypy or Python 3.12; 15% otherwise
             numba=""
             sparse=""
             awkward=""
@@ -240,7 +241,8 @@ jobs:
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
-          $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli \
+          # XXX: added `-c numba`
+          $(command -v mamba || command -v conda) install -c numba packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${fmm} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
