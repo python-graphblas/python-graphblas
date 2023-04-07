@@ -455,7 +455,7 @@ def to_awkward(A, format=None):
         indices, values = A.to_coo()
         form = RecordForm(
             contents=[
-                NumpyForm(A.dtype.numba_type.name, form_key="node1"),  # XXX: is numba required?
+                NumpyForm(A.dtype.np_type.name, form_key="node1"),
                 NumpyForm("int64", form_key="node0"),
             ],
             fields=["values", "indices"],
@@ -489,7 +489,7 @@ def to_awkward(A, format=None):
             RecordForm(
                 contents=[
                     NumpyForm("int64", form_key="node3"),
-                    NumpyForm(A.dtype.numba_type.name, form_key="node4"),
+                    NumpyForm(A.dtype.np_type.name, form_key="node4"),
                 ],
                 fields=["indices", "values"],
             ),

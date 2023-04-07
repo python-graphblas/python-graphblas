@@ -165,7 +165,7 @@ jobs:
           # Consider removing old versions when they become problematic or very old (>=2 years).
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", "=3.1", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
-          sparsever=$(python -c 'import random ; print(random.choice(["=0.12", "=0.13", "=0.14", ""]))')
+          sparsever=$(python -c 'import random ; print(random.choice(["=0.13", "=0.14", ""]))')
           fmmver=$(python -c 'import random ; print(random.choice(["=1.4", ""]))')
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.8') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", ""]))')
@@ -217,15 +217,16 @@ jobs:
           fi
           numbaver="=0.57.0rc1"  # XXX: testing numba
           fmm=fast_matrix_market${fmmver}
-          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || startsWith(steps.pyver.outputs.selected, '3.12') }} == true || $(python -c 'import random ; print(random.random() < .15)') == True ]]; then
-            # Some packages aren't available for pypy or Python 3.12; 15% otherwise
+          awkward=awkward${akver}
+          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || startsWith(steps.pyver.outputs.selected, '3.12') }} == true || $(python -c 'import random ; print(random.random() < .20)') == True ]]; then
+            # Some packages aren't available for pypy or Python 3.12; 20% otherwise
             numba=""
-            sparse=""
-            awkward=""
             numbaver=NA
+            sparse=""
             sparsever=NA
-            akver=NA
             if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} ]]; then
+              awkward=""
+              akver=NA
               fmm=""
               fmmver=NA
               # Be more flexible until we determine what versions are supported by pypy
@@ -237,7 +238,6 @@ jobs:
           else
             numba=numba${numbaver}
             sparse=sparse${sparsever}
-            awkward=awkward${akver}
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 

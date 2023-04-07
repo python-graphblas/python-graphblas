@@ -99,7 +99,7 @@ io = [
     "python-graphblas[networkx,scipy]",
     "python-graphblas[numba]; python_version<'3.12'",
     "awkward >=1.9",
-    "sparse >=0.12; python_version<'3.12'",  # make optional, b/c sparse needs numba
+    "sparse >=0.13; python_version<'3.12'",  # make optional, b/c sparse needs numba
     "fast-matrix-market >=1.4.5",
 ]
 viz = [
@@ -176,9 +176,6 @@ filterwarnings = [
     # See: https://docs.python.org/3/library/warnings.html#describing-warning-filters
     # and: https://docs.pytest.org/en/7.2.x/how-to/capture-warnings.html#controlling-warnings
     "error",
-    # MAINT: we can drop support for sparse <0.13 at any time
-    "ignore:`np.bool` is a deprecated alias:DeprecationWarning:sparse._umath",  # sparse <0.13
-    "ignore:In the future `np.bool` will be defined as the corresponding NumPy scalar:FutureWarning:sparse._umath",
     # sparse 0.14.0 (2022-02-24) began raising this warning; it has been reported and fixed upstream.
     "ignore:coords should be an ndarray. This will raise a ValueError:DeprecationWarning:sparse._coo.core",
 
