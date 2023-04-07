@@ -215,7 +215,7 @@ jobs:
           else
             numbaver=$(python -c 'import random ; print(random.choice(["=0.56", ""]))')
           fi
-          numbaver="0.57.0rc1"  # XXX: testing numba
+          numbaver="=0.57.0rc1"  # XXX: testing numba
           fmm=fast_matrix_market${fmmver}
           if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || startsWith(steps.pyver.outputs.selected, '3.12') }} == true || $(python -c 'import random ; print(random.random() < .15)') == True ]]; then
             # Some packages aren't available for pypy or Python 3.12; 15% otherwise
