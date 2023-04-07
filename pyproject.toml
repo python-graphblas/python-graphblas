@@ -64,7 +64,7 @@ dependencies = [
     # These won't be installed by default after 2024.3.0
     # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
     "suitesparse-graphblas >=7.4.0.0, <7.5",
-    "numba >=0.55; python_version<'3.12'",  # make optional where numba is not supported
+    "numba >=0.55; python_version<'3.11'",  # make optional where numba is not supported
 ]
 
 [project.urls]
@@ -97,9 +97,9 @@ repr = [
 ]
 io = [
     "python-graphblas[networkx,scipy]",
-    "python-graphblas[numba]; python_version<'3.12'",
+    "python-graphblas[numba]; python_version<'3.11'",
     "awkward >=1.9",
-    "sparse >=0.13; python_version<'3.12'",  # make optional, b/c sparse needs numba
+    "sparse >=0.13; python_version<'3.11'",  # make optional, b/c sparse needs numba
     "fast-matrix-market >=1.4.5",
 ]
 viz = [
@@ -119,11 +119,11 @@ test = [
 ]
 default = [
     "python-graphblas[suitesparse,pandas,scipy]",
-    "python-graphblas[numba]; python_version<'3.12'",  # make optional where numba is not supported
+    "python-graphblas[numba]; python_version<'3.11'",  # make optional where numba is not supported
 ]
 complete = [
     "python-graphblas[default,io,viz,test]",
-    "python-graphblas[datashade]; python_version<'3.12'",  # make optional, b/c datashade needs numba
+    "python-graphblas[datashade]; python_version<'3.11'",  # make optional, b/c datashade needs numba
 ]
 
 [tool.setuptools]
@@ -189,6 +189,7 @@ filterwarnings = [
 
     # sre_parse deprecated in 3.11; this is triggered by awkward 0.10
     "ignore:module 'sre_parse' is deprecated:DeprecationWarning:",
+    "ignore:module 'sre_constants' is deprecated:DeprecationWarning:",
 
     # pypy gives this warning
     "ignore:can't resolve package from __spec__ or __package__:ImportWarning:",
