@@ -35,6 +35,8 @@ from graphblas.dtypes import (
 )
 from graphblas.exceptions import DomainMismatch, UdfParseError
 
+from .conftest import shouldhave
+
 if dtypes._supports_complex:
     from graphblas.dtypes import FC32, FC64
 
@@ -630,7 +632,7 @@ def test_binary_updates():
     vec4 = Vector.from_coo([0], [-3], dtype=dtypes.INT64)
     result2 = vec4.ewise_mult(vec2, binary.cdiv).new()
     assert result2.isequal(Vector.from_coo([0], [-1], dtype=dtypes.INT64), check_dtype=True)
-    if supports_udfs or hasattr(binary, "floordiv"):
+    if shouldhave(binary, "floordiv"):
         result3 = vec4.ewise_mult(vec2, binary.floordiv).new()
         assert result3.isequal(Vector.from_coo([0], [-2], dtype=dtypes.INT64), check_dtype=True)
 
@@ -695,13 +697,13 @@ def test_op_namespace():
     assert op.plus is binary.plus
     assert op.plus_times is semiring.plus_times
 
-    if supports_udfs or hasattr(unary.numpy, "fabs"):
+    if shouldhave(unary.numpy, "fabs"):
         assert op.numpy.fabs is unary.numpy.fabs
-    if supports_udfs or hasattr(binary.numpy, "subtract"):
+    if shouldhave(binary.numpy, "subtract"):
         assert op.numpy.subtract is binary.numpy.subtract
-    if supports_udfs or hasattr(binary.numpy, "add"):
+    if shouldhave(binary.numpy, "add"):
         assert op.numpy.add is binary.numpy.add
-    if supports_udfs or hasattr(semiring.numpy, "add_add"):
+    if shouldhave(semiring.numpy, "add_add"):
         assert op.numpy.add_add is semiring.numpy.add_add
     assert len(dir(op)) > 300
     if supports_udfs:
@@ -769,10 +771,10 @@ def test_op_namespace():
 @pytest.mark.slow
 def test_binaryop_attributes_numpy():
     # Some coverage from this test depends on order of tests
-    if supports_udfs or hasattr(monoid.numpy, "add"):
+    if shouldhave(monoid.numpy, "add"):
         assert binary.numpy.add[int].monoid is monoid.numpy.add[int]
         assert binary.numpy.add.monoid is monoid.numpy.add
-    if supports_udfs or hasattr(binary.numpy, "subtract"):
+    if shouldhave(binary.numpy, "subtract"):
         assert binary.numpy.subtract[int].monoid is None
         assert binary.numpy.subtract.monoid is None
 
@@ -794,12 +796,12 @@ def test_binaryop_attributes():
         assert op[int].parent is op
 
     assert binary.plus[int].parent is binary.plus
-    if supports_udfs or hasattr(binary.numpy, "add"):
+    if shouldhave(binary.numpy, "add"):
         assert binary.numpy.add[int].parent is binary.numpy.add
 
     # bad type
     assert binary.plus[bool].monoid is None
-    if supports_udfs or hasattr(binary.numpy, "equal"):
+    if shouldhave(binary.numpy, "equal"):
         assert binary.numpy.equal[int].monoid is None
         assert binary.numpy.equal[bool].monoid is monoid.numpy.equal[bool]  # sanity
 
@@ -824,7 +826,7 @@ def test_monoid_attributes():
     assert monoid.plus.binaryop is binary.plus
     assert monoid.plus.identities == {typ: 0 for typ in monoid.plus.types}
 
-    if supports_udfs or hasattr(monoid.numpy, "add"):
+    if shouldhave(monoid.numpy, "add"):
         assert monoid.numpy.add[int].binaryop is binary.numpy.add[int]
         assert monoid.numpy.add[int].identity == 0
         assert monoid.numpy.add.binaryop is binary.numpy.add
@@ -841,7 +843,7 @@ def test_monoid_attributes():
         assert op[int].parent is op
 
     assert monoid.plus[int].parent is monoid.plus
-    if supports_udfs or hasattr(monoid.numpy, "add"):
+    if shouldhave(monoid.numpy, "add"):
         assert monoid.numpy.add[int].parent is monoid.numpy.add
 
     for attr, val in vars(monoid).items():
@@ -863,7 +865,7 @@ def test_semiring_attributes():
     assert semiring.min_plus.monoid is monoid.min
     assert semiring.min_plus.binaryop is binary.plus
 
-    if supports_udfs or hasattr(semiring.numpy, "add_subtract"):
+    if shouldhave(semiring.numpy, "add_subtract"):
         assert semiring.numpy.add_subtract[int].monoid is monoid.numpy.add[int]
         assert semiring.numpy.add_subtract[int].binaryop is binary.numpy.subtract[int]
         assert semiring.numpy.add_subtract.monoid is monoid.numpy.add
@@ -920,7 +922,7 @@ def test_div_semirings():
     assert result[0, 0].new() == -2
     assert result.dtype == dtypes.FP64
 
-    if supports_udfs or hasattr(semiring, "plus_floordiv"):
+    if shouldhave(semiring, "plus_floordiv"):
         result = A1.T.mxm(A2, semiring.plus_floordiv).new()
         assert result[0, 0].new() == -3
         assert result.dtype == dtypes.INT64
@@ -959,7 +961,7 @@ def test_get_semiring():
     with pytest.raises(TypeError, match="Binary"):
         get_semiring(monoid.plus, None)
 
-    if supports_udfs or hasattr(binary.numpy, "copysign"):
+    if shouldhave(binary.numpy, "copysign"):
         sr = get_semiring(monoid.plus, binary.numpy.copysign)
         assert sr.monoid is monoid.plus
         assert sr.binaryop is binary.numpy.copysign
@@ -1000,20 +1002,20 @@ def test_commutes():
     assert semiring.plus_times.is_commutative
     if suitesparse:
         assert semiring.ss.min_secondi.commutes_to is semiring.ss.min_firstj
-    if supports_udfs or hasattr(semiring, "plus_pow") and hasattr(semiring, "plus_rpow"):
+    if shouldhave(semiring, "plus_pow") and shouldhave(semiring, "plus_rpow"):
         assert semiring.plus_pow.commutes_to is semiring.plus_rpow
     assert not semiring.plus_pow.is_commutative
-    if supports_udfs or hasattr(binary, "isclose"):
+    if shouldhave(binary, "isclose"):
         assert binary.isclose.commutes_to is binary.isclose
         assert binary.isclose.is_commutative
         assert binary.isclose(0.1).commutes_to is binary.isclose(0.1)
-    if supports_udfs or hasattr(binary, "floordiv") and hasattr(binary, "rfloordiv"):
+    if shouldhave(binary, "floordiv") and shouldhave(binary, "rfloordiv"):
         assert binary.floordiv.commutes_to is binary.rfloordiv
         assert not binary.floordiv.is_commutative
-    if supports_udfs or hasattr(binary.numpy, "add"):
+    if shouldhave(binary.numpy, "add"):
         assert binary.numpy.add.commutes_to is binary.numpy.add
         assert binary.numpy.add.is_commutative
-    if supports_udfs or hasattr(binary.numpy, "less") and hasattr(binary.numpy, "greater"):
+    if shouldhave(binary.numpy, "less") and shouldhave(binary.numpy, "greater"):
         assert binary.numpy.less.commutes_to is binary.numpy.greater
         assert not binary.numpy.less.is_commutative
 
@@ -1032,18 +1034,18 @@ def test_commutes():
     assert semiring.plus_times[int].is_commutative
     if suitesparse:
         assert semiring.ss.min_secondi[int].commutes_to is semiring.ss.min_firstj[int]
-    if supports_udfs or hasattr(semiring, "plus_rpow"):
+    if shouldhave(semiring, "plus_rpow"):
         assert semiring.plus_pow[int].commutes_to is semiring.plus_rpow[int]
     assert not semiring.plus_pow[int].is_commutative
-    if supports_udfs or hasattr(binary, "isclose"):
+    if shouldhave(binary, "isclose"):
         assert binary.isclose(0.1)[int].commutes_to is binary.isclose(0.1)[int]
-    if supports_udfs or hasattr(binary, "floordiv") and hasattr(binary, "rfloordiv"):
+    if shouldhave(binary, "floordiv") and shouldhave(binary, "rfloordiv"):
         assert binary.floordiv[int].commutes_to is binary.rfloordiv[int]
         assert not binary.floordiv[int].is_commutative
-    if supports_udfs or hasattr(binary.numpy, "add"):
+    if shouldhave(binary.numpy, "add"):
         assert binary.numpy.add[int].commutes_to is binary.numpy.add[int]
         assert binary.numpy.add[int].is_commutative
-    if supports_udfs or hasattr(binary.numpy, "less") and hasattr(binary.numpy, "greater"):
+    if shouldhave(binary.numpy, "less") and shouldhave(binary.numpy, "greater"):
         assert binary.numpy.less[int].commutes_to is binary.numpy.greater[int]
         assert not binary.numpy.less[int].is_commutative
 
@@ -1066,11 +1068,11 @@ def test_from_string():
     assert unary.from_string("abs[float]") is unary.abs[float]
     assert binary.from_string("+") is binary.plus
     assert binary.from_string("-[int]") is binary.minus[int]
-    if supports_udfs or config["mapnumpy"] or hasattr(binary.numpy, "true_divide"):
+    if config["mapnumpy"] or shouldhave(binary.numpy, "true_divide"):
         assert binary.from_string("true_divide") is binary.numpy.true_divide
-    if supports_udfs or hasattr(binary, "floordiv"):
+    if shouldhave(binary, "floordiv"):
         assert binary.from_string("//") is binary.floordiv
-    if supports_udfs or hasattr(binary.numpy, "mod"):
+    if shouldhave(binary.numpy, "mod"):
         assert binary.from_string("%") is binary.numpy.mod
     assert monoid.from_string("*[FP64]") is monoid.times["FP64"]
     assert semiring.from_string("min.plus") is semiring.min_plus
@@ -1399,11 +1401,11 @@ def test_is_idempotent():
     assert monoid.max[int].is_idempotent
     assert monoid.lor.is_idempotent
     assert monoid.band.is_idempotent
-    if supports_udfs or hasattr(monoid.numpy, "gcd"):
+    if shouldhave(monoid.numpy, "gcd"):
         assert monoid.numpy.gcd.is_idempotent
     assert not monoid.plus.is_idempotent
     assert not monoid.times[float].is_idempotent
-    if supports_udfs or config["mapnumpy"] or hasattr(monoid.numpy, "equal"):
+    if config["mapnumpy"] or shouldhave(monoid.numpy, "equal"):
         assert not monoid.numpy.equal.is_idempotent
     with pytest.raises(AttributeError):
         binary.min.is_idempotent

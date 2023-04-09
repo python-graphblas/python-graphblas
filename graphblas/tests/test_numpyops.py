@@ -15,7 +15,7 @@ from graphblas import Vector, backend, config
 from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.dtypes import _supports_complex
 
-from .conftest import compute
+from .conftest import compute, shouldhave
 
 is_win = sys.platform.startswith("win")
 suitesparse = backend == "suitesparse"
@@ -73,7 +73,7 @@ def test_npunary():
         # due to limitation of MSVC with complex
         blocklist["FC64"].update({"arcsin", "arcsinh"})
         blocklist["FC32"] = {"arcsin", "arcsinh"}
-    if supports_udfs or hasattr(gb.binary, "isclose"):
+    if shouldhave(gb.binary, "isclose"):
         isclose = gb.binary.isclose(1e-6, 0)
     else:
         isclose = None
@@ -157,19 +157,19 @@ def test_npbinary():
         "FP64": {"floor_divide"},  # numba/numpy difference for 1.0 / 0.0
         "BOOL": {"gcd", "lcm", "subtract"},  # not supported by numpy
     }
-    if supports_udfs or hasattr(gb.binary, "isclose"):
+    if shouldhave(gb.binary, "isclose"):
         isclose = gb.binary.isclose(1e-7, 0)
     else:
         isclose = None
-    if supports_udfs or hasattr(npbinary, "equal"):
+    if shouldhave(npbinary, "equal"):
         equal = npbinary.equal
     else:
         equal = gb.binary.eq
-    if supports_udfs or hasattr(npbinary, "isnan"):
+    if shouldhave(npbinary, "isnan"):
         isnan = npunary.isnan
     else:
         isnan = gb.unary.isnan
-    if supports_udfs or hasattr(npbinary, "isinf"):
+    if shouldhave(npbinary, "isinf"):
         isinf = npunary.isinf
     else:
         isinf = gb.unary.isinf

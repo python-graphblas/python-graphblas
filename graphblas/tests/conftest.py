@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import graphblas as gb
+from graphblas.core import _supports_udfs as supports_udfs
 
 orig_binaryops = set()
 orig_semirings = set()
@@ -116,3 +117,8 @@ def autocompute(func):
 
 def compute(x):
     return x
+
+
+def shouldhave(module, opname):
+    """Whether an "operator" module should have the given operator."""
+    return supports_udfs or hasattr(module, opname)

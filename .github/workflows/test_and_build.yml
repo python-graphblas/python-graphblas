@@ -166,7 +166,7 @@ jobs:
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", "=3.1", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           sparsever=$(python -c 'import random ; print(random.choice(["=0.13", "=0.14", ""]))')
-          fmmver=$(python -c 'import random ; print(random.choice(["=1.4", ""]))')
+          fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", ""]))')
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.8') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
@@ -211,15 +211,15 @@ jobs:
             psgver=""
           fi
           if [[ $npver == "=1.21" ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.55", "=0.56", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.55", "=0.56", "=0.57", ""]))')
           else
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.56", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57", ""]))')
           fi
           numbaver="=0.57.0rc1"  # XXX: testing numba
           fmm=fast_matrix_market${fmmver}
           awkward=awkward${akver}
-          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || startsWith(steps.pyver.outputs.selected, '3.12') }} == true || $(python -c 'import random ; print(random.random() < .20)') == True ]]; then
-            # Some packages aren't available for pypy or Python 3.12; 20% otherwise
+          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || startsWith(steps.pyver.outputs.selected, '3.12') }} == true || $(python -c 'import random ; print(random.random() < .25)') == True ]]; then
+            # Some packages aren't available for pypy or Python 3.12; 25% otherwise
             numba=""
             numbaver=NA
             sparse=""

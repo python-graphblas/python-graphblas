@@ -25,7 +25,7 @@ from graphblas.exceptions import (
     OutputNotEmpty,
 )
 
-from .conftest import autocompute, compute
+from .conftest import autocompute, compute, shouldhave
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
@@ -1357,7 +1357,7 @@ def test_reduce_agg(A):
     expected = unary.sqrt[float](squared).new()
     w5 = A.reduce_rowwise(agg.hypot).new()
     assert w5.isclose(expected)
-    if supports_udfs or hasattr(monoid.numpy, "hypot"):
+    if shouldhave(monoid.numpy, "hypot"):
         w6 = A.reduce_rowwise(monoid.numpy.hypot[float]).new()
         assert w6.isclose(expected)
     w7 = Vector(w5.dtype, size=w5.size)
@@ -1365,7 +1365,7 @@ def test_reduce_agg(A):
     assert w7.isclose(expected)
 
     w8 = A.reduce_rowwise(agg.logaddexp).new()
-    if supports_udfs or hasattr(monoid.numpy, "logaddexp"):
+    if shouldhave(monoid.numpy, "logaddexp"):
         expected = A.reduce_rowwise(monoid.numpy.logaddexp[float]).new()
         assert w8.isclose(w8)
 
@@ -3119,10 +3119,10 @@ def test_infix_sugar(A):
     assert binary.times(2, A).isequal(2 * A)
     assert binary.truediv(A, 2).isequal(A / 2)
     assert binary.truediv(5, A).isequal(5 / A)
-    if supports_udfs or hasattr(binary, "floordiv"):
+    if shouldhave(binary, "floordiv"):
         assert binary.floordiv(A, 2).isequal(A // 2)
         assert binary.floordiv(5, A).isequal(5 // A)
-    if supports_udfs or hasattr(binary.numpy, "mod"):
+    if shouldhave(binary.numpy, "mod"):
         assert binary.numpy.mod(A, 2).isequal(A % 2)
         assert binary.numpy.mod(5, A).isequal(5 % A)
     assert binary.pow(A, 2).isequal(A**2)
@@ -3151,7 +3151,7 @@ def test_infix_sugar(A):
     assert binary.ge(A, 4).isequal(A >= 4)
     assert binary.eq(A, 4).isequal(A == 4)
     assert binary.ne(A, 4).isequal(A != 4)
-    if supports_udfs or hasattr(binary, "floordiv") and hasattr(binary.numpy, "mod"):
+    if shouldhave(binary, "floordiv") and shouldhave(binary.numpy, "mod"):
         x, y = divmod(A, 3)
         assert binary.floordiv(A, 3).isequal(x)
         assert binary.numpy.mod(A, 3).isequal(y)
@@ -3194,12 +3194,12 @@ def test_infix_sugar(A):
     B /= 2
     assert type(B) is Matrix
     assert binary.truediv(A, 2).isequal(B)
-    if supports_udfs or hasattr(binary, "floordiv"):
+    if shouldhave(binary, "floordiv"):
         B = A.dup()
         B //= 2
         assert type(B) is Matrix
         assert binary.floordiv(A, 2).isequal(B)
-    if supports_udfs or hasattr(binary.numpy, "mod"):
+    if shouldhave(binary.numpy, "mod"):
         B = A.dup()
         B %= 2
         assert type(B) is Matrix
