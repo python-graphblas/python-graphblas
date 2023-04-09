@@ -267,9 +267,13 @@ def test_mmread_mmwrite(engine):
                 # fast_matrix_market v1.4.5 raises ValueError instead of OverflowError
                 M = gb.io.mmread(mm_in, engine)
         else:
-            if example == "_empty_lines_example" and engine in {"fmm", "auto"} and fmm is not None:
-                # TODO MAINT: is this a bug in fast_matrix_market, or does scipy.io.mmread
-                # read an invalid file? `fast_matrix_market` v1.4.5 does not handle this.
+            if (
+                example == "_empty_lines_example"
+                and engine in {"fmm", "auto"}
+                and fmm is not None
+                and fmm.__version__ in {"1.4.5"}
+            ):
+                # `fast_matrix_market` __version__ v1.4.5 does not handle this, but v1.5.0 does
                 continue
             M = gb.io.mmread(mm_in, engine)
             if not M.isequal(expected):  # pragma: no cover (debug)

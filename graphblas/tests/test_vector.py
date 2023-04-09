@@ -903,11 +903,9 @@ def test_reduce_agg(v):
     assert v.reduce(agg.stdp).new().isclose(0.5**0.5)
     assert v.reduce(agg.stds).new().isclose((2 / 3) ** 0.5)
     assert v.reduce(agg.L0norm).new() == 3
-    if supports_udfs:  # XXX TODO
-        assert v.reduce(agg.L1norm).new() == 4
+    assert v.reduce(agg.L1norm).new() == 4
     assert v.reduce(agg.L2norm).new().isclose(6**0.5)
-    if supports_udfs:  # XXX TODO
-        assert v.reduce(agg.Linfnorm).new() == 2
+    assert v.reduce(agg.Linfnorm).new() == 2
     assert v.reduce(agg.exists).new() == 1
     w = binary.plus(v, 1).new()
     assert w.reduce(agg.geometric_mean).new().isclose(12**0.25)
@@ -2516,7 +2514,7 @@ def test_from_scalar():
     v = Vector.from_scalar(1, dtype="INT64[2]", size=3)
     w = Vector("INT64[2]", size=3)
     w << [1, 1]
-    if supports_udfs:  # XXX TODO
+    if supports_udfs:
         assert v.isequal(w, check_dtype=True)
 
 

@@ -4144,7 +4144,7 @@ def test_from_scalar():
     if supports_udfs:
         assert A.isequal(B, check_dtype=True)
     else:
-        with pytest.raises(KeyError):  # XXX: is this the best type of error?
+        with pytest.raises(KeyError, match="eq does not work with"):
             assert A.isequal(B, check_dtype=True)
 
 
