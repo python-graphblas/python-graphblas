@@ -39,10 +39,18 @@ def __getattr__(key):
         ss = import_module(".ss", __name__)
         globals()["ss"] = ss
         return ss
+    if not _supports_udfs:
+        from .. import binary, semiring
+
+        if key in binary._udfs or key in semiring._udfs:
+            raise AttributeError(
+                f"module {__name__!r} unable to compile UDF for {key!r}; "
+                "install numba for UDF support"
+            )
     raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
 
 
-from ..core import operator  # noqa: E402 isort:skip
+from ..core import operator, _supports_udfs  # noqa: E402 isort:skip
 from . import numpy  # noqa: E402 isort:skip
 
 del operator

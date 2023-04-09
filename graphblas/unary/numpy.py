@@ -139,7 +139,10 @@ def __getattr__(name):
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         globals()[name] = getattr(_unary, _numpy_to_graphblas[name])
     elif not _supports_udfs:
-        raise AttributeError(f"module {__name__!r} unable to compile UDF for {name!r}")
+        raise AttributeError(
+            f"module {__name__!r} unable to compile UDF for {name!r}; "
+            "install numba for UDF support"
+        )
     else:
         numpy_func = getattr(_np, name)
 

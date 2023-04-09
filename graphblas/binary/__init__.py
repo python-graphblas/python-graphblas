@@ -1,5 +1,7 @@
 # All items are dynamically added by classes in operator.py
 # This module acts as a container of BinaryOp instances
+from ..core import _supports_udfs  # isort:skip
+
 _delayed = {}
 _delayed_commutes_to = {
     "absfirst": "abssecond",
@@ -9,6 +11,15 @@ _delayed_commutes_to = {
     "rpow": "pow",
 }
 _deprecated = {}
+_udfs = {
+    "absfirst",
+    "abssecond",
+    "binom",
+    "floordiv",
+    "isclose",
+    "rfloordiv",
+    "rpow",
+}
 
 
 def __dir__():
@@ -50,6 +61,11 @@ def __getattr__(key):
         ss = import_module(".ss", __name__)
         globals()["ss"] = ss
         return ss
+    if not _supports_udfs and key in _udfs:
+        raise AttributeError(
+            f"module {__name__!r} unable to compile UDF for {key!r}; "
+            "install numba for UDF support"
+        )
     raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
 
 

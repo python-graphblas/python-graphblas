@@ -218,8 +218,8 @@ jobs:
           numbaver="=0.57.0rc1"  # XXX: testing numba
           fmm=fast_matrix_market${fmmver}
           awkward=awkward${akver}
-          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || startsWith(steps.pyver.outputs.selected, '3.12') }} == true || $(python -c 'import random ; print(random.random() < .25)') == True ]]; then
-            # Some packages aren't available for pypy or Python 3.12; 25% otherwise
+          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || startsWith(steps.pyver.outputs.selected, '3.12') }} == true || $(python -c 'import random ; print(random.random() < .40)') == True ]]; then
+            # Some packages aren't available for pypy or Python 3.12; 40% otherwise
             numba=""
             numbaver=NA
             sparse=""

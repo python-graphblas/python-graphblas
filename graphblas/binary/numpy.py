@@ -174,7 +174,10 @@ def __getattr__(name):
         else:
             globals()[name] = getattr(_binary, _numpy_to_graphblas[name])
     elif not _supports_udfs:
-        raise AttributeError(f"module {__name__!r} unable to compile UDF for {name!r}")
+        raise AttributeError(
+            f"module {__name__!r} unable to compile UDF for {name!r}; "
+            "install numba for UDF support"
+        )
     else:
         numpy_func = getattr(_np, name)
 

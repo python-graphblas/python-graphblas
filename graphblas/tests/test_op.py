@@ -157,6 +157,18 @@ def test_get_typed_op():
         operator.get_typed_op(binary.plus, dtypes.INT64, "bad dtype")
 
 
+@pytest.mark.skipif("supports_udfs")
+def test_udf_mentions_numba():
+    with pytest.raises(AttributeError, match="install numba"):
+        binary.rfloordiv
+    with pytest.raises(AttributeError, match="install numba"):
+        semiring.any_rfloordiv
+    with pytest.raises(AttributeError, match="install numba"):
+        op.absfirst
+    with pytest.raises(AttributeError, match="install numba"):
+        op.plus_rpow
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_unaryop_udf():
     def plus_one(x):
