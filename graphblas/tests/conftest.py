@@ -1,6 +1,7 @@
 import atexit
 import functools
 import itertools
+import platform
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +12,8 @@ from graphblas.core import _supports_udfs as supports_udfs
 
 orig_binaryops = set()
 orig_semirings = set()
+
+pypy = platform.python_implementation() == "PyPy"
 
 
 def pytest_configure(config):

@@ -1,6 +1,5 @@
 import inspect
 import pickle
-import platform
 import random
 import sys
 import types
@@ -13,12 +12,11 @@ import graphblas as gb
 from graphblas import backend, binary, dtypes, monoid, replace, select, unary
 from graphblas.exceptions import EmptyObject
 
-from .conftest import autocompute, compute
+from .conftest import autocompute, compute, pypy
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 suitesparse = backend == "suitesparse"
-pypy = platform.python_implementation() == "PyPy"
 
 
 @pytest.fixture

@@ -1,7 +1,6 @@
 import inspect
 import itertools
 import pickle
-import platform
 import sys
 import types
 import weakref
@@ -25,12 +24,11 @@ from graphblas.exceptions import (
     OutputNotEmpty,
 )
 
-from .conftest import autocompute, compute, shouldhave
+from .conftest import autocompute, compute, pypy, shouldhave
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 suitesparse = backend == "suitesparse"
-pypy = platform.python_implementation() == "PyPy"
 
 
 @pytest.fixture

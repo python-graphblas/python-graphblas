@@ -104,23 +104,30 @@ def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
         val = isequal.reduce_scalar(monoid.land, allow_empty=False).new(**opts).value
     if val:
         return True
-    # x - y
-    abs_x_y = self.ewise_mult(other, binary.minus).new(FP64, mask=~isequal.V, **opts)
-    # abs(x - y)
-    abs_x_y(**opts) << abs_x_y.apply(unary.abs)
+    # So we can use structural mask below
+    isequal(**opts) << select.value(isequal == True)  # noqa: E712
+
     # abs(x)
-    x = self.apply(unary.abs).new(FP64, mask=~isequal.V, **opts)
+    x = self.apply(unary.abs).new(FP64, mask=~isequal.S, **opts)
     # abs(y)
-    y = other.apply(unary.abs).new(FP64, mask=~isequal.V, **opts)
+    y = other.apply(unary.abs).new(FP64, mask=~isequal.S, **opts)
     # max(abs(x), abs(y))
-    max_x_y = x.ewise_mult(y, binary.max).new(**opts)
+    x(**opts) << x.ewise_mult(y, binary.max)
+    max_x_y = x
     # rel_tol * max(abs(x), abs(y))
     max_x_y(**opts) << max_x_y.apply(binary.times, rel_tol)
     # max(rel_tol * max(abs(x), abs(y)), abs_tol)
     max_x_y(**opts) << max_x_y.apply(binary.max, abs_tol)
+
+    # x - y
+    y(~isequal.S, replace=True, **opts) << self.ewise_mult(other, binary.minus)
+    abs_x_y = y
+    # abs(x - y)
+    abs_x_y(**opts) << abs_x_y.apply(unary.abs)
+
     # abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
-    isequal(**opts) << abs_x_y.ewise_mult(max_x_y, binary.lt)
-    if type(isequal) is Vector:
+    isequal(**opts) << abs_x_y.ewise_mult(max_x_y, binary.le)
+    if isequal.ndim == 1:
         return isequal.reduce(monoid.land, allow_empty=False).new(**opts).value
     return isequal.reduce_scalar(monoid.land, allow_empty=False).new(**opts).value
 
