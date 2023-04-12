@@ -79,7 +79,8 @@ def test_npunary():
         isclose = None
     for gb_input, np_input in data:
         for unary_name in sorted(npunary._unary_names & npunary.__dir__()):
-            print(unary_name)  # XXX
+            print(unary_name, file=sys.stderr)  # XXX
+            sys.stderr.flush()
             op = getattr(npunary, unary_name)
             if gb_input.dtype not in op.types or unary_name in blocklist.get(
                 gb_input.dtype.name, ()
