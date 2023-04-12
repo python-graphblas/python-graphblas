@@ -220,11 +220,11 @@ jobs:
           fi
           fmm=fast_matrix_market${fmmver}
           awkward=awkward${akver}
-          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') || \
-                startsWith(steps.pyver.outputs.selected, '3.12') }} == true || \
-                ( $(python -c 'import random ; print(random.random() < .50)') == True && ${{ matrix.slowtask != 'notebooks'}} == true ) ]]
-          then
+          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') ||
+                startsWith(steps.pyver.outputs.selected, '3.12') }} == true ||
+                ( $(python -c 'import random ; print(random.random() < .50)') == True && ${{ matrix.slowtask != 'notebooks'}} == true ) ]] ; then
             # Some packages aren't available for pypy or Python 3.12; 50% otherwise (if not running notebooks)
+            echo "skipping numba"
             numba=""
             numbaver=NA
             sparse=""
