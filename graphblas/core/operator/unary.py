@@ -1,5 +1,6 @@
 import inspect
 import re
+import sys
 from types import FunctionType
 
 from ... import _STANDARD_OPERATOR_NAMES, op, unary
@@ -181,6 +182,7 @@ class UnaryOp(OpBase):
         if not is_udt:
             for type_ in _sample_values:
                 sig = (type_.numba_type,)
+                print("compiling", name, type_, file=sys.stderr)
                 try:
                     unary_udf.compile(sig)
                 except numba.TypingError:
@@ -232,6 +234,7 @@ class UnaryOp(OpBase):
                     def unary_wrapper(z, x):
                         z[0] = unary_udf(x[0])  # pragma: no cover (numba)
 
+                print("wrapping", name, type_, input_type, return_type, file=sys.stderr)
                 unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
                 new_unary = ffi_new("GrB_UnaryOp*")
                 check_status_carg(

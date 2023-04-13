@@ -87,7 +87,7 @@ jobs:
       # since we need to run all slow tests on Windows and non-Windoes OSes.
       matrix:
         # os: ["ubuntu-latest", "macos-latest", "windows-latest"]
-        os: ["windows-latest", "windows-latest", "windows-latest", "windows-latest", "windows-latest", "windows-latest"]  # XXX
+        os: ["windows-latest", "windows-latest", "windows-latest", "windows-latest", "windows-latest", "windows-latest", "windows-latest"]  # XXX
         slowtask: ["pytest_normal", "pytest_bizarro", "notebooks"]
     env:
       # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
