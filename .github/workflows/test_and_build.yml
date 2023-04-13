@@ -129,7 +129,7 @@ jobs:
             upstream
           weights: |
             1
-            1
+            10000
             1
             1
       - name: Setup mamba
