@@ -1,7 +1,6 @@
 # These tests are very slow, since they force creation of all
 # numpy unary, binary, monoid, and semiring objects.
 import itertools
-import random
 import sys
 
 import numpy as np
@@ -79,11 +78,7 @@ def test_npunary():
     else:
         isclose = None
     for gb_input, np_input in data:
-        names = sorted(npunary._unary_names & npunary.__dir__())
-        random.shuffle(names)
-        for unary_name in names:
-            print(unary_name, file=sys.stderr)  # XXX
-            sys.stderr.flush()
+        for unary_name in sorted(npunary._unary_names & npunary.__dir__()):
             op = getattr(npunary, unary_name)
             if gb_input.dtype not in op.types or unary_name in blocklist.get(
                 gb_input.dtype.name, ()

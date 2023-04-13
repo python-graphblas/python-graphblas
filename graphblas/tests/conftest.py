@@ -34,7 +34,6 @@ def pytest_configure(config):
     mapnumpy = config.getoption("--mapnumpy", False)
     if mapnumpy is None:
         mapnumpy = rng.random() < 0.5 if randomly else False
-    mapnumpy = False  # XXX
     runslow = config.getoption("--runslow", False)
     if runslow is None:
         # Add a small amount of randomization to be safer

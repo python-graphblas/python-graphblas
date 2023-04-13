@@ -1,6 +1,5 @@
 import inspect
 import re
-import sys
 from types import FunctionType
 
 from ... import _STANDARD_OPERATOR_NAMES, op, unary
@@ -182,7 +181,6 @@ class UnaryOp(OpBase):
         if not is_udt:
             for type_ in _sample_values:
                 sig = (type_.numba_type,)
-                print("compiling", name, type_, file=sys.stderr)
                 try:
                     unary_udf.compile(sig)
                 except numba.TypingError:
@@ -234,13 +232,8 @@ class UnaryOp(OpBase):
                     def unary_wrapper(z, x):
                         z[0] = unary_udf(x[0])  # pragma: no cover (numba)
 
-                print("wrapping", name, type_, input_type, return_type, file=sys.stderr)
-                cfunc = numba.cfunc(wrapper_sig, nopython=True)
-                print("AAA", file=sys.stderr)
-                unary_wrapper = cfunc(unary_wrapper)
-                print("BBB", file=sys.stderr)
+                unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
                 new_unary = ffi_new("GrB_UnaryOp*")
-                print("CCC", file=sys.stderr)
                 check_status_carg(
                     lib.GrB_UnaryOp_new(
                         new_unary, unary_wrapper.cffi, ret_type.gb_obj, type_.gb_obj
@@ -248,9 +241,7 @@ class UnaryOp(OpBase):
                     "UnaryOp",
                     new_unary,
                 )
-                print("DDD", file=sys.stderr)
                 op = TypedUserUnaryOp(new_type_obj, name, type_, ret_type, new_unary[0])
-                print("EEE", file=sys.stderr)
                 new_type_obj._add(op)
                 success = True
                 return_types[type_] = ret_type

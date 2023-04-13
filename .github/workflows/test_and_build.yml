@@ -81,13 +81,12 @@ jobs:
         shell: bash -l {0}
     strategy:
       # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
-      fail-fast: false
+      fail-fast: true
       # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
       matrix:
-        # os: ["ubuntu-latest", "macos-latest", "windows-latest"]
-        os: ["windows-latest", "windows-latest", "windows-latest", "windows-latest", "windows-latest", "windows-latest"]  # XXX
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
         slowtask: ["pytest_normal", "pytest_bizarro", "notebooks"]
     env:
       # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
@@ -128,10 +127,10 @@ jobs:
             source
             upstream
           weights: |
-            1000
             1
-            1000
-            1000
+            1
+            1
+            1
       - name: Setup mamba
         uses: conda-incubator/setup-miniconda@v2
         id: setup_mamba
@@ -189,7 +188,6 @@ jobs:
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", ""]))')
           fi
-          # npver="=1.24"  # XXX
           if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
             # TODO: there are currently issues with some numpy versions when
             # installing python-suitesparse-grphblas from source or upstream.
@@ -220,13 +218,11 @@ jobs:
           else
             numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57.0rc1", ""]))')
           fi
-          numbaver="=0.57.0rc1"  # XXX
           fmm=fast_matrix_market${fmmver}
           awkward=awkward${akver}
           if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') ||
                 startsWith(steps.pyver.outputs.selected, '3.12') }} == true ||
-                ( $(python -c 'import random ; print(random.random() < .01)') == True && ${{ matrix.slowtask != 'notebooks'}} == true ) ]] ; then
-            # XXX: change percentage above from .01 to .50
+                ( $(python -c 'import random ; print(random.random() < .50)') == True && ${{ matrix.slowtask != 'notebooks'}} == true ) ]] ; then
             # Some packages aren't available for pypy or Python 3.12; 50% otherwise (if not running notebooks)
             echo "skipping numba"
             numba=""
@@ -307,8 +303,7 @@ jobs:
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo $args
           pytest -v --pyargs suitesparse_graphblas
-          python -c 'import numba ; import graphblas as gb ; gb.config.set(mapnumpy=False) ; gb.unary.numpy.exp2'
-          coverage run -m pytest -s --color=yes --randomly -v $args \
+          coverage run -m pytest --color=yes --randomly -v $args \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
         run: |
@@ -343,8 +338,7 @@ jobs:
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
           echo $args
-          python -c 'import numba ; import graphblas as gb ; gb.config.set(mapnumpy=False) ; gb.unary.numpy.exp2'
-          coverage run -a -m pytest -s --color=yes --randomly -v $args \
+          coverage run -a -m pytest --color=yes --randomly -v $args \
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
@@ -365,7 +359,7 @@ jobs:
           rm script.py
           # Tests whose coverage depend on order of tests :/
           # TODO: understand why these are order-dependent and try to fix
-          coverage run -a -m pytest -s --color=yes -x --no-mapnumpy --runslow -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
+          coverage run -a -m pytest --color=yes -x --no-mapnumpy --runslow -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
           # coverage run -a -m pytest --color=yes -x --no-mapnumpy -k test_npmonoid graphblas/tests/test_numpyops.py --runslow
       - name: Auto-generated code check
         if: matrix.slowtask == 'pytest_bizarro'
