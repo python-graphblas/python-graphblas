@@ -189,6 +189,7 @@ jobs:
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", ""]))')
           fi
+          npver="=1.24"  # XXX
           if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
             # TODO: there are currently issues with some numpy versions when
             # installing python-suitesparse-grphblas from source or upstream.
