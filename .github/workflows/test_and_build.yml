@@ -308,7 +308,7 @@ jobs:
           echo $args
           pytest -v --pyargs suitesparse_graphblas
           python -c 'import graphblas as gb ; gb.config.set(mapnumpy=False) ; gb.unary.numpy.exp2'
-          coverage run -m pytest --color=yes --randomly -v $args \
+          coverage run -m pytest -s --color=yes --randomly -v $args \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
         run: |
