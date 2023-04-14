@@ -1794,6 +1794,7 @@ class ss:
         ----------
         nrows : int
         ncols : int
+        cols : array-like
         indptr : array-like
         values : array-like
         row_indices : array-like

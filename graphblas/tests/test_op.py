@@ -161,12 +161,29 @@ def test_get_typed_op():
 def test_udf_mentions_numba():
     with pytest.raises(AttributeError, match="install numba"):
         binary.rfloordiv
+    assert "rfloordiv" not in dir(binary)
     with pytest.raises(AttributeError, match="install numba"):
         semiring.any_rfloordiv
+    assert "any_rfloordiv" not in dir(semiring)
     with pytest.raises(AttributeError, match="install numba"):
         op.absfirst
+    assert "absfirst" not in dir(op)
     with pytest.raises(AttributeError, match="install numba"):
         op.plus_rpow
+    assert "plus_rpow" not in dir(op)
+    with pytest.raises(AttributeError, match="install numba"):
+        binary.numpy.gcd
+    assert "gcd" not in dir(binary.numpy)
+    assert "gcd" not in dir(op.numpy)
+
+
+@pytest.mark.skipif("supports_udfs")
+def test_unaryop_udf_no_support():
+    def plus_one(x):  # pragma: no cover (numba)
+        return x + 1
+
+    with pytest.raises(RuntimeError, match="UnaryOp.register_new.* unavailable"):
+        unary.register_new("plus_one", plus_one)
 
 
 @pytest.mark.skipif("not supports_udfs")

@@ -20,6 +20,7 @@ from graphblas.exceptions import (
     InvalidObject,
     InvalidValue,
     OutputNotEmpty,
+    UdfParseError,
 )
 
 from .conftest import autocompute, compute, pypy
@@ -805,7 +806,7 @@ def test_indexunary_udf(v):
     def twox_minusthunk(x, row, col, thunk):  # pragma: no cover (numba)
         return 2 * x - thunk
 
-    indexunary.register_new("twox_minusthunk", twox_minusthunk)
+    indexunary.register_new("twox_minusthunk", twox_minusthunk, lazy=True)
     assert hasattr(indexunary, "twox_minusthunk")
     assert not hasattr(select, "twox_minusthunk")
     with pytest.raises(ValueError, match="SelectOp must have BOOL return type"):
@@ -815,6 +816,8 @@ def test_indexunary_udf(v):
     expected = Vector.from_coo([1, 3, 4, 6], [-2, -2, 0, -4], size=7)
     result = indexunary.twox_minusthunk(v, 4).new()
     assert result.isequal(expected)
+    assert pickle.loads(pickle.dumps(indexunary.triu)) is indexunary.triu
+    assert indexunary.twox_minusthunk[int]._numba_func(1, 2, 3, 4) == twox_minusthunk(1, 2, 3, 4)
     delattr(indexunary, "twox_minusthunk")
 
     def ii(x, idx, _, thunk):  # pragma: no cover (numba)
@@ -833,6 +836,8 @@ def test_indexunary_udf(v):
     assert result.isequal(expected)
     delattr(indexunary, "ii")
     delattr(select, "ii")
+    with pytest.raises(UdfParseError, match="Unable to parse function using Numba"):
+        indexunary.register_new("bad", lambda x, row, col, thunk: result)
 
 
 def test_reduce(v):

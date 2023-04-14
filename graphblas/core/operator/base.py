@@ -465,7 +465,7 @@ class OpBase:
                             if type_ is None:
                                 type_ = BOOL
                         else:
-                            if type_ is None:  # pragma: no cover
+                            if type_ is None:  # pragma: no cover (safety)
                                 raise TypeError(f"Unable to determine return type for {varname}")
                             if return_prefix is None:
                                 return_type = type_
@@ -494,7 +494,9 @@ class OpBase:
     @classmethod
     def _check_supports_udf(cls, method_name):
         if not _supports_udfs:
-            raise RuntimeError(f"{cls.__name__}.{method_name} requires numba")
+            raise RuntimeError(
+                f"{cls.__name__}.{method_name}(...) unavailable; install numba for UDF support"
+            )
 
 
 _builtin_to_op = {}  # Populated in .utils

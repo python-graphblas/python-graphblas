@@ -2012,6 +2012,12 @@ def test_ss_import_export(A, do_iso, methods):
         B4 = Matrix.ss.import_any(**d)
         assert B4.isequal(A)
         assert B4.ss.is_iso is do_iso
+        if do_iso:
+            d["values"] = 1
+            d["is_iso"] = False
+            B4b = Matrix.ss.import_any(**d)
+            assert B4b.isequal(A)
+            assert B4b.ss.is_iso is True
     else:
         A4.ss.pack_any(**d)
         assert A4.isequal(A)

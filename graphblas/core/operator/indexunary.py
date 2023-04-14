@@ -280,7 +280,7 @@ class IndexUnaryOp(OpBase):
 
                 setattr(select, funcname, SelectOp._from_indexunary(indexunary_op))
 
-        if not cls._initialized:
+        if not cls._initialized:  # pragma: no cover (safety)
             _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{name}")
         if not lazy:
             return indexunary_op

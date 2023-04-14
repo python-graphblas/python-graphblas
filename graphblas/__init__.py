@@ -139,7 +139,7 @@ def _init(backend_arg, blocking, automatic=False):
     if backend in {"suitesparse", "suitesparse-vanilla"}:
         try:
             from suitesparse_graphblas import ffi, initialize, is_initialized, lib
-        except ImportError:
+        except ImportError:  # pragma: no cover (import)
             raise ImportError(
                 f"suitesparse_graphblas is required for {backend!r} backend. "
                 "It may be installed with pip or conda:\n\n"
