@@ -145,10 +145,28 @@ class SelectOp(OpBase):
         iop = IndexUnaryOp.register_new(
             name, func, parameterized=parameterized, is_udt=is_udt, lazy=lazy
         )
+        module, funcname = cls._remove_nesting(name, strict=False)
+        if lazy:
+            module._delayed[funcname] = (
+                cls._get_delayed,
+                {"name": name},
+            )
+        elif not all(x == BOOL for x in iop.types.values()):
+            # Undo registration of indexunaryop
+            imodule, funcname = IndexUnaryOp._remove_nesting(name, strict=False)
+            delattr(imodule, funcname)
+            raise ValueError("SelectOp must have BOOL return type")
+        else:
+            return getattr(module, funcname)
+
+    @classmethod
+    def _get_delayed(cls, name):
+        imodule, funcname = IndexUnaryOp._remove_nesting(name, strict=False)
+        iop = getattr(imodule, name)
         if not all(x == BOOL for x in iop.types.values()):
             raise ValueError("SelectOp must have BOOL return type")
-        if lazy:
-            return getattr(select, iop.name)
+        module, funcname = cls._remove_nesting(name, strict=False)
+        return getattr(module, funcname)
 
     @classmethod
     def _initialize(cls):

@@ -510,7 +510,7 @@ def test_sizeof(s):
     if (suitesparse or s._is_cscalar) and not pypy:
         assert 1 < sys.getsizeof(s) < 1000
     else:
-        with pytest.raises(TypeError):
+        with pytest.raises(TypeError):  # flakey coverage (why?!)
             sys.getsizeof(s)
 
 

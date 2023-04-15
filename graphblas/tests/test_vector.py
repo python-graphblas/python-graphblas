@@ -823,9 +823,11 @@ def test_indexunary_udf(v):
     def ii(x, idx, _, thunk):  # pragma: no cover (numba)
         return idx // 2 >= thunk
 
-    select.register_new("ii", ii)
-    assert hasattr(indexunary, "ii")
+    select.register_new("ii", ii, lazy=True)
+    assert "ii" in dir(select)
+    assert "ii" in dir(indexunary)
     assert hasattr(select, "ii")
+    assert hasattr(indexunary, "ii")
     ii_apply = indexunary.register_anonymous(ii)
     expected = Vector.from_coo([1, 3, 4, 6], [False, False, True, True], size=7)
     result = ii_apply(v, 2).new()

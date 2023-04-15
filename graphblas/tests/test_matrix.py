@@ -1290,11 +1290,21 @@ def test_indexunary_udf(A):
     def threex_minusthunk(x, row, col, thunk):  # pragma: no cover (numba)
         return 3 * x - thunk
 
-    indexunary.register_new("threex_minusthunk", threex_minusthunk)
+    assert indexunary.register_new("threex_minusthunk", threex_minusthunk) is not None
     assert hasattr(indexunary, "threex_minusthunk")
     assert not hasattr(select, "threex_minusthunk")
     with pytest.raises(ValueError, match="SelectOp must have BOOL return type"):
         select.register_anonymous(threex_minusthunk)
+    with pytest.raises(ValueError, match="SelectOp must have BOOL return type"):
+        select.register_new("bad_select", threex_minusthunk)
+    assert not hasattr(indexunary, "bad_select")
+    assert not hasattr(select, "bad_select")
+    assert select.register_new("bad_select", threex_minusthunk, lazy=True) is None
+    with pytest.raises(ValueError, match="SelectOp must have BOOL return type"):
+        select.bad_select
+    assert not hasattr(select, "bad_select")
+    assert hasattr(indexunary, "bad_select")  # Keep it
+
     expected = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],

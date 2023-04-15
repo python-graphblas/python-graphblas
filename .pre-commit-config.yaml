@@ -8,7 +8,7 @@ ci:
     # See: https://pre-commit.ci/#configuration
     autofix_prs: false
     autoupdate_schedule: monthly
-    skip: [pylint]
+    skip: [pylint, no-commit-to-branch]
 fail_fast: true
 default_language_version:
     python: python3

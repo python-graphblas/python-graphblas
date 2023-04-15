@@ -278,7 +278,8 @@ class IndexUnaryOp(OpBase):
             if all(x == BOOL for x in indexunary_op.types.values()):
                 from .select import SelectOp
 
-                setattr(select, funcname, SelectOp._from_indexunary(indexunary_op))
+                select_module, funcname = SelectOp._remove_nesting(name, strict=False)
+                setattr(select_module, funcname, SelectOp._from_indexunary(indexunary_op))
 
         if not cls._initialized:  # pragma: no cover (safety)
             _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{name}")
