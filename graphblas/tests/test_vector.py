@@ -818,6 +818,7 @@ def test_indexunary_udf(v):
     assert result.isequal(expected)
     assert pickle.loads(pickle.dumps(indexunary.triu)) is indexunary.triu
     assert indexunary.twox_minusthunk[int]._numba_func(1, 2, 3, 4) == twox_minusthunk(1, 2, 3, 4)
+    assert indexunary.twox_minusthunk[int].orig_func is twox_minusthunk
     delattr(indexunary, "twox_minusthunk")
 
     def ii(x, idx, _, thunk):  # pragma: no cover (numba)

@@ -587,7 +587,7 @@ class ss:
                 if is_iso:
                     if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
-                elif values.size > size:  # pragma: no branch (suitesparse)
+                elif values.size > size:  # pragma: no cover (suitesparse)
                     values = values[:size]
             rv = {
                 "bitmap": bitmap,

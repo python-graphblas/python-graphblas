@@ -180,6 +180,8 @@ class Matrix(BaseType):
 
     def _repr_html_(self, mask=None, collapse=False, expr=None):
         if self._parent is not None:
+            # NOT COVERED
+            raise Exception("XXX")
             return self._parent._repr_html_(mask=mask, collapse=collapse)
         from .formatting import format_matrix_html
         from .recorder import skip_record
@@ -2469,8 +2471,10 @@ class Matrix(BaseType):
         self._expect_op(op, ("SelectOp", "IndexUnaryOp"), within=method_name, argname="op")
         if thunk._is_cscalar:
             if thunk.dtype._is_udt:
+                # NOT COVERED
                 dtype_name = "UDT"
                 thunk = _Pointer(thunk)
+                raise Exception("XXX")
             else:
                 dtype_name = thunk.dtype.name
             cfunc_name = f"GrB_Matrix_select_{dtype_name}"

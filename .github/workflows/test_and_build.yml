@@ -81,7 +81,7 @@ jobs:
         shell: bash -l {0}
     strategy:
       # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
-      fail-fast: true
+      fail-fast: false  # XXX TODO
       # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
@@ -227,8 +227,11 @@ jobs:
           awkward=awkward${akver}
           if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') ||
                 startsWith(steps.pyver.outputs.selected, '3.12') }} == true ||
-                ( $(python -c 'import random ; print(random.random() < .318)') == True && ${{ matrix.slowtask != 'notebooks'}} == true ) ]] ; then
-            # Some packages aren't available for pypy or Python 3.12; 31.8% otherwise (if not running notebooks)
+                ( ${{ matrix.slowtask != 'notebooks'}} == true && (
+                  ( ${{ matrix.os == 'windows-latest' }} == true && $(python -c 'import random ; print(random.random() < .17)') == True ) ||
+                  ( ${{ matrix.os == 'windows-latest' }} == false && $(python -c 'import random ; print(random.random() < .34)') == True ))) ]]
+          then
+            # Some packages aren't available for pypy or Python 3.12; randomly otherwise (if not running notebooks)
             echo "skipping numba"
             numba=""
             numbaver=NA
@@ -366,6 +369,13 @@ jobs:
           # TODO: understand why these are order-dependent and try to fix
           coverage run -a -m pytest --color=yes -x --no-mapnumpy --runslow -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
           # coverage run -a -m pytest --color=yes -x --no-mapnumpy -k test_npmonoid graphblas/tests/test_numpyops.py --runslow
+      - name: More tests for coverage
+        if: matrix.slowtask == 'notebooks' && matrix.os == 'windows-latest'
+        run: |
+          # We use 'notebooks' slow task b/c it should have numba installed
+          coverage run -a -m pytest --color=yes --runslow --no-mapnumpy -p no:randomly -v -k 'test_commutes or test_bool_doesnt_get_too_large or test_npbinary or test_npmonoid or test_npsemiring'
+          coverage run -a -m pytest --color=yes --runslow --mapnumpy -p no:randomly -k 'test_bool_doesnt_get_too_large or test_npunary or test_binaryop_monoid_numpy'
+          coverage run -a -m pytest --color=yes -x --no-mapnumpy --runslow -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
       - name: Auto-generated code check
         if: matrix.slowtask == 'pytest_bizarro'
         run: |

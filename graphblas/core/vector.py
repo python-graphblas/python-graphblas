@@ -1542,6 +1542,8 @@ class Vector(BaseType):
             if thunk.dtype._is_udt:
                 dtype_name = "UDT"
                 thunk = _Pointer(thunk)
+                # NOT COVERED
+                raise Exception("XXX")
             else:
                 dtype_name = thunk.dtype.name
             cfunc_name = f"GrB_Vector_select_{dtype_name}"
@@ -1866,6 +1868,8 @@ class Vector(BaseType):
                                     shape = vals.shape
                             if vals is None or shape != (size,):
                                 if dtype.np_type.subdtype is not None:
+                                    # NOT COVERED
+                                    raise Exception("XXX")
                                     extra = (
                                         " (this is assigning to a vector with sub-array dtype "
                                         f"({dtype}), so array shape should include dtype shape)"

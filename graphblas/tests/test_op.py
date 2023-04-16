@@ -195,6 +195,7 @@ def test_unaryop_udf():
     assert hasattr(unary, "plus_one")
     assert unary.plus_one.orig_func is plus_one
     assert unary.plus_one[int].orig_func is plus_one
+    assert unary.plus_one[int]._numba_func(1) == 2
     comp_set = {
         INT8,
         INT16,
@@ -573,6 +574,7 @@ def test_binaryop_udf():
 
     BinaryOp.register_new("bin_test_func", times_minus_sum)
     assert hasattr(binary, "bin_test_func")
+    assert binary.bin_test_func[int].orig_func is times_minus_sum
     comp_set = {
         BOOL,  # goes to INT64
         INT8,
@@ -806,6 +808,12 @@ def test_binaryop_attributes_numpy():
     if shouldhave(binary.numpy, "subtract"):
         assert binary.numpy.subtract[int].monoid is None
         assert binary.numpy.subtract.monoid is None
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_binaryop_monoid_numpy():
+    assert gb.binary.numpy.minimum[int].monoid is gb.monoid.numpy.minimum[int]
 
 
 @pytest.mark.slow

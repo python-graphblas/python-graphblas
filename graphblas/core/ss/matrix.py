@@ -937,7 +937,7 @@ class ss:
             row_indices = claim_buffer(ffi, Ai[0], Ai_size[0] // index_dtype.itemsize, index_dtype)
             values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             if not raw:
-                if indptr.size > ncols + 1:
+                if indptr.size > ncols + 1:  # pragma: no cover (suitesparse)
                     indptr = indptr[: ncols + 1]
                 if row_indices.size > nvals:
                     row_indices = row_indices[:nvals]
@@ -3464,12 +3464,18 @@ class ss:
                         format = "bitmapc"
                     elif values.flags.c_contiguous:
                         format = "bitmapr"
+                    else:
+                        raise Exception("XXX")
+                    # BRANCH NOT COVERED
                 # Then consider bitmap contiguousness if necessary
                 if format is None and isinstance(bitmap, np.ndarray) and bitmap.ndim == 2:
                     if bitmap.flags.f_contiguous:
                         format = "bitmapc"
                     elif bitmap.flags.c_contiguous:
                         format = "bitmapr"
+                    else:
+                        raise Exception("XXX")
+                    # BRANCH NOT COVERED
                 # Then default to row-oriented
                 if format is None:
                     format = "bitmapr"

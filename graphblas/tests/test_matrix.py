@@ -1231,6 +1231,8 @@ def test_apply_indexunary(A):
     assert w4.isequal(A3)
     with pytest.raises(TypeError, match="left"):
         A.apply(select.valueeq, left=s3)
+    assert pickle.loads(pickle.dumps(indexunary.tril)) is indexunary.tril
+    assert pickle.loads(pickle.dumps(indexunary.tril[int])) is indexunary.tril[int]
 
 
 def test_select(A):
@@ -1259,6 +1261,16 @@ def test_select(A):
     assert w7.isequal(Aupper)
     with pytest.raises(TypeError, match="thunk"):
         A.select(select.valueeq, object())
+
+    A3rows = Matrix.from_coo([0, 0, 1, 1, 2], [1, 3, 4, 6, 5], [2, 3, 8, 4, 1], nrows=7, ncols=7)
+    w8 = select.rowle(A, 2).new()
+    w9 = A.select("row<=", 2).new()
+    w10 = select.row(A < 3).new()
+    assert w8.isequal(A3rows)
+    assert w9.isequal(A3rows)
+    assert w10.isequal(A3rows)
+    assert pickle.loads(pickle.dumps(select.tril)) is select.tril
+    assert pickle.loads(pickle.dumps(select.tril[bool])) is select.tril[bool]
 
 
 @autocompute
@@ -1320,6 +1332,8 @@ def test_indexunary_udf(A):
     select.register_new("iii", iii)
     assert hasattr(indexunary, "iii")
     assert hasattr(select, "iii")
+    assert indexunary.iii[int].orig_func is select.iii[int].orig_func is select.iii.orig_func
+    assert indexunary.iii[int]._numba_func is select.iii[int]._numba_func is select.iii._numba_func
     iii_apply = indexunary.register_anonymous(iii)
     expected = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
@@ -3946,7 +3960,7 @@ def test_ss_config(A):
 
 
 def test_to_csr_from_csc(A):
-    assert Matrix.from_csr(*A.to_csr(dtype=int)).isequal(A, check_dtype=True)
+    assert Matrix.from_csr(*A.to_csr(sort=False, dtype=int)).isequal(A, check_dtype=True)
     assert Matrix.from_csr(*A.T.to_csc()).isequal(A, check_dtype=True)
     assert Matrix.from_csc(*A.to_csc()).isequal(A)
     assert Matrix.from_csc(*A.T.to_csr()).isequal(A)
@@ -4285,7 +4299,7 @@ def test_ss_descriptors(A):
             (A @ A).new(nthreads=4, Nthreads=5)
         with pytest.raises(ValueError, match="escriptor"):
             A[0, 0].new(bad_opt=True)
-        A[0, 0].new(nthreads=4)  # ignored, but okay
+        A[0, 0].new(nthreads=4, sort=None)  # ignored, but okay
         with pytest.raises(ValueError, match="escriptor"):
             A.__setitem__((0, 0), 1, bad_opt=True)
         A.__setitem__((0, 0), 1, nthreads=4)  # ignored, but okay

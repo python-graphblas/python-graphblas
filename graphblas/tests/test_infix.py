@@ -360,3 +360,10 @@ def test_infix_expr_value_types():
     assert expr._expr is not None
     assert expr._value is None
     assert type(expr.new()) is Matrix
+    assert type(expr._get_value()) is Matrix
+    assert expr._expr is not None
+    assert expr._value is not None
+    assert expr._expr._value is not None
+    expr._value = None
+    assert expr._value is None
+    assert expr._expr._value is None
