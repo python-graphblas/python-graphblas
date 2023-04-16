@@ -881,7 +881,6 @@ def format_index_expression_html(expr):
         if "__EXPR__" in computed:
             return computed.replace("<tt>__EXPR__</tt>", topline)
         # BRANCH NOT COVERED
-        raise Exception("XXX")
 
     keys = []
     values = []

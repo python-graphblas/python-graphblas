@@ -279,10 +279,6 @@ external = [
     # noqa codes that ruff doesn't know about: https://github.com/charliermarsh/ruff#external
 ]
 ignore = [
-    # TODO: temporary!
-    "TRY002",
-    "RET506",
-
     # Would be nice to fix these
     "D100",  # Missing docstring in public module
     "D101",  # Missing docstring in public class

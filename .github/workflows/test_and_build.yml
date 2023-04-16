@@ -228,8 +228,8 @@ jobs:
           if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') ||
                 startsWith(steps.pyver.outputs.selected, '3.12') }} == true ||
                 ( ${{ matrix.slowtask != 'notebooks'}} == true && (
-                  ( ${{ matrix.os == 'windows-latest' }} == true && $(python -c 'import random ; print(random.random() < .17)') == True ) ||
-                  ( ${{ matrix.os == 'windows-latest' }} == false && $(python -c 'import random ; print(random.random() < .34)') == True ))) ]]
+                  ( ${{ matrix.os == 'windows-latest' }} == true && $(python -c 'import random ; print(random.random() < .2)') == True ) ||
+                  ( ${{ matrix.os == 'windows-latest' }} == false && $(python -c 'import random ; print(random.random() < .4)') == True ))) ]]
           then
             # Some packages aren't available for pypy or Python 3.12; randomly otherwise (if not running notebooks)
             echo "skipping numba"

@@ -68,7 +68,7 @@ def test_npunary():
         "INT64": {"reciprocal"},
         "FC64": {"ceil", "floor", "trunc"},
     }
-    if suitesparse and is_win and gb.config["mapnumpy"]:  # flaky coverage
+    if suitesparse and is_win and gb.config["mapnumpy"]:
         # asin and asinh are known to be wrong in SuiteSparse:GraphBLAS
         # due to limitation of MSVC with complex
         blocklist["FC64"].update({"arcsin", "arcsinh"})
@@ -180,7 +180,7 @@ def test_npbinary():
                 gb_left.dtype.name, ()
             ):
                 continue
-            if is_win and binary_name == "ldexp":  # flaky coverage
+            if is_win and binary_name == "ldexp":
                 # On Windows, the second argument must be int32 or less (I'm not sure why)
                 np_right = np_right.astype(np.int32)
             with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
@@ -271,8 +271,8 @@ def test_npmonoid():
             assert len(op.types) > 0, op.name
             if gb_left.dtype not in op.types or binary_name in blocklist.get(
                 gb_left.dtype.name, ()
-            ):  # flaky coverage
-                continue
+            ):
+                continue  # FLAKY COVERAGE
             with np.errstate(divide="ignore", over="ignore", under="ignore", invalid="ignore"):
                 gb_result = gb_left.ewise_mult(gb_right, op).new()
                 np_result = getattr(np, binary_name)(np_left, np_right)

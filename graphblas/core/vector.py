@@ -1543,7 +1543,6 @@ class Vector(BaseType):
                 dtype_name = "UDT"
                 thunk = _Pointer(thunk)
                 # NOT COVERED
-                raise Exception("XXX")
             else:
                 dtype_name = thunk.dtype.name
             cfunc_name = f"GrB_Vector_select_{dtype_name}"
@@ -1869,7 +1868,6 @@ class Vector(BaseType):
                             if vals is None or shape != (size,):
                                 if dtype.np_type.subdtype is not None:
                                     # NOT COVERED
-                                    raise Exception("XXX")
                                     extra = (
                                         " (this is assigning to a vector with sub-array dtype "
                                         f"({dtype}), so array shape should include dtype shape)"
@@ -1989,7 +1987,7 @@ class Vector(BaseType):
             # If we know the dtype, then using `np.fromiter` is much faster
             dtype = lookup_dtype(dtype)
             if dtype.np_type.subdtype is not None and np.__version__[:5] in {"1.21.", "1.22."}:
-                values, dtype = values_to_numpy_buffer(list(d.values()), dtype)  # flaky coverage
+                values, dtype = values_to_numpy_buffer(list(d.values()), dtype)  # FLAKY COVERAGE
             else:
                 values = np.fromiter(d.values(), dtype.np_type)
         if size is None and indices.size == 0:

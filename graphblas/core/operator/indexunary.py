@@ -47,8 +47,6 @@ class ParameterizedIndexUnaryOp(ParameterizedUdf):
     __slots__ = "func", "__signature__", "_is_udt"
 
     def __init__(self, name, func, *, anonymous=False, is_udt=False):
-        # NOT COVERED
-        raise Exception("XXX")
         self.func = func
         self.__signature__ = inspect.signature(func)
         self._is_udt = is_udt
@@ -57,15 +55,12 @@ class ParameterizedIndexUnaryOp(ParameterizedUdf):
         super().__init__(name, anonymous)
 
     def _call(self, *args, **kwargs):
-        # NOT COVERED
-        raise Exception("XXX")
         indexunary = self.func(*args, **kwargs)
         indexunary._parameterized_info = (self, args, kwargs)
         return IndexUnaryOp.register_anonymous(indexunary, self.name, is_udt=self._is_udt)
 
     def __reduce__(self):
         # NOT COVERED
-        raise Exception("XXX")
         name = f"indexunary.{self.name}"
         if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
             return name
@@ -74,7 +69,6 @@ class ParameterizedIndexUnaryOp(ParameterizedUdf):
     @staticmethod
     def _deserialize(name, func, anonymous):
         # NOT COVERED
-        raise Exception("XXX")
         if anonymous:
             return IndexUnaryOp.register_anonymous(func, name, parameterized=True)
         if (rv := IndexUnaryOp._find(name)) is not None:
@@ -254,8 +248,6 @@ class IndexUnaryOp(OpBase):
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
-            # NOT COVERED
-            raise Exception("XXX")
             return ParameterizedIndexUnaryOp(name, func, anonymous=True, is_udt=is_udt)
         return cls._build(name, func, anonymous=True, is_udt=is_udt)
 
@@ -279,8 +271,6 @@ class IndexUnaryOp(OpBase):
                 {"name": name, "func": func, "parameterized": parameterized},
             )
         elif parameterized:
-            # NOT COVERED
-            raise Exception("XXX")
             indexunary_op = ParameterizedIndexUnaryOp(name, func, is_udt=is_udt)
             setattr(module, funcname, indexunary_op)
         else:
@@ -362,13 +352,11 @@ class IndexUnaryOp(OpBase):
         if self._anonymous:
             if hasattr(self.orig_func, "_parameterized_info"):
                 # NOT COVERED
-                raise Exception("XXX")
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
             return (self.register_anonymous, (self.orig_func, self.name))
         if (name := f"indexunary.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
         # NOT COVERED
-        raise Exception("XXX")
         return (self._deserialize, (self.name, self.orig_func))
 
     __call__ = TypedBuiltinIndexUnaryOp.__call__

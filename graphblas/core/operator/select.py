@@ -38,8 +38,6 @@ class ParameterizedSelectOp(ParameterizedUdf):
     __slots__ = "func", "__signature__", "_is_udt"
 
     def __init__(self, name, func, *, anonymous=False, is_udt=False):
-        # NOT COVERED
-        raise Exception("XXX")
         self.func = func
         self.__signature__ = inspect.signature(func)
         self._is_udt = is_udt
@@ -48,15 +46,12 @@ class ParameterizedSelectOp(ParameterizedUdf):
         super().__init__(name, anonymous)
 
     def _call(self, *args, **kwargs):
-        # NOT COVERED
-        raise Exception("XXX")
         sel = self.func(*args, **kwargs)
         sel._parameterized_info = (self, args, kwargs)
         return SelectOp.register_anonymous(sel, self.name, is_udt=self._is_udt)
 
     def __reduce__(self):
         # NOT COVERED
-        raise Exception("XXX")
         name = f"select.{self.name}"
         if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
             return name
@@ -65,7 +60,6 @@ class ParameterizedSelectOp(ParameterizedUdf):
     @staticmethod
     def _deserialize(name, func, anonymous):
         # NOT COVERED
-        raise Exception("XXX")
         if anonymous:
             return SelectOp.register_anonymous(func, name, parameterized=True)
         if (rv := SelectOp._find(name)) is not None:
@@ -134,8 +128,6 @@ class SelectOp(OpBase):
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
-            # NOT COVERED
-            raise Exception("XXX")
             return ParameterizedSelectOp(name, func, anonymous=True, is_udt=is_udt)
         iop = IndexUnaryOp._build(name, func, anonymous=True, is_udt=is_udt)
         return SelectOp._from_indexunary(iop)
@@ -161,6 +153,10 @@ class SelectOp(OpBase):
                 cls._get_delayed,
                 {"name": name},
             )
+        elif parameterized:
+            op = ParameterizedSelectOp(funcname, func, is_udt=is_udt)
+            setattr(module, funcname, op)
+            return op
         elif not all(x == BOOL for x in iop.types.values()):
             # Undo registration of indexunaryop
             imodule, funcname = IndexUnaryOp._remove_nesting(name, strict=False)
@@ -203,7 +199,6 @@ class SelectOp(OpBase):
         self._is_udt = is_udt
         if is_udt:
             # NOT COVERED
-            raise Exception("XXX")
             self._udt_types = {}  # {dtype: DataType}
             self._udt_ops = {}  # {dtype: TypedUserIndexUnaryOp}
 
@@ -211,13 +206,11 @@ class SelectOp(OpBase):
         if self._anonymous:
             if hasattr(self.orig_func, "_parameterized_info"):
                 # NOT COVERED
-                raise Exception("XXX")
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
             return (self.register_anonymous, (self.orig_func, self.name))
         if (name := f"select.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
         # NOT COVERED
-        raise Exception("XXX")
         return (self._deserialize, (self.name, self.orig_func))
 
     __call__ = TypedBuiltinSelectOp.__call__

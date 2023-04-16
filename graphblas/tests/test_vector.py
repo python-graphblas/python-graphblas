@@ -824,7 +824,14 @@ def test_indexunary_udf(v):
     def ii(x, idx, _, thunk):  # pragma: no cover (numba)
         return idx // 2 >= thunk
 
+    def iin(n):
+        def inner(x, idx, _, thunk):  # pragma: no cover (numba)
+            return idx // n >= thunk
+
+        return inner
+
     select.register_new("ii", ii, lazy=True)
+    select.register_new("iin", iin, parameterized=True)
     assert "ii" in dir(select)
     assert "ii" in dir(indexunary)
     assert hasattr(select, "ii")
@@ -833,12 +840,23 @@ def test_indexunary_udf(v):
     expected = Vector.from_coo([1, 3, 4, 6], [False, False, True, True], size=7)
     result = ii_apply(v, 2).new()
     assert result.isequal(expected)
+    result = v.apply(indexunary.iin(2), 2).new()
+    assert result.isequal(expected)
+    result = v.apply(indexunary.register_anonymous(iin, parameterized=True)(2), 2).new()
+    assert result.isequal(expected)
+
     ii_select = select.register_anonymous(ii)
     expected = Vector.from_coo([4, 6], [2, 0], size=7)
     result = ii_select(v, 2).new()
     assert result.isequal(expected)
+    result = v.select(select.iin(2), 2).new()
+    assert result.isequal(expected)
+    result = v.select(select.register_anonymous(iin, parameterized=True)(2), 2).new()
+    assert result.isequal(expected)
     delattr(indexunary, "ii")
     delattr(select, "ii")
+    delattr(indexunary, "iin")
+    delattr(select, "iin")
     with pytest.raises(UdfParseError, match="Unable to parse function using Numba"):
         indexunary.register_new("bad", lambda x, row, col, thunk: result)
 

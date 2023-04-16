@@ -180,8 +180,6 @@ class Matrix(BaseType):
 
     def _repr_html_(self, mask=None, collapse=False, expr=None):
         if self._parent is not None:
-            # NOT COVERED
-            raise Exception("XXX")
             return self._parent._repr_html_(mask=mask, collapse=collapse)
         from .formatting import format_matrix_html
         from .recorder import skip_record
@@ -1589,7 +1587,7 @@ class Matrix(BaseType):
             # If we know the dtype, then using `np.fromiter` is much faster
             dtype = lookup_dtype(dtype)
             if dtype.np_type.subdtype is not None and np.__version__[:5] in {"1.21.", "1.22."}:
-                values, dtype = values_to_numpy_buffer(list(iter_values), dtype)  # flaky coverage
+                values, dtype = values_to_numpy_buffer(list(iter_values), dtype)  # FLAKY COVERAGE
             else:
                 values = np.fromiter(iter_values, dtype.np_type)
         return getattr(cls, methodname)(
@@ -2474,7 +2472,6 @@ class Matrix(BaseType):
                 # NOT COVERED
                 dtype_name = "UDT"
                 thunk = _Pointer(thunk)
-                raise Exception("XXX")
             else:
                 dtype_name = thunk.dtype.name
             cfunc_name = f"GrB_Matrix_select_{dtype_name}"

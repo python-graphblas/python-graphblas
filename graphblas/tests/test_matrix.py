@@ -2297,6 +2297,11 @@ def test_ss_import_on_view():
     A = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
     B = Matrix.ss.import_any(nrows=2, ncols=2, values=np.array([1, 2, 3, 4, 99, 99, 99])[:4])
     assert A.isequal(B)
+    values = np.arange(16).reshape(4, 4)[::2, ::2]
+    bitmap = np.ones((4, 4), dtype=bool)[::2, ::2]
+    C = Matrix.ss.import_any(values=values, bitmap=bitmap)
+    D = Matrix.ss.import_any(values=values.copy(), bitmap=bitmap.copy())
+    assert C.isequal(D)
 
 
 @pytest.mark.skipif("not suitesparse")
