@@ -211,12 +211,17 @@ jobs:
             psgver=""
           fi
           # TODO: drop 0.57.0rc1 and use 0.57 once numba 0.57 is properly released
-          if [[ $npver == "=1.24" || ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
+          if [[ ${npver} == "=1.24" || ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
             numbaver=$(python -c 'import random ; print(random.choice(["=0.57.0rc1", ""]))')
-          elif [[ $npver == "=1.21" ]] ; then
+          elif [[ ${npver} == "=1.21" ]] ; then
             numbaver=$(python -c 'import random ; print(random.choice(["=0.55", "=0.56", "=0.57.0rc1", ""]))')
           else
             numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57.0rc1", ""]))')
+          fi
+          if [[ ${{ matrix.os == 'windows-latest' }} == true && ( ${npver} == "=1.24" || ${numbaver} == "=0.57.0rc1" ) ]] ; then
+            # TODO: numba 0.57.0rc1 currently crashes sometimes on windows, so skip it for now
+            npver=""
+            numbaver=""
           fi
           fmm=fast_matrix_market${fmmver}
           awkward=awkward${akver}
@@ -301,9 +306,9 @@ jobs:
             if [[ $G && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
-          echo $args
+          echo ${args}
           pytest -v --pyargs suitesparse_graphblas
-          coverage run -m pytest --color=yes --randomly -v $args \
+          coverage run -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
         run: |
@@ -337,8 +342,8 @@ jobs:
             if [[ $G && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
-          echo $args
-          coverage run -a -m pytest --color=yes --randomly -v $args \
+          echo ${args}
+          coverage run -a -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
