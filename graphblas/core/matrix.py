@@ -1589,7 +1589,7 @@ class Matrix(BaseType):
             # If we know the dtype, then using `np.fromiter` is much faster
             dtype = lookup_dtype(dtype)
             if dtype.np_type.subdtype is not None and np.__version__[:5] in {"1.21.", "1.22."}:
-                values, dtype = values_to_numpy_buffer(list(iter_values), dtype)
+                values, dtype = values_to_numpy_buffer(list(iter_values), dtype)  # flaky coverage
             else:
                 values = np.fromiter(iter_values, dtype.np_type)
         return getattr(cls, methodname)(

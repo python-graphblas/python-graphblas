@@ -502,11 +502,11 @@ def to_awkward(A, format=None):
                 @ak.behaviors.mixins.mixin_class(ak.behavior)
                 class _AwkwardDoublyCompressedMatrix:
                     @property
-                    def values(self):  # flaky coverage (why?!)
+                    def values(self):  # pragma: no branch (???)
                         return self.data.values
 
                     @property
-                    def indices(self):  # flaky coverage (why?!)
+                    def indices(self):  # pragma: no branch (???)
                         return self.data.indices
 
             form = RecordForm(
