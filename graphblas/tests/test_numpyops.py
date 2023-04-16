@@ -106,7 +106,7 @@ def test_npunary():
             )
             assert gb_result.nvals == np_result.size
             if compare_op is None:
-                continue
+                continue  # FLAKY COVERAGE
             match = gb_result.ewise_mult(np_result, compare_op).new()
             if gb_result.dtype.name.startswith("F"):
                 match(accum=gb.binary.lor) << gb_result.apply(npunary.isnan)
@@ -203,7 +203,7 @@ def test_npbinary():
 
             assert gb_result.nvals == np_result.size
             if compare_op is None:
-                continue
+                continue  # FLAKY COVERAGE
             match = gb_result.ewise_mult(np_result, compare_op).new()
             if gb_result.dtype.name.startswith("F"):
                 match(accum=gb.binary.lor) << gb_result.apply(isnan)
