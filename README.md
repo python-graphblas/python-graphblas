@@ -1,17 +1,21 @@
-# Python-graphblas
+![Python-graphblas](docs/_static/img/logo-name-medium.svg)
 
 [![conda-forge](https://img.shields.io/conda/vn/conda-forge/python-graphblas.svg)](https://anaconda.org/conda-forge/python-graphblas)
 [![pypi](https://img.shields.io/pypi/v/python-graphblas.svg)](https://pypi.python.org/pypi/python-graphblas/)
-![PyPI - Python Version](https://img.shields.io/pypi/pyversions/python-graphblas)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/python-graphblas)](https://pypi.python.org/pypi/python-graphblas/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/python-graphblas/python-graphblas/blob/main/LICENSE)
+<br>
 [![Tests](https://github.com/python-graphblas/python-graphblas/workflows/Tests/badge.svg?branch=main)](https://github.com/python-graphblas/python-graphblas/actions)
 [![Docs](https://readthedocs.org/projects/python-graphblas/badge/?version=latest)](https://python-graphblas.readthedocs.io/en/latest/)
 [![Coverage](https://coveralls.io/repos/python-graphblas/python-graphblas/badge.svg?branch=main)](https://coveralls.io/r/python-graphblas/python-graphblas)
+<br>
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7328791.svg)](https://doi.org/10.5281/zenodo.7328791)
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/python-graphblas/python-graphblas/HEAD?filepath=notebooks%2FIntro%20to%20GraphBLAS%20%2B%20SSSP%20example.ipynb)
 [![Discord](https://img.shields.io/badge/Chat-Discord-blue)](https://discord.com/invite/vur45CbwMz)
 
 Python library for GraphBLAS: high-performance sparse linear algebra for scalable graph analytics.
+For algorithms, see
+[`graphblas-algorithms`](https://github.com/python-graphblas/graphblas-algorithms).
 
 - **Documentation:** [https://python-graphblas.readthedocs.io/](https://python-graphblas.readthedocs.io/)
   - **GraphBLAS C API:** [https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf](https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf)
@@ -21,6 +25,11 @@ Python library for GraphBLAS: high-performance sparse linear algebra for scalabl
 - **Github discussions:** [https://github.com/python-graphblas/python-graphblas/discussions](https://github.com/python-graphblas/python-graphblas/discussions)
 - **Weekly community call:** [https://github.com/python-graphblas/python-graphblas/issues/247](https://github.com/python-graphblas/python-graphblas/issues/247)
 - **Chat via Discord:** [https://discord.com/invite/vur45CbwMz](https://discord.com/invite/vur45CbwMz) in the [#graphblas channel](https://discord.com/channels/786703927705862175/1024732940233605190)
+
+<p float="left">
+  <img src="docs/_static/img/draw-example.png" width="231" align="top" alt="Directed graph", title="Directed graph"/>
+  <img src="docs/_static/img/repr-matrix.png" width="231" align="top" alt="Adjacency matrix" title="Adjacency matrix"/>
+</p>
 
 ## Install
 Install the latest version of Python-graphblas via conda:
@@ -39,7 +48,7 @@ The following are not required by python-graphblas, but may be needed for certai
 
 - `pandas` – required for nicer `__repr__`;
 - `matplotlib` – required for basic plotting of graphs;
-- `scipy` – used in io module to read/write `scipy.sparse` format;
+- `scipy` – used in `io` module to read/write `scipy.sparse` format;
 - `networkx` – used in `io` module to interface with `networkx` graphs;
 - `fast-matrix-market` - for faster read/write of Matrix Market files with `gb.io.mmread` and `gb.io.mmwrite`.
 

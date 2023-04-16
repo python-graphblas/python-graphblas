@@ -4,6 +4,11 @@
 # To run: `pre-commit run --all-files`
 # To update: `pre-commit autoupdate`
 #  - &flake8_dependencies below needs updated manually
+ci:
+    # See: https://pre-commit.ci/#configuration
+    autofix_prs: false
+    autoupdate_schedule: monthly
+    skip: [pylint, no-commit-to-branch]
 fail_fast: true
 default_language_version:
     python: python3
