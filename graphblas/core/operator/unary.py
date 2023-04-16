@@ -2,8 +2,6 @@ import inspect
 import re
 from types import FunctionType
 
-import numba
-
 from ... import _STANDARD_OPERATOR_NAMES, op, unary
 from ...dtypes import (
     BOOL,
@@ -22,7 +20,7 @@ from ...dtypes import (
     lookup_dtype,
 )
 from ...exceptions import UdfParseError, check_status_carg
-from .. import ffi, lib
+from .. import _has_numba, ffi, lib
 from ..utils import output_type
 from .base import (
     _SS_OPERATORS,
@@ -30,12 +28,15 @@ from .base import (
     ParameterizedUdf,
     TypedOpBase,
     _deserialize_parameterized,
-    _get_udt_wrapper,
     _hasop,
 )
 
 if _supports_complex:
     from ...dtypes import FC32, FC64
+if _has_numba:
+    import numba
+
+    from .base import _get_udt_wrapper
 
 ffi_new = ffi.new
 
@@ -276,6 +277,7 @@ class UnaryOp(OpBase):
 
         Because it is not registered in the namespace, the name is optional.
         """
+        cls._check_supports_udf("register_anonymous")
         if parameterized:
             return ParameterizedUnaryOp(name, func, anonymous=True, is_udt=is_udt)
         return cls._build(name, func, anonymous=True, is_udt=is_udt)
@@ -289,6 +291,7 @@ class UnaryOp(OpBase):
             >>> dir(gb.unary)
             [..., 'plus_one', ...]
         """
+        cls._check_supports_udf("register_new")
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
@@ -372,7 +375,10 @@ class UnaryOp(OpBase):
             (unary.one, _one),
         ]:
             unop.orig_func = func
-            unop._numba_func = numba.njit(func)
+            if _has_numba:
+                unop._numba_func = numba.njit(func)
+            else:
+                unop._numba_func = None
             unop._udt_types = {}
             unop._udt_ops = {}
         cls._initialized = True

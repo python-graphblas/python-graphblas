@@ -5,14 +5,17 @@ See list of numpy ufuncs supported by numpy here:
 https://numba.readthedocs.io/en/stable/reference/numpysupported.html#math-operations
 
 """
-import numba as _numba
 import numpy as _np
 
 from .. import _STANDARD_OPERATOR_NAMES
 from .. import binary as _binary
 from .. import config as _config
 from .. import monoid as _monoid
+from ..core import _has_numba, _supports_udfs
 from ..dtypes import _supports_complex
+
+if _has_numba:
+    import numba as _numba
 
 _delayed = {}
 _complex_dtypes = {"FC32", "FC64"}
@@ -86,7 +89,8 @@ if _supports_complex:
 # To increase import speed, only call njit when `_config.get("mapnumpy")` is False
 if (
     _config.get("mapnumpy")
-    or type(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2))  # pragma: no branch (numba)
+    or _has_numba
+    and type(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2))  # pragma: no branch (numba)
     is not float
 ):
     # Incorrect behavior was introduced in numba 0.56.2 and numpy 1.23
@@ -155,7 +159,12 @@ _idempotent = {
 
 
 def __dir__():
-    return globals().keys() | _delayed.keys() | _monoid_identities.keys()
+    if not _supports_udfs and not _config.get("mapnumpy"):
+        return globals().keys()  # FLAKY COVERAGE
+    attrs = _delayed.keys() | _monoid_identities.keys()
+    if not _supports_udfs:
+        attrs &= _numpy_to_graphblas.keys()
+    return attrs | globals().keys()
 
 
 def __getattr__(name):

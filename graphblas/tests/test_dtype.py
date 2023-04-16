@@ -252,7 +252,4 @@ def test_has_complex():
     import suitesparse_graphblas as ssgb
     from packaging.version import parse
 
-    if parse(ssgb.__version__) < parse("7.4.3.1"):
-        assert not dtypes._supports_complex
-    else:
-        assert dtypes._supports_complex
+    assert dtypes._supports_complex == (parse(ssgb.__version__) >= parse("7.4.3.1"))

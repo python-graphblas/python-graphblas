@@ -10,6 +10,7 @@ import numpy as _np
 from .. import _STANDARD_OPERATOR_NAMES
 from .. import binary as _binary
 from .. import config as _config
+from ..core import _supports_udfs
 
 _delayed = {}
 _binary_names = {
@@ -130,7 +131,13 @@ _commutes_to = {
 
 
 def __dir__():
-    return globals().keys() | _delayed.keys() | _binary_names
+    if not _supports_udfs and not _config["mapnumpy"]:
+        # float_power is special: it's constructed from builtin operators
+        return globals().keys() | {"float_power"}  # FLAKY COVERAGE
+    attrs = _delayed.keys() | _binary_names
+    if not _supports_udfs:
+        attrs &= _numpy_to_graphblas.keys()
+    return attrs | globals().keys()
 
 
 def __getattr__(name):
@@ -141,7 +148,7 @@ def __getattr__(name):
         return rv
     if name not in _binary_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    if _config.get("mapnumpy") and name in _numpy_to_graphblas:
+    if _config.get("mapnumpy") and name in _numpy_to_graphblas or name == "float_power":
         if name == "float_power":
             from ..core.operator import binary
             from ..dtypes import FP64
@@ -166,6 +173,11 @@ def __getattr__(name):
             globals()[name] = new_op
         else:
             globals()[name] = getattr(_binary, _numpy_to_graphblas[name])
+    elif not _supports_udfs:
+        raise AttributeError(
+            f"module {__name__!r} unable to compile UDF for {name!r}; "
+            "install numba for UDF support"
+        )
     else:
         numpy_func = getattr(_np, name)
 

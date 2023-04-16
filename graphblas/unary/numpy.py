@@ -10,6 +10,7 @@ import numpy as _np
 from .. import _STANDARD_OPERATOR_NAMES
 from .. import config as _config
 from .. import unary as _unary
+from ..core import _supports_udfs
 from ..dtypes import _supports_complex
 
 _delayed = {}
@@ -119,7 +120,12 @@ __all__ = list(_unary_names)
 
 
 def __dir__():
-    return globals().keys() | _delayed.keys() | _unary_names
+    if not _supports_udfs and not _config.get("mapnumpy"):
+        return globals().keys()  # FLAKY COVERAGE
+    attrs = _delayed.keys() | _unary_names
+    if not _supports_udfs:
+        attrs &= _numpy_to_graphblas.keys()
+    return attrs | globals().keys()
 
 
 def __getattr__(name):
@@ -132,6 +138,11 @@ def __getattr__(name):
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     if _config.get("mapnumpy") and name in _numpy_to_graphblas:
         globals()[name] = getattr(_unary, _numpy_to_graphblas[name])
+    elif not _supports_udfs:
+        raise AttributeError(
+            f"module {__name__!r} unable to compile UDF for {name!r}; "
+            "install numba for UDF support"
+        )
     else:
         numpy_func = getattr(_np, name)
 

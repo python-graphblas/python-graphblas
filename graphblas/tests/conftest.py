@@ -1,15 +1,19 @@
 import atexit
 import functools
 import itertools
+import platform
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 import graphblas as gb
+from graphblas.core import _supports_udfs as supports_udfs
 
 orig_binaryops = set()
 orig_semirings = set()
+
+pypy = platform.python_implementation() == "PyPy"
 
 
 def pytest_configure(config):
@@ -48,7 +52,7 @@ def pytest_configure(config):
         rec.start()
 
         def save_records():
-            with Path("record.txt").open("w") as f:  # pragma: no cover
+            with Path("record.txt").open("w") as f:  # pragma: no cover (???)
                 f.write("\n".join(rec.data))
 
         # I'm sure there's a `pytest` way to do this...
@@ -116,3 +120,8 @@ def autocompute(func):
 
 def compute(x):
     return x
+
+
+def shouldhave(module, opname):
+    """Whether an "operator" module should have the given operator."""
+    return supports_udfs or hasattr(module, opname)

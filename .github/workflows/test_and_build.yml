@@ -102,14 +102,16 @@ jobs:
         id: pyver
         with:
           # We should support major Python versions for at least 36-42 months
-          # We could probably support pypy if numba were optional
+          # We may be able to support pypy if anybody asks for it
           # 3.8.16 0_73_pypy
           # 3.9.16 0_73_pypy
           contents: |
             3.8
             3.9
             3.10
+            3.11
           weights: |
+            1
             1
             1
             1
@@ -138,8 +140,8 @@ jobs:
           miniforge-version: latest
           use-mamba: true
           python-version: ${{ steps.pyver.outputs.selected }}
-          channels: conda-forge,nodefaults
-          channel-priority: strict
+          channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
+          channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
           activate-environment: graphblas
           auto-activate-base: false
       - name: Setup conda
@@ -150,8 +152,8 @@ jobs:
         with:
           auto-update-conda: true
           python-version: ${{ steps.pyver.outputs.selected }}
-          channels: conda-forge,nodefaults
-          channel-priority: strict
+          channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
+          channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
           activate-environment: graphblas
           auto-activate-base: false
       - name: Update env
@@ -161,29 +163,29 @@ jobs:
           #
           # First let's randomly get versions of dependencies to install.
           # Consider removing old versions when they become problematic or very old (>=2 years).
-          nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", ""]))')
+          nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", "=3.1", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
-          sparsever=$(python -c 'import random ; print(random.choice(["=0.12", "=0.13", "=0.14", ""]))')
-          fmmver=$(python -c 'import random ; print(random.choice(["=1.4", ""]))')
+          sparsever=$(python -c 'import random ; print(random.choice(["=0.13", "=0.14", ""]))')
+          fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", ""]))')
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.8') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
-            pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", ""]))')
+            pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", "=2.0", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.9') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
-            pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", ""]))')
+            pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", "=2.0", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.10') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
-            pdver=$(python -c 'import random ; print(random.choice(["=1.3", "=1.4", "=1.5", ""]))')
+            pdver=$(python -c 'import random ; print(random.choice(["=1.3", "=1.4", "=1.5", "=2.0", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", ""]))')
           else  # Python 3.11
-            npver=$(python -c 'import random ; print(random.choice(["=1.23", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", ""]))')
-            pdver=$(python -c 'import random ; print(random.choice(["=1.5", ""]))')
+            pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", ""]))')
           fi
           if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
@@ -208,16 +210,54 @@ jobs:
           else
             psgver=""
           fi
-          if [[ $npver == "=1.21" ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.55", "=0.56", ""]))')
+          # TODO: drop 0.57.0rc1 and use 0.57 once numba 0.57 is properly released
+          if [[ ${npver} == "=1.24" || ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.57.0rc1", ""]))')
+          elif [[ ${npver} == "=1.21" ]] ; then
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.55", "=0.56", "=0.57.0rc1", ""]))')
           else
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.56", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57.0rc1", ""]))')
+          fi
+          if [[ ${{ matrix.os == 'windows-latest' }} == true && ( ${npver} == "=1.24" || ${numbaver} == "=0.57.0rc1" ) ]] ; then
+            # TODO: numba 0.57.0rc1 currently crashes sometimes on windows, so skip it for now
+            npver=""
+            numbaver=""
+          fi
+          fmm=fast_matrix_market${fmmver}
+          awkward=awkward${akver}
+          if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') ||
+                startsWith(steps.pyver.outputs.selected, '3.12') }} == true ||
+                ( ${{ matrix.slowtask != 'notebooks'}} == true && (
+                  ( ${{ matrix.os == 'windows-latest' }} == true && $(python -c 'import random ; print(random.random() < .2)') == True ) ||
+                  ( ${{ matrix.os == 'windows-latest' }} == false && $(python -c 'import random ; print(random.random() < .4)') == True ))) ]]
+          then
+            # Some packages aren't available for pypy or Python 3.12; randomly otherwise (if not running notebooks)
+            echo "skipping numba"
+            numba=""
+            numbaver=NA
+            sparse=""
+            sparsever=NA
+            if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} ]]; then
+              awkward=""
+              akver=NA
+              fmm=""
+              fmmver=NA
+              # Be more flexible until we determine what versions are supported by pypy
+              npver=""
+              spver=""
+              pdver=""
+              yamlver=""
+            fi
+          else
+            numba=numba${numbaver}
+            sparse=sparse${sparsever}
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
-          $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli \
-            pyyaml${yamlver} sparse${sparsever} pandas${pdver} scipy${spver} numpy${npver} awkward${akver} \
-            networkx${nxver} numba${numbaver} fast_matrix_market${fmmver} ${psg} \
+          # TODO: remove `-c numba` when numba 0.57 is properly released
+          $(command -v mamba || command -v conda) install -c numba packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli \
+            pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
+            networkx${nxver} ${numba} ${fmm} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
@@ -269,9 +309,9 @@ jobs:
             if [[ $G && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
-          echo $args
+          echo ${args}
           pytest -v --pyargs suitesparse_graphblas
-          coverage run -m pytest --color=yes --randomly -v $args \
+          coverage run -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
         run: |
@@ -305,8 +345,8 @@ jobs:
             if [[ $G && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
-          echo $args
-          coverage run -a -m pytest --color=yes --randomly -v $args \
+          echo ${args}
+          coverage run -a -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
@@ -329,6 +369,13 @@ jobs:
           # TODO: understand why these are order-dependent and try to fix
           coverage run -a -m pytest --color=yes -x --no-mapnumpy --runslow -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
           # coverage run -a -m pytest --color=yes -x --no-mapnumpy -k test_npmonoid graphblas/tests/test_numpyops.py --runslow
+      - name: More tests for coverage
+        if: matrix.slowtask == 'notebooks' && matrix.os == 'windows-latest'
+        run: |
+          # We use 'notebooks' slow task b/c it should have numba installed
+          coverage run -a -m pytest --color=yes --runslow --no-mapnumpy -p no:randomly -v -k 'test_commutes or test_bool_doesnt_get_too_large or test_npbinary or test_npmonoid or test_npsemiring'
+          coverage run -a -m pytest --color=yes --runslow --mapnumpy -p no:randomly -k 'test_bool_doesnt_get_too_large or test_npunary or test_binaryop_monoid_numpy'
+          coverage run -a -m pytest --color=yes -x --no-mapnumpy --runslow -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
       - name: Auto-generated code check
         if: matrix.slowtask == 'pytest_bizarro'
         run: |
@@ -364,7 +411,11 @@ jobs:
         uses: codecov/codecov-action@v3
       - name: Notebooks Execution check
         if: matrix.slowtask == 'notebooks'
-        run: jupyter nbconvert --to notebook --execute notebooks/*ipynb
+        run: |
+          # Run notebooks only if numba is installed
+          if python -c 'import numba' 2> /dev/null ; then
+            jupyter nbconvert --to notebook --execute notebooks/*ipynb
+          fi
 
   finish:
     needs: build_and_test

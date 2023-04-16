@@ -5,6 +5,7 @@ import numpy as np
 
 from ... import agg, backend, binary, monoid, semiring, unary
 from ...dtypes import INT64, lookup_dtype
+from .. import _supports_udfs
 from ..utils import output_type
 
 
@@ -38,6 +39,7 @@ class Aggregator:
         semiring=None,
         switch=False,
         semiring2=None,
+        applybegin=None,
         finalize=None,
         composite=None,
         custom=None,
@@ -52,6 +54,7 @@ class Aggregator:
         self._semiring = semiring
         self._semiring2 = semiring2
         self._switch = switch
+        self._applybegin = applybegin
         self._finalize = finalize
         self._composite = composite
         self._custom = custom
@@ -152,8 +155,11 @@ class TypedAggregator:
 
     def _new(self, updater, expr, *, in_composite=False):
         agg = self.parent
+        opts = updater.opts
         if agg._monoid is not None:
             x = expr.args[0]
+            if agg._applybegin is not None:  # pragma: no cover (unused)
+                x = agg._applybegin(x).new(**opts)
             method = getattr(x, expr.method_name)
             if expr.output_type.__name__ == "Scalar":
                 expr = method(agg._monoid[self.type], allow_empty=not expr._is_cscalar)
@@ -167,7 +173,6 @@ class TypedAggregator:
                 return parent._as_vector()
             return
 
-        opts = updater.opts
         if agg._composite is not None:
             # Masks are applied throughout the aggregation, including composite aggregations.
             # Aggregations done while `in_composite is True` should return the updater parent
@@ -203,6 +208,8 @@ class TypedAggregator:
         if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
             # Matrix -> Vector
             A = expr.args[0]
+            if agg._applybegin is not None:
+                A = agg._applybegin(A).new(**opts)
             orig_updater = updater
             if agg._finalize is not None:
                 step1 = expr.construct_output(semiring.return_type)
@@ -223,6 +230,8 @@ class TypedAggregator:
         elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
             # Vector -> Scalar
             v = expr.args[0]
+            if agg._applybegin is not None:
+                v = agg._applybegin(v).new(**opts)
             step1 = expr._new_vector(semiring.return_type, size=1)
             init = expr._new_matrix(agg._initdtype, nrows=v._size, ncols=1)
             init(**opts)[...] = agg._initval  # O(1) dense column vector in SuiteSparse 5
@@ -242,6 +251,8 @@ class TypedAggregator:
         elif expr.cfunc_name.startswith("GrB_Matrix_reduce"):
             # Matrix -> Scalar
             A = expr.args[0]
+            if agg._applybegin is not None:
+                A = agg._applybegin(A).new(**opts)
             # We need to compute in two steps: Matrix -> Vector -> Scalar.
             # This has not been benchmarked or optimized.
             # We may be able to intelligently choose the faster path.
@@ -339,11 +350,21 @@ agg.logaddexp2 = Aggregator(
 # logaddexp2 = Aggregator('logaddexp2', monoid=semiring.numpy.logaddexp2)
 # hypot as monoid doesn't work if single negative element!
 # hypot = Aggregator('hypot', monoid=semiring.numpy.hypot)
+# hypot = Aggregator('hypot', applybegin=unary.abs, monoid=semiring.numpy.hypot)
 
 agg.L0norm = agg.count_nonzero
-agg.L1norm = Aggregator("L1norm", semiring="plus_absfirst", semiring2=semiring.plus_first)
 agg.L2norm = agg.hypot
-agg.Linfnorm = Aggregator("Linfnorm", semiring="max_absfirst", semiring2=semiring.max_first)
+if _supports_udfs:
+    agg.L1norm = Aggregator("L1norm", semiring="plus_absfirst", semiring2=semiring.plus_first)
+    agg.Linfnorm = Aggregator("Linfnorm", semiring="max_absfirst", semiring2=semiring.max_first)
+else:
+    # Are these always better?
+    agg.L1norm = Aggregator(
+        "L1norm", applybegin=unary.abs, semiring=semiring.plus_first, semiring2=semiring.plus_first
+    )
+    agg.Linfnorm = Aggregator(
+        "Linfnorm", applybegin=unary.abs, semiring=semiring.max_first, semiring2=semiring.max_first
+    )
 
 
 # Composite

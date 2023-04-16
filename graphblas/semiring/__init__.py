@@ -1,7 +1,29 @@
 # All items are dynamically added by classes in operator.py
 # This module acts as a container of Semiring instances
+from ..core import _supports_udfs
+
 _delayed = {}
 _deprecated = {}
+_udfs = {
+    # Used by aggregators
+    "max_absfirst",
+    "max_abssecond",
+    "plus_absfirst",
+    "plus_abssecond",
+    "plus_rpow",
+    # floordiv
+    "any_floordiv",
+    "max_floordiv",
+    "min_floordiv",
+    "plus_floordiv",
+    "times_floordiv",
+    # rfloordiv
+    "any_rfloordiv",
+    "max_rfloordiv",
+    "min_rfloordiv",
+    "plus_rfloordiv",
+    "times_rfloordiv",
+}
 
 
 def __dir__():
@@ -47,6 +69,11 @@ def __getattr__(key):
         ss = import_module(".ss", __name__)
         globals()["ss"] = ss
         return ss
+    if not _supports_udfs and key in _udfs:
+        raise AttributeError(
+            f"module {__name__!r} unable to compile UDF for {key!r}; "
+            "install numba for UDF support"
+        )
     raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
 
 

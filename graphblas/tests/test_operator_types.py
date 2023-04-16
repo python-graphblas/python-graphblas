@@ -2,6 +2,7 @@ import itertools
 from collections import defaultdict
 
 from graphblas import backend, binary, dtypes, monoid, semiring, unary
+from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core import operator
 from graphblas.dtypes import (
     BOOL,
@@ -83,6 +84,11 @@ if backend in {"suitesparse", "suitesparse-vanilla"}:  # pragma: no branch (futu
     BINARY[(ALL, POS)] = {
         "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1",
     }
+if not supports_udfs:
+    udfs = {"absfirst", "abssecond", "binom", "floordiv", "rfloordiv", "rpow"}
+    for funcnames in BINARY.values():
+        funcnames -= udfs
+    BINARY = {key: val for key, val in BINARY.items() if val}
 
 MONOID = {
     (UINT, UINT): {"band", "bor", "bxnor", "bxor"},

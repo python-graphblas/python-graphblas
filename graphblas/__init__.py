@@ -137,7 +137,21 @@ def _init(backend_arg, blocking, automatic=False):
 
     backend = backend_arg
     if backend in {"suitesparse", "suitesparse-vanilla"}:
-        from suitesparse_graphblas import ffi, initialize, is_initialized, lib
+        try:
+            from suitesparse_graphblas import ffi, initialize, is_initialized, lib
+        except ImportError:  # pragma: no cover (import)
+            raise ImportError(
+                f"suitesparse_graphblas is required for {backend!r} backend. "
+                "It may be installed with pip or conda:\n\n"
+                "    $ pip install suitesparse-graphblas\n"
+                "    $ conda install -c conda-forge python-suitesparse-graphblas\n\n"
+                "SuiteSparse:GraphBLAS is the primary C implementation and backend of "
+                "python-graphblas and is what we recommend to most users. If you are "
+                "installing python-graphblas with pip, we recommend installing with one "
+                "of the following to automatically include suitespare-graphblas:\n\n"
+                "    $ pip install python-graphblas[suitesparse]\n"
+                "    $ pip install python-graphblas[default]"
+            ) from None
 
         if is_initialized():
             mode = ffi.new("int32_t*")

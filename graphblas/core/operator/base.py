@@ -1,15 +1,18 @@
-from functools import lru_cache, reduce
-from operator import getitem, mul
+from functools import lru_cache
+from operator import getitem
 from types import BuiltinFunctionType, ModuleType
-
-import numba
-import numpy as np
 
 from ... import _STANDARD_OPERATOR_NAMES, backend, op
 from ...dtypes import BOOL, INT8, UINT64, _supports_complex, lookup_dtype
-from .. import lib
+from .. import _has_numba, _supports_udfs, lib
 from ..expr import InfixExprBase
 from ..utils import output_type
+
+if _has_numba:
+    import numba
+    from numba import NumbaError
+else:
+    NumbaError = TypeError
 
 UNKNOWN_OPCLASS = "UnknownOpClass"
 
@@ -158,96 +161,69 @@ def _call_op(op, left, right=None, thunk=None, **kwargs):
     )
 
 
-_udt_mask_cache = {}
+if _has_numba:
 
+    def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None, *, include_indexes=False):
+        ztype = INT8 if return_type == BOOL else return_type
+        xtype = INT8 if dtype == BOOL else dtype
+        nt = numba.types
+        wrapper_args = [nt.CPointer(ztype.numba_type), nt.CPointer(xtype.numba_type)]
+        if include_indexes:
+            wrapper_args.extend([UINT64.numba_type, UINT64.numba_type])
+        if dtype2 is not None:
+            ytype = INT8 if dtype2 == BOOL else dtype2
+            wrapper_args.append(nt.CPointer(ytype.numba_type))
+        wrapper_sig = nt.void(*wrapper_args)
 
-def _udt_mask(dtype):
-    """Create mask to determine which bytes of UDTs to use for equality check."""
-    if dtype in _udt_mask_cache:
-        return _udt_mask_cache[dtype]
-    if dtype.subdtype is not None:
-        mask = _udt_mask(dtype.subdtype[0])
-        N = reduce(mul, dtype.subdtype[1])
-        rv = np.concatenate([mask] * N)
-    elif dtype.names is not None:
-        prev_offset = mask = None
-        masks = []
-        for name in dtype.names:
-            dtype2, offset = dtype.fields[name]
-            if mask is not None:
-                masks.append(np.pad(mask, (0, offset - prev_offset - mask.size)))
-            mask = _udt_mask(dtype2)
-            prev_offset = offset
-        masks.append(np.pad(mask, (0, dtype.itemsize - prev_offset - mask.size)))
-        rv = np.concatenate(masks)
-    else:
-        rv = np.ones(dtype.itemsize, dtype=bool)
-    # assert rv.size == dtype.itemsize
-    _udt_mask_cache[dtype] = rv
-    return rv
-
-
-def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None, *, include_indexes=False):
-    ztype = INT8 if return_type == BOOL else return_type
-    xtype = INT8 if dtype == BOOL else dtype
-    nt = numba.types
-    wrapper_args = [nt.CPointer(ztype.numba_type), nt.CPointer(xtype.numba_type)]
-    if include_indexes:
-        wrapper_args.extend([UINT64.numba_type, UINT64.numba_type])
-    if dtype2 is not None:
-        ytype = INT8 if dtype2 == BOOL else dtype2
-        wrapper_args.append(nt.CPointer(ytype.numba_type))
-    wrapper_sig = nt.void(*wrapper_args)
-
-    zarray = xarray = yarray = BL = BR = yarg = yname = rcidx = ""
-    if return_type._is_udt:
-        if return_type.np_type.subdtype is None:
-            zarray = "    z = numba.carray(z_ptr, 1)\n"
-            zname = "z[0]"
+        zarray = xarray = yarray = BL = BR = yarg = yname = rcidx = ""
+        if return_type._is_udt:
+            if return_type.np_type.subdtype is None:
+                zarray = "    z = numba.carray(z_ptr, 1)\n"
+                zname = "z[0]"
+            else:
+                zname = "z_ptr[0]"
+                BR = "[0]"
         else:
             zname = "z_ptr[0]"
-            BR = "[0]"
-    else:
-        zname = "z_ptr[0]"
-        if return_type == BOOL:
-            BL = "bool("
-            BR = ")"
+            if return_type == BOOL:
+                BL = "bool("
+                BR = ")"
 
-    if dtype._is_udt:
-        if dtype.np_type.subdtype is None:
-            xarray = "    x = numba.carray(x_ptr, 1)\n"
-            xname = "x[0]"
-        else:
-            xname = "x_ptr"
-    elif dtype == BOOL:
-        xname = "bool(x_ptr[0])"
-    else:
-        xname = "x_ptr[0]"
-
-    if dtype2 is not None:
-        yarg = ", y_ptr"
-        if dtype2._is_udt:
-            if dtype2.np_type.subdtype is None:
-                yarray = "    y = numba.carray(y_ptr, 1)\n"
-                yname = ", y[0]"
+        if dtype._is_udt:
+            if dtype.np_type.subdtype is None:
+                xarray = "    x = numba.carray(x_ptr, 1)\n"
+                xname = "x[0]"
             else:
-                yname = ", y_ptr"
-        elif dtype2 == BOOL:
-            yname = ", bool(y_ptr[0])"
+                xname = "x_ptr"
+        elif dtype == BOOL:
+            xname = "bool(x_ptr[0])"
         else:
-            yname = ", y_ptr[0]"
+            xname = "x_ptr[0]"
 
-    if include_indexes:
-        rcidx = ", row, col"
+        if dtype2 is not None:
+            yarg = ", y_ptr"
+            if dtype2._is_udt:
+                if dtype2.np_type.subdtype is None:
+                    yarray = "    y = numba.carray(y_ptr, 1)\n"
+                    yname = ", y[0]"
+                else:
+                    yname = ", y_ptr"
+            elif dtype2 == BOOL:
+                yname = ", bool(y_ptr[0])"
+            else:
+                yname = ", y_ptr[0]"
 
-    d = {"numba": numba, "numba_func": numba_func}
-    text = (
-        f"def wrapper(z_ptr, x_ptr{rcidx}{yarg}):\n"
-        f"{zarray}{xarray}{yarray}"
-        f"    {zname} = {BL}numba_func({xname}{rcidx}{yname}){BR}\n"
-    )
-    exec(text, d)  # pylint: disable=exec-used
-    return d["wrapper"], wrapper_sig
+        if include_indexes:
+            rcidx = ", row, col"
+
+        d = {"numba": numba, "numba_func": numba_func}
+        text = (
+            f"def wrapper(z_ptr, x_ptr{rcidx}{yarg}):\n"
+            f"{zarray}{xarray}{yarray}"
+            f"    {zname} = {BL}numba_func({xname}{rcidx}{yname}){BR}\n"
+        )
+        exec(text, d)  # pylint: disable=exec-used
+        return d["wrapper"], wrapper_sig
 
 
 class TypedOpBase:
@@ -360,6 +336,8 @@ class OpBase:
                     raise KeyError(f"{self.name} does not work with {type_}")
             else:
                 return self._typed_ops[type_]
+        if not _supports_udfs:
+            raise KeyError(f"{self.name} does not work with {type_}")
         # This is a UDT or is able to operate on UDTs such as `first` any `any`
         dtype = lookup_dtype(type_)
         return self._compile_udt(dtype, dtype)
@@ -376,7 +354,7 @@ class OpBase:
     def __contains__(self, type_):
         try:
             self[type_]
-        except (TypeError, KeyError, numba.NumbaError):
+        except (TypeError, KeyError, NumbaError):
             return False
         return True
 
@@ -487,7 +465,7 @@ class OpBase:
                             if type_ is None:
                                 type_ = BOOL
                         else:
-                            if type_ is None:  # pragma: no cover
+                            if type_ is None:  # pragma: no cover (safety)
                                 raise TypeError(f"Unable to determine return type for {varname}")
                             if return_prefix is None:
                                 return_type = type_
@@ -512,6 +490,13 @@ class OpBase:
         if (rv := cls._find(name)) is not None:
             return rv  # Should we verify this is what the user expects?
         return cls.register_new(name, *args)
+
+    @classmethod
+    def _check_supports_udf(cls, method_name):
+        if not _supports_udfs:
+            raise RuntimeError(
+                f"{cls.__name__}.{method_name}(...) unavailable; install numba for UDF support"
+            )
 
 
 _builtin_to_op = {}  # Populated in .utils

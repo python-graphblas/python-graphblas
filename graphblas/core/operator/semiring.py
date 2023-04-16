@@ -17,7 +17,7 @@ from ...dtypes import (
     _supports_complex,
 )
 from ...exceptions import check_status_carg
-from .. import ffi, lib
+from .. import _supports_udfs, ffi, lib
 from .base import _SS_OPERATORS, OpBase, ParameterizedUdf, TypedOpBase, _call_op, _hasop
 from .binary import BinaryOp, ParameterizedBinaryOp
 from .monoid import Monoid, ParameterizedMonoid
@@ -358,15 +358,17 @@ class Semiring(OpBase):
         for orig_name, orig in div_semirings.items():
             cls.register_new(f"{orig_name[:-3]}truediv", orig.monoid, binary.truediv, lazy=True)
             cls.register_new(f"{orig_name[:-3]}rtruediv", orig.monoid, "rtruediv", lazy=True)
-            cls.register_new(f"{orig_name[:-3]}floordiv", orig.monoid, "floordiv", lazy=True)
-            cls.register_new(f"{orig_name[:-3]}rfloordiv", orig.monoid, "rfloordiv", lazy=True)
+            if _supports_udfs:
+                cls.register_new(f"{orig_name[:-3]}floordiv", orig.monoid, "floordiv", lazy=True)
+                cls.register_new(f"{orig_name[:-3]}rfloordiv", orig.monoid, "rfloordiv", lazy=True)
         # For aggregators
         cls.register_new("plus_pow", monoid.plus, binary.pow)
-        cls.register_new("plus_rpow", monoid.plus, "rpow", lazy=True)
-        cls.register_new("plus_absfirst", monoid.plus, "absfirst", lazy=True)
-        cls.register_new("max_absfirst", monoid.max, "absfirst", lazy=True)
-        cls.register_new("plus_abssecond", monoid.plus, "abssecond", lazy=True)
-        cls.register_new("max_abssecond", monoid.max, "abssecond", lazy=True)
+        if _supports_udfs:
+            cls.register_new("plus_rpow", monoid.plus, "rpow", lazy=True)
+            cls.register_new("plus_absfirst", monoid.plus, "absfirst", lazy=True)
+            cls.register_new("max_absfirst", monoid.max, "absfirst", lazy=True)
+            cls.register_new("plus_abssecond", monoid.plus, "abssecond", lazy=True)
+            cls.register_new("max_abssecond", monoid.max, "abssecond", lazy=True)
 
         # Update type information with sane coercion
         for lname in ["any", "eq", "land", "lor", "lxnor", "lxor"]:

@@ -11,7 +11,7 @@ from .dtypes import lookup_dtype as _lookup_dtype
 from .exceptions import GraphblasException as _GraphblasException
 
 
-def draw(m):  # pragma: no cover
+def draw(m):  # pragma: no cover (deprecated)
     """Draw a square adjacency Matrix as a graph.
 
     Requires `networkx <https://networkx.org/>`_ and
@@ -455,7 +455,7 @@ def to_awkward(A, format=None):
         indices, values = A.to_coo()
         form = RecordForm(
             contents=[
-                NumpyForm(A.dtype.numba_type.name, form_key="node1"),
+                NumpyForm(A.dtype.np_type.name, form_key="node1"),
                 NumpyForm("int64", form_key="node0"),
             ],
             fields=["values", "indices"],
@@ -489,7 +489,7 @@ def to_awkward(A, format=None):
             RecordForm(
                 contents=[
                     NumpyForm("int64", form_key="node3"),
-                    NumpyForm(A.dtype.numba_type.name, form_key="node4"),
+                    NumpyForm(A.dtype.np_type.name, form_key="node4"),
                 ],
                 fields=["indices", "values"],
             ),
@@ -502,11 +502,11 @@ def to_awkward(A, format=None):
                 @ak.behaviors.mixins.mixin_class(ak.behavior)
                 class _AwkwardDoublyCompressedMatrix:
                     @property
-                    def values(self):
+                    def values(self):  # pragma: no branch (???)
                         return self.data.values
 
                     @property
-                    def indices(self):
+                    def indices(self):  # pragma: no branch (???)
                         return self.data.indices
 
             form = RecordForm(

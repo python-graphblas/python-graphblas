@@ -131,6 +131,7 @@ def get_shape(nrows, ncols, dtype=None, **arrays):
                 # We could be smarter and determine the shape of the dtype sub-arrays
                 if arr.ndim >= 3:
                     break
+                # BRANCH NOT COVERED
             elif arr.ndim == 2:
                 break
         else:

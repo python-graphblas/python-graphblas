@@ -137,10 +137,10 @@ class Recorder:
         tail = "\n</blockquote>\n</details>\n</div>"
         return "\n".join(head), tail
 
-    def _repr_html_(self):  # pragma: no cover
+    def _repr_html_(self):
         try:
             from IPython.display import Code
-        except ImportError as exc:
+        except ImportError as exc:  # pragma: no cover (import)
             raise NotImplementedError from exc
         lines = self._get_repr_lines()
         code = Code("\n".join(lines), language="C")

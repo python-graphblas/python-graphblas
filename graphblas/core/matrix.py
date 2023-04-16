@@ -7,7 +7,7 @@ import numpy as np
 from .. import backend, binary, monoid, select, semiring
 from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, InvalidValue, NoValue, check_status
-from . import automethods, ffi, lib, utils
+from . import _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
 from .descriptor import lookup as descriptor_lookup
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, Updater
@@ -33,7 +33,7 @@ from .utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from .vector import Vector, VectorExpression, VectorIndexExpr, _select_mask
+from .vector import Vector, VectorExpression, VectorIndexExpr, _isclose_recipe, _select_mask
 
 if backend == "suitesparse":
     from .ss.matrix import ss
@@ -368,6 +368,8 @@ class Matrix(BaseType):
             return False
         if self._nvals != other._nvals:
             return False
+        if not _supports_udfs:
+            return _isclose_recipe(self, other, rel_tol, abs_tol, **opts)
 
         matches = self.ewise_mult(other, binary.isclose(rel_tol, abs_tol)).new(
             bool, name="M_isclose", **opts
@@ -611,14 +613,15 @@ class Matrix(BaseType):
         if not dup_op_given:
             if not self.dtype._is_udt:
                 dup_op = binary.plus
-            else:
+            elif backend != "suitesparse":
                 dup_op = binary.any
-        # SS:SuiteSparse-specific: we could use NULL for dup_op
-        dup_op = get_typed_op(dup_op, self.dtype, kind="binary")
-        if dup_op.opclass == "Monoid":
-            dup_op = dup_op.binaryop
-        else:
-            self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
+            # SS:SuiteSparse-specific: we use NULL for dup_op
+        if dup_op is not None:
+            dup_op = get_typed_op(dup_op, self.dtype, kind="binary")
+            if dup_op.opclass == "Monoid":
+                dup_op = dup_op.binaryop
+            else:
+                self._expect_op(dup_op, "BinaryOp", within="build", argname="dup_op")
 
         rows = _CArray(rows)
         columns = _CArray(columns)
@@ -1584,7 +1587,7 @@ class Matrix(BaseType):
             # If we know the dtype, then using `np.fromiter` is much faster
             dtype = lookup_dtype(dtype)
             if dtype.np_type.subdtype is not None and np.__version__[:5] in {"1.21.", "1.22."}:
-                values, dtype = values_to_numpy_buffer(list(iter_values), dtype)
+                values, dtype = values_to_numpy_buffer(list(iter_values), dtype)  # FLAKY COVERAGE
             else:
                 values = np.fromiter(iter_values, dtype.np_type)
         return getattr(cls, methodname)(
@@ -2466,6 +2469,7 @@ class Matrix(BaseType):
         self._expect_op(op, ("SelectOp", "IndexUnaryOp"), within=method_name, argname="op")
         if thunk._is_cscalar:
             if thunk.dtype._is_udt:
+                # NOT COVERED
                 dtype_name = "UDT"
                 thunk = _Pointer(thunk)
             else:

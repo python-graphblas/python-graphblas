@@ -40,9 +40,8 @@ def _printer(text, name, repr_name, indent):
                 # line = f"f'{{CSS_STYLE}}'"
                 in_style = False
                 is_style = True
-            else:  # pragma: no cover (???)
-                # This definitely gets covered, but why is it not picked up?
-                continue
+            else:
+                continue  # FLAKY COVERAGE
         if repr_name == "repr_html" and line.startswith("<style>"):
             prev_line = prev_line[:-1]  # remove "\n"
             in_style = True
@@ -5018,4 +5017,72 @@ def test_empty():
         '"M_1"      nvals  nrows  ncols  dtype  format\n'
         "gb.Matrix      0      0      5  INT64     csr\n"
         "---------------------------------------------"
+    )
+
+
+@pytest.mark.skipif("not pd")
+def test_vector_as_matrix():
+    v = Vector.from_coo([1], [2], name="v_A")
+    A = v._as_matrix()
+    repr_printer(A, "A")
+    assert repr(A) == (
+        '"(GrB_Matrix)v_A"  nvals  nrows  ncols  dtype         format\n'
+        "gb.Matrix              1      2      1  INT64  bitmapc (iso)\n"
+        "------------------------------------------------------------\n"
+        "   0\n"
+        "0   \n"
+        "1  2"
+    )
+    html_printer(A, "A")
+    assert repr_html(A) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v<sub>A</sub></tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>1</td>\n"
+        "    <td>2</td>\n"
+        "    <td>INT64</td>\n"
+        "    <td>bitmap (iso)</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>0</th>\n"
+        "      <th>1</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th></th>\n"
+        "      <td></td>\n"
+        "      <td>2</td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
     )

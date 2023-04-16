@@ -51,6 +51,7 @@ class ParameterizedSelectOp(ParameterizedUdf):
         return SelectOp.register_anonymous(sel, self.name, is_udt=self._is_udt)
 
     def __reduce__(self):
+        # NOT COVERED
         name = f"select.{self.name}"
         if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
             return name
@@ -58,6 +59,7 @@ class ParameterizedSelectOp(ParameterizedUdf):
 
     @staticmethod
     def _deserialize(name, func, anonymous):
+        # NOT COVERED
         if anonymous:
             return SelectOp.register_anonymous(func, name, parameterized=True)
         if (rv := SelectOp._find(name)) is not None:
@@ -124,6 +126,7 @@ class SelectOp(OpBase):
 
         Because it is not registered in the namespace, the name is optional.
         """
+        cls._check_supports_udf("register_anonymous")
         if parameterized:
             return ParameterizedSelectOp(name, func, anonymous=True, is_udt=is_udt)
         iop = IndexUnaryOp._build(name, func, anonymous=True, is_udt=is_udt)
@@ -140,13 +143,36 @@ class SelectOp(OpBase):
             >>> dir(gb.select)
             [..., 'upper_left_triangle', ...]
         """
+        cls._check_supports_udf("register_new")
         iop = IndexUnaryOp.register_new(
             name, func, parameterized=parameterized, is_udt=is_udt, lazy=lazy
         )
+        module, funcname = cls._remove_nesting(name, strict=False)
+        if lazy:
+            module._delayed[funcname] = (
+                cls._get_delayed,
+                {"name": name},
+            )
+        elif parameterized:
+            op = ParameterizedSelectOp(funcname, func, is_udt=is_udt)
+            setattr(module, funcname, op)
+            return op
+        elif not all(x == BOOL for x in iop.types.values()):
+            # Undo registration of indexunaryop
+            imodule, funcname = IndexUnaryOp._remove_nesting(name, strict=False)
+            delattr(imodule, funcname)
+            raise ValueError("SelectOp must have BOOL return type")
+        else:
+            return getattr(module, funcname)
+
+    @classmethod
+    def _get_delayed(cls, name):
+        imodule, funcname = IndexUnaryOp._remove_nesting(name, strict=False)
+        iop = getattr(imodule, name)
         if not all(x == BOOL for x in iop.types.values()):
             raise ValueError("SelectOp must have BOOL return type")
-        if lazy:
-            return getattr(select, iop.name)
+        module, funcname = cls._remove_nesting(name, strict=False)
+        return getattr(module, funcname)
 
     @classmethod
     def _initialize(cls):
@@ -172,16 +198,19 @@ class SelectOp(OpBase):
         self.is_positional = is_positional
         self._is_udt = is_udt
         if is_udt:
+            # NOT COVERED
             self._udt_types = {}  # {dtype: DataType}
             self._udt_ops = {}  # {dtype: TypedUserIndexUnaryOp}
 
     def __reduce__(self):
         if self._anonymous:
             if hasattr(self.orig_func, "_parameterized_info"):
+                # NOT COVERED
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
             return (self.register_anonymous, (self.orig_func, self.name))
         if (name := f"select.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
+        # NOT COVERED
         return (self._deserialize, (self.name, self.orig_func))
 
     __call__ = TypedBuiltinSelectOp.__call__

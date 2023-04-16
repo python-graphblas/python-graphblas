@@ -3,14 +3,18 @@ import itertools
 import numpy as np
 
 from .. import backend, binary, config, monoid
-from ..binary import isclose
 from ..dtypes import _INDEX, FP64, lookup_dtype, unify
 from ..exceptions import EmptyObject, check_status
-from . import automethods, ffi, lib, utils
+from . import _has_numba, _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
 from .expr import AmbiguousAssignOrExtract
 from .operator import get_typed_op
 from .utils import _Pointer, output_type, wrapdoc
+
+if _supports_udfs:
+    from ..binary import isclose
+else:
+    from .operator.binary import _isclose as isclose
 
 ffi_new = ffi.new
 
@@ -261,6 +265,17 @@ class Scalar(BaseType):
             return False
         # We can't yet call a UDF on a scalar as part of the spec, so let's do it ourselves
         isclose_func = isclose(rel_tol, abs_tol)
+        if not _has_numba:
+            # Check if types are compatible
+            get_typed_op(
+                binary.eq,
+                self.dtype,
+                other.dtype,
+                is_left_scalar=True,
+                is_right_scalar=True,
+                kind="binary",
+            )
+            return isclose_func(self.value, other.value)
         isclose_func = get_typed_op(
             isclose_func,
             self.dtype,

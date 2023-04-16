@@ -12,6 +12,7 @@ from .. import binary as _binary
 from .. import config as _config
 from .. import monoid as _monoid
 from ..binary.numpy import _binary_names
+from ..core import _supports_udfs
 from ..monoid.numpy import _fmin_is_float, _monoid_identities
 
 _delayed = {}
@@ -132,7 +133,17 @@ __all__ = list(_semiring_names)
 
 
 def __dir__():
-    return globals().keys() | _delayed.keys() | _semiring_names
+    if not _supports_udfs and not _config.get("mapnumpy"):
+        return globals().keys()  # FLAKY COVERAGE
+    attrs = _delayed.keys() | _semiring_names
+    if not _supports_udfs:
+        attrs &= {
+            f"{monoid_name}_{binary_name}"
+            for monoid_name, binary_name in _itertools.product(
+                dir(_monoid.numpy), dir(_binary.numpy)
+            )
+        }
+    return attrs | globals().keys()
 
 
 def __getattr__(name):

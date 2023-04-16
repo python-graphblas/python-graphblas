@@ -1,9 +1,9 @@
 import inspect
 import re
-from functools import lru_cache
+from functools import lru_cache, reduce
+from operator import mul
 from types import FunctionType
 
-import numba
 import numpy as np
 
 from ... import _STANDARD_OPERATOR_NAMES, backend, binary, monoid, op
@@ -24,7 +24,7 @@ from ...dtypes import (
     lookup_dtype,
 )
 from ...exceptions import UdfParseError, check_status_carg
-from .. import ffi, lib
+from .. import _has_numba, _supports_udfs, ffi, lib
 from ..expr import InfixExprBase
 from .base import (
     _SS_OPERATORS,
@@ -33,15 +33,45 @@ from .base import (
     TypedOpBase,
     _call_op,
     _deserialize_parameterized,
-    _get_udt_wrapper,
     _hasop,
-    _udt_mask,
 )
 
+if _has_numba:
+    import numba
+
+    from .base import _get_udt_wrapper
 if _supports_complex:
     from ...dtypes import FC32, FC64
 
 ffi_new = ffi.new
+
+if _has_numba:
+    _udt_mask_cache = {}
+
+    def _udt_mask(dtype):
+        """Create mask to determine which bytes of UDTs to use for equality check."""
+        if dtype in _udt_mask_cache:
+            return _udt_mask_cache[dtype]
+        if dtype.subdtype is not None:
+            mask = _udt_mask(dtype.subdtype[0])
+            N = reduce(mul, dtype.subdtype[1])
+            rv = np.concatenate([mask] * N)
+        elif dtype.names is not None:
+            prev_offset = mask = None
+            masks = []
+            for name in dtype.names:
+                dtype2, offset = dtype.fields[name]
+                if mask is not None:
+                    masks.append(np.pad(mask, (0, offset - prev_offset - mask.size)))
+                mask = _udt_mask(dtype2)
+                prev_offset = offset
+            masks.append(np.pad(mask, (0, dtype.itemsize - prev_offset - mask.size)))
+            rv = np.concatenate(masks)
+        else:
+            rv = np.ones(dtype.itemsize, dtype=bool)
+        # assert rv.size == dtype.itemsize
+        _udt_mask_cache[dtype] = rv
+        return rv
 
 
 class TypedBuiltinBinaryOp(TypedOpBase):
@@ -601,6 +631,7 @@ class BinaryOp(OpBase):
 
         Because it is not registered in the namespace, the name is optional.
         """
+        cls._check_supports_udf("register_anonymous")
         if parameterized:
             return ParameterizedBinaryOp(name, func, anonymous=True, is_udt=is_udt)
         return cls._build(name, func, anonymous=True, is_udt=is_udt)
@@ -621,6 +652,7 @@ class BinaryOp(OpBase):
             >>> dir(gb.binary)
             [..., 'max_zero', ...]
         """
+        cls._check_supports_udf("register_new")
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
@@ -681,21 +713,22 @@ class BinaryOp(OpBase):
                     orig_op.gb_name,
                 )
                 new_op._add(cur_op)
-        # Add floordiv
-        # cdiv truncates towards 0, while floordiv truncates towards -inf
-        BinaryOp.register_new("floordiv", _floordiv, lazy=True)  # cast to integer
-        BinaryOp.register_new("rfloordiv", _rfloordiv, lazy=True)  # cast to integer
+        if _supports_udfs:
+            # Add floordiv
+            # cdiv truncates towards 0, while floordiv truncates towards -inf
+            BinaryOp.register_new("floordiv", _floordiv, lazy=True)  # cast to integer
+            BinaryOp.register_new("rfloordiv", _rfloordiv, lazy=True)  # cast to integer
 
-        # For aggregators
-        BinaryOp.register_new("absfirst", _absfirst, lazy=True)
-        BinaryOp.register_new("abssecond", _abssecond, lazy=True)
-        BinaryOp.register_new("rpow", _rpow, lazy=True)
+            # For aggregators
+            BinaryOp.register_new("absfirst", _absfirst, lazy=True)
+            BinaryOp.register_new("abssecond", _abssecond, lazy=True)
+            BinaryOp.register_new("rpow", _rpow, lazy=True)
 
-        # For algorithms
-        binary._delayed["binom"] = (_register_binom, {})  # Lazy with custom creation
-        op._delayed["binom"] = binary
+            # For algorithms
+            binary._delayed["binom"] = (_register_binom, {})  # Lazy with custom creation
+            op._delayed["binom"] = binary
 
-        BinaryOp.register_new("isclose", _isclose, parameterized=True)
+            BinaryOp.register_new("isclose", _isclose, parameterized=True)
 
         # Update type information with sane coercion
         position_dtypes = [
@@ -777,14 +810,23 @@ class BinaryOp(OpBase):
             if right_name not in binary._delayed:
                 if right_name in _SS_OPERATORS:
                     right = binary._deprecated[right_name]
-                else:
+                elif _supports_udfs:
                     right = getattr(binary, right_name)
+                else:
+                    right = getattr(binary, right_name, None)
+                    if right is None:
+                        continue
                 if backend == "suitesparse" and left_name in _SS_OPERATORS:
                     right._commutes_to = f"ss.{left_name}"
                 else:
                     right._commutes_to = left_name
         for name in cls._commutative:
-            cur_op = getattr(binary, name)
+            if _supports_udfs:
+                cur_op = getattr(binary, name)
+            else:
+                cur_op = getattr(binary, name, None)
+                if cur_op is None:
+                    continue
             cur_op._commutes_to = name
         for left_name, right_name in cls._commutes_to_in_semiring.items():
             if left_name in _SS_OPERATORS:
@@ -805,7 +847,10 @@ class BinaryOp(OpBase):
             (binary.any, _first),
         ]:
             binop.orig_func = func
-            binop._numba_func = numba.njit(func)
+            if _has_numba:
+                binop._numba_func = numba.njit(func)
+            else:
+                binop._numba_func = None
             binop._udt_types = {}
             binop._udt_ops = {}
         binary.any._numba_func = binary.first._numba_func

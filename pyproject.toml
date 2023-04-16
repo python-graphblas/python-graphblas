@@ -47,6 +47,7 @@ classifiers = [
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3 :: Only",
     "Intended Audience :: Developers",
     "Intended Audience :: Other Audience",
@@ -57,11 +58,13 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "suitesparse-graphblas >=7.4.0.0, <7.5",
     "numpy >=1.21",
-    "numba >=0.55",
     "donfig >=0.6",
     "pyyaml >=5.4",
+    # These won't be installed by default after 2024.3.0
+    # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
+    "suitesparse-graphblas >=7.4.0.0, <7.5",
+    "numba >=0.55; python_version<'3.11'",  # make optional where numba is not supported
 ]
 
 [project.urls]
@@ -71,37 +74,56 @@ repository = "https://github.com/python-graphblas/python-graphblas"
 changelog = "https://github.com/python-graphblas/python-graphblas/releases"
 
 [project.optional-dependencies]
-repr = [
+suitesparse = [
+    "suitesparse-graphblas >=7.4.0.0, <7.5",
+]
+networkx = [
+    "networkx >=2.8",
+]
+numba = [
+    "numba >=0.55",
+]
+pandas = [
     "pandas >=1.2",
 ]
-io = [
-    "networkx >=2.8",
+scipy = [
     "scipy >=1.8",
+]
+suitesparse-udf = [  # udf requires numba
+    "python-graphblas[suitesparse,numba]",
+]
+repr = [
+    "python-graphblas[pandas]",
+]
+io = [
+    "python-graphblas[networkx,scipy]",
+    "python-graphblas[numba]; python_version<'3.11'",
     "awkward >=1.9",
-    "sparse >=0.12",
+    "sparse >=0.13; python_version<'3.11'",  # make optional, b/c sparse needs numba
     "fast-matrix-market >=1.4.5",
 ]
 viz = [
+    "python-graphblas[networkx,scipy]",
     "matplotlib >=3.5",
+]
+datashade = [  # datashade requires numba
+    "python-graphblas[numba,pandas,scipy]",
+    "datashader >=0.12",
+    "hvplot >=0.7",
 ]
 test = [
-    "pytest",
-    "packaging",
-    "pandas >=1.2",
-    "scipy >=1.8",
-    "tomli",
+    "python-graphblas[suitesparse,pandas,scipy]",
+    "packaging >=21",
+    "pytest >=6.2",
+    "tomli >=1",
+]
+default = [
+    "python-graphblas[suitesparse,pandas,scipy]",
+    "python-graphblas[numba]; python_version<'3.11'",  # make optional where numba is not supported
 ]
 complete = [
-    "pandas >=1.2",
-    "networkx >=2.8",
-    "scipy >=1.8",
-    "awkward >=1.9",
-    "sparse >=0.12",
-    "fast-matrix-market >=1.4.5",
-    "matplotlib >=3.5",
-    "pytest",
-    "packaging",
-    "tomli",
+    "python-graphblas[default,io,viz,test]",
+    "python-graphblas[datashade]; python_version<'3.11'",  # make optional, b/c datashade needs numba
 ]
 
 [tool.setuptools]
@@ -154,8 +176,6 @@ filterwarnings = [
     # See: https://docs.python.org/3/library/warnings.html#describing-warning-filters
     # and: https://docs.pytest.org/en/7.2.x/how-to/capture-warnings.html#controlling-warnings
     "error",
-    # MAINT: we can drop support for sparse <0.13 at any time
-    "ignore:`np.bool` is a deprecated alias:DeprecationWarning:sparse._umath",  # sparse <0.13
     # sparse 0.14.0 (2022-02-24) began raising this warning; it has been reported and fixed upstream.
     "ignore:coords should be an ndarray. This will raise a ValueError:DeprecationWarning:sparse._coo.core",
 
@@ -166,6 +186,13 @@ filterwarnings = [
     # And this deprecation warning was added in setuptools v67.5.0 (8 Mar 2023). See:
     # https://setuptools.pypa.io/en/latest/history.html#v67-5-0
     "ignore:pkg_resources is deprecated as an API:DeprecationWarning:pkg_resources",
+
+    # sre_parse deprecated in 3.11; this is triggered by awkward 0.10
+    "ignore:module 'sre_parse' is deprecated:DeprecationWarning:",
+    "ignore:module 'sre_constants' is deprecated:DeprecationWarning:",
+
+    # pypy gives this warning
+    "ignore:can't resolve package from __spec__ or __package__:ImportWarning:",
 ]
 
 [tool.coverage.run]

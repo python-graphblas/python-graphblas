@@ -2,21 +2,16 @@ import inspect
 import re
 from types import FunctionType
 
-import numba
-
 from ... import _STANDARD_OPERATOR_NAMES, indexunary, select
 from ...dtypes import BOOL, FP64, INT8, INT64, UINT64, _sample_values, lookup_dtype
 from ...exceptions import UdfParseError, check_status_carg
-from .. import ffi, lib
-from .base import (
-    OpBase,
-    ParameterizedUdf,
-    TypedOpBase,
-    _call_op,
-    _deserialize_parameterized,
-    _get_udt_wrapper,
-)
+from .. import _has_numba, ffi, lib
+from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op, _deserialize_parameterized
 
+if _has_numba:
+    import numba
+
+    from .base import _get_udt_wrapper
 ffi_new = ffi.new
 
 
@@ -65,6 +60,7 @@ class ParameterizedIndexUnaryOp(ParameterizedUdf):
         return IndexUnaryOp.register_anonymous(indexunary, self.name, is_udt=self._is_udt)
 
     def __reduce__(self):
+        # NOT COVERED
         name = f"indexunary.{self.name}"
         if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
             return name
@@ -72,6 +68,7 @@ class ParameterizedIndexUnaryOp(ParameterizedUdf):
 
     @staticmethod
     def _deserialize(name, func, anonymous):
+        # NOT COVERED
         if anonymous:
             return IndexUnaryOp.register_anonymous(func, name, parameterized=True)
         if (rv := IndexUnaryOp._find(name)) is not None:
@@ -249,6 +246,7 @@ class IndexUnaryOp(OpBase):
 
         Because it is not registered in the namespace, the name is optional.
         """
+        cls._check_supports_udf("register_anonymous")
         if parameterized:
             return ParameterizedIndexUnaryOp(name, func, anonymous=True, is_udt=is_udt)
         return cls._build(name, func, anonymous=True, is_udt=is_udt)
@@ -265,6 +263,7 @@ class IndexUnaryOp(OpBase):
             >>> dir(gb.indexunary)
             [..., 'row_mod', ...]
         """
+        cls._check_supports_udf("register_new")
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
@@ -281,9 +280,12 @@ class IndexUnaryOp(OpBase):
             if all(x == BOOL for x in indexunary_op.types.values()):
                 from .select import SelectOp
 
-                setattr(select, funcname, SelectOp._from_indexunary(indexunary_op))
+                select_module, funcname = SelectOp._remove_nesting(name, strict=False)
+                setattr(select_module, funcname, SelectOp._from_indexunary(indexunary_op))
+                if not cls._initialized:  # pragma: no cover (safety)
+                    _STANDARD_OPERATOR_NAMES.add(f"{SelectOp._modname}.{name}")
 
-        if not cls._initialized:
+        if not cls._initialized:  # pragma: no cover (safety)
             _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{name}")
         if not lazy:
             return indexunary_op
@@ -323,6 +325,7 @@ class IndexUnaryOp(OpBase):
                      "valueeq", "valuene", "valuegt", "valuege", "valuelt", "valuele"]:
             iop = getattr(indexunary, name)
             setattr(select, name, SelectOp._from_indexunary(iop))
+            _STANDARD_OPERATOR_NAMES.add(f"{SelectOp._modname}.{name}")
         # fmt: on
         cls._initialized = True
 
@@ -348,10 +351,12 @@ class IndexUnaryOp(OpBase):
     def __reduce__(self):
         if self._anonymous:
             if hasattr(self.orig_func, "_parameterized_info"):
+                # NOT COVERED
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
             return (self.register_anonymous, (self.orig_func, self.name))
         if (name := f"indexunary.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
+        # NOT COVERED
         return (self._deserialize, (self.name, self.orig_func))
 
     __call__ = TypedBuiltinIndexUnaryOp.__call__

@@ -11,6 +11,7 @@ from numpy.testing import assert_array_equal
 
 import graphblas as gb
 from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
+from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.exceptions import (
     DimensionMismatch,
     DomainMismatch,
@@ -19,9 +20,10 @@ from graphblas.exceptions import (
     InvalidObject,
     InvalidValue,
     OutputNotEmpty,
+    UdfParseError,
 )
 
-from .conftest import autocompute, compute
+from .conftest import autocompute, compute, pypy
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
@@ -798,12 +800,13 @@ def test_select_bools_and_masks(v):
     assert w8.isequal(w9)
 
 
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_indexunary_udf(v):
     def twox_minusthunk(x, row, col, thunk):  # pragma: no cover (numba)
         return 2 * x - thunk
 
-    indexunary.register_new("twox_minusthunk", twox_minusthunk)
+    indexunary.register_new("twox_minusthunk", twox_minusthunk, lazy=True)
     assert hasattr(indexunary, "twox_minusthunk")
     assert not hasattr(select, "twox_minusthunk")
     with pytest.raises(ValueError, match="SelectOp must have BOOL return type"):
@@ -813,24 +816,49 @@ def test_indexunary_udf(v):
     expected = Vector.from_coo([1, 3, 4, 6], [-2, -2, 0, -4], size=7)
     result = indexunary.twox_minusthunk(v, 4).new()
     assert result.isequal(expected)
+    assert pickle.loads(pickle.dumps(indexunary.triu)) is indexunary.triu
+    assert indexunary.twox_minusthunk[int]._numba_func(1, 2, 3, 4) == twox_minusthunk(1, 2, 3, 4)
+    assert indexunary.twox_minusthunk[int].orig_func is twox_minusthunk
     delattr(indexunary, "twox_minusthunk")
 
     def ii(x, idx, _, thunk):  # pragma: no cover (numba)
         return idx // 2 >= thunk
 
-    select.register_new("ii", ii)
-    assert hasattr(indexunary, "ii")
+    def iin(n):
+        def inner(x, idx, _, thunk):  # pragma: no cover (numba)
+            return idx // n >= thunk
+
+        return inner
+
+    select.register_new("ii", ii, lazy=True)
+    select.register_new("iin", iin, parameterized=True)
+    assert "ii" in dir(select)
+    assert "ii" in dir(indexunary)
     assert hasattr(select, "ii")
+    assert hasattr(indexunary, "ii")
     ii_apply = indexunary.register_anonymous(ii)
     expected = Vector.from_coo([1, 3, 4, 6], [False, False, True, True], size=7)
     result = ii_apply(v, 2).new()
     assert result.isequal(expected)
+    result = v.apply(indexunary.iin(2), 2).new()
+    assert result.isequal(expected)
+    result = v.apply(indexunary.register_anonymous(iin, parameterized=True)(2), 2).new()
+    assert result.isequal(expected)
+
     ii_select = select.register_anonymous(ii)
     expected = Vector.from_coo([4, 6], [2, 0], size=7)
     result = ii_select(v, 2).new()
     assert result.isequal(expected)
+    result = v.select(select.iin(2), 2).new()
+    assert result.isequal(expected)
+    result = v.select(select.register_anonymous(iin, parameterized=True)(2), 2).new()
+    assert result.isequal(expected)
     delattr(indexunary, "ii")
     delattr(select, "ii")
+    delattr(indexunary, "iin")
+    delattr(select, "iin")
+    with pytest.raises(UdfParseError, match="Unable to parse function using Numba"):
+        indexunary.register_new("bad", lambda x, row, col, thunk: result)
 
 
 def test_reduce(v):
@@ -1624,13 +1652,14 @@ def test_expr_is_like_vector(v):
         "resize",
         "update",
     }
-    assert attrs - expr_attrs == expected, (
+    ignore = {"__sizeof__"}
+    assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Vector.  You may need to "
         "add an entry to `vector` or `matrix_vector` set in `graphblas.core.automethods` "
         "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
         "methods, then you may need to run `python -m graphblas.core.infixmethods`."
     )
-    assert attrs - infix_attrs == expected
+    assert attrs - infix_attrs - ignore == expected
     # Make sure signatures actually match
     skip = {"__init__", "__repr__", "_repr_html_"}
     for expr in [binary.times(w & w), w & w]:
@@ -1672,7 +1701,8 @@ def test_index_expr_is_like_vector(v):
         "from_values",
         "resize",
     }
-    assert attrs - expr_attrs == expected, (
+    ignore = {"__sizeof__"}
+    assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Vector.  You may need to "
         "add an entry to `vector` or `matrix_vector` set in `graphblas.core.automethods` "
         "and then run `python -m graphblas.core.automethods`.  If you're messing with infix "
@@ -1963,7 +1993,7 @@ def test_ndim(A, v):
 
 
 def test_sizeof(v):
-    if suitesparse:
+    if suitesparse and not pypy:
         assert sys.getsizeof(v) > v.nvals * 16
     else:
         with pytest.raises(TypeError):
@@ -2006,6 +2036,7 @@ def test_delete_via_scalar(v):
     assert v.nvals == 0
 
 
+@pytest.mark.skipif("not supports_udfs")
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.float64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "VectorUDT")
@@ -2380,6 +2411,7 @@ def test_to_coo_subset(v):
     assert vals.dtype == np.int64
 
 
+@pytest.mark.skipif("not supports_udfs")
 def test_lambda_udfs(v):
     result = v.apply(lambda x: x + 1).new()  # pragma: no branch (numba)
     expected = binary.plus(v, 1).new()
@@ -2506,7 +2538,8 @@ def test_from_scalar():
     v = Vector.from_scalar(1, dtype="INT64[2]", size=3)
     w = Vector("INT64[2]", size=3)
     w << [1, 1]
-    assert v.isequal(w, check_dtype=True)
+    if supports_udfs:
+        assert v.isequal(w, check_dtype=True)
 
 
 def test_to_dense_from_dense():
@@ -2559,9 +2592,10 @@ def test_ss_sort(v):
         v.ss.sort(binary.plus)
 
     # Like compactify
-    _, p = v.ss.sort(lambda x, y: False, values=False)  # pragma: no branch (numba)
-    expected_p = Vector.from_coo([0, 1, 2, 3], [1, 3, 4, 6], size=7)
-    assert p.isequal(expected_p)
+    if supports_udfs:
+        _, p = v.ss.sort(lambda x, y: False, values=False)  # pragma: no branch (numba)
+        expected_p = Vector.from_coo([0, 1, 2, 3], [1, 3, 4, 6], size=7)
+        assert p.isequal(expected_p)
     # reversed
     _, p = v.ss.sort(binary.pair[bool], values=False)
     expected_p = Vector.from_coo([0, 1, 2, 3], [6, 4, 3, 1], size=7)
@@ -2569,6 +2603,7 @@ def test_ss_sort(v):
     w, p = v.ss.sort(monoid.lxor)  # Weird, but user-defined monoids may not commute, so okay
 
 
+@pytest.mark.skipif("not supports_udfs")
 def test_subarray_dtypes():
     a = np.arange(3 * 4, dtype=np.int64).reshape(3, 4)
     v = Vector.from_coo([1, 3, 5], a)

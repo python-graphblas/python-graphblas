@@ -80,7 +80,7 @@ def test_packages():
     pkgs.append("graphblas")
     pkgs.sort()
     pyproject = path.parent / "pyproject.toml"
-    if not pyproject.exists():
+    if not pyproject.exists():  # pragma: no cover (safety)
         pytest.skip("Did not find pyproject.toml")
     with pyproject.open("rb") as f:
         pkgs2 = sorted(tomli.load(f)["tool"]["setuptools"]["packages"])
