@@ -248,7 +248,7 @@ def test_npmonoid():
         ],
     ]
     # Complex monoids not working yet (they segfault upon creation in gb.core.operators)
-    if _supports_complex:  # pragma: no branch
+    if _supports_complex:
         data.append(
             [
                 [

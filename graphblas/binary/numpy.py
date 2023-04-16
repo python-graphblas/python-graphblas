@@ -133,7 +133,7 @@ _commutes_to = {
 def __dir__():
     if not _supports_udfs and not _config["mapnumpy"]:
         # float_power is special: it's constructed from builtin operators
-        return globals().keys() | {"float_power"}
+        return globals().keys() | {"float_power"}  # FLAKY COVERAGE
     attrs = _delayed.keys() | _binary_names
     if not _supports_udfs:
         attrs &= _numpy_to_graphblas.keys()

@@ -896,7 +896,7 @@ class ss:
             col_indices = claim_buffer(ffi, Aj[0], Aj_size[0] // index_dtype.itemsize, index_dtype)
             values = claim_buffer(ffi, Ax[0], Ax_size[0] // dtype.itemsize, dtype)
             if not raw:
-                if indptr.size > nrows + 1:  # pragma: no branch (suitesparse)
+                if indptr.size > nrows + 1:  # pragma: no cover (suitesparse)
                     indptr = indptr[: nrows + 1]
                 if col_indices.size > nvals:
                     col_indices = col_indices[:nvals]

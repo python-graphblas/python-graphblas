@@ -1860,7 +1860,7 @@ class Vector(BaseType):
                             shape = values.shape
                             try:
                                 vals = Vector.from_dense(values, dtype=dtype)
-                            except Exception:  # pragma: no cover (safety)
+                            except Exception:
                                 vals = None
                             else:
                                 if dtype.np_type.subdtype is not None:

@@ -121,7 +121,7 @@ __all__ = list(_unary_names)
 
 def __dir__():
     if not _supports_udfs and not _config.get("mapnumpy"):
-        return globals().keys()
+        return globals().keys()  # FLAKY COVERAGE
     attrs = _delayed.keys() | _unary_names
     if not _supports_udfs:
         attrs &= _numpy_to_graphblas.keys()

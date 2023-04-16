@@ -11,7 +11,7 @@ from .dtypes import lookup_dtype as _lookup_dtype
 from .exceptions import GraphblasException as _GraphblasException
 
 
-def draw(m):  # pragma: no cover
+def draw(m):  # pragma: no cover (deprecated)
     """Draw a square adjacency Matrix as a graph.
 
     Requires `networkx <https://networkx.org/>`_ and

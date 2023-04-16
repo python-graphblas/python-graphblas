@@ -40,9 +40,8 @@ def _printer(text, name, repr_name, indent):
                 # line = f"f'{{CSS_STYLE}}'"
                 in_style = False
                 is_style = True
-            else:  # pragma: no cover (???)
-                # This definitely gets covered, but why is it not picked up?
-                continue
+            else:
+                continue  # FLAKY COVERAGE
         if repr_name == "repr_html" and line.startswith("<style>"):
             prev_line = prev_line[:-1]  # remove "\n"
             in_style = True
