@@ -18,6 +18,7 @@ For algorithms, see
 [`graphblas-algorithms`](https://github.com/python-graphblas/graphblas-algorithms).
 
 - **Documentation:** [https://python-graphblas.readthedocs.io/](https://python-graphblas.readthedocs.io/)
+  - **FAQ:** [https://python-graphblas.readthedocs.io/en/stable/getting_started/faq.html](https://python-graphblas.readthedocs.io/en/stable/getting_started/faq.html)
   - **GraphBLAS C API:** [https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf](https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf)
   - **SuiteSparse:GraphBLAS User Guide:** [https://github.com/DrTimothyAldenDavis/GraphBLAS/raw/stable/Doc/GraphBLAS_UserGuide.pdf](https://github.com/DrTimothyAldenDavis/GraphBLAS/raw/stable/Doc/GraphBLAS_UserGuide.pdf)
 - **Source:** [https://github.com/python-graphblas/python-graphblas](https://github.com/python-graphblas/python-graphblas)
