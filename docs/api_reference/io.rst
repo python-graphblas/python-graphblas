@@ -49,6 +49,16 @@ These methods require `scipy <https://scipy.org/>`_ to be installed.
 
 .. autofunction:: graphblas.io.mmwrite
 
+Awkward Array
+~~~~~~~~~~~~~
+
+`Awkward Array <https://awkward-array.org/doc/main/>`_ is a library for nested, variable-sized data, including arbitrary-length lists,
+records, mixed types, and missing data, using NumPy-like idioms.
+
+.. autofunction:: graphblas.io.from_awkward
+
+.. autofunction:: graphblas.io.to_awkward
+
 Visualization
 ~~~~~~~~~~~~~
 
