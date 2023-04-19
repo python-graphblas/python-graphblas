@@ -211,7 +211,7 @@ While end-to-end analysis can be done using `python-graphblas`, users
 might find that other libraries in the Python ecosystem provide a more
 convenient high-level interface for data pre-processing and transformation
 (e.g. `pandas`, `scipy.sparse`), visualization (e.g. `networkx`, `igraph`),
-interactive exploration and analysis (e.g. `networkx`, `igraph`) or for 
+interactive exploration and analysis (e.g. `networkx`, `igraph`) or for
 algoritms that are not (yet) implemented in `graphblas-algorithms` (e.g.
 `networkx`, `igraph`, `scipy.sparse`). To facilitate communication with
 other libraries, `graphblas.io` contains multiple connectors, see the
