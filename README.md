@@ -42,6 +42,7 @@ or pip:
 $ pip install python-graphblas[default]
 ```
 This will also install the [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS) compiled C library.
+We currently support the [GraphBLAS C API 2.0 specification](https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf).
 
 ### Optional Dependencies
 
@@ -56,7 +57,7 @@ The following are not required by python-graphblas, but may be needed for certai
 ## Description
 Currently works with [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS), but the goal is to make it work with all implementations of the GraphBLAS spec.
 
-The approach taken with this library is to follow the C-API specification as closely as possible while making improvements
+The approach taken with this library is to follow the C-API 2.0 specification as closely as possible while making improvements
 allowed with the Python syntax. Because the spec always passes in the output object to be written to, we follow the same,
 which is very different from the way Python normally operates. In fact, many who are familiar with other Python data
 libraries (numpy, pandas, etc) will find it strange to not create new objects for every call.

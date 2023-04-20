@@ -112,6 +112,18 @@ This is motivated by these guidelines:
 For example, if a CVE is discovered, we won't retroactively apply the fix to previous releases.
 Instead, the fix will only be available starting with the next release.
 
+The `GraphBLAS C API specification <https://graphblas.org>`_ is expected to change slowly, but it does change.
+We aim to support the latest version of the GraphBLAS spec and of implementations.
+We will announce plans to drop support of *old* versions of the spec or major versions of implementations
+*before* we do so. We will make the announcements in the
+`release notes <https://github.com/python-graphblas/python-graphblas/releases>`_ and in our Discord channel.
+If the proposed changes will negatively affect you, please
+`let us know <https://github.com/python-graphblas/python-graphblas/issues>`_
+so we may work together towards a solution.
+
+To see which versions of SuiteSparse:GraphBLAS we support, look at the version specification
+of ``suitesparse`` under ``[projects.optional-dependencies]`` in ``pyproject.toml``.
+
 What is the relationship between python-graphblas and pygraphblas?
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
