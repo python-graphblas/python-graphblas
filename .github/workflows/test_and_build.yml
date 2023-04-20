@@ -218,10 +218,10 @@ jobs:
           else
             numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57.0rc1", ""]))')
           fi
-          if [[ ${{ matrix.os == 'windows-latest' }} == true && ( ${npver} == "=1.24" || ${numbaver} == "=0.57.0rc1" ) ]] ; then
+          if [[ ${{ matrix.os == 'windows-latest' }} == true && ( ${npver} == "=1.24" || ${numbaver} == "=0.57.0rc1"  || ! ${numbaver} ) ]] ; then
             # TODO: numba 0.57.0rc1 currently crashes sometimes on windows, so skip it for now
             npver=""
-            numbaver=""
+            numbaver="=0.56"
           fi
           fmm=fast_matrix_market${fmmver}
           awkward=awkward${akver}
