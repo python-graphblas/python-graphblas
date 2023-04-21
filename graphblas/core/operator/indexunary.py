@@ -241,10 +241,36 @@ class IndexUnaryOp(OpBase):
 
     @classmethod
     def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
-        """Register an IndexUnaryOp without registering it in the
-        ``graphblas.indexunary`` namespace.
+        """Register a IndexUnary without registering it in the ``graphblas.indexunary`` namespace.
 
         Because it is not registered in the namespace, the name is optional.
+
+        Parameters
+        ----------
+        func : FunctionType
+            The function to compile. For all current backends, this must be able
+            to be compiled with ``numba.njit``.
+        name : str, optional
+            The name of the operator. This *does not* show up as ``gb.indexunary.{name}``.
+        parameterized : bool, default False
+            When True, create a parameterized user-defined operator, which means
+            additional parameters can be "baked into" the operator when used.
+            For example, ``gb.binary.isclose`` is a parameterized BinaryOp that
+            optionally accepts ``rel_tol`` and ``abs_tol`` parameters, and it
+            can be used as: ``A.ewise_mult(B, gb.binary.isclose(rel_tol=1e-5))``.
+            When creating a parameterized user-defined operator, the ``func``
+            parameter must be a callable that *returns* a function that will
+            then get compiled.
+        is_udt : bool, default False
+            Whether the operator is intended to operate on user-defined types.
+            If True, then the function will not be automatically compiled for
+            builtin types, and it will be compiled "just in time" when used.
+            Setting ``is_udt=True`` is also helpful when the left and right
+            dtypes need to be different.
+
+        Returns
+        -------
+        return IndexUnaryOp or ParameterizedIndexUnaryOp
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
@@ -253,15 +279,47 @@ class IndexUnaryOp(OpBase):
 
     @classmethod
     def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
-        """Register an IndexUnaryOp. The name will be used to identify the IndexUnaryOp in the
-        ``graphblas.indexunary`` namespace.
+        """Register a new IndexUnaryOp and save it to ``graphblas.indexunary`` namespace.
 
         If the return type is Boolean, the function will also be registered as a SelectOp
-        with the same name.
+        (and saved to ``grablas.select`` namespace) with the same name.
 
-            >>> gb.indexunary.register_new("row_mod", lambda x, i, j, thunk: i % max(thunk, 2))
-            >>> dir(gb.indexunary)
-            [..., 'row_mod', ...]
+        Parameters
+        ----------
+        name : str
+            The name of the operator. This will show up as ``gb.indexunary.{name}``.
+            The name may contain periods, ".", which will result in nested objects
+            such as ``gb.indexunary.x.y.z`` for name ``"x.y.z"``.
+        func : FunctionType
+            The function to compile. For all current backends, this must be able
+            to be compiled with ``numba.njit``.
+        parameterized : bool, default False
+            When True, create a parameterized user-defined operator, which means
+            additional parameters can be "baked into" the operator when used.
+            For example, ``gb.binary.isclose`` is a parameterized BinaryOp that
+            optionally accepts ``rel_tol`` and ``abs_tol`` parameters, and it
+            can be used as: ``A.ewise_mult(B, gb.binary.isclose(rel_tol=1e-5))``.
+            When creating a parameterized user-defined operator, the ``func``
+            parameter must be a callable that *returns* a function that will
+            then get compiled.
+        is_udt : bool, default False
+            Whether the operator is intended to operate on user-defined types.
+            If True, then the function will not be automatically compiled for
+            builtin types, and it will be compiled "just in time" when used.
+            Setting ``is_udt=True`` is also helpful when the left and right
+            dtypes need to be different.
+        lazy : bool, default False
+            If False (the default), then the function will be automatically
+            compiled for builtin types (unless ``is_udt`` is True).
+            Compiling functions can be slow, however, so you may want to
+            delay compilation and only compile when the operator is used,
+            which is done by setting ``lazy=True``.
+
+        Examples
+        --------
+        >>> gb.indexunary.register_new("row_mod", lambda x, i, j, thunk: i % max(thunk, 2))
+        >>> dir(gb.indexunary)
+        [..., 'row_mod', ...]
         """
         cls._check_supports_udf("register_new")
         module, funcname = cls._remove_nesting(name)

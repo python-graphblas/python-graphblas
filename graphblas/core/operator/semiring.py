@@ -277,16 +277,16 @@ class Semiring(OpBase):
 
         Parameters
         ----------
-        monoid : Monoid
-            Builtin or registered monoid
-        binaryop : BinaryOp
-            Builtin or registered binary operator
+        monoid : Monoid or ParameterizedMonoid
+            The monoid of the semiring (like "plus" in the default "plus_times" semiring).
+        binaryop : BinaryOp or ParameterizedBinaryOp
+            The binaryop of the semiring (like "times" in the default "plus_times" semiring).
         name : str, optional
-            Name associated with the semiring
+            The name of the operator. This *does not* show up as ``gb.semiring.{name}``.
 
         Returns
         -------
-        Function handle
+        Semiring or ParameterizedSemiring
         """
         if type(monoid) is ParameterizedMonoid or type(binaryop) is ParameterizedBinaryOp:
             return ParameterizedSemiring(name, monoid, binaryop, anonymous=True)
@@ -294,12 +294,30 @@ class Semiring(OpBase):
 
     @classmethod
     def register_new(cls, name, monoid, binaryop, *, lazy=False):
-        """Register a Semiring. The name will be used to identify the Semiring in the
-        ``graphblas.semiring`` namespace.
+        """Register a new Semiring and save it to ``graphblas.semiring`` namespace.
 
-            >>> gb.core.operator.Semiring.register_new("max_max", gb.monoid.max, gb.binary.max)
-            >>> dir(gb.semiring)
-            [..., 'max_max', ...]
+        Parameters
+        ----------
+        name : str
+            The name of the operator. This will show up as ``gb.semiring.{name}``.
+            The name may contain periods, ".", which will result in nested objects
+            such as ``gb.semiring.x.y.z`` for name ``"x.y.z"``.
+        monoid : Monoid or ParameterizedMonoid
+            The monoid of the semiring (like "plus" in the default "plus_times" semiring).
+        binaryop : BinaryOp or ParameterizedBinaryOp
+            The binaryop of the semiring (like "times" in the default "plus_times" semiring).
+        lazy : bool, default False
+            If False (the default), then the function will be automatically
+            compiled for builtin types (unless ``is_udt`` is True).
+            Compiling functions can be slow, however, so you may want to
+            delay compilation and only compile when the operator is used,
+            which is done by setting ``lazy=True``.
+
+        Examples
+        --------
+        >>> gb.core.operator.Semiring.register_new("max_max", gb.monoid.max, gb.binary.max)
+        >>> dir(gb.semiring)
+        [..., 'max_max', ...]
         """
         module, funcname = cls._remove_nesting(name)
         if lazy:
