@@ -320,6 +320,8 @@ ignore = [
     "RET504",  # Unnecessary variable assignment before `return` statement
     "S110",  # `try`-`except`-`pass` detected, consider logging the exception (Note: good advice, but we don't log)
     "S112",  # `try`-`except`-`continue` detected, consider logging the exception (Note: good advice, but we don't log)
+    "S603",  # `subprocess` call: check for execution of untrusted input (Note: not important for us)
+    "S607",  # Starting a process with a partial executable path (Note: not important for us)
     "SIM102",  # Use a single `if` statement instead of nested `if` statements (Note: often necessary)
     "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
     "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)

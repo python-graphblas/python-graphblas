@@ -282,6 +282,7 @@ class UnaryOp(OpBase):
         func : FunctionType
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
+            ``func`` takes one input parameters of any dtype and returns any dtype.
         name : str, optional
             The name of the operator. This *does not* show up as ``gb.unary.{name}``.
         parameterized : bool, default False
@@ -320,6 +321,7 @@ class UnaryOp(OpBase):
         func : FunctionType
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
+            ``func`` takes one input parameters of any dtype and returns any dtype.
         parameterized : bool, default False
             When True, create a parameterized user-defined operator, which means
             additional parameters can be "baked into" the operator when used.

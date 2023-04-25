@@ -275,7 +275,8 @@ class Monoid(OpBase):
         Parameters
         ----------
         binaryop: BinaryOp or ParameterizedBinaryOp
-            The binary operator of the monoid.
+            The binary operator of the monoid, which should be able to use the same
+            dtype for both inputs and the output.
         identity: scalar or Mapping
             The identity of the monoid such that ``op(x, identity) == x`` for any x.
             ``identity`` may also be a mapping from dtype to scalar.
@@ -307,7 +308,8 @@ class Monoid(OpBase):
             The name may contain periods, ".", which will result in nested objects
             such as ``gb.monoid.x.y.z`` for name ``"x.y.z"``.
         binaryop: BinaryOp or ParameterizedBinaryOp
-            The binary operator of the monoid.
+            The binary operator of the monoid, which should be able to use the same
+            dtype for both inputs and the output.
         identity: scalar or Mapping
             The identity of the monoid such that ``op(x, identity) == x`` for any x.
             ``identity`` may also be a mapping from dtype to scalar.

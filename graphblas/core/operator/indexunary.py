@@ -250,6 +250,12 @@ class IndexUnaryOp(OpBase):
         func : FunctionType
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
+            ``func`` takes four input parameters--any dtype, int64, int64,
+             any dtype and returns any dtype. The first argument (any dtype) is
+            the value of the input Matrix or Vector, the second argument (int64)
+            is the row index of the Matrix or the index of the Vector, the third
+            argument (int64) is the column index of the Matrix or 0 for a Vector,
+            and the fourth argument (any dtype) is the value of the input Scalar.
         name : str, optional
             The name of the operator. This *does not* show up as ``gb.indexunary.{name}``.
         parameterized : bool, default False
@@ -293,6 +299,12 @@ class IndexUnaryOp(OpBase):
         func : FunctionType
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
+            ``func`` takes four input parameters--any dtype, int64, int64,
+             any dtype and returns any dtype. The first argument (any dtype) is
+            the value of the input Matrix or Vector, the second argument (int64)
+            is the row index of the Matrix or the index of the Vector, the third
+            argument (int64) is the column index of the Matrix or 0 for a Vector,
+            and the fourth argument (any dtype) is the value of the input Scalar.
         parameterized : bool, default False
             When True, create a parameterized user-defined operator, which means
             additional parameters can be "baked into" the operator when used.

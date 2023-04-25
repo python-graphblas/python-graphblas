@@ -8,7 +8,7 @@ Will be removed in version 2023.11.0 or later.
 """
 import warnings
 
-from .operator.agg import *
+from .operator.agg import *  # pylint: disable=wildcard-import,unused-wildcard-import
 
 warnings.warn(
     "graphblas.core.agg namespace is deprecated; please use graphblas.core.operator.agg instead.",
