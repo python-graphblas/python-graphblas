@@ -1,6 +1,6 @@
 # All items are dynamically added by classes in operator.py
 # This module acts as a container of BinaryOp instances
-from ..core import _supports_udfs  # isort:skip
+from ..core import _supports_udfs
 
 _delayed = {}
 _delayed_commutes_to = {

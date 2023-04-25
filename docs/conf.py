@@ -25,7 +25,7 @@ author = "Anaconda, Inc"
 # The full version, including alpha/beta/rc tags
 # release = "1.3.2"
 # See: https://github.com/pypa/setuptools_scm/#usage-from-sphinx
-from importlib.metadata import version  # noqa: E402 isort: skip
+from importlib.metadata import version  # noqa: E402 isort:skip
 
 release = version("python-graphblas")
 del version
