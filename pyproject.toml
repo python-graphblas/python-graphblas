@@ -139,6 +139,7 @@ packages = [
     "graphblas.core.operator",
     "graphblas.core.ss",
     "graphblas.indexunary",
+    "graphblas.io",
     "graphblas.monoid",
     "graphblas.op",
     "graphblas.semiring",
