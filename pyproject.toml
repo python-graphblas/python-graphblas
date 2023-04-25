@@ -350,6 +350,7 @@ ignore = [
 "graphblas/core/operator/base.py" = ["S102"]  # exec is used for UDF
 "graphblas/core/ss/matrix.py" = ["NPY002"]  # numba doesn't support rng generator yet
 "graphblas/core/ss/vector.py" = ["NPY002"]  # numba doesn't support rng generator yet
+"graphblas/core/utils.py" = ["PLE0302"]  # `__set__` is used as a property
 "graphblas/ss/_core.py" = ["N999"]  # We want _core.py to be underscopre
 # Allow useless expressions, assert, pickle, RNG, print, no docstring, and yoda in tests
 "graphblas/tests/*py" = ["B018", "S101", "S301", "S311", "T201", "D103", "D100", "SIM300"]
@@ -358,6 +359,7 @@ ignore = [
 "scripts/*.py" = ["INP001"]  # Not a package
 "scripts/create_pickle.py" = ["F403", "F405"]  # Allow `from foo import *`
 "docs/*.py" = ["INP001"]  # Not a package
+
 
 [tool.ruff.flake8-builtins]
 builtins-ignorelist = ["copyright", "format", "min", "max"]
