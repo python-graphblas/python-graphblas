@@ -133,7 +133,7 @@ class SelectOp(OpBase):
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
             ``func`` takes four input parameters--any dtype, int64, int64,
-             any dtype and returns boolean. The first argument (any dtype) is
+            any dtype and returns boolean. The first argument (any dtype) is
             the value of the input Matrix or Vector, the second argument (int64)
             is the row index of the Matrix or the index of the Vector, the third
             argument (int64) is the column index of the Matrix or 0 for a Vector,
@@ -183,7 +183,7 @@ class SelectOp(OpBase):
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
             ``func`` takes four input parameters--any dtype, int64, int64,
-             any dtype and returns boolean. The first argument (any dtype) is
+            any dtype and returns boolean. The first argument (any dtype) is
             the value of the input Matrix or Vector, the second argument (int64)
             is the row index of the Matrix or the index of the Vector, the third
             argument (int64) is the column index of the Matrix or 0 for a Vector,
