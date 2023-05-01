@@ -121,7 +121,7 @@ default = [
     "python-graphblas[suitesparse,pandas,scipy]",
     "python-graphblas[numba]; python_version<'3.11'",  # make optional where numba is not supported
 ]
-complete = [
+all = [
     "python-graphblas[default,io,viz,test]",
     "python-graphblas[datashade]; python_version<'3.11'",  # make optional, b/c datashade needs numba
 ]
