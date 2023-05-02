@@ -210,18 +210,12 @@ jobs:
           else
             psgver=""
           fi
-          # TODO: drop 0.57.0rc1 and use 0.57 once numba 0.57 is properly released
           if [[ ${npver} == "=1.24" || ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.57.0rc1", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.57", ""]))')
           elif [[ ${npver} == "=1.21" ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.55", "=0.56", "=0.57.0rc1", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.55", "=0.56", "=0.57", ""]))')
           else
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57.0rc1", ""]))')
-          fi
-          if [[ ${{ matrix.os == 'windows-latest' }} == true && ( ${npver} == "=1.24" || ${numbaver} == "=0.57.0rc1" ) ]] ; then
-            # TODO: numba 0.57.0rc1 currently crashes sometimes on windows, so skip it for now
-            npver=""
-            numbaver=""
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57", ""]))')
           fi
           fmm=fast_matrix_market${fmmver}
           awkward=awkward${akver}
@@ -254,7 +248,7 @@ jobs:
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
-          # TODO: remove `-c numba` when numba 0.57 is properly released
+          # TODO: remove `-c numba` when numba 0.57 is properly released on conda-forge
           $(command -v mamba || command -v conda) install -c numba packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${fmm} ${psg} \
