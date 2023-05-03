@@ -630,6 +630,34 @@ class BinaryOp(OpBase):
         """Register a BinaryOp without registering it in the ``graphblas.binary`` namespace.
 
         Because it is not registered in the namespace, the name is optional.
+
+        Parameters
+        ----------
+        func : FunctionType
+            The function to compile. For all current backends, this must be able
+            to be compiled with ``numba.njit``.
+            ``func`` takes two input parameters of any dtype and returns any dtype.
+        name : str, optional
+            The name of the operator. This *does not* show up as ``gb.binary.{name}``.
+        parameterized : bool, default False
+            When True, create a parameterized user-defined operator, which means
+            additional parameters can be "baked into" the operator when used.
+            For example, ``gb.binary.isclose`` is a parameterized function that
+            optionally accepts ``rel_tol`` and ``abs_tol`` parameters, and it
+            can be used as: ``A.ewise_mult(B, gb.binary.isclose(rel_tol=1e-5))``.
+            When creating a parameterized user-defined operator, the ``func``
+            parameter must be a callable that *returns* a function that will
+            then get compiled.
+        is_udt : bool, default False
+            Whether the operator is intended to operate on user-defined types.
+            If True, then the function will not be automatically compiled for
+            builtin types, and it will be compiled "just in time" when used.
+            Setting ``is_udt=True`` is also helpful when the left and right
+            dtypes need to be different.
+
+        Returns
+        -------
+        BinaryOp or ParameterizedBinaryOp
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
@@ -638,19 +666,60 @@ class BinaryOp(OpBase):
 
     @classmethod
     def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
-        """Register a BinaryOp. The name will be used to identify the BinaryOp in the
-        ``graphblas.binary`` namespace.
+        """Register a new BinaryOp and save it to ``graphblas.binary`` namespace.
 
-            >>> def max_zero(x, y):
-                    r = 0
-                    if x > r:
-                        r = x
-                    if y > r:
-                        r = y
-                    return r
-            >>> gb.core.operator.BinaryOp.register_new("max_zero", max_zero)
-            >>> dir(gb.binary)
-            [..., 'max_zero', ...]
+        Parameters
+        ----------
+        name : str
+            The name of the operator. This will show up as ``gb.binary.{name}``.
+            The name may contain periods, ".", which will result in nested objects
+            such as ``gb.binary.x.y.z`` for name ``"x.y.z"``.
+        func : FunctionType
+            The function to compile. For all current backends, this must be able
+            to be compiled with ``numba.njit``.
+            ``func`` takes two input parameters of any dtype and returns any dtype.
+        parameterized : bool, default False
+            When True, create a parameterized user-defined operator, which means
+            additional parameters can be "baked into" the operator when used.
+            For example, ``gb.binary.isclose`` is a parameterized function that
+            optionally accepts ``rel_tol`` and ``abs_tol`` parameters, and it
+            can be used as: ``A.ewise_mult(B, gb.binary.isclose(rel_tol=1e-5))``.
+            When creating a parameterized user-defined operator, the ``func``
+            parameter must be a callable that *returns* a function that will
+            then get compiled. See the ``user_isclose`` example below.
+        is_udt : bool, default False
+            Whether the operator is intended to operate on user-defined types.
+            If True, then the function will not be automatically compiled for
+            builtin types, and it will be compiled "just in time" when used.
+            Setting ``is_udt=True`` is also helpful when the left and right
+            dtypes need to be different.
+        lazy : bool, default False
+            If False (the default), then the function will be automatically
+            compiled for builtin types (unless ``is_udt`` is True).
+            Compiling functions can be slow, however, so you may want to
+            delay compilation and only compile when the operator is used,
+            which is done by setting ``lazy=True``.
+
+        Examples
+        --------
+        >>> def max_zero(x, y):
+                r = 0
+                if x > r:
+                    r = x
+                if y > r:
+                    r = y
+                return r
+        >>> gb.core.operator.BinaryOp.register_new("max_zero", max_zero)
+        >>> dir(gb.binary)
+        [..., 'max_zero', ...]
+
+        This is how ``gb.binary.isclose`` is defined:
+
+        >>> def user_isclose(rel_tol=1e-7, abs_tol=0.0):
+        >>>     def inner(x, y):
+        >>>         return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+        >>>     return inner
+        >>> gb.binary.register_new("user_isclose", user_isclose, parameterized=True)
         """
         cls._check_supports_udf("register_new")
         module, funcname = cls._remove_nesting(name)

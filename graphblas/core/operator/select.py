@@ -125,6 +125,40 @@ class SelectOp(OpBase):
         """Register a SelectOp without registering it in the ``graphblas.select`` namespace.
 
         Because it is not registered in the namespace, the name is optional.
+        The return type must be Boolean.
+
+        Parameters
+        ----------
+        func : FunctionType
+            The function to compile. For all current backends, this must be able
+            to be compiled with ``numba.njit``.
+            ``func`` takes four input parameters--any dtype, int64, int64,
+            any dtype and returns boolean. The first argument (any dtype) is
+            the value of the input Matrix or Vector, the second argument (int64)
+            is the row index of the Matrix or the index of the Vector, the third
+            argument (int64) is the column index of the Matrix or 0 for a Vector,
+            and the fourth argument (any dtype) is the value of the input Scalar.
+        name : str, optional
+            The name of the operator. This *does not* show up as ``gb.select.{name}``.
+        parameterized : bool, default False
+            When True, create a parameterized user-defined operator, which means
+            additional parameters can be "baked into" the operator when used.
+            For example, ``gb.binary.isclose`` is a parameterized BinaryOp that
+            optionally accepts ``rel_tol`` and ``abs_tol`` parameters, and it
+            can be used as: ``A.ewise_mult(B, gb.binary.isclose(rel_tol=1e-5))``.
+            When creating a parameterized user-defined operator, the ``func``
+            parameter must be a callable that *returns* a function that will
+            then get compiled.
+        is_udt : bool, default False
+            Whether the operator is intended to operate on user-defined types.
+            If True, then the function will not be automatically compiled for
+            builtin types, and it will be compiled "just in time" when used.
+            Setting ``is_udt=True`` is also helpful when the left and right
+            dtypes need to be different.
+
+        Returns
+        -------
+        SelectOp or ParameterizedSelectOp
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
@@ -134,14 +168,53 @@ class SelectOp(OpBase):
 
     @classmethod
     def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
-        """Register a SelectOp. The name will be used to identify the SelectOp in the
-        ``graphblas.select`` namespace.
+        """Register a new SelectOp and save it to ``graphblas.select`` namespace.
 
         The function will also be registered as a IndexUnaryOp with the same name.
+        The return type must be Boolean.
 
-            >>> gb.select.register_new("upper_left_triangle", lambda x, i, j, thunk: i + j <= thunk)
-            >>> dir(gb.select)
-            [..., 'upper_left_triangle', ...]
+        Parameters
+        ----------
+        name : str
+            The name of the operator. This will show up as ``gb.select.{name}``.
+            The name may contain periods, ".", which will result in nested objects
+            such as ``gb.select.x.y.z`` for name ``"x.y.z"``.
+        func : FunctionType
+            The function to compile. For all current backends, this must be able
+            to be compiled with ``numba.njit``.
+            ``func`` takes four input parameters--any dtype, int64, int64,
+            any dtype and returns boolean. The first argument (any dtype) is
+            the value of the input Matrix or Vector, the second argument (int64)
+            is the row index of the Matrix or the index of the Vector, the third
+            argument (int64) is the column index of the Matrix or 0 for a Vector,
+            and the fourth argument (any dtype) is the value of the input Scalar.
+        parameterized : bool, default False
+            When True, create a parameterized user-defined operator, which means
+            additional parameters can be "baked into" the operator when used.
+            For example, ``gb.binary.isclose`` is a parameterized BinaryOp that
+            optionally accepts ``rel_tol`` and ``abs_tol`` parameters, and it
+            can be used as: ``A.ewise_mult(B, gb.binary.isclose(rel_tol=1e-5))``.
+            When creating a parameterized user-defined operator, the ``func``
+            parameter must be a callable that *returns* a function that will
+            then get compiled.
+        is_udt : bool, default False
+            Whether the operator is intended to operate on user-defined types.
+            If True, then the function will not be automatically compiled for
+            builtin types, and it will be compiled "just in time" when used.
+            Setting ``is_udt=True`` is also helpful when the left and right
+            dtypes need to be different.
+        lazy : bool, default False
+            If False (the default), then the function will be automatically
+            compiled for builtin types (unless ``is_udt`` is True).
+            Compiling functions can be slow, however, so you may want to
+            delay compilation and only compile when the operator is used,
+            which is done by setting ``lazy=True``.
+
+        Examples
+        --------
+        >>> gb.select.register_new("upper_left_triangle", lambda x, i, j, thunk: i + j <= thunk)
+        >>> dir(gb.select)
+        [..., 'upper_left_triangle', ...]
         """
         cls._check_supports_udf("register_new")
         iop = IndexUnaryOp.register_new(

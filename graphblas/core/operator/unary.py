@@ -276,6 +276,32 @@ class UnaryOp(OpBase):
         """Register a UnaryOp without registering it in the ``graphblas.unary`` namespace.
 
         Because it is not registered in the namespace, the name is optional.
+
+        Parameters
+        ----------
+        func : FunctionType
+            The function to compile. For all current backends, this must be able
+            to be compiled with ``numba.njit``.
+            ``func`` takes one input parameters of any dtype and returns any dtype.
+        name : str, optional
+            The name of the operator. This *does not* show up as ``gb.unary.{name}``.
+        parameterized : bool, default False
+            When True, create a parameterized user-defined operator, which means
+            additional parameters can be "baked into" the operator when used.
+            For example, ``gb.binary.isclose`` is a parameterized function that
+            optionally accepts ``rel_tol`` and ``abs_tol`` parameters, and it
+            can be used as: ``A.ewise_mult(B, gb.binary.isclose(rel_tol=1e-5))``.
+            When creating a parameterized user-defined operator, the ``func``
+            parameter must be a callable that *returns* a function that will
+            then get compiled. See the ``user_isclose`` example below.
+        is_udt : bool, default False
+            Whether the operator is intended to operate on user-defined types.
+            If True, then the function will not be automatically compiled for
+            builtin types, and it will be compiled "just in time" when used.
+
+        Returns
+        -------
+        UnaryOp or ParameterizedUnaryOp
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
@@ -284,12 +310,43 @@ class UnaryOp(OpBase):
 
     @classmethod
     def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
-        """Register a UnaryOp. The name will be used to identify the UnaryOp in the
-        ``graphblas.unary`` namespace.
+        """Register a new UnaryOp and save it to ``graphblas.unary`` namespace.
 
-            >>> gb.core.operator.UnaryOp.register_new("plus_one", lambda x: x + 1)
-            >>> dir(gb.unary)
-            [..., 'plus_one', ...]
+        Parameters
+        ----------
+        name : str
+            The name of the operator. This will show up as ``gb.unary.{name}``.
+            The name may contain periods, ".", which will result in nested objects
+            such as ``gb.unary.x.y.z`` for name ``"x.y.z"``.
+        func : FunctionType
+            The function to compile. For all current backends, this must be able
+            to be compiled with ``numba.njit``.
+            ``func`` takes one input parameters of any dtype and returns any dtype.
+        parameterized : bool, default False
+            When True, create a parameterized user-defined operator, which means
+            additional parameters can be "baked into" the operator when used.
+            For example, ``gb.binary.isclose`` is a parameterized function that
+            optionally accepts ``rel_tol`` and ``abs_tol`` parameters, and it
+            can be used as: ``A.ewise_mult(B, gb.binary.isclose(rel_tol=1e-5))``.
+            When creating a parameterized user-defined operator, the ``func``
+            parameter must be a callable that *returns* a function that will
+            then get compiled. See the ``user_isclose`` example below.
+        is_udt : bool, default False
+            Whether the operator is intended to operate on user-defined types.
+            If True, then the function will not be automatically compiled for
+            builtin types, and it will be compiled "just in time" when used.
+        lazy : bool, default False
+            If False (the default), then the function will be automatically
+            compiled for builtin types (unless ``is_udt`` is True).
+            Compiling functions can be slow, however, so you may want to
+            delay compilation and only compile when the operator is used,
+            which is done by setting ``lazy=True``.
+
+        Examples
+        --------
+        >>> gb.core.operator.UnaryOp.register_new("plus_one", lambda x: x + 1)
+        >>> dir(gb.unary)
+        [..., 'plus_one', ...]
         """
         cls._check_supports_udf("register_new")
         module, funcname = cls._remove_nesting(name)

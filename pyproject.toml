@@ -64,7 +64,7 @@ dependencies = [
     # These won't be installed by default after 2024.3.0
     # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
     "suitesparse-graphblas >=7.4.0.0, <7.5",
-    "numba >=0.55; python_version<'3.11'",  # make optional where numba is not supported
+    "numba >=0.55; python_version<'3.12'",  # make optional where numba is not supported
 ]
 
 [project.urls]
@@ -97,9 +97,9 @@ repr = [
 ]
 io = [
     "python-graphblas[networkx,scipy]",
-    "python-graphblas[numba]; python_version<'3.11'",
+    "python-graphblas[numba]; python_version<'3.12'",
     "awkward >=1.9",
-    "sparse >=0.13; python_version<'3.11'",  # make optional, b/c sparse needs numba
+    "sparse >=0.13; python_version<'3.12'",  # make optional, b/c sparse needs numba
     "fast-matrix-market >=1.4.5",
 ]
 viz = [
@@ -119,11 +119,11 @@ test = [
 ]
 default = [
     "python-graphblas[suitesparse,pandas,scipy]",
-    "python-graphblas[numba]; python_version<'3.11'",  # make optional where numba is not supported
+    "python-graphblas[numba]; python_version<'3.12'",  # make optional where numba is not supported
 ]
-complete = [
+all = [
     "python-graphblas[default,io,viz,test]",
-    "python-graphblas[datashade]; python_version<'3.11'",  # make optional, b/c datashade needs numba
+    "python-graphblas[datashade]; python_version<'3.12'",  # make optional, b/c datashade needs numba
 ]
 
 [tool.setuptools]
@@ -321,6 +321,8 @@ ignore = [
     "RET504",  # Unnecessary variable assignment before `return` statement
     "S110",  # `try`-`except`-`pass` detected, consider logging the exception (Note: good advice, but we don't log)
     "S112",  # `try`-`except`-`continue` detected, consider logging the exception (Note: good advice, but we don't log)
+    "S603",  # `subprocess` call: check for execution of untrusted input (Note: not important for us)
+    "S607",  # Starting a process with a partial executable path (Note: not important for us)
     "SIM102",  # Use a single `if` statement instead of nested `if` statements (Note: often necessary)
     "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
     "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
@@ -349,6 +351,7 @@ ignore = [
 "graphblas/core/operator/base.py" = ["S102"]  # exec is used for UDF
 "graphblas/core/ss/matrix.py" = ["NPY002"]  # numba doesn't support rng generator yet
 "graphblas/core/ss/vector.py" = ["NPY002"]  # numba doesn't support rng generator yet
+"graphblas/core/utils.py" = ["PLE0302"]  # `__set__` is used as a property
 "graphblas/ss/_core.py" = ["N999"]  # We want _core.py to be underscopre
 # Allow useless expressions, assert, pickle, RNG, print, no docstring, and yoda in tests
 "graphblas/tests/*py" = ["B018", "S101", "S301", "S311", "T201", "D103", "D100", "SIM300"]
@@ -357,6 +360,7 @@ ignore = [
 "scripts/*.py" = ["INP001"]  # Not a package
 "scripts/create_pickle.py" = ["F403", "F405"]  # Allow `from foo import *`
 "docs/*.py" = ["INP001"]  # Not a package
+
 
 [tool.ruff.flake8-builtins]
 builtins-ignorelist = ["copyright", "format", "min", "max"]
