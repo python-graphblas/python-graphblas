@@ -7,6 +7,3 @@ include LICENSE
 include MANIFEST.in
 include graphblas/graphblas.yaml
 include graphblas/tests/pickle*.pkl
-include docs/_static/img/logo-name-medium.svg
-include docs/_static/img/draw-example.png
-include docs/_static/img/repr-matrix.png
