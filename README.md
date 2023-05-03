@@ -1,4 +1,4 @@
-![Python-graphblas](docs/_static/img/logo-name-medium.svg)
+![Python-graphblas](https://raw.githubusercontent.com/python-graphblas/python-graphblas/main/docs/_static/img/logo-name-medium.svg)
 
 [![conda-forge](https://img.shields.io/conda/vn/conda-forge/python-graphblas.svg)](https://anaconda.org/conda-forge/python-graphblas)
 [![pypi](https://img.shields.io/pypi/v/python-graphblas.svg)](https://pypi.python.org/pypi/python-graphblas/)
@@ -28,8 +28,8 @@ For algorithms, see
 - **Chat via Discord:** [https://discord.com/invite/vur45CbwMz](https://discord.com/invite/vur45CbwMz) in the [#graphblas channel](https://discord.com/channels/786703927705862175/1024732940233605190)
 
 <p float="left">
-  <img src="docs/_static/img/draw-example.png" width="231" align="top" alt="Directed graph", title="Directed graph"/>
-  <img src="docs/_static/img/repr-matrix.png" width="231" align="top" alt="Adjacency matrix" title="Adjacency matrix"/>
+  <img src="https://raw.githubusercontent.com/python-graphblas/python-graphblas/main/docs/_static/img/draw-example.png" width="231" align="top" alt="Directed graph", title="Directed graph"/>
+  <img src="https://raw.githubusercontent.com/python-graphblas/python-graphblas/main/docs/_static/img/repr-matrix.png" width="231" align="top" alt="Adjacency matrix" title="Adjacency matrix"/>
 </p>
 
 ## Install
