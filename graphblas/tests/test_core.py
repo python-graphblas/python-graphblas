@@ -83,7 +83,10 @@ def test_packages():
     if not pyproject.exists():  # pragma: no cover (safety)
         pytest.skip("Did not find pyproject.toml")
     with pyproject.open("rb") as f:
-        pkgs2 = sorted(tomli.load(f)["tool"]["setuptools"]["packages"])
+        cfg = tomli.load(f)
+    if cfg.get("project", {}).get("name") != "python-graphblas":  # pragma: no cover (safety)
+        pytest.skip("Did not find correct pyproject.toml")
+    pkgs2 = sorted(cfg["tool"]["setuptools"]["packages"])
     assert (
         pkgs == pkgs2
     ), "If there are extra items on the left, add them to pyproject.toml:tool.setuptools.packages"
