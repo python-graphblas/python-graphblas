@@ -225,7 +225,7 @@ def test_unaryop_udf():
         UnaryOp.register_new("bad", object())
     assert not hasattr(unary, "bad")
     with pytest.raises(UdfParseError, match="Unable to parse function using Numba"):
-        UnaryOp.register_new("bad", lambda x: v)
+        UnaryOp.register_new("bad", lambda x: v)  # pragma: no branch (numba)
 
 
 @pytest.mark.skipif("not supports_udfs")
