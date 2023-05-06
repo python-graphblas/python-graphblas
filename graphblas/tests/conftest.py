@@ -18,26 +18,31 @@ pypy = platform.python_implementation() == "PyPy"
 
 def pytest_configure(config):
     rng = np.random.default_rng()
-    randomly = config.getoption("--randomly", False)
+    randomly = config.getoption("--randomly", None)
+    if randomly is None:  # pragma: no cover
+        options_unavailable = True
+        randomly = True
+        config.addinivalue_line("markers", "slow: Skipped unless --runslow passed")
+    else:
+        options_unavailable = False
     backend = config.getoption("--backend", None)
     if backend is None:
         if randomly:
             backend = "suitesparse" if rng.random() < 0.5 else "suitesparse-vanilla"
         else:
             backend = "suitesparse"
-    blocking = config.getoption("--blocking", True)
+    blocking = config.getoption("--blocking", None)
     if blocking is None:  # pragma: no branch
         blocking = rng.random() < 0.5 if randomly else True
     record = config.getoption("--record", False)
     if record is None:  # pragma: no branch
         record = rng.random() < 0.5 if randomly else False
-    mapnumpy = config.getoption("--mapnumpy", False)
+    mapnumpy = config.getoption("--mapnumpy", None)
     if mapnumpy is None:
         mapnumpy = rng.random() < 0.5 if randomly else False
-    runslow = config.getoption("--runslow", False)
+    runslow = config.getoption("--runslow", None)
     if runslow is None:
-        # Add a small amount of randomization to be safer
-        runslow = rng.random() < 0.05 if randomly else False
+        runslow = options_unavailable
     config.runslow = runslow
 
     gb.config.set(autocompute=False, mapnumpy=mapnumpy)
