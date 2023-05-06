@@ -858,7 +858,7 @@ def test_indexunary_udf(v):
     delattr(indexunary, "iin")
     delattr(select, "iin")
     with pytest.raises(UdfParseError, match="Unable to parse function using Numba"):
-        indexunary.register_new("bad", lambda x, row, col, thunk: result) # pragma: no branch
+        indexunary.register_new("bad", lambda x, row, col, thunk: result)  # pragma: no branch
 
 
 def test_reduce(v):
