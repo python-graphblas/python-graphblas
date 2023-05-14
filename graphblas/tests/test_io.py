@@ -167,7 +167,11 @@ def test_matrix_to_from_networkx():
 def test_mmread_mmwrite(engine):
     if engine == "fmm" and fmm is None:  # pragma: no cover (import)
         pytest.skip("needs fast_matrix_market")
-    from scipy.io.tests import test_mmio
+    try:
+        from scipy.io.tests import test_mmio
+    except ImportError:
+        # Test files are mysteriously missing from some conda-forge builds
+        pytest.skip("scipy.io.tests.test_mmio unavailable :(")
 
     p31 = 2**31
     p63 = 2**63
