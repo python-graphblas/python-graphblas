@@ -1,6 +1,6 @@
 """Define functions to use as property methods on expressions.
 
-These will automatically compute the value and avoid the need for `.new()`.
+These will automatically compute the value and avoid the need for ``.new()``.
 
 To automatically create the functions, run:
 

@@ -355,7 +355,7 @@ class Matrix(BaseType):
         Returns
         -------
         bool
-            Whether all values of the Matrix are close to the values in `other`.
+            Whether all values of the Matrix are close to the values in ``other``.
         """
         other = self._expect_type(
             other, (Matrix, TransposedMatrix), within="isclose", argname="other"
@@ -448,19 +448,19 @@ class Matrix(BaseType):
         corresponding to the COO format of the Matrix.
 
         .. deprecated:: 2022.11.0
-            `Matrix.to_values` will be removed in a future release.
-            Use `Matrix.to_coo` instead. Will be removed in version 2023.9.0 or later
+            ``Matrix.to_values`` will be removed in a future release.
+            Use ``Matrix.to_coo`` instead. Will be removed in version 2023.9.0 or later
 
         Parameters
         ----------
         dtype :
             Requested dtype for the output values array.
         rows : bool, default=True
-            Whether to return rows; will return `None` for rows if `False`
+            Whether to return rows; will return ``None`` for rows if ``False``
         columns  :bool, default=True
-            Whether to return columns; will return `None` for columns if `False`
+            Whether to return columns; will return ``None`` for columns if ``False``
         values : bool, default=True
-            Whether to return values; will return `None` for values if `False`
+            Whether to return values; will return ``None`` for values if ``False``
         sort : bool, default=True
             Whether to require sorted indices.
             If internally stored rowwise, the sorting will be first by rows, then by column.
@@ -488,11 +488,11 @@ class Matrix(BaseType):
         dtype :
             Requested dtype for the output values array.
         rows : bool, default=True
-            Whether to return rows; will return `None` for rows if `False`
+            Whether to return rows; will return ``None`` for rows if ``False``
         columns  :bool, default=True
-            Whether to return columns; will return `None` for columns if `False`
+            Whether to return columns; will return ``None`` for columns if ``False``
         values : bool, default=True
-            Whether to return values; will return `None` for values if `False`
+            Whether to return values; will return ``None`` for values if ``False``
         sort : bool, default=True
             Whether to require sorted indices.
             If internally stored rowwise, the sorting will be first by rows, then by column.
@@ -559,7 +559,7 @@ class Matrix(BaseType):
         dtype :
             Requested dtype for the output values array.
         values : bool, default=True
-            Whether to return values; will return `None` for values if `False`
+            Whether to return values; will return ``None`` for values if ``False``
         sort : bool, default=True
             Whether to require sorted indices.
             If internally stored rowwise, the sorting will be first by rows, then by column.
@@ -585,7 +585,7 @@ class Matrix(BaseType):
         The typical use case is to create a new Matrix and insert values
         at the same time using :meth:`from_coo`.
 
-        All the arguments are used identically in :meth:`from_coo`, except for `clear`, which
+        All the arguments are used identically in :meth:`from_coo`, except for ``clear``, which
         indicates whether to clear the Matrix prior to adding the new values.
         """
         # TODO: accept `dtype` keyword to match the dtype of `values`?
@@ -781,8 +781,8 @@ class Matrix(BaseType):
         """Create a new Matrix from row and column indices and values.
 
         .. deprecated:: 2022.11.0
-            `Matrix.from_values` will be removed in a future release.
-            Use `Matrix.from_coo` instead. Will be removed in version 2023.9.0 or later
+            ``Matrix.from_values`` will be removed in a future release.
+            Use ``Matrix.from_coo`` instead. Will be removed in version 2023.9.0 or later
 
         Parameters
         ----------
@@ -1086,7 +1086,7 @@ class Matrix(BaseType):
         Parameters
         ----------
         indptr : list or np.ndarray
-            Pointers for each row into col_indices and values; `indptr.size == nrows + 1`.
+            Pointers for each row into col_indices and values; ``indptr.size == nrows + 1``.
         col_indices : list or np.ndarray
             Column indices.
         values : list or np.ndarray or scalar, default 1.0
@@ -1133,7 +1133,7 @@ class Matrix(BaseType):
         Parameters
         ----------
         indptr : list or np.ndarray
-            Pointers for each column into row_indices and values; `indptr.size == ncols + 1`.
+            Pointers for each column into row_indices and values; ``indptr.size == ncols + 1``.
         col_indices : list or np.ndarray
             Column indices.
         values : list or np.ndarray or scalar, default 1.0

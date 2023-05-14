@@ -57,9 +57,9 @@ def _resolve_expr(expr, callname, opname):
 
 
 def _match_expr(parent, expr):
-    """Match expressions to rewrite `A.select(A < 5)` into select expression.
+    """Match expressions to rewrite ``A.select(A < 5)`` into select expression.
 
-    The argument must match the parent, so this _won't_ be rewritten: `A.select(B < 5)`
+    The argument must match the parent, so this _won't_ be rewritten: ``A.select(B < 5)``
     """
     args = expr.args
     op = expr.op
@@ -83,7 +83,7 @@ def value(expr):
     Example usage:
     >>> gb.select.value(A > 0)
 
-    The example will dispatch to `gb.select.valuegt(A, 0)`
+    The example will dispatch to ``gb.select.valuegt(A, 0)``
     while being nicer to read.
     """
     return _resolve_expr(expr, "value", "value")
@@ -97,7 +97,7 @@ def row(expr):
     Example usage:
     >>> gb.select.row(A <= 5)
 
-    The example will dispatch to `gb.select.rowle(A, 5)`
+    The example will dispatch to ``gb.select.rowle(A, 5)``
     while being potentially nicer to read.
     """
     return _resolve_expr(expr, "row", "row")
@@ -111,7 +111,7 @@ def column(expr):
     Example usage:
     >>> gb.select.column(A <= 5)
 
-    The example will dispatch to `gb.select.colle(A, 5)`
+    The example will dispatch to ``gb.select.colle(A, 5)``
     while being potentially nicer to read.
     """
     return _resolve_expr(expr, "column", "col")
@@ -125,7 +125,7 @@ def index(expr):
     Example usage:
     >>> gb.select.index(v <= 5)
 
-    The example will dispatch to `gb.select.indexle(v, 5)`
+    The example will dispatch to ``gb.select.indexle(v, 5)``
     while being potentially nicer to read.
     """
     return _resolve_expr(expr, "index", "index")

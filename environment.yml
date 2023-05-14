@@ -94,8 +94,10 @@ dependencies:
     # - python-igraph
     # - python-louvain
     # - pyupgrade
+    # - rich
     # - ruff
     # - scalene
+    # - scikit-network
     # - setuptools-git-versioning
     # - snakeviz
     # - sphinx-lint
