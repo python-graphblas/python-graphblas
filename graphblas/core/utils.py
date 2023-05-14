@@ -22,7 +22,7 @@ def libget(name):
 
 
 def wrapdoc(func_with_doc):
-    """Decorator to copy `__doc__` from a function onto the wrapped function."""
+    """Decorator to copy ``__doc__`` from a function onto the wrapped function."""
 
     def inner(func_wo_doc):
         func_wo_doc.__doc__ = func_with_doc.__doc__
@@ -159,7 +159,7 @@ def get_order(order):
 
 
 def normalize_chunks(chunks, shape):
-    """Normalize chunks argument for use by `Matrix.ss.split`.
+    """Normalize chunks argument for use by ``Matrix.ss.split``.
 
     Examples
     --------
@@ -249,17 +249,17 @@ def normalize_chunks(chunks, shape):
 
 
 def ensure_type(x, types):
-    """Try to ensure `x` is one of the given types, computing if necessary.
+    """Try to ensure ``x`` is one of the given types, computing if necessary.
 
-    `types` must be a type or a tuple of types as used in `isinstance`.
+    ``types`` must be a type or a tuple of types as used in ``isinstance``.
 
-    For example, if `types` is a Vector, then a Vector input will be returned,
-    and a `VectorExpression` input will be computed and returned as a Vector.
+    For example, if ``types`` is a Vector, then a Vector input will be returned,
+    and a ``VectorExpression`` input will be computed and returned as a Vector.
 
     TypeError will be raised if the input is not or can't be converted to types.
 
-    This function ignores `graphblas.config["autocompute"]`; it always computes
-    if the return type will match `types`.
+    This function ignores ``graphblas.config["autocompute"]``; it always computes
+    if the return type will match ``types``.
     """
     if isinstance(x, types):
         return x
@@ -358,6 +358,7 @@ def _autogenerate_code(
     specializer=None,
     begin="# Begin auto-generated code",
     end="# End auto-generated code",
+    callblack=True,
 ):
     """Super low-tech auto-code generation used by automethods.py and infixmethods.py."""
     with filepath.open() as f:  # pragma: no branch (flaky)
@@ -384,7 +385,8 @@ def _autogenerate_code(
         f.write(new_text)
     import subprocess
 
-    try:
-        subprocess.check_call(["black", filepath])
-    except FileNotFoundError:  # pragma: no cover (safety)
-        pass  # It's okay if `black` isn't installed; pre-commit hooks will do linting
+    if callblack:
+        try:
+            subprocess.check_call(["black", filepath])
+        except FileNotFoundError:  # pragma: no cover (safety)
+            pass  # It's okay if `black` isn't installed; pre-commit hooks will do linting

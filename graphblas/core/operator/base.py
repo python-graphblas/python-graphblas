@@ -398,7 +398,7 @@ class OpBase:
     def _initialize(cls, include_in_ops=True):
         """
         include_in_ops determines whether the operators are included in the
-        `gb.ops` namespace in addition to the defined module.
+        ``gb.ops`` namespace in addition to the defined module.
         """
         if cls._initialized:  # pragma: no cover (safety)
             return

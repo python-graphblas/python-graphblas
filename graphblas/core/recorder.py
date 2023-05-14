@@ -34,7 +34,7 @@ def gbstr(arg):
 class Recorder:
     """Record GraphBLAS C calls.
 
-    The recorder can use `.start()` and `.stop()` to enable/disable recording,
+    The recorder can use ``.start()`` and ``.stop()`` to enable/disable recording,
     or it can be used as a context manager.
 
     For example,

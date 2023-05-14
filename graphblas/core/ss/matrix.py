@@ -63,7 +63,7 @@ def head(matrix, n=10, dtype=None, *, sort=False):
 
 
 def _concat_mn(tiles, *, is_matrix=None):
-    """Argument checking for `Matrix.ss.concat` and returns number of tiles in each dimension."""
+    """Argument checking for ``Matrix.ss.concat`` and returns number of tiles in each dimension."""
     from ..matrix import Matrix, TransposedMatrix
     from ..vector import Vector
 
@@ -261,8 +261,8 @@ class ss:
         vector : Vector
             Create a diagonal from this Vector.
         k : int, default 0
-            Diagonal in question.  Use `k>0` for diagonals above the main diagonal,
-            and `k<0` for diagonals below the main diagonal.
+            Diagonal in question.  Use ``k>0`` for diagonals above the main diagonal,
+            and ``k<0`` for diagonals below the main diagonal.
 
         See Also
         --------
@@ -282,12 +282,12 @@ class ss:
         """
         GxB_Matrix_split.
 
-        Split a Matrix into a 2D array of sub-matrices according to `chunks`.
+        Split a Matrix into a 2D array of sub-matrices according to ``chunks``.
 
         This performs the opposite operation as ``concat``.
 
-        `chunks` is short for "chunksizes" and indicates the chunk sizes for each dimension.
-        `chunks` may be a single integer, or a length 2 tuple or list.  Example chunks:
+        ``chunks`` is short for "chunksizes" and indicates the chunk sizes for each dimension.
+        ``chunks`` may be a single integer, or a length 2 tuple or list.  Example chunks:
 
         - ``chunks=10``
             - Split each dimension into chunks of size 10 (the last chunk may be smaller).
@@ -295,7 +295,7 @@ class ss:
             - Split rows into chunks of size 10 and columns into chunks of size 20.
         - ``chunks=(None, [5, 10])``
             - Don't split rows into chunks, and split columns into two chunks of size 5 and 10.
-        ` ``chunks=(10, [20, None])``
+        - ``chunks=(10, [20, None])``
             - Split columns into two chunks of size 20 and ``ncols - 20``
 
         See Also
@@ -366,9 +366,9 @@ class ss:
 
         Concatenate a 2D list of Matrix objects into the current Matrix.
         Any existing values in the current Matrix will be discarded.
-        To concatenate into a new Matrix, use `graphblas.ss.concat`.
+        To concatenate into a new Matrix, use ``graphblas.ss.concat``.
 
-        Vectors may be used as `Nx1` Matrix objects.
+        Vectors may be used as ``Nx1`` Matrix objects.
 
         This performs the opposite operation as ``split``.
 
@@ -542,8 +542,8 @@ class ss:
         Parameters
         ----------
         format : str, optional
-            If `format` is not specified, this method exports in the currently stored format.
-            To control the export format, set `format` to one of:
+            If ``format`` is not specified, this method exports in the currently stored format.
+            To control the export format, set ``format`` to one of:
                 - "csr"
                 - "csc"
                 - "hypercsr"
@@ -578,7 +578,7 @@ class ss:
 
         Returns
         -------
-        dict; keys depend on `format` and `raw` arguments (see below).
+        dict; keys depend on ``format`` and ``raw`` arguments (see below).
 
         See Also
         --------
@@ -732,10 +732,10 @@ class ss:
         """
         GxB_Matrix_unpack_xxx.
 
-        `unpack` is like `export`, except that the Matrix remains valid but empty.
-        `pack_*` methods are the opposite of `unpack`.
+        ``unpack`` is like ``export``, except that the Matrix remains valid but empty.
+        ``pack_*`` methods are the opposite of ``unpack``.
 
-        See `Matrix.ss.export` documentation for more details.
+        See ``Matrix.ss.export`` documentation for more details.
         """
         return self._export(
             format, sort=sort, raw=raw, give_ownership=True, method="unpack", opts=opts
@@ -1193,7 +1193,7 @@ class ss:
         col_indices : array-like
         is_iso : bool, default False
             Is the Matrix iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         sorted_cols : bool, default False
             Indicate whether the values in "col_indices" are sorted.
         take_ownership : bool, default False
@@ -1210,7 +1210,7 @@ class ss:
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Matrix.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "csr" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -1259,10 +1259,10 @@ class ss:
         """
         GxB_Matrix_pack_CSR.
 
-        `pack_csr` is like `import_csr` except it "packs" data into an
+        ``pack_csr`` is like ``import_csr`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("csr")``
 
-        See `Matrix.ss.import_csr` documentation for more details.
+        See ``Matrix.ss.import_csr`` documentation for more details.
         """
         return self._import_csr(
             indptr=indptr,
@@ -1383,7 +1383,7 @@ class ss:
         row_indices : array-like
         is_iso : bool, default False
             Is the Matrix iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         sorted_rows : bool, default False
             Indicate whether the values in "row_indices" are sorted.
         take_ownership : bool, default False
@@ -1400,7 +1400,7 @@ class ss:
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Matrix.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "csc" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -1449,10 +1449,10 @@ class ss:
         """
         GxB_Matrix_pack_CSC.
 
-        `pack_csc` is like `import_csc` except it "packs" data into an
+        ``pack_csc`` is like ``import_csc`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("csc")``
 
-        See `Matrix.ss.import_csc` documentation for more details.
+        See ``Matrix.ss.import_csc`` documentation for more details.
         """
         return self._import_csc(
             indptr=indptr,
@@ -1579,7 +1579,7 @@ class ss:
             If not specified, will be set to ``len(rows)``.
         is_iso : bool, default False
             Is the Matrix iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         sorted_cols : bool, default False
             Indicate whether the values in "col_indices" are sorted.
         take_ownership : bool, default False
@@ -1596,7 +1596,7 @@ class ss:
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Matrix.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "hypercsr" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -1649,10 +1649,10 @@ class ss:
         """
         GxB_Matrix_pack_HyperCSR.
 
-        `pack_hypercsr` is like `import_hypercsr` except it "packs" data into an
+        ``pack_hypercsr`` is like ``import_hypercsr`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("hypercsr")``
 
-        See `Matrix.ss.import_hypercsr` documentation for more details.
+        See ``Matrix.ss.import_hypercsr`` documentation for more details.
         """
         return self._import_hypercsr(
             rows=rows,
@@ -1803,7 +1803,7 @@ class ss:
             If not specified, will be set to ``len(cols)``.
         is_iso : bool, default False
             Is the Matrix iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         sorted_rows : bool, default False
             Indicate whether the values in "row_indices" are sorted.
         take_ownership : bool, default False
@@ -1820,7 +1820,7 @@ class ss:
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Matrix.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "hypercsc" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -1873,10 +1873,10 @@ class ss:
         """
         GxB_Matrix_pack_HyperCSC.
 
-        `pack_hypercsc` is like `import_hypercsc` except it "packs" data into an
+        ``pack_hypercsc`` is like ``import_hypercsc`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("hypercsc")``
 
-        See `Matrix.ss.import_hypercsc` documentation for more details.
+        See ``Matrix.ss.import_hypercsc`` documentation for more details.
         """
         return self._import_hypercsc(
             cols=cols,
@@ -2028,7 +2028,7 @@ class ss:
             If not provided, will be inferred from values or bitmap if either is 2d.
         is_iso : bool, default False
             Is the Matrix iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -2043,7 +2043,7 @@ class ss:
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Matrix.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "bitmapr" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -2090,10 +2090,10 @@ class ss:
         """
         GxB_Matrix_pack_BitmapR.
 
-        `pack_bitmapr` is like `import_bitmapr` except it "packs" data into an
+        ``pack_bitmapr`` is like ``import_bitmapr`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("bitmapr")``
 
-        See `Matrix.ss.import_bitmapr` documentation for more details.
+        See ``Matrix.ss.import_bitmapr`` documentation for more details.
         """
         return self._import_bitmapr(
             bitmap=bitmap,
@@ -2221,7 +2221,7 @@ class ss:
             If not provided, will be inferred from values or bitmap if either is 2d.
         is_iso : bool, default False
             Is the Matrix iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -2236,7 +2236,7 @@ class ss:
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Matrix.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "bitmapc" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -2283,10 +2283,10 @@ class ss:
         """
         GxB_Matrix_pack_BitmapC.
 
-        `pack_bitmapc` is like `import_bitmapc` except it "packs" data into an
+        ``pack_bitmapc`` is like ``import_bitmapc`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("bitmapc")``
 
-        See `Matrix.ss.import_bitmapc` documentation for more details.
+        See ``Matrix.ss.import_bitmapc`` documentation for more details.
         """
         return self._import_bitmapc(
             bitmap=bitmap,
@@ -2407,7 +2407,7 @@ class ss:
             If not provided, will be inferred from values if it is 2d.
         is_iso : bool, default False
             Is the Matrix iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -2422,7 +2422,7 @@ class ss:
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Matrix.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "fullr" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -2465,10 +2465,10 @@ class ss:
         """
         GxB_Matrix_pack_FullR.
 
-        `pack_fullr` is like `import_fullr` except it "packs" data into an
+        ``pack_fullr`` is like ``import_fullr`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("fullr")``
 
-        See `Matrix.ss.import_fullr` documentation for more details.
+        See ``Matrix.ss.import_fullr`` documentation for more details.
         """
         return self._import_fullr(
             values=values,
@@ -2566,7 +2566,7 @@ class ss:
             If not provided, will be inferred from values if it is 2d.
         is_iso : bool, default False
             Is the Matrix iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -2581,7 +2581,7 @@ class ss:
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Matrix.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "fullc" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -2624,10 +2624,10 @@ class ss:
         """
         GxB_Matrix_pack_FullC.
 
-        `pack_fullc` is like `import_fullc` except it "packs" data into an
+        ``pack_fullc`` is like ``import_fullc`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("fullc")``
 
-        See `Matrix.ss.import_fullc` documentation for more details.
+        See ``Matrix.ss.import_fullc`` documentation for more details.
         """
         return self._import_fullc(
             values=values,
@@ -2727,7 +2727,7 @@ class ss:
             The number of columns for the Matrix.
         is_iso : bool, default False
             Is the Matrix iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         sorted_rows : bool, default False
             True if rows are sorted or when (cols, rows) are sorted lexicographically
         sorted_cols : bool, default False
@@ -2736,7 +2736,7 @@ class ss:
             Ignored.  Zero-copy is not possible for "coo" format.
         dtype : dtype, optional
             dtype of the new Matrix.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "coo" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -2787,10 +2787,10 @@ class ss:
         """
         GrB_Matrix_build_XXX and GxB_Matrix_build_Scalar.
 
-        `pack_coo` is like `import_coo` except it "packs" data into an
+        ``pack_coo`` is like ``import_coo`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("coo")``
 
-        See `Matrix.ss.import_coo` documentation for more details.
+        See ``Matrix.ss.import_coo`` documentation for more details.
         """
         return self._import_coo(
             nrows=self._parent._nrows,
@@ -2914,7 +2914,7 @@ class ss:
             The number of columns for the Matrix.
         is_iso : bool, default False
             Is the Matrix iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         sorted_cols : bool, default False
             True indicates indices are sorted by column, then row.
         take_ownership : bool, default False
@@ -2932,7 +2932,7 @@ class ss:
             For "coor", ownership of "rows" will never change.
         dtype : dtype, optional
             dtype of the new Matrix.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "coor" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -2983,10 +2983,10 @@ class ss:
         """
         GxB_Matrix_pack_CSR.
 
-        `pack_coor` is like `import_coor` except it "packs" data into an
+        ``pack_coor`` is like ``import_coor`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("coor")``
 
-        See `Matrix.ss.import_coor` documentation for more details.
+        See ``Matrix.ss.import_coor`` documentation for more details.
         """
         return self._import_coor(
             rows=rows,
@@ -3083,7 +3083,7 @@ class ss:
             The number of columns for the Matrix.
         is_iso : bool, default False
             Is the Matrix iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         sorted_rows : bool, default False
             True indicates indices are sorted by column, then row.
         take_ownership : bool, default False
@@ -3101,7 +3101,7 @@ class ss:
             For "cooc", ownership of "cols" will never change.
         dtype : dtype, optional
             dtype of the new Matrix.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "cooc" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -3152,10 +3152,10 @@ class ss:
         """
         GxB_Matrix_pack_CSC.
 
-        `pack_cooc` is like `import_cooc` except it "packs" data into an
+        ``pack_cooc`` is like ``import_cooc`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("cooc")``
 
-        See `Matrix.ss.import_cooc` documentation for more details.
+        See ``Matrix.ss.import_cooc`` documentation for more details.
         """
         return self._import_cooc(
             ncols=self._parent._ncols,
@@ -3255,7 +3255,7 @@ class ss:
         GxB_Matrix_import_xxx.
 
         Dispatch to appropriate import method inferred from inputs.
-        See the other import functions and `Matrix.ss.export`` for details.
+        See the other import functions and ``Matrix.ss.export`` for details.
 
         Returns
         -------
@@ -3352,10 +3352,10 @@ class ss:
         """
         GxB_Matrix_pack_xxx.
 
-        `pack_any` is like `import_any` except it "packs" data into an
+        ``pack_any`` is like ``import_any`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack()``
 
-        See `Matrix.ss.import_any` documentation for more details.
+        See ``Matrix.ss.import_any`` documentation for more details.
         """
         return self._import_any(
             values=values,
@@ -3701,8 +3701,8 @@ class ss:
     def scan(self, op=monoid.plus, order="rowwise", *, name=None, **opts):
         """Perform a prefix scan across rows (default) or columns with the given monoid.
 
-        For example, use `monoid.plus` (the default) to perform a cumulative sum,
-        and `monoid.times` for cumulative product.  Works with any monoid.
+        For example, use ``monoid.plus`` (the default) to perform a cumulative sum,
+        and ``monoid.times`` for cumulative product.  Works with any monoid.
 
         Returns
         -------
@@ -3718,12 +3718,12 @@ class ss:
         """Perform a prefix scan across columns with the given monoid.
 
         .. deprecated:: 2022.11.1
-            `Matrix.ss.scan_columnwise` will be removed in a future release.
-            Use `Matrix.ss.scan(order="columnwise")` instead.
+            ``Matrix.ss.scan_columnwise`` will be removed in a future release.
+            Use ``Matrix.ss.scan(order="columnwise")`` instead.
             Will be removed in version 2023.7.0 or later
 
-        For example, use `monoid.plus` (the default) to perform a cumulative sum,
-        and `monoid.times` for cumulative product.  Works with any monoid.
+        For example, use ``monoid.plus`` (the default) to perform a cumulative sum,
+        and ``monoid.times`` for cumulative product.  Works with any monoid.
 
         Returns
         -------
@@ -3741,12 +3741,12 @@ class ss:
         """Perform a prefix scan across rows with the given monoid.
 
         .. deprecated:: 2022.11.1
-            `Matrix.ss.scan_rowwise` will be removed in a future release.
-            Use `Matrix.ss.scan` instead.
+            ``Matrix.ss.scan_rowwise`` will be removed in a future release.
+            Use ``Matrix.ss.scan`` instead.
             Will be removed in version 2023.7.0 or later
 
-        For example, use `monoid.plus` (the default) to perform a cumulative sum,
-        and `monoid.times` for cumulative product.  Works with any monoid.
+        For example, use ``monoid.plus`` (the default) to perform a cumulative sum,
+        and ``monoid.times`` for cumulative product.  Works with any monoid.
 
         Returns
         -------
@@ -3904,8 +3904,8 @@ class ss:
         """Select (up to) k elements from each row.
 
         .. deprecated:: 2022.11.1
-            `Matrix.ss.selectk_rowwise` will be removed in a future release.
-            Use `Matrix.ss.selectk` instead.
+            ``Matrix.ss.selectk_rowwise`` will be removed in a future release.
+            Use ``Matrix.ss.selectk`` instead.
             Will be removed in version 2023.7.0 or later
 
         Parameters
@@ -3950,8 +3950,8 @@ class ss:
         """Select (up to) k elements from each column.
 
         .. deprecated:: 2022.11.1
-            `Matrix.ss.selectk_columnwise` will be removed in a future release.
-            Use `Matrix.ss.selectk(order="columnwise")` instead.
+            ``Matrix.ss.selectk_columnwise`` will be removed in a future release.
+            Use ``Matrix.ss.selectk(order="columnwise")`` instead.
             Will be removed in version 2023.7.0 or later
 
         Parameters
@@ -4216,23 +4216,23 @@ class ss:
         """GxB_Matrix_sort to sort values along the rows (default) or columns of the Matrix.
 
         Sorting moves all the elements to the left (if rowwise) or top (if columnwise) just
-        like `compactify`. The returned matrices will be the same shape as the input Matrix.
+        like ``compactify``. The returned matrices will be the same shape as the input Matrix.
 
         Parameters
         ----------
         op : :class:`~graphblas.core.operator.BinaryOp`, optional
             Binary operator with a bool return type used to sort the values.
-            For example, `binary.lt` (the default) sorts the smallest elements first.
+            For example, ``binary.lt`` (the default) sorts the smallest elements first.
             Ties are broken according to indices (smaller first).
         order : {"rowwise", "columnwise"}, optional
             Whether to sort rowwise or columnwise. Rowwise shifts all values to the left,
             and columnwise shifts all values to the top. The default is "rowwise".
         values : bool, default=True
-            Whether to return values; will return `None` for values if `False`.
+            Whether to return values; will return ``None`` for values if ``False``.
         permutation : bool, default=True
             Whether to compute the permutation Matrix that has the original column
             indices (if rowwise) or row indices (if columnwise) of the sorted values.
-            Will return None if `False`.
+            Will return None if ``False``.
         nthreads : int, optional
             The maximum number of threads to use for this operation.
             None, 0 or negative nthreads means to use the default number of threads.
@@ -4301,7 +4301,7 @@ class ss:
             None, 0 or negative nthreads means to use the default number of threads.
 
         For best performance, this function returns a numpy array with uint8 dtype.
-        Use `Matrix.ss.deserialize(blob)` to create a Matrix from the result of serialization
+        Use ``Matrix.ss.deserialize(blob)`` to create a Matrix from the result of serialization
 
         This method is intended to support all serialization options from SuiteSparse:GraphBLAS.
 
@@ -4327,7 +4327,7 @@ class ss:
         """Deserialize a Matrix from bytes, buffer, or numpy array using GxB_Matrix_deserialize.
 
         The data should have been previously serialized with a compatible version of
-        SuiteSparse:GraphBLAS.  For example, from the result of `data = matrix.ss.serialize()`.
+        SuiteSparse:GraphBLAS.  For example, from the result of ``data = matrix.ss.serialize()``.
 
         Examples
         --------

@@ -12,7 +12,7 @@ from ..exceptions import _error_code_lookup
 
 
 class _graphblas_ss:
-    """Used in `_expect_type`."""
+    """Used in ``_expect_type``."""
 
 
 _graphblas_ss.__name__ = "graphblas.ss"
@@ -33,8 +33,8 @@ def diag(x, k=0, dtype=None, *, name=None, **opts):
         The Vector to assign to the diagonal, or the Matrix from which to
         extract the diagonal.
     k : int, default 0
-        Diagonal in question.  Use `k>0` for diagonals above the main diagonal,
-        and `k<0` for diagonals below the main diagonal.
+        Diagonal in question.  Use ``k>0`` for diagonals above the main diagonal,
+        and ``k<0`` for diagonals below the main diagonal.
 
     See Also
     --------
@@ -71,9 +71,9 @@ def concat(tiles, dtype=None, *, name=None, **opts):
 
     Concatenate a 2D list of Matrix objects into a new Matrix, or a 1D list of
     Vector objects into a new Vector.  To concatenate into existing objects,
-    use ``Matrix.ss.concat`` or `Vector.ss.concat`.
+    use ``Matrix.ss.concat`` or ``Vector.ss.concat``.
 
-    Vectors may be used as `Nx1` Matrix objects when creating a new Matrix.
+    Vectors may be used as ``Nx1`` Matrix objects when creating a new Matrix.
 
     This performs the opposite operation as ``split``.
 

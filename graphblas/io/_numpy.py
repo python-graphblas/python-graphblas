@@ -11,14 +11,14 @@ def from_numpy(m):  # pragma: no cover (deprecated)
     """Create a sparse Vector or Matrix from a dense numpy array.
 
     .. deprecated:: 2023.2.0
-        `from_numpy` will be removed in a future release.
-        Use `Vector.from_dense` or `Matrix.from_dense` instead.
+        ``from_numpy`` will be removed in a future release.
+        Use ``Vector.from_dense`` or ``Matrix.from_dense`` instead.
         Will be removed in version 2023.10.0 or later
 
     A value of 0 is considered as "missing".
 
-    - m.ndim == 1 returns a `Vector`
-    - m.ndim == 2 returns a `Matrix`
+    - m.ndim == 1 returns a ``Vector``
+    - m.ndim == 2 returns a ``Matrix``
     - m.ndim > 2 raises an error
 
     dtype is inferred from m.dtype
@@ -65,8 +65,8 @@ def to_numpy(m):  # pragma: no cover (deprecated)
     """Create a dense numpy array from a sparse Vector or Matrix.
 
     .. deprecated:: 2023.2.0
-        `to_numpy` will be removed in a future release.
-        Use `Vector.to_dense` or `Matrix.to_dense` instead.
+        ``to_numpy`` will be removed in a future release.
+        Use ``Vector.to_dense`` or ``Matrix.to_dense`` instead.
         Will be removed in version 2023.10.0 or later
 
     Missing values will become 0 in the output.
