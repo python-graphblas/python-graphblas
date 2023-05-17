@@ -168,11 +168,18 @@ known_first_party = "graphblas"
 line_length = 100
 
 [tool.pytest.ini_options]
+minversion = "6.0"
 testpaths = "graphblas/tests"
 xfail_strict = true
+addopts = [
+    "--strict-config",  # Force error if config is mispelled
+    "--strict-markers",  # Force error if marker is mispelled (must be defined in config)
+    "-ra",  # Print summary of all fails/errors
+]
 markers = [
     "slow: Skipped unless --runslow passed",
 ]
+log_cli_level = "info"
 filterwarnings = [
     # See: https://docs.python.org/3/library/warnings.html#describing-warning-filters
     # and: https://docs.pytest.org/en/7.2.x/how-to/capture-warnings.html#controlling-warnings

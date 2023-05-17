@@ -176,8 +176,9 @@ use as well as the blocking/non-blocking mode. If the context is not initialized
 be performed automatically.
 ```python
 import graphblas as gb
+
 # Context initialization must happen before any other imports
-gb.init('suitesparse', blocking=True)
+gb.init("suitesparse", blocking=True)
 
 # Now we can import other items from graphblas
 from graphblas import binary, semiring
@@ -195,7 +196,7 @@ def force_odd_func(x):
         return x + 1
     return x
 
-unary.register_new('force_odd', force_odd_func)
+unary.register_new("force_odd", force_odd_func)
 
 v = Vector.from_coo([0, 1, 3], [1, 2, 3])
 w = v.apply(unary.force_odd).new()
@@ -210,7 +211,7 @@ import graphblas as gb
 
 # scipy.sparse matrices
 A = gb.io.from_scipy_sparse(m)
-m = gb.io.to_scipy_sparse(m, format='csr')
+m = gb.io.to_scipy_sparse(m, format="csr")
 
 # networkx graphs
 A = gb.io.from_networkx(g)

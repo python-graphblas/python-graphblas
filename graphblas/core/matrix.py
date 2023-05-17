@@ -457,7 +457,7 @@ class Matrix(BaseType):
             Requested dtype for the output values array.
         rows : bool, default=True
             Whether to return rows; will return ``None`` for rows if ``False``
-        columns  :bool, default=True
+        columns : bool, default=True
             Whether to return columns; will return ``None`` for columns if ``False``
         values : bool, default=True
             Whether to return values; will return ``None`` for values if ``False``
