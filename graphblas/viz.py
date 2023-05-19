@@ -35,8 +35,7 @@ def _get_imports(names, within):
             except ImportError:
                 modname = _LAZY_IMPORTS[name].split(".")[0]
                 raise ImportError(f"`{within}` requires {modname} to be installed") from None
-            finally:
-                globals()[name] = val
+            globals()[name] = val
         rv.append(val)
     if is_string:
         return rv[0]

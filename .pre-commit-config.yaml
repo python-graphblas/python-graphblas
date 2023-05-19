@@ -5,10 +5,12 @@
 # To update: `pre-commit autoupdate`
 #  - &flake8_dependencies below needs updated manually
 ci:
-    # See: https://pre-commit.ci/#configuration
-    autofix_prs: false
-    autoupdate_schedule: monthly
-    skip: [pylint, no-commit-to-branch]
+  # See: https://pre-commit.ci/#configuration
+  autofix_prs: false
+  autoupdate_schedule: monthly
+  autoupdate_commit_msg: "chore: update pre-commit hooks"
+  autofix_commit_msg: "style: pre-commit fixes"
+  skip: [pylint, no-commit-to-branch]
 fail_fast: true
 default_language_version:
     python: python3
@@ -17,15 +19,21 @@ repos:
     rev: v4.4.0
     hooks:
       - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-symlinks
       - id: check-ast
       - id: check-toml
       - id: check-yaml
       - id: debug-statements
       - id: end-of-file-fixer
+        exclude_types: [svg]
       - id: mixed-line-ending
       - id: trailing-whitespace
+      - id: name-tests-test
+        args: ["--pytest-test-first"]
   - repo: https://github.com/abravalheri/validate-pyproject
-    rev: v0.12.2
+    rev: v0.13
     hooks:
       - id: validate-pyproject
         name: Validate pyproject.toml
@@ -58,7 +66,7 @@ repos:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.267
+    rev: v0.0.269
     hooks:
       - id: ruff
         args: [--fix-only, --show-fixes]
@@ -86,7 +94,7 @@ repos:
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.267
+    rev: v0.0.269
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint
@@ -101,6 +109,10 @@ repos:
     hooks:
       - id: pyroma
         args: [-n, "10", .]
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: "v0.9.0.2"
+    hooks:
+    - id: shellcheck
   - repo: local
     hooks:
       # Add `--hook-stage manual` to pre-commit command to run (very slow)
@@ -137,4 +149,4 @@ repos:
 #    hooks:
 #      - id: bandit
 #
-# blacken-docs, blackdoc mypy, pydocstringformatter, velin, flynt, yamllint
+# blacken-docs, blackdoc prettier, mypy, pydocstringformatter, velin, flynt, yamllint

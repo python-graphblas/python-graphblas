@@ -168,11 +168,18 @@ known_first_party = "graphblas"
 line_length = 100
 
 [tool.pytest.ini_options]
+minversion = "6.0"
 testpaths = "graphblas/tests"
 xfail_strict = true
+addopts = [
+    "--strict-config",  # Force error if config is mispelled
+    "--strict-markers",  # Force error if marker is mispelled (must be defined in config)
+    "-ra",  # Print summary of all fails/errors
+]
 markers = [
     "slow: Skipped unless --runslow passed",
 ]
+log_cli_level = "info"
 filterwarnings = [
     # See: https://docs.python.org/3/library/warnings.html#describing-warning-filters
     # and: https://docs.pytest.org/en/7.2.x/how-to/capture-warnings.html#controlling-warnings
@@ -342,6 +349,7 @@ ignore = [
     "TID",  # flake8-tidy-imports (Rely on isort and our own judgement)
     "TCH",  # flake8-type-checking (Note: figure out type checking later)
     "ARG",  # flake8-unused-arguments (Sometimes helpful, but too strict)
+    "TD",  # flake8-todos (Maybe okay to add some of these)
     "ERA",  # eradicate (We like code in comments!)
     "PD",  # pandas-vet (Intended for scripts that use pandas, not libraries)
 ]
