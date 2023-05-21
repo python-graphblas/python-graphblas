@@ -208,7 +208,7 @@ class JitConfig(BaseConfig):
         "cache_path": (lib.GxB_JIT_CACHE_PATH, "char*"),
     }
     _enumerations = {
-        "jit_c_control": {
+        "c_control": {
             "off": lib.GxB_JIT_OFF,
             "pause": lib.GxB_JIT_PAUSE,
             "run": lib.GxB_JIT_RUN,
