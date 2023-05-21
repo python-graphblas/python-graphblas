@@ -18,6 +18,7 @@ _str_to_compression = {
 class _DescriptorConfig(BaseConfig):
     _get_function = "GxB_Desc_get"
     _set_function = "GxB_Desc_set"
+    _context_keys = {"chunk", "gpu_id", "nthreads"}
     _options = {
         # GrB
         "output_replace": (lib.GrB_OUTP, "GrB_Desc_Value"),
@@ -26,12 +27,12 @@ class _DescriptorConfig(BaseConfig):
         "transpose_first": (lib.GrB_INP0, "GrB_Desc_Value"),
         "transpose_second": (lib.GrB_INP1, "GrB_Desc_Value"),
         # GxB
-        "nthreads": (lib.GxB_DESCRIPTOR_NTHREADS, "int"),
-        "chunk": (lib.GxB_DESCRIPTOR_CHUNK, "double"),
+        "chunk": (lib.GxB_CONTEXT_CHUNK, "double"),
+        "gpu_id": (lib.GxB_CONTEXT_GPU_ID, "int"),
+        "nthreads": (lib.GxB_CONTEXT_NTHREADS, "int"),
         "axb_method": (lib.GxB_AxB_METHOD, "GrB_Desc_Value"),
         "sort": (lib.GxB_SORT, "int"),
         "secure_import": (lib.GxB_IMPORT, "int"),
-        # "gpu_control": (GxB_DESCRIPTOR_GPU_CONTROL, "GrB_Desc_Value"),  # Coming soon...
     }
     _enumerations = {
         # GrB
@@ -71,10 +72,6 @@ class _DescriptorConfig(BaseConfig):
             False: False,
             True: lib.GxB_SORT,
         },
-        # "gpu_control": {  # Coming soon...
-        #     "always": lib.GxB_GPU_ALWAYS,
-        #     "never": lib.GxB_GPU_NEVER,
-        # },
     }
     _defaults = {
         # GrB
@@ -89,8 +86,8 @@ class _DescriptorConfig(BaseConfig):
         "axb_method": "default",
         "sort": False,
         "secure_import": False,
+        "gpu_id": -1,  # -1 means no GPU (I think)
     }
-    _count = 0
 
     def __init__(self):
         gb_obj = ffi_new("GrB_Descriptor*")

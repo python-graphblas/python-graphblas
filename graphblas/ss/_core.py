@@ -2,9 +2,11 @@ from collections.abc import Mapping
 
 from ..core import ffi, lib
 from ..core.base import _expect_type
+from ..core.descriptor import lookup as descriptor_lookup
 from ..core.matrix import Matrix, TransposedMatrix
 from ..core.scalar import _as_scalar
 from ..core.ss.config import BaseConfig
+from ..core.ss.context import global_context
 from ..core.ss.matrix import _concat_mn
 from ..core.vector import Vector
 from ..dtypes import INT64
@@ -52,6 +54,9 @@ def diag(x, k=0, dtype=None, *, name=None, **opts):
         dtype = x.dtype
     typ = type(x)
     if typ is Vector:
+        if opts:
+            # Ignore opts for now
+            desc = descriptor_lookup(**opts)  # noqa: F841
         size = x._size + abs(k.value)
         rv = Matrix(dtype, nrows=size, ncols=size, name=name)
         rv.ss.build_diag(x, k)
@@ -120,15 +125,17 @@ class GlobalConfig(BaseConfig):
     memory_pool : List[int]
     burble : bool
         Enable diagnostic printing from SuiteSparse:GraphBLAS
-    print_1based: bool
-    gpu_control : str, {"always", "never"}
-    gpu_chunk : double
+    print_1based : bool
+    gpu_id : int
+        Which GPU to use; default is -1, which means do not run on the GPU.
+        **GPU support is a work in progress--do not use**
 
     Setting values to None restores the default value for most configurations.
     """
 
     _get_function = "GxB_Global_Option_get"
     _set_function = "GxB_Global_Option_set"
+    _context_keys = {"chunk", "gpu_id", "nthreads"}
     _null_valid = {"bitmap_switch"}
     _options = {
         # Matrix/Vector format
@@ -143,9 +150,20 @@ class GlobalConfig(BaseConfig):
         # Diagnostics (skipping "printf" and "flush" for now)
         "burble": (lib.GxB_BURBLE, "bool"),
         "print_1based": (lib.GxB_PRINT_1BASED, "bool"),
+        # JIT control
+        # TODO: should this be in the global config or a separate JIT config?
+        "jit_c_control": (lib.GxB_JIT_C_CONTROL, "int"),
+        "jit_use_cmake": (lib.GxB_JIT_USE_CMAKE, "bool"),
+        "jit_c_compiler_name": (lib.GxB_JIT_C_COMPILER_NAME, "char*"),
+        "jit_c_compiler_flags": (lib.GxB_JIT_C_COMPILER_FLAGS, "char*"),
+        "jit_c_linker_flags": (lib.GxB_JIT_C_LINKER_FLAGS, "char*"),
+        "jit_c_libraries": (lib.GxB_JIT_C_LIBRARIES, "char*"),
+        "jit_c_cmake_libs": (lib.GxB_JIT_C_CMAKE_LIBS, "char*"),
+        "jit_c_preface": (lib.GxB_JIT_C_PREFACE, "char*"),
+        "jit_error_log": (lib.GxB_JIT_ERROR_LOG, "char*"),
+        "jit_cache_path": (lib.GxB_JIT_CACHE_PATH, "char*"),
         # CUDA GPU control
-        "gpu_control": (lib.GxB_GLOBAL_GPU_CONTROL, "GrB_Desc_Value"),
-        "gpu_chunk": (lib.GxB_GLOBAL_GPU_CHUNK, "double"),
+        "gpu_id": (lib.GxB_GLOBAL_GPU_ID, "int"),
     }
     # Values to restore defaults
     _defaults = {
@@ -156,6 +174,7 @@ class GlobalConfig(BaseConfig):
         "chunk": 0,
         "burble": 0,
         "print_1based": 0,
+        "gpu_id": -1,  # -1 means no GPU (I think)
     }
     _enumerations = {
         "format": {
@@ -163,9 +182,38 @@ class GlobalConfig(BaseConfig):
             "by_col": lib.GxB_BY_COL,
             # "no_format": lib.GxB_NO_FORMAT,  # Used by iterators; not valid here
         },
-        "gpu_control": {
-            "always": lib.GxB_GPU_ALWAYS,
-            "never": lib.GxB_GPU_NEVER,
+        "jit_c_control": {
+            "off": lib.GxB_JIT_OFF,
+            "pause": lib.GxB_JIT_PAUSE,
+            "run": lib.GxB_JIT_RUN,
+            "load": lib.GxB_JIT_LOAD,
+            "on": lib.GxB_JIT_ON,
+        },
+    }
+
+
+class JitConfig(BaseConfig):
+    _get_function = "GxB_Global_Option_get"
+    _set_function = "GxB_Global_Option_set"
+    _options = {
+        "c_control": (lib.GxB_JIT_C_CONTROL, "int"),
+        "use_cmake": (lib.GxB_JIT_USE_CMAKE, "bool"),
+        "c_compiler_name": (lib.GxB_JIT_C_COMPILER_NAME, "char*"),
+        "c_compiler_flags": (lib.GxB_JIT_C_COMPILER_FLAGS, "char*"),
+        "c_linker_flags": (lib.GxB_JIT_C_LINKER_FLAGS, "char*"),
+        "c_libraries": (lib.GxB_JIT_C_LIBRARIES, "char*"),
+        "c_cmake_libs": (lib.GxB_JIT_C_CMAKE_LIBS, "char*"),
+        "c_preface": (lib.GxB_JIT_C_PREFACE, "char*"),
+        "error_log": (lib.GxB_JIT_ERROR_LOG, "char*"),
+        "cache_path": (lib.GxB_JIT_CACHE_PATH, "char*"),
+    }
+    _enumerations = {
+        "jit_c_control": {
+            "off": lib.GxB_JIT_OFF,
+            "pause": lib.GxB_JIT_PAUSE,
+            "run": lib.GxB_JIT_RUN,
+            "load": lib.GxB_JIT_LOAD,
+            "on": lib.GxB_JIT_ON,
         },
     }
 
@@ -254,4 +302,5 @@ class About(Mapping):
 
 
 about = About()
-config = GlobalConfig()
+config = GlobalConfig(context=global_context)
+jit = JitConfig()

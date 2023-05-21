@@ -134,7 +134,7 @@ jobs:
             1
             1
             1
-            1
+            10000000
       - name: Setup mamba
         uses: conda-incubator/setup-miniconda@v2
         id: setup_mamba
@@ -204,13 +204,13 @@ jobs:
           # But, it's still useful for us to test with different versions!
           psg=""
           if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
-            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["=8.0.0.0", ""]))')
             psg=python-suitesparse-graphblas${psgver}
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
             psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", ""]))')
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "source" ]] ; then
             # These should be exact versions
-            psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["==8.0.0.0", ""]))')
           else
             psgver=""
           fi
@@ -258,7 +258,7 @@ jobs:
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
-            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
+            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=8.0.0"' || '' }} \
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }}
       - name: Build extension module
         run: |

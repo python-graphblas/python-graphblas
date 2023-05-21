@@ -4298,7 +4298,7 @@ def test_ss_descriptors(A):
         A(nthreads=4, axb_method="dot", sort=True) << A @ A
         assert A.isequal(C2)
         # Bad option should show list of valid options
-        with pytest.raises(ValueError, match="nthreads"):
+        with pytest.raises(ValueError, match="axb_method"):
             C1(bad_opt=True) << A
         with pytest.raises(ValueError, match="Duplicate descriptor"):
             (A @ A).new(nthreads=4, Nthreads=5)
