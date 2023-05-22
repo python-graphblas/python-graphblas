@@ -86,7 +86,7 @@ class _DescriptorConfig(BaseConfig):
         "axb_method": "default",
         "sort": False,
         "secure_import": False,
-        "gpu_id": -1,  # -1 means no GPU (I think)
+        "gpu_id": -1,  # -1 means no GPU
     }
 
     def __init__(self):

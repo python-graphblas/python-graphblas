@@ -56,7 +56,7 @@ def diag(x, k=0, dtype=None, *, name=None, **opts):
     if typ is Vector:
         if opts:
             # Ignore opts for now
-            desc = descriptor_lookup(**opts)  # noqa: F841
+            desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
         size = x._size + abs(k.value)
         rv = Matrix(dtype, nrows=size, ncols=size, name=name)
         rv.ss.build_diag(x, k)
@@ -174,7 +174,7 @@ class GlobalConfig(BaseConfig):
         "chunk": 0,
         "burble": 0,
         "print_1based": 0,
-        "gpu_id": -1,  # -1 means no GPU (I think)
+        "gpu_id": -1,  # -1 means no GPU
     }
     _enumerations = {
         "format": {

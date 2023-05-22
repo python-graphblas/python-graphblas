@@ -182,7 +182,8 @@ class BaseConfig(MutableMapping):
             if self._context is None:
                 from .context import Context
 
-                self._context = Context._maybe_new()
+                self._context = Context(engage=False)
+                self._context._engage()  # Disengage when context goes out of scope
                 self._parent._context = self._context  # Set context to descriptor
             info = set_function(self._context._carg, key_obj, val_obj)
         elif self._parent is None:
