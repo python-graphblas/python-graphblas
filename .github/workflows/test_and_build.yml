@@ -82,7 +82,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        shell: bash -lx {0}
+        shell: bash -l {0}
     strategy:
       # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
       fail-fast: true
@@ -167,6 +167,7 @@ jobs:
           #
           # First let's randomly get versions of dependencies to install.
           # Consider removing old versions when they become problematic or very old (>=2 years).
+          set -x  # echo on
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", "=3.1", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           sparsever=$(python -c 'import random ; print(random.choice(["=0.13", "=0.14", ""]))')
@@ -262,6 +263,7 @@ jobs:
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }}
       - name: Build extension module
         run: |
+          set -x  # echo on
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
               # Add --pre if installing a pre-release
               pip install --no-deps --only-binary ":all:" suitesparse-graphblas${psgver}
@@ -282,6 +284,7 @@ jobs:
           pip install --no-deps -e .
       - name: Unit tests
         run: |
+          set -x  # echo on
           A=${{ needs.rngs.outputs.mapnumpy == 'A' || '' }} ; B=${{ needs.rngs.outputs.mapnumpy == 'B' || '' }}
           C=${{ needs.rngs.outputs.mapnumpy == 'C' || '' }} ; D=${{ needs.rngs.outputs.mapnumpy == 'D' || '' }}
           E=${{ needs.rngs.outputs.backend == 'E' || '' }} ; F=${{ needs.rngs.outputs.backend == 'F' || '' }}
