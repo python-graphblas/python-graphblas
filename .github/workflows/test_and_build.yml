@@ -167,7 +167,6 @@ jobs:
           #
           # First let's randomly get versions of dependencies to install.
           # Consider removing old versions when they become problematic or very old (>=2 years).
-          set -x  # echo on
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", "=3.1", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           sparsever=$(python -c 'import random ; print(random.choice(["=0.13", "=0.14", ""]))')
@@ -253,6 +252,7 @@ jobs:
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
+          set -x  # echo on
           $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${fmm} ${psg} \
@@ -263,7 +263,6 @@ jobs:
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }}
       - name: Build extension module
         run: |
-          set -x  # echo on
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
               # Add --pre if installing a pre-release
               pip install --no-deps --only-binary ":all:" suitesparse-graphblas${psgver}
@@ -284,7 +283,6 @@ jobs:
           pip install --no-deps -e .
       - name: Unit tests
         run: |
-          set -x  # echo on
           A=${{ needs.rngs.outputs.mapnumpy == 'A' || '' }} ; B=${{ needs.rngs.outputs.mapnumpy == 'B' || '' }}
           C=${{ needs.rngs.outputs.mapnumpy == 'C' || '' }} ; D=${{ needs.rngs.outputs.mapnumpy == 'D' || '' }}
           E=${{ needs.rngs.outputs.backend == 'E' || '' }} ; F=${{ needs.rngs.outputs.backend == 'F' || '' }}
@@ -311,6 +309,7 @@ jobs:
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo ${args}
           pytest -v --pyargs suitesparse_graphblas
+          set -x  # echo on
           coverage run -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
@@ -346,6 +345,7 @@ jobs:
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
           echo ${args}
+          set -x  # echo on
           coverage run -a -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
