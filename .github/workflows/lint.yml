@@ -1,10 +1,12 @@
+# Rely on pre-commit.ci instead
 name: Lint via pre-commit
 
 on:
-  pull_request:
-  push:
-    branches-ignore:
-      - main
+  workflow_dispatch:
+  # pull_request:
+  # push:
+  #   branches-ignore:
+  #     - main
 
 permissions:
   contents: read

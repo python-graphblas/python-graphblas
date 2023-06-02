@@ -8,8 +8,9 @@ GraphBLAS must be initialized before it can be used. This is done with the
 .. code-block:: python
 
     import graphblas as gb
+
     # Context initialization must happen before any other imports
-    gb.init('suitesparse', blocking=False)
+    gb.init("suitesparse", blocking=False)
 
     # Now we can import other items from graphblas
     from graphblas import binary, semiring

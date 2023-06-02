@@ -453,17 +453,17 @@ class Vector(BaseType):
         """Extract the indices and values as a 2-tuple of numpy arrays.
 
         .. deprecated:: 2022.11.0
-            `Vector.to_values` will be removed in a future release.
-            Use `Vector.to_coo` instead. Will be removed in version 2023.9.0 or later
+            ``Vector.to_values`` will be removed in a future release.
+            Use ``Vector.to_coo`` instead. Will be removed in version 2023.9.0 or later
 
         Parameters
         ----------
         dtype :
             Requested dtype for the output values array.
         indices :bool, default=True
-            Whether to return indices; will return `None` for indices if `False`
+            Whether to return indices; will return ``None`` for indices if ``False``
         values : bool, default=True
-            Whether to return values; will return `None` for values if `False`
+            Whether to return values; will return ``None`` for values if ``False``
         sort : bool, default=True
             Whether to require sorted indices.
 
@@ -487,9 +487,9 @@ class Vector(BaseType):
         dtype :
             Requested dtype for the output values array.
         indices :bool, default=True
-            Whether to return indices; will return `None` for indices if `False`
+            Whether to return indices; will return ``None`` for indices if ``False``
         values : bool, default=True
-            Whether to return values; will return `None` for values if `False`
+            Whether to return values; will return ``None`` for values if ``False``
         sort : bool, default=True
             Whether to require sorted indices.
 
@@ -539,7 +539,7 @@ class Vector(BaseType):
         """Rarely used method to insert values into an existing Vector. The typical use case
         is to create a new Vector and insert values at the same time using :meth:`from_coo`.
 
-        All the arguments are used identically in :meth:`from_coo`, except for `clear`, which
+        All the arguments are used identically in :meth:`from_coo`, except for ``clear``, which
         indicates whether to clear the Vector prior to adding the new values.
         """
         # TODO: accept `dtype` keyword to match the dtype of `values`?
@@ -695,8 +695,8 @@ class Vector(BaseType):
         """Create a new Vector from indices and values.
 
         .. deprecated:: 2022.11.0
-            `Vector.from_values` will be removed in a future release.
-            Use `Vector.from_coo` instead. Will be removed in version 2023.9.0 or later
+            ``Vector.from_values`` will be removed in a future release.
+            Use ``Vector.from_coo`` instead. Will be removed in version 2023.9.0 or later
 
         Parameters
         ----------

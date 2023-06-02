@@ -273,7 +273,7 @@ Example usage:
     minval = v.reduce(gb.monoid.min).value
 
     # This will force the FP32 version of min to be used, possibly type casting the elements
-    minvalFP32 = v.reduce(gb.monoid.min['FP32']).value
+    minvalFP32 = v.reduce(gb.monoid.min["FP32"]).value
 
 
 The gb.op Namespace
@@ -431,7 +431,7 @@ the power of y for overlapping elements.
 
 .. code-block:: python
 
-    v ** w
+    v**w
 
 .. csv-table::
     :header: 0,1,2,3,4,5

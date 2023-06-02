@@ -155,8 +155,8 @@ class ss:
         matrix : Matrix or TransposedMatrix
             Extract a diagonal from this matrix.
         k : int, default 0
-            Diagonal in question.  Use `k>0` for diagonals above the main diagonal,
-            and `k<0` for diagonals below the main diagonal.
+            Diagonal in question.  Use ``k>0`` for diagonals above the main diagonal,
+            and ``k<0`` for diagonals below the main diagonal.
 
         See Also
         --------
@@ -185,12 +185,12 @@ class ss:
         """
         GxB_Matrix_split.
 
-        Split a Vector into a 1D array of sub-vectors according to `chunks`.
+        Split a Vector into a 1D array of sub-vectors according to ``chunks``.
 
         This performs the opposite operation as ``concat``.
 
-        `chunks` is short for "chunksizes" and indicates the chunk sizes.
-        `chunks` may be a single integer, or a tuple or list.  Example chunks:
+        ``chunks`` is short for "chunksizes" and indicates the chunk sizes.
+        ``chunks`` may be a single integer, or a tuple or list.  Example chunks:
 
         - ``chunks=10``
             - Split vector into chunks of size 10 (the last chunk may be smaller).
@@ -253,7 +253,7 @@ class ss:
 
         Concatenate a 1D list of Vector objects into the current Vector.
         Any existing values in the current Vector will be discarded.
-        To concatenate into a new Vector, use `graphblas.ss.concat`.
+        To concatenate into a new Vector, use ``graphblas.ss.concat``.
 
         This performs the opposite operation as ``split``.
 
@@ -415,8 +415,8 @@ class ss:
         Parameters
         ----------
         format : str or None, default None
-            If `format` is not specified, this method exports in the currently stored format.
-            To control the export format, set `format` to one of:
+            If ``format`` is not specified, this method exports in the currently stored format.
+            To control the export format, set ``format`` to one of:
                 - "sparse"
                 - "bitmap"
                 - "full"
@@ -434,7 +434,7 @@ class ss:
 
         Returns
         -------
-        dict; keys depend on `format` and `raw` arguments (see below).
+        dict; keys depend on ``format`` and ``raw`` arguments (see below).
 
         See Also
         --------
@@ -442,7 +442,7 @@ class ss:
         Vector.ss.import_any
 
         Return values
-            - Note: for `raw=True`, arrays may be larger than specified.
+            - Note: for ``raw=True``, arrays may be larger than specified.
             - "sparse" format
                 - indices : ndarray(dtype=uint64, size=nvals)
                 - values : ndarray(size=nvals)
@@ -481,10 +481,10 @@ class ss:
         """
         GxB_Vector_unpack_xxx.
 
-        `unpack` is like `export`, except that the Vector remains valid but empty.
-        `pack_*` methods are the opposite of `unpack`.
+        ``unpack`` is like ``export``, except that the Vector remains valid but empty.
+        ``pack_*`` methods are the opposite of ``unpack``.
 
-        See `Vector.ss.export` documentation for more details.
+        See ``Vector.ss.export`` documentation for more details.
         """
         return self._export(
             format=format, sort=sort, give_ownership=True, raw=raw, method="unpack", opts=opts
@@ -658,7 +658,7 @@ class ss:
         GxB_Vector_import_xxx.
 
         Dispatch to appropriate import method inferred from inputs.
-        See the other import functions and `Vector.ss.export`` for details.
+        See the other import functions and ``Vector.ss.export`` for details.
 
         Returns
         -------
@@ -724,10 +724,10 @@ class ss:
         """
         GxB_Vector_pack_xxx.
 
-        `pack_any` is like `import_any` except it "packs" data into an
+        ``pack_any`` is like ``import_any`` except it "packs" data into an
         existing Vector.  This is the opposite of ``unpack()``
 
-        See `Vector.ss.import_any` documentation for more details.
+        See ``Vector.ss.import_any`` documentation for more details.
         """
         return self._import_any(
             values=values,
@@ -858,7 +858,7 @@ class ss:
             If not specified, will be set to ``len(values)``.
         is_iso : bool, default False
             Is the Vector iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         sorted_index : bool, default False
             Indicate whether the values in "col_indices" are sorted.
         take_ownership : bool, default False
@@ -875,7 +875,7 @@ class ss:
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Vector.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "sparse" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -922,10 +922,10 @@ class ss:
         """
         GxB_Vector_pack_CSC.
 
-        `pack_sparse` is like `import_sparse` except it "packs" data into an
+        ``pack_sparse`` is like ``import_sparse`` except it "packs" data into an
         existing Vector.  This is the opposite of ``unpack("sparse")``
 
-        See `Vector.ss.import_sparse` documentation for more details.
+        See ``Vector.ss.import_sparse`` documentation for more details.
         """
         return self._import_sparse(
             indices=indices,
@@ -1045,7 +1045,7 @@ class ss:
             If not specified, it will be set to the size of values.
         is_iso : bool, default False
             Is the Vector iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -1060,7 +1060,7 @@ class ss:
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Vector.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "bitmap" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -1105,10 +1105,10 @@ class ss:
         """
         GxB_Vector_pack_Bitmap.
 
-        `pack_bitmap` is like `import_bitmap` except it "packs" data into an
+        ``pack_bitmap`` is like ``import_bitmap`` except it "packs" data into an
         existing Vector.  This is the opposite of ``unpack("bitmap")``
 
-        See `Vector.ss.import_bitmap` documentation for more details.
+        See ``Vector.ss.import_bitmap`` documentation for more details.
         """
         return self._import_bitmap(
             bitmap=bitmap,
@@ -1226,7 +1226,7 @@ class ss:
             If not specified, it will be set to the size of values.
         is_iso : bool, default False
             Is the Vector iso-valued (meaning all the same value)?
-            If true, then `values` should be a length 1 array.
+            If true, then ``values`` should be a length 1 array.
         take_ownership : bool, default False
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
@@ -1241,7 +1241,7 @@ class ss:
             read-only and will no longer own the data.
         dtype : dtype, optional
             dtype of the new Vector.
-            If not specified, this will be inferred from `values`.
+            If not specified, this will be inferred from ``values``.
         format : str, optional
             Must be "full" or None.  This is included to be compatible with
             the dict returned from exporting.
@@ -1282,10 +1282,10 @@ class ss:
         """
         GxB_Vector_pack_Full.
 
-        `pack_full` is like `import_full` except it "packs" data into an
+        ``pack_full`` is like ``import_full`` except it "packs" data into an
         existing Vector.  This is the opposite of ``unpack("full")``
 
-        See `Vector.ss.import_full` documentation for more details.
+        See ``Vector.ss.import_full`` documentation for more details.
         """
         return self._import_full(
             values=values,
@@ -1364,8 +1364,8 @@ class ss:
     def scan(self, op=monoid.plus, *, name=None, **opts):
         """Perform a prefix scan with the given monoid.
 
-        For example, use `monoid.plus` (the default) to perform a cumulative sum,
-        and `monoid.times` for cumulative product.  Works with any monoid.
+        For example, use ``monoid.plus`` (the default) to perform a cumulative sum,
+        and ``monoid.times`` for cumulative product.  Works with any monoid.
 
         Returns
         -------
@@ -1561,20 +1561,20 @@ class ss:
     def sort(self, op=binary.lt, *, values=True, permutation=True, **opts):
         """GxB_Vector_sort to sort values of the Vector.
 
-        Sorting moves all the elements to the left just like `compactify`.
+        Sorting moves all the elements to the left just like ``compactify``.
         The returned vectors will be the same size as the input Vector.
 
         Parameters
         ----------
         op : :class:`~graphblas.core.operator.BinaryOp`, optional
             Binary operator with a bool return type used to sort the values.
-            For example, `binary.lt` (the default) sorts the smallest elements first.
+            For example, ``binary.lt`` (the default) sorts the smallest elements first.
             Ties are broken according to indices (smaller first).
         values : bool, default=True
-            Whether to return values; will return `None` for values if `False`.
+            Whether to return values; will return ``None`` for values if ``False``.
         permutation : bool, default=True
             Whether to compute the permutation Vector that has the original indices of the
-            sorted values. Will return None if `False`.
+            sorted values. Will return None if ``False``.
         nthreads : int, optional
             The maximum number of threads to use for this operation.
             None, 0 or negative nthreads means to use the default number of threads.
@@ -1642,7 +1642,7 @@ class ss:
             None, 0 or negative nthreads means to use the default number of threads.
 
         For best performance, this function returns a numpy array with uint8 dtype.
-        Use `Vector.ss.deserialize(blob)` to create a Vector from the result of serialization·
+        Use ``Vector.ss.deserialize(blob)`` to create a Vector from the result of serialization·
 
         This method is intended to support all serialization options from SuiteSparse:GraphBLAS.
 
@@ -1668,7 +1668,7 @@ class ss:
         """Deserialize a Vector from bytes, buffer, or numpy array using GxB_Vector_deserialize.
 
         The data should have been previously serialized with a compatible version of
-        SuiteSparse:GraphBLAS.  For example, from the result of `data = vector.ss.serialize()`.
+        SuiteSparse:GraphBLAS.  For example, from the result of ``data = vector.ss.serialize()``.
 
         Examples
         --------

@@ -1,4 +1,4 @@
-"""`graphblas.agg` is an experimental module for exploring Aggregators.
+"""``graphblas.agg`` is an experimental module for exploring Aggregators.
 
 Aggregators may be used in reduce methods:
     - Matrix.reduce_rowwise
@@ -59,9 +59,9 @@ Custom recipes (specific to SuiteSparse:GraphBLAS):
     - ss.argmax
 
 .. deprecated:: 2023.1.0
-    Aggregators `first`, `last`, `first_index`, `last_index`, `argmin`, and `argmax` are
-    deprecated in the `agg` namespace such as `agg.first`. Use them from `agg.ss` namespace
-    instead such as `agg.ss.first`. Will be removed in version 2023.9.0 or later.
+    Aggregators ``first``, ``last``, ``first_index``, ``last_index``, ``argmin``, and ``argmax``
+    are deprecated in the ``agg`` namespace such as ``agg.first``. Use them from ``agg.ss``
+    namespace instead such as ``agg.ss.first``. Will be removed in version 2023.9.0 or later.
 
 # Possible aggregators:
 #   - absolute_deviation, sum(abs(x - mean(x))),  sum_absminus(x, mean(x))

@@ -269,22 +269,25 @@ class Monoid(OpBase):
     def register_anonymous(cls, binaryop, identity, name=None, *, is_idempotent=False):
         """Register a Monoid without registering it in the ``graphblas.monoid`` namespace.
 
+        A monoid is a binary operator whose inputs and output are the same dtype.
         Because it is not registered in the namespace, the name is optional.
 
         Parameters
         ----------
-        binaryop : BinaryOp
-            Builtin or registered binary operator
-        identity :
-            Identity value of the monoid
+        binaryop: BinaryOp or ParameterizedBinaryOp
+            The binary operator of the monoid, which should be able to use the same
+            dtype for both inputs and the output.
+        identity: scalar or Mapping
+            The identity of the monoid such that ``op(x, identity) == x`` for any x.
+            ``identity`` may also be a mapping from dtype to scalar.
         name : str, optional
-            Name associated with the monoid
+            The name of the operator. This *does not* show up as ``gb.monoid.{name}``.
         is_idempotent : bool, default False
             Does ``op(x, x) == x`` for any x?
 
         Returns
         -------
-        Function handle
+        Monoid or ParameterizedMonoid
         """
         if type(binaryop) is ParameterizedBinaryOp:
             return ParameterizedMonoid(
@@ -294,12 +297,36 @@ class Monoid(OpBase):
 
     @classmethod
     def register_new(cls, name, binaryop, identity, *, is_idempotent=False, lazy=False):
-        """Register a Monoid. The name will be used to identify the Monoid in the
-        ``graphblas.monoid`` namespace.
+        """Register a new Monoid and save it to ``graphblas.monoid`` namespace.
 
-            >>> gb.core.operator.Monoid.register_new("max_zero", gb.binary.max_zero, 0)
-            >>> dir(gb.monoid)
-            [..., 'max_zero', ...]
+        A monoid is a binary operator whose inputs and output are the same dtype.
+
+        Parameters
+        ----------
+        name : str
+            The name of the operator. This will show up as ``gb.monoid.{name}``.
+            The name may contain periods, ".", which will result in nested objects
+            such as ``gb.monoid.x.y.z`` for name ``"x.y.z"``.
+        binaryop: BinaryOp or ParameterizedBinaryOp
+            The binary operator of the monoid, which should be able to use the same
+            dtype for both inputs and the output.
+        identity: scalar or Mapping
+            The identity of the monoid such that ``op(x, identity) == x`` for any x.
+            ``identity`` may also be a mapping from dtype to scalar.
+        is_idempotent : bool, default False
+            Does ``op(x, x) == x`` for any x?
+        lazy : bool, default False
+            If False (the default), then the function will be automatically
+            compiled for builtin types (unless ``is_udt`` was True for the binaryop).
+            Compiling functions can be slow, however, so you may want to
+            delay compilation and only compile when the operator is used,
+            which is done by setting ``lazy=True``.
+
+        Examples
+        --------
+        >>> gb.core.operator.Monoid.register_new("max_zero", gb.binary.max_zero, 0)
+        >>> dir(gb.monoid)
+        [..., 'max_zero', ...]
         """
         module, funcname = cls._remove_nesting(name)
         if lazy:
