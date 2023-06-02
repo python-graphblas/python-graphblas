@@ -7,58 +7,6 @@ from ..core.vector import Vector
 _AwkwardDoublyCompressedMatrix = None
 
 
-def from_awkward(A, *, name=None):
-    """Create a Matrix or Vector from an Awkward Array.
-
-    The Awkward Array must have top-level parameters: format, shape
-
-    The Awkward Array must have top-level attributes based on format:
-    - vec/csr/csc: values, indices
-    - hypercsr/hypercsc: values, indices, offset_labels
-
-    Parameters
-    ----------
-    A : awkward.Array
-        Awkward Array with values and indices
-    name : str, optional
-        Name of resulting Matrix or Vector
-
-    Returns
-    -------
-    Vector or Matrix
-    """
-    params = A.layout.parameters
-    if missing := {"format", "shape"} - params.keys():
-        raise ValueError(f"Missing parameters: {missing}")
-    format = params["format"]
-    shape = params["shape"]
-
-    if len(shape) == 1:
-        if format != "vec":
-            raise ValueError(f"Invalid format for Vector: {format}")
-        return Vector.from_coo(
-            A.indices.layout.data, A.values.layout.data, size=shape[0], name=name
-        )
-    nrows, ncols = shape
-    values = A.values.layout.content.data
-    indptr = A.values.layout.offsets.data
-    if format == "csr":
-        cols = A.indices.layout.content.data
-        return Matrix.from_csr(indptr, cols, values, ncols=ncols, name=name)
-    if format == "csc":
-        rows = A.indices.layout.content.data
-        return Matrix.from_csc(indptr, rows, values, nrows=nrows, name=name)
-    if format == "hypercsr":
-        rows = A.offset_labels.layout.data
-        cols = A.indices.layout.content.data
-        return Matrix.from_dcsr(rows, indptr, cols, values, nrows=nrows, ncols=ncols, name=name)
-    if format == "hypercsc":
-        cols = A.offset_labels.layout.data
-        rows = A.indices.layout.content.data
-        return Matrix.from_dcsc(cols, indptr, rows, values, nrows=nrows, ncols=ncols, name=name)
-    raise ValueError(f"Invalid format for Matrix: {format}")
-
-
 def to_awkward(A, format=None):
     """Create an Awkward Array from a GraphBLAS Matrix.
 
@@ -179,3 +127,61 @@ def to_awkward(A, format=None):
     if classname:
         ret = ak.with_name(ret, classname)
     return ret
+
+
+def from_awkward(A, *, name=None):
+    """Create a Matrix or Vector from an Awkward Array.
+
+    The Awkward Array must have top-level parameters: format, shape
+
+    The Awkward Array must have top-level attributes based on format:
+    - vec/csr/csc: values, indices
+    - hypercsr/hypercsc: values, indices, offset_labels
+
+    Parameters
+    ----------
+    A : awkward.Array
+        Awkward Array with values and indices
+    name : str, optional
+        Name of resulting Matrix or Vector
+
+    Returns
+    -------
+    Vector or Matrix
+
+    Note: the intended purpose of this function is to facilitate
+    conversion of an `awkward-array` that was created via `to_awkward`
+    function. If attempting to convert an arbitrary `awkward-array`,
+    make sure that the top-level attributes and parameters contain
+    the expected values.
+    """
+    params = A.layout.parameters
+    if missing := {"format", "shape"} - params.keys():
+        raise ValueError(f"Missing parameters: {missing}")
+    format = params["format"]
+    shape = params["shape"]
+
+    if len(shape) == 1:
+        if format != "vec":
+            raise ValueError(f"Invalid format for Vector: {format}")
+        return Vector.from_coo(
+            A.indices.layout.data, A.values.layout.data, size=shape[0], name=name
+        )
+    nrows, ncols = shape
+    values = A.values.layout.content.data
+    indptr = A.values.layout.offsets.data
+    if format == "csr":
+        cols = A.indices.layout.content.data
+        return Matrix.from_csr(indptr, cols, values, ncols=ncols, name=name)
+    if format == "csc":
+        rows = A.indices.layout.content.data
+        return Matrix.from_csc(indptr, rows, values, nrows=nrows, name=name)
+    if format == "hypercsr":
+        rows = A.offset_labels.layout.data
+        cols = A.indices.layout.content.data
+        return Matrix.from_dcsr(rows, indptr, cols, values, nrows=nrows, ncols=ncols, name=name)
+    if format == "hypercsc":
+        cols = A.offset_labels.layout.data
+        rows = A.indices.layout.content.data
+        return Matrix.from_dcsc(cols, indptr, rows, values, nrows=nrows, ncols=ncols, name=name)
+    raise ValueError(f"Invalid format for Matrix: {format}")
