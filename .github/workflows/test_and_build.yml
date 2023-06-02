@@ -170,7 +170,7 @@ jobs:
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", "=3.1", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           sparsever=$(python -c 'import random ; print(random.choice(["=0.13", "=0.14", ""]))')
-          fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", ""]))')
+          fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", ""]))')
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.8') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
