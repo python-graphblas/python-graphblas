@@ -17,9 +17,9 @@ on:
     branches:
       - main
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
+# concurrency:
+#   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+#   cancel-in-progress: true
 
 jobs:
   rngs:
@@ -131,9 +131,9 @@ jobs:
             source
             upstream
           weights: |
-            1
-            1
-            1
+            1000000
+            1000000
+            1000000
             1
       - name: Setup mamba
         uses: conda-incubator/setup-miniconda@v2
@@ -170,7 +170,7 @@ jobs:
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", "=3.1", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           sparsever=$(python -c 'import random ; print(random.choice(["=0.13", "=0.14", ""]))')
-          fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", ""]))')
+          fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", ""]))')
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.8') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
@@ -252,13 +252,14 @@ jobs:
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
+          set -x  # echo on
           $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${fmm} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
-            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
+            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas=7.4"' || '' }} \
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }}
       - name: Build extension module
         run: |
@@ -308,6 +309,7 @@ jobs:
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo ${args}
           pytest -v --pyargs suitesparse_graphblas
+          set -x  # echo on
           coverage run -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
@@ -343,6 +345,7 @@ jobs:
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
           echo ${args}
+          set -x  # echo on
           coverage run -a -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
