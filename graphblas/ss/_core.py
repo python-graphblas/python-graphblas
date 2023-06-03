@@ -151,7 +151,6 @@ class GlobalConfig(BaseConfig):
         "burble": (lib.GxB_BURBLE, "bool"),
         "print_1based": (lib.GxB_PRINT_1BASED, "bool"),
         # JIT control
-        # TODO: should this be in the global config or a separate JIT config?
         "jit_c_control": (lib.GxB_JIT_C_CONTROL, "int"),
         "jit_use_cmake": (lib.GxB_JIT_USE_CMAKE, "bool"),
         "jit_c_compiler_name": (lib.GxB_JIT_C_COMPILER_NAME, "char*"),
@@ -183,32 +182,6 @@ class GlobalConfig(BaseConfig):
             # "no_format": lib.GxB_NO_FORMAT,  # Used by iterators; not valid here
         },
         "jit_c_control": {
-            "off": lib.GxB_JIT_OFF,
-            "pause": lib.GxB_JIT_PAUSE,
-            "run": lib.GxB_JIT_RUN,
-            "load": lib.GxB_JIT_LOAD,
-            "on": lib.GxB_JIT_ON,
-        },
-    }
-
-
-class JitConfig(BaseConfig):
-    _get_function = "GxB_Global_Option_get"
-    _set_function = "GxB_Global_Option_set"
-    _options = {
-        "c_control": (lib.GxB_JIT_C_CONTROL, "int"),
-        "use_cmake": (lib.GxB_JIT_USE_CMAKE, "bool"),
-        "c_compiler_name": (lib.GxB_JIT_C_COMPILER_NAME, "char*"),
-        "c_compiler_flags": (lib.GxB_JIT_C_COMPILER_FLAGS, "char*"),
-        "c_linker_flags": (lib.GxB_JIT_C_LINKER_FLAGS, "char*"),
-        "c_libraries": (lib.GxB_JIT_C_LIBRARIES, "char*"),
-        "c_cmake_libs": (lib.GxB_JIT_C_CMAKE_LIBS, "char*"),
-        "c_preface": (lib.GxB_JIT_C_PREFACE, "char*"),
-        "error_log": (lib.GxB_JIT_ERROR_LOG, "char*"),
-        "cache_path": (lib.GxB_JIT_CACHE_PATH, "char*"),
-    }
-    _enumerations = {
-        "c_control": {
             "off": lib.GxB_JIT_OFF,
             "pause": lib.GxB_JIT_PAUSE,
             "run": lib.GxB_JIT_RUN,
@@ -303,4 +276,3 @@ class About(Mapping):
 
 about = About()
 config = GlobalConfig(context=global_context)
-jit = JitConfig()

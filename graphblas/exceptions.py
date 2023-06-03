@@ -148,8 +148,6 @@ def check_status_carg(response_code, type_name, carg):
             "    https://github.com/python-graphblas/python-graphblas/issues\n"
             "Thanks (and sorry)!"
         )
-        if type_name == "Context":  # SuiteSparse does not have GxB_Context_error
-            text = ""
     else:
         string = _ffi.new("char**")
         error_func(string, carg)

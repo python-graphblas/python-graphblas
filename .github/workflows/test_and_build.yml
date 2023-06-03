@@ -204,13 +204,13 @@ jobs:
           # But, it's still useful for us to test with different versions!
           psg=""
           if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
-            psgver=$(python -c 'import random ; print(random.choice(["=8.0.0.0", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["=8.0.1.0", ""]))')
             psg=python-suitesparse-graphblas${psgver}
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
             psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", ""]))')
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "source" ]] ; then
             # These should be exact versions
-            psgver=$(python -c 'import random ; print(random.choice(["==8.0.0.0", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["==8.0.1.0", ""]))')
           else
             psgver=""
           fi

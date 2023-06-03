@@ -4664,23 +4664,22 @@ def test_large_iso():
     v = Vector(int, size=2**60)
     v[:] = 1
     repr_printer(v, "v")
-    if False:  # TODO XXX FIXME TEMPORARY
-        assert repr(v) == (
-            '"v_0"                    nvals                 size  dtype      format\n'
-            "gb.Vector  1152921504606846976  1152921504606846976  INT64  full (iso)\n"
-            "----------------------------------------------------------------------\n"
-            "index 0                    ... 1152921504606846975\n"
-            "value                   1  ...                   1"
-        )
-        repr_printer(v.S, "v.S")
-        assert repr(v.S) == (
-            '"v_0.S"                       nvals                 size  dtype      format\n'
-            "StructuralMask\n"
-            "of gb.Vector    1152921504606846976  1152921504606846976  INT64  full (iso)\n"
-            "---------------------------------------------------------------------------\n"
-            "index 0                    ... 1152921504606846975\n"
-            "value                   1  ...                   1"
-        )
+    assert repr(v) == (
+        '"v_0"                    nvals                 size  dtype      format\n'
+        "gb.Vector  1152921504606846976  1152921504606846976  INT64  full (iso)\n"
+        "----------------------------------------------------------------------\n"
+        "index 0                    ... 1152921504606846975\n"
+        "value                   1  ...                   1"
+    )
+    repr_printer(v.S, "v.S")
+    assert repr(v.S) == (
+        '"v_0.S"                       nvals                 size  dtype      format\n'
+        "StructuralMask\n"
+        "of gb.Vector    1152921504606846976  1152921504606846976  INT64  full (iso)\n"
+        "---------------------------------------------------------------------------\n"
+        "index 0                    ... 1152921504606846975\n"
+        "value                   1  ...                   1"
+    )
 
 
 def test_index_expr_vector(v):
