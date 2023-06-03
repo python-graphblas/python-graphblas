@@ -6,7 +6,8 @@ from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
 import graphblas as gb
 
 from ... import binary, monoid
-from ...dtypes import _INDEX, INT64, UINT64, _string_to_dtype, lookup_dtype
+from ...dtypes import _INDEX, INT64, UINT64, lookup_dtype
+from ...dtypes._core import _string_to_dtype
 from ...exceptions import _error_code_lookup, check_status, check_status_carg
 from .. import NULL, ffi, lib
 from ..base import call

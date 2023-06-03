@@ -19,10 +19,10 @@ from ...dtypes import (
     UINT16,
     UINT32,
     UINT64,
-    _sample_values,
     _supports_complex,
     lookup_dtype,
 )
+from ...dtypes._core import _sample_values
 from ...exceptions import UdfParseError, check_status_carg
 from .. import _has_numba, _supports_udfs, ffi, lib
 from ..expr import InfixExprBase
