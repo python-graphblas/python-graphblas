@@ -433,6 +433,7 @@ def test_awkward_errors():
 
 
 @pytest.mark.skipif("not sparse")
+@pytest.mark.slow
 def test_vector_to_from_pydata_sparse():
     coords = np.array([0, 1, 2, 3, 4], dtype="int64")
     data = np.array([10, 20, 30, 40, 50], dtype="int64")
@@ -446,6 +447,7 @@ def test_vector_to_from_pydata_sparse():
 
 
 @pytest.mark.skipif("not sparse")
+@pytest.mark.slow
 def test_matrix_to_from_pydata_sparse():
     coords = np.array([[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]], dtype="int64")
     data = np.array([10, 20, 30, 40, 50], dtype="int64")

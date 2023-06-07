@@ -1433,6 +1433,7 @@ def test_deprecated():
         import graphblas.core.agg  # noqa: F401
 
 
+@pytest.mark.slow
 def test_is_idempotent():
     assert monoid.min.is_idempotent
     assert monoid.max[int].is_idempotent

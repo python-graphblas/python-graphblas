@@ -66,7 +66,7 @@ repos:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.270
+    rev: v0.0.271
     hooks:
       - id: ruff
         args: [--fix-only, --show-fixes]
@@ -94,7 +94,7 @@ repos:
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.270
+    rev: v0.0.271
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint
