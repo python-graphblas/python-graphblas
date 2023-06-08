@@ -55,7 +55,7 @@ Awkward Array
 `Awkward Array <https://awkward-array.org/doc/main/>`_ is a library for nested,
 variable-sized data, including arbitrary-length lists, records, mixed types,
 and missing data, using NumPy-like idioms. Note that the intended use of the
-``awkward-array``-related ``io`` functions is to convert `graphblas` objects to awkward,
+``awkward-array``-related ``io`` functions is to convert ``graphblas`` objects to awkward,
 perform necessary computations/transformations and, if required, convert the
 awkward array back to ``graphblas`` format. To facilitate this conversion process,
 ``graphblas.io.to_awkward`` adds top-level attribute ``format``, describing the
