@@ -21,3 +21,23 @@ from ._core import (
 
 if _supports_complex:
     from ._core import FC32, FC64
+
+
+def __dir__():
+    return globals().keys() | {"ss"}
+
+
+def __getattr__(key):
+    if key == "ss":
+        from .. import backend
+
+        if backend != "suitesparse":
+            raise AttributeError(
+                f'module {__name__!r} only has attribute "ss" when backend is "suitesparse"'
+            )
+        from importlib import import_module
+
+        ss = import_module(".ss", __name__)
+        globals()["ss"] = ss
+        return ss
+    raise AttributeError(f"module {__name__!r} has no attribute {key!r}")

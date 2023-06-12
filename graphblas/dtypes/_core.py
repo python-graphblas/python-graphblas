@@ -90,7 +90,9 @@ def register_anonymous(dtype, name=None):
     except TypeError:
         if isinstance(dtype, dict):
             # Allow dtypes such as `{'x': int, 'y': float}` for convenience
-            dtype = np.dtype([(key, lookup_dtype(val).np_type) for key, val in dtype.items()])
+            dtype = np.dtype(
+                [(key, lookup_dtype(val).np_type) for key, val in dtype.items()], align=True
+            )
         elif isinstance(dtype, str) and "[" in dtype and dtype.endswith("]"):
             # Allow dtypes such as `"INT64[3, 4]"` for convenience
             base_dtype, shape = dtype.split("[", 1)
