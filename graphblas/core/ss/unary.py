@@ -3,7 +3,7 @@ from ...dtypes import lookup_dtype
 from ...exceptions import check_status_carg
 from .. import NULL, ffi, lib
 from ..operator.base import TypedOpBase
-from ..operator.unary import TypedBuiltinUnaryOp, UnaryOp
+from ..operator.unary import TypedUserUnaryOp, UnaryOp
 
 ffi_new = ffi.new
 
@@ -20,7 +20,7 @@ class TypedJitUnaryOp(TypedOpBase):
     def jit_c_definition(self):
         return self._jit_c_definition
 
-    __call__ = TypedBuiltinUnaryOp.__call__
+    __call__ = TypedUserUnaryOp.__call__
 
 
 def register_new(name, jit_c_definition, input_type, ret_type):
