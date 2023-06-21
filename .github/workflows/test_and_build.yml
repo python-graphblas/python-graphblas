@@ -249,7 +249,12 @@ jobs:
               yamlver=""
             fi
           else
-            numba=numba${numbaver}
+            if [[ ${npver} == "=1.25" ]] ; then
+              numbaver=NA
+              numba=""
+            else
+              numba=numba${numbaver}
+            fi
             sparse=sparse${sparsever}
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
