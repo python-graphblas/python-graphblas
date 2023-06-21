@@ -1,8 +1,8 @@
 import warnings as _warnings
 
 import numpy as _np
-from numpy import find_common_type as _find_common_type
 from numpy import promote_types as _promote_types
+from numpy import result_type as _result_type
 
 from . import backend
 from .core import NULL as _NULL
@@ -389,19 +389,11 @@ def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
     if type1 is type2:
         return type1
     if is_left_scalar:
-        scalar_types = [type1.np_type]
-        array_types = []
-    elif not is_right_scalar:
-        # Using `promote_types` is faster than `find_common_type`
-        return lookup_dtype(_promote_types(type1.np_type, type2.np_type))
-    else:
-        scalar_types = []
-        array_types = [type1.np_type]
-    if is_right_scalar:
-        scalar_types.append(type2.np_type)
-    else:
-        array_types.append(type2.np_type)
-    return lookup_dtype(_find_common_type(array_types, scalar_types))
+        if not is_right_scalar:
+            return lookup_dtype(_result_type(_np.array(0, type1.np_type), type2.np_type))
+    elif is_right_scalar:
+        return lookup_dtype(_result_type(type1.np_type, _np.array(0, type2.np_type)))
+    return lookup_dtype(_promote_types(type1.np_type, type2.np_type))
 
 
 def _default_name(dtype):
