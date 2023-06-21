@@ -58,7 +58,7 @@ Here are instructions for two popular environment managers:
 ::
 
   # Create a conda environment named ``graphblas-dev`` using environment.yml in the repository root
-  conda create -f environment.yml
+  conda env create -f environment.yml
   # Activate it
   conda activate graphblas-dev
   # Install python-graphblas from source
