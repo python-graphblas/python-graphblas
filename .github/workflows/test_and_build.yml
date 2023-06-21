@@ -248,13 +248,13 @@ jobs:
               pdver=""
               yamlver=""
             fi
+          elif [[ ${npver} == "=1.25" ]] ; then
+            numba=""
+            numbaver=NA
+            sparse=""
+            sparsever=NA
           else
-            if [[ ${npver} == "=1.25" ]] ; then
-              numbaver=NA
-              numba=""
-            else
-              numba=numba${numbaver}
-            fi
+            numba=numba${numbaver}
             sparse=sparse${sparsever}
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
