@@ -30,6 +30,8 @@ def register_new(name, jit_c_definition, input_type, ret_type):
         )
     input_type = lookup_dtype(input_type)
     ret_type = lookup_dtype(ret_type)
+    if not name.startswith("ss."):
+        name = f"ss.{name}"
     module, funcname = UnaryOp._remove_nesting(name)
 
     rv = UnaryOp(name)
@@ -48,4 +50,5 @@ def register_new(name, jit_c_definition, input_type, ret_type):
     )
     op = TypedJitUnaryOp(rv, funcname, input_type, ret_type, gb_obj[0], jit_c_definition)
     rv._add(op)
+    setattr(module, funcname, rv)
     return rv

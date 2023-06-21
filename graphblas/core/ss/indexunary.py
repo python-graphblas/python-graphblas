@@ -1,5 +1,5 @@
 from ... import backend
-from ...dtypes import lookup_dtype
+from ...dtypes import BOOL, lookup_dtype
 from ...exceptions import check_status_carg
 from .. import NULL, ffi, lib
 from ..operator.base import TypedOpBase
@@ -31,6 +31,8 @@ def register_new(name, jit_c_definition, input_type, thunk_type, ret_type):
     input_type = lookup_dtype(input_type)
     thunk_type = lookup_dtype(thunk_type)
     ret_type = lookup_dtype(ret_type)
+    if not name.startswith("ss."):
+        name = f"ss.{name}"
     module, funcname = IndexUnaryOp._remove_nesting(name)
 
     rv = IndexUnaryOp(name)
@@ -52,4 +54,16 @@ def register_new(name, jit_c_definition, input_type, thunk_type, ret_type):
         rv, funcname, input_type, ret_type, gb_obj[0], jit_c_definition, dtype2=thunk_type
     )
     rv._add(op)
+    if ret_type == BOOL:
+        from ..operator.select import SelectOp
+        from .select import TypedJitSelectOp
+
+        select_module, funcname = SelectOp._remove_nesting(name, strict=False)
+        selectop = SelectOp(name)
+        op2 = TypedJitSelectOp(
+            rv, funcname, input_type, ret_type, gb_obj[0], jit_c_definition, dtype2=thunk_type
+        )
+        selectop._add(op2)
+        setattr(select_module, funcname, selectop)
+    setattr(module, funcname, rv)
     return rv

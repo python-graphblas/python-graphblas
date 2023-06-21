@@ -37,6 +37,8 @@ def register_new(name, jit_c_definition, left_type, right_type, ret_type):
     left_type = lookup_dtype(left_type)
     right_type = lookup_dtype(right_type)
     ret_type = lookup_dtype(ret_type)
+    if not name.startswith("ss."):
+        name = f"ss.{name}"
     module, funcname = BinaryOp._remove_nesting(name)
 
     rv = BinaryOp(name)
@@ -58,4 +60,5 @@ def register_new(name, jit_c_definition, left_type, right_type, ret_type):
         rv, funcname, left_type, ret_type, gb_obj[0], jit_c_definition, dtype2=right_type
     )
     rv._add(op)
+    setattr(module, funcname, rv)
     return rv

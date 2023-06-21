@@ -17,7 +17,7 @@ def register_new(name, jit_c_definition):
         )
     if not name.isidentifier():
         raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
-    if name in dtypes._core._registry or hasattr(dtypes, name):
+    if name in dtypes._core._registry or hasattr(dtypes.ss, name):
         raise ValueError(f"{name!r} name for dtype is unavailable")
     if len(name) > lib.GxB_MAX_NAME_LEN:
         raise ValueError(
@@ -57,5 +57,5 @@ def register_new(name, jit_c_definition):
         dtypes._core._registry[np_type] = rv
         dtypes._core._registry[numba_type] = rv
         dtypes._core._registry[numba_type.name] = rv
-    setattr(dtypes, name, rv)
+    setattr(dtypes.ss, name, rv)
     return rv
