@@ -85,7 +85,7 @@ jobs:
         shell: bash -l {0}
     strategy:
       # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
-      fail-fast: true
+      fail-fast: false  # Every service seems super-flaky right now...
       # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
@@ -177,17 +177,17 @@ jobs:
             pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", "=2.0", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.9') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", "=1.25", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", "=2.0", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.10') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", "=1.25", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.3", "=1.4", "=1.5", "=2.0", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", ""]))')
           else  # Python 3.11
-            npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", "=2.2", ""]))')
@@ -214,7 +214,12 @@ jobs:
           else
             psgver=""
           fi
-          if [[ ${npver} == "=1.24" || ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
+          if [[ ${npver} == "=1.25" ]] ; then
+            numbaver=""
+            if [[ ${spver} == "=1.8" ]] ; then
+              spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", ""]))')
+            fi
+          elif [[ ${npver} == "=1.24" || ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
             numbaver=$(python -c 'import random ; print(random.choice(["=0.57", ""]))')
           elif [[ ${npver} == "=1.21" ]] ; then
             numbaver=$(python -c 'import random ; print(random.choice(["=0.55", "=0.56", "=0.57", ""]))')
@@ -246,6 +251,11 @@ jobs:
               pdver=""
               yamlver=""
             fi
+          elif [[ ${npver} == "=1.25" ]] ; then
+            numba=""
+            numbaver=NA
+            sparse=""
+            sparsever=NA
           else
             numba=numba${numbaver}
             sparse=sparse${sparsever}
@@ -308,7 +318,7 @@ jobs:
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo ${args}
-          pytest -v --pyargs suitesparse_graphblas
+          (cd .. && pytest -v --pyargs suitesparse_graphblas)  # Don't use our conftest.py
           set -x  # echo on
           coverage run -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
@@ -400,7 +410,18 @@ jobs:
       - name: Coverage2
         id: coverageAttempt2
         if: steps.coverageAttempt1.outcome == 'failure'
-        continue-on-error: false
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
+          COVERALLS_PARALLEL: true
+        run: |
+          coveralls --service=github
+      - name: Coverage3
+        id: coverageAttempt3
+        if: steps.coverageAttempt2.outcome == 'failure'
+        # Continue even if it failed 3 times... (sheesh! use codecov instead)
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}

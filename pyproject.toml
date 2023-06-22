@@ -170,7 +170,7 @@ line_length = 100
 [tool.pytest.ini_options]
 minversion = "6.0"
 testpaths = "graphblas/tests"
-xfail_strict = true
+xfail_strict = false  # TODO: re-enable this when awkward test failures are fixed
 addopts = [
     "--strict-config",  # Force error if config is mispelled
     "--strict-markers",  # Force error if marker is mispelled (must be defined in config)
@@ -184,6 +184,7 @@ filterwarnings = [
     # See: https://docs.python.org/3/library/warnings.html#describing-warning-filters
     # and: https://docs.pytest.org/en/7.2.x/how-to/capture-warnings.html#controlling-warnings
     "error",
+
     # sparse 0.14.0 (2022-02-24) began raising this warning; it has been reported and fixed upstream.
     "ignore:coords should be an ndarray. This will raise a ValueError:DeprecationWarning:sparse._coo.core",
 
@@ -191,13 +192,18 @@ filterwarnings = [
     # https://setuptools.pypa.io/en/latest/history.html#v67-3-0
     # MAINT: check if this is still necessary in 2025
     "ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning:pkg_resources",
-    # And this deprecation warning was added in setuptools v67.5.0 (8 Mar 2023). See:
+
+    # This deprecation warning was added in setuptools v67.5.0 (8 Mar 2023). See:
     # https://setuptools.pypa.io/en/latest/history.html#v67-5-0
     "ignore:pkg_resources is deprecated as an API:DeprecationWarning:pkg_resources",
 
     # sre_parse deprecated in 3.11; this is triggered by awkward 0.10
     "ignore:module 'sre_parse' is deprecated:DeprecationWarning:",
     "ignore:module 'sre_constants' is deprecated:DeprecationWarning:",
+
+    # numpy 1.25.0 (2023-06-17) deprecated `np.find_common_type`; many other dependencies use it.
+    # See if we can remove this filter in 2025.
+    "ignore:np.find_common_type is deprecated:DeprecationWarning:",
 
     # pypy gives this warning
     "ignore:can't resolve package from __spec__ or __package__:ImportWarning:",
