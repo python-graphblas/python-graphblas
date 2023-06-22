@@ -228,7 +228,7 @@ jobs:
             numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57", ""]))')
           fi
           fmm=fast_matrix_market${fmmver}
-          akver=${{ matrix.akver }}
+          akver="="${{ matrix.akver }}
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true && ${awkward} == "awkward=1.9.0"]]; then
             akver=""
           fi
