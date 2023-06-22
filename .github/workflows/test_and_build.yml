@@ -410,7 +410,18 @@ jobs:
       - name: Coverage2
         id: coverageAttempt2
         if: steps.coverageAttempt1.outcome == 'failure'
-        continue-on-error: false
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
+          COVERALLS_PARALLEL: true
+        run: |
+          coveralls --service=github
+      - name: Coverage3
+        id: coverageAttempt3
+        if: steps.coverageAttempt2.outcome == 'failure'
+        # Continue even if it failed 3 times... (sheesh! use codecov instead)
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
