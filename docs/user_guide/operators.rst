@@ -89,9 +89,10 @@ registered from numpy are located in ``graphblas.binary.numpy``.
 Monoids
 -------
 
-Monoids extend the concept of a binary operator to require a single domain for all inputs and
-the output. Monoids are also associative, so the order of the inputs does not matter. And finally,
-monoids have a default identity such that ``A op identity == A``.
+Monoids extend the concept of a binary operator to require a single domain for all inputs and the output.
+Monoids are also associative and commutative, so the order of operations and inputs do not matter
+(for example, ``(a + b) + c == b + (c + a)``).
+And finally, monoids have a default identity such that ``A op identity == A``.
 
 Monoids are commonly for reductions, collapsing all elements down to a single value.
 
