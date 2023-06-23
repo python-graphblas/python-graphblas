@@ -421,7 +421,7 @@ jobs:
         id: coverageAttempt3
         if: steps.coverageAttempt2.outcome == 'failure'
         # Continue even if it failed 3 times... (sheesh! use codecov instead)
-        continue-on-error: true
+        continue-on-error: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
