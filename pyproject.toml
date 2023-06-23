@@ -170,7 +170,7 @@ line_length = 100
 [tool.pytest.ini_options]
 minversion = "6.0"
 testpaths = "graphblas/tests"
-xfail_strict = false  # TODO: re-enable this when awkward test failures are fixed
+xfail_strict = true
 addopts = [
     "--strict-config",  # Force error if config is mispelled
     "--strict-markers",  # Force error if marker is mispelled (must be defined in config)
