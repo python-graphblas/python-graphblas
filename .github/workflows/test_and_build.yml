@@ -229,7 +229,7 @@ jobs:
           fi
           fmm=fast_matrix_market${fmmver}
           akver="="${{ matrix.akver }}
-          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true && ${awkward} == "awkward=1.9.0" ]] ; then
+          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true && ${akver} == "=1.9.0" ]] ; then
             akver=""
           fi
           awkward=awkward${akver}
