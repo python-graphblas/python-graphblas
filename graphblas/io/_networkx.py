@@ -31,7 +31,7 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
 
 
 # TODO: add parameters to allow different networkx classes and attribute names
-def to_networkx(m, edge_attribute="weight"):
+def to_networkx(m, edge_attribute="weight", create_isolates=False):
     """Create a networkx DiGraph from a square adjacency Matrix.
 
     Parameters
@@ -41,6 +41,11 @@ def to_networkx(m, edge_attribute="weight"):
     edge_attribute : str, optional
         Name of edge attribute from values of Matrix. If None, values will be skipped.
         Default is "weight".
+    create_isolates : bool, optional
+        If row $i$ and column $i$ are both empty, then node $i$ is an isolate. By default,
+        these isolate nodes are ignored. If True, then the graph will also contain the
+        isolate nodes. Note that for very large adjacency matrices, creating isolates
+        will increase the memory footprint of the graph.
 
     Returns
     -------
@@ -56,4 +61,6 @@ def to_networkx(m, edge_attribute="weight"):
         G.add_edges_from(zip(rows, cols))
     else:
         G.add_weighted_edges_from(zip(rows, cols, vals.tolist()), weight=edge_attribute)
+    if create_isolates:
+        G.add_nodes_from(range(max(m.shape)))
     return G
