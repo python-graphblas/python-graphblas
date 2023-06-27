@@ -116,17 +116,20 @@ def ic():  # pragma: no cover (debug)
 
 
 @contextlib.contextmanager
-def burble():
+def burble():  # pragma: no cover (debug)
     """Show the burble diagnostics within a context."""
-    # Don't keep track of previous state; always set to False when done
+    if gb.backend != "suitesparse":
+        yield
+        return
+    prev = gb.ss.config["burble"]
     gb.ss.config["burble"] = True
     try:
         yield
     finally:
-        gb.ss.config["burble"] = False
+        gb.ss.config["burble"] = prev
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def burble_all():  # pragma: no cover (debug)
     """Show the burble diagnostics for the entire test."""
     with burble():
