@@ -53,7 +53,7 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
             f'Bad engine value: {engine!r}. Must be "auto", "scipy", "fmm", or "fast_matrix_market"'
         )
     array = mmread(source, **kwargs)
-    if array.format == "coo":
+    if getattr(array, "format", None) == "coo":
         nrows, ncols = array.shape
         return Matrix.from_coo(
             array.row, array.col, array.data, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
