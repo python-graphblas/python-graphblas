@@ -1448,7 +1448,7 @@ def test_diag(v):
         expected = Matrix.from_coo(rows, cols, values, nrows=size, ncols=size, dtype=v.dtype)
         # Construct diagonal matrix A
         if suitesparse:
-            A = gb.ss.diag(v, k=k)
+            A = gb.ss.diag(v, k=k, nthreads=2)
             assert expected.isequal(A)
         A = v.diag(k)
         assert expected.isequal(A)
