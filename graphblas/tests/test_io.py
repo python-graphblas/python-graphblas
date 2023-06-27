@@ -59,18 +59,24 @@ def test_vector_to_from_numpy():
 
     csr = gb.io.to_scipy_sparse(v, "csr")
     assert csr.nnz == 2
-    assert ss.isspmatrix_csr(csr)
+    # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_csr`
+    assert isinstance(csr, getattr(ss, "sparray", ss.spmatrix))
+    assert csr.format == "csr"
     np.testing.assert_array_equal(csr.toarray(), np.array([[0.0, 2.0, 4.1]]))
 
     csc = gb.io.to_scipy_sparse(v, "csc")
     assert csc.nnz == 2
-    assert ss.isspmatrix_csc(csc)
+    # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_csc`
+    assert isinstance(csc, getattr(ss, "sparray", ss.spmatrix))
+    assert csc.format == "csc"
     np.testing.assert_array_equal(csc.toarray(), np.array([[0.0, 2.0, 4.1]]).T)
 
     # default to csr-like
     coo = gb.io.to_scipy_sparse(v, "coo")
     assert coo.shape == csr.shape
-    assert ss.isspmatrix_coo(coo)
+    # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_coo`
+    assert isinstance(coo, getattr(ss, "sparray", ss.spmatrix))
+    assert coo.format == "coo"
     assert coo.nnz == 2
     np.testing.assert_array_equal(coo.toarray(), np.array([[0.0, 2.0, 4.1]]))
 
@@ -99,7 +105,9 @@ def test_matrix_to_from_numpy():
 
     for format in ["csr", "csc", "coo"]:
         sparse = gb.io.to_scipy_sparse(M, format)
-        assert getattr(ss, f"isspmatrix_{format}")(sparse)
+        # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_csr`
+        assert isinstance(sparse, getattr(ss, "sparray", ss.spmatrix))
+        assert sparse.format == format
         assert sparse.nnz == 3
         np.testing.assert_array_equal(sparse.toarray(), a)
         M2 = gb.io.from_scipy_sparse(sparse)

@@ -36,7 +36,6 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
     try:
         # scipy is currently needed for *all* engines
         from scipy.io import mmread
-        from scipy.sparse import isspmatrix_coo
     except ImportError:  # pragma: no cover (import)
         raise ImportError("scipy is required to read Matrix Market files") from None
     engine = engine.lower()
@@ -54,7 +53,7 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
             f'Bad engine value: {engine!r}. Must be "auto", "scipy", "fmm", or "fast_matrix_market"'
         )
     array = mmread(source, **kwargs)
-    if isspmatrix_coo(array):
+    if array.format == "coo":
         nrows, ncols = array.shape
         return Matrix.from_coo(
             array.row, array.col, array.data, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
