@@ -46,7 +46,7 @@ def register_new(name, jit_c_definition, input_type, ret_type):
             ffi_new("char[]", jit_c_definition.encode()),
         ),
         "UnaryOp",
-        gb_obj,
+        gb_obj[0],
     )
     op = TypedJitUnaryOp(rv, funcname, input_type, ret_type, gb_obj[0], jit_c_definition)
     rv._add(op)

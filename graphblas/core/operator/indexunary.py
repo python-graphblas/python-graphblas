@@ -194,7 +194,7 @@ class IndexUnaryOp(OpBase):
                         type_.gb_obj,
                     ),
                     "IndexUnaryOp",
-                    new_indexunary,
+                    new_indexunary[0],
                 )
                 op = cls._typed_user_class(new_type_obj, name, type_, ret_type, new_indexunary[0])
                 new_type_obj._add(op)
@@ -226,7 +226,7 @@ class IndexUnaryOp(OpBase):
                 new_indexunary, indexunary_wrapper.cffi, ret_type._carg, dtype._carg, dtype2._carg
             ),
             "IndexUnaryOp",
-            new_indexunary,
+            new_indexunary[0],
         )
         op = TypedUserIndexUnaryOp(
             self,

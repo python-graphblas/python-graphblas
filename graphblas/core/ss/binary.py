@@ -54,7 +54,7 @@ def register_new(name, jit_c_definition, left_type, right_type, ret_type):
             ffi_new("char[]", jit_c_definition.encode()),
         ),
         "BinaryOp",
-        gb_obj,
+        gb_obj[0],
     )
     op = TypedJitBinaryOp(
         rv, funcname, left_type, ret_type, gb_obj[0], jit_c_definition, dtype2=right_type

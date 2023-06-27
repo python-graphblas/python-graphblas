@@ -48,7 +48,7 @@ def register_new(name, jit_c_definition, input_type, thunk_type, ret_type):
             ffi_new("char[]", jit_c_definition.encode()),
         ),
         "IndexUnaryOp",
-        gb_obj,
+        gb_obj[0],
     )
     op = TypedJitIndexUnaryOp(
         rv, funcname, input_type, ret_type, gb_obj[0], jit_c_definition, dtype2=thunk_type
