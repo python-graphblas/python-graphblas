@@ -75,7 +75,7 @@ changelog = "https://github.com/python-graphblas/python-graphblas/releases"
 
 [project.optional-dependencies]
 suitesparse = [
-    "suitesparse-graphblas >=8.0.1.0, <8.1",
+    "suitesparse-graphblas >8.0.0, <8.1",
 ]
 networkx = [
     "networkx >=2.8",
