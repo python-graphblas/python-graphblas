@@ -104,13 +104,17 @@ def mmwrite(
     engine = engine.lower()
     if engine in {"auto", "fmm", "fast_matrix_market"}:
         try:
-            from fast_matrix_market import mmwrite  # noqa: F811
+            from fast_matrix_market import __version__, mmwrite  # noqa: F811
         except ImportError:  # pragma: no cover (import)
             if engine != "auto":
                 raise ImportError(
                     "fast_matrix_market is required to write Matrix Market files "
                     f'using the "{engine}" engine'
                 ) from None
+        else:
+            import scipy as sp
+
+            engine = "fast_matrix_market"
     elif engine != "scipy":
         raise ValueError(
             f'Bad engine value: {engine!r}. Must be "auto", "scipy", "fmm", or "fast_matrix_market"'
@@ -119,6 +123,12 @@ def mmwrite(
         array = matrix.ss.export()["values"]
     else:
         array = to_scipy_sparse(matrix, format="coo")
+        if engine == "fast_matrix_market" and __version__ < "1.7." and sp.__version__ > "1.11.":
+            # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_coo`.
+            # fast_matrix_market updated to handle this in version 1.7.0
+            # Also, it looks like fast_matrix_market has special writers for csr and csc;
+            # should we see if using those are faster?
+            array = sp.sparse.coo_matrix(array)
     mmwrite(
         target,
         array,
