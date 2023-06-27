@@ -1006,7 +1006,7 @@ def test_get_semiring():
 
 def test_create_semiring():
     # stress test / sanity check
-    monoid_names = {x for x in dir(monoid) if not x.startswith("_")}
+    monoid_names = {x for x in dir(monoid) if not x.startswith("_") and x != "ss"}
     binary_names = {x for x in dir(binary) if not x.startswith("_") and x != "ss"}
     for monoid_name, binary_name in itertools.product(monoid_names, binary_names):
         cur_monoid = getattr(monoid, monoid_name)
