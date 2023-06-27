@@ -15,10 +15,10 @@ from ...dtypes import (
     UINT16,
     UINT32,
     UINT64,
-    _sample_values,
     _supports_complex,
     lookup_dtype,
 )
+from ...dtypes._core import _sample_values
 from ...exceptions import UdfParseError, check_status_carg
 from .. import _has_numba, ffi, lib
 from ..utils import output_type
@@ -239,7 +239,7 @@ class UnaryOp(OpBase):
                         new_unary, unary_wrapper.cffi, ret_type.gb_obj, type_.gb_obj
                     ),
                     "UnaryOp",
-                    new_unary,
+                    new_unary[0],
                 )
                 op = TypedUserUnaryOp(new_type_obj, name, type_, ret_type, new_unary[0])
                 new_type_obj._add(op)
@@ -264,7 +264,7 @@ class UnaryOp(OpBase):
         check_status_carg(
             lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi, ret_type._carg, dtype._carg),
             "UnaryOp",
-            new_unary,
+            new_unary[0],
         )
         op = TypedUserUnaryOp(self, self.name, dtype, ret_type, new_unary[0])
         self._udt_types[dtype] = ret_type

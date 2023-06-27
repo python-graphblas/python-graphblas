@@ -2,6 +2,7 @@ from collections.abc import Mapping
 
 from ..core import ffi, lib
 from ..core.base import _expect_type
+from ..core.descriptor import lookup as descriptor_lookup
 from ..core.matrix import Matrix, TransposedMatrix
 from ..core.scalar import _as_scalar
 from ..core.ss.config import BaseConfig
@@ -52,6 +53,9 @@ def diag(x, k=0, dtype=None, *, name=None, **opts):
         dtype = x.dtype
     typ = type(x)
     if typ is Vector:
+        if opts:
+            # Ignore opts for now
+            desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
         size = x._size + abs(k.value)
         rv = Matrix(dtype, nrows=size, ncols=size, name=name)
         rv.ss.build_diag(x, k)
@@ -120,7 +124,7 @@ class GlobalConfig(BaseConfig):
     memory_pool : List[int]
     burble : bool
         Enable diagnostic printing from SuiteSparse:GraphBLAS
-    print_1based: bool
+    print_1based : bool
     gpu_control : str, {"always", "never"}
     gpu_chunk : double
 

@@ -54,5 +54,7 @@ jobs:
           python-version: ${{ needs.rngs.outputs.pyver }}
           # python-version: ${{ matrix.python-version }}
       - run: python -m pip install --upgrade pip
+      # - run: pip install --pre suitesparse-graphblas  # Use if we need pre-release
       - run: pip install -e .[default]
-      - run: ./scripts/test_imports.sh
+      - name: Run test imports
+        run: ./scripts/test_imports.sh

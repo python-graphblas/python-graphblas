@@ -138,6 +138,7 @@ packages = [
     "graphblas.core",
     "graphblas.core.operator",
     "graphblas.core.ss",
+    "graphblas.dtypes",
     "graphblas.indexunary",
     "graphblas.io",
     "graphblas.monoid",
@@ -311,6 +312,7 @@ ignore = [
     # "SIM401",  # Use dict.get ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
     "TRY004",  # Prefer `TypeError` exception for invalid type (Note: good advice, but not worth the nuisance)
     "TRY200",  # Use `raise from` to specify exception cause (Note: sometimes okay to raise original exception)
+    "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar` (Note: no annotations yet)
 
     # Intentionally ignored
     "COM812",  # Trailing comma missing
@@ -322,6 +324,7 @@ ignore = [
     "N806",  # Variable ... in function should be lowercase
     "N807",  # Function name should not start and end with `__`
     "N818",  # Exception name ... should be named with an Error suffix (Note: good advice)
+    "PLR0124", # Name compared with itself, consider replacing `x == x` (Note: too strict)
     "PLR0911",  # Too many return statements
     "PLR0912",  # Too many branches
     "PLR0913",  # Too many arguments to function call
@@ -356,6 +359,7 @@ ignore = [
     "TCH",  # flake8-type-checking (Note: figure out type checking later)
     "ARG",  # flake8-unused-arguments (Sometimes helpful, but too strict)
     "TD",  # flake8-todos (Maybe okay to add some of these)
+    "FIX",  # flake8-fixme (like flake8-todos)
     "ERA",  # eradicate (We like code in comments!)
     "PD",  # pandas-vet (Intended for scripts that use pandas, not libraries)
 ]

@@ -348,7 +348,7 @@ class BaseType:
                         return
                     if opts:
                         # Ignore opts for now
-                        descriptor_lookup(**opts)
+                        desc = descriptor_lookup(**opts)
                     self.value = expr
                     return
 
@@ -371,7 +371,7 @@ class BaseType:
                 else:
                     if opts:
                         # Ignore opts for now
-                        descriptor_lookup(**opts)
+                        desc = descriptor_lookup(**opts)
                     self.value = expr
                     return
             else:
@@ -571,7 +571,7 @@ class BaseExpression:
         ):
             if opts:
                 # Ignore opts for now
-                descriptor_lookup(**opts)
+                desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
             if self._is_scalar and self._value._is_cscalar != is_cscalar:
                 return self._value.dup(is_cscalar=is_cscalar, name=name)
             rv = self._value

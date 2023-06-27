@@ -3,7 +3,8 @@ import re
 from types import FunctionType
 
 from ... import _STANDARD_OPERATOR_NAMES, indexunary, select
-from ...dtypes import BOOL, FP64, INT8, INT64, UINT64, _sample_values, lookup_dtype
+from ...dtypes import BOOL, FP64, INT8, INT64, UINT64, lookup_dtype
+from ...dtypes._core import _sample_values
 from ...exceptions import UdfParseError, check_status_carg
 from .. import _has_numba, ffi, lib
 from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op, _deserialize_parameterized
@@ -193,7 +194,7 @@ class IndexUnaryOp(OpBase):
                         type_.gb_obj,
                     ),
                     "IndexUnaryOp",
-                    new_indexunary,
+                    new_indexunary[0],
                 )
                 op = cls._typed_user_class(new_type_obj, name, type_, ret_type, new_indexunary[0])
                 new_type_obj._add(op)
@@ -225,7 +226,7 @@ class IndexUnaryOp(OpBase):
                 new_indexunary, indexunary_wrapper.cffi, ret_type._carg, dtype._carg, dtype2._carg
             ),
             "IndexUnaryOp",
-            new_indexunary,
+            new_indexunary[0],
         )
         op = TypedUserIndexUnaryOp(
             self,
