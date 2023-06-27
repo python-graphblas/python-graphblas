@@ -128,7 +128,7 @@ def mmwrite(
             # fast_matrix_market updated to handle this in version 1.7.0
             # Also, it looks like fast_matrix_market has special writers for csr and csc;
             # should we see if using those are faster?
-            array = sp.sparse.coo_matrix(array)
+            array = sp.sparse.coo_matrix(array)  # FLAKY COVERAGE
     mmwrite(
         target,
         array,

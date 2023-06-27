@@ -1455,7 +1455,7 @@ def test_diag(v):
 
         # Extract diagonal from A
         if suitesparse:
-            w = gb.ss.diag(A, Scalar.from_value(k))
+            w = gb.ss.diag(A, Scalar.from_value(k), nthreads=2)
             assert v.isequal(w)
             assert w.dtype == "INT64"
 
@@ -1737,6 +1737,13 @@ def test_dup_expr(v):
     assert result.isequal(b)
     result = (b | b).dup(clear=True)
     assert result.isequal(b.dup(clear=True))
+    result = v[:5].dup()
+    assert result.isequal(v[:5].new())
+    if suitesparse:
+        result = v[:5].dup(nthreads=2)
+        assert result.isequal(v[:5].new())
+        result = v[:5].dup(clear=True, nthreads=2)
+        assert result.isequal(Vector(v.dtype, size=5))
 
 
 @pytest.mark.skipif("not suitesparse")

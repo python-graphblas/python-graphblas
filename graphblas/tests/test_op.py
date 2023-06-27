@@ -1447,3 +1447,14 @@ def test_is_idempotent():
         assert not monoid.numpy.equal.is_idempotent
     with pytest.raises(AttributeError):
         binary.min.is_idempotent
+
+
+def test_ops_have_ss():
+    modules = [unary, binary, monoid, semiring, indexunary, select, op]
+    if suitesparse:
+        for mod in modules:
+            assert mod.ss is not None
+    else:
+        for mod in modules:
+            with pytest.raises(AttributeError):
+                mod.ss

@@ -253,3 +253,20 @@ def test_has_complex():
     from packaging.version import parse
 
     assert dtypes._supports_complex == (parse(ssgb.__version__) >= parse("7.4.3.1"))
+
+
+def test_has_ss_attribute():
+    if suitesparse:
+        assert dtypes.ss is not None
+    else:
+        with pytest.raises(AttributeError):
+            dtypes.ss
+
+
+def test_dir():
+    must_have = {"DataType", "lookup_dtype", "register_anonymous", "register_new", "ss", "unify"}
+    must_have.update({"FP32", "FP64", "INT8", "INT16", "INT32", "INT64"})
+    must_have.update({"BOOL", "UINT8", "UINT16", "UINT32", "UINT64"})
+    if dtypes._supports_complex:
+        must_have.update({"FC32", "FC64"})
+    assert set(dir(dtypes)) & must_have == must_have
