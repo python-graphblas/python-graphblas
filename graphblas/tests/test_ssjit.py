@@ -5,7 +5,7 @@ from numpy.testing import assert_array_equal
 from graphblas import backend, binary, dtypes, indexunary, select, unary
 from graphblas.core import _supports_udfs as supports_udfs
 
-from .conftest import autocompute
+from .conftest import autocompute, burble
 
 from graphblas import Vector  # isort:skip (for dask-graphblas)
 
@@ -20,9 +20,10 @@ def v():
 
 @autocompute
 def test_jit_udt():
-    dtype = dtypes.ss.register_new(
-        "myquaternion", "typedef struct { float x [4][4] ; int color ; } myquaternion ;"
-    )
+    with burble():
+        dtype = dtypes.ss.register_new(
+            "myquaternion", "typedef struct { float x [4][4] ; int color ; } myquaternion ;"
+        )
     assert not hasattr(dtypes, "myquaternion")
     assert dtypes.ss.myquaternion is dtype
     assert dtype.name == "myquaternion"
@@ -41,7 +42,8 @@ def test_jit_udt():
 
 def test_jit_unary(v):
     cdef = "void square (float *z, float *x) { (*z) = (*x) * (*x) ; } ;"
-    square = unary.ss.register_new("square", cdef, "FP32", "FP32")
+    with burble():
+        square = unary.ss.register_new("square", cdef, "FP32", "FP32")
     assert not hasattr(unary, "square")
     assert unary.ss.square is square
     assert square.name == "ss.square"
@@ -58,13 +60,14 @@ def test_jit_unary(v):
 
 def test_jit_binary(v):
     cdef = "void absdiff (double *z, double *x, double *y) { (*z) = fabs ((*x) - (*y)) ; }"
-    absdiff = binary.ss.register_new(
-        "absdiff",
-        cdef,
-        "FP64",
-        "FP64",
-        "FP64",
-    )
+    with burble():
+        absdiff = binary.ss.register_new(
+            "absdiff",
+            cdef,
+            "FP64",
+            "FP64",
+            "FP64",
+        )
     assert not hasattr(binary, "absdiff")
     assert binary.ss.absdiff is absdiff
     assert absdiff.name == "ss.absdiff"
@@ -87,7 +90,8 @@ def test_jit_indexunary(v):
         "void diffy (double *z, double *x, GrB_Index i, GrB_Index j, double *y) "
         "{ (*z) = (i + j) * fabs ((*x) - (*y)) ; }"
     )
-    diffy = indexunary.ss.register_new("diffy", cdef, "FP64", "FP64", "FP64")
+    with burble():
+        diffy = indexunary.ss.register_new("diffy", cdef, "FP64", "FP64", "FP64")
     assert not hasattr(indexunary, "diffy")
     assert indexunary.ss.diffy is diffy
     assert not hasattr(select, "diffy")
@@ -110,7 +114,8 @@ def test_jit_select(v):
         "void woot (bool *z, const int32_t *x, GrB_Index i, GrB_Index j, int32_t *y) "
         "{ (*z) = ((*x) + i + j == (*y)) ; }"
     )
-    woot = select.ss.register_new("woot", cdef, "INT32", "INT32")
+    with burble():
+        woot = select.ss.register_new("woot", cdef, "INT32", "INT32")
     assert not hasattr(select, "woot")
     assert select.ss.woot is woot
     assert not hasattr(indexunary, "woot")
