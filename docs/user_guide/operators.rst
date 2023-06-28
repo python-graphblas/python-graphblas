@@ -89,9 +89,12 @@ registered from numpy are located in ``graphblas.binary.numpy``.
 Monoids
 -------
 
-Monoids extend the concept of a binary operator to require a single domain for all inputs and
-the output. Monoids are also associative, so the order of the inputs does not matter. And finally,
-monoids have a default identity such that ``A op identity == A``.
+Monoids extend the concept of a binary operator to require a single domain for all inputs and the output.
+Monoids are also associative so the order of operations does not matter
+(for example, ``(a + b) + c == a + (b + c)``).
+GraphBLAS primarily uses *commutative monoids* (for example, ``a + b == b + a``),
+and all standard monoids in python-graphblas commute.
+And finally, monoids have a default identity such that ``A op identity == A``.
 
 Monoids are commonly for reductions, collapsing all elements down to a single value.
 
@@ -273,7 +276,7 @@ Example usage:
     minval = v.reduce(gb.monoid.min).value
 
     # This will force the FP32 version of min to be used, possibly type casting the elements
-    minvalFP32 = v.reduce(gb.monoid.min['FP32']).value
+    minvalFP32 = v.reduce(gb.monoid.min["FP32"]).value
 
 
 The gb.op Namespace
@@ -431,7 +434,7 @@ the power of y for overlapping elements.
 
 .. code-block:: python
 
-    v ** w
+    v**w
 
 .. csv-table::
     :header: 0,1,2,3,4,5

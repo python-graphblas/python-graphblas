@@ -1056,7 +1056,7 @@ def _as_scalar(scalar, dtype=None, *, is_cscalar):
 
 
 def _dict_to_record(np_type, d):
-    """Converts e.g. `{"x": 1, "y": 2.3}` to `(1, 2.3)`."""
+    """Converts e.g. ``{"x": 1, "y": 2.3}`` to ``(1, 2.3)``."""
     rv = []
     for name, (dtype, _) in np_type.fields.items():
         val = d[name]

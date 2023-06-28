@@ -17,6 +17,10 @@ on:
     branches:
       - main
 
+# concurrency:
+#   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+#   cancel-in-progress: true
+
 jobs:
   rngs:
     # To achieve consistent coverage, we need a little bit of correlated collaboration.
@@ -127,9 +131,9 @@ jobs:
             source
             upstream
           weights: |
-            1
-            1
-            1
+            1000000
+            1000000
+            1000000
             1
       - name: Setup mamba
         uses: conda-incubator/setup-miniconda@v2
@@ -166,27 +170,27 @@ jobs:
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", "=3.1", ""]))')
           yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           sparsever=$(python -c 'import random ; print(random.choice(["=0.13", "=0.14", ""]))')
-          fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", ""]))')
+          fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", "=1.7", ""]))')
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.8') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", "=2.0", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.9') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", ""]))')
-            spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", "=1.25", ""]))')
+            spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", "=1.11", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", "=2.0", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.10') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", ""]))')
-            spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", "=1.25", ""]))')
+            spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", "=1.11", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.3", "=1.4", "=1.5", "=2.0", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", ""]))')
           else  # Python 3.11
-            npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", ""]))')
-            spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", ""]))')
+            spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", "=2.2", ""]))')
           fi
           if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
             # TODO: there are currently issues with some numpy versions when
@@ -200,28 +204,27 @@ jobs:
           # But, it's still useful for us to test with different versions!
           psg=""
           if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
-            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2"]))')
             psg=python-suitesparse-graphblas${psgver}
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
-            psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2"]))')
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "source" ]] ; then
             # These should be exact versions
-            psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2"]))')
           else
             psgver=""
           fi
-          # TODO: drop 0.57.0rc1 and use 0.57 once numba 0.57 is properly released
-          if [[ ${npver} == "=1.24" || ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.57.0rc1", ""]))')
-          elif [[ ${npver} == "=1.21" ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.55", "=0.56", "=0.57.0rc1", ""]))')
-          else
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57.0rc1", ""]))')
-          fi
-          if [[ ${{ matrix.os == 'windows-latest' }} == true && ( ${npver} == "=1.24" || ${numbaver} == "=0.57.0rc1" ) ]] ; then
-            # TODO: numba 0.57.0rc1 currently crashes sometimes on windows, so skip it for now
-            npver=""
+          if [[ ${npver} == "=1.25" ]] ; then
             numbaver=""
+            if [[ ${spver} == "=1.8" ]] ; then
+              spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", ""]))')
+            fi
+          elif [[ ${npver} == "=1.24" || ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.57", ""]))')
+          elif [[ ${npver} == "=1.21" ]] ; then
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.55", "=0.56", "=0.57", ""]))')
+          else
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57", ""]))')
           fi
           fmm=fast_matrix_market${fmmver}
           awkward=awkward${akver}
@@ -248,20 +251,25 @@ jobs:
               pdver=""
               yamlver=""
             fi
+          elif [[ ${npver} == "=1.25" ]] ; then
+            numba=""
+            numbaver=NA
+            sparse=""
+            sparsever=NA
           else
             numba=numba${numbaver}
             sparse=sparse${sparsever}
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
-          # TODO: remove `-c numba` when numba 0.57 is properly released
-          $(command -v mamba || command -v conda) install -c numba packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli \
+          set -x  # echo on
+          $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${fmm} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
-            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4.0"' || '' }} \
+            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas=7.4"' || '' }} \
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }}
       - name: Build extension module
         run: |
@@ -310,7 +318,8 @@ jobs:
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo ${args}
-          pytest -v --pyargs suitesparse_graphblas
+          (cd .. && pytest -v --pyargs suitesparse_graphblas)  # Don't use our conftest.py
+          set -x  # echo on
           coverage run -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
@@ -346,6 +355,7 @@ jobs:
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
           echo ${args}
+          set -x  # echo on
           coverage run -a -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
@@ -363,6 +373,9 @@ jobs:
           coverage run -a script.py
           # Tests lazy loading of lib, ffi, and NULL in gb.core
           echo "from graphblas.core import base" > script.py
+          coverage run -a script.py
+          # Test another code pathway for loading lib
+          echo "from graphblas.core import lib" > script.py
           coverage run -a script.py
           rm script.py
           # Tests whose coverage depend on order of tests :/
@@ -400,6 +413,17 @@ jobs:
       - name: Coverage2
         id: coverageAttempt2
         if: steps.coverageAttempt1.outcome == 'failure'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
+          COVERALLS_PARALLEL: true
+        run: |
+          coveralls --service=github
+      - name: Coverage3
+        id: coverageAttempt3
+        if: steps.coverageAttempt2.outcome == 'failure'
+        # Continue even if it failed 3 times... (sheesh! use codecov instead)
         continue-on-error: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

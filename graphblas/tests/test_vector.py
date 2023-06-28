@@ -858,7 +858,7 @@ def test_indexunary_udf(v):
     delattr(indexunary, "iin")
     delattr(select, "iin")
     with pytest.raises(UdfParseError, match="Unable to parse function using Numba"):
-        indexunary.register_new("bad", lambda x, row, col, thunk: result)
+        indexunary.register_new("bad", lambda x, row, col, thunk: result)  # pragma: no branch
 
 
 def test_reduce(v):
@@ -1432,7 +1432,7 @@ def test_vector_index_with_scalar():
         s0 = Scalar.from_value(0, dtype=dtype)
         w = v[[s1, s0]].new()
         assert w.isequal(expected)
-    for dtype in ["bool", "fp32", "fp64"] + ["fc32", "fc64"] if dtypes._supports_complex else []:
+    for dtype in ["bool", "fp32", "fp64"] + (["fc32", "fc64"] if dtypes._supports_complex else []):
         s = Scalar.from_value(1, dtype=dtype)
         with pytest.raises(TypeError, match="An integer is required for indexing"):
             v[s]
@@ -1448,14 +1448,14 @@ def test_diag(v):
         expected = Matrix.from_coo(rows, cols, values, nrows=size, ncols=size, dtype=v.dtype)
         # Construct diagonal matrix A
         if suitesparse:
-            A = gb.ss.diag(v, k=k)
+            A = gb.ss.diag(v, k=k, nthreads=2)
             assert expected.isequal(A)
         A = v.diag(k)
         assert expected.isequal(A)
 
         # Extract diagonal from A
         if suitesparse:
-            w = gb.ss.diag(A, Scalar.from_value(k))
+            w = gb.ss.diag(A, Scalar.from_value(k), nthreads=2)
             assert v.isequal(w)
             assert w.dtype == "INT64"
 
@@ -1737,6 +1737,13 @@ def test_dup_expr(v):
     assert result.isequal(b)
     result = (b | b).dup(clear=True)
     assert result.isequal(b.dup(clear=True))
+    result = v[:5].dup()
+    assert result.isequal(v[:5].new())
+    if suitesparse:
+        result = v[:5].dup(nthreads=2)
+        assert result.isequal(v[:5].new())
+        result = v[:5].dup(clear=True, nthreads=2)
+        assert result.isequal(Vector(v.dtype, size=5))
 
 
 @pytest.mark.skipif("not suitesparse")
@@ -2425,7 +2432,7 @@ def test_lambda_udfs(v):
     # with pytest.raises(TypeError):
     v.ewise_add(v, lambda x, y: x + y)  # pragma: no branch (numba)
     with pytest.raises(TypeError):
-        v.inner(v, lambda x, y: x + y)
+        v.inner(v, lambda x, y: x + y)  # pragma: no branch (numba)
 
 
 def test_get(v):

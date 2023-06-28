@@ -59,18 +59,24 @@ def test_vector_to_from_numpy():
 
     csr = gb.io.to_scipy_sparse(v, "csr")
     assert csr.nnz == 2
-    assert ss.isspmatrix_csr(csr)
+    # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_csr`
+    assert isinstance(csr, getattr(ss, "sparray", ss.spmatrix))
+    assert csr.format == "csr"
     np.testing.assert_array_equal(csr.toarray(), np.array([[0.0, 2.0, 4.1]]))
 
     csc = gb.io.to_scipy_sparse(v, "csc")
     assert csc.nnz == 2
-    assert ss.isspmatrix_csc(csc)
+    # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_csc`
+    assert isinstance(csc, getattr(ss, "sparray", ss.spmatrix))
+    assert csc.format == "csc"
     np.testing.assert_array_equal(csc.toarray(), np.array([[0.0, 2.0, 4.1]]).T)
 
     # default to csr-like
     coo = gb.io.to_scipy_sparse(v, "coo")
     assert coo.shape == csr.shape
-    assert ss.isspmatrix_coo(coo)
+    # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_coo`
+    assert isinstance(coo, getattr(ss, "sparray", ss.spmatrix))
+    assert coo.format == "coo"
     assert coo.nnz == 2
     np.testing.assert_array_equal(coo.toarray(), np.array([[0.0, 2.0, 4.1]]))
 
@@ -99,7 +105,9 @@ def test_matrix_to_from_numpy():
 
     for format in ["csr", "csc", "coo"]:
         sparse = gb.io.to_scipy_sparse(M, format)
-        assert getattr(ss, f"isspmatrix_{format}")(sparse)
+        # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_csr`
+        assert isinstance(sparse, getattr(ss, "sparray", ss.spmatrix))
+        assert sparse.format == format
         assert sparse.nnz == 3
         np.testing.assert_array_equal(sparse.toarray(), a)
         M2 = gb.io.from_scipy_sparse(sparse)
@@ -167,7 +175,11 @@ def test_matrix_to_from_networkx():
 def test_mmread_mmwrite(engine):
     if engine == "fmm" and fmm is None:  # pragma: no cover (import)
         pytest.skip("needs fast_matrix_market")
-    from scipy.io.tests import test_mmio
+    try:
+        from scipy.io.tests import test_mmio
+    except ImportError:
+        # Test files are mysteriously missing from some conda-forge builds
+        pytest.skip("scipy.io.tests.test_mmio unavailable :(")
 
     p31 = 2**31
     p63 = 2**63
@@ -365,6 +377,7 @@ def test_scipy_sparse():
 
 
 @pytest.mark.skipif("not ak")
+@pytest.mark.xfail(np.__version__[:5] == "1.25.", reason="awkward bug with numpy 1.25")
 def test_awkward_roundtrip():
     # Vector
     v = gb.Vector.from_coo([1, 3, 5], [20, 21, -5], size=22)
@@ -386,6 +399,7 @@ def test_awkward_roundtrip():
 
 
 @pytest.mark.skipif("not ak")
+@pytest.mark.xfail(np.__version__[:5] == "1.25.", reason="awkward bug with numpy 1.25")
 def test_awkward_iso_roundtrip():
     # Vector
     v = gb.Vector.from_coo([1, 3, 5], [20, 20, 20], size=22)
@@ -429,6 +443,7 @@ def test_awkward_errors():
 
 
 @pytest.mark.skipif("not sparse")
+@pytest.mark.slow
 def test_vector_to_from_pydata_sparse():
     coords = np.array([0, 1, 2, 3, 4], dtype="int64")
     data = np.array([10, 20, 30, 40, 50], dtype="int64")
@@ -442,6 +457,7 @@ def test_vector_to_from_pydata_sparse():
 
 
 @pytest.mark.skipif("not sparse")
+@pytest.mark.slow
 def test_matrix_to_from_pydata_sparse():
     coords = np.array([[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]], dtype="int64")
     data = np.array([10, 20, 30, 40, 50], dtype="int64")

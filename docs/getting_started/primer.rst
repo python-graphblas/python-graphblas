@@ -89,26 +89,13 @@ makes for faster graph algorithms.
 
     # networkx-style storage of an undirected graph
     G = {
-      0: {1: {'weight': 5.6},
-          2: {'weight': 2.3},
-          3: {'weight': 4.6}},
-      1: {0: {'weight': 5.6},
-          2: {'weight': 1.9},
-          3: {'weight': 6.2}},
-      2: {0: {'weight': 2.3},
-          1: {'weight': 1.9},
-          3: {'weight': 3.0}},
-      3: {0: {'weight': 4.6},
-          1: {'weight': 6.2},
-          2: {'weight': 3.0},
-          4: {'weight': 1.4}},
-      4: {3: {'weight': 1.4},
-          5: {'weight': 4.4},
-          6: {'weight': 1.0}},
-      5: {4: {'weight': 4.4},
-          6: {'weight': 2.8}},
-      6: {4: {'weight': 1.0},
-          5: {'weight': 2.8}}
+        0: {1: {"weight": 5.6}, 2: {"weight": 2.3}, 3: {"weight": 4.6}},
+        1: {0: {"weight": 5.6}, 2: {"weight": 1.9}, 3: {"weight": 6.2}},
+        2: {0: {"weight": 2.3}, 1: {"weight": 1.9}, 3: {"weight": 3.0}},
+        3: {0: {"weight": 4.6}, 1: {"weight": 6.2}, 2: {"weight": 3.0}, 4: {"weight": 1.4}},
+        4: {3: {"weight": 1.4}, 5: {"weight": 4.4}, 6: {"weight": 1.0}},
+        5: {4: {"weight": 4.4}, 6: {"weight": 2.8}},
+        6: {4: {"weight": 1.0}, 5: {"weight": 2.8}},
     }
 
 An alternative way to store a graph is as an adjacency matrix. Each node becomes both a row
@@ -240,7 +227,9 @@ node 0.
         [0, 0, 1, 1, 2],
         [1, 2, 2, 3, 3],
         [2.0, 5.0, 1.5, 4.25, 0.5],
-        nrows=4, ncols=4)
+        nrows=4,
+        ncols=4
+    )
     v = Vector.from_coo([start_node], [0.0], size=4)
 
     # Compute SSSP

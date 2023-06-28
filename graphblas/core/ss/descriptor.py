@@ -90,7 +90,6 @@ class _DescriptorConfig(BaseConfig):
         "sort": False,
         "secure_import": False,
     }
-    _count = 0
 
     def __init__(self):
         gb_obj = ffi_new("GrB_Descriptor*")
@@ -132,7 +131,7 @@ def get_descriptor(**opts):
     sort : bool, default False
         A hint for whether methods may return a "jumbled" matrix
     secure_import : bool, default False
-        Whether to trust the data for `import` and `pack` functions.
+        Whether to trust the data for ``import`` and ``pack`` functions.
         When True, checks are performed to ensure input data is valid.
     compression : str, {"none", "default", "lz4", "lz4hc", "zstd"}
         Whether and how to compress the data for serialization.

@@ -25,7 +25,9 @@ Instead, only the calls from the last iteration will be returned.
         [0, 0, 1, 1, 2],
         [1, 2, 2, 3, 3],
         [2.0, 5.0, 1.5, 4.25, 0.5],
-        nrows=4, ncols=4)
+        nrows=4,
+        ncols=4
+    )
     v = Vector.from_coo([start_node], [0.0], size=4)
 
     # Compute SSSP

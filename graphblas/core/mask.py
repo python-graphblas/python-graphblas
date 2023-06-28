@@ -35,7 +35,7 @@ class Mask:
         """Return a new object with True values determined by the mask(s).
 
         By default, the result is True wherever the mask(s) would have been applied,
-        and empty otherwise.  If `complement` is True, then these are switched:
+        and empty otherwise.  If ``complement`` is True, then these are switched:
         the result is empty where the mask(s) would have been applied, and True otherwise.
 
         In other words, these are equivalent if complement is False (and mask keyword is None):
@@ -48,14 +48,14 @@ class Mask:
         >>> C(self) << expr
         >>> C(~result.S) << expr  # equivalent when complement is True
 
-        This can also efficiently merge two masks by using the `mask=` argument.
+        This can also efficiently merge two masks by using the ``mask=`` argument.
         This is equivalent to the following (but uses more efficient recipes):
 
         >>> val = Matrix(...)
         >>> val(self) << True
         >>> val(mask, replace=True) << val
 
-        If `complement=` argument is True, then the *complement* will be returned.
+        If ``complement=`` argument is True, then the *complement* will be returned.
         This is equivalent to the following (but uses more efficient recipes):
 
         >>> val = Matrix(...)
@@ -83,7 +83,7 @@ class Mask:
     def __and__(self, other, **opts):
         """Return the intersection of two masks as a new mask.
 
-        `new_mask = mask1 & mask2` is equivalent to the following:
+        ``new_mask = mask1 & mask2`` is equivalent to the following:
 
         >>> val = Matrix(bool, nrows, ncols)
         >>> val(mask1) << True
@@ -109,7 +109,7 @@ class Mask:
     def __or__(self, other, **opts):
         """Return the union of two masks as a new mask.
 
-        `new_mask = mask1 | mask2` is equivalent to the following:
+        ``new_mask = mask1 | mask2`` is equivalent to the following:
 
         >>> val = Matrix(bool, nrows, ncols)
         >>> val(mask1) << True

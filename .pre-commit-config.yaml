@@ -5,10 +5,12 @@
 # To update: `pre-commit autoupdate`
 #  - &flake8_dependencies below needs updated manually
 ci:
-    # See: https://pre-commit.ci/#configuration
-    autofix_prs: false
-    autoupdate_schedule: monthly
-    skip: [pylint, no-commit-to-branch]
+  # See: https://pre-commit.ci/#configuration
+  autofix_prs: false
+  autoupdate_schedule: monthly
+  autoupdate_commit_msg: "chore: update pre-commit hooks"
+  autofix_commit_msg: "style: pre-commit fixes"
+  skip: [pylint, no-commit-to-branch]
 fail_fast: true
 default_language_version:
     python: python3
@@ -17,21 +19,27 @@ repos:
     rev: v4.4.0
     hooks:
       - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      # - id: check-symlinks
       - id: check-ast
       - id: check-toml
       - id: check-yaml
       - id: debug-statements
       - id: end-of-file-fixer
+        exclude_types: [svg]
       - id: mixed-line-ending
       - id: trailing-whitespace
+      - id: name-tests-test
+        args: ["--pytest-test-first"]
   - repo: https://github.com/abravalheri/validate-pyproject
-    rev: v0.12.2
+    rev: v0.13
     hooks:
       - id: validate-pyproject
         name: Validate pyproject.toml
   # I don't yet trust ruff to do what autoflake does
-  - repo: https://github.com/myint/autoflake
-    rev: v2.0.2
+  - repo: https://github.com/PyCQA/autoflake
+    rev: v2.2.0
     hooks:
       - id: autoflake
         args: [--in-place]
@@ -43,7 +51,7 @@ repos:
       - id: isort
   # Let's keep `pyupgrade` even though `ruff --fix` probably does most of it
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.3.1
+    rev: v3.7.0
     hooks:
       - id: pyupgrade
         args: [--py38-plus]
@@ -58,7 +66,7 @@ repos:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.261
+    rev: v0.0.275
     hooks:
       - id: ruff
         args: [--fix-only, --show-fixes]
@@ -71,22 +79,22 @@ repos:
         additional_dependencies: &flake8_dependencies
         # These versions need updated manually
         - flake8==6.0.0
-        - flake8-bugbear==23.3.23
+        - flake8-bugbear==23.6.5
         - flake8-simplify==0.20.0
   - repo: https://github.com/asottile/yesqa
-    rev: v1.4.0
+    rev: v1.5.0
     hooks:
       - id: yesqa
         additional_dependencies: *flake8_dependencies
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.4
+    rev: v2.2.5
     hooks:
       - id: codespell
         types_or: [python, rst, markdown]
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.261
+    rev: v0.0.275
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint
@@ -101,6 +109,10 @@ repos:
     hooks:
       - id: pyroma
         args: [-n, "10", .]
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: "v0.9.0.5"
+    hooks:
+    - id: shellcheck
   - repo: local
     hooks:
       # Add `--hook-stage manual` to pre-commit command to run (very slow)
@@ -137,4 +149,4 @@ repos:
 #    hooks:
 #      - id: bandit
 #
-# blacken-docs, blackdoc mypy, pydocstringformatter, velin, flynt, yamllint
+# blacken-docs, blackdoc prettier, mypy, pydocstringformatter, velin, flynt, yamllint

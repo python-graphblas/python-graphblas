@@ -2,6 +2,7 @@ from collections.abc import Mapping
 
 from ..core import ffi, lib
 from ..core.base import _expect_type
+from ..core.descriptor import lookup as descriptor_lookup
 from ..core.matrix import Matrix, TransposedMatrix
 from ..core.scalar import _as_scalar
 from ..core.ss.config import BaseConfig
@@ -12,7 +13,7 @@ from ..exceptions import _error_code_lookup
 
 
 class _graphblas_ss:
-    """Used in `_expect_type`."""
+    """Used in ``_expect_type``."""
 
 
 _graphblas_ss.__name__ = "graphblas.ss"
@@ -33,8 +34,8 @@ def diag(x, k=0, dtype=None, *, name=None, **opts):
         The Vector to assign to the diagonal, or the Matrix from which to
         extract the diagonal.
     k : int, default 0
-        Diagonal in question.  Use `k>0` for diagonals above the main diagonal,
-        and `k<0` for diagonals below the main diagonal.
+        Diagonal in question.  Use ``k>0`` for diagonals above the main diagonal,
+        and ``k<0`` for diagonals below the main diagonal.
 
     See Also
     --------
@@ -52,6 +53,9 @@ def diag(x, k=0, dtype=None, *, name=None, **opts):
         dtype = x.dtype
     typ = type(x)
     if typ is Vector:
+        if opts:
+            # Ignore opts for now
+            desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
         size = x._size + abs(k.value)
         rv = Matrix(dtype, nrows=size, ncols=size, name=name)
         rv.ss.build_diag(x, k)
@@ -71,9 +75,9 @@ def concat(tiles, dtype=None, *, name=None, **opts):
 
     Concatenate a 2D list of Matrix objects into a new Matrix, or a 1D list of
     Vector objects into a new Vector.  To concatenate into existing objects,
-    use ``Matrix.ss.concat`` or `Vector.ss.concat`.
+    use ``Matrix.ss.concat`` or ``Vector.ss.concat``.
 
-    Vectors may be used as `Nx1` Matrix objects when creating a new Matrix.
+    Vectors may be used as ``Nx1`` Matrix objects when creating a new Matrix.
 
     This performs the opposite operation as ``split``.
 
@@ -120,7 +124,7 @@ class GlobalConfig(BaseConfig):
     memory_pool : List[int]
     burble : bool
         Enable diagnostic printing from SuiteSparse:GraphBLAS
-    print_1based: bool
+    print_1based : bool
     gpu_control : str, {"always", "never"}
     gpu_chunk : double
 

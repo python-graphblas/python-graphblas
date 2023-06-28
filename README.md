@@ -1,4 +1,4 @@
-![Python-graphblas](docs/_static/img/logo-name-medium.svg)
+![Python-graphblas](https://raw.githubusercontent.com/python-graphblas/python-graphblas/main/docs/_static/img/logo-name-medium.svg)
 
 [![conda-forge](https://img.shields.io/conda/vn/conda-forge/python-graphblas.svg)](https://anaconda.org/conda-forge/python-graphblas)
 [![pypi](https://img.shields.io/pypi/v/python-graphblas.svg)](https://pypi.python.org/pypi/python-graphblas/)
@@ -18,6 +18,7 @@ For algorithms, see
 [`graphblas-algorithms`](https://github.com/python-graphblas/graphblas-algorithms).
 
 - **Documentation:** [https://python-graphblas.readthedocs.io/](https://python-graphblas.readthedocs.io/)
+  - **FAQ:** [https://python-graphblas.readthedocs.io/en/stable/getting_started/faq.html](https://python-graphblas.readthedocs.io/en/stable/getting_started/faq.html)
   - **GraphBLAS C API:** [https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf](https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf)
   - **SuiteSparse:GraphBLAS User Guide:** [https://github.com/DrTimothyAldenDavis/GraphBLAS/raw/stable/Doc/GraphBLAS_UserGuide.pdf](https://github.com/DrTimothyAldenDavis/GraphBLAS/raw/stable/Doc/GraphBLAS_UserGuide.pdf)
 - **Source:** [https://github.com/python-graphblas/python-graphblas](https://github.com/python-graphblas/python-graphblas)
@@ -27,8 +28,8 @@ For algorithms, see
 - **Chat via Discord:** [https://discord.com/invite/vur45CbwMz](https://discord.com/invite/vur45CbwMz) in the [#graphblas channel](https://discord.com/channels/786703927705862175/1024732940233605190)
 
 <p float="left">
-  <img src="docs/_static/img/draw-example.png" width="231" align="top" alt="Directed graph", title="Directed graph"/>
-  <img src="docs/_static/img/repr-matrix.png" width="231" align="top" alt="Adjacency matrix" title="Adjacency matrix"/>
+  <img src="https://raw.githubusercontent.com/python-graphblas/python-graphblas/main/docs/_static/img/draw-example.png" width="231" align="top" alt="Directed graph", title="Directed graph"/>
+  <img src="https://raw.githubusercontent.com/python-graphblas/python-graphblas/main/docs/_static/img/repr-matrix.png" width="231" align="top" alt="Adjacency matrix" title="Adjacency matrix"/>
 </p>
 
 ## Install
@@ -41,6 +42,7 @@ or pip:
 $ pip install python-graphblas[default]
 ```
 This will also install the [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS) compiled C library.
+We currently support the [GraphBLAS C API 2.0 specification](https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf).
 
 ### Optional Dependencies
 
@@ -55,7 +57,7 @@ The following are not required by python-graphblas, but may be needed for certai
 ## Description
 Currently works with [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS), but the goal is to make it work with all implementations of the GraphBLAS spec.
 
-The approach taken with this library is to follow the C-API specification as closely as possible while making improvements
+The approach taken with this library is to follow the C-API 2.0 specification as closely as possible while making improvements
 allowed with the Python syntax. Because the spec always passes in the output object to be written to, we follow the same,
 which is very different from the way Python normally operates. In fact, many who are familiar with other Python data
 libraries (numpy, pandas, etc) will find it strange to not create new objects for every call.
@@ -174,8 +176,9 @@ use as well as the blocking/non-blocking mode. If the context is not initialized
 be performed automatically.
 ```python
 import graphblas as gb
+
 # Context initialization must happen before any other imports
-gb.init('suitesparse', blocking=True)
+gb.init("suitesparse", blocking=True)
 
 # Now we can import other items from graphblas
 from graphblas import binary, semiring
@@ -193,7 +196,7 @@ def force_odd_func(x):
         return x + 1
     return x
 
-unary.register_new('force_odd', force_odd_func)
+unary.register_new("force_odd", force_odd_func)
 
 v = Vector.from_coo([0, 1, 3], [1, 2, 3])
 w = v.apply(unary.force_odd).new()
@@ -224,7 +227,7 @@ import graphblas as gb
 
 # scipy.sparse matrices
 A = gb.io.from_scipy_sparse(m)
-m = gb.io.to_scipy_sparse(m, format='csr')
+m = gb.io.to_scipy_sparse(m, format="csr")
 
 # networkx graphs
 A = gb.io.from_networkx(g)

@@ -64,7 +64,7 @@ dependencies = [
     # These won't be installed by default after 2024.3.0
     # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
     "suitesparse-graphblas >=7.4.0.0, <7.5",
-    "numba >=0.55; python_version<'3.11'",  # make optional where numba is not supported
+    "numba >=0.55; python_version<'3.12'",  # make optional where numba is not supported
 ]
 
 [project.urls]
@@ -97,9 +97,9 @@ repr = [
 ]
 io = [
     "python-graphblas[networkx,scipy]",
-    "python-graphblas[numba]; python_version<'3.11'",
+    "python-graphblas[numba]; python_version<'3.12'",
     "awkward >=1.9",
-    "sparse >=0.13; python_version<'3.11'",  # make optional, b/c sparse needs numba
+    "sparse >=0.13; python_version<'3.12'",  # make optional, b/c sparse needs numba
     "fast-matrix-market >=1.4.5",
 ]
 viz = [
@@ -119,11 +119,11 @@ test = [
 ]
 default = [
     "python-graphblas[suitesparse,pandas,scipy]",
-    "python-graphblas[numba]; python_version<'3.11'",  # make optional where numba is not supported
+    "python-graphblas[numba]; python_version<'3.12'",  # make optional where numba is not supported
 ]
-complete = [
+all = [
     "python-graphblas[default,io,viz,test]",
-    "python-graphblas[datashade]; python_version<'3.11'",  # make optional, b/c datashade needs numba
+    "python-graphblas[datashade]; python_version<'3.12'",  # make optional, b/c datashade needs numba
 ]
 
 [tool.setuptools]
@@ -138,7 +138,9 @@ packages = [
     "graphblas.core",
     "graphblas.core.operator",
     "graphblas.core.ss",
+    "graphblas.dtypes",
     "graphblas.indexunary",
+    "graphblas.io",
     "graphblas.monoid",
     "graphblas.op",
     "graphblas.semiring",
@@ -167,15 +169,23 @@ known_first_party = "graphblas"
 line_length = 100
 
 [tool.pytest.ini_options]
+minversion = "6.0"
 testpaths = "graphblas/tests"
 xfail_strict = true
+addopts = [
+    "--strict-config",  # Force error if config is mispelled
+    "--strict-markers",  # Force error if marker is mispelled (must be defined in config)
+    "-ra",  # Print summary of all fails/errors
+]
 markers = [
     "slow: Skipped unless --runslow passed",
 ]
+log_cli_level = "info"
 filterwarnings = [
     # See: https://docs.python.org/3/library/warnings.html#describing-warning-filters
     # and: https://docs.pytest.org/en/7.2.x/how-to/capture-warnings.html#controlling-warnings
     "error",
+
     # sparse 0.14.0 (2022-02-24) began raising this warning; it has been reported and fixed upstream.
     "ignore:coords should be an ndarray. This will raise a ValueError:DeprecationWarning:sparse._coo.core",
 
@@ -183,13 +193,18 @@ filterwarnings = [
     # https://setuptools.pypa.io/en/latest/history.html#v67-3-0
     # MAINT: check if this is still necessary in 2025
     "ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning:pkg_resources",
-    # And this deprecation warning was added in setuptools v67.5.0 (8 Mar 2023). See:
+
+    # This deprecation warning was added in setuptools v67.5.0 (8 Mar 2023). See:
     # https://setuptools.pypa.io/en/latest/history.html#v67-5-0
     "ignore:pkg_resources is deprecated as an API:DeprecationWarning:pkg_resources",
 
     # sre_parse deprecated in 3.11; this is triggered by awkward 0.10
     "ignore:module 'sre_parse' is deprecated:DeprecationWarning:",
     "ignore:module 'sre_constants' is deprecated:DeprecationWarning:",
+
+    # numpy 1.25.0 (2023-06-17) deprecated `np.find_common_type`; many other dependencies use it.
+    # See if we can remove this filter in 2025.
+    "ignore:np.find_common_type is deprecated:DeprecationWarning:",
 
     # pypy gives this warning
     "ignore:can't resolve package from __spec__ or __package__:ImportWarning:",
@@ -297,6 +312,7 @@ ignore = [
     # "SIM401",  # Use dict.get ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
     "TRY004",  # Prefer `TypeError` exception for invalid type (Note: good advice, but not worth the nuisance)
     "TRY200",  # Use `raise from` to specify exception cause (Note: sometimes okay to raise original exception)
+    "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar` (Note: no annotations yet)
 
     # Intentionally ignored
     "COM812",  # Trailing comma missing
@@ -308,6 +324,7 @@ ignore = [
     "N806",  # Variable ... in function should be lowercase
     "N807",  # Function name should not start and end with `__`
     "N818",  # Exception name ... should be named with an Error suffix (Note: good advice)
+    "PLR0124", # Name compared with itself, consider replacing `x == x` (Note: too strict)
     "PLR0911",  # Too many return statements
     "PLR0912",  # Too many branches
     "PLR0913",  # Too many arguments to function call
@@ -320,6 +337,8 @@ ignore = [
     "RET504",  # Unnecessary variable assignment before `return` statement
     "S110",  # `try`-`except`-`pass` detected, consider logging the exception (Note: good advice, but we don't log)
     "S112",  # `try`-`except`-`continue` detected, consider logging the exception (Note: good advice, but we don't log)
+    "S603",  # `subprocess` call: check for execution of untrusted input (Note: not important for us)
+    "S607",  # Starting a process with a partial executable path (Note: not important for us)
     "SIM102",  # Use a single `if` statement instead of nested `if` statements (Note: often necessary)
     "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
     "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
@@ -339,6 +358,8 @@ ignore = [
     "TID",  # flake8-tidy-imports (Rely on isort and our own judgement)
     "TCH",  # flake8-type-checking (Note: figure out type checking later)
     "ARG",  # flake8-unused-arguments (Sometimes helpful, but too strict)
+    "TD",  # flake8-todos (Maybe okay to add some of these)
+    "FIX",  # flake8-fixme (like flake8-todos)
     "ERA",  # eradicate (We like code in comments!)
     "PD",  # pandas-vet (Intended for scripts that use pandas, not libraries)
 ]
@@ -348,6 +369,7 @@ ignore = [
 "graphblas/core/operator/base.py" = ["S102"]  # exec is used for UDF
 "graphblas/core/ss/matrix.py" = ["NPY002"]  # numba doesn't support rng generator yet
 "graphblas/core/ss/vector.py" = ["NPY002"]  # numba doesn't support rng generator yet
+"graphblas/core/utils.py" = ["PLE0302"]  # `__set__` is used as a property
 "graphblas/ss/_core.py" = ["N999"]  # We want _core.py to be underscopre
 # Allow useless expressions, assert, pickle, RNG, print, no docstring, and yoda in tests
 "graphblas/tests/*py" = ["B018", "S101", "S301", "S311", "T201", "D103", "D100", "SIM300"]
@@ -356,6 +378,7 @@ ignore = [
 "scripts/*.py" = ["INP001"]  # Not a package
 "scripts/create_pickle.py" = ["F403", "F405"]  # Allow `from foo import *`
 "docs/*.py" = ["INP001"]  # Not a package
+
 
 [tool.ruff.flake8-builtins]
 builtins-ignorelist = ["copyright", "format", "min", "max"]

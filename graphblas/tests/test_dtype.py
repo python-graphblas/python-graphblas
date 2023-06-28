@@ -123,7 +123,7 @@ def test_dtype_bad_comparison():
 
 
 def test_dtypes_match_numpy():
-    for key, val in dtypes._registry.items():
+    for key, val in dtypes._core._registry.items():
         try:
             if key is int or (isinstance(key, str) and key == "int"):
                 # For win64, numpy treats int as int32, not int64
@@ -137,7 +137,7 @@ def test_dtypes_match_numpy():
 
 
 def test_pickle():
-    for val in dtypes._registry.values():
+    for val in dtypes._core._registry.values():
         s = pickle.dumps(val)
         val2 = pickle.loads(s)
         if val._is_udt:  # pragma: no cover
@@ -205,7 +205,7 @@ def test_auto_register():
 
 
 def test_default_names():
-    from graphblas.dtypes import _default_name
+    from graphblas.dtypes._core import _default_name
 
     assert _default_name(np.dtype([("x", np.int32), ("y", np.float64)], align=True)) == (
         "{'x': INT32, 'y': FP64}"
@@ -230,9 +230,9 @@ def test_dtype_to_from_string():
         except Exception:
             pass
     for dtype in types:
-        s = dtypes._dtype_to_string(dtype)
+        s = dtypes._core._dtype_to_string(dtype)
         try:
-            dtype2 = dtypes._string_to_dtype(s)
+            dtype2 = dtypes._core._string_to_dtype(s)
         except Exception:
             with pytest.raises(ValueError, match="Unknown dtype"):
                 lookup_dtype(dtype)
@@ -253,3 +253,20 @@ def test_has_complex():
     from packaging.version import parse
 
     assert dtypes._supports_complex == (parse(ssgb.__version__) >= parse("7.4.3.1"))
+
+
+def test_has_ss_attribute():
+    if suitesparse:
+        assert dtypes.ss is not None
+    else:
+        with pytest.raises(AttributeError):
+            dtypes.ss
+
+
+def test_dir():
+    must_have = {"DataType", "lookup_dtype", "register_anonymous", "register_new", "ss", "unify"}
+    must_have.update({"FP32", "FP64", "INT8", "INT16", "INT32", "INT64"})
+    must_have.update({"BOOL", "UINT8", "UINT16", "UINT32", "UINT64"})
+    if dtypes._supports_complex:
+        must_have.update({"FC32", "FC64"})
+    assert set(dir(dtypes)) & must_have == must_have
