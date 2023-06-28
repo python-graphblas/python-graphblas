@@ -665,7 +665,7 @@ class Matrix(BaseType):
         else:
             if opts:
                 # Ignore opts for now
-                descriptor_lookup(**opts)
+                desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
             new_mat = ffi_new("GrB_Matrix*")
             rv = Matrix._from_obj(new_mat, self.dtype, self._nrows, self._ncols, name=name)
             call("GrB_Matrix_dup", [_Pointer(rv), self])
@@ -2707,7 +2707,7 @@ class Matrix(BaseType):
             result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
         if opts:
             # Ignore opts for now
-            descriptor_lookup(**opts)
+            desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (

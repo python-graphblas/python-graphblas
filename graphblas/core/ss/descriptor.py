@@ -90,7 +90,6 @@ class _DescriptorConfig(BaseConfig):
         "sort": False,
         "secure_import": False,
     }
-    _count = 0
 
     def __init__(self):
         gb_obj = ffi_new("GrB_Descriptor*")

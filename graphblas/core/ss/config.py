@@ -12,6 +12,9 @@ class BaseConfig(MutableMapping):
     # Subclasses should redefine these
     _get_function = None
     _set_function = None
+    _context_get_function = "GxB_Context_get"
+    _context_set_function = "GxB_Context_set"
+    _context_keys = set()
     _null_valid = {}
     _options = {}
     _defaults = {}
@@ -28,7 +31,7 @@ class BaseConfig(MutableMapping):
         "GxB_Format_Value",
     }
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, context=None):
         cls = type(self)
         if not cls._initialized:
             cls._reverse_enumerations = {}
@@ -51,6 +54,7 @@ class BaseConfig(MutableMapping):
                         rd[k] = k
             cls._initialized = True
         self._parent = parent
+        self._context = context
 
     def __delitem__(self, key):
         raise TypeError("Configuration options can't be deleted.")
@@ -61,19 +65,27 @@ class BaseConfig(MutableMapping):
             raise KeyError(key)
         key_obj, ctype = self._options[key]
         is_bool = ctype == "bool"
+        if is_context := (key in self._context_keys):  # pragma: no cover (suitesparse 8)
+            get_function_base = self._context_get_function
+        else:
+            get_function_base = self._get_function
         if ctype in self._int32_ctypes:
             ctype = "int32_t"
-            get_function_name = f"{self._get_function}_INT32"
+            get_function_name = f"{get_function_base}_INT32"
         elif ctype.startswith("int64_t"):
-            get_function_name = f"{self._get_function}_INT64"
+            get_function_name = f"{get_function_base}_INT64"
         elif ctype.startswith("double"):
-            get_function_name = f"{self._get_function}_FP64"
+            get_function_name = f"{get_function_base}_FP64"
+        elif ctype.startswith("char"):  # pragma: no cover (suitesparse 8)
+            get_function_name = f"{get_function_base}_CHAR"
         else:  # pragma: no cover (sanity)
             raise ValueError(ctype)
         get_function = getattr(lib, get_function_name)
         is_array = "[" in ctype
         val_ptr = ffi.new(ctype if is_array else f"{ctype}*")
-        if self._parent is None:
+        if is_context:  # pragma: no cover (suitesparse 8)
+            info = get_function(self._context._carg, key_obj, val_ptr)
+        elif self._parent is None:
             info = get_function(key_obj, val_ptr)
         else:
             info = get_function(self._parent._carg, key_obj, val_ptr)
@@ -93,6 +105,8 @@ class BaseConfig(MutableMapping):
                 return rv
             if is_bool:
                 return bool(val_ptr[0])
+            if ctype.startswith("char"):  # pragma: no cover (suitesparse 8)
+                return ffi.string(val_ptr[0]).decode()
             return val_ptr[0]
         raise _error_code_lookup[info](f"Failed to get info for {key!r}")  # pragma: no cover
 
@@ -103,15 +117,21 @@ class BaseConfig(MutableMapping):
         if key in self._read_only:
             raise ValueError(f"Config option {key!r} is read-only")
         key_obj, ctype = self._options[key]
+        if is_context := (key in self._context_keys):  # pragma: no cover (suitesparse 8)
+            set_function_base = self._context_set_function
+        else:
+            set_function_base = self._set_function
         if ctype in self._int32_ctypes:
             ctype = "int32_t"
-            set_function_name = f"{self._set_function}_INT32"
+            set_function_name = f"{set_function_base}_INT32"
         elif ctype == "double":
-            set_function_name = f"{self._set_function}_FP64"
+            set_function_name = f"{set_function_base}_FP64"
         elif ctype.startswith("int64_t["):
-            set_function_name = f"{self._set_function}_INT64_ARRAY"
+            set_function_name = f"{set_function_base}_INT64_ARRAY"
         elif ctype.startswith("double["):
-            set_function_name = f"{self._set_function}_FP64_ARRAY"
+            set_function_name = f"{set_function_base}_FP64_ARRAY"
+        elif ctype.startswith("char"):  # pragma: no cover (suitesparse 8)
+            set_function_name = f"{set_function_base}_CHAR"
         else:  # pragma: no cover (sanity)
             raise ValueError(ctype)
         set_function = getattr(lib, set_function_name)
@@ -154,9 +174,19 @@ class BaseConfig(MutableMapping):
                     f"expected {size}, got {vals.size}: {val}"
                 )
             val_obj = ffi.from_buffer(ctype, vals)
+        elif ctype.startswith("char"):  # pragma: no cover (suitesparse 8)
+            val_obj = ffi.new("char[]", val.encode())
         else:
             val_obj = ffi.cast(ctype, val)
-        if self._parent is None:
+        if is_context:  # pragma: no cover (suitesparse 8)
+            if self._context is None:
+                from .context import Context
+
+                self._context = Context(engage=False)
+                self._context._engage()  # Disengage when context goes out of scope
+                self._parent._context = self._context  # Set context to descriptor
+            info = set_function(self._context._carg, key_obj, val_obj)
+        elif self._parent is None:
             info = set_function(key_obj, val_obj)
         else:
             info = set_function(self._parent._carg, key_obj, val_obj)
@@ -174,7 +204,12 @@ class BaseConfig(MutableMapping):
         return len(self._options)
 
     def __repr__(self):
-        return "{" + ",\n ".join(f"{k!r}: {v!r}" for k, v in self.items()) + "}"
+        return (
+            type(self).__name__
+            + "({"
+            + ",\n ".join(f"{k!r}: {v!r}" for k, v in self.items())
+            + "})"
+        )
 
     def _ipython_key_completions_(self):  # pragma: no cover (ipython)
         return list(self)

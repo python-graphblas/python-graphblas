@@ -1,18 +1,33 @@
-# All items are dynamically added by classes in operator.py
-# This module acts as a container of IndexUnaryOp instances
-_delayed = {}
+from ._core import (
+    _INDEX,
+    BOOL,
+    FP32,
+    FP64,
+    INT8,
+    INT16,
+    INT32,
+    INT64,
+    UINT8,
+    UINT16,
+    UINT32,
+    UINT64,
+    DataType,
+    _supports_complex,
+    lookup_dtype,
+    register_anonymous,
+    register_new,
+    unify,
+)
+
+if _supports_complex:
+    from ._core import FC32, FC64
 
 
 def __dir__():
-    return globals().keys() | _delayed.keys() | {"ss"}
+    return globals().keys() | {"ss"}
 
 
 def __getattr__(key):
-    if key in _delayed:
-        func, kwargs = _delayed.pop(key)
-        rv = func(**kwargs)
-        globals()[key] = rv
-        return rv
     if key == "ss":
         from .. import backend
 
@@ -26,8 +41,3 @@ def __getattr__(key):
         globals()["ss"] = ss
         return ss
     raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
-
-
-from ..core import operator  # noqa: E402 isort:skip
-
-del operator
