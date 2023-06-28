@@ -1,16 +1,19 @@
+import numpy as np
+
 from ... import backend, dtypes
 from ...exceptions import check_status_carg
 from .. import _has_numba, ffi, lib
 
 ffi_new = ffi.new
 if _has_numba:
+    import numba
     from cffi import FFI
     from numba.core.typing import cffi_utils
 
     jit_ffi = FFI()
 
 
-def register_new(name, jit_c_definition):
+def register_new(name, jit_c_definition, *, np_type=None):
     if backend != "suitesparse":
         raise RuntimeError(
             "`gb.dtypes.ss.register_new` invalid when not using 'suitesparse' backend"
@@ -39,23 +42,38 @@ def register_new(name, jit_c_definition):
     check_status_carg(lib.GxB_Type_size(size_ptr, gb_obj[0]), "Type", gb_obj[0])
     size = size_ptr[0]
 
-    if _has_numba:
+    save_np_type = True
+    if np_type is None and _has_numba and numba.__version__[:5] > "0.56.":
         jit_ffi.cdef(jit_c_definition)
         numba_type = cffi_utils.map_type(jit_ffi.typeof(name), use_record_dtype=True)
         np_type = numba_type.dtype
         if np_type.itemsize != size:  # pragma: no cover
-            # TODO: Should we warn or raise?
-            numba_type = np_type = None
+            raise RuntimeError(
+                "Size of compiled user-defined type does not match size of inferred numpy type: "
+                f"{size} != {np_type.itemsize} != {size}.\n\n"
+                f"UDT C definition: {jit_c_definition}\n"
+                f"numpy dtype: {np_type}\n\n"
+                "To get around this, you may pass `np_type=` keyword argument."
+            )
     else:
-        # Instead of None, should we make these e.g. np.dtype((np.uint8, size))`?
-        numba_type = np_type = None
+        if np_type is not None:
+            np_type = np.dtype(np_type)
+        else:
+            # Not an ideal numpy type, but minimally useful
+            np_type = np.dtype((np.uint8, size))
+            save_np_type = False
+        if _has_numba:
+            numba_type = numba.typeof(np_type).dtype
+        else:
+            numba_type = None
 
     # For now, let's use "opaque" unsigned bytes for the c type.
     rv = dtypes._core.DataType(name, gb_obj, None, f"uint8_t[{size}]", numba_type, np_type)
     dtypes._core._registry[gb_obj] = rv
-    if _has_numba:
+    if save_np_type or np_type not in dtypes._core._registry:
         dtypes._core._registry[np_type] = rv
-        dtypes._core._registry[numba_type] = rv
-        dtypes._core._registry[numba_type.name] = rv
+        if numba_type is not None and (save_np_type or numba_type not in dtypes._core._registry):
+            dtypes._core._registry[numba_type] = rv
+            dtypes._core._registry[numba_type.name] = rv
     setattr(dtypes.ss, name, rv)
     return rv

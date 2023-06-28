@@ -13,6 +13,11 @@ from .conftest import autocompute, burble
 
 from graphblas import Vector  # isort:skip (for dask-graphblas)
 
+try:
+    import numba
+except ImportError:
+    numba = None
+
 if backend != "suitesparse":
     pytest.skip("not suitesparse backend", allow_module_level=True)
 if gb.ss.about["library_version"][0] < 8:
@@ -85,8 +90,20 @@ def test_jit_udt():
     assert dtype.name == "myquaternion"
     assert str(dtype) == "myquaternion"
     assert dtype.gb_name is None
-    assert dtype.np_type == np.dtype([("x", "<f4", (4, 4)), ("color", "<i4")], align=True)
     v = Vector(dtype, 2)
+    np_type = np.dtype([("x", "<f4", (4, 4)), ("color", "<i4")], align=True)
+    if numba is None or numba.__version__[:5] < "0.57.":
+        assert dtype.np_type == np.dtype((np.uint8, np_type.itemsize))
+        with pytest.raises(TypeError):
+            v[0] = {"x": np.arange(16).reshape(4, 4), "color": 100}
+        # We can provide dtype directly to make things work more nicely
+        dtype = dtypes.ss.register_new(
+            "myquaternion2",
+            "typedef struct { float x [4][4] ; int color ; } myquaternion2 ;",
+            np_type=np_type,
+        )
+        v = Vector(dtype, 2)
+    assert dtype.np_type == np_type
     v[0] = {"x": np.arange(16).reshape(4, 4), "color": 100}
     assert_array_equal(v[0].value["x"], np.arange(16).reshape(4, 4))
     assert v[0].value["color"] == 100
@@ -94,6 +111,14 @@ def test_jit_udt():
     if supports_udfs:
         expected = Vector.from_dense([100, 3])
         assert expected.isequal(v.apply(lambda x: x["color"]))
+
+    np_type = np.dtype([("x", "<f4", (3, 3)), ("color", "<i4")], align=True)
+    dtype = dtypes.ss.register_new(
+        "notquaternion",
+        "typedef struct { float x [3][3] ; int color ; } notquaternion ;",
+        np_type=np_type,
+    )
+    assert dtype.np_type == np_type
 
 
 def test_jit_unary(v):
