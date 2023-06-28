@@ -1,20 +1,16 @@
-import warnings as _warnings
+import warnings
 
-import numpy as _np
-from numpy import promote_types as _promote_types
-from numpy import result_type as _result_type
+import numpy as np
+from numpy import promote_types, result_type
 
-from . import backend
-from .core import NULL as _NULL
-from .core import _has_numba
-from .core import ffi as _ffi
-from .core import lib as _lib
+from .. import backend, dtypes
+from ..core import NULL, _has_numba, ffi, lib
 
 if _has_numba:
-    import numba as _numba
+    import numba
 
 # Default assumption unless FC32/FC64 are found in lib
-_supports_complex = hasattr(_lib, "GrB_FC64") or hasattr(_lib, "GxB_FC64")
+_supports_complex = hasattr(lib, "GrB_FC64") or hasattr(lib, "GxB_FC64")
 
 
 class DataType:
@@ -26,7 +22,7 @@ class DataType:
         self.gb_name = gb_name
         self.c_type = c_type
         self.numba_type = numba_type
-        self.np_type = _np.dtype(np_type)
+        self.np_type = np.dtype(np_type)
 
     def __repr__(self):
         return self.name
@@ -62,7 +58,7 @@ class DataType:
 
     @property
     def _is_anonymous(self):
-        return globals().get(self.name) is not self
+        return getattr(dtypes, self.name, None) is not self
 
     @property
     def _is_udt(self):
@@ -80,27 +76,29 @@ class DataType:
 def register_new(name, dtype):
     if not name.isidentifier():
         raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
-    if name in _registry or name in globals():
+    if name in _registry or hasattr(dtypes, name):
         raise ValueError(f"{name!r} name for dtype is unavailable")
     rv = register_anonymous(dtype, name)
     _registry[name] = rv
-    globals()[name] = rv
+    setattr(dtypes, name, rv)
     return rv
 
 
 def register_anonymous(dtype, name=None):
     try:
-        dtype = _np.dtype(dtype)
+        dtype = np.dtype(dtype)
     except TypeError:
         if isinstance(dtype, dict):
             # Allow dtypes such as `{'x': int, 'y': float}` for convenience
-            dtype = _np.dtype([(key, lookup_dtype(val).np_type) for key, val in dtype.items()])
+            dtype = np.dtype(
+                [(key, lookup_dtype(val).np_type) for key, val in dtype.items()], align=True
+            )
         elif isinstance(dtype, str) and "[" in dtype and dtype.endswith("]"):
             # Allow dtypes such as `"INT64[3, 4]"` for convenience
             base_dtype, shape = dtype.split("[", 1)
             base_dtype = lookup_dtype(base_dtype)
-            shape = _np.lib.format.safe_eval(f"[{shape}")
-            dtype = _np.dtype((base_dtype.np_type, shape))
+            shape = np.lib.format.safe_eval(f"[{shape}")
+            dtype = np.dtype((base_dtype.np_type, shape))
         else:
             raise
     if dtype in _registry:
@@ -114,36 +112,36 @@ def register_anonymous(dtype, name=None):
     if dtype.hasobject:
         raise ValueError("dtype must not allow Python objects")
 
-    from .exceptions import check_status_carg
+    from ..exceptions import check_status_carg
 
-    gb_obj = _ffi.new("GrB_Type*")
+    gb_obj = ffi.new("GrB_Type*")
     if backend == "suitesparse":
         # We name this so that we can serialize and deserialize UDTs
         # We don't yet have C definitions
         np_repr = _dtype_to_string(dtype).encode()
-        if len(np_repr) > _lib.GxB_MAX_NAME_LEN:
+        if len(np_repr) > lib.GxB_MAX_NAME_LEN:
             msg = (
                 f"UDT repr is too large to serialize ({len(repr(dtype).encode())} > "
-                f"{_lib.GxB_MAX_NAME_LEN})."
+                f"{lib.GxB_MAX_NAME_LEN})."
             )
             if name is not None:
-                np_repr = name.encode()[: _lib.GxB_MAX_NAME_LEN]
+                np_repr = name.encode()[: lib.GxB_MAX_NAME_LEN]
             else:
-                np_repr = np_repr[: _lib.GxB_MAX_NAME_LEN]
-            _warnings.warn(
+                np_repr = np_repr[: lib.GxB_MAX_NAME_LEN]
+            warnings.warn(
                 f"{msg}.  It will use the following name, "
                 f"and the dtype may need to be specified when deserializing: {np_repr}",
                 stacklevel=2,
             )
-        status = _lib.GxB_Type_new(gb_obj, dtype.itemsize, np_repr, _NULL)
+        status = lib.GxB_Type_new(gb_obj, dtype.itemsize, np_repr, NULL)
     else:
-        status = _lib.GrB_Type_new(gb_obj, dtype.itemsize)
+        status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
     check_status_carg(status, "Type", gb_obj[0])
 
     # For now, let's use "opaque" unsigned bytes for the c type.
     if name is None:
         name = _default_name(dtype)
-    numba_type = _numba.typeof(dtype).dtype if _has_numba else None
+    numba_type = numba.typeof(dtype).dtype if _has_numba else None
     rv = DataType(name, gb_obj, None, f"uint8_t[{dtype.itemsize}]", numba_type, dtype)
     _registry[gb_obj] = rv
     _registry[dtype] = rv
@@ -155,153 +153,153 @@ def register_anonymous(dtype, name=None):
 
 BOOL = DataType(
     "BOOL",
-    _lib.GrB_BOOL,
+    lib.GrB_BOOL,
     "GrB_BOOL",
     "_Bool",
-    _numba.types.bool_ if _has_numba else None,
-    _np.bool_,
+    numba.types.bool_ if _has_numba else None,
+    np.bool_,
 )
 INT8 = DataType(
-    "INT8", _lib.GrB_INT8, "GrB_INT8", "int8_t", _numba.types.int8 if _has_numba else None, _np.int8
+    "INT8", lib.GrB_INT8, "GrB_INT8", "int8_t", numba.types.int8 if _has_numba else None, np.int8
 )
 UINT8 = DataType(
     "UINT8",
-    _lib.GrB_UINT8,
+    lib.GrB_UINT8,
     "GrB_UINT8",
     "uint8_t",
-    _numba.types.uint8 if _has_numba else None,
-    _np.uint8,
+    numba.types.uint8 if _has_numba else None,
+    np.uint8,
 )
 INT16 = DataType(
     "INT16",
-    _lib.GrB_INT16,
+    lib.GrB_INT16,
     "GrB_INT16",
     "int16_t",
-    _numba.types.int16 if _has_numba else None,
-    _np.int16,
+    numba.types.int16 if _has_numba else None,
+    np.int16,
 )
 UINT16 = DataType(
     "UINT16",
-    _lib.GrB_UINT16,
+    lib.GrB_UINT16,
     "GrB_UINT16",
     "uint16_t",
-    _numba.types.uint16 if _has_numba else None,
-    _np.uint16,
+    numba.types.uint16 if _has_numba else None,
+    np.uint16,
 )
 INT32 = DataType(
     "INT32",
-    _lib.GrB_INT32,
+    lib.GrB_INT32,
     "GrB_INT32",
     "int32_t",
-    _numba.types.int32 if _has_numba else None,
-    _np.int32,
+    numba.types.int32 if _has_numba else None,
+    np.int32,
 )
 UINT32 = DataType(
     "UINT32",
-    _lib.GrB_UINT32,
+    lib.GrB_UINT32,
     "GrB_UINT32",
     "uint32_t",
-    _numba.types.uint32 if _has_numba else None,
-    _np.uint32,
+    numba.types.uint32 if _has_numba else None,
+    np.uint32,
 )
 INT64 = DataType(
     "INT64",
-    _lib.GrB_INT64,
+    lib.GrB_INT64,
     "GrB_INT64",
     "int64_t",
-    _numba.types.int64 if _has_numba else None,
-    _np.int64,
+    numba.types.int64 if _has_numba else None,
+    np.int64,
 )
 # _Index (like UINT64) is for internal use only and shouldn't be exposed to the user
 _INDEX = DataType(
     "UINT64",
-    _lib.GrB_UINT64,
+    lib.GrB_UINT64,
     "GrB_Index",
     "GrB_Index",
-    _numba.types.uint64 if _has_numba else None,
-    _np.uint64,
+    numba.types.uint64 if _has_numba else None,
+    np.uint64,
 )
 UINT64 = DataType(
     "UINT64",
-    _lib.GrB_UINT64,
+    lib.GrB_UINT64,
     "GrB_UINT64",
     "uint64_t",
-    _numba.types.uint64 if _has_numba else None,
-    _np.uint64,
+    numba.types.uint64 if _has_numba else None,
+    np.uint64,
 )
 FP32 = DataType(
     "FP32",
-    _lib.GrB_FP32,
+    lib.GrB_FP32,
     "GrB_FP32",
     "float",
-    _numba.types.float32 if _has_numba else None,
-    _np.float32,
+    numba.types.float32 if _has_numba else None,
+    np.float32,
 )
 FP64 = DataType(
     "FP64",
-    _lib.GrB_FP64,
+    lib.GrB_FP64,
     "GrB_FP64",
     "double",
-    _numba.types.float64 if _has_numba else None,
-    _np.float64,
+    numba.types.float64 if _has_numba else None,
+    np.float64,
 )
 
-if _supports_complex and hasattr(_lib, "GxB_FC32"):
+if _supports_complex and hasattr(lib, "GxB_FC32"):
     FC32 = DataType(
         "FC32",
-        _lib.GxB_FC32,
+        lib.GxB_FC32,
         "GxB_FC32",
         "float _Complex",
-        _numba.types.complex64 if _has_numba else None,
-        _np.complex64,
+        numba.types.complex64 if _has_numba else None,
+        np.complex64,
     )
-if _supports_complex and hasattr(_lib, "GrB_FC32"):  # pragma: no cover (unused)
+if _supports_complex and hasattr(lib, "GrB_FC32"):  # pragma: no cover (unused)
     FC32 = DataType(
         "FC32",
-        _lib.GrB_FC32,
+        lib.GrB_FC32,
         "GrB_FC32",
         "float _Complex",
-        _numba.types.complex64 if _has_numba else None,
-        _np.complex64,
+        numba.types.complex64 if _has_numba else None,
+        np.complex64,
     )
-if _supports_complex and hasattr(_lib, "GxB_FC64"):
+if _supports_complex and hasattr(lib, "GxB_FC64"):
     FC64 = DataType(
         "FC64",
-        _lib.GxB_FC64,
+        lib.GxB_FC64,
         "GxB_FC64",
         "double _Complex",
-        _numba.types.complex128 if _has_numba else None,
-        _np.complex128,
+        numba.types.complex128 if _has_numba else None,
+        np.complex128,
     )
-if _supports_complex and hasattr(_lib, "GrB_FC64"):  # pragma: no cover (unused)
+if _supports_complex and hasattr(lib, "GrB_FC64"):  # pragma: no cover (unused)
     FC64 = DataType(
         "FC64",
-        _lib.GrB_FC64,
+        lib.GrB_FC64,
         "GrB_FC64",
         "double _Complex",
-        _numba.types.complex128 if _has_numba else None,
-        _np.complex128,
+        numba.types.complex128 if _has_numba else None,
+        np.complex128,
     )
 
 # Used for testing user-defined functions
 _sample_values = {
-    INT8: _np.int8(1),
-    UINT8: _np.uint8(1),
-    INT16: _np.int16(1),
-    UINT16: _np.uint16(1),
-    INT32: _np.int32(1),
-    UINT32: _np.uint32(1),
-    INT64: _np.int64(1),
-    UINT64: _np.uint64(1),
-    FP32: _np.float32(0.5),
-    FP64: _np.float64(0.5),
-    BOOL: _np.bool_(True),
+    INT8: np.int8(1),
+    UINT8: np.uint8(1),
+    INT16: np.int16(1),
+    UINT16: np.uint16(1),
+    INT32: np.int32(1),
+    UINT32: np.uint32(1),
+    INT64: np.int64(1),
+    UINT64: np.uint64(1),
+    FP32: np.float32(0.5),
+    FP64: np.float64(0.5),
+    BOOL: np.bool_(True),
 }
 if _supports_complex:
     _sample_values.update(
         {
-            FC32: _np.complex64(complex(0, 0.5)),
-            FC64: _np.complex128(complex(0, 0.5)),
+            FC32: np.complex64(complex(0, 0.5)),
+            FC64: np.complex128(complex(0, 0.5)),
         }
     )
 
@@ -390,10 +388,10 @@ def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
         return type1
     if is_left_scalar:
         if not is_right_scalar:
-            return lookup_dtype(_result_type(_np.array(0, type1.np_type), type2.np_type))
+            return lookup_dtype(result_type(np.array(0, type1.np_type), type2.np_type))
     elif is_right_scalar:
-        return lookup_dtype(_result_type(type1.np_type, _np.array(0, type2.np_type)))
-    return lookup_dtype(_promote_types(type1.np_type, type2.np_type))
+        return lookup_dtype(result_type(type1.np_type, np.array(0, type2.np_type)))
+    return lookup_dtype(promote_types(type1.np_type, type2.np_type))
 
 
 def _default_name(dtype):
@@ -423,7 +421,7 @@ def _dtype_to_string(dtype):
     >>> dtype == new_dtype
     True
     """
-    if isinstance(dtype, _np.dtype) and dtype not in _registry:
+    if isinstance(dtype, np.dtype) and dtype not in _registry:
         np_type = dtype
     else:
         dtype = lookup_dtype(dtype)
@@ -432,11 +430,11 @@ def _dtype_to_string(dtype):
         np_type = dtype.np_type
     s = str(np_type)
     try:
-        if _np.dtype(_np.lib.format.safe_eval(s)) == np_type:  # pragma: no branch (safety)
+        if np.dtype(np.lib.format.safe_eval(s)) == np_type:  # pragma: no branch (safety)
             return s
     except Exception:
         pass
-    if _np.dtype(np_type.str) != np_type:  # pragma: no cover (safety)
+    if np.dtype(np_type.str) != np_type:  # pragma: no cover (safety)
         raise ValueError(f"Unable to reliably convert dtype to string and back: {dtype}")
     return repr(np_type.str)
 
@@ -451,5 +449,5 @@ def _string_to_dtype(s):
         return lookup_dtype(s)
     except Exception:
         pass
-    np_type = _np.dtype(_np.lib.format.safe_eval(s))
+    np_type = np.dtype(np.lib.format.safe_eval(s))
     return lookup_dtype(np_type)

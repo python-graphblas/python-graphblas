@@ -612,7 +612,7 @@ class Vector(BaseType):
         else:
             if opts:
                 # Ignore opts for now
-                descriptor_lookup(**opts)
+                desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
             rv = Vector._from_obj(ffi_new("GrB_Vector*"), self.dtype, self._size, name=name)
             call("GrB_Vector_dup", [_Pointer(rv), self])
         return rv
@@ -1757,7 +1757,7 @@ class Vector(BaseType):
             result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
         if opts:
             # Ignore opts for now
-            descriptor_lookup(**opts)
+            desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
             if (
@@ -2177,6 +2177,9 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
         if clear:
             if dtype is None:
                 dtype = self.dtype
+            if opts:
+                # Ignore opts for now
+                desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
             return self.output_type(dtype, *self.shape, name=name)
         return self.new(dtype, mask=mask, name=name, **opts)
 
