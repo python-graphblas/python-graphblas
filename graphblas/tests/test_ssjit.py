@@ -1,4 +1,5 @@
 import os
+import sys
 
 import numpy as np
 import pytest
@@ -23,16 +24,47 @@ def _setup_jit():
     if "CONDA_PREFIX" not in os.environ:
         return
     conda_prefix = os.environ["CONDA_PREFIX"]
-    gb.ss.config["jit_c_cmake_libs"] = (
-        f"m;dl;{conda_prefix}/x86_64-conda-linux-gnu/lib/libgomp.so;"
-        f"{conda_prefix}/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so"
-    )
-    gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/cc"
-    gb.ss.config["jit_c_libraries"] = (
-        f" -lm -ldl {conda_prefix}/x86_64-conda-linux-gnu/lib/libgomp.so "
-        f"{conda_prefix}/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so"
-    )
     gb.ss.config["jit_c_control"] = "on"
+    # gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/cc"
+    if sys.platform == "linux":
+        gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/x86_64-conda-linux-gnu-cc"
+        gb.ss.config["jit_c_compiler_flags"] = (
+            "-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong "
+            f"-fno-plt -O2 -ffunction-sections -pipe -isystem {conda_prefix}/include -Wundef "
+            "-std=c11 -lm -Wno-pragmas -fexcess-precision=fast -fcx-limited-range "
+            "-fno-math-errno -fwrapv -O3 -DNDEBUG -fopenmp -fPIC"
+        )
+        gb.ss.config["jit_c_linker_flags"] = (
+            "-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now "
+            "-Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined "
+            f"-Wl,-rpath,{conda_prefix}/lib -Wl,-rpath-link,{conda_prefix}/lib "
+            f"-L{conda_prefix}/lib -shared"
+        )
+        gb.ss.config["jit_c_libraries"] = (
+            f"-lm -ldl {conda_prefix}/lib/libgomp.so "
+            f"{conda_prefix}/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so"
+        )
+        gb.ss.config["jit_c_cmake_libs"] = (
+            f"m;dl;{conda_prefix}/lib/libgomp.so;"
+            f"{conda_prefix}/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so"
+        )
+    elif sys.platform == "win32":
+        pass
+    else:
+        gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/x86_64-apple-darwin13.4.0-clang"
+        gb.ss.config["jit_c_compiler_flags"] = (
+            "-march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE "
+            f"-fstack-protector-strong -O2 -pipe -isystem {conda_prefix}/include -DGBNCPUFEAT "
+            "-Wno-pointer-sign -O3 -DNDEBUG -fopenmp=libomp -fPIC -arch x86_64 -isysroot "
+            "/Applications/Xcode_13.2.1.app/Contents/Developer/Platforms/MacOSX.platform"
+            "/Developer/SDKs/MacOSX10.9.sdk"
+        )
+        gb.ss.config["jit_c_linker_flags"] = (
+            "-Wl,-pie -Wl,-headerpad_max_install_names -Wl,-dead_strip_dylibs "
+            f"-Wl,-rpath,{conda_prefix}/lib -L{conda_prefix}/lib -dynamiclib"
+        )
+        gb.ss.config["jit_c_libraries"] = f"-lm -ldl {conda_prefix}/lib/libomp.dylib"
+        gb.ss.config["jit_c_cmake_libs"] = f"m;dl;{conda_prefix}/lib/libomp.dylib"
 
 
 @pytest.fixture
@@ -42,6 +74,7 @@ def v():
 
 @autocompute
 def test_jit_udt():
+    print("sys.platform:", sys.platform)
     print(gb.ss.config)  # XXX
     with burble():
         dtype = dtypes.ss.register_new(
@@ -64,6 +97,7 @@ def test_jit_udt():
 
 
 def test_jit_unary(v):
+    print("sys.platform:", sys.platform)
     print(gb.ss.config)  # XXX
     cdef = "void square (float *z, float *x) { (*z) = (*x) * (*x) ; } ;"
     with burble():
