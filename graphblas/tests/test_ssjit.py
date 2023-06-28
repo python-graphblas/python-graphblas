@@ -1,7 +1,10 @@
+import os
+
 import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
+import graphblas as gb
 from graphblas import backend, binary, dtypes, indexunary, select, unary
 from graphblas.core import _supports_udfs as supports_udfs
 
@@ -10,7 +13,26 @@ from .conftest import autocompute, burble
 from graphblas import Vector  # isort:skip (for dask-graphblas)
 
 if backend != "suitesparse":
-    pytest.skip("not suitesparse", allow_module_level=True)
+    pytest.skip("not suitesparse backend", allow_module_level=True)
+if gb.ss.about["library_version"][0] < 8:
+    pytest.skip("not SuiteSparse:GraphBLAS >=8", allow_module_level=True)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _setup_jit():
+    if "CONDA_PREFIX" not in os.environ:
+        return
+    conda_prefix = os.environ["CONDA_PREFIX"]
+    gb.ss.config["jit_c_cmake_libs"] = (
+        f"m;dl;{conda_prefix}/x86_64-conda-linux-gnu/lib/libgomp.so;"
+        f"{conda_prefix}/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so"
+    )
+    gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/cc"
+    gb.ss.config["jit_c_libraries"] = (
+        f" -lm -ldl {conda_prefix}/x86_64-conda-linux-gnu/lib/libgomp.so "
+        f"{conda_prefix}/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so"
+    )
+    gb.ss.config["jit_c_control"] = "on"
 
 
 @pytest.fixture
@@ -20,6 +42,7 @@ def v():
 
 @autocompute
 def test_jit_udt():
+    print(gb.ss.config)  # XXX
     with burble():
         dtype = dtypes.ss.register_new(
             "myquaternion", "typedef struct { float x [4][4] ; int color ; } myquaternion ;"
@@ -41,6 +64,7 @@ def test_jit_udt():
 
 
 def test_jit_unary(v):
+    print(gb.ss.config)  # XXX
     cdef = "void square (float *z, float *x) { (*z) = (*x) * (*x) ; } ;"
     with burble():
         square = unary.ss.register_new("square", cdef, "FP32", "FP32")

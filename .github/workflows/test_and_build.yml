@@ -320,7 +320,7 @@ jobs:
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo ${args}
-          (cd .. && pytest -v --pyargs suitesparse_graphblas)  # Don't use our conftest.py
+          (cd .. && pytest --pyargs suitesparse_graphblas -s -k test_print_jit_config && pytest -v --pyargs suitesparse_graphblas)  # Don't use our conftest.py
           set -x  # echo on
           coverage run -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
