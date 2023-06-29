@@ -7,10 +7,10 @@ import graphblas as gb
 
 from ... import binary, monoid
 from ...dtypes import _INDEX, INT64, UINT64, lookup_dtype
-from ...dtypes._core import _string_to_dtype
 from ...exceptions import _error_code_lookup, check_status, check_status_carg
 from .. import NULL, ffi, lib
 from ..base import call
+from ..dtypes import _string_to_dtype
 from ..operator import get_typed_op
 from ..scalar import Scalar, _as_scalar
 from ..utils import (
