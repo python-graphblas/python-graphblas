@@ -22,15 +22,18 @@ if backend != "suitesparse":
     pytest.skip("not suitesparse backend", allow_module_level=True)
 if gb.ss.about["library_version"][0] < 8:
     pytest.skip("not SuiteSparse:GraphBLAS >=8", allow_module_level=True)
+if sys.platform == "darwin":
+    pytest.skip("SuiteSparse JIT tests not yet working on macos", allow_module_level=True)
 
 
 @pytest.fixture(scope="module", autouse=True)
 def _setup_jit():
+    # Configuration values below were obtained from the output of the JIT config
+    # in CI, but with paths changed to use `{conda_prefix}` where appropriate.
     if "CONDA_PREFIX" not in os.environ:
         return
     conda_prefix = os.environ["CONDA_PREFIX"]
     gb.ss.config["jit_c_control"] = "on"
-    # gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/cc"
     if sys.platform == "linux":
         gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/x86_64-conda-linux-gnu-cc"
         gb.ss.config["jit_c_compiler_flags"] = (
@@ -53,11 +56,10 @@ def _setup_jit():
             f"m;dl;{conda_prefix}/lib/libgomp.so;"
             f"{conda_prefix}/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so"
         )
-    elif sys.platform == "win32":
-        pass
-    else:
-        # gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/x86_64-apple-darwin13.4.0-clang"
-        gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/cc"
+    elif sys.platform == "darwin":  # pragma: no cover
+        # This is not yet working in CI
+        # gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/cc"
+        gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/x86_64-apple-darwin13.4.0-clang"
         gb.ss.config["jit_c_compiler_flags"] = (
             "-march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE "
             f"-fstack-protector-strong -O2 -pipe -isystem {conda_prefix}/include -DGBNCPUFEAT "
@@ -71,6 +73,8 @@ def _setup_jit():
         )
         gb.ss.config["jit_c_libraries"] = f"-lm -ldl {conda_prefix}/lib/libomp.dylib"
         gb.ss.config["jit_c_cmake_libs"] = f"m;dl;{conda_prefix}/lib/libomp.dylib"
+    elif sys.platform == "win32":
+        pass
 
 
 @pytest.fixture
@@ -80,8 +84,6 @@ def v():
 
 @autocompute
 def test_jit_udt():
-    print("sys.platform:", sys.platform)
-    print(gb.ss.config)  # XXX
     with burble():
         dtype = dtypes.ss.register_new(
             "myquaternion", "typedef struct { float x [4][4] ; int color ; } myquaternion ;"
@@ -123,8 +125,6 @@ def test_jit_udt():
 
 
 def test_jit_unary(v):
-    print("sys.platform:", sys.platform)
-    print(gb.ss.config)  # XXX
     cdef = "void square (float *z, float *x) { (*z) = (*x) * (*x) ; } ;"
     with burble():
         square = unary.ss.register_new("square", cdef, "FP32", "FP32")
