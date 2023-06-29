@@ -22,9 +22,9 @@ from ...dtypes import (
     _supports_complex,
     lookup_dtype,
 )
-from ...dtypes._core import _sample_values
 from ...exceptions import UdfParseError, check_status_carg
 from .. import _has_numba, _supports_udfs, ffi, lib
+from ..dtypes import _sample_values
 from ..expr import InfixExprBase
 from .base import (
     _SS_OPERATORS,

@@ -18,9 +18,9 @@ from ...dtypes import (
     _supports_complex,
     lookup_dtype,
 )
-from ...dtypes._core import _sample_values
 from ...exceptions import UdfParseError, check_status_carg
 from .. import _has_numba, ffi, lib
+from ..dtypes import _sample_values
 from ..utils import output_type
 from .base import (
     _SS_OPERATORS,
