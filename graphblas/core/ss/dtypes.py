@@ -1,6 +1,6 @@
 import numpy as np
 
-from ... import backend, dtypes
+from ... import backend, core, dtypes
 from ...exceptions import check_status_carg
 from .. import _has_numba, ffi, lib
 
@@ -20,7 +20,7 @@ def register_new(name, jit_c_definition, *, np_type=None):
         )
     if not name.isidentifier():
         raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
-    if name in dtypes._core._registry or hasattr(dtypes.ss, name):
+    if name in core.dtypes._registry or hasattr(dtypes.ss, name):
         raise ValueError(f"{name!r} name for dtype is unavailable")
     if len(name) > lib.GxB_MAX_NAME_LEN:
         raise ValueError(
@@ -68,12 +68,12 @@ def register_new(name, jit_c_definition, *, np_type=None):
             numba_type = None
 
     # For now, let's use "opaque" unsigned bytes for the c type.
-    rv = dtypes._core.DataType(name, gb_obj, None, f"uint8_t[{size}]", numba_type, np_type)
-    dtypes._core._registry[gb_obj] = rv
-    if save_np_type or np_type not in dtypes._core._registry:
-        dtypes._core._registry[np_type] = rv
-        if numba_type is not None and (save_np_type or numba_type not in dtypes._core._registry):
-            dtypes._core._registry[numba_type] = rv
-            dtypes._core._registry[numba_type.name] = rv
+    rv = core.dtypes.DataType(name, gb_obj, None, f"uint8_t[{size}]", numba_type, np_type)
+    core.dtypes._registry[gb_obj] = rv
+    if save_np_type or np_type not in core.dtypes._registry:
+        core.dtypes._registry[np_type] = rv
+        if numba_type is not None and (save_np_type or numba_type not in core.dtypes._registry):
+            core.dtypes._registry[numba_type] = rv
+            core.dtypes._registry[numba_type.name] = rv
     setattr(dtypes.ss, name, rv)
     return rv
