@@ -196,7 +196,7 @@ filterwarnings = [
 
     # This deprecation warning was added in setuptools v67.5.0 (8 Mar 2023). See:
     # https://setuptools.pypa.io/en/latest/history.html#v67-5-0
-    "ignore:pkg_resources is deprecated as an API:DeprecationWarning:pkg_resources",
+    "ignore:pkg_resources is deprecated as an API:DeprecationWarning:",
 
     # sre_parse deprecated in 3.11; this is triggered by awkward 0.10
     "ignore:module 'sre_parse' is deprecated:DeprecationWarning:",
