@@ -1,4 +1,4 @@
-from ._core import (
+from ..core.dtypes import (
     _INDEX,
     BOOL,
     FP32,
@@ -20,7 +20,7 @@ from ._core import (
 )
 
 if _supports_complex:
-    from ._core import FC32, FC64
+    from ..core.dtypes import FC32, FC64
 
 
 def __dir__():
