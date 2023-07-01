@@ -3,8 +3,17 @@ import numpy as np
 from ... import backend, core, dtypes
 from ...exceptions import check_status_carg
 from .. import _has_numba, ffi, lib
+from . import _IS_SSGB7
 
 ffi_new = ffi.new
+if _IS_SSGB7:
+    # JIT was introduced in SuiteSparse:GraphBLAS 8.0
+    import suitesparse_graphblas as ssgb
+
+    raise ImportError(
+        "JIT was added to SuiteSparse:GraphBLAS in version 8; "
+        f"current version is {ssgb.__version__}"
+    )
 if _has_numba:
     import numba
     from cffi import FFI

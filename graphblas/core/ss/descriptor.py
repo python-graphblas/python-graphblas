@@ -1,6 +1,7 @@
 from ...exceptions import check_status, check_status_carg
 from .. import ffi, lib
 from ..descriptor import Descriptor
+from . import _IS_SSGB7
 from .config import BaseConfig
 
 ffi_new = ffi.new
@@ -18,7 +19,8 @@ _str_to_compression = {
 class _DescriptorConfig(BaseConfig):
     _get_function = "GxB_Desc_get"
     _set_function = "GxB_Desc_set"
-    _context_keys = {"chunk", "gpu_id", "nthreads"}
+    if not _IS_SSGB7:
+        _context_keys = {"chunk", "gpu_id", "nthreads"}
     _options = {
         # GrB
         "output_replace": (lib.GrB_OUTP, "GrB_Desc_Value"),
@@ -27,13 +29,25 @@ class _DescriptorConfig(BaseConfig):
         "transpose_first": (lib.GrB_INP0, "GrB_Desc_Value"),
         "transpose_second": (lib.GrB_INP1, "GrB_Desc_Value"),
         # GxB
-        "chunk": (lib.GxB_CONTEXT_CHUNK, "double"),
-        "gpu_id": (lib.GxB_CONTEXT_GPU_ID, "int"),
-        "nthreads": (lib.GxB_CONTEXT_NTHREADS, "int"),
         "axb_method": (lib.GxB_AxB_METHOD, "GrB_Desc_Value"),
         "sort": (lib.GxB_SORT, "int"),
         "secure_import": (lib.GxB_IMPORT, "int"),
     }
+    if _IS_SSGB7:
+        _options.update(
+            {
+                "nthreads": (lib.GxB_DESCRIPTOR_NTHREADS, "int"),
+                "chunk": (lib.GxB_DESCRIPTOR_CHUNK, "double"),
+            }
+        )
+    else:
+        _options.update(
+            {
+                "chunk": (lib.GxB_CONTEXT_CHUNK, "double"),
+                "gpu_id": (lib.GxB_CONTEXT_GPU_ID, "int"),
+                "nthreads": (lib.GxB_CONTEXT_NTHREADS, "int"),
+            }
+        )
     _enumerations = {
         # GrB
         "output_replace": {
@@ -86,8 +100,9 @@ class _DescriptorConfig(BaseConfig):
         "axb_method": "default",
         "sort": False,
         "secure_import": False,
-        "gpu_id": -1,  # -1 means no GPU
     }
+    if not _IS_SSGB7:
+        _defaults["gpu_id"] = -1
 
     def __init__(self):
         gb_obj = ffi_new("GrB_Descriptor*")

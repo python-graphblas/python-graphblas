@@ -3,8 +3,17 @@ from ...dtypes import BOOL, lookup_dtype
 from .. import ffi
 from ..operator.base import TypedOpBase
 from ..operator.select import SelectOp, TypedUserSelectOp
+from . import _IS_SSGB7
 
 ffi_new = ffi.new
+if _IS_SSGB7:
+    # JIT was introduced in SuiteSparse:GraphBLAS 8.0
+    import suitesparse_graphblas as ssgb
+
+    raise ImportError(
+        "JIT was added to SuiteSparse:GraphBLAS in version 8; "
+        f"current version is {ssgb.__version__}"
+    )
 
 
 class TypedJitSelectOp(TypedOpBase):

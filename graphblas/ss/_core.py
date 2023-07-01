@@ -5,8 +5,8 @@ from ..core.base import _expect_type
 from ..core.descriptor import lookup as descriptor_lookup
 from ..core.matrix import Matrix, TransposedMatrix
 from ..core.scalar import _as_scalar
+from ..core.ss import _IS_SSGB7
 from ..core.ss.config import BaseConfig
-from ..core.ss.context import global_context
 from ..core.ss.matrix import _concat_mn
 from ..core.vector import Vector
 from ..dtypes import INT64
@@ -135,7 +135,8 @@ class GlobalConfig(BaseConfig):
 
     _get_function = "GxB_Global_Option_get"
     _set_function = "GxB_Global_Option_set"
-    _context_keys = {"chunk", "gpu_id", "nthreads"}
+    if not _IS_SSGB7:
+        _context_keys = {"chunk", "gpu_id", "nthreads"}
     _null_valid = {"bitmap_switch"}
     _options = {
         # Matrix/Vector format
@@ -150,20 +151,32 @@ class GlobalConfig(BaseConfig):
         # Diagnostics (skipping "printf" and "flush" for now)
         "burble": (lib.GxB_BURBLE, "bool"),
         "print_1based": (lib.GxB_PRINT_1BASED, "bool"),
-        # JIT control
-        "jit_c_control": (lib.GxB_JIT_C_CONTROL, "int"),
-        "jit_use_cmake": (lib.GxB_JIT_USE_CMAKE, "bool"),
-        "jit_c_compiler_name": (lib.GxB_JIT_C_COMPILER_NAME, "char*"),
-        "jit_c_compiler_flags": (lib.GxB_JIT_C_COMPILER_FLAGS, "char*"),
-        "jit_c_linker_flags": (lib.GxB_JIT_C_LINKER_FLAGS, "char*"),
-        "jit_c_libraries": (lib.GxB_JIT_C_LIBRARIES, "char*"),
-        "jit_c_cmake_libs": (lib.GxB_JIT_C_CMAKE_LIBS, "char*"),
-        "jit_c_preface": (lib.GxB_JIT_C_PREFACE, "char*"),
-        "jit_error_log": (lib.GxB_JIT_ERROR_LOG, "char*"),
-        "jit_cache_path": (lib.GxB_JIT_CACHE_PATH, "char*"),
-        # CUDA GPU control
-        "gpu_id": (lib.GxB_GLOBAL_GPU_ID, "int"),
     }
+    if _IS_SSGB7:
+        _options.update(
+            {
+                "gpu_control": (lib.GxB_GLOBAL_GPU_CONTROL, "GrB_Desc_Value"),
+                "gpu_chunk": (lib.GxB_GLOBAL_GPU_CHUNK, "double"),
+            }
+        )
+    else:
+        _options.update(
+            {
+                # JIT control
+                "jit_c_control": (lib.GxB_JIT_C_CONTROL, "int"),
+                "jit_use_cmake": (lib.GxB_JIT_USE_CMAKE, "bool"),
+                "jit_c_compiler_name": (lib.GxB_JIT_C_COMPILER_NAME, "char*"),
+                "jit_c_compiler_flags": (lib.GxB_JIT_C_COMPILER_FLAGS, "char*"),
+                "jit_c_linker_flags": (lib.GxB_JIT_C_LINKER_FLAGS, "char*"),
+                "jit_c_libraries": (lib.GxB_JIT_C_LIBRARIES, "char*"),
+                "jit_c_cmake_libs": (lib.GxB_JIT_C_CMAKE_LIBS, "char*"),
+                "jit_c_preface": (lib.GxB_JIT_C_PREFACE, "char*"),
+                "jit_error_log": (lib.GxB_JIT_ERROR_LOG, "char*"),
+                "jit_cache_path": (lib.GxB_JIT_CACHE_PATH, "char*"),
+                # CUDA GPU control
+                "gpu_id": (lib.GxB_GLOBAL_GPU_ID, "int"),
+            }
+        )
     # Values to restore defaults
     _defaults = {
         "hyper_switch": lib.GxB_HYPER_DEFAULT,
@@ -173,22 +186,29 @@ class GlobalConfig(BaseConfig):
         "chunk": 0,
         "burble": 0,
         "print_1based": 0,
-        "gpu_id": -1,  # -1 means no GPU
     }
+    if not _IS_SSGB7:
+        _defaults["gpu_id"] = -1  # -1 means no GPU
     _enumerations = {
         "format": {
             "by_row": lib.GxB_BY_ROW,
             "by_col": lib.GxB_BY_COL,
             # "no_format": lib.GxB_NO_FORMAT,  # Used by iterators; not valid here
         },
-        "jit_c_control": {
+    }
+    if _IS_SSGB7:
+        _enumerations["gpu_control"] = {
+            "always": lib.GxB_GPU_ALWAYS,
+            "never": lib.GxB_GPU_NEVER,
+        }
+    else:
+        _enumerations["jit_c_control"] = {
             "off": lib.GxB_JIT_OFF,
             "pause": lib.GxB_JIT_PAUSE,
             "run": lib.GxB_JIT_RUN,
             "load": lib.GxB_JIT_LOAD,
             "on": lib.GxB_JIT_ON,
-        },
-    }
+        }
 
 
 class About(Mapping):
@@ -275,4 +295,10 @@ class About(Mapping):
 
 
 about = About()
-config = GlobalConfig(context=global_context)
+if _IS_SSGB7:
+    config = GlobalConfig()
+else:
+    # Context was introduced in SuiteSparse:GraphBLAS 8.0
+    from ..core.ss.context import global_context
+
+    config = GlobalConfig(context=global_context)

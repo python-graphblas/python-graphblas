@@ -2,9 +2,18 @@ import threading
 
 from ...exceptions import InvalidValue, check_status, check_status_carg
 from .. import ffi, lib
+from . import _IS_SSGB7
 from .config import BaseConfig
 
 ffi_new = ffi.new
+if _IS_SSGB7:
+    # Context was introduced in SuiteSparse:GraphBLAS 8.0
+    import suitesparse_graphblas as ssgb
+
+    raise ImportError(
+        "Context was added to SuiteSparse:GraphBLAS in version 8; "
+        f"current version is {ssgb.__version__}"
+    )
 
 
 class Context(BaseConfig):
