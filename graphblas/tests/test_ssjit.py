@@ -21,8 +21,6 @@ except ImportError:
 
 if backend != "suitesparse":
     pytest.skip("not suitesparse backend", allow_module_level=True)
-# if sys.platform == "darwin":
-#    pytest.skip("SuiteSparse JIT tests not yet working on macos", allow_module_level=True)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -55,16 +53,12 @@ def _setup_jit():
             f"m;dl;{conda_prefix}/lib/libgomp.so;"
             f"{conda_prefix}/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so"
         )
-    elif sys.platform == "darwin":  # pragma: no cover
-        # This is not yet working in CI
+    elif sys.platform == "darwin":
         gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/clang"
-        # gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/x86_64-apple-darwin13.4.0-clang"
         gb.ss.config["jit_c_compiler_flags"] = (
             "-march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE "
             f"-fstack-protector-strong -O2 -pipe -isystem {conda_prefix}/include -DGBNCPUFEAT "
-            "-Wno-pointer-sign -O3 -DNDEBUG -fopenmp=libomp -fPIC -arch x86_64 "
-            # "-isysroot /Applications/Xcode_13.2.1.app/Contents/Developer/Platforms"
-            # "/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk"
+            "-Wno-pointer-sign -O3 -DNDEBUG -fopenmp=libomp -fPIC -arch x86_64"
         )
         gb.ss.config["jit_c_linker_flags"] = (
             "-Wl,-pie -Wl,-headerpad_max_install_names -Wl,-dead_strip_dylibs "
