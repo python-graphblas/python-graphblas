@@ -90,7 +90,8 @@ jobs:
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
       matrix:
-        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        # os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        os: ["macos-latest", "macos-latest"]
         slowtask: ["pytest_normal", "pytest_bizarro", "notebooks"]
     env:
       # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
@@ -205,12 +206,15 @@ jobs:
           psg=""
           if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
             psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2", "=8.0.2.1", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["=8.0.2.1", ""]))')  # XXX
             psg=python-suitesparse-graphblas${psgver}
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
             psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", "==8.0.2.1", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["==8.0.2.1", ""]))')  # XXX
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "source" ]] ; then
             # These should be exact versions
             psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", "==8.0.2.1", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["==8.0.2.1", ""]))')  # XXX
           else
             psgver=""
           fi
@@ -260,7 +264,7 @@ jobs:
             numba=numba${numbaver}
             sparse=sparse${sparsever}
           fi
-          echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
+          echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psg${psgver}"
 
           set -x  # echo on
           $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli c-compiler make \

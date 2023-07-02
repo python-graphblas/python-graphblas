@@ -62,9 +62,9 @@ def _setup_jit():
         gb.ss.config["jit_c_compiler_flags"] = (
             "-march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE "
             f"-fstack-protector-strong -O2 -pipe -isystem {conda_prefix}/include -DGBNCPUFEAT "
-            "-Wno-pointer-sign -O3 -DNDEBUG -fopenmp=libomp -fPIC -arch x86_64 -isysroot "
-            "/Applications/Xcode_13.2.1.app/Contents/Developer/Platforms/MacOSX.platform"
-            "/Developer/SDKs/MacOSX10.9.sdk"
+            "-Wno-pointer-sign -O3 -DNDEBUG -fopenmp=libomp -fPIC -arch x86_64 "
+            # "-isysroot /Applications/Xcode_13.2.1.app/Contents/Developer/Platforms"
+            # "/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk"
         )
         gb.ss.config["jit_c_linker_flags"] = (
             "-Wl,-pie -Wl,-headerpad_max_install_names -Wl,-dead_strip_dylibs "

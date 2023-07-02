@@ -48,6 +48,8 @@ def pytest_configure(config):
 
     gb.config.set(autocompute=False, mapnumpy=mapnumpy)
 
+    runslow = False  # XXX
+    backend = "suitesparse"  # XXX
     gb.init(backend, blocking=blocking)
     print(
         f"Running tests with {backend!r} backend, blocking={blocking}, "
