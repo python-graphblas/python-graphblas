@@ -21,8 +21,8 @@ except ImportError:
 
 if backend != "suitesparse":
     pytest.skip("not suitesparse backend", allow_module_level=True)
-if sys.platform == "darwin":
-    pytest.skip("SuiteSparse JIT tests not yet working on macos", allow_module_level=True)
+# if sys.platform == "darwin":
+#    pytest.skip("SuiteSparse JIT tests not yet working on macos", allow_module_level=True)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -57,7 +57,7 @@ def _setup_jit():
         )
     elif sys.platform == "darwin":  # pragma: no cover
         # This is not yet working in CI
-        gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/cc"
+        gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/clang"
         # gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/x86_64-apple-darwin13.4.0-clang"
         gb.ss.config["jit_c_compiler_flags"] = (
             "-march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE "
