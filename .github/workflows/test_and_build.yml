@@ -263,14 +263,15 @@ jobs:
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
 
           set -x  # echo on
-          $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli c-compiler cmake make m4 \
+          $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli c-compiler cmake make \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${fmm} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4"' || '' }} \
-            ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }}
+            ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }} \
+            ${{ matrix.os != 'windows-latest' && 'm4' || '' }}
       - name: Build extension module
         run: |
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
@@ -295,7 +296,7 @@ jobs:
         run: |
           # Don't use our conftest.py ; allow `test_print_jit_config` to fail if it doesn't exist
           (cd ..
-           pytest --pyargs suitesparse_graphblas -s -k test_print_jit_config
+           pytest --pyargs suitesparse_graphblas -s -k test_print_jit_config || true
            pytest -v --pyargs suitesparse_graphblas)
       - name: Unit tests
         run: |

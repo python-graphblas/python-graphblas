@@ -21,8 +21,8 @@ except ImportError:
 
 if backend != "suitesparse":
     pytest.skip("not suitesparse backend", allow_module_level=True)
-if sys.platform == "darwin":
-    pytest.skip("SuiteSparse JIT tests not yet working on macos", allow_module_level=True)
+# if sys.platform == "darwin":
+#     pytest.skip("SuiteSparse JIT tests not yet working on macos", allow_module_level=True)
 
 
 @pytest.fixture(scope="module", autouse=True)
