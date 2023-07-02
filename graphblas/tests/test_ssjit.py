@@ -57,8 +57,8 @@ def _setup_jit():
         )
     elif sys.platform == "darwin":  # pragma: no cover
         # This is not yet working in CI
-        # gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/cc"
-        gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/x86_64-apple-darwin13.4.0-clang"
+        gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/cc"
+        # gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/x86_64-apple-darwin13.4.0-clang"
         gb.ss.config["jit_c_compiler_flags"] = (
             "-march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE "
             f"-fstack-protector-strong -O2 -pipe -isystem {conda_prefix}/include -DGBNCPUFEAT "

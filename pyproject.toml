@@ -171,7 +171,7 @@ line_length = 100
 [tool.pytest.ini_options]
 minversion = "6.0"
 testpaths = "graphblas/tests"
-xfail_strict = true
+xfail_strict = false  # 2023-07-23: awkward and numpy 1.25 sometimes conflict
 addopts = [
     "--strict-config",  # Force error if config is mispelled
     "--strict-markers",  # Force error if marker is mispelled (must be defined in config)
