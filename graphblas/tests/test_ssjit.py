@@ -8,6 +8,7 @@ from numpy.testing import assert_array_equal
 import graphblas as gb
 from graphblas import backend, binary, dtypes, indexunary, select, unary
 from graphblas.core import _supports_udfs as supports_udfs
+from graphblas.core.ss import _IS_SSGB7
 
 from .conftest import autocompute, burble
 
@@ -20,8 +21,6 @@ except ImportError:
 
 if backend != "suitesparse":
     pytest.skip("not suitesparse backend", allow_module_level=True)
-if gb.ss.about["library_version"][0] < 8:
-    pytest.skip("not SuiteSparse:GraphBLAS >=8", allow_module_level=True)
 if sys.platform == "darwin":
     pytest.skip("SuiteSparse JIT tests not yet working on macos", allow_module_level=True)
 
@@ -30,7 +29,7 @@ if sys.platform == "darwin":
 def _setup_jit():
     # Configuration values below were obtained from the output of the JIT config
     # in CI, but with paths changed to use `{conda_prefix}` where appropriate.
-    if "CONDA_PREFIX" not in os.environ:
+    if "CONDA_PREFIX" not in os.environ or _IS_SSGB7:
         return
     conda_prefix = os.environ["CONDA_PREFIX"]
     gb.ss.config["jit_c_control"] = "on"
@@ -73,7 +72,7 @@ def _setup_jit():
         )
         gb.ss.config["jit_c_libraries"] = f"-lm -ldl {conda_prefix}/lib/libomp.dylib"
         gb.ss.config["jit_c_cmake_libs"] = f"m;dl;{conda_prefix}/lib/libomp.dylib"
-    elif sys.platform == "win32":
+    elif sys.platform == "win32":  # pragma: no branch (sanity)
         pass
 
 
@@ -84,6 +83,12 @@ def v():
 
 @autocompute
 def test_jit_udt():
+    if _IS_SSGB7:
+        with pytest.raises(RuntimeError, match="JIT was added"):
+            dtypes.ss.register_new(
+                "myquaternion", "typedef struct { float x [4][4] ; int color ; } myquaternion ;"
+            )
+        return
     with burble():
         dtype = dtypes.ss.register_new(
             "myquaternion", "typedef struct { float x [4][4] ; int color ; } myquaternion ;"
@@ -113,7 +118,7 @@ def test_jit_udt():
     v[1] = (2, 3)
     if supports_udfs:
         expected = Vector.from_dense([100, 3])
-        assert expected.isequal(v.apply(lambda x: x["color"]))
+        assert expected.isequal(v.apply(lambda x: x["color"]))  # pragma: no cover (numba)
 
     np_type = np.dtype([("x", "<f4", (3, 3)), ("color", "<i4")], align=True)
     dtype = dtypes.ss.register_new(
@@ -126,6 +131,10 @@ def test_jit_udt():
 
 def test_jit_unary(v):
     cdef = "void square (float *z, float *x) { (*z) = (*x) * (*x) ; } ;"
+    if _IS_SSGB7:
+        with pytest.raises(RuntimeError, match="JIT was added"):
+            unary.ss.register_new("square", cdef, "FP32", "FP32")
+        return
     with burble():
         square = unary.ss.register_new("square", cdef, "FP32", "FP32")
     assert not hasattr(unary, "square")
@@ -144,6 +153,10 @@ def test_jit_unary(v):
 
 def test_jit_binary(v):
     cdef = "void absdiff (double *z, double *x, double *y) { (*z) = fabs ((*x) - (*y)) ; }"
+    if _IS_SSGB7:
+        with pytest.raises(RuntimeError, match="JIT was added"):
+            binary.ss.register_new("absdiff", cdef, "FP64", "FP64", "FP64")
+        return
     with burble():
         absdiff = binary.ss.register_new(
             "absdiff",
@@ -174,6 +187,10 @@ def test_jit_indexunary(v):
         "void diffy (double *z, double *x, GrB_Index i, GrB_Index j, double *y) "
         "{ (*z) = (i + j) * fabs ((*x) - (*y)) ; }"
     )
+    if _IS_SSGB7:
+        with pytest.raises(RuntimeError, match="JIT was added"):
+            indexunary.ss.register_new("diffy", cdef, "FP64", "FP64", "FP64")
+        return
     with burble():
         diffy = indexunary.ss.register_new("diffy", cdef, "FP64", "FP64", "FP64")
     assert not hasattr(indexunary, "diffy")
@@ -198,6 +215,10 @@ def test_jit_select(v):
         "void woot (bool *z, const int32_t *x, GrB_Index i, GrB_Index j, int32_t *y) "
         "{ (*z) = ((*x) + i + j == (*y)) ; }"
     )
+    if _IS_SSGB7:
+        with pytest.raises(RuntimeError, match="JIT was added"):
+            select.ss.register_new("woot", cdef, "INT32", "INT32")
+        return
     with burble():
         woot = select.ss.register_new("woot", cdef, "INT32", "INT32")
     assert not hasattr(select, "woot")
@@ -218,3 +239,14 @@ def test_jit_select(v):
     expected = Vector.from_coo([1, 3, 4, 6], [False, False, True, True])
     assert expected.isequal(res)
     assert woot["INT32"].jit_c_definition == cdef
+
+
+def test_context_importable():
+    if _IS_SSGB7:
+        with pytest.raises(ImportError, match="Context was added"):
+            from graphblas.core.ss.context import global_context as _  # noqa: F401
+        assert not hasattr("gb.ss", "global_context")
+        return
+    from graphblas.core.ss.context import global_context
+
+    assert gb.ss.global_context is global_context

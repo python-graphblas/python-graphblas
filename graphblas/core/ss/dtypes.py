@@ -6,14 +6,6 @@ from .. import _has_numba, ffi, lib
 from . import _IS_SSGB7
 
 ffi_new = ffi.new
-if _IS_SSGB7:
-    # JIT was introduced in SuiteSparse:GraphBLAS 8.0
-    import suitesparse_graphblas as ssgb
-
-    raise ImportError(
-        "JIT was added to SuiteSparse:GraphBLAS in version 8; "
-        f"current version is {ssgb.__version__}"
-    )
 if _has_numba:
     import numba
     from cffi import FFI
@@ -23,9 +15,17 @@ if _has_numba:
 
 
 def register_new(name, jit_c_definition, *, np_type=None):
-    if backend != "suitesparse":
+    if backend != "suitesparse":  # pragma: no cover (safety)
         raise RuntimeError(
             "`gb.dtypes.ss.register_new` invalid when not using 'suitesparse' backend"
+        )
+    if _IS_SSGB7:
+        # JIT was introduced in SuiteSparse:GraphBLAS 8.0
+        import suitesparse_graphblas as ssgb
+
+        raise RuntimeError(
+            "JIT was added to SuiteSparse:GraphBLAS in version 8; "
+            f"current version is {ssgb.__version__}"
         )
     if not name.isidentifier():
         raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
