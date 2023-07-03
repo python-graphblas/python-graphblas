@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path("..").resolve()))
 # -- Project information -----------------------------------------------------
 
 project = "python-graphblas"
-copyright = "2022, Anaconda, Inc"
+copyright = "2020-2023, Anaconda, Inc. and contributors"
 author = "Anaconda, Inc"
 
 # The full version, including alpha/beta/rc tags

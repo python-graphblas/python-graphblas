@@ -228,7 +228,7 @@ class Semiring(OpBase):
             check_status_carg(
                 lib.GrB_Semiring_new(new_semiring, monoid[binary_out].gb_obj, binary_func.gb_obj),
                 "Semiring",
-                new_semiring,
+                new_semiring[0],
             )
             ret_type = monoid[binary_out].return_type
             op = TypedUserSemiring(
@@ -254,7 +254,7 @@ class Semiring(OpBase):
         ret_type = monoid.return_type
         new_semiring = ffi_new("GrB_Semiring*")
         status = lib.GrB_Semiring_new(new_semiring, monoid.gb_obj, binaryop.gb_obj)
-        check_status_carg(status, "Semiring", new_semiring)
+        check_status_carg(status, "Semiring", new_semiring[0])
         op = TypedUserSemiring(
             new_semiring,
             self.name,

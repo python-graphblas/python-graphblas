@@ -421,7 +421,7 @@ class Updater:
             # Fast path using assignElement
             if self.opts:
                 # Ignore opts for now
-                descriptor_lookup(**self.opts)
+                desc = descriptor_lookup(**self.opts)  # noqa: F841 (keep desc in scope for context)
             self.parent._assign_element(resolved_indexes, obj)
         else:
             mask = self.kwargs.get("mask")

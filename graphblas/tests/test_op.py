@@ -1006,7 +1006,7 @@ def test_get_semiring():
 
 def test_create_semiring():
     # stress test / sanity check
-    monoid_names = {x for x in dir(monoid) if not x.startswith("_")}
+    monoid_names = {x for x in dir(monoid) if not x.startswith("_") and x != "ss"}
     binary_names = {x for x in dir(binary) if not x.startswith("_") and x != "ss"}
     for monoid_name, binary_name in itertools.product(monoid_names, binary_names):
         cur_monoid = getattr(monoid, monoid_name)
@@ -1433,6 +1433,7 @@ def test_deprecated():
         import graphblas.core.agg  # noqa: F401
 
 
+@pytest.mark.slow
 def test_is_idempotent():
     assert monoid.min.is_idempotent
     assert monoid.max[int].is_idempotent
@@ -1446,3 +1447,14 @@ def test_is_idempotent():
         assert not monoid.numpy.equal.is_idempotent
     with pytest.raises(AttributeError):
         binary.min.is_idempotent
+
+
+def test_ops_have_ss():
+    modules = [unary, binary, monoid, semiring, indexunary, select, op]
+    if suitesparse:
+        for mod in modules:
+            assert mod.ss is not None
+    else:
+        for mod in modules:
+            with pytest.raises(AttributeError):
+                mod.ss

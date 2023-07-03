@@ -1,4 +1,5 @@
 import atexit
+import contextlib
 import functools
 import itertools
 import platform
@@ -112,6 +113,27 @@ def ic():  # pragma: no cover (debug)
     icecream.install()
     # icecream.ic.disable()  # This disables icecream; do ic.enable() to re-enable
     return icecream.ic
+
+
+@contextlib.contextmanager
+def burble():  # pragma: no cover (debug)
+    """Show the burble diagnostics within a context."""
+    if gb.backend != "suitesparse":
+        yield
+        return
+    prev = gb.ss.config["burble"]
+    gb.ss.config["burble"] = True
+    try:
+        yield
+    finally:
+        gb.ss.config["burble"] = prev
+
+
+@pytest.fixture(scope="session")
+def burble_all():  # pragma: no cover (debug)
+    """Show the burble diagnostics for the entire test."""
+    with burble():
+        yield burble
 
 
 def autocompute(func):

@@ -36,7 +36,6 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
     try:
         # scipy is currently needed for *all* engines
         from scipy.io import mmread
-        from scipy.sparse import isspmatrix_coo
     except ImportError:  # pragma: no cover (import)
         raise ImportError("scipy is required to read Matrix Market files") from None
     engine = engine.lower()
@@ -54,7 +53,7 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
             f'Bad engine value: {engine!r}. Must be "auto", "scipy", "fmm", or "fast_matrix_market"'
         )
     array = mmread(source, **kwargs)
-    if isspmatrix_coo(array):
+    if getattr(array, "format", None) == "coo":
         nrows, ncols = array.shape
         return Matrix.from_coo(
             array.row, array.col, array.data, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
@@ -105,13 +104,17 @@ def mmwrite(
     engine = engine.lower()
     if engine in {"auto", "fmm", "fast_matrix_market"}:
         try:
-            from fast_matrix_market import mmwrite  # noqa: F811
+            from fast_matrix_market import __version__, mmwrite  # noqa: F811
         except ImportError:  # pragma: no cover (import)
             if engine != "auto":
                 raise ImportError(
                     "fast_matrix_market is required to write Matrix Market files "
                     f'using the "{engine}" engine'
                 ) from None
+        else:
+            import scipy as sp
+
+            engine = "fast_matrix_market"
     elif engine != "scipy":
         raise ValueError(
             f'Bad engine value: {engine!r}. Must be "auto", "scipy", "fmm", or "fast_matrix_market"'
@@ -120,6 +123,12 @@ def mmwrite(
         array = matrix.ss.export()["values"]
     else:
         array = to_scipy_sparse(matrix, format="coo")
+        if engine == "fast_matrix_market" and __version__ < "1.7." and sp.__version__ > "1.11.":
+            # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_coo`.
+            # fast_matrix_market updated to handle this in version 1.7.0
+            # Also, it looks like fast_matrix_market has special writers for csr and csc;
+            # should we see if using those are faster?
+            array = sp.sparse.coo_matrix(array)  # FLAKY COVERAGE
     mmwrite(
         target,
         array,

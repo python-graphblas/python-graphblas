@@ -19,12 +19,12 @@ from ...dtypes import (
     UINT16,
     UINT32,
     UINT64,
-    _sample_values,
     _supports_complex,
     lookup_dtype,
 )
 from ...exceptions import UdfParseError, check_status_carg
 from .. import _has_numba, _supports_udfs, ffi, lib
+from ..dtypes import _sample_values
 from ..expr import InfixExprBase
 from .base import (
     _SS_OPERATORS,
@@ -506,7 +506,7 @@ class BinaryOp(OpBase):
                         type_.gb_obj,
                     ),
                     "BinaryOp",
-                    new_binary,
+                    new_binary[0],
                 )
                 op = TypedUserBinaryOp(new_type_obj, name, type_, ret_type, new_binary[0])
                 new_type_obj._add(op)
@@ -611,7 +611,7 @@ class BinaryOp(OpBase):
                 new_binary, binary_wrapper.cffi, ret_type._carg, dtype._carg, dtype2._carg
             ),
             "BinaryOp",
-            new_binary,
+            new_binary[0],
         )
         op = TypedUserBinaryOp(
             self,
