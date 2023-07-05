@@ -132,7 +132,7 @@ jobs:
             upstream
           weights: |
             1
-            1000000000
+            1
             1
             1
       - name: Setup mamba
@@ -208,7 +208,6 @@ jobs:
             psg=python-suitesparse-graphblas${psgver}
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
             psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", "==8.0.2.1", ""]))')
-            psgver=$(python -c 'import random ; print(random.choice(["==8.0.2.1", ""]))')  # XXX
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "source" ]] ; then
             # These should be exact versions
             psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", "==8.0.2.1", ""]))')
