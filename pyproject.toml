@@ -171,7 +171,7 @@ line_length = 100
 [tool.pytest.ini_options]
 minversion = "6.0"
 testpaths = "graphblas/tests"
-xfail_strict = true
+xfail_strict = false  # 2023-07-23: awkward and numpy 1.25 sometimes conflict
 addopts = [
     "--strict-config",  # Force error if config is mispelled
     "--strict-markers",  # Force error if marker is mispelled (must be defined in config)
@@ -313,6 +313,7 @@ ignore = [
     "TRY004",  # Prefer `TypeError` exception for invalid type (Note: good advice, but not worth the nuisance)
     "TRY200",  # Use `raise from` to specify exception cause (Note: sometimes okay to raise original exception)
     "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar` (Note: no annotations yet)
+    "PERF401",  # Use a list comprehension to create a transformed list (Note: poorly implemented atm)
 
     # Intentionally ignored
     "COM812",  # Trailing comma missing
@@ -324,6 +325,8 @@ ignore = [
     "N806",  # Variable ... in function should be lowercase
     "N807",  # Function name should not start and end with `__`
     "N818",  # Exception name ... should be named with an Error suffix (Note: good advice)
+    "PERF203",  # `try`-`except` within a loop incurs performance overhead (Note: too strict)
+    "PLC0205",  # Class `__slots__` should be a non-string iterable (Note: string is fine)
     "PLR0124", # Name compared with itself, consider replacing `x == x` (Note: too strict)
     "PLR0911",  # Too many return statements
     "PLR0912",  # Too many branches

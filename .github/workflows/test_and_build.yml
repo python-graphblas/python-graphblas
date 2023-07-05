@@ -131,9 +131,9 @@ jobs:
             source
             upstream
           weights: |
-            1000000
-            1000000
-            1000000
+            1
+            1
+            1
             1
       - name: Setup mamba
         uses: conda-incubator/setup-miniconda@v2
@@ -175,22 +175,22 @@ jobs:
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", "=2.0", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.9') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", "=1.25", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", "=1.11", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", "=2.0", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.10') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", "=1.25", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", "=1.11", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.3", "=1.4", "=1.5", "=2.0", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", ""]))')
           else  # Python 3.11
             npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", "=2.2", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", "=2.2", "=2.3", ""]))')
           fi
           if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
             # TODO: there are currently issues with some numpy versions when
@@ -204,13 +204,13 @@ jobs:
           # But, it's still useful for us to test with different versions!
           psg=""
           if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
-            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2"]))')
+            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2", "=8.0.2.1", ""]))')
             psg=python-suitesparse-graphblas${psgver}
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
-            psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2"]))')
+            psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", "==8.0.2.1", ""]))')
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "source" ]] ; then
             # These should be exact versions
-            psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2"]))')
+            psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", "==8.0.2.1", ""]))')
           else
             psgver=""
           fi
@@ -260,17 +260,18 @@ jobs:
             numba=numba${numbaver}
             sparse=sparse${sparsever}
           fi
-          echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psgver${psgver}"
+          echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psg${psgver}"
 
           set -x  # echo on
-          $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli \
+          $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli c-compiler make \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${fmm} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
-            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas=7.4"' || '' }} \
-            ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }}
+            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4"' || '' }} \
+            ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }} \
+            ${{ matrix.os == 'windows-latest' && 'cmake' || 'm4' }}
       - name: Build extension module
         run: |
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
@@ -291,6 +292,12 @@ jobs:
               pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
           fi
           pip install --no-deps -e .
+      - name: python-suitesparse-graphblas tests
+        run: |
+          # Don't use our conftest.py ; allow `test_print_jit_config` to fail if it doesn't exist
+          (cd ..
+           pytest --pyargs suitesparse_graphblas -s -k test_print_jit_config || true
+           pytest -v --pyargs suitesparse_graphblas)
       - name: Unit tests
         run: |
           A=${{ needs.rngs.outputs.mapnumpy == 'A' || '' }} ; B=${{ needs.rngs.outputs.mapnumpy == 'B' || '' }}
@@ -318,7 +325,6 @@ jobs:
             if [[ $H && $normal  ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)$( \
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo ${args}
-          (cd .. && pytest -v --pyargs suitesparse_graphblas)  # Don't use our conftest.py
           set -x  # echo on
           coverage run -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}

@@ -51,7 +51,7 @@ repos:
       - id: isort
   # Let's keep `pyupgrade` even though `ruff --fix` probably does most of it
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.7.0
+    rev: v3.8.0
     hooks:
       - id: pyupgrade
         args: [--py38-plus]
@@ -66,7 +66,7 @@ repos:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.275
+    rev: v0.0.277
     hooks:
       - id: ruff
         args: [--fix-only, --show-fixes]
@@ -94,7 +94,7 @@ repos:
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.275
+    rev: v0.0.277
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint

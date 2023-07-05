@@ -4,10 +4,10 @@
 # This may be helpful when updating dependency versions in CI.
 # Tip: add `--json` for more information.
 conda search 'numpy[channel=conda-forge]>=1.25.0'
-conda search 'pandas[channel=conda-forge]>=2.0.2'
-conda search 'scipy[channel=conda-forge]>=1.11.0'
+conda search 'pandas[channel=conda-forge]>=2.0.3'
+conda search 'scipy[channel=conda-forge]>=1.11.1'
 conda search 'networkx[channel=conda-forge]>=3.1'
-conda search 'awkward[channel=conda-forge]>=2.2.4'
+conda search 'awkward[channel=conda-forge]>=2.3.0'
 conda search 'sparse[channel=conda-forge]>=0.14.0'
 conda search 'fast_matrix_market[channel=conda-forge]>=1.7.2'
 conda search 'numba[channel=conda-forge]>=0.57.1'

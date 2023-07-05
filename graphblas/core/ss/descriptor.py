@@ -1,6 +1,7 @@
 from ...exceptions import check_status, check_status_carg
 from .. import ffi, lib
 from ..descriptor import Descriptor
+from . import _IS_SSGB7
 from .config import BaseConfig
 
 ffi_new = ffi.new
@@ -18,6 +19,8 @@ _str_to_compression = {
 class _DescriptorConfig(BaseConfig):
     _get_function = "GxB_Desc_get"
     _set_function = "GxB_Desc_set"
+    if not _IS_SSGB7:
+        _context_keys = {"chunk", "gpu_id", "nthreads"}
     _options = {
         # GrB
         "output_replace": (lib.GrB_OUTP, "GrB_Desc_Value"),
@@ -26,13 +29,25 @@ class _DescriptorConfig(BaseConfig):
         "transpose_first": (lib.GrB_INP0, "GrB_Desc_Value"),
         "transpose_second": (lib.GrB_INP1, "GrB_Desc_Value"),
         # GxB
-        "nthreads": (lib.GxB_DESCRIPTOR_NTHREADS, "int"),
-        "chunk": (lib.GxB_DESCRIPTOR_CHUNK, "double"),
         "axb_method": (lib.GxB_AxB_METHOD, "GrB_Desc_Value"),
         "sort": (lib.GxB_SORT, "int"),
         "secure_import": (lib.GxB_IMPORT, "int"),
-        # "gpu_control": (GxB_DESCRIPTOR_GPU_CONTROL, "GrB_Desc_Value"),  # Coming soon...
     }
+    if _IS_SSGB7:
+        _options.update(
+            {
+                "nthreads": (lib.GxB_DESCRIPTOR_NTHREADS, "int"),
+                "chunk": (lib.GxB_DESCRIPTOR_CHUNK, "double"),
+            }
+        )
+    else:
+        _options.update(
+            {
+                "chunk": (lib.GxB_CONTEXT_CHUNK, "double"),
+                "gpu_id": (lib.GxB_CONTEXT_GPU_ID, "int"),
+                "nthreads": (lib.GxB_CONTEXT_NTHREADS, "int"),
+            }
+        )
     _enumerations = {
         # GrB
         "output_replace": {
@@ -71,10 +86,6 @@ class _DescriptorConfig(BaseConfig):
             False: False,
             True: lib.GxB_SORT,
         },
-        # "gpu_control": {  # Coming soon...
-        #     "always": lib.GxB_GPU_ALWAYS,
-        #     "never": lib.GxB_GPU_NEVER,
-        # },
     }
     _defaults = {
         # GrB
@@ -90,6 +101,8 @@ class _DescriptorConfig(BaseConfig):
         "sort": False,
         "secure_import": False,
     }
+    if not _IS_SSGB7:
+        _defaults["gpu_id"] = -1
 
     def __init__(self):
         gb_obj = ffi_new("GrB_Descriptor*")

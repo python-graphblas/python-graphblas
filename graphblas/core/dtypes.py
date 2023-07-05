@@ -22,7 +22,7 @@ class DataType:
         self.gb_name = gb_name
         self.c_type = c_type
         self.numba_type = numba_type
-        self.np_type = np.dtype(np_type)
+        self.np_type = np.dtype(np_type) if np_type is not None else None
 
     def __repr__(self):
         return self.name

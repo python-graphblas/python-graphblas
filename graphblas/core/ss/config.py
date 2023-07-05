@@ -65,7 +65,7 @@ class BaseConfig(MutableMapping):
             raise KeyError(key)
         key_obj, ctype = self._options[key]
         is_bool = ctype == "bool"
-        if is_context := (key in self._context_keys):  # pragma: no cover (suitesparse 8)
+        if is_context := (key in self._context_keys):
             get_function_base = self._context_get_function
         else:
             get_function_base = self._get_function
@@ -76,14 +76,14 @@ class BaseConfig(MutableMapping):
             get_function_name = f"{get_function_base}_INT64"
         elif ctype.startswith("double"):
             get_function_name = f"{get_function_base}_FP64"
-        elif ctype.startswith("char"):  # pragma: no cover (suitesparse 8)
+        elif ctype.startswith("char"):
             get_function_name = f"{get_function_base}_CHAR"
         else:  # pragma: no cover (sanity)
             raise ValueError(ctype)
         get_function = getattr(lib, get_function_name)
         is_array = "[" in ctype
         val_ptr = ffi.new(ctype if is_array else f"{ctype}*")
-        if is_context:  # pragma: no cover (suitesparse 8)
+        if is_context:
             info = get_function(self._context._carg, key_obj, val_ptr)
         elif self._parent is None:
             info = get_function(key_obj, val_ptr)
@@ -105,7 +105,7 @@ class BaseConfig(MutableMapping):
                 return rv
             if is_bool:
                 return bool(val_ptr[0])
-            if ctype.startswith("char"):  # pragma: no cover (suitesparse 8)
+            if ctype.startswith("char"):
                 return ffi.string(val_ptr[0]).decode()
             return val_ptr[0]
         raise _error_code_lookup[info](f"Failed to get info for {key!r}")  # pragma: no cover
@@ -117,7 +117,7 @@ class BaseConfig(MutableMapping):
         if key in self._read_only:
             raise ValueError(f"Config option {key!r} is read-only")
         key_obj, ctype = self._options[key]
-        if is_context := (key in self._context_keys):  # pragma: no cover (suitesparse 8)
+        if is_context := (key in self._context_keys):
             set_function_base = self._context_set_function
         else:
             set_function_base = self._set_function
@@ -130,7 +130,7 @@ class BaseConfig(MutableMapping):
             set_function_name = f"{set_function_base}_INT64_ARRAY"
         elif ctype.startswith("double["):
             set_function_name = f"{set_function_base}_FP64_ARRAY"
-        elif ctype.startswith("char"):  # pragma: no cover (suitesparse 8)
+        elif ctype.startswith("char"):
             set_function_name = f"{set_function_base}_CHAR"
         else:  # pragma: no cover (sanity)
             raise ValueError(ctype)
@@ -174,11 +174,11 @@ class BaseConfig(MutableMapping):
                     f"expected {size}, got {vals.size}: {val}"
                 )
             val_obj = ffi.from_buffer(ctype, vals)
-        elif ctype.startswith("char"):  # pragma: no cover (suitesparse 8)
+        elif ctype.startswith("char"):
             val_obj = ffi.new("char[]", val.encode())
         else:
             val_obj = ffi.cast(ctype, val)
-        if is_context:  # pragma: no cover (suitesparse 8)
+        if is_context:
             if self._context is None:
                 from .context import Context
 
