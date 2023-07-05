@@ -4,9 +4,9 @@ from types import FunctionType
 
 from ... import _STANDARD_OPERATOR_NAMES, indexunary, select
 from ...dtypes import BOOL, FP64, INT8, INT64, UINT64, lookup_dtype
-from ...dtypes._core import _sample_values
 from ...exceptions import UdfParseError, check_status_carg
 from .. import _has_numba, ffi, lib
+from ..dtypes import _sample_values
 from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op, _deserialize_parameterized
 
 if _has_numba:

@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas import dtypes
+from graphblas import core, dtypes
 from graphblas.core import lib
 from graphblas.dtypes import lookup_dtype
 
@@ -123,7 +123,7 @@ def test_dtype_bad_comparison():
 
 
 def test_dtypes_match_numpy():
-    for key, val in dtypes._core._registry.items():
+    for key, val in core.dtypes._registry.items():
         try:
             if key is int or (isinstance(key, str) and key == "int"):
                 # For win64, numpy treats int as int32, not int64
@@ -137,7 +137,7 @@ def test_dtypes_match_numpy():
 
 
 def test_pickle():
-    for val in dtypes._core._registry.values():
+    for val in core.dtypes._registry.values():
         s = pickle.dumps(val)
         val2 = pickle.loads(s)
         if val._is_udt:  # pragma: no cover
@@ -205,7 +205,7 @@ def test_auto_register():
 
 
 def test_default_names():
-    from graphblas.dtypes._core import _default_name
+    from graphblas.core.dtypes import _default_name
 
     assert _default_name(np.dtype([("x", np.int32), ("y", np.float64)], align=True)) == (
         "{'x': INT32, 'y': FP64}"
@@ -230,9 +230,9 @@ def test_dtype_to_from_string():
         except Exception:
             pass
     for dtype in types:
-        s = dtypes._core._dtype_to_string(dtype)
+        s = core.dtypes._dtype_to_string(dtype)
         try:
-            dtype2 = dtypes._core._string_to_dtype(s)
+            dtype2 = core.dtypes._string_to_dtype(s)
         except Exception:
             with pytest.raises(ValueError, match="Unknown dtype"):
                 lookup_dtype(dtype)
