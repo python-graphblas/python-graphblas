@@ -67,7 +67,14 @@ def _setup_jit():
         gb.ss.config["jit_c_libraries"] = f"-lm -ldl {conda_prefix}/lib/libomp.dylib"
         gb.ss.config["jit_c_cmake_libs"] = f"m;dl;{conda_prefix}/lib/libomp.dylib"
     elif sys.platform == "win32":  # pragma: no branch (sanity)
-        pass
+        gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/cc"
+        gb.ss.config["jit_c_compiler_flags"] = (
+            '/DWIN32 /D_WINDOWS -DGBNCPUFEAT /O2 -wd"4244" -wd"4146" -wd"4018" '
+            '-wd"4996" -wd"4047" -wd"4554" /O2 /Ob2 /DNDEBUG -openmp'
+        )
+        gb.ss.config["jit_c_linker_flags"] = "/machine:x64"
+        gb.ss.config["jit_c_libraries"] = ""
+        gb.ss.config["jit_c_cmake_libs"] = ""
 
 
 @pytest.fixture
