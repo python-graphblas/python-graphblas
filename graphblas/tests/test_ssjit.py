@@ -67,6 +67,12 @@ def _setup_jit():
         gb.ss.config["jit_c_libraries"] = f"-lm -ldl {conda_prefix}/lib/libomp.dylib"
         gb.ss.config["jit_c_cmake_libs"] = f"m;dl;{conda_prefix}/lib/libomp.dylib"
     elif sys.platform == "win32":  # pragma: no branch (sanity)
+        if "mingw" in gb.ss.config["jit_c_libraries"]:
+            # This probably means we're testing a `python-suitesparse-graphblas` wheel
+            # in a conda environment. This is not yet working.
+            gb.ss.config["jit_c_control"] = "off"
+            return
+
         gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/cc"
         gb.ss.config["jit_c_compiler_flags"] = (
             '/DWIN32 /D_WINDOWS -DGBNCPUFEAT /O2 -wd"4244" -wd"4146" -wd"4018" '
@@ -89,6 +95,8 @@ def test_jit_udt():
             dtypes.ss.register_new(
                 "myquaternion", "typedef struct { float x [4][4] ; int color ; } myquaternion ;"
             )
+        return
+    if gb.ss.config["jit_c_control"] == "off":
         return
     with burble():
         dtype = dtypes.ss.register_new(
@@ -136,6 +144,8 @@ def test_jit_unary(v):
         with pytest.raises(RuntimeError, match="JIT was added"):
             unary.ss.register_new("square", cdef, "FP32", "FP32")
         return
+    if gb.ss.config["jit_c_control"] == "off":
+        return
     with burble():
         square = unary.ss.register_new("square", cdef, "FP32", "FP32")
     assert not hasattr(unary, "square")
@@ -157,6 +167,8 @@ def test_jit_binary(v):
     if _IS_SSGB7:
         with pytest.raises(RuntimeError, match="JIT was added"):
             binary.ss.register_new("absdiff", cdef, "FP64", "FP64", "FP64")
+        return
+    if gb.ss.config["jit_c_control"] == "off":
         return
     with burble():
         absdiff = binary.ss.register_new(
@@ -192,6 +204,8 @@ def test_jit_indexunary(v):
         with pytest.raises(RuntimeError, match="JIT was added"):
             indexunary.ss.register_new("diffy", cdef, "FP64", "FP64", "FP64")
         return
+    if gb.ss.config["jit_c_control"] == "off":
+        return
     with burble():
         diffy = indexunary.ss.register_new("diffy", cdef, "FP64", "FP64", "FP64")
     assert not hasattr(indexunary, "diffy")
@@ -219,6 +233,8 @@ def test_jit_select(v):
     if _IS_SSGB7:
         with pytest.raises(RuntimeError, match="JIT was added"):
             select.ss.register_new("woot", cdef, "INT32", "INT32")
+        return
+    if gb.ss.config["jit_c_control"] == "off":
         return
     with burble():
         woot = select.ss.register_new("woot", cdef, "INT32", "INT32")
