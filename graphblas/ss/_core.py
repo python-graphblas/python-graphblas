@@ -126,9 +126,16 @@ class GlobalConfig(BaseConfig):
     burble : bool
         Enable diagnostic printing from SuiteSparse:GraphBLAS
     print_1based : bool
+    gpu_control : str, {"always", "never"}
+        Only available for SuiteSparse:GraphBLAS 7
+        **GPU support is a work in progress--not recommended to use**
+    gpu_chunk : double
+        Only available for SuiteSparse:GraphBLAS 7
+        **GPU support is a work in progress--not recommended to use**
     gpu_id : int
         Which GPU to use; default is -1, which means do not run on the GPU.
-        **GPU support is a work in progress--do not use**
+        Only available for SuiteSparse:GraphBLAS 8
+        **GPU support is a work in progress--not recommended to use**
 
     Setting values to None restores the default value for most configurations.
     """
