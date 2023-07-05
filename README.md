@@ -204,6 +204,22 @@ w  # indexes=[0, 1, 3], values=[1, 3, 3]
 ```
 Similar methods exist for BinaryOp, Monoid, and Semiring.
 
+## Relation to other network analysis libraries
+Python-graphblas aims to provide an efficient and consistent expression
+of graph operations using linear algebra. This allows the development of
+high-performance implementations of existing and new graph algorithms
+(also see [`graphblas-algorithms`](https://github.com/python-graphblas/graphblas-algorithms)).
+
+While end-to-end analysis can be done using `python-graphblas`, users
+might find that other libraries in the Python ecosystem provide a more
+convenient high-level interface for data pre-processing and transformation
+(e.g. `pandas`, `scipy.sparse`), visualization (e.g. `networkx`, `igraph`),
+interactive exploration and analysis (e.g. `networkx`, `igraph`) or for
+algorithms that are not (yet) implemented in `graphblas-algorithms` (e.g.
+`networkx`, `igraph`, `scipy.sparse.csgraph`). To facilitate communication with
+other libraries, `graphblas.io` contains multiple connectors, see the
+following section.
+
 ## Import/Export connectors to the Python ecosystem
 `graphblas.io` contains functions for converting to and from:
 ```python
