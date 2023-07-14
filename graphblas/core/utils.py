@@ -1,4 +1,4 @@
-from numbers import Integral, Number
+from operator import index
 
 import numpy as np
 
@@ -158,6 +158,17 @@ def get_order(order):
     )
 
 
+def maybe_integral(val):
+    """Ensure ``val`` is an integer or return None if it's not."""
+    try:
+        return index(val)
+    except TypeError:
+        pass
+    if isinstance(val, float) and val.is_integer():
+        return int(val)
+    return None
+
+
 def normalize_chunks(chunks, shape):
     """Normalize chunks argument for use by ``Matrix.ss.split``.
 
@@ -175,8 +186,8 @@ def normalize_chunks(chunks, shape):
     """
     if isinstance(chunks, (list, tuple)):
         pass
-    elif isinstance(chunks, Number):
-        chunks = (chunks,) * len(shape)
+    elif (chunk := maybe_integral(chunks)) is not None:
+        chunks = (chunk,) * len(shape)
     elif isinstance(chunks, np.ndarray):
         chunks = chunks.tolist()
     else:
@@ -192,22 +203,21 @@ def normalize_chunks(chunks, shape):
     for size, chunk in zip(shape, chunks):
         if chunk is None:
             cur_chunks = [size]
-        elif isinstance(chunk, Integral) or isinstance(chunk, float) and chunk.is_integer():
-            chunk = int(chunk)
-            if chunk < 0:
-                raise ValueError(f"Chunksize must be greater than 0; got: {chunk}")
-            div, mod = divmod(size, chunk)
-            cur_chunks = [chunk] * div
+        elif (c := maybe_integral(chunk)) is not None:
+            if c < 0:
+                raise ValueError(f"Chunksize must be greater than 0; got: {c}")
+            div, mod = divmod(size, c)
+            cur_chunks = [c] * div
             if mod:
                 cur_chunks.append(mod)
         elif isinstance(chunk, (list, tuple)):
             cur_chunks = []
             none_index = None
             for c in chunk:
-                if isinstance(c, Integral) or isinstance(c, float) and c.is_integer():
-                    c = int(c)
-                    if c < 0:
-                        raise ValueError(f"Chunksize must be greater than 0; got: {c}")
+                if (val := maybe_integral(c)) is not None:
+                    if val < 0:
+                        raise ValueError(f"Chunksize must be greater than 0; got: {val}")
+                    c = val
                 elif c is None:
                     if none_index is not None:
                         raise TypeError(

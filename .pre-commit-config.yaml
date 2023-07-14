@@ -7,7 +7,7 @@
 ci:
   # See: https://pre-commit.ci/#configuration
   autofix_prs: false
-  autoupdate_schedule: monthly
+  autoupdate_schedule: quarterly
   autoupdate_commit_msg: "chore: update pre-commit hooks"
   autofix_commit_msg: "style: pre-commit fixes"
   skip: [pylint, no-commit-to-branch]
@@ -51,7 +51,7 @@ repos:
       - id: isort
   # Let's keep `pyupgrade` even though `ruff --fix` probably does most of it
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.8.0
+    rev: v3.9.0
     hooks:
       - id: pyupgrade
         args: [--py38-plus]
@@ -61,12 +61,12 @@ repos:
       - id: auto-walrus
         args: [--line-length, "100"]
   - repo: https://github.com/psf/black
-    rev: 23.3.0
+    rev: 23.7.0
     hooks:
       - id: black
       - id: black-jupyter
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.277
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.0.278
     hooks:
       - id: ruff
         args: [--fix-only, --show-fixes]
@@ -93,8 +93,8 @@ repos:
         types_or: [python, rst, markdown]
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.277
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.0.278
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint

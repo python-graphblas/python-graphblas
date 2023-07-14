@@ -3,7 +3,7 @@ import itertools
 import numpy as np
 
 from .. import backend, binary, config, monoid
-from ..dtypes import _INDEX, FP64, lookup_dtype, unify
+from ..dtypes import _INDEX, FP64, _index_dtypes, lookup_dtype, unify
 from ..exceptions import EmptyObject, check_status
 from . import _has_numba, _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
@@ -158,7 +158,11 @@ class Scalar(BaseType):
     def __complex__(self):
         return complex(self.value)
 
-    __index__ = __int__
+    @property
+    def __index__(self):
+        if self.dtype in _index_dtypes:
+            return self.__int__
+        raise AttributeError("Scalar object only has `__index__` for integral dtypes")
 
     def __array__(self, dtype=None):
         if dtype is None:
