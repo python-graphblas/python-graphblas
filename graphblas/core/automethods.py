@@ -213,6 +213,10 @@ def outer(self):
     return self._get_value("outer")
 
 
+def power(self):
+    return self._get_value("power")
+
+
 def reduce(self):
     return self._get_value("reduce")
 
@@ -410,6 +414,7 @@ def _main():
         "kronecker",
         "mxm",
         "mxv",
+        "power",
         "reduce_columnwise",
         "reduce_rowwise",
         "reduce_scalar",
