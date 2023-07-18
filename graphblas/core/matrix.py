@@ -97,7 +97,9 @@ def _power(updater, A, n, op):
     if n == 1:
         updater << A
         return
-    # Use repeated squaring; compute A^2, A^4, A^8, etc., and combine terms
+    # Use repeated squaring: compute A^2, A^4, A^8, etc., and combine terms as needed.
+    # See `numpy.linalg.matrix_power` for a simpler implementation to understand how this works.
+    # We reuse `result` and `square` outputs, and use `square_expr` so masks can be applied.
     result = square = square_expr = None
     n, bit = divmod(n, 2)
     while True:
@@ -2733,6 +2735,40 @@ class Matrix(BaseType):
         )
 
     def power(self, n, op=semiring.plus_times):
+        """Raise a square Matrix to the (positive integer) power ``n``.
+
+        Matrix power is computed by repeated matrix squaring and matrix multiplication.
+        For a graph as an adjacency matrix, matrix power with default ``plus_times``
+        semiring computes the number of walks connecting each pair of nodes.
+        The result can grow very quickly for large matrices and with larger ``n``.
+
+        Parameters
+        ----------
+        n : int
+            The exponent must be a positive integer.
+        op : :class:`~graphblas.core.operator.Semiring`
+            Semiring used in the computation
+
+        Returns
+        -------
+        MatrixExpression
+
+        Examples
+        --------
+        .. code-block:: python
+
+            C << A.power(4, op=semiring.plus_times)
+
+            # Is equivalent to:
+            tmp = (A @ A).new()
+            tmp << tmp @ tmp
+            C << tmp @ tmp
+
+            # And is more efficient than the naive implementation:
+            C = A.dup()
+            for i in range(1, 4):
+                C << A @ C
+        """
         method_name = "power"
         if self._nrows != self._ncols:
             raise DimensionMismatch(f"power only works for square Matrix; shape is {self.shape}")
