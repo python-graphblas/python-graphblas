@@ -999,10 +999,10 @@ def test_reduce_agg_firstlast_index(v):
 
 def test_reduce_agg_empty():
     v = Vector("UINT8", size=3)
-    for _attr, aggr in vars(agg).items():
+    for attr, aggr in vars(agg).items():
         if not isinstance(aggr, agg.Aggregator):
             continue
-        s = v.reduce(aggr).new()
+        s = v.reduce(aggr).new(name=attr)
         assert compute(s.value) is None
 
 
