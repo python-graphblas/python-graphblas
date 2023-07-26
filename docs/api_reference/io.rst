@@ -69,4 +69,4 @@ format of the ``graphblas`` object (this attributed is used by the
 Visualization
 ~~~~~~~~~~~~~
 
-.. autofunction:: graphblas.io.draw
+.. autofunction:: graphblas.viz.draw
