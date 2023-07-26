@@ -1,10 +1,9 @@
 from collections.abc import MutableMapping
-from numbers import Integral
 
 from ...dtypes import lookup_dtype
 from ...exceptions import _error_code_lookup, check_status
 from .. import NULL, ffi, lib
-from ..utils import values_to_numpy_buffer
+from ..utils import maybe_integral, values_to_numpy_buffer
 
 
 class BaseConfig(MutableMapping):
@@ -147,8 +146,8 @@ class BaseConfig(MutableMapping):
             bitwise = self._bitwise[key]
             if isinstance(val, str):
                 val = bitwise[val.lower()]
-            elif isinstance(val, Integral):
-                val = bitwise.get(val, val)
+            elif (x := maybe_integral(val)) is not None:
+                val = bitwise.get(x, x)
             else:
                 bits = 0
                 for x in val:

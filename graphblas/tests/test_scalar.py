@@ -132,6 +132,8 @@ def test_casting(s):
     assert float(s) == 5.0
     assert type(float(s)) is float
     assert range(s) == range(5)
+    with pytest.raises(AttributeError, match="Scalar .* only .*__index__.*integral"):
+        range(s.dup(float))
     assert complex(s) == complex(5)
     assert type(complex(s)) is complex
 
