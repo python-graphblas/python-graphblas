@@ -4375,3 +4375,34 @@ def test_subarray_dtypes():
     if suitesparse:
         Full2 = Matrix.ss.import_fullr(b2)
         assert Full1.isequal(Full2, check_dtype=True)
+
+
+def test_power(A):
+    expected = A.dup()
+    for i in range(1, 50):
+        result = A.power(i).new()
+        assert result.isequal(expected)
+        expected << A @ expected
+    # Test transpose
+    expected = A.T.new()
+    for i in range(1, 10):
+        result = A.T.power(i).new()
+        assert result.isequal(expected)
+        expected << A.T @ expected
+    # Test other semiring
+    expected = A.dup()
+    for i in range(1, 10):
+        result = A.power(i, semiring.min_plus).new()
+        assert result.isequal(expected)
+        expected << semiring.min_plus(A @ expected)
+    # Exceptional
+    with pytest.raises(TypeError, match="must be a positive integer"):
+        A.power(1.5)
+    with pytest.raises(ValueError, match="must be a positive integer"):
+        A.power(-1)
+    with pytest.raises(ValueError, match="must be a positive integer"):
+        # Not implemented yet... could create identity matrix
+        A.power(0)
+    B = A[:2, :3].new()
+    with pytest.raises(DimensionMismatch):
+        B.power(2)

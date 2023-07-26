@@ -28,6 +28,7 @@ from .utils import (
     class_property,
     get_order,
     ints_to_numpy_buffer,
+    maybe_integral,
     normalize_values,
     output_type,
     values_to_numpy_buffer,
@@ -89,6 +90,68 @@ def _m_union_v(updater, left, right, left_default, right_default, op):
 
 def _reposition(updater, indices, chunk):
     updater[indices] = chunk
+
+
+def _power(updater, A, n, op):
+    opts = updater.opts
+    if n == 1:
+        updater << A
+        return
+    # Use repeated squaring: compute A^2, A^4, A^8, etc., and combine terms as needed.
+    # See `numpy.linalg.matrix_power` for a simpler implementation to understand how this works.
+    # We reuse `result` and `square` outputs, and use `square_expr` so masks can be applied.
+    result = square = square_expr = None
+    n, bit = divmod(n, 2)
+    while True:
+        if bit != 0:
+            # Need to multiply `square_expr` or `A` into the result
+            if square_expr is not None:
+                # Need to evaluate `square_expr`; either into final result, or into `square`
+                if n == 0 and result is None:
+                    # Handle `updater << A @ A` without an intermediate value
+                    updater << square_expr
+                    return
+                if square is None:
+                    # Create `square = A @ A`
+                    square = square_expr.new(name="Squares", **opts)
+                else:
+                    # Compute `square << square @ square`
+                    square(**opts) << square_expr
+                square_expr = None
+            if result is None:
+                # First time needing the intermediate result!
+                if square is None:
+                    # Use `A` if possible to avoid unnecessary copying
+                    # We will detect and handle `result is A` below
+                    result = A
+                else:
+                    # Copy square as intermediate result
+                    result = square.dup(name="Power", **opts)
+            elif n == 0:
+                # All done! No more terms to compute
+                updater << op(result @ square)
+                return
+            elif result is A:
+                # Now we need to create a new matrix for the intermediate result
+                result = op(result @ square).new(name="Power", **opts)
+            else:
+                # Main branch: multiply `square` into `result`
+                result(**opts) << op(result @ square)
+        n, bit = divmod(n, 2)
+        if square_expr is not None:
+            # We need to perform another squaring, so evaluate current `square_expr` first
+            if square is None:
+                # Create `square`
+                square = square_expr.new(name="Squares", **opts)
+            else:
+                # Compute `square`
+                square << square_expr
+        if square is None:
+            # First iteration! Create expression for first square
+            square_expr = op(A @ A)
+        else:
+            # Expression for repeated squaring
+            square_expr = op(square @ square)
 
 
 class Matrix(BaseType):
@@ -155,8 +218,6 @@ class Matrix(BaseType):
         This is SuiteSparse-specific and may change in the future.
         This does not copy the matrix.
         """
-        from .vector import Vector
-
         if self._ncols != 1:
             raise ValueError(
                 f"Matrix must have a single column (not {self._ncols}) to be cast to a Vector"
@@ -2690,6 +2751,60 @@ class Matrix(BaseType):
             dtype=self.dtype,
         )
 
+    def power(self, n, op=semiring.plus_times):
+        """Raise a square Matrix to the (positive integer) power ``n``.
+
+        Matrix power is computed by repeated matrix squaring and matrix multiplication.
+        For a graph as an adjacency matrix, matrix power with default ``plus_times``
+        semiring computes the number of walks connecting each pair of nodes.
+        The result can grow very quickly for large matrices and with larger ``n``.
+
+        Parameters
+        ----------
+        n : int
+            The exponent must be a positive integer.
+        op : :class:`~graphblas.core.operator.Semiring`
+            Semiring used in the computation
+
+        Returns
+        -------
+        MatrixExpression
+
+        Examples
+        --------
+        .. code-block:: python
+
+            C << A.power(4, op=semiring.plus_times)
+
+            # Is equivalent to:
+            tmp = (A @ A).new()
+            tmp << tmp @ tmp
+            C << tmp @ tmp
+
+            # And is more efficient than the naive implementation:
+            C = A.dup()
+            for i in range(1, 4):
+                C << A @ C
+        """
+        method_name = "power"
+        if self._nrows != self._ncols:
+            raise DimensionMismatch(f"power only works for square Matrix; shape is {self.shape}")
+        if (N := maybe_integral(n)) is None:
+            raise TypeError(f"n must be a positive integer; got bad type: {type(n)}")
+        if N <= 0:
+            raise ValueError(f"n must be a positive integer; got: {N}")
+        op = get_typed_op(op, self.dtype, kind="semiring")
+        self._expect_op(op, "Semiring", within=method_name, argname="op")
+        return MatrixExpression(
+            "power",
+            None,
+            [self, _power, (self, N, op)],  # [*expr_args, func, args]
+            expr_repr=f"{{0.name}}.power({N}, op={op})",
+            nrows=self._nrows,
+            ncols=self._ncols,
+            dtype=self.dtype,
+        )
+
     ##################################
     # Extract and Assign index methods
     ##################################
@@ -3358,6 +3473,7 @@ class MatrixExpression(BaseExpression):
     mxv = wrapdoc(Matrix.mxv)(property(automethods.mxv))
     name = wrapdoc(Matrix.name)(property(automethods.name)).setter(automethods._set_name)
     nvals = wrapdoc(Matrix.nvals)(property(automethods.nvals))
+    power = wrapdoc(Matrix.power)(property(automethods.power))
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(automethods.reduce_rowwise))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(automethods.reduce_scalar))
@@ -3458,6 +3574,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     mxv = wrapdoc(Matrix.mxv)(property(automethods.mxv))
     name = wrapdoc(Matrix.name)(property(automethods.name)).setter(automethods._set_name)
     nvals = wrapdoc(Matrix.nvals)(property(automethods.nvals))
+    power = wrapdoc(Matrix.power)(property(automethods.power))
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(automethods.reduce_rowwise))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(automethods.reduce_scalar))
@@ -3619,6 +3736,7 @@ class TransposedMatrix:
     reduce_columnwise = Matrix.reduce_columnwise
     reduce_scalar = Matrix.reduce_scalar
     reposition = Matrix.reposition
+    power = Matrix.power
 
     # Operator sugar
     __or__ = Matrix.__or__

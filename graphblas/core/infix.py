@@ -330,6 +330,7 @@ class MatrixInfixExpr(InfixExprBase):
     mxv = wrapdoc(Matrix.mxv)(property(automethods.mxv))
     name = wrapdoc(Matrix.name)(property(automethods.name)).setter(automethods._set_name)
     nvals = wrapdoc(Matrix.nvals)(property(automethods.nvals))
+    power = wrapdoc(Matrix.power)(property(automethods.power))
     reduce_columnwise = wrapdoc(Matrix.reduce_columnwise)(property(automethods.reduce_columnwise))
     reduce_rowwise = wrapdoc(Matrix.reduce_rowwise)(property(automethods.reduce_rowwise))
     reduce_scalar = wrapdoc(Matrix.reduce_scalar)(property(automethods.reduce_scalar))
