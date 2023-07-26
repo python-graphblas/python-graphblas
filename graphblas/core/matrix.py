@@ -104,36 +104,53 @@ def _power(updater, A, n, op):
     n, bit = divmod(n, 2)
     while True:
         if bit != 0:
+            # Need to multiply `square_expr` or `A` into the result
             if square_expr is not None:
+                # Need to evaluate `square_expr`; either into final result, or into `square`
                 if n == 0 and result is None:
+                    # Handle `updater << A @ A` without an intermediate value
                     updater << square_expr
                     return
                 if square is None:
+                    # Create `square = A @ A`
                     square = square_expr.new(name="Squares", **opts)
                 else:
+                    # Compute `square << square @ square`
                     square(**opts) << square_expr
                 square_expr = None
             if result is None:
+                # First time needing the intermediate result!
                 if square is None:
+                    # Use `A` if possible to avoid unnecessary copying
+                    # We will detect and handle `result is A` below
                     result = A
                 else:
+                    # Copy square as intermediate result
                     result = square.dup(name="Power", **opts)
             elif n == 0:
+                # All done! No more terms to compute
                 updater << op(result @ square)
                 return
             elif result is A:
+                # Now we need to create a new matrix for the intermediate result
                 result = op(result @ square).new(name="Power", **opts)
             else:
+                # Main branch: multiply `square` into `result`
                 result(**opts) << op(result @ square)
         n, bit = divmod(n, 2)
         if square_expr is not None:
+            # We need to perform another squaring, so evaluate current `square_expr` first
             if square is None:
+                # Create `square`
                 square = square_expr.new(name="Squares", **opts)
             else:
+                # Compute `square`
                 square << square_expr
         if square is None:
+            # First iteration! Create expression for first square
             square_expr = op(A @ A)
         else:
+            # Expression for repeated squaring
             square_expr = op(square @ square)
 
 
