@@ -1,5 +1,4 @@
 import itertools
-import warnings
 
 import numpy as np
 from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
@@ -3715,51 +3714,6 @@ class ss:
             parent = parent.T
         return prefix_scan(parent, op, name=name, within="scan", **opts)
 
-    def scan_columnwise(self, op=monoid.plus, *, name=None, **opts):
-        """Perform a prefix scan across columns with the given monoid.
-
-        .. deprecated:: 2022.11.1
-            ``Matrix.ss.scan_columnwise`` will be removed in a future release.
-            Use ``Matrix.ss.scan(order="columnwise")`` instead.
-            Will be removed in version 2023.7.0 or later
-
-        For example, use ``monoid.plus`` (the default) to perform a cumulative sum,
-        and ``monoid.times`` for cumulative product.  Works with any monoid.
-
-        Returns
-        -------
-        Matrix
-        """
-        warnings.warn(
-            "`Matrix.ss.scan_columnwise` is deprecated; "
-            'please use `Matrix.ss.scan(order="columnwise")` instead.',
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return prefix_scan(self._parent.T, op, name=name, within="scan_columnwise", **opts)
-
-    def scan_rowwise(self, op=monoid.plus, *, name=None, **opts):
-        """Perform a prefix scan across rows with the given monoid.
-
-        .. deprecated:: 2022.11.1
-            ``Matrix.ss.scan_rowwise`` will be removed in a future release.
-            Use ``Matrix.ss.scan`` instead.
-            Will be removed in version 2023.7.0 or later
-
-        For example, use ``monoid.plus`` (the default) to perform a cumulative sum,
-        and ``monoid.times`` for cumulative product.  Works with any monoid.
-
-        Returns
-        -------
-        Matrix
-        """
-        warnings.warn(
-            "`Matrix.ss.scan_rowwise` is deprecated; please use `Matrix.ss.scan` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return prefix_scan(self._parent, op, name=name, within="scan_rowwise", **opts)
-
     def flatten(self, order="rowwise", *, name=None, **opts):
         """Return a copy of the Matrix collapsed into a Vector.
 
@@ -3901,99 +3855,6 @@ class ss:
             k, fmt, indices, sort_axis, choose_func, is_random, do_sort, name
         )
 
-    def selectk_rowwise(self, how, k, *, name=None):  # pragma: no cover (deprecated)
-        """Select (up to) k elements from each row.
-
-        .. deprecated:: 2022.11.1
-            ``Matrix.ss.selectk_rowwise`` will be removed in a future release.
-            Use ``Matrix.ss.selectk`` instead.
-            Will be removed in version 2023.7.0 or later
-
-        Parameters
-        ----------
-        how : str
-            "random": choose k elements with equal probability
-            "first": choose the first k elements
-            "last": choose the last k elements
-        k : int
-            The number of elements to choose from each row
-
-        **THIS API IS EXPERIMENTAL AND MAY CHANGE**
-        """
-        warnings.warn(
-            "`Matrix.ss.selectk_rowwise` is deprecated; please use `Matrix.ss.selectk` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        how = how.lower()
-        fmt = "hypercsr"
-        indices = "col_indices"
-        sort_axis = "sorted_cols"
-        if how == "random":
-            choose_func = choose_random
-            is_random = True
-            do_sort = False
-        elif how == "first":
-            choose_func = choose_first
-            is_random = False
-            do_sort = True
-        elif how == "last":
-            choose_func = choose_last
-            is_random = False
-            do_sort = True
-        else:
-            raise ValueError('`how` argument must be one of: "random", "first", "last"')
-        return self._select_random(
-            k, fmt, indices, sort_axis, choose_func, is_random, do_sort, name
-        )
-
-    def selectk_columnwise(self, how, k, *, name=None):  # pragma: no cover (deprecated)
-        """Select (up to) k elements from each column.
-
-        .. deprecated:: 2022.11.1
-            ``Matrix.ss.selectk_columnwise`` will be removed in a future release.
-            Use ``Matrix.ss.selectk(order="columnwise")`` instead.
-            Will be removed in version 2023.7.0 or later
-
-        Parameters
-        ----------
-        how : str
-            - "random": choose elements with equal probability
-            - "first": choose the first k elements
-            - "last": choose the last k elements
-        k : int
-            The number of elements to choose from each column
-
-        **THIS API IS EXPERIMENTAL AND MAY CHANGE**
-        """
-        warnings.warn(
-            "`Matrix.ss.selectk_columnwise` is deprecated; "
-            'please use `Matrix.ss.selectk(order="columnwise")` instead.',
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        how = how.lower()
-        fmt = "hypercsc"
-        indices = "row_indices"
-        sort_axis = "sorted_rows"
-        if how == "random":
-            choose_func = choose_random
-            is_random = True
-            do_sort = False
-        elif how == "first":
-            choose_func = choose_first
-            is_random = False
-            do_sort = True
-        elif how == "last":
-            choose_func = choose_last
-            is_random = False
-            do_sort = True
-        else:
-            raise ValueError('`how` argument must be one of: "random", "first", "last"')
-        return self._select_random(
-            k, fmt, indices, sort_axis, choose_func, is_random, do_sort, name
-        )
-
     def _select_random(self, k, fmt, indices, sort_axis, choose_func, is_random, do_sort, name):
         if k < 0:
             raise ValueError("negative k is not allowed")
@@ -4057,92 +3918,6 @@ class ss:
             dimname = "nrows"
             indices = "row_indices"
         return self._compactify(how, reverse, asindex, dimname, k, fmt, indices, name)
-
-    def compactify_rowwise(
-        self, how="first", ncols=None, *, reverse=False, asindex=False, name=None
-    ):
-        """Shift all values to the left so all values in a row are contiguous.
-
-        This returns a new Matrix.
-
-        Parameters
-        ----------
-        how : {"first", "last", "smallest", "largest", "random"}, optional
-            How to compress the values:
-            - first : take the values furthest to the left
-            - last : take the values furthest to the right
-            - smallest : take the smallest values (if tied, may take any)
-            - largest : take the largest values (if tied, may take any)
-            - random : take values randomly with equal probability and without replacement
-              Chosen values may not be ordered randomly
-        reverse : bool, default False
-            Reverse the values in each row when True
-        asindex : bool, default False
-            Return the column index of the value when True.  If there are ties for
-            "smallest" and "largest", then any valid index may be returned.
-        ncols : int, optional
-            The number of columns of the returned Matrix.  If not specified, then
-            the Matrix will be "compacted" to the smallest ncols that doesn't lose
-            values.
-
-        **THIS API IS EXPERIMENTAL AND MAY CHANGE**
-
-        See Also
-        --------
-        Matrix.ss.sort
-        """
-        warnings.warn(
-            "`Matrix.ss.compactify_rowwise` is deprecated; "
-            "please use `Matrix.ss.compactify` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self._compactify(
-            how, reverse, asindex, "ncols", ncols, "hypercsr", "col_indices", name
-        )
-
-    def compactify_columnwise(
-        self, how="first", nrows=None, *, reverse=False, asindex=False, name=None
-    ):
-        """Shift all values to the top so all values in a column are contiguous.
-
-        This returns a new Matrix.
-
-        Parameters
-        ----------
-        how : {"first", "last", "smallest", "largest", "random"}, optional
-            How to compress the values:
-            - first : take the values furthest to the top
-            - last : take the values furthest to the bottom
-            - smallest : take the smallest values (if tied, may take any)
-            - largest : take the largest values (if tied, may take any)
-            - random : take values randomly with equal probability and without replacement
-              Chosen values may not be ordered randomly
-        reverse : bool, default False
-            Reverse the values in each column when True
-        asindex : bool, default False
-            Return the row index of the value when True.  If there are ties for
-            "smallest" and "largest", then any valid index may be returned.
-        nrows : int, optional
-            The number of rows of the returned Matrix.  If not specified, then
-            the Matrix will be "compacted" to the smallest nrows that doesn't lose
-            values.
-
-        **THIS API IS EXPERIMENTAL AND MAY CHANGE**
-
-        See Also
-        --------
-        Matrix.ss.sort
-        """
-        warnings.warn(
-            "`Matrix.ss.compactify_columnwise` is deprecated; "
-            'please use `Matrix.ss.compactify(order="columnwise")` instead.',
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self._compactify(
-            how, reverse, asindex, "nrows", nrows, "hypercsc", "row_indices", name
-        )
 
     def _compactify(self, how, reverse, asindex, nkey, nval, fmt, indices_name, name):
         how = how.lower()

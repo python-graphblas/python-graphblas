@@ -3538,19 +3538,6 @@ def test_ss_compactify(A, do_iso):
 
 
 def test_deprecated(A):
-    if suitesparse:
-        with pytest.warns(DeprecationWarning):
-            A.ss.compactify_rowwise()
-        with pytest.warns(DeprecationWarning):
-            A.ss.compactify_columnwise()
-        with pytest.warns(DeprecationWarning):
-            A.ss.scan_rowwise()
-        with pytest.warns(DeprecationWarning):
-            A.ss.scan_columnwise()
-        with pytest.warns(DeprecationWarning):
-            A.ss.selectk_rowwise("first", 3)
-        with pytest.warns(DeprecationWarning):
-            A.ss.selectk_columnwise("first", 3)
     with pytest.warns(DeprecationWarning):
         A.to_values()
     with pytest.warns(DeprecationWarning):
