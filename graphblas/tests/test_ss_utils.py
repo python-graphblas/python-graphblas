@@ -237,6 +237,7 @@ def test_global_config():
     assert "format" in repr(config)
 
 
+@pytest.mark.skipif("not gb.core.ss._IS_SSGB7")
 def test_context():
     context = gb.ss.Context()
     prev = dict(context)
