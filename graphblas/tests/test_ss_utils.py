@@ -4,6 +4,7 @@ from numpy.testing import assert_array_equal
 
 import graphblas as gb
 from graphblas import Matrix, Vector, backend
+from graphblas.exceptions import InvalidValue
 
 if backend != "suitesparse":
     pytest.skip("gb.ss and A.ss only available with suitesparse backend", allow_module_level=True)
@@ -234,3 +235,61 @@ def test_global_config():
     with pytest.raises(ValueError, match="Wrong number"):
         config["memory_pool"] = [1, 2]
     assert "format" in repr(config)
+
+
+def test_context():
+    context = gb.ss.Context()
+    prev = dict(context)
+    context["chunk"] += 1
+    context["nthreads"] += 1
+    assert context["chunk"] == prev["chunk"] + 1
+    assert context["nthreads"] == prev["nthreads"] + 1
+    context2 = gb.ss.Context(stack=True)
+    assert context2 == context
+    context3 = gb.ss.Context(stack=False)
+    assert context3 == prev
+    context4 = gb.ss.Context(
+        chunk=context["chunk"] + 1, nthreads=context["nthreads"] + 1, stack=False
+    )
+    assert context4["chunk"] == context["chunk"] + 1
+    assert context4["nthreads"] == context["nthreads"] + 1
+    assert context == context.dup()
+    assert context4 == context.dup(chunk=context["chunk"] + 1, nthreads=context["nthreads"] + 1)
+    assert context.dup(gpu_id=-1)["gpu_id"] == -1
+
+    context.engage()
+    assert gb.core.ss.context.threadlocal.context is context
+    with gb.ss.Context(nthreads=1) as ctx:
+        assert gb.core.ss.context.threadlocal.context is ctx
+        v = Vector(int, 5)
+        v(nthreads=2) << v + v
+        assert gb.core.ss.context.threadlocal.context is ctx
+    assert gb.core.ss.context.threadlocal.context is context
+    with pytest.raises(InvalidValue):
+        # Wait, why does this raise?!
+        ctx.disengage()
+    assert gb.core.ss.context.threadlocal.context is context
+    context.disengage()
+    assert gb.core.ss.context.threadlocal.context is gb.core.ss.context.global_context
+    assert context._prev_context is None
+
+    # hackery
+    gb.core.ss.context.threadlocal.context = context
+    context.disengage()
+    context.disengage()
+    context.disengage()
+    assert gb.core.ss.context.threadlocal.context is gb.core.ss.context.global_context
+
+    # Actually engaged, but not set in threadlocal
+    context._engage()
+    assert gb.core.ss.context.threadlocal.context is gb.core.ss.context.global_context
+    context.disengage()
+
+    context.engage()
+    context._engage()
+    assert gb.core.ss.context.threadlocal.context is context
+    context.disengage()
+
+    context._context = context  # This is allowed to work with config
+    with pytest.raises(AttributeError, match="_context"):
+        context._context = ctx  # This is not
