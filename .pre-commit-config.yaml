@@ -54,7 +54,7 @@ repos:
     rev: v3.9.0
     hooks:
       - id: pyupgrade
-        args: [--py38-plus]
+        args: [--py39-plus]
   - repo: https://github.com/MarcoGorelli/auto-walrus
     rev: v0.2.2
     hooks:

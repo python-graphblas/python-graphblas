@@ -10,7 +10,7 @@ name = "python-graphblas"
 dynamic = ["version"]
 description = "Python library for GraphBLAS: high-performance sparse linear algebra for scalable graph analytics"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = {file = "LICENSE"}
 authors = [
     {name = "Erik Welch", email = "erik.n.welch@gmail.com"},
@@ -44,7 +44,6 @@ classifiers = [
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -157,7 +156,7 @@ dirty_template = "{tag}+{ccount}.g{sha}.dirty"
 
 [tool.black]
 line-length = 100
-target-version = ["py38", "py39", "py310", "py311"]
+target-version = ["py39", "py310", "py311"]
 
 [tool.isort]
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
@@ -235,7 +234,7 @@ ignore-words-list = "coo,ba"
 [tool.ruff]
 # https://github.com/charliermarsh/ruff/
 line-length = 100
-target-version = "py38"
+target-version = "py39"
 select = [
     # Have we enabled too many checks that they'll become a nuisance? We'll see...
     "F",  # pyflakes
@@ -396,7 +395,7 @@ convention = "numpy"
 [tool.pylint.messages_control]
 # To run a single check, do: pylint graphblas --disable E,W,R,C,I --enable assignment-from-no-return
 max-line-length = 100
-py-version = "3.8"
+py-version = "3.9"
 enable = ["I"]
 disable = [
     # Error
