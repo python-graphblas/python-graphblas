@@ -90,8 +90,7 @@ if _supports_complex:
 if (
     _config.get("mapnumpy")
     or _has_numba
-    and type(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2))  # pragma: no branch (numba)
-    is not float
+    and not isinstance(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2), float)  # pragma: no branch
 ):
     # Incorrect behavior was introduced in numba 0.56.2 and numpy 1.23
     # See: https://github.com/numba/numba/issues/8478
@@ -170,7 +169,7 @@ def __dir__():
 def __getattr__(name):
     if name in _delayed:
         func, kwargs = _delayed.pop(name)
-        if type(kwargs["binaryop"]) is str:
+        if isinstance(kwargs["binaryop"], str):
             from ..binary import from_string
 
             kwargs["binaryop"] = from_string(kwargs["binaryop"])

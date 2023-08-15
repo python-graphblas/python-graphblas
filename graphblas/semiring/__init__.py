@@ -46,11 +46,11 @@ def __getattr__(key):
         return rv
     if key in _delayed:
         func, kwargs = _delayed.pop(key)
-        if type(kwargs["binaryop"]) is str:
+        if isinstance(kwargs["binaryop"], str):
             from ..binary import from_string
 
             kwargs["binaryop"] = from_string(kwargs["binaryop"])
-        if type(kwargs["monoid"]) is str:
+        if isinstance(kwargs["monoid"], str):
             from ..monoid import from_string
 
             kwargs["monoid"] = from_string(kwargs["monoid"])

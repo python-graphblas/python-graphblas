@@ -76,9 +76,9 @@ class Aggregator:
     @property
     def types(self):
         if self._types is None:
-            if type(self._semiring) is str:
+            if isinstance(self._semiring, str):
                 self._semiring = semiring.from_string(self._semiring)
-                if type(self._types_orig[0]) is str:  # pragma: no branch
+                if isinstance(self._types_orig[0], str):  # pragma: no branch
                     self._types_orig[0] = semiring.from_string(self._types_orig[0])
             self._types = _get_types(
                 self._types_orig, None if self._initval_orig is None else self._initdtype

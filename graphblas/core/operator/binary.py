@@ -200,7 +200,7 @@ class ParameterizedBinaryOp(ParameterizedUdf):
 
     @property
     def commutes_to(self):
-        if type(self._commutes_to) is str:
+        if isinstance(self._commutes_to, str):
             self._commutes_to = BinaryOp._find(self._commutes_to)
         return self._commutes_to
 
