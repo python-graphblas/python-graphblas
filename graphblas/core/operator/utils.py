@@ -340,7 +340,7 @@ def _from_string(string, module, mapping, example):
         )
     if base in mapping:
         op = mapping[base]
-        if type(op) is str:
+        if isinstance(op, str):
             op = mapping[base] = module.from_string(op)
     elif hasattr(module, base):
         op = getattr(module, base)

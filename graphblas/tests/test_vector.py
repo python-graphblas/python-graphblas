@@ -2440,7 +2440,7 @@ def test_get(v):
     assert v.get(0, "mittens") == "mittens"
     assert v.get(1) == 1
     assert v.get(1, "mittens") == 1
-    assert type(compute(v.get(1))) is int
+    assert isinstance(compute(v.get(1)), int)
     with pytest.raises(ValueError, match="Bad index in Vector.get"):
         # Not yet supported
         v.get([0, 1])

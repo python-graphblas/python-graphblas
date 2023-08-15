@@ -3891,7 +3891,7 @@ def test_get(A):
     assert compute(A.T.get(0, 1)) is None
     assert A.T.get(1, 0) == 2
     assert A.get(0, 1, "mittens") == 2
-    assert type(compute(A.get(0, 1))) is int
+    assert isinstance(compute(A.get(0, 1)), int)
     with pytest.raises(ValueError, match="Bad row, col"):
         # Not yet supported
         A.get(0, [0, 1])

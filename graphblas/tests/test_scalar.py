@@ -128,14 +128,14 @@ def test_equal(s):
 
 def test_casting(s):
     assert int(s) == 5
-    assert type(int(s)) is int
+    assert isinstance(int(s), int)
     assert float(s) == 5.0
-    assert type(float(s)) is float
+    assert isinstance(float(s), float)
     assert range(s) == range(5)
     with pytest.raises(AttributeError, match="Scalar .* only .*__index__.*integral"):
         range(s.dup(float))
     assert complex(s) == complex(5)
-    assert type(complex(s)) is complex
+    assert isinstance(complex(s), complex)
 
 
 def test_truthy(s):
@@ -580,7 +580,7 @@ def test_record_from_dict():
 def test_get(s):
     assert s.get() == 5
     assert s.get("mittens") == 5
-    assert type(compute(s.get())) is int
+    assert isinstance(compute(s.get()), int)
     s.clear()
     assert compute(s.get()) is None
     assert s.get("mittens") == "mittens"
