@@ -2925,6 +2925,7 @@ def test_expr_is_like_matrix(A):
         "_parent",
         "_prep_for_assign",
         "_prep_for_extract",
+        "_setdiag",
         "_to_csx",
         "_update",
         "build",
@@ -2940,6 +2941,7 @@ def test_expr_is_like_matrix(A):
         "from_scalar",
         "from_values",
         "resize",
+        "setdiag",
         "update",
     }
     ignore = {"__sizeof__"}
@@ -2990,6 +2992,7 @@ def test_index_expr_is_like_matrix(A):
         "_parent",
         "_prep_for_assign",
         "_prep_for_extract",
+        "_setdiag",
         "_to_csx",
         "_update",
         "build",
@@ -3005,6 +3008,7 @@ def test_index_expr_is_like_matrix(A):
         "from_values",
         "from_scalar",
         "resize",
+        "setdiag",
     }
     ignore = {"__sizeof__"}
     assert attrs - expr_attrs - ignore == expected, (
