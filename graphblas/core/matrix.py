@@ -3388,6 +3388,7 @@ class MatrixExpression(BaseExpression):
         expr_repr=None,
         ncols=None,
         nrows=None,
+        order=None,
     ):
         super().__init__(
             method_name,
@@ -3517,7 +3518,7 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     _is_transposed = False
     __networkx_plugin__ = "graphblas"
 
-    def __init__(self, parent, resolved_indexes, nrows, ncols):
+    def __init__(self, parent, resolved_indexes, nrows, ncols, order=None):
         super().__init__(parent, resolved_indexes)
         self._nrows = nrows
         self._ncols = ncols

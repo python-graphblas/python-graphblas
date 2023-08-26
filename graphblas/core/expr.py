@@ -486,7 +486,7 @@ class InfixExprBase:
         self.right = right
         self._expr = None
 
-    def new(self, dtype=None, *, mask=None, order=None, name=None, **opts):
+    def new(self, dtype=None, *, mask=None, name=None, **opts):
         if (
             mask is None
             and self._expr is not None

@@ -271,7 +271,7 @@ class MatrixInfixExpr(InfixExprBase):
     _is_transposed = False
     __networkx_plugin__ = "graphblas"
 
-    def __init__(self, left, right):
+    def __init__(self, left, right, order=None):
         super().__init__(left, right)
         if left.ndim == 1:
             self._nrows = right._nrows
