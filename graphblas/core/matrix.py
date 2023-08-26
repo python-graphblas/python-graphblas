@@ -175,7 +175,7 @@ class Matrix(BaseType):
     _name_counter = itertools.count()
     __networkx_plugin__ = "graphblas"
 
-    def __new__(cls, dtype=FP64, nrows=0, ncols=0, *, name=None):
+    def __new__(cls, dtype=FP64, nrows=0, ncols=0, order=None, *, name=None):
         self = object.__new__(cls)
         self.dtype = lookup_dtype(dtype)
         nrows = _as_scalar(nrows, _INDEX, is_cscalar=True)
@@ -3633,7 +3633,7 @@ class TransposedMatrix:
 
         return format_matrix_html(self, collapse=collapse)
 
-    def new(self, dtype=None, *, mask=None, name=None, **opts):
+    def new(self, dtype=None, *, mask=None, name=None, order=None, **opts):
         if dtype is None:
             dtype = self.dtype
         output = Matrix(dtype, self._nrows, self._ncols, name=name)

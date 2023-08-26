@@ -31,7 +31,7 @@ class Mask:
     def _carg(self):
         return self.parent.gb_obj[0]
 
-    def new(self, dtype=None, *, complement=False, mask=None, name=None, **opts):
+    def new(self, dtype=None, *, complement=False, mask=None, order=None, name=None, **opts):
         """Return a new object with True values determined by the mask(s).
 
         By default, the result is True wherever the mask(s) would have been applied,
