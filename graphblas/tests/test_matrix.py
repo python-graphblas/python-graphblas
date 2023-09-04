@@ -143,7 +143,7 @@ def test_from_coo():
     assert C4.isequal(C5, check_dtype=True)
 
     with pytest.raises(
-        ValueError, match="`rows` and `columns` and `values` lengths must match: 1, 2, 1"
+            ValueError, match="`rows` and `columns` and `values` lengths must match: 1, 2, 1"
     ):
         Matrix.from_coo([0], [1, 2], [0])
 
@@ -521,27 +521,27 @@ def test_extract_input_mask():
     with pytest.raises(ValueError, match="Shape of `input_mask` does not match shape of input"):
         m(input_mask=MT.S) << A[0, [0, 1]]
     with pytest.raises(
-        ValueError, match="Size of `input_mask` Vector does not match ncols of Matrix"
+            ValueError, match="Size of `input_mask` Vector does not match ncols of Matrix"
     ):
         A[0, [0]].new(input_mask=expected.S)
     with pytest.raises(
-        ValueError, match="Size of `input_mask` Vector does not match ncols of Matrix"
+            ValueError, match="Size of `input_mask` Vector does not match ncols of Matrix"
     ):
         m(input_mask=expected.S) << A[0, [0]]
     with pytest.raises(
-        ValueError, match="Size of `input_mask` Vector does not match nrows of Matrix"
+            ValueError, match="Size of `input_mask` Vector does not match nrows of Matrix"
     ):
         A[[0], 0].new(input_mask=m.S)
     with pytest.raises(
-        ValueError, match="Size of `input_mask` Vector does not match nrows of Matrix"
+            ValueError, match="Size of `input_mask` Vector does not match nrows of Matrix"
     ):
         m(input_mask=m.S) << A[[0], 0]
     with pytest.raises(
-        TypeError, match="Got Vector `input_mask` when extracting a submatrix from a Matrix"
+            TypeError, match="Got Vector `input_mask` when extracting a submatrix from a Matrix"
     ):
         A[[0], [0]].new(input_mask=expected.S)
     with pytest.raises(
-        TypeError, match="Got Vector `input_mask` when extracting a submatrix from a Matrix"
+            TypeError, match="Got Vector `input_mask` when extracting a submatrix from a Matrix"
     ):
         A(input_mask=expected.S) << A[[0], [0]]
     with pytest.raises(ValueError, match="input_mask"):
@@ -788,11 +788,11 @@ def test_assign_row_scalar(A, v):
     C[:, :](C.S) << 1
 
     with pytest.raises(
-        TypeError, match="Unable to use Vector mask on Matrix assignment to a Matrix"
+            TypeError, match="Unable to use Vector mask on Matrix assignment to a Matrix"
     ):
         C[:, :](v.S) << 1
     with pytest.raises(
-        TypeError, match="Unable to use Vector mask on single element assignment to a Matrix"
+            TypeError, match="Unable to use Vector mask on single element assignment to a Matrix"
     ):
         C[0, 0](v.S) << 1
 
@@ -905,7 +905,7 @@ def test_assign_row_col_matrix_mask():
     assert C.isequal(result)
 
     with pytest.raises(
-        TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
+            TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
     ):
         C[0, :](B.S) << v2
 
@@ -921,7 +921,7 @@ def test_assign_row_col_matrix_mask():
     assert C.isequal(result)
 
     with pytest.raises(
-        TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
+            TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
     ):
         C[:, 0](B.S) << v2
 
@@ -937,7 +937,7 @@ def test_assign_row_col_matrix_mask():
     assert C.isequal(result)
 
     with pytest.raises(
-        TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
+            TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
     ):
         C[:, 0](B.S) << 100
 
@@ -953,7 +953,7 @@ def test_assign_row_col_matrix_mask():
     assert C.isequal(result)
 
     with pytest.raises(
-        TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
+            TypeError, match="Indices for subassign imply Vector submask, but got Matrix mask instead"
     ):
         C[:, 0](B.S) << 100
 
@@ -1422,7 +1422,7 @@ def test_reduce_agg(A):
     assert A.reduce_scalar(agg.count_nonzero).new() == 12
     assert A.reduce_scalar(agg.count_zero).new() == 0
     assert A.reduce_scalar(agg.sum_of_squares).new() == 245
-    assert A.reduce_scalar(agg.hypot).new().isclose(245**0.5)
+    assert A.reduce_scalar(agg.hypot).new().isclose(245 ** 0.5)
     assert A.reduce_scalar(agg.logaddexp).new().isclose(8.6071076)
     assert A.reduce_scalar(agg.logaddexp2).new().isclose(9.2288187)
     assert A.reduce_scalar(agg.mean).new().isclose(47 / 12)
@@ -1482,7 +1482,7 @@ def test_reduce_agg_argminmax(A):
 
     # reduce_scalar
     with pytest.raises(
-        ValueError, match="Aggregator argmin may not be used with Matrix.reduce_scalar"
+            ValueError, match="Aggregator argmin may not be used with Matrix.reduce_scalar"
     ):
         A.reduce_scalar(agg.ss.argmin)
 
@@ -2422,12 +2422,12 @@ def test_ss_import_export_auto(A, do_iso, methods):
         "cooc",
     ]:
         for (
-            sort,
-            raw,
-            import_format,
-            give_ownership,
-            take_ownership,
-            import_name,
+                sort,
+                raw,
+                import_format,
+                give_ownership,
+                take_ownership,
+                import_name,
         ) in itertools.product(
             [False, True],
             [False, True],
@@ -2473,11 +2473,11 @@ def test_ss_import_export_auto(A, do_iso, methods):
     C_orig = C.dup()
     for format in ["fullr", "fullc"]:
         for raw, import_format, give_ownership, take_ownership, import_name in itertools.product(
-            [False, True],
-            [format, None],
-            [False, True],
-            [False, True],
-            ["any", format],
+                [False, True],
+                [format, None],
+                [False, True],
+                [False, True],
+                ["any", format],
         ):
             assert C.shape == (C.nrows, C.ncols)
             C2 = C.dup() if give_ownership or out_method == "unpack" else C
@@ -2646,7 +2646,7 @@ def test_not_to_array(A):
     with pytest.raises(TypeError, match="Matrix can't be directly converted to a numpy array"):
         np.array(A)
     with pytest.raises(
-        TypeError, match="TransposedMatrix can't be directly converted to a numpy array"
+            TypeError, match="TransposedMatrix can't be directly converted to a numpy array"
     ):
         np.array(A.T)
 
@@ -2745,14 +2745,14 @@ def test_ss_concat(A, v):
     assert B1.dtype == "FP64"
     expected = Matrix(A.dtype, nrows=A.nrows, ncols=2 * A.ncols)
     expected[:, : A.ncols] = A
-    expected[:, A.ncols :] = A
+    expected[:, A.ncols:] = A
     assert B1.isequal(expected)
 
     B2 = Matrix(A.dtype, nrows=2 * A.nrows, ncols=A.ncols)
     B2.ss.concat([[A], [A]])
     expected = Matrix(A.dtype, nrows=2 * A.nrows, ncols=A.ncols)
     expected[: A.nrows, :] = A
-    expected[A.nrows :, :] = A
+    expected[A.nrows:, :] = A
     assert B2.isequal(expected)
 
     tiles = A.ss.split([4, 3])
@@ -2783,7 +2783,7 @@ def test_ss_concat(A, v):
     B4 = gb.ss.concat([[v], [v]])
     expected = Matrix(v.dtype, nrows=2 * v.size, ncols=1)
     expected[: v.size, 0] = v
-    expected[v.size :, 0] = v
+    expected[v.size:, 0] = v
     assert B4.isequal(expected)
 
     B5 = gb.ss.concat([[A, v]])
@@ -3032,7 +3032,7 @@ def test_dup_expr(A):
     result = (A + A).dup(float, clear=True)
     assert result.isequal(A.dup(float, clear=True), check_dtype=True)
     result = (A * A).dup(mask=A.V)
-    assert result.isequal((A**2).new(mask=A.V))
+    assert result.isequal((A ** 2).new(mask=A.V))
     result = A[:, :].dup()
     assert result.isequal(A)
     result = A[:, :].dup(clear=True)
@@ -3158,8 +3158,8 @@ def test_infix_sugar(A):
     if shouldhave(binary.numpy, "mod"):
         assert binary.numpy.mod(A, 2).isequal(A % 2)
         assert binary.numpy.mod(5, A).isequal(5 % A)
-    assert binary.pow(A, 2).isequal(A**2)
-    assert binary.pow(2, A).isequal(2**A)
+    assert binary.pow(A, 2).isequal(A ** 2)
+    assert binary.pow(2, A).isequal(2 ** A)
     assert binary.pow(A, 2).isequal(pow(A, 2))
     assert unary.ainv(A).isequal(-A)
     assert unary.ainv(A.T).isequal(-A.T)
@@ -3895,7 +3895,7 @@ def test_bool_as_mask(A):
 @pytest.mark.skipif("not suitesparse")
 def test_ss_serialize(A):
     for compression, level, nthreads in itertools.product(
-        [None, "none", "default", "lz4", "lz4hc", "zstd"], [None, 1, 5, 9], [None, -1, 1, 10]
+            [None, "none", "default", "lz4", "lz4hc", "zstd"], [None, 1, 5, 9], [None, -1, 1, 10]
     ):
         if level is not None and compression not in {"lz4hc", "zstd"}:
             with pytest.raises(TypeError, match="level argument"):
@@ -4393,3 +4393,9 @@ def test_power(A):
     B = A[:2, :3].new()
     with pytest.raises(DimensionMismatch):
         B.power(2)
+
+
+def test_setting_orientation(A):
+    A = gb.Matrix.from_csc([0, 2, 3, 3, 5], [1, 3, 7, 6, 20], [10, 20, 30, 40, 50])
+    B = A.T.new(order="col")
+    assert B.ss.orientation == "columnwise"

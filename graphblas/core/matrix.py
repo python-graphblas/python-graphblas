@@ -165,6 +165,8 @@ class Matrix(BaseType):
         Number of rows.
     ncols : int
         Number of columns.
+    order : str, optional
+        Orientation of the Matrix.
     name : str, optional
         Name to give the Matrix. This will be displayed in the ``__repr__``.
     """
@@ -188,6 +190,8 @@ class Matrix(BaseType):
         self._parent = None
         if backend == "suitesparse":
             self.ss = ss(self)
+            if order is not None:
+                self.ss.orientation = get_order(order)
         return self
 
     @classmethod
@@ -3518,10 +3522,11 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     _is_transposed = False
     __networkx_plugin__ = "graphblas"
 
-    def __init__(self, parent, resolved_indexes, nrows, ncols, order=None):
+    def __init__(self, parent, resolved_indexes, nrows, ncols, order):
         super().__init__(parent, resolved_indexes)
         self._nrows = nrows
         self._ncols = ncols
+        self.ss.orientation = order
 
     @property
     def ncols(self):
@@ -3637,7 +3642,11 @@ class TransposedMatrix:
     def new(self, dtype=None, *, mask=None, name=None, order=None, **opts):
         if dtype is None:
             dtype = self.dtype
-        output = Matrix(dtype, self._nrows, self._ncols, name=name)
+        if order is None:
+            order = self.ss.orientation
+        else:
+            order = get_order(order)
+        output = Matrix(dtype, self._nrows, self._ncols, order, name=name)
         output(mask=mask, **opts) << self
         return output
 

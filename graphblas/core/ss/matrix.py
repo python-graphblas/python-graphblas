@@ -249,6 +249,13 @@ class ss:
             return "columnwise"
         return "rowwise"
 
+    @orientation.setter
+    def orientation(self, order):
+        if order == "columnwise":
+            return "columnwise"
+        else:
+            return "rowwise"
+
     def build_diag(self, vector, k=0, **opts):
         """
         GxB_Matrix_diag.
