@@ -121,7 +121,7 @@ def check_status(response_code, args):
         return
     if response_code == GrB_NO_VALUE:
         return NoValue
-    if type(args) is list:
+    if isinstance(args, list):
         arg = args[0]
     else:
         arg = args

@@ -291,6 +291,7 @@ select = [
 ]
 external = [
     # noqa codes that ruff doesn't know about: https://github.com/charliermarsh/ruff#external
+    "F811",
 ]
 ignore = [
     # Would be nice to fix these
