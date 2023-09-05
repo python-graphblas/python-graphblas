@@ -258,6 +258,11 @@ class VectorMatMulExpr(VectorInfixExpr):
         self.method_name = method_name
         self._size = size
 
+    __matmul__ = Vector.__matmul__
+    __rmatmul__ = Vector.__rmatmul__
+    inner = Vector.inner
+    vxm = Vector.vxm
+
 
 utils._output_types[VectorEwiseAddExpr] = Vector
 utils._output_types[VectorEwiseMultExpr] = Vector
@@ -396,6 +401,11 @@ class MatrixMatMulExpr(MatrixInfixExpr):
         self._nrows = nrows
         self._ncols = ncols
 
+    __matmul__ = Matrix.__matmul__
+    __rmatmul__ = Matrix.__rmatmul__
+    mxm = Matrix.mxm
+    mxv = Matrix.mxv
+
 
 utils._output_types[MatrixEwiseAddExpr] = Matrix
 utils._output_types[MatrixEwiseMultExpr] = Matrix
@@ -489,7 +499,10 @@ def _matmul_infix_expr(left, right, *, within):
         )
 
     # Create dummy expression to check compatibility of dimensions, etc.
-    expr = getattr(left, method)(right, any_pair[bool])
+    # Be careful not to accidentally reify an expression.
+    expr = getattr(left if type(left) is left_type else left.dup(clear=True), method)(
+        right if type(right) is right_type else right.dup(clear=True), any_pair[bool]
+    )
     if expr.output_type is Vector:
         return VectorMatMulExpr(left, right, method_name=method, size=expr._size)
     if expr.output_type is Matrix:

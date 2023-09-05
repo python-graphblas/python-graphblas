@@ -1285,14 +1285,23 @@ class Vector(BaseType):
             # Functional syntax
             C << semiring.min_plus(v @ A)
         """
+        from .infix import MatrixMatMulExpr, VectorMatMulExpr
         from .matrix import Matrix, TransposedMatrix
 
         method_name = "vxm"
         other = self._expect_type(
-            other, (Matrix, TransposedMatrix), within=method_name, argname="other", op=op
+            other,
+            (Matrix, TransposedMatrix, MatrixMatMulExpr),
+            within=method_name,
+            argname="other",
+            op=op,
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
+        if type(self) is VectorMatMulExpr:
+            self = self._expect_type(op(self), Vector, within=method_name, argname="self", op=op)
+        if type(other) is MatrixMatMulExpr:
+            other = self._expect_type(op(other), Matrix, within=method_name, argname="other", op=op)
         expr = VectorExpression(
             method_name,
             "GrB_vxm",
@@ -1634,10 +1643,18 @@ class Vector(BaseType):
         `Matrix Multiplication <../user_guide/operations.html#matrix-multiply>`__
         family of functions.
         """
+        from .infix import VectorMatMulExpr
+
         method_name = "inner"
-        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
+        other = self._expect_type(
+            other, (Vector, VectorMatMulExpr), within=method_name, argname="other", op=op
+        )
         op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
+        if type(self) is VectorMatMulExpr:
+            self = self._expect_type(op(self), Vector, within=method_name, argname="self", op=op)
+        if type(other) is VectorMatMulExpr:
+            other = self._expect_type(op(other), Vector, within=method_name, argname="other", op=op)
         expr = ScalarExpression(
             method_name,
             "GrB_vxm",

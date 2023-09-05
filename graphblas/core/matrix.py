@@ -2187,10 +2187,18 @@ class Matrix(BaseType):
             # Functional syntax
             C << semiring.min_plus(A @ v)
         """
+        from .infix import MatrixMatMulExpr, VectorMatMulExpr
+
         method_name = "mxv"
-        other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
+        other = self._expect_type(
+            other, (Vector, VectorMatMulExpr), within=method_name, argname="other", op=op
+        )
         op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
+        if type(self) is MatrixMatMulExpr:
+            self = self._expect_type(op(self), Matrix, within=method_name, argname="self", op=op)
+        if type(other) is VectorMatMulExpr:
+            other = self._expect_type(op(other), Vector, within=method_name, argname="other", op=op)
         expr = VectorExpression(
             method_name,
             "GrB_mxv",
@@ -2230,12 +2238,22 @@ class Matrix(BaseType):
             # Functional syntax
             C << semiring.min_plus(A @ B)
         """
+        from .infix import MatrixMatMulExpr
+
         method_name = "mxm"
         other = self._expect_type(
-            other, (Matrix, TransposedMatrix), within=method_name, argname="other", op=op
+            other,
+            (Matrix, TransposedMatrix, MatrixMatMulExpr),
+            within=method_name,
+            argname="other",
+            op=op,
         )
         op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
+        if type(self) is MatrixMatMulExpr:
+            self = self._expect_type(op(self), Matrix, within=method_name, argname="self", op=op)
+        if type(other) is MatrixMatMulExpr:
+            other = self._expect_type(op(other), Matrix, within=method_name, argname="other", op=op)
         expr = MatrixExpression(
             method_name,
             "GrB_mxm",
