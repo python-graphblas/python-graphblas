@@ -263,7 +263,7 @@ and showing that linear algebra can be used to compute graph algorithms with the
 of semirings.
 
 This is a somewhat new field of research, so many academic papers and talks are being given every year.
-`Graphblas.org <graphblas.org>`_ remains the best source for keeping up-to-date with the latest
+`Graphblas.org <https://graphblas.org>`_ remains the best source for keeping up-to-date with the latest
 developments in this area.
 
 Many people will benefit from faster graph algorithms written in GraphBLAS, but for those that want
