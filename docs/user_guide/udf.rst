@@ -27,6 +27,7 @@ Example user-defined UnaryOp:
     w = v.apply(unary.force_odd).new()
 
 .. csv-table:: w
+    :class: matrix
     :header: 0,1,2,3,4,5
 
     1,3,,3,9,15
@@ -48,6 +49,7 @@ Example lambda usage:
     v.apply(lambda x: x % 5 - 2).new()
 
 .. csv-table::
+    :class: matrix
     :header: 0,1,2,3,4,5
 
     -1,0,,1,1,2
