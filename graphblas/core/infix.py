@@ -2,12 +2,11 @@ from .. import backend, binary
 from ..dtypes import BOOL
 from ..monoid import land, lor
 from ..semiring import any_pair
-from . import automethods, utils
+from . import automethods, recorder, utils
 from .base import _expect_op, _expect_type
 from .expr import InfixExprBase
 from .mask import Mask
 from .matrix import Matrix, MatrixExpression, TransposedMatrix
-from .recorder import skip_record
 from .scalar import Scalar, ScalarExpression
 from .utils import output_type, wrapdoc
 from .vector import Vector, VectorExpression
@@ -477,7 +476,7 @@ utils._output_types[MatrixMatMulExpr] = Matrix
 
 
 def _dummy(obj, obj_type):
-    with skip_record:
+    with recorder.skip_record:
         return obj_type(BOOL, *obj.shape, name="")
 
 
