@@ -6,6 +6,7 @@ from .select import ParameterizedSelectOp, SelectOp
 from .semiring import ParameterizedSemiring, Semiring
 from .unary import ParameterizedUnaryOp, UnaryOp
 from .utils import (
+    _get_typed_op_from_exprs,
     aggregator_from_string,
     binary_from_string,
     get_semiring,

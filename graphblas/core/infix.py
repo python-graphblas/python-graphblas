@@ -7,6 +7,7 @@ from .base import _expect_op, _expect_type
 from .expr import InfixExprBase
 from .mask import Mask
 from .matrix import Matrix, MatrixExpression, TransposedMatrix
+from .recorder import skip_record
 from .scalar import Scalar, ScalarExpression
 from .utils import output_type, wrapdoc
 from .vector import Vector, VectorExpression
@@ -238,6 +239,32 @@ class VectorEwiseAddExpr(VectorInfixExpr):
 
     _to_expr = _ewise_add_to_expr
 
+    ewise_add = Vector.ewise_add
+    ewise_mult = Vector.ewise_mult
+    ewise_union = Vector.ewise_union
+
+    def __and__(self, other):
+        1 / 0
+        raise TypeError("XXX")
+
+    def __rand__(self, other):
+        1 / 0
+        raise TypeError("XXX")
+
+    def __or__(self, other):
+        if isinstance(other, (VectorEwiseMultExpr, MatrixEwiseMultExpr)):
+            1 / 0
+            raise TypeError("XXX")
+        1 / 0
+        return _ewise_infix_expr(self, other, method="ewise_add", within="__or__")
+
+    def __ror__(self, other):
+        if isinstance(other, (VectorEwiseMultExpr, MatrixEwiseMultExpr)):
+            1 / 0
+            raise TypeError("XXX")
+        1 / 0
+        return _ewise_infix_expr(other, self, method="ewise_add", within="__ror__")
+
 
 class VectorEwiseMultExpr(VectorInfixExpr):
     __slots__ = ()
@@ -246,6 +273,27 @@ class VectorEwiseMultExpr(VectorInfixExpr):
     _infix = "&"
 
     _to_expr = _ewise_mult_to_expr
+
+    ewise_add = Vector.ewise_add
+    ewise_mult = Vector.ewise_mult
+    ewise_union = Vector.ewise_union
+
+    def __and__(self, other):
+        if isinstance(other, (VectorEwiseAddExpr, MatrixEwiseAddExpr)):
+            raise TypeError("XXX")
+        return _ewise_infix_expr(self, other, method="ewise_mult", within="__and__")
+
+    def __rand__(self, other):
+        if isinstance(other, (VectorEwiseAddExpr, MatrixEwiseAddExpr)):
+            1 / 0
+            raise TypeError("XXX")
+        return _ewise_infix_expr(other, self, method="ewise_mult", within="__rand__")
+
+    def __or__(self, other):
+        raise TypeError("XXX")
+
+    def __ror__(self, other):
+        raise TypeError("XXX")
 
 
 class VectorMatMulExpr(VectorInfixExpr):
@@ -380,6 +428,14 @@ class MatrixEwiseAddExpr(MatrixInfixExpr):
 
     _to_expr = _ewise_add_to_expr
 
+    __and__ = VectorEwiseAddExpr.__and__
+    __or__ = VectorEwiseAddExpr.__or__
+    __rand__ = VectorEwiseAddExpr.__rand__
+    __ror__ = VectorEwiseAddExpr.__ror__
+    ewise_add = Matrix.ewise_add
+    ewise_mult = Matrix.ewise_mult
+    ewise_union = Matrix.ewise_union
+
 
 class MatrixEwiseMultExpr(MatrixInfixExpr):
     __slots__ = ()
@@ -388,6 +444,14 @@ class MatrixEwiseMultExpr(MatrixInfixExpr):
     _infix = "&"
 
     _to_expr = _ewise_mult_to_expr
+
+    __and__ = VectorEwiseMultExpr.__and__
+    __or__ = VectorEwiseMultExpr.__or__
+    __rand__ = VectorEwiseMultExpr.__rand__
+    __ror__ = VectorEwiseMultExpr.__ror__
+    ewise_add = Matrix.ewise_add
+    ewise_mult = Matrix.ewise_mult
+    ewise_union = Matrix.ewise_union
 
 
 class MatrixMatMulExpr(MatrixInfixExpr):
@@ -412,6 +476,11 @@ utils._output_types[MatrixEwiseMultExpr] = Matrix
 utils._output_types[MatrixMatMulExpr] = Matrix
 
 
+def _dummy(obj, obj_type):
+    with skip_record:
+        return obj_type(BOOL, *obj.shape, name="")
+
+
 def _ewise_infix_expr(left, right, *, method, within):
     left_type = output_type(left)
     right_type = output_type(right)
@@ -419,7 +488,9 @@ def _ewise_infix_expr(left, right, *, method, within):
     types = {Vector, Matrix, TransposedMatrix}
     if left_type in types and right_type in types:
         # Create dummy expression to check compatibility of dimensions, etc.
-        expr = getattr(left, method)(right, binary.any)
+        expr = getattr(
+            _dummy(left, left_type) if isinstance(left, InfixExprBase) else left, method
+        )(_dummy(right, right_type) if isinstance(right, InfixExprBase) else right, binary.first)
         if expr.output_type is Vector:
             if method == "ewise_mult":
                 return VectorEwiseMultExpr(left, right)
@@ -437,13 +508,17 @@ def _ewise_infix_expr(left, right, *, method, within):
         right._expect_type(left, tuple(types), within=within, argname="left")
     elif left_type is Scalar:
         # Create dummy expression to check compatibility of dimensions, etc.
-        expr = getattr(left, method)(right, binary.any)
+        expr = getattr(
+            _dummy(left, left_type) if isinstance(left, InfixExprBase) else left, method
+        )(_dummy(right, right_type) if isinstance(right, InfixExprBase) else right, binary.first)
         if method == "ewise_mult":
             return ScalarEwiseMultExpr(left, right)
         return ScalarEwiseAddExpr(left, right)
     elif right_type is Scalar:
         # Create dummy expression to check compatibility of dimensions, etc.
-        expr = getattr(right, method)(left, binary.any)
+        expr = getattr(
+            _dummy(right, right_type) if isinstance(right, InfixExprBase) else right, method
+        )(_dummy(left, left_type) if isinstance(left, InfixExprBase) else left, binary.first)
         if method == "ewise_mult":
             return ScalarEwiseMultExpr(right, left)
         return ScalarEwiseAddExpr(right, left)
@@ -499,9 +574,8 @@ def _matmul_infix_expr(left, right, *, within):
         )
 
     # Create dummy expression to check compatibility of dimensions, etc.
-    # Be careful not to accidentally reify an expression.
-    expr = getattr(left if type(left) is left_type else left.dup(clear=True), method)(
-        right if type(right) is right_type else right.dup(clear=True), any_pair[bool]
+    expr = getattr(_dummy(left, left_type) if isinstance(left, InfixExprBase) else left, method)(
+        _dummy(right, right_type) if isinstance(right, InfixExprBase) else right, any_pair[BOOL]
     )
     if expr.output_type is Vector:
         return VectorMatMulExpr(left, right, method_name=method, size=expr._size)

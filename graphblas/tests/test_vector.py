@@ -1532,6 +1532,8 @@ def test_outer(v):
 
 @autocompute
 def test_auto(v):
+    from graphblas.core.infix import VectorEwiseMultExpr
+
     v = v.dup(dtype=bool)
     expected = binary.land(v & v).new()
     assert 0 not in expected
@@ -1579,16 +1581,26 @@ def test_auto(v):
             "__rand__",
             "__ror__",
         ]:
+            # print(type(expr).__name__, method)
             val1 = getattr(expected, method)(expected).new()
             val2 = getattr(expected, method)(expr)
-            val3 = getattr(expr, method)(expected)
-            val4 = getattr(expr, method)(expr)
-            assert val1.isequal(val2)
-            assert val1.isequal(val3)
-            assert val1.isequal(val4)
-            assert val1.isequal(val2.new())
-            assert val1.isequal(val3.new())
-            assert val1.isequal(val4.new())
+            if method in {"__or__", "__ror__"} and type(expr) is VectorEwiseMultExpr:
+                # Doing e.g. `plus(x & y | z)` isn't allowed--make user be explicit
+                with pytest.raises(TypeError):
+                    assert val1.isequal(val2)
+                with pytest.raises(TypeError):
+                    val3 = getattr(expr, method)(expected)
+                with pytest.raises(TypeError):
+                    val4 = getattr(expr, method)(expr)
+            else:
+                assert val1.isequal(val2)
+                assert val1.isequal(val2.new())
+                val3 = getattr(expr, method)(expected)
+                assert val1.isequal(val3)
+                assert val1.isequal(val3.new())
+                val4 = getattr(expr, method)(expr)
+                assert val1.isequal(val4)
+                assert val1.isequal(val4.new())
         s1 = expected.reduce(monoid.lor).new()
         s2 = expr.reduce(monoid.lor)
         assert s1.isequal(s2.new())

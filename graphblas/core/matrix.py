@@ -12,7 +12,14 @@ from .base import BaseExpression, BaseType, _check_mask, call
 from .descriptor import lookup as descriptor_lookup
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, Updater
 from .mask import Mask, StructuralMask, ValueMask
-from .operator import UNKNOWN_OPCLASS, find_opclass, get_semiring, get_typed_op, op_from_string
+from .operator import (
+    UNKNOWN_OPCLASS,
+    _get_typed_op_from_exprs,
+    find_opclass,
+    get_semiring,
+    get_typed_op,
+    op_from_string,
+)
 from .scalar import (
     _COMPLETE,
     _MATERIALIZE,
@@ -1938,17 +1945,36 @@ class Matrix(BaseType):
             # Functional syntax
             C << monoid.max(A | B)
         """
+        from .infix import (
+            MatrixEwiseAddExpr,
+            MatrixEwiseMultExpr,
+            VectorEwiseAddExpr,
+            VectorEwiseMultExpr,
+        )
+
         method_name = "ewise_add"
         other = self._expect_type(
             other,
-            (Matrix, TransposedMatrix, Vector),
+            (
+                Matrix,
+                TransposedMatrix,
+                Vector,
+                MatrixEwiseAddExpr,
+                MatrixEwiseMultExpr,
+                VectorEwiseAddExpr,
+                VectorEwiseMultExpr,
+            ),
             within=method_name,
             argname="other",
             op=op,
         )
-        op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
+        op = _get_typed_op_from_exprs(op, self, other, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if type(self) is MatrixEwiseMultExpr:
+            raise TypeError("XXX")
+        if type(other) in {MatrixEwiseMultExpr, VectorEwiseMultExpr}:
+            raise TypeError("XXX")
         if other.ndim == 1:
             # Broadcast rowwise from the right
             if self._ncols != other._size:
@@ -1956,6 +1982,16 @@ class Matrix(BaseType):
                     "Dimensions not compatible for broadcasting Vector from the right "
                     f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                     f"must equal Vector.size (={other._size})."
+                )
+            if type(self) is MatrixEwiseAddExpr:
+                1 / 0
+                self = self._expect_type(
+                    op(self), Matrix, within=method_name, argname="self", op=op
+                )
+            if type(other) is VectorEwiseAddExpr:
+                1 / 0
+                other = self._expect_type(
+                    op(other), Vector, within=method_name, argname="other", op=op
                 )
             return MatrixExpression(
                 method_name,
@@ -1965,6 +2001,12 @@ class Matrix(BaseType):
                 ncols=self._ncols,
                 op=op,
             )
+        if type(self) is MatrixEwiseAddExpr:
+            1 / 0
+            self = self._expect_type(op(self), Matrix, within=method_name, argname="self", op=op)
+        if type(other) is MatrixEwiseAddExpr:
+            1 / 0
+            other = self._expect_type(op(other), Matrix, within=method_name, argname="other", op=op)
         expr = MatrixExpression(
             method_name,
             f"GrB_Matrix_eWiseAdd_{op.opclass}",
@@ -2006,13 +2048,38 @@ class Matrix(BaseType):
             # Functional syntax
             C << binary.gt(A & B)
         """
+        from .infix import (
+            MatrixEwiseAddExpr,
+            MatrixEwiseMultExpr,
+            VectorEwiseAddExpr,
+            VectorEwiseMultExpr,
+        )
+
         method_name = "ewise_mult"
         other = self._expect_type(
-            other, (Matrix, TransposedMatrix, Vector), within=method_name, argname="other", op=op
+            other,
+            (
+                Matrix,
+                TransposedMatrix,
+                Vector,
+                MatrixEwiseAddExpr,
+                MatrixEwiseMultExpr,
+                VectorEwiseAddExpr,
+                VectorEwiseMultExpr,
+            ),
+            within=method_name,
+            argname="other",
+            op=op,
         )
-        op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
+        op = _get_typed_op_from_exprs(op, self, other, kind="binary")
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if type(self) is MatrixEwiseAddExpr:
+            1 / 0
+            raise TypeError("XXX")
+        if type(other) in {MatrixEwiseAddExpr, VectorEwiseAddExpr}:
+            1 / 0
+            raise TypeError("XXX")
         if other.ndim == 1:
             # Broadcast rowwise from the right
             if self._ncols != other._size:
@@ -2020,6 +2087,16 @@ class Matrix(BaseType):
                     "Dimensions not compatible for broadcasting Vector from the right "
                     f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                     f"must equal Vector.size (={other._size})."
+                )
+            if type(self) is MatrixEwiseMultExpr:
+                1 / 0
+                self = self._expect_type(
+                    op(self), Matrix, within=method_name, argname="self", op=op
+                )
+            if type(other) is VectorEwiseMultExpr:
+                1 / 0
+                other = self._expect_type(
+                    op(other), Vector, within=method_name, argname="other", op=op
                 )
             return MatrixExpression(
                 method_name,
@@ -2029,6 +2106,10 @@ class Matrix(BaseType):
                 ncols=self._ncols,
                 op=op,
             )
+        if type(self) is MatrixEwiseMultExpr:
+            self = self._expect_type(op(self), Matrix, within=method_name, argname="self", op=op)
+        if type(other) is MatrixEwiseMultExpr:
+            other = self._expect_type(op(other), Matrix, within=method_name, argname="other", op=op)
         expr = MatrixExpression(
             method_name,
             f"GrB_Matrix_eWiseMult_{op.opclass}",
@@ -2074,9 +2155,28 @@ class Matrix(BaseType):
             # Functional syntax
             C << binary.div(A | B, left_default=1, right_default=1)
         """
+        from .infix import (
+            MatrixEwiseAddExpr,
+            MatrixEwiseMultExpr,
+            VectorEwiseAddExpr,
+            VectorEwiseMultExpr,
+        )
+
         method_name = "ewise_union"
         other = self._expect_type(
-            other, (Matrix, TransposedMatrix, Vector), within=method_name, argname="other", op=op
+            other,
+            (
+                Matrix,
+                TransposedMatrix,
+                Vector,
+                MatrixEwiseAddExpr,
+                MatrixEwiseMultExpr,
+                VectorEwiseAddExpr,
+                VectorEwiseMultExpr,
+            ),
+            within=method_name,
+            argname="other",
+            op=op,
         )
         dtype = self.dtype if self.dtype._is_udt else None
         if type(left_default) is not Scalar:
@@ -2111,12 +2211,23 @@ class Matrix(BaseType):
                 )
         else:
             right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
-        scalar_dtype = unify(left.dtype, right.dtype)
-        nonscalar_dtype = unify(self.dtype, other.dtype)
-        op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
+
+        op = _get_typed_op_from_exprs(op, self, right, kind="binary")
+        op2 = _get_typed_op_from_exprs(op, left, other, kind="binary")
+        if op is not op2:
+            scalar_dtype = unify(op.type2, op2.type)
+            nonscalar_dtype = unify(op.type, op2.type2)
+            op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
+            1 / 0
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
+        if type(self) is MatrixEwiseMultExpr:
+            1 / 0
+            raise TypeError("XXX")
+        if type(other) in {MatrixEwiseMultExpr, VectorEwiseMultExpr}:
+            1 / 0
+            raise TypeError("XXX")
         expr_repr = "{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})"
         if other.ndim == 1:
             # Broadcast rowwise from the right
@@ -2126,6 +2237,24 @@ class Matrix(BaseType):
                     f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                     f"must equal Vector.size (={other._size})."
                 )
+            if type(self) is MatrixEwiseAddExpr:
+                1 / 0
+                self = self._expect_type(
+                    op(self, left_default=left, right_default=right),
+                    Matrix,
+                    within=method_name,
+                    argname="self",
+                    op=op,
+                )
+            if type(other) is VectorEwiseAddExpr:
+                1 / 0
+                other = self._expect_type(
+                    op(other, left_default=left, right_default=right),
+                    Vector,
+                    within=method_name,
+                    argname="other",
+                    op=op,
+                )
             return MatrixExpression(
                 method_name,
                 None,
@@ -2133,6 +2262,24 @@ class Matrix(BaseType):
                 expr_repr=expr_repr,
                 nrows=self._nrows,
                 ncols=self._ncols,
+                op=op,
+            )
+        if type(self) is MatrixEwiseAddExpr:
+            1 / 0
+            self = self._expect_type(
+                op(self, left_default=left, right_default=right),
+                Matrix,
+                within=method_name,
+                argname="self",
+                op=op,
+            )
+        if type(other) is MatrixEwiseAddExpr:
+            1 / 0
+            other = self._expect_type(
+                op(other, left_default=left, right_default=right),
+                Matrix,
+                within=method_name,
+                argname="other",
                 op=op,
             )
         if backend == "suitesparse":
@@ -2196,6 +2343,7 @@ class Matrix(BaseType):
         op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         if type(self) is MatrixMatMulExpr:
+            1 / 0
             self = self._expect_type(op(self), Matrix, within=method_name, argname="self", op=op)
         if type(other) is VectorMatMulExpr:
             other = self._expect_type(op(other), Vector, within=method_name, argname="other", op=op)
@@ -2251,8 +2399,10 @@ class Matrix(BaseType):
         op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         if type(self) is MatrixMatMulExpr:
+            1 / 0
             self = self._expect_type(op(self), Matrix, within=method_name, argname="self", op=op)
         if type(other) is MatrixMatMulExpr:
+            1 / 0
             other = self._expect_type(op(other), Matrix, within=method_name, argname="other", op=op)
         expr = MatrixExpression(
             method_name,

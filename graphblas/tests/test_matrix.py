@@ -2805,6 +2805,8 @@ def test_ss_nbytes(A):
 
 @autocompute
 def test_auto(A, v):
+    from graphblas.core.infix import MatrixEwiseMultExpr
+
     expected = binary.land[bool](A & A).new()
     B = A.dup(dtype=bool)
     for expr in [(B & B), binary.land[bool](A & A)]:
@@ -2827,14 +2829,26 @@ def test_auto(A, v):
             "__and__",
             "__or__",
             # "kronecker",
+            "__rand__",
+            "__ror__",
         ]:
+            # print(type(expr).__name__, method)
             val1 = getattr(expected, method)(expected).new()
             val2 = getattr(expected, method)(expr)
-            val3 = getattr(expr, method)(expected)
-            val4 = getattr(expr, method)(expr)
-            assert val1.isequal(val2)
-            assert val1.isequal(val3)
-            assert val1.isequal(val4)
+            if method in {"__or__", "__ror__"} and type(expr) is MatrixEwiseMultExpr:
+                # Doing e.g. `plus(A & B | C)` isn't allowed--make user be explicit
+                with pytest.raises(TypeError):
+                    assert val1.isequal(val2)
+                with pytest.raises(TypeError):
+                    val3 = getattr(expr, method)(expected)
+                with pytest.raises(TypeError):
+                    val4 = getattr(expr, method)(expr)
+            else:
+                assert val1.isequal(val2)
+                val3 = getattr(expr, method)(expected)
+                assert val1.isequal(val3)
+                val4 = getattr(expr, method)(expr)
+                assert val1.isequal(val4)
         for method in ["reduce_rowwise", "reduce_columnwise", "reduce_scalar"]:
             s1 = getattr(expected, method)(monoid.lor).new()
             s2 = getattr(expr, method)(monoid.lor)
@@ -3136,6 +3150,10 @@ def test_ss_reshape(A):
 def test_autocompute_argument_messages(A, v):
     with pytest.raises(TypeError, match="autocompute"):
         A.ewise_mult(A & A)
+    with pytest.raises(TypeError, match="autocompute"):
+        A.ewise_mult(binary.plus(A & A))
+    with pytest.raises(TypeError, match="autocompute"):
+        A.ewise_mult(A + A)
     with pytest.raises(TypeError, match="autocompute"):
         A.mxv(A @ v)
 
