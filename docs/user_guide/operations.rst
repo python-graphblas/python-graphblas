@@ -45,8 +45,9 @@ a Vector is treated as an nx1 column matrix.
     C << gb.semiring.min_plus(A @ B)  # functional style
 
 .. csv-table:: A
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2,3
+    :stub-columns: 1
 
     **0**,,2.0,5.0,
     **1**,,,1.5,4.25
@@ -54,8 +55,9 @@ a Vector is treated as an nx1 column matrix.
     **3**,,,,
 
 .. csv-table:: B
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,3.0,2.0
     **1**,9.0,6.0,
@@ -63,8 +65,9 @@ a Vector is treated as an nx1 column matrix.
     **3**,0.0,5.0,
 
 .. csv-table:: C << min_plus(A @ B)
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,11.0,8.0,6.0
     **1**,4.25,4.5,2.5
@@ -90,8 +93,9 @@ a Vector is treated as an nx1 column matrix.
     w << gb.semiring.plus_times(A @ v)  # functional style
 
 .. csv-table:: A
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2,3
+    :stub-columns: 1
 
     **0**,,2.0,5.0,
     **1**,,,1.5,4.25
@@ -99,13 +103,13 @@ a Vector is treated as an nx1 column matrix.
     **3**,,,,
 
 .. csv-table:: v
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3
 
     10.0,20.0,,40.0
 
 .. csv-table:: w << plus_times(A @ v)
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3
 
     40.0,170.0,20.0,
@@ -127,14 +131,15 @@ a Vector is treated as an nx1 column matrix.
     u << gb.semiring.plus_plus(v @ B)  # functional style
 
 .. csv-table:: v
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3
 
     10.0,20.0,,40.0
 
 .. csv-table:: B
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,3.0,2.0
     **1**,9.0,6.0,
@@ -142,7 +147,7 @@ a Vector is treated as an nx1 column matrix.
     **3**,0.0,5.0,
 
 .. csv-table:: u << plus_plus(v @ B)
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2
 
     69.0,84.0,12.0
@@ -181,24 +186,27 @@ Example usage:
     C << gb.binary.min(A & B)  # functional style
 
 .. csv-table:: A
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,2.0,5.0
     **1**,1.5,,4.0
     **2**,,0.5,
 
 .. csv-table:: B
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,3.0,-2.0
     **1**,0.0,6.0,
     **2**,,3.0,1.0
 
 .. csv-table:: C << min(A & B)
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,2.0,-2.0
     **1**,0.0,,
@@ -265,24 +273,27 @@ should be used with the functional syntax, ``left_default`` and ``right_default`
     C << gb.binary.minus(A | B)  # functional style
 
 .. csv-table:: A
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,9.0,2.0,5.0
     **1**,1.5,,4.0
     **2**,,,
 
 .. csv-table:: B
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,4.0,0.0,-2.0
     **1**,,,
     **2**,6.0,3.0,1.0
 
 .. csv-table:: C << A.ewise_add(B, 'minus')
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2,
+    :stub-columns: 1
 
     **0**,5.0,2.0,7.0
     **1**,1.5,,4.0
@@ -310,24 +321,27 @@ should be used with the functional syntax, ``left_default`` and ``right_default`
     C << gb.binary.minus(A | B, left_default=0, right_default=0)  # functional style
 
 .. csv-table:: A
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,9.0,2.0,5.0
     **1**,1.5,,4.0
     **2**,,,
 
 .. csv-table:: B
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,4.0,0.0,-2.0
     **1**,,,
     **2**,6.0,3.0,1.0
 
 .. csv-table:: C << A.ewise_union(B, 'minus', 0, 0)
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2,
+    :stub-columns: 1
 
     **0**,5.0,2.0,7.0
     **1**,1.5,,4.0
@@ -362,13 +376,13 @@ Vector Slice Example:
     w << v[:4]
 
 .. csv-table:: v
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3,4,5,6
 
     10.0,2.0,,40.0,-5.0,,24.0
 
 .. csv-table:: w << v[:4]
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3
 
     10.0,2.0,,40.0
@@ -387,16 +401,18 @@ Matrix List Example:
     C << A[[0, 2], :]
 
 .. csv-table:: A
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,2.0,5.0
     **1**,1.5,4.0,
     **2**,0.5,,-7.0
 
 .. csv-table:: C << A[[0, 2], :]
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,2.0,5.0
     **1**,0.5,,-7.0
@@ -434,23 +450,26 @@ Matrix-Matrix Assignment Example:
     A[::2, ::2] << B
 
 .. csv-table:: A
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,2.0,5.0
     **1**,1.5,4.0,
     **2**,0.5,,-7.0
 
 .. csv-table:: B
-    :class: inline
+    :class: inline matrix
     :header: ,0,1
+    :stub-columns: 1
 
     **0**,-99.0,-98.0
     **1**,-97.0,-96.0
 
 .. csv-table:: A[::2, ::2] << B
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,-99.0,2.0,-98.0
     **1**,1.5,4.0,
@@ -470,22 +489,24 @@ Matrix-Vector Assignment Example:
     A[1, :] << v
 
 .. csv-table:: A
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,2.0,5.0
     **1**,1.5,4.0,
     **2**,0.5,,-7.0
 
 .. csv-table:: v
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2
 
     ,,-99.0
 
 .. csv-table:: A[1, :] << v
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,2.0,5.0
     **1**,,,-99.0
@@ -500,13 +521,13 @@ Vector-Scalar Assignment Example:
     v[:4] << 99
 
 .. csv-table:: v
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3,4,5,6
 
     10,2,,40,-5,,24
 
 .. csv-table:: v[:4] << 99
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3,4,5,6
 
     99,99,99,99,-5,,24
@@ -535,13 +556,13 @@ function with the collection as the argument.
     w << gb.unary.minv(v)
 
 .. csv-table:: v
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3
 
     10.0,20.0,,40.0
 
 .. csv-table:: w << minv(v)
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3
 
     0.1,0.05,,0.025
@@ -558,13 +579,13 @@ function with the collection as the argument.
     w << gb.indexunary.index(v)
 
 .. csv-table:: v
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3
 
     10.0,20.0,,40.0
 
 .. csv-table:: w << index(v)
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3
 
     0,1,,3
@@ -582,13 +603,13 @@ function with the collection as the argument.
     w << v - 15
 
 .. csv-table:: v
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3
 
     10.0,20.0,,40.0
 
 .. csv-table:: w << v.apply('minus', right=15)
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3,
 
     -5.0,5.0,,25.0
@@ -616,16 +637,18 @@ Upper Triangle Example:
     C << gb.select.triu(A)
 
 .. csv-table:: A
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,2.0,5.0
     **1**,1.5,,4.0
     **2**,,0.5,-7.0
 
 .. csv-table:: C << select.triu(A)
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,2.0,5.0
     **1**,,,4.0
@@ -643,13 +666,13 @@ Select by Value Example:
     w << gb.select.value(v >= 5)
 
 .. csv-table:: v
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3,4,5,6
 
     10.0,2.0,,40.0,-5.0,,24.0
 
 .. csv-table:: w << select.value(v >= 5)
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3,4,5,6
 
     10.0,,,40.0,,,24.0
@@ -678,15 +701,16 @@ A monoid or aggregator is used to perform the reduction.
     w << A.reduce_columnwise("times")
 
 .. csv-table:: A
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2,3
+    :stub-columns: 1
 
     **0**,,2.0,,5.0
     **1**,1.5,4.0,,
     **2**,0.5,-7.0,,
 
 .. csv-table:: w << A.reduce_columnwise('times')
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2,3
 
     ,0.75,-56.0,,5.0
@@ -705,15 +729,16 @@ A monoid or aggregator is used to perform the reduction.
     s << A.reduce_scalar("max")
 
 .. csv-table:: A
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2,3
+    :stub-columns: 1
 
     **0**,,2.0,,5.0
     **1**,1.5,4.0,,
     **2**,0.5,-7.0,,
 
 .. csv-table:: s << A.reduce_scalar('max')
-    :class: inline
+    :class: inline matrix
     :header: ,,,,
 
     5.0
@@ -730,13 +755,13 @@ A monoid or aggregator is used to perform the reduction.
     s << gb.agg.argmin(v)
 
 .. csv-table:: v
-    :class: inline
+    :class: inline matrix
     :header: 0,1,2,3,4,5,6
 
     10.0,2.0,,40.0,-5.0,,24.0
 
 .. csv-table:: s << argmin(v)
-    :class: inline
+    :class: inline matrix
     :header: ,,,
 
     4
@@ -761,16 +786,18 @@ To force the transpose to be computed by itself, use it by itself as the right-h
     C << A.T
 
 .. csv-table:: A
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2,3
+    :stub-columns: 1
 
     **0**,,2.0,,5.0
     **1**,1.5,4.0,,
     **2**,0.5,,-7.0,
 
 .. csv-table:: C << A.T
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,1.5,0.5
     **1**,2.0,4.0,
@@ -802,23 +829,26 @@ The Kronecker product uses a binary operator.
     C << A.kronecker(B, "times")
 
 .. csv-table:: A
-    :class: inline
+    :class: inline matrix
     :header: ,0,1
+    :stub-columns: 1
 
     **0**,1.0,-2.0
     **1**,3.0,
 
 .. csv-table:: B
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2
+    :stub-columns: 1
 
     **0**,,2.0,5.0
     **1**,1.5,4.0,
     **2**,0.5,,-7.0
 
 .. csv-table:: C << A.kronecker(B, 'times')
-    :class: inline
+    :class: inline matrix
     :header: ,0,1,2,3,4,5
+    :stub-columns: 1
 
     **0**,,2.0,5.0,,-4.0,-10.0
     **1**,1.5,4.0,,-3.0,-8.0,

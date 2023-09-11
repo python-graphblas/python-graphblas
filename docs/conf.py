@@ -36,7 +36,7 @@ del version
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = ["sphinx.ext.autodoc", "numpydoc", "sphinx_panels", "nbsphinx"]
-html_css_files = ["custom.css"]
+html_css_files = ["custom.css", "matrix.css"]
 html_js_files = ["custom.js"]
 
 # Add any paths that contain templates here, relative to this directory.
