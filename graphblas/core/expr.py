@@ -476,29 +476,6 @@ class Updater:
     def __bool__(self):
         raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
 
-    @property
-    def setdiag(self):
-        if self.parent.ndim != 2:
-            raise AttributeError(f"'{type(self).__name__}' object has no attribute 'setdiag'")
-        return self._setdiag
-
-    def _setdiag(self, values, k=0, *, clear_missing=True):
-        return self.parent._setdiag(
-            values,
-            k,
-            clear_missing=clear_missing,
-            mask=self.kwargs["mask"],
-            accum=self.kwargs["accum"],
-            replace=self.kwargs["replace"],
-            opts=self.opts,
-        )
-
-    def __dir__(self):
-        rv = super().__dir__()
-        if self.parent.ndim != 2:
-            rv = list(set(rv) - {"setdiag", "_setdiag"})
-        return rv
-
 
 class InfixExprBase:
     __slots__ = "left", "right", "_expr", "__weakref__"

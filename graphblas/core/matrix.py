@@ -2805,41 +2805,41 @@ class Matrix(BaseType):
             dtype=self.dtype,
         )
 
-    def setdiag(self, values, k=0, *, clear_missing=True, **opts):
-        """https://github.com/python-graphblas/python-graphblas/issues/487
+    def setdiag(self, values, k=0, *, mask=None, accum=None, clear_missing=True, **opts):
+        """Set k'th diagonal with a Scalar, Vector, or array.
 
-        Set k'th diagonal with a Scalar, Vector, or array.
+        TODO: finish docstring.
+
+        Parameters
+        ----------
+        values :
+        k : int, default=0
+        mask : Mask, optional
+        accum : Monoid or BinaryOp, optional
+        clear_missing : bool, default=True
         """
-        self._setdiag(values, k, clear_missing=clear_missing, opts=opts)
-
-    def _setdiag(
-        self, values, k=0, *, clear_missing=True, mask=None, accum=None, replace=None, opts=None
-    ):
         if (K := maybe_integral(k)) is None:
             raise TypeError(f"k must be an integer; got bad type: {type(k)}")
         k = K
         if k < 0:
-            size = min(self._nrows + k, self._ncols)
-            if size < 0:
+            if (size := min(self._nrows + k, self._ncols)) < 0:
                 raise IndexError(
                     f"k={k} is too small; the k'th diagonal is out of range. "
                     f"Valid k for Matrix with shape {self.nrows}x{self.ncols}: "
                     f"{-self._nrows} <= k <= {self.ncols}"
                 )
-        else:
-            size = min(self._ncols - k, self._nrows)
-            if size < 0:
-                raise IndexError(
-                    f"k={k} is too large; the k'th diagonal is out of range. "
-                    f"Valid k for Matrix with shape {self.nrows}x{self.ncols}: "
-                    f"{-self._nrows} <= k <= {self.ncols}"
-                )
+        elif (size := min(self._ncols - k, self._nrows)) < 0:
+            raise IndexError(
+                f"k={k} is too large; the k'th diagonal is out of range. "
+                f"Valid k for Matrix with shape {self.nrows}x{self.ncols}: "
+                f"{-self._nrows} <= k <= {self.ncols}"
+            )
 
         # Convert `values` to Vector if necessary (i.e., it's scalar or array)
         is_scalar = clear_diag = False
         if output_type(values) is Vector:
             v = values
-            clear_diag = clear_missing and v._nvals != v._size
+            clear_diag = accum is None and clear_missing and v._nvals != v._size
         elif type(values) is Scalar:
             is_scalar = True
         else:
@@ -2866,24 +2866,38 @@ class Matrix(BaseType):
         if is_scalar:
             v = Vector.from_scalar(values, size)
         elif v._size != size:
-            raise RuntimeError("egg, bacon, and spam")
+            raise DimensionMismatch(
+                f"Dimensions not compatible for assigning length {v._size} Vector "
+                f"to {k}'th diagonal of Matrix with shape {self._nrows}x{self._ncols}."
+                f"The Vector should be size {size}."
+            )
 
         if mask is not None:
             mask = _check_mask(mask)
-            if mask.complement:
-                raise NotImplementedError
-            if replace:
-                raise NotImplementedError
             if mask.parent.ndim == 2:
                 if mask.parent.shape != self.shape:
-                    raise RuntimeError("spam, egg, sausage, and spam")
-                M = select.diag(mask.parent, k).new()
+                    raise DimensionMismatch(
+                        "Matrix mask in setdiag is the wrong shape; "
+                        f"expected shape {self._nrows}x{self._ncols}, "
+                        f"got {mask.parent._nrows}x{mask.parent._ncols}"
+                    )
+                if mask.complement:
+                    mval = type(mask)(mask.parent.diag(k)).new()
+                    mask = mval.S
+                    M = mval.diag()
+                else:
+                    M = select.diag(mask.parent, k).new()
             elif mask.parent._size != size:
-                raise RuntimeError("spam, egg, spam, spam, bacon, and spam")
+                raise DimensionMismatch(
+                    "Vector mask in setdiag is the wrong length; "
+                    f"expected size {size}, got size {mask.parent._size}."
+                )
             else:
+                if mask.complement:
+                    mask = mask.new().S
                 M = mask.parent.diag()
-                if M.shape != self.shape:
-                    M.resize(self._nrows, self._ncols)
+            if M.shape != self.shape:
+                M.resize(self._nrows, self._ncols)
             mask = type(mask)(M)
 
         if clear_diag:
