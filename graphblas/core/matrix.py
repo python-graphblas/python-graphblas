@@ -2808,15 +2808,28 @@ class Matrix(BaseType):
     def setdiag(self, values, k=0, *, mask=None, accum=None, clear_missing=True, **opts):
         """Set k'th diagonal with a Scalar, Vector, or array.
 
-        TODO: finish docstring.
+        This is not a built-in GraphBLAS operation. It is implemented as a recipe.
 
         Parameters
         ----------
-        values :
+        values : Vector or list or np.ndarray or scalar
+            New values to assign to the diagonal. The length of Vector and array
+            values must match the size of the diagonal being assigned to.
         k : int, default=0
+            Which diagonal or off-diagonal to set. For example, set the elements
+            ``A[i, i+k] = values[i]``. The default, k=0, is the main diagonal.
         mask : Mask, optional
+            Vector or Matrix Mask to control which diagonal elements to set.
+            If it is Matrix Mask, then only the diagonal is used as the mask.
         accum : Monoid or BinaryOp, optional
+            Operator to use to combine existing diagonal values and new values.
         clear_missing : bool, default=True
+            If True, missing elements in Vector values will result in the
+            corresponding diagonal elements to be removed. This parameter has
+            no effect if values is not a Vector or if accum operator is given.
+            The default is True to match normal behavior for assignments, but
+            it requires a call to ``select.offdiag``. If clear_missing is False,
+            then the recipe is approximately ``D = v.diag(k) ; self(D.S) << D``.
         """
         if (K := maybe_integral(k)) is None:
             raise TypeError(f"k must be an integer; got bad type: {type(k)}")
