@@ -29,6 +29,7 @@ array will match the collection dtype.
     v = gb.Vector.from_coo([1, 3, 6], [2, 3, 4], float, size=10)
 
 .. csv-table::
+    :class: matrix
     :header: 0,1,2,3,4,5,6,7,8,9,10
 
     ,2.0,,3.0,,,4.0,,,
