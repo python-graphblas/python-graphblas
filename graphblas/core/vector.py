@@ -68,13 +68,13 @@ def _v_union_m(updater, left, right, left_default, right_default, op):
     updater << temp.ewise_union(right, op, left_default=left_default, right_default=right_default)
 
 
-def _v_union_v(updater, left, right, left_default, right_default, op, dtype):
+def _v_union_v(updater, left, right, left_default, right_default, op):
     mask = updater.kwargs.get("mask")
     opts = updater.opts
-    new_left = left.dup(dtype, clear=True)
+    new_left = left.dup(op.type, clear=True)
     new_left(mask=mask, **opts) << binary.second(right, left_default)
     new_left(mask=mask, **opts) << binary.first(left | new_left)
-    new_right = right.dup(dtype, clear=True)
+    new_right = right.dup(op.type2, clear=True)
     new_right(mask=mask, **opts) << binary.second(left, right_default)
     new_right(mask=mask, **opts) << binary.first(right | new_right)
     updater << op(new_left & new_right)
@@ -1104,10 +1104,8 @@ class Vector(BaseType):
                 op=op,
             )
         if type(self) is VectorEwiseAddExpr:
-            1 / 0
             self = self._expect_type(op(self), Vector, within=method_name, argname="self", op=op)
         if type(other) is VectorEwiseAddExpr:
-            1 / 0
             other = self._expect_type(op(other), Vector, within=method_name, argname="other", op=op)
         expr = VectorExpression(
             method_name,
@@ -1176,10 +1174,8 @@ class Vector(BaseType):
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if type(self) is VectorEwiseAddExpr:
-            1 / 0
             raise TypeError("XXX")
         if type(other) in {VectorEwiseAddExpr, MatrixEwiseAddExpr}:
-            1 / 0
             raise TypeError("XXX")
         if other.ndim == 2:
             # Broadcast columnwise from the left
@@ -1278,7 +1274,9 @@ class Vector(BaseType):
             argname="other",
             op=op,
         )
-        dtype = self.dtype if self.dtype._is_udt else None
+        temp_op = _get_typed_op_from_exprs(op, self, other, kind="binary")
+        left_dtype = temp_op.type
+        dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
             try:
                 left = Scalar.from_value(
@@ -1295,6 +1293,8 @@ class Vector(BaseType):
                 )
         else:
             left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
+        right_dtype = temp_op.type2
+        dtype = right_dtype if right_dtype._is_udt else None
         if type(right_default) is not Scalar:
             try:
                 right = Scalar.from_value(
@@ -1312,21 +1312,21 @@ class Vector(BaseType):
         else:
             right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
 
-        op = _get_typed_op_from_exprs(op, self, right, kind="binary")
+        op1 = _get_typed_op_from_exprs(op, self, right, kind="binary")
         op2 = _get_typed_op_from_exprs(op, left, other, kind="binary")
-        if op is not op2:
-            scalar_dtype = unify(op.type2, op2.type)
-            nonscalar_dtype = unify(op.type, op2.type2)
-            op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
+        if op1 is not op2:
+            left_dtype = unify(op1.type, op2.type, is_right_scalar=True)
+            right_dtype = unify(op1.type2, op2.type2, is_left_scalar=True)
+            op = get_typed_op(op, left_dtype, right_dtype, kind="binary")
             1 / 0
+        else:
+            op = op1
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
         if type(self) is VectorEwiseMultExpr:
-            1 / 0
             raise TypeError("XXX")
         if type(other) in {VectorEwiseMultExpr, MatrixEwiseMultExpr}:
-            1 / 0
             raise TypeError("XXX")
         expr_repr = "{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})"
         if other.ndim == 2:
@@ -1365,7 +1365,6 @@ class Vector(BaseType):
                 op=op,
             )
         if type(self) is VectorEwiseAddExpr:
-            1 / 0
             self = self._expect_type(
                 op(self, left_default=left, right_default=right),
                 Vector,
@@ -1374,7 +1373,6 @@ class Vector(BaseType):
                 op=op,
             )
         if type(other) is VectorEwiseAddExpr:
-            1 / 0
             other = self._expect_type(
                 op(other, left_default=left, right_default=right),
                 Vector,
@@ -1391,11 +1389,10 @@ class Vector(BaseType):
                 expr_repr=expr_repr,
             )
         else:
-            dtype = unify(scalar_dtype, nonscalar_dtype, is_left_scalar=True)
             expr = VectorExpression(
                 method_name,
                 None,
-                [self, left, other, right, _v_union_v, (self, other, left, right, op, dtype)],
+                [self, left, other, right, _v_union_v, (self, other, left, right, op)],
                 expr_repr=expr_repr,
                 size=self._size,
                 op=op,
@@ -1448,8 +1445,10 @@ class Vector(BaseType):
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         if type(self) is VectorMatMulExpr:
             self = self._expect_type(op(self), Vector, within=method_name, argname="self", op=op)
+            1 / 0
         if type(other) is MatrixMatMulExpr:
             other = self._expect_type(op(other), Matrix, within=method_name, argname="other", op=op)
+            1 / 0
         expr = VectorExpression(
             method_name,
             "GrB_vxm",
@@ -1801,8 +1800,10 @@ class Vector(BaseType):
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         if type(self) is VectorMatMulExpr:
             self = self._expect_type(op(self), Vector, within=method_name, argname="self", op=op)
+            1 / 0
         if type(other) is VectorMatMulExpr:
             other = self._expect_type(op(other), Vector, within=method_name, argname="other", op=op)
+            1 / 0
         expr = ScalarExpression(
             method_name,
             "GrB_vxm",

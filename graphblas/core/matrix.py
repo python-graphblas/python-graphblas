@@ -1972,8 +1972,10 @@ class Matrix(BaseType):
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if type(self) is MatrixEwiseMultExpr:
+            1 / 0
             raise TypeError("XXX")
         if type(other) in {MatrixEwiseMultExpr, VectorEwiseMultExpr}:
+            1 / 0
             raise TypeError("XXX")
         if other.ndim == 1:
             # Broadcast rowwise from the right
@@ -2107,8 +2109,10 @@ class Matrix(BaseType):
                 op=op,
             )
         if type(self) is MatrixEwiseMultExpr:
+            1 / 0
             self = self._expect_type(op(self), Matrix, within=method_name, argname="self", op=op)
         if type(other) is MatrixEwiseMultExpr:
+            1 / 0
             other = self._expect_type(op(other), Matrix, within=method_name, argname="other", op=op)
         expr = MatrixExpression(
             method_name,
@@ -2212,13 +2216,15 @@ class Matrix(BaseType):
         else:
             right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
 
-        op = _get_typed_op_from_exprs(op, self, right, kind="binary")
+        op1 = _get_typed_op_from_exprs(op, self, right, kind="binary")
         op2 = _get_typed_op_from_exprs(op, left, other, kind="binary")
-        if op is not op2:
-            scalar_dtype = unify(op.type2, op2.type)
-            nonscalar_dtype = unify(op.type, op2.type2)
-            op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
+        if op1 is not op2:
+            left_dtype = unify(op1.type, op2.type, is_right_scalar=True)
+            right_dtype = unify(op1.type2, op2.type2, is_left_scalar=True)
+            op = get_typed_op(op, left_dtype, right_dtype, kind="binary")
             1 / 0
+        else:
+            op = op1
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
@@ -2346,6 +2352,7 @@ class Matrix(BaseType):
             1 / 0
             self = self._expect_type(op(self), Matrix, within=method_name, argname="self", op=op)
         if type(other) is VectorMatMulExpr:
+            1 / 0
             other = self._expect_type(op(other), Vector, within=method_name, argname="other", op=op)
         expr = VectorExpression(
             method_name,
