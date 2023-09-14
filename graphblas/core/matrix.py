@@ -2835,17 +2835,17 @@ class Matrix(BaseType):
             raise TypeError(f"k must be an integer; got bad type: {type(k)}")
         k = K
         if k < 0:
-            if (size := min(self._nrows + k, self._ncols)) < 0:
+            if (size := min(self._nrows + k, self._ncols)) <= 0:
                 raise IndexError(
                     f"k={k} is too small; the k'th diagonal is out of range. "
                     f"Valid k for Matrix with shape {self.nrows}x{self.ncols}: "
-                    f"{-self._nrows} <= k <= {self.ncols}"
+                    f"{-self._nrows} < k < {self.ncols}"
                 )
-        elif (size := min(self._ncols - k, self._nrows)) < 0:
+        elif (size := min(self._ncols - k, self._nrows)) <= 0:
             raise IndexError(
                 f"k={k} is too large; the k'th diagonal is out of range. "
                 f"Valid k for Matrix with shape {self.nrows}x{self.ncols}: "
-                f"{-self._nrows} <= k <= {self.ncols}"
+                f"{-self._nrows} < k < {self.ncols}"
             )
 
         # Convert `values` to Vector if necessary (i.e., it's scalar or array)

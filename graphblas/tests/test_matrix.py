@@ -4415,16 +4415,17 @@ def test_setdiag():
     expected[0, 1] = 10
     expected[1, 2] = 20
     assert A.isequal(expected)
-    # size 0 diagonals (doesn't set anything, but valid call)
-    A.setdiag(-1, 3)
-    assert A.isequal(expected)
-    A.setdiag(-1, -2)
-    assert A.isequal(expected)
-    A.setdiag([], 3)
-    assert A.isequal(expected)
-    A.setdiag(Vector(int, 0), -2)
-    assert A.isequal(expected)
-    # Now we're out of bounds
+    # Size 0 diagonals, which does not set anything.
+    # This could be valid (esp. given a size 0 vector), but let's raise for now.
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(-1, 3)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(-1, -2)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag([], 3)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(Vector(int, 0), -2)
+    # Now we're definitely out of bounds
     with pytest.raises(IndexError, match="diagonal is out of range"):
         A.setdiag(-1, 4)
     with pytest.raises(IndexError, match="diagonal is out of range"):
