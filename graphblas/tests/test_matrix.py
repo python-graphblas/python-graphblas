@@ -4460,19 +4460,18 @@ def test_setdiag():
     A.setdiag(10, mask=A.S, accum="+")
     expected[0, 0] = 30
     assert A.isequal(expected)
-    # Test `clear_missing=`
+    # Test how to clear or not clear missing elements
     A.clear()
     A.setdiag(99)
-    A.setdiag(v, clear_missing=True)
+    A.setdiag(v)
     expected[0, 0] = 1
     assert A.isequal(expected)
     A.setdiag(99)
-    A.setdiag(v, clear_missing=False)
+    A.setdiag(v, accum="second")
     expected[1, 1] = 99
     assert A.isequal(expected)
-    # clear_missing only applies where the mask is present
     A.setdiag(99)
-    A.setdiag(v, mask=v.S, clear_missing=True)
+    A.setdiag(v, mask=v.S)
     assert A.isequal(expected)
 
     # We handle complemented masks!
