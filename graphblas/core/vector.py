@@ -1086,12 +1086,10 @@ class Vector(BaseType):
                     f"must equal Vector.size (={self._size})."
                 )
             if type(self) is VectorEwiseAddExpr:
-                1 / 0
                 self = self._expect_type(
                     op(self), Vector, within=method_name, argname="self", op=op
                 )
             if type(other) is MatrixEwiseAddExpr:
-                1 / 0
                 other = self._expect_type(
                     op(other), Matrix, within=method_name, argname="other", op=op
                 )
@@ -1318,7 +1316,6 @@ class Vector(BaseType):
             left_dtype = unify(op1.type, op2.type, is_right_scalar=True)
             right_dtype = unify(op1.type2, op2.type2, is_left_scalar=True)
             op = get_typed_op(op, left_dtype, right_dtype, kind="binary")
-            1 / 0
         else:
             op = op1
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
@@ -1800,10 +1797,8 @@ class Vector(BaseType):
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         if type(self) is VectorMatMulExpr:
             self = self._expect_type(op(self), Vector, within=method_name, argname="self", op=op)
-            1 / 0
         if type(other) is VectorMatMulExpr:
             other = self._expect_type(op(other), Vector, within=method_name, argname="other", op=op)
-            1 / 0
         expr = ScalarExpression(
             method_name,
             "GrB_vxm",

@@ -371,9 +371,11 @@ def test_infix_expr_value_types():
 
 @autocompute
 def test_multi_infix_ewise():
+    D0 = Vector.from_scalar(0, 3).diag()
     v1 = Vector.from_coo([0, 1], [1, 2], size=3)  # 1 2 .
     v2 = Vector.from_coo([1, 2], [1, 2], size=3)  # . 1 2
     v3 = Vector.from_coo([2, 0], [1, 2], size=3)  # 2 . 1
+    # ewise_add
     result = binary.plus((v1 | v2) | v3).new()
     expected = Vector.from_scalar(3, size=3)
     assert result.isequal(expected)
@@ -382,6 +384,7 @@ def test_multi_infix_ewise():
     result = monoid.min(v1 | v2 | v3).new()
     expected = Vector.from_scalar(1, size=3)
     assert result.isequal(expected)
+    # ewise_mult
     result = monoid.max((v1 & v2) & v3).new()
     expected = Vector(int, size=3)
     assert result.isequal(expected)
@@ -390,11 +393,29 @@ def test_multi_infix_ewise():
     result = monoid.min((v1 & v2) & v1).new()
     expected = Vector.from_coo([1], [1], size=3)
     assert result.isequal(expected)
+    # ewise_union
     result = binary.plus((v1 | v2) | v3, left_default=10, right_default=10).new()
     expected = Vector.from_scalar(13, size=3)
     assert result.isequal(expected)
+    result = binary.plus((v1 | v2) | v3, left_default=10, right_default=10.0).new()
+    expected = Vector.from_scalar(13.0, size=3)
+    assert result.isequal(expected)
     result = binary.plus(v1 | (v2 | v3), left_default=10, right_default=10).new()
     assert result.isequal(expected)
+    # inner
+    assert op.plus_plus(v1 @ v1).value == 6
+    assert op.plus_plus(v1 @ (v1 @ D0)).value == 6
+    assert op.plus_plus((D0 @ v1) @ v1).value == 6
+    # matrix-vector ewise_add
+    result = binary.plus((D0 | v1) | v2).new()
+    expected = binary.plus(binary.plus(D0 | v1) | v2).new()
+    assert result.isequal(expected)
+    result = binary.plus(D0 | (v1 | v2)).new()
+    assert result.isequal(expected)
+    result = binary.plus((v1 | v2) | D0).new()
+    assert result.isequal(expected.T)
+    result = binary.plus(v1 | (v2 | D0)).new()
+    assert result.isequal(expected.T)
 
     with pytest.raises(TypeError, match="XXX"):  # TODO
         (v1 & v2) | v3
