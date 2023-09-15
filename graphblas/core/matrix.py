@@ -2867,10 +2867,10 @@ class Matrix(BaseType):
                         extra_message="Literal scalars also accepted.",
                     )
                 else:
-                    v = Vector.from_dense(values, dtype=dtype)
+                    v = Vector.from_dense(values, dtype=dtype, **opts)
 
         if is_scalar:
-            v = Vector.from_scalar(values, size)
+            v = Vector.from_scalar(values, size, **opts)
         elif v._size != size:
             raise DimensionMismatch(
                 f"Dimensions not compatible for assigning length {v._size} Vector "
@@ -2888,11 +2888,11 @@ class Matrix(BaseType):
                         f"got {mask.parent._nrows}x{mask.parent._ncols}"
                     )
                 if mask.complement:
-                    mval = type(mask)(mask.parent.diag(k)).new()
+                    mval = type(mask)(mask.parent.diag(k)).new(**opts)
                     mask = mval.S
                     M = mval.diag()
                 else:
-                    M = select.diag(mask.parent, k).new()
+                    M = select.diag(mask.parent, k).new(**opts)
             elif mask.parent._size != size:
                 raise DimensionMismatch(
                     "Vector mask in setdiag is the wrong length; "
@@ -2900,7 +2900,7 @@ class Matrix(BaseType):
                 )
             else:
                 if mask.complement:
-                    mask = mask.new().S
+                    mask = mask.new(**opts).S
                 M = mask.parent.diag()
             if M.shape != self.shape:
                 M.resize(self._nrows, self._ncols)
