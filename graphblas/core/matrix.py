@@ -2828,17 +2828,19 @@ class Matrix(BaseType):
             raise TypeError(f"k must be an integer; got bad type: {type(k)}")
         k = K
         if k < 0:
-            if (size := min(self._nrows + k, self._ncols)) <= 0:
+            if (size := min(self._nrows + k, self._ncols)) <= 0 and k <= -self._nrows:
                 raise IndexError(
                     f"k={k} is too small; the k'th diagonal is out of range. "
-                    f"Valid k for Matrix with shape {self.nrows}x{self.ncols}: "
-                    f"{-self._nrows} < k < {self.ncols}"
+                    f"Valid k for Matrix with shape {self._nrows}x{self._ncols}: "
+                    f"{-self._nrows} {'<' if self._nrows else '<='} k "
+                    f"{'<' if self._ncols else '<='} {self._ncols}"
                 )
-        elif (size := min(self._ncols - k, self._nrows)) <= 0:
+        elif (size := min(self._ncols - k, self._nrows)) <= 0 and k > 0 and k >= self._ncols:
             raise IndexError(
                 f"k={k} is too large; the k'th diagonal is out of range. "
-                f"Valid k for Matrix with shape {self.nrows}x{self.ncols}: "
-                f"{-self._nrows} < k < {self.ncols}"
+                f"Valid k for Matrix with shape {self._nrows}x{self._ncols}: "
+                f"{-self._nrows} {'<' if self._nrows else '<='} k "
+                f"{'<' if self._ncols else '<='} {self._ncols}"
             )
 
         # Convert `values` to Vector if necessary (i.e., it's scalar or array)

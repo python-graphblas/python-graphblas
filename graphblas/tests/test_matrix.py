@@ -4439,6 +4439,37 @@ def test_setdiag():
     with pytest.raises(DimensionMismatch, match="Dimensions not compatible"):
         A.setdiag([10], 1)
 
+    # Special care for dimensions of length 0
+    A = Matrix(int, 0, 2, name="A")
+    A.setdiag(0, 0)
+    A.setdiag(0, 1)
+    A.setdiag([], 0)
+    A.setdiag([], 1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(0, -1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag([], -1)
+    A = Matrix(int, 2, 0, name="A")
+    A.setdiag(0, 0)
+    A.setdiag(0, -1)
+    A.setdiag([], 0)
+    A.setdiag([], -1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(0, 1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag([], 1)
+    A = Matrix(int, 0, 0, name="A")
+    A.setdiag(0, 0)
+    A.setdiag([], 0)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(0, 1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag([], 1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(0, -1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag([], -1)
+
     A = Matrix(int, 2, 2, name="A")
     expected = Matrix(int, 2, 2, name="expected")
     v = Vector(int, 2, name="v")
