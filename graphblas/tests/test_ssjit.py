@@ -1,4 +1,5 @@
 import os
+import pathlib
 import sys
 
 import numpy as np
@@ -81,6 +82,10 @@ def _setup_jit():
         gb.ss.config["jit_c_linker_flags"] = "/machine:x64"
         gb.ss.config["jit_c_libraries"] = ""
         gb.ss.config["jit_c_cmake_libs"] = ""
+
+    if not pathlib.Path(gb.ss.config["jit_c_compiler_name"]).exists():
+        # Can't use the JIT if we don't have a compiler!
+        gb.ss.config["jit_c_control"] = "off"
 
 
 @pytest.fixture

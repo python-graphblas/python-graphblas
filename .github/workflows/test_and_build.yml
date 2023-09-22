@@ -169,17 +169,17 @@ jobs:
           sparsever=$(python -c 'import random ; print(random.choice(["=0.13", "=0.14", ""]))')
           fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", "=1.7", ""]))')
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.9') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", "=1.25", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", "=1.25", "=1.26", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", "=1.11", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", "=2.0", "=2.1", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.10') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", "=1.25", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.21", "=1.22", "=1.23", "=1.24", "=1.25", "=1.26", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", "=1.11", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.3", "=1.4", "=1.5", "=2.0", "=2.1", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", ""]))')
           else  # Python 3.11
-            npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", "=2.1", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", ""]))')
@@ -206,7 +206,7 @@ jobs:
           else
             psgver=""
           fi
-          if [[ ${npver} == "=1.25" ]] ; then
+          if [[ ${npver} == "=1.25" || ${npver} == "=1.26" ]] ; then
             numbaver=""
             if [[ ${spver} == "=1.8" ]] ; then
               spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", ""]))')
@@ -243,7 +243,8 @@ jobs:
               pdver=""
               yamlver=""
             fi
-          elif [[ ${npver} == "=1.25" ]] ; then
+          elif [[ ${npver} == "=1.25" || ${npver} == "=1.26" ]] ; then
+            # Don't install numba for unsupported versions of numpy
             numba=""
             numbaver=NA
             sparse=""
