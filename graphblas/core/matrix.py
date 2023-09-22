@@ -2805,6 +2805,119 @@ class Matrix(BaseType):
             dtype=self.dtype,
         )
 
+    def setdiag(self, values, k=0, *, mask=None, accum=None, **opts):
+        """Set k'th diagonal with a Scalar, Vector, or array.
+
+        This is not a built-in GraphBLAS operation. It is implemented as a recipe.
+
+        Parameters
+        ----------
+        values : Vector or list or np.ndarray or scalar
+            New values to assign to the diagonal. The length of Vector and array
+            values must match the size of the diagonal being assigned to.
+        k : int, default=0
+            Which diagonal or off-diagonal to set. For example, set the elements
+            ``A[i, i+k] = values[i]``. The default, k=0, is the main diagonal.
+        mask : Mask, optional
+            Vector or Matrix Mask to control which diagonal elements to set.
+            If it is Matrix Mask, then only the diagonal is used as the mask.
+        accum : Monoid or BinaryOp, optional
+            Operator to use to combine existing diagonal values and new values.
+        """
+        if (K := maybe_integral(k)) is None:
+            raise TypeError(f"k must be an integer; got bad type: {type(k)}")
+        k = K
+        if k < 0:
+            if (size := min(self._nrows + k, self._ncols)) <= 0 and k <= -self._nrows:
+                raise IndexError(
+                    f"k={k} is too small; the k'th diagonal is out of range. "
+                    f"Valid k for Matrix with shape {self._nrows}x{self._ncols}: "
+                    f"{-self._nrows} {'<' if self._nrows else '<='} k "
+                    f"{'<' if self._ncols else '<='} {self._ncols}"
+                )
+        elif (size := min(self._ncols - k, self._nrows)) <= 0 and k > 0 and k >= self._ncols:
+            raise IndexError(
+                f"k={k} is too large; the k'th diagonal is out of range. "
+                f"Valid k for Matrix with shape {self._nrows}x{self._ncols}: "
+                f"{-self._nrows} {'<' if self._nrows else '<='} k "
+                f"{'<' if self._ncols else '<='} {self._ncols}"
+            )
+
+        # Convert `values` to Vector if necessary (i.e., it's scalar or array)
+        is_scalar = clear_diag = False
+        if output_type(values) is Vector:
+            v = values
+            clear_diag = accum is None and v._nvals != v._size
+        elif type(values) is Scalar:
+            is_scalar = True
+        else:
+            dtype = self.dtype if self.dtype._is_udt else None
+            try:
+                # Try to make it a Scalar
+                values = Scalar.from_value(values, dtype, is_cscalar=None, name="")
+                is_scalar = True
+            except (TypeError, ValueError):
+                try:
+                    # Else try to make it a numpy array
+                    values, dtype = values_to_numpy_buffer(values, dtype)
+                except Exception:
+                    self._expect_type(
+                        values,
+                        (Scalar, Vector, np.ndarray),
+                        within="setdiag",
+                        argname="values",
+                        extra_message="Literal scalars also accepted.",
+                    )
+                else:
+                    v = Vector.from_dense(values, dtype=dtype, **opts)
+
+        if is_scalar:
+            v = Vector.from_scalar(values, size, **opts)
+        elif v._size != size:
+            raise DimensionMismatch(
+                f"Dimensions not compatible for assigning length {v._size} Vector "
+                f"to {k}'th diagonal of Matrix with shape {self._nrows}x{self._ncols}."
+                f"The Vector should be size {size}."
+            )
+
+        if mask is not None:
+            mask = _check_mask(mask)
+            if mask.parent.ndim == 2:
+                if mask.parent.shape != self.shape:
+                    raise DimensionMismatch(
+                        "Matrix mask in setdiag is the wrong shape; "
+                        f"expected shape {self._nrows}x{self._ncols}, "
+                        f"got {mask.parent._nrows}x{mask.parent._ncols}"
+                    )
+                if mask.complement:
+                    mval = type(mask)(mask.parent.diag(k)).new(**opts)
+                    mask = mval.S
+                    M = mval.diag()
+                else:
+                    M = select.diag(mask.parent, k).new(**opts)
+            elif mask.parent._size != size:
+                raise DimensionMismatch(
+                    "Vector mask in setdiag is the wrong length; "
+                    f"expected size {size}, got size {mask.parent._size}."
+                )
+            else:
+                if mask.complement:
+                    mask = mask.new(**opts).S
+                M = mask.parent.diag()
+            if M.shape != self.shape:
+                M.resize(self._nrows, self._ncols)
+            mask = type(mask)(M)
+
+        if clear_diag:
+            self(mask=mask, **opts) << select.offdiag(self, k)
+
+        Diag = v.diag(k)
+        if Diag.shape != self.shape:
+            Diag.resize(self._nrows, self._ncols)
+        if mask is None:
+            mask = Diag.S
+        self(accum=accum, mask=mask, **opts) << Diag
+
     ##################################
     # Extract and Assign index methods
     ##################################

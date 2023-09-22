@@ -2940,6 +2940,7 @@ def test_expr_is_like_matrix(A):
         "from_scalar",
         "from_values",
         "resize",
+        "setdiag",
         "update",
     }
     ignore = {"__sizeof__"}
@@ -3002,9 +3003,10 @@ def test_index_expr_is_like_matrix(A):
         "from_dense",
         "from_dicts",
         "from_edgelist",
-        "from_values",
         "from_scalar",
+        "from_values",
         "resize",
+        "setdiag",
     }
     ignore = {"__sizeof__"}
     assert attrs - expr_attrs - ignore == expected, (
@@ -4393,3 +4395,135 @@ def test_power(A):
     B = A[:2, :3].new()
     with pytest.raises(DimensionMismatch):
         B.power(2)
+
+
+def test_setdiag():
+    A = Matrix(int, 2, 3)
+    A.setdiag(1)
+    expected = Matrix(int, 2, 3)
+    expected[0, 0] = 1
+    expected[1, 1] = 1
+    assert A.isequal(expected)
+    A.setdiag(Scalar.from_value(2), 2)
+    expected[0, 2] = 2
+    assert A.isequal(expected)
+    A.setdiag(3, k=-1)
+    expected[1, 0] = 3
+    assert A.isequal(expected)
+    # List (or array) is treated as dense
+    A.setdiag([10, 20], 1)
+    expected[0, 1] = 10
+    expected[1, 2] = 20
+    assert A.isequal(expected)
+    # Size 0 diagonals, which does not set anything.
+    # This could be valid (esp. given a size 0 vector), but let's raise for now.
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(-1, 3)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(-1, -2)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag([], 3)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(Vector(int, 0), -2)
+    # Now we're definitely out of bounds
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(-1, 4)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(-1, -3)
+    with pytest.raises(TypeError, match="k must be an integer"):
+        A.setdiag(-1, 0.5)
+    with pytest.raises(TypeError, match="Bad type for argument `values` in Matrix.setdiag"):
+        A.setdiag(object())
+    with pytest.raises(DimensionMismatch, match="Dimensions not compatible"):
+        A.setdiag([10, 20, 30], 1)
+    with pytest.raises(DimensionMismatch, match="Dimensions not compatible"):
+        A.setdiag([10], 1)
+
+    # Special care for dimensions of length 0
+    A = Matrix(int, 0, 2, name="A")
+    A.setdiag(0, 0)
+    A.setdiag(0, 1)
+    A.setdiag([], 0)
+    A.setdiag([], 1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(0, -1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag([], -1)
+    A = Matrix(int, 2, 0, name="A")
+    A.setdiag(0, 0)
+    A.setdiag(0, -1)
+    A.setdiag([], 0)
+    A.setdiag([], -1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(0, 1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag([], 1)
+    A = Matrix(int, 0, 0, name="A")
+    A.setdiag(0, 0)
+    A.setdiag([], 0)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(0, 1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag([], 1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag(0, -1)
+    with pytest.raises(IndexError, match="diagonal is out of range"):
+        A.setdiag([], -1)
+
+    A = Matrix(int, 2, 2, name="A")
+    expected = Matrix(int, 2, 2, name="expected")
+    v = Vector(int, 2, name="v")
+    Vector(int, 2)
+    v[0] = 1
+    A.setdiag(v)
+    expected[0, 0] = 1
+    assert A.isequal(expected)
+    A.setdiag(v, accum=binary.plus)
+    expected[0, 0] = 2
+    assert A.isequal(expected)
+    A.setdiag(10, mask=v.S)
+    expected[0, 0] = 10
+    assert A.isequal(expected)
+    A.setdiag(10, mask=v.S, accum="+")
+    expected[0, 0] = 20
+    assert A.isequal(expected)
+    # Allow mask to be a matrix
+    A.setdiag(10, mask=A.S, accum="+")
+    expected[0, 0] = 30
+    assert A.isequal(expected)
+    # Test how to clear or not clear missing elements
+    A.clear()
+    A.setdiag(99)
+    A.setdiag(v)
+    expected[0, 0] = 1
+    assert A.isequal(expected)
+    A.setdiag(99)
+    A.setdiag(v, accum="second")
+    expected[1, 1] = 99
+    assert A.isequal(expected)
+    A.setdiag(99)
+    A.setdiag(v, mask=v.S)
+    assert A.isequal(expected)
+
+    # We handle complemented masks!
+    A.clear()
+    expected.clear()
+    A.setdiag(42, mask=~v.S)
+    expected[1, 1] = 42
+    assert A.isequal(expected)
+    A.setdiag(7, mask=~A.V)
+    expected[0, 0] = 7
+    assert A.isequal(expected)
+
+    with pytest.raises(DimensionMismatch, match="Matrix mask in setdiag is the wrong "):
+        A.setdiag(9, mask=Matrix(int, 3, 3).S)
+    with pytest.raises(DimensionMismatch, match="Vector mask in setdiag is the wrong "):
+        A.setdiag(10, mask=Vector(int, 3).S)
+
+    A.clear()
+    A.resize(2, 3)
+    expected.clear()
+    expected.resize(2, 3)
+    A.setdiag(30, mask=v.S)
+    expected[0, 0] = 30
+    assert A.isequal(expected)
