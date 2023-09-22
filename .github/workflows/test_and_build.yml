@@ -206,7 +206,7 @@ jobs:
           else
             psgver=""
           fi
-          if [[ ${npver} == "=1.25" || ${npver} == "=1.26"]] ; then
+          if [[ ${npver} == "=1.25" || ${npver} == "=1.26" ]] ; then
             numbaver=""
             if [[ ${spver} == "=1.8" ]] ; then
               spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", ""]))')
