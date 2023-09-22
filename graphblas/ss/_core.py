@@ -122,7 +122,9 @@ class GlobalConfig(BaseConfig):
         Threshold that determines when to switch to bitmap format
     nthreads : int
         Maximum number of OpenMP threads to use
-    memory_pool : List[int]
+    chunk : double
+        Control the number of threads used for small problems.
+        For example, ``nthreads = floor(work / chunk)``.
     burble : bool
         Enable diagnostic printing from SuiteSparse:GraphBLAS
     print_1based : bool
@@ -134,8 +136,43 @@ class GlobalConfig(BaseConfig):
         **GPU support is a work in progress--not recommended to use**
     gpu_id : int
         Which GPU to use; default is -1, which means do not run on the GPU.
-        Only available for SuiteSparse:GraphBLAS 8
+        Only available for SuiteSparse:GraphBLAS >=8
         **GPU support is a work in progress--not recommended to use**
+    jit_c_control : {"off", "pause", "run", "load", "on}
+        Control the CPU JIT:
+        "off" : do not use the JIT and free all JIT kernels if loaded
+        "pause" : do not run JIT kernels, but keep any loaded
+        "run" : run JIT kernels if already loaded, but don't load or compile
+        "load" : able to load and run JIT kernels; may not compile
+        "on" : full JIT: able to compile, load, and run
+        Only available for SuiteSparse:GraphBLAS >=8
+    jit_use_cmake : bool
+        Whether to use cmake to compile the JIT kernels.
+        Only available for SuiteSparse:GraphBLAS >=8
+    jit_c_compiler_name : str
+        C compiler for JIT kernels.
+        Only available for SuiteSparse:GraphBLAS >=8
+    jit_c_compiler_flags : str
+        Flags for the C compiler.
+        Only available for SuiteSparse:GraphBLAS >=8
+    jit_c_linker_flags : str
+        Link flags for the C compiler
+        Only available for SuiteSparse:GraphBLAS >=8
+    jit_c_libraries : str
+        Libraries to link against.
+        Only available for SuiteSparse:GraphBLAS >=8
+    jit_c_cmake_libs : str
+        Libraries to link against when cmake is used.
+        Only available for SuiteSparse:GraphBLAS >=8
+    jit_c_preface : str
+        C code as preface to JIT kernels.
+        Only available for SuiteSparse:GraphBLAS >=8
+    jit_error_log : str
+        Error log file.
+        Only available for SuiteSparse:GraphBLAS >=8
+    jit_cache_path : str
+        The folder with the compiled kernels.
+        Only available for SuiteSparse:GraphBLAS >=8
 
     Setting values to None restores the default value for most configurations.
     """
@@ -154,7 +191,7 @@ class GlobalConfig(BaseConfig):
         "nthreads": (lib.GxB_GLOBAL_NTHREADS, "int"),
         "chunk": (lib.GxB_GLOBAL_CHUNK, "double"),
         # Memory pool control
-        "memory_pool": (lib.GxB_MEMORY_POOL, "int64_t[64]"),
+        # "memory_pool": (lib.GxB_MEMORY_POOL, "int64_t[64]"),  # No longer used
         # Diagnostics (skipping "printf" and "flush" for now)
         "burble": (lib.GxB_BURBLE, "bool"),
         "print_1based": (lib.GxB_PRINT_1BASED, "bool"),
