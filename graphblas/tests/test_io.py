@@ -377,7 +377,7 @@ def test_scipy_sparse():
 
 
 @pytest.mark.skipif("not ak")
-@pytest.mark.xfail(np.__version__[:5] == "1.25.", reason="awkward bug with numpy 1.25")
+@pytest.mark.xfail(np.__version__[:5] in {"1.25.", "1.26."}, reason="awkward bug with numpy >=1.25")
 def test_awkward_roundtrip():
     # Vector
     v = gb.Vector.from_coo([1, 3, 5], [20, 21, -5], size=22)
@@ -399,7 +399,7 @@ def test_awkward_roundtrip():
 
 
 @pytest.mark.skipif("not ak")
-@pytest.mark.xfail(np.__version__[:5] == "1.25.", reason="awkward bug with numpy 1.25")
+@pytest.mark.xfail(np.__version__[:5] in {"1.25.", "1.26."}, reason="awkward bug with numpy >=1.25")
 def test_awkward_iso_roundtrip():
     # Vector
     v = gb.Vector.from_coo([1, 3, 5], [20, 20, 20], size=22)
