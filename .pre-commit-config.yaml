@@ -51,7 +51,7 @@ repos:
       - id: isort
   # Let's keep `pyupgrade` even though `ruff --fix` probably does most of it
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.12.0
+    rev: v3.13.0
     hooks:
       - id: pyupgrade
         args: [--py39-plus]
@@ -66,7 +66,7 @@ repos:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.0.290
+    rev: v0.0.291
     hooks:
       - id: ruff
         args: [--fix-only, --show-fixes]
@@ -80,7 +80,7 @@ repos:
         # These versions need updated manually
         - flake8==6.1.0
         - flake8-bugbear==23.9.16
-        - flake8-simplify==0.20.0
+        - flake8-simplify==0.21.0
   - repo: https://github.com/asottile/yesqa
     rev: v1.5.0
     hooks:
@@ -94,7 +94,7 @@ repos:
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.0.290
+    rev: v0.0.291
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint
@@ -110,7 +110,7 @@ repos:
       - id: pyroma
         args: [-n, "10", .]
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: "v0.9.0.5"
+    rev: "v0.9.0.6"
     hooks:
     - id: shellcheck
   - repo: local
