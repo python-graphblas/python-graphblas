@@ -263,23 +263,33 @@ class BaseType:
         )
 
     def __or__(self, other):
-        from .infix import _ewise_infix_expr
+        from .infix import MatrixEwiseMultExpr, VectorEwiseMultExpr, _ewise_infix_expr
 
+        if isinstance(other, (VectorEwiseMultExpr, MatrixEwiseMultExpr)):
+            raise TypeError("XXX")
         return _ewise_infix_expr(self, other, method="ewise_add", within="__or__")
 
     def __ror__(self, other):
-        from .infix import _ewise_infix_expr
+        from .infix import MatrixEwiseMultExpr, VectorEwiseMultExpr, _ewise_infix_expr
 
+        if isinstance(other, (VectorEwiseMultExpr, MatrixEwiseMultExpr)):
+            1 / 0
+            raise TypeError("XXX")
         return _ewise_infix_expr(other, self, method="ewise_add", within="__ror__")
 
     def __and__(self, other):
-        from .infix import _ewise_infix_expr
+        from .infix import MatrixEwiseAddExpr, VectorEwiseAddExpr, _ewise_infix_expr
 
+        if isinstance(other, (VectorEwiseAddExpr, MatrixEwiseAddExpr)):
+            raise TypeError("XXX")
         return _ewise_infix_expr(self, other, method="ewise_mult", within="__and__")
 
     def __rand__(self, other):
-        from .infix import _ewise_infix_expr
+        from .infix import MatrixEwiseAddExpr, VectorEwiseAddExpr, _ewise_infix_expr
 
+        if isinstance(other, (VectorEwiseAddExpr, MatrixEwiseAddExpr)):
+            1 / 0
+            raise TypeError("XXX")
         return _ewise_infix_expr(other, self, method="ewise_mult", within="__rand__")
 
     def __matmul__(self, other):

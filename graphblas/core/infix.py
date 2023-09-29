@@ -238,31 +238,17 @@ class VectorEwiseAddExpr(VectorInfixExpr):
 
     _to_expr = _ewise_add_to_expr
 
+    __or__ = Vector.__or__
+    __ror__ = Vector.__ror__
     ewise_add = Vector.ewise_add
     ewise_mult = Vector.ewise_mult
     ewise_union = Vector.ewise_union
 
-    def __and__(self, other):
-        1 / 0
+    def __and__(self, other, *, within="__and__"):
         raise TypeError("XXX")
 
     def __rand__(self, other):
-        1 / 0
-        raise TypeError("XXX")
-
-    def __or__(self, other):
-        if isinstance(other, (VectorEwiseMultExpr, MatrixEwiseMultExpr)):
-            1 / 0
-            raise TypeError("XXX")
-        1 / 0
-        return _ewise_infix_expr(self, other, method="ewise_add", within="__or__")
-
-    def __ror__(self, other):
-        if isinstance(other, (VectorEwiseMultExpr, MatrixEwiseMultExpr)):
-            1 / 0
-            raise TypeError("XXX")
-        1 / 0
-        return _ewise_infix_expr(other, self, method="ewise_add", within="__ror__")
+        self.__and__(other, within="__rand__")
 
 
 class VectorEwiseMultExpr(VectorInfixExpr):
@@ -273,20 +259,11 @@ class VectorEwiseMultExpr(VectorInfixExpr):
 
     _to_expr = _ewise_mult_to_expr
 
+    __and__ = Vector.__and__
+    __rand__ = Vector.__rand__
     ewise_add = Vector.ewise_add
     ewise_mult = Vector.ewise_mult
     ewise_union = Vector.ewise_union
-
-    def __and__(self, other):
-        if isinstance(other, (VectorEwiseAddExpr, MatrixEwiseAddExpr)):
-            raise TypeError("XXX")
-        return _ewise_infix_expr(self, other, method="ewise_mult", within="__and__")
-
-    def __rand__(self, other):
-        if isinstance(other, (VectorEwiseAddExpr, MatrixEwiseAddExpr)):
-            1 / 0
-            raise TypeError("XXX")
-        return _ewise_infix_expr(other, self, method="ewise_mult", within="__rand__")
 
     def __or__(self, other):
         raise TypeError("XXX")
@@ -427,10 +404,10 @@ class MatrixEwiseAddExpr(MatrixInfixExpr):
 
     _to_expr = _ewise_add_to_expr
 
-    __and__ = VectorEwiseAddExpr.__and__
-    __or__ = VectorEwiseAddExpr.__or__
-    __rand__ = VectorEwiseAddExpr.__rand__
-    __ror__ = VectorEwiseAddExpr.__ror__
+    __and__ = VectorEwiseMultExpr.__and__
+    __rand__ = VectorEwiseMultExpr.__rand__
+    __or__ = Matrix.__or__
+    __ror__ = Matrix.__ror__
     ewise_add = Matrix.ewise_add
     ewise_mult = Matrix.ewise_mult
     ewise_union = Matrix.ewise_union
@@ -444,9 +421,9 @@ class MatrixEwiseMultExpr(MatrixInfixExpr):
 
     _to_expr = _ewise_mult_to_expr
 
-    __and__ = VectorEwiseMultExpr.__and__
+    __and__ = Matrix.__and__
+    __rand__ = Matrix.__rand__
     __or__ = VectorEwiseMultExpr.__or__
-    __rand__ = VectorEwiseMultExpr.__rand__
     __ror__ = VectorEwiseMultExpr.__ror__
     ewise_add = Matrix.ewise_add
     ewise_mult = Matrix.ewise_mult
