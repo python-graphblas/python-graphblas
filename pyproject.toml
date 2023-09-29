@@ -235,6 +235,9 @@ ignore-words-list = "coo,ba"
 # https://github.com/charliermarsh/ruff/
 line-length = 100
 target-version = "py39"
+unfixable = [
+    "F841"  # unused-variable (Note: can leave useless expression)
+]
 select = [
     # Have we enabled too many checks that they'll become a nuisance? We'll see...
     "F",  # pyflakes

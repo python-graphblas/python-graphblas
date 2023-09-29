@@ -232,8 +232,8 @@ def test_global_config():
         else:
             with pytest.raises(ValueError, match="Unable to set default value for"):
                 config[k] = None
-    with pytest.raises(ValueError, match="Wrong number"):
-        config["memory_pool"] = [1, 2]
+    # with pytest.raises(ValueError, match="Wrong number"):
+    #     config["memory_pool"] = [1, 2]  # No longer used
     assert "format" in repr(config)
 
 

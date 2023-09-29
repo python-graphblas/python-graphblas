@@ -314,12 +314,14 @@ each symbol. Each is detailed below.
 The following objects will be used to demonstrate the behavior.
 
 .. csv-table:: Vector v
+    :class: matrix
     :header: 0,1,2,3,4,5
 
     1.0,,2.0,3.5,,9.0
 
 
 .. csv-table:: Vector w
+    :class: matrix
     :header: 0,1,2,3,4,5
 
     7.0,5.2,,3.0,,2.5
@@ -343,6 +345,7 @@ Addition performs an element-wise union between collections, adding overlapping 
     v + w
 
 .. csv-table::
+    :class: matrix
     :header: 0,1,2,3,4,5
 
     8.0,5.2,2.0,6.5,,11.5
@@ -358,6 +361,7 @@ and negating any standalone elements from the right-hand object.
     v - w
 
 .. csv-table::
+    :class: matrix
     :header: 0,1,2,3,4,5
 
     -6.0,-5.2,2.0,0.5,,6.5
@@ -373,6 +377,7 @@ overlapping elements.
     v * w
 
 .. csv-table::
+    :class: matrix
     :header: 0,1,2,3,4,5
 
     7.0,,,10.5,,22.5
@@ -392,6 +397,7 @@ elements and always results in a floating-point dtype.
     v / w
 
 .. csv-table::
+    :class: matrix
     :header: 0,1,2,3,4,5
 
     0.142857,,,1.166667,,3.6
@@ -407,6 +413,7 @@ Dividing by zero with floor division will raise a ``ZeroDivisionError``.
     v // w
 
 .. csv-table::
+    :class: matrix
     :header: 0,1,2,3,4,5
 
     0.0,,,1.0,,3.0
@@ -422,6 +429,7 @@ of dividing overlapping elements.
     v % w
 
 .. csv-table::
+    :class: matrix
     :header: 0,1,2,3,4,5
 
     1.0,,,0.5,,1.5
@@ -437,6 +445,7 @@ the power of y for overlapping elements.
     v**w
 
 .. csv-table::
+    :class: matrix
     :header: 0,1,2,3,4,5
 
     1.0,,,42.875,,243.0
@@ -455,6 +464,7 @@ rather than ``all(A == B)``
     v > w
 
 .. csv-table::
+    :class: matrix
     :header: 0,1,2,3,4,5
 
     False,,,True,,True
@@ -464,6 +474,7 @@ rather than ``all(A == B)``
     v == w
 
 .. csv-table::
+    :class: matrix
     :header: 0,1,2,3,4,5
 
     False,,,False,,False
