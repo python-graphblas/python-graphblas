@@ -48,6 +48,9 @@ dependencies:
     - numpydoc
     - pydata-sphinx-theme
     - sphinx-panels
+    # For building logo
+    - drawsvg
+    - cairosvg
     # EXTRA (optional; uncomment as desired)
     # - autoflake
     # - black
