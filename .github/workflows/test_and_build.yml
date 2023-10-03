@@ -206,12 +206,15 @@ jobs:
           else
             psgver=""
           fi
-          if [[ ${npver} == "=1.25" || ${npver} == "=1.26" ]] ; then
+          if [[ ${npver} == "=1.26" ]] ; then
+            numbaver=""
+            if [[ ${spver} == "=1.8" || ${spver} == "=1.9" ]] ; then
+              spver=$(python -c 'import random ; print(random.choice(["=1.10", "=1.11", ""]))')
+            fi
+          elif [[ ${npver} == "=1.25" ]] ; then
             numbaver=""
             if [[ ${spver} == "=1.8" ]] ; then
               spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", ""]))')
-            elif [[ ${spver} == "=1.9" && ${npver} == "=1.26" ]] ; then
-              spver=$(python -c 'import random ; print(random.choice(["=1.10", "=1.11", ""]))')
             fi
           elif [[ ${npver} == "=1.24" || ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
             numbaver=$(python -c 'import random ; print(random.choice(["=0.57", ""]))')
