@@ -1,4 +1,4 @@
-![Python-graphblas](https://raw.githubusercontent.com/python-graphblas/python-graphblas/main/docs/_static/img/logo-name-medium.svg)
+![Python-graphblas](https://raw.githubusercontent.com/python-graphblas/python-graphblas/main/docs/_static/img/logo-horizontal-medium-big.svg)
 
 [![conda-forge](https://img.shields.io/conda/vn/conda-forge/python-graphblas.svg)](https://anaconda.org/conda-forge/python-graphblas)
 [![pypi](https://img.shields.io/pypi/v/python-graphblas.svg)](https://pypi.python.org/pypi/python-graphblas/)
