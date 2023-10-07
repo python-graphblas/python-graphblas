@@ -206,7 +206,12 @@ jobs:
           else
             psgver=""
           fi
-          if [[ ${npver} == "=1.25" || ${npver} == "=1.26" ]] ; then
+          if [[ ${npver} == "=1.26" ]] ; then
+            numbaver=""
+            if [[ ${spver} == "=1.8" || ${spver} == "=1.9" ]] ; then
+              spver=$(python -c 'import random ; print(random.choice(["=1.10", "=1.11", ""]))')
+            fi
+          elif [[ ${npver} == "=1.25" ]] ; then
             numbaver=""
             if [[ ${spver} == "=1.8" ]] ; then
               spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", ""]))')
@@ -260,7 +265,7 @@ jobs:
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${fmm} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
-            ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7"' || '' }} \
+            ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7" drawsvg' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4"' || '' }} \
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }} \
