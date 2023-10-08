@@ -414,7 +414,7 @@ jobs:
           git diff --exit-code
       - name: Coverage1
         id: coverageAttempt1
-        if: !startsWith(steps.pyver.outputs.selected, '3.12')
+        if: ! startsWith(steps.pyver.outputs.selected, '3.12')
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
