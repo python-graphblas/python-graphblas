@@ -69,6 +69,7 @@ dependencies:
     # - flake8-simplify
     # - gcc
     # - gh
+    # - git
     # - graph-tool
     # - xorg-libxcursor  # for graph-tool
     # - grayskull
