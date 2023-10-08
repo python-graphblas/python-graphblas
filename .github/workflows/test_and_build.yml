@@ -280,11 +280,11 @@ jobs:
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psg${psgver}"
 
           set -x  # echo on
+          # matplotlib does not yet support Python 3.12, so don't install notebook dependencies in 3.12
           $(command -v mamba || command -v conda) install packaging pytest coverage ${coveralls} pytest-randomly cffi donfig tomli c-compiler make \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${fmm} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
-            # matplotlib does not yet support Python 3.12
             ${{ matrix.slowtask == 'notebooks' && startsWith(steps.pyver.outputs.selected, '3.12') != true && 'matplotlib nbconvert jupyter "ipython>=7" drawsvg' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4"' || '' }} \
