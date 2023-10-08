@@ -202,7 +202,16 @@ jobs:
           # That is, we don't need to support versions of it that are two years old.
           # But, it's still useful for us to test with different versions!
           psg=""
-          if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
+          if [[ ${{ steps.sourcetype.outputs.selected}} == "upstream" ]] ; then
+            psgver=""
+          elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]] ; then
+            if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
+              psgver=$(python -c 'import random ; print(random.choice(["=8.2.0.1", ""]))')
+              psg=python-suitesparse-graphblas${psgver}
+            else
+              psgver=$(python -c 'import random ; print(random.choice(["==8.2.0.1", ""]))')
+            fi
+          elif [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
             psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2", "=8.0.2.1", "=8.2.0.1", ""]))')
             psg=python-suitesparse-graphblas${psgver}
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
@@ -210,8 +219,6 @@ jobs:
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "source" ]] ; then
             # These should be exact versions
             psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", "==8.0.2.1", "==8.2.0.1", ""]))')
-          else
-            psgver=""
           fi
           if [[ ${npver} == "=1.26" ]] ; then
             numbaver=""
