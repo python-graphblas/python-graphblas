@@ -265,10 +265,15 @@ jobs:
             numba=numba${numbaver}
             sparse=sparse${sparsever}
           fi
+          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]]; then
+            coveralls=""
+          else
+            coveralls="coveralls=3.3.1"
+          fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psg${psgver}"
 
           set -x  # echo on
-          $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli c-compiler make \
+          $(command -v mamba || command -v conda) install packaging pytest coverage ${coveralls} pytest-randomly cffi donfig tomli c-compiler make \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${fmm} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
@@ -409,6 +414,7 @@ jobs:
           git diff --exit-code
       - name: Coverage1
         id: coverageAttempt1
+        if: !startsWith(steps.pyver.outputs.selected, '3.12')
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
