@@ -272,15 +272,10 @@ jobs:
             numba=numba${numbaver}
             sparse=sparse${sparsever}
           fi
-          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]]; then
-            coveralls=""
-          else
-            coveralls="coveralls=3.3.1"
-          fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psg${psgver}"
 
           set -x  # echo on
-          $(command -v mamba || command -v conda) install packaging pytest coverage ${coveralls} pytest-randomly cffi donfig tomli c-compiler make \
+          $(command -v mamba || command -v conda) install packaging pytest coverage pytest-randomly cffi donfig tomli c-compiler make \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${fmm} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
@@ -422,42 +417,10 @@ jobs:
           coverage run -a -m graphblas.core.automethods
           coverage run -a -m graphblas.core.infixmethods
           git diff --exit-code
-      - name: Coverage1
-        id: coverageAttempt1
-        if: startsWith(steps.pyver.outputs.selected, '3.12') != true
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
-          COVERALLS_PARALLEL: true
+      - name: Coverage
         run: |
           coverage xml
           coverage report --show-missing
-          coveralls --service=github
-      # Retry upload if first attempt failed.
-      # This happens somewhat randomly and for irregular reasons.
-      # Logic is a duplicate of previous step.
-      - name: Coverage2
-        id: coverageAttempt2
-        if: steps.coverageAttempt1.outcome == 'failure'
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
-          COVERALLS_PARALLEL: true
-        run: |
-          coveralls --service=github
-      - name: Coverage3
-        id: coverageAttempt3
-        if: steps.coverageAttempt2.outcome == 'failure'
-        # Continue even if it failed 3 times... (sheesh! use codecov instead)
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COVERALLS_FLAG_NAME: ${{ matrix.os }}/${{ matrix.slowtask }}
-          COVERALLS_PARALLEL: true
-        run: |
-          coveralls --service=github
       - name: codecov
         uses: codecov/codecov-action@v3
       - name: Notebooks Execution check
@@ -467,18 +430,3 @@ jobs:
           if python -c 'import numba' 2> /dev/null ; then
             jupyter nbconvert --to notebook --execute notebooks/*ipynb
           fi
-
-  finish:
-    needs: build_and_test
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
-      - run: python -m pip install --upgrade pip
-      - run: pip install coveralls
-      - name: Coveralls Finished
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: coveralls --finish
