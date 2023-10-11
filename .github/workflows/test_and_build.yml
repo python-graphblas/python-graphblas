@@ -117,7 +117,7 @@ jobs:
             1
             1
             1
-            100
+            1
       - name: RNG for source of python-suitesparse-graphblas
         uses: ddradar/choose-random-action@v2.0.2
         id: sourcetype

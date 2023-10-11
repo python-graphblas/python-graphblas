@@ -38,7 +38,7 @@ jobs:
             1
             1
             1
-            100
+            1
   test_imports:
     needs: rngs
     runs-on: ${{ needs.rngs.outputs.os }}
