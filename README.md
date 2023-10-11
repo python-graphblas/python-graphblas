@@ -7,7 +7,7 @@
 <br>
 [![Tests](https://github.com/python-graphblas/python-graphblas/workflows/Tests/badge.svg?branch=main)](https://github.com/python-graphblas/python-graphblas/actions)
 [![Docs](https://readthedocs.org/projects/python-graphblas/badge/?version=latest)](https://python-graphblas.readthedocs.io/en/latest/)
-[![Coverage](https://coveralls.io/repos/python-graphblas/python-graphblas/badge.svg?branch=main)](https://coveralls.io/r/python-graphblas/python-graphblas)
+[![Coverage](https://codecov.io/gh/python-graphblas/python-graphblas/graph/badge.svg?token=D7HHLDPQ2Q)](https://codecov.io/gh/python-graphblas/python-graphblas)
 [![pyOpenSci](https://tinyurl.com/y22nb8up)](https://github.com/pyOpenSci/software-review/issues/81)
 <br>
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7328791.svg)](https://doi.org/10.5281/zenodo.7328791)
