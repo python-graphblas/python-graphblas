@@ -47,6 +47,7 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3 :: Only",
     "Intended Audience :: Developers",
     "Intended Audience :: Other Audience",
@@ -62,7 +63,7 @@ dependencies = [
     "pyyaml >=5.4",
     # These won't be installed by default after 2024.3.0
     # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
-    "suitesparse-graphblas >=7.4.0.0, <7.5",
+    "suitesparse-graphblas >=7.4.0.0, <9",
     "numba >=0.55; python_version<'3.12'",  # make optional where numba is not supported
 ]
 
@@ -74,7 +75,7 @@ changelog = "https://github.com/python-graphblas/python-graphblas/releases"
 
 [project.optional-dependencies]
 suitesparse = [
-    "suitesparse-graphblas >=7.4.0.0, <7.5",
+    "suitesparse-graphblas >=7.4.0.0, <9",
 ]
 networkx = [
     "networkx >=2.8",
@@ -156,7 +157,7 @@ dirty_template = "{tag}+{ccount}.g{sha}.dirty"
 
 [tool.black]
 line-length = 100
-target-version = ["py39", "py310", "py311"]
+target-version = ["py39", "py310", "py311", "py312"]
 
 [tool.isort]
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
@@ -207,6 +208,9 @@ filterwarnings = [
 
     # pypy gives this warning
     "ignore:can't resolve package from __spec__ or __package__:ImportWarning:",
+
+    # Python 3.12 introduced this deprecation, which is triggered by pandas 2.1.1
+    "ignore:datetime.datetime.utcfromtimestamp:DeprecationWarning:dateutil",
 ]
 
 [tool.coverage.run]

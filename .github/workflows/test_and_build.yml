@@ -112,7 +112,9 @@ jobs:
             3.9
             3.10
             3.11
+            3.12
           weights: |
+            1
             1
             1
             1
@@ -178,11 +180,16 @@ jobs:
             spver=$(python -c 'import random ; print(random.choice(["=1.8", "=1.9", "=1.10", "=1.11", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.3", "=1.4", "=1.5", "=2.0", "=2.1", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", ""]))')
-          else  # Python 3.11
+          elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", "=2.1", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", ""]))')
+          else  # Python 3.12
+            npver=$(python -c 'import random ; print(random.choice(["=1.26", ""]))')
+            spver=$(python -c 'import random ; print(random.choice(["=1.11", ""]))')
+            pdver=$(python -c 'import random ; print(random.choice(["=2.1", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=2.4", ""]))')
           fi
           if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
             # TODO: there are currently issues with some numpy versions when
@@ -195,16 +202,23 @@ jobs:
           # That is, we don't need to support versions of it that are two years old.
           # But, it's still useful for us to test with different versions!
           psg=""
-          if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
-            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2", "=8.0.2.1", ""]))')
+          if [[ ${{ steps.sourcetype.outputs.selected}} == "upstream" ]] ; then
+            psgver=""
+          elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]] ; then
+            if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
+              psgver=$(python -c 'import random ; print(random.choice(["=8.2.0.1", ""]))')
+              psg=python-suitesparse-graphblas${psgver}
+            else
+              psgver=$(python -c 'import random ; print(random.choice(["==8.2.0.1", ""]))')
+            fi
+          elif [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
+            psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2", "=8.0.2.1", "=8.2.0.1", ""]))')
             psg=python-suitesparse-graphblas${psgver}
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
-            psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", "==8.0.2.1", ""]))')
+            psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", "==8.0.2.1", "==8.2.0.1", ""]))')
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "source" ]] ; then
             # These should be exact versions
-            psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", "==8.0.2.1", ""]))')
-          else
-            psgver=""
+            psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", "==8.0.2.1", "==8.2.0.1", ""]))')
           fi
           if [[ ${npver} == "=1.26" ]] ; then
             numbaver=""
@@ -258,10 +272,15 @@ jobs:
             numba=numba${numbaver}
             sparse=sparse${sparsever}
           fi
+          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]]; then
+            coveralls=""
+          else
+            coveralls="coveralls=3.3.1"
+          fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psg${psgver}"
 
           set -x  # echo on
-          $(command -v mamba || command -v conda) install packaging pytest coverage coveralls=3.3.1 pytest-randomly cffi donfig tomli c-compiler make \
+          $(command -v mamba || command -v conda) install packaging pytest coverage ${coveralls} pytest-randomly cffi donfig tomli c-compiler make \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${fmm} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
@@ -397,11 +416,15 @@ jobs:
         if: matrix.slowtask == 'pytest_bizarro'
         run: |
           # This step uses `black`
+          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]]; then
+            pip install black  # Latest version of black on conda-forge does not have builds for Python 3.12
+          fi
           coverage run -a -m graphblas.core.automethods
           coverage run -a -m graphblas.core.infixmethods
           git diff --exit-code
       - name: Coverage1
         id: coverageAttempt1
+        if: startsWith(steps.pyver.outputs.selected, '3.12') != true
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
