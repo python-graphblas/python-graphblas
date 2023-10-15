@@ -16,7 +16,7 @@ default_language_version:
     python: python3
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
       - id: check-added-large-files
       - id: check-case-conflict
@@ -33,7 +33,7 @@ repos:
       - id: name-tests-test
         args: ["--pytest-test-first"]
   - repo: https://github.com/abravalheri/validate-pyproject
-    rev: v0.14
+    rev: v0.15
     hooks:
       - id: validate-pyproject
         name: Validate pyproject.toml
@@ -51,7 +51,7 @@ repos:
       - id: isort
   # Let's keep `pyupgrade` even though `ruff --fix` probably does most of it
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.13.0
+    rev: v3.15.0
     hooks:
       - id: pyupgrade
         args: [--py39-plus]
@@ -66,7 +66,7 @@ repos:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.0.291
+    rev: v0.0.292
     hooks:
       - id: ruff
         args: [--fix-only, --show-fixes]
@@ -87,18 +87,18 @@ repos:
       - id: yesqa
         additional_dependencies: *flake8_dependencies
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.5
+    rev: v2.2.6
     hooks:
       - id: codespell
         types_or: [python, rst, markdown]
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.0.291
+    rev: v0.0.292
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint
-    rev: v0.6.8
+    rev: v0.7.0
     hooks:
       - id: sphinx-lint
         args: [--enable, all, "--disable=line-too-long,leaked-markup"]
@@ -126,7 +126,7 @@ repos:
         args: [graphblas/]
         pass_filenames: false
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
       - id: no-commit-to-branch  # no commit directly to main
 #

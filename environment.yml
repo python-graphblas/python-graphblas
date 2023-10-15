@@ -48,6 +48,9 @@ dependencies:
     - numpydoc
     - pydata-sphinx-theme
     - sphinx-panels
+    # For building logo
+    - drawsvg
+    - cairosvg
     # EXTRA (optional; uncomment as desired)
     # - autoflake
     # - black
@@ -66,6 +69,7 @@ dependencies:
     # - flake8-simplify
     # - gcc
     # - gh
+    # - git
     # - graph-tool
     # - xorg-libxcursor  # for graph-tool
     # - grayskull

@@ -54,10 +54,10 @@ incident.
 
 This Code of Conduct is adapted from the [Numba Code of Conduct][numba],  which is based on the [Contributor Covenant][homepage],
 version 1.3.0, available at
-[http://contributor-covenant.org/version/1/3/0/][version],
+[https://contributor-covenant.org/version/1/3/0/][version],
 and the [Swift Code of Conduct][swift].
 
 [numba]: https://github.com/numba/numba-governance/blob/accepted/code-of-conduct.md
-[homepage]: http://contributor-covenant.org
-[version]: http://contributor-covenant.org/version/1/3/0/
+[homepage]: https://contributor-covenant.org
+[version]: https://contributor-covenant.org/version/1/3/0/
 [swift]: https://swift.org/community/#code-of-conduct
