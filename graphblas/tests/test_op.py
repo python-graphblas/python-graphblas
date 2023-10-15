@@ -19,7 +19,7 @@ from graphblas import (
 )
 from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core import lib, operator
-from graphblas.core.operator import BinaryOp, IndexUnaryOp, Monoid, Semiring, UnaryOp, get_semiring
+from graphblas.core.operator import BinaryOp, IndexUnaryOp, Monoid, Semiring, UnaryOp, get_semiring, SelectOp
 from graphblas.dtypes import (
     BOOL,
     FP32,
@@ -1335,6 +1335,19 @@ def test_udt():
     assert binary.first[udt, dtypes.INT8].type is udt
     assert binary.first[udt, dtypes.INT8].type2 is dtypes.INT8
     assert monoid.any[udt].type2 is udt
+
+    def _this_or_that(val, idx, _, thunk):  # pragma: no cover (numba)
+        return val["x"]
+
+    sel = SelectOp.register_anonymous(_this_or_that, is_udt=True)
+    sel[udt]
+    assert udt in sel
+    result = v.select(sel, 0).new()
+    assert result.nvals == 0
+    assert result.dtype == v.dtype
+    result = w.select(sel, 0).new()
+    assert result.nvals == 3
+    assert result.isequal(w)
 
 
 def test_dir():

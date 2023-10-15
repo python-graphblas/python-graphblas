@@ -165,6 +165,20 @@ def test_jit_unary(v):
     expected = Vector.from_coo([1, 3, 4, 6], [1, 1, 4, 0], dtype="FP32")
     assert expected.isequal(v)
     assert square["FP32"].jit_c_definition == cdef
+    assert "FP64" not in square
+    with burble():
+        square_fp64 = unary.ss.register_new(
+            "square", cdef.replace("float", "double"), "FP64", "FP64"
+        )
+    assert square_fp64 is square
+    assert "FP64" in square
+    with pytest.raises(
+        TypeError, match="UnaryOp gb.unary.ss.square already defined for FP32 input type"
+    ):
+        unary.ss.register_new("square", cdef, "FP32", "FP32")
+    unary.ss.register_new("nested.square", cdef, "FP32", "FP32")
+    with pytest.raises(AttributeError, match="nested is already defined"):
+        unary.ss.register_new("nested", cdef, "FP32", "FP32")
 
 
 def test_jit_binary(v):
@@ -186,9 +200,11 @@ def test_jit_binary(v):
     assert not hasattr(binary, "absdiff")
     assert binary.ss.absdiff is absdiff
     assert absdiff.name == "ss.absdiff"
-    assert absdiff.types == {dtypes.FP64: dtypes.FP64}
+    assert absdiff.types == {(dtypes.FP64, dtypes.FP64): dtypes.FP64}  # different than normal
+    assert "FP64" in absdiff
+    assert absdiff["FP64"].return_type == dtypes.FP64
     # The JIT is unforgiving and does not coerce--use the correct types!
-    with pytest.raises(KeyError, match="absdiff does not work with INT64"):
+    with pytest.raises(KeyError, match="absdiff does not work with .INT64, INT64. types"):
         v << absdiff(v & v)
     w = (v - 1).new("FP64")
     v = v.dup("FP64")
@@ -198,6 +214,36 @@ def test_jit_binary(v):
     res = absdiff(w & v).new()
     assert expected.isequal(res)
     assert absdiff["FP64"].jit_c_definition == cdef
+    assert "FP32" not in absdiff
+    with burble():
+        absdiff_fp32 = binary.ss.register_new(
+            "absdiff",
+            cdef.replace("FP64", "FP32").replace("fabs", "fabsf"),
+            "FP32",
+            "FP32",
+            "FP32",
+        )
+    assert absdiff_fp32 is absdiff
+    assert "FP32" in absdiff
+    with pytest.raises(
+        TypeError,
+        match="BinaryOp gb.binary.ss.absdiff already defined for .FP64, FP64. input types",
+    ):
+        binary.ss.register_new("absdiff", cdef, "FP64", "FP64", "FP64")
+    binary.ss.register_new("nested.absdiff", cdef, "FP64", "FP64", "FP64")
+    with pytest.raises(AttributeError, match="nested is already defined"):
+        binary.ss.register_new("nested", cdef, "FP64", "FP64", "FP64")
+    # Make sure we can be specific with left/right dtypes
+    absdiff_mixed = binary.ss.register_new(
+        "absdiff",
+        "void absdiff (double *z, double *x, float *y) { (*z) = fabs ((*x) - (double)(*y)) ; }",
+        "FP64",
+        "FP32",
+        "FP64",
+    )
+    assert absdiff_mixed is absdiff
+    assert ("FP64", "FP32") in absdiff
+    assert ("FP32", "FP64") not in absdiff
 
 
 def test_jit_indexunary(v):
@@ -218,15 +264,50 @@ def test_jit_indexunary(v):
     assert not hasattr(select, "diffy")
     assert not hasattr(select.ss, "diffy")
     assert diffy.name == "ss.diffy"
-    assert diffy.types == {dtypes.FP64: dtypes.FP64}
+    assert diffy.types == {(dtypes.FP64, dtypes.FP64): dtypes.FP64}
+    assert "FP64" in diffy
+    assert diffy["FP64"].return_type == dtypes.FP64
     # The JIT is unforgiving and does not coerce--use the correct types!
-    with pytest.raises(KeyError, match="diffy does not work with INT64"):
+    with pytest.raises(KeyError, match="diffy does not work with .INT64, INT64. types"):
         v << diffy(v, 1)
     v = v.dup("FP64")
-    res = diffy(v, -1).new()
+    with pytest.raises(KeyError, match="diffy does not work with .FP64, INT64. types"):
+        v << diffy(v, -1)
+    res = diffy(v, -1.0).new()
     expected = Vector.from_coo([1, 3, 4, 6], [2, 6, 12, 6], dtype="FP64")
     assert expected.isequal(res)
     assert diffy["FP64"].jit_c_definition == cdef
+    assert "FP32" not in diffy
+    with burble():
+        diffy_fp32 = indexunary.ss.register_new(
+            "diffy",
+            cdef.replace("double", "float").replace("fabs", "fabsf"),
+            "FP32",
+            "FP32",
+            "FP32",
+        )
+    assert diffy_fp32 is diffy
+    assert "FP32" in diffy
+    with pytest.raises(
+        TypeError,
+        match="IndexUnaryOp gb.indexunary.ss.diffy already defined for .FP64, FP64. input types",
+    ):
+        indexunary.ss.register_new("diffy", cdef, "FP64", "FP64", "FP64")
+    indexunary.ss.register_new("nested.diffy", cdef, "FP64", "FP64", "FP64")
+    with pytest.raises(AttributeError, match="nested is already defined"):
+        indexunary.ss.register_new("nested", cdef, "FP64", "FP64", "FP64")
+    # Make sure we can be specific with left/right dtypes
+    diffy_mixed = indexunary.ss.register_new(
+        "diffy",
+        "void diffy (double *z, double *x, GrB_Index i, GrB_Index j, float *y) "
+        "{ (*z) = (i + j) * fabs ((*x) - (double)(*y)) ; }",
+        "FP64",
+        "FP32",
+        "FP64",
+    )
+    assert diffy_mixed is diffy
+    assert ("FP64", "FP32") in diffy
+    assert ("FP32", "FP64") not in diffy
 
 
 def test_jit_select(v):
@@ -248,19 +329,56 @@ def test_jit_select(v):
     assert not hasattr(indexunary, "woot")
     assert hasattr(indexunary.ss, "woot")
     assert woot.name == "ss.woot"
-    assert woot.types == {dtypes.INT32: dtypes.BOOL}
+    assert woot.types == {(dtypes.INT32, dtypes.INT32): dtypes.BOOL}
+    assert "INT32" in woot
+    assert woot["INT32"].return_type == dtypes.BOOL
     # The JIT is unforgiving and does not coerce--use the correct types!
-    with pytest.raises(KeyError, match="woot does not work with INT64"):
+    with pytest.raises(KeyError, match="woot does not work with .INT64, INT64. types"):
         v << woot(v, 1)
     v = v.dup("INT32")
-    res = woot(v, 6).new()
+    with pytest.raises(KeyError, match="woot does not work with .INT32, INT64. types"):
+        v << woot(v, 6)
+    res = woot(v, gb.Scalar.from_value(6, "INT32")).new()
     expected = Vector.from_coo([4, 6], [2, 0])
     assert expected.isequal(res)
 
-    res = indexunary.ss.woot(v, 6).new()
+    res = indexunary.ss.woot(v, gb.Scalar.from_value(6, "INT32")).new()
     expected = Vector.from_coo([1, 3, 4, 6], [False, False, True, True])
     assert expected.isequal(res)
     assert woot["INT32"].jit_c_definition == cdef
+
+    assert "INT64" not in woot
+    with burble():
+        woot_int64 = select.ss.register_new(
+            "woot", cdef.replace("int32", "int64"), "INT64", "INT64"
+        )
+    assert woot_int64 is woot
+    assert "INT64" in woot
+    with pytest.raises(TypeError, match="ss.woot already defined for .INT32, INT32. input types"):
+        select.ss.register_new("woot", cdef, "INT32", "INT32")
+    del indexunary.ss.woot
+    with pytest.raises(TypeError, match="ss.woot already defined for .INT32, INT32. input types"):
+        select.ss.register_new("woot", cdef, "INT32", "INT32")
+    select.ss.register_new("nested.woot", cdef, "INT32", "INT32")
+    with pytest.raises(AttributeError, match="nested is already defined"):
+        select.ss.register_new("nested", cdef, "INT32", "INT32")
+    del indexunary.ss.nested
+    with pytest.raises(AttributeError, match="nested is already defined"):
+        select.ss.register_new("nested", cdef.replace("woot", "nested"), "INT32", "INT32")
+    select.ss.haha = "haha"
+    with pytest.raises(AttributeError, match="haha is already defined"):
+        select.ss.register_new("haha", cdef.replace("woot", "haha"), "INT32", "INT32")
+    # Make sure we can be specific with left/right dtypes
+    woot_mixed = select.ss.register_new(
+        "woot",
+        "void woot (bool *z, const int64_t *x, GrB_Index i, GrB_Index j, int32_t *y) "
+        "{ (*z) = ((*x) + i + j == (*y)) ; }",
+        "INT64",
+        "INT32",
+    )
+    assert woot_mixed is woot
+    assert ("INT64", "INT32") in woot
+    assert ("INT32", "INT64") not in woot
 
 
 def test_context_importable():

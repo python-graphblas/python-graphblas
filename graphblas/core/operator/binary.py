@@ -597,6 +597,8 @@ class BinaryOp(OpBase):
                     #     z_ptr[0] = False
                     z_ptr[0] = (x[mask] != y[mask]).any()
 
+        elif self._numba_func is None:
+            raise KeyError(f"{self.name} does not work with {dtypes} types")
         else:
             numba_func = self._numba_func
             sig = (dtype.numba_type, dtype2.numba_type)

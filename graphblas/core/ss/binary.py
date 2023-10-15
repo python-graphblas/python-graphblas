@@ -31,6 +31,47 @@ class TypedJitBinaryOp(TypedOpBase):
 
 
 def register_new(name, jit_c_definition, left_type, right_type, ret_type):
+    """Register a new BinaryOp using the SuiteSparse:GraphBLAS JIT compiler.
+
+    This creates a BinaryOp by compiling the C string definition of the function.
+    It requires a shell call to a C compiler. The resulting operator will be as
+    fast as if it were built-in to SuiteSparse:GraphBLAS and does not have the
+    overhead of additional function calls as when using ``gb.binary.register_new``.
+
+    This is an advanced feature that requires a C compiler and proper configuration.
+    Configuration is handled by ``gb.ss.config``; see its docstring for details.
+    By default, the JIT caches results in ``~/.SuiteSparse/``. For more information,
+    see the SuiteSparse:GraphBLAS user guide.
+
+    Only one type signature may be registered at a time, but repeated calls using
+    the same name with different input types is allowed.
+
+    Parameters
+    ----------
+    name : str
+        The name of the operator. This will show up as ``gb.binary.ss.{name}``.
+        The name may contain periods, ".", which will result in nested objects
+        such as ``gb.binary.ss.x.y.z`` for name ``"x.y.z"``.
+    jit_c_definition : str
+        The C definition as a string of the user-defined function. For example:
+        ``"void absdiff (double *z, double *x, double *y) { (*z) = fabs ((*x) - (*y)) ; }"``.
+    left_type : dtype
+        The dtype of the left operand of the binary operator.
+    right_type : dtype
+        The dtype of the right operand of the binary operator.
+    ret_type : dtype
+        The dtype of the result of the binary operator.
+
+    Returns
+    -------
+    BinaryOp
+
+    See Also
+    --------
+    gb.binary.register_new
+    gb.binary.register_anonymous
+    gb.unary.ss.register_new
+    """
     if backend != "suitesparse":  # pragma: no cover (safety)
         raise RuntimeError(
             "`gb.binary.ss.register_new` invalid when not using 'suitesparse' backend"
@@ -47,9 +88,23 @@ def register_new(name, jit_c_definition, left_type, right_type, ret_type):
     right_type = lookup_dtype(right_type)
     ret_type = lookup_dtype(ret_type)
     name = name if name.startswith("ss.") else f"ss.{name}"
-    module, funcname = BinaryOp._remove_nesting(name)
-
-    rv = BinaryOp(name)
+    module, funcname = BinaryOp._remove_nesting(name, strict=False)
+    if hasattr(module, funcname):
+        rv = getattr(module, funcname)
+        if not isinstance(rv, BinaryOp):
+            BinaryOp._remove_nesting(name)
+        if (
+            (left_type, right_type) in rv.types
+            or rv._udt_types is not None
+            and (left_type, right_type) in rv._udt_types
+        ):
+            raise TypeError(
+                f"BinaryOp gb.binary.{name} already defined for "
+                f"({left_type}, {right_type}) input types"
+            )
+    else:
+        # We use `is_udt=True` to make dtype handling flexible and explicit.
+        rv = BinaryOp(name, is_udt=True)
     gb_obj = ffi_new("GrB_BinaryOp*")
     check_status_carg(
         lib.GxB_BinaryOp_new(
@@ -67,6 +122,6 @@ def register_new(name, jit_c_definition, left_type, right_type, ret_type):
     op = TypedJitBinaryOp(
         rv, funcname, left_type, ret_type, gb_obj[0], jit_c_definition, dtype2=right_type
     )
-    rv._add(op)
+    rv._add(op, is_jit=True)
     setattr(module, funcname, rv)
     return rv

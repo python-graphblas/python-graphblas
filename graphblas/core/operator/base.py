@@ -342,9 +342,18 @@ class OpBase:
         dtype = lookup_dtype(type_)
         return self._compile_udt(dtype, dtype)
 
-    def _add(self, op):
-        self._typed_ops[op.type] = op
-        self.types[op.type] = op.return_type
+    def _add(self, op, *, is_jit=False):
+        if is_jit:
+            if hasattr(op, "type2") or hasattr(op, "thunk_type"):
+                dtypes = (op.type, op._type2)
+            else:
+                dtypes = op.type
+            self.types[dtypes] = op.return_type  # This is a different use of .types
+            self._udt_types[dtypes] = op.return_type
+            self._udt_ops[dtypes] = op
+        else:
+            self._typed_ops[op.type] = op
+            self.types[op.type] = op.return_type
 
     def __delitem__(self, type_):
         type_ = lookup_dtype(type_)
