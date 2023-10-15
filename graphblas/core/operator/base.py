@@ -336,8 +336,6 @@ class OpBase:
                     raise KeyError(f"{self.name} does not work with {type_}")
             else:
                 return self._typed_ops[type_]
-        if not _supports_udfs:
-            raise KeyError(f"{self.name} does not work with {type_}")
         # This is a UDT or is able to operate on UDTs such as `first` any `any`
         dtype = lookup_dtype(type_)
         return self._compile_udt(dtype, dtype)

@@ -523,8 +523,8 @@ class BinaryOp(OpBase):
         if dtypes in self._udt_types:
             return self._udt_ops[dtypes]
 
-        nt = numba.types
-        if self.name == "eq" and not self._anonymous:
+        if self.name == "eq" and not self._anonymous and _has_numba:
+            nt = numba.types
             # assert dtype.np_type == dtype2.np_type
             itemsize = dtype.np_type.itemsize
             mask = _udt_mask(dtype.np_type)
@@ -561,7 +561,8 @@ class BinaryOp(OpBase):
                     #     z_ptr[0] = True
                     z_ptr[0] = (x[mask] == y[mask]).all()
 
-        elif self.name == "ne" and not self._anonymous:
+        elif self.name == "ne" and not self._anonymous and _has_numba:
+            nt = numba.types
             # assert dtype.np_type == dtype2.np_type
             itemsize = dtype.np_type.itemsize
             mask = _udt_mask(dtype.np_type)

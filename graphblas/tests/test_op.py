@@ -19,7 +19,15 @@ from graphblas import (
 )
 from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core import lib, operator
-from graphblas.core.operator import BinaryOp, IndexUnaryOp, Monoid, Semiring, UnaryOp, get_semiring, SelectOp
+from graphblas.core.operator import (
+    BinaryOp,
+    IndexUnaryOp,
+    Monoid,
+    SelectOp,
+    Semiring,
+    UnaryOp,
+    get_semiring,
+)
 from graphblas.dtypes import (
     BOOL,
     FP32,
