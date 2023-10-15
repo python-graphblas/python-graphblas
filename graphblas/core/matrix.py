@@ -2089,12 +2089,10 @@ class Matrix(BaseType):
                     f"must equal Vector.size (={other._size})."
                 )
             if type(self) is MatrixEwiseMultExpr:
-                1 / 0
                 self = self._expect_type(
                     op(self), Matrix, within=method_name, argname="self", op=op
                 )
             if type(other) is VectorEwiseMultExpr:
-                1 / 0
                 other = self._expect_type(
                     op(other), Vector, within=method_name, argname="other", op=op
                 )
@@ -2246,7 +2244,6 @@ class Matrix(BaseType):
                     f"must equal Vector.size (={other._size})."
                 )
             if type(self) is MatrixEwiseAddExpr:
-                1 / 0
                 self = self._expect_type(
                     op(self, left_default=left, right_default=right),
                     Matrix,
@@ -2255,7 +2252,6 @@ class Matrix(BaseType):
                     op=op,
                 )
             if type(other) is VectorEwiseAddExpr:
-                1 / 0
                 other = self._expect_type(
                     op(other, left_default=left, right_default=right),
                     Vector,
@@ -2350,10 +2346,8 @@ class Matrix(BaseType):
         op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         if type(self) is MatrixMatMulExpr:
-            1 / 0
             self = self._expect_type(op(self), Matrix, within=method_name, argname="self", op=op)
         if type(other) is VectorMatMulExpr:
-            1 / 0
             other = self._expect_type(op(other), Vector, within=method_name, argname="other", op=op)
         expr = VectorExpression(
             method_name,

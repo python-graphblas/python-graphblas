@@ -1184,12 +1184,10 @@ class Vector(BaseType):
                     f"must equal Vector.size (={self._size})."
                 )
             if type(self) is VectorEwiseMultExpr:
-                1 / 0
                 self = self._expect_type(
                     op(self), Vector, within=method_name, argname="self", op=op
                 )
             if type(other) is MatrixEwiseMultExpr:
-                1 / 0
                 other = self._expect_type(
                     op(other), Matrix, within=method_name, argname="other", op=op
                 )
@@ -1335,7 +1333,6 @@ class Vector(BaseType):
                     f"must equal Vector.size (={self._size})."
                 )
             if type(self) is VectorEwiseAddExpr:
-                1 / 0
                 self = self._expect_type(
                     op(self, left_default=left, right_default=right),
                     Vector,
@@ -1344,7 +1341,6 @@ class Vector(BaseType):
                     op=op,
                 )
             if type(other) is MatrixEwiseAddExpr:
-                1 / 0
                 other = self._expect_type(
                     op(other, left_default=left, right_default=right),
                     Matrix,
@@ -1442,10 +1438,8 @@ class Vector(BaseType):
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         if type(self) is VectorMatMulExpr:
             self = self._expect_type(op(self), Vector, within=method_name, argname="self", op=op)
-            1 / 0
         if type(other) is MatrixMatMulExpr:
             other = self._expect_type(op(other), Matrix, within=method_name, argname="other", op=op)
-            1 / 0
         expr = VectorExpression(
             method_name,
             "GrB_vxm",

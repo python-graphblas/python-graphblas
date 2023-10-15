@@ -370,7 +370,7 @@ def test_infix_expr_value_types():
 
 
 @autocompute
-def test_multi_infix_ewise():
+def test_multi_infix():
     D0 = Vector.from_scalar(0, 3).diag()
     v1 = Vector.from_coo([0, 1], [1, 2], size=3)  # 1 2 .
     v2 = Vector.from_coo([1, 2], [1, 2], size=3)  # . 1 2
@@ -416,6 +416,44 @@ def test_multi_infix_ewise():
     assert result.isequal(expected.T)
     result = binary.plus(v1 | (v2 | D0)).new()
     assert result.isequal(expected.T)
+    # matrix-vector ewise_mult
+    result = binary.plus((D0 & v1) & v2).new()
+    expected = binary.plus(binary.plus(D0 & v1) & v2).new()
+    assert result.isequal(expected)
+    assert result.nvals > 0
+    result = binary.plus(D0 & (v1 & v2)).new()
+    assert result.isequal(expected)
+    result = binary.plus((v1 & v2) & D0).new()
+    assert result.isequal(expected.T)
+    result = binary.plus(v1 & (v2 & D0)).new()
+    assert result.isequal(expected.T)
+    # matrix-vector ewise_union
+    kwargs = {"left_default": 10, "right_default": 20}
+    result = binary.plus((D0 | v1) | v2, **kwargs).new()
+    expected = binary.plus(binary.plus(D0 | v1, **kwargs) | v2, **kwargs).new()
+    assert result.isequal(expected)
+    result = binary.plus(D0 | (v1 | v2), **kwargs).new()
+    expected = binary.plus(D0 | binary.plus(v1 | v2, **kwargs), **kwargs).new()
+    assert result.isequal(expected)
+    result = binary.plus((v1 | v2) | D0, **kwargs).new()
+    expected = binary.plus(binary.plus(v1 | v2, **kwargs) | D0, **kwargs).new()
+    assert result.isequal(expected)
+    result = binary.plus(v1 | (v2 | D0), **kwargs).new()
+    expected = binary.plus(v1 | binary.plus(v2 | D0, **kwargs), **kwargs).new()
+    assert result.isequal(expected)
+    # vxm, mxv
+    result = op.plus_plus((D0 @ v1) @ D0).new()
+    assert result.isequal(v1)
+    result = op.plus_plus(D0 @ (v1 @ D0)).new()
+    assert result.isequal(v1)
+    result = op.plus_plus(v1 @ (D0 @ D0)).new()
+    assert result.isequal(v1)
+    result = op.plus_plus((D0 @ D0) @ v1).new()
+    assert result.isequal(v1)
+    result = op.plus_plus((v1 @ D0) @ D0).new()
+    assert result.isequal(v1)
+    result = op.plus_plus(D0 @ (D0 @ v1)).new()
+    assert result.isequal(v1)
 
     with pytest.raises(TypeError, match="XXX"):  # TODO
         (v1 & v2) | v3
