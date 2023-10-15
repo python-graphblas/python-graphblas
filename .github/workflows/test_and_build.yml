@@ -144,8 +144,7 @@ jobs:
           use-mamba: true
           python-version: ${{ steps.pyver.outputs.selected }}
           channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
-          # mamba does not yet implement strict priority
-          # channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
+          channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
           activate-environment: graphblas
           auto-activate-base: false
       - name: Setup conda
