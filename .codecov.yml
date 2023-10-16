@@ -7,6 +7,9 @@ coverage:
       default:
         informational: true
     changes: false
-comment: on
+comment:
+  behavior: default
+github_checks:
+  annotations: false
 ignore:
   - graphblas/viz.py
