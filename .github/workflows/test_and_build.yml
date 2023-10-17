@@ -144,8 +144,7 @@ jobs:
           use-mamba: true
           python-version: ${{ steps.pyver.outputs.selected }}
           channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
-          # mamba does not yet implement strict priority
-          # channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
+          channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
           activate-environment: graphblas
           auto-activate-base: false
       - name: Setup conda
@@ -412,9 +411,6 @@ jobs:
         if: matrix.slowtask == 'pytest_bizarro'
         run: |
           # This step uses `black`
-          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]]; then
-            pip install black  # Latest version of black on conda-forge does not have builds for Python 3.12
-          fi
           coverage run -a -m graphblas.core.automethods
           coverage run -a -m graphblas.core.infixmethods
           git diff --exit-code

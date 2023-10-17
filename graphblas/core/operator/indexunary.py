@@ -25,6 +25,10 @@ class TypedBuiltinIndexUnaryOp(TypedOpBase):
             thunk = False  # most basic form of 0 when unifying dtypes
         return _call_op(self, val, right=thunk)
 
+    @property
+    def thunk_type(self):
+        return self.type if self._type2 is None else self._type2
+
 
 class TypedUserIndexUnaryOp(TypedOpBase):
     __slots__ = ()
@@ -41,6 +45,7 @@ class TypedUserIndexUnaryOp(TypedOpBase):
     def _numba_func(self):
         return self.parent._numba_func
 
+    thunk_type = TypedBuiltinIndexUnaryOp.thunk_type
     __call__ = TypedBuiltinIndexUnaryOp.__call__
 
 
@@ -210,6 +215,8 @@ class IndexUnaryOp(OpBase):
         dtypes = (dtype, dtype2)
         if dtypes in self._udt_types:
             return self._udt_ops[dtypes]
+        if self._numba_func is None:
+            raise KeyError(f"{self.name} does not work with {dtypes} types")
 
         numba_func = self._numba_func
         sig = (dtype.numba_type, UINT64.numba_type, UINT64.numba_type, dtype2.numba_type)

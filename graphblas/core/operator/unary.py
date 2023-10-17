@@ -252,6 +252,8 @@ class UnaryOp(OpBase):
     def _compile_udt(self, dtype, dtype2):
         if dtype in self._udt_types:
             return self._udt_ops[dtype]
+        if self._numba_func is None:
+            raise KeyError(f"{self.name} does not work with {dtype}")
 
         numba_func = self._numba_func
         sig = (dtype.numba_type,)
