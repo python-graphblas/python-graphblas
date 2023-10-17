@@ -8,6 +8,7 @@ coverage:
         informational: true
     changes: false
 comment:
+  layout: "header, diff, footer"
   behavior: default
 github_checks:
   annotations: false
