@@ -1,6 +1,7 @@
 import os
 import pathlib
 import sys
+import sysconfig
 
 import numpy as np
 import pytest
@@ -26,6 +27,13 @@ if backend != "suitesparse":
 
 @pytest.fixture(scope="module", autouse=True)
 def _setup_jit():
+    gb.ss.config["jit_c_control"] = "on"
+    gb.ss.config["jit_c_compiler_name"] = sysconfig.get_config_var("CC")
+    gb.ss.config["jit_c_compiler_flags"] = sysconfig.get_config_var("CFLAGS")
+    gb.ss.config["jit_c_libraries"] = sysconfig.get_config_var("LIBS")
+    print(gb.ss.config)
+    return
+
     # Configuration values below were obtained from the output of the JIT config
     # in CI, but with paths changed to use `{conda_prefix}` where appropriate.
     if "CONDA_PREFIX" not in os.environ or _IS_SSGB7:
