@@ -36,9 +36,6 @@ def _setup_jit():
         gb.ss.config["jit_c_compiler_flags"] = val
     if val := sysconfig.get_config_var("LIBS"):
         gb.ss.config["jit_c_libraries"] = val
-    # if False:
-    if val := sysconfig.get_config_var("LDFLAGS"):
-        gb.ss.config["jit_c_linker_flags"] = val
     print(gb.ss.config)
     return
 
