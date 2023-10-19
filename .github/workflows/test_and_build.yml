@@ -354,7 +354,7 @@ jobs:
           G=${{ needs.rngs.outputs.backend == 'G' || '' }} ; H=${{ needs.rngs.outputs.backend == 'H' || '' }}
           normal=${{ matrix.slowtask == 'pytest_normal' || '' }} ; bizarro=${{ matrix.slowtask == 'pytest_bizarro' || '' }}
           ubuntu=${{ matrix.os == 'ubuntu-latest' || '' }} ; windows=${{ matrix.os == 'windows-latest' || '' }} ; macos=${{ matrix.os == 'macos-latest' || '' }}
-          mapnumpy='--mapnumpy' ; nomapnumpy='--no-mapnumpy' ; suitesparse='--backend=suitesparse' ; vanilla='--backend=suitesparse-vanilla'
+          mapnumpy='--mapnumpy' ; nomapnumpy='--no-mapnumpy' ; suitesparse='--backend=suitesparse' ; vanilla='--backend=suitesparse'
           args=$(
             if [[ $A && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
             if [[ $A && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \

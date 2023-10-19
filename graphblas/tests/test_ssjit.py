@@ -28,9 +28,15 @@ if backend != "suitesparse":
 @pytest.fixture(scope="module", autouse=True)
 def _setup_jit():
     gb.ss.config["jit_c_control"] = "on"
-    gb.ss.config["jit_c_compiler_name"] = sysconfig.get_config_var("CC")
-    gb.ss.config["jit_c_compiler_flags"] = sysconfig.get_config_var("CFLAGS")
-    gb.ss.config["jit_c_libraries"] = sysconfig.get_config_var("LIBS")
+    if val := sysconfig.get_config_var("CC"):
+        gb.ss.config["jit_c_compiler_name"] = val
+    if val := sysconfig.get_config_var("CFLAGS"):
+        gb.ss.config["jit_c_compiler_flags"] = val
+    if val := sysconfig.get_config_var("LIBS"):
+        gb.ss.config["jit_c_libraries"] = val
+    # if val := sysconfig.get_config_var('LDFLAGS'):
+    if False:
+        gb.ss.config["jit_c_linker_flags"] = val
     print(gb.ss.config)
     return
 
