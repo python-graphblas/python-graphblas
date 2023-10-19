@@ -27,6 +27,8 @@ if backend != "suitesparse":
 
 @pytest.fixture(scope="module", autouse=True)
 def _setup_jit():
+    if _IS_SSGB7:
+        return
     gb.ss.config["jit_c_control"] = "on"
     if val := sysconfig.get_config_var("CC"):
         gb.ss.config["jit_c_compiler_name"] = val

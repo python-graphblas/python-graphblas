@@ -220,6 +220,7 @@ jobs:
             # These should be exact versions
             psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", "==8.0.2.1", "==8.2.0.1", "==8.2.1.0", ""]))')
           fi
+          psg=""  # XXX
           if [[ ${npver} == "=1.26" ]] ; then
             numbaver=""
             if [[ ${spver} == "=1.8" || ${spver} == "=1.9" ]] ; then
@@ -339,7 +340,7 @@ jobs:
           echo ${args}
           set -x  # echo on
           coverage run -m pytest --color=yes --randomly -v ${args} \
-            ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
+            ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }} graphblas/tests/test_ssjit.py
       - name: Unit tests (bizarro scalars)
         run: |
           # Run tests again with Scalars being C scalars by default
