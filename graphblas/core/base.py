@@ -273,7 +273,6 @@ class BaseType:
         from .infix import MatrixEwiseMultExpr, VectorEwiseMultExpr, _ewise_infix_expr
 
         if isinstance(other, (VectorEwiseMultExpr, MatrixEwiseMultExpr)):
-            1 / 0
             raise TypeError("XXX")
         return _ewise_infix_expr(other, self, method="ewise_add", within="__ror__")
 
@@ -288,7 +287,6 @@ class BaseType:
         from .infix import MatrixEwiseAddExpr, VectorEwiseAddExpr, _ewise_infix_expr
 
         if isinstance(other, (VectorEwiseAddExpr, MatrixEwiseAddExpr)):
-            1 / 0
             raise TypeError("XXX")
         return _ewise_infix_expr(other, self, method="ewise_mult", within="__rand__")
 

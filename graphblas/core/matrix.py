@@ -1972,10 +1972,8 @@ class Matrix(BaseType):
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if type(self) is MatrixEwiseMultExpr:
-            1 / 0
             raise TypeError("XXX")
         if type(other) in {MatrixEwiseMultExpr, VectorEwiseMultExpr}:
-            1 / 0
             raise TypeError("XXX")
         if other.ndim == 1:
             # Broadcast rowwise from the right
@@ -2002,10 +2000,8 @@ class Matrix(BaseType):
                 op=op,
             )
         if type(self) is MatrixEwiseAddExpr:
-            1 / 0
             self = self._expect_type(op(self), Matrix, within=method_name, argname="self", op=op)
         if type(other) is MatrixEwiseAddExpr:
-            1 / 0
             other = self._expect_type(op(other), Matrix, within=method_name, argname="other", op=op)
         expr = MatrixExpression(
             method_name,
@@ -2075,10 +2071,8 @@ class Matrix(BaseType):
         # Per the spec, op may be a semiring, but this is weird, so don't.
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if type(self) is MatrixEwiseAddExpr:
-            1 / 0
             raise TypeError("XXX")
         if type(other) in {MatrixEwiseAddExpr, VectorEwiseAddExpr}:
-            1 / 0
             raise TypeError("XXX")
         if other.ndim == 1:
             # Broadcast rowwise from the right
@@ -2105,10 +2099,8 @@ class Matrix(BaseType):
                 op=op,
             )
         if type(self) is MatrixEwiseMultExpr:
-            1 / 0
             self = self._expect_type(op(self), Matrix, within=method_name, argname="self", op=op)
         if type(other) is MatrixEwiseMultExpr:
-            1 / 0
             other = self._expect_type(op(other), Matrix, within=method_name, argname="other", op=op)
         expr = MatrixExpression(
             method_name,
@@ -2222,17 +2214,14 @@ class Matrix(BaseType):
             left_dtype = unify(op1.type, op2.type, is_right_scalar=True)
             right_dtype = unify(op1.type2, op2.type2, is_left_scalar=True)
             op = get_typed_op(op, left_dtype, right_dtype, kind="binary")
-            1 / 0
         else:
             op = op1
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
         if type(self) is MatrixEwiseMultExpr:
-            1 / 0
             raise TypeError("XXX")
         if type(other) in {MatrixEwiseMultExpr, VectorEwiseMultExpr}:
-            1 / 0
             raise TypeError("XXX")
         expr_repr = "{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})"
         if other.ndim == 1:
@@ -2269,7 +2258,6 @@ class Matrix(BaseType):
                 op=op,
             )
         if type(self) is MatrixEwiseAddExpr:
-            1 / 0
             self = self._expect_type(
                 op(self, left_default=left, right_default=right),
                 Matrix,
@@ -2278,7 +2266,6 @@ class Matrix(BaseType):
                 op=op,
             )
         if type(other) is MatrixEwiseAddExpr:
-            1 / 0
             other = self._expect_type(
                 op(other, left_default=left, right_default=right),
                 Matrix,
@@ -2401,10 +2388,8 @@ class Matrix(BaseType):
         op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
         if type(self) is MatrixMatMulExpr:
-            1 / 0
             self = self._expect_type(op(self), Matrix, within=method_name, argname="self", op=op)
         if type(other) is MatrixMatMulExpr:
-            1 / 0
             other = self._expect_type(op(other), Matrix, within=method_name, argname="other", op=op)
         expr = MatrixExpression(
             method_name,

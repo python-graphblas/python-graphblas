@@ -370,7 +370,7 @@ def test_infix_expr_value_types():
 
 
 @autocompute
-def test_multi_infix():
+def test_multi_infix_vector():
     D0 = Vector.from_scalar(0, 3).diag()
     v1 = Vector.from_coo([0, 1], [1, 2], size=3)  # 1 2 .
     v2 = Vector.from_coo([1, 2], [1, 2], size=3)  # . 1 2
@@ -458,22 +458,114 @@ def test_multi_infix():
     with pytest.raises(TypeError, match="XXX"):  # TODO
         (v1 & v2) | v3
     with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2).__ror__(v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
         (v1 & v2) | (v2 & v3)
     with pytest.raises(TypeError, match="XXX"):  # TODO
         (v1 & v2) | (v2 | v3)
     with pytest.raises(TypeError, match="XXX"):  # TODO
         v1 | (v2 & v3)
     with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1.__ror__(v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
         (v1 | v2) | (v2 & v3)
 
     with pytest.raises(TypeError, match="XXX"):  # TODO
         v1 & (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1.__rand__(v2 | v3)
     with pytest.raises(TypeError, match="XXX"):  # TODO
         (v1 | v2) & (v2 | v3)
     with pytest.raises(TypeError, match="XXX"):  # TODO
         (v1 & v2) & (v2 | v3)
     with pytest.raises(TypeError, match="XXX"):  # TODO
         (v1 | v2) & v3
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2).__rand__(v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) & (v2 & v3)
+
+    # We don't (yet) differentiate between infix and methods
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1.ewise_add(v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2).ewise_add(v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1.ewise_union(v2 & v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2).ewise_union(v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1.ewise_mult(v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2).ewise_mult(v3)
+
+
+@autocompute
+def test_multi_infix_matrix():
+    # Adapted from test_multi_infix_vector
+    D0 = Vector.from_scalar(0, 3).diag()
+    v1 = Matrix.from_coo([0, 1], [0, 0], [1, 2], nrows=3)  # 1 2 .
+    v2 = Matrix.from_coo([1, 2], [0, 0], [1, 2], nrows=3)  # . 1 2
+    v3 = Matrix.from_coo([2, 0], [0, 0], [1, 2], nrows=3)  # 2 . 1
+    # ewise_add
+    result = binary.plus((v1 | v2) | v3).new()
+    expected = Matrix.from_scalar(3, 3, 1)
+    assert result.isequal(expected)
+    result = binary.plus(v1 | (v2 | v3)).new()
+    assert result.isequal(expected)
+    result = monoid.min(v1 | v2 | v3).new()
+    expected = Matrix.from_scalar(1, 3, 1)
+    assert result.isequal(expected)
+    # ewise_mult
+    result = monoid.max((v1 & v2) & v3).new()
+    expected = Matrix(int, 3, 1)
+    assert result.isequal(expected)
+    result = monoid.max(v1 & (v2 & v3)).new()
+    assert result.isequal(expected)
+    result = monoid.min((v1 & v2) & v1).new()
+    expected = Matrix.from_coo([1], [0], [1], nrows=3)
+    assert result.isequal(expected)
+    # ewise_union
+    result = binary.plus((v1 | v2) | v3, left_default=10, right_default=10).new()
+    expected = Matrix.from_scalar(13, 3, 1)
+    assert result.isequal(expected)
+    result = binary.plus((v1 | v2) | v3, left_default=10, right_default=10.0).new()
+    expected = Matrix.from_scalar(13.0, 3, 1)
+    assert result.isequal(expected)
+    result = binary.plus(v1 | (v2 | v3), left_default=10, right_default=10).new()
+    assert result.isequal(expected)
+    # mxm
+    assert op.plus_plus(v1.T @ v1)[0, 0].value == 6
+    assert op.plus_plus(v1 @ (v1.T @ D0))[0, 0].value == 2
+    assert op.plus_plus((v1.T @ D0) @ v1)[0, 0].value == 6
+
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) | v3
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2).__ror__(v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) | (v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) | (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1 | (v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1.__ror__(v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) | (v2 & v3)
+
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1 & (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1.__rand__(v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) & (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) & (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) & v3
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2).__rand__(v3)
     with pytest.raises(TypeError, match="XXX"):  # TODO
         (v1 | v2) & (v2 & v3)
 

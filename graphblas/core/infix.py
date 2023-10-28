@@ -404,8 +404,8 @@ class MatrixEwiseAddExpr(MatrixInfixExpr):
 
     _to_expr = _ewise_add_to_expr
 
-    __and__ = VectorEwiseMultExpr.__and__
-    __rand__ = VectorEwiseMultExpr.__rand__
+    __and__ = VectorEwiseAddExpr.__and__
+    __rand__ = VectorEwiseAddExpr.__rand__
     __or__ = Matrix.__or__
     __ror__ = Matrix.__ror__
     ewise_add = Matrix.ewise_add
