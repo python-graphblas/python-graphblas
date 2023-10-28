@@ -25,6 +25,45 @@ class TypedJitUnaryOp(TypedOpBase):
 
 
 def register_new(name, jit_c_definition, input_type, ret_type):
+    """Register a new UnaryOp using the SuiteSparse:GraphBLAS JIT compiler.
+
+    This creates a UnaryOp by compiling the C string definition of the function.
+    It requires a shell call to a C compiler. The resulting operator will be as
+    fast as if it were built-in to SuiteSparse:GraphBLAS and does not have the
+    overhead of additional function calls as when using ``gb.unary.register_new``.
+
+    This is an advanced feature that requires a C compiler and proper configuration.
+    Configuration is handled by ``gb.ss.config``; see its docstring for details.
+    By default, the JIT caches results in ``~/.SuiteSparse/``. For more information,
+    see the SuiteSparse:GraphBLAS user guide.
+
+    Only one type signature may be registered at a time, but repeated calls using
+    the same name with different input types is allowed.
+
+    Parameters
+    ----------
+    name : str
+        The name of the operator. This will show up as ``gb.unary.ss.{name}``.
+        The name may contain periods, ".", which will result in nested objects
+        such as ``gb.unary.ss.x.y.z`` for name ``"x.y.z"``.
+    jit_c_definition : str
+        The C definition as a string of the user-defined function. For example:
+        ``"void square (float *z, float *x) { (*z) = (*x) * (*x) ; } ;"``
+    input_type : dtype
+        The dtype of the operand of the unary operator.
+    ret_type : dtype
+        The dtype of the result of the unary operator.
+
+    Returns
+    -------
+    UnaryOp
+
+    See Also
+    --------
+    gb.unary.register_new
+    gb.unary.register_anonymous
+    gb.binary.ss.register_new
+    """
     if backend != "suitesparse":  # pragma: no cover (safety)
         raise RuntimeError(
             "`gb.unary.ss.register_new` invalid when not using 'suitesparse' backend"
@@ -40,9 +79,16 @@ def register_new(name, jit_c_definition, input_type, ret_type):
     input_type = lookup_dtype(input_type)
     ret_type = lookup_dtype(ret_type)
     name = name if name.startswith("ss.") else f"ss.{name}"
-    module, funcname = UnaryOp._remove_nesting(name)
-
-    rv = UnaryOp(name)
+    module, funcname = UnaryOp._remove_nesting(name, strict=False)
+    if hasattr(module, funcname):
+        rv = getattr(module, funcname)
+        if not isinstance(rv, UnaryOp):
+            UnaryOp._remove_nesting(name)
+        if input_type in rv.types or rv._udt_types is not None and input_type in rv._udt_types:
+            raise TypeError(f"UnaryOp gb.unary.{name} already defined for {input_type} input type")
+    else:
+        # We use `is_udt=True` to make dtype handling flexible and explicit.
+        rv = UnaryOp(name, is_udt=True)
     gb_obj = ffi_new("GrB_UnaryOp*")
     check_status_carg(
         lib.GxB_UnaryOp_new(
@@ -57,6 +103,6 @@ def register_new(name, jit_c_definition, input_type, ret_type):
         gb_obj[0],
     )
     op = TypedJitUnaryOp(rv, funcname, input_type, ret_type, gb_obj[0], jit_c_definition)
-    rv._add(op)
+    rv._add(op, is_jit=True)
     setattr(module, funcname, rv)
     return rv

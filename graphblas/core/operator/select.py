@@ -1,9 +1,17 @@
 import inspect
 
 from ... import _STANDARD_OPERATOR_NAMES, select
-from ...dtypes import BOOL
+from ...dtypes import BOOL, UINT64
+from ...exceptions import check_status_carg
+from .. import _has_numba, ffi, lib
 from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op, _deserialize_parameterized
-from .indexunary import IndexUnaryOp
+from .indexunary import IndexUnaryOp, TypedBuiltinIndexUnaryOp
+
+if _has_numba:
+    import numba
+
+    from .base import _get_udt_wrapper
+ffi_new = ffi.new
 
 
 class TypedBuiltinSelectOp(TypedOpBase):
@@ -15,13 +23,15 @@ class TypedBuiltinSelectOp(TypedOpBase):
             thunk = False  # most basic form of 0 when unifying dtypes
         return _call_op(self, val, thunk=thunk)
 
+    thunk_type = TypedBuiltinIndexUnaryOp.thunk_type
+
 
 class TypedUserSelectOp(TypedOpBase):
     __slots__ = ()
     opclass = "SelectOp"
 
-    def __init__(self, parent, name, type_, return_type, gb_obj):
-        super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
+    def __init__(self, parent, name, type_, return_type, gb_obj, dtype2=None):
+        super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
 
     @property
     def orig_func(self):
@@ -31,6 +41,7 @@ class TypedUserSelectOp(TypedOpBase):
     def _numba_func(self):
         return self.parent._numba_func
 
+    thunk_type = TypedBuiltinSelectOp.thunk_type
     __call__ = TypedBuiltinSelectOp.__call__
 
 
@@ -119,6 +130,44 @@ class SelectOp(OpBase):
             obj._typed_ops[type_] = op
             obj.types[type_] = op.return_type
         return obj
+
+    def _compile_udt(self, dtype, dtype2):
+        if dtype2 is None:  # pragma: no cover
+            dtype2 = dtype
+        dtypes = (dtype, dtype2)
+        if dtypes in self._udt_types:
+            return self._udt_ops[dtypes]
+        if self._numba_func is None:
+            raise KeyError(f"{self.name} does not work with {dtypes} types")
+
+        # It would be nice if we could reuse compiling done for IndexUnaryOp
+        numba_func = self._numba_func
+        sig = (dtype.numba_type, UINT64.numba_type, UINT64.numba_type, dtype2.numba_type)
+        numba_func.compile(sig)  # Should we catch and give additional error message?
+        select_wrapper, wrapper_sig = _get_udt_wrapper(
+            numba_func, BOOL, dtype, dtype2, include_indexes=True
+        )
+
+        select_wrapper = numba.cfunc(wrapper_sig, nopython=True)(select_wrapper)
+        new_select = ffi_new("GrB_IndexUnaryOp*")
+        check_status_carg(
+            lib.GrB_IndexUnaryOp_new(
+                new_select, select_wrapper.cffi, BOOL._carg, dtype._carg, dtype2._carg
+            ),
+            "IndexUnaryOp",
+            new_select[0],
+        )
+        op = TypedUserSelectOp(
+            self,
+            self.name,
+            dtype,
+            BOOL,
+            new_select[0],
+            dtype2=dtype2,
+        )
+        self._udt_types[dtypes] = BOOL
+        self._udt_ops[dtypes] = op
+        return op
 
     @classmethod
     def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):

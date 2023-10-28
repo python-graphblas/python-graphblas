@@ -87,7 +87,7 @@ pandas = [
     "pandas >=1.2",
 ]
 scipy = [
-    "scipy >=1.8",
+    "scipy >=1.9",
 ]
 suitesparse-udf = [  # udf requires numba
     "python-graphblas[suitesparse,numba]",
