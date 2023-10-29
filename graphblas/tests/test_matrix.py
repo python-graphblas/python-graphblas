@@ -2834,16 +2834,17 @@ def test_auto(A, v):
         ]:
             # print(type(expr).__name__, method)
             val1 = getattr(expected, method)(expected).new()
-            val2 = getattr(expected, method)(expr)
             if method in {"__or__", "__ror__"} and type(expr) is MatrixEwiseMultExpr:
                 # Doing e.g. `plus(A & B | C)` isn't allowed--make user be explicit
                 with pytest.raises(TypeError):
-                    assert val1.isequal(val2)
+                    # assert val1.isequal(val2)
+                    val2 = getattr(expected, method)(expr)
                 with pytest.raises(TypeError):
                     val3 = getattr(expr, method)(expected)
                 with pytest.raises(TypeError):
                     val4 = getattr(expr, method)(expr)
             else:
+                val2 = getattr(expected, method)(expr)
                 assert val1.isequal(val2)
                 val3 = getattr(expr, method)(expected)
                 assert val1.isequal(val3)
@@ -2957,7 +2958,7 @@ def test_expr_is_like_matrix(A):
         "setdiag",
         "update",
     }
-    ignore = {"__sizeof__"}
+    ignore = {"__sizeof__", "_ewise_add", "_ewise_union", "_ewise_mult", "_mxm", "_mxv"}
     assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Matrix.  You may need to "
         "add an entry to `matrix` or `matrix_vector` set in `graphblas.core.automethods` "
@@ -3022,7 +3023,7 @@ def test_index_expr_is_like_matrix(A):
         "resize",
         "setdiag",
     }
-    ignore = {"__sizeof__"}
+    ignore = {"__sizeof__", "_ewise_add", "_ewise_union", "_ewise_mult", "_mxm", "_mxv"}
     assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Matrix.  You may need to "
         "add an entry to `matrix` or `matrix_vector` set in `graphblas.core.automethods` "

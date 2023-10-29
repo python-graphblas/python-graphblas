@@ -125,6 +125,18 @@ class ScalarEwiseAddExpr(ScalarInfixExpr):
 
     _to_expr = _ewise_add_to_expr
 
+    __or__ = Scalar.__or__
+    __ror__ = Scalar.__ror__
+    _ewise_add = Scalar._ewise_add
+    _ewise_mult = Scalar._ewise_mult
+    _ewise_union = Scalar._ewise_union
+
+    def __and__(self, other, *, within="__and__"):
+        raise TypeError("XXX")
+
+    def __rand__(self, other):
+        self.__and__(other, within="__rand__")
+
 
 class ScalarEwiseMultExpr(ScalarInfixExpr):
     __slots__ = ()
@@ -133,6 +145,18 @@ class ScalarEwiseMultExpr(ScalarInfixExpr):
     _infix = "&"
 
     _to_expr = _ewise_mult_to_expr
+
+    __and__ = Scalar.__and__
+    __rand__ = Scalar.__rand__
+    _ewise_add = Scalar._ewise_add
+    _ewise_mult = Scalar._ewise_mult
+    _ewise_union = Scalar._ewise_union
+
+    def __or__(self, other):
+        raise TypeError("XXX")
+
+    def __ror__(self, other):
+        raise TypeError("XXX")
 
 
 class ScalarMatMulExpr(ScalarInfixExpr):
@@ -238,17 +262,13 @@ class VectorEwiseAddExpr(VectorInfixExpr):
 
     _to_expr = _ewise_add_to_expr
 
+    __and__ = ScalarEwiseAddExpr.__and__  # raises
+    __rand__ = ScalarEwiseAddExpr.__rand__  # raises
     __or__ = Vector.__or__
     __ror__ = Vector.__ror__
-    ewise_add = Vector.ewise_add
-    ewise_mult = Vector.ewise_mult
-    ewise_union = Vector.ewise_union
-
-    def __and__(self, other, *, within="__and__"):
-        raise TypeError("XXX")
-
-    def __rand__(self, other):
-        self.__and__(other, within="__rand__")
+    _ewise_add = Vector._ewise_add
+    _ewise_mult = Vector._ewise_mult
+    _ewise_union = Vector._ewise_union
 
 
 class VectorEwiseMultExpr(VectorInfixExpr):
@@ -261,15 +281,11 @@ class VectorEwiseMultExpr(VectorInfixExpr):
 
     __and__ = Vector.__and__
     __rand__ = Vector.__rand__
-    ewise_add = Vector.ewise_add
-    ewise_mult = Vector.ewise_mult
-    ewise_union = Vector.ewise_union
-
-    def __or__(self, other):
-        raise TypeError("XXX")
-
-    def __ror__(self, other):
-        raise TypeError("XXX")
+    __or__ = ScalarEwiseMultExpr.__or__  # raises
+    __ror__ = ScalarEwiseMultExpr.__ror__  # raises
+    _ewise_add = Vector._ewise_add
+    _ewise_mult = Vector._ewise_mult
+    _ewise_union = Vector._ewise_union
 
 
 class VectorMatMulExpr(VectorInfixExpr):
@@ -284,8 +300,8 @@ class VectorMatMulExpr(VectorInfixExpr):
 
     __matmul__ = Vector.__matmul__
     __rmatmul__ = Vector.__rmatmul__
-    inner = Vector.inner
-    vxm = Vector.vxm
+    _inner = Vector._inner
+    _vxm = Vector._vxm
 
 
 utils._output_types[VectorEwiseAddExpr] = Vector
@@ -404,13 +420,13 @@ class MatrixEwiseAddExpr(MatrixInfixExpr):
 
     _to_expr = _ewise_add_to_expr
 
-    __and__ = VectorEwiseAddExpr.__and__
-    __rand__ = VectorEwiseAddExpr.__rand__
+    __and__ = VectorEwiseAddExpr.__and__  # raises
+    __rand__ = VectorEwiseAddExpr.__rand__  # raises
     __or__ = Matrix.__or__
     __ror__ = Matrix.__ror__
-    ewise_add = Matrix.ewise_add
-    ewise_mult = Matrix.ewise_mult
-    ewise_union = Matrix.ewise_union
+    _ewise_add = Matrix._ewise_add
+    _ewise_mult = Matrix._ewise_mult
+    _ewise_union = Matrix._ewise_union
 
 
 class MatrixEwiseMultExpr(MatrixInfixExpr):
@@ -423,11 +439,11 @@ class MatrixEwiseMultExpr(MatrixInfixExpr):
 
     __and__ = Matrix.__and__
     __rand__ = Matrix.__rand__
-    __or__ = VectorEwiseMultExpr.__or__
-    __ror__ = VectorEwiseMultExpr.__ror__
-    ewise_add = Matrix.ewise_add
-    ewise_mult = Matrix.ewise_mult
-    ewise_union = Matrix.ewise_union
+    __or__ = VectorEwiseMultExpr.__or__  # raises
+    __ror__ = VectorEwiseMultExpr.__ror__  # raises
+    _ewise_add = Matrix._ewise_add
+    _ewise_mult = Matrix._ewise_mult
+    _ewise_union = Matrix._ewise_union
 
 
 class MatrixMatMulExpr(MatrixInfixExpr):
@@ -443,8 +459,8 @@ class MatrixMatMulExpr(MatrixInfixExpr):
 
     __matmul__ = Matrix.__matmul__
     __rmatmul__ = Matrix.__rmatmul__
-    mxm = Matrix.mxm
-    mxv = Matrix.mxv
+    _mxm = Matrix._mxm
+    _mxv = Matrix._mxv
 
 
 utils._output_types[MatrixEwiseAddExpr] = Matrix
@@ -559,6 +575,9 @@ def _matmul_infix_expr(left, right, *, within):
         return MatrixMatMulExpr(left, right, nrows=expr._nrows, ncols=expr._ncols)
     return ScalarMatMulExpr(left, right)
 
+
+_ewise_add_expr_types = (MatrixEwiseAddExpr, VectorEwiseAddExpr, ScalarEwiseAddExpr)
+_ewise_mult_expr_types = (MatrixEwiseMultExpr, VectorEwiseMultExpr, ScalarEwiseMultExpr)
 
 # Import infixmethods, which has side effects
 from . import infixmethods  # noqa: E402, F401 isort:skip

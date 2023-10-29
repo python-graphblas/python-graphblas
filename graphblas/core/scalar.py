@@ -30,12 +30,12 @@ def _scalar_index(name):
     return self
 
 
-def _s_union_s(updater, left, right, left_default, right_default, op, dtype):
+def _s_union_s(updater, left, right, left_default, right_default, op):
     opts = updater.opts
-    new_left = left.dup(dtype, clear=True)
+    new_left = left.dup(op.type, clear=True)
     new_left(**opts) << binary.second(right, left_default)
     new_left(**opts) << binary.first(left | new_left)
-    new_right = right.dup(dtype, clear=True)
+    new_right = right.dup(op.type2, clear=True)
     new_right(**opts) << binary.second(left, right_default)
     new_right(**opts) << binary.first(right | new_right)
     updater << op(new_left & new_right)
@@ -629,7 +629,23 @@ class Scalar(BaseType):
             # Functional syntax
             c << monoid.max(a | b)
         """
+        return self._ewise_add(other, op)
+
+    def _ewise_add(self, other, op=monoid.plus, is_infix=False):
         method_name = "ewise_add"
+        if is_infix:
+            from .infix import ScalarEwiseAddExpr
+
+            # This is a little different than how we handle ewise_add for Vector and
+            # Matrix where we are super-careful to handle dtypes well to support UDTs.
+            # For Scalar, we're going to let dtypes in expressions resolve themselves.
+            # Scalars are more challenging, because they may be literal scalars.
+            # Also, we have not yet resolved `op` here, so errors may be different.
+            if isinstance(self, ScalarEwiseAddExpr):
+                self = op(self).new()
+            if isinstance(other, ScalarEwiseAddExpr):
+                other = op(other).new()
+
         if type(other) is not Scalar:
             dtype = self.dtype if self.dtype._is_udt else None
             try:
@@ -683,7 +699,23 @@ class Scalar(BaseType):
             # Functional syntax
             c << binary.gt(a & b)
         """
+        return self._ewise_mult(other, op)
+
+    def _ewise_mult(self, other, op=binary.times, is_infix=False):
         method_name = "ewise_mult"
+        if is_infix:
+            from .infix import ScalarEwiseMultExpr
+
+            # This is a little different than how we handle ewise_mult for Vector and
+            # Matrix where we are super-careful to handle dtypes well to support UDTs.
+            # For Scalar, we're going to let dtypes in expressions resolve themselves.
+            # Scalars are more challenging, because they may be literal scalars.
+            # Also, we have not yet resolved `op` here, so errors may be different.
+            if isinstance(self, ScalarEwiseMultExpr):
+                self = op(self).new()
+            if isinstance(other, ScalarEwiseMultExpr):
+                other = op(other).new()
+
         if type(other) is not Scalar:
             dtype = self.dtype if self.dtype._is_udt else None
             try:
@@ -741,8 +773,25 @@ class Scalar(BaseType):
             # Functional syntax
             c << binary.div(a | b, left_default=1, right_default=1)
         """
+        return self._ewise_union(other, op, left_default, right_default)
+
+    def _ewise_union(self, other, op, left_default, right_default, is_infix=False):
         method_name = "ewise_union"
-        dtype = self.dtype if self.dtype._is_udt else None
+        if is_infix:
+            from .infix import ScalarEwiseAddExpr
+
+            # This is a little different than how we handle ewise_union for Vector and
+            # Matrix where we are super-careful to handle dtypes well to support UDTs.
+            # For Scalar, we're going to let dtypes in expressions resolve themselves.
+            # Scalars are more challenging, because they may be literal scalars.
+            # Also, we have not yet resolved `op` here, so errors may be different.
+            if isinstance(self, ScalarEwiseAddExpr):
+                self = op(self, left_default=left_default, right_default=right_default).new()
+            if isinstance(other, ScalarEwiseAddExpr):
+                other = op(other, left_default=left_default, right_default=right_default).new()
+
+        right_dtype = self.dtype
+        dtype = right_dtype if right_dtype._is_udt else None
         if type(other) is not Scalar:
             try:
                 other = Scalar.from_value(other, dtype, is_cscalar=False, name="")
@@ -755,6 +804,13 @@ class Scalar(BaseType):
                     extra_message="Literal scalars also accepted.",
                     op=op,
                 )
+        else:
+            other = _as_scalar(other, dtype, is_cscalar=False)  # pragma: is_grbscalar
+
+        temp_op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
+
+        left_dtype = temp_op.type
+        dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
             try:
                 left = Scalar.from_value(
@@ -771,6 +827,8 @@ class Scalar(BaseType):
                 )
         else:
             left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
+        right_dtype = temp_op.type2
+        dtype = right_dtype if right_dtype._is_udt else None
         if type(right_default) is not Scalar:
             try:
                 right = Scalar.from_value(
@@ -787,12 +845,19 @@ class Scalar(BaseType):
                 )
         else:
             right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
-        defaults_dtype = unify(left.dtype, right.dtype)
-        args_dtype = unify(self.dtype, other.dtype)
-        op = get_typed_op(op, defaults_dtype, args_dtype, kind="binary")
+
+        op1 = get_typed_op(op, self.dtype, right.dtype, kind="binary")
+        op2 = get_typed_op(op, left.dtype, other.dtype, kind="binary")
+        if op1 is not op2:
+            left_dtype = unify(op1.type, op2.type, is_right_scalar=True)
+            right_dtype = unify(op1.type2, op2.type2, is_left_scalar=True)
+            op = get_typed_op(op, left_dtype, right_dtype, kind="binary")
+        else:
+            op = op1
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
+
         expr_repr = "{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})"
         if backend == "suitesparse":
             expr = ScalarExpression(
@@ -805,11 +870,10 @@ class Scalar(BaseType):
                 scalar_as_vector=True,
             )
         else:
-            dtype = unify(defaults_dtype, args_dtype)
             expr = ScalarExpression(
                 method_name,
                 None,
-                [self, left, other, right, _s_union_s, (self, other, left, right, op, dtype)],
+                [self, left, other, right, _s_union_s, (self, other, left, right, op)],
                 op=op,
                 expr_repr=expr_repr,
                 is_cscalar=False,

@@ -9,7 +9,7 @@ from ..exceptions import DimensionMismatch, NoValue, check_status
 from . import _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
 from .descriptor import lookup as descriptor_lookup
-from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, Updater
+from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, InfixExprBase, Updater
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import (
     UNKNOWN_OPCLASS,
@@ -1045,37 +1045,41 @@ class Vector(BaseType):
             # Functional syntax
             w << monoid.max(u | v)
         """
-        from .infix import (
-            MatrixEwiseAddExpr,
-            MatrixEwiseMultExpr,
-            VectorEwiseAddExpr,
-            VectorEwiseMultExpr,
-        )
+        return self._ewise_add(other, op)
+
+    def _ewise_add(self, other, op=monoid.plus, is_infix=False):
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
         method_name = "ewise_add"
-        other = self._expect_type(
-            other,
-            (
-                Vector,
-                Matrix,
-                TransposedMatrix,
-                MatrixEwiseAddExpr,
-                MatrixEwiseMultExpr,
-                VectorEwiseAddExpr,
-                VectorEwiseMultExpr,
-            ),
-            within=method_name,
-            argname="other",
-            op=op,
-        )
-        op = _get_typed_op_from_exprs(op, self, other, kind="binary")
-        # Per the spec, op may be a semiring, but this is weird, so don't.
-        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
-        if type(self) is VectorEwiseMultExpr:
-            raise TypeError("XXX")
-        if type(other) in {VectorEwiseMultExpr, MatrixEwiseMultExpr}:
-            raise TypeError("XXX")
+        if is_infix:
+            from .infix import MatrixEwiseAddExpr, VectorEwiseAddExpr
+
+            other = self._expect_type(
+                other,
+                (Vector, Matrix, TransposedMatrix, MatrixEwiseAddExpr, VectorEwiseAddExpr),
+                within=method_name,
+                argname="other",
+                op=op,
+            )
+            op = _get_typed_op_from_exprs(op, self, other, kind="binary")
+            # Per the spec, op may be a semiring, but this is weird, so don't.
+            self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+            if isinstance(self, VectorEwiseAddExpr):
+                self = op(self).new()
+            if isinstance(other, InfixExprBase):
+                other = op(other).new()
+        else:
+            other = self._expect_type(
+                other,
+                (Vector, Matrix, TransposedMatrix),
+                within=method_name,
+                argname="other",
+                op=op,
+            )
+            op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
+            # Per the spec, op may be a semiring, but this is weird, so don't.
+            self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+
         if other.ndim == 2:
             # Broadcast columnwise from the left
             if other._nrows != self._size:
@@ -1085,14 +1089,6 @@ class Vector(BaseType):
                     f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
                     f"must equal Vector.size (={self._size})."
                 )
-            if type(self) is VectorEwiseAddExpr:
-                self = self._expect_type(
-                    op(self), Vector, within=method_name, argname="self", op=op
-                )
-            if type(other) is MatrixEwiseAddExpr:
-                other = self._expect_type(
-                    op(other), Matrix, within=method_name, argname="other", op=op
-                )
             return MatrixExpression(
                 method_name,
                 None,
@@ -1101,10 +1097,6 @@ class Vector(BaseType):
                 ncols=other._ncols,
                 op=op,
             )
-        if type(self) is VectorEwiseAddExpr:
-            self = self._expect_type(op(self), Vector, within=method_name, argname="self", op=op)
-        if type(other) is VectorEwiseAddExpr:
-            other = self._expect_type(op(other), Vector, within=method_name, argname="other", op=op)
         expr = VectorExpression(
             method_name,
             f"GrB_Vector_eWiseAdd_{op.opclass}",
@@ -1144,37 +1136,40 @@ class Vector(BaseType):
             # Functional syntax
             w << binary.gt(u & v)
         """
-        from .infix import (
-            MatrixEwiseAddExpr,
-            MatrixEwiseMultExpr,
-            VectorEwiseAddExpr,
-            VectorEwiseMultExpr,
-        )
+        return self._ewise_mult(other, op)
+
+    def _ewise_mult(self, other, op=binary.times, is_infix=False):
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
         method_name = "ewise_mult"
-        other = self._expect_type(
-            other,
-            (
-                Vector,
-                Matrix,
-                TransposedMatrix,
-                MatrixEwiseAddExpr,
-                MatrixEwiseMultExpr,
-                VectorEwiseAddExpr,
-                VectorEwiseMultExpr,
-            ),
-            within=method_name,
-            argname="other",
-            op=op,
-        )
-        op = _get_typed_op_from_exprs(op, self, other, kind="binary")
-        # Per the spec, op may be a semiring, but this is weird, so don't.
-        self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
-        if type(self) is VectorEwiseAddExpr:
-            raise TypeError("XXX")
-        if type(other) in {VectorEwiseAddExpr, MatrixEwiseAddExpr}:
-            raise TypeError("XXX")
+        if is_infix:
+            from .infix import MatrixEwiseMultExpr, VectorEwiseMultExpr
+
+            other = self._expect_type(
+                other,
+                (Vector, Matrix, TransposedMatrix, MatrixEwiseMultExpr, VectorEwiseMultExpr),
+                within=method_name,
+                argname="other",
+                op=op,
+            )
+            op = _get_typed_op_from_exprs(op, self, other, kind="binary")
+            # Per the spec, op may be a semiring, but this is weird, so don't.
+            self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+            if isinstance(self, VectorEwiseMultExpr):
+                self = op(self).new()
+            if isinstance(other, InfixExprBase):
+                other = op(other).new()
+        else:
+            other = self._expect_type(
+                other,
+                (Vector, Matrix, TransposedMatrix),
+                within=method_name,
+                argname="other",
+                op=op,
+            )
+            op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
+            # Per the spec, op may be a semiring, but this is weird, so don't.
+            self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if other.ndim == 2:
             # Broadcast columnwise from the left
             if other._nrows != self._size:
@@ -1182,14 +1177,6 @@ class Vector(BaseType):
                     "Dimensions not compatible for broadcasting Vector from the left "
                     f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
                     f"must equal Vector.size (={self._size})."
-                )
-            if type(self) is VectorEwiseMultExpr:
-                self = self._expect_type(
-                    op(self), Vector, within=method_name, argname="self", op=op
-                )
-            if type(other) is MatrixEwiseMultExpr:
-                other = self._expect_type(
-                    op(other), Matrix, within=method_name, argname="other", op=op
                 )
             return MatrixExpression(
                 method_name,
@@ -1199,10 +1186,6 @@ class Vector(BaseType):
                 ncols=other._ncols,
                 op=op,
             )
-        if type(self) is VectorEwiseMultExpr:
-            self = self._expect_type(op(self), Vector, within=method_name, argname="self", op=op)
-        if type(other) is VectorEwiseMultExpr:
-            other = self._expect_type(op(other), Vector, within=method_name, argname="other", op=op)
         expr = VectorExpression(
             method_name,
             f"GrB_Vector_eWiseMult_{op.opclass}",
@@ -1246,31 +1229,33 @@ class Vector(BaseType):
             # Functional syntax
             w << binary.div(u | v, left_default=1, right_default=1)
         """
-        from .infix import (
-            MatrixEwiseAddExpr,
-            MatrixEwiseMultExpr,
-            VectorEwiseAddExpr,
-            VectorEwiseMultExpr,
-        )
+        return self._ewise_union(other, op, left_default, right_default)
+
+    def _ewise_union(self, other, op, left_default, right_default, is_infix=False):
         from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
         method_name = "ewise_union"
-        other = self._expect_type(
-            other,
-            (
-                Vector,
-                Matrix,
-                TransposedMatrix,
-                MatrixEwiseAddExpr,
-                MatrixEwiseMultExpr,
-                VectorEwiseAddExpr,
-                VectorEwiseMultExpr,
-            ),
-            within=method_name,
-            argname="other",
-            op=op,
-        )
-        temp_op = _get_typed_op_from_exprs(op, self, other, kind="binary")
+        if is_infix:
+            from .infix import MatrixEwiseAddExpr, VectorEwiseAddExpr
+
+            other = self._expect_type(
+                other,
+                (Vector, Matrix, TransposedMatrix, MatrixEwiseAddExpr, VectorEwiseAddExpr),
+                within=method_name,
+                argname="other",
+                op=op,
+            )
+            temp_op = _get_typed_op_from_exprs(op, self, other, kind="binary")
+        else:
+            other = self._expect_type(
+                other,
+                (Vector, Matrix, TransposedMatrix),
+                within=method_name,
+                argname="other",
+                op=op,
+            )
+            temp_op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
+
         left_dtype = temp_op.type
         dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
@@ -1308,8 +1293,12 @@ class Vector(BaseType):
         else:
             right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
 
-        op1 = _get_typed_op_from_exprs(op, self, right, kind="binary")
-        op2 = _get_typed_op_from_exprs(op, left, other, kind="binary")
+        if is_infix:
+            op1 = _get_typed_op_from_exprs(op, self, right, kind="binary")
+            op2 = _get_typed_op_from_exprs(op, left, other, kind="binary")
+        else:
+            op1 = get_typed_op(op, self.dtype, right.dtype, kind="binary")
+            op2 = get_typed_op(op, left.dtype, other.dtype, kind="binary")
         if op1 is not op2:
             left_dtype = unify(op1.type, op2.type, is_right_scalar=True)
             right_dtype = unify(op1.type2, op2.type2, is_left_scalar=True)
@@ -1319,10 +1308,13 @@ class Vector(BaseType):
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
-        if type(self) is VectorEwiseMultExpr:
-            raise TypeError("XXX")
-        if type(other) in {VectorEwiseMultExpr, MatrixEwiseMultExpr}:
-            raise TypeError("XXX")
+
+        if is_infix:
+            if isinstance(self, VectorEwiseAddExpr):
+                self = op(self, left_default=left, right_default=right).new()
+            if isinstance(other, InfixExprBase):
+                other = op(other, left_default=left, right_default=right).new()
+
         expr_repr = "{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})"
         if other.ndim == 2:
             # Broadcast columnwise from the left
@@ -1332,22 +1324,6 @@ class Vector(BaseType):
                     f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
                     f"must equal Vector.size (={self._size})."
                 )
-            if type(self) is VectorEwiseAddExpr:
-                self = self._expect_type(
-                    op(self, left_default=left, right_default=right),
-                    Vector,
-                    within=method_name,
-                    argname="self",
-                    op=op,
-                )
-            if type(other) is MatrixEwiseAddExpr:
-                other = self._expect_type(
-                    op(other, left_default=left, right_default=right),
-                    Matrix,
-                    within=method_name,
-                    argname="other",
-                    op=op,
-                )
             return MatrixExpression(
                 method_name,
                 None,
@@ -1355,22 +1331,6 @@ class Vector(BaseType):
                 expr_repr=expr_repr,
                 nrows=other._nrows,
                 ncols=other._ncols,
-                op=op,
-            )
-        if type(self) is VectorEwiseAddExpr:
-            self = self._expect_type(
-                op(self, left_default=left, right_default=right),
-                Vector,
-                within=method_name,
-                argname="self",
-                op=op,
-            )
-        if type(other) is VectorEwiseAddExpr:
-            other = self._expect_type(
-                op(other, left_default=left, right_default=right),
-                Vector,
-                within=method_name,
-                argname="other",
                 op=op,
             )
         if backend == "suitesparse":
@@ -1423,23 +1383,35 @@ class Vector(BaseType):
             # Functional syntax
             C << semiring.min_plus(v @ A)
         """
-        from .infix import MatrixMatMulExpr, VectorMatMulExpr
+        return self._vxm(other, op)
+
+    def _vxm(self, other, op=semiring.plus_times, is_infix=False):
         from .matrix import Matrix, TransposedMatrix
 
         method_name = "vxm"
-        other = self._expect_type(
-            other,
-            (Matrix, TransposedMatrix, MatrixMatMulExpr),
-            within=method_name,
-            argname="other",
-            op=op,
-        )
-        op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
-        self._expect_op(op, "Semiring", within=method_name, argname="op")
-        if type(self) is VectorMatMulExpr:
-            self = self._expect_type(op(self), Vector, within=method_name, argname="self", op=op)
-        if type(other) is MatrixMatMulExpr:
-            other = self._expect_type(op(other), Matrix, within=method_name, argname="other", op=op)
+        if is_infix:
+            from .infix import MatrixMatMulExpr, VectorMatMulExpr
+
+            other = self._expect_type(
+                other,
+                (Matrix, TransposedMatrix, MatrixMatMulExpr),
+                within=method_name,
+                argname="other",
+                op=op,
+            )
+            op = _get_typed_op_from_exprs(op, self, other, kind="semiring")
+            self._expect_op(op, "Semiring", within=method_name, argname="op")
+            if isinstance(self, VectorMatMulExpr):
+                self = op(self).new()
+            if isinstance(other, MatrixMatMulExpr):
+                other = op(other).new()
+        else:
+            other = self._expect_type(
+                other, (Matrix, TransposedMatrix), within=method_name, argname="other", op=op
+            )
+            op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
+            self._expect_op(op, "Semiring", within=method_name, argname="op")
+
         expr = VectorExpression(
             method_name,
             "GrB_vxm",
@@ -1781,18 +1753,27 @@ class Vector(BaseType):
         `Matrix Multiplication <../user_guide/operations.html#matrix-multiply>`__
         family of functions.
         """
-        from .infix import VectorMatMulExpr
+        return self._inner(other, op)
 
+    def _inner(self, other, op=semiring.plus_times, is_infix=False):
         method_name = "inner"
-        other = self._expect_type(
-            other, (Vector, VectorMatMulExpr), within=method_name, argname="other", op=op
-        )
-        op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
-        self._expect_op(op, "Semiring", within=method_name, argname="op")
-        if type(self) is VectorMatMulExpr:
-            self = self._expect_type(op(self), Vector, within=method_name, argname="self", op=op)
-        if type(other) is VectorMatMulExpr:
-            other = self._expect_type(op(other), Vector, within=method_name, argname="other", op=op)
+        if is_infix:
+            from .infix import VectorMatMulExpr
+
+            other = self._expect_type(
+                other, (Vector, VectorMatMulExpr), within=method_name, argname="other", op=op
+            )
+            op = _get_typed_op_from_exprs(op, self, other, kind="semiring")
+            self._expect_op(op, "Semiring", within=method_name, argname="op")
+            if isinstance(self, VectorMatMulExpr):
+                self = op(self).new()
+            if isinstance(other, VectorMatMulExpr):
+                other = op(other).new()
+        else:
+            other = self._expect_type(other, Vector, within=method_name, argname="other", op=op)
+            op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
+            self._expect_op(op, "Semiring", within=method_name, argname="op")
+
         expr = ScalarExpression(
             method_name,
             "GrB_vxm",
