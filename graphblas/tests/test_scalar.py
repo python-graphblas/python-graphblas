@@ -360,7 +360,7 @@ def test_expr_is_like_scalar(s):
     }
     if s.is_cscalar:
         expected.add("_empty")
-    ignore = {"__sizeof__", "_ewise_union", "_ewise_mult", "_ewise_add"}
+    ignore = {"__sizeof__", "_ewise_add", "_ewise_mult", "_ewise_union"}
     assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Scalar.  You may need to "
         "add an entry to `scalar` set in `graphblas.core.automethods` "
@@ -402,7 +402,7 @@ def test_index_expr_is_like_scalar(s):
     }
     if s.is_cscalar:
         expected.add("_empty")
-    ignore = {"__sizeof__", "_ewise_union", "_ewise_mult", "_ewise_add"}
+    ignore = {"__sizeof__", "_ewise_add", "_ewise_mult", "_ewise_union"}
     assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Scalar.  You may need to "
         "add an entry to `scalar` set in `graphblas.core.automethods` "

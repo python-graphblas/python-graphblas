@@ -534,6 +534,9 @@ def test_multi_infix_matrix():
     result = monoid.min(v1 | v2 | v3).new()
     expected = Matrix.from_scalar(1, 3, 1)
     assert result.isequal(expected)
+    result = binary.plus(v1 | v1 | v1 | v1 | v1).new()
+    expected = (5 * v1).new()
+    assert result.isequal(expected)
     # ewise_mult
     result = monoid.max((v1 & v2) & v3).new()
     expected = Matrix(int, 3, 1)
@@ -542,6 +545,9 @@ def test_multi_infix_matrix():
     assert result.isequal(expected)
     result = monoid.min((v1 & v2) & v1).new()
     expected = Matrix.from_coo([1], [0], [1], nrows=3)
+    assert result.isequal(expected)
+    result = binary.plus(v1 & v1 & v1 & v1 & v1).new()
+    expected = (5 * v1).new()
     assert result.isequal(expected)
     # ewise_union
     result = binary.plus((v1 | v2) | v3, left_default=10, right_default=10).new()
@@ -556,6 +562,7 @@ def test_multi_infix_matrix():
     assert op.plus_plus(v1.T @ v1).new()[0, 0].new().value == 6
     assert op.plus_plus(v1 @ (v1.T @ D0)).new()[0, 0].new().value == 2
     assert op.plus_plus((v1.T @ D0) @ v1).new()[0, 0].new().value == 6
+    assert op.plus_plus(D0 @ D0 @ D0 @ D0 @ D0).new().isequal(D0)
 
     with pytest.raises(TypeError, match="XXX"):  # TODO
         (v1 & v2) | v3

@@ -1664,7 +1664,7 @@ def test_expr_is_like_vector(v):
         "resize",
         "update",
     }
-    ignore = {"__sizeof__", "_inner", "_vxm", "_ewise_add", "_ewise_union", "_ewise_mult"}
+    ignore = {"__sizeof__", "_ewise_add", "_ewise_mult", "_ewise_union", "_inner", "_vxm"}
     assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Vector.  You may need to "
         "add an entry to `vector` or `matrix_vector` set in `graphblas.core.automethods` "
@@ -1713,7 +1713,7 @@ def test_index_expr_is_like_vector(v):
         "from_values",
         "resize",
     }
-    ignore = {"__sizeof__", "_inner", "_vxm", "_ewise_add", "_ewise_union", "_ewise_mult"}
+    ignore = {"__sizeof__", "_ewise_add", "_ewise_mult", "_ewise_union", "_inner", "_vxm"}
     assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Vector.  You may need to "
         "add an entry to `vector` or `matrix_vector` set in `graphblas.core.automethods` "
