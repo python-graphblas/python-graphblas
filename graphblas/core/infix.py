@@ -1,8 +1,9 @@
 from .. import backend, binary
 from ..dtypes import BOOL
+from ..exceptions import DimensionMismatch
 from ..monoid import land, lor
 from ..semiring import any_pair
-from . import automethods, utils
+from . import automethods, recorder, utils
 from .base import _expect_op, _expect_type
 from .expr import InfixExprBase
 from .mask import Mask
@@ -402,43 +403,62 @@ utils._output_types[MatrixEwiseMultExpr] = Matrix
 utils._output_types[MatrixMatMulExpr] = Matrix
 
 
+def _dummy(obj, obj_type):
+    with recorder.skip_record:
+        return output_type(obj)(BOOL, *obj.shape, name="")
+
+
+def _mismatched(left, right, method, op):
+    # Create dummy expression to raise on incompatible dimensions
+    getattr(_dummy(left) if isinstance(left, InfixExprBase) else left, method)(
+        _dummy(right) if isinstance(right, InfixExprBase) else right, op
+    )
+    raise DimensionMismatch  # pragma: no cover
+
+
 def _ewise_infix_expr(left, right, *, method, within):
     left_type = output_type(left)
     right_type = output_type(right)
 
     types = {Vector, Matrix, TransposedMatrix}
     if left_type in types and right_type in types:
-        # Create dummy expression to check compatibility of dimensions, etc.
-        expr = getattr(left, method)(right, binary.any)
-        if expr.output_type is Vector:
-            if method == "ewise_mult":
-                return VectorEwiseMultExpr(left, right)
-            return VectorEwiseAddExpr(left, right)
+        if left_type is Vector:
+            if right_type is Vector:
+                if left._size != right._size:
+                    _mismatched(left, right, method, binary.first)
+                if method == "ewise_mult":
+                    return VectorEwiseMultExpr(left, right)
+                return VectorEwiseAddExpr(left, right)
+            if left._size != right._nrows:
+                _mismatched(left, right, method, binary.first)
+        elif right_type is Vector:
+            if left._ncols != right._size:
+                _mismatched(left, right, method, binary.first)
+        elif left.shape != right.shape:
+            _mismatched(left, right, method, binary.first)
         if method == "ewise_mult":
             return MatrixEwiseMultExpr(left, right)
         return MatrixEwiseAddExpr(left, right)
+
     if within == "__or__" and isinstance(right, Mask):
         return right.__ror__(left)
     if within == "__and__" and isinstance(right, Mask):
         return right.__rand__(left)
     if left_type in types:
         left._expect_type(right, tuple(types), within=within, argname="right")
-    elif right_type in types:
+    if right_type in types:
         right._expect_type(left, tuple(types), within=within, argname="left")
-    elif left_type is Scalar:
-        # Create dummy expression to check compatibility of dimensions, etc.
-        expr = getattr(left, method)(right, binary.any)
+    if left_type is Scalar:
         if method == "ewise_mult":
             return ScalarEwiseMultExpr(left, right)
         return ScalarEwiseAddExpr(left, right)
-    elif right_type is Scalar:
-        # Create dummy expression to check compatibility of dimensions, etc.
-        expr = getattr(right, method)(left, binary.any)
+    if right_type is Scalar:
         if method == "ewise_mult":
             return ScalarEwiseMultExpr(right, left)
         return ScalarEwiseAddExpr(right, left)
-    else:  # pragma: no cover (sanity)
-        raise TypeError(f"Bad types for ewise infix: {type(left).__name__}, {type(right).__name__}")
+    raise TypeError(  # pragma: no cover (sanity)
+        f"Bad types for ewise infix: {type(left).__name__}, {type(right).__name__}"
+    )
 
 
 def _matmul_infix_expr(left, right, *, within):
@@ -447,54 +467,51 @@ def _matmul_infix_expr(left, right, *, within):
 
     if left_type is Vector:
         if right_type is Matrix or right_type is TransposedMatrix:
-            method = "vxm"
-        elif right_type is Vector:
-            method = "inner"
-        else:
-            right = left._expect_type(
-                right,
-                (Matrix, TransposedMatrix),
-                within=within,
-                argname="right",
-            )
-    elif left_type is Matrix or left_type is TransposedMatrix:
+            if left._size != right._nrows:
+                _mismatched(left, right, "vxm", any_pair[BOOL])
+            return VectorMatMulExpr(left, right, method_name="vxm", size=right._ncols)
         if right_type is Vector:
-            method = "mxv"
-        elif right_type is Matrix or right_type is TransposedMatrix:
-            method = "mxm"
-        else:
-            right = left._expect_type(
-                right,
-                (Vector, Matrix, TransposedMatrix),
-                within=within,
-                argname="right",
-            )
-    elif right_type is Vector:
-        left = right._expect_type(
+            if left._size != right._size:
+                _mismatched(left, right, "inner", any_pair[BOOL])
+            return ScalarMatMulExpr(left, right)
+        left._expect_type(
+            right,
+            (Matrix, TransposedMatrix, Vector),
+            within=within,
+            argname="right",
+        )
+    if left_type is Matrix or left_type is TransposedMatrix:
+        if right_type is Vector:
+            if left._ncols != right._size:
+                _mismatched(left, right, "mxv", any_pair[BOOL])
+            return VectorMatMulExpr(left, right, method_name="mxv", size=left._nrows)
+        if right_type is Matrix or right_type is TransposedMatrix:
+            if left._ncols != right._nrows:
+                _mismatched(left, right, "mxm", any_pair[BOOL])
+            return MatrixMatMulExpr(left, right, nrows=left._nrows, ncols=right._ncols)
+        left._expect_type(
+            right,
+            (Vector, Matrix, TransposedMatrix),
+            within=within,
+            argname="right",
+        )
+    if right_type is Vector:
+        right._expect_type(
             left,
             (Matrix, TransposedMatrix),
             within=within,
             argname="left",
         )
-    elif right_type is Matrix or right_type is TransposedMatrix:
-        left = right._expect_type(
+    if right_type is Matrix or right_type is TransposedMatrix:
+        right._expect_type(
             left,
             (Vector, Matrix, TransposedMatrix),
             within=within,
             argname="left",
         )
-    else:  # pragma: no cover (sanity)
-        raise TypeError(
-            f"Bad types for matmul infix: {type(left).__name__}, {type(right).__name__}"
-        )
-
-    # Create dummy expression to check compatibility of dimensions, etc.
-    expr = getattr(left, method)(right, any_pair[bool])
-    if expr.output_type is Vector:
-        return VectorMatMulExpr(left, right, method_name=method, size=expr._size)
-    if expr.output_type is Matrix:
-        return MatrixMatMulExpr(left, right, nrows=expr._nrows, ncols=expr._ncols)
-    return ScalarMatMulExpr(left, right)
+    raise TypeError(  # pragma: no cover (sanity)
+        f"Bad types for matmul infix: {type(left).__name__}, {type(right).__name__}"
+    )
 
 
 # Import infixmethods, which has side effects

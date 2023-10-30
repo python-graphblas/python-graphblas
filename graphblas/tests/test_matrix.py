@@ -2827,7 +2827,10 @@ def test_auto(A, v):
             "__and__",
             "__or__",
             # "kronecker",
+            "__rand__",
+            "__ror__",
         ]:
+            # print(type(expr).__name__, method)
             val1 = getattr(expected, method)(expected).new()
             val2 = getattr(expected, method)(expr)
             val3 = getattr(expr, method)(expected)
@@ -3138,6 +3141,10 @@ def test_ss_reshape(A):
 def test_autocompute_argument_messages(A, v):
     with pytest.raises(TypeError, match="autocompute"):
         A.ewise_mult(A & A)
+    with pytest.raises(TypeError, match="autocompute"):
+        A.ewise_mult(binary.plus(A & A))
+    with pytest.raises(TypeError, match="autocompute"):
+        A.ewise_mult(A + A)
     with pytest.raises(TypeError, match="autocompute"):
         A.mxv(A @ v)
 

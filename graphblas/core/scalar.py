@@ -30,12 +30,12 @@ def _scalar_index(name):
     return self
 
 
-def _s_union_s(updater, left, right, left_default, right_default, op, dtype):
+def _s_union_s(updater, left, right, left_default, right_default, op):
     opts = updater.opts
-    new_left = left.dup(dtype, clear=True)
+    new_left = left.dup(op.type, clear=True)
     new_left(**opts) << binary.second(right, left_default)
     new_left(**opts) << binary.first(left | new_left)
-    new_right = right.dup(dtype, clear=True)
+    new_right = right.dup(op.type2, clear=True)
     new_right(**opts) << binary.second(left, right_default)
     new_right(**opts) << binary.first(right | new_right)
     updater << op(new_left & new_right)
@@ -742,7 +742,8 @@ class Scalar(BaseType):
             c << binary.div(a | b, left_default=1, right_default=1)
         """
         method_name = "ewise_union"
-        dtype = self.dtype if self.dtype._is_udt else None
+        right_dtype = self.dtype
+        dtype = right_dtype if right_dtype._is_udt else None
         if type(other) is not Scalar:
             try:
                 other = Scalar.from_value(other, dtype, is_cscalar=False, name="")
@@ -755,6 +756,13 @@ class Scalar(BaseType):
                     extra_message="Literal scalars also accepted.",
                     op=op,
                 )
+        else:
+            other = _as_scalar(other, dtype, is_cscalar=False)  # pragma: is_grbscalar
+
+        temp_op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
+
+        left_dtype = temp_op.type
+        dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
             try:
                 left = Scalar.from_value(
@@ -771,6 +779,8 @@ class Scalar(BaseType):
                 )
         else:
             left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
+        right_dtype = temp_op.type2
+        dtype = right_dtype if right_dtype._is_udt else None
         if type(right_default) is not Scalar:
             try:
                 right = Scalar.from_value(
@@ -787,9 +797,15 @@ class Scalar(BaseType):
                 )
         else:
             right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
-        defaults_dtype = unify(left.dtype, right.dtype)
-        args_dtype = unify(self.dtype, other.dtype)
-        op = get_typed_op(op, defaults_dtype, args_dtype, kind="binary")
+
+        op1 = get_typed_op(op, self.dtype, right.dtype, kind="binary")
+        op2 = get_typed_op(op, left.dtype, other.dtype, kind="binary")
+        if op1 is not op2:
+            left_dtype = unify(op1.type, op2.type, is_right_scalar=True)
+            right_dtype = unify(op1.type2, op2.type2, is_left_scalar=True)
+            op = get_typed_op(op, left_dtype, right_dtype, kind="binary")
+        else:
+            op = op1
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
@@ -805,11 +821,10 @@ class Scalar(BaseType):
                 scalar_as_vector=True,
             )
         else:
-            dtype = unify(defaults_dtype, args_dtype)
             expr = ScalarExpression(
                 method_name,
                 None,
-                [self, left, other, right, _s_union_s, (self, other, left, right, op, dtype)],
+                [self, left, other, right, _s_union_s, (self, other, left, right, op)],
                 op=op,
                 expr_repr=expr_repr,
                 is_cscalar=False,

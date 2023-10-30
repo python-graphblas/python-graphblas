@@ -67,13 +67,13 @@ def _m_mult_v(updater, left, right, op):
     updater << left.mxm(right.diag(name="M_temp"), get_semiring(monoid.any, op))
 
 
-def _m_union_m(updater, left, right, left_default, right_default, op, dtype):
+def _m_union_m(updater, left, right, left_default, right_default, op):
     mask = updater.kwargs.get("mask")
     opts = updater.opts
-    new_left = left.dup(dtype, clear=True)
+    new_left = left.dup(op.type, clear=True)
     new_left(mask=mask, **opts) << binary.second(right, left_default)
     new_left(mask=mask, **opts) << binary.first(left | new_left)
-    new_right = right.dup(dtype, clear=True)
+    new_right = right.dup(op.type2, clear=True)
     new_right(mask=mask, **opts) << binary.second(left, right_default)
     new_right(mask=mask, **opts) << binary.first(right | new_right)
     updater << op(new_left & new_right)
@@ -2078,7 +2078,10 @@ class Matrix(BaseType):
         other = self._expect_type(
             other, (Matrix, TransposedMatrix, Vector), within=method_name, argname="other", op=op
         )
-        dtype = self.dtype if self.dtype._is_udt else None
+        temp_op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
+
+        left_dtype = temp_op.type
+        dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
             try:
                 left = Scalar.from_value(
@@ -2095,6 +2098,8 @@ class Matrix(BaseType):
                 )
         else:
             left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
+        right_dtype = temp_op.type2
+        dtype = right_dtype if right_dtype._is_udt else None
         if type(right_default) is not Scalar:
             try:
                 right = Scalar.from_value(
@@ -2111,12 +2116,19 @@ class Matrix(BaseType):
                 )
         else:
             right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
-        scalar_dtype = unify(left.dtype, right.dtype)
-        nonscalar_dtype = unify(self.dtype, other.dtype)
-        op = get_typed_op(op, scalar_dtype, nonscalar_dtype, is_left_scalar=True, kind="binary")
+
+        op1 = get_typed_op(op, self.dtype, right.dtype, kind="binary")
+        op2 = get_typed_op(op, left.dtype, other.dtype, kind="binary")
+        if op1 is not op2:
+            left_dtype = unify(op1.type, op2.type, is_right_scalar=True)
+            right_dtype = unify(op1.type2, op2.type2, is_left_scalar=True)
+            op = get_typed_op(op, left_dtype, right_dtype, kind="binary")
+        else:
+            op = op1
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if op.opclass == "Monoid":
             op = op.binaryop
+
         expr_repr = "{0.name}.{method_name}({2.name}, {op}, {1._expr_name}, {3._expr_name})"
         if other.ndim == 1:
             # Broadcast rowwise from the right
@@ -2146,11 +2158,10 @@ class Matrix(BaseType):
                 expr_repr=expr_repr,
             )
         else:
-            dtype = unify(scalar_dtype, nonscalar_dtype, is_left_scalar=True)
             expr = MatrixExpression(
                 method_name,
                 None,
-                [self, left, other, right, _m_union_m, (self, other, left, right, op, dtype)],
+                [self, left, other, right, _m_union_m, (self, other, left, right, op)],
                 expr_repr=expr_repr,
                 nrows=self._nrows,
                 ncols=self._ncols,
