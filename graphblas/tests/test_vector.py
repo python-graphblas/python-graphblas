@@ -1579,6 +1579,7 @@ def test_auto(v):
             "__rand__",
             "__ror__",
         ]:
+            # print(type(expr).__name__, method)
             val1 = getattr(expected, method)(expected).new()
             val2 = getattr(expected, method)(expr)
             val3 = getattr(expr, method)(expected)

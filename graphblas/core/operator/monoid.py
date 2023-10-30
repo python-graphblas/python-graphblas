@@ -19,10 +19,9 @@ from ...dtypes import (
 )
 from ...exceptions import check_status_carg
 from .. import ffi, lib
-from ..expr import InfixExprBase
 from ..utils import libget
-from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op, _hasop
-from .binary import BinaryOp, ParameterizedBinaryOp
+from .base import OpBase, ParameterizedUdf, TypedOpBase, _hasop
+from .binary import BinaryOp, ParameterizedBinaryOp, TypedBuiltinBinaryOp
 
 ffi_new = ffi.new
 
@@ -35,25 +34,6 @@ class TypedBuiltinMonoid(TypedOpBase):
     def __init__(self, parent, name, type_, return_type, gb_obj, gb_name):
         super().__init__(parent, name, type_, return_type, gb_obj, gb_name)
         self._identity = None
-
-    def __call__(self, left, right=None, *, left_default=None, right_default=None):
-        if left_default is not None or right_default is not None:
-            if (
-                left_default is None
-                or right_default is None
-                or right is not None
-                or not isinstance(left, InfixExprBase)
-                or left.method_name != "ewise_add"
-            ):
-                raise TypeError(
-                    "Specifying `left_default` or `right_default` keyword arguments implies "
-                    "performing `ewise_union` operation with infix notation.\n"
-                    "There is only one valid way to do this:\n\n"
-                    f">>> {self}(x | y, left_default=0, right_default=0)\n\nwhere x and y "
-                    "are Vectors or Matrices, and left_default and right_default are scalars."
-                )
-            return left.left.ewise_union(left.right, self, left_default, right_default)
-        return _call_op(self, left, right)
 
     @property
     def identity(self):
@@ -83,6 +63,8 @@ class TypedBuiltinMonoid(TypedOpBase):
     def is_idempotent(self):
         """True if ``monoid(x, x) == x`` for any x."""
         return self.parent.is_idempotent
+
+    __call__ = TypedBuiltinBinaryOp.__call__
 
 
 class TypedUserMonoid(TypedOpBase):
