@@ -169,6 +169,17 @@ def test_matrix_to_from_networkx():
     assert M.nvals == 0
     assert M.shape == (1, 1)
 
+    # test creation of isolates
+    M = gb.Matrix.from_edgelist([(0,1),(3,0)],nrows=5,ncols=5)
+    G = gb.io.to_networkx(M, create_isolates=True)
+    G_nx = nx.DiGraph()
+    G_nx.add_edges_from([(0,1),(3,0)])
+    G_nx.add_nodes_from(range(5))
+    assert G.number_of_edges() == G_nx.number_of_edges() == 2
+    assert G.number_of_nodes() == G_nx.number_of_nodes() == 5
+    from networkx.utils import graphs_equal
+    assert graphs_equal(G, G_nx)
+
 
 @pytest.mark.skipif("not ss")
 @pytest.mark.parametrize("engine", ["auto", "scipy", "fmm"])
