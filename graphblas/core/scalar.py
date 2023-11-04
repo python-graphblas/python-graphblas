@@ -629,7 +629,23 @@ class Scalar(BaseType):
             # Functional syntax
             c << monoid.max(a | b)
         """
+        return self._ewise_add(other, op)
+
+    def _ewise_add(self, other, op=monoid.plus, is_infix=False):
         method_name = "ewise_add"
+        if is_infix:
+            from .infix import ScalarEwiseAddExpr
+
+            # This is a little different than how we handle ewise_add for Vector and
+            # Matrix where we are super-careful to handle dtypes well to support UDTs.
+            # For Scalar, we're going to let dtypes in expressions resolve themselves.
+            # Scalars are more challenging, because they may be literal scalars.
+            # Also, we have not yet resolved `op` here, so errors may be different.
+            if isinstance(self, ScalarEwiseAddExpr):
+                self = op(self).new()
+            if isinstance(other, ScalarEwiseAddExpr):
+                other = op(other).new()
+
         if type(other) is not Scalar:
             dtype = self.dtype if self.dtype._is_udt else None
             try:
@@ -683,7 +699,23 @@ class Scalar(BaseType):
             # Functional syntax
             c << binary.gt(a & b)
         """
+        return self._ewise_mult(other, op)
+
+    def _ewise_mult(self, other, op=binary.times, is_infix=False):
         method_name = "ewise_mult"
+        if is_infix:
+            from .infix import ScalarEwiseMultExpr
+
+            # This is a little different than how we handle ewise_mult for Vector and
+            # Matrix where we are super-careful to handle dtypes well to support UDTs.
+            # For Scalar, we're going to let dtypes in expressions resolve themselves.
+            # Scalars are more challenging, because they may be literal scalars.
+            # Also, we have not yet resolved `op` here, so errors may be different.
+            if isinstance(self, ScalarEwiseMultExpr):
+                self = op(self).new()
+            if isinstance(other, ScalarEwiseMultExpr):
+                other = op(other).new()
+
         if type(other) is not Scalar:
             dtype = self.dtype if self.dtype._is_udt else None
             try:
@@ -741,7 +773,23 @@ class Scalar(BaseType):
             # Functional syntax
             c << binary.div(a | b, left_default=1, right_default=1)
         """
+        return self._ewise_union(other, op, left_default, right_default)
+
+    def _ewise_union(self, other, op, left_default, right_default, is_infix=False):
         method_name = "ewise_union"
+        if is_infix:
+            from .infix import ScalarEwiseAddExpr
+
+            # This is a little different than how we handle ewise_union for Vector and
+            # Matrix where we are super-careful to handle dtypes well to support UDTs.
+            # For Scalar, we're going to let dtypes in expressions resolve themselves.
+            # Scalars are more challenging, because they may be literal scalars.
+            # Also, we have not yet resolved `op` here, so errors may be different.
+            if isinstance(self, ScalarEwiseAddExpr):
+                self = op(self, left_default=left_default, right_default=right_default).new()
+            if isinstance(other, ScalarEwiseAddExpr):
+                other = op(other, left_default=left_default, right_default=right_default).new()
+
         right_dtype = self.dtype
         dtype = right_dtype if right_dtype._is_udt else None
         if type(other) is not Scalar:

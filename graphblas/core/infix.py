@@ -126,6 +126,19 @@ class ScalarEwiseAddExpr(ScalarInfixExpr):
 
     _to_expr = _ewise_add_to_expr
 
+    # Allow e.g. `plus(x | y | z)`
+    __or__ = Scalar.__or__
+    __ror__ = Scalar.__ror__
+    _ewise_add = Scalar._ewise_add
+    _ewise_union = Scalar._ewise_union
+
+    # Don't allow e.g. `plus(x | y & z)`
+    def __and__(self, other):
+        raise TypeError("XXX")
+
+    def __rand__(self, other):
+        raise TypeError("XXX")
+
 
 class ScalarEwiseMultExpr(ScalarInfixExpr):
     __slots__ = ()
@@ -134,6 +147,18 @@ class ScalarEwiseMultExpr(ScalarInfixExpr):
     _infix = "&"
 
     _to_expr = _ewise_mult_to_expr
+
+    # Allow e.g. `plus(x & y & z)`
+    __and__ = Scalar.__and__
+    __rand__ = Scalar.__rand__
+    _ewise_mult = Scalar._ewise_mult
+
+    # Don't allow e.g. `plus(x | y & z)`
+    def __or__(self, other):
+        raise TypeError("XXX")
+
+    def __ror__(self, other):
+        raise TypeError("XXX")
 
 
 class ScalarMatMulExpr(ScalarInfixExpr):
@@ -239,6 +264,15 @@ class VectorEwiseAddExpr(VectorInfixExpr):
 
     _to_expr = _ewise_add_to_expr
 
+    # Allow e.g. `plus(x | y | z)`
+    __or__ = Vector.__or__
+    __ror__ = Vector.__ror__
+    _ewise_add = Vector._ewise_add
+    _ewise_union = Vector._ewise_union
+    # Don't allow e.g. `plus(x | y & z)`
+    __and__ = ScalarEwiseAddExpr.__and__  # raises
+    __rand__ = ScalarEwiseAddExpr.__rand__  # raises
+
 
 class VectorEwiseMultExpr(VectorInfixExpr):
     __slots__ = ()
@@ -247,6 +281,14 @@ class VectorEwiseMultExpr(VectorInfixExpr):
     _infix = "&"
 
     _to_expr = _ewise_mult_to_expr
+
+    # Allow e.g. `plus(x & y & z)`
+    __and__ = Vector.__and__
+    __rand__ = Vector.__rand__
+    _ewise_mult = Vector._ewise_mult
+    # Don't allow e.g. `plus(x | y & z)`
+    __or__ = ScalarEwiseMultExpr.__or__  # raises
+    __ror__ = ScalarEwiseMultExpr.__ror__  # raises
 
 
 class VectorMatMulExpr(VectorInfixExpr):
@@ -258,6 +300,11 @@ class VectorMatMulExpr(VectorInfixExpr):
         InfixExprBase.__init__(self, left, right)
         self.method_name = method_name
         self._size = size
+
+    __matmul__ = Vector.__matmul__
+    __rmatmul__ = Vector.__rmatmul__
+    _inner = Vector._inner
+    _vxm = Vector._vxm
 
 
 utils._output_types[VectorEwiseAddExpr] = Vector
@@ -376,6 +423,15 @@ class MatrixEwiseAddExpr(MatrixInfixExpr):
 
     _to_expr = _ewise_add_to_expr
 
+    # Allow e.g. `plus(x | y | z)`
+    __or__ = Matrix.__or__
+    __ror__ = Matrix.__ror__
+    _ewise_add = Matrix._ewise_add
+    _ewise_union = Matrix._ewise_union
+    # Don't allow e.g. `plus(x | y & z)`
+    __and__ = VectorEwiseAddExpr.__and__  # raises
+    __rand__ = VectorEwiseAddExpr.__rand__  # raises
+
 
 class MatrixEwiseMultExpr(MatrixInfixExpr):
     __slots__ = ()
@@ -384,6 +440,14 @@ class MatrixEwiseMultExpr(MatrixInfixExpr):
     _infix = "&"
 
     _to_expr = _ewise_mult_to_expr
+
+    # Allow e.g. `plus(x & y & z)`
+    __and__ = Matrix.__and__
+    __rand__ = Matrix.__rand__
+    _ewise_mult = Matrix._ewise_mult
+    # Don't allow e.g. `plus(x | y & z)`
+    __or__ = VectorEwiseMultExpr.__or__  # raises
+    __ror__ = VectorEwiseMultExpr.__ror__  # raises
 
 
 class MatrixMatMulExpr(MatrixInfixExpr):
@@ -396,6 +460,11 @@ class MatrixMatMulExpr(MatrixInfixExpr):
         super().__init__(left, right)
         self._nrows = nrows
         self._ncols = ncols
+
+    __matmul__ = Matrix.__matmul__
+    __rmatmul__ = Matrix.__rmatmul__
+    _mxm = Matrix._mxm
+    _mxv = Matrix._mxv
 
 
 utils._output_types[MatrixEwiseAddExpr] = Matrix
@@ -513,6 +582,9 @@ def _matmul_infix_expr(left, right, *, within):
         f"Bad types for matmul infix: {type(left).__name__}, {type(right).__name__}"
     )
 
+
+_ewise_add_expr_types = (MatrixEwiseAddExpr, VectorEwiseAddExpr, ScalarEwiseAddExpr)
+_ewise_mult_expr_types = (MatrixEwiseMultExpr, VectorEwiseMultExpr, ScalarEwiseMultExpr)
 
 # Import infixmethods, which has side effects
 from . import infixmethods  # noqa: E402, F401 isort:skip

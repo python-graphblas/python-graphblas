@@ -2805,6 +2805,8 @@ def test_ss_nbytes(A):
 
 @autocompute
 def test_auto(A, v):
+    from graphblas.core.infix import MatrixEwiseMultExpr
+
     expected = binary.land[bool](A & A).new()
     B = A.dup(dtype=bool)
     for expr in [(B & B), binary.land[bool](A & A)]:
@@ -2832,12 +2834,21 @@ def test_auto(A, v):
         ]:
             # print(type(expr).__name__, method)
             val1 = getattr(expected, method)(expected).new()
-            val2 = getattr(expected, method)(expr)
-            val3 = getattr(expr, method)(expected)
-            val4 = getattr(expr, method)(expr)
-            assert val1.isequal(val2)
-            assert val1.isequal(val3)
-            assert val1.isequal(val4)
+            if method in {"__or__", "__ror__"} and type(expr) is MatrixEwiseMultExpr:
+                # Doing e.g. `plus(A & B | C)` isn't allowed--make user be explicit
+                with pytest.raises(TypeError):
+                    val2 = getattr(expected, method)(expr)
+                with pytest.raises(TypeError):
+                    val3 = getattr(expr, method)(expected)
+                with pytest.raises(TypeError):
+                    val4 = getattr(expr, method)(expr)
+            else:
+                val2 = getattr(expected, method)(expr)
+                assert val1.isequal(val2)
+                val3 = getattr(expr, method)(expected)
+                assert val1.isequal(val3)
+                val4 = getattr(expr, method)(expr)
+                assert val1.isequal(val4)
         for method in ["reduce_rowwise", "reduce_columnwise", "reduce_scalar"]:
             s1 = getattr(expected, method)(monoid.lor).new()
             s2 = getattr(expr, method)(monoid.lor)
@@ -2946,7 +2957,7 @@ def test_expr_is_like_matrix(A):
         "setdiag",
         "update",
     }
-    ignore = {"__sizeof__"}
+    ignore = {"__sizeof__", "_ewise_add", "_ewise_mult", "_ewise_union", "_mxm", "_mxv"}
     assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Matrix.  You may need to "
         "add an entry to `matrix` or `matrix_vector` set in `graphblas.core.automethods` "
@@ -3011,7 +3022,7 @@ def test_index_expr_is_like_matrix(A):
         "resize",
         "setdiag",
     }
-    ignore = {"__sizeof__"}
+    ignore = {"__sizeof__", "_ewise_add", "_ewise_mult", "_ewise_union", "_mxm", "_mxv"}
     assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Matrix.  You may need to "
         "add an entry to `matrix` or `matrix_vector` set in `graphblas.core.automethods` "

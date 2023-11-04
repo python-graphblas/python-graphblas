@@ -1,6 +1,6 @@
 import pytest
 
-from graphblas import monoid, op
+from graphblas import binary, monoid, op
 from graphblas.exceptions import DimensionMismatch
 
 from .conftest import autocompute
@@ -367,3 +367,415 @@ def test_infix_expr_value_types():
     expr._value = None
     assert expr._value is None
     assert expr._expr._value is None
+
+
+def test_multi_infix_vector():
+    D0 = Vector.from_scalar(0, 3).diag()
+    v1 = Vector.from_coo([0, 1], [1, 2], size=3)  # 1 2 .
+    v2 = Vector.from_coo([1, 2], [1, 2], size=3)  # . 1 2
+    v3 = Vector.from_coo([2, 0], [1, 2], size=3)  # 2 . 1
+    # ewise_add
+    result = binary.plus((v1 | v2) | v3).new()
+    expected = Vector.from_scalar(3, size=3)
+    assert result.isequal(expected)
+    result = binary.plus(v1 | (v2 | v3)).new()
+    assert result.isequal(expected)
+    result = monoid.min(v1 | v2 | v3).new()
+    expected = Vector.from_scalar(1, size=3)
+    assert result.isequal(expected)
+    # ewise_mult
+    result = monoid.max((v1 & v2) & v3).new()
+    expected = Vector(int, size=3)
+    assert result.isequal(expected)
+    result = monoid.max(v1 & (v2 & v3)).new()
+    assert result.isequal(expected)
+    result = monoid.min((v1 & v2) & v1).new()
+    expected = Vector.from_coo([1], [1], size=3)
+    assert result.isequal(expected)
+    # ewise_union
+    result = binary.plus((v1 | v2) | v3, left_default=10, right_default=10).new()
+    expected = Vector.from_scalar(13, size=3)
+    assert result.isequal(expected)
+    result = binary.plus((v1 | v2) | v3, left_default=10, right_default=10.0).new()
+    expected = Vector.from_scalar(13.0, size=3)
+    assert result.isequal(expected)
+    result = binary.plus(v1 | (v2 | v3), left_default=10, right_default=10).new()
+    assert result.isequal(expected)
+    # inner
+    assert op.plus_plus(v1 @ v1).new().value == 6
+    assert op.plus_plus(v1 @ (v1 @ D0)).new().value == 6
+    assert op.plus_plus((D0 @ v1) @ v1).new().value == 6
+    # matrix-vector ewise_add
+    result = binary.plus((D0 | v1) | v2).new()
+    expected = binary.plus(binary.plus(D0 | v1).new() | v2).new()
+    assert result.isequal(expected)
+    result = binary.plus(D0 | (v1 | v2)).new()
+    assert result.isequal(expected)
+    result = binary.plus((v1 | v2) | D0).new()
+    assert result.isequal(expected.T)
+    result = binary.plus(v1 | (v2 | D0)).new()
+    assert result.isequal(expected.T)
+    # matrix-vector ewise_mult
+    result = binary.plus((D0 & v1) & v2).new()
+    expected = binary.plus(binary.plus(D0 & v1).new() & v2).new()
+    assert result.isequal(expected)
+    assert result.nvals > 0
+    result = binary.plus(D0 & (v1 & v2)).new()
+    assert result.isequal(expected)
+    result = binary.plus((v1 & v2) & D0).new()
+    assert result.isequal(expected.T)
+    result = binary.plus(v1 & (v2 & D0)).new()
+    assert result.isequal(expected.T)
+    # matrix-vector ewise_union
+    kwargs = {"left_default": 10, "right_default": 20}
+    result = binary.plus((D0 | v1) | v2, **kwargs).new()
+    expected = binary.plus(binary.plus(D0 | v1, **kwargs).new() | v2, **kwargs).new()
+    assert result.isequal(expected)
+    result = binary.plus(D0 | (v1 | v2), **kwargs).new()
+    expected = binary.plus(D0 | binary.plus(v1 | v2, **kwargs).new(), **kwargs).new()
+    assert result.isequal(expected)
+    result = binary.plus((v1 | v2) | D0, **kwargs).new()
+    expected = binary.plus(binary.plus(v1 | v2, **kwargs).new() | D0, **kwargs).new()
+    assert result.isequal(expected)
+    result = binary.plus(v1 | (v2 | D0), **kwargs).new()
+    expected = binary.plus(v1 | binary.plus(v2 | D0, **kwargs).new(), **kwargs).new()
+    assert result.isequal(expected)
+    # vxm, mxv
+    result = op.plus_plus((D0 @ v1) @ D0).new()
+    assert result.isequal(v1)
+    result = op.plus_plus(D0 @ (v1 @ D0)).new()
+    assert result.isequal(v1)
+    result = op.plus_plus(v1 @ (D0 @ D0)).new()
+    assert result.isequal(v1)
+    result = op.plus_plus((D0 @ D0) @ v1).new()
+    assert result.isequal(v1)
+    result = op.plus_plus((v1 @ D0) @ D0).new()
+    assert result.isequal(v1)
+    result = op.plus_plus(D0 @ (D0 @ v1)).new()
+    assert result.isequal(v1)
+
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) | v3
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2).__ror__(v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) | (v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) | (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1 | (v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1.__ror__(v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) | (v2 & v3)
+
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1 & (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1.__rand__(v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) & (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) & (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) & v3
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2).__rand__(v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) & (v2 & v3)
+
+    # We differentiate between infix and methods
+    with pytest.raises(TypeError, match="to automatically compute"):
+        v1.ewise_add(v2 & v3)
+    with pytest.raises(TypeError, match="Automatic computation"):
+        (v1 & v2).ewise_add(v3)
+    with pytest.raises(TypeError, match="to automatically compute"):
+        v1.ewise_union(v2 & v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="Automatic computation"):
+        (v1 & v2).ewise_union(v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="to automatically compute"):
+        v1.ewise_mult(v2 | v3)
+    with pytest.raises(TypeError, match="Automatic computation"):
+        (v1 | v2).ewise_mult(v3)
+
+
+@autocompute
+def test_multi_infix_vector_auto():
+    v1 = Vector.from_coo([0, 1], [1, 2], size=3)  # 1 2 .
+    v2 = Vector.from_coo([1, 2], [1, 2], size=3)  # . 1 2
+    v3 = Vector.from_coo([2, 0], [1, 2], size=3)  # 2 . 1
+    # We differentiate between infix and methods
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        v1.ewise_add(v2 & v3)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        (v1 & v2).ewise_add(v3)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        v1.ewise_union(v2 & v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        (v1 & v2).ewise_union(v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        v1.ewise_mult(v2 | v3)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        (v1 | v2).ewise_mult(v3)
+
+
+def test_multi_infix_matrix():
+    # Adapted from test_multi_infix_vector
+    D0 = Vector.from_scalar(0, 3).diag()
+    v1 = Matrix.from_coo([0, 1], [0, 0], [1, 2], nrows=3)  # 1 2 .
+    v2 = Matrix.from_coo([1, 2], [0, 0], [1, 2], nrows=3)  # . 1 2
+    v3 = Matrix.from_coo([2, 0], [0, 0], [1, 2], nrows=3)  # 2 . 1
+    # ewise_add
+    result = binary.plus((v1 | v2) | v3).new()
+    expected = Matrix.from_scalar(3, 3, 1)
+    assert result.isequal(expected)
+    result = binary.plus(v1 | (v2 | v3)).new()
+    assert result.isequal(expected)
+    result = monoid.min(v1 | v2 | v3).new()
+    expected = Matrix.from_scalar(1, 3, 1)
+    assert result.isequal(expected)
+    result = binary.plus(v1 | v1 | v1 | v1 | v1).new()
+    expected = (5 * v1).new()
+    assert result.isequal(expected)
+    # ewise_mult
+    result = monoid.max((v1 & v2) & v3).new()
+    expected = Matrix(int, 3, 1)
+    assert result.isequal(expected)
+    result = monoid.max(v1 & (v2 & v3)).new()
+    assert result.isequal(expected)
+    result = monoid.min((v1 & v2) & v1).new()
+    expected = Matrix.from_coo([1], [0], [1], nrows=3)
+    assert result.isequal(expected)
+    result = binary.plus(v1 & v1 & v1 & v1 & v1).new()
+    expected = (5 * v1).new()
+    assert result.isequal(expected)
+    # ewise_union
+    result = binary.plus((v1 | v2) | v3, left_default=10, right_default=10).new()
+    expected = Matrix.from_scalar(13, 3, 1)
+    assert result.isequal(expected)
+    result = binary.plus((v1 | v2) | v3, left_default=10, right_default=10.0).new()
+    expected = Matrix.from_scalar(13.0, 3, 1)
+    assert result.isequal(expected)
+    result = binary.plus(v1 | (v2 | v3), left_default=10, right_default=10).new()
+    assert result.isequal(expected)
+    # mxm
+    assert op.plus_plus(v1.T @ v1).new()[0, 0].new().value == 6
+    assert op.plus_plus(v1 @ (v1.T @ D0)).new()[0, 0].new().value == 2
+    assert op.plus_plus((v1.T @ D0) @ v1).new()[0, 0].new().value == 6
+    assert op.plus_plus(D0 @ D0 @ D0 @ D0 @ D0).new().isequal(D0)
+
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) | v3
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2).__ror__(v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) | (v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) | (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1 | (v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1.__ror__(v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) | (v2 & v3)
+
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1 & (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1.__rand__(v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) & (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) & (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) & v3
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2).__rand__(v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) & (v2 & v3)
+
+    # We differentiate between infix and methods
+    with pytest.raises(TypeError, match="to automatically compute"):
+        v1.ewise_add(v2 & v3)
+    with pytest.raises(TypeError, match="Automatic computation"):
+        (v1 & v2).ewise_add(v3)
+    with pytest.raises(TypeError, match="to automatically compute"):
+        v1.ewise_union(v2 & v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="Automatic computation"):
+        (v1 & v2).ewise_union(v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="to automatically compute"):
+        v1.ewise_mult(v2 | v3)
+    with pytest.raises(TypeError, match="Automatic computation"):
+        (v1 | v2).ewise_mult(v3)
+
+
+@autocompute
+def test_multi_infix_matrix_auto():
+    v1 = Matrix.from_coo([0, 1], [0, 0], [1, 2], nrows=3)  # 1 2 .
+    v2 = Matrix.from_coo([1, 2], [0, 0], [1, 2], nrows=3)  # . 1 2
+    v3 = Matrix.from_coo([2, 0], [0, 0], [1, 2], nrows=3)  # 2 . 1
+    # We differentiate between infix and methods
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        v1.ewise_add(v2 & v3)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        (v1 & v2).ewise_add(v3)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        v1.ewise_union(v2 & v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        (v1 & v2).ewise_union(v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        v1.ewise_mult(v2 | v3)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        (v1 | v2).ewise_mult(v3)
+
+
+def test_multi_infix_scalar():
+    # Adapted from test_multi_infix_vector
+    v1 = Scalar.from_value(1)
+    v2 = Scalar.from_value(2)
+    v3 = Scalar(int)
+    # ewise_add
+    result = binary.plus((v1 | v2) | v3).new()
+    expected = 3
+    assert result.isequal(expected)
+    result = binary.plus((1 | v2) | v3).new()
+    assert result.isequal(expected)
+    result = binary.plus((1 | v2) | 0).new()
+    assert result.isequal(expected)
+    result = binary.plus((v1 | 2) | v3).new()
+    assert result.isequal(expected)
+    result = binary.plus((v1 | 2) | 0).new()
+    assert result.isequal(expected)
+    result = binary.plus((v1 | v2) | 0).new()
+    assert result.isequal(expected)
+
+    result = binary.plus(v1 | (v2 | v3)).new()
+    assert result.isequal(expected)
+    result = binary.plus(1 | (v2 | v3)).new()
+    assert result.isequal(expected)
+    result = binary.plus(1 | (2 | v3)).new()
+    assert result.isequal(expected)
+    result = binary.plus(1 | (v2 | 0)).new()
+    assert result.isequal(expected)
+    result = binary.plus(v1 | (2 | v3)).new()
+    assert result.isequal(expected)
+    result = binary.plus(v1 | (v2 | 0)).new()
+    assert result.isequal(expected)
+
+    result = monoid.min(v1 | v2 | v3).new()
+    expected = 1
+    assert result.isequal(expected)
+    # ewise_mult
+    result = monoid.max((v1 & v2) & v3).new()
+    expected = None
+    assert result.isequal(expected)
+    result = monoid.max(v1 & (v2 & v3)).new()
+    assert result.isequal(expected)
+    result = monoid.min((v1 & v2) & v1).new()
+    expected = 1
+    assert result.isequal(expected)
+
+    result = monoid.min((1 & v2) & v1).new()
+    assert result.isequal(expected)
+    result = monoid.min((1 & v2) & 1).new()
+    assert result.isequal(expected)
+    result = monoid.min((v1 & 2) & v1).new()
+    assert result.isequal(expected)
+    result = monoid.min((v1 & 2) & 1).new()
+    assert result.isequal(expected)
+    result = monoid.min((v1 & v2) & 1).new()
+    assert result.isequal(expected)
+
+    result = monoid.min(1 & (v2 & v1)).new()
+    assert result.isequal(expected)
+    result = monoid.min(1 & (2 & v1)).new()
+    assert result.isequal(expected)
+    result = monoid.min(1 & (v2 & 1)).new()
+    assert result.isequal(expected)
+    result = monoid.min(v1 & (2 & v1)).new()
+    assert result.isequal(expected)
+    result = monoid.min(v1 & (v2 & 1)).new()
+    assert result.isequal(expected)
+
+    # ewise_union
+    result = binary.plus((v1 | v2) | v3, left_default=10, right_default=10).new()
+    expected = 13
+    assert result.isequal(expected)
+    result = binary.plus((1 | v2) | v3, left_default=10, right_default=10).new()
+    assert result.isequal(expected)
+    result = binary.plus((v1 | 2) | v3, left_default=10, right_default=10).new()
+    assert result.isequal(expected)
+    result = binary.plus((v1 | v2) | v3, left_default=10, right_default=10.0).new()
+    assert result.isequal(expected)
+    result = binary.plus(v1 | (v2 | v3), left_default=10, right_default=10).new()
+    assert result.isequal(expected)
+    result = binary.plus(1 | (v2 | v3), left_default=10, right_default=10).new()
+    assert result.isequal(expected)
+    result = binary.plus(1 | (2 | v3), left_default=10, right_default=10).new()
+    assert result.isequal(expected)
+    result = binary.plus(v1 | (2 | v3), left_default=10, right_default=10).new()
+    assert result.isequal(expected)
+
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) | v3
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2).__ror__(v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) | (v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) | (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1 | (v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1.__ror__(v2 & v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) | (v2 & v3)
+
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1 & (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        v1.__rand__(v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) & (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 & v2) & (v2 | v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) & v3
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2).__rand__(v3)
+    with pytest.raises(TypeError, match="XXX"):  # TODO
+        (v1 | v2) & (v2 & v3)
+
+    # We differentiate between infix and methods
+    with pytest.raises(TypeError, match="to automatically compute"):
+        v1.ewise_add(v2 & v3)
+    with pytest.raises(TypeError, match="Automatic computation"):
+        (v1 & v2).ewise_add(v3)
+    with pytest.raises(TypeError, match="to automatically compute"):
+        v1.ewise_union(v2 & v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="Automatic computation"):
+        (v1 & v2).ewise_union(v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="to automatically compute"):
+        v1.ewise_mult(v2 | v3)
+    with pytest.raises(TypeError, match="Automatic computation"):
+        (v1 | v2).ewise_mult(v3)
+
+
+@autocompute
+def test_multi_infix_scalar_auto():
+    v1 = Scalar.from_value(1)
+    v2 = Scalar.from_value(2)
+    v3 = Scalar(int)
+    # We differentiate between infix and methods
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        v1.ewise_add(v2 & v3)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        (v1 & v2).ewise_add(v3)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        v1.ewise_union(v2 & v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        (v1 & v2).ewise_union(v3, binary.plus, left_default=1, right_default=1)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        v1.ewise_mult(v2 | v3)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        (v1 | v2).ewise_mult(v3)

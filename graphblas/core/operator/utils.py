@@ -2,6 +2,7 @@ from types import BuiltinFunctionType, FunctionType, ModuleType
 
 from ... import backend, binary, config, indexunary, monoid, op, select, semiring, unary
 from ...dtypes import UINT64, lookup_dtype, unify
+from ..expr import InfixExprBase
 from .base import (
     _SS_OPERATORS,
     OpBase,
@@ -130,6 +131,30 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             kind=kind,
         )
     raise TypeError(f"Unable to get typed operator from object with type {type(op)}")
+
+
+def _get_typed_op_from_exprs(op, left, right, *, kind=None):
+    if isinstance(left, InfixExprBase):
+        left_op = _get_typed_op_from_exprs(op, left.left, left.right, kind=kind)
+        left_dtype = left_op.type
+    else:
+        left_op = None
+        left_dtype = left.dtype
+    if isinstance(right, InfixExprBase):
+        right_op = _get_typed_op_from_exprs(op, right.left, right.right, kind=kind)
+        if right_op is left_op:
+            return right_op
+        right_dtype = right_op.type2
+    else:
+        right_dtype = right.dtype
+    return get_typed_op(
+        op,
+        left_dtype,
+        right_dtype,
+        is_left_scalar=left._is_scalar,
+        is_right_scalar=right._is_scalar,
+        kind=kind,
+    )
 
 
 def get_semiring(monoid, binaryop, name=None):

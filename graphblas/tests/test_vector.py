@@ -1532,6 +1532,8 @@ def test_outer(v):
 
 @autocompute
 def test_auto(v):
+    from graphblas.core.infix import VectorEwiseMultExpr
+
     v = v.dup(dtype=bool)
     expected = binary.land(v & v).new()
     assert 0 not in expected
@@ -1581,15 +1583,24 @@ def test_auto(v):
         ]:
             # print(type(expr).__name__, method)
             val1 = getattr(expected, method)(expected).new()
-            val2 = getattr(expected, method)(expr)
-            val3 = getattr(expr, method)(expected)
-            val4 = getattr(expr, method)(expr)
-            assert val1.isequal(val2)
-            assert val1.isequal(val3)
-            assert val1.isequal(val4)
-            assert val1.isequal(val2.new())
-            assert val1.isequal(val3.new())
-            assert val1.isequal(val4.new())
+            if method in {"__or__", "__ror__"} and type(expr) is VectorEwiseMultExpr:
+                # Doing e.g. `plus(x & y | z)` isn't allowed--make user be explicit
+                with pytest.raises(TypeError):
+                    val2 = getattr(expected, method)(expr)
+                with pytest.raises(TypeError):
+                    val3 = getattr(expr, method)(expected)
+                with pytest.raises(TypeError):
+                    val4 = getattr(expr, method)(expr)
+            else:
+                val2 = getattr(expected, method)(expr)
+                assert val1.isequal(val2)
+                assert val1.isequal(val2.new())
+                val3 = getattr(expr, method)(expected)
+                assert val1.isequal(val3)
+                assert val1.isequal(val3.new())
+                val4 = getattr(expr, method)(expr)
+                assert val1.isequal(val4)
+                assert val1.isequal(val4.new())
         s1 = expected.reduce(monoid.lor).new()
         s2 = expr.reduce(monoid.lor)
         assert s1.isequal(s2.new())
@@ -1653,7 +1664,7 @@ def test_expr_is_like_vector(v):
         "resize",
         "update",
     }
-    ignore = {"__sizeof__"}
+    ignore = {"__sizeof__", "_ewise_add", "_ewise_mult", "_ewise_union", "_inner", "_vxm"}
     assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Vector.  You may need to "
         "add an entry to `vector` or `matrix_vector` set in `graphblas.core.automethods` "
@@ -1702,7 +1713,7 @@ def test_index_expr_is_like_vector(v):
         "from_values",
         "resize",
     }
-    ignore = {"__sizeof__"}
+    ignore = {"__sizeof__", "_ewise_add", "_ewise_mult", "_ewise_union", "_inner", "_vxm"}
     assert attrs - expr_attrs - ignore == expected, (
         "If you see this message, you probably added a method to Vector.  You may need to "
         "add an entry to `vector` or `matrix_vector` set in `graphblas.core.automethods` "
