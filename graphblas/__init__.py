@@ -39,7 +39,7 @@ del get_config
 backend = None
 _init_params = None
 _SPECIAL_ATTRS = {
-    "MAX_SIZE",
+    "MAX_SIZE",  # The maximum size of Vector and Matrix dimensions (GrB_INDEX_MAX + 1)
     "Matrix",
     "Recorder",
     "Scalar",
