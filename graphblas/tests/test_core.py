@@ -90,3 +90,7 @@ def test_packages():
     assert (
         pkgs == pkgs2
     ), "If there are extra items on the left, add them to pyproject.toml:tool.setuptools.packages"
+
+
+def test_index_max():
+    assert gb.INDEX_MAX == 2**60 - 1  # True for all current backends
