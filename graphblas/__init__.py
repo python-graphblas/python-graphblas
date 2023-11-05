@@ -39,7 +39,7 @@ del get_config
 backend = None
 _init_params = None
 _SPECIAL_ATTRS = {
-    "INDEX_MAX",
+    "MAX_SIZE",
     "Matrix",
     "Recorder",
     "Scalar",
@@ -206,10 +206,10 @@ def _load(name):
     if name in {"Matrix", "Vector", "Scalar", "Recorder"}:
         module = _import_module(f".core.{name.lower()}", __name__)
         globals()[name] = getattr(module, name)
-    elif name == "INDEX_MAX":
+    elif name == "MAX_SIZE":
         from .core import lib
 
-        globals()[name] = lib.GrB_INDEX_MAX
+        globals()[name] = lib.GrB_INDEX_MAX + 1
     else:
         # Everything else is a module
         globals()[name] = _import_module(f".{name}", __name__)

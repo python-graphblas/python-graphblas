@@ -93,4 +93,4 @@ def test_packages():
 
 
 def test_index_max():
-    assert gb.INDEX_MAX == 2**60 - 1  # True for all current backends
+    assert gb.MAX_SIZE == 2**60  # True for all current backends
