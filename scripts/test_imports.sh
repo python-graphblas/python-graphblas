@@ -13,7 +13,7 @@ if ! python -c "from graphblas.select import tril" ; then exit 1 ; fi
 if ! python -c "from graphblas.semiring import plus_times" ; then exit 1 ; fi
 if ! python -c "from graphblas.unary import exp" ; then exit 1 ; fi
 if ! (for attr in Matrix Scalar Vector Recorder agg binary dtypes exceptions \
-  init io monoid op select semiring tests unary ss viz INDEX_MAX
+  init io monoid op select semiring tests unary ss viz MAX_SIZE
   do echo python -c \"from graphblas import $attr\"
     if ! python -c "from graphblas import $attr"
       then exit 1
