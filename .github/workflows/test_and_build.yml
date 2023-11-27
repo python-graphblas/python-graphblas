@@ -135,7 +135,7 @@ jobs:
             1
             1
       - name: Setup mamba
-        uses: conda-incubator/setup-miniconda@v2
+        uses: conda-incubator/setup-miniconda@v3
         id: setup_mamba
         continue-on-error: true
         with:
@@ -148,7 +148,7 @@ jobs:
           activate-environment: graphblas
           auto-activate-base: false
       - name: Setup conda
-        uses: conda-incubator/setup-miniconda@v2
+        uses: conda-incubator/setup-miniconda@v3
         id: setup_conda
         if: steps.setup_mamba.outcome == 'failure'
         continue-on-error: false
