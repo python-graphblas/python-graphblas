@@ -4402,14 +4402,22 @@ def test_power(A):
         result = A.power(i, semiring.min_plus).new()
         assert result.isequal(expected)
         expected << semiring.min_plus(A @ expected)
+    # n == 0
+    result = A.power(0).new()
+    expected = Vector.from_scalar(1, A.nrows, A.dtype).diag()
+    assert result.isequal(expected)
+    result = A.power(0, semiring.plus_min).new()
+    identity = semiring.plus_min[A.dtype].binaryop.monoid.identity
+    assert identity != 1
+    expected = Vector.from_scalar(identity, A.nrows, A.dtype).diag()
+    assert result.isequal(expected)
     # Exceptional
-    with pytest.raises(TypeError, match="must be a positive integer"):
+    with pytest.raises(TypeError, match="must be a nonnegative integer"):
         A.power(1.5)
-    with pytest.raises(ValueError, match="must be a positive integer"):
+    with pytest.raises(ValueError, match="must be a nonnegative integer"):
         A.power(-1)
-    with pytest.raises(ValueError, match="must be a positive integer"):
-        # Not implemented yet... could create identity matrix
-        A.power(0)
+    with pytest.raises(ValueError, match="binaryop must be associated with a monoid"):
+        A.power(0, semiring.min_first)
     B = A[:2, :3].new()
     with pytest.raises(DimensionMismatch):
         B.power(2)

@@ -101,6 +101,10 @@ def _reposition(updater, indices, chunk):
 
 def _power(updater, A, n, op):
     opts = updater.opts
+    if n == 0:
+        v = Vector.from_scalar(op.binaryop.monoid.identity, A._nrows, A.dtype, name="v_diag")
+        updater << v.diag(name="M_diag")
+        return
     if n == 1:
         updater << A
         return
@@ -2895,7 +2899,11 @@ class Matrix(BaseType):
         Parameters
         ----------
         n : int
-            The exponent must be a positive integer.
+            The exponent must be a nonnegative integer. If n=0, the result will be a diagonal
+            matrix with values equal to the identity of the semiring's binary operator.
+            For example, ``plus_times`` will have diagonal values of 1, which is the
+            identity of ``times``. The binary operator must be associated with a monoid
+            when n=0 so the identity can be determined; otherwise, ValueError is raised.
         op : :class:`~graphblas.core.operator.Semiring`
             Semiring used in the computation
 
@@ -2923,11 +2931,17 @@ class Matrix(BaseType):
         if self._nrows != self._ncols:
             raise DimensionMismatch(f"power only works for square Matrix; shape is {self.shape}")
         if (N := maybe_integral(n)) is None:
-            raise TypeError(f"n must be a positive integer; got bad type: {type(n)}")
-        if N <= 0:
-            raise ValueError(f"n must be a positive integer; got: {N}")
+            raise TypeError(f"n must be a nonnegative integer; got bad type: {type(n)}")
+        if N < 0:
+            raise ValueError(f"n must be a nonnegative integer; got: {N}")
         op = get_typed_op(op, self.dtype, kind="semiring")
         self._expect_op(op, "Semiring", within=method_name, argname="op")
+        if N == 0 and op.binaryop.monoid is None:
+            raise ValueError(
+                f"Binary operator of {op} semiring does not have a monoid with an identity. "
+                "When n=0, the result is a diagonal matrix with values equal to the "
+                "identity of the binaryop, so the binaryop must be associated with a monoid."
+            )
         return MatrixExpression(
             "power",
             None,
