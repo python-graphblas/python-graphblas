@@ -75,6 +75,9 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
     from .agg import Aggregator, TypedAggregator
 
     if isinstance(op, Aggregator):
+        # agg._any_dtype basically serves the same purpose as op._custom_dtype
+        if op._any_dtype is not None and op._any_dtype is not True:
+            return op[op._any_dtype]
         return op[dtype]
     if isinstance(op, TypedAggregator):
         return op

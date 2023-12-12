@@ -250,7 +250,7 @@ def test_update(s):
 
 def test_not_hashable(s):
     with pytest.raises(TypeError, match="unhashable type"):
-        {s}
+        _ = {s}
     with pytest.raises(TypeError, match="unhashable type"):
         hash(s)
 
