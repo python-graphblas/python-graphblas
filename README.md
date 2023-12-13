@@ -9,7 +9,7 @@
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/python-graphblas)](https://pypi.python.org/pypi/python-graphblas/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/python-graphblas/python-graphblas/blob/main/LICENSE)
 <br>
-[![Tests](https://github.com/python-graphblas/python-graphblas/workflows/Tests/badge.svg?branch=main)](https://github.com/python-graphblas/python-graphblas/actions)
+[![Tests](https://github.com/python-graphblas/python-graphblas/actions/workflows/test_and_build.yml/badge.svg?branch=main)](https://github.com/python-graphblas/python-graphblas/actions)
 [![Docs](https://readthedocs.org/projects/python-graphblas/badge/?version=latest)](https://python-graphblas.readthedocs.io/en/latest/)
 [![Coverage](https://codecov.io/gh/python-graphblas/python-graphblas/graph/badge.svg?token=D7HHLDPQ2Q)](https://codecov.io/gh/python-graphblas/python-graphblas)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7328791.svg)](https://doi.org/10.5281/zenodo.7328791)
