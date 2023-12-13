@@ -948,6 +948,21 @@ def test_reduce_agg(v):
     assert s.is_empty
 
 
+def test_reduce_agg_count_is_int64(v):
+    """Aggregators that count should default to INT64 return dtype."""
+    assert v.dtype == dtypes.INT64
+    res = v.reduce(agg.count).new()
+    assert res.dtype == dtypes.INT64
+    assert res == 4
+    res = v.dup(dtypes.INT8).reduce(agg.count).new()
+    assert res.dtype == dtypes.INT64
+    assert res == 4
+    # Allow return dtype to be specified
+    res = v.dup(dtypes.INT8).reduce(agg.count[dtypes.INT16]).new()
+    assert res.dtype == dtypes.INT16
+    assert res == 4
+
+
 @pytest.mark.skipif("not suitesparse")
 def test_reduce_agg_argminmax(v):
     assert v.reduce(agg.ss.argmin).new() == 6
