@@ -375,7 +375,6 @@ ignore = [
 ]
 
 [tool.ruff.per-file-ignores]
-"graphblas/core/agg.py" = ["F401", "F403"]  # Deprecated
 "graphblas/core/operator/base.py" = ["S102"]  # exec is used for UDF
 "graphblas/core/ss/matrix.py" = ["NPY002"]  # numba doesn't support rng generator yet
 "graphblas/core/ss/vector.py" = ["NPY002"]  # numba doesn't support rng generator yet
