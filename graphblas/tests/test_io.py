@@ -39,17 +39,6 @@ suitesparse = gb.backend == "suitesparse"
 
 
 @pytest.mark.skipif("not ss")
-def test_deprecated():
-    a = np.array([0.0, 2.0, 4.1])
-    with pytest.warns(DeprecationWarning):
-        v = gb.io.from_numpy(a)
-    assert v.isequal(gb.Vector.from_coo([1, 2], [2.0, 4.1]), check_dtype=True)
-    with pytest.warns(DeprecationWarning):
-        a2 = gb.io.to_numpy(v)
-    np.testing.assert_array_equal(a, a2)
-
-
-@pytest.mark.skipif("not ss")
 def test_vector_to_from_numpy():
     a = np.array([0.0, 2.0, 4.1])
     v = Vector.from_dense(a, 0)
