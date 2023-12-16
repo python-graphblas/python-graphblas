@@ -236,7 +236,6 @@ class VectorInfixExpr(InfixExprBase):
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dense = wrapdoc(Vector.to_dense)(property(automethods.to_dense))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
-    to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
     wait = wrapdoc(Vector.wait)(property(automethods.wait))
     # These raise exceptions
@@ -396,7 +395,6 @@ class MatrixInfixExpr(InfixExprBase):
     to_dense = wrapdoc(Matrix.to_dense)(property(automethods.to_dense))
     to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
     to_edgelist = wrapdoc(Matrix.to_edgelist)(property(automethods.to_edgelist))
-    to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
     # These raise exceptions
     __array__ = Matrix.__array__

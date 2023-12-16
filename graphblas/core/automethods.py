@@ -281,10 +281,6 @@ def to_edgelist(self):
     return self._get_value("to_edgelist")
 
 
-def to_values(self):
-    return self._get_value("to_values")
-
-
 def value(self):
     return self._get_value("value")
 
@@ -398,7 +394,6 @@ def _main():
         "ss",
         "to_coo",
         "to_dense",
-        "to_values",
     }
     vector = {
         "_as_matrix",

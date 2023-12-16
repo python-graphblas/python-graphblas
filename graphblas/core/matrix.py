@@ -1,5 +1,4 @@
 import itertools
-import warnings
 from collections.abc import Sequence
 
 import numpy as np
@@ -515,42 +514,6 @@ class Matrix(BaseType):
         self._nrows = nrows.value
         self._ncols = ncols.value
 
-    def to_values(self, dtype=None, *, rows=True, columns=True, values=True, sort=True):
-        """Extract the indices and values as a 3-tuple of numpy arrays
-        corresponding to the COO format of the Matrix.
-
-        .. deprecated:: 2022.11.0
-            ``Matrix.to_values`` will be removed in a future release.
-            Use ``Matrix.to_coo`` instead. Will be removed in version 2023.9.0 or later
-
-        Parameters
-        ----------
-        dtype :
-            Requested dtype for the output values array.
-        rows : bool, default=True
-            Whether to return rows; will return ``None`` for rows if ``False``
-        columns : bool, default=True
-            Whether to return columns; will return ``None`` for columns if ``False``
-        values : bool, default=True
-            Whether to return values; will return ``None`` for values if ``False``
-        sort : bool, default=True
-            Whether to require sorted indices.
-            If internally stored rowwise, the sorting will be first by rows, then by column.
-            If internally stored columnwise, the sorting will be first by column, then by row.
-
-        Returns
-        -------
-        np.ndarray[dtype=uint64] : Rows
-        np.ndarray[dtype=uint64] : Columns
-        np.ndarray : Values
-        """
-        warnings.warn(
-            "`Matrix.to_values(...)` is deprecated; please use `Matrix.to_coo(...)` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.to_coo(dtype, rows=rows, columns=columns, values=values, sort=sort)
-
     def to_coo(self, dtype=None, *, rows=True, columns=True, values=True, sort=True):
         """Extract the indices and values as a 3-tuple of numpy arrays
         corresponding to the COO format of the Matrix.
@@ -835,61 +798,6 @@ class Matrix(BaseType):
         raise ValueError(
             "Bad row, col arguments in Matrix.get(...).  "
             "Indices should get a single element, which will be extracted as a Python scalar."
-        )
-
-    @classmethod
-    def from_values(
-        cls,
-        rows,
-        columns,
-        values,
-        dtype=None,
-        *,
-        nrows=None,
-        ncols=None,
-        dup_op=None,
-        name=None,
-    ):
-        """Create a new Matrix from row and column indices and values.
-
-        .. deprecated:: 2022.11.0
-            ``Matrix.from_values`` will be removed in a future release.
-            Use ``Matrix.from_coo`` instead. Will be removed in version 2023.9.0 or later
-
-        Parameters
-        ----------
-        rows : list or np.ndarray
-            Row indices.
-        columns : list or np.ndarray
-            Column indices.
-        values : list or np.ndarray or scalar
-            List of values. If a scalar is provided, all values will be set to this single value.
-        dtype :
-            Data type of the Matrix. If not provided, the values will be inspected
-            to choose an appropriate dtype.
-        nrows : int, optional
-            Number of rows in the Matrix. If not provided, ``nrows`` is computed
-            from the maximum row index found in ``rows``.
-        ncols : int, optional
-            Number of columns in the Matrix. If not provided, ``ncols`` is computed
-            from the maximum column index found in ``columns``.
-        dup_op : :class:`~graphblas.core.operator.BinaryOp`, optional
-            Function used to combine values if duplicate indices are found.
-            Leaving ``dup_op=None`` will raise an error if duplicates are found.
-        name : str, optional
-            Name to give the Matrix.
-
-        Returns
-        -------
-        Matrix
-        """
-        warnings.warn(
-            "`Matrix.from_values(...)` is deprecated; please use `Matrix.from_coo(...)` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return cls.from_coo(
-            rows, columns, values, dtype, nrows=nrows, ncols=ncols, dup_op=dup_op, name=name
         )
 
     @classmethod
@@ -3751,7 +3659,6 @@ class MatrixExpression(BaseExpression):
     to_dense = wrapdoc(Matrix.to_dense)(property(automethods.to_dense))
     to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
     to_edgelist = wrapdoc(Matrix.to_edgelist)(property(automethods.to_edgelist))
-    to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
     # These raise exceptions
     __array__ = Matrix.__array__
@@ -3852,7 +3759,6 @@ class MatrixIndexExpr(AmbiguousAssignOrExtract):
     to_dense = wrapdoc(Matrix.to_dense)(property(automethods.to_dense))
     to_dicts = wrapdoc(Matrix.to_dicts)(property(automethods.to_dicts))
     to_edgelist = wrapdoc(Matrix.to_edgelist)(property(automethods.to_edgelist))
-    to_values = wrapdoc(Matrix.to_values)(property(automethods.to_values))
     wait = wrapdoc(Matrix.wait)(property(automethods.wait))
     # These raise exceptions
     __array__ = Matrix.__array__
@@ -3923,13 +3829,6 @@ class TransposedMatrix:
     @wrapdoc(Matrix.to_coo)
     def to_coo(self, dtype=None, *, rows=True, columns=True, values=True, sort=True):
         rows, cols, vals = self._matrix.to_coo(
-            dtype, rows=rows, columns=columns, values=values, sort=sort
-        )
-        return cols, rows, vals
-
-    @wrapdoc(Matrix.to_values)
-    def to_values(self, dtype=None, *, rows=True, columns=True, values=True, sort=True):
-        rows, cols, vals = self._matrix.to_values(
             dtype, rows=rows, columns=columns, values=values, sort=sort
         )
         return cols, rows, vals
