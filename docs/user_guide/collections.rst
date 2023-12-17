@@ -145,7 +145,7 @@ The shape and dtype remain unchanged, but the collection will be fully sparse (i
 to_coo
 ~~~~~~
 
-To go from a collection back to the index and values, ``.to_coo()`` can be called. Numpy arrays
+To go from a collection back to the index and values, ``.to_coo()`` can be called. NumPy arrays
 will be returned in a tuple.
 
 .. code-block:: python

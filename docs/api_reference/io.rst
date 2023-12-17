@@ -10,15 +10,18 @@ These methods require `networkx <https://networkx.org/>`_ to be installed.
 
 .. autofunction:: graphblas.io.to_networkx
 
-Numpy
+NumPy
 ~~~~~
 
-These methods require `scipy <https://scipy.org/>`_ to be installed, as some
-of the scipy.sparse machinery is used during the conversion process.
+These methods convert to and from dense arrays. For more, see :ref:`IO in the user guide <from-to-values>`.
 
-.. autofunction:: graphblas.io.from_numpy
+.. automethod:: graphblas.core.matrix.Matrix.from_dense
 
-.. autofunction:: graphblas.io.to_numpy
+.. automethod:: graphblas.core.matrix.Matrix.to_dense
+
+.. automethod:: graphblas.core.vector.Vector.from_dense
+
+.. automethod:: graphblas.core.vector.Vector.to_dense
 
 Scipy Sparse
 ~~~~~~~~~~~~
