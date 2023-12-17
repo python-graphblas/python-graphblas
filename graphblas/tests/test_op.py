@@ -1450,8 +1450,6 @@ def test_deprecated():
         gb.op.secondj
     with pytest.warns(DeprecationWarning, match="please use"):
         gb.agg.argmin
-    with pytest.warns(DeprecationWarning, match="please use"):
-        import graphblas.core.agg  # noqa: F401
 
 
 @pytest.mark.slow

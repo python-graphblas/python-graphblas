@@ -389,7 +389,7 @@ jobs:
           echo "from graphblas.agg import count" > script.py
           coverage run -a script.py
           echo "from graphblas import agg" > script.py  # Does this still cover?
-          echo "from graphblas.core import agg" >> script.py
+          echo "from graphblas.core.operator import agg" >> script.py
           coverage run -a script.py
           # Tests lazy loading of lib, ffi, and NULL in gb.core
           echo "from graphblas.core import base" > script.py
