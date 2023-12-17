@@ -1675,7 +1675,6 @@ def test_expr_is_like_vector(v):
         "from_dict",
         "from_pairs",
         "from_scalar",
-        "from_values",
         "resize",
         "update",
     }
@@ -1725,7 +1724,6 @@ def test_index_expr_is_like_vector(v):
         "from_dict",
         "from_pairs",
         "from_scalar",
-        "from_values",
         "resize",
     }
     ignore = {"__sizeof__", "_ewise_add", "_ewise_mult", "_ewise_union", "_inner", "_vxm"}
@@ -2010,13 +2008,6 @@ def test_ss_split(v):
     assert x2.isequal(expected2)
     assert x1.name == "split_0"
     assert x2.name == "split_1"
-
-
-def test_deprecated(v):
-    with pytest.warns(DeprecationWarning):
-        v.to_values()
-    with pytest.warns(DeprecationWarning):
-        Vector.from_values([1], [2])
 
 
 def test_ndim(A, v):

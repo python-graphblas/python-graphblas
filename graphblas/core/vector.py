@@ -1,5 +1,4 @@
 import itertools
-import warnings
 
 import numpy as np
 
@@ -456,36 +455,6 @@ class Vector(BaseType):
         call("GrB_Vector_resize", [self, size])
         self._size = size.value
 
-    def to_values(self, dtype=None, *, indices=True, values=True, sort=True):
-        """Extract the indices and values as a 2-tuple of numpy arrays.
-
-        .. deprecated:: 2022.11.0
-            ``Vector.to_values`` will be removed in a future release.
-            Use ``Vector.to_coo`` instead. Will be removed in version 2023.9.0 or later
-
-        Parameters
-        ----------
-        dtype :
-            Requested dtype for the output values array.
-        indices :bool, default=True
-            Whether to return indices; will return ``None`` for indices if ``False``
-        values : bool, default=True
-            Whether to return values; will return ``None`` for values if ``False``
-        sort : bool, default=True
-            Whether to require sorted indices.
-
-        Returns
-        -------
-        np.ndarray[dtype=uint64] : Indices
-        np.ndarray : Values
-        """
-        warnings.warn(
-            "`Vector.to_values(...)` is deprecated; please use `Vector.to_coo(...)` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.to_coo(dtype, indices=indices, values=values, sort=sort)
-
     def to_coo(self, dtype=None, *, indices=True, values=True, sort=True):
         """Extract the indices and values as a 2-tuple of numpy arrays.
 
@@ -696,43 +665,6 @@ class Vector(BaseType):
             "Bad index in Vector.get(...).  "
             "A single index should be given, and the result will be a Python scalar."
         )
-
-    @classmethod
-    def from_values(cls, indices, values, dtype=None, *, size=None, dup_op=None, name=None):
-        """Create a new Vector from indices and values.
-
-        .. deprecated:: 2022.11.0
-            ``Vector.from_values`` will be removed in a future release.
-            Use ``Vector.from_coo`` instead. Will be removed in version 2023.9.0 or later
-
-        Parameters
-        ----------
-        indices : list or np.ndarray
-            Vector indices.
-        values : list or np.ndarray or scalar
-            List of values. If a scalar is provided, all values will be set to this single value.
-        dtype :
-            Data type of the Vector. If not provided, the values will be inspected
-            to choose an appropriate dtype.
-        size : int, optional
-            Size of the Vector. If not provided, ``size`` is computed from
-            the maximum index found in ``indices``.
-        dup_op : BinaryOp, optional
-            Function used to combine values if duplicate indices are found.
-            Leaving ``dup_op=None`` will raise an error if duplicates are found.
-        name : str, optional
-            Name to give the Vector.
-
-        Returns
-        -------
-        Vector
-        """
-        warnings.warn(
-            "`Vector.from_values(...)` is deprecated; please use `Vector.from_coo(...)` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return cls.from_coo(indices, values, dtype, size=size, dup_op=dup_op, name=name)
 
     @classmethod
     def from_coo(cls, indices, values=1.0, dtype=None, *, size=None, dup_op=None, name=None):
@@ -2271,7 +2203,6 @@ class VectorExpression(BaseExpression):
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dense = wrapdoc(Vector.to_dense)(property(automethods.to_dense))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
-    to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
     wait = wrapdoc(Vector.wait)(property(automethods.wait))
     # These raise exceptions
@@ -2359,7 +2290,6 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
     to_coo = wrapdoc(Vector.to_coo)(property(automethods.to_coo))
     to_dense = wrapdoc(Vector.to_dense)(property(automethods.to_dense))
     to_dict = wrapdoc(Vector.to_dict)(property(automethods.to_dict))
-    to_values = wrapdoc(Vector.to_values)(property(automethods.to_values))
     vxm = wrapdoc(Vector.vxm)(property(automethods.vxm))
     wait = wrapdoc(Vector.wait)(property(automethods.wait))
     # These raise exceptions

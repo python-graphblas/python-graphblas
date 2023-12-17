@@ -2952,7 +2952,6 @@ def test_expr_is_like_matrix(A):
         "from_dicts",
         "from_edgelist",
         "from_scalar",
-        "from_values",
         "resize",
         "setdiag",
         "update",
@@ -3018,7 +3017,6 @@ def test_index_expr_is_like_matrix(A):
         "from_dicts",
         "from_edgelist",
         "from_scalar",
-        "from_values",
         "resize",
         "setdiag",
     }
@@ -3555,15 +3553,6 @@ def test_ss_compactify(A, do_iso):
     assert B.isequal(expected)
     with pytest.raises(ValueError, match="`how` argument must be one of:"):
         A.ss.compactify("bad_how")
-
-
-def test_deprecated(A):
-    with pytest.warns(DeprecationWarning):
-        A.to_values()
-    with pytest.warns(DeprecationWarning):
-        A.T.to_values()
-    with pytest.warns(DeprecationWarning):
-        A.from_values([1], [2], [3])
 
 
 def test_ndim(A):
