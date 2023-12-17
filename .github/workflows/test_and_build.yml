@@ -196,6 +196,9 @@ jobs:
           if [[ ${pdver} == "=2.1" && ${npver} == "=1.21" ]]; then
             pdver="=2.0"
           fi
+          if [[ ${nxver} == "=3.2" && ${spver} == "=1.8" ]]; then
+            spver="=1.9"
+          fi
           if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
             # TODO: there are currently issues with some numpy versions when
             # installing python-suitesparse-grphblas from source or upstream.
