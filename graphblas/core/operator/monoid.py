@@ -270,6 +270,7 @@ class Monoid(OpBase):
         Returns
         -------
         Monoid or ParameterizedMonoid
+
         """
         if type(binaryop) is ParameterizedBinaryOp:
             return ParameterizedMonoid(
@@ -309,6 +310,7 @@ class Monoid(OpBase):
         >>> gb.core.operator.Monoid.register_new("max_zero", gb.binary.max_zero, 0)
         >>> dir(gb.monoid)
         [..., 'max_zero', ...]
+
         """
         module, funcname = cls._remove_nesting(name)
         if lazy:

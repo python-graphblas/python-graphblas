@@ -88,9 +88,7 @@ def _match_expr(parent, expr):
 
 
 def value(expr):
-    """
-    An advanced select method which allows for easily expressing
-    value comparison logic.
+    """An advanced select method for easily expressing value comparison logic.
 
     Example usage:
     >>> gb.select.value(A > 0)
@@ -102,9 +100,7 @@ def value(expr):
 
 
 def row(expr):
-    """
-    An advanced select method which allows for easily expressing
-    Matrix row index comparison logic.
+    """An advanced select method for easily expressing Matrix row index comparison logic.
 
     Example usage:
     >>> gb.select.row(A <= 5)
@@ -116,9 +112,7 @@ def row(expr):
 
 
 def column(expr):
-    """
-    An advanced select method which allows for easily expressing
-    Matrix column index comparison logic.
+    """An advanced select method for easily expressing Matrix column index comparison logic.
 
     Example usage:
     >>> gb.select.column(A <= 5)
@@ -130,8 +124,7 @@ def column(expr):
 
 
 def index(expr):
-    """
-    An advanced select method which allows for easily expressing
+    """An advanced select method which allows for easily expressing
     Vector index comparison logic.
 
     Example usage:

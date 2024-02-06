@@ -663,6 +663,7 @@ class BinaryOp(OpBase):
         Returns
         -------
         BinaryOp or ParameterizedBinaryOp
+
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
@@ -725,6 +726,7 @@ class BinaryOp(OpBase):
         >>>         return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
         >>>     return inner
         >>> gb.binary.register_new("user_isclose", user_isclose, parameterized=True)
+
         """
         cls._check_supports_udf("register_new")
         module, funcname = cls._remove_nesting(name)

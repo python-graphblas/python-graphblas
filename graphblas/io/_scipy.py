@@ -22,6 +22,7 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
     Returns
     -------
     :class:`~graphblas.Matrix`
+
     """
     nrows, ncols = A.shape
     dtype = lookup_dtype(A.dtype)

@@ -208,6 +208,7 @@ class SelectOp(OpBase):
         Returns
         -------
         SelectOp or ParameterizedSelectOp
+
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
@@ -264,6 +265,7 @@ class SelectOp(OpBase):
         >>> gb.select.register_new("upper_left_triangle", lambda x, i, j, thunk: i + j <= thunk)
         >>> dir(gb.select)
         [..., 'upper_left_triangle', ...]
+
         """
         cls._check_supports_udf("register_new")
         iop = IndexUnaryOp.register_new(

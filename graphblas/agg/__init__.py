@@ -73,6 +73,7 @@ Custom recipes (specific to SuiteSparse:GraphBLAS):
 #   - bxnor monoid: even bits
 #   - bnor monoid: odd bits
 """
+
 # All items are dynamically added by classes in core/operator/agg.py
 # This module acts as a container of Aggregator instances
 _deprecated = {}

@@ -285,6 +285,7 @@ class IndexUnaryOp(OpBase):
         Returns
         -------
         return IndexUnaryOp or ParameterizedIndexUnaryOp
+
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
@@ -340,6 +341,7 @@ class IndexUnaryOp(OpBase):
         >>> gb.indexunary.register_new("row_mod", lambda x, i, j, thunk: i % max(thunk, 2))
         >>> dir(gb.indexunary)
         [..., 'row_mod', ...]
+
         """
         cls._check_supports_udf("register_new")
         module, funcname = cls._remove_nesting(name)

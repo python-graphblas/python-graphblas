@@ -287,6 +287,7 @@ class Semiring(OpBase):
         Returns
         -------
         Semiring or ParameterizedSemiring
+
         """
         if type(monoid) is ParameterizedMonoid or type(binaryop) is ParameterizedBinaryOp:
             return ParameterizedSemiring(name, monoid, binaryop, anonymous=True)
@@ -318,6 +319,7 @@ class Semiring(OpBase):
         >>> gb.core.operator.Semiring.register_new("max_max", gb.monoid.max, gb.binary.max)
         >>> dir(gb.semiring)
         [..., 'max_max', ...]
+
         """
         module, funcname = cls._remove_nesting(name)
         if lazy:

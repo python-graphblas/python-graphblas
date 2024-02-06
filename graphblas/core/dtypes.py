@@ -375,8 +375,7 @@ def lookup_dtype(key, value=None):
 
 
 def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
-    """
-    Returns a type that can hold both type1 and type2.
+    """Returns a type that can hold both type1 and type2.
 
     For example:
     unify(INT32, INT64) -> INT64

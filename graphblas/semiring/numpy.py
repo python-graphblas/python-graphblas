@@ -5,6 +5,7 @@ See list of numpy ufuncs supported by numpy here:
 https://numba.readthedocs.io/en/stable/reference/numpysupported.html#math-operations
 
 """
+
 import itertools as _itertools
 
 from .. import _STANDARD_OPERATOR_NAMES

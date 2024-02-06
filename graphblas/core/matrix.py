@@ -177,6 +177,7 @@ class Matrix(BaseType):
         Number of columns.
     name : str, optional
         Name to give the Matrix. This will be displayed in the ``__repr__``.
+
     """
 
     __slots__ = "_nrows", "_ncols", "_parent", "ss"
@@ -296,6 +297,7 @@ class Matrix(BaseType):
         Examples
         --------
             >>> del M[1, 5]
+
         """
         del Updater(self, opts=opts)[keys]
 
@@ -310,6 +312,7 @@ class Matrix(BaseType):
         .. code-block:: python
 
             subM = M[[1, 3, 5], :].new()
+
         """
         resolved_indexes = IndexerResolver(self, keys)
         shape = resolved_indexes.shape
@@ -331,6 +334,7 @@ class Matrix(BaseType):
         .. code-block:: python
 
             M[0, 0:3] = 17
+
         """
         Updater(self, opts=opts)[keys] = expr
 
@@ -342,6 +346,7 @@ class Matrix(BaseType):
         .. code-block:: python
 
             (10, 15) in M
+
         """
         extractor = self[index]
         if not extractor._is_scalar:
@@ -381,6 +386,7 @@ class Matrix(BaseType):
         See Also
         --------
         :meth:`isclose` : For equality check of floating point dtypes
+
         """
         other = self._expect_type(
             other, (Matrix, TransposedMatrix), within="isequal", argname="other"
@@ -427,6 +433,7 @@ class Matrix(BaseType):
         -------
         bool
             Whether all values of the Matrix are close to the values in ``other``.
+
         """
         other = self._expect_type(
             other, (Matrix, TransposedMatrix), within="isclose", argname="other"
@@ -544,6 +551,7 @@ class Matrix(BaseType):
         np.ndarray[dtype=uint64] : Rows
         np.ndarray[dtype=uint64] : Columns
         np.ndarray : Values
+
         """
         if sort and backend == "suitesparse":
             self.wait()  # sort in SS
@@ -610,6 +618,7 @@ class Matrix(BaseType):
         -------
         np.ndarray[dtype=uint64] : Edgelist
         np.ndarray : Values
+
         """
         rows, columns, values = self.to_coo(dtype, values=values, sort=sort)
         return (np.column_stack([rows, columns]), values)
@@ -690,6 +699,7 @@ class Matrix(BaseType):
         Returns
         -------
         Matrix
+
         """
         if dtype is not None or mask is not None or clear:
             if dtype is None:
@@ -721,6 +731,7 @@ class Matrix(BaseType):
         Returns
         -------
         :class:`~graphblas.Vector`
+
         """
         if backend == "suitesparse":
             from ..ss._core import diag
@@ -764,6 +775,7 @@ class Matrix(BaseType):
         Use wait to force completion of the Matrix.
 
         Has no effect in `blocking mode <../user_guide/init.html#graphblas-modes>`__.
+
         """
         how = how.lower()
         if how == "materialize":
@@ -790,6 +802,7 @@ class Matrix(BaseType):
         Returns
         -------
         Python scalar
+
         """
         expr = self[row, col]
         if expr._is_scalar:
@@ -847,6 +860,7 @@ class Matrix(BaseType):
         Returns
         -------
         Matrix
+
         """
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
@@ -926,6 +940,7 @@ class Matrix(BaseType):
         Returns
         -------
         Matrix
+
         """
         edgelist_values = None
         if isinstance(edgelist, np.ndarray):
@@ -1095,6 +1110,7 @@ class Matrix(BaseType):
         to_csr
         Matrix.ss.import_csr
         io.from_scipy_sparse
+
         """
         return cls._from_csx(_CSR_FORMAT, indptr, col_indices, values, dtype, ncols, nrows, name)
 
@@ -1142,6 +1158,7 @@ class Matrix(BaseType):
         to_csc
         Matrix.ss.import_csc
         io.from_scipy_sparse
+
         """
         return cls._from_csx(_CSC_FORMAT, indptr, row_indices, values, dtype, nrows, ncols, name)
 
@@ -1202,6 +1219,7 @@ class Matrix(BaseType):
         to_dcsr
         Matrix.ss.import_hypercsr
         io.from_scipy_sparse
+
         """
         if backend == "suitesparse":
             return cls.ss.import_hypercsr(
@@ -1286,6 +1304,7 @@ class Matrix(BaseType):
         to_dcsc
         Matrix.ss.import_hypercsc
         io.from_scipy_sparse
+
         """
         if backend == "suitesparse":
             return cls.ss.import_hypercsc(
@@ -1347,6 +1366,7 @@ class Matrix(BaseType):
         Returns
         -------
         Matrix
+
         """
         if type(value) is not Scalar:
             try:
@@ -1400,6 +1420,7 @@ class Matrix(BaseType):
         Returns
         -------
         Matrix
+
         """
         values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=2)
         if values.ndim == 0:
@@ -1459,6 +1480,7 @@ class Matrix(BaseType):
         Returns
         -------
         np.ndarray
+
         """
         max_nvals = self._nrows * self._ncols
         if fill_value is None or self._nvals == max_nvals:
@@ -1534,6 +1556,7 @@ class Matrix(BaseType):
         Returns
         -------
         Matrix
+
         """
         order = get_order(order)
         if isinstance(nested_dicts, Sequence):
@@ -1643,6 +1666,7 @@ class Matrix(BaseType):
         from_csr
         Matrix.ss.export
         io.to_scipy_sparse
+
         """
         if backend == "suitesparse":
             info = self.ss.export("csr", sort=sort)
@@ -1674,6 +1698,7 @@ class Matrix(BaseType):
         from_csc
         Matrix.ss.export
         io.to_scipy_sparse
+
         """
         if backend == "suitesparse":
             info = self.ss.export("csc", sort=sort)
@@ -1708,6 +1733,7 @@ class Matrix(BaseType):
         from_dcsc
         Matrix.ss.export
         io.to_scipy_sparse
+
         """
         if backend == "suitesparse":
             info = self.ss.export("hypercsr", sort=sort)
@@ -1750,6 +1776,7 @@ class Matrix(BaseType):
         from_dcsc
         Matrix.ss.export
         io.to_scipy_sparse
+
         """
         if backend == "suitesparse":
             info = self.ss.export("hypercsc", sort=sort)
@@ -1787,6 +1814,7 @@ class Matrix(BaseType):
         Returns
         -------
         dict
+
         """
         order = get_order(order)
         if order == "rowwise":
@@ -1856,6 +1884,7 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << monoid.max(A | B)
+
         """
         return self._ewise_add(other, op)
 
@@ -1946,6 +1975,7 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << binary.gt(A & B)
+
         """
         return self._ewise_mult(other, op)
 
@@ -2040,6 +2070,7 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << binary.div(A | B, left_default=1, right_default=1)
+
         """
         return self._ewise_union(other, op, left_default, right_default)
 
@@ -2193,6 +2224,7 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << semiring.min_plus(A @ v)
+
         """
         return self._mxv(other, op)
 
@@ -2253,6 +2285,7 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << semiring.min_plus(A @ B)
+
         """
         return self._mxm(other, op)
 
@@ -2317,6 +2350,7 @@ class Matrix(BaseType):
         .. code-block:: python
 
             C << A.kronecker(B, op=binary.times)
+
         """
         method_name = "kronecker"
         other = self._expect_type(
@@ -2373,6 +2407,7 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << op.abs(A)
+
         """
         method_name = "apply"
         extra_message = (
@@ -2521,6 +2556,7 @@ class Matrix(BaseType):
 
             # Functional syntax
             C << select.value(A >= 1)
+
         """
         method_name = "select"
         if isinstance(op, str):
@@ -2615,6 +2651,7 @@ class Matrix(BaseType):
         .. code-block:: python
 
             w << A.reduce_rowwise(monoid.plus)
+
         """
         method_name = "reduce_rowwise"
         op = get_typed_op(op, self.dtype, kind="binary|aggregator")
@@ -2652,6 +2689,7 @@ class Matrix(BaseType):
         .. code-block:: python
 
             w << A.reduce_columnwise(monoid.plus)
+
         """
         method_name = "reduce_columnwise"
         op = get_typed_op(op, self.dtype, kind="binary|aggregator")
@@ -2670,8 +2708,7 @@ class Matrix(BaseType):
         )
 
     def reduce_scalar(self, op=monoid.plus, *, allow_empty=True):
-        """
-        Reduce all values in the Matrix into a single value using ``op``.
+        """Reduce all values in the Matrix into a single value using ``op``.
 
         See the `Reduce <../user_guide/operations.html#reduce>`__
         section in the User Guide for more details.
@@ -2693,6 +2730,7 @@ class Matrix(BaseType):
         .. code-block:: python
 
             total << A.reduce_scalar(monoid.plus)
+
         """
         method_name = "reduce_scalar"
         op = get_typed_op(op, self.dtype, kind="binary|aggregator")
@@ -2753,6 +2791,7 @@ class Matrix(BaseType):
         .. code-block:: python
 
             C = A.reposition(1, 2).new()
+
         """
         if nrows is None:
             nrows = self._nrows
@@ -2834,6 +2873,7 @@ class Matrix(BaseType):
             C = A.dup()
             for i in range(1, 4):
                 C << A @ C
+
         """
         method_name = "power"
         if self._nrows != self._ncols:
@@ -2878,6 +2918,7 @@ class Matrix(BaseType):
             If it is Matrix Mask, then only the diagonal is used as the mask.
         accum : Monoid or BinaryOp, optional
             Operator to use to combine existing diagonal values and new values.
+
         """
         if (K := maybe_integral(k)) is None:
             raise TypeError(f"k must be an integer; got bad type: {type(k)}")

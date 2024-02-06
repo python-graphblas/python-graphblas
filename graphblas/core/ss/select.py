@@ -66,6 +66,7 @@ def register_new(name, jit_c_definition, input_type, thunk_type):
     gb.select.register_new
     gb.select.register_anonymous
     gb.indexunary.ss.register_new
+
     """
     if backend != "suitesparse":  # pragma: no cover (safety)
         raise RuntimeError(

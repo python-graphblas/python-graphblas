@@ -250,8 +250,7 @@ class ss:
         return "rowwise"
 
     def build_diag(self, vector, k=0, **opts):
-        """
-        GxB_Matrix_diag.
+        """GxB_Matrix_diag.
 
         Construct a diagonal Matrix from the given vector.
         Existing entries in the Matrix are discarded.
@@ -279,8 +278,7 @@ class ss:
         )
 
     def split(self, chunks, *, name=None, **opts):
-        """
-        GxB_Matrix_split.
+        """GxB_Matrix_split.
 
         Split a Matrix into a 2D array of sub-matrices according to ``chunks``.
 
@@ -302,6 +300,7 @@ class ss:
         --------
         Matrix.ss.concat
         graphblas.ss.concat
+
         """
         from ..matrix import Matrix
 
@@ -361,8 +360,7 @@ class ss:
         )
 
     def concat(self, tiles, **opts):
-        """
-        GxB_Matrix_concat.
+        """GxB_Matrix_concat.
 
         Concatenate a 2D list of Matrix objects into the current Matrix.
         Any existing values in the current Matrix will be discarded.
@@ -376,13 +374,13 @@ class ss:
         --------
         Matrix.ss.split
         graphblas.ss.concat
+
         """
         tiles, m, n, is_matrix = _concat_mn(tiles, is_matrix=True)
         self._concat(tiles, m, n, opts)
 
     def build_scalar(self, rows, columns, value):
-        """
-        GxB_Matrix_build_Scalar.
+        """GxB_Matrix_build_Scalar.
 
         Like ``build``, but uses a scalar for all the values.
 
@@ -390,6 +388,7 @@ class ss:
         --------
         Matrix.build
         Matrix.from_coo
+
         """
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
@@ -536,8 +535,7 @@ class ss:
             lib.GxB_Iterator_free(it_ptr)
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False, **opts):
-        """
-        GxB_Matrix_export_xxx.
+        """GxB_Matrix_export_xxx.
 
         Parameters
         ----------
@@ -718,6 +716,7 @@ class ss:
 
         >>> pieces = A.ss.export()
         >>> A2 = Matrix.ss.import_any(**pieces)
+
         """
         return self._export(
             format,
@@ -729,8 +728,7 @@ class ss:
         )
 
     def unpack(self, format=None, *, sort=False, raw=False, **opts):
-        """
-        GxB_Matrix_unpack_xxx.
+        """GxB_Matrix_unpack_xxx.
 
         ``unpack`` is like ``export``, except that the Matrix remains valid but empty.
         ``pack_*`` methods are the opposite of ``unpack``.
@@ -1179,8 +1177,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_import_CSR.
+        """GxB_Matrix_import_CSR.
 
         Create a new Matrix from standard CSR format.
 
@@ -1220,6 +1217,7 @@ class ss:
         Returns
         -------
         Matrix
+
         """
         return cls._import_csr(
             nrows=nrows,
@@ -1256,8 +1254,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_pack_CSR.
+        """GxB_Matrix_pack_CSR.
 
         ``pack_csr`` is like ``import_csr`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("csr")``
@@ -1369,8 +1366,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_import_CSC.
+        """GxB_Matrix_import_CSC.
 
         Create a new Matrix from standard CSC format.
 
@@ -1410,6 +1406,7 @@ class ss:
         Returns
         -------
         Matrix
+
         """
         return cls._import_csc(
             nrows=nrows,
@@ -1446,8 +1443,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_pack_CSC.
+        """GxB_Matrix_pack_CSC.
 
         ``pack_csc`` is like ``import_csc`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("csc")``
@@ -1561,8 +1557,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_import_HyperCSR.
+        """GxB_Matrix_import_HyperCSR.
 
         Create a new Matrix from standard HyperCSR format.
 
@@ -1606,6 +1601,7 @@ class ss:
         Returns
         -------
         Matrix
+
         """
         return cls._import_hypercsr(
             nrows=nrows,
@@ -1646,8 +1642,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_pack_HyperCSR.
+        """GxB_Matrix_pack_HyperCSR.
 
         ``pack_hypercsr`` is like ``import_hypercsr`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("hypercsr")``
@@ -1785,8 +1780,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_import_HyperCSC.
+        """GxB_Matrix_import_HyperCSC.
 
         Create a new Matrix from standard HyperCSC format.
 
@@ -1830,6 +1824,7 @@ class ss:
         Returns
         -------
         Matrix
+
         """
         return cls._import_hypercsc(
             nrows=nrows,
@@ -1870,8 +1865,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_pack_HyperCSC.
+        """GxB_Matrix_pack_HyperCSC.
 
         ``pack_hypercsc`` is like ``import_hypercsc`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("hypercsc")``
@@ -2006,8 +2000,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_import_BitmapR.
+        """GxB_Matrix_import_BitmapR.
 
         Create a new Matrix from values and bitmap (as mask) arrays.
 
@@ -2053,6 +2046,7 @@ class ss:
         Returns
         -------
         Matrix
+
         """
         return cls._import_bitmapr(
             bitmap=bitmap,
@@ -2087,8 +2081,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_pack_BitmapR.
+        """GxB_Matrix_pack_BitmapR.
 
         ``pack_bitmapr`` is like ``import_bitmapr`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("bitmapr")``
@@ -2199,8 +2192,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_import_BitmapC.
+        """GxB_Matrix_import_BitmapC.
 
         Create a new Matrix from values and bitmap (as mask) arrays.
 
@@ -2246,6 +2238,7 @@ class ss:
         Returns
         -------
         Matrix
+
         """
         return cls._import_bitmapc(
             bitmap=bitmap,
@@ -2280,8 +2273,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_pack_BitmapC.
+        """GxB_Matrix_pack_BitmapC.
 
         ``pack_bitmapc`` is like ``import_bitmapc`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("bitmapc")``
@@ -2390,8 +2382,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_import_FullR.
+        """GxB_Matrix_import_FullR.
 
         Create a new Matrix from values.
 
@@ -2432,6 +2423,7 @@ class ss:
         Returns
         -------
         Matrix
+
         """
         return cls._import_fullr(
             values=values,
@@ -2462,8 +2454,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_pack_FullR.
+        """GxB_Matrix_pack_FullR.
 
         ``pack_fullr`` is like ``import_fullr`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("fullr")``
@@ -2549,8 +2540,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_import_FullC.
+        """GxB_Matrix_import_FullC.
 
         Create a new Matrix from values.
 
@@ -2591,6 +2581,7 @@ class ss:
         Returns
         -------
         Matrix
+
         """
         return cls._import_fullc(
             values=values,
@@ -2621,8 +2612,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_pack_FullC.
+        """GxB_Matrix_pack_FullC.
 
         ``pack_fullc`` is like ``import_fullc`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("fullc")``
@@ -2711,8 +2701,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GrB_Matrix_build_XXX and GxB_Matrix_build_Scalar.
+        """GrB_Matrix_build_XXX and GxB_Matrix_build_Scalar.
 
         Create a new Matrix from indices and values in coordinate format.
 
@@ -2746,6 +2735,7 @@ class ss:
         Returns
         -------
         Matrix
+
         """
         return cls._import_coo(
             rows=rows,
@@ -2784,8 +2774,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GrB_Matrix_build_XXX and GxB_Matrix_build_Scalar.
+        """GrB_Matrix_build_XXX and GxB_Matrix_build_Scalar.
 
         ``pack_coo`` is like ``import_coo`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("coo")``
@@ -2897,8 +2886,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_import_CSR.
+        """GxB_Matrix_import_CSR.
 
         Create a new Matrix from indices and values in coordinate format.
         Rows must be sorted.
@@ -2942,6 +2930,7 @@ class ss:
         Returns
         -------
         Matrix
+
         """
         return cls._import_coor(
             rows=rows,
@@ -2980,8 +2969,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_pack_CSR.
+        """GxB_Matrix_pack_CSR.
 
         ``pack_coor`` is like ``import_coor`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("coor")``
@@ -3066,8 +3054,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_import_CSC.
+        """GxB_Matrix_import_CSC.
 
         Create a new Matrix from indices and values in coordinate format.
         Rows must be sorted.
@@ -3111,6 +3098,7 @@ class ss:
         Returns
         -------
         Matrix
+
         """
         return cls._import_cooc(
             rows=rows,
@@ -3149,8 +3137,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_pack_CSC.
+        """GxB_Matrix_pack_CSC.
 
         ``pack_cooc`` is like ``import_cooc`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack("cooc")``
@@ -3251,8 +3238,7 @@ class ss:
         nvals=None,  # optional
         **opts,
     ):
-        """
-        GxB_Matrix_import_xxx.
+        """GxB_Matrix_import_xxx.
 
         Dispatch to appropriate import method inferred from inputs.
         See the other import functions and ``Matrix.ss.export`` for details.
@@ -3280,6 +3266,7 @@ class ss:
 
         >>> pieces = A.ss.export()
         >>> A2 = Matrix.ss.import_any(**pieces)
+
         """
         return cls._import_any(
             values=values,
@@ -3349,8 +3336,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Matrix_pack_xxx.
+        """GxB_Matrix_pack_xxx.
 
         ``pack_any`` is like ``import_any`` except it "packs" data into an
         existing Matrix.  This is the opposite of ``unpack()``
@@ -3707,6 +3693,7 @@ class ss:
         Returns
         -------
         Matrix
+
         """
         order = get_order(order)
         parent = self._parent
@@ -3735,6 +3722,7 @@ class ss:
         See Also
         --------
         Vector.ss.reshape : copy a Vector to a Matrix.
+
         """
         rv = self.reshape(-1, 1, order=order, name=name, **opts)
         return rv._as_vector()
@@ -3771,6 +3759,7 @@ class ss:
         --------
         Matrix.ss.flatten : flatten a Matrix into a Vector.
         Vector.ss.reshape : copy a Vector to a Matrix.
+
         """
         from ..matrix import Matrix
 
@@ -3825,6 +3814,7 @@ class ss:
             The number of elements to choose from each row
 
         **THIS API IS EXPERIMENTAL AND MAY CHANGE**
+
         """
         # TODO: largest, smallest, random_weighted
         order = get_order(order)
@@ -4021,6 +4011,7 @@ class ss:
         See Also
         --------
         Matrix.ss.compactify
+
         """
         from ..matrix import Matrix
 
@@ -4082,6 +4073,7 @@ class ss:
         This method is intended to support all serialization options from SuiteSparse:GraphBLAS.
 
         *Warning*: Behavior of serializing UDTs is experimental and may change in a future release.
+
         """
         desc = get_descriptor(compression=compression, compression_level=level, **opts)
         blob_handle = ffi_new("void**")
@@ -4121,6 +4113,7 @@ class ss:
         nthreads : int, optional
             The maximum number of threads to use when deserializing.
             None, 0 or negative nthreads means to use the default number of threads.
+
         """
         if isinstance(data, np.ndarray):
             data = ints_to_numpy_buffer(data, np.uint8)

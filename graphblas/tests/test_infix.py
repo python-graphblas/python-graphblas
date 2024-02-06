@@ -346,7 +346,7 @@ def test_inplace_infix(s1, v1, v2, A1, A2):
 
 @autocompute
 def test_infix_expr_value_types():
-    """Test bug where `infix_expr._value` was used as MatrixExpression or Matrix"""
+    """Test bug where `infix_expr._value` was used as MatrixExpression or Matrix."""
     from graphblas.core.matrix import MatrixExpression
 
     A = Matrix(int, 3, 3)

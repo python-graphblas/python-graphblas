@@ -241,7 +241,7 @@ def test_dtype_to_from_string():
 
 
 def test_has_complex():
-    """Only SuiteSparse has complex (with Windows support in Python after v7.4.3.1)"""
+    """Only SuiteSparse has complex (with Windows support in Python after v7.4.3.1)."""
     if not suitesparse:
         assert not dtypes._supports_complex
         return
