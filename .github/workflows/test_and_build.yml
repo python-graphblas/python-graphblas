@@ -167,7 +167,6 @@ jobs:
           # First let's randomly get versions of dependencies to install.
           # Consider removing old versions when they become problematic or very old (>=2 years).
           nxver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=3.0", "=3.1", "=3.2", ""]))')
-          yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           sparsever=$(python -c 'import random ; print(random.choice(["=0.13", "=0.14", "=0.15", ""]))')
           # Randomly choosing versions of dependencies based on Python version works surprisingly well...
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.9') }} == true ]]; then
@@ -176,24 +175,28 @@ jobs:
             pdver=$(python -c 'import random ; print(random.choice(["=1.2", "=1.3", "=1.4", "=1.5", "=2.0", "=2.1", "=2.2", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", ""]))')
             fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", "=1.7", ""]))')
+            yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.10') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.22", "=1.23", "=1.24", "=1.25", "=1.26", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.3", "=1.4", "=1.5", "=2.0", "=2.1", "=2.2", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", ""]))')
             fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", "=1.7", ""]))')
+            yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", "=2.1", "=2.2", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", ""]))')
             fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", "=1.7", ""]))')
+            yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           else  # Python 3.12
             npver=$(python -c 'import random ; print(random.choice(["=1.26", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.11", "=1.12", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=2.1", "=2.2", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=2.4", "=2.5", ""]))')
             fmmver=$(python -c 'import random ; print(random.choice(["=1.7", ""]))')
+            yamlver=$(python -c 'import random ; print(random.choice(["=6.0", ""]))')
           fi
           # But there may be edge cases of incompatibility we need to handle (more handled below)
           if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
