@@ -239,6 +239,10 @@ jobs:
           else
             numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57", "=0.58", "=0.59", ""]))')
           fi
+          # Only numba 0.59 support Python 3.12
+          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]] ; then
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.59", ""]))')
+          fi
           fmm=fast_matrix_market${fmmver}
           awkward=awkward${akver}
           if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') ||
