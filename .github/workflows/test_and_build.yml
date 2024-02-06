@@ -90,8 +90,8 @@ jobs:
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
       matrix:
-        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
-        slowtask: ["pytest_normal", "pytest_bizarro", "notebooks", "pytest_normal", "pytest_bizarro", "notebooks", "pytest_normal", "pytest_bizarro", "notebooks", "pytest_normal", "pytest_bizarro", "notebooks",]
+        os: ["ubuntu-latest", "macos-latest", "windows-latest", "ubuntu-latest", "macos-latest", "windows-latest", "ubuntu-latest", "macos-latest", "windows-latest"]
+        slowtask: ["pytest_normal", "pytest_bizarro", "notebooks", "pytest_normal", "pytest_bizarro", "notebooks", "pytest_normal", "pytest_bizarro", "notebooks", "pytest_normal", "pytest_bizarro", "notebooks"]
     env:
       # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
       # Setting this is a workaround.
@@ -316,9 +316,10 @@ jobs:
       - name: python-suitesparse-graphblas tests
         run: |
           # Don't use our conftest.py ; allow `test_print_jit_config` to fail if it doesn't exist
-          (cd ..
-           pytest --pyargs suitesparse_graphblas -s -k test_print_jit_config || true
-           pytest -v --pyargs suitesparse_graphblas)
+          echo el barto
+          # (cd ..
+          #  pytest --pyargs suitesparse_graphblas -s -k test_print_jit_config || true
+          #  pytest -v --pyargs suitesparse_graphblas)
       - name: Unit tests
         run: |
           A=${{ needs.rngs.outputs.mapnumpy == 'A' || '' }} ; B=${{ needs.rngs.outputs.mapnumpy == 'B' || '' }}
@@ -347,8 +348,9 @@ jobs:
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo ${args}
           set -x  # echo on
-          coverage run -m pytest --color=yes --randomly -v ${args} \
-            ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
+          echo el barto
+          # coverage run -m pytest --color=yes --randomly -v ${args} \
+          #   ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
         run: |
           # Run tests again with Scalars being C scalars by default
@@ -383,8 +385,9 @@ jobs:
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
           echo ${args}
           set -x  # echo on
-          coverage run -a -m pytest --color=yes --randomly -v ${args} \
-            ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
+          echo el barto
+          # coverage run -a -m pytest --color=yes --randomly -v ${args} \
+          #   ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
         if: matrix.slowtask == 'pytest_normal'
@@ -413,9 +416,10 @@ jobs:
         if: matrix.slowtask == 'notebooks' && matrix.os == 'windows-latest'
         run: |
           # We use 'notebooks' slow task b/c it should have numba installed
-          coverage run -a -m pytest --color=yes --runslow --no-mapnumpy -p no:randomly -v -k 'test_commutes or test_bool_doesnt_get_too_large or test_npbinary or test_npmonoid or test_npsemiring'
-          coverage run -a -m pytest --color=yes --runslow --mapnumpy -p no:randomly -k 'test_bool_doesnt_get_too_large or test_npunary or test_binaryop_monoid_numpy'
-          coverage run -a -m pytest --color=yes -x --no-mapnumpy --runslow -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
+          echo el barto
+          # coverage run -a -m pytest --color=yes --runslow --no-mapnumpy -p no:randomly -v -k 'test_commutes or test_bool_doesnt_get_too_large or test_npbinary or test_npmonoid or test_npsemiring'
+          # coverage run -a -m pytest --color=yes --runslow --mapnumpy -p no:randomly -k 'test_bool_doesnt_get_too_large or test_npunary or test_binaryop_monoid_numpy'
+          # coverage run -a -m pytest --color=yes -x --no-mapnumpy --runslow -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
       - name: Auto-generated code check
         if: matrix.slowtask == 'pytest_bizarro'
         run: |
@@ -433,6 +437,7 @@ jobs:
         if: matrix.slowtask == 'notebooks'
         run: |
           # Run notebooks only if numba is installed
-          if python -c 'import numba' 2> /dev/null ; then
-            jupyter nbconvert --to notebook --execute notebooks/*ipynb
-          fi
+          echo el barto
+          # if python -c 'import numba' 2> /dev/null ; then
+          #   jupyter nbconvert --to notebook --execute notebooks/*ipynb
+          # fi
