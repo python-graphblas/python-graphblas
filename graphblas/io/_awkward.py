@@ -154,6 +154,7 @@ def from_awkward(A, *, name=None):
     function. If attempting to convert an arbitrary `awkward-array`,
     make sure that the top-level attributes and parameters contain
     the expected values.
+
     """
     params = A.layout.parameters
     if missing := {"format", "shape"} - params.keys():

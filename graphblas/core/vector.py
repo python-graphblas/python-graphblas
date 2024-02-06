@@ -149,6 +149,7 @@ class Vector(BaseType):
         Size of the Vector.
     name : str, optional
         Name to give the Vector. This will be displayed in the ``__repr__``.
+
     """
 
     __slots__ = "_size", "_parent", "ss"
@@ -265,6 +266,7 @@ class Vector(BaseType):
         Examples
         --------
             >>> del v[1:-1]
+
         """
         del Updater(self, opts=opts)[keys]
 
@@ -279,6 +281,7 @@ class Vector(BaseType):
         .. code-block:: python
 
             sub_v = v[[1, 3, 5]].new()
+
         """
         resolved_indexes = IndexerResolver(self, keys)
         shape = resolved_indexes.shape
@@ -298,6 +301,7 @@ class Vector(BaseType):
 
             # This makes a dense iso-value vector
             v[:] = 1
+
         """
         Updater(self, opts=opts)[keys] = expr
 
@@ -310,6 +314,7 @@ class Vector(BaseType):
 
             # Check if v[15] is non-empty
             15 in v
+
         """
         extractor = self[index]
         if not extractor._is_scalar:
@@ -349,6 +354,7 @@ class Vector(BaseType):
         See Also
         --------
         :meth:`isclose` : For equality check of floating point dtypes
+
         """
         other = self._expect_type(other, Vector, within="isequal", argname="other")
         if check_dtype and self.dtype != other.dtype:
@@ -391,6 +397,7 @@ class Vector(BaseType):
         Returns
         -------
         bool
+
         """
         other = self._expect_type(other, Vector, within="isclose", argname="other")
         if check_dtype and self.dtype != other.dtype:
@@ -479,6 +486,7 @@ class Vector(BaseType):
         -------
         np.ndarray[dtype=uint64] : Indices
         np.ndarray : Values
+
         """
         if sort and backend == "suitesparse":
             self.wait()  # sort in SS
@@ -578,6 +586,7 @@ class Vector(BaseType):
         Returns
         -------
         Vector
+
         """
         if dtype is not None or mask is not None or clear:
             if dtype is None:
@@ -608,6 +617,7 @@ class Vector(BaseType):
         Returns
         -------
         :class:`~graphblas.Matrix`
+
         """
         from .matrix import Matrix
 
@@ -632,6 +642,7 @@ class Vector(BaseType):
         Use wait to force completion of the Vector.
 
         Has no effect in `blocking mode <../user_guide/init.html#graphblas-modes>`__.
+
         """
         how = how.lower()
         if how == "materialize":
@@ -656,6 +667,7 @@ class Vector(BaseType):
         Returns
         -------
         Python scalar
+
         """
         expr = self[index]
         if expr._is_scalar:
@@ -698,6 +710,7 @@ class Vector(BaseType):
         Returns
         -------
         Vector
+
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
@@ -755,6 +768,7 @@ class Vector(BaseType):
         Returns
         -------
         Vector
+
         """
         if isinstance(pairs, np.ndarray):
             raise TypeError("pairs as NumPy array is not supported; use `Vector.from_coo` instead")
@@ -806,6 +820,7 @@ class Vector(BaseType):
         Returns
         -------
         Vector
+
         """
         if type(value) is not Scalar:
             try:
@@ -858,6 +873,7 @@ class Vector(BaseType):
         Returns
         -------
         Vector
+
         """
         values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
         if values.ndim == 0:
@@ -906,6 +922,7 @@ class Vector(BaseType):
         Returns
         -------
         np.ndarray
+
         """
         if fill_value is None or self._nvals == self._size:
             if self._nvals != self._size:
@@ -976,6 +993,7 @@ class Vector(BaseType):
 
             # Functional syntax
             w << monoid.max(u | v)
+
         """
         return self._ewise_add(other, op)
 
@@ -1067,6 +1085,7 @@ class Vector(BaseType):
 
             # Functional syntax
             w << binary.gt(u & v)
+
         """
         return self._ewise_mult(other, op)
 
@@ -1160,6 +1179,7 @@ class Vector(BaseType):
 
             # Functional syntax
             w << binary.div(u | v, left_default=1, right_default=1)
+
         """
         return self._ewise_union(other, op, left_default, right_default)
 
@@ -1314,6 +1334,7 @@ class Vector(BaseType):
 
             # Functional syntax
             C << semiring.min_plus(v @ A)
+
         """
         return self._vxm(other, op)
 
@@ -1393,6 +1414,7 @@ class Vector(BaseType):
 
             # Functional syntax
             w << op.abs(v)
+
         """
         method_name = "apply"
         extra_message = (
@@ -1538,6 +1560,7 @@ class Vector(BaseType):
 
             # Functional syntax
             w << select.value(v >= 1)
+
         """
         method_name = "select"
         if isinstance(op, str):
@@ -1632,6 +1655,7 @@ class Vector(BaseType):
         .. code-block:: python
 
             total << v.reduce(monoid.plus)
+
         """
         method_name = "reduce"
         op = get_typed_op(op, self.dtype, kind="binary|aggregator")
@@ -1684,6 +1708,7 @@ class Vector(BaseType):
         *Note*: This is not a standard GraphBLAS function, but fits with other functions in the
         `Matrix Multiplication <../user_guide/operations.html#matrix-multiply>`__
         family of functions.
+
         """
         return self._inner(other, op)
 
@@ -1739,6 +1764,7 @@ class Vector(BaseType):
             C << v.outer(w, op=binary.times)
 
         *Note*: This is not a standard GraphBLAS function.
+
         """
         from .matrix import MatrixExpression
 
@@ -1787,6 +1813,7 @@ class Vector(BaseType):
         .. code-block:: python
 
             w = v.reposition(20).new()
+
         """
         if size is None:
             size = self._size
@@ -2047,6 +2074,7 @@ class Vector(BaseType):
         Returns
         -------
         Vector
+
         """
         indices = np.fromiter(d.keys(), np.uint64)
         if dtype is None:
@@ -2074,6 +2102,7 @@ class Vector(BaseType):
         Returns
         -------
         dict
+
         """
         indices, values = self.to_coo(sort=False)
         return dict(zip(indices.tolist(), values.tolist()))

@@ -33,7 +33,7 @@ repos:
       - id: name-tests-test
         args: ["--pytest-test-first"]
   - repo: https://github.com/abravalheri/validate-pyproject
-    rev: v0.15
+    rev: v0.16
     hooks:
       - id: validate-pyproject
         name: Validate pyproject.toml
@@ -61,25 +61,25 @@ repos:
       - id: auto-walrus
         args: [--line-length, "100"]
   - repo: https://github.com/psf/black
-    rev: 23.12.1
+    rev: 24.1.1
     hooks:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.9
+    rev: v0.2.1
     hooks:
       - id: ruff
         args: [--fix-only, --show-fixes]
   # Let's keep `flake8` even though `ruff` does much of the same.
   # `flake8-bugbear` and `flake8-simplify` have caught things missed by `ruff`.
   - repo: https://github.com/PyCQA/flake8
-    rev: 6.1.0
+    rev: 7.0.0
     hooks:
       - id: flake8
         additional_dependencies: &flake8_dependencies
         # These versions need updated manually
-        - flake8==6.1.0
-        - flake8-bugbear==23.12.2
+        - flake8==7.0.0
+        - flake8-bugbear==24.1.17
         - flake8-simplify==0.21.0
   - repo: https://github.com/asottile/yesqa
     rev: v1.5.0
@@ -94,7 +94,7 @@ repos:
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.9
+    rev: v0.2.1
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint

@@ -170,6 +170,7 @@ def get_semiring(monoid, binaryop, name=None):
     semiring.register_anonymous
     semiring.register_new
     semiring.from_string
+
     """
     monoid, opclass = find_opclass(monoid)
     switched = False

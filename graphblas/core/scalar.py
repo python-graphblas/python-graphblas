@@ -53,6 +53,7 @@ class Scalar(BaseType):
         with a proper GrB_Scalar object.
     name : str, optional
         Name to give the Scalar. This will be displayed in the ``__repr__``.
+
     """
 
     __slots__ = "_empty", "_is_cscalar"
@@ -196,6 +197,7 @@ class Scalar(BaseType):
         See Also
         --------
         :meth:`isclose` : For equality check of floating point dtypes
+
         """
         if type(other) is not Scalar:
             if other is None:
@@ -245,6 +247,7 @@ class Scalar(BaseType):
         Returns
         -------
         bool
+
         """
         if type(other) is not Scalar:
             if other is None:
@@ -428,6 +431,7 @@ class Scalar(BaseType):
         Returns
         -------
         Scalar
+
         """
         if is_cscalar is None:
             is_cscalar = self._is_cscalar
@@ -473,6 +477,7 @@ class Scalar(BaseType):
         Use wait to force completion of the Scalar.
 
         Has no effect in `blocking mode <../user_guide/init.html#graphblas-modes>`__.
+
         """
         how = how.lower()
         if how == "materialize":
@@ -496,6 +501,7 @@ class Scalar(BaseType):
         Returns
         -------
         Python scalar
+
         """
         return default if self._is_empty else self.value
 
@@ -519,6 +525,7 @@ class Scalar(BaseType):
         Returns
         -------
         Scalar
+
         """
         typ = output_type(value)
         if dtype is None:
@@ -628,6 +635,7 @@ class Scalar(BaseType):
 
             # Functional syntax
             c << monoid.max(a | b)
+
         """
         return self._ewise_add(other, op)
 
@@ -698,6 +706,7 @@ class Scalar(BaseType):
 
             # Functional syntax
             c << binary.gt(a & b)
+
         """
         return self._ewise_mult(other, op)
 
@@ -772,6 +781,7 @@ class Scalar(BaseType):
 
             # Functional syntax
             c << binary.div(a | b, left_default=1, right_default=1)
+
         """
         return self._ewise_union(other, op, left_default, right_default)
 
@@ -917,6 +927,7 @@ class Scalar(BaseType):
 
             # Functional syntax
             b << op.abs(a)
+
         """
         expr = self._as_vector().apply(op, right, left=left)
         return ScalarExpression(

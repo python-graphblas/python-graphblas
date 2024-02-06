@@ -145,8 +145,7 @@ class ss:
         return format
 
     def build_diag(self, matrix, k=0, **opts):
-        """
-        GxB_Vector_diag.
+        """GxB_Vector_diag.
 
         Extract a diagonal from a Matrix or TransposedMatrix into a Vector.
         Existing entries in the Vector are discarded.
@@ -183,8 +182,7 @@ class ss:
         )
 
     def split(self, chunks, *, name=None, **opts):
-        """
-        GxB_Matrix_split.
+        """GxB_Matrix_split.
 
         Split a Vector into a 1D array of sub-vectors according to ``chunks``.
 
@@ -202,6 +200,7 @@ class ss:
         --------
         Vector.ss.concat
         graphblas.ss.concat
+
         """
         from ..vector import Vector
 
@@ -249,8 +248,7 @@ class ss:
         )
 
     def concat(self, tiles, **opts):
-        """
-        GxB_Matrix_concat.
+        """GxB_Matrix_concat.
 
         Concatenate a 1D list of Vector objects into the current Vector.
         Any existing values in the current Vector will be discarded.
@@ -262,13 +260,13 @@ class ss:
         --------
         Vector.ss.split
         graphblas.ss.concat
+
         """
         tiles, m, n, is_matrix = _concat_mn(tiles, is_matrix=False)
         self._concat(tiles, m, opts)
 
     def build_scalar(self, indices, value):
-        """
-        GxB_Vector_build_Scalar.
+        """GxB_Vector_build_Scalar.
 
         Like ``build``, but uses a scalar for all the values.
 
@@ -276,6 +274,7 @@ class ss:
         --------
         Vector.build
         Vector.from_coo
+
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
         scalar = _as_scalar(value, self._parent.dtype, is_cscalar=False)  # pragma: is_grbscalar
@@ -410,8 +409,7 @@ class ss:
             lib.GxB_Iterator_free(it_ptr)
 
     def export(self, format=None, *, sort=False, give_ownership=False, raw=False, **opts):
-        """
-        GxB_Vextor_export_xxx.
+        """GxB_Vextor_export_xxx.
 
         Parameters
         ----------
@@ -468,6 +466,7 @@ class ss:
 
         >>> pieces = v.ss.export()
         >>> v2 = Vector.ss.import_any(**pieces)
+
         """
         return self._export(
             format=format,
@@ -479,8 +478,7 @@ class ss:
         )
 
     def unpack(self, format=None, *, sort=False, raw=False, **opts):
-        """
-        GxB_Vector_unpack_xxx.
+        """GxB_Vector_unpack_xxx.
 
         ``unpack`` is like ``export``, except that the Vector remains valid but empty.
         ``pack_*`` methods are the opposite of ``unpack``.
@@ -655,8 +653,7 @@ class ss:
         nvals=None,  # optional
         **opts,
     ):
-        """
-        GxB_Vector_import_xxx.
+        """GxB_Vector_import_xxx.
 
         Dispatch to appropriate import method inferred from inputs.
         See the other import functions and ``Vector.ss.export`` for details.
@@ -679,6 +676,7 @@ class ss:
 
         >>> pieces = v.ss.export()
         >>> v2 = Vector.ss.import_any(**pieces)
+
         """
         return cls._import_any(
             values=values,
@@ -722,8 +720,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Vector_pack_xxx.
+        """GxB_Vector_pack_xxx.
 
         ``pack_any`` is like ``import_any`` except it "packs" data into an
         existing Vector.  This is the opposite of ``unpack()``
@@ -844,8 +841,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Vector_import_CSC.
+        """GxB_Vector_import_CSC.
 
         Create a new Vector from sparse input.
 
@@ -886,6 +882,7 @@ class ss:
         Returns
         -------
         Vector
+
         """
         return cls._import_sparse(
             size=size,
@@ -920,8 +917,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Vector_pack_CSC.
+        """GxB_Vector_pack_CSC.
 
         ``pack_sparse`` is like ``import_sparse`` except it "packs" data into an
         existing Vector.  This is the opposite of ``unpack("sparse")``
@@ -1029,8 +1025,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Vector_import_Bitmap.
+        """GxB_Vector_import_Bitmap.
 
         Create a new Vector from values and bitmap (as mask) arrays.
 
@@ -1071,6 +1066,7 @@ class ss:
         Returns
         -------
         Vector
+
         """
         return cls._import_bitmap(
             bitmap=bitmap,
@@ -1103,8 +1099,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Vector_pack_Bitmap.
+        """GxB_Vector_pack_Bitmap.
 
         ``pack_bitmap`` is like ``import_bitmap`` except it "packs" data into an
         existing Vector.  This is the opposite of ``unpack("bitmap")``
@@ -1214,8 +1209,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Vector_import_Full.
+        """GxB_Vector_import_Full.
 
         Create a new Vector from values.
 
@@ -1252,6 +1246,7 @@ class ss:
         Returns
         -------
         Vector
+
         """
         return cls._import_full(
             values=values,
@@ -1280,8 +1275,7 @@ class ss:
         name=None,
         **opts,
     ):
-        """
-        GxB_Vector_pack_Full.
+        """GxB_Vector_pack_Full.
 
         ``pack_full`` is like ``import_full`` except it "packs" data into an
         existing Vector.  This is the opposite of ``unpack("full")``
@@ -1371,6 +1365,7 @@ class ss:
         Returns
         -------
         Scalar
+
         """
         return prefix_scan(self._parent, op, name=name, within="scan", **opts)
 
@@ -1401,6 +1396,7 @@ class ss:
         See Also
         --------
         Matrix.ss.flatten : flatten a Matrix into a Vector.
+
         """
         return self._parent._as_matrix().ss.reshape(nrows, ncols, order, name=name, **opts)
 
@@ -1420,6 +1416,7 @@ class ss:
             The number of elements to choose
 
         **THIS API IS EXPERIMENTAL AND MAY CHANGE**
+
         """
         how = how.lower()
         if k < 0:
@@ -1588,6 +1585,7 @@ class ss:
         See Also
         --------
         Vector.ss.compactify
+
         """
         from ..vector import Vector
 
@@ -1648,6 +1646,7 @@ class ss:
         This method is intended to support all serialization options from SuiteSparse:GraphBLAS.
 
         *Warning*: Behavior of serializing UDTs is experimental and may change in a future release.
+
         """
         desc = get_descriptor(compression=compression, compression_level=level, **opts)
         blob_handle = ffi_new("void**")
@@ -1687,6 +1686,7 @@ class ss:
         nthreads : int, optional
             The maximum number of threads to use when deserializing.
             None, 0 or negative nthreads means to use the default number of threads.
+
         """
         if isinstance(data, np.ndarray):
             data = ints_to_numpy_buffer(data, np.uint8)

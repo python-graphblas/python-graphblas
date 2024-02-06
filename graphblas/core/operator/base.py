@@ -405,7 +405,8 @@ class OpBase:
 
     @classmethod
     def _initialize(cls, include_in_ops=True):
-        """
+        """Initialize operators for this operator type.
+
         include_in_ops determines whether the operators are included in the
         ``gb.ops`` namespace in addition to the defined module.
         """

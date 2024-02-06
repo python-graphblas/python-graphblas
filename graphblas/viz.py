@@ -79,6 +79,7 @@ def spy(M, *, centered=False, show=True, figure=None, axes=None, figsize=None, *
     See Also
     --------
     datashade
+
     """
     mpl, plt, ss = _get_imports(["mpl", "plt", "ss"], "spy")
     A = to_scipy_sparse(M, "coo")
@@ -129,6 +130,7 @@ def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kw
     See Also
     --------
     spy
+
     """
     np, pd, bk, hv, hp, ds = _get_imports(["np", "pd", "bk", "hv", "hp", "ds"], "datashade")
     if "df" not in kwargs:

@@ -304,6 +304,7 @@ class UnaryOp(OpBase):
         Returns
         -------
         UnaryOp or ParameterizedUnaryOp
+
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
@@ -349,6 +350,7 @@ class UnaryOp(OpBase):
         >>> gb.core.operator.UnaryOp.register_new("plus_one", lambda x: x + 1)
         >>> dir(gb.unary)
         [..., 'plus_one', ...]
+
         """
         cls._check_supports_udf("register_new")
         module, funcname = cls._remove_nesting(name)

@@ -21,6 +21,7 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     Returns
     -------
     :class:`~graphblas.Matrix`
+
     """
     import networkx as nx
 
@@ -45,6 +46,7 @@ def to_networkx(m, edge_attribute="weight"):
     Returns
     -------
     nx.DiGraph
+
     """
     import networkx as nx
 

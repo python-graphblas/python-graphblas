@@ -32,6 +32,7 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
     Returns
     -------
     :class:`~graphblas.Matrix`
+
     """
     try:
         # scipy is currently needed for *all* engines
@@ -95,6 +96,7 @@ def mmwrite(
         Number of digits to write for real or complex values
     symmetry : str, optional
         {"general", "symmetric", "skew-symmetric", "hermetian"}
+
     """
     try:
         # scipy is currently needed for *all* engines

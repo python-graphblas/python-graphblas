@@ -7,6 +7,7 @@ To automatically create the functions, run:
 $ python -m graphblas.core.automethods
 
 """
+
 from .. import config
 
 

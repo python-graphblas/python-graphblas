@@ -147,13 +147,13 @@ class IndexerResolver:
         return self.indices[0]._py_index()
 
     def parse_indices(self, indices, shape):
-        """
-        Returns
+        """Returns
         -------
             [(rows, rowsize), (cols, colsize)] for Matrix
             [(idx, idx_size)] for Vector
 
         Within each tuple, if the index is of type int, the size will be None
+
         """
         if len(shape) == 1:
             if type(indices) is tuple:
@@ -312,8 +312,8 @@ class AmbiguousAssignOrExtract:
         Updater(self.parent, opts=opts)._setitem(self.resolved_indexes, expr, is_submask=False)
 
     def new(self, dtype=None, *, mask=None, input_mask=None, name=None, **opts):
-        """
-        Force extraction of the indexes into a new object
+        """Force extraction of the indexes into a new object.
+
         dtype and mask are the only controllable parameters.
         """
         if input_mask is not None:

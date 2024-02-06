@@ -22,8 +22,7 @@ _graphblas_ss = _graphblas_ss()
 
 
 def diag(x, k=0, dtype=None, *, name=None, **opts):
-    """
-    GxB_Matrix_diag, GxB_Vector_diag.
+    """GxB_Matrix_diag, GxB_Vector_diag.
 
     Extract a diagonal Vector from a Matrix, or construct a diagonal Matrix
     from a Vector.  Unlike ``Matrix.diag`` and ``Vector.diag``, this function
@@ -71,8 +70,7 @@ def diag(x, k=0, dtype=None, *, name=None, **opts):
 
 
 def concat(tiles, dtype=None, *, name=None, **opts):
-    """
-    GxB_Matrix_concat.
+    """GxB_Matrix_concat.
 
     Concatenate a 2D list of Matrix objects into a new Matrix, or a 1D list of
     Vector objects into a new Vector.  To concatenate into existing objects,

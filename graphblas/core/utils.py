@@ -43,7 +43,7 @@ _output_types = {
     object: object,
     type: type,
 }
-_output_types.update((k, k) for k in np.cast)
+_output_types.update((k, k) for k in set(np.sctypeDict.values()))
 
 
 def output_type(val):
@@ -86,6 +86,7 @@ def values_to_numpy_buffer(
     -------
     np.ndarray
     dtype
+
     """
     if dtype is not None:
         dtype = lookup_dtype(dtype)
@@ -183,6 +184,7 @@ def normalize_chunks(chunks, shape):
     [(10,), (5, 15)]
     >>> normalize_chunks((5, (5, None)), shape)
     [(5, 5), (5, 15)]
+
     """
     if isinstance(chunks, (list, tuple)):
         pass

@@ -157,6 +157,7 @@ def get_descriptor(**opts):
     Returns
     -------
     Descriptor or None
+
     """
     if not opts or all(val is False or val is None for val in opts.values()):
         return

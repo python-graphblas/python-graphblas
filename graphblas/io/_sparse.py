@@ -23,6 +23,7 @@ def from_pydata_sparse(s, *, dup_op=None, name=None):
     -------
     :class:`~graphblas.Vector`
     :class:`~graphblas.Matrix`
+
     """
     try:
         import sparse

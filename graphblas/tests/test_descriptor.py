@@ -2,8 +2,7 @@ from graphblas.core import descriptor, lib
 
 
 def test_caching():
-    """
-    Test that building a descriptor is actually caching rather than building
+    """Test that building a descriptor is actually caching rather than building
     a new object for each call.
     """
     tocr = descriptor.lookup(
