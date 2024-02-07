@@ -360,7 +360,7 @@ class Matrix(BaseType):
     def __iter__(self):
         """Iterate over (row, col) indices which are present in the matrix."""
         rows, columns, _ = self.to_coo(values=False)
-        return zip(rows.flat, columns.flat)
+        return zip(rows.flat, columns.flat, strict=True)
 
     def __sizeof__(self):
         if backend == "suitesparse":
@@ -961,7 +961,7 @@ class Matrix(BaseType):
             rows = edgelist[:, 0]
             cols = edgelist[:, 1]
         else:
-            unzipped = list(zip(*edgelist))
+            unzipped = list(zip(*edgelist, strict=True))
             if len(unzipped) == 2:
                 rows, cols = unzipped
             elif len(unzipped) == 3:
@@ -1826,10 +1826,11 @@ class Matrix(BaseType):
         cols = cols.tolist()
         values = values.tolist()
         return {
-            row: dict(zip(cols[start:stop], values[start:stop]))
+            row: dict(zip(cols[start:stop], values[start:stop], strict=True))
             for row, (start, stop) in zip(
                 compressed_rows.tolist(),
                 np.lib.stride_tricks.sliding_window_view(indptr, 2).tolist(),
+                strict=True,
             )
         }
         # Alternative

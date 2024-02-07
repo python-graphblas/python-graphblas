@@ -2603,12 +2603,14 @@ def test_iter(A):
         zip(
             [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
             [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
+            strict=True,
         )
     )
     assert set(A.T) == set(
         zip(
             [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
             [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
+            strict=True,
         )
     )
 
@@ -2731,8 +2733,8 @@ def test_ss_split(A):
     for results in [A.ss.split([4, 3]), A.ss.split([[4, None], 3], name="split")]:
         row_boundaries = [0, 4, 7]
         col_boundaries = [0, 3, 6, 7]
-        for i, (i1, i2) in enumerate(zip(row_boundaries[:-1], row_boundaries[1:])):
-            for j, (j1, j2) in enumerate(zip(col_boundaries[:-1], col_boundaries[1:])):
+        for i, (i1, i2) in enumerate(itertools.pairwise(row_boundaries)):
+            for j, (j1, j2) in enumerate(itertools.pairwise(col_boundaries)):
                 expected = A[i1:i2, j1:j2].new()
                 assert expected.isequal(results[i][j])
     with pytest.raises(DimensionMismatch):
@@ -3068,7 +3070,7 @@ def test_ss_flatten(A):
         [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4],
     ]
     # row-wise
-    indices = [row * A.ncols + col for row, col in zip(data[0], data[1])]
+    indices = [row * A.ncols + col for row, col in zip(data[0], data[1], strict=True)]
     expected = Vector.from_coo(indices, data[2], size=A.nrows * A.ncols)
     for fmt in ["csr", "hypercsr", "bitmapr"]:
         B = Matrix.ss.import_any(**A.ss.export(format=fmt))
@@ -3087,7 +3089,7 @@ def test_ss_flatten(A):
     assert C.isequal(B)
 
     # column-wise
-    indices = [col * A.nrows + row for row, col in zip(data[0], data[1])]
+    indices = [col * A.nrows + row for row, col in zip(data[0], data[1], strict=True)]
     expected = Vector.from_coo(indices, data[2], size=A.nrows * A.ncols)
     for fmt in ["csc", "hypercsc", "bitmapc"]:
         B = Matrix.ss.import_any(**A.ss.export(format=fmt))
@@ -3626,9 +3628,9 @@ def test_ss_iteration(A):
     assert not list(B.ss.itervalues())
     assert not list(B.ss.iteritems())
     rows, columns, values = A.to_coo()
-    assert sorted(zip(rows, columns)) == sorted(A.ss.iterkeys())
+    assert sorted(zip(rows, columns, strict=True)) == sorted(A.ss.iterkeys())
     assert sorted(values) == sorted(A.ss.itervalues())
-    assert sorted(zip(rows, columns, values)) == sorted(A.ss.iteritems())
+    assert sorted(zip(rows, columns, values, strict=True)) == sorted(A.ss.iteritems())
     N = rows.size
 
     A = Matrix.ss.import_bitmapr(**A.ss.export("bitmapr"))

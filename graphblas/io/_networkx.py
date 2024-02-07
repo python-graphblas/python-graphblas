@@ -55,7 +55,9 @@ def to_networkx(m, edge_attribute="weight"):
     cols = cols.tolist()
     G = nx.DiGraph()
     if edge_attribute is None:
-        G.add_edges_from(zip(rows, cols))
+        G.add_edges_from(zip(rows, cols, strict=True))
     else:
-        G.add_weighted_edges_from(zip(rows, cols, vals.tolist()), weight=edge_attribute)
+        G.add_weighted_edges_from(
+            zip(rows, cols, vals.tolist(), strict=True), weight=edge_attribute
+        )
     return G
