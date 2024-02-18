@@ -2270,7 +2270,7 @@ def test_ss_iteration(v):
     # This is what I would expect
     assert sorted(indices) == sorted(v.ss.iterkeys())
     assert sorted(values) == sorted(v.ss.itervalues())
-    assert sorted(zip(indices, values)) == sorted(v.ss.iteritems())
+    assert sorted(zip(indices, values, strict=True)) == sorted(v.ss.iteritems())
 
     N = indices.size
     v = Vector.ss.import_bitmap(**v.ss.export("bitmap"))

@@ -43,7 +43,7 @@ def head(vector, n=10, dtype=None, *, sort=False):
         dtype = vector.dtype
     else:
         dtype = lookup_dtype(dtype)
-    indices, vals = zip(*itertools.islice(vector.ss.iteritems(), n))
+    indices, vals = zip(*itertools.islice(vector.ss.iteritems(), n), strict=True)
     return np.array(indices, np.uint64), np.array(vals, dtype.np_type)
 
 

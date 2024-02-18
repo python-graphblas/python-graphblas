@@ -10,7 +10,7 @@ name = "python-graphblas"
 dynamic = ["version"]
 description = "Python library for GraphBLAS: high-performance sparse linear algebra for scalable graph analytics"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {file = "LICENSE"}
 authors = [
     {name = "Erik Welch", email = "erik.n.welch@gmail.com"},
@@ -44,7 +44,6 @@ classifiers = [
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -58,7 +57,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "numpy >=1.22",
+    "numpy >=1.23",
     "donfig >=0.6",
     "pyyaml >=5.4",
     # These won't be installed by default after 2024.3.0
@@ -84,7 +83,7 @@ numba = [
     "numba >=0.55",
 ]
 pandas = [
-    "pandas >=1.2",
+    "pandas >=1.5",
 ]
 scipy = [
     "scipy >=1.9",
@@ -99,17 +98,17 @@ io = [
     "python-graphblas[networkx,scipy]",
     "python-graphblas[numba]; python_version<'3.13'",
     "awkward >=1.9",
-    "sparse >=0.13; python_version<'3.13'",  # make optional, b/c sparse needs numba
+    "sparse >=0.14; python_version<'3.13'",  # make optional, b/c sparse needs numba
     "fast-matrix-market >=1.4.5",
 ]
 viz = [
     "python-graphblas[networkx,scipy]",
-    "matplotlib >=3.5",
+    "matplotlib >=3.6",
 ]
 datashade = [  # datashade requires numba
     "python-graphblas[numba,pandas,scipy]",
-    "datashader >=0.12",
-    "hvplot >=0.7",
+    "datashader >=0.14",
+    "hvplot >=0.8",
 ]
 test = [
     "python-graphblas[suitesparse,pandas,scipy]",
@@ -157,7 +156,7 @@ dirty_template = "{tag}+{ccount}.g{sha}.dirty"
 
 [tool.black]
 line-length = 100
-target-version = ["py39", "py310", "py311", "py312"]
+target-version = ["py310", "py311", "py312"]
 
 [tool.isort]
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
@@ -241,10 +240,11 @@ ignore-words-list = "coo,ba"
 [tool.ruff]
 # https://github.com/charliermarsh/ruff/
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 [tool.ruff.lint]
 unfixable = [
-    "F841"  # unused-variable (Note: can leave useless expression)
+    "F841",  # unused-variable (Note: can leave useless expression)
+    "B905",  # zip-without-explicit-strict (Note: prefer `zip(x, y, strict=True)`)
 ]
 select = [
     # Have we enabled too many checks that they'll become a nuisance? We'll see...
@@ -360,6 +360,7 @@ ignore = [
     "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
     "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
     "TRY003",  # Avoid specifying long messages outside the exception class (Note: why?)
+    "UP038",  # Use `X | Y` in `isinstance` call instead of `(X, Y)` (Note: using `|` is slower atm)
 
     # Ignored categories
     "C90",  # mccabe (Too strict, but maybe we should make things less complex)
@@ -409,7 +410,7 @@ convention = "numpy"
 [tool.pylint.messages_control]
 # To run a single check, do: pylint graphblas --disable E,W,R,C,I --enable assignment-from-no-return
 max-line-length = 100
-py-version = "3.9"
+py-version = "3.10"
 enable = ["I"]
 disable = [
     # Error

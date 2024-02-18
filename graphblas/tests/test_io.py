@@ -146,7 +146,7 @@ def test_matrix_to_from_networkx():
     M = gb.io.from_networkx(G, nodelist=range(7))
     if suitesparse:
         assert M.ss.is_iso
-    rows, cols = zip(*edges)
+    rows, cols = zip(*edges, strict=True)
     expected = gb.Matrix.from_coo(rows, cols, 1)
     assert expected.isequal(M)
     # Test empty

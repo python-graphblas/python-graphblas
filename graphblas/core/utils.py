@@ -202,7 +202,7 @@ def normalize_chunks(chunks, shape):
             f"chunks argument must be of length {len(shape)} (one for each dimension of a {typ})"
         )
     chunksizes = []
-    for size, chunk in zip(shape, chunks):
+    for size, chunk in zip(shape, chunks, strict=True):
         if chunk is None:
             cur_chunks = [size]
         elif (c := maybe_integral(chunk)) is not None:

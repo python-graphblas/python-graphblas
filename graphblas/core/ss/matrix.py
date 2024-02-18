@@ -58,7 +58,7 @@ def head(matrix, n=10, dtype=None, *, sort=False):
         dtype = matrix.dtype
     else:
         dtype = lookup_dtype(dtype)
-    rows, cols, vals = zip(*itertools.islice(matrix.ss.iteritems(), n))
+    rows, cols, vals = zip(*itertools.islice(matrix.ss.iteritems(), n), strict=True)
     return np.array(rows, np.uint64), np.array(cols, np.uint64), np.array(vals, dtype.np_type)
 
 

@@ -630,7 +630,7 @@ def create_header(type_name, keys, vals, *, lower_border=False, name="", quote=T
         name = f'"{name}"'
     key_text = []
     val_text = []
-    for key, val in zip(keys, vals):
+    for key, val in zip(keys, vals, strict=True):
         width = max(len(key), len(val)) + 2
         key_text.append(key.rjust(width))
         val_text.append(val.rjust(width))

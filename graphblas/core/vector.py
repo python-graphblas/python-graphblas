@@ -772,7 +772,7 @@ class Vector(BaseType):
         """
         if isinstance(pairs, np.ndarray):
             raise TypeError("pairs as NumPy array is not supported; use `Vector.from_coo` instead")
-        unzipped = list(zip(*pairs))
+        unzipped = list(zip(*pairs, strict=True))
         if len(unzipped) == 2:
             indices, values = unzipped
         elif not unzipped:
@@ -2105,7 +2105,7 @@ class Vector(BaseType):
 
         """
         indices, values = self.to_coo(sort=False)
-        return dict(zip(indices.tolist(), values.tolist()))
+        return dict(zip(indices.tolist(), values.tolist(), strict=True))
 
 
 if backend == "suitesparse":
