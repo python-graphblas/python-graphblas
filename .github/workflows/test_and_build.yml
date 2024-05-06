@@ -50,7 +50,7 @@ jobs:
       backend: ${{ steps.backend.outputs.selected }}
     steps:
       - name: RNG for mapnumpy
-        uses: ddradar/choose-random-action@v2.0.2
+        uses: ddradar/choose-random-action@v3.0.0
         id: mapnumpy
         with:
           contents: |
@@ -64,7 +64,7 @@ jobs:
             1
             1
       - name: RNG for backend
-        uses: ddradar/choose-random-action@v2.0.2
+        uses: ddradar/choose-random-action@v3.0.0
         id: backend
         with:
           contents: |
@@ -102,7 +102,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: RNG for Python version
-        uses: ddradar/choose-random-action@v2.0.2
+        uses: ddradar/choose-random-action@v3.0.0
         id: pyver
         with:
           # We should support major Python versions for at least 36 months as per SPEC 0
@@ -117,7 +117,7 @@ jobs:
             1
             1
       - name: RNG for source of python-suitesparse-graphblas
-        uses: ddradar/choose-random-action@v2.0.2
+        uses: ddradar/choose-random-action@v3.0.0
         id: sourcetype
         with:
           # Weights must be natural numbers, so set weights to very large to skip one
