@@ -14,7 +14,7 @@ jobs:
       pyver: ${{ steps.pyver.outputs.selected }}
     steps:
       - name: RNG for os
-        uses: ddradar/choose-random-action@v2.0.2
+        uses: ddradar/choose-random-action@v3.0.0
         id: os
         with:
           contents: |
@@ -26,7 +26,7 @@ jobs:
             1
             1
       - name: RNG for Python version
-        uses: ddradar/choose-random-action@v2.0.2
+        uses: ddradar/choose-random-action@v3.0.0
         id: pyver
         with:
           contents: |
