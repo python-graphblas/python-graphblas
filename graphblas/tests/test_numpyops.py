@@ -112,6 +112,9 @@ def test_npunary():
                 match(accum=gb.binary.lor) << gb_result.apply(npunary.isnan)
             compare = match.reduce(gb.monoid.land).new()
             if not compare:  # pragma: no cover (debug)
+                if np.__version__.startswith("2.") and unary_name in {"sign"}:
+                    # numba 0.60.0 does not match numpy 2.0
+                    continue
                 print(unary_name, gb_input.dtype)
                 print(compute(gb_result))
                 print(np_result)

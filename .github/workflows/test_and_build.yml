@@ -50,7 +50,7 @@ jobs:
       backend: ${{ steps.backend.outputs.selected }}
     steps:
       - name: RNG for mapnumpy
-        uses: ddradar/choose-random-action@v2.0.2
+        uses: ddradar/choose-random-action@v3.0.0
         id: mapnumpy
         with:
           contents: |
@@ -64,7 +64,7 @@ jobs:
             1
             1
       - name: RNG for backend
-        uses: ddradar/choose-random-action@v2.0.2
+        uses: ddradar/choose-random-action@v3.0.0
         id: backend
         with:
           contents: |
@@ -102,7 +102,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: RNG for Python version
-        uses: ddradar/choose-random-action@v2.0.2
+        uses: ddradar/choose-random-action@v3.0.0
         id: pyver
         with:
           # We should support major Python versions for at least 36 months as per SPEC 0
@@ -117,7 +117,7 @@ jobs:
             1
             1
       - name: RNG for source of python-suitesparse-graphblas
-        uses: ddradar/choose-random-action@v2.0.2
+        uses: ddradar/choose-random-action@v3.0.0
         id: sourcetype
         with:
           # Weights must be natural numbers, so set weights to very large to skip one
@@ -164,28 +164,28 @@ jobs:
           #
           # First let's randomly get versions of dependencies to install.
           # Consider removing old versions when they become problematic or very old (>=2 years).
-          nxver=$(python -c 'import random ; print(random.choice(["=2.8", "=3.0", "=3.1", "=3.2", ""]))')
+          nxver=$(python -c 'import random ; print(random.choice(["=2.8", "=3.0", "=3.1", "=3.2", "=3.3", ""]))')
           sparsever=$(python -c 'import random ; print(random.choice(["=0.14", "=0.15", ""]))')
           # Randomly choosing versions of dependencies based on Python version works surprisingly well...
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.10') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26", ""]))')
-            spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", ""]))')
+            spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", "=1.13", "=0.14", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", "=2.1", "=2.2", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", "=2.6", ""]))')
             fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", "=1.7", ""]))')
             yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]]; then
             npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26", ""]))')
-            spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", ""]))')
+            spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", "=1.13", "=0.14", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", "=2.1", "=2.2", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", "=2.6", ""]))')
             fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", "=1.7", ""]))')
             yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           else  # Python 3.12
             npver=$(python -c 'import random ; print(random.choice(["=1.26", ""]))')
-            spver=$(python -c 'import random ; print(random.choice(["=1.11", "=1.12", ""]))')
+            spver=$(python -c 'import random ; print(random.choice(["=1.11", "=1.12", "=1.13", "=0.14", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=2.1", "=2.2", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=2.4", "=2.5", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=2.4", "=2.5", "=2.6", ""]))')
             fmmver=$(python -c 'import random ; print(random.choice(["=1.7", ""]))')
             yamlver=$(python -c 'import random ; print(random.choice(["=6.0", ""]))')
           fi
@@ -220,20 +220,20 @@ jobs:
             psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", "==8.0.2.1", "==8.2.0.1", "==8.2.1.0", ""]))')
           fi
           if [[ ${npver} == "=1.26" ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.58", "=0.59", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.58", "=0.59", "=0.60", ""]))')
             if [[ ${spver} == "=1.9" ]] ; then
               spver=$(python -c 'import random ; print(random.choice(["=1.10", "=1.11", ""]))')
             fi
           elif [[ ${npver} == "=1.25" ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.58", "=0.59", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.58", "=0.59", "=0.60", ""]))')
           elif [[ ${npver} == "=1.24" || ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.57", "=0.58", "=0.59", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.57", "=0.58", "=0.59", "=0.60", ""]))')
           else
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57", "=0.58", "=0.59", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57", "=0.58", "=0.59", "=0.60", ""]))')
           fi
-          # Only numba 0.59 support Python 3.12
+          # Only numba >=0.59 support Python 3.12
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.59", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.59", "=0.60", ""]))')
           fi
           fmm=fast_matrix_market${fmmver}
           awkward=awkward${akver}

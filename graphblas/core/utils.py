@@ -5,6 +5,8 @@ import numpy as np
 from ..dtypes import _INDEX, lookup_dtype
 from . import ffi, lib
 
+_NP2 = np.__version__.startswith("2.")
+
 
 def libget(name):
     """Helper to get items from GraphBLAS which might be GrB or GxB."""
@@ -60,7 +62,8 @@ def ints_to_numpy_buffer(array, dtype, *, name="array", copy=False, ownable=Fals
         and not np.issubdtype(array.dtype, np.bool_)
     ):
         raise ValueError(f"{name} must be integers, not {array.dtype.name}")
-    array = np.array(array, dtype, copy=copy, order=order)
+    # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
+    array = np.array(array, dtype, copy=copy or _NP2 and None, order=order)
     if ownable and (not array.flags.owndata or not array.flags.writeable):
         array = array.copy(order)
     return array
@@ -90,10 +93,14 @@ def values_to_numpy_buffer(
     """
     if dtype is not None:
         dtype = lookup_dtype(dtype)
-        array = np.array(array, _get_subdtype(dtype.np_type), copy=copy, order=order)
+        # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
+        array = np.array(
+            array, _get_subdtype(dtype.np_type), copy=copy or _NP2 and None, order=order
+        )
     else:
         is_input_np = isinstance(array, np.ndarray)
-        array = np.array(array, copy=copy, order=order)
+        # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
+        array = np.array(array, copy=copy or _NP2 and None, order=order)
         if array.dtype.hasobject:
             raise ValueError("object dtype for values is not allowed")
         if not is_input_np and array.dtype == np.int32:  # pragma: no cover
@@ -312,7 +319,10 @@ class _CArray:
         if size is not None:
             self.array = np.empty(size, dtype=dtype.np_type)
         else:
-            self.array = np.array(array, dtype=_get_subdtype(dtype.np_type), copy=False, order="C")
+            # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
+            self.array = np.array(
+                array, dtype=_get_subdtype(dtype.np_type), copy=_NP2 and None, order="C"
+            )
         c_type = dtype.c_type if dtype._is_udt else f"{dtype.c_type}*"
         self._carg = ffi.cast(c_type, ffi.from_buffer(self.array))
         self.dtype = dtype

@@ -313,11 +313,9 @@ ignore = [
     "D104",  # Missing docstring in public package
     "D105",  # Missing docstring in magic method
     "D107",  # Missing docstring in `__init__`
-    # "D107",  # Missing docstring in `__init__`
     "D205",  # 1 blank line required between summary line and description
     "D401",  # First line of docstring should be in imperative mood:
     "D417",  # D417 Missing argument description in the docstring for ...: ...
-    # "D417",  # Missing argument description in the docstring:
     "PLE0605",  # Invalid format for `__all__`, must be `tuple` or `list` (Note: broken in v0.0.237)
 
     # Maybe consider
