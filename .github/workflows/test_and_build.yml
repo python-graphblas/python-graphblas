@@ -168,21 +168,24 @@ jobs:
           sparsever=$(python -c 'import random ; print(random.choice(["=0.14", "=0.15", ""]))')
           # Randomly choosing versions of dependencies based on Python version works surprisingly well...
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.10') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26", ""]))')
+            # npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26", "=2.0, ""]))')  # TODO
+            npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26"]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", "=1.13", "=0.14", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", "=2.1", "=2.2", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", "=2.6", ""]))')
             fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", "=1.7", ""]))')
             yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26", ""]))')
+            # npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26", "=2.0", ""]))')  # TODO
+            npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26"]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", "=1.13", "=0.14", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", "=2.1", "=2.2", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", "=2.6", ""]))')
             fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", "=1.7", ""]))')
             yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           else  # Python 3.12
-            npver=$(python -c 'import random ; print(random.choice(["=1.26", ""]))')
+            # npver=$(python -c 'import random ; print(random.choice(["=1.26", "=2.0", ""]))')  # TODO
+            npver=$(python -c 'import random ; print(random.choice(["=1.26"]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.11", "=1.12", "=1.13", "=0.14", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=2.1", "=2.2", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=2.4", "=2.5", "=2.6", ""]))')
@@ -193,7 +196,7 @@ jobs:
           if [[ ${{ steps.sourcetype.outputs.selected }} == "source" || ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
             # TODO: there are currently issues with some numpy versions when
             # installing python-suitesparse-grphblas from source or upstream.
-            npver=""
+            npver="=1.26"
             spver=""
             pdver=""
           fi
