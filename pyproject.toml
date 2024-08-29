@@ -241,7 +241,12 @@ ignore-words-list = "coo,ba"
 # https://github.com/charliermarsh/ruff/
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.format]
+exclude = ["*.ipynb"]  # Consider enabling auto-formatting of notebooks
+
 [tool.ruff.lint]
+exclude = ["*.ipynb"]  # Consider enabling auto-formatting of notebooks
 unfixable = [
     "F841",  # unused-variable (Note: can leave useless expression)
     "B905",  # zip-without-explicit-strict (Note: prefer `zip(x, y, strict=True)`)
@@ -346,6 +351,7 @@ ignore = [
     "PLR0915",  # Too many statements
     "PLR2004",  # Magic number used in comparison, consider replacing magic with a constant variable
     "PLW0603",  # Using the global statement to update ... is discouraged (Note: yeah, discouraged, but too strict)
+    "PLW0642",  # Reassigned `self` variable in instance method (Note: too strict for us)
     "PLW2901",  # Outer for loop variable ... overwritten by inner assignment target (Note: good advice, but too strict)
     "RET502",  # Do not implicitly `return None` in function able to return non-`None` value
     "RET503",  # Missing explicit `return` at the end of function able to return non-`None` value
@@ -382,7 +388,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "graphblas/core/operator/base.py" = ["S102"]  # exec is used for UDF
-"graphblas/core/ss/matrix.py" = ["NPY002"]  # numba doesn't support rng generator yet
+"graphblas/core/ss/matrix.py" = ["NPY002", "PLR1730"]  # numba doesn't support rng generator yet
 "graphblas/core/ss/vector.py" = ["NPY002"]  # numba doesn't support rng generator yet
 "graphblas/core/utils.py" = ["PLE0302"]  # `__set__` is used as a property
 "graphblas/ss/_core.py" = ["N999"]  # We want _core.py to be underscopre

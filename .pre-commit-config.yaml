@@ -33,7 +33,7 @@ repos:
       - id: name-tests-test
         args: ["--pytest-test-first"]
   - repo: https://github.com/abravalheri/validate-pyproject
-    rev: v0.18
+    rev: v0.19
     hooks:
       - id: validate-pyproject
         name: Validate pyproject.toml
@@ -51,7 +51,7 @@ repos:
       - id: isort
   # Let's keep `pyupgrade` even though `ruff --fix` probably does most of it
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.16.0
+    rev: v3.17.0
     hooks:
       - id: pyupgrade
         args: [--py310-plus]
@@ -61,25 +61,25 @@ repos:
       - id: auto-walrus
         args: [--line-length, "100"]
   - repo: https://github.com/psf/black
-    rev: 24.4.2
+    rev: 24.8.0
     hooks:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.5.0
+    rev: v0.6.2
     hooks:
       - id: ruff
         args: [--fix-only, --show-fixes]
   # Let's keep `flake8` even though `ruff` does much of the same.
   # `flake8-bugbear` and `flake8-simplify` have caught things missed by `ruff`.
   - repo: https://github.com/PyCQA/flake8
-    rev: 7.1.0
+    rev: 7.1.1
     hooks:
       - id: flake8
         additional_dependencies: &flake8_dependencies
         # These versions need updated manually
-        - flake8==7.1.0
-        - flake8-bugbear==24.2.6
+        - flake8==7.1.1
+        - flake8-bugbear==24.8.19
         - flake8-simplify==0.21.0
   - repo: https://github.com/asottile/yesqa
     rev: v1.5.0
@@ -94,7 +94,7 @@ repos:
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.5.0
+    rev: v0.6.2
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint

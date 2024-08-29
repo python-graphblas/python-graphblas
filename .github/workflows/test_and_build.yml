@@ -168,23 +168,23 @@ jobs:
           sparsever=$(python -c 'import random ; print(random.choice(["=0.14", "=0.15", ""]))')
           # Randomly choosing versions of dependencies based on Python version works surprisingly well...
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.10') }} == true ]]; then
-            # npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26", "=2.0, ""]))')  # TODO
-            npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26"]))')
+            # npver=$(python -c 'import random ; print(random.choice(["=1.24", "=1.25", "=1.26", "=2.0, "=2.1", ""]))')  # TODO
+            npver=$(python -c 'import random ; print(random.choice(["=1.24", "=1.25", "=1.26"]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", "=1.13", "=0.14", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", "=2.1", "=2.2", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", "=2.6", ""]))')
             fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", "=1.7", ""]))')
             yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]]; then
-            # npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26", "=2.0", ""]))')  # TODO
-            npver=$(python -c 'import random ; print(random.choice(["=1.23", "=1.24", "=1.25", "=1.26"]))')
+            # npver=$(python -c 'import random ; print(random.choice(["=1.24", "=1.25", "=1.26", "=2.0", "=2.1", ""]))')  # TODO
+            npver=$(python -c 'import random ; print(random.choice(["=1.24", "=1.25", "=1.26"]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", "=1.13", "=0.14", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", "=2.1", "=2.2", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", "=2.6", ""]))')
             fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", "=1.7", ""]))')
             yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
           else  # Python 3.12
-            # npver=$(python -c 'import random ; print(random.choice(["=1.26", "=2.0", ""]))')  # TODO
+            # npver=$(python -c 'import random ; print(random.choice(["=1.26", "=2.0", "=2.1", ""]))')  # TODO
             npver=$(python -c 'import random ; print(random.choice(["=1.26"]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.11", "=1.12", "=1.13", "=0.14", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=2.1", "=2.2", ""]))')
@@ -232,7 +232,7 @@ jobs:
           elif [[ ${npver} == "=1.24" || ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
             numbaver=$(python -c 'import random ; print(random.choice(["=0.57", "=0.58", "=0.59", "=0.60", ""]))')
           else
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.56", "=0.57", "=0.58", "=0.59", "=0.60", ""]))')
+            numbaver=""
           fi
           # Only numba >=0.59 support Python 3.12
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]] ; then
@@ -282,7 +282,7 @@ jobs:
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7" drawsvg' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
-            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4"' || '' }} \
+            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4,<9"' || '' }} \
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }} \
             ${{ matrix.os == 'windows-latest' && 'cmake' || 'm4' }}
       - name: Build extension module
