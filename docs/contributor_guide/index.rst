@@ -74,7 +74,7 @@ Here are instructions for two popular environment managers:
   # to trigger manual check use:
   # pre-commit run --all-files
 
-* If you are using [`pixi`](https://pixi.sh), then you can use the following pre-defined tasks:
+* If you are using `pixi<https://pixi.sh>`_, then you can use the following pre-defined tasks:
 
 ::
 
