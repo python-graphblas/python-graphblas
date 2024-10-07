@@ -484,3 +484,28 @@ disable = [
     "locally-disabled",
     "suppressed-message",
 ]
+
+[tool.pixi.project]
+channels = ["conda-forge", "nodefaults"]
+platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
+
+[tool.pixi.pypi-dependencies]
+python_graphblas = { path = ".", editable = true }
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+test-env = { features = ["test"], solve-group = "default" }
+dev-env = { features = ["dev"], solve-group = "default" }
+
+[tool.pixi.feature.test-env.tasks]
+test = "pytest graphblas"
+
+[tool.pixi.feature.dev.tasks]
+post-install = "pre-commit install"
+pre-commit = { cmd = [
+    "pre-commit",
+    "run",
+    "--all-files",
+], depends-on = [
+    "post-install",
+] }
