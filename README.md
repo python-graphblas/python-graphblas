@@ -41,7 +41,7 @@ $ conda install -c conda-forge python-graphblas
 ```
 or pip:
 ```
-$ pip install python-graphblas[default]
+$ pip install 'python-graphblas[default]'
 ```
 This will also install the [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS) compiled C library.
 We currently support the [GraphBLAS C API 2.0 specification](https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf).
