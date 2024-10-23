@@ -99,7 +99,7 @@ class BaseConfig(MutableMapping):
                     return {reverse_bitwise[val]}
                 rv = set()
                 for k, v in self._bitwise[key].items():
-                    if isinstance(k, str) and val & v and bin(v).count("1") == 1:
+                    if isinstance(k, str) and val & v and (v).bit_count() == 1:
                         rv.add(k)
                 return rv
             if is_bool:

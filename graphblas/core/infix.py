@@ -316,6 +316,7 @@ class MatrixInfixExpr(InfixExprBase):
     ndim = 2
     output_type = MatrixExpression
     _is_transposed = False
+    __networkx_backend__ = "graphblas"
     __networkx_plugin__ = "graphblas"
 
     def __init__(self, left, right):

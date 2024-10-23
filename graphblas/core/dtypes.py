@@ -1,4 +1,5 @@
 import warnings
+from ast import literal_eval
 
 import numpy as np
 from numpy import promote_types, result_type
@@ -97,7 +98,7 @@ def register_anonymous(dtype, name=None):
             # Allow dtypes such as `"INT64[3, 4]"` for convenience
             base_dtype, shape = dtype.split("[", 1)
             base_dtype = lookup_dtype(base_dtype)
-            shape = np.lib.format.safe_eval(f"[{shape}")
+            shape = literal_eval(f"[{shape}")
             dtype = np.dtype((base_dtype.np_type, shape))
         else:
             raise
@@ -429,7 +430,7 @@ def _dtype_to_string(dtype):
         np_type = dtype.np_type
     s = str(np_type)
     try:
-        if np.dtype(np.lib.format.safe_eval(s)) == np_type:  # pragma: no branch (safety)
+        if np.dtype(literal_eval(s)) == np_type:  # pragma: no branch (safety)
             return s
     except Exception:
         pass
@@ -448,5 +449,5 @@ def _string_to_dtype(s):
         return lookup_dtype(s)
     except Exception:
         pass
-    np_type = np.dtype(np.lib.format.safe_eval(s))
+    np_type = np.dtype(literal_eval(s))
     return lookup_dtype(np_type)

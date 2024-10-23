@@ -224,6 +224,10 @@ def test_record_dtype_from_dict():
 def test_dtype_to_from_string():
     types = [dtypes.BOOL, dtypes.FP64]
     for c in string.ascii_letters:
+        if c == "T":
+            # See NEP 55 about StringDtype "T". Notably, this doesn't work:
+            # >>> np.dtype(np.dtype("T").str)
+            continue
         try:
             dtype = np.dtype(c)
             types.append(dtype)
