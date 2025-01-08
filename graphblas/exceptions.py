@@ -119,7 +119,7 @@ GrB_SUCCESS = _lib.GrB_SUCCESS
 GrB_NO_VALUE = _lib.GrB_NO_VALUE
 if _backend == "suitesparse":
     _error_code_lookup[_lib.GxB_EXHAUSTED] = StopIteration
-    if hasattr(_lib, 'GxB_JIT_ERROR'):  # Added in 9.x
+    if hasattr(_lib, "GxB_JIT_ERROR"):  # Added in 9.x
         _error_code_lookup[_lib.GxB_JIT_ERROR] = JitError
 
 

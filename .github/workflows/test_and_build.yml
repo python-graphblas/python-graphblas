@@ -171,7 +171,7 @@ jobs:
 
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.10') }} == true ]]; then
             nxver=$(python -c 'import random ; print(random.choice(["=2.8", "=3.0", "=3.1", "=3.2", "=3.3", "=3.4", ""]))')
-            npver=$(python -c 'import random ; print(random.choice(["=1.24", "=1.25", "=1.26", "=2.0, "=2.1", "=2.2", ""]))')
+            npver=$(python -c 'import random ; print(random.choice(["=1.24", "=1.25", "=1.26", "=2.0", "=2.1", "=2.2", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", "=1.13", "=0.14", "=0.15", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", "=2.1", "=2.2", ""]))')
             akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", "=2.6", "=2.7", ""]))')
