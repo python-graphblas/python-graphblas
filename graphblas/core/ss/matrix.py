@@ -3650,8 +3650,10 @@ class ss:
     def unpack_hyperhash(self, *, compute=False, name=None, **opts):
         """Unpacks the hyper_hash of a hypersparse matrix if possible.
 
-        Will return None if the matrix is not hypersparse or if the hash is not computed.
-        Use ``compute=True`` to compute the hyper_hash if the input is hypersparse.
+        Will return None if the matrix is not hypersparse, if the hash is not computed,
+        or if the hash is not needed. Use ``compute=True`` to try to compute the hyper_hash
+        if the input is hypersparse. The hyper_hash is optional in SuiteSparse:GraphBLAS,
+        so it may not be computed even with ``compute=True``.
 
         Use ``pack_hyperhash`` to move a hyper_hash matrix that was previously unpacked
         back into a matrix.

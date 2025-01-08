@@ -85,6 +85,11 @@ class NotImplementedException(GraphblasException):
     """
 
 
+# SuiteSparse errors
+class JitError(GraphblasException):
+    """TODO."""
+
+
 # Our errors
 class UdfParseError(GraphblasException):
     """Unable to parse the user-defined function."""
@@ -114,6 +119,7 @@ GrB_SUCCESS = _lib.GrB_SUCCESS
 GrB_NO_VALUE = _lib.GrB_NO_VALUE
 if _backend == "suitesparse":
     _error_code_lookup[_lib.GxB_EXHAUSTED] = StopIteration
+    _error_code_lookup[_lib.GxB_JIT_ERROR] = JitError
 
 
 def check_status(response_code, args):

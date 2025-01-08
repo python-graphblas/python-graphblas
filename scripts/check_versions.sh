@@ -3,13 +3,13 @@
 # Use, adjust, copy/paste, etc. as necessary to answer your questions.
 # This may be helpful when updating dependency versions in CI.
 # Tip: add `--json` for more information.
-conda search 'flake8-bugbear[channel=conda-forge]>=24.8.19'
+conda search 'flake8-bugbear[channel=conda-forge]>=24.12.12'
 conda search 'flake8-simplify[channel=conda-forge]>=0.21.0'
-conda search 'numpy[channel=conda-forge]>=2.1.0'
-conda search 'pandas[channel=conda-forge]>=2.2.2'
-conda search 'scipy[channel=conda-forge]>=1.14.1'
-conda search 'networkx[channel=conda-forge]>=3.3'
-conda search 'awkward[channel=conda-forge]>=2.6.7'
+conda search 'numpy[channel=conda-forge]>=2.2.1'
+conda search 'pandas[channel=conda-forge]>=2.2.3'
+conda search 'scipy[channel=conda-forge]>=1.15.0'
+conda search 'networkx[channel=conda-forge]>=3.4.2'
+conda search 'awkward[channel=conda-forge]>=2.7.2'
 conda search 'sparse[channel=conda-forge]>=0.15.4'
 conda search 'fast_matrix_market[channel=conda-forge]>=1.7.6'
 conda search 'numba[channel=conda-forge]>=0.60.0'

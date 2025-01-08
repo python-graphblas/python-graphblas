@@ -4074,10 +4074,11 @@ def test_ss_pack_hyperhash(A):
     Y = C.ss.unpack_hyperhash()
     Y = C.ss.unpack_hyperhash(compute=True)
     assert C.ss.unpack_hyperhash() is None
-    assert Y.nrows == C.nrows
-    C.ss.pack_hyperhash(Y)
-    assert Y.gb_obj[0] == gb.core.NULL
-    assert C.ss.unpack_hyperhash() is not None
+    if Y is not None:  # hyperhash may or may not be computed
+        assert Y.nrows == C.nrows
+        C.ss.pack_hyperhash(Y)
+        assert Y.gb_obj[0] == gb.core.NULL
+        assert C.ss.unpack_hyperhash() is not None  # May or may not be computed
 
 
 def test_to_dicts_from_dicts(A):
