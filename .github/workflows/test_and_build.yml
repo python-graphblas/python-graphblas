@@ -284,7 +284,7 @@ jobs:
           fi
 
           # Handle NumPy 2
-          if [[ $npver == =2.* ]] ; then
+          if [[ $npver != =1.* ]] ; then
             # Only pandas >=2.2.2 supports NumPy 2
             pdver=$(python -c 'import random ; print(random.choice(["=2.2", ""]))')
 
