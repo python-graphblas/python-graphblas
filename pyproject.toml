@@ -100,7 +100,7 @@ io = [
     "python-graphblas[numba]; python_version<'3.13'",
     "awkward >=1.9",
     "sparse >=0.14; python_version<'3.13'",  # make optional, b/c sparse needs numba
-    "fast-matrix-market >=1.4.5",
+    "fast-matrix-market >=1.4.5; python_version<'3.13'",  # py3.13 not supported yet
 ]
 viz = [
     "python-graphblas[networkx,scipy]",
