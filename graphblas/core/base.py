@@ -513,7 +513,7 @@ class BaseType:
     _expect_op = _expect_op
 
     # Don't let non-scalars be coerced to numpy arrays
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, *, copy=None):
         raise TypeError(
             f"{type(self).__name__} can't be directly converted to a numpy array; "
             f"perhaps use `{self.name}.to_coo()` method instead."

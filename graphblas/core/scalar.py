@@ -165,7 +165,7 @@ class Scalar(BaseType):
             return self.__int__
         raise AttributeError("Scalar object only has `__index__` for integral dtypes")
 
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, *, copy=None):
         if dtype is None:
             dtype = self.dtype.np_type
         return np.array(self.value, dtype=dtype)
