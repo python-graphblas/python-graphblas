@@ -285,7 +285,7 @@ select = [
     # "PYI",  # flake8-pyi (We don't have stub files yet)
     "PT",  # flake8-pytest-style
     "Q",  # flake8-quotes
-    "RSE", # flake8-raise
+    "RSE",  # flake8-raise
     "RET",  # flake8-return
     # "SLF",  # flake8-self (We can use our own private variables--sheesh!)
     "SIM",  # flake8-simplify
@@ -331,7 +331,7 @@ ignore = [
     "TRY004",  # Prefer `TypeError` exception for invalid type (Note: good advice, but not worth the nuisance)
     "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar` (Note: no annotations yet)
     "RUF021",  # parenthesize-chained-operators (Note: results don't look good yet)
-    "RUF023", # unsorted-dunder-slots (Note: maybe fine, but noisy changes)
+    "RUF023",  # unsorted-dunder-slots (Note: maybe fine, but noisy changes)
     "PERF401",  # Use a list comprehension to create a transformed list (Note: poorly implemented atm)
 
     # Intentionally ignored
@@ -347,7 +347,7 @@ ignore = [
     "N818",  # Exception name ... should be named with an Error suffix (Note: good advice)
     "PERF203",  # `try`-`except` within a loop incurs performance overhead (Note: too strict)
     "PLC0205",  # Class `__slots__` should be a non-string iterable (Note: string is fine)
-    "PLR0124", # Name compared with itself, consider replacing `x == x` (Note: too strict)
+    "PLR0124",  # Name compared with itself, consider replacing `x == x` (Note: too strict)
     "PLR0911",  # Too many return statements
     "PLR0912",  # Too many branches
     "PLR0913",  # Too many arguments to function call

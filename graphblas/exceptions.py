@@ -87,12 +87,12 @@ class NotImplementedException(GraphblasException):
 
 # SuiteSparse errors
 class JitError(GraphblasException):
-    """TODO."""
+    """SuiteSparse:GraphBLAS error using JIT."""
 
 
 # Our errors
 class UdfParseError(GraphblasException):
-    """Unable to parse the user-defined function."""
+    """SuiteSparse:GraphBLAS unable to parse the user-defined function."""
 
 
 _error_code_lookup = {
