@@ -85,12 +85,12 @@ jobs:
         shell: bash -l {0}
     strategy:
       # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
-      fail-fast: true
+      fail-fast: false
       # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
       matrix:
-        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        os: ["ubuntu-latest", "macos-latest", "windows-latest", "ubuntu-latest", "macos-latest", "windows-latest"]
         slowtask: ["pytest_normal", "pytest_bizarro", "notebooks"]
     env:
       # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
@@ -212,12 +212,15 @@ jobs:
             fi
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
             psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2", "=8.0.2.1", "=8.2.0.1", "=8.2.1.0", ""]))')
+            psgver=""  # XXX
             psg=python-suitesparse-graphblas${psgver}
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
             psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", "==8.0.2.1", "==8.2.0.1", "==8.2.1.0", ""]))')
+            psgver=""  # XXX
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "source" ]] ; then
             # These should be exact versions
             psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", "==8.0.2.1", "==8.2.0.1", "==8.2.1.0", ""]))')
+            psgver=""  # XXX
           fi
           if [[ ${npver} == "=1.26" ]] ; then
             numbaver=$(python -c 'import random ; print(random.choice(["=0.58", "=0.59", ""]))')
@@ -316,7 +319,7 @@ jobs:
           G=${{ needs.rngs.outputs.backend == 'G' || '' }} ; H=${{ needs.rngs.outputs.backend == 'H' || '' }}
           normal=${{ matrix.slowtask == 'pytest_normal' || '' }} ; bizarro=${{ matrix.slowtask == 'pytest_bizarro' || '' }}
           ubuntu=${{ matrix.os == 'ubuntu-latest' || '' }} ; windows=${{ matrix.os == 'windows-latest' || '' }} ; macos=${{ matrix.os == 'macos-latest' || '' }}
-          mapnumpy='--mapnumpy' ; nomapnumpy='--no-mapnumpy' ; suitesparse='--backend=suitesparse' ; vanilla='--backend=suitesparse-vanilla'
+          mapnumpy='--mapnumpy' ; nomapnumpy='--no-mapnumpy' ; suitesparse='' ; vanilla=''
           args=$(
             if [[ $A && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
             if [[ $A && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
@@ -336,8 +339,8 @@ jobs:
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo ${args}
           set -x  # echo on
-          coverage run -m pytest --color=yes --randomly -v ${args} \
-            ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
+          coverage run -m pytest --color=yes --randomly -v ${args} --backend=suitesparse \
+            ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }} graphblas/tests/test_ssjit.py
       - name: Unit tests (bizarro scalars)
         run: |
           # Run tests again with Scalars being C scalars by default
@@ -352,7 +355,7 @@ jobs:
           G=${{ needs.rngs.outputs.backend == 'G' || '' }} ; H=${{ needs.rngs.outputs.backend == 'H' || '' }}
           normal=${{ matrix.slowtask == 'pytest_normal' || '' }} ; bizarro=${{ matrix.slowtask == 'pytest_bizarro' || '' }}
           ubuntu=${{ matrix.os == 'ubuntu-latest' || '' }} ; windows=${{ matrix.os == 'windows-latest' || '' }} ; macos=${{ matrix.os == 'macos-latest' || '' }}
-          mapnumpy='--mapnumpy' ; nomapnumpy='--no-mapnumpy' ; suitesparse='--backend=suitesparse' ; vanilla='--backend=suitesparse-vanilla'
+          mapnumpy='--mapnumpy' ; nomapnumpy='--no-mapnumpy' ; suitesparse='' ; vanilla=''
           args=$(
             if [[ $A && $normal  ]] ; then if [[ $ubuntu ]] ; then echo " $nomapnumpy"  ; elif [[ $windows ]] ; then echo " $mapnumpy"    ; fi ; fi)$( \
             if [[ $A && $bizarro ]] ; then if [[ $ubuntu ]] ; then echo " $mapnumpy"    ; elif [[ $windows ]] ; then echo " $nomapnumpy"  ; fi ; fi)$( \
@@ -372,8 +375,8 @@ jobs:
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
           echo ${args}
           set -x  # echo on
-          coverage run -a -m pytest --color=yes --randomly -v ${args} \
-            ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
+          coverage run -a -m pytest --color=yes --randomly -v ${args} --backend=suitesparse \
+            ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }} graphblas/tests/test_ssjit.py
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
         if: matrix.slowtask == 'pytest_normal'
