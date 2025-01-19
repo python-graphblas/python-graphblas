@@ -85,7 +85,7 @@ jobs:
         shell: bash -l {0}
     strategy:
       # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
-      fail-fast: true
+      fail-fast: false
       # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
@@ -284,8 +284,10 @@ jobs:
             numba=numba${numbaver}
             sparse=sparse${sparsever}
           fi
-          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]]; then
-            # fast_matrix_market does not yet support Python 3.13
+          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ||
+                ${{ matrix.os == 'macos-latest' }} == true ]]
+          then
+            # fast_matrix_market does not yet support Python 3.13 or osx-arm64
             fmm=""
             fmmver=NA
           fi
