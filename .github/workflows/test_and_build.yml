@@ -101,6 +101,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: RNG for Python version
         uses: ddradar/choose-random-action@v3.0.0
         id: pyver
@@ -282,6 +283,11 @@ jobs:
           else
             numba=numba${numbaver}
             sparse=sparse${sparsever}
+          fi
+          if [[ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]]; then
+            # fast_matrix_market does not yet support Python 3.13
+            fmm=""
+            fmmver=NA
           fi
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psg${psgver}"
 

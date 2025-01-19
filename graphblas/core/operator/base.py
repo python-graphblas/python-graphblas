@@ -251,8 +251,7 @@ class TypedOpBase:
 
     def __repr__(self):
         classname = self.opclass.lower()
-        if classname.endswith("op"):
-            classname = classname[:-2]
+        classname = classname.removesuffix("op")
         dtype2 = "" if self._type2 is None else f", {self._type2.name}"
         return f"{classname}.{self.name}[{self.type.name}{dtype2}]"
 

@@ -67,7 +67,7 @@ repos:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.6
+    rev: v0.9.2
     hooks:
       - id: ruff
         args: [--fix-only, --show-fixes]
@@ -96,7 +96,7 @@ repos:
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.6
+    rev: v0.9.2
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint
@@ -115,6 +115,10 @@ repos:
     rev: "v0.10.0.1"
     hooks:
     - id: shellcheck
+  - repo: https://github.com/woodruffw/zizmor-pre-commit
+    rev: v1.2.2
+    hooks:
+      - id: zizmor
   - repo: local
     hooks:
       # Add `--hook-stage manual` to pre-commit command to run (very slow)

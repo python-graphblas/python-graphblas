@@ -406,6 +406,7 @@ ignore = [
 
 [tool.ruff.lint.flake8-builtins]
 builtins-ignorelist = ["copyright", "format", "min", "max"]
+builtins-allowed-modules = ["select"]
 
 [tool.ruff.lint.flake8-pytest-style]
 fixture-parentheses = false

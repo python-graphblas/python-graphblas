@@ -1,0 +1,16 @@
+rules:
+  use-trusted-publishing:
+    # TODO: we should update to use trusted publishing
+    ignore:
+      - publish_pypi.yml
+  excessive-permissions:
+    # It is probably good practice to use narrow permissions
+    ignore:
+      - debug.yml
+      - imports.yml
+      - publish_pypi.yml
+      - test_and_build.yml
+  template-injection:
+    # We use templates pretty heavily
+    ignore:
+      - test_and_build.yml
