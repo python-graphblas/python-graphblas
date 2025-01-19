@@ -284,7 +284,7 @@ jobs:
             numba=numba${numbaver}
             sparse=sparse${sparsever}
           fi
-          if [[ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]]; then
+          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]]; then
             # fast_matrix_market does not yet support Python 3.13
             fmm=""
             fmmver=NA
