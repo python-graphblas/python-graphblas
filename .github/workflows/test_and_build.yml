@@ -283,17 +283,21 @@ jobs:
             numbaver=$(python -c 'import random ; print(random.choice(["=0.59", "=0.60", ""]))')
           fi
 
-          # Only pandas >=2.2.2 supports NumPy 2
+          # Handle NumPy 2
           if [[ $npver == =2.* ]] ; then
+            # Only pandas >=2.2.2 supports NumPy 2
             pdver=$(python -c 'import random ; print(random.choice(["=2.2", ""]))')
-          fi
 
-          # Only awkward >=2.6.3 supports NumPy 2
-          if [[ $npver == =2.* ]] ; then
+            # Only awkward >=2.6.3 supports NumPy 2
             if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]] ; then
               akver=$(python -c 'import random ; print(random.choice(["=2.7", ""]))')
             else
               akver=$(python -c 'import random ; print(random.choice(["=2.6", "=2.7", ""]))')
+            fi
+
+            # Only scipy >=1.13 supports NumPy 2
+            if [[ $spver == "=1.9" || $spver == "=1.10" || $spver == "=1.11" || $spver == "=1.12" ]] ; then
+              spver="=1.13"
             fi
           fi
 
