@@ -29,8 +29,10 @@ def _setup_jit():
     # Configuration values below were obtained from the output of the JIT config
     # in CI, but with paths changed to use `{conda_prefix}` where appropriate.
     if "CONDA_PREFIX" not in os.environ or _IS_SSGB7:
+        yield
         return
     conda_prefix = os.environ["CONDA_PREFIX"]
+    prev = gb.ss.config["jit_c_control"]
     gb.ss.config["jit_c_control"] = "on"
     if sys.platform == "linux":
         gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/x86_64-conda-linux-gnu-cc"
@@ -72,6 +74,7 @@ def _setup_jit():
             # This probably means we're testing a `python-suitesparse-graphblas` wheel
             # in a conda environment. This is not yet working.
             gb.ss.config["jit_c_control"] = "off"
+            yield
             return
 
         gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/cc"
@@ -86,6 +89,10 @@ def _setup_jit():
     if not pathlib.Path(gb.ss.config["jit_c_compiler_name"]).exists():
         # Can't use the JIT if we don't have a compiler!
         gb.ss.config["jit_c_control"] = "off"
+        yield
+        return
+    yield
+    gb.ss.config["jit_c_control"] = prev
 
 
 @pytest.fixture

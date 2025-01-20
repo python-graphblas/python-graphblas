@@ -116,7 +116,17 @@ def register_anonymous(dtype, name=None):
     from ..exceptions import check_status_carg
 
     gb_obj = ffi.new("GrB_Type*")
-    if backend == "suitesparse":
+
+    if hasattr(lib, "GrB_Type_set_String"):
+        # We name this so that we can serialize and deserialize UDTs
+        # We don't yet have C definitions
+        np_repr = _dtype_to_string(dtype)
+        status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
+        check_status_carg(status, "Type", gb_obj[0])
+        val_obj = ffi.new("char[]", np_repr.encode())
+        status = lib.GrB_Type_set_String(gb_obj[0], val_obj, lib.GrB_NAME)
+    elif backend == "suitesparse":
+        # For SuiteSparse < 9
         # We name this so that we can serialize and deserialize UDTs
         # We don't yet have C definitions
         np_repr = _dtype_to_string(dtype).encode()
