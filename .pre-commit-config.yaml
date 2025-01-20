@@ -13,7 +13,7 @@ ci:
   skip: [pylint, no-commit-to-branch]
 fail_fast: true
 default_language_version:
-    python: python3
+  python: python3
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -26,6 +26,9 @@ repos:
       - id: check-toml
       - id: check-yaml
       - id: check-executables-have-shebangs
+      - id: check-vcs-permalinks
+      - id: destroyed-symlinks
+      - id: detect-private-key
       - id: debug-statements
       - id: end-of-file-fixer
         exclude_types: [svg]
@@ -114,11 +117,29 @@ repos:
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: "v0.10.0.1"
     hooks:
-    - id: shellcheck
+      - id: shellcheck
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.31.0
+    hooks:
+      - id: check-dependabot
+      - id: check-github-workflows
+      - id: check-readthedocs
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
   - repo: https://github.com/woodruffw/zizmor-pre-commit
     rev: v1.2.2
     hooks:
       - id: zizmor
+  - repo: meta
+    hooks:
+      - id: check-hooks-apply
+      - id: check-useless-excludes
   - repo: local
     hooks:
       # Add `--hook-stage manual` to pre-commit command to run (very slow)
@@ -155,4 +176,4 @@ repos:
 #    hooks:
 #      - id: bandit
 #
-# blacken-docs, blackdoc prettier, mypy, pydocstringformatter, velin, flynt, yamllint
+# blacken-docs, blackdoc prettier, mypy, pydocstringformatter, velin, flynt, taplo
