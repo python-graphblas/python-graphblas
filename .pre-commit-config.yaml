@@ -81,8 +81,8 @@ repos:
     hooks:
       - id: flake8
         args: ["--config=.flake8"]
-        additional_dependencies: &flake8_dependencies
-          # These versions need updated manually
+        additional_dependencies:
+          &flake8_dependencies # These versions need updated manually
           - flake8==7.1.1
           - flake8-bugbear==24.12.12
           - flake8-simplify==0.21.0
@@ -118,6 +118,14 @@ repos:
     rev: "v0.10.0.1"
     hooks:
       - id: shellcheck
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.4.2
+    hooks:
+      - id: prettier
+  - repo: https://github.com/ComPWA/taplo-pre-commit
+    rev: v0.9.3
+    hooks:
+      - id: taplo-format
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.7
     hooks:
@@ -155,7 +163,7 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
-      - id: no-commit-to-branch  # no commit directly to main
+      - id: no-commit-to-branch # no commit directly to main
 #
 # Maybe:
 #
@@ -176,4 +184,4 @@ repos:
 #    hooks:
 #      - id: bandit
 #
-# blacken-docs, blackdoc prettier, mypy, pydocstringformatter, velin, flynt, taplo
+# blacken-docs, blackdoc, mypy, pydocstringformatter, velin, flynt

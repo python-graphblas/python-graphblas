@@ -3,7 +3,7 @@ name: Publish to PyPI
 on:
   push:
     tags:
-      - '20*'
+      - "20*"
 
 jobs:
   build_and_deploy:

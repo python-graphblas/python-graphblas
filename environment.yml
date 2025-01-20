@@ -11,103 +11,103 @@
 # It is okay to comment out sections below that you don't need such as viz or building docs.
 name: graphblas-dev
 channels:
-    - conda-forge
-    - nodefaults  # Only install packages from conda-forge for faster solving
+  - conda-forge
+  - nodefaults # Only install packages from conda-forge for faster solving
 dependencies:
-    - python
-    - donfig
-    - numba
-    - python-suitesparse-graphblas
-    - pyyaml
-    # For repr
-    - pandas
-    # For I/O
-    - awkward
-    - fast_matrix_market
-    - networkx
-    - scipy
-    - sparse
-    # For viz
-    - datashader
-    - hvplot
-    - matplotlib
-    # For linting
-    - pre-commit
-    # For testing
-    - packaging
-    - pytest-cov
-    - tomli
-    # For debugging
-    - icecream
-    - ipykernel
-    - ipython
-    # For type annotations
-    - mypy
-    # For building docs
-    - nbsphinx
-    - numpydoc
-    - pydata-sphinx-theme
-    - sphinx-panels
-    # For building logo
-    - drawsvg
-    - cairosvg
-    # EXTRA (optional; uncomment as desired)
-    # - autoflake
-    # - black
-    # - black-jupyter
-    # - build
-    # - codespell
-    # - commonmark
-    # - cython
-    # - cytoolz
-    # - distributed
-    # - flake8
-    # - flake8-bugbear
-    # - flake8-comprehensions
-    # - flake8-print
-    # - flake8-quotes
-    # - flake8-simplify
-    # - gcc
-    # - gh
-    # - git
-    # - graph-tool
-    # - xorg-libxcursor  # for graph-tool
-    # - grayskull
-    # - h5py
-    # - hiveplot
-    # - igraph
-    # - ipycytoscape
-    # - isort
-    # - jupyter
-    # - jupyterlab
-    # - line_profiler
-    # - lxml
-    # - make
-    # - memory_profiler
-    # - nbqa
-    # - netcdf4
-    # - networkit
-    # - nxviz
-    # - pycodestyle
-    # - pydot
-    # - pygraphviz
-    # - pylint
-    # - pytest-runner
-    # - pytest-xdist
-    # - python-graphviz
-    # - python-igraph
-    # - python-louvain
-    # - pyupgrade
-    # - rich
-    # - ruff
-    # - scalene
-    # - scikit-network
-    # - setuptools-git-versioning
-    # - snakeviz
-    # - sphinx-lint
-    # - sympy
-    # - tuna
-    # - twine
-    # - vim
-    # - yesqa
-    # - zarr
+  - python
+  - donfig
+  - numba
+  - python-suitesparse-graphblas
+  - pyyaml
+  # For repr
+  - pandas
+  # For I/O
+  - awkward
+  - fast_matrix_market
+  - networkx
+  - scipy
+  - sparse
+  # For viz
+  - datashader
+  - hvplot
+  - matplotlib
+  # For linting
+  - pre-commit
+  # For testing
+  - packaging
+  - pytest-cov
+  - tomli
+  # For debugging
+  - icecream
+  - ipykernel
+  - ipython
+  # For type annotations
+  - mypy
+  # For building docs
+  - nbsphinx
+  - numpydoc
+  - pydata-sphinx-theme
+  - sphinx-panels
+  # For building logo
+  - drawsvg
+  - cairosvg
+  # EXTRA (optional; uncomment as desired)
+  # - autoflake
+  # - black
+  # - black-jupyter
+  # - build
+  # - codespell
+  # - commonmark
+  # - cython
+  # - cytoolz
+  # - distributed
+  # - flake8
+  # - flake8-bugbear
+  # - flake8-comprehensions
+  # - flake8-print
+  # - flake8-quotes
+  # - flake8-simplify
+  # - gcc
+  # - gh
+  # - git
+  # - graph-tool
+  # - xorg-libxcursor  # for graph-tool
+  # - grayskull
+  # - h5py
+  # - hiveplot
+  # - igraph
+  # - ipycytoscape
+  # - isort
+  # - jupyter
+  # - jupyterlab
+  # - line_profiler
+  # - lxml
+  # - make
+  # - memory_profiler
+  # - nbqa
+  # - netcdf4
+  # - networkit
+  # - nxviz
+  # - pycodestyle
+  # - pydot
+  # - pygraphviz
+  # - pylint
+  # - pytest-runner
+  # - pytest-xdist
+  # - python-graphviz
+  # - python-igraph
+  # - python-louvain
+  # - pyupgrade
+  # - rich
+  # - ruff
+  # - scalene
+  # - scikit-network
+  # - setuptools-git-versioning
+  # - snakeviz
+  # - sphinx-lint
+  # - sympy
+  # - tuna
+  # - twine
+  # - vim
+  # - yesqa
+  # - zarr
