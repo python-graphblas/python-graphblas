@@ -1,5 +1,6 @@
 import os
 import pathlib
+import platform
 import sys
 
 import numpy as np
@@ -61,7 +62,7 @@ def _setup_jit():
         gb.ss.config["jit_c_compiler_flags"] = (
             "-march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE "
             f"-fstack-protector-strong -O2 -pipe -isystem {conda_prefix}/include -DGBNCPUFEAT "
-            "-Wno-pointer-sign -O3 -DNDEBUG -fopenmp=libomp -fPIC -arch x86_64"
+            f"-Wno-pointer-sign -O3 -DNDEBUG -fopenmp=libomp -fPIC -arch {platform.machine()}"
         )
         gb.ss.config["jit_c_linker_flags"] = (
             "-Wl,-pie -Wl,-headerpad_max_install_names -Wl,-dead_strip_dylibs "
