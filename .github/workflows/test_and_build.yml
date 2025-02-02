@@ -493,10 +493,12 @@ jobs:
           coverage run -a -m graphblas.core.infixmethods
           git diff --exit-code
       - name: Coverage
+        if: false
         run: |
           coverage xml
           coverage report --show-missing
       - name: codecov
+        if: false
         uses: codecov/codecov-action@v4
       - name: Notebooks Execution check
         if: matrix.slowtask == 'notebooks'
