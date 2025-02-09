@@ -70,7 +70,7 @@ repos:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.4
+    rev: v0.9.5
     hooks:
       - id: ruff
         args: [--fix-only, --show-fixes]
@@ -99,7 +99,7 @@ repos:
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.4
+    rev: v0.9.5
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint
@@ -141,7 +141,7 @@ repos:
     hooks:
       - id: yamllint
   - repo: https://github.com/woodruffw/zizmor-pre-commit
-    rev: v1.3.0
+    rev: v1.3.1
     hooks:
       - id: zizmor
   - repo: meta
