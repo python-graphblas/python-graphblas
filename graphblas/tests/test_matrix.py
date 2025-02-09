@@ -24,7 +24,7 @@ from graphblas.exceptions import (
     OutputNotEmpty,
 )
 
-from .conftest import autocompute, compute, pypy, shouldhave
+from .conftest import autocompute, compute, dprint, pypy, shouldhave
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
@@ -475,6 +475,8 @@ def test_extract_column(A):
 
 
 def test_extract_input_mask():
+    # debug print used to investigate segfaults
+    dprint("D", 0)
     # A       M
     # 0 1 2   _ 0 1
     # 3 4 5   2 3 _
@@ -483,116 +485,173 @@ def test_extract_input_mask():
         [0, 1, 2, 0, 1, 2],
         [0, 1, 2, 3, 4, 5],
     )
+    dprint("D", 1)
     M = Matrix.from_coo(
         [0, 0, 1, 1],
         [1, 2, 0, 1],
         [0, 1, 2, 3],
     )
+    dprint("D", 2)
     m = M[0, :].new()
+    dprint("D", 3)
     MT = M.T.new()
+    dprint("D", 4)
     # Matrix structure mask
     result = A[0, [0, 1]].new(input_mask=M.S)
+    dprint("D", 5)
     expected = Vector.from_coo([1], [1])
+    dprint("D", 6)
     assert result.isequal(expected)
+    dprint("D", 7)
     # again
     result.clear()
+    dprint("D", 8)
     result(input_mask=M.S) << A[0, [0, 1]]
+    dprint("D", 9)
     assert result.isequal(expected)
+    dprint("D", 10)
 
     # Vector mask
     result = A[0, [0, 1]].new(input_mask=m.S)
+    dprint("D", 11)
     assert result.isequal(expected)
+    dprint("D", 12)
     # again
     result.clear()
+    dprint("D", 13)
     result(input_mask=m.S) << A[0, [0, 1]]
+    dprint("D", 14)
     assert result.isequal(expected)
+    dprint("D", 15)
 
     # Matrix value mask
     result = A[0, [1, 2]].new(input_mask=M.V)
+    dprint("D", 16)
     expected = Vector.from_coo([1], [2], size=2)
+    dprint("D", 17)
     assert result.isequal(expected)
+    dprint("D", 18)
     # again
     result.clear()
+    dprint("D", 19)
     result(input_mask=M.V) << A[0, [1, 2]]
+    dprint("D", 20)
     assert result.isequal(expected)
+    dprint("D", 21)
 
     with pytest.raises(ValueError, match="Shape of `input_mask` does not match shape of input"):
         A[0, [0, 1]].new(input_mask=MT.S)
+    dprint("D", 22)
     with pytest.raises(ValueError, match="Shape of `input_mask` does not match shape of input"):
         m(input_mask=MT.S) << A[0, [0, 1]]
+    dprint("D", 23)
     with pytest.raises(
         ValueError, match="Size of `input_mask` Vector does not match ncols of Matrix"
     ):
         A[0, [0]].new(input_mask=expected.S)
+    dprint("D", 24)
     with pytest.raises(
         ValueError, match="Size of `input_mask` Vector does not match ncols of Matrix"
     ):
         m(input_mask=expected.S) << A[0, [0]]
+    dprint("D", 25)
     with pytest.raises(
         ValueError, match="Size of `input_mask` Vector does not match nrows of Matrix"
     ):
         A[[0], 0].new(input_mask=m.S)
+    dprint("D", 26)
     with pytest.raises(
         ValueError, match="Size of `input_mask` Vector does not match nrows of Matrix"
     ):
         m(input_mask=m.S) << A[[0], 0]
+    dprint("D", 27)
     with pytest.raises(
         TypeError, match="Got Vector `input_mask` when extracting a submatrix from a Matrix"
     ):
         A[[0], [0]].new(input_mask=expected.S)
+    dprint("D", 28)
     with pytest.raises(
         TypeError, match="Got Vector `input_mask` when extracting a submatrix from a Matrix"
     ):
         A(input_mask=expected.S) << A[[0], [0]]
+    dprint("D", 29)
     with pytest.raises(ValueError, match="input_mask"):
         A[0, 0].new(input_mask=M.S)
+    dprint("D", 30)
     with pytest.raises(TypeError, match="mask and input_mask arguments cannot both be given"):
         A[0, [0, 1]].new(input_mask=M.S, mask=expected.S)
+    dprint("D", 31)
     with pytest.raises(TypeError, match="mask and input_mask arguments cannot both be given"):
         A(input_mask=M.S, mask=expected.S)
+    dprint("D", 32)
     with pytest.raises(TypeError, match="Mask must be"):
         A[0, [0, 1]].new(input_mask=M)
+    dprint("D", 33)
     with pytest.raises(TypeError, match="Mask must be"):
         A(input_mask=M)
+    dprint("D", 34)
     with pytest.raises(TypeError, match="Mask object must be type Vector"):
         expected[[0, 1]].new(input_mask=M.S)
+    dprint("D", 35)
     with pytest.raises(TypeError, match="Mask object must be type Vector"):
         expected(input_mask=M.S) << expected[[0, 1]]
+    dprint("D", 36)
     with pytest.raises(AttributeError, match="new"):
         A.new(input_mask=M.S)
+    dprint("D", 37)
     with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
         A(input_mask=M.S) << A.apply(unary.ainv)
+    dprint("D", 38)
     with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
         A(input_mask=M.S)[[0], [0]] = 1
+    dprint("D", 39)
     with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
         A(input_mask=M.S)[[0], [0]]
+    dprint("D", 40)
 
     # With transpose input value
     # Matrix structure mask
     result = A.T[[0, 1], 0].new(input_mask=MT.S)
+    dprint("D", 41)
     expected = Vector.from_coo([1], [1])
+    dprint("D", 42)
     assert result.isequal(expected)
+    dprint("D", 43)
     # again
     result.clear()
+    dprint("D", 44)
     result(input_mask=MT.S) << A.T[[0, 1], 0]
+    dprint("D", 45)
     assert result.isequal(expected)
+    dprint("D", 46)
 
     # Vector mask
     result = A.T[[0, 1], 0].new(input_mask=m.S)
+    dprint("D", 47)
     assert result.isequal(expected)
+    dprint("D", 48)
     # again
     result.clear()
+    dprint("D", 49)
     result(input_mask=m.S) << A.T[[0, 1], 0]
+    dprint("D", 50)
     assert result.isequal(expected)
+    dprint("D", 51)
 
     # Matrix value mask
     result = A.T[[1, 2], 0].new(input_mask=MT.V)
+    dprint("D", 52)
     expected = Vector.from_coo([1], [2], size=2)
+    dprint("D", 53)
     assert result.isequal(expected)
+    dprint("D", 54)
     # again
     result.clear()
+    dprint("D", 55)
     result(input_mask=MT.V) << A.T[[1, 2], 0]
+    dprint("D", 56)
     assert result.isequal(expected)
+    dprint("D", 57)
 
 
 def test_extract_with_matrix(A):
@@ -964,6 +1023,8 @@ def test_assign_row_col_matrix_mask():
 
 @pytest.mark.parametrize("index", [slice(12), list(range(12))])
 def test_subassign_combos(index):
+    # debug print used to investigate segfaults
+    dprint("E", 0)
     #         0  1  2  3  4  5  6  7  8  9 10 11 12 13
     # mask    1  1  1  1  0  0  0  0  _  _  _  _
     # val     1  2  _  _  3  4  _  _  5  6  _  _
@@ -971,13 +1032,20 @@ def test_subassign_combos(index):
     mask_base = Vector.from_coo(
         [0, 1, 2, 3, 4, 5, 6, 7], [1, 1, 1, 1, 0, 0, 0, 0], size=12, name="mask"
     )
+    dprint("E", 1)
     val_base = Vector.from_coo([0, 1, 4, 5, 8, 9], [1, 2, 3, 4, 5, 6], size=12)
+    dprint("E", 2)
     self_base = Vector.from_coo([0, 2, 4, 6, 8, 10, 12], [10, 20, 30, 40, 50, 60, 70], size=14)
+    dprint("E", 3)
 
     S = gb.core.mask.StructuralMask
+    dprint("E", 4)
     V = gb.core.mask.ValueMask
+    dprint("E", 5)
     CS = gb.core.mask.ComplementedStructuralMask
+    dprint("E", 6)
     CV = gb.core.mask.ComplementedValueMask
+    dprint("E", 7)
     params = [  # mask_type, replace, indices, values
         [S, False, [0, 1, 2, 4, 5, 6, 8, 10, 12], [11, 2, 20, 33, 4, 40, 50, 60, 70]],
         [V, False, [0, 1, 2, 4, 6, 8, 10, 12], [11, 2, 20, 30, 40, 50, 60, 70]],
@@ -988,6 +1056,7 @@ def test_subassign_combos(index):
         [CS, True, [8, 9, 10, 12], [55, 6, 60, 70]],
         [CV, True, [4, 5, 6, 8, 9, 10, 12], [33, 4, 40, 55, 6, 60, 70]],
     ]
+    dprint("E", 8)
     # Vector-Vector
     for mask_type, replace, indices, values in params:
         self = self_base.dup(name="self")
@@ -1000,6 +1069,7 @@ def test_subassign_combos(index):
             print(expected)
             print(self)
             raise AssertionError("incorrect; see printed data")
+    dprint("E", 9)
 
     def asrow(v):
         Row = Matrix(v.dtype, nrows=1, ncols=v.size, name=v.name)
@@ -1019,6 +1089,7 @@ def test_subassign_combos(index):
             print(expected)
             print(self)
             raise AssertionError("incorrect; see printed data")
+    dprint("E", 10)
 
     def ascol(v):
         Col = Matrix(v.dtype, nrows=v.size, ncols=1, name=v.name)
@@ -1038,6 +1109,7 @@ def test_subassign_combos(index):
             print(expected)
             print(self)
             raise AssertionError("incorrect; see printed data")
+    dprint("E", 11)
 
     # Matrix-matrix
     for mask_type, replace, indices, values in params:
@@ -1052,6 +1124,7 @@ def test_subassign_combos(index):
             print(expected)
             print(self)
             raise AssertionError("incorrect; see printed data")
+    dprint("E", 12)
 
 
 def test_assign_column_scalar(A, v):
@@ -1870,30 +1943,46 @@ def test_transpose_equals(A):
 
 
 def test_transpose_exceptional():
+    # debug print used to investigate segfaults
+    dprint("F", 0)
     A = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [True, True, False, True])
+    dprint("F", 1)
     B = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4])
+    dprint("F", 2)
 
     with pytest.raises(TypeError, match="not callable"):
         B.T(mask=A.V) << B.ewise_mult(B, op=binary.plus)
+    dprint("F", 3)
     with pytest.raises(AttributeError):
         B(mask=A.T.V) << B.ewise_mult(B, op=binary.plus)
+    dprint("F", 4)
     with pytest.raises(AttributeError):
         B.T(mask=A.T.V) << B.ewise_mult(B, op=binary.plus)
+    dprint("F", 5)
     with pytest.raises(TypeError, match="does not support item assignment"):
         B.T[1, 0] << 10
+    dprint("F", 6)
     with pytest.raises(TypeError, match="not callable"):
         B.T[1, 0]() << 10
+    dprint("F", 7)
     with pytest.raises(TypeError, match="not callable"):
         B.T()[1, 0] << 10
+    dprint("F", 8)
     # with pytest.raises(AttributeError):
     # should use new instead--Now okay.
     assert B.T.dup().isequal(B.T.new())
+    dprint("F", 9)
     # Not exceptional, but while we're here...
     C = B.T.new(mask=A.V)
+    dprint("F", 10)
     D = B.T.new()
+    dprint("F", 11)
     D = D.dup(mask=A.V)
+    dprint("F", 12)
     assert C.isequal(D)
+    dprint("F", 13)
     assert C.isequal(Matrix.from_coo([0, 0, 1], [0, 1, 1], [1, 3, 4]))
+    dprint("F", 14)
 
 
 def test_nested_matrix_operations():
@@ -3041,25 +3130,46 @@ def test_index_expr_is_like_matrix(A):
 
 @autocompute
 def test_dup_expr(A):
+    # debug print used to investigate segfaults
+    dprint("C", 0)
     result = (A + A).dup()
+    dprint("C", 1)
     assert result.isequal(2 * A)
+    dprint("C", 2)
     result = (A + A).dup(clear=True)
+    dprint("C", 3)
     assert result.isequal(A.dup(clear=True), check_dtype=True)
+    dprint("C", 4)
     result = (A + A).dup(float, clear=True)
+    dprint("C", 5)
     assert result.isequal(A.dup(float, clear=True), check_dtype=True)
+    dprint("C", 6)
     result = (A * A).dup(mask=A.V)
+    dprint("C", 7)
     assert result.isequal((A**2).new(mask=A.V))
+    dprint("C", 8)
     result = A[:, :].dup()
+    dprint("C", 9)
     assert result.isequal(A)
+    dprint("C", 10)
     result = A[:, :].dup(clear=True)
+    dprint("C", 11)
     assert result.isequal(A.dup(clear=True), check_dtype=True)
+    dprint("C", 12)
     result = A[:, :].dup(float, clear=True)
+    dprint("C", 13)
     assert result.isequal(A.dup(float, clear=True), check_dtype=True)
+    dprint("C", 14)
     B = A.dup(bool)
+    dprint("C", 15)
     result = (B | B).dup()
+    dprint("C", 16)
     assert result.isequal(B)
+    dprint("C", 17)
     result = (B | B).dup(clear=True)
+    dprint("C", 18)
     assert result.isequal(B.dup(clear=True))
+    dprint("C", 19)
 
 
 @pytest.mark.skipif("not suitesparse")

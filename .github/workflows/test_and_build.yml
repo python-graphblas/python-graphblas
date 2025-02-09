@@ -359,7 +359,7 @@ jobs:
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4,<10"' || '' }} \
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }} \
             ${{ matrix.os == 'windows-latest' && 'cmake' || 'm4' }} \
-            pytest-forked  # XXX: to investigate crashes
+            ${{ matrix.os != 'windows-latest' && 'pytest-forked' || '' }}  # XXX: to investigate crashes
       - name: Build extension module
         run: |
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then

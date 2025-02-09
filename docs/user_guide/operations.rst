@@ -8,7 +8,7 @@ Matrix Multiply
 The GraphBLAS spec contains three methods for matrix multiplication, depending on whether
 the inputs are Matrix or Vector.
 
-  - **mxm** -- Matrix-Matrix multplications
+  - **mxm** -- Matrix-Matrix multiplication
   - **mxv** -- Matrix-Vector multiplication
   - **vxm** -- Vector-Matrix multiplication
 

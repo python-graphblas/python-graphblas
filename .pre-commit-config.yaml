@@ -50,7 +50,7 @@ repos:
   # We can probably remove `isort` if we come to trust `ruff --fix`,
   # but we'll need to figure out the configuration to do this in `ruff`
   - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
+    rev: 6.0.0
     hooks:
       - id: isort
   # Let's keep `pyupgrade` even though `ruff --fix` probably does most of it
@@ -65,12 +65,12 @@ repos:
       - id: auto-walrus
         args: [--line-length, "100"]
   - repo: https://github.com/psf/black
-    rev: 24.10.0
+    rev: 25.1.0
     hooks:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.2
+    rev: v0.9.4
     hooks:
       - id: ruff
         args: [--fix-only, --show-fixes]
@@ -92,14 +92,14 @@ repos:
       - id: yesqa
         additional_dependencies: *flake8_dependencies
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.3.0
+    rev: v2.4.1
     hooks:
       - id: codespell
         types_or: [python, rst, markdown]
         additional_dependencies: [tomli]
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.2
+    rev: v0.9.4
     hooks:
       - id: ruff
   - repo: https://github.com/sphinx-contrib/sphinx-lint
@@ -131,7 +131,7 @@ repos:
     hooks:
       - id: actionlint
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.31.0
+    rev: 0.31.1
     hooks:
       - id: check-dependabot
       - id: check-github-workflows
@@ -141,7 +141,7 @@ repos:
     hooks:
       - id: yamllint
   - repo: https://github.com/woodruffw/zizmor-pre-commit
-    rev: v1.2.2
+    rev: v1.3.0
     hooks:
       - id: zizmor
   - repo: meta

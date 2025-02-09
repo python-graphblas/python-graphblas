@@ -3,6 +3,7 @@ import contextlib
 import functools
 import itertools
 import platform
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -156,3 +157,10 @@ def compute(x):
 def shouldhave(module, opname):
     """Whether an "operator" module should have the given operator."""
     return supports_udfs or hasattr(module, opname)
+
+
+def dprint(*args, **kwargs):
+    """Print to stderr for debugging purposes."""
+    kwargs["file"] = sys.stderr
+    kwargs["flush"] = True
+    print(*args, **kwargs)
