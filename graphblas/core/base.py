@@ -32,6 +32,7 @@ def call(cfunc_name, args):
         if rec.data:
             sys.stderr.write(rec.data[-1] + "\n")
             sys.stderr.flush()
+            rec.data.pop()
 
     try:
         err_code = cfunc(*call_args)
