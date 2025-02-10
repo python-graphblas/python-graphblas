@@ -495,9 +495,10 @@ def test_extract_input_mask():
     m = M[0, :].new()
     dprint("D", 3)
     MT = M.T.new()
-    dprint("D", 4)
     # Matrix structure mask
-    result = A[0, [0, 1]].new(input_mask=M.S)
+    dprint("D", 4)
+    with gb.Recorder() as rec:  # noqa: F841
+        result = A[0, [0, 1]].new(input_mask=M.S)  # XXX: here
     dprint("D", 5)
     expected = Vector.from_coo([1], [1])
     dprint("D", 6)
@@ -1056,7 +1057,7 @@ def test_subassign_combos(index):
         [CS, True, [8, 9, 10, 12], [55, 6, 60, 70]],
         [CV, True, [4, 5, 6, 8, 9, 10, 12], [33, 4, 40, 55, 6, 60, 70]],
     ]
-    dprint("E", 8)
+    dprint("E", 8)  # XXX: after here
     # Vector-Vector
     for mask_type, replace, indices, values in params:
         self = self_base.dup(name="self")
@@ -1973,7 +1974,8 @@ def test_transpose_exceptional():
     assert B.T.dup().isequal(B.T.new())
     dprint("F", 9)
     # Not exceptional, but while we're here...
-    C = B.T.new(mask=A.V)
+    with gb.Recorder() as rec:  # noqa: F841
+        C = B.T.new(mask=A.V)  # XXX: here
     dprint("F", 10)
     D = B.T.new()
     dprint("F", 11)
@@ -3146,7 +3148,8 @@ def test_dup_expr(A):
     dprint("C", 6)
     result = (A * A).dup(mask=A.V)
     dprint("C", 7)
-    assert result.isequal((A**2).new(mask=A.V))
+    with gb.Recorder() as rec:  # noqa: F841
+        assert result.isequal((A**2).new(mask=A.V))  # XXX: here
     dprint("C", 8)
     result = A[:, :].dup()
     dprint("C", 9)

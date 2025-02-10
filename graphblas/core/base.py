@@ -1,3 +1,4 @@
+import sys
 from contextvars import ContextVar
 
 from .. import backend, config
@@ -23,6 +24,15 @@ def record_raw(text):
 def call(cfunc_name, args):
     call_args = [getattr(x, "_carg", x) if x is not None else NULL for x in args]
     cfunc = libget(cfunc_name)
+
+    # XXX
+    rec = _recorder.get(_prev_recorder)
+    if rec is not None:
+        rec.record(cfunc_name, args)
+        if rec.data:
+            sys.stderr.write(rec.data[-1] + "\n")
+            sys.stderr.flush()
+
     try:
         err_code = cfunc(*call_args)
     except TypeError as exc:

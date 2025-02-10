@@ -255,7 +255,8 @@ def test_extract_input_mask():
     dprint("A", 1)
     m = Vector.from_coo([0, 2], [0, 2])
     dprint("A", 2)
-    result = v[[0, 1]].new(input_mask=m.S)
+    with gb.Recorder() as rec:  # noqa: F841
+        result = v[[0, 1]].new(input_mask=m.S)  # XXX: here
     dprint("A", 3)
     expected = Vector.from_coo([0], [0], size=2)
     dprint("A", 4)
@@ -1771,7 +1772,8 @@ def test_dup_expr(v):
     dprint("B", 4)
     result = (v * v).dup(mask=v.V)
     dprint("B", 5)
-    assert result.isequal((v**2).new(mask=v.V))
+    with gb.Recorder() as rec:  # noqa: F841
+        assert result.isequal((v**2).new(mask=v.V))  # XXX: here
     dprint("B", 6)
     result = v[:].dup()
     dprint("B", 7)

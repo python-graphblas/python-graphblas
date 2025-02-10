@@ -2,6 +2,7 @@ import itertools
 
 import pytest
 
+import graphblas as gb
 from graphblas import Vector
 from graphblas.core.mask import Mask
 
@@ -43,7 +44,8 @@ def test_mask_new(as_matrix):
             dprint("G", 12)
             expected = expected.dup(mask=m1).dup(mask=m2)
             dprint("G", 13)
-            result = m1.new(dtype, mask=m2, name=name)
+            with gb.Recorder() as rec:  # noqa: F841
+                result = m1.new(dtype, mask=m2, name=name)  # XXX: here
             dprint("G", 14)
             assert result.name == name
             dprint("G", 15)
@@ -127,7 +129,8 @@ def test_mask_or(as_matrix):
             dprint("H", 12)
             expected(m2) << True
             dprint("H", 13)
-            result = (m1 | m2).new()
+            with gb.Recorder() as rec:  # noqa: F841
+                result = (m1 | m2).new()  # XXX: here
             dprint("H", 14)
             assert result.isequal(expected, check_dtype=True)
             dprint("H", 15)
@@ -185,7 +188,8 @@ def test_mask_and(as_matrix):
             dprint("I", 12)
             expected = expected.dup(mask=m1).dup(mask=m2)
             dprint("I", 13)
-            result = (m1 & m2).new()
+            with gb.Recorder() as rec:  # noqa: F841
+                result = (m1 & m2).new()  # XXX: here
             dprint("I", 14)
             assert result.isequal(expected, check_dtype=True)
             dprint("I", 15)

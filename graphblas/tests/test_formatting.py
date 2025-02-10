@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+import graphblas as gb
 from graphblas import backend, dtypes, unary
 from graphblas.core import formatting
 from graphblas.core.formatting import CSS_STYLE
@@ -475,7 +476,8 @@ def test_vector_mask_repr_large(w):
             "value  1              1                       ...  1              1                     "
         )
         dprint("K", 2)
-        repr_printer(w.V, "w.V", indent=8)
+        with gb.Recorder() as rec:  # noqa: F841
+            repr_printer(w.V, "w.V", indent=8)  # XXX: here
         dprint("K", 3)
         assert repr(w.V) == (
             '"w.V"         nvals  size  dtype  format\n'
@@ -2602,7 +2604,8 @@ def test_vector_mask_repr_html_large(w):
             "</div></details></div>"
         )
         dprint("J", 2)
-        html_printer(w.V, "w.V", indent=8)
+        with gb.Recorder() as rec:  # noqa: F841
+            html_printer(w.V, "w.V", indent=8)  # XXX: here
         dprint("J", 3)
         assert repr_html(w.V) == (
             "<div>"

@@ -415,7 +415,8 @@ jobs:
           echo ${args}
           set -x  # echo on
           # XXX coverage run -m pytest --color=yes --randomly -v ${args} \
-          pytest --forked --color=yes --randomly -v -s ${args} \
+          pytest ${{ matrix.os != 'windows-latest' && '--forked' || '' }} \
+            --color=yes --randomly -v -s ${args} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
         run: |
@@ -452,7 +453,8 @@ jobs:
           echo ${args}
           set -x  # echo on
           # XXX coverage run -a -m pytest --color=yes --randomly -v ${args} \
-          pytest --forked --color=yes --randomly -v -s ${args} \
+          pytest ${{ matrix.os != 'windows-latest' && '--forked' || '' }} \
+            --color=yes --randomly -v -s ${args} \
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
