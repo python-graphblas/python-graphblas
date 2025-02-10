@@ -1,4 +1,7 @@
-import sysconfig
+import os
+import pathlib
+import platform
+import sys
 
 import numpy as np
 import pytest
@@ -24,6 +27,8 @@ if backend != "suitesparse":
 
 @pytest.fixture(scope="module", autouse=True)
 def _setup_jit():
+    """Set up the SuiteSparse:GraphBLAS JIT."""
+    """
     cc = sysconfig.get_config_var("CC")
     cflags = sysconfig.get_config_var("CFLAGS")
     include = sysconfig.get_path("include")
@@ -41,7 +46,9 @@ def _setup_jit():
 
     yield
     gb.ss.config["jit_c_control"] = prev
+
     """
+
     # Configuration values below were obtained from the output of the JIT config
     # in CI, but with paths changed to use `{conda_prefix}` where appropriate.
     if "CONDA_PREFIX" not in os.environ or _IS_SSGB7:
@@ -109,7 +116,6 @@ def _setup_jit():
         return
     yield
     gb.ss.config["jit_c_control"] = prev
-    """
 
 
 @pytest.fixture

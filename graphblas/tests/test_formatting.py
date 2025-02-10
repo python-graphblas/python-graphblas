@@ -477,6 +477,7 @@ def test_vector_mask_repr_large(w):
         )
         dprint("K", 2)
         with gb.Recorder() as rec:  # noqa: F841
+            dprint("Recorded. About to crash!")
             repr_printer(w.V, "w.V", indent=8)  # XXX: here
         dprint("K", 3)
         assert repr(w.V) == (
@@ -2605,6 +2606,7 @@ def test_vector_mask_repr_html_large(w):
         )
         dprint("J", 2)
         with gb.Recorder() as rec:  # noqa: F841
+            dprint("Recorded. About to crash!")
             html_printer(w.V, "w.V", indent=8)  # XXX: here
         dprint("J", 3)
         assert repr_html(w.V) == (

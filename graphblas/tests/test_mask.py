@@ -45,6 +45,7 @@ def test_mask_new(as_matrix):
             expected = expected.dup(mask=m1).dup(mask=m2)
             dprint("G", 13)
             with gb.Recorder() as rec:  # noqa: F841
+                dprint("Recorded. About to crash!")
                 result = m1.new(dtype, mask=m2, name=name)  # XXX: here
             dprint("G", 14)
             assert result.name == name
@@ -130,6 +131,7 @@ def test_mask_or(as_matrix):
             expected(m2) << True
             dprint("H", 13)
             with gb.Recorder() as rec:  # noqa: F841
+                dprint("Recorded. About to crash!")
                 result = (m1 | m2).new()  # XXX: here
             dprint("H", 14)
             assert result.isequal(expected, check_dtype=True)
@@ -189,6 +191,7 @@ def test_mask_and(as_matrix):
             expected = expected.dup(mask=m1).dup(mask=m2)
             dprint("I", 13)
             with gb.Recorder() as rec:  # noqa: F841
+                dprint("Recorded. About to crash!")
                 result = (m1 & m2).new()  # XXX: here
             dprint("I", 14)
             assert result.isequal(expected, check_dtype=True)
