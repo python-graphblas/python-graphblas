@@ -158,6 +158,7 @@ jobs:
           auto-update-conda: true
           python-version: ${{ steps.pyver.outputs.selected }}
           channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
+          conda-remove-defaults: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'false' || 'true' }}
           channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
           activate-environment: graphblas
           auto-activate-base: false
