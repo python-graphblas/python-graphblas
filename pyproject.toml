@@ -61,7 +61,7 @@ dependencies = [
   # These won't be installed by default after 2024.3.0
   # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
   "suitesparse-graphblas >=7.4.0.0, <10",
-  "numba >=0.55; python_version<'3.13'",  # make optional where numba is not supported
+  "numba >=0.55; python_version<'3.14'",  # make optional where numba is not supported
 ]
 
 [project.urls]
@@ -82,9 +82,9 @@ suitesparse-udf = [ # udf requires numba
 repr = ["python-graphblas[pandas]"]
 io = [
   "python-graphblas[networkx,scipy]",
-  "python-graphblas[numba]; python_version<'3.13'",
+  "python-graphblas[numba]; python_version<'3.14'",
   "awkward >=1.9",
-  "sparse >=0.14; python_version<'3.13'",              # make optional, b/c sparse needs numba
+  "sparse >=0.14; python_version<'3.14'",              # make optional, b/c sparse needs numba
   "fast-matrix-market >=1.4.5; python_version<'3.13'", # py3.13 not supported yet
 ]
 viz = ["python-graphblas[networkx,scipy]", "matplotlib >=3.6"]
@@ -101,11 +101,11 @@ test = [
 ]
 default = [
   "python-graphblas[suitesparse,pandas,scipy]",
-  "python-graphblas[numba]; python_version<'3.13'", # make optional where numba is not supported
+  "python-graphblas[numba]; python_version<'3.14'", # make optional where numba is not supported
 ]
 all = [
   "python-graphblas[default,io,viz,test]",
-  "python-graphblas[datashade]; python_version<'3.13'", # make optional, b/c datashade needs numba
+  "python-graphblas[datashade]; python_version<'3.14'", # make optional, b/c datashade needs numba
 ]
 
 [tool.setuptools]
@@ -370,6 +370,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"graphblas/core/operator/__init__.py" = ["A005"]
+"graphblas/io/__init__.py" = ["A005"] # shadows a standard-library module
 "graphblas/core/operator/base.py" = ["S102"] # exec is used for UDF
 "graphblas/core/ss/matrix.py" = [
   "NPY002",

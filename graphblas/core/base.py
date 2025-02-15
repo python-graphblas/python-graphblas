@@ -1,4 +1,3 @@
-import sys
 from contextvars import ContextVar
 
 from .. import backend, config
@@ -30,8 +29,9 @@ def call(cfunc_name, args):
     if rec is not None:
         rec.record(cfunc_name, args)
         if rec.data:
-            sys.stderr.write(rec.data[-1] + "\n")
-            sys.stderr.flush()
+            from graphblas.tests.conftest import dprint
+
+            dprint(rec.data[-1])
             rec.data.pop()
 
     try:

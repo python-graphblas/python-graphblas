@@ -1095,24 +1095,42 @@ def test_isequal(v):
 
 @pytest.mark.slow
 def test_isclose(v):
+    dprint("L", 0)
     assert v.isclose(v)
+    dprint("L", 1)
     u = Vector.from_coo([1], [1])  # wrong size
+    dprint("L", 2)
     assert not u.isclose(v)
+    dprint("L", 3)
     u2 = Vector.from_coo([1], [1], size=7)  # missing values
+    dprint("L", 4)
     assert not u2.isclose(v)
+    dprint("L", 5)
     u3 = Vector.from_coo([1, 2, 3, 4, 6], [1, 1, 1, 2, 0], size=7)  # extra values
+    dprint("L", 6)
     assert not u3.isclose(v)
+    dprint("L", 7)
     u4 = Vector.from_coo([1, 3, 4, 6], [1.0, 1.0, 2.0, 0.0])
+    dprint("L", 8)
     assert not u4.isclose(v, check_dtype=True), "different datatypes are not equal"
+    dprint("L", 9)
     u5 = Vector.from_coo([1, 3, 4, 6], [1.0, 1 + 1e-9, 1.999999999999, 0.0])
+    dprint("L", 1)
     assert u5.isclose(v)
+    dprint("L", 10)
     u6 = Vector.from_coo([1, 3, 4, 6], [1.0, 1 + 1e-4, 1.99999, 0.0])
+    dprint("L", 11)
     assert u6.isclose(v, rel_tol=1e-3)
+    dprint("L", 12)
     # isclose should consider `inf == inf`
     u7 = Vector.from_coo([1, 3], [-np.inf, np.inf])
+    dprint("L", 13)
     assert u7.isclose(u7, rel_tol=1e-8)
+    dprint("L", 14)
     u4b = Vector.from_coo([1, 3, 4, 5], [1.0, 1.0, 2.0, 0.0], size=u4.size)
+    dprint("L", 15)
     assert not u4.isclose(u4b)
+    dprint("L", 16)
 
 
 def test_binary_op(v):

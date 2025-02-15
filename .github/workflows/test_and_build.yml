@@ -267,20 +267,20 @@ jobs:
 
           # Numba is tightly coupled to numpy versions
           if [[ ${npver} == "=1.26" ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.58", "=0.59", "=0.60", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.58", "=0.59", "=0.60", "=0.61", ""]))')
             if [[ ${spver} == "=1.9" ]] ; then
               spver=$(python -c 'import random ; print(random.choice(["=1.10", "=1.11", ""]))')
             fi
           elif [[ ${npver} == "=1.25" ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.58", "=0.59", "=0.60", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.58", "=0.59", "=0.60", "=0.61", ""]))')
           elif [[ ${npver} == "=1.24" || ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.57", "=0.58", "=0.59", "=0.60", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.57", "=0.58", "=0.59", "=0.60", "=0.61", ""]))')
           else
             numbaver=""
           fi
           # Only numba >=0.59 support Python 3.12
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]] ; then
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.59", "=0.60", ""]))')
+            numbaver=$(python -c 'import random ; print(random.choice(["=0.59", "=0.60", "=0.61", ""]))')
           fi
 
           # Handle NumPy 2

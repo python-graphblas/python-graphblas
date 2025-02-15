@@ -1437,43 +1437,74 @@ def test_reduce_row(A):
 
 @pytest.mark.slow
 def test_reduce_agg(A):
+    dprint("N", 0)
     result = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
+    dprint("N", 1)
     w1 = A.reduce_rowwise(agg.sum).new()
+    dprint("N", 2)
     assert w1.isequal(result)
+    dprint("N", 3)
     w2 = A.T.reduce_columnwise(agg.sum).new()
+    dprint("N", 4)
     assert w2.isequal(result)
+    dprint("N", 5)
 
     counts = A.dup(dtype=bool).reduce_rowwise(monoid.plus[int]).new()
+    dprint("N", 6)
     w3 = A.reduce_rowwise(agg.count).new()
+    dprint("N", 7)
     assert w3.isequal(counts)
+    dprint("N", 8)
     w4 = A.T.reduce_columnwise(agg.count).new()
+    dprint("N", 9)
     assert w4.isequal(counts)
+    dprint("N", 10)
 
     Asquared = monoid.times(A & A).new()
+    dprint("N", 11)
     squared = Asquared.reduce_rowwise(monoid.plus).new()
+    dprint("N", 12)
     expected = unary.sqrt[float](squared).new()
+    dprint("N", 13)
     w5 = A.reduce_rowwise(agg.hypot).new()
+    dprint("N", 14)
     assert w5.isclose(expected)
+    dprint("N", 15)
     if shouldhave(monoid.numpy, "hypot"):
         w6 = A.reduce_rowwise(monoid.numpy.hypot[float]).new()
+        dprint("N", 16)
         assert w6.isclose(expected)
+        dprint("N", 17)
     w7 = Vector(w5.dtype, size=w5.size)
+    dprint("N", 18)
     w7 << A.reduce_rowwise(agg.hypot)
+    dprint("N", 19)
     assert w7.isclose(expected)
+    dprint("N", 20)
 
     w8 = A.reduce_rowwise(agg.logaddexp).new()
+    dprint("N", 21)
     if shouldhave(monoid.numpy, "logaddexp"):
         expected = A.reduce_rowwise(monoid.numpy.logaddexp[float]).new()
+        dprint("N", 22)
         assert w8.isclose(w8)
+        dprint("N", 23)
 
     result = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 2, 9, 10, 11, 8, 4])
+    dprint("N", 24)
     w9 = A.reduce_columnwise(agg.sum).new()
+    dprint("N", 25)
     assert w9.isequal(result)
+    dprint("N", 26)
     w10 = A.T.reduce_rowwise(agg.sum).new()
+    dprint("N", 27)
     assert w10.isequal(result)
+    dprint("N", 28)
 
     counts = A.dup(dtype=bool).reduce_columnwise(monoid.plus[int]).new()
+    dprint("N", 29)
     w11 = A.reduce_columnwise(agg.count).new()
+    dprint("N", 30)
     assert w11.isequal(counts)
     w12 = A.T.reduce_rowwise(agg.count).new()
     assert w12.isequal(counts)
@@ -1888,41 +1919,60 @@ def test_isequal(A, v):
 
 @pytest.mark.slow
 def test_isclose(A, v):
+    dprint("M", 0)
     assert A.isclose(A)
+    dprint("M", 1)
     with pytest.raises(TypeError, match="Matrix"):
         A.isclose(v)  # equality is not type-checking
+    dprint("M", 2)
     C = Matrix.from_coo([1], [1], [1])  # wrong size
+    dprint("M", 3)
     assert not C.isclose(A)
+    dprint("M", 4)
     D = Matrix.from_coo([1], [2], [1])
+    dprint("M", 5)
     assert not C.isclose(D)
+    dprint("M", 6)
     D2 = Matrix.from_coo([0], [2], [1], nrows=D.nrows, ncols=D.ncols)
+    dprint("M", 7)
     assert not D2.isclose(D)
+    dprint("M", 8)
     C2 = Matrix.from_coo([1], [1], [1], nrows=7, ncols=7)  # missing values
+    dprint("M", 9)
     assert not C2.isclose(A)
+    dprint("M", 10)
     C3 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1, 0],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 2],
         [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4, 3],
     )  # extra values
+    dprint("M", 11)
     assert not C3.isclose(A)
+    dprint("M", 12)
     C4 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3.0, 2.0, 3.0, 1.0, 5.0, 3.0, 7.0, 8.0, 3.0, 1.0, 7.0, 4.0],
     )
+    dprint("M", 13)
     assert not C4.isclose(A, check_dtype=True), "different datatypes are not equal"
+    dprint("M", 14)
     C5 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],  # fmt: skip
         [3.0, 2.0, 3.0, 1.0, 5.0, 3.000000000000000001, 7.0, 8.0, 3.0, 1 - 1e-11, 7.0, 4.0],
     )
+    dprint("M", 15)
     assert C5.isclose(A)
+    dprint("M", 16)
     C6 = Matrix.from_coo(
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3.0, 2.000001, 3.0, 1.0, 5.0, 3.0, 7.0, 7.9999999, 3.0, 1.0, 7.0, 4.0],
     )
+    dprint("M", 17)
     assert C6.isclose(A, rel_tol=1e-3)
+    dprint("M", 18)
 
 
 @pytest.mark.slow
