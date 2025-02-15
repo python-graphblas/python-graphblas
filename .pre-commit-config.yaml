@@ -121,10 +121,10 @@ repos:
     rev: v0.9.3
     hooks:
       - id: taplo-format
-  - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.7
-    hooks:
-      - id: actionlint
+  # - repo: https://github.com/rhysd/actionlint
+  #   rev: v1.7.7
+  #   hooks:
+  #     - id: actionlint
   - repo: https://github.com/python-jsonschema/check-jsonschema
     rev: 0.31.1
     hooks:

@@ -90,7 +90,7 @@ jobs:
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
       matrix:
-        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        os: ["ubuntu-latest", "macos-latest", "macos-latest", "windows-latest"]
         slowtask: ["pytest_normal", "pytest_bizarro", "notebooks"]
     env:
       # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
@@ -174,7 +174,7 @@ jobs:
             npver=$(python -c 'import random ; print(random.choice(["=1.24", "=1.25", "=1.26", "=2.0", "=2.1", "=2.2", ""]))')
             spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", "=1.13", "=1.14", "=1.15", ""]))')
             pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", "=2.1", "=2.2", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", "=2.6", "=2.7", ""]))')
+            akver=$(python -c 'import random ; print(random.choice(["=1.10", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", "=2.6", "=2.7", ""]))')
             fmmver=$(python -c 'import random ; print(random.choice(["=1.4", "=1.5", "=1.6", "=1.7", ""]))')
             yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
             sparsever=$(python -c 'import random ; print(random.choice(["=0.14", "=0.15", ""]))')

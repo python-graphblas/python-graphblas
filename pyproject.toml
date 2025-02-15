@@ -83,7 +83,7 @@ repr = ["python-graphblas[pandas]"]
 io = [
   "python-graphblas[networkx,scipy]",
   "python-graphblas[numba]; python_version<'3.14'",
-  "awkward >=1.9",
+  "awkward >=2.0",
   "sparse >=0.14; python_version<'3.14'",              # make optional, b/c sparse needs numba
   "fast-matrix-market >=1.4.5; python_version<'3.13'", # py3.13 not supported yet
 ]

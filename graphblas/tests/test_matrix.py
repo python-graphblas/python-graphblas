@@ -497,6 +497,9 @@ def test_extract_input_mask():
     MT = M.T.new()
     # Matrix structure mask
     dprint("D", 4)
+    dprint("(x_x;)")
+    dprint(M.S)
+    dprint(M)
     with gb.Recorder() as rec:  # noqa: F841
         dprint("Recorded. About to crash!")
         result = A[0, [0, 1]].new(input_mask=M.S)  # XXX: here
@@ -2025,6 +2028,9 @@ def test_transpose_exceptional():
     assert B.T.dup().isequal(B.T.new())
     dprint("F", 9)
     # Not exceptional, but while we're here...
+    dprint("(x_x;)")
+    dprint(A.V)
+    dprint(B)
     with gb.Recorder() as rec:  # noqa: F841
         dprint("Recorded. About to crash!")
         C = B.T.new(mask=A.V)  # XXX: here
@@ -3201,6 +3207,9 @@ def test_dup_expr(A):
     dprint("C", 6)
     result = (A * A).dup(mask=A.V)
     dprint("C", 7)
+    dprint("(x_x;)")
+    dprint(A.V)
+    dprint(A)
     with gb.Recorder() as rec:  # noqa: F841
         dprint("Recorded. About to crash!")
         assert result.isequal((A**2).new(mask=A.V))  # XXX: here
