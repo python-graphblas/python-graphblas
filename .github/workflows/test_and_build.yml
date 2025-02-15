@@ -145,6 +145,7 @@ jobs:
           use-mamba: true
           python-version: ${{ steps.pyver.outputs.selected }}
           channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
+          conda-remove-defaults: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'false' || 'true' }}
           channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
           activate-environment: graphblas
           auto-activate-base: false
@@ -306,7 +307,7 @@ jobs:
 
           # Don't install numba and sparse for some versions
           if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') ||
-                startsWith(steps.pyver.outputs.selected, '3.13') }} == true ||
+                startsWith(steps.pyver.outputs.selected, '3.14') }} == true ||
                 ( ${{ matrix.slowtask != 'notebooks'}} == true && (
                   ( ${{ matrix.os == 'windows-latest' }} == true && $(python -c 'import random ; print(random.random() < .2)') == True ) ||
                   ( ${{ matrix.os == 'windows-latest' }} == false && $(python -c 'import random ; print(random.random() < .4)') == True ))) ]]
@@ -414,6 +415,7 @@ jobs:
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo ${args}
           set -x  # echo on
+          python -c 'import graphblas.core.ss'  # XXX
           # XXX coverage run -m pytest --color=yes --randomly -v ${args} \
           pytest ${{ matrix.os != 'windows-latest' && '--forked' || '' }} \
             --color=yes --randomly -v -s ${args} \
