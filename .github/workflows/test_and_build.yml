@@ -341,6 +341,11 @@ jobs:
             sparse=sparse${sparsever}
           fi
 
+          # sparse does not yet support Python 3.13
+          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]] ; then
+            sparse=""
+            sparsever=NA
+          fi
           # fast_matrix_market does not yet support Python 3.13 or osx-arm64
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ||
                 ${{ matrix.os == 'macos-latest' }} == true ]]
