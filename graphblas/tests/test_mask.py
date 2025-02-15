@@ -6,7 +6,7 @@ import graphblas as gb
 from graphblas import Vector
 from graphblas.core.mask import Mask
 
-from .conftest import dprint
+from .conftest import burble, dprint
 
 
 @pytest.mark.parametrize("as_matrix", [False, True])
@@ -47,7 +47,7 @@ def test_mask_new(as_matrix):
             dprint("(x_x;)")
             dprint(m1)
             dprint(m2)
-            with gb.Recorder() as rec:  # noqa: F841
+            with gb.Recorder(), burble():
                 dprint("Recorded. About to crash!")
                 result = m1.new(dtype, mask=m2, name=name)  # XXX: here
             dprint("G", 14)
@@ -136,7 +136,7 @@ def test_mask_or(as_matrix):
             dprint("(x_x;)")
             dprint(m1)
             dprint(m2)
-            with gb.Recorder() as rec:  # noqa: F841
+            with gb.Recorder(), burble():
                 dprint("Recorded. About to crash!", mask_dtype)
                 result = (m1 | m2).new()  # XXX: here
             dprint("H", 14)
@@ -199,7 +199,7 @@ def test_mask_and(as_matrix):
             dprint("(x_x;)")
             dprint(m1)
             dprint(m2)
-            with gb.Recorder() as rec:  # noqa: F841
+            with gb.Recorder(), burble():
                 dprint("Recorded. About to crash!")
                 result = (m1 & m2).new()  # XXX: here
             dprint("I", 14)

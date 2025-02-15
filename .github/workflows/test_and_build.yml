@@ -356,7 +356,7 @@ jobs:
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7" drawsvg' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
-            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4,<10"' || '' }} \
+            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4,<9.4"' || '' }} \
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }} \
             ${{ matrix.os == 'windows-latest' && 'cmake' || 'm4' }} \
             ${{ matrix.os != 'windows-latest' && 'pytest-forked' || '' }}  # XXX: to investigate crashes

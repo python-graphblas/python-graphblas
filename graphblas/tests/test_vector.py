@@ -23,7 +23,7 @@ from graphblas.exceptions import (
     UdfParseError,
 )
 
-from .conftest import autocompute, compute, dprint, pypy
+from .conftest import autocompute, burble, compute, dprint, pypy
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
@@ -257,7 +257,7 @@ def test_extract_input_mask():
     dprint("A", 2)
     dprint("(x_x;)")
     dprint(m.S)
-    with gb.Recorder() as rec:  # noqa: F841
+    with gb.Recorder(), burble():
         dprint("Recorded. About to crash!")
         result = v[[0, 1]].new(input_mask=m.S)  # XXX: here
     dprint("A", 3)
@@ -1797,7 +1797,7 @@ def test_dup_expr(v):
     dprint("(x_x;)")
     dprint(v.V)
     dprint(v)
-    with gb.Recorder() as rec:  # noqa: F841
+    with gb.Recorder(), burble():
         dprint("Recorded. About to crash!")
         assert result.isequal((v**2).new(mask=v.V))  # XXX: here
     dprint("B", 6)

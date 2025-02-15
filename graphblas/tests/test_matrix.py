@@ -24,7 +24,7 @@ from graphblas.exceptions import (
     OutputNotEmpty,
 )
 
-from .conftest import autocompute, compute, dprint, pypy, shouldhave
+from .conftest import autocompute, burble, compute, dprint, pypy, shouldhave
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
@@ -500,7 +500,7 @@ def test_extract_input_mask():
     dprint("(x_x;)")
     dprint(M.S)
     dprint(M)
-    with gb.Recorder() as rec:  # noqa: F841
+    with gb.Recorder(), burble():
         dprint("Recorded. About to crash!")
         result = A[0, [0, 1]].new(input_mask=M.S)  # XXX: here
     dprint("D", 5)
@@ -2031,7 +2031,7 @@ def test_transpose_exceptional():
     dprint("(x_x;)")
     dprint(A.V)
     dprint(B)
-    with gb.Recorder() as rec:  # noqa: F841
+    with gb.Recorder(), burble():
         dprint("Recorded. About to crash!")
         C = B.T.new(mask=A.V)  # XXX: here
     dprint("F", 10)
@@ -3210,7 +3210,7 @@ def test_dup_expr(A):
     dprint("(x_x;)")
     dprint(A.V)
     dprint(A)
-    with gb.Recorder() as rec:  # noqa: F841
+    with gb.Recorder(), burble():
         dprint("Recorded. About to crash!")
         assert result.isequal((A**2).new(mask=A.V))  # XXX: here
     dprint("C", 8)
