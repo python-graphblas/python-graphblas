@@ -24,13 +24,12 @@ except ImportError:
 if backend != "suitesparse":
     pytest.skip("not suitesparse backend", allow_module_level=True)
 
-pytest.skip("Skip while investigating crash", allow_module_level=True)  # XXX
-
 
 @pytest.fixture(scope="module", autouse=True)
 def _setup_jit():
     """Set up the SuiteSparse:GraphBLAS JIT."""
     """
+    # Still experimenting with using sysconfig
     cc = sysconfig.get_config_var("CC")
     cflags = sysconfig.get_config_var("CFLAGS")
     include = sysconfig.get_path("include")
@@ -48,7 +47,7 @@ def _setup_jit():
 
     yield
     gb.ss.config["jit_c_control"] = prev
-
+    return
     """
 
     # Configuration values below were obtained from the output of the JIT config

@@ -77,13 +77,13 @@ repos:
   # Let's keep `flake8` even though `ruff` does much of the same.
   # `flake8-bugbear` and `flake8-simplify` have caught things missed by `ruff`.
   - repo: https://github.com/PyCQA/flake8
-    rev: 7.1.1
+    rev: 7.1.2
     hooks:
       - id: flake8
         args: ["--config=.flake8"]
         additional_dependencies:
           &flake8_dependencies # These versions need updated manually
-          - flake8==7.1.1
+          - flake8==7.1.2
           - flake8-bugbear==24.12.12
           - flake8-simplify==0.21.0
   - repo: https://github.com/codespell-project/codespell
