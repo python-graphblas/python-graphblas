@@ -374,12 +374,12 @@ ignore = [
 "graphblas/io/__init__.py" = ["A005"] # shadows a standard-library module
 "graphblas/core/operator/base.py" = ["S102"] # exec is used for UDF
 "graphblas/core/ss/matrix.py" = [
-  "NPY002",
+  "NPY002",  # numba doesn't support rng generator yet
   "PLR1730",
-] # numba doesn't support rng generator yet
+]
 "graphblas/core/ss/vector.py" = [
-  "NPY002",
-] # numba doesn't support rng generator yet
+  "NPY002", # numba doesn't support rng generator yet
+]
 "graphblas/core/utils.py" = ["PLE0302"] # `__set__` is used as a property
 "graphblas/ss/_core.py" = ["N999"] # We want _core.py to be underscopre
 # Allow useless expressions, assert, pickle, RNG, print, no docstring, and yoda in tests
@@ -395,8 +395,8 @@ ignore = [
 ]
 "graphblas/tests/test_formatting.py" = ["E501"] # Allow long lines
 "graphblas/**/__init__.py" = [
-  "F401",
-] # Allow unused imports (w/o defining `__all__`)
+  "F401", # Allow unused imports (w/o defining `__all__`)
+]
 "scripts/*.py" = ["INP001"] # Not a package
 "scripts/create_pickle.py" = ["F403", "F405"] # Allow `from foo import *`
 "docs/*.py" = ["INP001"] # Not a package

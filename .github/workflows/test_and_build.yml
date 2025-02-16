@@ -367,7 +367,7 @@ jobs:
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4,<9.4"' || '' }} \
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }} \
             ${{ matrix.os == 'windows-latest' && 'cmake' || 'm4' }} \
-            ${{ matrix.os != 'windows-latest' && 'pytest-forked' || '' }}  # XXX: to investigate crashes
+            # ${{ matrix.os != 'windows-latest' && 'pytest-forked' || '' }}  # to investigate crashes
       - name: Build extension module
         run: |
           if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
@@ -422,10 +422,9 @@ jobs:
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $suitesparse" ; elif [[ $windows ]] ; then echo " $vanilla"     ; fi ; fi)
           echo ${args}
           set -x  # echo on
-          python -c 'import graphblas.core.ss'  # XXX
-          # XXX coverage run -m pytest --color=yes --randomly -v ${args} \
-          pytest ${{ matrix.os != 'windows-latest' && '--forked' || '' }} \
-            --color=yes --randomly -v -s ${args} \
+          # pytest ${{ matrix.os != 'windows-latest' && '--forked' || '' }} \  # to investigate crashes
+          #   --color=yes --randomly -v -s ${args} \
+          coverage run -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
         run: |
@@ -461,9 +460,9 @@ jobs:
             if [[ $H && $bizarro ]] ; then if [[ $macos  ]] ; then echo " $vanilla"     ; elif [[ $windows ]] ; then echo " $suitesparse" ; fi ; fi)
           echo ${args}
           set -x  # echo on
-          # XXX coverage run -a -m pytest --color=yes --randomly -v ${args} \
-          pytest ${{ matrix.os != 'windows-latest' && '--forked' || '' }} \
-            --color=yes --randomly -v -s ${args} \
+          # pytest ${{ matrix.os != 'windows-latest' && '--forked' || '' }} \  # to investigate crashes
+          #   --color=yes --randomly -v -s ${args} \
+          coverage run -a -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_bizarro' && '--runslow' || '' }}
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
@@ -504,12 +503,10 @@ jobs:
           coverage run -a -m graphblas.core.infixmethods
           git diff --exit-code
       - name: Coverage
-        if: false
         run: |
           coverage xml
           coverage report --show-missing
       - name: codecov
-        if: false
         uses: codecov/codecov-action@v4
       - name: Notebooks Execution check
         if: matrix.slowtask == 'notebooks'

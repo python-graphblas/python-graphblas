@@ -1,12 +1,11 @@
 import numpy as np
 import pytest
 
-import graphblas as gb
 from graphblas import backend, dtypes, unary
 from graphblas.core import formatting
 from graphblas.core.formatting import CSS_STYLE
 
-from .conftest import autocompute, dprint
+from .conftest import autocompute
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
@@ -462,11 +461,8 @@ def test_vector_mask_repr_small(v):
 
 @pytest.mark.skipif("not pd")
 def test_vector_mask_repr_large(w):
-    # debug print used to investigate segfaults
-    dprint("K", 0)
     with pd.option_context("display.max_columns", 26, "display.width", 100):
         repr_printer(w.S, "w.S", indent=8)
-        dprint("K", 1)
         assert repr(w.S) == (
             '"w.S"           nvals  size  dtype  format\n'
             "StructuralMask\n"
@@ -475,11 +471,7 @@ def test_vector_mask_repr_large(w):
             "index 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "value  1              1                       ...  1              1                     "
         )
-        dprint("K", 2)
-        with gb.Recorder() as rec:  # noqa: F841
-            dprint("Recorded. About to crash!")
-            repr_printer(w.V, "w.V", indent=8)  # XXX: here
-        dprint("K", 3)
+        repr_printer(w.V, "w.V", indent=8)
         assert repr(w.V) == (
             '"w.V"         nvals  size  dtype  format\n'
             "ValueMask   \n"
@@ -488,9 +480,7 @@ def test_vector_mask_repr_large(w):
             "index 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "value  1              1                       ...  1              1                     "
         )
-        dprint("K", 4)
         repr_printer(~w.S, "~w.S", indent=8)
-        dprint("K", 5)
         assert repr(~w.S) == (
             '"~w.S"                      nvals  size  dtype  format\n'
             "ComplementedStructuralMask\n"
@@ -499,9 +489,7 @@ def test_vector_mask_repr_large(w):
             "index 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "value  0              0                       ...  0              0                     "
         )
-        dprint("K", 6)
         repr_printer(~w.V, "~w.V", indent=8)
-        dprint("K", 7)
         assert repr(~w.V) == (
             '"~w.V"                 nvals  size  dtype  format\n'
             "ComplementedValueMask\n"
@@ -510,7 +498,6 @@ def test_vector_mask_repr_large(w):
             "index 0  1  2  3  4  5  6  7  8  9  10 11 12  ... 64 65 66 67 68 69 70 71 72 73 74 75 76\n"
             "value  0              0                       ...  0              0                     "
         )
-        dprint("K", 8)
 
 
 def test_scalar_repr(s, t):
@@ -2520,11 +2507,8 @@ def test_vector_mask_repr_html_small(v):
 
 @pytest.mark.skipif("not pd")
 def test_vector_mask_repr_html_large(w):
-    # debug print used to investigate segfaults
-    dprint("J", 0)
     with pd.option_context("display.max_columns", 20):
         html_printer(w.S, "w.S", indent=8)
-        dprint("J", 1)
         assert repr_html(w.S) == (
             "<div>"
             f"{CSS_STYLE}"
@@ -2604,11 +2588,7 @@ def test_vector_mask_repr_html_large(w):
             "</table>\n"
             "</div></details></div>"
         )
-        dprint("J", 2)
-        with gb.Recorder() as rec:  # noqa: F841
-            dprint("Recorded. About to crash!")
-            html_printer(w.V, "w.V", indent=8)  # XXX: here
-        dprint("J", 3)
+        html_printer(w.V, "w.V", indent=8)
         assert repr_html(w.V) == (
             "<div>"
             f"{CSS_STYLE}"
@@ -2688,9 +2668,7 @@ def test_vector_mask_repr_html_large(w):
             "</table>\n"
             "</div></details></div>"
         )
-        dprint("J", 4)
         html_printer(~w.S, "~w.S", indent=8)
-        dprint("J", 5)
         assert repr_html(~w.S) == (
             "<div>"
             f"{CSS_STYLE}"
@@ -2770,9 +2748,7 @@ def test_vector_mask_repr_html_large(w):
             "</table>\n"
             "</div></details></div>"
         )
-        dprint("J", 6)
         html_printer(~w.V, "~w.V", indent=8)
-        dprint("J", 7)
         assert repr_html(~w.V) == (
             "<div>"
             f"{CSS_STYLE}"
@@ -2852,7 +2828,6 @@ def test_vector_mask_repr_html_large(w):
             "</table>\n"
             "</div></details></div>"
         )
-        dprint("J", 8)
 
 
 def test_scalar_repr_html(s, t):

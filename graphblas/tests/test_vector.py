@@ -23,7 +23,7 @@ from graphblas.exceptions import (
     UdfParseError,
 )
 
-from .conftest import autocompute, burble, compute, dprint, pypy
+from .conftest import autocompute, compute, pypy
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
@@ -249,35 +249,19 @@ def test_extract_values(v):
 
 
 def test_extract_input_mask():
-    # debug print used to investigate segfaults
-    dprint("A", 0)
     v = Vector.from_coo([0, 1, 2], [0, 1, 2])
-    dprint("A", 1)
     m = Vector.from_coo([0, 2], [0, 2])
-    dprint("A", 2)
-    dprint("(x_x;)")
-    dprint(m.S)
-    with gb.Recorder(), burble():
-        dprint("Recorded. About to crash!")
-        result = v[[0, 1]].new(input_mask=m.S)  # XXX: here
-    dprint("A", 3)
+    result = v[[0, 1]].new(input_mask=m.S)
     expected = Vector.from_coo([0], [0], size=2)
-    dprint("A", 4)
     assert result.isequal(expected)
-    dprint("A", 5)
     # again
     result.clear()
-    dprint("A", 6)
     result(input_mask=m.S) << v[[0, 1]]
-    dprint("A", 7)
     assert result.isequal(expected)
-    dprint("A", 8)
     with pytest.raises(ValueError, match="Size of `input_mask` does not match size of input"):
         v[[0, 2]].new(input_mask=expected.S)
-    dprint("A", 9)
     with pytest.raises(TypeError, match="`input_mask` argument may only be used for extract"):
         v(input_mask=m.S) << 1
-    dprint("A", 10)
 
 
 def test_extract_element(v):
@@ -1097,42 +1081,24 @@ def test_isequal(v):
 
 @pytest.mark.slow
 def test_isclose(v):
-    dprint("L", 0)
     assert v.isclose(v)
-    dprint("L", 1)
     u = Vector.from_coo([1], [1])  # wrong size
-    dprint("L", 2)
     assert not u.isclose(v)
-    dprint("L", 3)
     u2 = Vector.from_coo([1], [1], size=7)  # missing values
-    dprint("L", 4)
     assert not u2.isclose(v)
-    dprint("L", 5)
     u3 = Vector.from_coo([1, 2, 3, 4, 6], [1, 1, 1, 2, 0], size=7)  # extra values
-    dprint("L", 6)
     assert not u3.isclose(v)
-    dprint("L", 7)
     u4 = Vector.from_coo([1, 3, 4, 6], [1.0, 1.0, 2.0, 0.0])
-    dprint("L", 8)
     assert not u4.isclose(v, check_dtype=True), "different datatypes are not equal"
-    dprint("L", 9)
     u5 = Vector.from_coo([1, 3, 4, 6], [1.0, 1 + 1e-9, 1.999999999999, 0.0])
-    dprint("L", 1)
     assert u5.isclose(v)
-    dprint("L", 10)
     u6 = Vector.from_coo([1, 3, 4, 6], [1.0, 1 + 1e-4, 1.99999, 0.0])
-    dprint("L", 11)
     assert u6.isclose(v, rel_tol=1e-3)
-    dprint("L", 12)
     # isclose should consider `inf == inf`
     u7 = Vector.from_coo([1, 3], [-np.inf, np.inf])
-    dprint("L", 13)
     assert u7.isclose(u7, rel_tol=1e-8)
-    dprint("L", 14)
     u4b = Vector.from_coo([1, 3, 4, 5], [1.0, 1.0, 2.0, 0.0], size=u4.size)
-    dprint("L", 15)
     assert not u4.isclose(u4b)
-    dprint("L", 16)
 
 
 def test_binary_op(v):
@@ -1192,7 +1158,6 @@ def test_del(capsys):
     del v2
     gc.collect()
     captured = capsys.readouterr()
-    return  # XXX
     assert not captured.out
     assert not captured.err
 
@@ -1782,60 +1747,30 @@ def test_index_expr_is_like_vector(v):
 
 @autocompute
 def test_dup_expr(v):
-    # debug print used to investigate segfaults
-    dprint("B", 0)
     result = (v + v).dup()
-    dprint("B", 1)
     assert result.isequal(2 * v)
-    dprint("B", 2)
     result = (v + v).dup(clear=True)
-    dprint("B", 3)
     assert result.isequal(v.dup(clear=True))
-    dprint("B", 4)
     result = (v * v).dup(mask=v.V)
-    dprint("B", 5)
-    dprint("(x_x;)")
-    dprint(v.V)
-    dprint(v)
-    with gb.Recorder(), burble():
-        dprint("Recorded. About to crash!")
-        assert result.isequal((v**2).new(mask=v.V))  # XXX: here
-    dprint("B", 6)
+    assert result.isequal((v**2).new(mask=v.V))
     result = v[:].dup()
-    dprint("B", 7)
     assert result.isequal(v)
-    dprint("B", 8)
     result = v[:].dup(clear=True)
-    dprint("B", 9)
     assert result.isequal(v.dup(clear=True), check_dtype=True)
-    dprint("B", 10)
     result = v[:].dup(float, clear=True)
-    dprint("B", 11)
     assert result.isequal(v.dup(float, clear=True), check_dtype=True)
-    dprint("B", 12)
     b = v.dup(bool)
-    dprint("B", 13)
     result = (b | b).dup()
-    dprint("B", 14)
     assert result.isequal(b)
-    dprint("B", 15)
     result = (b | b).dup(clear=True)
-    dprint("B", 16)
     assert result.isequal(b.dup(clear=True))
-    dprint("B", 17)
     result = v[:5].dup()
-    dprint("B", 18)
     assert result.isequal(v[:5].new())
-    dprint("B", 19)
     if suitesparse:
         result = v[:5].dup(nthreads=2)
-        dprint("B", 20)
         assert result.isequal(v[:5].new())
-        dprint("B", 21)
         result = v[:5].dup(clear=True, nthreads=2)
-        dprint("B", 22)
         assert result.isequal(Vector(v.dtype, size=5))
-        dprint("B", 23)
 
 
 @pytest.mark.skipif("not suitesparse")
