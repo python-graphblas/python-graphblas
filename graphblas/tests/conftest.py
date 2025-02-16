@@ -123,8 +123,6 @@ def ic():  # pragma: no cover (debug)
 @contextlib.contextmanager
 def burble():  # pragma: no cover (debug)
     """Show the burble diagnostics within a context."""
-    yield  # XXX
-    return  # XXX
     if gb.backend != "suitesparse":
         yield
         return
