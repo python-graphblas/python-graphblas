@@ -84,15 +84,21 @@ jobs:
       run:
         shell: bash -l {0}
     strategy:
-      # To "stress test" in CI, set `fail-fast` to `false` and perhaps add more items to `matrix.slowtask`
+      # To "stress test" in CI, set `fail-fast` to `false` and use `repeat` in matrix below
       fail-fast: false
       # The build matrix is [os]x[slowtask] and then randomly chooses [pyver] and [sourcetype].
       # This should ensure we'll have full code coverage (i.e., no chance of getting unlucky),
       # since we need to run all slow tests on Windows and non-Windoes OSes.
       matrix:
-        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        # "macos-latest" and "macos-latest-large" both included to test osx on arm and non-arm
+        # See: https://github.com/actions/runner-images
+        os:
+          - "ubuntu-latest"
+          - "macos-latest" # arm64
+          - "macos-latest-large" # x64
+          - "windows-latest"
         slowtask: ["pytest_normal", "pytest_bizarro", "notebooks"]
-        repeat: [1, 2, 3] # For stress testing
+        repeat: [1, 2] # For stress testing
     env:
       # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
       # Setting this is a workaround.
@@ -136,25 +142,9 @@ jobs:
             1
             1
             1
-      - name: Setup mamba
-        uses: conda-incubator/setup-miniconda@v3
-        id: setup_mamba
-        continue-on-error: true
-        with:
-          miniforge-variant: Mambaforge
-          miniforge-version: latest
-          use-mamba: true
-          python-version: ${{ steps.pyver.outputs.selected }}
-          channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
-          conda-remove-defaults: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'false' || 'true' }}
-          channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
-          activate-environment: graphblas
-          auto-activate-base: false
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v3
         id: setup_conda
-        if: steps.setup_mamba.outcome == 'failure'
-        continue-on-error: false
         with:
           auto-update-conda: true
           python-version: ${{ steps.pyver.outputs.selected }}
@@ -358,7 +348,8 @@ jobs:
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psg${psgver}"
 
           set -x  # echo on
-          $(command -v mamba || command -v conda) install packaging pytest coverage pytest-randomly cffi donfig tomli c-compiler make \
+          $(command -v mamba || command -v conda) install -c nodefaults \
+            packaging pytest coverage pytest-randomly cffi donfig tomli c-compiler make \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${fmm} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
@@ -394,6 +385,10 @@ jobs:
           (cd ..
            pytest --pyargs suitesparse_graphblas -s -k test_print_jit_config || true
            pytest -v --pyargs suitesparse_graphblas)
+      - name: print Python platform and sysconfig variables
+        run: |
+          python -c "import platform ; print(platform.uname())"
+          python -c "import pprint, sysconfig ; pprint.pprint(sysconfig.get_config_vars())"
       - name: Unit tests
         run: |
           A=${{ needs.rngs.outputs.mapnumpy == 'A' || '' }} ; B=${{ needs.rngs.outputs.mapnumpy == 'B' || '' }}
