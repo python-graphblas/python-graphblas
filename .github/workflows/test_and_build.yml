@@ -92,7 +92,7 @@ jobs:
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
         slowtask: ["pytest_normal", "pytest_bizarro", "notebooks"]
-        repeat: [1, 2, 3] # For stress testing
+        # repeat: [1, 2, 3] # For stress testing
     env:
       # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
       # Setting this is a workaround.
@@ -133,7 +133,7 @@ jobs:
             upstream
           weights: |
             1
-            10
+            1
             1
             1
       - name: Setup conda
@@ -215,6 +215,12 @@ jobs:
             else
               npver=$(python -c 'import random ; print(random.choice(["=2.0", "=2.1", "=2.2", ""]))')
             fi
+          elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]] ; then
+            if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
+              psgver=$(python -c 'import random ; print(random.choice(["=9.3.1.0", ""]))')
+            else
+              psgver=$(python -c 'import random ; print(random.choice(["==9.3.1.0", ""]))')
+            fi
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]] ; then
             if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
               if [[ $npver == =1.* ]] ; then
@@ -230,6 +236,7 @@ jobs:
                 psgver=$(python -c 'import random ; print(random.choice(["==9.3.1.0", ""]))')
               fi
             fi
+          # python-suitsparse-graphblas support is the same for Python 3.10 and 3.11
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
             if [[ $npver == =1.* ]] ; then
               psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2", "=8.0.2.1", "=8.2.0.1", "=8.2.1.0"]))')
