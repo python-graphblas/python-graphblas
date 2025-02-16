@@ -59,6 +59,7 @@ dependencies = [
   "donfig >=0.6",
   "pyyaml >=5.4",
   # These won't be installed by default after 2024.3.0
+  # once pep-771 is supported: https://peps.python.org/pep-0771/
   # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
   "suitesparse-graphblas >=7.4.0.0, <10",
   "numba >=0.55; python_version<'3.14'",  # make optional where numba is not supported
