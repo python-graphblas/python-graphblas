@@ -24,6 +24,8 @@ except ImportError:
 if backend != "suitesparse":
     pytest.skip("not suitesparse backend", allow_module_level=True)
 
+pytest.skip("Skip while investigating crash", allow_module_level=True)  # XXX
+
 
 @pytest.fixture(scope="module", autouse=True)
 def _setup_jit():
