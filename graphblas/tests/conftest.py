@@ -123,6 +123,8 @@ def ic():  # pragma: no cover (debug)
 @contextlib.contextmanager
 def burble():  # pragma: no cover (debug)
     """Show the burble diagnostics within a context."""
+    yield  # XXX
+    return  # XXX
     if gb.backend != "suitesparse":
         yield
         return
@@ -159,7 +161,7 @@ def shouldhave(module, opname):
     return supports_udfs or hasattr(module, opname)
 
 
-def dprint(*args, **kwargs):
+def dprint(*args, **kwargs):  # pragma: no cover (debug)
     """Print to stderr for debugging purposes."""
     kwargs["file"] = sys.stderr
     kwargs["flush"] = True
