@@ -36,19 +36,19 @@ def _setup_jit():
 
     if not os.environ.get("GITHUB_ACTIONS"):
         # Try to run the tests with defaults from sysconfig if not running in CI
+        prev = gb.ss.config["jit_c_control"]
         cc = sysconfig.get_config_var("CC")
         cflags = sysconfig.get_config_var("CFLAGS")
         include = sysconfig.get_path("include")
         libs = sysconfig.get_config_var("LIBS")
         if not (cc is None or cflags is None or include is None or libs is None):
-            prev = gb.ss.config["jit_c_control"]
             gb.ss.config["jit_c_control"] = "on"
             gb.ss.config["jit_c_compiler_name"] = cc
             gb.ss.config["jit_c_compiler_flags"] = f"{cflags} -I{include}"
             gb.ss.config["jit_c_libraries"] = libs
-        # else:  # Or maybe skip these tests if sysconfig vars aren't set
-        #     yield
-        #     return
+        else:
+            # Should we skip or try to run if sysconfig vars aren't set?
+            gb.ss.config["jit_c_control"] = "on"  # "off"
         try:
             yield
         finally:
@@ -62,6 +62,7 @@ def _setup_jit():
     ):
         # TODO: tests for the SuiteSparse JIT are not passing on linux when using wheels or on osx
         # This should be understood and fixed!
+        gb.ss.config["jit_c_control"] = "off"
         yield
         return
 
