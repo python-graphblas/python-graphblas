@@ -14,7 +14,7 @@ jobs:
       pyver: ${{ steps.pyver.outputs.selected }}
     steps:
       - name: RNG for os
-        uses: ddradar/choose-random-action@v2.0.2
+        uses: ddradar/choose-random-action@v3.0.0
         id: os
         with:
           contents: |
@@ -26,14 +26,16 @@ jobs:
             1
             1
       - name: RNG for Python version
-        uses: ddradar/choose-random-action@v2.0.2
+        uses: ddradar/choose-random-action@v3.0.0
         id: pyver
         with:
           contents: |
             3.10
             3.11
             3.12
+            3.13
           weights: |
+            1
             1
             1
             1
@@ -43,10 +45,13 @@ jobs:
     # runs-on: ${{ matrix.os }}
     # strategy:
     #   matrix:
-    #     python-version: ["3.10", "3.11", "3.12"]
+    #     python-version: ["3.10", "3.11", "3.12", "3.13"]
     #     os: ["ubuntu-latest", "macos-latest", "windows-latest"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ needs.rngs.outputs.pyver }}

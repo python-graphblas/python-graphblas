@@ -1,12 +1,12 @@
 name: graphblas
 channels:
-    - conda-forge
+  - conda-forge
 dependencies:
-    - python=3.11
-    - python-graphblas
-    - matplotlib
-    - networkx
-    - pandas
-    - scipy
-    - drawsvg
-    - cairosvg
+  - python=3.11
+  - python-graphblas
+  - matplotlib
+  - networkx
+  - pandas
+  - scipy
+  - drawsvg
+  - cairosvg

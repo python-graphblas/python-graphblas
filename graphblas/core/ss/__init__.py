@@ -1,3 +1,5 @@
 import suitesparse_graphblas as _ssgb
 
-_IS_SSGB7 = _ssgb.__version__.split(".", 1)[0] == "7"
+(version_major, version_minor, version_bug) = map(int, _ssgb.__version__.split(".")[:3])
+
+_IS_SSGB7 = version_major == 7

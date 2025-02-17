@@ -13,13 +13,13 @@ educational level, family status, culture, or political belief.
 
 Examples of unacceptable behavior by participants include:
 
-* The use of sexualized language or imagery
-* Personal attacks
-* Trolling or insulting/derogatory comments
-* Public or private harassment
-* Publishing other's private information, such as physical or electronic
+- The use of sexualized language or imagery
+- Personal attacks
+- Trolling or insulting/derogatory comments
+- Public or private harassment
+- Publishing other's private information, such as physical or electronic
   addresses, without explicit permission
-* Other unethical or unprofessional conduct
+- Other unethical or unprofessional conduct
 
 Project maintainers have the right and responsibility to remove, edit, or
 reject comments, commits, code, wiki edits, issues, and other contributions
@@ -52,7 +52,7 @@ that is deemed necessary and appropriate to the circumstances. Maintainers are
 obligated to maintain confidentiality with regard to the reporter of an
 incident.
 
-This Code of Conduct is adapted from the [Numba Code of Conduct][numba],  which is based on the [Contributor Covenant][homepage],
+This Code of Conduct is adapted from the [Numba Code of Conduct][numba], which is based on the [Contributor Covenant][homepage],
 version 1.3.0, available at
 [https://contributor-covenant.org/version/1/3/0/][version],
 and the [Swift Code of Conduct][swift].

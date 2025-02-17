@@ -35,14 +35,19 @@ For algorithms, see
 </p>
 
 ## Install
+
 Install the latest version of Python-graphblas via conda:
+
 ```
 $ conda install -c conda-forge python-graphblas
 ```
+
 or pip:
+
 ```
 $ pip install 'python-graphblas[default]'
 ```
+
 This will also install the [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS) compiled C library.
 We currently support the [GraphBLAS C API 2.0 specification](https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf).
 
@@ -57,6 +62,7 @@ The following are not required by python-graphblas, but may be needed for certai
 - `fast-matrix-market` - for faster read/write of Matrix Market files with `gb.io.mmread` and `gb.io.mmwrite`.
 
 ## Description
+
 Currently works with [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS), but the goal is to make it work with all implementations of the GraphBLAS spec.
 
 The approach taken with this library is to follow the C-API 2.0 specification as closely as possible while making improvements
@@ -70,10 +76,12 @@ with how Python handles assignment, so instead we (ab)use the left-shift `<<` no
 assignment. This opens up all kinds of nice possibilities.
 
 This is an example of how the mapping works:
+
 ```C
 // C call
 GrB_Matrix_mxm(M, mask, GrB_PLUS_INT64, GrB_MIN_PLUS_INT64, A, B, NULL)
 ```
+
 ```python
 # Python call
 M(mask.V, accum=binary.plus) << A.mxm(B, semiring.min_plus)
@@ -91,10 +99,12 @@ is a much better approach, even if it doesn't feel very Pythonic.
 Descriptor flags are set on the appropriate elements to keep logic close to what it affects. Here is the same call
 with descriptor bits set. `ttcsr` indicates transpose the first and second matrices, complement the structure of the mask,
 and do a replacement on the output.
+
 ```C
 // C call
 GrB_Matrix_mxm(M, mask, GrB_PLUS_INT64, GrB_MIN_PLUS_INT64, A, B, desc.ttcsr)
 ```
+
 ```python
 # Python call
 M(~mask.S, accum=binary.plus, replace=True) << A.T.mxm(B.T, semiring.min_plus)
@@ -104,16 +114,20 @@ The objects receiving the flag operations (A.T, ~mask, etc) are also delayed obj
 do no computation, allowing the correct descriptor bits to be set in a single GraphBLAS call.
 
 **If no mask or accumulator is used, the call looks like this**:
+
 ```python
 M << A.mxm(B, semiring.min_plus)
 ```
+
 The use of `<<` to indicate updating is actually just syntactic sugar for a real `.update()` method. The above
 expression could be written as:
+
 ```python
 M.update(A.mxm(B, semiring.min_plus))
 ```
 
 ## Operations
+
 ```python
 M(mask, accum) << A.mxm(B, semiring)        # mxm
 w(mask, accum) << A.mxv(v, semiring)        # mxv
@@ -123,14 +137,18 @@ M(mask, accum) << A.ewise_mult(B, binaryop) # eWiseMult
 M(mask, accum) << A.kronecker(B, binaryop)  # kronecker
 M(mask, accum) << A.T                       # transpose
 ```
+
 ## Extract
+
 ```python
 M(mask, accum) << A[rows, cols]             # rows and cols are a list or a slice
 w(mask, accum) << A[rows, col_index]        # extract column
 w(mask, accum) << A[row_index, cols]        # extract row
 s = A[row_index, col_index].value           # extract single element
 ```
+
 ## Assign
+
 ```python
 M(mask, accum)[rows, cols] << A             # rows and cols are a list or a slice
 M(mask, accum)[rows, col_index] << v        # assign column
@@ -140,31 +158,42 @@ M[row_index, col_index] << s                # assign scalar to single element
                                             # (mask and accum not allowed)
 del M[row_index, col_index]                 # remove single element
 ```
+
 ## Apply
+
 ```python
 M(mask, accum) << A.apply(unaryop)
 M(mask, accum) << A.apply(binaryop, left=s)   # bind-first
 M(mask, accum) << A.apply(binaryop, right=s)  # bind-second
 ```
+
 ## Reduce
+
 ```python
 v(mask, accum) << A.reduce_rowwise(op)      # reduce row-wise
 v(mask, accum) << A.reduce_columnwise(op)   # reduce column-wise
 s(accum) << A.reduce_scalar(op)
 s(accum) << v.reduce(op)
 ```
+
 ## Creating new Vectors / Matrices
+
 ```python
 A = Matrix.new(dtype, num_rows, num_cols)   # new_type
 B = A.dup()                                 # dup
 A = Matrix.from_coo([row_indices], [col_indices], [values])  # build
 ```
+
 ## New from delayed
+
 Delayed objects can be used to create a new object using `.new()` method
+
 ```python
 C = A.mxm(B, semiring).new()
 ```
+
 ## Properties
+
 ```python
 size = v.size                               # size
 nrows = M.nrows                             # nrows
@@ -172,10 +201,13 @@ ncols = M.ncols                             # ncols
 nvals = M.nvals                             # nvals
 rindices, cindices, vals = M.to_coo()       # extractTuples
 ```
+
 ## Initialization
+
 There is a mechanism to initialize `graphblas` with a context prior to use. This allows for setting the backend to
 use as well as the blocking/non-blocking mode. If the context is not initialized, a default initialization will
 be performed automatically.
+
 ```python
 import graphblas as gb
 
@@ -186,10 +218,13 @@ gb.init("suitesparse", blocking=True)
 from graphblas import binary, semiring
 from graphblas import Matrix, Vector, Scalar
 ```
+
 ## Performant User Defined Functions
+
 Python-graphblas requires `numba` which enables compiling user-defined Python functions to native C for use in GraphBLAS.
 
 Example customized UnaryOp:
+
 ```python
 from graphblas import unary
 
@@ -204,9 +239,11 @@ v = Vector.from_coo([0, 1, 3], [1, 2, 3])
 w = v.apply(unary.force_odd).new()
 w  # indexes=[0, 1, 3], values=[1, 3, 3]
 ```
+
 Similar methods exist for BinaryOp, Monoid, and Semiring.
 
 ## Relation to other network analysis libraries
+
 Python-graphblas aims to provide an efficient and consistent expression
 of graph operations using linear algebra. This allows the development of
 high-performance implementations of existing and new graph algorithms
@@ -223,7 +260,9 @@ other libraries, `graphblas.io` contains multiple connectors, see the
 following section.
 
 ## Import/Export connectors to the Python ecosystem
+
 `graphblas.io` contains functions for converting to and from:
+
 ```python
 import graphblas as gb
 

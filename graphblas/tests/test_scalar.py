@@ -50,7 +50,7 @@ def test_dup(s):
     s_empty = Scalar(dtypes.FP64)
     s_unempty = Scalar.from_value(0.0)
     if s_empty.is_cscalar:
-        # NumPy wraps around
+        # NumPy <2 wraps around; >=2 raises OverflowError
         uint_data = [
             ("UINT8", 2**8 - 2),
             ("UINT16", 2**16 - 2),
@@ -73,6 +73,10 @@ def test_dup(s):
         ("FP32", -2.5),
         *uint_data,
     ]:
+        if dtype.startswith("UINT") and s_empty.is_cscalar and not np.__version__.startswith("1."):
+            with pytest.raises(OverflowError, match="out of bounds for uint"):
+                s4.dup(dtype=dtype, name="s5")
+            continue
         s5 = s4.dup(dtype=dtype, name="s5")
         assert s5.dtype == dtype
         assert s5.value == val

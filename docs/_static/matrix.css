@@ -1,104 +1,104 @@
 /* Based on the stylesheet used by matrepr (https://github.com/alugowski/matrepr) and modified for sphinx */
 
-table.matrix  {
-    border-collapse: collapse;
-    border: 0px;
+table.matrix {
+  border-collapse: collapse;
+  border: 0px;
 }
 
 /* Disable a horizintal line from the default stylesheet */
 .table.matrix > :not(caption) > * > * {
-    border-bottom-width: 0px;
+  border-bottom-width: 0px;
 }
 
 /* row indices */
 table.matrix > tbody tr th {
-    font-size: smaller;
-    font-weight: bolder;
-    vertical-align: middle;
-    text-align: right;
+  font-size: smaller;
+  font-weight: bolder;
+  vertical-align: middle;
+  text-align: right;
 }
 /* row indices are often made bold in the source data; here make them match the boldness of the th column label style*/
 table.matrix strong {
-    font-weight: bold;
+  font-weight: bold;
 }
 
 /* column indices */
 table.matrix > thead tr th {
-    font-size: smaller;
-    font-weight: bolder;
-    vertical-align: middle;
-    text-align: center;
+  font-size: smaller;
+  font-weight: bolder;
+  vertical-align: middle;
+  text-align: center;
 }
 
 /* cells */
 table.matrix > tbody tr td {
-    vertical-align: middle;
-    text-align: center;
-    position: relative;
+  vertical-align: middle;
+  text-align: center;
+  position: relative;
 }
 
 /* left border */
 table.matrix > tbody tr td:first-of-type {
-    border-left: solid 2px var(--pst-color-text-base);
+  border-left: solid 2px var(--pst-color-text-base);
 }
 /* right border */
 table.matrix > tbody tr td:last-of-type {
-    border-right: solid 2px var(--pst-color-text-base);
+  border-right: solid 2px var(--pst-color-text-base);
 }
 
 /* prevents empty cells from collapsing, especially empty rows */
 table.matrix > tbody tr td:empty::before {
-    /* basicaly fills empty cells with &nbsp; */
-    content: "\00a0\00a0\00a0";
-    visibility: hidden;
+  /* basicaly fills empty cells with &nbsp; */
+  content: "\00a0\00a0\00a0";
+  visibility: hidden;
 }
 table.matrix > tbody tr td:empty::after {
-    content: "\00a0\00a0\00a0";
-    visibility: hidden;
+  content: "\00a0\00a0\00a0";
+  visibility: hidden;
 }
 
 /* matrix bracket ticks */
 table.matrix > tbody > tr:first-child > td:first-of-type::before {
-    content: "";
-    width: 4px;
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    visibility: visible;
-    left: 0;
-    right: auto;
-    border-top: solid 2px var(--pst-color-text-base);
+  content: "";
+  width: 4px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  visibility: visible;
+  left: 0;
+  right: auto;
+  border-top: solid 2px var(--pst-color-text-base);
 }
 table.matrix > tbody > tr:last-child > td:first-of-type::before {
-    content: "";
-    width: 4px;
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    visibility: visible;
-    left: 0;
-    right: auto;
-    border-bottom: solid 2px var(--pst-color-text-base);
+  content: "";
+  width: 4px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  visibility: visible;
+  left: 0;
+  right: auto;
+  border-bottom: solid 2px var(--pst-color-text-base);
 }
 table.matrix > tbody > tr:first-child > td:last-of-type::after {
-    content: "";
-    width: 4px;
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    visibility: visible;
-    left: auto;
-    right: 0;
-    border-top: solid 2px var(--pst-color-text-base);
+  content: "";
+  width: 4px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  visibility: visible;
+  left: auto;
+  right: 0;
+  border-top: solid 2px var(--pst-color-text-base);
 }
 table.matrix > tbody > tr:last-child > td:last-of-type::after {
-    content: "";
-    width: 4px;
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    visibility: visible;
-    left: auto;
-    right: 0;
-    border-bottom: solid 2px var(--pst-color-text-base);
+  content: "";
+  width: 4px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  visibility: visible;
+  left: auto;
+  right: 0;
+  border-bottom: solid 2px var(--pst-color-text-base);
 }

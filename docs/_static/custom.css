@@ -1,78 +1,78 @@
-
 /* Main Page Stylings */
 
 .intro-card {
-    background-color: var(--pst-color-background);
-    margin-bottom: 30px;
+  background-color: var(--pst-color-background);
+  margin-bottom: 30px;
 }
 
 .intro-card:hover {
-    box-shadow: 0.2rem 0.5rem 1rem var(--pst-color-link) !important;
+  box-shadow: 0.2rem 0.5rem 1rem var(--pst-color-link) !important;
 }
 
 .intro-card .card-header {
-    background-color: inherit;
+  background-color: inherit;
 }
 
 .intro-card .card-header .card-text {
-    font-weight: bold;
+  font-weight: bold;
 }
 
 .intro-card .card-body {
-    margin-top: 0;
+  margin-top: 0;
 }
 
 .intro-card .card-body .card-text:first-child {
-    margin-bottom: 0;
+  margin-bottom: 0;
 }
 
 .shadow {
-    box-shadow: 0.2rem 0.5rem 1rem var(--pst-color-text-muted) !important;
+  box-shadow: 0.2rem 0.5rem 1rem var(--pst-color-text-muted) !important;
 }
 
 .table {
-    font-size: smaller;
-    width: inherit;
+  font-size: smaller;
+  width: inherit;
 }
 
-.table td, .table th {
-    padding: 0 .75rem;
+.table td,
+.table th {
+  padding: 0 0.75rem;
 }
 
 .table.inline {
-    display: inline-table;
-    margin-right: 30px;
+  display: inline-table;
+  margin-right: 30px;
 }
 
 p.rubric {
-    border-bottom: none;
+  border-bottom: none;
 }
 
 button.navbar-btn.rounded-circle {
-    padding: 0.25rem;
+  padding: 0.25rem;
 }
 
 button.navbar-btn.search-button {
-    color: var(--pst-color-text-muted);
-    padding: 0;
+  color: var(--pst-color-text-muted);
+  padding: 0;
 }
 
-button.navbar-btn:hover
-{
-    color: var(--pst-color-primary);
+button.navbar-btn:hover {
+  color: var(--pst-color-primary);
 }
 
 button.theme-switch-button {
-    font-size: calc(var(--pst-font-size-icon) - .1rem);
-    border: none;
+  font-size: calc(var(--pst-font-size-icon) - 0.1rem);
+  border: none;
 }
 
 button span.theme-switch:hover {
-    color: var(--pst-color-primary);
+  color: var(--pst-color-primary);
 }
 
 /* Styling for Jupyter Notebook ReST Exports */
 
-.dataframe tbody th, .dataframe tbody td {
-    padding: 10px;
+.dataframe tbody th,
+.dataframe tbody td {
+  padding: 10px;
 }

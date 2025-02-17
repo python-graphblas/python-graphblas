@@ -1,4 +1,3 @@
-from . import backend as _backend
 from .core import ffi as _ffi
 from .core import lib as _lib
 from .core.utils import _Pointer
@@ -85,9 +84,14 @@ class NotImplementedException(GraphblasException):
     """
 
 
+# SuiteSparse errors
+class JitError(GraphblasException):
+    """SuiteSparse:GraphBLAS error using JIT."""
+
+
 # Our errors
 class UdfParseError(GraphblasException):
-    """Unable to parse the user-defined function."""
+    """SuiteSparse:GraphBLAS unable to parse the user-defined function."""
 
 
 _error_code_lookup = {
@@ -112,8 +116,12 @@ _error_code_lookup = {
 }
 GrB_SUCCESS = _lib.GrB_SUCCESS
 GrB_NO_VALUE = _lib.GrB_NO_VALUE
-if _backend == "suitesparse":
+
+# SuiteSparse-specific errors
+if hasattr(_lib, "GxB_EXHAUSTED"):
     _error_code_lookup[_lib.GxB_EXHAUSTED] = StopIteration
+if hasattr(_lib, "GxB_JIT_ERROR"):  # Added in 9.4
+    _error_code_lookup[_lib.GxB_JIT_ERROR] = JitError
 
 
 def check_status(response_code, args):

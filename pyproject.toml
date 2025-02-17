@@ -1,9 +1,6 @@
 [build-system]
 build-backend = "setuptools.build_meta"
-requires = [
-    "setuptools >=64",
-    "setuptools-git-versioning",
-]
+requires = ["setuptools >=64", "setuptools-git-versioning"]
 
 [project]
 name = "python-graphblas"
@@ -11,59 +8,61 @@ dynamic = ["version"]
 description = "Python library for GraphBLAS: high-performance sparse linear algebra for scalable graph analytics"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
 authors = [
-    {name = "Erik Welch", email = "erik.n.welch@gmail.com"},
-    {name = "Jim Kitchen"},
-    {name = "Python-graphblas contributors"},
+  { name = "Erik Welch", email = "erik.n.welch@gmail.com" },
+  { name = "Jim Kitchen" },
+  { name = "Python-graphblas contributors" },
 ]
 maintainers = [
-    {name = "Erik Welch", email = "erik.n.welch@gmail.com"},
-    {name = "Jim Kitchen", email = "jim22k@gmail.com"},
-    {name = "Sultan Orazbayev", email = "contact@econpoint.com"},
+  { name = "Erik Welch", email = "erik.n.welch@gmail.com" },
+  { name = "Jim Kitchen", email = "jim22k@gmail.com" },
+  { name = "Sultan Orazbayev", email = "contact@econpoint.com" },
 ]
 keywords = [
-    "graphblas",
-    "graph",
-    "sparse",
-    "matrix",
-    "lagraph",
-    "suitesparse",
-    "Networks",
-    "Graph Theory",
-    "Mathematics",
-    "network",
-    "discrete mathematics",
-    "math",
+  "graphblas",
+  "graph",
+  "sparse",
+  "matrix",
+  "lagraph",
+  "suitesparse",
+  "Networks",
+  "Graph Theory",
+  "Mathematics",
+  "network",
+  "discrete mathematics",
+  "math",
 ]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
-    "License :: OSI Approved :: Apache Software License",
-    "Operating System :: MacOS :: MacOS X",
-    "Operating System :: POSIX :: Linux",
-    "Operating System :: Microsoft :: Windows",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3 :: Only",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Other Audience",
-    "Intended Audience :: Science/Research",
-    "Topic :: Scientific/Engineering",
-    "Topic :: Scientific/Engineering :: Information Analysis",
-    "Topic :: Scientific/Engineering :: Mathematics",
-    "Topic :: Software Development :: Libraries :: Python Modules",
+  "Development Status :: 5 - Production/Stable",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: MacOS :: MacOS X",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3 :: Only",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Other Audience",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+  "Topic :: Scientific/Engineering :: Mathematics",
+  "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "numpy >=1.23",
-    "donfig >=0.6",
-    "pyyaml >=5.4",
-    # These won't be installed by default after 2024.3.0
-    # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
-    "suitesparse-graphblas >=7.4.0.0, <9",
-    "numba >=0.55; python_version<'3.13'",  # make optional where numba is not supported
+  "numpy >=1.23",
+  "donfig >=0.6",
+  "pyyaml >=5.4",
+  # These won't be installed by default after 2024.3.0
+  # once pep-771 is supported: https://peps.python.org/pep-0771/
+  # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
+  "suitesparse-graphblas >=7.4.0.0, <10",
+  "numba >=0.55; python_version<'3.14'",  # make optional where numba is not supported
 ]
 
 [project.urls]
@@ -73,56 +72,41 @@ repository = "https://github.com/python-graphblas/python-graphblas"
 changelog = "https://github.com/python-graphblas/python-graphblas/releases"
 
 [project.optional-dependencies]
-suitesparse = [
-    "suitesparse-graphblas >=7.4.0.0, <9",
+suitesparse = ["suitesparse-graphblas >=7.4.0.0, <10"]
+networkx = ["networkx >=2.8"]
+numba = ["numba >=0.55"]
+pandas = ["pandas >=1.5"]
+scipy = ["scipy >=1.9"]
+suitesparse-udf = [ # udf requires numba
+  "python-graphblas[suitesparse,numba]",
 ]
-networkx = [
-    "networkx >=2.8",
-]
-numba = [
-    "numba >=0.55",
-]
-pandas = [
-    "pandas >=1.5",
-]
-scipy = [
-    "scipy >=1.9",
-]
-suitesparse-udf = [  # udf requires numba
-    "python-graphblas[suitesparse,numba]",
-]
-repr = [
-    "python-graphblas[pandas]",
-]
+repr = ["python-graphblas[pandas]"]
 io = [
-    "python-graphblas[networkx,scipy]",
-    "python-graphblas[numba]; python_version<'3.13'",
-    "awkward >=1.9",
-    "sparse >=0.14; python_version<'3.13'",  # make optional, b/c sparse needs numba
-    "fast-matrix-market >=1.4.5",
+  "python-graphblas[networkx,scipy]",
+  "python-graphblas[numba]; python_version<'3.14'",
+  "awkward >=2.0",
+  "sparse >=0.14; python_version<'3.13'",              # make optional, b/c sparse needs numba
+  "fast-matrix-market >=1.4.5; python_version<'3.13'", # py3.13 not supported yet
 ]
-viz = [
-    "python-graphblas[networkx,scipy]",
-    "matplotlib >=3.6",
-]
-datashade = [  # datashade requires numba
-    "python-graphblas[numba,pandas,scipy]",
-    "datashader >=0.14",
-    "hvplot >=0.8",
+viz = ["python-graphblas[networkx,scipy]", "matplotlib >=3.6"]
+datashade = [ # datashade requires numba
+  "python-graphblas[numba,pandas,scipy]",
+  "datashader >=0.14",
+  "hvplot >=0.8",
 ]
 test = [
-    "python-graphblas[suitesparse,pandas,scipy]",
-    "packaging >=21",
-    "pytest >=6.2",
-    "tomli >=1",
+  "python-graphblas[suitesparse,pandas,scipy]",
+  "packaging >=21",
+  "pytest >=6.2",
+  "tomli >=1",
 ]
 default = [
-    "python-graphblas[suitesparse,pandas,scipy]",
-    "python-graphblas[numba]; python_version<'3.13'",  # make optional where numba is not supported
+  "python-graphblas[suitesparse,pandas,scipy]",
+  "python-graphblas[numba]; python_version<'3.14'", # make optional where numba is not supported
 ]
 all = [
-    "python-graphblas[default,io,viz,test]",
-    "python-graphblas[datashade]; python_version<'3.13'",  # make optional, b/c datashade needs numba
+  "python-graphblas[default,io,viz,test]",
+  "python-graphblas[datashade]; python_version<'3.14'", # make optional, b/c datashade needs numba
 ]
 
 [tool.setuptools]
@@ -131,22 +115,22 @@ all = [
 # $ find graphblas/ -name __init__.py -print | sort | sed -e 's/\/__init__.py//g' -e 's/\//./g'
 # $ python -c 'import tomli ; [print(x) for x in sorted(tomli.load(open("pyproject.toml", "rb"))["tool"]["setuptools"]["packages"])]'
 packages = [
-    "graphblas",
-    "graphblas.agg",
-    "graphblas.binary",
-    "graphblas.core",
-    "graphblas.core.operator",
-    "graphblas.core.ss",
-    "graphblas.dtypes",
-    "graphblas.indexunary",
-    "graphblas.io",
-    "graphblas.monoid",
-    "graphblas.op",
-    "graphblas.semiring",
-    "graphblas.select",
-    "graphblas.ss",
-    "graphblas.tests",
-    "graphblas.unary",
+  "graphblas",
+  "graphblas.agg",
+  "graphblas.binary",
+  "graphblas.core",
+  "graphblas.core.operator",
+  "graphblas.core.ss",
+  "graphblas.dtypes",
+  "graphblas.indexunary",
+  "graphblas.io",
+  "graphblas.monoid",
+  "graphblas.op",
+  "graphblas.semiring",
+  "graphblas.select",
+  "graphblas.ss",
+  "graphblas.tests",
+  "graphblas.unary",
 ]
 
 [tool.setuptools-git-versioning]
@@ -156,7 +140,7 @@ dirty_template = "{tag}+{ccount}.g{sha}.dirty"
 
 [tool.black]
 line-length = 100
-target-version = ["py310", "py311", "py312"]
+target-version = ["py310", "py311", "py312", "py313"]
 
 [tool.isort]
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
@@ -170,56 +154,54 @@ line_length = 100
 [tool.pytest.ini_options]
 minversion = "6.0"
 testpaths = "graphblas/tests"
-xfail_strict = false  # 2023-07-23: awkward and numpy 1.25 sometimes conflict
+xfail_strict = false # 2023-07-23: awkward and numpy 1.25 sometimes conflict
 addopts = [
-    "--strict-config",  # Force error if config is mispelled
-    "--strict-markers",  # Force error if marker is mispelled (must be defined in config)
-    "-ra",  # Print summary of all fails/errors
+  "--strict-config",  # Force error if config is mispelled
+  "--strict-markers", # Force error if marker is mispelled (must be defined in config)
+  "-ra",              # Print summary of all fails/errors
 ]
-markers = [
-    "slow: Skipped unless --runslow passed",
-]
+markers = ["slow: Skipped unless --runslow passed"]
 log_cli_level = "info"
 filterwarnings = [
-    # See: https://docs.python.org/3/library/warnings.html#describing-warning-filters
-    # and: https://docs.pytest.org/en/7.2.x/how-to/capture-warnings.html#controlling-warnings
-    "error",
+  # See: https://docs.python.org/3/library/warnings.html#describing-warning-filters
+  # and: https://docs.pytest.org/en/7.2.x/how-to/capture-warnings.html#controlling-warnings
+  "error",
 
-    # sparse 0.14.0 (2022-02-24) began raising this warning; it has been reported and fixed upstream.
-    "ignore:coords should be an ndarray. This will raise a ValueError:DeprecationWarning:sparse._coo.core",
+  # sparse 0.14.0 (2022-02-24) began raising this warning; it has been reported and fixed upstream.
+  "ignore:coords should be an ndarray. This will raise a ValueError:DeprecationWarning:sparse._coo.core",
 
-    # setuptools v67.3.0 deprecated `pkg_resources.declare_namespace` on 13 Feb 2023. See:
-    # https://setuptools.pypa.io/en/latest/history.html#v67-3-0
-    # MAINT: check if this is still necessary in 2025
-    "ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning:pkg_resources",
+  # setuptools v67.3.0 deprecated `pkg_resources.declare_namespace` on 13 Feb 2023. See:
+  # https://setuptools.pypa.io/en/latest/history.html#v67-3-0
+  # MAINT: check if this is still necessary in 2025
+  "ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning:pkg_resources",
 
-    # This deprecation warning was added in setuptools v67.5.0 (8 Mar 2023). See:
-    # https://setuptools.pypa.io/en/latest/history.html#v67-5-0
-    "ignore:pkg_resources is deprecated as an API:DeprecationWarning:",
+  # This deprecation warning was added in setuptools v67.5.0 (8 Mar 2023). See:
+  # https://setuptools.pypa.io/en/latest/history.html#v67-5-0
+  "ignore:pkg_resources is deprecated as an API:DeprecationWarning:",
 
-    # sre_parse deprecated in 3.11; this is triggered by awkward 0.10
-    "ignore:module 'sre_parse' is deprecated:DeprecationWarning:",
-    "ignore:module 'sre_constants' is deprecated:DeprecationWarning:",
+  # sre_parse deprecated in 3.11; this is triggered by awkward 0.10
+  "ignore:module 'sre_parse' is deprecated:DeprecationWarning:",
+  "ignore:module 'sre_constants' is deprecated:DeprecationWarning:",
 
-    # numpy 1.25.0 (2023-06-17) deprecated `np.find_common_type`; many other dependencies use it.
-    # See if we can remove this filter in 2025.
-    "ignore:np.find_common_type is deprecated:DeprecationWarning:",
+  # numpy 1.25.0 (2023-06-17) deprecated `np.find_common_type`; many other dependencies use it.
+  # See if we can remove this filter in 2025.
+  "ignore:np.find_common_type is deprecated:DeprecationWarning:",
 
-    # pypy gives this warning
-    "ignore:can't resolve package from __spec__ or __package__:ImportWarning:",
+  # pypy gives this warning
+  "ignore:can't resolve package from __spec__ or __package__:ImportWarning:",
 
-    # Python 3.12 introduced this deprecation, which is triggered by pandas 2.1.1
-    "ignore:datetime.datetime.utcfromtimestamp:DeprecationWarning:dateutil",
+  # Python 3.12 introduced this deprecation, which is triggered by pandas 2.1.1
+  "ignore:datetime.datetime.utcfromtimestamp:DeprecationWarning:dateutil",
 
-    # Pandas 2.2 warns that pyarrow will become a required dependency in pandas 3.0
-    "ignore:\\nPyarrow will become a required dependency of pandas:DeprecationWarning:",
+  # Pandas 2.2 warns that pyarrow will become a required dependency in pandas 3.0
+  "ignore:\\nPyarrow will become a required dependency of pandas:DeprecationWarning:",
 ]
 
 [tool.coverage.run]
 branch = true
 source = ["graphblas"]
 omit = [
-    "graphblas/viz.py",  # TODO: test and get coverage for viz.py
+  "graphblas/viz.py", # TODO: test and get coverage for viz.py
 ]
 
 [tool.coverage.report]
@@ -229,9 +211,9 @@ fail_under = 0
 skip_covered = true
 skip_empty = true
 exclude_lines = [
-    "pragma: no cover",
-    "raise AssertionError",
-    "raise NotImplementedError",
+  "pragma: no cover",
+  "raise AssertionError",
+  "raise NotImplementedError",
 ]
 
 [tool.codespell]
@@ -241,164 +223,189 @@ ignore-words-list = "coo,ba"
 # https://github.com/charliermarsh/ruff/
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.format]
+exclude = ["*.ipynb"] # Consider enabling auto-formatting of notebooks
+
 [tool.ruff.lint]
+exclude = ["*.ipynb"] # Consider enabling auto-formatting of notebooks
 unfixable = [
-    "F841",  # unused-variable (Note: can leave useless expression)
-    "B905",  # zip-without-explicit-strict (Note: prefer `zip(x, y, strict=True)`)
+  "F841", # unused-variable (Note: can leave useless expression)
+  "B905", # zip-without-explicit-strict (Note: prefer `zip(x, y, strict=True)`)
 ]
 select = [
-    # Have we enabled too many checks that they'll become a nuisance? We'll see...
-    "F",  # pyflakes
-    "E",  # pycodestyle Error
-    "W",  # pycodestyle Warning
-    # "C90",  # mccabe (Too strict, but maybe we should make things less complex)
-    # "I",  # isort (Should we replace `isort` with this?)
-    "N",  # pep8-naming
-    "D",  # pydocstyle
-    "UP",  # pyupgrade
-    "YTT",  # flake8-2020
-    # "ANN",  # flake8-annotations (We don't use annotations yet)
-    "S",  # bandit
-    # "BLE",  # flake8-blind-except (Maybe consider)
-    # "FBT",  # flake8-boolean-trap (Why?)
-    "B",  # flake8-bugbear
-    "A",  # flake8-builtins
-    "COM",  # flake8-commas
-    "C4",  # flake8-comprehensions
-    "DTZ",  # flake8-datetimez
-    "T10",  # flake8-debugger
-    # "DJ",  # flake8-django (We don't use django)
-    # "EM",  # flake8-errmsg (Perhaps nicer, but too much work)
-    "EXE",  # flake8-executable
-    "ISC",  # flake8-implicit-str-concat
-    # "ICN",  # flake8-import-conventions (Doesn't allow "_" prefix such as `_np`)
-    "G",  # flake8-logging-format
-    "INP",  # flake8-no-pep420
-    "PIE",  # flake8-pie
-    "T20",   # flake8-print
-    # "PYI",  # flake8-pyi (We don't have stub files yet)
-    "PT",  # flake8-pytest-style
-    "Q",  # flake8-quotes
-    "RSE", # flake8-raise
-    "RET",  # flake8-return
-    # "SLF",  # flake8-self (We can use our own private variables--sheesh!)
-    "SIM",  # flake8-simplify
-    # "TID",  # flake8-tidy-imports (Rely on isort and our own judgement)
-    # "TCH",  # flake8-type-checking (Note: figure out type checking later)
-    # "ARG",  # flake8-unused-arguments (Sometimes helpful, but too strict)
-    "PTH",  # flake8-use-pathlib (Often better, but not always)
-    # "ERA",  # eradicate (We like code in comments!)
-    # "PD",  # pandas-vet (Intended for scripts that use pandas, not libraries)
-    "PGH",  # pygrep-hooks
-    "PL",  # pylint
-    "PLC",  # pylint Convention
-    "PLE",  # pylint Error
-    "PLR",  # pylint Refactor
-    "PLW",  # pylint Warning
-    "TRY",  # tryceratops
-    "NPY",  # NumPy-specific rules
-    "RUF",  # ruff-specific rules
-    "ALL",  # Try new categories by default (making the above list unnecessary)
+  # Have we enabled too many checks that they'll become a nuisance? We'll see...
+  "F", # pyflakes
+  "E", # pycodestyle Error
+  "W", # pycodestyle Warning
+  # "C90",  # mccabe (Too strict, but maybe we should make things less complex)
+  # "I",  # isort (Should we replace `isort` with this?)
+  "N",   # pep8-naming
+  "D",   # pydocstyle
+  "UP",  # pyupgrade
+  "YTT", # flake8-2020
+  # "ANN",  # flake8-annotations (We don't use annotations yet)
+  "S", # bandit
+  # "BLE",  # flake8-blind-except (Maybe consider)
+  # "FBT",  # flake8-boolean-trap (Why?)
+  "B",   # flake8-bugbear
+  "A",   # flake8-builtins
+  "COM", # flake8-commas
+  "C4",  # flake8-comprehensions
+  "DTZ", # flake8-datetimez
+  "T10", # flake8-debugger
+  # "DJ",  # flake8-django (We don't use django)
+  # "EM",  # flake8-errmsg (Perhaps nicer, but too much work)
+  "EXE", # flake8-executable
+  "ISC", # flake8-implicit-str-concat
+  # "ICN",  # flake8-import-conventions (Doesn't allow "_" prefix such as `_np`)
+  "G",   # flake8-logging-format
+  "INP", # flake8-no-pep420
+  "PIE", # flake8-pie
+  "T20", # flake8-print
+  # "PYI",  # flake8-pyi (We don't have stub files yet)
+  "PT",  # flake8-pytest-style
+  "Q",   # flake8-quotes
+  "RSE", # flake8-raise
+  "RET", # flake8-return
+  # "SLF",  # flake8-self (We can use our own private variables--sheesh!)
+  "SIM", # flake8-simplify
+  # "TID",  # flake8-tidy-imports (Rely on isort and our own judgement)
+  # "TCH",  # flake8-type-checking (Note: figure out type checking later)
+  # "ARG",  # flake8-unused-arguments (Sometimes helpful, but too strict)
+  "PTH", # flake8-use-pathlib (Often better, but not always)
+  # "ERA",  # eradicate (We like code in comments!)
+  # "PD",  # pandas-vet (Intended for scripts that use pandas, not libraries)
+  "PGH", # pygrep-hooks
+  "PL",  # pylint
+  "PLC", # pylint Convention
+  "PLE", # pylint Error
+  "PLR", # pylint Refactor
+  "PLW", # pylint Warning
+  "TRY", # tryceratops
+  "NPY", # NumPy-specific rules
+  "RUF", # ruff-specific rules
+  "ALL", # Try new categories by default (making the above list unnecessary)
 ]
 external = [
-    # noqa codes that ruff doesn't know about: https://github.com/charliermarsh/ruff#external
-    "F811",
+  # noqa codes that ruff doesn't know about: https://github.com/charliermarsh/ruff#external
+  "F811",
 ]
 ignore = [
-    # Would be nice to fix these
-    "D100",  # Missing docstring in public module
-    "D101",  # Missing docstring in public class
-    "D102",  # Missing docstring in public method
-    "D103",  # Missing docstring in public function
-    "D104",  # Missing docstring in public package
-    "D105",  # Missing docstring in magic method
-    "D107",  # Missing docstring in `__init__`
-    # "D107",  # Missing docstring in `__init__`
-    "D205",  # 1 blank line required between summary line and description
-    "D401",  # First line of docstring should be in imperative mood:
-    "D417",  # D417 Missing argument description in the docstring for ...: ...
-    # "D417",  # Missing argument description in the docstring:
-    "PLE0605",  # Invalid format for `__all__`, must be `tuple` or `list` (Note: broken in v0.0.237)
+  # Would be nice to fix these
+  "D100",    # Missing docstring in public module
+  "D101",    # Missing docstring in public class
+  "D102",    # Missing docstring in public method
+  "D103",    # Missing docstring in public function
+  "D104",    # Missing docstring in public package
+  "D105",    # Missing docstring in magic method
+  "D107",    # Missing docstring in `__init__`
+  "D205",    # 1 blank line required between summary line and description
+  "D401",    # First line of docstring should be in imperative mood:
+  "D417",    # D417 Missing argument description in the docstring for ...: ...
+  "PLE0605", # Invalid format for `__all__`, must be `tuple` or `list` (Note: broken in v0.0.237)
 
-    # Maybe consider
-    # "SIM300",  # Yoda conditions are discouraged, use ... instead (Note: we're not this picky)
-    # "SIM401",  # Use dict.get ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
-    "B904",  # Use `raise from` to specify exception cause (Note: sometimes okay to raise original exception)
-    "TRY004",  # Prefer `TypeError` exception for invalid type (Note: good advice, but not worth the nuisance)
-    "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar` (Note: no annotations yet)
-    "PERF401",  # Use a list comprehension to create a transformed list (Note: poorly implemented atm)
+  # Maybe consider
+  # "SIM300",  # Yoda conditions are discouraged, use ... instead (Note: we're not this picky)
+  # "SIM401",  # Use dict.get ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
+  "B904",    # Use `raise from` to specify exception cause (Note: sometimes okay to raise original exception)
+  "TRY004",  # Prefer `TypeError` exception for invalid type (Note: good advice, but not worth the nuisance)
+  "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar` (Note: no annotations yet)
+  "RUF021",  # parenthesize-chained-operators (Note: results don't look good yet)
+  "RUF023",  # unsorted-dunder-slots (Note: maybe fine, but noisy changes)
+  "PERF401", # Use a list comprehension to create a transformed list (Note: poorly implemented atm)
 
-    # Intentionally ignored
-    "COM812",  # Trailing comma missing
-    "D203",  # 1 blank line required before class docstring (Note: conflicts with D211, which is preferred)
-    "D213",  # (Note: conflicts with D212, which is preferred)
-    "D400",  # First line should end with a period (Note: prefer D415, which also allows "?" and "!")
-    "N801",  # Class name ... should use CapWords convention (Note:we have a few exceptions to this)
-    "N802",  # Function name ... should be lowercase
-    "N803",  # Argument name ... should be lowercase (Maybe okay--except in tests)
-    "N806",  # Variable ... in function should be lowercase
-    "N807",  # Function name should not start and end with `__`
-    "N818",  # Exception name ... should be named with an Error suffix (Note: good advice)
-    "PERF203",  # `try`-`except` within a loop incurs performance overhead (Note: too strict)
-    "PLC0205",  # Class `__slots__` should be a non-string iterable (Note: string is fine)
-    "PLR0124", # Name compared with itself, consider replacing `x == x` (Note: too strict)
-    "PLR0911",  # Too many return statements
-    "PLR0912",  # Too many branches
-    "PLR0913",  # Too many arguments to function call
-    "PLR0915",  # Too many statements
-    "PLR2004",  # Magic number used in comparison, consider replacing magic with a constant variable
-    "PLW0603",  # Using the global statement to update ... is discouraged (Note: yeah, discouraged, but too strict)
-    "PLW2901",  # Outer for loop variable ... overwritten by inner assignment target (Note: good advice, but too strict)
-    "RET502",  # Do not implicitly `return None` in function able to return non-`None` value
-    "RET503",  # Missing explicit `return` at the end of function able to return non-`None` value
-    "RET504",  # Unnecessary variable assignment before `return` statement
-    "S110",  # `try`-`except`-`pass` detected, consider logging the exception (Note: good advice, but we don't log)
-    "S112",  # `try`-`except`-`continue` detected, consider logging the exception (Note: good advice, but we don't log)
-    "S603",  # `subprocess` call: check for execution of untrusted input (Note: not important for us)
-    "S607",  # Starting a process with a partial executable path (Note: not important for us)
-    "SIM102",  # Use a single `if` statement instead of nested `if` statements (Note: often necessary)
-    "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
-    "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
-    "TRY003",  # Avoid specifying long messages outside the exception class (Note: why?)
-    "UP038",  # Use `X | Y` in `isinstance` call instead of `(X, Y)` (Note: using `|` is slower atm)
+  # Intentionally ignored
+  "COM812",  # Trailing comma missing
+  "D203",    # 1 blank line required before class docstring (Note: conflicts with D211, which is preferred)
+  "D213",    # (Note: conflicts with D212, which is preferred)
+  "D400",    # First line should end with a period (Note: prefer D415, which also allows "?" and "!")
+  "N801",    # Class name ... should use CapWords convention (Note:we have a few exceptions to this)
+  "N802",    # Function name ... should be lowercase
+  "N803",    # Argument name ... should be lowercase (Maybe okay--except in tests)
+  "N806",    # Variable ... in function should be lowercase
+  "N807",    # Function name should not start and end with `__`
+  "N818",    # Exception name ... should be named with an Error suffix (Note: good advice)
+  "PERF203", # `try`-`except` within a loop incurs performance overhead (Note: too strict)
+  "PLC0205", # Class `__slots__` should be a non-string iterable (Note: string is fine)
+  "PLR0124", # Name compared with itself, consider replacing `x == x` (Note: too strict)
+  "PLR0911", # Too many return statements
+  "PLR0912", # Too many branches
+  "PLR0913", # Too many arguments to function call
+  "PLR0915", # Too many statements
+  "PLR2004", # Magic number used in comparison, consider replacing magic with a constant variable
+  "PLW0603", # Using the global statement to update ... is discouraged (Note: yeah, discouraged, but too strict)
+  "PLW0642", # Reassigned `self` variable in instance method (Note: too strict for us)
+  "PLW2901", # Outer for loop variable ... overwritten by inner assignment target (Note: good advice, but too strict)
+  "RET502",  # Do not implicitly `return None` in function able to return non-`None` value
+  "RET503",  # Missing explicit `return` at the end of function able to return non-`None` value
+  "RET504",  # Unnecessary variable assignment before `return` statement
+  "S110",    # `try`-`except`-`pass` detected, consider logging the exception (Note: good advice, but we don't log)
+  "S112",    # `try`-`except`-`continue` detected, consider logging the exception (Note: good advice, but we don't log)
+  "S603",    # `subprocess` call: check for execution of untrusted input (Note: not important for us)
+  "S607",    # Starting a process with a partial executable path (Note: not important for us)
+  "SIM102",  # Use a single `if` statement instead of nested `if` statements (Note: often necessary)
+  "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
+  "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
+  "TRY003",  # Avoid specifying long messages outside the exception class (Note: why?)
+  "UP038",   # Use `X | Y` in `isinstance` call instead of `(X, Y)` (Note: using `|` is slower atm)
 
-    # Ignored categories
-    "C90",  # mccabe (Too strict, but maybe we should make things less complex)
-    "I",  # isort (Should we replace `isort` with this?)
-    "ANN",  # flake8-annotations (We don't use annotations yet)
-    "BLE",  # flake8-blind-except (Maybe consider)
-    "FBT",  # flake8-boolean-trap (Why?)
-    "DJ",  # flake8-django (We don't use django)
-    "EM",  # flake8-errmsg (Perhaps nicer, but too much work)
-    "ICN",  # flake8-import-conventions (Doesn't allow "_" prefix such as `_np`)
-    "PYI",  # flake8-pyi (We don't have stub files yet)
-    "SLF",  # flake8-self (We can use our own private variables--sheesh!)
-    "TID",  # flake8-tidy-imports (Rely on isort and our own judgement)
-    "TCH",  # flake8-type-checking (Note: figure out type checking later)
-    "ARG",  # flake8-unused-arguments (Sometimes helpful, but too strict)
-    "TD",  # flake8-todos (Maybe okay to add some of these)
-    "FIX",  # flake8-fixme (like flake8-todos)
-    "ERA",  # eradicate (We like code in comments!)
-    "PD",  # pandas-vet (Intended for scripts that use pandas, not libraries)
+  # Ignored categories
+  "C90", # mccabe (Too strict, but maybe we should make things less complex)
+  "I",   # isort (Should we replace `isort` with this?)
+  "ANN", # flake8-annotations (We don't use annotations yet)
+  "BLE", # flake8-blind-except (Maybe consider)
+  "FBT", # flake8-boolean-trap (Why?)
+  "DJ",  # flake8-django (We don't use django)
+  "EM",  # flake8-errmsg (Perhaps nicer, but too much work)
+  "ICN", # flake8-import-conventions (Doesn't allow "_" prefix such as `_np`)
+  "PYI", # flake8-pyi (We don't have stub files yet)
+  "SLF", # flake8-self (We can use our own private variables--sheesh!)
+  "TID", # flake8-tidy-imports (Rely on isort and our own judgement)
+  "TCH", # flake8-type-checking (Note: figure out type checking later)
+  "ARG", # flake8-unused-arguments (Sometimes helpful, but too strict)
+  "TD",  # flake8-todos (Maybe okay to add some of these)
+  "FIX", # flake8-fixme (like flake8-todos)
+  "ERA", # eradicate (We like code in comments!)
+  "PD",  # pandas-vet (Intended for scripts that use pandas, not libraries)
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"graphblas/core/operator/base.py" = ["S102"]  # exec is used for UDF
-"graphblas/core/ss/matrix.py" = ["NPY002"]  # numba doesn't support rng generator yet
-"graphblas/core/ss/vector.py" = ["NPY002"]  # numba doesn't support rng generator yet
-"graphblas/core/utils.py" = ["PLE0302"]  # `__set__` is used as a property
-"graphblas/ss/_core.py" = ["N999"]  # We want _core.py to be underscopre
+"graphblas/core/operator/__init__.py" = ["A005"]
+"graphblas/io/__init__.py" = ["A005"] # shadows a standard-library module
+"graphblas/core/operator/base.py" = ["S102"] # exec is used for UDF
+"graphblas/core/ss/matrix.py" = [
+  "NPY002",  # numba doesn't support rng generator yet
+  "PLR1730",
+]
+"graphblas/core/ss/vector.py" = [
+  "NPY002", # numba doesn't support rng generator yet
+]
+"graphblas/core/utils.py" = ["PLE0302"] # `__set__` is used as a property
+"graphblas/ss/_core.py" = ["N999"] # We want _core.py to be underscopre
 # Allow useless expressions, assert, pickle, RNG, print, no docstring, and yoda in tests
-"graphblas/tests/*py" = ["B018", "S101", "S301", "S311", "T201", "D103", "D100", "SIM300"]
-"graphblas/tests/test_formatting.py" = ["E501"]  # Allow long lines
-"graphblas/**/__init__.py" = ["F401"]  # Allow unused imports (w/o defining `__all__`)
-"scripts/*.py" = ["INP001"]  # Not a package
-"scripts/create_pickle.py" = ["F403", "F405"]  # Allow `from foo import *`
-"docs/*.py" = ["INP001"]  # Not a package
+"graphblas/tests/*py" = [
+  "B018",
+  "S101",
+  "S301",
+  "S311",
+  "T201",
+  "D103",
+  "D100",
+  "SIM300",
+]
+"graphblas/tests/test_formatting.py" = ["E501"] # Allow long lines
+"graphblas/**/__init__.py" = [
+  "F401", # Allow unused imports (w/o defining `__all__`)
+]
+"scripts/*.py" = ["INP001"] # Not a package
+"scripts/create_pickle.py" = ["F403", "F405"] # Allow `from foo import *`
+"docs/*.py" = ["INP001"] # Not a package
 
 
 [tool.ruff.lint.flake8-builtins]
 builtins-ignorelist = ["copyright", "format", "min", "max"]
+builtins-allowed-modules = ["select"]
 
 [tool.ruff.lint.flake8-pytest-style]
 fixture-parentheses = false
@@ -407,80 +414,86 @@ mark-parentheses = false
 [tool.lint.ruff.pydocstyle]
 convention = "numpy"
 
+[tool.bandit]
+exclude_dirs = ["graphblas/tests", "scripts"]
+skips = [
+  "B110", # Try, Except, Pass detected.  (Note: it would be nice to not have this pattern)
+]
+
 [tool.pylint.messages_control]
 # To run a single check, do: pylint graphblas --disable E,W,R,C,I --enable assignment-from-no-return
 max-line-length = 100
 py-version = "3.10"
 enable = ["I"]
 disable = [
-    # Error
-    "assignment-from-no-return",
+  # Error
+  "assignment-from-no-return",
 
-    # Warning
-    "arguments-differ",
-    "arguments-out-of-order",
-    "expression-not-assigned",
-    "fixme",
-    "global-statement",
-    "non-parent-init-called",
-    "redefined-builtin",
-    "redefined-outer-name",
-    "super-init-not-called",
-    "unbalanced-tuple-unpacking",
-    "unnecessary-lambda",
-    "unspecified-encoding",
-    "unused-argument",
-    "unused-variable",
+  # Warning
+  "arguments-differ",
+  "arguments-out-of-order",
+  "expression-not-assigned",
+  "fixme",
+  "global-statement",
+  "non-parent-init-called",
+  "redefined-builtin",
+  "redefined-outer-name",
+  "super-init-not-called",
+  "unbalanced-tuple-unpacking",
+  "unnecessary-lambda",
+  "unspecified-encoding",
+  "unused-argument",
+  "unused-variable",
 
-    # Refactor
-    "cyclic-import",
-    "duplicate-code",
-    "inconsistent-return-statements",
-    "too-few-public-methods",
+  # Refactor
+  "cyclic-import",
+  "duplicate-code",
+  "inconsistent-return-statements",
+  "too-few-public-methods",
 
-    # Convention
-    "missing-class-docstring",
-    "missing-function-docstring",
-    "missing-module-docstring",
-    "too-many-lines",
+  # Convention
+  "missing-class-docstring",
+  "missing-function-docstring",
+  "missing-module-docstring",
+  "too-many-lines",
 
-    # Intentionally turned off
-    # error
-    "class-variable-slots-conflict",
-    "invalid-unary-operand-type",
-    "no-member",
-    "no-name-in-module",
-    "not-an-iterable",
-    "too-many-function-args",
-    "unexpected-keyword-arg",
-    # warning
-    "broad-except",
-    "pointless-statement",
-    "protected-access",
-    "undefined-loop-variable",
-    "unused-import",
-    # refactor
-    "comparison-with-itself",
-    "too-many-arguments",
-    "too-many-boolean-expressions",
-    "too-many-branches",
-    "too-many-instance-attributes",
-    "too-many-locals",
-    "too-many-nested-blocks",
-    "too-many-public-methods",
-    "too-many-return-statements",
-    "too-many-statements",
-    # convention
-    "import-outside-toplevel",
-    "invalid-name",
-    "line-too-long",
-    "singleton-comparison",
-    "single-string-used-for-slots",
-    "unidiomatic-typecheck",
-    "unnecessary-dunder-call",
-    "wrong-import-order",
-    "wrong-import-position",
-    # informative
-    "locally-disabled",
-    "suppressed-message",
+  # Intentionally turned off
+  # error
+  "class-variable-slots-conflict",
+  "invalid-unary-operand-type",
+  "no-member",
+  "no-name-in-module",
+  "not-an-iterable",
+  "too-many-function-args",
+  "unexpected-keyword-arg",
+  # warning
+  "broad-except",
+  "pointless-statement",
+  "protected-access",
+  "undefined-loop-variable",
+  "unused-import",
+  # refactor
+  "comparison-with-itself",
+  "too-many-arguments",
+  "too-many-boolean-expressions",
+  "too-many-branches",
+  "too-many-instance-attributes",
+  "too-many-locals",
+  "too-many-nested-blocks",
+  "too-many-public-methods",
+  "too-many-return-statements",
+  "too-many-statements",
+  # convention
+  "import-outside-toplevel",
+  "invalid-name",
+  "line-too-long",
+  "singleton-comparison",
+  "single-string-used-for-slots",
+  "unidiomatic-typecheck",
+  "unnecessary-dunder-call",
+  "wrong-import-order",
+  "wrong-import-position",
+  # informative
+  "locally-disabled",
+  "suppressed-message",
 ]

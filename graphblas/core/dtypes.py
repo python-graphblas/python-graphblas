@@ -1,4 +1,5 @@
 import warnings
+from ast import literal_eval
 
 import numpy as np
 from numpy import promote_types, result_type
@@ -97,7 +98,7 @@ def register_anonymous(dtype, name=None):
             # Allow dtypes such as `"INT64[3, 4]"` for convenience
             base_dtype, shape = dtype.split("[", 1)
             base_dtype = lookup_dtype(base_dtype)
-            shape = np.lib.format.safe_eval(f"[{shape}")
+            shape = literal_eval(f"[{shape}")
             dtype = np.dtype((base_dtype.np_type, shape))
         else:
             raise
@@ -115,7 +116,17 @@ def register_anonymous(dtype, name=None):
     from ..exceptions import check_status_carg
 
     gb_obj = ffi.new("GrB_Type*")
-    if backend == "suitesparse":
+
+    if hasattr(lib, "GrB_Type_set_String"):
+        # We name this so that we can serialize and deserialize UDTs
+        # We don't yet have C definitions
+        np_repr = _dtype_to_string(dtype)
+        status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
+        check_status_carg(status, "Type", gb_obj[0])
+        val_obj = ffi.new("char[]", np_repr.encode())
+        status = lib.GrB_Type_set_String(gb_obj[0], val_obj, lib.GrB_NAME)
+    elif backend == "suitesparse":
+        # For SuiteSparse < 9
         # We name this so that we can serialize and deserialize UDTs
         # We don't yet have C definitions
         np_repr = _dtype_to_string(dtype).encode()
@@ -429,7 +440,7 @@ def _dtype_to_string(dtype):
         np_type = dtype.np_type
     s = str(np_type)
     try:
-        if np.dtype(np.lib.format.safe_eval(s)) == np_type:  # pragma: no branch (safety)
+        if np.dtype(literal_eval(s)) == np_type:  # pragma: no branch (safety)
             return s
     except Exception:
         pass
@@ -448,5 +459,5 @@ def _string_to_dtype(s):
         return lookup_dtype(s)
     except Exception:
         pass
-    np_type = np.dtype(np.lib.format.safe_eval(s))
+    np_type = np.dtype(literal_eval(s))
     return lookup_dtype(np_type)

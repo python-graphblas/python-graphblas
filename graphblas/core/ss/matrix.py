@@ -3650,8 +3650,10 @@ class ss:
     def unpack_hyperhash(self, *, compute=False, name=None, **opts):
         """Unpacks the hyper_hash of a hypersparse matrix if possible.
 
-        Will return None if the matrix is not hypersparse or if the hash is not computed.
-        Use ``compute=True`` to compute the hyper_hash if the input is hypersparse.
+        Will return None if the matrix is not hypersparse, if the hash is not computed,
+        or if the hash is not needed. Use ``compute=True`` to try to compute the hyper_hash
+        if the input is hypersparse. The hyper_hash is optional in SuiteSparse:GraphBLAS,
+        so it may not be computed even with ``compute=True``.
 
         Use ``pack_hyperhash`` to move a hyper_hash matrix that was previously unpacked
         back into a matrix.
@@ -4079,6 +4081,21 @@ class ss:
         blob_handle = ffi_new("void**")
         blob_size_handle = ffi_new("GrB_Index*")
         parent = self._parent
+        if parent.dtype._is_udt and hasattr(lib, "GrB_Type_get_String"):
+            # Get the name from the dtype and set it to the name of the matrix so we can
+            # recreate the UDT. This is a bit hacky and we should restore the original name.
+            # First get the size of name.
+            dtype_size = ffi_new("size_t*")
+            status = lib.GrB_Type_get_SIZE(parent.dtype.gb_obj[0], dtype_size, lib.GrB_NAME)
+            check_status_carg(status, "Type", parent.dtype.gb_obj[0])
+            # Then get the name
+            dtype_char = ffi_new(f"char[{dtype_size[0]}]")
+            status = lib.GrB_Type_get_String(parent.dtype.gb_obj[0], dtype_char, lib.GrB_NAME)
+            check_status_carg(status, "Type", parent.dtype.gb_obj[0])
+            # Then set the name
+            status = lib.GrB_Matrix_set_String(parent._carg, dtype_char, lib.GrB_NAME)
+            check_status_carg(status, "Matrix", parent._carg)
+
         check_status(
             lib.GxB_Matrix_serialize(
                 blob_handle,
@@ -4120,8 +4137,8 @@ class ss:
         else:
             data = np.frombuffer(data, np.uint8)
         data_obj = ffi.from_buffer("void*", data)
-        # Get the dtype name first
         if dtype is None:
+            # Get the dtype name first (for non-UDTs)
             cname = ffi_new(f"char[{lib.GxB_MAX_NAME_LEN}]")
             info = lib.GxB_deserialize_type_name(
                 cname,
@@ -4131,6 +4148,22 @@ class ss:
             if info != lib.GrB_SUCCESS:
                 raise _error_code_lookup[info]("Matrix deserialize failed to get the dtype name")
             dtype_name = b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode()
+            if not dtype_name and hasattr(lib, "GxB_Serialized_get_String"):
+                # Handle UDTs. First get the size of name
+                dtype_size = ffi_new("size_t*")
+                info = lib.GxB_Serialized_get_SIZE(data_obj, dtype_size, lib.GrB_NAME, data.nbytes)
+                if info != lib.GrB_SUCCESS:
+                    raise _error_code_lookup[info](
+                        "Matrix deserialize failed to get the size of name"
+                    )
+                # Then get the name
+                dtype_char = ffi_new(f"char[{dtype_size[0]}]")
+                info = lib.GxB_Serialized_get_String(
+                    data_obj, dtype_char, lib.GrB_NAME, data.nbytes
+                )
+                if info != lib.GrB_SUCCESS:
+                    raise _error_code_lookup[info]("Matrix deserialize failed to get the name")
+                dtype_name = ffi.string(dtype_char).decode()
             dtype = _string_to_dtype(dtype_name)
         else:
             dtype = lookup_dtype(dtype)

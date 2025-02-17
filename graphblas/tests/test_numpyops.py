@@ -5,6 +5,7 @@ import sys
 
 import numpy as np
 import pytest
+from packaging.version import parse
 
 import graphblas as gb
 import graphblas.binary.numpy as npbinary
@@ -112,6 +113,15 @@ def test_npunary():
                 match(accum=gb.binary.lor) << gb_result.apply(npunary.isnan)
             compare = match.reduce(gb.monoid.land).new()
             if not compare:  # pragma: no cover (debug)
+                import numba
+
+                if (
+                    unary_name in {"sign"}
+                    and np.__version__.startswith("2.")
+                    and parse(numba.__version__) < parse("0.61.0")
+                ):
+                    # numba <0.61.0 does not match numpy 2.0
+                    continue
                 print(unary_name, gb_input.dtype)
                 print(compute(gb_result))
                 print(np_result)
