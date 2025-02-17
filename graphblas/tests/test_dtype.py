@@ -9,6 +9,7 @@ import pytest
 import graphblas as gb
 from graphblas import core, dtypes
 from graphblas.core import lib
+from graphblas.core.utils import _NP2
 from graphblas.dtypes import lookup_dtype
 
 suitesparse = gb.backend == "suitesparse"
@@ -227,6 +228,9 @@ def test_dtype_to_from_string():
         if c == "T":
             # See NEP 55 about StringDtype "T". Notably, this doesn't work:
             # >>> np.dtype(np.dtype("T").str)
+            continue
+        if _NP2 and c == "a":
+            # Data type alias 'a' was deprecated in NumPy 2.0. Use the 'S' alias instead.
             continue
         try:
             dtype = np.dtype(c)
