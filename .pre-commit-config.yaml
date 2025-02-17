@@ -11,7 +11,7 @@ ci:
   autoupdate_commit_msg: "chore: update pre-commit hooks"
   autofix_commit_msg: "style: pre-commit fixes"
   skip: [pylint, no-commit-to-branch]
-fail_fast: true
+fail_fast: false
 default_language_version:
   python: python3
 repos:
