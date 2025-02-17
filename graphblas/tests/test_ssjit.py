@@ -60,7 +60,7 @@ def _setup_jit():
         or sys.platform == "linux"
         and "conda" not in gb.ss.config["jit_c_compiler_name"]
     ):
-        # TODO: tests for the SuiteSparse JIT are not passing on linux when using wheels or on osx
+        # XXX TODO: tests for SuiteSparse JIT are not passing on linux when using wheels or on osx
         # This should be understood and fixed!
         gb.ss.config["jit_c_control"] = "off"
         yield
