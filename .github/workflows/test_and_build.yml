@@ -142,7 +142,7 @@ jobs:
         with:
           auto-update-conda: true
           python-version: ${{ steps.pyver.outputs.selected }}
-          channels: conda-forge,${{ contains(steps.pyver.outputs.selected, 'pypy') && 'defaults' || 'nodefaults' }}
+          channels: conda-forge${{ contains(steps.pyver.outputs.selected, 'pypy') && ',defaults' || '' }}
           conda-remove-defaults: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'false' || 'true' }}
           channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
           activate-environment: graphblas
@@ -386,7 +386,7 @@ jobs:
           (cd ..
            pytest --pyargs suitesparse_graphblas -s -k test_print_jit_config || true
            pytest -v --pyargs suitesparse_graphblas)
-      - name: print Python platform and sysconfig variables
+      - name: Print platform and sysconfig variables
         run: |
           python -c "import platform ; print(platform.uname())"
           python -c "import pprint, sysconfig ; pprint.pprint(sysconfig.get_config_vars())"
