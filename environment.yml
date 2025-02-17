@@ -23,7 +23,6 @@ dependencies:
   - pandas
   # For I/O
   - awkward
-  - fast_matrix_market
   - networkx
   - scipy
   - sparse
@@ -55,7 +54,6 @@ dependencies:
   # - autoflake
   # - black
   # - black-jupyter
-  # - build
   # - codespell
   # - commonmark
   # - cython
@@ -109,5 +107,4 @@ dependencies:
   # - tuna
   # - twine
   # - vim
-  # - yesqa
   # - zarr

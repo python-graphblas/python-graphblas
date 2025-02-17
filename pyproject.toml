@@ -414,6 +414,12 @@ mark-parentheses = false
 [tool.lint.ruff.pydocstyle]
 convention = "numpy"
 
+[tool.bandit]
+exclude_dirs = ["graphblas/tests", "scripts"]
+skips = [
+  "B110", # Try, Except, Pass detected.  (Note: it would be nice to not have this pattern)
+]
+
 [tool.pylint.messages_control]
 # To run a single check, do: pylint graphblas --disable E,W,R,C,I --enable assignment-from-no-return
 max-line-length = 100
