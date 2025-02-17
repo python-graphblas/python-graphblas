@@ -92,7 +92,7 @@ jobs:
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
         slowtask: ["pytest_normal", "pytest_bizarro", "notebooks"]
-        # repeat: [1, 2, 3] # For stress testing
+        repeat: [1, 2, 3] # For stress testing
     env:
       # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
       # Setting this is a workaround.
@@ -119,7 +119,7 @@ jobs:
             1
             1
             1
-            1
+            1000
       - name: RNG for source of python-suitesparse-graphblas
         uses: ddradar/choose-random-action@v3.0.0
         id: sourcetype
