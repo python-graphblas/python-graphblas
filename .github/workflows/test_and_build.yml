@@ -217,24 +217,24 @@ jobs:
             fi
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]] ; then
             if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
-              psgver=$(python -c 'import random ; print(random.choice(["=9.3.1.0", ""]))')
+              psgver=$(python -c 'import random ; print(random.choice(["=9.3.1.0", "=9.4.5.0", ""]))')
               psg=python-suitesparse-graphblas${psgver}
             else
-              psgver=$(python -c 'import random ; print(random.choice(["==9.3.1.0", ""]))')
+              psgver=$(python -c 'import random ; print(random.choice(["==9.3.1.0", "==9.4.5.0", ""]))')
             fi
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]] ; then
             if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
               if [[ $npver == =1.* ]] ; then
                 psgver=$(python -c 'import random ; print(random.choice(["=8.2.0.1", "=8.2.1.0"]))')
               else
-                psgver=$(python -c 'import random ; print(random.choice(["=9.3.1.0", ""]))')
+                psgver=$(python -c 'import random ; print(random.choice(["=9.3.1.0", "=9.4.5.0", ""]))')
               fi
               psg=python-suitesparse-graphblas${psgver}
             else
               if [[ $npver == =1.* ]] ; then
                 psgver=$(python -c 'import random ; print(random.choice(["==8.2.0.1", "==8.2.1.0"]))')
               else
-                psgver=$(python -c 'import random ; print(random.choice(["==9.3.1.0", ""]))')
+                psgver=$(python -c 'import random ; print(random.choice(["==9.3.1.0", "==9.4.5.0", ""]))')
               fi
             fi
           # python-suitsparse-graphblas support is the same for Python 3.10 and 3.11
@@ -242,21 +242,21 @@ jobs:
             if [[ $npver == =1.* ]] ; then
               psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2", "=8.0.2.1", "=8.2.0.1", "=8.2.1.0"]))')
             else
-              psgver=$(python -c 'import random ; print(random.choice(["=9.3.1.0", ""]))')
+              psgver=$(python -c 'import random ; print(random.choice(["=9.3.1.0", "=9.4.5.0", ""]))')
             fi
             psg=python-suitesparse-graphblas${psgver}
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
             if [[ $npver == =1.* ]] ; then
               psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", "==8.0.2.1", "==8.2.0.1", "==8.2.1.0"]))')
             else
-              psgver=$(python -c 'import random ; print(random.choice(["==9.3.1.0", ""]))')
+              psgver=$(python -c 'import random ; print(random.choice(["==9.3.1.0", "==9.4.5.0", ""]))')
             fi
           elif [[ ${{ steps.sourcetype.outputs.selected}} == "source" ]] ; then
             # These should be exact versions
             if [[ $npver == =1.* ]] ; then
               psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", "==8.0.2.1", "==8.2.0.1", "==8.2.1.0"]))')
             else
-              psgver=$(python -c 'import random ; print(random.choice(["==9.3.1.0", ""]))')
+              psgver=$(python -c 'import random ; print(random.choice(["==9.3.1.0", "==9.4.5.0", ""]))')
             fi
           fi
 
@@ -357,7 +357,7 @@ jobs:
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && 'matplotlib nbconvert jupyter "ipython>=7" drawsvg' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
-            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4,<9.4"' || '' }} \
+            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4,<9.5"' || '' }} \
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }} \
             ${{ matrix.os == 'windows-latest' && 'cmake' || 'm4' }} \
             # ${{ matrix.os != 'windows-latest' && 'pytest-forked' || '' }}  # to investigate crashes
