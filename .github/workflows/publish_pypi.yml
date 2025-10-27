@@ -28,7 +28,7 @@ jobs:
           python -m pip install build twine
       - name: Build wheel and sdist
         run: python -m build --sdist --wheel
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: releases
           path: dist
