@@ -215,10 +215,12 @@ class GlobalConfig(BaseConfig):
                 "jit_c_preface": (lib.GxB_JIT_C_PREFACE, "char*"),
                 "jit_error_log": (lib.GxB_JIT_ERROR_LOG, "char*"),
                 "jit_cache_path": (lib.GxB_JIT_CACHE_PATH, "char*"),
-                # CUDA GPU control
-                "gpu_id": (lib.GxB_GLOBAL_GPU_ID, "int"),
             }
         )
+        # GxB_GLOBAL_GPU_ID existed in SS:GraphBLAS <=10.1 as a scalar int.
+        # It was renamed to GxB_GLOBAL_GPU_IDS in 10.2 and changed to a list type.
+        if hasattr(lib, "GxB_GLOBAL_GPU_ID"):
+            _options["gpu_id"] = (lib.GxB_GLOBAL_GPU_ID, "int")
     # Values to restore defaults
     _defaults = {
         "hyper_switch": lib.GxB_HYPER_DEFAULT,

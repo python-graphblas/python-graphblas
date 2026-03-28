@@ -636,7 +636,7 @@ class Matrix(BaseType):
         # TODO: accept `dtype` keyword to match the dtype of `values`?
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
-        values, dtype = values_to_numpy_buffer(values, self.dtype)
+        values, _dtype = values_to_numpy_buffer(values, self.dtype)
         n = values.shape[0]
         if rows.size != n or columns.size != n:
             raise ValueError(
@@ -3979,6 +3979,7 @@ class TransposedMatrix:
     _extract_element = Matrix._extract_element
     _prep_for_extract = Matrix._prep_for_extract
     __eq__ = Matrix.__eq__
+    __hash__ = None
     __bool__ = Matrix.__bool__
     __getitem__ = Matrix.__getitem__
     __contains__ = Matrix.__contains__

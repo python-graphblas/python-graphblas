@@ -869,13 +869,13 @@ def test_monoid_attributes():
     assert monoid.plus[int].binaryop is binary.plus[int]
     assert monoid.plus[int].identity == 0
     assert monoid.plus.binaryop is binary.plus
-    assert monoid.plus.identities == {typ: 0 for typ in monoid.plus.types}
+    assert monoid.plus.identities == dict.fromkeys(monoid.plus.types, 0)
 
     if shouldhave(monoid.numpy, "add"):
         assert monoid.numpy.add[int].binaryop is binary.numpy.add[int]
         assert monoid.numpy.add[int].identity == 0
         assert monoid.numpy.add.binaryop is binary.numpy.add
-        assert monoid.numpy.add.identities == {typ: 0 for typ in monoid.numpy.add.types}
+        assert monoid.numpy.add.identities == dict.fromkeys(monoid.numpy.add.types, 0)
 
     def plus(x, y):  # pragma: no cover (numba)
         return x + y

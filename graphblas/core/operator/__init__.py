@@ -1,5 +1,6 @@
 from .base import UNKNOWN_OPCLASS, OpBase, OpPath, ParameterizedUdf, TypedOpBase, find_opclass
 from .binary import BinaryOp, ParameterizedBinaryOp
+from .indexbinary import IndexBinaryOp, ParameterizedIndexBinaryOp
 from .indexunary import IndexUnaryOp, ParameterizedIndexUnaryOp
 from .monoid import Monoid, ParameterizedMonoid
 from .select import ParameterizedSelectOp, SelectOp

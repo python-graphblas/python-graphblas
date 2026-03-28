@@ -3429,7 +3429,7 @@ def test_ss_lastk(A):
 @pytest.mark.slow
 def test_ss_compactify(A, do_iso):
     if do_iso:
-        r, c, v = A.to_coo()
+        r, c, _v = A.to_coo()
         A = Matrix.from_coo(r, c, 1)
     rows = [0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 6]
     new_cols = [0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 2]
@@ -3848,11 +3848,11 @@ def test_to_coo_sort():
     rng.shuffle(r)
     rng.shuffle(c)
     A = Matrix.from_coo(r, c, r, nrows=N, ncols=N)
-    rows, cols, values = A.to_coo(sort=False)
+    rows, cols, _values = A.to_coo(sort=False)
     A = Matrix.from_coo(r, c, r, nrows=N, ncols=N)
-    rows, cols, values = A.to_coo(sort=True)
+    rows, cols, _values = A.to_coo(sort=True)
     assert_array_equal(rows, expected_rows)
-    rows, cols, values = A.T.to_coo(sort=True)
+    rows, cols, _values = A.T.to_coo(sort=True)
     assert_array_equal(cols, expected_rows)
 
 

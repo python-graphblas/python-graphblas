@@ -136,6 +136,8 @@ class Scalar(BaseType):
         """
         return self.isequal(other)
 
+    __hash__ = None
+
     def __ne__(self, other):
         return not self.isequal(other)
 
@@ -1001,6 +1003,7 @@ class ScalarExpression(BaseExpression):
 
     is_cscalar = Scalar.is_cscalar
     is_grbscalar = Scalar.is_grbscalar
+    __hash__ = None
 
     # Begin auto-generated code: Scalar
     _get_value = automethods._get_value
@@ -1075,6 +1078,7 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
 
     is_cscalar = Scalar.is_cscalar
     is_grbscalar = Scalar.is_grbscalar
+    __hash__ = None
 
     # Begin auto-generated code: Scalar
     _get_value = automethods._get_value

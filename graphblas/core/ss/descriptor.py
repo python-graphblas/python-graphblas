@@ -44,10 +44,13 @@ class _DescriptorConfig(BaseConfig):
         _options.update(
             {
                 "chunk": (lib.GxB_CONTEXT_CHUNK, "double"),
-                "gpu_id": (lib.GxB_CONTEXT_GPU_ID, "int"),
                 "nthreads": (lib.GxB_CONTEXT_NTHREADS, "int"),
             }
         )
+        # GxB_CONTEXT_GPU_ID existed in SS:GraphBLAS <=10.1 as a scalar int.
+        # It was renamed to GxB_CONTEXT_GPU_IDS in 10.2 and changed to a list type.
+        if hasattr(lib, "GxB_CONTEXT_GPU_ID"):
+            _options["gpu_id"] = (lib.GxB_CONTEXT_GPU_ID, "int")
     _enumerations = {
         # GrB
         "output_replace": {

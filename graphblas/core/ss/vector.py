@@ -262,7 +262,7 @@ class ss:
         graphblas.ss.concat
 
         """
-        tiles, m, n, is_matrix = _concat_mn(tiles, is_matrix=False)
+        tiles, m, _n, _is_matrix = _concat_mn(tiles, is_matrix=False)
         self._concat(tiles, m, opts)
 
     def build_scalar(self, indices, value):

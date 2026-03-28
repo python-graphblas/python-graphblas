@@ -272,7 +272,7 @@ def test_mmread_mmwrite(engine):
                 example == "_empty_lines_example"
                 and engine in {"fmm", "auto"}
                 and fmm is not None
-                and fmm.__version__ in {"1.4.5"}
+                and fmm.__version__ == "1.4.5"
             ):
                 # `fast_matrix_market` __version__ v1.4.5 does not handle this, but v1.5.0 does
                 continue

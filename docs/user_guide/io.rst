@@ -146,5 +146,3 @@ and ``gb.io.mmwrite()`` to write a Matrix to a Matrix Market file.
 These names match the equivalent functions in `scipy.sparse <https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.mmread.html>`_.
 
 ``scipy`` is required to be installed to read Matrix Market files.
-If ``fast_matrix_market`` is installed, it will be used by default for
-`much better performance <https://github.com/alugowski/fast_matrix_market>`_.

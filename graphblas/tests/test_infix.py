@@ -454,34 +454,34 @@ def test_multi_infix_vector():
     result = op.plus_plus(D0 @ (D0 @ v1)).new()
     assert result.isequal(v1)
 
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2) | v3
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2).__ror__(v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2) | (v2 & v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2) | (v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         v1 | (v2 & v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         v1.__ror__(v2 & v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2) | (v2 & v3)
 
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         v1 & (v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         v1.__rand__(v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2) & (v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2) & (v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2) & v3
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2).__rand__(v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2) & (v2 & v3)
 
     # We differentiate between infix and methods
@@ -564,34 +564,34 @@ def test_multi_infix_matrix():
     assert op.plus_plus((v1.T @ D0) @ v1).new()[0, 0].new().value == 6
     assert op.plus_plus(D0 @ D0 @ D0 @ D0 @ D0).new().isequal(D0)
 
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2) | v3
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2).__ror__(v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2) | (v2 & v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2) | (v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         v1 | (v2 & v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         v1.__ror__(v2 & v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2) | (v2 & v3)
 
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         v1 & (v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         v1.__rand__(v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2) & (v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2) & (v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2) & v3
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2).__rand__(v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2) & (v2 & v3)
 
     # We differentiate between infix and methods
@@ -716,34 +716,34 @@ def test_multi_infix_scalar():
     result = binary.plus(v1 | (2 | v3), left_default=10, right_default=10).new()
     assert result.isequal(expected)
 
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2) | v3
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2).__ror__(v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2) | (v2 & v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2) | (v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         v1 | (v2 & v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         v1.__ror__(v2 & v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2) | (v2 & v3)
 
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         v1 & (v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         v1.__rand__(v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2) & (v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 & v2) & (v2 | v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2) & v3
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2).__rand__(v3)
-    with pytest.raises(TypeError, match="XXX"):  # TODO
+    with pytest.raises(TypeError, match="Cannot mix"):
         (v1 | v2) & (v2 & v3)
 
     # We differentiate between infix and methods

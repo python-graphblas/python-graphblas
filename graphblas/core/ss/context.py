@@ -20,9 +20,12 @@ class Context(BaseConfig):
     _context_keys = {"chunk", "gpu_id", "nthreads"}
     _options = {
         "chunk": (lib.GxB_CONTEXT_CHUNK, "double"),
-        "gpu_id": (lib.GxB_CONTEXT_GPU_ID, "int"),
         "nthreads": (lib.GxB_CONTEXT_NTHREADS, "int"),
     }
+    # GxB_CONTEXT_GPU_ID existed in SS:GraphBLAS <=10.1 as a scalar int.
+    # It was renamed to GxB_CONTEXT_GPU_IDS in 10.2 and changed to a list type.
+    if hasattr(lib, "GxB_CONTEXT_GPU_ID"):
+        _options["gpu_id"] = (lib.GxB_CONTEXT_GPU_ID, "int")
     _defaults = {
         "nthreads": 0,
         "chunk": 0,
@@ -37,13 +40,14 @@ class Context(BaseConfig):
             context = threadlocal.context
             self["nthreads"] = context["nthreads"] if nthreads is None else nthreads
             self["chunk"] = context["chunk"] if chunk is None else chunk
-            self["gpu_id"] = context["gpu_id"] if gpu_id is None else gpu_id
+            if "gpu_id" in self._options:
+                self["gpu_id"] = context["gpu_id"] if gpu_id is None else gpu_id
         else:
             if nthreads is not None:
                 self["nthreads"] = nthreads
             if chunk is not None:
                 self["chunk"] = chunk
-            if gpu_id is not None:
+            if gpu_id is not None and "gpu_id" in self._options:
                 self["gpu_id"] = gpu_id
         self._prev_context = None
         if engage:
@@ -66,7 +70,7 @@ class Context(BaseConfig):
             nthreads = self["nthreads"]
         if chunk is None:
             chunk = self["chunk"]
-        if gpu_id is None:
+        if gpu_id is None and "gpu_id" in self._options:
             gpu_id = self["gpu_id"]
         return type(self)(engage, stack=False, nthreads=nthreads, chunk=chunk, gpu_id=gpu_id)
 

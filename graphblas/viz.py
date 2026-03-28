@@ -81,7 +81,7 @@ def spy(M, *, centered=False, show=True, figure=None, axes=None, figsize=None, *
     datashade
 
     """
-    mpl, plt, ss = _get_imports(["mpl", "plt", "ss"], "spy")
+    mpl, plt, _ss = _get_imports(["mpl", "plt", "ss"], "spy")
     A = to_scipy_sparse(M, "coo")
     if show:
         plt.ion()
@@ -132,7 +132,7 @@ def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kw
     spy
 
     """
-    np, pd, bk, hv, hp, ds = _get_imports(["np", "pd", "bk", "hv", "hp", "ds"], "datashade")
+    np, pd, bk, hv, _hp, _ds = _get_imports(["np", "pd", "bk", "hv", "hp", "ds"], "datashade")
     if "df" not in kwargs:
         rows, cols, vals = M.to_coo()
         max_int = np.iinfo(np.int64).max

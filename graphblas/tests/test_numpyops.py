@@ -40,7 +40,7 @@ def test_bool_doesnt_get_too_large():
             z = a.ewise_mult(b, gb.monoid.numpy.add).new()
     else:
         z = a.ewise_mult(b, gb.monoid.numpy.add).new()
-        x, y = z.to_coo()
+        _x, y = z.to_coo()
         np.testing.assert_array_equal(y, (True, True, True, False))
 
     def func(x):  # pragma: no cover (numba)
@@ -48,7 +48,7 @@ def test_bool_doesnt_get_too_large():
 
     op = gb.core.operator.UnaryOp.register_anonymous(func)
     z = a.apply(op).new()
-    x, y = z.to_coo()
+    _x, y = z.to_coo()
     np.testing.assert_array_equal(y, (True, False, True, False))
 
 
@@ -116,7 +116,7 @@ def test_npunary():
                 import numba
 
                 if (
-                    unary_name in {"sign"}
+                    unary_name == "sign"
                     and np.__version__.startswith("2.")
                     and parse(numba.__version__) < parse("0.61.0")
                 ):
@@ -201,7 +201,7 @@ def test_npbinary():
                         compare_op = isclose
                     else:
                         np_result = getattr(np, binary_name)(np_left, np_right)
-                        if binary_name in {"arctan2"}:
+                        if binary_name == "arctan2":
                             compare_op = isclose
                         else:
                             compare_op = equal

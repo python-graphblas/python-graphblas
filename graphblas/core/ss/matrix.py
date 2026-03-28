@@ -376,7 +376,7 @@ class ss:
         graphblas.ss.concat
 
         """
-        tiles, m, n, is_matrix = _concat_mn(tiles, is_matrix=True)
+        tiles, m, n, _is_matrix = _concat_mn(tiles, is_matrix=True)
         self._concat(tiles, m, n, opts)
 
     def build_scalar(self, rows, columns, value):

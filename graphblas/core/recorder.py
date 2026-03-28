@@ -179,4 +179,4 @@ class Recorder:
 
 
 skip_record = Recorder(start=False)
-skip_record.data = collections.deque([], 0)
+skip_record.data = collections.deque(maxlen=0)

@@ -16,20 +16,23 @@ default_language_version:
   python: python3
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-added-large-files
       - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-illegal-windows-names
       - id: check-merge-conflict
-      # - id: check-symlinks
       - id: check-ast
+      - id: check-json # No json files yet
       - id: check-toml
       - id: check-yaml
       - id: check-executables-have-shebangs
       - id: check-vcs-permalinks
+      - id: debug-statements
       - id: destroyed-symlinks
       - id: detect-private-key
-      - id: debug-statements
+      - id: forbid-submodules
       - id: end-of-file-fixer
         exclude_types: [svg]
       - id: mixed-line-ending
@@ -37,114 +40,142 @@ repos:
       - id: name-tests-test
         args: ["--pytest-test-first"]
   - repo: https://github.com/abravalheri/validate-pyproject
-    rev: v0.23
+    rev: v0.25
     hooks:
       - id: validate-pyproject
         name: Validate pyproject.toml
   # I don't yet trust ruff to do what autoflake does
   - repo: https://github.com/PyCQA/autoflake
-    rev: v2.3.1
+    rev: v2.3.3
     hooks:
       - id: autoflake
         args: [--in-place]
   # We can probably remove `isort` if we come to trust `ruff --fix`,
   # but we'll need to figure out the configuration to do this in `ruff`
   - repo: https://github.com/pycqa/isort
-    rev: 6.0.0
+    rev: 8.0.1
     hooks:
       - id: isort
   # Let's keep `pyupgrade` even though `ruff --fix` probably does most of it
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.19.1
+    rev: v3.21.2
     hooks:
       - id: pyupgrade
-        args: [--py310-plus]
+        args: [--py311-plus]
   - repo: https://github.com/MarcoGorelli/auto-walrus
-    rev: 0.3.4
+    rev: 0.4.1
     hooks:
       - id: auto-walrus
         args: [--line-length, "100"]
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 26.3.1
     hooks:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.6
+    rev: v0.15.7
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: [--fix-only, --show-fixes]
   # Let's keep `flake8` even though `ruff` does much of the same.
   # `flake8-bugbear` and `flake8-simplify` have caught things missed by `ruff`.
   - repo: https://github.com/PyCQA/flake8
-    rev: 7.1.2
+    rev: 7.3.0
     hooks:
       - id: flake8
         args: ["--config=.flake8"]
         additional_dependencies:
           &flake8_dependencies # These versions need updated manually
-          - flake8==7.1.2
-          - flake8-bugbear==24.12.12
-          - flake8-simplify==0.21.0
+          - flake8==7.3.0
+          - flake8-bugbear==25.11.29
+          - flake8-simplify==0.30.0
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
+    rev: v2.4.2
     hooks:
       - id: codespell
-        types_or: [python, rst, markdown]
-        additional_dependencies: [tomli]
+        types_or: [python, markdown, rst, toml, yaml]
+        additional_dependencies:
+          - tomli; python_version<'3.11'
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.6
+    rev: v0.15.7
     hooks:
-      - id: ruff
+      - id: ruff-check
+      # - id: ruff-format  # Prefer black, but may temporarily uncomment this to see
   - repo: https://github.com/sphinx-contrib/sphinx-lint
-    rev: v1.0.0
+    rev: v1.0.2
     hooks:
       - id: sphinx-lint
         args: [--enable, all, "--disable=line-too-long,leaked-markup"]
   # `pyroma` may help keep our package standards up to date if best practices change.
   # This is probably a "low value" check though and safe to remove if we want faster pre-commit.
   - repo: https://github.com/regebro/pyroma
-    rev: "4.2"
+    rev: "5.0.1"
     hooks:
       - id: pyroma
         args: [-n, "10", .]
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: "v0.10.0.1"
+    rev: "v0.11.0.1"
     hooks:
       - id: shellcheck
   - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.5.1
+    rev: v3.8.1
     hooks:
       - id: prettier
+        args: [--prose-wrap=preserve]
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.10.0
+    hooks:
+      - id: rst-backticks
+      - id: rst-directive-colons
+      - id: rst-inline-touching-normal
+      - id: python-check-blanket-noqa
+      - id: python-check-blanket-type-ignore
+      - id: python-no-eval
+      - id: python-no-log-warn
+      - id: text-unicode-replacement-char
   - repo: https://github.com/ComPWA/taplo-pre-commit
     rev: v0.9.3
     hooks:
       - id: taplo-format
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.7
+    rev: v1.7.11
     hooks:
       - id: actionlint
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.31.1
+    rev: 0.37.0
     hooks:
       - id: check-dependabot
       - id: check-github-workflows
       - id: check-readthedocs
   - repo: https://github.com/adrienverge/yamllint
-    rev: v1.35.1
+    rev: v1.38.0
     hooks:
       - id: yamllint
-  - repo: https://github.com/woodruffw/zizmor-pre-commit
-    rev: v1.3.1
-    hooks:
-      - id: zizmor
+  #  - repo: https://github.com/woodruffw/zizmor-pre-commit
+  #    rev: v1.14.2
+  #    hooks:
+  #      - id: zizmor
   - repo: meta
     hooks:
       - id: check-hooks-apply
       - id: check-useless-excludes
   - repo: local
     hooks:
+      - id: disallow-caps
+        name: Disallow improper capitalization
+        language: pygrep
+        entry: PyBind|Numpy\>|Cmake|CCache|Github|PyTest|\<RST\>|PyLint
+        exclude: (.pre-commit-config.yaml|docs/pages/guides/style\.md)$
+      - id: disallow-words
+        name: Disallow certain words
+        language: pygrep
+        entry: "[Ff]alsey"
+        exclude: .pre-commit-config.yaml$
+      - id: disallow-bad-permalinks
+        name: Disallow _ in permalinks
+        language: pygrep
+        entry: "^permalink:.*_.*"
       # Add `--hook-stage manual` to pre-commit command to run (very slow)
       # It's probably better (and faster!) to simply run `pylint graphblas/some/file.py`
       - id: pylint
@@ -156,7 +187,7 @@ repos:
         args: [graphblas/]
         pass_filenames: false
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: no-commit-to-branch # no commit directly to main
 #

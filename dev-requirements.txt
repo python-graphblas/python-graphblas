@@ -6,7 +6,7 @@ pyyaml
 pandas
 # For I/O
 awkward
-fast_matrix_market
+# fast_matrix_market is deprecated (no longer maintained; last supported Python is 3.12)
 networkx
 scipy
 sparse

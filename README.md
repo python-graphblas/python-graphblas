@@ -25,7 +25,7 @@ For algorithms, see
   - **SuiteSparse:GraphBLAS User Guide:** [https://github.com/DrTimothyAldenDavis/GraphBLAS/raw/stable/Doc/GraphBLAS_UserGuide.pdf](https://github.com/DrTimothyAldenDavis/GraphBLAS/raw/stable/Doc/GraphBLAS_UserGuide.pdf)
 - **Source:** [https://github.com/python-graphblas/python-graphblas](https://github.com/python-graphblas/python-graphblas)
 - **Bug reports:** [https://github.com/python-graphblas/python-graphblas/issues](https://github.com/python-graphblas/python-graphblas/issues)
-- **Github discussions:** [https://github.com/python-graphblas/python-graphblas/discussions](https://github.com/python-graphblas/python-graphblas/discussions)
+- **GitHub discussions:** [https://github.com/python-graphblas/python-graphblas/discussions](https://github.com/python-graphblas/python-graphblas/discussions)
 - **Weekly community call:** [python-graphblas#247](https://github.com/python-graphblas/python-graphblas/issues/247) or [https://scientific-python.org/calendars/](https://scientific-python.org/calendars/)
 - **Chat via Discord:** [https://discord.com/invite/vur45CbwMz](https://discord.com/invite/vur45CbwMz) in the [#graphblas channel](https://discord.com/channels/786703927705862175/1024732940233605190)
 
@@ -58,8 +58,7 @@ The following are not required by python-graphblas, but may be needed for certai
 - `pandas` – required for nicer `__repr__`;
 - `matplotlib` – required for basic plotting of graphs;
 - `scipy` – used in `io` module to read/write `scipy.sparse` format;
-- `networkx` – used in `io` module to interface with `networkx` graphs;
-- `fast-matrix-market` - for faster read/write of Matrix Market files with `gb.io.mmread` and `gb.io.mmwrite`.
+- `networkx` – used in `io` module to interface with `networkx` graphs.
 
 ## Description
 

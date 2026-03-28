@@ -292,7 +292,7 @@ def test_neg():
         (
             dtype
             for attr, dtype in vars(dtypes).items()
-            if isinstance(dtype, dtypes.DataType) and attr not in {"_INDEX"}
+            if isinstance(dtype, dtypes.DataType) and attr != "_INDEX"
         ),
         key=lambda x: x.name,
         reverse=random.choice([False, True]),  # used to segfault when False

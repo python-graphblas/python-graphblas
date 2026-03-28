@@ -28,19 +28,10 @@ def to_awkward(A, format=None):
     awkward.Array
 
     """
-    try:
-        # awkward version 1
-        # MAINT: we can probably drop awkward v1 at the end of 2024 or 2025
-        import awkward._v2 as ak
-        from awkward._v2.forms.listoffsetform import ListOffsetForm
-        from awkward._v2.forms.numpyform import NumpyForm
-        from awkward._v2.forms.recordform import RecordForm
-    except ImportError:
-        # awkward version 2
-        import awkward as ak
-        from awkward.forms.listoffsetform import ListOffsetForm
-        from awkward.forms.numpyform import NumpyForm
-        from awkward.forms.recordform import RecordForm
+    import awkward as ak
+    from awkward.forms.listoffsetform import ListOffsetForm
+    from awkward.forms.numpyform import NumpyForm
+    from awkward.forms.recordform import RecordForm
 
     out_type = output_type(A)
     if format is None:

@@ -1,6 +1,17 @@
 from types import BuiltinFunctionType, FunctionType, ModuleType
 
-from ... import backend, binary, config, indexunary, monoid, op, select, semiring, unary
+from ... import (
+    backend,
+    binary,
+    config,
+    indexbinary,
+    indexunary,
+    monoid,
+    op,
+    select,
+    semiring,
+    unary,
+)
 from ...dtypes import UINT64, lookup_dtype, unify
 from ..expr import InfixExprBase
 from .base import (
@@ -14,6 +25,7 @@ from .base import (
     find_opclass,
 )
 from .binary import BinaryOp
+from .indexbinary import IndexBinaryOp
 from .indexunary import IndexUnaryOp
 from .monoid import Monoid
 from .select import SelectOp
@@ -261,6 +273,8 @@ def get_semiring(monoid, binaryop, name=None):
 
 unary.register_new = UnaryOp.register_new
 unary.register_anonymous = UnaryOp.register_anonymous
+indexbinary.register_new = IndexBinaryOp.register_new
+indexbinary.register_anonymous = IndexBinaryOp.register_anonymous
 indexunary.register_new = IndexUnaryOp.register_new
 indexunary.register_anonymous = IndexUnaryOp.register_anonymous
 select.register_new = SelectOp.register_new

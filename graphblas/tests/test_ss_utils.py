@@ -256,8 +256,8 @@ def test_context():
     assert context4["nthreads"] == context["nthreads"] + 1
     assert context == context.dup()
     assert context4 == context.dup(chunk=context["chunk"] + 1, nthreads=context["nthreads"] + 1)
-    assert context.dup(gpu_id=-1)["gpu_id"] == -1
-
+    if "gpu_id" in gb.ss.Context._options:
+        assert context.dup(gpu_id=-1)["gpu_id"] == -1
     context.engage()
     assert gb.core.ss.context.threadlocal.context is context
     with gb.ss.Context(nthreads=1) as ctx:

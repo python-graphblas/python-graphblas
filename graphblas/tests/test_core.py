@@ -67,7 +67,7 @@ def test_bad_call():
 def test_version():
     from packaging.version import parse
 
-    assert parse(gb.__version__) > parse("2022.11.0")
+    assert parse(gb.__version__) > parse("2024.2.0")
 
 
 @pytest.mark.skipif("not setuptools or not tomli or not gb.__file__")

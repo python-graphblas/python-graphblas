@@ -528,7 +528,7 @@ class Vector(BaseType):
         """
         # TODO: accept `dtype` keyword to match the dtype of `values`?
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
-        values, dtype = values_to_numpy_buffer(values, self.dtype)
+        values, _dtype = values_to_numpy_buffer(values, self.dtype)
         n = values.shape[0]
         if indices.size != n:
             raise ValueError(

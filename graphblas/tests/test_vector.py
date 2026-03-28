@@ -27,7 +27,6 @@ from .conftest import autocompute, compute, pypy
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
-
 suitesparse = backend == "suitesparse"
 if suitesparse:
     ss_version_major = gb.core.ss.version_major

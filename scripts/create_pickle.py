@@ -4,6 +4,7 @@
 Note that the exact binary of the pickle files may differ depending on which
 Python version is used to create them.
 """
+
 import argparse
 import pickle
 from pathlib import Path

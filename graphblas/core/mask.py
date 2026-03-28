@@ -18,6 +18,8 @@ class Mask:
     def __eq__(self, other):
         raise TypeError(f"__eq__ not defined for objects of type {type(self)}.")
 
+    __hash__ = None
+
     def __bool__(self):
         raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
 

@@ -1,14 +1,15 @@
 [build-system]
 build-backend = "setuptools.build_meta"
-requires = ["setuptools >=64", "setuptools-git-versioning"]
+requires = ["setuptools >=77", "setuptools-git-versioning"]
 
 [project]
 name = "python-graphblas"
 dynamic = ["version"]
 description = "Python library for GraphBLAS: high-performance sparse linear algebra for scalable graph analytics"
 readme = "README.md"
-requires-python = ">=3.10"
-license = { file = "LICENSE" }
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
   { name = "Erik Welch", email = "erik.n.welch@gmail.com" },
   { name = "Jim Kitchen" },
@@ -35,16 +36,15 @@ keywords = [
 ]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
-  "License :: OSI Approved :: Apache Software License",
   "Operating System :: MacOS :: MacOS X",
   "Operating System :: POSIX :: Linux",
   "Operating System :: Microsoft :: Windows",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: 3 :: Only",
   "Intended Audience :: Developers",
   "Intended Audience :: Other Audience",
@@ -55,14 +55,14 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-  "numpy >=1.23",
+  "numpy >=1.24",
   "donfig >=0.6",
   "pyyaml >=5.4",
-  # These won't be installed by default after 2024.3.0
-  # once pep-771 is supported: https://peps.python.org/pep-0771/
+  # These should be optional once PEP 771 is accepted and supported:
+  # https://peps.python.org/pep-0771/ (still draft as of 2026-03)
   # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
-  "suitesparse-graphblas >=7.4.0.0, <10",
-  "numba >=0.55; python_version<'3.14'",  # make optional where numba is not supported
+  "suitesparse-graphblas >=7.4.0.0",
+  "numba >=0.57; python_version<'3.15'", # make optional where numba is not supported
 ]
 
 [project.urls]
@@ -74,7 +74,7 @@ changelog = "https://github.com/python-graphblas/python-graphblas/releases"
 [project.optional-dependencies]
 suitesparse = ["suitesparse-graphblas >=7.4.0.0, <10"]
 networkx = ["networkx >=2.8"]
-numba = ["numba >=0.55"]
+numba = ["numba >=0.57"]
 pandas = ["pandas >=1.5"]
 scipy = ["scipy >=1.9"]
 suitesparse-udf = [ # udf requires numba
@@ -83,10 +83,10 @@ suitesparse-udf = [ # udf requires numba
 repr = ["python-graphblas[pandas]"]
 io = [
   "python-graphblas[networkx,scipy]",
-  "python-graphblas[numba]; python_version<'3.14'",
+  "python-graphblas[numba]; python_version<'3.15'", # make optional where numba is not supported
   "awkward >=2.0",
-  "sparse >=0.14; python_version<'3.13'",              # make optional, b/c sparse needs numba
-  "fast-matrix-market >=1.4.5; python_version<'3.13'", # py3.13 not supported yet
+  "sparse >=0.14; python_version<'3.13'",           # make optional, b/c sparse needs numba
+  # fast-matrix-market is no longer maintained; last supported Python is 3.12
 ]
 viz = ["python-graphblas[networkx,scipy]", "matplotlib >=3.6"]
 datashade = [ # datashade requires numba
@@ -102,11 +102,11 @@ test = [
 ]
 default = [
   "python-graphblas[suitesparse,pandas,scipy]",
-  "python-graphblas[numba]; python_version<'3.14'", # make optional where numba is not supported
+  "python-graphblas[numba]; python_version<'3.15'", # make optional where numba is not supported
 ]
 all = [
   "python-graphblas[default,io,viz,test]",
-  "python-graphblas[datashade]; python_version<'3.14'", # make optional, b/c datashade needs numba
+  "python-graphblas[datashade]; python_version<'3.15'", # make optional, b/c datashade needs numba
 ]
 
 [tool.setuptools]
@@ -122,6 +122,7 @@ packages = [
   "graphblas.core.operator",
   "graphblas.core.ss",
   "graphblas.dtypes",
+  "graphblas.indexbinary",
   "graphblas.indexunary",
   "graphblas.io",
   "graphblas.monoid",
@@ -140,7 +141,7 @@ dirty_template = "{tag}+{ccount}.g{sha}.dirty"
 
 [tool.black]
 line-length = 100
-target-version = ["py310", "py311", "py312", "py313"]
+target-version = ["py311", "py312", "py313", "py314"]
 
 [tool.isort]
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
@@ -154,7 +155,7 @@ line_length = 100
 [tool.pytest.ini_options]
 minversion = "6.0"
 testpaths = "graphblas/tests"
-xfail_strict = false # 2023-07-23: awkward and numpy 1.25 sometimes conflict
+xfail_strict = false
 addopts = [
   "--strict-config",  # Force error if config is mispelled
   "--strict-markers", # Force error if marker is mispelled (must be defined in config)
@@ -167,34 +168,15 @@ filterwarnings = [
   # and: https://docs.pytest.org/en/7.2.x/how-to/capture-warnings.html#controlling-warnings
   "error",
 
-  # sparse 0.14.0 (2022-02-24) began raising this warning; it has been reported and fixed upstream.
+  # sparse 0.14.0 began raising this warning; fixed in newer versions but CI tests with 0.14/0.15
   "ignore:coords should be an ndarray. This will raise a ValueError:DeprecationWarning:sparse._coo.core",
-
-  # setuptools v67.3.0 deprecated `pkg_resources.declare_namespace` on 13 Feb 2023. See:
-  # https://setuptools.pypa.io/en/latest/history.html#v67-3-0
-  # MAINT: check if this is still necessary in 2025
-  "ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning:pkg_resources",
-
-  # This deprecation warning was added in setuptools v67.5.0 (8 Mar 2023). See:
-  # https://setuptools.pypa.io/en/latest/history.html#v67-5-0
-  "ignore:pkg_resources is deprecated as an API:DeprecationWarning:",
-
-  # sre_parse deprecated in 3.11; this is triggered by awkward 0.10
-  "ignore:module 'sre_parse' is deprecated:DeprecationWarning:",
-  "ignore:module 'sre_constants' is deprecated:DeprecationWarning:",
-
-  # numpy 1.25.0 (2023-06-17) deprecated `np.find_common_type`; many other dependencies use it.
-  # See if we can remove this filter in 2025.
-  "ignore:np.find_common_type is deprecated:DeprecationWarning:",
 
   # pypy gives this warning
   "ignore:can't resolve package from __spec__ or __package__:ImportWarning:",
 
   # Python 3.12 introduced this deprecation, which is triggered by pandas 2.1.1
+  # MAINT: check if still needed once we drop pandas <2.2 support
   "ignore:datetime.datetime.utcfromtimestamp:DeprecationWarning:dateutil",
-
-  # Pandas 2.2 warns that pyarrow will become a required dependency in pandas 3.0
-  "ignore:\\nPyarrow will become a required dependency of pandas:DeprecationWarning:",
 ]
 
 [tool.coverage.run]
@@ -222,7 +204,7 @@ ignore-words-list = "coo,ba"
 [tool.ruff]
 # https://github.com/charliermarsh/ruff/
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.format]
 exclude = ["*.ipynb"] # Consider enabling auto-formatting of notebooks
@@ -313,6 +295,7 @@ ignore = [
   "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar` (Note: no annotations yet)
   "RUF021",  # parenthesize-chained-operators (Note: results don't look good yet)
   "RUF023",  # unsorted-dunder-slots (Note: maybe fine, but noisy changes)
+  "RUF043",  # Pattern passed to `match=` contains metacharacters but is neither escaped nor raw
   "PERF401", # Use a list comprehension to create a transformed list (Note: poorly implemented atm)
 
   # Intentionally ignored
@@ -328,6 +311,7 @@ ignore = [
   "N818",    # Exception name ... should be named with an Error suffix (Note: good advice)
   "PERF203", # `try`-`except` within a loop incurs performance overhead (Note: too strict)
   "PLC0205", # Class `__slots__` should be a non-string iterable (Note: string is fine)
+  "PLC0415", # `import` should be at the top-level of a file
   "PLR0124", # Name compared with itself, consider replacing `x == x` (Note: too strict)
   "PLR0911", # Too many return statements
   "PLR0912", # Too many branches
@@ -340,6 +324,7 @@ ignore = [
   "RET502",  # Do not implicitly `return None` in function able to return non-`None` value
   "RET503",  # Missing explicit `return` at the end of function able to return non-`None` value
   "RET504",  # Unnecessary variable assignment before `return` statement
+  "RUF028",  # This suppression comment is invalid because... (Note: `fmt` is for black, not ruff)
   "S110",    # `try`-`except`-`pass` detected, consider logging the exception (Note: good advice, but we don't log)
   "S112",    # `try`-`except`-`continue` detected, consider logging the exception (Note: good advice, but we don't log)
   "S603",    # `subprocess` call: check for execution of untrusted input (Note: not important for us)
@@ -348,7 +333,6 @@ ignore = [
   "SIM105",  # Use contextlib.suppress(...) instead of try-except-pass (Note: try-except-pass is much faster)
   "SIM108",  # Use ternary operator ... instead of if-else-block (Note: if-else better for coverage and sometimes clearer)
   "TRY003",  # Avoid specifying long messages outside the exception class (Note: why?)
-  "UP038",   # Use `X | Y` in `isinstance` call instead of `(X, Y)` (Note: using `|` is slower atm)
 
   # Ignored categories
   "C90", # mccabe (Too strict, but maybe we should make things less complex)
@@ -374,6 +358,7 @@ ignore = [
 "graphblas/core/operator/__init__.py" = ["A005"]
 "graphblas/io/__init__.py" = ["A005"] # shadows a standard-library module
 "graphblas/core/operator/base.py" = ["S102"] # exec is used for UDF
+"graphblas/monoid/numpy.py" = ["PLW0108"] # lambda is needed for numba.njit
 "graphblas/core/ss/matrix.py" = [
   "NPY002",  # numba doesn't support rng generator yet
   "PLR1730",
@@ -411,7 +396,7 @@ builtins-allowed-modules = ["select"]
 fixture-parentheses = false
 mark-parentheses = false
 
-[tool.lint.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
 [tool.bandit]
@@ -423,7 +408,7 @@ skips = [
 [tool.pylint.messages_control]
 # To run a single check, do: pylint graphblas --disable E,W,R,C,I --enable assignment-from-no-return
 max-line-length = 100
-py-version = "3.10"
+py-version = "3.11"
 enable = ["I"]
 disable = [
   # Error

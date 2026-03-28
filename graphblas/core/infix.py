@@ -70,6 +70,8 @@ class ScalarInfixExpr(InfixExprBase):
     def is_grbscalar(self):
         return not self.is_cscalar
 
+    __hash__ = None
+
     # Begin auto-generated code: Scalar
     __and__ = wrapdoc(Scalar.__and__)(property(automethods.__and__))
     __array__ = wrapdoc(Scalar.__array__)(property(automethods.__array__))
@@ -134,10 +136,16 @@ class ScalarEwiseAddExpr(ScalarInfixExpr):
 
     # Don't allow e.g. `plus(x | y & z)`
     def __and__(self, other):
-        raise TypeError("XXX")
+        raise TypeError(
+            "Cannot mix `&` (ewise_mult) into an `|` (ewise_add) infix chain due to Python"
+            " operator precedence. Use explicit method calls instead."
+        )
 
     def __rand__(self, other):
-        raise TypeError("XXX")
+        raise TypeError(
+            "Cannot mix `&` (ewise_mult) into an `|` (ewise_add) infix chain due to Python"
+            " operator precedence. Use explicit method calls instead."
+        )
 
 
 class ScalarEwiseMultExpr(ScalarInfixExpr):
@@ -155,10 +163,16 @@ class ScalarEwiseMultExpr(ScalarInfixExpr):
 
     # Don't allow e.g. `plus(x | y & z)`
     def __or__(self, other):
-        raise TypeError("XXX")
+        raise TypeError(
+            "Cannot mix `|` (ewise_add) into an `&` (ewise_mult) infix chain due to Python"
+            " operator precedence. Use explicit method calls instead."
+        )
 
     def __ror__(self, other):
-        raise TypeError("XXX")
+        raise TypeError(
+            "Cannot mix `|` (ewise_add) into an `&` (ewise_mult) infix chain due to Python"
+            " operator precedence. Use explicit method calls instead."
+        )
 
 
 class ScalarMatMulExpr(ScalarInfixExpr):

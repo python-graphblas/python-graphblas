@@ -11,6 +11,6 @@ extend-ignore =
 # E203 whitespace before ':' (to be compatible with black)
 per-file-ignores =
     scripts/create_pickle.py:F403,F405,
-    graphblas/tests/*.py:T201,
+    graphblas/tests/*.py:T201,B043,
     graphblas/core/ss/matrix.py:SIM113,
     graphblas/**/__init__.py:F401,

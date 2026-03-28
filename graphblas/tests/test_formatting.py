@@ -9,7 +9,6 @@ from .conftest import autocompute
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
-
 try:
     import pandas as pd
 except ImportError:  # pragma: no cover (import)

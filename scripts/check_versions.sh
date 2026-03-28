@@ -3,15 +3,19 @@
 # Use, adjust, copy/paste, etc. as necessary to answer your questions.
 # This may be helpful when updating dependency versions in CI.
 # Tip: add `--json` for more information.
-conda search 'flake8-bugbear[channel=conda-forge]>=24.12.12'
-conda search 'flake8-simplify[channel=conda-forge]>=0.21.0'
-conda search 'numpy[channel=conda-forge]>=2.2.3'
-conda search 'pandas[channel=conda-forge]>=2.2.3'
-conda search 'scipy[channel=conda-forge]>=1.15.2'
-conda search 'networkx[channel=conda-forge]>=3.4.2'
-conda search 'awkward[channel=conda-forge]>=2.7.4'
-conda search 'sparse[channel=conda-forge]>=0.15.5'
-conda search 'fast_matrix_market[channel=conda-forge]>=1.7.6'
-conda search 'numba[channel=conda-forge]>=0.61.0'
-conda search 'pyyaml[channel=conda-forge]>=6.0.2'
-# conda search 'python[channel=conda-forge]>=3.10 *pypy*'
+#
+# When updating versions throughout the repo (CI, pyproject.toml, pre-commit, etc.),
+# also update these version numbers to match the latest versions we currently test.
+conda search 'flake8-bugbear[channel=conda-forge]>=25.11.29'
+conda search 'flake8-simplify[channel=conda-forge]>=0.30.0'
+conda search 'numpy[channel=conda-forge]>=2.4'
+conda search 'pandas[channel=conda-forge]>=3.0'
+conda search 'scipy[channel=conda-forge]>=1.17'
+conda search 'networkx[channel=conda-forge]>=3.6'
+conda search 'awkward[channel=conda-forge]>=2.9'
+conda search 'sparse[channel=conda-forge]>=0.15'
+# fast_matrix_market is deprecated (no longer maintained; last supported Python is 3.12)
+conda search 'numba[channel=conda-forge]>=0.64'
+conda search 'pyyaml[channel=conda-forge]>=6.0'
+conda search 'python-suitesparse-graphblas[channel=conda-forge]>=10.3.1'
+# conda search 'python[channel=conda-forge]>=3.11 *pypy*'

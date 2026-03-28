@@ -49,6 +49,7 @@ _SPECIAL_ATTRS = {
     "core",
     "dtypes",
     "exceptions",
+    "indexbinary",
     "indexunary",
     "io",
     "monoid",

@@ -266,28 +266,40 @@ class BaseType:
         from .infix import _ewise_infix_expr, _ewise_mult_expr_types
 
         if isinstance(other, _ewise_mult_expr_types):
-            raise TypeError("XXX")
+            raise TypeError(
+                "Cannot mix `|` (ewise_add) with `&` (ewise_mult) expressions due to Python"
+                " operator precedence. Use explicit method calls instead."
+            )
         return _ewise_infix_expr(self, other, method="ewise_add", within="__or__")
 
     def __ror__(self, other):
         from .infix import _ewise_infix_expr, _ewise_mult_expr_types
 
         if isinstance(other, _ewise_mult_expr_types):
-            raise TypeError("XXX")
+            raise TypeError(
+                "Cannot mix `|` (ewise_add) with `&` (ewise_mult) expressions due to Python"
+                " operator precedence. Use explicit method calls instead."
+            )
         return _ewise_infix_expr(other, self, method="ewise_add", within="__ror__")
 
     def __and__(self, other):
         from .infix import _ewise_add_expr_types, _ewise_infix_expr
 
         if isinstance(other, _ewise_add_expr_types):
-            raise TypeError("XXX")
+            raise TypeError(
+                "Cannot mix `&` (ewise_mult) with `|` (ewise_add) expressions due to Python"
+                " operator precedence. Use explicit method calls instead."
+            )
         return _ewise_infix_expr(self, other, method="ewise_mult", within="__and__")
 
     def __rand__(self, other):
         from .infix import _ewise_add_expr_types, _ewise_infix_expr
 
         if isinstance(other, _ewise_add_expr_types):
-            raise TypeError("XXX")
+            raise TypeError(
+                "Cannot mix `&` (ewise_mult) with `|` (ewise_add) expressions due to Python"
+                " operator precedence. Use explicit method calls instead."
+            )
         return _ewise_infix_expr(other, self, method="ewise_mult", within="__rand__")
 
     def __matmul__(self, other):
