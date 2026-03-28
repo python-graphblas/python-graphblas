@@ -5,9 +5,13 @@ import pytest
 import graphblas as gb
 from graphblas import Matrix, Scalar, Vector, dtypes, indexbinary
 from graphblas.core import _supports_udfs as supports_udfs
+from graphblas.core.operator.indexbinary import _has_idxbinop
 from graphblas.exceptions import UdfParseError
 
-pytestmark = pytest.mark.skipif(not supports_udfs, reason="requires numba")
+pytestmark = [
+    pytest.mark.skipif(not supports_udfs, reason="requires numba"),
+    pytest.mark.skipif(not _has_idxbinop, reason="requires SuiteSparse:GraphBLAS 9.4+"),
+]
 
 
 def test_register_anonymous():

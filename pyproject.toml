@@ -72,7 +72,7 @@ repository = "https://github.com/python-graphblas/python-graphblas"
 changelog = "https://github.com/python-graphblas/python-graphblas/releases"
 
 [project.optional-dependencies]
-suitesparse = ["suitesparse-graphblas >=7.4.0.0, <10"]
+suitesparse = ["suitesparse-graphblas >=7.4.0.0"]
 networkx = ["networkx >=2.8"]
 numba = ["numba >=0.57"]
 pandas = ["pandas >=1.5"]
