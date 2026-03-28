@@ -214,11 +214,12 @@ jobs:
               npver=$(python -c 'import random ; print(random.choice(["=2.0", "=2.1", "=2.2", "=2.3", "=2.4", ""]))')
             fi
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.14') }} == true ]] ; then
+            # psg 9.x doesn't have Python 3.14 builds; psg 10.0.1.1+ does
             if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
-              psgver=$(python -c 'import random ; print(random.choice(["=9.4.5.0", "=10.0.1.1", "=10.1.1.0", "=10.3.1.0", ""]))')
+              psgver=$(python -c 'import random ; print(random.choice(["=10.0.1.1", "=10.1.1.0", "=10.3.1.0", ""]))')
               psg=python-suitesparse-graphblas${psgver}
             else
-              psgver=$(python -c 'import random ; print(random.choice(["==9.4.5.0", "==10.0.1.1", "==10.1.1.0", "==10.3.1.0", ""]))')
+              psgver=$(python -c 'import random ; print(random.choice(["==10.0.1.1", "==10.1.1.0", "==10.3.1.0", ""]))')
             fi
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]] ; then
             if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
@@ -310,6 +311,13 @@ jobs:
             # Only scipy >=1.13 supports NumPy 2
             if [[ $spver == "=1.9" || $spver == "=1.10" || $spver == "=1.11" || $spver == "=1.12" ]] ; then
               spver="=1.13"
+            fi
+
+            # numba 0.63 requires numpy <2.4; bump to 0.64+ if numpy >=2.4
+            if [[ $npver == "=2.4" || $npver == "" ]] ; then
+              if [[ $numbaver == "=0.61" || $numbaver == "=0.62" || $numbaver == "=0.63" ]] ; then
+                numbaver="=0.64"
+              fi
             fi
           fi
 
