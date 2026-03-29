@@ -52,6 +52,15 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
     if engine in {"auto", "fmm", "fast_matrix_market"}:
         try:
             from fast_matrix_market import mmread  # noqa: F811
+
+            if engine == "auto":
+                warnings.warn(
+                    "fast_matrix_market is installed but is no longer maintained and will be "
+                    "removed in a future version. Uninstall it or use engine='scipy' to "
+                    "silence this warning.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
         except ImportError:  # pragma: no cover (import)
             if engine != "auto":
                 raise ImportError(
@@ -123,6 +132,15 @@ def mmwrite(
     if engine in {"auto", "fmm", "fast_matrix_market"}:
         try:
             from fast_matrix_market import __version__, mmwrite  # noqa: F811
+
+            if engine == "auto":
+                warnings.warn(
+                    "fast_matrix_market is installed but is no longer maintained and will be "
+                    "removed in a future version. Uninstall it or use engine='scipy' to "
+                    "silence this warning.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
         except ImportError:  # pragma: no cover (import)
             if engine != "auto":
                 raise ImportError(
