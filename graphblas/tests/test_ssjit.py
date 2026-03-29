@@ -35,14 +35,19 @@ def _fix_jit_config():
     2. Replaces -isysroot with the local macOS SDK (via xcrun), or strips it on Linux
     3. Strips -fdebug-prefix-map flags referencing build paths
 
-    Returns True if a working compiler was found, False otherwise.
+    Returns
+    -------
+        True:  JIT configured and verified working
+        False: JIT configuration attempted but compilation failed (don't retry)
+        None:  No conda environment; caller should try a different approach
+
     Only modifies jit_c_compiler_name, jit_c_compiler_flags, and jit_c_control.
     Linker flags and libraries are left at their defaults (already have correct
     $CONDA_PREFIX paths substituted by the graphblas C library).
     """
     conda_prefix = os.environ.get("CONDA_PREFIX", "")
     if not conda_prefix:
-        return False
+        return None  # No conda env; caller should try sysconfig instead
 
     # Check if the default compiler already works (e.g., /usr/bin/cc on macOS).
     # Only replace it if the baked-in path doesn't exist.
@@ -100,9 +105,12 @@ def _fix_jit_config():
 def _setup_jit():
     """Set up the SuiteSparse:GraphBLAS JIT.
 
-    Strategy: try _fix_jit_config() first (works when psg is from conda-forge).
-    If that fails (no conda env, or psg from wheel/source), fall through to sysconfig.
-    If neither works, turn JIT off.
+    Strategy:
+    1. _fix_jit_config(): fix conda-baked compiler paths and probe.
+       - Returns True: JIT works, proceed.
+       - Returns False: probe failed, JIT is broken, turn off.
+       - Returns None: no conda env, try sysconfig instead.
+    2. Sysconfig fallback: for non-conda installs (pure pip).
     """
     if _IS_SSGB7:
         # SuiteSparse JIT was added in SSGB 8
@@ -111,26 +119,29 @@ def _setup_jit():
 
     prev = gb.ss.config["jit_c_control"]
 
-    if _fix_jit_config():
-        try:
-            yield
-        finally:
-            gb.ss.config["jit_c_control"] = prev
-        return
-
-    # Fallback: try sysconfig (for non-conda environments)
-    cc = sysconfig.get_config_var("CC")
-    cflags = sysconfig.get_config_var("CFLAGS")
-    include = sysconfig.get_path("include")
-    libs = sysconfig.get_config_var("LIBS")
-    if cc and cflags and include:
-        gb.ss.config["jit_c_control"] = "on"
-        gb.ss.config["jit_c_compiler_name"] = cc
-        gb.ss.config["jit_c_compiler_flags"] = f"{cflags} -I{include}"
-        if libs:
-            gb.ss.config["jit_c_libraries"] = libs
-    else:
+    result = _fix_jit_config()
+    if result is True:
+        pass  # Conda JIT configured and verified
+    elif result is False:
+        # Probe failed — JIT doesn't work with this psg build.
+        # Don't try sysconfig; if the conda compiler can't compile
+        # GraphBLAS JIT kernels, Python's sysconfig compiler won't either.
         gb.ss.config["jit_c_control"] = "off"
+    else:
+        # No conda env (result is None). Try sysconfig for non-conda installs.
+        cc = sysconfig.get_config_var("CC")
+        cflags = sysconfig.get_config_var("CFLAGS")
+        include = sysconfig.get_path("include")
+        libs = sysconfig.get_config_var("LIBS")
+        if cc and cflags and include:
+            gb.ss.config["jit_c_control"] = "on"
+            gb.ss.config["jit_c_compiler_name"] = cc
+            gb.ss.config["jit_c_compiler_flags"] = f"{cflags} -I{include}"
+            if libs:
+                gb.ss.config["jit_c_libraries"] = libs
+        else:
+            gb.ss.config["jit_c_control"] = "off"
+
     try:
         yield
     finally:

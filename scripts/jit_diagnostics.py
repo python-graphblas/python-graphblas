@@ -115,8 +115,10 @@ def main():
     from graphblas.tests.test_ssjit import _fix_jit_config
 
     result = _fix_jit_config()
-    print(f"  Success: {result}")
-    if result:
+    # True=JIT working, False=probe failed, None=no conda env
+    desc = "working" if result is True else "probe failed" if result is False else "no conda"
+    print(f"  Result: {result} ({desc})")
+    if result is True:
         print(f"  Compiler: {gb.ss.config['jit_c_compiler_name']}")
         flags_after = gb.ss.config["jit_c_compiler_flags"]
         if len(flags_after) > 120:
