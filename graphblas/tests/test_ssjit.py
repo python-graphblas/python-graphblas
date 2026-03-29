@@ -1,6 +1,7 @@
 import os
 import pathlib
 import re
+import subprocess
 import sysconfig
 
 import numpy as np
@@ -31,7 +32,7 @@ def _fix_jit_config():
     The graphblas C library bakes in build-time compiler paths from conda-build,
     which don't exist in the user's environment. This function:
     1. Replaces the compiler path with the equivalent from $CONDA_PREFIX/bin/
-    2. Strips -isysroot flags pointing to non-existent build SDKs (macOS)
+    2. Replaces -isysroot with the local macOS SDK (via xcrun), or strips it on Linux
     3. Strips -fdebug-prefix-map flags referencing build paths
 
     Returns True if a working compiler was found, False otherwise.
@@ -57,11 +58,21 @@ def _fix_jit_config():
         return False
     gb.ss.config["jit_c_compiler_name"] = str(local_cc)
 
-    # Fix compiler flags: remove build-time-only flags that reference paths
-    # that don't exist in the user's environment
+    # Fix compiler flags: fix build-time-only paths that don't exist in the
+    # user's environment
     flags = gb.ss.config["jit_c_compiler_flags"]
-    # -isysroot <path>: macOS SDK path from conda-build (e.g., /opt/conda-sdks/MacOSX10.13.sdk)
-    flags = re.sub(r"-isysroot\s+\S+", "", flags)
+    # -isysroot <path>: macOS SDK path from conda-build (e.g., /opt/conda-sdks/MacOSX10.13.sdk).
+    # The conda cross-compiler needs an explicit sysroot. Replace with the local SDK if available.
+    isysroot_match = re.search(r"-isysroot\s+(\S+)", flags)
+    if isysroot_match and not pathlib.Path(isysroot_match.group(1)).exists():
+        try:
+            sdk_path = subprocess.check_output(
+                ["xcrun", "--show-sdk-path"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            flags = re.sub(r"-isysroot\s+\S+", f"-isysroot {sdk_path}", flags)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # No Xcode SDK available (linux, or macOS without Xcode CLT)
+            flags = re.sub(r"-isysroot\s+\S+", "", flags)
     # -fdebug-prefix-map=<build_path>=<src>: debug path remapping from conda-build
     flags = re.sub(r"-fdebug-prefix-map=\S+", "", flags)
     gb.ss.config["jit_c_compiler_flags"] = flags

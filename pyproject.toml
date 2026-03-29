@@ -177,6 +177,10 @@ filterwarnings = [
   # Python 3.12 introduced this deprecation, which is triggered by pandas 2.1.1
   # MAINT: check if still needed once we drop pandas <2.2 support
   "ignore:datetime.datetime.utcfromtimestamp:DeprecationWarning:dateutil",
+
+  # numpy 1.25+ deprecated np.find_common_type; triggered by older scipy/networkx/pandas
+  # MAINT: remove once we drop numpy <2 support (numpy 2.0 removed it entirely)
+  "ignore:np.find_common_type is deprecated:DeprecationWarning:",
 ]
 
 [tool.coverage.run]

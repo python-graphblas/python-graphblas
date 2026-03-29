@@ -166,6 +166,11 @@ jobs:
             npver=$(python -c 'import random ; print(random.choice(["=2.3", "=2.4", ""]))')
           fi
 
+          # Upstream needs numpy 2; override before selecting numpy-dependent deps
+          if [[ ${{ steps.sourcetype.outputs.selected}} == "upstream" && $npver == =1.* ]] ; then
+            npver=$(python -c 'import random ; print(random.choice(["=2.0", "=2.1", "=2.2", "=2.3", "=2.4", ""]))')
+          fi
+
           # Step 2: Pick other dependency versions based on numpy version AND Python version.
           # Not all old versions have builds for newer Python versions, so we must narrow per-Python.
           if [[ $npver == =1.* ]] ; then
@@ -229,27 +234,31 @@ jobs:
           #
           # numba: minimum version depends on Python version
           if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.14') }} == true ]] ; then
-            # numba >=0.63 for py3.14; numpy >=2.4 requires numba >=0.64
-            if [[ $numbaver == "=0.62" || $numbaver == "=0.63" ]] ; then
-              if [[ $npver == "=2.4" || $npver == "" ]] ; then
-                numbaver="=0.64"
-              else
-                numbaver=$(python -c 'import random ; print(random.choice(["=0.63", "=0.64", ""]))')
-              fi
+            # numba >=0.63 for py3.14
+            if [[ $numbaver == "=0.62" ]] ; then
+              numbaver=$(python -c 'import random ; print(random.choice(["=0.63", "=0.64", ""]))')
             fi
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]] ; then
-            # numba >=0.61 for py3.13; numpy >=2.4 requires numba >=0.64
-            if [[ $npver == "=2.4" || $npver == "" ]] ; then
-              if [[ $numbaver == "=0.61" || $numbaver == "=0.62" || $numbaver == "=0.63" ]] ; then
-                numbaver="=0.64"
-              fi
-            elif [[ $numbaver == "=0.57" || $numbaver == "=0.58" || $numbaver == "=0.59" || $numbaver == "=0.60" ]] ; then
+            # numba >=0.61 for py3.13
+            if [[ $numbaver == "=0.57" || $numbaver == "=0.58" || $numbaver == "=0.59" || $numbaver == "=0.60" ]] ; then
               numbaver=$(python -c 'import random ; print(random.choice(["=0.61", "=0.62", "=0.63", "=0.64", ""]))')
             fi
           elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]] ; then
             # numba >=0.59 for py3.12
             if [[ $numbaver == "=0.57" || $numbaver == "=0.58" ]] ; then
               numbaver=$(python -c 'import random ; print(random.choice(["=0.59", "=0.60", "=0.61", ""]))')
+            fi
+          fi
+          # numba <0.64 requires numpy <2.4 (independent of Python version)
+          if [[ ($npver == "=2.4" || $npver == "") && ($numbaver == "=0.62" || $numbaver == "=0.63") ]] ; then
+            numbaver="=0.64"
+          fi
+          # scipy <1.15.1 requires numpy <2.3; scipy <1.16 requires numpy <2.5
+          if [[ $npver == "=2.3" || $npver == "=2.4" || $npver == "" ]] ; then
+            if [[ $spver == "=1.13" || $spver == "=1.14" ]] ; then
+              spver=$(python -c 'import random ; print(random.choice(["=1.16", "=1.17", ""]))')
+            elif [[ $spver == "=1.15" ]] ; then
+              spver=$(python -c 'import random ; print(random.choice(["=1.15", "=1.16", "=1.17", ""]))')
             fi
           fi
           # numba 1.26+scipy 1.9 conflict
@@ -276,10 +285,6 @@ jobs:
           psg=""
           if [[ ${{ steps.sourcetype.outputs.selected}} == "upstream" ]] ; then
             psgver=""
-            # Upstream needs numpy 2
-            if [[ $npver == =1.* ]] ; then
-              npver=$(python -c 'import random ; print(random.choice(["=2.0", "=2.1", "=2.2", "=2.3", "=2.4", ""]))')
-            fi
           elif [[ $npver == =1.* ]] ; then
             # numpy 1.x: use old psg versions (only py3.11 and py3.12 can reach here)
             if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
