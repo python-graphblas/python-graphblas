@@ -1,7 +1,6 @@
 import os
 import pathlib
-import platform
-import sys
+import re
 import sysconfig
 
 import numpy as np
@@ -26,108 +25,85 @@ if backend != "suitesparse":
     pytest.skip("not suitesparse backend", allow_module_level=True)
 
 
+def _fix_jit_config():
+    """Fix the GraphBLAS JIT configuration for the current conda environment.
+
+    The graphblas C library bakes in build-time compiler paths from conda-build,
+    which don't exist in the user's environment. This function:
+    1. Replaces the compiler path with the equivalent from $CONDA_PREFIX/bin/
+    2. Strips -isysroot flags pointing to non-existent build SDKs (macOS)
+    3. Strips -fdebug-prefix-map flags referencing build paths
+
+    Returns True if a working compiler was found, False otherwise.
+    Only modifies jit_c_compiler_name, jit_c_compiler_flags, and jit_c_control.
+    Linker flags and libraries are left at their defaults (already have correct
+    $CONDA_PREFIX paths substituted by the graphblas C library).
+    """
+    conda_prefix = os.environ.get("CONDA_PREFIX", "")
+    if not conda_prefix:
+        return False
+
+    # Fix compiler name: replace build-time path with local conda equivalent
+    jit_cc = gb.ss.config["jit_c_compiler_name"]
+    cc_basename = pathlib.Path(jit_cc).name
+    bin_dir = pathlib.Path(conda_prefix) / "bin"
+    # Try exact name first, then 'cc' fallback
+    for candidate in [cc_basename, "cc"]:
+        local_cc = bin_dir / candidate
+        if local_cc.exists():
+            break
+    else:
+        return False
+    gb.ss.config["jit_c_compiler_name"] = str(local_cc)
+
+    # Fix compiler flags: remove build-time-only flags that reference paths
+    # that don't exist in the user's environment
+    flags = gb.ss.config["jit_c_compiler_flags"]
+    # -isysroot <path>: macOS SDK path from conda-build (e.g., /opt/conda-sdks/MacOSX10.13.sdk)
+    flags = re.sub(r"-isysroot\s+\S+", "", flags)
+    # -fdebug-prefix-map=<build_path>=<src>: debug path remapping from conda-build
+    flags = re.sub(r"-fdebug-prefix-map=\S+", "", flags)
+    gb.ss.config["jit_c_compiler_flags"] = flags
+
+    gb.ss.config["jit_c_control"] = "on"
+    return True
+
+
 @pytest.fixture(scope="module", autouse=True)
 def _setup_jit():
-    """Set up the SuiteSparse:GraphBLAS JIT."""
+    """Set up the SuiteSparse:GraphBLAS JIT.
+
+    Strategy: try _fix_jit_config() first (works when psg is from conda-forge).
+    If that fails (no conda env, or psg from wheel/source), fall through to sysconfig.
+    If neither works, turn JIT off.
+    """
     if _IS_SSGB7:
         # SuiteSparse JIT was added in SSGB 8
         yield
         return
 
-    if not os.environ.get("GITHUB_ACTIONS"):
-        # Try to run the tests with defaults from sysconfig if not running in CI
-        prev = gb.ss.config["jit_c_control"]
-        cc = sysconfig.get_config_var("CC")
-        cflags = sysconfig.get_config_var("CFLAGS")
-        include = sysconfig.get_path("include")
-        libs = sysconfig.get_config_var("LIBS")
-        if not (cc is None or cflags is None or include is None or libs is None):
-            gb.ss.config["jit_c_control"] = "on"
-            gb.ss.config["jit_c_compiler_name"] = cc
-            gb.ss.config["jit_c_compiler_flags"] = f"{cflags} -I{include}"
-            gb.ss.config["jit_c_libraries"] = libs
-        else:
-            # Should we skip or try to run if sysconfig vars aren't set?
-            gb.ss.config["jit_c_control"] = "on"  # "off"
+    prev = gb.ss.config["jit_c_control"]
+
+    if _fix_jit_config():
         try:
             yield
         finally:
             gb.ss.config["jit_c_control"] = prev
         return
 
-    if (
-        sys.platform == "darwin"
-        or sys.platform == "linux"
-        and "conda" not in gb.ss.config["jit_c_compiler_name"]
-    ):
-        # XXX TODO: tests for SuiteSparse JIT are not passing on linux when using wheels or on osx
-        # This should be understood and fixed!
+    # Fallback: try sysconfig (for non-conda environments)
+    cc = sysconfig.get_config_var("CC")
+    cflags = sysconfig.get_config_var("CFLAGS")
+    include = sysconfig.get_path("include")
+    libs = sysconfig.get_config_var("LIBS")
+    if cc and cflags and include:
+        gb.ss.config["jit_c_control"] = "on"
+        gb.ss.config["jit_c_compiler_name"] = cc
+        gb.ss.config["jit_c_compiler_flags"] = f"{cflags} -I{include}"
+        if libs:
+            gb.ss.config["jit_c_libraries"] = libs
+    else:
         gb.ss.config["jit_c_control"] = "off"
-        yield
-        return
-
-    # Configuration values below were obtained from the output of the JIT config
-    # in CI, but with paths changed to use `{conda_prefix}` where appropriate.
-    conda_prefix = os.environ["CONDA_PREFIX"]
-    prev = gb.ss.config["jit_c_control"]
-    gb.ss.config["jit_c_control"] = "on"
-    if sys.platform == "linux":
-        gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/x86_64-conda-linux-gnu-cc"
-        gb.ss.config["jit_c_compiler_flags"] = (
-            "-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong "
-            f"-fno-plt -O2 -ffunction-sections -pipe -isystem {conda_prefix}/include -Wundef "
-            "-std=c11 -lm -Wno-pragmas -fexcess-precision=fast -fcx-limited-range "
-            "-fno-math-errno -fwrapv -O3 -DNDEBUG -fopenmp -fPIC"
-        )
-        gb.ss.config["jit_c_linker_flags"] = (
-            "-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now "
-            "-Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined "
-            f"-Wl,-rpath,{conda_prefix}/lib -Wl,-rpath-link,{conda_prefix}/lib "
-            f"-L{conda_prefix}/lib -shared"
-        )
-        gb.ss.config["jit_c_libraries"] = (
-            f"-lm -ldl {conda_prefix}/lib/libgomp.so "
-            f"{conda_prefix}/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so"
-        )
-        gb.ss.config["jit_c_cmake_libs"] = (
-            f"m;dl;{conda_prefix}/lib/libgomp.so;"
-            f"{conda_prefix}/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so"
-        )
-    elif sys.platform == "darwin":
-        gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/clang"
-        gb.ss.config["jit_c_compiler_flags"] = (
-            "-march=core2 -mtune=haswell -mssse3 -ftree-vectorize -fPIC -fPIE "
-            f"-fstack-protector-strong -O2 -pipe -isystem {conda_prefix}/include -DGBNCPUFEAT "
-            f"-Wno-pointer-sign -O3 -DNDEBUG -fopenmp=libomp -fPIC -arch {platform.machine()}"
-        )
-        gb.ss.config["jit_c_linker_flags"] = (
-            "-Wl,-pie -Wl,-headerpad_max_install_names -Wl,-dead_strip_dylibs "
-            f"-Wl,-rpath,{conda_prefix}/lib -L{conda_prefix}/lib -dynamiclib"
-        )
-        gb.ss.config["jit_c_libraries"] = f"-lm -ldl {conda_prefix}/lib/libomp.dylib"
-        gb.ss.config["jit_c_cmake_libs"] = f"m;dl;{conda_prefix}/lib/libomp.dylib"
-    elif sys.platform == "win32":  # pragma: no branch (sanity)
-        if "mingw" in gb.ss.config["jit_c_libraries"]:
-            # This probably means we're testing a `python-suitesparse-graphblas` wheel
-            # in a conda environment. This is not yet working.
-            gb.ss.config["jit_c_control"] = "off"
-            yield
-            return
-
-        gb.ss.config["jit_c_compiler_name"] = f"{conda_prefix}/bin/cc"
-        gb.ss.config["jit_c_compiler_flags"] = (
-            '/DWIN32 /D_WINDOWS -DGBNCPUFEAT /O2 -wd"4244" -wd"4146" -wd"4018" '
-            '-wd"4996" -wd"4047" -wd"4554" /O2 /Ob2 /DNDEBUG -openmp'
-        )
-        gb.ss.config["jit_c_linker_flags"] = "/machine:x64"
-        gb.ss.config["jit_c_libraries"] = ""
-        gb.ss.config["jit_c_cmake_libs"] = ""
-
-    if not pathlib.Path(gb.ss.config["jit_c_compiler_name"]).exists():
-        # Can't use the JIT if we don't have a compiler!
-        gb.ss.config["jit_c_control"] = "off"
-        yield
-        return
     try:
         yield
     finally:
@@ -148,7 +124,7 @@ def test_jit_udt():
             )
         return
     if gb.ss.config["jit_c_control"] == "off":
-        return
+        pytest.skip("JIT not available (no C compiler configured)")
     with burble():
         dtype = dtypes.ss.register_new(
             "myquaternion", "typedef struct { float x [4][4] ; int color ; } myquaternion ;"
@@ -196,7 +172,7 @@ def test_jit_unary(v):
             unary.ss.register_new("square", cdef, "FP32", "FP32")
         return
     if gb.ss.config["jit_c_control"] == "off":
-        return
+        pytest.skip("JIT not available (no C compiler configured)")
     with burble():
         square = unary.ss.register_new("square", cdef, "FP32", "FP32")
     assert not hasattr(unary, "square")
@@ -234,7 +210,7 @@ def test_jit_binary(v):
             binary.ss.register_new("absdiff", cdef, "FP64", "FP64", "FP64")
         return
     if gb.ss.config["jit_c_control"] == "off":
-        return
+        pytest.skip("JIT not available (no C compiler configured)")
     with burble():
         absdiff = binary.ss.register_new(
             "absdiff",
@@ -302,7 +278,7 @@ def test_jit_indexunary(v):
             indexunary.ss.register_new("diffy", cdef, "FP64", "FP64", "FP64")
         return
     if gb.ss.config["jit_c_control"] == "off":
-        return
+        pytest.skip("JIT not available (no C compiler configured)")
     with burble():
         diffy = indexunary.ss.register_new("diffy", cdef, "FP64", "FP64", "FP64")
     assert not hasattr(indexunary, "diffy")
@@ -367,7 +343,7 @@ def test_jit_select(v):
             select.ss.register_new("woot", cdef, "INT32", "INT32")
         return
     if gb.ss.config["jit_c_control"] == "off":
-        return
+        pytest.skip("JIT not available (no C compiler configured)")
     with burble():
         woot = select.ss.register_new("woot", cdef, "INT32", "INT32")
     assert not hasattr(select, "woot")

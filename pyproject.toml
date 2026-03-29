@@ -383,7 +383,7 @@ ignore = [
 "graphblas/**/__init__.py" = [
   "F401", # Allow unused imports (w/o defining `__all__`)
 ]
-"scripts/*.py" = ["INP001"] # Not a package
+"scripts/*.py" = ["INP001", "T201"] # Not a package; allow print
 "scripts/create_pickle.py" = ["F403", "F405"] # Allow `from foo import *`
 "docs/*.py" = ["INP001"] # Not a package
 
