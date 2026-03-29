@@ -44,19 +44,23 @@ def _fix_jit_config():
     if not conda_prefix:
         return False
 
-    # Fix compiler name: replace build-time path with local conda equivalent.
-    # The conda cross-compiler (e.g., arm64-apple-darwin20.0.0-clang) may need
-    # a specific SDK. Try the exact name first, then common fallbacks.
+    # Check if the default compiler already works (e.g., /usr/bin/cc on macOS).
+    # Only replace it if the baked-in path doesn't exist.
     jit_cc = gb.ss.config["jit_c_compiler_name"]
-    cc_basename = pathlib.Path(jit_cc).name
-    bin_dir = pathlib.Path(conda_prefix) / "bin"
-    for candidate in [cc_basename, "cc", "clang", "gcc"]:
-        local_cc = bin_dir / candidate
-        if local_cc.exists():
-            break
+    if pathlib.Path(jit_cc).exists():
+        # Default compiler exists — don't replace it, just fix flags
+        pass
     else:
-        return False
-    gb.ss.config["jit_c_compiler_name"] = str(local_cc)
+        # Replace build-time path with local conda equivalent.
+        cc_basename = pathlib.Path(jit_cc).name
+        bin_dir = pathlib.Path(conda_prefix) / "bin"
+        for candidate in [cc_basename, "cc", "clang", "gcc"]:
+            local_cc = bin_dir / candidate
+            if local_cc.exists():
+                break
+        else:
+            return False
+        gb.ss.config["jit_c_compiler_name"] = str(local_cc)
 
     # Fix compiler flags: fix build-time-only paths that don't exist in the
     # user's environment
@@ -78,7 +82,18 @@ def _fix_jit_config():
     gb.ss.config["jit_c_compiler_flags"] = flags
 
     gb.ss.config["jit_c_control"] = "on"
-    return True
+
+    # Verify the JIT actually works by attempting a trivial compilation.
+    # If it fails (e.g., missing libraries, wrong flags), turn JIT off.
+    try:
+        from graphblas import dtypes as _dtypes
+
+        _dtypes.ss.register_new("_jit_probe", "typedef struct { int _probe ; } _jit_probe ;")
+    except Exception:
+        gb.ss.config["jit_c_control"] = "off"
+        return False
+    else:
+        return True
 
 
 @pytest.fixture(scope="module", autouse=True)
