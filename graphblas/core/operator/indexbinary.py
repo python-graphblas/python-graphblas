@@ -46,9 +46,12 @@ class TypedBuiltinIndexBinaryOp(TypedOpBase):
         if theta is None:
             theta = False
         if not isinstance(theta, Scalar):
-            theta = Scalar.from_value(theta, is_cscalar=False, name="")  # must be GrB scalar
+            theta = Scalar.from_value(theta, is_cscalar=False, name="")  # pragma: is_grbscalar
         elif theta._is_cscalar:
-            theta = Scalar.from_value(theta.value, is_cscalar=False, name="")
+            # fmt: off
+            val = theta.value
+            theta = Scalar.from_value(val, is_cscalar=False, name="")  # pragma: is_grbscalar
+            # fmt: on
         new_binop = ffi_new("GrB_BinaryOp*")
         check_status_carg(
             lib.GxB_BinaryOp_new_IndexOp(new_binop, self.gb_obj, theta._carg),
@@ -460,9 +463,12 @@ class IndexBinaryOp(OpBase):
         if theta is None:
             theta = False
         if not isinstance(theta, Scalar):
-            theta = Scalar.from_value(theta, is_cscalar=False, name="")
+            theta = Scalar.from_value(theta, is_cscalar=False, name="")  # pragma: is_grbscalar
         elif theta._is_cscalar:
-            theta = Scalar.from_value(theta.value, is_cscalar=False, name="")
+            # fmt: off
+            val = theta.value
+            theta = Scalar.from_value(val, is_cscalar=False, name="")  # pragma: is_grbscalar
+            # fmt: on
         if dtype is None:
             dtype = theta.dtype
         else:

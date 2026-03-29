@@ -43,12 +43,13 @@ def _fix_jit_config():
     if not conda_prefix:
         return False
 
-    # Fix compiler name: replace build-time path with local conda equivalent
+    # Fix compiler name: replace build-time path with local conda equivalent.
+    # The conda cross-compiler (e.g., arm64-apple-darwin20.0.0-clang) may need
+    # a specific SDK. Try the exact name first, then common fallbacks.
     jit_cc = gb.ss.config["jit_c_compiler_name"]
     cc_basename = pathlib.Path(jit_cc).name
     bin_dir = pathlib.Path(conda_prefix) / "bin"
-    # Try exact name first, then 'cc' fallback
-    for candidate in [cc_basename, "cc"]:
+    for candidate in [cc_basename, "cc", "clang", "gcc"]:
         local_cc = bin_dir / candidate
         if local_cc.exists():
             break

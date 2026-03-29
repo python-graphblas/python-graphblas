@@ -131,13 +131,27 @@ def main():
         try:
             from graphblas import dtypes
 
+            prev_burble = gb.ss.config["burble"]
+            gb.ss.config["burble"] = True
             dtype = dtypes.ss.register_new(
                 "jit_diag_test",
                 "typedef struct { int val ; } jit_diag_test ;",
             )
+            gb.ss.config["burble"] = prev_burble
             print(f"  SUCCESS: registered type '{dtype.name}'")
         except Exception as e:
             print(f"  FAILED: {type(e).__name__}: {e}")
+            try:
+                err_log = gb.ss.config["jit_error_log"]
+                if err_log:
+                    print(f"  JIT error log: {err_log[:500]}")
+            except Exception:
+                pass
+
+    # Print final JIT state
+    print("\n--- Final JIT state ---")
+    print(f"  jit_c_control: {gb.ss.config['jit_c_control']}")
+    print(f"  jit_c_compiler_name: {gb.ss.config['jit_c_compiler_name']}")
 
     print(f"\n{'=' * 60}")
     return 0
