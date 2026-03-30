@@ -282,3 +282,7 @@ def test_dir_and_module():
     assert "register_new" in dir(indexbinary)
     assert "register_anonymous" in dir(indexbinary)
     assert "ss" in dir(indexbinary)
+    # Actually access the ss module to verify it exists (not just in __dir__)
+    ss = indexbinary.ss
+    assert hasattr(ss, "_delayed")
+    assert hasattr(ss, "register_new")

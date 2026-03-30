@@ -9,8 +9,9 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import graphblas as gb
-from graphblas import backend, binary, dtypes, indexunary, select, unary
+from graphblas import backend, binary, dtypes, indexbinary, indexunary, select, unary
 from graphblas.core import _supports_udfs as supports_udfs
+from graphblas.core.operator.indexbinary import _has_idxbinop
 from graphblas.core.ss import _IS_SSGB7
 
 from .conftest import autocompute, burble
@@ -368,6 +369,69 @@ def test_jit_indexunary(v):
     assert diffy_mixed is diffy
     assert ("FP64", "FP32") in diffy
     assert ("FP32", "FP64") not in diffy
+
+
+@pytest.mark.skipif(not _has_idxbinop, reason="requires SuiteSparse:GraphBLAS 9.4+")
+def test_jit_indexbinary(v):
+    cdef = (
+        "void add_theta (double *z, double *x, GrB_Index ix, GrB_Index jx, "
+        "double *y, GrB_Index iy, GrB_Index jy, double *theta) "
+        "{ (*z) = (*x) + (*y) + (*theta) ; }"
+    )
+    if gb.ss.config["jit_c_control"] == "off":
+        pytest.skip("JIT not available (no C compiler configured)")
+    with burble():
+        add_theta = indexbinary.ss.register_new("add_theta", cdef, "FP64", "FP64", "FP64", "FP64")
+    assert not hasattr(indexbinary, "add_theta")
+    assert indexbinary.ss.add_theta is add_theta
+    assert add_theta.name == "ss.add_theta"
+    assert add_theta.types == {(dtypes.FP64, dtypes.FP64): dtypes.FP64}
+    assert "FP64" in add_theta
+    assert add_theta["FP64"].return_type == dtypes.FP64
+    assert add_theta["FP64"].jit_c_definition == cdef
+    # Bind theta and use as BinaryOp
+    v64 = v.dup("FP64")
+    binop = add_theta["FP64"](10.0)
+    assert binop.opclass == "BinaryOp"
+    res = v64.ewise_mult(v64, binop).new()
+    # v has values at [1, 3, 4, 6] with vals [1, 1, 2, 0]
+    # ewise_mult: x+y+theta = 2*val + 10
+    expected = Vector.from_coo([1, 3, 4, 6], [12.0, 12.0, 14.0, 10.0], dtype="FP64")
+    assert expected.isequal(res)
+    # Test duplicate registration fails
+    assert "FP32" not in add_theta
+    with burble():
+        add_theta_fp32 = indexbinary.ss.register_new(
+            "add_theta",
+            cdef.replace("double", "float"),
+            "FP32",
+            "FP32",
+            "FP32",
+            "FP32",
+        )
+    assert add_theta_fp32 is add_theta
+    assert "FP32" in add_theta
+    with pytest.raises(
+        TypeError,
+        match="IndexBinaryOp gb.indexbinary.ss.add_theta already defined for .FP64, FP64. input",
+    ):
+        indexbinary.ss.register_new("add_theta", cdef, "FP64", "FP64", "FP64", "FP64")
+    # Test nested names
+    indexbinary.ss.register_new("nested.add_theta", cdef, "FP64", "FP64", "FP64", "FP64")
+    with pytest.raises(AttributeError, match="nested is already defined"):
+        indexbinary.ss.register_new("nested", cdef, "FP64", "FP64", "FP64", "FP64")
+    # Test mixed types (x=FP64, y=FP64, theta=FP32)
+    mixed_cdef = (
+        "void add_theta (double *z, double *x, GrB_Index ix, GrB_Index jx, "
+        "double *y, GrB_Index iy, GrB_Index jy, float *theta) "
+        "{ (*z) = (*x) + (*y) + (double)(*theta) ; }"
+    )
+    add_theta_mixed = indexbinary.ss.register_new(
+        "add_theta", mixed_cdef, "FP64", "FP64", "FP32", "FP64"
+    )
+    assert add_theta_mixed is add_theta
+    assert ("FP64", "FP32") in add_theta
+    assert ("FP32", "FP64") not in add_theta
 
 
 def test_jit_select(v):

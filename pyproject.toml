@@ -371,6 +371,9 @@ ignore = [
   "NPY002", # numba doesn't support rng generator yet
 ]
 "graphblas/core/utils.py" = ["PLE0302"] # `__set__` is used as a property
+"scripts/ci_pick_versions.py" = [
+  "S311",
+] # random.choice is intentional for CI version selection
 "graphblas/ss/_core.py" = ["N999"] # We want _core.py to be underscopre
 # Allow useless expressions, assert, pickle, RNG, print, no docstring, and yoda in tests
 "graphblas/tests/*py" = [

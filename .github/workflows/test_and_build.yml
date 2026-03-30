@@ -164,203 +164,25 @@ jobs:
           auto-activate-base: false
       - name: Update env
         run: |
-          # Install dependencies based on the needs of the job.
-          #
-          # Strategy: pick random dependency versions, then apply compatibility constraints.
-          # Most constraints depend on numpy version (1.x vs 2.x), not Python version.
-          # Consider removing old versions when they become problematic or very old (>=2 years).
-          #
-          # Step 1: Pick numpy version (varies by Python version)
-          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=1.24", "=1.25", "=1.26", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", ""]))')
-          elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=1.26", "=2.0", "=2.1", "=2.2", "=2.3", "=2.4", ""]))')
-          elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]]; then
-            npver=$(python -c 'import random ; print(random.choice(["=2.1", "=2.2", "=2.3", "=2.4", ""]))')
-          else  # Python 3.14
-            npver=$(python -c 'import random ; print(random.choice(["=2.3", "=2.4", ""]))')
-          fi
+          # Pick random compatible dependency versions using the version picker script.
+          # See scripts/ci_pick_versions.py for version pools and constraint logic.
+          pyver=$(python -c "v='${{ steps.pyver.outputs.selected }}'.split('.');print(f'{v[0]}.{v[1]}')")
+          eval "$(python scripts/ci_pick_versions.py --python "$pyver" --source ${{ steps.sourcetype.outputs.selected }})"
 
-          # Upstream needs numpy 2; override before selecting numpy-dependent deps
-          if [[ ${{ steps.sourcetype.outputs.selected}} == "upstream" && $npver == =1.* ]] ; then
-            npver=$(python -c 'import random ; print(random.choice(["=2.0", "=2.1", "=2.2", "=2.3", "=2.4", ""]))')
-          fi
-
-          # Step 2: Pick other dependency versions based on numpy version AND Python version.
-          # Not all old versions have builds for newer Python versions, so we must narrow per-Python.
-          if [[ $npver == =1.* ]] ; then
-            # numpy 1.x path (only py3.11 and py3.12 can reach here)
-            if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]]; then
-              spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", "=1.13", "=1.14", "=1.15", "=1.16", "=1.17", ""]))')
-              pdver=$(python -c 'import random ; print(random.choice(["=1.5", "=2.0", "=2.1", "=2.2", "=2.3", ""]))')
-              akver=$(python -c 'import random ; print(random.choice(["=2.0", "=2.1", "=2.2", "=2.3", "=2.4", "=2.5", "=2.6", "=2.7", "=2.8", "=2.9", ""]))')
-            else  # py3.12
-              spver=$(python -c 'import random ; print(random.choice(["=1.11", "=1.12", "=1.13", "=1.14", "=1.15", "=1.16", "=1.17", ""]))')
-              pdver=$(python -c 'import random ; print(random.choice(["=2.1", "=2.2", "=2.3", ""]))')
-              akver=$(python -c 'import random ; print(random.choice(["=2.4", "=2.5", "=2.6", "=2.7", "=2.8", "=2.9", ""]))')
-            fi
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.57", "=0.58", "=0.59", "=0.60", "=0.61", ""]))')
-          else
-            # numpy 2.x: need newer dependency versions
-            # Versions are narrowed further below for newer Python versions
-            spver=$(python -c 'import random ; print(random.choice(["=1.13", "=1.14", "=1.15", "=1.16", "=1.17", ""]))')
-            pdver=$(python -c 'import random ; print(random.choice(["=2.2", "=2.3", "=3.0", ""]))')
-            akver=$(python -c 'import random ; print(random.choice(["=2.6", "=2.7", "=2.8", "=2.9", ""]))')
-            numbaver=$(python -c 'import random ; print(random.choice(["=0.62", "=0.63", "=0.64", ""]))')
-          fi
-
-          # Step 3: Pick versions that don't depend on numpy
-          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]]; then
-            nxver=$(python -c 'import random ; print(random.choice(["=2.8", "=3.0", "=3.1", "=3.2", "=3.3", "=3.4", "=3.5", "=3.6", ""]))')
-            yamlver=$(python -c 'import random ; print(random.choice(["=5.4", "=6.0", ""]))')
-          elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]]; then
-            nxver=$(python -c 'import random ; print(random.choice(["=3.2", "=3.3", "=3.4", "=3.5", "=3.6", ""]))')
-            yamlver=$(python -c 'import random ; print(random.choice(["=6.0", ""]))')
-          elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]]; then
-            nxver=$(python -c 'import random ; print(random.choice(["=3.4", "=3.5", "=3.6", ""]))')
-            yamlver=$(python -c 'import random ; print(random.choice(["=6.0", ""]))')
-          else  # Python 3.14
-            nxver=$(python -c 'import random ; print(random.choice(["=3.6", ""]))')
-            yamlver=$(python -c 'import random ; print(random.choice(["=6.0", ""]))')
-          fi
-          sparsever=$(python -c 'import random ; print(random.choice(["=0.14", "=0.15", ""]))')
-
-          # Step 4: Apply compatibility constraints
-          #
-          # Narrow scipy/awkward for newer Python versions (not all builds available)
-          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.14') }} == true ]] ; then
-            if [[ $spver == "=1.13" || $spver == "=1.14" || $spver == "=1.15" ]] ; then
-              spver=$(python -c 'import random ; print(random.choice(["=1.16", "=1.17", ""]))')
-            fi
-            if [[ $pdver == "=2.2" ]] ; then
-              pdver=$(python -c 'import random ; print(random.choice(["=2.3", "=3.0", ""]))')
-            fi
-            if [[ $akver == "=2.6" || $akver == "=2.7" ]] ; then
-              akver=$(python -c 'import random ; print(random.choice(["=2.8", "=2.9", ""]))')
-            fi
-          elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]] ; then
-            if [[ $spver == "=1.13" ]] ; then
-              spver=$(python -c 'import random ; print(random.choice(["=1.14", "=1.15", "=1.16", "=1.17", ""]))')
-            fi
-            if [[ $akver == "=2.6" ]] ; then
-              akver=$(python -c 'import random ; print(random.choice(["=2.7", "=2.8", "=2.9", ""]))')
-            fi
-          fi
-          #
-          # numba: minimum version depends on Python version
-          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.14') }} == true ]] ; then
-            # numba >=0.63 for py3.14
-            if [[ $numbaver == "=0.62" ]] ; then
-              numbaver=$(python -c 'import random ; print(random.choice(["=0.63", "=0.64", ""]))')
-            fi
-          elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ]] ; then
-            # numba >=0.61 for py3.13
-            if [[ $numbaver == "=0.57" || $numbaver == "=0.58" || $numbaver == "=0.59" || $numbaver == "=0.60" ]] ; then
-              numbaver=$(python -c 'import random ; print(random.choice(["=0.61", "=0.62", "=0.63", "=0.64", ""]))')
-            fi
-          elif [[ ${{ startsWith(steps.pyver.outputs.selected, '3.12') }} == true ]] ; then
-            # numba >=0.59 for py3.12
-            if [[ $numbaver == "=0.57" || $numbaver == "=0.58" ]] ; then
-              numbaver=$(python -c 'import random ; print(random.choice(["=0.59", "=0.60", "=0.61", ""]))')
-            fi
-          fi
-          # numba <0.64 requires numpy <2.4 (independent of Python version)
-          if [[ ($npver == "=2.4" || $npver == "") && ($numbaver == "=0.62" || $numbaver == "=0.63") ]] ; then
-            numbaver="=0.64"
-          fi
-          # scipy >=1.15 requires numpy >=1.26.4
-          if [[ $npver == "=1.24" || $npver == "=1.25" ]] ; then
-            if [[ $spver == "=1.15" || $spver == "=1.16" || $spver == "=1.17" || $spver == "" ]] ; then
-              spver=$(python -c 'import random ; print(random.choice(["=1.9", "=1.10", "=1.11", "=1.12", "=1.13", "=1.14"]))')
-            fi
-          fi
-          # scipy <1.15.1 requires numpy <2.3; scipy <1.16 requires numpy <2.5
-          if [[ $npver == "=2.3" || $npver == "=2.4" || $npver == "" ]] ; then
-            if [[ $spver == "=1.13" || $spver == "=1.14" ]] ; then
-              spver=$(python -c 'import random ; print(random.choice(["=1.16", "=1.17", ""]))')
-            elif [[ $spver == "=1.15" ]] ; then
-              spver=$(python -c 'import random ; print(random.choice(["=1.15", "=1.16", "=1.17", ""]))')
-            fi
-          fi
-          # pandas 3.0 requires numba >=0.60 and scipy >=1.14.1
-          if [[ $pdver == "=3.0" ]] ; then
-            if [[ $numbaver == "=0.57" || $numbaver == "=0.58" || $numbaver == "=0.59" ]] ; then
-              numbaver="=0.60"
-            fi
-            if [[ $spver == "=1.9" || $spver == "=1.10" || $spver == "=1.11" || $spver == "=1.12" || $spver == "=1.13" || $spver == "=1.14" ]] ; then
-              spver=$(python -c 'import random ; print(random.choice(["=1.15", "=1.16", "=1.17", ""]))')
-            fi
-          fi
-          # numba 1.26+scipy 1.9 conflict
-          if [[ $npver == "=1.26" && $spver == "=1.9" ]] ; then
-            spver=$(python -c 'import random ; print(random.choice(["=1.10", "=1.11", ""]))')
-          fi
-
-          # sparse does not support Python 3.13+
-          if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.13') }} == true ||
-                ${{ startsWith(steps.pyver.outputs.selected, '3.14') }} == true ]] ; then
-            sparsever=NA
-          fi
-
-          # Source builds have issues with some numpy/scipy/pandas versions
-          if [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
-            npver=""
-            spver=""
-            pdver=""
-          fi
-
-          # Step 5: Pick python-suitesparse-graphblas version
-          # psg versions: numpy 1.x -> old psg (7.4-8.2); numpy 2.x -> psg 9.x/10.x
-          # psg 9.x has no Python 3.14 builds; psg 10.x has 3.11-3.14
+          # Set up psg conda package variable (conda-forge installs via conda, others via pip)
           psg=""
-          if [[ ${{ steps.sourcetype.outputs.selected}} == "upstream" ]] ; then
-            psgver=""
-          elif [[ $npver == =1.* ]] ; then
-            # numpy 1.x: use old psg versions (only py3.11 and py3.12 can reach here)
-            if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
-              if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
-                psgver=$(python -c 'import random ; print(random.choice(["=7.4.0", "=7.4.1", "=7.4.2", "=7.4.3.0", "=7.4.3.1", "=7.4.3.2", "=8.0.2.1", "=8.2.0.1", "=8.2.1.0"]))')
-              else
-                psgver=$(python -c 'import random ; print(random.choice(["=8.2.0.1", "=8.2.1.0"]))')
-              fi
-              psg=python-suitesparse-graphblas${psgver}
-            elif [[ ${{ steps.sourcetype.outputs.selected}} == "wheel" ]] ; then
-              if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
-                psgver=$(python -c 'import random ; print(random.choice(["==7.4.3.2", "==8.0.2.1", "==8.2.0.1", "==8.2.1.0"]))')
-              else
-                psgver=$(python -c 'import random ; print(random.choice(["==8.2.0.1", "==8.2.1.0"]))')
-              fi
-            else  # source
-              if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.11') }} == true ]] ; then
-                psgver=$(python -c 'import random ; print(random.choice(["==7.4.0.0", "==7.4.1.0", "==7.4.2.0", "==7.4.3.0", "==7.4.3.1", "==7.4.3.2", "==8.0.2.1", "==8.2.0.1", "==8.2.1.0"]))')
-              else
-                psgver=$(python -c 'import random ; print(random.choice(["==8.2.0.1", "==8.2.1.0"]))')
-              fi
-            fi
-          else
-            # numpy 2.x: use psg 9.x/10.x
-            if [[ ${{ startsWith(steps.pyver.outputs.selected, '3.14') }} == true ]] ; then
-              # psg 9.x doesn't have Python 3.14 builds
-              psg_choices="10.0.1.1 10.1.1.0 10.3.1.0"
-            else
-              psg_choices="9.3.1.0 9.4.5.0 10.0.1.1 10.1.1.0 10.3.1.0"
-            fi
-            if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
-              psgver=$(python -c "import random ; vs = '${psg_choices}'.split() ; print(random.choice(['=' + v for v in vs] + ['']))")
-              psg=python-suitesparse-graphblas${psgver}
-            else
-              psgver=$(python -c "import random ; vs = '${psg_choices}'.split() ; print(random.choice(['==' + v for v in vs] + ['']))")
-            fi
+          if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" && -n "$psgver" ]] ; then
+            psg=python-suitesparse-graphblas${psgver}
           fi
 
-          # Step 6: Decide whether to install numba and sparse
+          # Decide whether to install numba and sparse.
+          # Random skip: pypy always, 20% on Windows, 40% on other OSes (unless notebooks).
           awkward=awkward${akver}
           if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} == true ||
                 ( ${{ matrix.slowtask != 'notebooks'}} == true && (
                   ( ${{ matrix.os == 'windows-latest' }} == true && $(python -c 'import random ; print(random.random() < .2)') == True ) ||
                   ( ${{ matrix.os == 'windows-latest' }} == false && $(python -c 'import random ; print(random.random() < .4)') == True ))) ]]
           then
-            # Some packages aren't available for pypy; randomly skip otherwise (if not running notebooks)
             echo "skipping numba"
             numba=""
             numbaver=NA
@@ -374,10 +196,9 @@ jobs:
               pdver=""
               yamlver=""
             fi
-          elif [[ ${npver} == =2.* && ( ${numbaver} == "=0.57" || ${numbaver} == "=0.58" || ${numbaver} == "=0.59" || ${numbaver} == "=0.60" || ${numbaver} == "=0.61" ) ]] ; then
-            # numba <0.62 doesn't support numpy 2
+          elif [[ ${numbaver} == "NA" ]] ; then
+            # Version picker already determined numba is incompatible
             numba=""
-            numbaver=NA
             sparse=""
             sparsever=NA
           else
@@ -389,7 +210,7 @@ jobs:
             fi
           fi
 
-          echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psg${psgver} fmm=deprecated"
+          echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psg${psgver}"
 
           set -x  # echo on
           $(command -v mamba || command -v conda) install -c nodefaults \
