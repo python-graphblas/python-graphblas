@@ -365,7 +365,7 @@ jobs:
           coverage xml
           coverage report --show-missing
       - name: codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
       - name: Notebooks Execution check
         if: matrix.slowtask == 'notebooks'
         run: |
