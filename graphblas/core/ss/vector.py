@@ -1641,7 +1641,7 @@ class ss:
             None, 0 or negative nthreads means to use the default number of threads.
 
         For best performance, this function returns a numpy array with uint8 dtype.
-        Use ``Vector.ss.deserialize(blob)`` to create a Vector from the result of serialization·
+        Use ``Vector.ss.deserialize(blob)`` to create a Vector from the result of serialization.
 
         This method is intended to support all serialization options from SuiteSparse:GraphBLAS.
 
@@ -1728,15 +1728,24 @@ class ss:
             if info != lib.GrB_SUCCESS:
                 raise _error_code_lookup[info]("Vector deserialize failed to get the dtype name")
             dtype_name = b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode()
-            if not dtype_name and hasattr(lib, "GxB_Serialized_get_String"):
-                # Handle UDTs. First get the size of name
+            # See ``Matrix.ss.deserialize`` for the rationale: ``dtype_name``
+            # may be a UDT's ``GxB_JIT_C_NAME``, which can't always be
+            # resolved without falling back to ``GrB_NAME`` (the numpy
+            # repr) on the matrix or vector.
+            orig_error = None
+            if dtype_name:
+                try:
+                    dtype = _string_to_dtype(dtype_name)
+                except (ValueError, TypeError, SyntaxError) as exc:
+                    orig_error = exc
+            need_fallback = not dtype_name or orig_error is not None
+            if need_fallback and hasattr(lib, "GxB_Serialized_get_String"):
                 dtype_size = ffi_new("size_t*")
                 info = lib.GxB_Serialized_get_SIZE(data_obj, dtype_size, lib.GrB_NAME, data.nbytes)
                 if info != lib.GrB_SUCCESS:
                     raise _error_code_lookup[info](
                         "Vector deserialize failed to get the size of name"
                     )
-                # Then get the name
                 dtype_char = ffi_new(f"char[{dtype_size[0]}]")
                 info = lib.GxB_Serialized_get_String(
                     data_obj, dtype_char, lib.GrB_NAME, data.nbytes
@@ -1744,7 +1753,12 @@ class ss:
                 if info != lib.GrB_SUCCESS:
                     raise _error_code_lookup[info]("Vector deserialize failed to get the name")
                 dtype_name = ffi.string(dtype_char).decode()
-            dtype = _string_to_dtype(dtype_name)
+                dtype = _string_to_dtype(dtype_name)
+            elif need_fallback:
+                raise ValueError(
+                    f"Vector deserialize cannot resolve dtype {dtype_name!r} and "
+                    f"GxB_Serialized_get_String is unavailable in this SuiteSparse build"
+                ) from orig_error
         else:
             dtype = lookup_dtype(dtype)
         desc = get_descriptor(**opts)

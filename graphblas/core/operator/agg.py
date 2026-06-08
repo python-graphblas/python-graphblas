@@ -5,6 +5,7 @@ import numpy as np
 
 from ... import agg, backend, binary, monoid, semiring, unary
 from ...dtypes import INT64, lookup_dtype
+from ...exceptions import UdfParseError
 from .. import _supports_udfs
 from ..utils import output_type
 
@@ -88,14 +89,54 @@ class Aggregator:
     def __getitem__(self, dtype):
         dtype = lookup_dtype(dtype)
         if not self._any_dtype and dtype not in self.types:
-            raise KeyError(f"{self.name} does not work with {dtype}")
+            # When this is a monoid-based aggregator and ``dtype`` is a UDT,
+            # try to compile the underlying monoid for it. Built-in monoids
+            # like ``plus``, ``min``, and ``max`` auto-generate field-by-field
+            # UDT versions, which lets ``agg.sum[udt]``, ``agg.min[udt]``,
+            # and friends work transparently. Composite or semiring-based
+            # aggregators (e.g., ``hypot``) aren't handled here; their
+            # pipelines don't lift to UDTs cleanly.
+            if (
+                dtype._is_udt
+                and self._monoid is not None
+                and self._semiring is None
+                and self._composite is None
+                and self._custom is None
+                and self._finalize is None
+                and self._applybegin is None
+            ):
+                # ``_compile_udt`` can raise ``KeyError`` (no field-wise
+                # identity for this op/dtype) or ``UdfParseError`` (wrapped
+                # Numba compile failure). Treat both as "does not work
+                # with" rather than leaking the underlying error.
+                try:
+                    typed_monoid = self._monoid[dtype]
+                except (KeyError, TypeError, UdfParseError):
+                    pass
+                else:
+                    self.types[dtype] = typed_monoid.return_type
+            if dtype not in self.types:
+                raise KeyError(f"{self.name} does not work with {dtype}")
         if dtype not in self._typed_ops:
             self._typed_ops[dtype] = TypedAggregator(self, dtype)
         return self._typed_ops[dtype]
 
     def __contains__(self, dtype):
-        dtype = lookup_dtype(dtype)
-        return self._any_dtype or dtype in self.types
+        # Behavior change vs. earlier releases: ``dtype in agg.sum`` for a UDT
+        # used to be an O(1) ``dtype in self.types`` lookup that would return
+        # ``False`` even when the underlying monoid could be auto-lifted for
+        # that UDT. Now it goes through ``__getitem__``, which compiles the
+        # field-wise monoid on first use and caches both the resolved return
+        # type in ``self.types`` and the ``TypedAggregator`` in
+        # ``self._typed_ops``. The first ``in`` against a fresh UDT triggers
+        # a Numba compile; subsequent ones are cheap. ``__getitem__``'s UDT
+        # lift narrows the catch to ``KeyError``/``TypeError``/``UdfParseError``;
+        # the same set is caught here.
+        try:
+            self[dtype]
+        except (KeyError, TypeError, UdfParseError):
+            return False
+        return True
 
     def __repr__(self):
         if self.name in agg._deprecated:
@@ -152,6 +193,26 @@ class TypedAggregator:
 
     def __repr__(self):
         return f"agg.{self.name}[{self.type}]"
+
+    @property
+    def jit_c_source(self):
+        """C source of the underlying monoid kernel for monoid-based aggs, else ``None``.
+
+        Composite and custom aggregators (``agg.hypot``, ``agg.ss.first``,
+        etc.) don't have a single underlying kernel, so they return ``None``.
+        """
+        mon = getattr(self.parent, "_monoid", None)
+        if mon is None or self.type not in mon:
+            return None
+        return mon[self.type].jit_c_source
+
+    @property
+    def jit_c_name(self):
+        """C name of the underlying monoid kernel for monoid-based aggs, else ``None``."""
+        mon = getattr(self.parent, "_monoid", None)
+        if mon is None or self.type not in mon:
+            return None
+        return mon[self.type].jit_c_name
 
     def _new(self, updater, expr, *, in_composite=False):
         agg = self.parent

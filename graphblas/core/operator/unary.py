@@ -36,7 +36,7 @@ if _supports_complex:
 if _has_numba:
     import numba
 
-    from .base import _get_udt_wrapper
+    from .base import _compile_udf_for_udt, _get_udt_wrapper, _resolve_udt_return_type
 
 ffi_new = ffi.new
 
@@ -108,15 +108,15 @@ class ParameterizedUnaryOp(ParameterizedUdf):
         name = f"unary.{self.name}"
         if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:  # pragma: no cover
             return name
-        return (self._deserialize, (self.name, self.func, self._anonymous))
+        return (self._deserialize, (self.name, self.func, self._anonymous, self._is_udt))
 
     @staticmethod
-    def _deserialize(name, func, anonymous):
+    def _deserialize(name, func, anonymous, is_udt=False):
         if anonymous:
-            return UnaryOp.register_anonymous(func, name, parameterized=True)
+            return UnaryOp.register_anonymous(func, name, parameterized=True, is_udt=is_udt)
         if (rv := UnaryOp._find(name)) is not None:
             return rv
-        return UnaryOp.register_new(name, func, parameterized=True)
+        return UnaryOp.register_new(name, func, parameterized=True, is_udt=is_udt)
 
 
 def _identity(x):
@@ -125,6 +125,11 @@ def _identity(x):
 
 def _one(x):
     return 1  # pragma: no cover (numba)
+
+
+if _has_numba:
+    from .udt_utils import BUILTIN_UDT_UNARY_OPS as _BUILTIN_UDT_UNARY_OPS
+    from .udt_utils import _has_jit_set, compile_udt_unary_wrapper, set_jit_c_on_op
 
 
 class UnaryOp(OpBase):
@@ -201,7 +206,11 @@ class UnaryOp(OpBase):
 
                 # Numba is unable to handle BOOL correctly right now, but we have a workaround
                 # See: https://github.com/numba/numba/issues/5395
-                # We're relying on coercion behaving correctly here
+                # We're relying on coercion behaving correctly here.
+                # MAINT 2026-05-17: re-verified on Numba 0.65 (cfunc with
+                # CPointer(boolean) fails to compile: "Storing i8 to ptr of
+                # i1"). Re-test periodically and drop the INT8 routing when
+                # upstream is fixed.
                 input_type = INT8 if type_ == BOOL else type_
                 return_type = INT8 if ret_type == BOOL else ret_type
 
@@ -252,15 +261,58 @@ class UnaryOp(OpBase):
     def _compile_udt(self, dtype, dtype2):
         if dtype in self._udt_types:
             return self._udt_ops[dtype]
+        # See the matching note in ``BinaryOp._compile_udt``: plain-scalar
+        # misses on UDT-dispatch-enabled ops get the legacy message.
+        if not dtype._is_udt and self._numba_func is None:
+            raise KeyError(f"{self.name} does not work with {dtype}")
+        if self._numba_func is None and _has_numba and self.name in _BUILTIN_UDT_UNARY_OPS:
+            # Auto-generate an element-wise UDT function for the built-in
+            # unary ops (``ainv``, ``abs``).
+            py_op = _BUILTIN_UDT_UNARY_OPS[self.name]
+            unary_wrapper, wrapper_sig, ret_type = compile_udt_unary_wrapper(
+                self.name, py_op, dtype
+            )
+            unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
+            new_unary = ffi_new("GrB_UnaryOp*")
+            check_status_carg(
+                lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi, ret_type._carg, dtype._carg),
+                "UnaryOp",
+                new_unary[0],
+            )
+            # ``_has_jit_set`` gates access to ``lib.GrB_UnaryOp_set_String``,
+            # which is absent on SS < 8.
+            if _has_jit_set:
+                jit_info = set_jit_c_on_op(
+                    new_unary[0],
+                    self.name,
+                    py_op,
+                    dtype,
+                    lib.GrB_UnaryOp_set_String,
+                    arity=1,
+                )
+            else:
+                jit_info = None
+            op = TypedUserUnaryOp(self, self.name, dtype, ret_type, new_unary[0])
+            op._jit_c_info = jit_info
+            if jit_info is None and _has_jit_set:
+                from ..ss.jit_config import _maybe_warn_no_jit
+
+                _maybe_warn_no_jit(op_name=self.name, dtype_name=dtype.name)
+            self._udt_types[dtype] = ret_type
+            self._udt_ops[dtype] = op
+            return op
         if self._numba_func is None:
             raise KeyError(f"{self.name} does not work with {dtype}")
 
         numba_func = self._numba_func
         sig = (dtype.numba_type,)
-        numba_func.compile(sig)  # Should we catch and give additional error message?
-        ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
+        _compile_udf_for_udt(numba_func, sig, op_kind="unary", op_name=self.name, dtypes=(dtype,))
+        numba_ret_type = numba_func.overloads[sig].signature.return_type
+        ret_type = _resolve_udt_return_type(numba_ret_type, dtype)
 
-        unary_wrapper, wrapper_sig = _get_udt_wrapper(numba_func, ret_type, dtype)
+        unary_wrapper, wrapper_sig = _get_udt_wrapper(
+            numba_func, ret_type, dtype, numba_ret_type=numba_ret_type
+        )
         unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
         new_unary = ffi_new("GrB_UnaryOp*")
         check_status_carg(
@@ -357,7 +409,7 @@ class UnaryOp(OpBase):
         if lazy:
             module._delayed[funcname] = (
                 cls.register_new,
-                {"name": name, "func": func, "parameterized": parameterized},
+                {"name": name, "func": func, "parameterized": parameterized, "is_udt": is_udt},
             )
         elif parameterized:
             unary_op = ParameterizedUnaryOp(name, func, is_udt=is_udt)
@@ -442,6 +494,13 @@ class UnaryOp(OpBase):
                 unop._numba_func = None
             unop._udt_types = {}
             unop._udt_ops = {}
+        # Enable element-wise unary ops on UDTs (``ainv``, ``abs``).
+        if _has_numba:
+            for op_name in _BUILTIN_UDT_UNARY_OPS:
+                unop = getattr(unary, op_name, None)
+                if unop is not None:
+                    unop._udt_types = {}
+                    unop._udt_ops = {}
         cls._initialized = True
 
     def __init__(
@@ -467,9 +526,9 @@ class UnaryOp(OpBase):
         if self._anonymous:
             if hasattr(self.orig_func, "_parameterized_info"):
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
-            return (self.register_anonymous, (self.orig_func, self.name))
+            return (UnaryOp._deserialize_anon_udf, (self.orig_func, self.name, self._is_udt))
         if (name := f"unary.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
-        return (self._deserialize, (self.name, self.orig_func))
+        return (UnaryOp._deserialize_udf, (self.name, self.orig_func, self._is_udt))
 
     __call__ = TypedBuiltinUnaryOp.__call__

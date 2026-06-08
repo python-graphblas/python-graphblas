@@ -13,14 +13,64 @@ _has_idxbinop = hasattr(lib, "GxB_IndexBinaryOp_new")
 if _has_numba:
     import numba
 
+    from .base import (
+        _compile_udf_for_udt,
+        _get_udt_wrapper_indexbinary,
+        _resolve_udt_return_type,
+    )
+
 ffi_new = ffi.new
 
 
-class _BoundIndexBinaryOp(TypedOpBase):
-    """A BinaryOp created by binding a theta value to an IndexBinaryOp."""
+def _rebind_indexbinaryop(parent, type_, theta):
+    # ``theta`` was stored as a raw Python/numpy value. For UDT thunks,
+    # ``TypedBuiltinIndexBinaryOp.__call__`` would route a raw value through
+    # ``Scalar.from_value(theta)`` with no dtype, which then fails inside the
+    # multi-dim ndarray ``Scalar.value`` setter for array UDT values. Wrap
+    # as a typed Scalar here so the bind uses an explicit dtype.
+    typed = parent[type_]
+    thunk_type = typed.thunk_type
+    if thunk_type._is_udt and not isinstance(theta, (int, float, bool, complex)):
+        from ..scalar import Scalar
 
-    __slots__ = ()
+        theta = Scalar.from_value(theta, dtype=thunk_type, is_cscalar=False, name="")
+    return typed(theta)
+
+
+class _BoundIndexBinaryOp(TypedOpBase):
+    """A BinaryOp produced by binding a theta value to an IndexBinaryOp.
+
+    Under the hood this is a single typed ``GrB_BinaryOp`` (constructed via
+    ``GxB_BinaryOp_new_IndexOp``), so SuiteSparse accepts it anywhere a
+    typed ``GrB_BinaryOp`` is expected: ``ewise_mult`` / ``ewise_add`` and,
+    via :func:`Semiring.register_anonymous`, as the multiplier of a
+    Semiring that then works in ``mxm`` / ``mxv`` / ``vxm``.
+    """
+
+    __slots__ = ("_theta",)
     opclass = "BinaryOp"
+    # A bound IBO is monomorphic in its operand types (one ``(x, y, z,
+    # theta)`` combination). Expose the polymorphism / commutativity
+    # markers that ``Semiring._build`` and related consumers probe as
+    # class-level defaults, so they get sane answers (and no
+    # ``AttributeError``) when a bound IBO is passed in place of a
+    # ``BinaryOp`` parent.
+    _is_udt = False
+    _udt_types = None
+    _udt_ops = None
+    _semiring_commutes_to = None
+    commutes_to = None
+    is_commutative = False
+    # ``is_positional`` and ``_custom_dtype`` are BinaryOp-specific dispatch
+    # hints: when a polymorphic BinaryOp is queried for a type it doesn't
+    # support, the resolver in ``utils.get_typed_op`` falls back through
+    # them. A bound IBO is already type-monomorphic (one ``GrB_BinaryOp``
+    # for one (x, y, z, theta) combination), so neither fallback applies.
+    is_positional = False
+    _custom_dtype = None
+
+    def __reduce__(self):
+        return (_rebind_indexbinaryop, (self.parent, self.type, self._theta))
 
 
 class TypedBuiltinIndexBinaryOp(TypedOpBase):
@@ -28,23 +78,28 @@ class TypedBuiltinIndexBinaryOp(TypedOpBase):
     opclass = "IndexBinaryOp"
 
     def __call__(self, theta=None):
-        """Bind a theta value to create a BinaryOp that can be used in operations.
+        """Bind a theta value, returning a BinaryOp.
+
+        The result is usable directly in ``ewise_mult`` and ``ewise_add``,
+        or as the multiplier of a Semiring (see
+        :meth:`Semiring.register_anonymous`) for ``mxm`` / ``mxv`` / ``vxm``.
 
         Parameters
         ----------
         theta : scalar, optional
-            The theta parameter to bind. Default is 0 (False).
+            The theta parameter to bind. Defaults to 0 (False).
 
         Returns
         -------
         TypedOpBase
-            A BinaryOp created from this IndexBinaryOp with the given theta.
+            A BinaryOp built from this IndexBinaryOp with the given theta.
 
         """
         from ..scalar import Scalar
 
         if theta is None:
             theta = False
+        theta_value = theta.value if isinstance(theta, Scalar) else theta
         if not isinstance(theta, Scalar):
             theta = Scalar.from_value(theta, is_cscalar=False, name="")  # pragma: is_grbscalar
         elif theta._is_cscalar:
@@ -58,14 +113,16 @@ class TypedBuiltinIndexBinaryOp(TypedOpBase):
             "BinaryOp",
             new_binop[0],
         )
-        rv = _BoundIndexBinaryOp.__new__(_BoundIndexBinaryOp)
-        rv.parent = self.parent
-        rv.name = self.name
-        rv.type = self.type
-        rv.return_type = self.return_type
-        rv.gb_obj = new_binop[0]
-        rv.gb_name = f"{self.name}_bound"
-        rv._type2 = self._type2
+        rv = _BoundIndexBinaryOp(
+            self.parent,
+            self.name,
+            self.type,
+            self.return_type,
+            new_binop[0],
+            f"{self.name}_bound",
+            dtype2=self._type2,
+        )
+        rv._theta = theta_value
         return rv
 
     @property
@@ -116,31 +173,32 @@ class ParameterizedIndexBinaryOp(ParameterizedUdf):
         name = f"indexbinary.{self.name}"
         if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
             return name
-        return (self._deserialize, (self.name, self.func, self._anonymous))
+        return (self._deserialize, (self.name, self.func, self._anonymous, self._is_udt))
 
     @staticmethod
-    def _deserialize(name, func, anonymous):
+    def _deserialize(name, func, anonymous, is_udt=False):
         if anonymous:
-            return IndexBinaryOp.register_anonymous(func, name, parameterized=True)
+            return IndexBinaryOp.register_anonymous(func, name, parameterized=True, is_udt=is_udt)
         if (rv := IndexBinaryOp._find(name)) is not None:
             return rv
-        return IndexBinaryOp.register_new(name, func, parameterized=True)
+        return IndexBinaryOp.register_new(name, func, parameterized=True, is_udt=is_udt)
 
 
 class IndexBinaryOp(OpBase):
-    """Takes two inputs with their indices, plus a thunk, and returns one output.
+    """Takes two inputs with their indices plus a thunk, and returns one output.
 
     The function has the signature ``f(x, ix, jx, y, iy, jy, theta) -> z``,
-    where ``ix, jx`` are the row/column indices of ``x`` and ``iy, jy`` are
-    the row/column indices of ``y``.
+    where ``ix, jx`` are the row and column indices of ``x``, and ``iy, jy``
+    are the row and column indices of ``y``.
 
-    An IndexBinaryOp can be converted to a BinaryOp by binding a theta value,
-    which makes it usable in any operation that accepts a BinaryOp (eWiseMult,
-    eWiseAdd, mxm, etc.).
+    Binding a theta value (``ibo[dtype](theta)``) produces a BinaryOp usable
+    directly in ``ewise_mult`` and ``ewise_add``. To use it as a multiplier in
+    ``mxm`` / ``mxv`` / ``vxm``, wrap it in a Semiring via
+    :meth:`Semiring.register_anonymous`; per SuiteSparse, the additive monoid
+    itself cannot be IndexBinaryOp-based.
 
-    IndexBinaryOps are located in the ``graphblas.indexbinary`` namespace.
-
-    There are no built-in IndexBinaryOps; all are user-defined.
+    IndexBinaryOps live in the ``graphblas.indexbinary`` namespace. There are
+    no built-ins; all IndexBinaryOps are user-defined.
     """
 
     __slots__ = "orig_func", "_is_udt", "_numba_func"
@@ -204,12 +262,17 @@ class IndexBinaryOp(OpBase):
                 elif type_ == BOOL and ret_type.name == "INT64" and return_types.get(INT8) == INT8:
                     ret_type = INT8
 
-                # Numba is unable to handle BOOL correctly right now
+                # Numba can't handle BOOL correctly (see numba/numba#5395), so
+                # we route booleans through INT8 and rely on coercion at the
+                # wrapper boundary. See the BOOL branches below.
+                # MAINT 2026-05-17: re-verified on Numba 0.65 (cfunc with
+                # CPointer(boolean) fails to compile: "Storing i8 to ptr of
+                # i1"). Re-test periodically.
                 input_type = INT8 if type_ == BOOL else type_
                 return_type = INT8 if ret_type == BOOL else ret_type
 
-                # Build wrapper: z = f(x, ix, jx, y, iy, jy, theta)
-                # C signature: void(z*, x*, ix, jx, y*, iy, jy, theta*)
+                # Build a wrapper that calls z = f(x, ix, jx, y, iy, jy, theta).
+                # C signature: void(z*, x*, ix, jx, y*, iy, jy, theta*).
                 wrapper_sig = nt.void(
                     nt.CPointer(return_type.numba_type),
                     nt.CPointer(input_type.numba_type),
@@ -282,7 +345,9 @@ class IndexBinaryOp(OpBase):
 
     def _compile_udt(self, dtype, dtype2):
         if not _has_idxbinop:
-            raise RuntimeError(
+            # KeyError (not RuntimeError) so ``udt in op`` and the resolver
+            # chain in ``__contains__`` / ``[dtype]`` lookups return cleanly.
+            raise KeyError(
                 "IndexBinaryOp requires SuiteSparse:GraphBLAS 9.4+ "
                 "(python-suitesparse-graphblas 9.3.1+)"
             )
@@ -304,10 +369,13 @@ class IndexBinaryOp(OpBase):
             UINT64.numba_type,
             dtype2.numba_type,
         )
-        numba_func.compile(sig)
-        ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
+        _compile_udf_for_udt(
+            numba_func, sig, op_kind="indexbinary", op_name=self.name, dtypes=(dtype, dtype2)
+        )
+        numba_ret_type = numba_func.overloads[sig].signature.return_type
+        ret_type = _resolve_udt_return_type(numba_ret_type, dtype, dtype2)
         indexbinary_wrapper, wrapper_sig = _get_udt_wrapper_indexbinary(
-            numba_func, ret_type, dtype, dtype2
+            numba_func, ret_type, dtype, dtype2, numba_ret_type=numba_ret_type
         )
 
         indexbinary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(indexbinary_wrapper)
@@ -340,22 +408,22 @@ class IndexBinaryOp(OpBase):
 
     @classmethod
     def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
-        """Register an IndexBinaryOp without registering it in the ``indexbinary`` namespace.
+        """Register an IndexBinaryOp without adding it to the ``indexbinary`` namespace.
 
         Because it is not registered in the namespace, the name is optional.
 
         Parameters
         ----------
         func : FunctionType
-            The function to compile. For all current backends, this must be able
-            to be compiled with ``numba.njit``.
-            ``func`` takes seven input parameters--``(x, ix, jx, y, iy, jy, theta)``--
-            where ``x`` and ``y`` are element values, ``ix, jx`` and ``iy, jy``
-            are their row/column indices (int64), and ``theta`` is a scalar parameter.
+            The function to compile. For all current backends, this must be
+            compilable with ``numba.njit``. The function takes seven inputs
+            ``(x, ix, jx, y, iy, jy, theta)``: ``x`` and ``y`` are element
+            values, ``ix, jx`` and ``iy, jy`` are their row and column indices
+            (int64), and ``theta`` is a scalar parameter.
         name : str, optional
             The name of the operator. This *does not* show up as ``gb.indexbinary.{name}``.
         parameterized : bool, default False
-            When True, create a parameterized user-defined operator, which means
+            When True, create a parameterized user-defined operator, so that
             additional parameters can be "baked into" the operator when used.
         is_udt : bool, default False
             Whether the operator is intended to operate on user-defined types.
@@ -372,24 +440,24 @@ class IndexBinaryOp(OpBase):
 
     @classmethod
     def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
-        """Register a new IndexBinaryOp and save it to ``graphblas.indexbinary`` namespace.
+        """Register a new IndexBinaryOp under the ``graphblas.indexbinary`` namespace.
 
         Parameters
         ----------
         name : str
-            The name of the operator. This will show up as ``gb.indexbinary.{name}``.
+            The name of the operator. Available afterwards as ``gb.indexbinary.{name}``.
         func : FunctionType
-            The function to compile. For all current backends, this must be able
-            to be compiled with ``numba.njit``.
-            ``func`` takes seven input parameters--``(x, ix, jx, y, iy, jy, theta)``--
-            where ``x`` and ``y`` are element values, ``ix, jx`` and ``iy, jy``
-            are their row/column indices (int64), and ``theta`` is a scalar parameter.
+            The function to compile. For all current backends, this must be
+            compilable with ``numba.njit``. The function takes seven inputs
+            ``(x, ix, jx, y, iy, jy, theta)``: ``x`` and ``y`` are element
+            values, ``ix, jx`` and ``iy, jy`` are their row and column indices
+            (int64), and ``theta`` is a scalar parameter.
         parameterized : bool, default False
             When True, create a parameterized user-defined operator.
         is_udt : bool, default False
             Whether the operator is intended to operate on user-defined types.
         lazy : bool, default False
-            If True, delay compilation until the operator is used.
+            When True, defer compilation until the operator is first used.
 
         Examples
         --------
@@ -401,7 +469,7 @@ class IndexBinaryOp(OpBase):
         if lazy:
             module._delayed[funcname] = (
                 cls.register_new,
-                {"name": name, "func": func, "parameterized": parameterized},
+                {"name": name, "func": func, "parameterized": parameterized, "is_udt": is_udt},
             )
         elif parameterized:
             idxbinop = ParameterizedIndexBinaryOp(name, func, is_udt=is_udt)
@@ -420,7 +488,7 @@ class IndexBinaryOp(OpBase):
         if cls._initialized:
             return
         super()._initialize(include_in_ops=False)
-        # No built-in IndexBinaryOps to register
+        # No built-in IndexBinaryOps to register.
         cls._initialized = True
 
     def __init__(self, name, func=None, *, anonymous=False, is_udt=False, numba_func=None):
@@ -436,25 +504,28 @@ class IndexBinaryOp(OpBase):
         if self._anonymous:
             if hasattr(self.orig_func, "_parameterized_info"):
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
-            return (self.register_anonymous, (self.orig_func, self.name))
+            return (
+                IndexBinaryOp._deserialize_anon_udf,
+                (self.orig_func, self.name, self._is_udt),
+            )
         if (name := f"indexbinary.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
-        return (self._deserialize, (self.name, self.orig_func))
+        return (IndexBinaryOp._deserialize_udf, (self.name, self.orig_func, self._is_udt))
 
     def __call__(self, theta=None, dtype=None):
-        """Bind a theta value to create a BinaryOp.
+        """Bind a theta value to produce a BinaryOp.
 
         Parameters
         ----------
         theta : scalar, optional
-            The theta parameter to bind. Default is 0 (False).
+            The theta parameter to bind. Defaults to 0 (False).
         dtype : dtype, optional
-            The dtype to use. If not provided, it will be inferred from theta.
+            The dtype to use. Inferred from ``theta`` when not provided.
 
         Returns
         -------
         TypedOpBase
-            A BinaryOp created from this IndexBinaryOp with the given theta.
+            A BinaryOp built from this IndexBinaryOp with the given theta.
 
         """
         from ...dtypes import lookup_dtype as _lookup_dtype
@@ -475,33 +546,3 @@ class IndexBinaryOp(OpBase):
             dtype = _lookup_dtype(dtype)
         typed_op = self[dtype]
         return typed_op(theta)
-
-
-def _get_udt_wrapper_indexbinary(numba_func, return_type, dtype, dtype2):
-    """Build a wrapper function for UDT IndexBinaryOp: z = f(x, ix, jx, y, iy, jy, theta)."""
-    nt = numba.types
-    ztype = INT8 if return_type == BOOL else return_type
-    xtype = INT8 if dtype == BOOL else dtype
-    ytype = INT8 if dtype2 == BOOL else dtype2
-
-    wrapper_sig = nt.void(
-        nt.CPointer(ztype.numba_type),
-        nt.CPointer(xtype.numba_type),
-        UINT64.numba_type,
-        UINT64.numba_type,
-        nt.CPointer(ytype.numba_type),
-        UINT64.numba_type,
-        UINT64.numba_type,
-        nt.CPointer(ytype.numba_type),
-    )
-
-    d = {"numba": numba, "numba_func": numba_func}
-    xderef = "bool(x_ptr[0])" if dtype == BOOL else "x_ptr[0]"
-    yderef = "bool(y_ptr[0])" if dtype2 == BOOL else "y_ptr[0]"
-    tderef = "bool(t_ptr[0])" if dtype2 == BOOL else "t_ptr[0]"
-    call = f"numba_func({xderef}, ix, jx, {yderef}, iy, jy, {tderef})"
-    if return_type == BOOL:
-        call = f"bool({call})"
-    text = f"def wrapper(z_ptr, x_ptr, ix, jx, y_ptr, iy, jy, t_ptr):\n    z_ptr[0] = {call}\n"
-    exec(text, d)  # noqa: S102
-    return d["wrapper"], wrapper_sig

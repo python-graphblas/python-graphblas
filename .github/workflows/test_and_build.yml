@@ -169,9 +169,10 @@ jobs:
           pyver=$(python -c "v='${{ steps.pyver.outputs.selected }}'.split('.');print(f'{v[0]}.{v[1]}')")
           eval "$(python scripts/ci_pick_versions.py --python "$pyver" --source ${{ steps.sourcetype.outputs.selected }})"
 
-          # Set up psg conda package variable (conda-forge installs via conda, others via pip)
+          # Set up psg conda package variable (conda-forge installs via conda, others via pip).
+          # For conda-forge, psg must always be installed; an empty psgver just means "latest".
           psg=""
-          if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" && -n "$psgver" ]] ; then
+          if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
             psg=python-suitesparse-graphblas${psgver}
           fi
 

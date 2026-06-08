@@ -24,7 +24,7 @@ repos:
       - id: check-illegal-windows-names
       - id: check-merge-conflict
       - id: check-ast
-      - id: check-json # No json files yet
+      - id: check-json # no JSON files yet; enabled for the future
       - id: check-toml
       - id: check-yaml
       - id: check-executables-have-shebangs
@@ -53,6 +53,9 @@ repos:
   # We can probably remove `isort` if we come to trust `ruff --fix`,
   # but we'll need to figure out the configuration to do this in `ruff`
   - repo: https://github.com/pycqa/isort
+    # 9.0 is still in alpha (9.0.0a3) and a pre-release pin defeats
+    # pre-commit.ci's autoupdate "avoid prereleases" logic; stay on the last
+    # stable 8.x until 9.0 GAs.
     rev: 8.0.1
     hooks:
       - id: isort
@@ -73,7 +76,7 @@ repos:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.7
+    rev: v0.15.13
     hooks:
       - id: ruff-check
         args: [--fix-only, --show-fixes]
@@ -98,10 +101,10 @@ repos:
           - tomli; python_version<'3.11'
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.7
+    rev: v0.15.13
     hooks:
       - id: ruff-check
-      # - id: ruff-format  # Prefer black, but may temporarily uncomment this to see
+      # - id: ruff-format  # we prefer black; uncomment to compare with ruff's formatter
   - repo: https://github.com/sphinx-contrib/sphinx-lint
     rev: v1.0.2
     hooks:
@@ -119,7 +122,7 @@ repos:
     hooks:
       - id: shellcheck
   - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.8.1
+    rev: v3.8.3
     hooks:
       - id: prettier
         args: [--prose-wrap=preserve]
@@ -138,12 +141,13 @@ repos:
     rev: v0.9.3
     hooks:
       - id: taplo-format
+        args: ["--option", "column_width=100"]
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.11
+    rev: v1.7.12
     hooks:
       - id: actionlint
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.37.0
+    rev: 0.37.2
     hooks:
       - id: check-dependabot
       - id: check-github-workflows

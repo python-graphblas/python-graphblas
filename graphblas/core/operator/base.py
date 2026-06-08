@@ -1,9 +1,11 @@
+import re
 from functools import lru_cache
 from operator import getitem
 from types import BuiltinFunctionType, ModuleType
 
 from ... import _STANDARD_OPERATOR_NAMES, backend, op
 from ...dtypes import BOOL, INT8, UINT64, _supports_complex, lookup_dtype
+from ...exceptions import UdfParseError
 from .. import _has_numba, _supports_udfs, lib
 from ..expr import InfixExprBase
 from ..utils import output_type
@@ -165,67 +167,295 @@ def _call_op(op, left, right=None, thunk=None, **kwargs):
 
 if _has_numba:
 
-    def _get_udt_wrapper(numba_func, return_type, dtype, dtype2=None, *, include_indexes=False):
-        ztype = INT8 if return_type == BOOL else return_type
-        xtype = INT8 if dtype == BOOL else dtype
+    def _compile_udf_for_udt(numba_func, sig, *, op_kind, op_name, dtypes):
+        """Compile ``sig`` and re-raise Numba compilation errors as ``UdfParseError``.
+
+        Catches the full ``NumbaError`` hierarchy (TypingError, LoweringError,
+        UnsupportedError, ...) so any compilation failure produces a
+        single-line UDT diagnostic.
+        """
+        try:
+            numba_func.compile(sig)
+        except NumbaError as exc:
+            dtypes_str = ", ".join(str(d) for d in dtypes)
+            snippet = _summarize_numba_typing_error(exc)
+            raise UdfParseError(
+                f"{op_kind}.{op_name} does not work with ({dtypes_str}): {snippet}"
+            ) from exc
+
+    # Numba prefixes its actionable diagnostic line with one of these.
+    _NUMBA_DIAG_PREFIXES = (
+        "No implementation of function",
+        "No conversion from",
+        "Field ",
+        "Cannot infer",
+        "Operator Overload",
+        "Invalid use of",
+        "use of undeclared",
+        "Untyped global",
+    )
+
+    _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+    def _summarize_numba_typing_error(exc):
+        """Pull the most actionable lines out of a Numba TypingError.
+
+        Numba's "No implementation of function ... found for signature:"
+        diagnostic puts the signature on the line *below* the prefix; the
+        signature is the actionable part. When the matched line ends with a
+        ``:``, append the next non-empty line so the user sees both.
+        """
+        lines = [_ANSI_RE.sub("", line).strip() for line in str(exc).splitlines()]
+        for i, line in enumerate(lines):
+            if line.startswith(_NUMBA_DIAG_PREFIXES):
+                if line.endswith(":"):
+                    for follow in lines[i + 1 :]:
+                        if follow:
+                            return f"{line} {follow}"
+                return line
+        for line in lines:
+            if line:
+                return line
+        return "Numba could not compile the function for these input types"
+
+    def _resolve_udt_return_type(numba_ret_type, *dtypes):
+        """Resolve a Numba return type to a DataType, matching Tuple returns to an input UDT.
+
+        When a UDF returns a tuple, Numba infers ``Tuple(...)`` rather than a
+        Record type. Match by field count, preferring a candidate whose field
+        types align with the Tuple's element types.
+        """
+        try:
+            return lookup_dtype(numba_ret_type)
+        except (ValueError, TypeError):
+            pass
+        if isinstance(numba_ret_type, numba.core.types.BaseTuple):
+            from .udt_utils import _iter_record_leaves
+
+            n = len(numba_ret_type.types)
+
+            def _leaves(d):
+                """Yield ``(python_path, c_path, leaf_dtype)`` for a record UDT."""
+                return list(_iter_record_leaves(d.np_type))
+
+            # Match by total leaf count (flat for shallow records, total
+            # leaves across nesting for nested records).
+            same_arity = [
+                d
+                for d in dtypes
+                if d._is_udt and d.np_type.names is not None and len(_leaves(d)) == n
+            ]
+            # Prefer a UDT whose leaf types match the tuple elements element-wise.
+            for d in same_arity:
+                leaf_dtypes = [leaf for _py, _c, leaf in _leaves(d)]
+                try:
+                    expected = [lookup_dtype(t).numba_type for t in leaf_dtypes]
+                except (ValueError, TypeError):
+                    continue
+                if all(et == tt for et, tt in zip(expected, numba_ret_type.types, strict=True)):
+                    return d
+            # No perfect match; fall back to the first arity-compatible UDT.
+            if same_arity:
+                return same_arity[0]
+            # Tuple return whose arity matches no input UDT: most likely the
+            # user is returning the wrong number of fields. List the candidate
+            # arities so the fix is obvious.
+            record_arities = sorted(
+                {len(_leaves(d)) for d in dtypes if d._is_udt and d.np_type.names is not None}
+            )
+            if record_arities:
+                expected = " or ".join(str(a) for a in record_arities)
+                raise UdfParseError(
+                    f"UDT UDF returned a tuple of length {n}; expected {expected} "
+                    f"to match one of the input record UDTs."
+                )
+            # All UDT inputs are array UDTs. Tuples don't map to those: the
+            # function should return a numpy array of the right shape (or a
+            # scalar) instead.
+            array_inputs = [d for d in dtypes if d._is_udt and d.np_type.subdtype is not None]
+            if array_inputs:
+                shape = array_inputs[0].np_type.subdtype[1]
+                raise UdfParseError(
+                    f"UDT UDF returned a tuple of length {n}, but inputs are array UDTs of "
+                    f"shape {shape}. Return a numpy array (e.g., ``np.array(...)``) or a "
+                    f"scalar; tuple returns are only matched to record UDTs."
+                )
+        raise UdfParseError(
+            f"UDT UDF returned an unsupported type {numba_ret_type!r}. "
+            f"Return a scalar, a tuple matching a record UDT's fields, or a numpy array "
+            f"matching an array UDT's shape."
+        )
+
+    def _input_operand(dtype, var):
+        """Return ``(setup_line, deref_expr, ptr_arg_type)`` for one input operand.
+
+        - ``setup_line`` is the optional ``var = numba.carray(var_ptr, 1)`` line
+          to add to the wrapper body (empty for non-record cases).
+        - ``deref_expr`` is the value to pass to ``numba_func`` for this operand.
+        - ``ptr_arg_type`` is the Numba ``CPointer(...)`` type for the wrapper signature.
+        """
         nt = numba.types
-        wrapper_args = [nt.CPointer(ztype.numba_type), nt.CPointer(xtype.numba_type)]
-        if include_indexes:
-            wrapper_args.extend([UINT64.numba_type, UINT64.numba_type])
-        if dtype2 is not None:
-            ytype = INT8 if dtype2 == BOOL else dtype2
-            wrapper_args.append(nt.CPointer(ytype.numba_type))
-        wrapper_sig = nt.void(*wrapper_args)
-
-        zarray = xarray = yarray = BL = BR = yarg = yname = rcidx = ""
-        if return_type._is_udt:
-            if return_type.np_type.subdtype is None:
-                zarray = "    z = numba.carray(z_ptr, 1)\n"
-                zname = "z[0]"
-            else:
-                zname = "z_ptr[0]"
-                BR = "[0]"
-        else:
-            zname = "z_ptr[0]"
-            if return_type == BOOL:
-                BL = "bool("
-                BR = ")"
-
         if dtype._is_udt:
             if dtype.np_type.subdtype is None:
-                xarray = "    x = numba.carray(x_ptr, 1)\n"
-                xname = "x[0]"
-            else:
-                xname = "x_ptr"
-        elif dtype == BOOL:
-            xname = "bool(x_ptr[0])"
-        else:
-            xname = "x_ptr[0]"
+                return (
+                    f"    {var} = numba.carray({var}_ptr, 1)\n",
+                    f"{var}[0]",
+                    nt.CPointer(dtype.numba_type),
+                )
+            # Array UDT: pass the raw pointer. The UDF carrays it if it wants.
+            return "", f"{var}_ptr", nt.CPointer(dtype.numba_type)
+        if dtype == BOOL:
+            # Numba can't compile bool ptrs (numba/numba#5395); expose them
+            # as int8 and cast on deref.
+            # MAINT 2026-05-17: re-verified on Numba 0.65; re-test periodically.
+            return "", f"bool({var}_ptr[0])", nt.CPointer(INT8.numba_type)
+        return "", f"{var}_ptr[0]", nt.CPointer(dtype.numba_type)
 
-        if dtype2 is not None:
-            yarg = ", y_ptr"
-            if dtype2._is_udt:
-                if dtype2.np_type.subdtype is None:
-                    yarray = "    y = numba.carray(y_ptr, 1)\n"
-                    yname = ", y[0]"
-                else:
-                    yname = ", y_ptr"
-            elif dtype2 == BOOL:
-                yname = ", bool(y_ptr[0])"
-            else:
-                yname = ", y_ptr[0]"
+    def _output_handler(return_type, numba_ret_type):
+        """Return ``(setup_line, ret_ptr_type, write_kind, write_info)``.
 
+        ``write_kind`` is ``"record_fields"`` when the UDF returns a Tuple to be
+        unpacked into a record output, otherwise ``"direct"``.
+        ``write_info`` is the tuple-unpack field tuple for ``"record_fields"``,
+        or a ``(BL, BR, zname)`` 3-tuple for ``"direct"``.
+        """
+        nt = numba.types
+        ztype = INT8 if return_type == BOOL else return_type
+        ret_ptr_type = nt.CPointer(ztype.numba_type)
+
+        if (
+            numba_ret_type is not None
+            and isinstance(numba_ret_type, numba.core.types.BaseTuple)
+            and return_type._is_udt
+            and return_type.np_type.names is not None
+        ):
+            # ``write_info`` is the list of Python access paths to each leaf
+            # field (``"['a']"`` for flat, ``"['outer']['inner_a']"`` for
+            # nested). The wrapper iterates these to write the flat tuple
+            # ``_result`` back leaf-by-leaf.
+            from .udt_utils import _iter_record_leaves
+
+            leaf_python_paths = tuple(py for py, _c, _d in _iter_record_leaves(return_type.np_type))
+            return (
+                "    z = numba.carray(z_ptr, 1)\n",
+                ret_ptr_type,
+                "record_fields",
+                leaf_python_paths,
+            )
+        if return_type._is_udt:
+            if return_type.np_type.subdtype is None:
+                return (
+                    "    z = numba.carray(z_ptr, 1)\n",
+                    ret_ptr_type,
+                    "direct",
+                    ("", "", "z[0]"),
+                )
+            # Array UDT: write via z_ptr[0]. The UDF receives the carray and
+            # writes in place.
+            return "", ret_ptr_type, "direct", ("", "[0]", "z_ptr[0]")
+        if return_type == BOOL:
+            return "", ret_ptr_type, "direct", ("bool(", ")", "z_ptr[0]")
+        return "", ret_ptr_type, "direct", ("", "", "z_ptr[0]")
+
+    def _compose_wrapper_body(zkind, zinfo, signature_line, body_setup, call_expr):
+        """Assemble the Python source for a UDT cfunc wrapper.
+
+        For record returns, the wrapper writes leaf-by-leaf; Numba does not
+        compile a nested-tuple assignment to an outer record field.
+        """
+        if zkind == "record_fields":
+            field_assigns = "".join(
+                f"    z[0]{path} = _result[{i}]\n" for i, path in enumerate(zinfo)
+            )
+            return (
+                f"{signature_line}\n"
+                f"{body_setup}"
+                f"    _result = {call_expr}\n"
+                f"{field_assigns}"
+            )
+        BL, BR, zname = zinfo
+        return f"{signature_line}\n{body_setup}    {zname} = {BL}{call_expr}{BR}\n"
+
+    def _get_udt_wrapper(
+        numba_func, return_type, dtype, dtype2=None, *, include_indexes=False, numba_ret_type=None
+    ):
+        """Build a Numba cfunc wrapper for unary, binary, indexunary, or select UDFs on UDTs.
+
+        ``include_indexes=True`` inserts ``(row, col)`` between ``x`` and
+        ``y`` in both the wrapper signature and the call to ``numba_func``,
+        matching the IndexUnaryOp and SelectOp shape. The IndexBinaryOp path
+        (four indices plus a theta operand) uses
+        :func:`_get_udt_wrapper_indexbinary`.
+        """
+        nt = numba.types
+        zsetup, zptr_type, zkind, zinfo = _output_handler(return_type, numba_ret_type)
+        xsetup, xderef, xptr_type = _input_operand(dtype, "x")
+        wrapper_args = [zptr_type, xptr_type]
         if include_indexes:
-            rcidx = ", row, col"
+            wrapper_args.extend([UINT64.numba_type, UINT64.numba_type])
+        ysetup, yderef_expr, yarg = "", "", ""
+        if dtype2 is not None:
+            ysetup, yderef, yptr_type = _input_operand(dtype2, "y")
+            wrapper_args.append(yptr_type)
+            yarg = ", y_ptr"
+            yderef_expr = f", {yderef}"
+        wrapper_sig = nt.void(*wrapper_args)
 
-        d = {"numba": numba, "numba_func": numba_func}
-        text = (
-            f"def wrapper(z_ptr, x_ptr{rcidx}{yarg}):\n"
-            f"{zarray}{xarray}{yarray}"
-            f"    {zname} = {BL}numba_func({xname}{rcidx}{yname}){BR}\n"
+        rcidx = ", row, col" if include_indexes else ""
+        signature_line = f"def wrapper(z_ptr, x_ptr{rcidx}{yarg}):"
+        body_setup = f"{zsetup}{xsetup}{ysetup}"
+        call_expr = f"numba_func({xderef}{rcidx}{yderef_expr})"
+
+        text = _compose_wrapper_body(zkind, zinfo, signature_line, body_setup, call_expr)
+        from .udt_utils import _compile_codegen
+
+        kind = "indexunary" if include_indexes else ("binary" if dtype2 is not None else "unary")
+        wrapper = _compile_codegen(
+            text,
+            func_name="wrapper",
+            source_label=f"<gb-udt-wrapper {kind} dtype={dtype} ret={return_type}>",
+            extra_ns={"numba_func": numba_func},
         )
-        exec(text, d)  # pylint: disable=exec-used
-        return d["wrapper"], wrapper_sig
+        return wrapper, wrapper_sig
+
+    def _get_udt_wrapper_indexbinary(
+        numba_func, return_type, dtype, dtype2, *, numba_ret_type=None
+    ):
+        """Build a Numba cfunc wrapper for IndexBinaryOp UDFs on UDTs.
+
+        Signature: ``f(x, ix, jx, y, iy, jy, theta) -> z``. ``dtype2`` is the
+        shared type of ``y`` and ``theta``.
+        """
+        nt = numba.types
+        zsetup, zptr_type, zkind, zinfo = _output_handler(return_type, numba_ret_type)
+        xsetup, xderef, xptr_type = _input_operand(dtype, "x")
+        ysetup, yderef, yptr_type = _input_operand(dtype2, "y")
+        tsetup, tderef, tptr_type = _input_operand(dtype2, "t")
+        wrapper_sig = nt.void(
+            zptr_type,
+            xptr_type,
+            UINT64.numba_type,
+            UINT64.numba_type,
+            yptr_type,
+            UINT64.numba_type,
+            UINT64.numba_type,
+            tptr_type,
+        )
+
+        signature_line = "def wrapper(z_ptr, x_ptr, ix, jx, y_ptr, iy, jy, t_ptr):"
+        body_setup = f"{zsetup}{xsetup}{ysetup}{tsetup}"
+        call_expr = f"numba_func({xderef}, ix, jx, {yderef}, iy, jy, {tderef})"
+
+        text = _compose_wrapper_body(zkind, zinfo, signature_line, body_setup, call_expr)
+        from .udt_utils import _compile_codegen
+
+        wrapper = _compile_codegen(
+            text,
+            func_name="wrapper",
+            source_label=f"<gb-udt-wrapper indexbinary dtype={dtype} dtype2={dtype2}>",
+            extra_ns={"numba_func": numba_func},
+        )
+        return wrapper, wrapper_sig
 
 
 class TypedOpBase:
@@ -237,6 +467,7 @@ class TypedOpBase:
         "gb_obj",
         "gb_name",
         "_type2",
+        "_jit_c_info",
         "__weakref__",
     )
 
@@ -248,6 +479,20 @@ class TypedOpBase:
         self.gb_obj = gb_obj
         self.gb_name = gb_name
         self._type2 = dtype2
+        # ``(c_name, c_definition)`` when SuiteSparse JIT-compiled a kernel
+        # for this typed op; ``None`` for built-in ops and for UDT ops with
+        # no JIT path.
+        self._jit_c_info = None
+
+    @property
+    def jit_c_name(self):
+        """The C symbol name SuiteSparse uses for this op's JIT kernel, or ``None``."""
+        return self._jit_c_info[0] if self._jit_c_info is not None else None
+
+    @property
+    def jit_c_source(self):
+        """C source SuiteSparse JIT-compiles for this op, or ``None`` when no JIT kernel exists."""
+        return self._jit_c_info[1] if self._jit_c_info is not None else None
 
     def __repr__(self):
         classname = self.opclass.lower()
@@ -267,6 +512,27 @@ class TypedOpBase:
         if self._type2 is None or self.type == self._type2:
             return (getitem, (self.parent, self.type))
         return (getitem, (self.parent, (self.type, self._type2)))
+
+
+class _BinaryopJitDelegate:
+    """Mixin for ops that don't own a JIT kernel; defer introspection to ``binaryop``.
+
+    Monoids and semirings reuse the binary op's JIT kernel. The setter
+    accepts ``None`` so ``TypedOpBase.__init__``'s slot init is a no-op.
+    """
+
+    __slots__ = ()
+
+    @property
+    def _jit_c_info(self):
+        return self.binaryop._jit_c_info
+
+    @_jit_c_info.setter
+    def _jit_c_info(self, value):
+        if value is not None:  # pragma: no cover (defensive)
+            raise AttributeError(
+                f"{type(self).__name__} does not own _jit_c_info; set it on its binaryop"
+            )
 
 
 def _deserialize_parameterized(parameterized_op, args, kwargs):
@@ -362,7 +628,7 @@ class OpBase:
     def __contains__(self, type_):
         try:
             self[type_]
-        except (TypeError, KeyError, NumbaError):
+        except (TypeError, KeyError, NumbaError, UdfParseError):
             return False
         return True
 
@@ -499,6 +765,23 @@ class OpBase:
         if (rv := cls._find(name)) is not None:
             return rv  # Should we verify this is what the user expects?
         return cls.register_new(name, *args)
+
+    @classmethod
+    def _deserialize_udf(cls, name, orig_func, is_udt):
+        """Re-register a named UDF on unpickle, or reuse if already present.
+
+        Shared by the five UDF-capable subclasses (UnaryOp, BinaryOp,
+        IndexUnaryOp, SelectOp, IndexBinaryOp), all of which emit the
+        same three-tuple from ``__reduce__``.
+        """
+        if (rv := cls._find(name)) is not None:
+            return rv
+        return cls.register_new(name, orig_func, is_udt=is_udt)
+
+    @classmethod
+    def _deserialize_anon_udf(cls, func, name, is_udt):
+        """Re-register an anonymous UDF on unpickle."""
+        return cls.register_anonymous(func, name, is_udt=is_udt)
 
     @classmethod
     def _check_supports_udf(cls, method_name):

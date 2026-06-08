@@ -221,6 +221,39 @@ IndexUnary operators are located in two places.
     (i.e. all except rowindex, colindex, and diagindex). Calling the operators in the
     select namespace will perform a ``select`` operation.
 
+IndexBinary Operators
+---------------------
+
+IndexBinary operators are the two-input analogue of IndexUnary operators. The function
+receives both values, the indices of *each* value, and a thunk parameter:
+``f(x, ix, jx, y, iy, jy, theta) -> z``, where ``ix, jx`` are the row/column indices of
+``x`` and ``iy, jy`` are those of ``y``.
+
+There are no built-in IndexBinary operators; all are user-defined (see
+:doc:`udf`). Binding a ``theta`` value to an IndexBinaryOp produces a
+regular BinaryOp usable directly in ``ewise_mult`` / ``ewise_add``, or as
+the multiplier of a Semiring for ``mxm`` / ``mxv`` / ``vxm``.
+
+Example usage:
+
+.. code-block:: python
+
+    def discounted_sum(x, ix, jx, y, iy, jy, theta):
+        return (x + y) * theta
+
+    gb.indexbinary.register_new("discounted_sum", discounted_sum)
+
+    binop = gb.indexbinary.discounted_sum[float](0.5)   # bind theta
+    C << A.ewise_mult(B, binop)
+
+    # For mxm, wrap in a Semiring; the additive monoid must accept the
+    # bound op's return type.
+    sr = gb.semiring.register_anonymous(gb.monoid.plus, binop)
+    D << A.mxm(B, sr)
+
+IndexBinary operators are located in the ``graphblas.indexbinary`` namespace.
+They require SuiteSparse:GraphBLAS 9.4 or newer.
+
 Aggregators
 -----------
 

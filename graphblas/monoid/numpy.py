@@ -93,9 +93,11 @@ if (
     or _has_numba
     and not isinstance(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2), float)  # pragma: no branch
 ):
-    # Incorrect behavior was introduced in numba 0.56.2 and numpy 1.23
+    # Incorrect behavior was introduced in numba 0.56.2 and numpy 1.23.
     # See: https://github.com/numba/numba/issues/8478
-    # The behavioral check above is kept as a safety net; it's correct for all numba/numpy combos
+    # MAINT (2026-05): the behavioral check above still discriminates fixed
+    # vs. broken numba/numpy combinations. Once we drop everything older
+    # than the fix, this branch can become unconditional.
     _monoid_identities["fmax"].update(
         {
             "BOOL": False,

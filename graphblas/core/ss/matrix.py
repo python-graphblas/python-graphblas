@@ -4157,15 +4157,27 @@ class ss:
             if info != lib.GrB_SUCCESS:
                 raise _error_code_lookup[info]("Matrix deserialize failed to get the dtype name")
             dtype_name = b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode()
-            if not dtype_name and hasattr(lib, "GxB_Serialized_get_String"):
-                # Handle UDTs. First get the size of name
+            # ``dtype_name`` is the type's internal name (a built-in like
+            # ``'INT64'``, or the ``GxB_JIT_C_NAME`` for a UDT). For UDTs
+            # we also fall back to ``GrB_NAME`` (the numpy repr written
+            # into the matrix by ``serialize``) whenever the short name
+            # can't be resolved to a known dtype. That covers UDTs
+            # registered anonymously by-name, where ``JIT_C_NAME`` is set
+            # but no Python-side registration exists under that name.
+            orig_error = None
+            if dtype_name:
+                try:
+                    dtype = _string_to_dtype(dtype_name)
+                except (ValueError, TypeError, SyntaxError) as exc:
+                    orig_error = exc
+            need_fallback = not dtype_name or orig_error is not None
+            if need_fallback and hasattr(lib, "GxB_Serialized_get_String"):
                 dtype_size = ffi_new("size_t*")
                 info = lib.GxB_Serialized_get_SIZE(data_obj, dtype_size, lib.GrB_NAME, data.nbytes)
                 if info != lib.GrB_SUCCESS:
                     raise _error_code_lookup[info](
                         "Matrix deserialize failed to get the size of name"
                     )
-                # Then get the name
                 dtype_char = ffi_new(f"char[{dtype_size[0]}]")
                 info = lib.GxB_Serialized_get_String(
                     data_obj, dtype_char, lib.GrB_NAME, data.nbytes
@@ -4173,7 +4185,14 @@ class ss:
                 if info != lib.GrB_SUCCESS:
                     raise _error_code_lookup[info]("Matrix deserialize failed to get the name")
                 dtype_name = ffi.string(dtype_char).decode()
-            dtype = _string_to_dtype(dtype_name)
+                dtype = _string_to_dtype(dtype_name)
+            elif need_fallback:
+                # No GrB_NAME fallback available (older SS); surface the original
+                # resolution failure with the actual dtype name attached.
+                raise ValueError(
+                    f"Matrix deserialize cannot resolve dtype {dtype_name!r} and "
+                    f"GxB_Serialized_get_String is unavailable in this SuiteSparse build"
+                ) from orig_error
         else:
             dtype = lookup_dtype(dtype)
         desc = get_descriptor(**opts)

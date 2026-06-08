@@ -10,7 +10,7 @@ from .indexunary import IndexUnaryOp, TypedBuiltinIndexUnaryOp
 if _has_numba:
     import numba
 
-    from .base import _get_udt_wrapper
+    from .base import _compile_udf_for_udt, _get_udt_wrapper
 ffi_new = ffi.new
 
 
@@ -66,16 +66,16 @@ class ParameterizedSelectOp(ParameterizedUdf):
         name = f"select.{self.name}"
         if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
             return name
-        return (self._deserialize, (self.name, self.func, self._anonymous))
+        return (self._deserialize, (self.name, self.func, self._anonymous, self._is_udt))
 
     @staticmethod
-    def _deserialize(name, func, anonymous):
+    def _deserialize(name, func, anonymous, is_udt=False):
         # NOT COVERED
         if anonymous:
-            return SelectOp.register_anonymous(func, name, parameterized=True)
+            return SelectOp.register_anonymous(func, name, parameterized=True, is_udt=is_udt)
         if (rv := SelectOp._find(name)) is not None:
             return rv
-        return SelectOp.register_new(name, func, parameterized=True)
+        return SelectOp.register_new(name, func, parameterized=True, is_udt=is_udt)
 
 
 class SelectOp(OpBase):
@@ -143,7 +143,9 @@ class SelectOp(OpBase):
         # It would be nice if we could reuse compiling done for IndexUnaryOp
         numba_func = self._numba_func
         sig = (dtype.numba_type, UINT64.numba_type, UINT64.numba_type, dtype2.numba_type)
-        numba_func.compile(sig)  # Should we catch and give additional error message?
+        _compile_udf_for_udt(
+            numba_func, sig, op_kind="select", op_name=self.name, dtypes=(dtype, dtype2)
+        )
         select_wrapper, wrapper_sig = _get_udt_wrapper(
             numba_func, BOOL, dtype, dtype2, include_indexes=True
         )
@@ -331,10 +333,13 @@ class SelectOp(OpBase):
             if hasattr(self.orig_func, "_parameterized_info"):
                 # NOT COVERED
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
-            return (self.register_anonymous, (self.orig_func, self.name))
+            return (
+                SelectOp._deserialize_anon_udf,
+                (self.orig_func, self.name, self._is_udt),
+            )
         if (name := f"select.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
         # NOT COVERED
-        return (self._deserialize, (self.name, self.orig_func))
+        return (SelectOp._deserialize_udf, (self.name, self.orig_func, self._is_udt))
 
     __call__ = TypedBuiltinSelectOp.__call__

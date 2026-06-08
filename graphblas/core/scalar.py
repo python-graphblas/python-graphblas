@@ -369,8 +369,10 @@ class Scalar(BaseType):
                 else:
                     arr = np.empty(np_type.subdtype[1], dtype=np_type.subdtype[0])
                 arr[:] = val
-                self.gb_obj[0 : self.dtype.np_type.itemsize] = arr.view(np.uint8)
-                # self.gb_obj[0:self.dtype.np_type.itemsize] = bytes(val)
+                # tobytes() flattens any-rank numpy buffers (in particular,
+                # multi-dim array UDTs like ``FP64[2, 3]``) to a 1-D byte
+                # buffer that cffi can copy into the GrB_Scalar storage.
+                self.gb_obj[0 : self.dtype.np_type.itemsize] = arr.tobytes()
             else:
                 self.gb_obj[0] = val
             self._empty = False

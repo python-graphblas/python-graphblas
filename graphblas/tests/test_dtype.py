@@ -8,7 +8,9 @@ import pytest
 
 import graphblas as gb
 from graphblas import core, dtypes
+from graphblas.core import _supports_udfs as supports_udfs  # noqa: F401
 from graphblas.core import lib
+from graphblas.core.operator.udt_utils import _has_jit_set  # noqa: F401
 from graphblas.core.utils import _NP2
 from graphblas.dtypes import lookup_dtype
 
@@ -220,6 +222,174 @@ def test_default_names():
 def test_record_dtype_from_dict():
     dtype = dtypes.lookup_dtype({"x": int, "y": float})
     assert dtype.name == "{'x': INT64, 'y': FP64}"
+
+
+def test_register_anonymous_from_dataclass():
+    """A ``@dataclass`` (class or instance) registers as a record UDT, fields and all."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class DcEdge:
+        weight: float
+        count: int
+
+    # Class form: defaults the UDT name to the class name.
+    udt = dtypes.register_anonymous(DcEdge)
+    assert udt.name == "DcEdge"
+    assert "weight" in udt.np_type.names
+    assert "count" in udt.np_type.names
+
+    # Explicit name overrides the class name (reuses the same DataType object
+    # because the underlying np.dtype matches; rename behavior is intentional).
+    udt2 = dtypes.register_anonymous(DcEdge, "_DcEdgeAlias")
+    assert udt2 is udt
+    assert udt.name == "_DcEdgeAlias"
+
+    # Instance form also works.
+    e = DcEdge(weight=1.5, count=10)
+    udt3 = dtypes.register_anonymous(e, "_DcEdgeFromInst")
+    assert udt3 is udt
+
+    # Empty dataclasses are rejected; a zero-field record UDT isn't useful.
+    @dataclass
+    class _Empty:
+        pass
+
+    with pytest.raises(ValueError, match="at least one field"):
+        dtypes.register_anonymous(_Empty)
+
+
+def test_register_anonymous_from_dataclass_deferred_annotations():
+    """Dataclass fields annotated as strings (PEP 563 / 649) resolve through ``lookup_dtype``."""
+    from dataclasses import make_dataclass
+
+    _DcDeferred = make_dataclass("_DcDeferred", [("deferred_x", "int"), ("deferred_y", "float")])
+    udt = dtypes.register_anonymous(_DcDeferred)
+    assert udt.np_type.names == ("deferred_x", "deferred_y")
+    assert udt.np_type.fields["deferred_x"][0] == np.int64
+    assert udt.np_type.fields["deferred_y"][0] == np.float64
+
+
+def test_register_new_from_dataclass():
+    """``register_new(MyDataclass)`` infers the dtype name from the class name."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class _DcRegNew:
+        a: int
+        b: float
+
+    udt = dtypes.register_new(_DcRegNew)
+    assert udt.name == "_DcRegNew"
+    assert udt is dtypes._DcRegNew
+    # Explicit name + dtype still works.
+
+    @dataclass
+    class _DcRegNew2:
+        x: int
+
+    udt2 = dtypes.register_new("_DcRegNewAlias", _DcRegNew2)
+    assert udt2.name == "_DcRegNewAlias"
+    # Sole non-dataclass argument is a TypeError, not a cryptic AttributeError.
+    with pytest.raises(TypeError, match="requires both"):
+        dtypes.register_new(np.dtype([("x", np.int64)]))
+
+
+def test_register_anonymous_from_dataclass_instance_default_name():
+    """``register_anonymous(instance)`` without ``name=`` defaults to the class name."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class _DcInstName:
+        v: float
+
+    inst = _DcInstName(v=1.5)
+    udt = dtypes.register_anonymous(inst)
+    assert udt.name == "_DcInstName"
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not _has_jit_set")
+def test_udt_with_macro_field_name_falls_back_to_cfunc():
+    """A stdlib-macro field name (e.g., ``M_PI``) skips JIT and falls back to cfunc.
+
+    Regression for the silent JIT-compile failure: the C preprocessor would
+    expand ``M_PI`` to a numeric literal inside the struct declarator
+    (``typedef struct { double M_PI ; ... }``), producing uncompilable C
+    that SuiteSparse swallowed without warning. The ``_C_RESERVED`` set
+    blocks macros so the warning fires and JIT is skipped cleanly.
+    """
+    from graphblas.core.ss import jit_config
+    from graphblas.exceptions import NoJITWarning
+
+    record_dtype = np.dtype([("M_PI", np.float64), ("other", np.float64)], align=True)
+    udt = dtypes.register_anonymous(record_dtype, "_MacroFieldUdt")
+    assert udt.jit_c_name is None
+    assert udt.jit_c_definition is None
+
+    jit_config._warned_no_jit = False
+    with pytest.warns(NoJITWarning, match="without JIT"):
+        plus_udt = gb.binary.plus[udt]
+    assert plus_udt.jit_c_source is None
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not _has_jit_set")
+def test_udt_with_c_reserved_field_name_falls_back_to_cfunc():
+    """A C-reserved field name skips JIT silently; the op still runs via the cfunc path."""
+    from graphblas.core.ss import jit_config
+    from graphblas.exceptions import NoJITWarning
+
+    # ``class`` is a C++ reserved word and is in our ``_C_RESERVED`` set.
+    record_dtype = np.dtype([("class", np.int64), ("ok_field", np.int64)], align=True)
+    udt = dtypes.register_anonymous(record_dtype, "_CReservedUdt")
+
+    # JIT info must be ``None``: no C struct to register.
+    assert udt.jit_c_name is None
+    assert udt.jit_c_definition is None
+
+    # Auto-lift must succeed and emit the one-time warning. Reset the
+    # warned-flag so this test sees the warning regardless of test ordering.
+    jit_config._warned_no_jit = False
+    with pytest.warns(NoJITWarning, match="without JIT"):
+        plus_udt = gb.binary.plus[udt]
+    assert plus_udt.jit_c_source is None  # no JIT
+    # ``eq`` has a separate JIT codegen path from arithmetic (BOOL output, leaf
+    # comparisons), so pin its skip independently.
+    assert gb.binary.eq[udt].jit_c_source is None
+    v = gb.Vector(udt, size=2)
+    v[0] = (1, 10)
+    v[1] = (2, 20)
+    w = gb.Vector(udt, size=2)
+    w[0] = (100, 1000)
+    w[1] = (200, 2000)
+    result = v.ewise_mult(w, plus_udt).new()
+    assert tuple(result[0].new().value) == (101, 1010)
+    assert tuple(result[1].new().value) == (202, 2020)
+
+
+@pytest.mark.skipif("not _has_jit_set")
+def test_udt_jit_c_info_pinned_at_first_register():
+    """SuiteSparse's ``GxB_JIT_C_DEFINITION`` is one-shot per ``GrB_Type``.
+
+    Re-registering an existing ``np.dtype`` under a new Python-side name
+    updates ``rv.name`` but not the SS-side JIT identity. The introspection
+    properties ``jit_c_name`` and ``jit_c_definition`` must report what
+    SS actually has, not the renamed Python value, so callers can trust
+    the introspection to match what JIT-compiled kernels see.
+    """
+    # Use a field/shape combo unique to this test to keep the C-side name
+    # stable.
+    record_dtype = np.dtype([("pin_a", np.int64), ("pin_b", np.int64)], align=True)
+    udt = dtypes.register_anonymous(record_dtype, "_PinUDT_first")
+    assert udt.jit_c_name == "_PinUDT_first"
+
+    udt2 = dtypes.register_anonymous(record_dtype, "_PinUDT_renamed")
+    assert udt2 is udt
+    assert udt.name == "_PinUDT_renamed"
+    # SS-side name is frozen at first register; introspection must reflect that.
+    assert udt.jit_c_name == "_PinUDT_first"
+    assert "_PinUDT_first" in udt.jit_c_definition
 
 
 def test_dtype_to_from_string():

@@ -12,7 +12,7 @@ from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op, _deserialize_
 if _has_numba:
     import numba
 
-    from .base import _get_udt_wrapper
+    from .base import _compile_udf_for_udt, _get_udt_wrapper, _resolve_udt_return_type
 ffi_new = ffi.new
 
 
@@ -70,16 +70,16 @@ class ParameterizedIndexUnaryOp(ParameterizedUdf):
         name = f"indexunary.{self.name}"
         if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
             return name
-        return (self._deserialize, (self.name, self.func, self._anonymous))
+        return (self._deserialize, (self.name, self.func, self._anonymous, self._is_udt))
 
     @staticmethod
-    def _deserialize(name, func, anonymous):
+    def _deserialize(name, func, anonymous, is_udt=False):
         # NOT COVERED
         if anonymous:
-            return IndexUnaryOp.register_anonymous(func, name, parameterized=True)
+            return IndexUnaryOp.register_anonymous(func, name, parameterized=True, is_udt=is_udt)
         if (rv := IndexUnaryOp._find(name)) is not None:
             return rv
-        return IndexUnaryOp.register_new(name, func, parameterized=True)
+        return IndexUnaryOp.register_new(name, func, parameterized=True, is_udt=is_udt)
 
 
 class IndexUnaryOp(OpBase):
@@ -154,7 +154,11 @@ class IndexUnaryOp(OpBase):
 
                 # Numba is unable to handle BOOL correctly right now, but we have a workaround
                 # See: https://github.com/numba/numba/issues/5395
-                # We're relying on coercion behaving correctly here
+                # We're relying on coercion behaving correctly here.
+                # MAINT 2026-05-17: re-verified on Numba 0.65 (cfunc with
+                # CPointer(boolean) fails to compile: "Storing i8 to ptr of
+                # i1"). Re-test periodically and drop the INT8 routing when
+                # upstream is fixed.
                 input_type = INT8 if type_ == BOOL else type_
                 return_type = INT8 if ret_type == BOOL else ret_type
 
@@ -220,10 +224,13 @@ class IndexUnaryOp(OpBase):
 
         numba_func = self._numba_func
         sig = (dtype.numba_type, UINT64.numba_type, UINT64.numba_type, dtype2.numba_type)
-        numba_func.compile(sig)  # Should we catch and give additional error message?
-        ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
+        _compile_udf_for_udt(
+            numba_func, sig, op_kind="indexunary", op_name=self.name, dtypes=(dtype, dtype2)
+        )
+        numba_ret_type = numba_func.overloads[sig].signature.return_type
+        ret_type = _resolve_udt_return_type(numba_ret_type, dtype, dtype2)
         indexunary_wrapper, wrapper_sig = _get_udt_wrapper(
-            numba_func, ret_type, dtype, dtype2, include_indexes=True
+            numba_func, ret_type, dtype, dtype2, include_indexes=True, numba_ret_type=numba_ret_type
         )
 
         indexunary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(indexunary_wrapper)
@@ -348,7 +355,7 @@ class IndexUnaryOp(OpBase):
         if lazy:
             module._delayed[funcname] = (
                 cls.register_new,
-                {"name": name, "func": func, "parameterized": parameterized},
+                {"name": name, "func": func, "parameterized": parameterized, "is_udt": is_udt},
             )
         elif parameterized:
             indexunary_op = ParameterizedIndexUnaryOp(name, func, is_udt=is_udt)
@@ -433,10 +440,13 @@ class IndexUnaryOp(OpBase):
             if hasattr(self.orig_func, "_parameterized_info"):
                 # NOT COVERED
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
-            return (self.register_anonymous, (self.orig_func, self.name))
+            return (
+                IndexUnaryOp._deserialize_anon_udf,
+                (self.orig_func, self.name, self._is_udt),
+            )
         if (name := f"indexunary.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
         # NOT COVERED
-        return (self._deserialize, (self.name, self.orig_func))
+        return (IndexUnaryOp._deserialize_udf, (self.name, self.orig_func, self._is_udt))
 
     __call__ = TypedBuiltinIndexUnaryOp.__call__
