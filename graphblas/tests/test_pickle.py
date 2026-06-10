@@ -433,6 +433,58 @@ def test_udt_pickle_crossprocess():
         gb.core.dtypes._registry.pop(udt_name, None)
 
 
+def _crossproc_parameterized_is_udt_factory(scale):  # pragma: no cover (called by Numba)
+    def inner(x, y):
+        return x * scale + y * scale
+
+    return inner
+
+
+def _op_compile_parameterized_is_udt(d):
+    op = d["op"]
+    # ``op._is_udt`` must survive the spawn so the right compile path runs in the child.
+    return bool(op._is_udt)
+
+
+_CROSSPROC_OPS["compile_parameterized_is_udt"] = _op_compile_parameterized_is_udt
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "module_name",
+    ["unary", "binary", "indexunary", "select", "indexbinary"],
+)
+def test_parameterized_is_udt_pickle_crossprocess(module_name):
+    """``is_udt`` survives a spawn -> unpickle -> re-register chain.
+
+    Same-process pickle is covered by ``test_parameterized_is_udt_pickle_roundtrip``
+    in ``test_op.py``; this exercises the cross-process path that wave-5
+    fixed (parameterized ``__reduce__`` used to drop ``is_udt`` and the
+    child silently took the non-UDT compile path).
+    """
+    module = getattr(gb, module_name)
+    op_name = f"_cpu_param_is_udt_{module_name}"
+    if hasattr(module, op_name):
+        delattr(module, op_name)
+    module.register_new(
+        op_name, _crossproc_parameterized_is_udt_factory, parameterized=True, is_udt=True
+    )
+    try:
+        op = getattr(module, op_name)
+        assert op._is_udt is True
+        payload = pickle.dumps({"op": op})
+        (got,) = _run_crossproc("compile_parameterized_is_udt", payload)
+        assert got is True
+    finally:
+        delattr(module, op_name)
+        # binary and unary ops also register into the combined ``op`` namespace,
+        # which ``delattr(module, ...)`` doesn't touch; clean it so
+        # test_op_namespace doesn't see an op with no per-type home.
+        vars(gb.op).pop(op_name, None)
+        gb.op._delayed.pop(op_name, None)
+
+
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_bound_ibo_pickle_crossprocess():

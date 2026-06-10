@@ -45,8 +45,9 @@ dependencies:
   # For building docs
   - nbsphinx
   - numpydoc
-  - pydata-sphinx-theme
-  - sphinx-panels
+  - pydata-sphinx-theme>=0.15
+  - sphinx>=7
+  - sphinx-design
   # For building logo
   - drawsvg
   - cairosvg
@@ -55,7 +56,6 @@ dependencies:
   # - black
   # - black-jupyter
   # - codespell
-  # - commonmark
   # - cython
   # - cytoolz
   # - distributed

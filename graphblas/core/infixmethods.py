@@ -65,7 +65,7 @@ def __xor__(self, other):
     if expr.dtype != BOOL:
         raise TypeError(
             f"The __xor__ infix operator, `x ^ y`, is not supported for {expr.dtype.name} dtype."
-            "  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
+            "  It is only supported for BOOL dtype (and it uses ewise_add, the union)."
         )
     return expr
 
@@ -75,7 +75,7 @@ def __rxor__(self, other):
     if expr.dtype != BOOL:
         raise TypeError(
             f"The __xor__ infix operator, `x ^ y`, is not supported for {expr.dtype.name} dtype."
-            "  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
+            "  It is only supported for BOOL dtype (and it uses ewise_add, the union)."
         )
     return expr
 
@@ -92,7 +92,7 @@ def __ixor__(self, other):
     elif other.dtype != BOOL:
         raise TypeError(
             f"The __ixor__ infix operator, `x ^= y`, is not supported for {other.dtype.name} "
-            "dtype.  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
+            "dtype.  It is only supported for BOOL dtype (and it uses ewise_add, the union)."
         )
     else:
         self(binary.lxor) << other
@@ -111,13 +111,13 @@ def __ior__(self, other):
         if expr.dtype != BOOL:
             raise TypeError(
                 f"The __ior__ infix operator, `x |= y`, is not supported for {expr.dtype.name} "
-                "dtype.  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
+                "dtype.  It is only supported for BOOL dtype (and it uses ewise_add, the union)."
             )
         self << expr
     elif other.dtype != BOOL:
         raise TypeError(
             f"The __ior__ infix operator, `x |= y`, is not supported for {other.dtype.name} "
-            "dtype.  It is only supported for BOOL dtype (and it uses ewise_add--the union)."
+            "dtype.  It is only supported for BOOL dtype (and it uses ewise_add, the union)."
         )
     else:
         self(binary.lor) << other
@@ -129,7 +129,7 @@ def __iand__(self, other):
     if expr.dtype != BOOL:
         raise TypeError(
             f"The __iand__ infix operator, `x &= y`, is not supported for {expr.dtype.name} dtype."
-            "  It is only supported for BOOL dtype (and it uses ewise_mult--the intersection)."
+            "  It is only supported for BOOL dtype (and it uses ewise_mult, the intersection)."
         )
     self << expr
     return self

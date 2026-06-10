@@ -1,3 +1,4 @@
+import contextlib
 import os
 import sysconfig
 
@@ -39,6 +40,14 @@ if backend != "suitesparse":
 # can call it themselves. Tests use it through the public surface.
 _fix_jit_config = gb.ss.fix_jit_config if not _IS_SSGB7 else (lambda: None)
 
+# Capture the post-import JIT state before the autouse ``_setup_jit`` fixture
+# runs. ``_auto_fix_jit_at_import`` probes once; ``jit_c_control`` is ``'on'``
+# iff the env can actually JIT-compile. Tests that assert on the import-time
+# state read this constant; the fixture may transiently mutate the live config.
+_JIT_WORKS_AT_IMPORT = (
+    not _IS_SSGB7 and backend == "suitesparse" and gb.ss.config["jit_c_control"] == "on"
+)
+
 
 @pytest.fixture(scope="module", autouse=True)
 def _setup_jit():
@@ -47,7 +56,9 @@ def _setup_jit():
     Strategy:
     1. _fix_jit_config(): fix conda-baked compiler paths and probe.
        - Returns True: JIT works, proceed.
-       - Returns False: probe failed, JIT is broken, turn off.
+       - Returns False: probe failed. SuiteSparse will have left
+         ``jit_c_control = 'load'`` (compile disabled, cache loading
+         still allowed); we leave that state untouched.
        - Returns None: no conda env, try sysconfig instead.
     2. Sysconfig fallback: for non-conda installs (pure pip).
     """
@@ -59,15 +70,12 @@ def _setup_jit():
     prev = gb.ss.config["jit_c_control"]
 
     result = _fix_jit_config()
-    if result is True:
-        pass  # Conda JIT configured and verified
-    elif result is False:
-        # Probe failed; JIT doesn't work with this psg build.
-        # Don't try sysconfig; if the conda compiler can't compile
-        # GraphBLAS JIT kernels, Python's sysconfig compiler won't either.
-        gb.ss.config["jit_c_control"] = "off"
-    else:
-        # No conda env (result is None). Try sysconfig for non-conda installs.
+    # ``True``: conda JIT configured and verified. ``False``: probe failed
+    # (``_probe_jit`` leaves ``jit_c_control`` at ``'load'``; don't try
+    # sysconfig, since if the conda compiler can't build GraphBLAS JIT
+    # kernels, Python's sysconfig compiler won't either). Both done.
+    if result is None:
+        # No conda env. Try sysconfig for non-conda installs.
         cc = sysconfig.get_config_var("CC")
         cflags = sysconfig.get_config_var("CFLAGS")
         include = sysconfig.get_path("include")
@@ -78,9 +86,24 @@ def _setup_jit():
             gb.ss.config["jit_c_compiler_flags"] = f"{cflags} -I{include}"
             if libs:
                 gb.ss.config["jit_c_libraries"] = libs
-        else:
-            gb.ss.config["jit_c_control"] = "off"
 
+    try:
+        yield
+    finally:
+        gb.ss.config["jit_c_control"] = prev
+
+
+def _require_jit_on():
+    """Skip the test if the SuiteSparse JIT can't compile in this environment."""
+    if gb.ss.config["jit_c_control"] != "on":
+        pytest.skip("JIT compilation not available (probe failed or compiler missing)")
+
+
+@contextlib.contextmanager
+def _jit_mode(mode):
+    """Temporarily set ``jit_c_control`` to ``mode``; restore on exit."""
+    prev = gb.ss.config["jit_c_control"]
+    gb.ss.config["jit_c_control"] = mode
     try:
         yield
     finally:
@@ -89,15 +112,29 @@ def _setup_jit():
 
 @pytest.mark.skipif("_IS_SSGB7")
 def test_auto_fix_jit_at_import_left_compiler_usable():
-    """After ``import graphblas.ss``, a usable compiler implies ``jit_c_control == 'on'``."""
+    """After ``import graphblas.ss``, a probe-confirmed compiler implies
+    ``jit_c_control == 'on'``.
+    """
     if not gb.ss.jit_compiler_is_usable():
         pytest.skip("sandboxed env without a usable compiler; auto-fix had nothing to repair")
+    if not _JIT_WORKS_AT_IMPORT:
+        # Compiler file exists but the import-time probe failed (e.g., the
+        # baked-in flags target a different arch than the host). After a
+        # compile failure SuiteSparse drops ``jit_c_control`` to a
+        # non-compiling mode so downstream ops punt to generic cleanly; the
+        # probe absorbs that first failure. Which mode it lands in (``'load'``
+        # or ``'run'``) varies by SuiteSparse version.
+        assert gb.ss.config["jit_c_control"] in {"load", "run"}
+        pytest.skip("compiler present but JIT probe failed in this env")
+    assert _JIT_WORKS_AT_IMPORT
     assert gb.ss.config["jit_c_control"] == "on"
 
 
 @pytest.mark.skipif("_IS_SSGB7")
 def test_public_fix_jit_config_repairs_a_broken_compiler():
     """``gb.ss.fix_jit_config()`` repairs a clobbered compiler path and returns ``True``."""
+    if not _JIT_WORKS_AT_IMPORT:
+        pytest.skip("env JIT doesn't actually compile; nothing to repair to")
     prev = {
         "control": gb.ss.config["jit_c_control"],
         "cc": gb.ss.config["jit_c_compiler_name"],
@@ -157,8 +194,7 @@ def test_jit_udt():
                 "myquaternion", "typedef struct { float x [4][4] ; int color ; } myquaternion ;"
             )
         return
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
     with burble():
         dtype = dtypes.ss.register_new(
             "myquaternion", "typedef struct { float x [4][4] ; int color ; } myquaternion ;"
@@ -205,15 +241,14 @@ def test_jit_unary(v):
         with pytest.raises(RuntimeError, match="JIT was added"):
             unary.ss.register_new("square", cdef, "FP32", "FP32")
         return
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
     with burble():
         square = unary.ss.register_new("square", cdef, "FP32", "FP32")
     assert not hasattr(unary, "square")
     assert unary.ss.square is square
     assert square.name == "ss.square"
     assert square.types == {dtypes.FP32: dtypes.FP32}
-    # The JIT is unforgiving and does not coerce--use the correct types!
+    # JIT ops don't coerce: wrong dtype raises KeyError, not a silent cast.
     with pytest.raises(KeyError, match="square does not work with INT64"):
         v << square(v)
     v = v.dup("FP32")
@@ -244,8 +279,7 @@ def test_jit_binary(v):
         with pytest.raises(RuntimeError, match="JIT was added"):
             binary.ss.register_new("absdiff", cdef, "FP64", "FP64", "FP64")
         return
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
     with burble():
         absdiff = binary.ss.register_new(
             "absdiff",
@@ -260,7 +294,7 @@ def test_jit_binary(v):
     assert absdiff.types == {(dtypes.FP64, dtypes.FP64): dtypes.FP64}  # different than normal
     assert "FP64" in absdiff
     assert absdiff["FP64"].return_type == dtypes.FP64
-    # The JIT is unforgiving and does not coerce--use the correct types!
+    # JIT ops don't coerce: wrong dtype raises KeyError, not a silent cast.
     with pytest.raises(KeyError, match="absdiff does not work with .INT64, INT64. types"):
         v << absdiff(v & v)
     w = (v - 1).new("FP64")
@@ -313,8 +347,7 @@ def test_jit_indexunary(v):
         with pytest.raises(RuntimeError, match="JIT was added"):
             indexunary.ss.register_new("diffy", cdef, "FP64", "FP64", "FP64")
         return
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
     with burble():
         diffy = indexunary.ss.register_new("diffy", cdef, "FP64", "FP64", "FP64")
     assert not hasattr(indexunary, "diffy")
@@ -325,7 +358,7 @@ def test_jit_indexunary(v):
     assert diffy.types == {(dtypes.FP64, dtypes.FP64): dtypes.FP64}
     assert "FP64" in diffy
     assert diffy["FP64"].return_type == dtypes.FP64
-    # The JIT is unforgiving and does not coerce--use the correct types!
+    # JIT ops don't coerce: wrong dtype raises KeyError, not a silent cast.
     with pytest.raises(KeyError, match="diffy does not work with .INT64, INT64. types"):
         v << diffy(v, 1)
     v = v.dup("FP64")
@@ -376,8 +409,7 @@ def test_jit_indexbinary(v):
         "double *y, GrB_Index iy, GrB_Index jy, double *theta) "
         "{ (*z) = (*x) + (*y) + (*theta) ; }"
     )
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
     with burble():
         add_theta = indexbinary.ss.register_new("add_theta", cdef, "FP64", "FP64", "FP64", "FP64")
     assert not hasattr(indexbinary, "add_theta")
@@ -435,7 +467,8 @@ def test_jit_indexbinary(v):
 @pytest.mark.slow
 def test_jit_select(v):
     cdef = (
-        # Why does this one insist on `const` for `x` argument?
+        # SelectOps don't write to their input array, so SuiteSparse requires
+        # the x argument to be ``const``.
         "void woot (bool *z, const int32_t *x, GrB_Index i, GrB_Index j, int32_t *y) "
         "{ (*z) = ((*x) + i + j == (*y)) ; }"
     )
@@ -443,8 +476,7 @@ def test_jit_select(v):
         with pytest.raises(RuntimeError, match="JIT was added"):
             select.ss.register_new("woot", cdef, "INT32", "INT32")
         return
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
     with burble():
         woot = select.ss.register_new("woot", cdef, "INT32", "INT32")
     assert not hasattr(select, "woot")
@@ -455,7 +487,7 @@ def test_jit_select(v):
     assert woot.types == {(dtypes.INT32, dtypes.INT32): dtypes.BOOL}
     assert "INT32" in woot
     assert woot["INT32"].return_type == dtypes.BOOL
-    # The JIT is unforgiving and does not coerce--use the correct types!
+    # JIT ops don't coerce: wrong dtype raises KeyError, not a silent cast.
     with pytest.raises(KeyError, match="woot does not work with .INT64, INT64. types"):
         v << woot(v, 1)
     v = v.dup("INT32")
@@ -575,35 +607,6 @@ def test_udt_jit_c_source_introspection():
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.skipif("_IS_SSGB7")
-def test_anonymous_udt_gets_jit_c_name():
-    """Anonymous UDTs (registered via ``register_anonymous``) must also get
-    ``GxB_JIT_C_NAME`` set on their auto-lifted ops, so SuiteSparse JIT can
-    expand kernels for them.
-
-    Belt-and-suspenders coverage: the dtype's own JIT C name should also be set.
-    Uses field names unique to this test to avoid colliding with other test UDTs.
-    """
-    record_dtype = np.dtype([("anonj_x", np.int64), ("anonj_y", np.int64)], align=True)
-    udt = dtypes.register_anonymous(record_dtype, "_AnonJitUdt")
-
-    # The anonymous UDT itself has a JIT-resolvable C name and typedef.
-    assert udt.jit_c_name == "_AnonJitUdt"
-    assert udt.jit_c_definition is not None
-
-    # Auto-lift an op on the anonymous UDT. Both the C name and the C
-    # source must be set; these are what SuiteSparse needs to JIT-compile.
-    op = binary.plus[udt]
-    assert op.jit_c_name == "plus__AnonJitUdt"
-    assert op.jit_c_source is not None
-
-    # Same for unary
-    op_unary = unary.ainv[udt]
-    assert op_unary.jit_c_name == "ainv__AnonJitUdt"
-    assert op_unary.jit_c_source is not None
-
-
-@pytest.mark.skipif("not supports_udfs")
-@pytest.mark.skipif("_IS_SSGB7")
 def test_op_jit_signature_uses_pinned_type_name():
     """After a UDT is renamed, auto-lifted ops must still reference the
     pinned (first-registration) C name in their signature. SS's
@@ -638,8 +641,7 @@ def test_jit_compiles_auto_udt_ops():
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
 
     record_dtype = np.dtype([("a", np.int64), ("b", np.float64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "_JitAutoUdt")
@@ -650,21 +652,17 @@ def test_jit_compiles_auto_udt_ops():
     v[2] = (5, 6.0)
     w = v.dup()
 
-    # Force JIT on and probe.  If our typedef + JIT_C_NAME wiring is correct,
+    # Force JIT on and probe. If our typedef + JIT_C_NAME wiring is correct,
     # SuiteSparse should compile and load the kernel without errors.
-    prev_control = gb.ss.config["jit_c_control"]
-    gb.ss.config["jit_c_control"] = "on"
-    try:
+    with _jit_mode("on"):
         with burble():
             result = binary.plus(v & w).new()
         assert result[0].new() == (2, 4.0)
         assert result[2].new() == (10, 12.0)
-        # JIT must not have been disabled by a compilation failure.
+        # JIT must remain in compile-on mode; a failed compile flips it to 'load'.
         assert (
-            gb.ss.config["jit_c_control"] != "off"
-        ), "JIT was disabled after compiling a built-in UDT op (typedef/name wiring is broken)"
-    finally:
-        gb.ss.config["jit_c_control"] = prev_control
+            gb.ss.config["jit_c_control"] == "on"
+        ), "JIT compilation got disabled (flipped from 'on' to 'load') after a built-in UDT op"
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -681,8 +679,7 @@ def test_floordiv_udt_jit_matches_python_semantics():
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
 
     N = 50
 
@@ -745,8 +742,7 @@ def test_min_max_udt_jit_propagates_nan():
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
 
     # Field names unique to this test; see floordiv test for the cache rationale.
     udt = dtypes.register_anonymous(
@@ -786,8 +782,7 @@ def test_abs_udt_jit_matches_python_negative_zero():
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
 
     import struct
 
@@ -906,8 +901,7 @@ def test_udt_op_jit_cfunc_parity(udt_kind):
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
     if numba is None:
         pytest.skip("numba required for the cfunc baseline")
 
@@ -924,19 +918,14 @@ def test_udt_op_jit_cfunc_parity(udt_kind):
     binary_ops = ["plus", "minus", "times", "truediv", "floordiv", "min", "max"]
     unary_ops = ["ainv", "abs"]
 
-    prev = gb.ss.config["jit_c_control"]
-    try:
-        # JIT path
-        gb.ss.config["jit_c_control"] = "on"
+    with _jit_mode("on"):
         jit_binary = {op: v.ewise_mult(u, getattr(binary, op)).new() for op in binary_ops}
         jit_unary = {op: getattr(unary, op)(v).new() for op in unary_ops}
-        # cfunc path: turn JIT off so SS uses the registered function pointer
-        # instead of compiling a new kernel.
-        gb.ss.config["jit_c_control"] = "off"
+    # cfunc path: JIT off so SS uses the registered function pointer instead of
+    # compiling a new kernel.
+    with _jit_mode("off"):
         cf_binary = {op: v.ewise_mult(u, getattr(binary, op)).new() for op in binary_ops}
         cf_unary = {op: getattr(unary, op)(v).new() for op in unary_ops}
-    finally:
-        gb.ss.config["jit_c_control"] = prev
 
     def values_equal(j, c):
         # Compare raw bytes via ``to_dense`` rather than ``isequal``. With the
@@ -971,8 +960,7 @@ def test_anonymous_udt_with_no_name_still_jits():
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
 
     spec = np.dtype([("anon_a", np.float64), ("anon_b", np.int64)], align=True)
     udt = dtypes.register_anonymous(spec)  # no name=
@@ -989,6 +977,17 @@ def test_anonymous_udt_with_no_name_still_jits():
     assert plus_op.jit_c_source is not None
     assert plus_op.jit_c_name.startswith("plus__gbudt_")
 
+    # Run the kernel to confirm the JIT path produces correct results.
+    v = gb.Vector(udt, 2)
+    v[0] = (1.0, 10)
+    v[1] = (2.0, 20)
+    w = gb.Vector(udt, 2)
+    w[0] = (3.0, 30)
+    w[1] = (4.0, 40)
+    result = v.ewise_mult(w, binary.plus).new()
+    assert result[0].new().value.tolist() == (4.0, 40)
+    assert result[1].new().value.tolist() == (6.0, 60)
+
 
 @pytest.mark.slow
 @pytest.mark.skipif("not supports_udfs")
@@ -1004,8 +1003,7 @@ def test_complex_field_udt_jits_arithmetic():
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
 
     spec = np.dtype([("cval", np.complex128), ("scale", np.float64)])
     udt = dtypes.register_anonymous(spec, "_JitCplx1")
@@ -1023,24 +1021,20 @@ def test_complex_field_udt_jits_arithmetic():
     # division and Numba's complex division differ in their last-bit
     # rounding / overflow handling, so they're equivalent within ulps but
     # not bit-identical.
-    prev = gb.ss.config["jit_c_control"]
-    try:
-        for op_name in ("plus", "minus", "times"):
-            op = getattr(binary, op_name)
-            gb.ss.config["jit_c_control"] = "on"
+    for op_name in ("plus", "minus", "times"):
+        op = getattr(binary, op_name)
+        with _jit_mode("on"):
             wj = v.ewise_mult(u, op).new()
-            gb.ss.config["jit_c_control"] = "off"
+        with _jit_mode("off"):
             wc = v.ewise_mult(u, op).new()
-            assert wj.isequal(wc, check_dtype=True), f"binary.{op_name} on complex UDT diverged"
-        for op_name in ("abs", "ainv"):
-            op = getattr(unary, op_name)
-            gb.ss.config["jit_c_control"] = "on"
+        assert wj.isequal(wc, check_dtype=True), f"binary.{op_name} on complex UDT diverged"
+    for op_name in ("abs", "ainv"):
+        op = getattr(unary, op_name)
+        with _jit_mode("on"):
             wj = op(v).new()
-            gb.ss.config["jit_c_control"] = "off"
+        with _jit_mode("off"):
             wc = op(v).new()
-            assert wj.isequal(wc, check_dtype=True), f"unary.{op_name} on complex UDT diverged"
-    finally:
-        gb.ss.config["jit_c_control"] = prev
+        assert wj.isequal(wc, check_dtype=True), f"unary.{op_name} on complex UDT diverged"
 
     # abs source must use cabs (not the ternary, which doesn't compile on _Complex).
     assert "cabs(" in unary.abs[udt].jit_c_source
@@ -1079,6 +1073,7 @@ def test_packed_record_layout_skips_jit():
     assert w[0].new() == (2, 3.0)
 
 
+@pytest.mark.skipif("not supports_udfs")
 def test_packed_nested_record_layout_skips_jit():
     """Packed-inside-packed must skip the JIT path too.
 
@@ -1120,8 +1115,7 @@ def test_nested_record_udt_jits():
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
 
     # ``align=True`` is required for mixed-width fields so numpy's offsets
     # match what a C compiler would produce. Without it, the JIT kernel
@@ -1155,24 +1149,20 @@ def test_nested_record_udt_jits():
         v[i] = (i, (1.0 + i, 2.0 + i))
         u[i] = (1, (0.5, -0.5))
 
-    prev = gb.ss.config["jit_c_control"]
-    try:
-        for op_name in ("plus", "minus", "times"):
-            op = getattr(binary, op_name)
-            gb.ss.config["jit_c_control"] = "on"
+    for op_name in ("plus", "minus", "times"):
+        op = getattr(binary, op_name)
+        with _jit_mode("on"):
             wj = v.ewise_mult(u, op).new()
-            gb.ss.config["jit_c_control"] = "off"
+        with _jit_mode("off"):
             wc = v.ewise_mult(u, op).new()
-            assert wj.isequal(wc, check_dtype=True), f"binary.{op_name} on nested UDT diverged"
-        for op_name in ("abs", "ainv"):
-            op = getattr(unary, op_name)
-            gb.ss.config["jit_c_control"] = "on"
+        assert wj.isequal(wc, check_dtype=True), f"binary.{op_name} on nested UDT diverged"
+    for op_name in ("abs", "ainv"):
+        op = getattr(unary, op_name)
+        with _jit_mode("on"):
             wj = op(v).new()
-            gb.ss.config["jit_c_control"] = "off"
+        with _jit_mode("off"):
             wc = op(v).new()
-            assert wj.isequal(wc, check_dtype=True), f"unary.{op_name} on nested UDT diverged"
-    finally:
-        gb.ss.config["jit_c_control"] = prev
+        assert wj.isequal(wc, check_dtype=True), f"unary.{op_name} on nested UDT diverged"
 
 
 @pytest.mark.slow
@@ -1234,87 +1224,97 @@ def test_nested_record_monoid_semiring_agg():
     assert (c11["agg_id"], c11["agg_pt"]["agg_x"], c11["agg_pt"]["agg_y"]) == (220, 1.0, 2.0)
 
 
+# Per-shape fill functions for the eq/ne JIT-vs-cfunc parity test below.
+# Each returns ``(v1_record, v2_record)`` for index ``i``. Variants that put
+# a NaN at index 0 also exercise IEEE comparison semantics (eq(NaN,NaN) is
+# False), pinned by the ``nan_at_zero`` flag in ``_EQ_NE_VARIANTS``.
+
+
+def _eq_ne_fill_record_float(i):
+    nan = float("nan")
+    if i == 0:
+        return (nan, 1.0), (nan, 1.0)
+    return (1.0 + i, 2.0), (1.0 + i, 2.0 if i % 2 == 0 else 3.0)
+
+
+def _eq_ne_fill_record_int(i):
+    return (i, 2 * i), (i, 2 * i if i % 3 == 0 else 2 * i + 1)
+
+
+def _eq_ne_fill_record_nested(i):
+    return (i, (1.0, 2.0)), (i, (1.0, 2.0) if i % 3 != 0 else (1.5, 2.0))
+
+
+def _eq_ne_fill_record_complex(i):
+    return (
+        (complex(1.0 + i, 2.0), 3.0),
+        (complex(1.0 + i, 2.0 if i % 2 == 0 else 3.0), 3.0),
+    )
+
+
+def _eq_ne_fill_array_f64(i):
+    return (
+        np.array([1.0 + i, 2.0, 3.0]),
+        np.array([1.0 + i, 2.0 if i % 2 == 0 else -2.0, 3.0]),
+    )
+
+
+_EQ_NE_VARIANTS = {
+    "record_float": (
+        np.dtype([("eq_f_a", np.float64), ("eq_f_b", np.float64)], align=True),
+        "_EqJitF",
+        _eq_ne_fill_record_float,
+        True,
+    ),
+    "record_int": (
+        np.dtype([("eq_i_a", np.int64), ("eq_i_b", np.int32)], align=True),
+        "_EqJitI",
+        _eq_ne_fill_record_int,
+        False,
+    ),
+    "record_nested": (
+        np.dtype(
+            [("eq_n_id", np.int32), ("eq_n_pt", [("nx", np.float64), ("ny", np.float64)])],
+            align=True,
+        ),
+        "_EqJitN",
+        _eq_ne_fill_record_nested,
+        False,
+    ),
+    "record_complex": (
+        np.dtype([("eq_c_z", np.complex128), ("eq_c_s", np.float64)]),
+        "_EqJitC",
+        _eq_ne_fill_record_complex,
+        False,
+    ),
+    "array_f64": (
+        np.dtype((np.float64, (3,))),
+        "_EqJitArr",
+        _eq_ne_fill_array_f64,
+        False,
+    ),
+}
+
+
 @pytest.mark.slow
-@pytest.mark.parametrize(
-    "shape",
-    [
-        "record_float",
-        "record_int",
-        "record_nested",
-        "record_complex",
-        "array_f64",
-    ],
-)
+@pytest.mark.parametrize("shape", list(_EQ_NE_VARIANTS))
 def test_eq_ne_udt_jit_matches_cfunc(shape):
     """``binary.eq[udt]`` / ``binary.ne[udt]`` JIT-compile a leaf-wise
     comparison kernel and produce the same result as the cfunc fallback.
 
     Verifies the JIT kernel for several shapes (flat record, nested
     record, complex, array UDT), and that NaN propagation matches IEEE
-    (``eq(NaN, NaN) == False``).
+    (``eq(NaN, NaN) == False``) on variants flagged ``nan_at_zero``.
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
-    if gb.ss.config["jit_c_control"] == "off":
-        pytest.skip("JIT not available (no C compiler configured)")
+    _require_jit_on()
     if numba is None:
         pytest.skip("numba required for the cfunc baseline")
 
+    np_dtype, type_name, fill, nan_at_zero = _EQ_NE_VARIANTS[shape]
+    udt = dtypes.register_anonymous(np_dtype, type_name)
     N = 64
-    if shape == "record_float":
-        udt = dtypes.register_anonymous(
-            np.dtype([("eq_f_a", np.float64), ("eq_f_b", np.float64)], align=True),
-            "_EqJitF",
-        )
-
-        def fill(i):
-            nan = float("nan")
-            if i == 0:
-                return (nan, 1.0), (nan, 1.0)  # NaN on both sides -> ne
-            return (1.0 + i, 2.0), (1.0 + i, 2.0 if i % 2 == 0 else 3.0)
-
-    elif shape == "record_int":
-        udt = dtypes.register_anonymous(
-            np.dtype([("eq_i_a", np.int64), ("eq_i_b", np.int32)], align=True),
-            "_EqJitI",
-        )
-
-        def fill(i):
-            return (i, 2 * i), (i, 2 * i if i % 3 == 0 else 2 * i + 1)
-
-    elif shape == "record_nested":
-        udt = dtypes.register_anonymous(
-            np.dtype(
-                [("eq_n_id", np.int32), ("eq_n_pt", [("nx", np.float64), ("ny", np.float64)])],
-                align=True,
-            ),
-            "_EqJitN",
-        )
-
-        def fill(i):
-            return (i, (1.0, 2.0)), (i, (1.0, 2.0) if i % 3 != 0 else (1.5, 2.0))
-
-    elif shape == "record_complex":
-        udt = dtypes.register_anonymous(
-            np.dtype([("eq_c_z", np.complex128), ("eq_c_s", np.float64)]),
-            "_EqJitC",
-        )
-
-        def fill(i):
-            return (complex(1.0 + i, 2.0), 3.0), (
-                complex(1.0 + i, 2.0 if i % 2 == 0 else 3.0),
-                3.0,
-            )
-
-    else:  # array_f64
-        udt = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_EqJitArr")
-
-        def fill(i):
-            return (
-                np.array([1.0 + i, 2.0, 3.0]),
-                np.array([1.0 + i, 2.0 if i % 2 == 0 else -2.0, 3.0]),
-            )
-
     v1 = gb.Vector(udt, N)
     v2 = gb.Vector(udt, N)
     for i in range(N):
@@ -1326,18 +1326,14 @@ def test_eq_ne_udt_jit_matches_cfunc(shape):
     assert binary.eq[udt].jit_c_source is not None
     assert binary.ne[udt].jit_c_source is not None
 
-    prev = gb.ss.config["jit_c_control"]
-    try:
-        gb.ss.config["jit_c_control"] = "on"
+    with _jit_mode("on"):
         eq_jit = v1.ewise_mult(v2, binary.eq).new()
         ne_jit = v1.ewise_mult(v2, binary.ne).new()
-        gb.ss.config["jit_c_control"] = "off"
+    with _jit_mode("off"):
         eq_cf = v1.ewise_mult(v2, binary.eq).new()
         ne_cf = v1.ewise_mult(v2, binary.ne).new()
-    finally:
-        gb.ss.config["jit_c_control"] = prev
 
-    # Byte-equal across paths (the result is BOOL, so this is just exact).
+    # Byte-equal across paths (the result is BOOL, so this is exact).
     assert (
         eq_jit.to_dense().tobytes() == eq_cf.to_dense().tobytes()
     ), f"eq on {shape}: JIT and cfunc disagree"
@@ -1345,10 +1341,8 @@ def test_eq_ne_udt_jit_matches_cfunc(shape):
         ne_jit.to_dense().tobytes() == ne_cf.to_dense().tobytes()
     ), f"ne on {shape}: JIT and cfunc disagree"
 
-    # IEEE NaN sanity: when both records carry NaN, eq[0] must be False
-    # (and ne[0] True). Only meaningful for the float / complex / array
-    # variants where fill[0] puts NaN at a leaf.
-    if shape == "record_float":
+    if nan_at_zero:
+        # Both records carry NaN at index 0; IEEE ``a == a`` is False.
         assert eq_jit[0].new().value is False
         assert ne_jit[0].new().value is True
 

@@ -8,9 +8,9 @@ Matrix Multiply
 The GraphBLAS spec contains three methods for matrix multiplication, depending on whether
 the inputs are Matrix or Vector.
 
-  - **mxm** -- Matrix-Matrix multiplication
-  - **mxv** -- Matrix-Vector multiplication
-  - **vxm** -- Vector-Matrix multiplication
+  - **mxm**: Matrix-Matrix multiplication
+  - **mxv**: Matrix-Vector multiplication
+  - **vxm**: Vector-Matrix multiplication
 
 These three methods exist on python-graphblas collections, but the preferred approach is using
 the ``@`` symbol, which indicates matrix multiplication in Python.

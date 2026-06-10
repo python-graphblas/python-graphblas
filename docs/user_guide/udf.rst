@@ -87,7 +87,7 @@ User-defined types (UDTs)
 -------------------------
 
 Pass ``is_udt=True`` when your UDF operates on user-defined record or array
-types. See :doc:`udt` for the full story. In short:
+types. See :doc:`udt` for the full story.
 
 .. code-block:: python
 
@@ -120,12 +120,12 @@ works in ``ewise_mult``, ``ewise_add``, and the other elementwise paths:
 
     from graphblas import indexbinary, Matrix
 
-    def discounted_distance(x, ix, jx, y, iy, jy, theta):
+    def discounted_sum(x, ix, jx, y, iy, jy, theta):
         return (x + y) * theta
 
-    indexbinary.register_new("discounted_dist", discounted_distance)
+    indexbinary.register_new("discounted_sum", discounted_sum)
 
-    bound = indexbinary.discounted_dist[float](0.5)   # theta = 0.5
+    bound = indexbinary.discounted_sum[float](0.5)   # theta = 0.5
     A = Matrix.from_coo([0, 1], [0, 1], [1.0, 2.0])
     B = Matrix.from_coo([0, 1], [0, 1], [3.0, 4.0])
     C = A.ewise_mult(B, bound).new()

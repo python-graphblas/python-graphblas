@@ -5,8 +5,8 @@ from types import BuiltinFunctionType, ModuleType
 
 from ... import _STANDARD_OPERATOR_NAMES, backend, op
 from ...dtypes import BOOL, INT8, UINT64, _supports_complex, lookup_dtype
-from ...exceptions import UdfParseError
-from .. import _has_numba, _supports_udfs, lib
+from ...exceptions import UdfParseError, check_status_carg
+from .. import _has_numba, _supports_udfs, ffi, lib
 from ..expr import InfixExprBase
 from ..utils import output_type
 
@@ -95,6 +95,20 @@ def _hasop(module, name):
     )
 
 
+def _bool_to_int8(dtype):
+    """Return INT8 if ``dtype`` is BOOL, else the dtype unchanged.
+
+    Numba can't compile cfuncs that read or write ``CPointer(boolean)``
+    (errors like ``cannot store i1 to i8*`` / ``cond is not i1: i8``); see
+    numba/numba#5395. Routing BOOL through INT8 sidesteps that; GraphBLAS
+    coerces back at the cfunc boundary.
+
+    MAINT 2026-05-24: still hits on Numba 0.65. Re-test periodically and
+    drop the INT8 routing when upstream is fixed.
+    """
+    return INT8 if dtype == BOOL else dtype
+
+
 class OpPath:
     def __init__(self, parent, name):
         self._parent = parent
@@ -166,6 +180,41 @@ def _call_op(op, left, right=None, thunk=None, **kwargs):
 
 
 if _has_numba:
+
+    def _finalize_udt_op(parent_op, dtype, dtype2, ret_type, wrapper, wrapper_sig, typed_user_cls):
+        """Compile the cfunc, allocate the ``GrB`` op, wrap it, and cache it.
+
+        Shared tail for ``_compile_udt`` in UnaryOp / BinaryOp / IndexUnaryOp /
+        SelectOp. Looks up the SuiteSparse handle type and ``_new`` symbol
+        from ``typed_user_cls.opclass``. ``dtype2`` is ``None`` for unary
+        ops; the rest pass both. Returns the cached ``TypedUser*Op``.
+        """
+        wrapper = numba.cfunc(wrapper_sig, nopython=True)(wrapper)
+        c_typename = _GB_OBJ_C_TYPENAME[typed_user_cls.opclass]
+        error_label = c_typename.removeprefix("GrB_").removeprefix("GxB_")
+        gb_obj = ffi.new(f"{c_typename}*")
+        new_func = getattr(lib, f"{c_typename}_new")
+        if dtype2 is None:
+            check_status_carg(
+                new_func(gb_obj, wrapper.cffi, ret_type._carg, dtype._carg),
+                error_label,
+                gb_obj[0],
+            )
+            op = typed_user_cls(parent_op, parent_op.name, dtype, ret_type, gb_obj[0])
+            key = dtype
+        else:
+            check_status_carg(
+                new_func(gb_obj, wrapper.cffi, ret_type._carg, dtype._carg, dtype2._carg),
+                error_label,
+                gb_obj[0],
+            )
+            op = typed_user_cls(
+                parent_op, parent_op.name, dtype, ret_type, gb_obj[0], dtype2=dtype2
+            )
+            key = (dtype, dtype2)
+        parent_op._udt_types[key] = ret_type
+        parent_op._udt_ops[key] = op
+        return op
 
     def _compile_udf_for_udt(numba_func, sig, *, op_kind, op_name, dtypes):
         """Compile ``sig`` and re-raise Numba compilation errors as ``UdfParseError``.
@@ -307,7 +356,7 @@ if _has_numba:
         if dtype == BOOL:
             # Numba can't compile bool ptrs (numba/numba#5395); expose them
             # as int8 and cast on deref.
-            # MAINT 2026-05-17: re-verified on Numba 0.65; re-test periodically.
+            # MAINT 2026-05-24: still hits on Numba 0.65; re-test periodically.
             return "", f"bool({var}_ptr[0])", nt.CPointer(INT8.numba_type)
         return "", f"{var}_ptr[0]", nt.CPointer(dtype.numba_type)
 
@@ -458,6 +507,23 @@ if _has_numba:
         return wrapper, wrapper_sig
 
 
+# Maps ``opclass`` to the SuiteSparse C type name SS allocates for it.
+# ``IndexBinaryOp`` is in the GxB_ namespace (SS-specific, added in 9.4);
+# the rest are GrB_. ``SelectOp`` is implemented on top of
+# ``GrB_IndexUnaryOp`` (BOOL-returning), so its handle frees through the
+# same ``GrB_IndexUnaryOp_free``. Used by ``TypedOpBase.__del__`` to
+# synthesize the pointer cell for ``<C type>_free``.
+_GB_OBJ_C_TYPENAME = {
+    "UnaryOp": "GrB_UnaryOp",
+    "BinaryOp": "GrB_BinaryOp",
+    "IndexUnaryOp": "GrB_IndexUnaryOp",
+    "SelectOp": "GrB_IndexUnaryOp",
+    "IndexBinaryOp": "GxB_IndexBinaryOp",
+    "Monoid": "GrB_Monoid",
+    "Semiring": "GrB_Semiring",
+}
+
+
 class TypedOpBase:
     __slots__ = (
         "parent",
@@ -468,8 +534,17 @@ class TypedOpBase:
         "gb_name",
         "_type2",
         "_jit_c_info",
+        "_owns_gb_obj_inst",
         "__weakref__",
     )
+    # Subclasses whose ``gb_obj`` was allocated via ``GrB_<Type>_new`` /
+    # ``GxB_<Type>_new`` (TypedUser*Op, _BoundIndexBinaryOp) override this so
+    # ``__del__`` frees the SuiteSparse handle. Built-in typed ops point at
+    # SuiteSparse's permanent built-in singletons and must never free.
+    # Specific instances can override via ``_owns_gb_obj_inst`` (set by
+    # the constructor); ``SelectOp._from_indexunary`` aliases an existing
+    # ``GrB_IndexUnaryOp`` and must clear ownership to avoid a double free.
+    _owns_gb_obj = False
 
     def __init__(self, parent, name, type_, return_type, gb_obj, gb_name, dtype2=None):
         self.parent = parent
@@ -483,6 +558,10 @@ class TypedOpBase:
         # for this typed op; ``None`` for built-in ops and for UDT ops with
         # no JIT path.
         self._jit_c_info = None
+        # Per-instance ownership override; defaults to the class attribute.
+        # ``SelectOp._from_indexunary`` flips this to ``False`` on aliasing
+        # TypedUserSelectOps so only the IndexUnaryOp frees the handle.
+        self._owns_gb_obj_inst = type(self)._owns_gb_obj
 
     @property
     def jit_c_name(self):
@@ -513,6 +592,32 @@ class TypedOpBase:
             return (getitem, (self.parent, self.type))
         return (getitem, (self.parent, (self.type, self._type2)))
 
+    def __del__(self):
+        # Free the SuiteSparse handle we allocated. Built-in typed ops alias
+        # SuiteSparse's permanent built-in singletons and must never free, so
+        # gate on the per-instance owns flag (defaults to the class
+        # attribute; the alias case overrides to False). Mirrors the
+        # ``Matrix.__del__`` / ``Vector.__del__`` pattern.
+        if not getattr(self, "_owns_gb_obj_inst", False):
+            return
+        gb_obj = getattr(self, "gb_obj", None)
+        if gb_obj is None or lib is None or ffi is None:
+            # Interpreter shutdown can clear ``lib`` / ``ffi`` before
+            # finalizers run; SS will clean up the handles at process exit.
+            return
+        c_type_name = _GB_OBJ_C_TYPENAME.get(self.opclass)
+        if c_type_name is None:  # pragma: no cover (defensive)
+            return
+        free_fn = getattr(lib, f"{c_type_name}_free", None)
+        if free_fn is None:
+            # ``GxB_IndexBinaryOp_free`` is absent on SS < 9.4; that build
+            # also can't allocate one in the first place, so this path is
+            # unreachable in practice but guarded for safety.
+            return
+        # ``GrB_<Type>_free`` takes a pointer-to-pointer (sets ``*p = NULL``
+        # after free). Synthesize a cell pointing at our handle and call it.
+        free_fn(ffi.new(f"{c_type_name}*", gb_obj))
+
 
 class _BinaryopJitDelegate:
     """Mixin for ops that don't own a JIT kernel; defer introspection to ``binaryop``.
@@ -529,10 +634,9 @@ class _BinaryopJitDelegate:
 
     @_jit_c_info.setter
     def _jit_c_info(self, value):
-        if value is not None:  # pragma: no cover (defensive)
-            raise AttributeError(
-                f"{type(self).__name__} does not own _jit_c_info; set it on its binaryop"
-            )
+        # No-op so ``TypedOpBase.__init__``'s ``self._jit_c_info = None``
+        # slot-init succeeds. The kernel lives on ``binaryop``.
+        pass
 
 
 def _deserialize_parameterized(parameterized_op, args, kwargs):
@@ -543,6 +647,10 @@ class ParameterizedUdf:
     __slots__ = "name", "__call__", "_anonymous", "__weakref__"
     is_positional = False
     _custom_dtype = None
+    # Subclasses set this to the OpBase subclass they parameterize (e.g.,
+    # ``ParameterizedUnaryOp._op_class = UnaryOp``). Assigned after the
+    # OpBase subclass is defined to avoid an import-order cycle.
+    _op_class = None
 
     def __init__(self, name, anonymous):
         self.name = name
@@ -553,6 +661,30 @@ class ParameterizedUdf:
 
     def _call(self, *args, **kwargs):
         raise NotImplementedError
+
+    def __reduce__(self):
+        # The namespace prefix (``unary``, ``binary``, ...) comes from the
+        # OpBase subclass each parameterized op wraps. Standard ops pickle by
+        # name; user-registered ones pickle the reduce tuple and re-register
+        # on load via ``_deserialize`` (which dispatches through ``_op_class``).
+        name = f"{self._op_class._modname}.{self.name}"
+        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
+            return name
+        return (self._deserialize, (self.name, self.func, self._anonymous, self._is_udt))
+
+    @classmethod
+    def _deserialize(cls, name, func, anonymous, is_udt=False):
+        """Re-register a parameterized UDF on unpickle, or reuse if already present.
+
+        Shared by the five ``Parameterized*Op`` subclasses; each sets
+        ``_op_class`` to the matching OpBase subclass for the dispatch below.
+        """
+        op_cls = cls._op_class
+        if anonymous:
+            return op_cls.register_anonymous(func, name, parameterized=True, is_udt=is_udt)
+        if (rv := op_cls._find(name)) is not None:
+            return rv
+        return op_cls.register_new(name, func, parameterized=True, is_udt=is_udt)
 
 
 _VARNAMES = tuple(x for x in dir(lib) if x[0] != "_")
@@ -771,8 +903,8 @@ class OpBase:
         """Re-register a named UDF on unpickle, or reuse if already present.
 
         Shared by the five UDF-capable subclasses (UnaryOp, BinaryOp,
-        IndexUnaryOp, SelectOp, IndexBinaryOp), all of which emit the
-        same three-tuple from ``__reduce__``.
+        IndexUnaryOp, SelectOp, IndexBinaryOp), all of which use the
+        default ``__reduce__`` below.
         """
         if (rv := cls._find(name)) is not None:
             return rv
@@ -782,6 +914,22 @@ class OpBase:
     def _deserialize_anon_udf(cls, func, name, is_udt):
         """Re-register an anonymous UDF on unpickle."""
         return cls.register_anonymous(func, name, is_udt=is_udt)
+
+    def __reduce__(self):
+        """Default ``__reduce__`` for UDF-capable subclasses.
+
+        Assumes the instance has ``orig_func`` and ``_is_udt`` attributes (all
+        five UDF-capable subclasses do). ``Monoid``, ``Semiring``, and
+        ``Aggregator`` define their own ``__reduce__`` because their pickle
+        shape differs (they hold a binary op + identity, etc.).
+        """
+        if self._anonymous:
+            if hasattr(self.orig_func, "_parameterized_info"):
+                return (_deserialize_parameterized, self.orig_func._parameterized_info)
+            return (type(self)._deserialize_anon_udf, (self.orig_func, self.name, self._is_udt))
+        if (name := f"{self._modname}.{self.name}") in _STANDARD_OPERATOR_NAMES:
+            return name
+        return (type(self)._deserialize_udf, (self.name, self.orig_func, self._is_udt))
 
     @classmethod
     def _check_supports_udf(cls, method_name):

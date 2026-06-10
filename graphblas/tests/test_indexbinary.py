@@ -192,29 +192,42 @@ def test_parameterized():
     assert C.to_coo()[2][0] == 26  # (3+5)*2 + 10 = 26
 
 
-def _pickle_test_add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
-    # Module-level so pickle can serialize the function reference. IBO
-    # ``__reduce__`` for user-registered ops returns a tuple containing the
-    # original function; pickling that needs the function to be globally
-    # importable (i.e., not a closure / local function).
+# Module-level so pickle can serialize the function reference. IBO
+# ``__reduce__`` for user-registered ops returns a tuple containing the
+# original function; pickling needs the function to be globally importable
+# (i.e., not a closure / local function).
+def _ibo_add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
     return x + y + theta
 
 
+def _ibo_return_x(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+    return x
+
+
 def test_pickle_registered():
-    indexbinary.register_new("pickle_test_op", _pickle_test_add_theta)
-    op = indexbinary.pickle_test_op
-    op2 = pickle.loads(pickle.dumps(op))
-    assert op2.name == op.name
+    indexbinary.register_new("pickle_test_op", _ibo_add_theta)
+    try:
+        op = indexbinary.pickle_test_op
+        op2 = pickle.loads(pickle.dumps(op))
+        assert op2.name == op.name
 
-    typed = op[int]
-    typed2 = pickle.loads(pickle.dumps(typed))
-    assert typed2.name == typed.name
+        typed = op[int]
+        typed2 = pickle.loads(pickle.dumps(typed))
+        assert typed2.name == typed.name
 
-    delattr(indexbinary, "pickle_test_op")
+        # Unpickled op must actually run, not just carry the right name.
+        bound = op2[int](7)
+        A = Matrix.from_coo([0, 1], [0, 1], [3, 11])
+        B = Matrix.from_coo([0, 1], [0, 1], [5, 1])
+        C = A.ewise_mult(B, bound).new()
+        # (3+5)+7 = 15; (11+1)+7 = 19
+        assert C.isequal(Matrix.from_coo([0, 1], [0, 1], [15, 19]))
+    finally:
+        delattr(indexbinary, "pickle_test_op")
 
 
 def test_pickle_bound():
-    indexbinary.register_new("pickle_bound_test_op", _pickle_test_add_theta)
+    indexbinary.register_new("pickle_bound_test_op", _ibo_add_theta)
     try:
         bound = indexbinary.pickle_bound_test_op[int](7)
         bound2 = pickle.loads(pickle.dumps(bound))
@@ -226,11 +239,6 @@ def test_pickle_bound():
         assert C1.isequal(C2)
     finally:
         delattr(indexbinary, "pickle_bound_test_op")
-
-
-def _pickle_test_array_udt_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
-    # Module-level so pickle.dumps(bound) can resolve the orig_func.
-    return x
 
 
 def test_pickle_bound_array_udt_theta():
@@ -246,7 +254,7 @@ def test_pickle_bound_array_udt_theta():
     from graphblas import dtypes
 
     arr_udt = dtypes.register_anonymous(np.dtype((np.int64, (3,))), "_BoundIboArr3")
-    indexbinary.register_new("pickle_bound_array_udt_op", _pickle_test_array_udt_theta, is_udt=True)
+    indexbinary.register_new("pickle_bound_array_udt_op", _ibo_return_x, is_udt=True)
     try:
         op = indexbinary.pickle_bound_array_udt_op
         theta_scalar = gb.Scalar(arr_udt)
@@ -264,24 +272,144 @@ def test_pickle_bound_array_udt_theta():
         delattr(indexbinary, "pickle_bound_array_udt_op")
 
 
+def test_bind_raw_array_udt_theta():
+    """A raw (non-Scalar) array-UDT theta is bound using the known thunk dtype.
+
+    Regression: the ``not isinstance(theta, Scalar)`` branch of the IBO
+    ``__call__`` passed the raw value to ``Scalar.from_value`` with no dtype,
+    which inferred a scalar element type and crashed on the multi-dim ndarray.
+    The typed op now supplies its thunk dtype; the untyped op uses the explicit
+    ``dtype=`` argument.
+    """
+    from graphblas import dtypes
+
+    arr_udt = dtypes.register_anonymous(np.dtype((np.int64, (3,))), "_RawThetaArr3")
+    indexbinary.register_new("raw_array_udt_op", _ibo_return_x, is_udt=True)
+    try:
+        op = indexbinary.raw_array_udt_op
+        raw = np.array([1, 2, 3], dtype=np.int64)
+        # Typed op: ``op[arr_udt]`` knows the thunk dtype.
+        bound = op[arr_udt](raw)
+        assert bound.type is arr_udt
+        assert np.array_equal(bound._theta, raw)
+        # Untyped op: the explicit ``dtype=`` supplies the UDT.
+        bound2 = op(raw, dtype=arr_udt)
+        assert bound2.type is arr_udt
+        assert np.array_equal(bound2._theta, raw)
+    finally:
+        delattr(indexbinary, "raw_array_udt_op")
+
+
+def test_bind_raw_udt_theta_without_dtype_errors():
+    """A raw UDT theta with no dtype can't be inferred; the error is clear and actionable."""
+    indexbinary.register_new("raw_no_dtype_op", _ibo_return_x, is_udt=True)
+    try:
+        op = indexbinary.raw_no_dtype_op
+        with pytest.raises(TypeError, match="Cannot infer a dtype for theta"):
+            op(np.array([1, 2, 3], dtype=np.int64))
+        with pytest.raises(TypeError, match="Cannot infer a dtype for theta"):
+            op((1, 2, 3))
+    finally:
+        delattr(indexbinary, "raw_no_dtype_op")
+
+
+def test_pickle_bound_record_udt_theta():
+    """Bound IBO with a record-UDT theta value round-trips through pickle.
+
+    Companion to :func:`test_pickle_bound_array_udt_theta` for the record
+    flavor of UDT; the array case was the one that crashed before the
+    ``_rebind_indexbinaryop`` Scalar-wrap fix, and the record case worked
+    only because ``_theta`` happened to be a 0-d ``np.void`` that
+    ``Scalar.value =`` accepted. Pin the contract for both shapes so a
+    regression in either is loud.
+    """
+    from graphblas import dtypes
+
+    rec_udt = dtypes.register_anonymous(
+        np.dtype([("a", np.int64), ("b", np.int64)], align=True),
+        "_BoundIboRec",
+    )
+    indexbinary.register_new("pickle_bound_record_udt_op", _ibo_return_x, is_udt=True)
+    try:
+        op = indexbinary.pickle_bound_record_udt_op
+        theta_scalar = gb.Scalar(rec_udt)
+        theta_scalar.value = (5, 7)
+        bound = op[rec_udt](theta_scalar)
+        bound2 = pickle.loads(pickle.dumps(bound))
+        assert tuple(bound2._theta) == (5, 7)
+        assert bound2.parent is bound.parent
+        assert bound2.type is rec_udt
+    finally:
+        delattr(indexbinary, "pickle_bound_record_udt_op")
+
+
+@pytest.mark.slow
+def test_bound_ibo_memory_bounded():
+    """Regression: ``iop(theta)`` used to leak one ``GrB_BinaryOp`` per call.
+
+    Bound IBOs are never cached, so a loop that re-binds with different
+    theta values leaks unboundedly without the ``TypedOpBase.__del__`` free.
+    50k bound IBOs are well above the noise floor for the leak (each is
+    several hundred bytes of SS state plus a python-level wrapper); RSS
+    growth should stay below a few MB after GC drops them.
+    """
+    import gc
+    import resource
+    import sys
+
+    if hasattr(indexbinary, "leak_test_bound_ibo_op"):
+        delattr(indexbinary, "leak_test_bound_ibo_op")
+    indexbinary.register_new("leak_test_bound_ibo_op", _ibo_add_theta)
+    op = indexbinary.leak_test_bound_ibo_op
+    try:
+        # ``ru_maxrss`` is bytes on macOS, KB on Linux.
+        scale = 1024 if sys.platform.startswith("linux") else 1024 * 1024
+
+        def rss_mb():
+            return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / scale
+
+        # Warm up to populate typed-op cache; first call also touches the
+        # numba sample-types path.
+        for _ in range(100):
+            _ = op[int](0)
+        gc.collect()
+        before = rss_mb()
+        for i in range(50_000):
+            _ = op[int](i)
+        gc.collect()
+        after = rss_mb()
+        # 50k leaked GrB_BinaryOps were on the order of tens of MB before the
+        # fix; under the fix we expect single-digit MB.
+        assert (
+            after - before
+        ) < 25.0, f"bound-IBO leak: RSS grew {after - before:.1f} MB over 50k binds"
+    finally:
+        delattr(indexbinary, "leak_test_bound_ibo_op")
+
+
 def test_bound_ibo_jit_introspection_returns_none():
     """Bound IBOs are user-defined and don't go through the built-in JIT C
     codegen path, so the introspection properties must report ``None``
     without crashing. Regression for an earlier construction path that
     used ``__new__`` directly and skipped the inherited ``_jit_c_info``
-    slot's default-None initialization.
+    slot's default-None initialization. Also checks the unpickled instance,
+    which goes through a different construction path (``_rebind_indexbinaryop``
+    -> ``TypedBuiltinIndexBinaryOp.__call__``).
     """
-
-    def add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
-        return x + y + theta
-
-    op = indexbinary.register_anonymous(add_theta)
-    bound = op[int](3)
-    # User IBOs don't go through the built-in JIT C codegen path, so these
-    # are expected to be ``None``; the introspection properties must not
-    # crash either way.
-    assert bound.jit_c_name is None
-    assert bound.jit_c_source is None
+    indexbinary.register_new("_jit_introspect_test_op", _ibo_add_theta)
+    try:
+        op = indexbinary._jit_introspect_test_op
+        bound = op[int](3)
+        # User IBOs don't go through the built-in JIT C codegen path, so these
+        # are expected to be ``None``; the introspection properties must not
+        # crash either way.
+        assert bound.jit_c_name is None
+        assert bound.jit_c_source is None
+        bound2 = pickle.loads(pickle.dumps(bound))
+        assert bound2.jit_c_name is None
+        assert bound2.jit_c_source is None
+    finally:
+        delattr(indexbinary, "_jit_introspect_test_op")
 
 
 def test_bad_udf():

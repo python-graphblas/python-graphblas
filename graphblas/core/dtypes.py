@@ -296,10 +296,7 @@ def register_anonymous(dtype, name=None):
         # We don't yet have C definitions
         np_repr = _dtype_to_string(dtype).encode()
         if len(np_repr) > lib.GxB_MAX_NAME_LEN:
-            msg = (
-                f"UDT repr is too large to serialize ({len(repr(dtype).encode())} > "
-                f"{lib.GxB_MAX_NAME_LEN})."
-            )
+            msg = f"UDT repr is too large to serialize ({len(np_repr)} > {lib.GxB_MAX_NAME_LEN})."
             if name is not None:
                 np_repr = name.encode()[: lib.GxB_MAX_NAME_LEN]
             else:
@@ -607,13 +604,53 @@ def _dtype_to_string(dtype):
         np_type = dtype.np_type
     s = str(np_type)
     try:
-        if np.dtype(literal_eval(s)) == np_type:  # pragma: no branch (safety)
+        if np.dtype(literal_eval(s)) == np_type:
             return s
     except Exception:
         pass
-    if np.dtype(np_type.str) != np_type:  # pragma: no cover (safety)
-        raise ValueError(f"Unable to reliably convert dtype to string and back: {dtype}")
-    return repr(np_type.str)
+    if np.dtype(np_type.str) == np_type:
+        return repr(np_type.str)
+    # Some nested dtypes (e.g. ``align=True`` outer + ``packed`` inner) don't
+    # round-trip via ``str(np_type)`` because numpy's reconstruction enforces
+    # the outer's alignment on the inner. Fall back to an explicit per-field
+    # dict using literal offsets/itemsize, which encodes the exact layout
+    # without invoking ``align``. ``literal_eval`` accepts the result, so
+    # ``_string_to_dtype`` doesn't need a special case for it.
+    return repr(_dtype_to_explicit_dict(np_type))
+
+
+def _dtype_to_explicit_dict(np_type):
+    """Encode ``np_type`` as a plain dict/tuple/str tree of literals.
+
+    Layout-preserving fallback for :func:`_dtype_to_string`. Records become a
+    ``{names, formats, offsets, itemsize}`` dict whose nested ``formats`` may
+    be further nested dicts; array dtypes become a ``(base_str, shape)``
+    tuple. The result round-trips through ``np.dtype(literal_eval(s))``
+    without ever using ``aligned=True``, so the original byte layout is
+    preserved verbatim even for the aligned-outer / packed-inner cases.
+    """
+    if np_type.names is not None:
+        formats = []
+        for name in np_type.names:
+            sub = np_type.fields[name][0]
+            if sub.names is not None or sub.subdtype is not None:
+                formats.append(_dtype_to_explicit_dict(sub))
+            else:
+                formats.append(sub.str)
+        return {
+            "names": list(np_type.names),
+            "formats": formats,
+            "offsets": [np_type.fields[name][1] for name in np_type.names],
+            "itemsize": np_type.itemsize,
+        }
+    if np_type.subdtype is not None:
+        base, shape = np_type.subdtype
+        if base.names is not None:
+            base_repr = _dtype_to_explicit_dict(base)
+        else:
+            base_repr = base.str
+        return (base_repr, shape)
+    return np_type.str
 
 
 def _string_to_dtype(s):

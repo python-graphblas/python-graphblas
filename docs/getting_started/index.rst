@@ -30,10 +30,10 @@ Optional Dependencies
 The following are not required by ``python-graphblas``, but may be needed for certain functionality
 to work.
 
-  - `pandas <https://pandas.pydata.org/>`__ -- required for nicer ``__repr__``
-  - `matplotlib <https://matplotlib.org>`__ -- required for basic plotting of graphs
-  - `scipy <https://scipy.org/>`__ -- used in ``io`` module to read/write ``scipy.sparse`` format
-  - `networkx <https://networkx.org>`__ -- used in ``io`` module to interface with networkx graphs
+  - `pandas <https://pandas.pydata.org/>`__: required for nicer ``__repr__``
+  - `matplotlib <https://matplotlib.org>`__: required for basic plotting of graphs
+  - `scipy <https://scipy.org/>`__: used in ``io`` module to read/write ``scipy.sparse`` format
+  - `networkx <https://networkx.org>`__: used in ``io`` module to interface with networkx graphs
 
 GraphBLAS Fundamentals
 ----------------------

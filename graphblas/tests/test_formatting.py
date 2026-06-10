@@ -81,6 +81,17 @@ def html_printer(x, name="", indent=4):
     return _printer(repr_html(x), name, "repr_html", indent)
 
 
+@pytest.fixture(autouse=True)
+def _stable_repr_width(monkeypatch):
+    """Pin terminal width so pandas-rendered reprs are deterministic.
+
+    Matrix/Vector reprs let pandas truncate columns to the terminal width, and
+    the expected strings assume 80. Under ``pytest -n`` workers inherit the
+    launching terminal's width, so a wide terminal would show extra columns.
+    """
+    monkeypatch.setenv("COLUMNS", "80")
+
+
 @pytest.fixture
 def A():
     return Matrix.from_coo([0, 0, 0], [0, 2, 4], [0, 1, 2], nrows=1, ncols=5, name="A_1")

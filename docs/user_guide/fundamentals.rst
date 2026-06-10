@@ -183,8 +183,8 @@ Comparing Objects
 Comparing objects can be tricky because of the need to check the shape, sparsity pattern, and values
 of both objects. Two convenience methods exist to simplify comparisons.
 
-1. isequal -- for checking exact matches
-2. isclose -- for checking approximately equal for floating point dtypes
+1. isequal: for checking exact matches
+2. isclose: for checking approximately equal for floating point dtypes
 
 By default, the types do not need to match as long as the values are equivalent. If exact dtype matching
 is required, set the ``check_dtype`` keyword argument to True.

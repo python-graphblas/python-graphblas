@@ -22,10 +22,22 @@ warning at import or at first JIT use.
 
 import os
 import pathlib
+import platform
 import re
 import subprocess
 
 from .. import lib  # noqa: F401  (sets up cffi)
+
+# Mapping from the values that show up in baked-in ``-arch`` flags to what
+# ``platform.machine()`` returns on the running host.
+_ARCH_ALIASES = {
+    "x86_64": ("x86_64", "amd64"),
+    "arm64": ("arm64", "aarch64"),
+    "aarch64": ("arm64", "aarch64"),
+    "i386": ("i386", "x86"),
+    "ppc": ("ppc", "powerpc"),
+    "ppc64": ("ppc64", "powerpc64"),
+}
 
 
 def _ss_config():
@@ -36,17 +48,16 @@ def _ss_config():
 
 
 def jit_compiler_is_usable():
-    """Return True iff the configured JIT compiler exists on disk.
+    """True iff the configured JIT compiler path exists on disk.
 
-    A cheap probe: it checks the file but doesn't try to compile anything.
-    Use this to decide whether to warn the user or suggest ``fix_jit_config()``.
+    Cheap (no compile attempt); use before suggesting ``fix_jit_config()``.
     """
     cfg = _ss_config()
     cc = cfg.get("jit_c_compiler_name", "")
     return bool(cc) and pathlib.Path(cc).exists()
 
 
-def fix_jit_config(*, use_sysconfig=False, probe=True):
+def fix_jit_config(*, use_sysconfig=True, probe=True):
     """Repair the SuiteSparse:GraphBLAS JIT compiler configuration.
 
     Replaces the baked-in compiler path (which often points at a conda-build
@@ -56,21 +67,24 @@ def fix_jit_config(*, use_sysconfig=False, probe=True):
 
     Parameters
     ----------
-    use_sysconfig : bool, default False
+    use_sysconfig : bool, default True
         When ``$CONDA_PREFIX`` isn't set (pure pip install), try the
-        compiler from ``sysconfig.get_config_var("CC")`` instead.
+        compiler from ``sysconfig.get_config_var("CC")``. Set to ``False``
+        to restrict the repair to a conda environment only.
     probe : bool, default True
         After fixing the config, try to JIT-register a trivial UDT to verify
-        the compiler actually works. If the probe fails, set
-        ``jit_c_control = 'off'`` and return False so SS doesn't keep
-        attempting failing compiles.
+        the compiler actually works. SuiteSparse auto-flips ``jit_c_control``
+        from ``'on'`` to ``'load'`` on a failed compile; the probe absorbs
+        that first failure so user-visible ops afterwards see a stable
+        ``'load'`` (cache-only) state and punt to generic cleanly.
 
     Returns
     -------
     True
         Fix applied and (if ``probe``) verified working.
     False
-        Fix attempted but the probe failed, so JIT is now disabled.
+        Fix attempted but the probe failed. ``jit_c_control`` is now
+        whatever SuiteSparse left it at (typically ``'load'``).
     None
         No environment available to fix from. There's no ``$CONDA_PREFIX``,
         and either ``use_sysconfig=False`` or no sysconfig compiler is set.
@@ -84,12 +98,11 @@ def fix_jit_config(*, use_sysconfig=False, probe=True):
         return None
     if rv is None:
         return None
-    # An explicit user-driven fix is a clean opportunity to re-arm the
-    # one-time ``NoJITWarning``: if the repair worked, the next UDT auto-lift
-    # that *still* falls back to cfunc (different cause: UDT layout, etc.)
+    # An explicit user-driven fix is a clean opportunity to re-arm
+    # ``NoJITWarning``: if the repair worked, the next UDT auto-lift that
+    # *still* falls back to cfunc (different cause: UDT layout, etc.)
     # deserves a fresh notification rather than silent suppression.
-    global _warned_no_jit
-    _warned_no_jit = False
+    _warned_no_jit_for.clear()
     if not probe:
         return True
     return _probe_jit(cfg)
@@ -143,39 +156,70 @@ def _fix_compiler_flags(cfg):
         except (subprocess.CalledProcessError, FileNotFoundError):
             # No Xcode SDK (Linux, or macOS without Xcode CLT).
             flags = re.sub(r"-isysroot\s+\S+", "", flags)
+    flags = _strip_mismatched_arch(flags)
     # Build-time debug path remapping is irrelevant in a user environment.
     flags = re.sub(r"-fdebug-prefix-map=\S+", "", flags)
     cfg["jit_c_compiler_flags"] = flags
 
 
+def _strip_mismatched_arch(flags):
+    """Strip any ``-arch FOO`` that doesn't match the host architecture.
+
+    conda-forge's ``python-suitesparse-graphblas`` bakes the build host's
+    ``-arch`` into ``jit_c_compiler_flags``. On a different host (e.g., an
+    arm64 Mac running an x86_64-built package) the JIT compile produces
+    objects for the wrong arch and the link fails. Leaving the flag out
+    lets the compiler default to the host arch.
+    """
+    host = platform.machine().lower()
+    return re.sub(
+        r"-arch\s+(\S+)",
+        lambda m: "" if m.group(1).lower() not in _ARCH_ALIASES.get(host, (host,)) else m.group(0),
+        flags,
+    )
+
+
 def _probe_jit(cfg):
-    """Probe a trivial JIT compile to verify the config works."""
+    """Probe a trivial JIT compile to verify the config works.
+
+    On failure, SuiteSparse will have flipped ``jit_c_control`` from
+    ``'on'`` to ``'load'`` (its built-in response to a failed compile);
+    we leave that state alone. Both ``'load'`` and ``'off'`` cause
+    downstream ops to punt to the generic kernel, but ``'load'`` preserves
+    any pre-compiled kernels in the cache.
+    """
     from ... import dtypes as _dtypes
 
-    # ``register_new`` rejects a duplicate name with ``ValueError``. The probe
-    # dtype is installed at ``dtypes.ss._jit_probe`` on first success; reuse it
-    # on a second probe so a repeat call doesn't flip ``jit_c_control`` to
-    # ``off``.
+    # The probe dtype is installed at ``dtypes.ss._jit_probe`` on first
+    # success; reuse it on a second probe so a repeat call doesn't appear to
+    # fail. Without the hasattr short-circuit, ``register_new`` would raise
+    # ``ValueError("name unavailable")`` on the second call.
     probe_name = "_jit_probe"
     if hasattr(_dtypes.ss, probe_name):
         return True
     try:
         _dtypes.ss.register_new(probe_name, "typedef struct { int _probe ; } _jit_probe ;")
     except Exception:
-        cfg["jit_c_control"] = "off"
+        # ``register_new`` can raise ``JitError`` (bad path / flags / arch /
+        # SDK), ``RuntimeError`` (SS<8 has no JIT), or one of its input
+        # validation ``ValueError``s. The probe's contract is "did this
+        # work?", so absorb every failure mode here.
         return False
     return True
 
 
 def _auto_fix_jit_at_import():
-    """Auto-fix the JIT config once at ``gb.ss`` import time.
+    """Run :func:`fix_jit_config` at ``gb.ss`` import; designed not to raise.
 
-    When the baked-in compiler path is missing, swap it for one from
-    ``$CONDA_PREFIX/bin/`` or ``sysconfig``, and bump ``jit_c_control`` from
-    the SS default ``'run'`` (load only) to ``'on'`` (compile and load).
-    When the compiler is already usable, only the mode bump applies. Never
-    raises and does not probe; if the resulting state is still broken,
-    ``_maybe_warn_no_jit`` surfaces the issue at first UDT auto-lift.
+    Called unguarded from ``graphblas/ss/__init__.py``, so any exception
+    here breaks ``import graphblas.ss``. The body sticks to dict ops and
+    delegates the failure-prone work to ``_probe_jit``, which catches
+    everything internally.
+
+    The probe is the load-bearing piece: without it, SS would surface
+    ``JitError`` on the first user-triggered JIT compile (a failed
+    compile is only converted to a silent ``'load'`` fallback on
+    subsequent calls).
     """
     cfg = _ss_config()
     if "jit_c_control" not in cfg:
@@ -183,28 +227,30 @@ def _auto_fix_jit_at_import():
     if jit_compiler_is_usable():
         if cfg["jit_c_control"] in ("run", "load"):
             cfg["jit_c_control"] = "on"
-        return
-    try:
+    else:
         fix_jit_config(use_sysconfig=True, probe=False)
-    except Exception:  # pragma: no cover (defensive)
-        return
-    if jit_compiler_is_usable() and cfg["jit_c_control"] in ("run", "load"):
-        cfg["jit_c_control"] = "on"
+        if jit_compiler_is_usable() and cfg["jit_c_control"] in ("run", "load"):
+            cfg["jit_c_control"] = "on"
+    if cfg.get("jit_c_control") == "on":
+        _probe_jit(cfg)
 
 
-_warned_no_jit = False
+# Keyed by ``(op_name, dtype_name)`` so each distinct pair warns once.
+# A user who registers several UDTs gets one warning per (op, dtype) pair
+# rather than a single global swallow.
+_warned_no_jit_for = set()
 
 
 def _maybe_warn_no_jit(*, op_name="", dtype_name=""):
-    """Emit a one-time ``NoJITWarning`` when UDT auto-lift falls back to the cfunc path.
+    """Emit a ``NoJITWarning`` (once per ``(op_name, dtype_name)``) when UDT auto-lift falls back.
 
     The most likely cause (bogus compiler path, ``jit_c_control`` off, or
     UDT not C-expressible) is named in the message along with the remediation.
     """
-    global _warned_no_jit
-    if _warned_no_jit:
+    key = (op_name, dtype_name)
+    if key in _warned_no_jit_for:
         return
-    _warned_no_jit = True
+    _warned_no_jit_for.add(key)
     import warnings as _warnings
 
     cfg = _ss_config()
@@ -214,9 +260,9 @@ def _maybe_warn_no_jit(*, op_name="", dtype_name=""):
             f"({cfg.get('jit_c_compiler_name', '<unset>')!r}); "
             "call ``gb.ss.fix_jit_config()`` to repair it"
         )
-    elif cfg.get("jit_c_control") in ("off", "pause"):
+    elif cfg.get("jit_c_control") != "on":
         cause = (
-            f"jit_c_control is {cfg.get('jit_c_control')!r}; "
+            f"jit_c_control is {cfg.get('jit_c_control')!r} (must be 'on' to compile); "
             "set ``gb.ss.config['jit_c_control'] = 'on'`` to enable compilation"
         )
     else:
@@ -239,7 +285,7 @@ def _maybe_warn_no_jit(*, op_name="", dtype_name=""):
         f"Operations will use the Numba function-pointer fallback "
         f"(typically 2-3x slower for elementwise ops, since SuiteSparse "
         f"can't inline the kernel into its eWise and reduce templates). "
-        f"This warning fires once per process; silence with "
+        f"This warning fires once per (op, dtype) per process; silence with "
         f"``warnings.filterwarnings('ignore', category=gb.exceptions.NoJITWarning)`` "
         f"or by message match.",
         NoJITWarning,

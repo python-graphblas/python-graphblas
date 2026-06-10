@@ -32,14 +32,23 @@ from .base import (
     ParameterizedUdf,
     TypedOpBase,
     _call_op,
-    _deserialize_parameterized,
     _hasop,
 )
+
+# Imported unconditionally (plain dict, no numba): ``_compile_udt`` consults it
+# even when numba is absent.
+from .udt_utils import BUILTIN_UDT_BINARY_OPS as _BUILTIN_UDT_BINARY_OPS
 
 if _has_numba:
     import numba
 
-    from .base import _compile_udf_for_udt, _get_udt_wrapper, _resolve_udt_return_type
+    from .base import (
+        _bool_to_int8,
+        _compile_udf_for_udt,
+        _finalize_udt_op,
+        _get_udt_wrapper,
+        _resolve_udt_return_type,
+    )
 if _supports_complex:
     from ...dtypes import FC32, FC64
 
@@ -50,52 +59,17 @@ if _has_numba:
     def _make_udt_comparison(dtype, dtype2, *, is_eq):
         """Build a cfunc-ready wrapper for UDT eq or ne comparison.
 
-        Compares per-leaf with IEEE semantics: a NaN-bearing field always
-        compares unequal, even when two records have bit-identical NaN
-        patterns. Padding bytes are skipped implicitly because we never
-        read them. Returns ``(wrapper_func, wrapper_sig)``.
-
-        Three operand shapes are supported, matching the arithmetic ops:
-
-        - Both sides the same UDT (record or array). They must agree on
-          structure; mixing record vs array or differing field names /
-          array shapes raises ``KeyError``.
-        - One side is a UDT, the other is a plain scalar type. The
-          scalar is broadcast to every leaf (``all(leaf == scalar)`` for
-          ``eq``, ``any(leaf != scalar)`` for ``ne``). This matches the
-          broadcast semantics that ``plus``, ``minus``, ``times``, etc.
-          already provide.
-
-        Without the mixed-type path, the wrapper would dereference the
-        non-UDT operand as if it were a UDT, reading past the cell and
-        silently producing nonsense results.
+        Compares per-leaf with IEEE semantics (NaN compares unequal even
+        to itself); scalar broadcasts to every leaf when paired with a
+        UDT. Mismatched-shape UDT pairs raise ``KeyError``. Returns
+        ``(wrapper_func, wrapper_sig)``.
         """
-        from .udt_utils import _get_udt_info, _iter_record_leaves
+        from .udt_utils import _check_udt_pair, _get_udt_info, _iter_record_leaves
 
         info_x = _get_udt_info(dtype)
         info_y = _get_udt_info(dtype2)
         op_name = "eq" if is_eq else "ne"
-
-        if info_x is not None and info_y is not None:
-            kind_x, detail_x = info_x
-            kind_y, detail_y = info_y
-            if kind_x != kind_y:
-                raise KeyError(
-                    f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-                    f"cannot mix record and array UDTs in a single element-wise op."
-                )
-            if kind_x == "record" and detail_x != detail_y:
-                raise KeyError(
-                    f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-                    f"record UDTs must share field names; got {list(detail_x)} vs "
-                    f"{list(detail_y)}."
-                )
-            if kind_x == "array" and detail_x != detail_y:
-                raise KeyError(
-                    f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-                    f"array UDTs must share base dtype and flat size; "
-                    f"got {detail_x} vs {detail_y}."
-                )
+        _check_udt_pair(op_name, dtype, dtype2, info_x, info_y)
 
         x_is_scalar = info_x is None
         y_is_scalar = info_y is None
@@ -249,6 +223,7 @@ class TypedBuiltinBinaryOp(TypedOpBase):
 class TypedUserBinaryOp(TypedOpBase):
     __slots__ = "_monoid"
     opclass = "BinaryOp"
+    _owns_gb_obj = True
 
     def __init__(self, parent, name, type_, return_type, gb_obj, dtype2=None):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
@@ -327,20 +302,6 @@ class ParameterizedBinaryOp(ParameterizedUdf):
         return self._commutes_to
 
     is_commutative = TypedBuiltinBinaryOp.is_commutative
-
-    def __reduce__(self):
-        name = f"binary.{self.name}"
-        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
-            return name
-        return (self._deserialize, (self.name, self.func, self._anonymous, self._is_udt))
-
-    @staticmethod
-    def _deserialize(name, func, anonymous, is_udt=False):
-        if anonymous:
-            return BinaryOp.register_anonymous(func, name, parameterized=True, is_udt=is_udt)
-        if (rv := BinaryOp._find(name)) is not None:
-            return rv
-        return BinaryOp.register_new(name, func, parameterized=True, is_udt=is_udt)
 
 
 def _floordiv(x, y):
@@ -428,10 +389,10 @@ def _pair_dtype(op, dtype, dtype2):
 
 
 if _has_numba:
-    from .udt_utils import BUILTIN_UDT_BINARY_OPS as _BUILTIN_UDT_BINARY_OPS
     from .udt_utils import (
         _compile_codegen,
         _has_jit_set,
+        _maybe_warn_jit_skipped,
         compile_udt_binary_wrapper,
         set_jit_c_on_op,
     )
@@ -589,15 +550,8 @@ class BinaryOp(OpBase):
                 elif type_ == BOOL and ret_type == INT64 and return_types.get(INT8) == INT8:
                     ret_type = INT8
 
-                # Numba is unable to handle BOOL correctly right now, but we have a workaround
-                # See: https://github.com/numba/numba/issues/5395
-                # We're relying on coercion behaving correctly here.
-                # MAINT 2026-05-17: re-verified on Numba 0.65 (cfunc with
-                # CPointer(boolean) fails to compile: "Storing i8 to ptr of
-                # i1"). Re-test periodically and drop the INT8 routing when
-                # upstream is fixed.
-                input_type = INT8 if type_ == BOOL else type_
-                return_type = INT8 if ret_type == BOOL else ret_type
+                input_type = _bool_to_int8(type_)
+                return_type = _bool_to_int8(ret_type)
 
                 # Build wrapper because GraphBLAS wants pointers and void return
                 wrapper_sig = nt.void(
@@ -693,22 +647,8 @@ class BinaryOp(OpBase):
                 numba_func, ret_type, dtype, dtype2, numba_ret_type=numba_ret_type
             )
 
-        binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
-        new_binary = ffi_new("GrB_BinaryOp*")
-        check_status_carg(
-            lib.GrB_BinaryOp_new(
-                new_binary, binary_wrapper.cffi, ret_type._carg, dtype._carg, dtype2._carg
-            ),
-            "BinaryOp",
-            new_binary[0],
-        )
-        op = TypedUserBinaryOp(
-            self,
-            self.name,
-            dtype,
-            ret_type,
-            new_binary[0],
-            dtype2=dtype2,
+        op = _finalize_udt_op(
+            self, dtype, dtype2, ret_type, binary_wrapper, wrapper_sig, TypedUserBinaryOp
         )
         # Set JIT C definition for auto-generated built-in UDT ops. Only
         # same-type pairs apply: mixed UDT+scalar ops don't have a
@@ -718,7 +658,7 @@ class BinaryOp(OpBase):
         if _has_numba and _has_jit_set and dtype == dtype2 and is_jittable:
             if self.name in _BUILTIN_UDT_BINARY_OPS:
                 op._jit_c_info = set_jit_c_on_op(
-                    new_binary[0],
+                    op.gb_obj,
                     self.name,
                     _BUILTIN_UDT_BINARY_OPS[self.name],
                     dtype,
@@ -731,20 +671,13 @@ class BinaryOp(OpBase):
                 from .udt_utils import set_jit_c_comparison_on_op
 
                 op._jit_c_info = set_jit_c_comparison_on_op(
-                    new_binary[0],
+                    op.gb_obj,
                     self.name,
                     dtype,
                     lib.GrB_BinaryOp_set_String,
                     is_eq=(self.name == "eq"),
                 )
-            if op._jit_c_info is None:
-                # JIT setup was skipped despite SS supporting JIT generally
-                # (compiler unusable, mode off, or UDT not C-expressible).
-                from ..ss.jit_config import _maybe_warn_no_jit
-
-                _maybe_warn_no_jit(op_name=self.name, dtype_name=dtype.name)
-        self._udt_types[dtypes] = ret_type
-        self._udt_ops[dtypes] = op
+            _maybe_warn_jit_skipped(op._jit_c_info, self.name, dtype.name)
         return op
 
     @classmethod
@@ -1096,15 +1029,6 @@ class BinaryOp(OpBase):
             self._udt_types = {}  # {(dtype, dtype): DataType}
             self._udt_ops = {}  # {(dtype, dtype): TypedUserBinaryOp}
 
-    def __reduce__(self):
-        if self._anonymous:
-            if hasattr(self.orig_func, "_parameterized_info"):
-                return (_deserialize_parameterized, self.orig_func._parameterized_info)
-            return (BinaryOp._deserialize_anon_udf, (self.orig_func, self.name, self._is_udt))
-        if (name := f"binary.{self.name}") in _STANDARD_OPERATOR_NAMES:
-            return name
-        return (BinaryOp._deserialize_udf, (self.name, self.orig_func, self._is_udt))
-
     __call__ = TypedBuiltinBinaryOp.__call__
     is_commutative = TypedBuiltinBinaryOp.is_commutative
     commutes_to = ParameterizedBinaryOp.commutes_to
@@ -1116,3 +1040,6 @@ class BinaryOp(OpBase):
 
             self._monoid = Monoid._find(self.name)
         return self._monoid
+
+
+ParameterizedBinaryOp._op_class = BinaryOp
