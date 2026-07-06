@@ -53,7 +53,7 @@ repos:
   # We can probably remove `isort` if we come to trust `ruff --fix`,
   # but we'll need to figure out the configuration to do this in `ruff`
   - repo: https://github.com/pycqa/isort
-    rev: 8.0.1
+    rev: 9.0.0a3
     hooks:
       - id: isort
   # Let's keep `pyupgrade` even though `ruff --fix` probably does most of it
@@ -68,12 +68,12 @@ repos:
       - id: auto-walrus
         args: [--line-length, "100"]
   - repo: https://github.com/psf/black-pre-commit-mirror
-    rev: 26.3.1
+    rev: 26.5.1
     hooks:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.7
+    rev: v0.15.20
     hooks:
       - id: ruff-check
         args: [--fix-only, --show-fixes]
@@ -98,7 +98,7 @@ repos:
           - tomli; python_version<'3.11'
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.7
+    rev: v0.15.20
     hooks:
       - id: ruff-check
       # - id: ruff-format  # Prefer black, but may temporarily uncomment this to see
@@ -110,7 +110,7 @@ repos:
   # `pyroma` may help keep our package standards up to date if best practices change.
   # This is probably a "low value" check though and safe to remove if we want faster pre-commit.
   - repo: https://github.com/regebro/pyroma
-    rev: "5.0.1"
+    rev: "5.1b1"
     hooks:
       - id: pyroma
         args: [-n, "10", .]
@@ -119,7 +119,7 @@ repos:
     hooks:
       - id: shellcheck
   - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.8.1
+    rev: v3.9.4
     hooks:
       - id: prettier
         args: [--prose-wrap=preserve]
@@ -139,11 +139,11 @@ repos:
     hooks:
       - id: taplo-format
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.11
+    rev: v1.7.12
     hooks:
       - id: actionlint
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.37.0
+    rev: 0.37.4
     hooks:
       - id: check-dependabot
       - id: check-github-workflows
