@@ -53,16 +53,27 @@ def test_spy_centered():
 
 
 def test_spy_with_axes():
-    # Passing an explicit Axes exercises the ``axes is not None`` branch.
-    # markersize must be supplied here: the auto-markersize path references a
-    # ``fig`` local that only exists when spy creates the figure itself.
+    # Passing an explicit Axes exercises the ``axes is not None`` branch,
+    # including the auto-markersize path (which once raised NameError here).
     pytest.importorskip("scipy.sparse")
     A = square_matrix()
     fig = mpl.figure.Figure()
     axes = fig.subplots()
-    result = viz.spy(A, show=False, axes=axes, markersize=5)
+    result = viz.spy(A, show=False, axes=axes)
     assert result is fig
     assert axes.lines
+
+
+def test_spy_with_figure():
+    # Passing an explicit Figure (no Axes) once raised NameError; spy should
+    # create the Axes on the given figure and return that same figure.
+    pytest.importorskip("scipy.sparse")
+    A = square_matrix()
+    fig = mpl.figure.Figure()
+    result = viz.spy(A, show=False, figure=fig)
+    assert result is fig
+    assert fig.axes
+    assert fig.axes[0].lines
 
 
 @pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")
