@@ -4570,3 +4570,21 @@ def test_setdiag():
     A.setdiag(30, mask=v.S)
     expected[0, 0] = 30
     assert A.isequal(expected)
+
+
+def test_constructor_rejects_arraylike_first_arg():
+    # The first positional arg is the dtype; passing data instead used to raise a
+    # confusing "Unknown dtype" ValueError. It should now raise TypeError pointing
+    # at the from_* constructors.
+    with pytest.raises(TypeError, match="Matrix.*dtype.*from_coo.*from_dense"):
+        Matrix([[1, 2], [3, 4]])
+    with pytest.raises(TypeError, match="Matrix.*expects a dtype"):
+        Matrix(np.zeros((2, 2)))
+    # Valid dtype-first signatures still work, including list/tuple dtype specs
+    assert Matrix(int, 2, 2).dtype == dtypes.INT64
+    assert Matrix("INT64", nrows=2, ncols=2).dtype == dtypes.INT64
+    assert Matrix([("x", "i8"), ("y", "f8")], nrows=2, ncols=2).dtype._is_udt
+    assert Matrix((np.int32, (2, 2)), nrows=2, ncols=2).dtype._is_udt
+    # A non-array-like bad dtype keeps the original ValueError
+    with pytest.raises(ValueError, match="Unknown dtype"):
+        Matrix("not_a_dtype", nrows=2, ncols=2)
