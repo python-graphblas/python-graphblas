@@ -8,6 +8,7 @@ from ..exceptions import DimensionMismatch, GrB_NO_VALUE, NoValue, check_status,
 from . import _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, _is_recording, call
 from .descriptor import lookup as descriptor_lookup
+from .dtypes import _raise_dtype_or_arraylike
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, InfixExprBase, Updater
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import (
@@ -158,7 +159,10 @@ class Vector(BaseType):
 
     def __new__(cls, dtype=FP64, size=0, *, name=None):
         self = object.__new__(cls)
-        self.dtype = lookup_dtype(dtype)
+        try:
+            self.dtype = lookup_dtype(dtype)
+        except (ValueError, TypeError) as exc:
+            _raise_dtype_or_arraylike("Vector", dtype, exc)
         size = _as_scalar(size, _INDEX, is_cscalar=True)
         self.name = f"v_{next(Vector._name_counter)}" if name is None else name
         self.gb_obj = ffi_new("GrB_Vector*")
