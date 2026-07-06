@@ -162,7 +162,7 @@ class Vector(BaseType):
 
     """
 
-    __slots__ = "_size", "_parent", "ss"
+    __slots__ = "_size", "_parent"
     ndim = 1
     _name_counter = itertools.count()
 
@@ -175,8 +175,6 @@ class Vector(BaseType):
         call("GrB_Vector_new", [_Pointer(self), self.dtype, size])
         self._size = size.value
         self._parent = None
-        if backend == "suitesparse":
-            self.ss = ss(self)
         return self
 
     @classmethod
@@ -187,8 +185,6 @@ class Vector(BaseType):
         self.dtype = dtype
         self._size = size
         self._parent = parent
-        if backend == "suitesparse":
-            self.ss = ss(self)
         return self
 
     def __del__(self):
@@ -2168,10 +2164,17 @@ class Vector(BaseType):
 
 
 if backend == "suitesparse":
-    Vector.ss = class_property(Vector.ss, ss)
+    # Built lazily per access, not stored, to avoid the ss/_parent reference
+    # cycle that would keep every Vector alive until the cyclic gc; see gh-559
+    # and the matching note in matrix.py.
+    def _ss(self):
+        return ss(self)
+
+    _ss.__name__ = _ss.__qualname__ = "ss"
+    Vector.ss = class_property(property(_ss), ss)
 else:
     Vector.ss = class_property(
-        Vector.ss, 'ss attribute is only available with "suitesparse" backend', exceptional=True
+        property(), 'ss attribute is only available with "suitesparse" backend', exceptional=True
     )
 
 
