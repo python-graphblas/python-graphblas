@@ -88,12 +88,12 @@ def spy(M, *, centered=False, show=True, figure=None, axes=None, figsize=None, *
         plt.show()
     if axes is None:
         if figure is None:
-            fig = mpl.figure.Figure(figsize=figsize)
-        axes = fig.subplots()
+            figure = mpl.figure.Figure(figsize=figsize)
+        axes = figure.subplots()
     if kwargs.get("markersize") is None:
         # Make the square markers "fill" their space
         markersize = min(axes.bbox.width / A.shape[1], axes.bbox.height / A.shape[0])
-        kwargs["markersize"] = max(0.002, markersize * 72 / fig.dpi)
+        kwargs["markersize"] = max(0.002, markersize * 72 / axes.figure.dpi)
     axes.spy(A, **kwargs)
     # Fix offsets
     if not centered:
