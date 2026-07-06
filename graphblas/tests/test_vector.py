@@ -2712,3 +2712,23 @@ def test_subarray_dtypes():
         assert full1.isequal(full2, check_dtype=True)
         full2 = Vector.ss.import_bitmap(values=a, bitmap=[True, True, True])
         assert full1.isequal(full2, check_dtype=True)
+
+
+def test_constructor_rejects_arraylike_first_arg():
+    # The first positional arg is the dtype; passing data instead used to raise a
+    # confusing "Unknown dtype" ValueError. It should now raise TypeError pointing
+    # at the from_* constructors.
+    with pytest.raises(TypeError, match="Vector.*dtype.*from_coo.*from_dense"):
+        Vector([1, 2, 3])
+    with pytest.raises(TypeError, match="Vector.*expects a dtype"):
+        Vector((1, 2, 3))
+    with pytest.raises(TypeError, match="Vector.*expects a dtype"):
+        Vector(np.array([1, 2, 3]))
+    # Valid dtype-first signatures still work, including list/tuple dtype specs
+    assert Vector(int, size=3).dtype == dtypes.INT64
+    assert Vector("INT64", size=3).dtype == dtypes.INT64
+    assert Vector(np.dtype("int64"), size=3).dtype == dtypes.INT64
+    assert Vector([("x", "i8"), ("y", "f8")], size=3).dtype._is_udt
+    # A non-array-like bad dtype keeps the original ValueError
+    with pytest.raises(ValueError, match="Unknown dtype"):
+        Vector("not_a_dtype", size=3)
