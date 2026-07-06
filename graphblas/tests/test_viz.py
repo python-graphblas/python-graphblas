@@ -8,6 +8,8 @@ not assert on pixel output. Anything missing is skipped, not failed, so a
 minimal-dependency CI run sees clean skips.
 """
 
+import math
+
 import pytest
 
 from graphblas import Matrix, Vector, viz
@@ -100,6 +102,57 @@ def test_draw_rejects_non_matrix():
         viz.draw(v)
 
 
+@pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")
+def test_draw_reciprocal_edges_both_labels_visible():
+    # Regression for gh-474: reciprocal directed edges (0->1 and 1->0) used to be
+    # drawn as coincident straight lines, so one weight hid the other. draw() now
+    # curves reciprocal pairs; both weights must appear at distinct positions.
+    pytest.importorskip("networkx")
+    pytest.importorskip("scipy.sparse")
+    M = Matrix.from_coo([0, 1], [1, 0], [10, 20], nrows=2, ncols=2)
+    viz.draw(M)
+    ax = plt.gcf().get_axes()[0]
+
+    weight_labels = [t for t in ax.texts if t.get_text() in {"10", "20"}]
+    assert {t.get_text() for t in weight_labels} == {"10", "20"}, "both weights must be drawn"
+    assert len(weight_labels) == 2
+
+    # Old behavior placed both labels on the shared straight-line midpoint.
+    # networkx returns two anchors there that differ only by floating-point
+    # noise (order 1e-6), so an exact ``!=`` comparison passes even when the
+    # labels sit on top of each other.  Require a separation that is a real
+    # fraction of the distance between the two nodes instead.
+    node_positions = [t.get_position() for t in ax.texts if t.get_text() in {"0", "1"}]
+    assert len(node_positions) == 2
+    edge_length = math.dist(*node_positions)
+    separation = math.dist(*(t.get_position() for t in weight_labels))
+    assert separation > 0.001 * edge_length, "reciprocal edge labels still overlap"
+
+
+@pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")
+def test_draw_without_networkx_curved_label_support(monkeypatch):
+    # draw_networkx_edge_labels gained connectionstyle in networkx 3.3, and the
+    # project supports >=2.8.  Standing in a pre-3.3 signature must not raise; the
+    # gh-474 curving is skipped and every edge renders straight, as it did before.
+    nx = pytest.importorskip("networkx")
+    pytest.importorskip("scipy.sparse")
+    real = nx.draw_networkx_edge_labels
+
+    def pre_33_draw_networkx_edge_labels(g, pos, edge_labels=None, **kwargs):
+        if "connectionstyle" in kwargs:
+            raise TypeError(
+                "draw_networkx_edge_labels() got an unexpected keyword argument "
+                "'connectionstyle'"
+            )
+        return real(g, pos, edge_labels=edge_labels, **kwargs)
+
+    monkeypatch.setattr(nx, "draw_networkx_edge_labels", pre_33_draw_networkx_edge_labels)
+    M = Matrix.from_coo([0, 1], [1, 0], [10, 20], nrows=2, ncols=2)
+    viz.draw(M)
+    ax = plt.gcf().get_axes()[0]
+    assert {t.get_text() for t in ax.texts if t.get_text() in {"10", "20"}} == {"10", "20"}
+
+
 def _import_datashade_deps():
     for name in ("numpy", "pandas", "datashader", "holoviews", "hvplot", "bokeh"):
         pytest.importorskip(name)
@@ -140,3 +193,33 @@ def test_datashade_empty_agg():
     _import_datashade_deps()
     A = square_matrix()
     assert viz.datashade(A, agg=[]) is None
+
+
+def test_datashade_positions_match_spy():
+    # Regression for gh-473: element (row=r, col=c) must render centered on the
+    # integer tick pair (col, row), the same convention ``spy`` uses.  We check
+    # the datashader aggregation directly (no display) over the limits the
+    # interactive path uses, at one pixel per matrix cell.
+    _import_datashade_deps()
+    import datashader as ds
+    import numpy as np
+
+    # Non-square (3x4) with distinct row/col so a row<->col swap would show.
+    M = Matrix.from_coo([0, 0, 2], [1, 3, 3], [1.0, 1.0, 1.0], nrows=3, ncols=4)
+    df = viz._matrix_to_dataframe(M)
+    xlim, ylim = viz._cell_centered_limits(M)
+    assert xlim == (-0.5, M.ncols - 0.5)
+    assert ylim == (-0.5, M.nrows - 0.5)
+
+    canvas = ds.Canvas(plot_width=M.ncols, plot_height=M.nrows, x_range=xlim, y_range=ylim)
+    agg = canvas.points(df, "col", "row", ds.count())
+
+    # Pixel centers land on integers, so ticks label the cells they sit on.
+    assert agg.coords["col"].values.tolist() == [0.0, 1.0, 2.0, 3.0]
+    assert agg.coords["row"].values.tolist() == [0.0, 1.0, 2.0]
+
+    # Counts are nonzero exactly at the (row, col) indices of the elements.
+    xs = agg.coords["col"].values
+    ys = agg.coords["row"].values
+    nonzero = {(round(float(ys[i])), round(float(xs[j]))) for i, j in np.argwhere(agg.values > 0)}
+    assert nonzero == {(0, 1), (0, 3), (2, 3)}
