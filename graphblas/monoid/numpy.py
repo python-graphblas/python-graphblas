@@ -103,11 +103,11 @@ if (
             "BOOL": False,
             "INT8": _np.iinfo(_np.int8).min,
             "UINT8": 0,
-            "INT16": _np.iinfo(_np.int8).min,
+            "INT16": _np.iinfo(_np.int16).min,
             "UINT16": 0,
-            "INT32": _np.iinfo(_np.int8).min,
+            "INT32": _np.iinfo(_np.int32).min,
             "UINT32": 0,
-            "INT64": _np.iinfo(_np.int8).min,
+            "INT64": _np.iinfo(_np.int64).min,
             "UINT64": 0,
         }
     )

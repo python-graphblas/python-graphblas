@@ -52,6 +52,48 @@ def test_bool_doesnt_get_too_large():
     np.testing.assert_array_equal(y, (True, False, True, False))
 
 
+@pytest.mark.skipif("not supports_udfs")
+# On a broken numba x numpy combo (numba #8478, still within our supported floor)
+# the module sets _fmin_is_float=True and does not populate the integer fmax/fmin
+# identities, so skip rather than KeyError on that config.
+@pytest.mark.skipif("npmonoid._fmin_is_float")
+@pytest.mark.parametrize("dtype", ["INT16", "INT32", "INT64"])
+def test_numpy_fmax_fmin_identity_outside_int8(dtype):
+    # Regression: the fmax identity for INT16/INT32/INT64 was set to int8's min
+    # (-128) instead of the dtype's own min, so a fmax-reduce over values all
+    # below -128 wrongly returned -128 rather than the true maximum. fmin always
+    # used the correct per-dtype max; it is checked here as a control. Only the
+    # mapnumpy=False path (UDF monoids) reads these identities; mapnumpy=True
+    # resolves fmax/fmin to the builtin max/min, which were already correct.
+    np_dtype = getattr(np, dtype.lower())
+    lo = int(np.iinfo(np_dtype).min)
+    hi = int(np.iinfo(np_dtype).max)
+    # Pin the identity table directly (deterministic, independent of config).
+    assert npmonoid._monoid_identities["fmax"][dtype] == lo
+    assert npmonoid._monoid_identities["fmin"][dtype] == hi
+
+    # Exercise the UDF monoids end-to-end. Force a fresh mapnumpy=False build so
+    # this hits the affected path regardless of the session's random mapnumpy
+    # (the resolved monoid is cached on the module after first access).
+    orig = config["mapnumpy"]
+    config.set(mapnumpy=False)
+    npmonoid.__dict__.pop("fmax", None)
+    npmonoid.__dict__.pop("fmin", None)
+    try:
+        below = [-1000, -2000, -3000]  # all below int8's min, valid for INT16+
+        above = [1000, 2000, 3000]  # all above int8's max
+        v_below = Vector.from_coo([0, 1, 2], below, dtype=dtype)
+        v_above = Vector.from_coo([0, 1, 2], above, dtype=dtype)
+        assert v_below.reduce(npmonoid.fmax).new().value == max(below)  # -1000
+        assert v_above.reduce(npmonoid.fmin).new().value == min(above)  # 1000
+        assert npmonoid.fmax[dtype].identity == lo
+        assert npmonoid.fmin[dtype].identity == hi
+    finally:
+        config.set(mapnumpy=orig)
+        npmonoid.__dict__.pop("fmax", None)
+        npmonoid.__dict__.pop("fmin", None)
+
+
 @pytest.mark.slow
 def test_npunary():
     L = list(range(5))
