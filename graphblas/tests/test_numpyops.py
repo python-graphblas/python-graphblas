@@ -133,6 +133,51 @@ def test_numpy_monoid_identity_matches_builtin():
     assert not mismatches, mismatches
 
 
+def test_numpy_monoid_unmapped_identity_consistency():
+    # The six numpy monoids with no builtin counterpart (gcd, hypot, logaddexp,
+    # logaddexp2, maximum, minimum) are absent from _numpy_to_graphblas, so the
+    # sibling test above never reads their identities. Guard the two that have a
+    # byte-identical builtin-backed twin: numpy's maximum/minimum share fmax's/
+    # fmin's identity table exactly (nan vs. non-nan changes only propagation of
+    # a present value, not the neutral element). fmax/fmin are themselves pinned
+    # against builtin max/min by the sibling test, so asserting maximum == fmax
+    # and minimum == fmin transitively validates maximum/minimum. Read the table
+    # directly and compare cast-to-dtype, matching the sibling test: no config
+    # toggle, no operator-cache mutation, no monoid resolution.
+    identities = npmonoid._monoid_identities
+    mismatches = []
+    for np_name, twin in (("maximum", "fmax"), ("minimum", "fmin")):
+        table = identities[np_name]
+        twin_table = identities[twin]
+        # fmax/fmin drop their integer keys on a broken numba/numpy combo
+        # (_fmin_is_float), so intersect rather than assume every dtype is present.
+        shared = table.keys() & twin_table.keys()
+        assert shared, f"{np_name}/{twin} share no dtypes"
+        for name in sorted(shared):
+            np_type = gb.dtypes.lookup_dtype(name).np_type
+            np_cast = np.asarray(table[name]).astype(np_type)
+            twin_cast = np.asarray(twin_table[name]).astype(np_type)
+            if np_cast != twin_cast:
+                mismatches.append(
+                    f"{np_name}[{name}]={table[name]!r} vs {twin}[{name}]={twin_table[name]!r}"
+                )
+    assert not mismatches, mismatches
+
+    # Light self-check for the log-add monoids: their neutral element is -inf
+    # (logaddexp(-inf, x) == x). gcd and hypot are deliberately left out of any
+    # functional identity check: their conventional identity is 0, but numpy's
+    # gcd/hypot are not sign-preserving (gcd(0, -5) == 5 != -5), so
+    # f(identity, x) == x is not a valid invariant for them even though 0 is the
+    # correct identity. So only their presence, not a value, is asserted here.
+    for np_name in ("logaddexp", "logaddexp2"):
+        table = identities[np_name]
+        assert table, f"{np_name} identity table is empty"
+        for name, value in table.items():
+            assert value == -np.inf, f"{np_name}[{name}]={value!r} != -inf"
+    for np_name in ("gcd", "hypot"):
+        assert identities[np_name], f"{np_name} identity table is empty"
+
+
 @pytest.mark.slow
 def test_npunary():
     L = list(range(5))
