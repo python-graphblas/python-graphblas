@@ -40,7 +40,7 @@ _monoid_identities = {
     # Comparison functions
     "equal": {"BOOL": True},
     "logical_and": {"BOOL": True},
-    "logical_or": {"BOOL": True},
+    "logical_or": {"BOOL": False},
     "logical_xor": {"BOOL": False},
     "maximum": {
         "BOOL": False,

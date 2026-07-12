@@ -76,9 +76,14 @@ def test_numpy_fmax_fmin_identity_outside_int8(dtype):
     # this hits the affected path regardless of the session's random mapnumpy
     # (the resolved monoid is cached on the module after first access).
     orig = config["mapnumpy"]
+    # Save whatever is cached so the exact prior state is restored. Resolving a
+    # UDF monoid under mapnumpy=False also caches a UDF binary op (monoid/numpy.py
+    # getattr(_binary.numpy, name)); restoring the original objects rather than
+    # popping avoids leaving a UDF binary behind and keeps op.numpy in sync.
+    saved = {n: (npmonoid.__dict__.get(n), npbinary.__dict__.get(n)) for n in ("fmax", "fmin")}
     config.set(mapnumpy=False)
-    npmonoid.__dict__.pop("fmax", None)
-    npmonoid.__dict__.pop("fmin", None)
+    for name in ("fmax", "fmin"):
+        npmonoid.__dict__.pop(name, None)
     try:
         below = [-1000, -2000, -3000]  # all below int8's min, valid for INT16+
         above = [1000, 2000, 3000]  # all above int8's max
@@ -90,8 +95,42 @@ def test_numpy_fmax_fmin_identity_outside_int8(dtype):
         assert npmonoid.fmin[dtype].identity == hi
     finally:
         config.set(mapnumpy=orig)
-        npmonoid.__dict__.pop("fmax", None)
-        npmonoid.__dict__.pop("fmin", None)
+        for name, (monoid_obj, binary_obj) in saved.items():
+            for module, obj in ((npmonoid, monoid_obj), (npbinary, binary_obj)):
+                if obj is None:
+                    module.__dict__.pop(name, None)
+                else:
+                    module.__dict__[name] = obj
+
+
+def test_numpy_monoid_identity_matches_builtin():
+    # Invariant: mapnumpy must not change a numpy monoid's identity. For every op
+    # in the numpy->builtin mapping, the numpy identity (read straight from
+    # _monoid_identities, which register_new uses verbatim on the mapnumpy=False
+    # path) must equal the builtin monoid's identity for every shared dtype,
+    # compared cast-to-dtype so benign encodings agree (bitwise_and's -1 and
+    # band's 255 are both all-ones); only a genuinely wrong value (e.g. logical_or
+    # True vs lor False) is flagged. This guards the whole table and caught both
+    # fmax/fmin and logical_or. Reading the table directly keeps it deterministic
+    # and mutates no operator caches, so it cannot desync monoid/binary/op.numpy.
+    identities = npmonoid._monoid_identities
+    mismatches = []
+    for np_name, gb_name in npmonoid._numpy_to_graphblas.items():
+        table = identities[np_name]
+        gb_monoid = getattr(gb.monoid, gb_name)
+        for dtype in gb_monoid.types:
+            if isinstance(table, dict):
+                if dtype.name not in table:
+                    continue  # numpy op does not define this dtype
+                np_id = table[dtype.name]
+            else:
+                np_id = table  # scalar identity applies to every dtype
+            gb_id = gb_monoid[dtype].identity
+            np_cast = np.asarray(np_id).astype(dtype.np_type)
+            gb_cast = np.asarray(gb_id).astype(dtype.np_type)
+            if np_cast != gb_cast:
+                mismatches.append(f"{np_name}[{dtype.name}]={np_id!r} vs {gb_name}={gb_id!r}")
+    assert not mismatches, mismatches
 
 
 @pytest.mark.slow
