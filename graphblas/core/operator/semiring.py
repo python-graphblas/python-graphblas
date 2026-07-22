@@ -95,6 +95,10 @@ class TypedUserSemiring(_BinaryopJitDelegate, TypedOpBase):
     # ``semi.monoid.jit_c_source``.
     __slots__ = "monoid", "binaryop"
     opclass = "Semiring"
+    # Deliberately not ``_owns_gb_obj = True``: see ``TypedUserMonoid``.
+    # Same ordering hazard: a ``GrB_Semiring`` holds pointers into its
+    # ``GrB_Monoid`` and ``GrB_BinaryOp``, and the cache in
+    # ``Semiring.{_typed_ops,_udt_ops}`` bounds the leak.
 
     def __init__(self, parent, name, type_, return_type, gb_obj, monoid, binaryop, dtype2=None):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
@@ -229,9 +233,7 @@ class Semiring(OpBase):
         from .indexbinary import _BoundIndexBinaryOp
 
         if isinstance(binaryop, _BoundIndexBinaryOp):
-            return cls._build_from_bound_indexbinary(
-                name, monoid, binaryop, anonymous=anonymous
-            )
+            return cls._build_from_bound_indexbinary(name, monoid, binaryop, anonymous=anonymous)
         if type(binaryop) is not BinaryOp:
             raise TypeError(
                 f"binaryop must be a BinaryOp or a bound IndexBinaryOp "

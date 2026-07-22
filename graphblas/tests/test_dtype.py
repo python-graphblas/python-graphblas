@@ -327,7 +327,7 @@ def test_udt_with_macro_field_name_falls_back_to_cfunc():
     assert udt.jit_c_name is None
     assert udt.jit_c_definition is None
 
-    jit_config._warned_no_jit = False
+    jit_config._warned_no_jit_for.discard(("plus", udt.name))
     with pytest.warns(NoJITWarning, match="without JIT"):
         plus_udt = gb.binary.plus[udt]
     assert plus_udt.jit_c_source is None
@@ -348,9 +348,10 @@ def test_udt_with_c_reserved_field_name_falls_back_to_cfunc():
     assert udt.jit_c_name is None
     assert udt.jit_c_definition is None
 
-    # Auto-lift must succeed and emit the one-time warning. Reset the
-    # warned-flag so this test sees the warning regardless of test ordering.
-    jit_config._warned_no_jit = False
+    # Auto-lift must succeed and emit a warning. Discard the keyed entry so
+    # this test sees the warning regardless of test ordering (the same
+    # ``(op, dtype)`` may have been warned about in an earlier test).
+    jit_config._warned_no_jit_for.discard(("plus", udt.name))
     with pytest.warns(NoJITWarning, match="without JIT"):
         plus_udt = gb.binary.plus[udt]
     assert plus_udt.jit_c_source is None  # no JIT
@@ -416,6 +417,28 @@ def test_dtype_to_from_string():
                 lookup_dtype(dtype)
         else:
             assert dtype == dtype2
+
+
+def test_dtype_to_string_aligned_outer_packed_inner():
+    """Regression: nested dtype with ``align=True`` outer and a packed inner
+    used to fail ``_dtype_to_string`` round-trip with ``ValueError: Unable
+    to reliably convert dtype to string and back``. Numpy's reconstruction
+    from ``str(np_type)`` enforces the outer's alignment on the inner,
+    rejecting the packed inner's offset. The explicit-offsets fallback
+    encodes the layout verbatim and round-trips cleanly.
+    """
+    packed_inner = np.dtype([("inner_a", np.int32), ("inner_b", np.float64)])
+    outer = np.dtype([("flag", np.int32), ("coord", packed_inner)], align=True)
+    s = core.dtypes._dtype_to_string(outer)
+    rt = core.dtypes._string_to_dtype(s)
+    # The DataType wraps an np.dtype; check the underlying layout matches.
+    rt_np = rt.np_type
+    assert rt_np == outer
+    assert outer.fields["flag"] == rt_np.fields["flag"]
+    assert outer.fields["coord"] == rt_np.fields["coord"]
+    # Registration through register_anonymous used to raise on this shape.
+    udt = dtypes.register_anonymous(outer, "_NestedAlignPacked")
+    assert udt.np_type == outer
 
 
 def test_has_complex():

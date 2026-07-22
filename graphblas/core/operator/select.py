@@ -1,17 +1,13 @@
 import inspect
 
-from ... import _STANDARD_OPERATOR_NAMES, select
+from ... import select
 from ...dtypes import BOOL, UINT64
-from ...exceptions import check_status_carg
-from .. import _has_numba, ffi, lib
-from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op, _deserialize_parameterized
+from .. import _has_numba
+from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op
 from .indexunary import IndexUnaryOp, TypedBuiltinIndexUnaryOp
 
 if _has_numba:
-    import numba
-
-    from .base import _compile_udf_for_udt, _get_udt_wrapper
-ffi_new = ffi.new
+    from .base import _compile_udf_for_udt, _finalize_udt_op, _get_udt_wrapper
 
 
 class TypedBuiltinSelectOp(TypedOpBase):
@@ -29,6 +25,7 @@ class TypedBuiltinSelectOp(TypedOpBase):
 class TypedUserSelectOp(TypedOpBase):
     __slots__ = ()
     opclass = "SelectOp"
+    _owns_gb_obj = True  # underlying object is a GrB_IndexUnaryOp
 
     def __init__(self, parent, name, type_, return_type, gb_obj, dtype2=None):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
@@ -60,22 +57,6 @@ class ParameterizedSelectOp(ParameterizedUdf):
         sel = self.func(*args, **kwargs)
         sel._parameterized_info = (self, args, kwargs)
         return SelectOp.register_anonymous(sel, self.name, is_udt=self._is_udt)
-
-    def __reduce__(self):
-        # NOT COVERED
-        name = f"select.{self.name}"
-        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
-            return name
-        return (self._deserialize, (self.name, self.func, self._anonymous, self._is_udt))
-
-    @staticmethod
-    def _deserialize(name, func, anonymous, is_udt=False):
-        # NOT COVERED
-        if anonymous:
-            return SelectOp.register_anonymous(func, name, parameterized=True, is_udt=is_udt)
-        if (rv := SelectOp._find(name)) is not None:
-            return rv
-        return SelectOp.register_new(name, func, parameterized=True, is_udt=is_udt)
 
 
 class SelectOp(OpBase):
@@ -116,6 +97,10 @@ class SelectOp(OpBase):
                     t.return_type,
                     t.gb_obj,
                 )
+                # Aliases the IndexUnaryOp's allocation. The IndexUnaryOp
+                # owns the free; clearing here prevents a double free when
+                # both ends are GC'd.
+                op._owns_gb_obj_inst = False
             else:
                 op = cls._typed_class(
                     obj,
@@ -149,27 +134,9 @@ class SelectOp(OpBase):
         select_wrapper, wrapper_sig = _get_udt_wrapper(
             numba_func, BOOL, dtype, dtype2, include_indexes=True
         )
-
-        select_wrapper = numba.cfunc(wrapper_sig, nopython=True)(select_wrapper)
-        new_select = ffi_new("GrB_IndexUnaryOp*")
-        check_status_carg(
-            lib.GrB_IndexUnaryOp_new(
-                new_select, select_wrapper.cffi, BOOL._carg, dtype._carg, dtype2._carg
-            ),
-            "IndexUnaryOp",
-            new_select[0],
+        return _finalize_udt_op(
+            self, dtype, dtype2, BOOL, select_wrapper, wrapper_sig, TypedUserSelectOp
         )
-        op = TypedUserSelectOp(
-            self,
-            self.name,
-            dtype,
-            BOOL,
-            new_select[0],
-            dtype2=dtype2,
-        )
-        self._udt_types[dtypes] = BOOL
-        self._udt_ops[dtypes] = op
-        return op
 
     @classmethod
     def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
@@ -183,8 +150,8 @@ class SelectOp(OpBase):
         func : FunctionType
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
-            ``func`` takes four input parameters--any dtype, int64, int64,
-            any dtype and returns boolean. The first argument (any dtype) is
+            ``func`` takes four input parameters (any dtype, int64, int64,
+            any dtype) and returns boolean. The first argument (any dtype) is
             the value of the input Matrix or Vector, the second argument (int64)
             is the row index of the Matrix or the index of the Vector, the third
             argument (int64) is the column index of the Matrix or 0 for a Vector,
@@ -234,8 +201,8 @@ class SelectOp(OpBase):
         func : FunctionType
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
-            ``func`` takes four input parameters--any dtype, int64, int64,
-            any dtype and returns boolean. The first argument (any dtype) is
+            ``func`` takes four input parameters (any dtype, int64, int64,
+            any dtype) and returns boolean. The first argument (any dtype) is
             the value of the input Matrix or Vector, the second argument (int64)
             is the row index of the Matrix or the index of the Vector, the third
             argument (int64) is the column index of the Matrix or 0 for a Vector,
@@ -324,22 +291,10 @@ class SelectOp(OpBase):
         self.is_positional = is_positional
         self._is_udt = is_udt
         if is_udt:
-            # NOT COVERED
             self._udt_types = {}  # {dtype: DataType}
             self._udt_ops = {}  # {dtype: TypedUserIndexUnaryOp}
 
-    def __reduce__(self):
-        if self._anonymous:
-            if hasattr(self.orig_func, "_parameterized_info"):
-                # NOT COVERED
-                return (_deserialize_parameterized, self.orig_func._parameterized_info)
-            return (
-                SelectOp._deserialize_anon_udf,
-                (self.orig_func, self.name, self._is_udt),
-            )
-        if (name := f"select.{self.name}") in _STANDARD_OPERATOR_NAMES:
-            return name
-        # NOT COVERED
-        return (SelectOp._deserialize_udf, (self.name, self.orig_func, self._is_udt))
-
     __call__ = TypedBuiltinSelectOp.__call__
+
+
+ParameterizedSelectOp._op_class = SelectOp

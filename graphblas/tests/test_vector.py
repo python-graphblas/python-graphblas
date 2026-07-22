@@ -1600,7 +1600,7 @@ def test_auto(v):
             # print(type(expr).__name__, method)
             val1 = getattr(expected, method)(expected).new()
             if method in {"__or__", "__ror__"} and type(expr) is VectorEwiseMultExpr:
-                # Doing e.g. `plus(x & y | z)` isn't allowed--make user be explicit
+                # Doing e.g. `plus(x & y | z)` isn't allowed; make user be explicit
                 with pytest.raises(TypeError):
                     val2 = getattr(expected, method)(expr)
                 with pytest.raises(TypeError):

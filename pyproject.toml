@@ -188,6 +188,13 @@ filterwarnings = [
   # this path wrap with ``pytest.warns(NoJITWarning, match="without JIT")``
   # (or ``UserWarning``, which still matches via inheritance).
   "ignore:UDT operator running without JIT:UserWarning",
+
+  # ``pytest -n`` (xdist) makes pytest-benchmark issue this warning during
+  # ``pytest_configure`` to say it disabled itself. Our ``error`` filter
+  # turns warnings into errors, which crashes config before tests run.
+  # Match by message only: naming the category would make pytest import
+  # pytest_benchmark to resolve it, which fails where it isn't installed.
+  "ignore:Benchmarks are automatically disabled:",
 ]
 
 [tool.coverage.run]
@@ -257,7 +264,7 @@ select = [
   "Q",   # flake8-quotes
   "RSE", # flake8-raise
   "RET", # flake8-return
-  # "SLF",  # flake8-self (We can use our own private variables--sheesh!)
+  # "SLF",  # flake8-self (we can use our own private variables, sheesh!)
   "SIM", # flake8-simplify
   # "TID",  # flake8-tidy-imports (Rely on isort and our own judgement)
   # "TCH",  # flake8-type-checking (Note: figure out type checking later)
@@ -312,7 +319,7 @@ ignore = [
   "D400",    # First line should end with a period (Note: prefer D415, which also allows "?" and "!")
   "N801",    # Class name ... should use CapWords convention (Note:we have a few exceptions to this)
   "N802",    # Function name ... should be lowercase
-  "N803",    # Argument name ... should be lowercase (Maybe okay--except in tests)
+  "N803",    # Argument name ... should be lowercase (Maybe okay; except in tests)
   "N806",    # Variable ... in function should be lowercase
   "N807",    # Function name should not start and end with `__`
   "N818",    # Exception name ... should be named with an Error suffix (Note: good advice)
@@ -351,7 +358,7 @@ ignore = [
   "EM",  # flake8-errmsg (Perhaps nicer, but too much work)
   "ICN", # flake8-import-conventions (Doesn't allow "_" prefix such as `_np`)
   "PYI", # flake8-pyi (We don't have stub files yet)
-  "SLF", # flake8-self (We can use our own private variables--sheesh!)
+  "SLF", # flake8-self (we can use our own private variables, sheesh!)
   "TID", # flake8-tidy-imports (Rely on isort and our own judgement)
   "TCH", # flake8-type-checking (Note: figure out type checking later)
   "ARG", # flake8-unused-arguments (Sometimes helpful, but too strict)

@@ -251,6 +251,11 @@ class Scalar(BaseType):
         bool
 
         """
+        if self.dtype._is_udt:
+            raise TypeError(
+                f"Scalar.isclose is not defined for user-defined types (got {self.dtype.name!r}); "
+                "use isequal for exact comparison."
+            )
         if type(other) is not Scalar:
             if other is None:
                 return self._is_empty

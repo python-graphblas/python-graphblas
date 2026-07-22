@@ -1886,7 +1886,7 @@ def test_transpose_exceptional():
     with pytest.raises(TypeError, match="not callable"):
         B.T()[1, 0] << 10
     # with pytest.raises(AttributeError):
-    # should use new instead--Now okay.
+    # should use new instead. Now okay.
     assert B.T.dup().isequal(B.T.new())
     # Not exceptional, but while we're here...
     C = B.T.new(mask=A.V)
@@ -2837,7 +2837,7 @@ def test_auto(A, v):
             # print(type(expr).__name__, method)
             val1 = getattr(expected, method)(expected).new()
             if method in {"__or__", "__ror__"} and type(expr) is MatrixEwiseMultExpr:
-                # Doing e.g. `plus(A & B | C)` isn't allowed--make user be explicit
+                # Doing e.g. `plus(A & B | C)` isn't allowed; make user be explicit
                 with pytest.raises(TypeError):
                     val2 = getattr(expected, method)(expr)
                 with pytest.raises(TypeError):

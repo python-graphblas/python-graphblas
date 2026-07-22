@@ -6,7 +6,7 @@ from ...dtypes import BOOL, INT8, UINT64, lookup_dtype
 from ...exceptions import UdfParseError, check_status_carg
 from .. import _has_numba, ffi, lib
 from ..dtypes import _sample_values
-from .base import OpBase, ParameterizedUdf, TypedOpBase, _deserialize_parameterized
+from .base import OpBase, ParameterizedUdf, TypedOpBase
 
 _has_idxbinop = hasattr(lib, "GxB_IndexBinaryOp_new")
 
@@ -14,6 +14,7 @@ if _has_numba:
     import numba
 
     from .base import (
+        _bool_to_int8,
         _compile_udf_for_udt,
         _get_udt_wrapper_indexbinary,
         _resolve_udt_return_type,
@@ -37,6 +38,27 @@ def _rebind_indexbinaryop(parent, type_, theta):
     return typed(theta)
 
 
+def _theta_to_scalar(theta, dtype):
+    """Wrap a raw (non-Scalar) theta as a GrB Scalar for binding.
+
+    ``dtype`` is the thunk dtype when known (a UDT thunk or an explicit
+    ``dtype=``), else ``None`` to infer from the value. A raw user-defined-type
+    value (array/tuple) can't be inferred, so raise a clear error that names the
+    value and the working alternatives.
+    """
+    from ..scalar import Scalar
+
+    try:
+        return Scalar.from_value(theta, dtype, is_cscalar=False, name="")  # pragma: is_grbscalar
+    except TypeError as exc:
+        if dtype is None:
+            raise TypeError(
+                f"Cannot infer a dtype for theta from {theta!r}; pass an explicit dtype "
+                "(e.g., op(value, dtype=...)) or a typed Scalar. Required for user-defined types."
+            ) from exc
+        raise
+
+
 class _BoundIndexBinaryOp(TypedOpBase):
     """A BinaryOp produced by binding a theta value to an IndexBinaryOp.
 
@@ -49,9 +71,16 @@ class _BoundIndexBinaryOp(TypedOpBase):
 
     __slots__ = ("_theta",)
     opclass = "BinaryOp"
+    # Each ``iop(theta)`` call allocates a fresh ``GrB_BinaryOp`` via
+    # ``GxB_BinaryOp_new_IndexOp`` and bound IBOs are never cached, so this
+    # is the per-call allocation that ``TypedOpBase.__del__`` must release.
+    # Without this, every ``iop(theta)`` (including each pickle round-trip)
+    # leaks one ``GrB_BinaryOp`` for the life of the process.
+    _owns_gb_obj = True
     # A bound IBO is monomorphic in its operand types (one ``(x, y, z,
     # theta)`` combination). Expose the polymorphism / commutativity
-    # markers that ``Semiring._build`` and related consumers probe as
+    # markers that ``Semiring.__init__``, ``Semiring.is_positional``,
+    # ``Semiring._custom_dtype``, and ``TypedUserSemiring`` probe as
     # class-level defaults, so they get sane answers (and no
     # ``AttributeError``) when a bound IBO is passed in place of a
     # ``BinaryOp`` parent.
@@ -101,11 +130,15 @@ class TypedBuiltinIndexBinaryOp(TypedOpBase):
             theta = False
         theta_value = theta.value if isinstance(theta, Scalar) else theta
         if not isinstance(theta, Scalar):
-            theta = Scalar.from_value(theta, is_cscalar=False, name="")  # pragma: is_grbscalar
+            # A raw value for a UDT thunk carries the thunk dtype; otherwise the
+            # value is inferred (and a raw UDT value raises a clear error).
+            tt = self.thunk_type
+            theta = _theta_to_scalar(theta, tt if tt._is_udt else None)
         elif theta._is_cscalar:
             # fmt: off
-            val = theta.value
-            theta = Scalar.from_value(val, is_cscalar=False, name="")  # pragma: is_grbscalar
+            # Pass dtype explicitly; an array-UDT value would otherwise infer wrong.
+            val, dt = theta.value, theta.dtype
+            theta = Scalar.from_value(val, dt, is_cscalar=False, name="")  # pragma: is_grbscalar
             # fmt: on
         new_binop = ffi_new("GrB_BinaryOp*")
         check_status_carg(
@@ -133,6 +166,7 @@ class TypedBuiltinIndexBinaryOp(TypedOpBase):
 class TypedUserIndexBinaryOp(TypedOpBase):
     __slots__ = ()
     opclass = "IndexBinaryOp"
+    _owns_gb_obj = True
 
     def __init__(self, parent, name, type_, return_type, gb_obj, dtype2=None):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
@@ -168,20 +202,6 @@ class ParameterizedIndexBinaryOp(ParameterizedUdf):
         idxbinop = self.func(*args, **kwargs)
         idxbinop._parameterized_info = (self, args, kwargs)
         return IndexBinaryOp.register_anonymous(idxbinop, self.name, is_udt=self._is_udt)
-
-    def __reduce__(self):
-        name = f"indexbinary.{self.name}"
-        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
-            return name
-        return (self._deserialize, (self.name, self.func, self._anonymous, self._is_udt))
-
-    @staticmethod
-    def _deserialize(name, func, anonymous, is_udt=False):
-        if anonymous:
-            return IndexBinaryOp.register_anonymous(func, name, parameterized=True, is_udt=is_udt)
-        if (rv := IndexBinaryOp._find(name)) is not None:
-            return rv
-        return IndexBinaryOp.register_new(name, func, parameterized=True, is_udt=is_udt)
 
 
 class IndexBinaryOp(OpBase):
@@ -262,14 +282,8 @@ class IndexBinaryOp(OpBase):
                 elif type_ == BOOL and ret_type.name == "INT64" and return_types.get(INT8) == INT8:
                     ret_type = INT8
 
-                # Numba can't handle BOOL correctly (see numba/numba#5395), so
-                # we route booleans through INT8 and rely on coercion at the
-                # wrapper boundary. See the BOOL branches below.
-                # MAINT 2026-05-17: re-verified on Numba 0.65 (cfunc with
-                # CPointer(boolean) fails to compile: "Storing i8 to ptr of
-                # i1"). Re-test periodically.
-                input_type = INT8 if type_ == BOOL else type_
-                return_type = INT8 if ret_type == BOOL else ret_type
+                input_type = _bool_to_int8(type_)
+                return_type = _bool_to_int8(ret_type)
 
                 # Build a wrapper that calls z = f(x, ix, jx, y, iy, jy, theta).
                 # C signature: void(z*, x*, ix, jx, y*, iy, jy, theta*).
@@ -500,18 +514,6 @@ class IndexBinaryOp(OpBase):
             self._udt_types = {}  # {(dtype, dtype2): DataType}
             self._udt_ops = {}  # {(dtype, dtype2): TypedUserIndexBinaryOp}
 
-    def __reduce__(self):
-        if self._anonymous:
-            if hasattr(self.orig_func, "_parameterized_info"):
-                return (_deserialize_parameterized, self.orig_func._parameterized_info)
-            return (
-                IndexBinaryOp._deserialize_anon_udf,
-                (self.orig_func, self.name, self._is_udt),
-            )
-        if (name := f"indexbinary.{self.name}") in _STANDARD_OPERATOR_NAMES:
-            return name
-        return (IndexBinaryOp._deserialize_udf, (self.name, self.orig_func, self._is_udt))
-
     def __call__(self, theta=None, dtype=None):
         """Bind a theta value to produce a BinaryOp.
 
@@ -534,11 +536,14 @@ class IndexBinaryOp(OpBase):
         if theta is None:
             theta = False
         if not isinstance(theta, Scalar):
-            theta = Scalar.from_value(theta, is_cscalar=False, name="")  # pragma: is_grbscalar
+            # An explicit dtype supplies a UDT; with no dtype the value is
+            # inferred (and a raw UDT value raises a clear error).
+            theta = _theta_to_scalar(theta, _lookup_dtype(dtype) if dtype is not None else None)
         elif theta._is_cscalar:
             # fmt: off
-            val = theta.value
-            theta = Scalar.from_value(val, is_cscalar=False, name="")  # pragma: is_grbscalar
+            # Pass dtype explicitly; an array-UDT value would otherwise infer wrong.
+            val, dt = theta.value, theta.dtype
+            theta = Scalar.from_value(val, dt, is_cscalar=False, name="")  # pragma: is_grbscalar
             # fmt: on
         if dtype is None:
             dtype = theta.dtype
@@ -546,3 +551,6 @@ class IndexBinaryOp(OpBase):
             dtype = _lookup_dtype(dtype)
         typed_op = self[dtype]
         return typed_op(theta)
+
+
+ParameterizedIndexBinaryOp._op_class = IndexBinaryOp

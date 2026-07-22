@@ -160,6 +160,11 @@ repos:
   #    rev: v1.14.2
   #    hooks:
   #      - id: zizmor
+  - repo: https://github.com/pysentry/pysentry-pre-commit
+    rev: v0.4.6
+    hooks:
+      - id: pysentry
+        args: ["--format=human", "--fail-on=low", "--sources=pypa,osv,pypi"]
   - repo: meta
     hooks:
       - id: check-hooks-apply
@@ -180,6 +185,25 @@ repos:
         name: Disallow _ in permalinks
         language: pygrep
         entry: "^permalink:.*_.*"
+      - id: disallow-ai-dashes
+        # AI-ism: em-dash, en-dash, " -- " separator, or "word--jam".
+        # See ``scripts/find_aiisms.sh`` for the manual / branch-diff variant
+        # and ``ai/CLAUDE.md`` "Writing Style" for the rationale.
+        name: Disallow em/en-dash and ' -- ' as a separator
+        language: pygrep
+        entry: "—|–| -- |[A-Za-z0-9]--"
+        types_or: [python, rst, markdown, toml, yaml, shell]
+        # README intentionally uses en-dash. docs/conf.py + jit_diagnostics.py
+        # use ``# --- Section ---`` banner comments / print output, which the
+        # regex also matches. find_aiisms.sh contains the matching regex.
+        exclude: |
+          (?x)^(
+            README\.md
+            | docs/conf\.py
+            | scripts/jit_diagnostics\.py
+            | scripts/find_aiisms\.sh
+            | \.pre-commit-config\.yaml
+          )$
       # Add `--hook-stage manual` to pre-commit command to run (very slow)
       # It's probably better (and faster!) to simply run `pylint graphblas/some/file.py`
       - id: pylint

@@ -1361,7 +1361,6 @@ def test_udt():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_tuple_return_binaryop(record_udt):
-    """A BinaryOp UDF returning a tuple builds the result UDT field-by-field."""
     v, w = _record_pair(record_udt)
 
     def _add_udt(x, y):
@@ -1377,7 +1376,6 @@ def test_udt_tuple_return_binaryop(record_udt):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_tuple_return_unaryop_vector(record_udt):
-    """A UnaryOp UDF returning a tuple builds the result UDT field-by-field on a Vector."""
     v, _ = _record_pair(record_udt)
 
     def _double_udt(val):
@@ -1393,7 +1391,6 @@ def test_udt_tuple_return_unaryop_vector(record_udt):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_tuple_return_unaryop_matrix(record_udt):
-    """A tuple-returning UnaryOp also works on a Matrix.apply path."""
 
     def _double_udt(val):
         return (val["a"] * 2, val["b"] * 2.0)  # pragma: no cover (numba)
@@ -1447,7 +1444,6 @@ def test_udt_tuple_return_semiring(record_udt):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_tuple_return_indexunary(record_udt):
-    """An IndexUnaryOp UDF returning a tuple builds the result UDT field-by-field."""
     v, _ = _record_pair(record_udt)
 
     def _idx_udt(val, idx, _col, thunk):
@@ -1463,7 +1459,7 @@ def test_udt_tuple_return_indexunary(record_udt):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_tuple_return_3field():
-    """Tuple-return scales beyond the standard 2-field record dtype."""
+    """Tuple-return works for records with more than two fields."""
     dtype3 = np.dtype([("x", np.int32), ("y", np.float64), ("z", np.int64)], align=True)
     udt3 = dtypes.register_anonymous(dtype3)
     v3 = Vector(udt3, size=2)
@@ -1496,6 +1492,8 @@ def test_udt_input_with_scalar_return(record_udt):
     sum_op = BinaryOp.register_anonymous(_sum_fields, "test_sum_fields", is_udt=True)
     result = sum_op(v & w).new()
     assert result[0].new() == 21.0  # 1 + 20.0
+    assert result[1].new() == 43.0  # 3 + 40.0
+    assert result[2].new() == 65.0  # 5 + 60.0
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -1615,7 +1613,6 @@ def test_udt_builtin_minmax_record(record_udt, op_name, expected_rows):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_unary_ainv_abs_record(record_udt):
-    """``unary.ainv`` and ``unary.abs`` apply per field on a record UDT."""
     v = Vector(record_udt, size=3)
     v[0] = (1, 2.0)
     v[1] = (3, 4.0)
@@ -1637,7 +1634,6 @@ def test_udt_unary_ainv_abs_record(record_udt):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_matrix_apply_unary(record_udt):
-    """``Matrix.apply`` works on a record-UDT-valued matrix."""
     M = Matrix(record_udt, nrows=2, ncols=2)
     M[0, 0] = (1, 2.0)
     M[0, 1] = (3, 4.0)
@@ -1645,6 +1641,8 @@ def test_udt_matrix_apply_unary(record_udt):
     M[1, 1] = (7, 8.0)
     result = M.apply(unary.ainv).new()
     assert result[0, 0].new() == (-1, -2.0)
+    assert result[0, 1].new() == (-3, -4.0)
+    assert result[1, 0].new() == (-5, -6.0)
     assert result[1, 1].new() == (-7, -8.0)
 
 
@@ -1679,7 +1677,6 @@ def test_udt_builtin_binary_array(array_udt, op_name, expected):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_unary_ainv_abs_array(array_udt):
-    """``unary.ainv`` / ``unary.abs`` apply per element on an array UDT."""
     a, _b = _array_pair(array_udt)
     np.testing.assert_array_equal(a.apply(unary.ainv).new()[0].new().value, [-1.0, -2.0, -3.0])
     c = Vector(array_udt, size=2)
@@ -1716,7 +1713,7 @@ def test_udt_jit_typedef():
     arr_udt = dtypes.register_anonymous(arr_dtype, "Vec7")
     lib.GrB_Type_get_String(arr_udt._carg, buf, lib.GxB_JIT_C_DEFINITION)
     defn = ffi.string(buf).decode()
-    assert "double v [7]" in defn or "double v[7]" in defn
+    assert "double v [7]" in defn
     assert "Vec7" in defn
 
     # 2D array UDT
@@ -1927,7 +1924,6 @@ def test_udt_auto_semiring():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_single_field_record():
-    """A single-field record UDT works for binary and reduce paths."""
     single_dtype = np.dtype([("val", np.float64)], align=True)
     single_udt = dtypes.register_anonymous(single_dtype)
     v = Vector(single_udt, 2)
@@ -1938,6 +1934,7 @@ def test_udt_single_field_record():
     w[1] = (20.0,)
     result = binary.plus(v & w).new()
     assert result[0].new() == (13.0,)
+    assert result[1].new() == (27.0,)
     assert v.reduce(monoid.plus).new() == (10.0,)
 
 
@@ -1954,7 +1951,10 @@ def test_udt_bool_field_record():
     bw[0] = (True, 10)
     bw[1] = (True, 20)
     result = binary.plus(bv & bw).new()
-    assert result[0].new().value[1] == 11  # count field
+    # count field sums normally; flag is ``bool(a + b)``, so it's False only
+    # when both inputs are False.
+    assert result[0].new().value.tolist() == (True, 11)
+    assert result[1].new().value.tolist() == (True, 22)
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -1974,7 +1974,6 @@ def test_udt_op_compilation_is_lazy():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_large_array():
-    """A 100-element array UDT compiles and runs."""
     big_dtype = np.dtype((np.float64, (100,)))
     big_udt = dtypes.register_anonymous(big_dtype)
     a = Vector(big_udt, 2)
@@ -1984,13 +1983,13 @@ def test_udt_large_array():
     b[0] = [1.0] * 100
     b[1] = [1.0] * 100
     result = binary.plus(a & b).new()
-    np.testing.assert_array_equal(result[0].new().value[:3], [1.0, 2.0, 3.0])
+    np.testing.assert_array_equal(result[0].new().value, np.arange(1.0, 101.0))
+    np.testing.assert_array_equal(result[1].new().value, np.arange(101.0, 201.0))
 
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_int_array():
-    """An integer array UDT applies binary ops element-by-element."""
     int_arr_dtype = np.dtype((np.int32, (4,)))
     int_arr_udt = dtypes.register_anonymous(int_arr_dtype)
     iv = Vector(int_arr_udt, 2)
@@ -2001,6 +2000,7 @@ def test_udt_int_array():
     iw[1] = [50, 60, 70, 80]
     result = binary.times(iv & iw).new()
     np.testing.assert_array_equal(result[0].new().value, [10, 40, 90, 160])
+    np.testing.assert_array_equal(result[1].new().value, [250, 360, 490, 640])
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -2185,6 +2185,7 @@ def test_udt_array_scalar_broadcast_plus_times(broadcast_array_udt):
     np.testing.assert_array_equal(res_lhs[0].new().value, [11.0, 12.0, 13.0])
     np.testing.assert_array_equal(res_lhs[1].new().value, [104.0, 105.0, 106.0])
     np.testing.assert_array_equal(res_rhs[0].new().value, [11.0, 12.0, 13.0])
+    np.testing.assert_array_equal(res_rhs[1].new().value, [104.0, 105.0, 106.0])
 
     res_times = binary.times(vec_arr & vec_s).new()
     np.testing.assert_array_equal(res_times[0].new().value, [10.0, 20.0, 30.0])
@@ -2221,26 +2222,26 @@ def test_udt_matrix_scalar_broadcast(broadcast_record_udt):
     assert result[1, 1].new() == (41.0, 42.0)
 
 
+# eq/ne broadcasting between a UDT and a scalar type.
+#
+# Before this fix, ``binary.eq(udt_vec & int_vec)`` silently reinterpreted
+# the int cell as a UDT struct (reading past the cell) and produced
+# byte-comparison nonsense that happened to look like plausible False/True.
+# Now the scalar broadcasts to every leaf, so ``eq`` is true only when all
+# leaves equal the scalar.
+
+
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
-def test_udt_eq_ne_scalar_broadcast():
-    """eq/ne broadcasting between a UDT and a scalar type.
-
-    Before this fix, ``binary.eq(udt_vec & int_vec)`` silently
-    reinterpreted the int cell as a UDT struct (reading past the cell)
-    and produced byte-comparison nonsense that happened to look like
-    plausible False/True. Now the scalar broadcasts to every leaf, so
-    ``eq`` is true only when all leaves equal the scalar.
-    """
-    # ---- Record UDT vs scalar ----
+def test_udt_eq_ne_scalar_broadcast_record():
     record = dtypes.register_anonymous(
         np.dtype([("u", np.float64), ("v", np.float64)], align=True),
         name="_EqBcastUV",
     )
     v_udt = Vector(record, size=3)
-    v_udt[0] = (10.0, 10.0)  # all equal to 10 -> eq True
-    v_udt[1] = (10.0, 20.0)  # partial match -> eq False
-    v_udt[2] = (1.0, 2.0)  # no match -> eq False
+    v_udt[0] = (10.0, 10.0)
+    v_udt[1] = (10.0, 20.0)  # partial match
+    v_udt[2] = (1.0, 2.0)  # no match
     v_int = Vector.from_coo([0, 1, 2], [10, 10, 10])
 
     eq_result = binary.eq(v_udt & v_int).new()
@@ -2255,8 +2256,18 @@ def test_udt_eq_ne_scalar_broadcast():
     eq_rev = binary.eq(v_int & v_udt).new()
     assert eq_rev.isequal(expected_eq)
 
-    # NaN propagation through the broadcast: a NaN leaf never equals
-    # anything, even another NaN.
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_eq_ne_scalar_broadcast_nan_propagates():
+    """A NaN leaf never equals anything, even another NaN."""
+    # Distinct field names from the sibling record test: ``register_anonymous``
+    # keys on ``np.dtype``, so reusing ``("u", "v")`` would alias the cached
+    # DataType across tests (see CLAUDE.md).
+    record = dtypes.register_anonymous(
+        np.dtype([("nan_u", np.float64), ("nan_v", np.float64)], align=True),
+        name="_EqBcastUVNan",
+    )
     v_nan = Vector(record, size=3)
     v_nan[0] = (np.nan, 5.0)
     v_nan[1] = (5.0, 5.0)
@@ -2265,7 +2276,10 @@ def test_udt_eq_ne_scalar_broadcast():
     eq_nan = binary.eq(v_nan & v_five).new()
     assert eq_nan.isequal(Vector.from_coo([0, 1, 2], [False, True, False]))
 
-    # ---- Array UDT (1D and 2D) vs scalar ----
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_eq_ne_scalar_broadcast_array_1d():
     arr1d = dtypes.register_anonymous(np.dtype((np.float64, (3,))), name="_EqBcastA3")
     v_a = Vector(arr1d, size=2)
     v_a[0] = [1.0, 1.0, 1.0]
@@ -2274,6 +2288,10 @@ def test_udt_eq_ne_scalar_broadcast():
     eq_a = binary.eq(v_a & v_one).new()
     assert eq_a.isequal(Vector.from_coo([0, 1], [True, False]))
 
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_eq_ne_scalar_broadcast_array_2d():
     arr2d = dtypes.register_anonymous(np.dtype((np.float64, (2, 2))), name="_EqBcastA22")
     v_a22 = Vector(arr2d, size=2)
     v_a22[0] = [[3.0, 3.0], [3.0, 3.0]]
@@ -2282,7 +2300,10 @@ def test_udt_eq_ne_scalar_broadcast():
     eq_a22 = binary.eq(v_a22 & v_three).new()
     assert eq_a22.isequal(Vector.from_coo([0, 1], [True, False]))
 
-    # ---- Nested record vs scalar ----
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_eq_ne_scalar_broadcast_nested_record():
     inner = np.dtype([("a", np.float64), ("b", np.float64)], align=True)
     nested = dtypes.register_anonymous(
         np.dtype([("outer", np.float64), ("inner", inner)], align=True),
@@ -2296,7 +2317,10 @@ def test_udt_eq_ne_scalar_broadcast():
     eq_n = binary.eq(v_n & v_5).new()
     assert eq_n.isequal(Vector.from_coo([0, 1, 2], [True, False, False]))
 
-    # ---- Record with array sub-field vs scalar ----
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_eq_ne_scalar_broadcast_record_with_array_subfield():
     rec_arr = dtypes.register_anonymous(
         np.dtype([("a", np.float64), ("v", np.float64, (3,))], align=True),
         name="_EqBcastRecArr",
@@ -2428,15 +2452,20 @@ def test_udt_lazy_registration():
         assert add_op(v & v).new()[0].new() == (2, 4.0)
         assert v.apply(neg_op).new()[0].new() == (-1, -2.0)
     finally:
-        # Clean up the namespace so test_operator_types' enumeration of
-        # binary/unary/indexunary doesn't see these UDT-only ops.
+        # Remove these UDT-only ops from every namespace they leaked into,
+        # including the combined ``op`` (binary and unary register there too).
+        # ``test_dir`` enumerates module names, and test_op_namespace iterates
+        # ``op._delayed`` and would fail to resolve an op whose per-type entry
+        # is gone. Pop ``__dict__`` and ``_delayed`` directly to avoid
+        # re-triggering ``__getattr__``.
         for module, name in [
             (binary, "_lazy_udt_add"),
             (unary, "_lazy_udt_neg"),
             (indexunary, "_lazy_udt_iu"),
+            (op, "_lazy_udt_add"),
+            (op, "_lazy_udt_neg"),
         ]:
-            if hasattr(module, name):
-                delattr(module, name)
+            vars(module).pop(name, None)
             module._delayed.pop(name, None)
 
 
@@ -2628,6 +2657,46 @@ def test_is_idempotent():
         binary.min.is_idempotent
 
 
+def _isidem_factory(scale):  # pragma: no cover (called by Numba)
+    # Plain arithmetic so the binop compiles for every builtin type that
+    # ``BinaryOp._build`` samples, including complex (no ``>`` lowering).
+    def inner(x, y):
+        return (x + y) * scale
+
+    return inner
+
+
+def _isidem_pick_first(x, y):  # pragma: no cover (called by Numba)
+    # Returning ``x`` is trivially idempotent (``op(x, x) == x``) and
+    # compiles for every builtin type, including complex where ``max``
+    # has no Numba lowering.
+    return x
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_monoid_pickle_preserves_is_idempotent():
+    """Regression: anonymous ``Monoid`` and ``ParameterizedMonoid`` both
+    dropped ``is_idempotent`` from the pickle round-trip, silently turning
+    a known-idempotent op into a non-idempotent one. Both
+    ``Monoid.__reduce__`` and ``ParameterizedMonoid.__reduce__`` now carry
+    the flag explicitly so ``_deserialize`` can pass it to
+    ``register_anonymous`` / ``register_new``.
+    """
+    import pickle
+
+    # Plain Monoid (non-parameterized) over an anonymous BinaryOp.
+    bin_op = BinaryOp.register_anonymous(_isidem_pick_first, "isidem_pick_first")
+    mon = Monoid.register_anonymous(bin_op, 0, "isidem_monoid", is_idempotent=True)
+    assert mon.is_idempotent is True
+    assert pickle.loads(pickle.dumps(mon)).is_idempotent is True
+
+    # ParameterizedMonoid wrapping a ParameterizedBinaryOp.
+    pbin = BinaryOp.register_anonymous(_isidem_factory, parameterized=True)
+    pmon = Monoid.register_anonymous(pbin, 0, "isidem_param_monoid", is_idempotent=True)
+    assert pmon.is_idempotent is True
+    assert pickle.loads(pickle.dumps(pmon)).is_idempotent is True
+
+
 def _parameterized_is_udt_factory(scale):  # pragma: no cover (called by Numba inside the op)
     def inner(x, y):
         return x * scale + y * scale
@@ -2696,11 +2765,18 @@ def test_compile_codegen_helper():
     assert co_filename.startswith("<gb-udt-helper-test plus> #")
     assert "x + y" in "".join(linecache.cache[co_filename][2])
 
-    # A bad source surfaces as RuntimeError with the offending source attached.
+    # A bad source surfaces as RuntimeError with the offending source attached
+    # and the underlying SyntaxError as ``__cause__``.
     bad_src = "def _op(x, y):\n    return (x + y\n"  # missing close paren
-    with pytest.raises(RuntimeError, match=r"(?s)not valid Python.*x \+ y"):
+    with pytest.raises(RuntimeError) as exc_info:
         _compile_codegen(
             bad_src,
             func_name="_op",
             source_label="<gb-udt-helper-test typo>",
         )
+    msg = str(exc_info.value)
+    assert "<gb-udt-helper-test typo>" in msg
+    assert "not valid Python" in msg
+    assert "Source:" in msg
+    assert bad_src in msg
+    assert isinstance(exc_info.value.__cause__, SyntaxError)

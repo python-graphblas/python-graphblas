@@ -7,12 +7,18 @@ from ...dtypes import BOOL, FP64, INT8, INT64, UINT64, lookup_dtype
 from ...exceptions import UdfParseError, check_status_carg
 from .. import _has_numba, ffi, lib
 from ..dtypes import _sample_values
-from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op, _deserialize_parameterized
+from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op
 
 if _has_numba:
     import numba
 
-    from .base import _compile_udf_for_udt, _get_udt_wrapper, _resolve_udt_return_type
+    from .base import (
+        _bool_to_int8,
+        _compile_udf_for_udt,
+        _finalize_udt_op,
+        _get_udt_wrapper,
+        _resolve_udt_return_type,
+    )
 ffi_new = ffi.new
 
 
@@ -33,6 +39,7 @@ class TypedBuiltinIndexUnaryOp(TypedOpBase):
 class TypedUserIndexUnaryOp(TypedOpBase):
     __slots__ = ()
     opclass = "IndexUnaryOp"
+    _owns_gb_obj = True
 
     def __init__(self, parent, name, type_, return_type, gb_obj, dtype2=None):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
@@ -64,22 +71,6 @@ class ParameterizedIndexUnaryOp(ParameterizedUdf):
         indexunary = self.func(*args, **kwargs)
         indexunary._parameterized_info = (self, args, kwargs)
         return IndexUnaryOp.register_anonymous(indexunary, self.name, is_udt=self._is_udt)
-
-    def __reduce__(self):
-        # NOT COVERED
-        name = f"indexunary.{self.name}"
-        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
-            return name
-        return (self._deserialize, (self.name, self.func, self._anonymous, self._is_udt))
-
-    @staticmethod
-    def _deserialize(name, func, anonymous, is_udt=False):
-        # NOT COVERED
-        if anonymous:
-            return IndexUnaryOp.register_anonymous(func, name, parameterized=True, is_udt=is_udt)
-        if (rv := IndexUnaryOp._find(name)) is not None:
-            return rv
-        return IndexUnaryOp.register_new(name, func, parameterized=True, is_udt=is_udt)
 
 
 class IndexUnaryOp(OpBase):
@@ -152,15 +143,8 @@ class IndexUnaryOp(OpBase):
                 elif type_ == BOOL and ret_type == INT64 and return_types.get(INT8) == INT8:
                     ret_type = INT8
 
-                # Numba is unable to handle BOOL correctly right now, but we have a workaround
-                # See: https://github.com/numba/numba/issues/5395
-                # We're relying on coercion behaving correctly here.
-                # MAINT 2026-05-17: re-verified on Numba 0.65 (cfunc with
-                # CPointer(boolean) fails to compile: "Storing i8 to ptr of
-                # i1"). Re-test periodically and drop the INT8 routing when
-                # upstream is fixed.
-                input_type = INT8 if type_ == BOOL else type_
-                return_type = INT8 if ret_type == BOOL else ret_type
+                input_type = _bool_to_int8(type_)
+                return_type = _bool_to_int8(ret_type)
 
                 # Build wrapper because GraphBLAS wants pointers and void return
                 wrapper_sig = nt.void(
@@ -232,27 +216,9 @@ class IndexUnaryOp(OpBase):
         indexunary_wrapper, wrapper_sig = _get_udt_wrapper(
             numba_func, ret_type, dtype, dtype2, include_indexes=True, numba_ret_type=numba_ret_type
         )
-
-        indexunary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(indexunary_wrapper)
-        new_indexunary = ffi_new("GrB_IndexUnaryOp*")
-        check_status_carg(
-            lib.GrB_IndexUnaryOp_new(
-                new_indexunary, indexunary_wrapper.cffi, ret_type._carg, dtype._carg, dtype2._carg
-            ),
-            "IndexUnaryOp",
-            new_indexunary[0],
+        return _finalize_udt_op(
+            self, dtype, dtype2, ret_type, indexunary_wrapper, wrapper_sig, TypedUserIndexUnaryOp
         )
-        op = TypedUserIndexUnaryOp(
-            self,
-            self.name,
-            dtype,
-            ret_type,
-            new_indexunary[0],
-            dtype2=dtype2,
-        )
-        self._udt_types[dtypes] = ret_type
-        self._udt_ops[dtypes] = op
-        return op
 
     @classmethod
     def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
@@ -265,8 +231,8 @@ class IndexUnaryOp(OpBase):
         func : FunctionType
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
-            ``func`` takes four input parameters--any dtype, int64, int64,
-            any dtype and returns any dtype. The first argument (any dtype) is
+            ``func`` takes four input parameters (any dtype, int64, int64,
+            any dtype) and returns any dtype. The first argument (any dtype) is
             the value of the input Matrix or Vector, the second argument (int64)
             is the row index of the Matrix or the index of the Vector, the third
             argument (int64) is the column index of the Matrix or 0 for a Vector,
@@ -315,8 +281,8 @@ class IndexUnaryOp(OpBase):
         func : FunctionType
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
-            ``func`` takes four input parameters--any dtype, int64, int64,
-            any dtype and returns any dtype. The first argument (any dtype) is
+            ``func`` takes four input parameters (any dtype, int64, int64,
+            any dtype) and returns any dtype. The first argument (any dtype) is
             the value of the input Matrix or Vector, the second argument (int64)
             is the row index of the Matrix or the index of the Vector, the third
             argument (int64) is the column index of the Matrix or 0 for a Vector,
@@ -435,18 +401,7 @@ class IndexUnaryOp(OpBase):
             self._udt_types = {}  # {dtype: DataType}
             self._udt_ops = {}  # {dtype: TypedUserIndexUnaryOp}
 
-    def __reduce__(self):
-        if self._anonymous:
-            if hasattr(self.orig_func, "_parameterized_info"):
-                # NOT COVERED
-                return (_deserialize_parameterized, self.orig_func._parameterized_info)
-            return (
-                IndexUnaryOp._deserialize_anon_udf,
-                (self.orig_func, self.name, self._is_udt),
-            )
-        if (name := f"indexunary.{self.name}") in _STANDARD_OPERATOR_NAMES:
-            return name
-        # NOT COVERED
-        return (IndexUnaryOp._deserialize_udf, (self.name, self.orig_func, self._is_udt))
-
     __call__ = TypedBuiltinIndexUnaryOp.__call__
+
+
+ParameterizedIndexUnaryOp._op_class = IndexUnaryOp

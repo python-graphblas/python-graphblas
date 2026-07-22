@@ -138,7 +138,7 @@ Matrix Market files
 
 The `Matrix Market file format <https://math.nist.gov/MatrixMarket/formats.html>`_ is a common
 file format for storing sparse arrays in human-readable ASCII.
-Matrix Market files--also called MM files--often use ".mtx" file extension.
+Matrix Market files (also called MM files) often use ".mtx" file extension.
 For example, many datasets in MM format can be found in `the SuiteSparse Matrix Collection <https://sparse.tamu.edu/>`_.
 
 Use ``gb.io.mmread()`` to read a Matrix Market file to a python-graphblas Matrix,

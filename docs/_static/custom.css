@@ -5,8 +5,12 @@
   margin-bottom: 30px;
 }
 
-.intro-card:hover {
-  box-shadow: 0.2rem 0.5rem 1rem var(--pst-color-link) !important;
+html[data-theme="light"] .intro-card:hover {
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.18) !important;
+}
+
+html[data-theme="dark"] .intro-card:hover {
+  box-shadow: 0 0.5rem 1rem var(--pst-color-link) !important;
 }
 
 .intro-card .card-header {

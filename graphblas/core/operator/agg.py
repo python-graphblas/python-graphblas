@@ -122,16 +122,10 @@ class Aggregator:
         return self._typed_ops[dtype]
 
     def __contains__(self, dtype):
-        # Behavior change vs. earlier releases: ``dtype in agg.sum`` for a UDT
-        # used to be an O(1) ``dtype in self.types`` lookup that would return
-        # ``False`` even when the underlying monoid could be auto-lifted for
-        # that UDT. Now it goes through ``__getitem__``, which compiles the
-        # field-wise monoid on first use and caches both the resolved return
-        # type in ``self.types`` and the ``TypedAggregator`` in
-        # ``self._typed_ops``. The first ``in`` against a fresh UDT triggers
-        # a Numba compile; subsequent ones are cheap. ``__getitem__``'s UDT
-        # lift narrows the catch to ``KeyError``/``TypeError``/``UdfParseError``;
-        # the same set is caught here.
+        # Routes through ``__getitem__`` (which can lift the underlying
+        # monoid for a UDT) so ``dtype in agg.sum`` reports True for any
+        # UDT the monoid can auto-compile. Catches the same exception set
+        # ``__getitem__`` raises.
         try:
             self[dtype]
         except (KeyError, TypeError, UdfParseError):
@@ -144,6 +138,8 @@ class Aggregator:
         return f"agg.{self.name}"
 
     def __reduce__(self):
+        # Aggregator has no register_anonymous/register_new, so every
+        # instance is a module-level singleton; pickle by name.
         if self.name in agg._deprecated:
             return f"agg.ss.{self.name}"
         return f"agg.{self.name}"

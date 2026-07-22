@@ -107,10 +107,12 @@ class UdfParseError(GraphblasException):
 class NoJITWarning(UserWarning):
     """Auto-lifted UDT op fell back to the Numba cfunc path.
 
-    Emitted once per process from :func:`graphblas.core.ss.jit_config._maybe_warn_no_jit`
-    when an op like ``binary.plus[udt]`` would otherwise have JIT-compiled, but
-    couldn't because the JIT compiler is unusable, ``jit_c_control`` is off, or
-    the UDT isn't expressible as a C struct.
+    Emitted from :func:`graphblas.core.ss.jit_config._maybe_warn_no_jit`
+    when an op like ``binary.plus[udt]`` would otherwise have JIT-compiled,
+    but couldn't because the JIT compiler is unusable, ``jit_c_control``
+    is off, or the UDT isn't expressible as a C struct. Fires once per
+    ``(op, dtype)`` pair per process, so a user who registers several
+    UDTs gets one warning per pair regardless of cause.
 
     Inherits from :class:`UserWarning` so existing ``UserWarning`` filters
     still match it; users can also filter by category for a tight scope:

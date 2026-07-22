@@ -308,6 +308,37 @@ def _get_udt_info(dtype):
     return None
 
 
+def _check_udt_pair(op_name, dtype, dtype2, info_x, info_y):
+    """Raise ``KeyError`` if two UDT operands disagree on shape.
+
+    ``info_x`` and ``info_y`` are ``_get_udt_info`` results. When either is
+    ``None`` (one side is a scalar broadcast), no check fires. Without this
+    gate the generated wrapper code raises a cryptic Numba ``TypingError``
+    on the first field access.
+    """
+    if info_x is None or info_y is None:
+        return
+    kind_x, detail_x = info_x
+    kind_y, detail_y = info_y
+    if kind_x != kind_y:
+        raise KeyError(
+            f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
+            f"cannot mix record and array UDTs in a single element-wise op."
+        )
+    if kind_x == "record" and detail_x != detail_y:
+        raise KeyError(
+            f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
+            f"record UDTs must share field names; got {list(detail_x)} vs "
+            f"{list(detail_y)}."
+        )
+    if kind_x == "array" and detail_x != detail_y:
+        raise KeyError(
+            f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
+            f"array UDTs must share base dtype and flat size; "
+            f"got {detail_x} vs {detail_y}."
+        )
+
+
 def _iter_record_leaves(np_type, python_prefix="", c_prefix=""):
     """Yield ``(python_access, c_access, leaf_dtype)`` for each leaf in a record.
 
@@ -483,13 +514,13 @@ def _op_supports_field_dtypes(op_name, np_type):
 if _has_numba:
 
     def _expr_binary(py_op, x_expr, y_expr):
-        """Return a Python expression string for a binary op on two expressions."""
+        """Python-source builder; sibling of :func:`_c_expr_binary` for JIT C."""
         if py_op in _FUNC_BINARY_OPS:
             return f"{py_op}({x_expr}, {y_expr})"
         return f"{x_expr} {py_op} {y_expr}"
 
     def _expr_unary(py_op, operand):
-        """Return a Python expression string for a unary op on a fully-qualified operand."""
+        """Python-source builder; sibling of :func:`_c_expr_unary` for JIT C."""
         if py_op in _FUNC_UNARY_OPS:
             return f"{py_op}({operand})"
         return f"{py_op}{operand}"
@@ -577,8 +608,8 @@ if _has_numba:
         )
         return op_func, sig
 
-    # MAINT: this function, ``compile_udt_unary_wrapper`` below, and
-    # ``_make_jit_c_definition`` all branch on ``kind == "record"`` vs the
+    # MAINT 2026-05-21: this function, ``compile_udt_unary_wrapper`` below,
+    # and ``_make_jit_c_definition`` all branch on ``kind == "record"`` vs the
     # array path with near-identical scaffolding. When a third op family
     # (ternary, indexbinary, ...) needs the same treatment, fold the three
     # into one shape-parametrized helper instead of pasting a third copy.
@@ -602,30 +633,7 @@ if _has_numba:
 
         info_x = _get_udt_info(dtype)
         info_y = _get_udt_info(dtype2)
-
-        # When both sides are UDTs, they must agree on shape. Without this
-        # pre-check, generated code like ``x['a'] + y['a']`` fails inside
-        # Numba with a cryptic TypingError mentioning record-field internals.
-        if info_x is not None and info_y is not None:
-            kind_x, detail_x = info_x
-            kind_y, detail_y = info_y
-            if kind_x != kind_y:
-                raise KeyError(
-                    f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-                    f"cannot mix record and array UDTs in a single element-wise op."
-                )
-            if kind_x == "record" and detail_x != detail_y:
-                raise KeyError(
-                    f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-                    f"record UDTs must share field names; got {list(detail_x)} vs "
-                    f"{list(detail_y)}."
-                )
-            if kind_x == "array" and detail_x != detail_y:
-                raise KeyError(
-                    f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-                    f"array UDTs must share base dtype and flat size; "
-                    f"got {detail_x} vs {detail_y}."
-                )
+        _check_udt_pair(op_name, dtype, dtype2, info_x, info_y)
 
         # Pick the UDT side. Both sides may be UDTs; the pre-check above
         # ensures they share a shape in that case.
@@ -885,8 +893,17 @@ def _make_jit_c_comparison_definition(op_name, dtype, *, is_eq):
     expressed in C. The kernel signature is
     ``void op(_Bool *z, const Udt *x, const Udt *y)``: each leaf field
     contributes a scalar ``==`` (or ``!=``) comparison; record-UDT leaves
-    are chained with ``&&`` (eq) or ``||`` (ne). Array UDTs and array
-    sub-fields unroll their elements at codegen time.
+    are chained with ``&&`` (eq) or ``||`` (ne). Top-level array UDTs unroll
+    their elements at codegen time.
+
+    Array-valued sub-fields inside a record (e.g.
+    ``[("weights", (float64, 3))]``) aren't supported: ``_udt_c_typedef``
+    rejects records with array sub-fields (``NP_TO_C_TYPES`` has no entry
+    for sub-array dtypes), so this function returns ``None`` before
+    iterating leaves in that case. Adding support would mean extending
+    ``_udt_c_typedef`` to emit ``double name[N]`` and ``_make_jit_c_definition``
+    to unroll array sub-fields in arithmetic codegen too; both legs need
+    to land together or the eq/ne path is alone in supporting it.
 
     IEEE NaN propagation comes for free: C ``a == b`` is false when either
     side is NaN, so two records both carrying NaN compare unequal under
@@ -894,9 +911,9 @@ def _make_jit_c_comparison_definition(op_name, dtype, *, is_eq):
     semantic comparison.
     """
     np_type = dtype.np_type
-    if np_type.names is not None and not _is_c_compatible_layout(np_type):
-        return None
     pinned_name = dtype.jit_c_name
+    # ``_udt_c_typedef`` returns None when the numpy layout doesn't match a
+    # C compiler's layout for the same struct.
     typedef_info = _udt_c_typedef(pinned_name or dtype.name, np_type)
     if typedef_info is None:
         return None
@@ -904,30 +921,42 @@ def _make_jit_c_comparison_definition(op_name, dtype, *, is_eq):
     c_name = f"{op_name}_{type_name}"
     op = "==" if is_eq else "!="
     join = " && " if is_eq else " || "
-    terms = []
     if np_type.subdtype is not None:
         # Array UDT: unroll all elements.
         _base, shape = np_type.subdtype
         size = reduce(mul, shape)
         terms = [f"((x->v[{i}]) {op} (y->v[{i}]))" for i in range(size)]
     elif np_type.names is not None:
-        for _py, c_path, leaf_dtype in _iter_record_leaves(np_type):
-            if leaf_dtype.subdtype is not None:
-                # Array-valued sub-field inside a record: unroll its
-                # elements and combine with the same connective.
-                base_dtype, shape = leaf_dtype.subdtype
-                if base_dtype not in NP_TO_C_TYPES:
-                    return None
-                size = reduce(mul, shape)
-                arr_terms = [f"((x->{c_path}[{i}]) {op} (y->{c_path}[{i}]))" for i in range(size)]
-                terms.append("(" + join.join(arr_terms) + ")")
-            else:
-                terms.append(f"((x->{c_path}) {op} (y->{c_path}))")
+        terms = [f"((x->{c}) {op} (y->{c}))" for _py, c, _d in _iter_record_leaves(np_type)]
     else:
         return None
     body = join.join(terms) if terms else ("1" if is_eq else "0")
     params = f"_Bool *z, const {type_name} *x, const {type_name} *y"
     return c_name, f"void {c_name} ({params}) {{ *z = {body} ; }}"
+
+
+def _maybe_warn_jit_skipped(jit_info, op_name, dtype_name):
+    """Emit a ``NoJITWarning`` when JIT setup was skipped despite SS supporting JIT.
+
+    Called by op-class ``_compile_udt`` paths after ``set_jit_c_*_on_op``
+    returns ``None``. The ``_has_jit_set`` gate keeps the warning silent on
+    SS < 8 where JIT is fundamentally absent.
+    """
+    if jit_info is None and _has_jit_set:
+        from ..ss.jit_config import _maybe_warn_no_jit
+
+        _maybe_warn_no_jit(op_name=op_name, dtype_name=dtype_name)
+
+
+def _set_jit_c_strings(gb_obj, c_name, c_defn, set_string_func):
+    """Pin ``GxB_JIT_C_NAME`` + ``GxB_JIT_C_DEFINITION`` on a fresh op handle.
+
+    Both strings are one-shot on SuiteSparse: a second set returns
+    ``GrB_ALREADY_SET`` silently. The return is not checked here because
+    callers always pass a freshly-allocated handle.
+    """
+    set_string_func(gb_obj, ffi.new("char[]", c_name.encode()), lib.GxB_JIT_C_NAME)
+    set_string_func(gb_obj, ffi.new("char[]", c_defn.encode()), lib.GxB_JIT_C_DEFINITION)
 
 
 def set_jit_c_comparison_on_op(gb_obj, op_name, dtype, set_string_func, *, is_eq):
@@ -938,21 +967,14 @@ def set_jit_c_comparison_on_op(gb_obj, op_name, dtype, set_string_func, *, is_eq
     ``(c_name, c_defn)`` on success, ``None`` when JIT isn't available or
     the dtype can't be expressed in C; callers cache the returned strings
     on the op for introspection (see ``TypedUserBinaryOp.jit_c_source``).
-
-    ``gb_obj`` must be a freshly-created ``GrB_BinaryOp``: ``GxB_JIT_C_NAME``
-    and ``GxB_JIT_C_DEFINITION`` are one-shot on SuiteSparse, so a second
-    set returns ``GrB_ALREADY_SET`` silently (the return is not checked
-    here).
     """
     if not _has_jit_set:
         return None
     result = _make_jit_c_comparison_definition(op_name, dtype, is_eq=is_eq)
     if result is None:
         return None
-    c_name, c_defn = result
-    set_string_func(gb_obj, ffi.new("char[]", c_name.encode()), lib.GxB_JIT_C_NAME)
-    set_string_func(gb_obj, ffi.new("char[]", c_defn.encode()), lib.GxB_JIT_C_DEFINITION)
-    return c_name, c_defn
+    _set_jit_c_strings(gb_obj, *result, set_string_func)
+    return result
 
 
 def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2):
@@ -962,18 +984,11 @@ def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2):
     dtype is expressible in C, ``None`` otherwise. Callers may cache the
     returned strings for introspection (see ``TypedUserUnaryOp.jit_c_source``
     and ``TypedUserBinaryOp.jit_c_source``).
-
-    ``gb_obj`` must be a freshly-created ``GrB_UnaryOp`` / ``GrB_BinaryOp``:
-    ``GxB_JIT_C_NAME`` and ``GxB_JIT_C_DEFINITION`` are one-shot on
-    SuiteSparse, so a second set returns ``GrB_ALREADY_SET`` silently
-    (the return is not checked here).
     """
     if not _has_jit_set:
         return None
     result = _make_jit_c_definition(op_name, py_op, dtype, arity)
     if result is None:
         return None
-    c_name, c_defn = result
-    set_string_func(gb_obj, ffi.new("char[]", c_name.encode()), lib.GxB_JIT_C_NAME)
-    set_string_func(gb_obj, ffi.new("char[]", c_defn.encode()), lib.GxB_JIT_C_DEFINITION)
-    return c_name, c_defn
+    _set_jit_c_strings(gb_obj, *result, set_string_func)
+    return result

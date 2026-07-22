@@ -106,13 +106,16 @@ Built-in operators on UDTs
 The following operators auto-lift to any UDT on first use:
 
 - BinaryOps: ``plus``, ``minus``, ``times``, ``truediv``, ``floordiv``,
-  ``min``, ``max``, ``eq``, ``ne``.
+  ``min``, ``max``, ``eq``, ``ne``. The positional selectors ``first``,
+  ``second``, ``any``, and ``pair`` work too, since they don't touch field
+  values.
 - UnaryOps: ``ainv``, ``abs``.
 - Monoids: ``plus``, ``times``, ``min``, ``max``, ``any``.
 - Semirings combining a UDT-lifting monoid with a UDT-lifting BinaryOp
   (e.g., ``plus_times``, ``min_plus``, ``max_times``, ``any_first``).
 - Aggregators built on those monoids: ``sum``, ``prod``, ``min``, ``max``,
-  ``any_value``, ``count``, ``first``, ``last``.
+  ``any_value``, ``count``. The positional ``agg.ss.first`` and
+  ``agg.ss.last`` work on any dtype, including UDTs.
 
 For example:
 
@@ -126,8 +129,11 @@ For example:
     total       = v.reduce(agg.sum[edge_dtype]).new()  # field-wise reduce
 
 The lift is field-by-field for record UDTs and element-by-element for array
-UDTs. Field types that don't support the operation raise ``UdfParseError``
-on the first lookup (e.g., ``binary.floordiv[complex_udt]``).
+UDTs. Field types that don't support the operation raise ``KeyError`` on the
+first lookup. ``binary.min``, ``binary.max``, and ``binary.floordiv`` reject
+UDTs with any complex leaf (no ordering, no integer modulus); use ``plus``,
+``minus``, ``times``, or ``truediv`` for complex arithmetic, or register a
+custom binary op.
 
 Composite aggregators (``agg.hypot``, ``agg.L1norm``, ``agg.Linfnorm``,
 ``agg.sum_of_squares``, ``agg.sum_of_inverses``) do *not* auto-lift to UDTs;
@@ -204,20 +210,29 @@ Inspect what SuiteSparse is JIT-ing from Python:
 
 JIT is skipped when:
 
-- The UDT name (or any field name) is a C reserved word (``class``,
-  ``return``, ...) or a stdlib macro/typedef pulled in by ``GraphBLAS.h``
-  (``NULL``, ``FILE``, ``M_PI``, ``complex``, ...). The op falls through
-  to the Numba cfunc path.
+- A field name (or the UDT name, if you supplied one) is a C reserved word
+  (``class``, ``return``, ...) or a stdlib macro/typedef pulled in by
+  ``GraphBLAS.h`` (``NULL``, ``FILE``, ``M_PI``, ``complex``, ...). The op
+  falls through to the Numba cfunc path.
 - A field type isn't in the numpy-to-C map (rare; the standard numeric
   scalar types all map).
-- The UDT has no usable name. Anonymous registration without an explicit
-  ``name=`` argument produces a default like ``"{'x': INT64}"``, which is
-  not a valid C identifier.
+- The numpy layout doesn't match what a C compiler would produce. The most
+  common case is a packed record with mixed-width fields (e.g.,
+  ``np.dtype([("a", int32), ("b", float64)])`` without ``align=True``).
+  Pass ``align=True`` to ``np.dtype``, or use the dict / dataclass form,
+  which auto-aligns.
 - The JIT compiler isn't usable after auto-fix (see below).
 
-The first time auto-lift produces a non-JIT'd op in a process, a one-time
-``graphblas.exceptions.NoJITWarning`` (a subclass of ``UserWarning``) is
-emitted with the cause and the remediation. Silence it by category or by
+Anonymous UDTs (no ``name=`` argument) still take the JIT path: a synthetic
+``_gbudt_NNN`` C name is minted so SuiteSparse always has a registerable
+identifier. Pass ``name=`` only for readable JIT cache filenames and
+introspection.
+
+The first time auto-lift produces a non-JIT'd op for a given ``(op, dtype)``
+pair in a process, a ``graphblas.exceptions.NoJITWarning`` (a subclass of
+``UserWarning``) is emitted with the cause and the remediation. The warning
+fires once per ``(op, dtype)`` rather than once per process, so distinct
+fallback causes each surface a warning. Silence it by category or by
 message::
 
     import warnings
@@ -236,13 +251,14 @@ A conda-installed ``python-suitesparse-graphblas`` bakes in the build host's
 compiler path (e.g., ``/Users/runner/...``), which doesn't exist on user
 machines. With the bogus default, SuiteSparse emits the JIT ``.c`` source
 but never compiles a ``.dylib`` or ``.so``, and silently falls back to the
-cfunc path. **The 2-3x JIT speedup is invisibly lost.**
+cfunc path. The 2-3x JIT speedup is silently lost.
 
 python-graphblas auto-fixes this at import. If ``jit_c_compiler_name``
 doesn't exist on disk, it is replaced with one from ``$CONDA_PREFIX/bin/``
 (or from ``sysconfig`` for pure-pip installs), and ``jit_c_control`` is
-bumped from the SS default ``'run'`` (load only) to ``'on'`` (compile and
-load). When the default config is already valid, only the mode bump applies.
+bumped from the SS default ``'run'`` (run cached kernels only; no compile,
+no load from disk) to ``'on'`` (compile, load, and run). When the default
+config is already valid, only the mode bump applies.
 
 Call the helper manually to re-fix or verify::
 

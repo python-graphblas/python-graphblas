@@ -29,5 +29,6 @@ mypy
 # For building docs
 nbsphinx
 numpydoc
-pydata-sphinx-theme
-sphinx-panels
+pydata-sphinx-theme>=0.15
+sphinx>=7
+sphinx-design

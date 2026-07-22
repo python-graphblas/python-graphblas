@@ -141,6 +141,11 @@ class TypedUserMonoid(_BinaryopJitDelegate, TypedOpBase):
     __slots__ = "binaryop", "identity"
     opclass = "Monoid"
     is_commutative = True
+    # Deliberately not ``_owns_gb_obj = True``: a ``GrB_Monoid`` holds a
+    # pointer into its underlying ``GrB_BinaryOp``, and Python's cyclic GC
+    # makes no guarantee about which side is finalized first. Freeing the
+    # monoid after its binary op is gone aborts SuiteSparse. The leak is
+    # bounded by the cache in ``Monoid.{_typed_ops,_udt_ops}``.
 
     def __init__(self, parent, name, type_, return_type, gb_obj, binaryop, identity):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
@@ -203,15 +208,18 @@ class ParameterizedMonoid(ParameterizedUdf):
         name = f"monoid.{self.name}"
         if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:  # pragma: no cover
             return name
-        return (self._deserialize, (self.name, self.binaryop, self.identity, self._anonymous))
+        return (
+            self._deserialize,
+            (self.name, self.binaryop, self.identity, self._anonymous, self._is_idempotent),
+        )
 
     @staticmethod
-    def _deserialize(name, binaryop, identity, anonymous):
+    def _deserialize(name, binaryop, identity, anonymous, is_idempotent=False):
         if anonymous:
-            return Monoid.register_anonymous(binaryop, identity, name)
+            return Monoid.register_anonymous(binaryop, identity, name, is_idempotent=is_idempotent)
         if (rv := Monoid._find(name)) is not None:
             return rv
-        return Monoid.register_new(name, binaryop, identity)
+        return Monoid.register_new(name, binaryop, identity, is_idempotent=is_idempotent)
 
 
 class Monoid(OpBase):
@@ -431,11 +439,30 @@ class Monoid(OpBase):
                 self._udt_ops = {}  # {dtype: TypedUserMonoid}
 
     def __reduce__(self):
-        if self._anonymous:
-            return (self.register_anonymous, (self._binaryop, self._identity, self.name))
-        if (name := f"monoid.{self.name}") in _STANDARD_OPERATOR_NAMES:
+        if not self._anonymous and (name := f"monoid.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
-        return (self._deserialize, (self.name, self._binaryop, self._identity))
+        # Carry ``is_idempotent`` through pickle: ``register_anonymous`` /
+        # ``register_new`` take it as keyword-only, and the inherited
+        # ``OpBase._deserialize`` can't pass keyword args, so route through a
+        # dedicated deserializer here.
+        return (
+            Monoid._deserialize_named_monoid,
+            (
+                self.name,
+                self._binaryop,
+                self._identity,
+                self._anonymous,
+                self._is_idempotent,
+            ),
+        )
+
+    @staticmethod
+    def _deserialize_named_monoid(name, binaryop, identity, anonymous, is_idempotent):
+        if anonymous:
+            return Monoid.register_anonymous(binaryop, identity, name, is_idempotent=is_idempotent)
+        if (rv := Monoid._find(name)) is not None:
+            return rv
+        return Monoid.register_new(name, binaryop, identity, is_idempotent=is_idempotent)
 
     @property
     def binaryop(self):
