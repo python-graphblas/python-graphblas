@@ -2,7 +2,6 @@
 """Print JIT diagnostic information for debugging compiler configuration.
 
 Run with: python scripts/jit_diagnostics.py
-Or during CI: python -m scripts.jit_diagnostics  (from repo root)
 
 This prints the GraphBLAS JIT configuration, available compilers, sysconfig
 values, and attempts a JIT compilation to verify everything works.
@@ -66,7 +65,7 @@ def main():
     from graphblas.core.ss import _IS_SSGB7
 
     if _IS_SSGB7:
-        print("\nSuiteSparse:GraphBLAS 7.x — JIT not available")
+        print("\nSuiteSparse:GraphBLAS 7.x: JIT not available")
         return 0
 
     print("\n--- GraphBLAS JIT defaults (from compiled C library) ---")
@@ -111,10 +110,8 @@ def main():
         print(f"  -fdebug-prefix-map: {d}")
 
     # Try the fix
-    print("\n--- Attempting _fix_jit_config ---")
-    from graphblas.tests.test_ssjit import _fix_jit_config
-
-    result = _fix_jit_config()
+    print("\n--- Attempting gb.ss.fix_jit_config ---")
+    result = gb.ss.fix_jit_config()
     # True=JIT working, False=probe failed, None=no conda env
     desc = "working" if result is True else "probe failed" if result is False else "no conda"
     print(f"  Result: {result} ({desc})")

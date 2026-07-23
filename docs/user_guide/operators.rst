@@ -19,21 +19,21 @@ Example usage:
 
 Common unary operators are:
 
-  - **identity** -- returns the input unchanged
-  - **abs** -- absolute value
-  - **ainv** -- additive inverse (f(x) = -x)
-  - **minv** -- multiplicative inverse (f(x) = 1/x)
-  - **lnot** -- logical not (True -> False)
-  - **bnot** -- binary not (110010 -> 001101)
-  - **one** -- result is always 1.0 (or equivalent for the dtype)
-  - **round** -- floating-point round function
-  - **floor** -- floating-point floor function
-  - **ceil** -- floating-point ceiling function
-  - **sin** -- trigonometric sine function
-  - **cos** -- trigonometric cosine function
-  - **tan** -- trigonometric tangent function
-  - **exp** -- exponential
-  - **log** -- logarithm
+  - **identity**: returns the input unchanged
+  - **abs**: absolute value
+  - **ainv**: additive inverse (f(x) = -x)
+  - **minv**: multiplicative inverse (f(x) = 1/x)
+  - **lnot**: logical not (True -> False)
+  - **bnot**: binary not (110010 -> 001101)
+  - **one**: result is always 1.0 (or equivalent for the dtype)
+  - **round**: floating-point round function
+  - **floor**: floating-point floor function
+  - **ceil**: floating-point ceiling function
+  - **sin**: trigonometric sine function
+  - **cos**: trigonometric cosine function
+  - **tan**: trigonometric tangent function
+  - **exp**: exponential
+  - **log**: logarithm
 
 Unary operators are located in the ``graphblas.unary`` namespace. Additional unary operators
 registered from numpy are located in ``graphblas.unary.numpy``.
@@ -56,32 +56,32 @@ Example usage:
 
 Common binary operators are:
 
-  - **pair** -- result is always 1.0 (or equivalent for the dtype)
-  - **first** -- f(a, b) = a
-  - **second** -- f(a, b) = b
-  - **min** -- min(a, b)
-  - **max** -- max(a, b)
-  - **eq** -- a == b
-  - **ne** -- a != b
-  - **gt** -- a > b
-  - **lt** -- a < b
-  - **ge** -- a >= b
-  - **le** -- a <= b
-  - **plus** -- a + b
-  - **minus** -- a - b
-  - **times** -- a * b
-  - **truediv** -- a / b
-  - **fmod** -- a % b
-  - **pow** -- a ** b
-  - **atan2** -- math.atan2(a, b)
-  - **lor** -- logical or (a | b)
-  - **land** -- logical and (a & b)
-  - **lxor** -- logical xor (a ^ b)
-  - **lxnor** -- logical xnor ~(a ^ b)
-  - **bor** -- binary or
-  - **band** -- binary and
-  - **bxor** -- binary xor
-  - **bxnor** -- binary xnor
+  - **pair**: result is always 1.0 (or equivalent for the dtype)
+  - **first**: f(a, b) = a
+  - **second**: f(a, b) = b
+  - **min**: min(a, b)
+  - **max**: max(a, b)
+  - **eq**: a == b
+  - **ne**: a != b
+  - **gt**: a > b
+  - **lt**: a < b
+  - **ge**: a >= b
+  - **le**: a <= b
+  - **plus**: a + b
+  - **minus**: a - b
+  - **times**: a * b
+  - **truediv**: a / b
+  - **fmod**: a % b
+  - **pow**: a ** b
+  - **atan2**: math.atan2(a, b)
+  - **lor**: logical or (a | b)
+  - **land**: logical and (a & b)
+  - **lxor**: logical xor (a ^ b)
+  - **lxnor**: logical xnor ~(a ^ b)
+  - **bor**: binary or
+  - **band**: binary and
+  - **bxor**: binary xor
+  - **bxnor**: binary xnor
 
 Binary operators are located in the ``graphblas.binary`` namespace. Additional binary operators
 registered from numpy are located in ``graphblas.binary.numpy``.
@@ -107,15 +107,15 @@ Example usage:
 
 Common monoids are:
 
-  - **any** -- return either input
-  - **min** -- min(a, b)
-  - **max** -- max(a, b)
-  - **plus** -- a + b
-  - **times** -- a * b
-  - **land** -- a & b
-  - **lor** -- a | b
-  - **lxor** -- a ^ b
-  - **lxnor** -- ~(a ^ b)
+  - **any**: return either input
+  - **min**: min(a, b)
+  - **max**: max(a, b)
+  - **plus**: a + b
+  - **times**: a * b
+  - **land**: a & b
+  - **lor**: a | b
+  - **lxor**: a ^ b
+  - **lxnor**: ~(a ^ b)
 
 Monoids are located in the ``graphblas.monoid`` namespace. Additional monoids registered from
 numpy are located in ``graphblas.monoid.numpy``.
@@ -187,26 +187,26 @@ Example usage with a thunk parameter:
 
 Defined IndexUnary operators are:
 
-  - **index** -- return the vector index
-  - **rowindex** -- return the matrix row index
-  - **colindex** -- return the matrix column index
-  - **diagindex** -- return the matrix diagonal index (i.e. column - row)
-  - **tril** -- lower triangle matrix (True if column >= row)
-  - **triu** -- upper triangle matrix (True if column <= row)
-  - **diag** -- matrix diagonal (True if row == column)
-  - **offdiag** -- matrix off-diagonal (True if row != column)
-  - **indexle** -- vector index <= thunk
-  - **indexgt** -- vector index > thunk
-  - **rowle** -- matrix row index <= thunk
-  - **rowgt** -- matrix row index > thunk
-  - **colle** -- matrix column index <= thunk
-  - **colgt** -- matrix column index > thunk
-  - **valueeq** -- value == thunk
-  - **valuene** -- value != thunk
-  - **valuelt** -- value < thunk
-  - **valuele** -- value <= thunk
-  - **valuegt** -- value > thunk
-  - **valuege** -- value >= thunk
+  - **index**: return the vector index
+  - **rowindex**: return the matrix row index
+  - **colindex**: return the matrix column index
+  - **diagindex**: return the matrix diagonal index (i.e. column - row)
+  - **tril**: lower triangle matrix (True if column >= row)
+  - **triu**: upper triangle matrix (True if column <= row)
+  - **diag**: matrix diagonal (True if row == column)
+  - **offdiag**: matrix off-diagonal (True if row != column)
+  - **indexle**: vector index <= thunk
+  - **indexgt**: vector index > thunk
+  - **rowle**: matrix row index <= thunk
+  - **rowgt**: matrix row index > thunk
+  - **colle**: matrix column index <= thunk
+  - **colgt**: matrix column index > thunk
+  - **valueeq**: value == thunk
+  - **valuene**: value != thunk
+  - **valuelt**: value < thunk
+  - **valuele**: value <= thunk
+  - **valuegt**: value > thunk
+  - **valuege**: value >= thunk
 
 IndexUnary operators are located in two places.
 
@@ -220,6 +220,39 @@ IndexUnary operators are located in two places.
     Only the IndexUnary operators which return a boolean are contained in this namespace
     (i.e. all except rowindex, colindex, and diagindex). Calling the operators in the
     select namespace will perform a ``select`` operation.
+
+IndexBinary Operators
+---------------------
+
+IndexBinary operators are the two-input analogue of IndexUnary operators. The function
+receives both values, the indices of *each* value, and a thunk parameter:
+``f(x, ix, jx, y, iy, jy, theta) -> z``, where ``ix, jx`` are the row/column indices of
+``x`` and ``iy, jy`` are those of ``y``.
+
+There are no built-in IndexBinary operators; all are user-defined (see
+:doc:`udf`). Binding a ``theta`` value to an IndexBinaryOp produces a
+regular BinaryOp usable directly in ``ewise_mult`` / ``ewise_add``, or as
+the multiplier of a Semiring for ``mxm`` / ``mxv`` / ``vxm``.
+
+Example usage:
+
+.. code-block:: python
+
+    def discounted_sum(x, ix, jx, y, iy, jy, theta):
+        return (x + y) * theta
+
+    gb.indexbinary.register_new("discounted_sum", discounted_sum)
+
+    binop = gb.indexbinary.discounted_sum[float](0.5)   # bind theta
+    C << A.ewise_mult(B, binop)
+
+    # For mxm, wrap in a Semiring; the additive monoid must accept the
+    # bound op's return type.
+    sr = gb.semiring.register_anonymous(gb.monoid.plus, binop)
+    D << A.mxm(B, sr)
+
+IndexBinary operators are located in the ``graphblas.indexbinary`` namespace.
+They require SuiteSparse:GraphBLAS 9.4 or newer.
 
 Aggregators
 -----------

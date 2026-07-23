@@ -32,46 +32,140 @@ from .base import (
     ParameterizedUdf,
     TypedOpBase,
     _call_op,
-    _deserialize_parameterized,
     _hasop,
 )
+
+# Imported unconditionally (plain dict, no numba): ``_compile_udt`` consults it
+# even when numba is absent.
+from .udt_utils import BUILTIN_UDT_BINARY_OPS as _BUILTIN_UDT_BINARY_OPS
 
 if _has_numba:
     import numba
 
-    from .base import _get_udt_wrapper
+    from .base import (
+        _bool_to_int8,
+        _compile_udf_for_udt,
+        _finalize_udt_op,
+        _get_udt_wrapper,
+        _resolve_udt_return_type,
+    )
 if _supports_complex:
     from ...dtypes import FC32, FC64
 
 ffi_new = ffi.new
 
 if _has_numba:
-    _udt_mask_cache = {}
 
-    def _udt_mask(dtype):
-        """Create mask to determine which bytes of UDTs to use for equality check."""
-        if dtype in _udt_mask_cache:
-            return _udt_mask_cache[dtype]
-        if dtype.subdtype is not None:
-            mask = _udt_mask(dtype.subdtype[0])
-            N = reduce(mul, dtype.subdtype[1])
-            rv = np.concatenate([mask] * N)
-        elif dtype.names is not None:
-            prev_offset = mask = None
-            masks = []
-            for name in dtype.names:
-                dtype2, offset = dtype.fields[name]
-                if mask is not None:
-                    masks.append(np.pad(mask, (0, offset - prev_offset - mask.size)))
-                mask = _udt_mask(dtype2)
-                prev_offset = offset
-            masks.append(np.pad(mask, (0, dtype.itemsize - prev_offset - mask.size)))
-            rv = np.concatenate(masks)
-        else:
-            rv = np.ones(dtype.itemsize, dtype=bool)
-        # assert rv.size == dtype.itemsize
-        _udt_mask_cache[dtype] = rv
-        return rv
+    def _make_udt_comparison(dtype, dtype2, *, is_eq):
+        """Build a cfunc-ready wrapper for UDT eq or ne comparison.
+
+        Compares per-leaf with IEEE semantics (NaN compares unequal even
+        to itself); scalar broadcasts to every leaf when paired with a
+        UDT. Mismatched-shape UDT pairs raise ``KeyError``. Returns
+        ``(wrapper_func, wrapper_sig)``.
+        """
+        from .udt_utils import _check_udt_pair, _get_udt_info, _iter_record_leaves
+
+        info_x = _get_udt_info(dtype)
+        info_y = _get_udt_info(dtype2)
+        op_name = "eq" if is_eq else "ne"
+        _check_udt_pair(op_name, dtype, dtype2, info_x, info_y)
+
+        x_is_scalar = info_x is None
+        y_is_scalar = info_y is None
+        udt_dtype = dtype2 if x_is_scalar else dtype
+        udt_info = info_y if x_is_scalar else info_x
+
+        nt = numba.types
+        cmp_op = "==" if is_eq else "!="
+        join = " and " if is_eq else " or "
+
+        if udt_info[0] == "array":
+            # Array UDT: unroll element-by-element so the scalar broadcast
+            # case can drop ``numba.carray`` on that side entirely.
+            # ``_get_udt_info`` already flattens the multi-dim shape.
+            # The wrapper sees the UDT side as a flat pointer-to-element,
+            # not pointer-to-Record; passing the Record numba_type here
+            # makes ``numba.carray`` try to read N record-sized chunks.
+            _base, N = udt_info[1]
+            base_numba = numba.from_dtype(_base)
+            x_ptr_type = (
+                nt.CPointer(numba.from_dtype(dtype.np_type))
+                if x_is_scalar
+                else nt.CPointer(base_numba)
+            )
+            y_ptr_type = (
+                nt.CPointer(numba.from_dtype(dtype2.np_type))
+                if y_is_scalar
+                else nt.CPointer(base_numba)
+            )
+            wrapper_sig = nt.void(nt.CPointer(INT8.numba_type), x_ptr_type, y_ptr_type)
+            if x_is_scalar:
+                terms = [f"(x_ptr[0] {cmp_op} y[{i}])" for i in range(N)]
+                arrays = f"    y = numba.carray(y_ptr, {N})\n"
+            elif y_is_scalar:
+                terms = [f"(x[{i}] {cmp_op} y_ptr[0])" for i in range(N)]
+                arrays = f"    x = numba.carray(x_ptr, {N})\n"
+            else:
+                terms = [f"(x[{i}] {cmp_op} y[{i}])" for i in range(N)]
+                arrays = f"    x = numba.carray(x_ptr, {N})\n    y = numba.carray(y_ptr, {N})\n"
+            body = join.join(terms)
+            src = f"def wrapper(z_ptr, x_ptr, y_ptr):\n{arrays}    z_ptr[0] = {body}\n"
+            wrapper = _compile_codegen(
+                src,
+                func_name="wrapper",
+                source_label=f"<gb-udt {op_name} array N={N}>",
+            )
+            return wrapper, wrapper_sig
+
+        # Record UDT (possibly nested): chain leaf comparisons. For an
+        # array-valued sub-field, unroll its elements so the scalar side
+        # never sees a numpy fancy-broadcast (Numba's record access can't
+        # express that as a single expression).
+        np_type = udt_dtype.np_type
+        terms = []
+        for py_path, _c, leaf_dtype in _iter_record_leaves(np_type):
+            if leaf_dtype.subdtype is not None:
+                _base, shape = leaf_dtype.subdtype
+                sub_N = int(reduce(mul, shape))
+                if x_is_scalar:
+                    subterms = [f"(x_ptr[0] {cmp_op} y[0]{py_path}[{i}])" for i in range(sub_N)]
+                elif y_is_scalar:
+                    subterms = [f"(x[0]{py_path}[{i}] {cmp_op} y_ptr[0])" for i in range(sub_N)]
+                else:
+                    reducer = ".all()" if is_eq else ".any()"
+                    terms.append(f"(x[0]{py_path} {cmp_op} y[0]{py_path}){reducer}")
+                    continue
+                terms.append("(" + join.join(subterms) + ")")
+            else:
+                x_expr = "x_ptr[0]" if x_is_scalar else f"x[0]{py_path}"
+                y_expr = "y_ptr[0]" if y_is_scalar else f"y[0]{py_path}"
+                terms.append(f"({x_expr} {cmp_op} {y_expr})")
+        expr = join.join(terms) if terms else ("True" if is_eq else "False")
+        lines = ["def wrapper(z_ptr, x_ptr, y_ptr):"]
+        if not x_is_scalar:
+            lines.append("    x = numba.carray(x_ptr, 1)")
+        if not y_is_scalar:
+            lines.append("    y = numba.carray(y_ptr, 1)")
+        lines.append(f"    z_ptr[0] = {expr}")
+        src = "\n".join(lines) + "\n"
+        wrapper = _compile_codegen(
+            src,
+            func_name="wrapper",
+            source_label=f"<gb-udt {op_name} record nleaves={len(terms)}>",
+        )
+        x_ptr_type = (
+            nt.CPointer(numba.from_dtype(dtype.np_type))
+            if x_is_scalar
+            else nt.CPointer(dtype.numba_type)
+        )
+        y_ptr_type = (
+            nt.CPointer(numba.from_dtype(dtype2.np_type))
+            if y_is_scalar
+            else nt.CPointer(dtype2.numba_type)
+        )
+        wrapper_sig = nt.void(nt.CPointer(INT8.numba_type), x_ptr_type, y_ptr_type)
+        return wrapper, wrapper_sig
 
 
 class TypedBuiltinBinaryOp(TypedOpBase):
@@ -129,6 +223,7 @@ class TypedBuiltinBinaryOp(TypedOpBase):
 class TypedUserBinaryOp(TypedOpBase):
     __slots__ = "_monoid"
     opclass = "BinaryOp"
+    _owns_gb_obj = True
 
     def __init__(self, parent, name, type_, return_type, gb_obj, dtype2=None):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
@@ -208,20 +303,6 @@ class ParameterizedBinaryOp(ParameterizedUdf):
 
     is_commutative = TypedBuiltinBinaryOp.is_commutative
 
-    def __reduce__(self):
-        name = f"binary.{self.name}"
-        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
-            return name
-        return (self._deserialize, (self.name, self.func, self._anonymous))
-
-    @staticmethod
-    def _deserialize(name, func, anonymous):
-        if anonymous:
-            return BinaryOp.register_anonymous(func, name, parameterized=True)
-        if (rv := BinaryOp._find(name)) is not None:
-            return rv
-        return BinaryOp.register_new(name, func, parameterized=True)
-
 
 def _floordiv(x, y):
     return x // y  # pragma: no cover (numba)
@@ -297,18 +378,24 @@ def _pair(x, y):
     return 1  # pragma: no cover (numba)
 
 
-def _first_dtype(op, dtype, dtype2):
-    if dtype._is_udt or dtype2._is_udt:
-        return op._compile_udt(dtype, dtype2)
-
-
-def _second_dtype(op, dtype, dtype2):
+def _udt_dtype(op, dtype, dtype2):
+    """Custom dtype handler that compiles an operator for UDTs on first use."""
     if dtype._is_udt or dtype2._is_udt:
         return op._compile_udt(dtype, dtype2)
 
 
 def _pair_dtype(op, dtype, dtype2):
     return op[INT64]
+
+
+if _has_numba:
+    from .udt_utils import (
+        _compile_codegen,
+        _has_jit_set,
+        _maybe_warn_jit_skipped,
+        compile_udt_binary_wrapper,
+        set_jit_c_on_op,
+    )
 
 
 class BinaryOp(OpBase):
@@ -463,11 +550,8 @@ class BinaryOp(OpBase):
                 elif type_ == BOOL and ret_type == INT64 and return_types.get(INT8) == INT8:
                     ret_type = INT8
 
-                # Numba is unable to handle BOOL correctly right now, but we have a workaround
-                # See: https://github.com/numba/numba/issues/5395
-                # We're relying on coercion behaving correctly here
-                input_type = INT8 if type_ == BOOL else type_
-                return_type = INT8 if ret_type == BOOL else ret_type
+                input_type = _bool_to_int8(type_)
+                return_type = _bool_to_int8(ret_type)
 
                 # Build wrapper because GraphBLAS wants pointers and void return
                 wrapper_sig = nt.void(
@@ -525,109 +609,75 @@ class BinaryOp(OpBase):
         if dtypes in self._udt_types:
             return self._udt_ops[dtypes]
 
-        if self.name == "eq" and not self._anonymous and _has_numba:
-            nt = numba.types
-            # assert dtype.np_type == dtype2.np_type
-            itemsize = dtype.np_type.itemsize
-            mask = _udt_mask(dtype.np_type)
-            ret_type = BOOL
-            wrapper_sig = nt.void(
-                nt.CPointer(INT8.numba_type),
-                nt.CPointer(UINT8.numba_type),
-                nt.CPointer(UINT8.numba_type),
+        # Built-in arithmetic ops set ``_udt_types = {}`` to enable UDT
+        # dispatch, which also routes plain-scalar misses (e.g. ``plus[BOOL]``)
+        # here. Re-raise with the legacy single-dtype message so callers like
+        # ``mapnumpy`` see the same error as before UDT auto-lift.
+        if self.name in _BUILTIN_UDT_BINARY_OPS and not dtype._is_udt and not dtype2._is_udt:
+            raise KeyError(f"{self.name} does not work with {dtype}")
+
+        if self.name in ("eq", "ne") and not self._anonymous and _has_numba:
+            binary_wrapper, wrapper_sig = _make_udt_comparison(
+                dtype, dtype2, is_eq=(self.name == "eq")
             )
-            # PERF: we can probably make this faster
-            if mask.all():
-
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover (numba)
-                    x = numba.carray(x_ptr, itemsize)
-                    y = numba.carray(y_ptr, itemsize)
-                    # for i in range(itemsize):
-                    #     if x[i] != y[i]:
-                    #         z_ptr[0] = False
-                    #         break
-                    # else:
-                    #     z_ptr[0] = True
-                    z_ptr[0] = (x == y).all()
-
-            else:
-
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover (numba)
-                    x = numba.carray(x_ptr, itemsize)
-                    y = numba.carray(y_ptr, itemsize)
-                    # for i in range(itemsize):
-                    #     if mask[i] and x[i] != y[i]:
-                    #         z_ptr[0] = False
-                    #         break
-                    # else:
-                    #     z_ptr[0] = True
-                    z_ptr[0] = (x[mask] == y[mask]).all()
-
-        elif self.name == "ne" and not self._anonymous and _has_numba:
-            nt = numba.types
-            # assert dtype.np_type == dtype2.np_type
-            itemsize = dtype.np_type.itemsize
-            mask = _udt_mask(dtype.np_type)
             ret_type = BOOL
-            wrapper_sig = nt.void(
-                nt.CPointer(INT8.numba_type),
-                nt.CPointer(UINT8.numba_type),
-                nt.CPointer(UINT8.numba_type),
+
+        elif _has_numba and self.name in _BUILTIN_UDT_BINARY_OPS:
+            # Auto-generate a per-leaf wrapper for built-in arithmetic. Most
+            # of these names (plus, minus, times, truediv, min, max) have no
+            # ``_numba_func`` and would fall through to the KeyError below
+            # without this branch. ``floordiv`` does have a ``_numba_func``,
+            # which Numba won't compile against records; the per-leaf wrapper
+            # is the only path that works for it on UDTs.
+            py_op = _BUILTIN_UDT_BINARY_OPS[self.name]
+            binary_wrapper, wrapper_sig, ret_type = compile_udt_binary_wrapper(
+                self.name, py_op, dtype, dtype2
             )
-            if mask.all():
-
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover (numba)
-                    x = numba.carray(x_ptr, itemsize)
-                    y = numba.carray(y_ptr, itemsize)
-                    # for i in range(itemsize):
-                    #     if x[i] != y[i]:
-                    #         z_ptr[0] = True
-                    #         break
-                    # else:
-                    #     z_ptr[0] = False
-                    z_ptr[0] = (x != y).any()
-
-            else:
-
-                def binary_wrapper(z_ptr, x_ptr, y_ptr):  # pragma: no cover (numba)
-                    x = numba.carray(x_ptr, itemsize)
-                    y = numba.carray(y_ptr, itemsize)
-                    # for i in range(itemsize):
-                    #     if mask[i] and x[i] != y[i]:
-                    #         z_ptr[0] = True
-                    #         break
-                    # else:
-                    #     z_ptr[0] = False
-                    z_ptr[0] = (x[mask] != y[mask]).any()
-
         elif self._numba_func is None:
             raise KeyError(f"{self.name} does not work with {dtypes} types")
         else:
             numba_func = self._numba_func
             sig = (dtype.numba_type, dtype2.numba_type)
-            numba_func.compile(sig)  # Should we catch and give additional error message?
-            ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
-            binary_wrapper, wrapper_sig = _get_udt_wrapper(numba_func, ret_type, dtype, dtype2)
+            _compile_udf_for_udt(
+                numba_func, sig, op_kind="binary", op_name=self.name, dtypes=(dtype, dtype2)
+            )
+            numba_ret_type = numba_func.overloads[sig].signature.return_type
+            ret_type = _resolve_udt_return_type(numba_ret_type, dtype, dtype2)
+            binary_wrapper, wrapper_sig = _get_udt_wrapper(
+                numba_func, ret_type, dtype, dtype2, numba_ret_type=numba_ret_type
+            )
 
-        binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
-        new_binary = ffi_new("GrB_BinaryOp*")
-        check_status_carg(
-            lib.GrB_BinaryOp_new(
-                new_binary, binary_wrapper.cffi, ret_type._carg, dtype._carg, dtype2._carg
-            ),
-            "BinaryOp",
-            new_binary[0],
+        op = _finalize_udt_op(
+            self, dtype, dtype2, ret_type, binary_wrapper, wrapper_sig, TypedUserBinaryOp
         )
-        op = TypedUserBinaryOp(
-            self,
-            self.name,
-            dtype,
-            ret_type,
-            new_binary[0],
-            dtype2=dtype2,
-        )
-        self._udt_types[dtypes] = ret_type
-        self._udt_ops[dtypes] = op
+        # Set JIT C definition for auto-generated built-in UDT ops. Only
+        # same-type pairs apply: mixed UDT+scalar ops don't have a
+        # meaningful single-type C definition. ``_has_jit_set`` gates access
+        # to ``lib.GrB_BinaryOp_set_String``, which is absent on SS < 8.
+        is_jittable = self.name in _BUILTIN_UDT_BINARY_OPS or self.name in ("eq", "ne")
+        if _has_numba and _has_jit_set and dtype == dtype2 and is_jittable:
+            if self.name in _BUILTIN_UDT_BINARY_OPS:
+                op._jit_c_info = set_jit_c_on_op(
+                    op.gb_obj,
+                    self.name,
+                    _BUILTIN_UDT_BINARY_OPS[self.name],
+                    dtype,
+                    lib.GrB_BinaryOp_set_String,
+                    arity=2,
+                )
+            else:
+                # eq/ne return BOOL, not the UDT; the kernel is a chain of
+                # per-leaf scalar comparisons.
+                from .udt_utils import set_jit_c_comparison_on_op
+
+                op._jit_c_info = set_jit_c_comparison_on_op(
+                    op.gb_obj,
+                    self.name,
+                    dtype,
+                    lib.GrB_BinaryOp_set_String,
+                    is_eq=(self.name == "eq"),
+                )
+            _maybe_warn_jit_skipped(op._jit_c_info, self.name, dtype.name)
         return op
 
     @classmethod
@@ -733,7 +783,12 @@ class BinaryOp(OpBase):
         if lazy:
             module._delayed[funcname] = (
                 cls.register_new,
-                {"name": name, "func": func, "parameterized": parameterized},
+                {
+                    "name": name,
+                    "func": func,
+                    "parameterized": parameterized,
+                    "is_udt": is_udt,
+                },
             )
         elif parameterized:
             binary_op = ParameterizedBinaryOp(name, func, is_udt=is_udt)
@@ -915,29 +970,40 @@ class BinaryOp(OpBase):
                 right = getattr(binary, right_name)
             left._semiring_commutes_to = right
             right._semiring_commutes_to = left
-        # Allow some functions to work on UDTs
+        # ``any`` uses ``_second`` so ``monoid.any[udt].reduce(v)`` folds as
+        # ``acc = v_i`` and returns an actual element. With ``_first`` the
+        # accumulator would never advance, so the reduce would always return
+        # the identity.
         for binop, func in [
             (binary.first, _first),
             (binary.second, _second),
             (binary.pair, _pair),
-            (binary.any, _first),
+            (binary.any, _second),
         ]:
             binop.orig_func = func
-            if _has_numba:
-                binop._numba_func = numba.njit(func)
-            else:
-                binop._numba_func = None
+            binop._numba_func = numba.njit(func) if _has_numba else None
             binop._udt_types = {}
             binop._udt_ops = {}
-        binary.any._numba_func = binary.first._numba_func
+        binary.any._numba_func = binary.second._numba_func
+        binary.first._custom_dtype = _udt_dtype
+        binary.second._custom_dtype = _udt_dtype
+        binary.pair._custom_dtype = _pair_dtype
+        # eq and ne walk the UDT leaf-by-leaf (special-cased in _compile_udt
+        # via _make_udt_comparison) so NaN propagation matches IEEE semantics
+        # rather than bit equality.
         binary.eq._udt_types = {}
         binary.eq._udt_ops = {}
         binary.ne._udt_types = {}
         binary.ne._udt_ops = {}
-        # Set custom dtype handling
-        binary.first._custom_dtype = _first_dtype
-        binary.second._custom_dtype = _second_dtype
-        binary.pair._custom_dtype = _pair_dtype
+        # Element-wise arithmetic ops are auto-generated from per-field /
+        # per-element scalar ops.
+        if _has_numba:
+            for op_name in _BUILTIN_UDT_BINARY_OPS:
+                binop = getattr(binary, op_name, None)
+                if binop is not None:
+                    binop._udt_types = {}
+                    binop._udt_ops = {}
+                    binop._custom_dtype = _udt_dtype
         cls._initialized = True
 
     def __init__(
@@ -963,15 +1029,6 @@ class BinaryOp(OpBase):
             self._udt_types = {}  # {(dtype, dtype): DataType}
             self._udt_ops = {}  # {(dtype, dtype): TypedUserBinaryOp}
 
-    def __reduce__(self):
-        if self._anonymous:
-            if hasattr(self.orig_func, "_parameterized_info"):
-                return (_deserialize_parameterized, self.orig_func._parameterized_info)
-            return (self.register_anonymous, (self.orig_func, self.name))
-        if (name := f"binary.{self.name}") in _STANDARD_OPERATOR_NAMES:
-            return name
-        return (self._deserialize, (self.name, self.orig_func))
-
     __call__ = TypedBuiltinBinaryOp.__call__
     is_commutative = TypedBuiltinBinaryOp.is_commutative
     commutes_to = ParameterizedBinaryOp.commutes_to
@@ -983,3 +1040,6 @@ class BinaryOp(OpBase):
 
             self._monoid = Monoid._find(self.name)
         return self._monoid
+
+
+ParameterizedBinaryOp._op_class = BinaryOp

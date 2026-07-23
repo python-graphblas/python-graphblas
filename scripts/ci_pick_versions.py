@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-"""Pick random dependency versions for CI testing.
+"""Pick random, compatible dependency versions for python-graphblas CI.
 
-Randomly selects compatible dependency versions for python-graphblas CI.
-Replaces the bash-based version selection in test_and_build.yml.
+Replaces the bash-based version selection that used to live in
+test_and_build.yml.
 
 Usage (in GitHub Actions workflow):
     eval "$(python scripts/ci_pick_versions.py --python 3.12 --source conda-forge)"
@@ -85,8 +85,10 @@ SPARSE_VERSIONS = {
     "3.14": "NA",
 }
 
-# PSG versions by numpy branch and source type.
-# conda-forge uses "=" prefix, wheel/source use "==".
+# PSG versions to pair with numpy 1.x (only reachable on py3.11/py3.12, since
+# py3.13+ have no numpy 1.x in their pools). Only "conda-forge" and "wheel"
+# builds get here: "source" builds blank numpy before picking psg (so they use
+# PSG_VERSIONS_NP2), and "upstream" builds always use psg from git.
 PSG_VERSIONS_NP1 = {
     "conda-forge": {
         "3.11": [
@@ -104,20 +106,6 @@ PSG_VERSIONS_NP1 = {
     },
     "wheel": {
         "3.11": ["7.4.3.2", "8.0.2.1", "8.2.0.1", "8.2.1.0"],
-        "3.12": ["8.2.0.1", "8.2.1.0"],
-    },
-    "source": {
-        "3.11": [
-            "7.4.0.0",
-            "7.4.1.0",
-            "7.4.2.0",
-            "7.4.3.0",
-            "7.4.3.1",
-            "7.4.3.2",
-            "8.0.2.1",
-            "8.2.0.1",
-            "8.2.1.0",
-        ],
         "3.12": ["8.2.0.1", "8.2.1.0"],
     },
 }

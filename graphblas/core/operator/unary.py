@@ -27,7 +27,6 @@ from .base import (
     OpBase,
     ParameterizedUdf,
     TypedOpBase,
-    _deserialize_parameterized,
     _hasop,
 )
 
@@ -36,7 +35,13 @@ if _supports_complex:
 if _has_numba:
     import numba
 
-    from .base import _get_udt_wrapper
+    from .base import (
+        _bool_to_int8,
+        _compile_udf_for_udt,
+        _finalize_udt_op,
+        _get_udt_wrapper,
+        _resolve_udt_return_type,
+    )
 
 ffi_new = ffi.new
 
@@ -73,6 +78,7 @@ class TypedBuiltinUnaryOp(TypedOpBase):
 class TypedUserUnaryOp(TypedOpBase):
     __slots__ = ()
     opclass = "UnaryOp"
+    _owns_gb_obj = True
 
     def __init__(self, parent, name, type_, return_type, gb_obj):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
@@ -104,20 +110,6 @@ class ParameterizedUnaryOp(ParameterizedUdf):
         unary._parameterized_info = (self, args, kwargs)
         return UnaryOp.register_anonymous(unary, self.name, is_udt=self._is_udt)
 
-    def __reduce__(self):
-        name = f"unary.{self.name}"
-        if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:  # pragma: no cover
-            return name
-        return (self._deserialize, (self.name, self.func, self._anonymous))
-
-    @staticmethod
-    def _deserialize(name, func, anonymous):
-        if anonymous:
-            return UnaryOp.register_anonymous(func, name, parameterized=True)
-        if (rv := UnaryOp._find(name)) is not None:
-            return rv
-        return UnaryOp.register_new(name, func, parameterized=True)
-
 
 def _identity(x):
     return x  # pragma: no cover (numba)
@@ -125,6 +117,15 @@ def _identity(x):
 
 def _one(x):
     return 1  # pragma: no cover (numba)
+
+
+if _has_numba:
+    from .udt_utils import BUILTIN_UDT_UNARY_OPS as _BUILTIN_UDT_UNARY_OPS
+    from .udt_utils import (
+        _maybe_warn_jit_skipped,
+        compile_udt_unary_wrapper,
+        set_jit_c_on_op,
+    )
 
 
 class UnaryOp(OpBase):
@@ -199,11 +200,8 @@ class UnaryOp(OpBase):
                 elif type_ == BOOL and ret_type == INT64 and return_types.get(INT8) == INT8:
                     ret_type = INT8
 
-                # Numba is unable to handle BOOL correctly right now, but we have a workaround
-                # See: https://github.com/numba/numba/issues/5395
-                # We're relying on coercion behaving correctly here
-                input_type = INT8 if type_ == BOOL else type_
-                return_type = INT8 if ret_type == BOOL else ret_type
+                input_type = _bool_to_int8(type_)
+                return_type = _bool_to_int8(ret_type)
 
                 # Build wrapper because GraphBLAS wants pointers and void return
                 wrapper_sig = nt.void(
@@ -252,26 +250,41 @@ class UnaryOp(OpBase):
     def _compile_udt(self, dtype, dtype2):
         if dtype in self._udt_types:
             return self._udt_ops[dtype]
+        # See the matching note in ``BinaryOp._compile_udt``: plain-scalar
+        # misses on UDT-dispatch-enabled ops get the legacy message.
+        if not dtype._is_udt and self._numba_func is None:
+            raise KeyError(f"{self.name} does not work with {dtype}")
+        if self._numba_func is None and _has_numba and self.name in _BUILTIN_UDT_UNARY_OPS:
+            # Auto-generate an element-wise UDT function for the built-in
+            # unary ops (``ainv``, ``abs``).
+            py_op = _BUILTIN_UDT_UNARY_OPS[self.name]
+            unary_wrapper, wrapper_sig, ret_type = compile_udt_unary_wrapper(
+                self.name, py_op, dtype
+            )
+            op = _finalize_udt_op(
+                self, dtype, None, ret_type, unary_wrapper, wrapper_sig, TypedUserUnaryOp
+            )
+            # ``set_jit_c_on_op`` is a no-op (returns None) when
+            # ``_has_jit_set`` is False (SS < 8).
+            op._jit_c_info = set_jit_c_on_op(
+                op.gb_obj, self.name, py_op, dtype, lib.GrB_UnaryOp_set_String, arity=1
+            )
+            _maybe_warn_jit_skipped(op._jit_c_info, self.name, dtype.name)
+            return op
         if self._numba_func is None:
             raise KeyError(f"{self.name} does not work with {dtype}")
 
         numba_func = self._numba_func
         sig = (dtype.numba_type,)
-        numba_func.compile(sig)  # Should we catch and give additional error message?
-        ret_type = lookup_dtype(numba_func.overloads[sig].signature.return_type)
-
-        unary_wrapper, wrapper_sig = _get_udt_wrapper(numba_func, ret_type, dtype)
-        unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
-        new_unary = ffi_new("GrB_UnaryOp*")
-        check_status_carg(
-            lib.GrB_UnaryOp_new(new_unary, unary_wrapper.cffi, ret_type._carg, dtype._carg),
-            "UnaryOp",
-            new_unary[0],
+        _compile_udf_for_udt(numba_func, sig, op_kind="unary", op_name=self.name, dtypes=(dtype,))
+        numba_ret_type = numba_func.overloads[sig].signature.return_type
+        ret_type = _resolve_udt_return_type(numba_ret_type, dtype)
+        unary_wrapper, wrapper_sig = _get_udt_wrapper(
+            numba_func, ret_type, dtype, numba_ret_type=numba_ret_type
         )
-        op = TypedUserUnaryOp(self, self.name, dtype, ret_type, new_unary[0])
-        self._udt_types[dtype] = ret_type
-        self._udt_ops[dtype] = op
-        return op
+        return _finalize_udt_op(
+            self, dtype, None, ret_type, unary_wrapper, wrapper_sig, TypedUserUnaryOp
+        )
 
     @classmethod
     def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
@@ -357,7 +370,7 @@ class UnaryOp(OpBase):
         if lazy:
             module._delayed[funcname] = (
                 cls.register_new,
-                {"name": name, "func": func, "parameterized": parameterized},
+                {"name": name, "func": func, "parameterized": parameterized, "is_udt": is_udt},
             )
         elif parameterized:
             unary_op = ParameterizedUnaryOp(name, func, is_udt=is_udt)
@@ -442,6 +455,13 @@ class UnaryOp(OpBase):
                 unop._numba_func = None
             unop._udt_types = {}
             unop._udt_ops = {}
+        # Enable element-wise unary ops on UDTs (``ainv``, ``abs``).
+        if _has_numba:
+            for op_name in _BUILTIN_UDT_UNARY_OPS:
+                unop = getattr(unary, op_name, None)
+                if unop is not None:
+                    unop._udt_types = {}
+                    unop._udt_ops = {}
         cls._initialized = True
 
     def __init__(
@@ -463,13 +483,7 @@ class UnaryOp(OpBase):
             self._udt_types = {}  # {dtype: DataType}
             self._udt_ops = {}  # {dtype: TypedUserUnaryOp}
 
-    def __reduce__(self):
-        if self._anonymous:
-            if hasattr(self.orig_func, "_parameterized_info"):
-                return (_deserialize_parameterized, self.orig_func._parameterized_info)
-            return (self.register_anonymous, (self.orig_func, self.name))
-        if (name := f"unary.{self.name}") in _STANDARD_OPERATOR_NAMES:
-            return name
-        return (self._deserialize, (self.name, self.orig_func))
-
     __call__ = TypedBuiltinUnaryOp.__call__
+
+
+ParameterizedUnaryOp._op_class = UnaryOp

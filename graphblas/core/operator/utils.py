@@ -40,6 +40,15 @@ try:
     BinaryOp._initialize()
     Monoid._initialize()
     Semiring._initialize()
+    # IndexBinaryOp has no built-ins, but ``_initialize`` still needs to
+    # set ``cls._initialized = True``. Without that, user ``register_new``
+    # calls hit the "not initialized" branch and mistakenly add user op
+    # names to ``_STANDARD_OPERATOR_NAMES``. Pickle then emits a string
+    # reference that won't resolve in a fresh process. Cross-process pickle
+    # for user-registered IBOs (and bound IBOs derived from them) requires
+    # the tuple-form ``__reduce__`` that re-registers the function in the
+    # child.
+    IndexBinaryOp._initialize()
 except Exception:  # pragma: no cover (debug)
     # Exceptions here can often get ignored by Python
     import traceback

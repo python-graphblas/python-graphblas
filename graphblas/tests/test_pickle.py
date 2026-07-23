@@ -1,3 +1,4 @@
+import multiprocessing
 import pickle
 from pathlib import Path
 
@@ -338,3 +339,180 @@ def test_udt(extra):
     any_udt = d["any[udt]"]
     assert any_udt is gb.binary.any[udt3]
     assert pickle.loads(pickle.dumps(gb.binary.first[udt, int])) is gb.binary.first[udt, int]
+
+
+# Module-level so the spawn worker can pickle it; local functions can't cross processes.
+def _crossproc_ibo_add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+    return x + y + theta
+
+
+# Operations dispatched by ``_crossproc_worker``. Each takes the unpickled dict
+# and returns a JSON-friendly value to send through the Pipe.
+def _op_udt_reduce(d):
+    return d["vector"].reduce(d["op"]).new().value
+
+
+def _op_bound_ibo_ewise(d):
+    rows, cols, vals = d["A"].ewise_mult(d["B"], d["bound"]).new().to_coo()
+    return list(rows), list(cols), [int(v) for v in vals]
+
+
+_CROSSPROC_OPS = {
+    "udt_reduce": _op_udt_reduce,
+    "bound_ibo_ewise": _op_bound_ibo_ewise,
+}
+
+
+def _crossproc_worker(backend, op_name, payload, conn):
+    """Run ``_CROSSPROC_OPS[op_name]`` on the unpickled payload in a fresh interpreter."""
+    try:
+        import graphblas as gb_
+
+        gb_.init(backend)
+        unpickled = pickle.loads(payload)
+        conn.send(("ok", _CROSSPROC_OPS[op_name](unpickled)))
+    except Exception as exc:  # pragma: no cover (only on failure)
+        conn.send(("err", f"{type(exc).__name__}: {exc}"))
+    finally:
+        conn.close()
+
+
+def _run_crossproc(op_name, payload):
+    """Spawn a child running ``_crossproc_worker`` and return ``rest`` from ``("ok", *rest)``."""
+    ctx = multiprocessing.get_context("spawn")
+    parent_conn, child_conn = ctx.Pipe(duplex=False)
+    proc = ctx.Process(
+        target=_crossproc_worker,
+        args=(gb.backend, op_name, payload, child_conn),
+    )
+    proc.start()
+    child_conn.close()
+    try:
+        assert parent_conn.poll(timeout=120), "child process timed out"
+        result = parent_conn.recv()
+    finally:
+        proc.join(timeout=5)
+        if proc.is_alive():  # pragma: no cover (defensive)
+            proc.terminate()
+            proc.join(timeout=5)
+    status, *rest = result
+    assert status == "ok", f"child failed: {rest}"
+    return rest
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_pickle_crossprocess():
+    """Verify a typed UDT monoid round-trips through a spawned child process.
+
+    Same-process pickle already exercises the ``__reduce__`` and
+    ``_deserialize`` paths. This test additionally proves the child can
+    re-register the UDT and auto-lift the parent monoid for it without
+    inheriting any state from the parent process; that's the case
+    ``dask`` and ``multiprocessing`` actually hit.
+    """
+    record_dtype = np.dtype([("x", np.int64), ("y", np.int64)], align=True)
+    udt_name = "CrossProcPickleUDT"
+    # Use register_new so the child can re-register under the same name.
+    if hasattr(gb.dtypes, udt_name):
+        delattr(gb.dtypes, udt_name)
+        gb.core.dtypes._registry.pop(udt_name, None)
+    udt = gb.dtypes.register_new(udt_name, record_dtype)
+    try:
+        monoid = gb.monoid.plus[udt]
+        v = gb.Vector(udt, size=3)
+        v[0] = (1, 10)
+        v[1] = (2, 20)
+        v[2] = (3, 30)
+        payload = pickle.dumps({"op": monoid, "vector": v})
+        (value,) = _run_crossproc("udt_reduce", payload)
+        # Reduce of (1,10), (2,20), (3,30) with plus = (6, 60).
+        assert tuple(value) == (6, 60)
+    finally:
+        delattr(gb.dtypes, udt_name)
+        gb.core.dtypes._registry.pop(udt_name, None)
+
+
+def _crossproc_parameterized_is_udt_factory(scale):  # pragma: no cover (called by Numba)
+    def inner(x, y):
+        return x * scale + y * scale
+
+    return inner
+
+
+def _op_compile_parameterized_is_udt(d):
+    op = d["op"]
+    # ``op._is_udt`` must survive the spawn so the right compile path runs in the child.
+    return bool(op._is_udt)
+
+
+_CROSSPROC_OPS["compile_parameterized_is_udt"] = _op_compile_parameterized_is_udt
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "module_name",
+    ["unary", "binary", "indexunary", "select", "indexbinary"],
+)
+def test_parameterized_is_udt_pickle_crossprocess(module_name):
+    """``is_udt`` survives a spawn -> unpickle -> re-register chain.
+
+    Same-process pickle is covered by ``test_parameterized_is_udt_pickle_roundtrip``
+    in ``test_op.py``; this exercises the cross-process path that wave-5
+    fixed (parameterized ``__reduce__`` used to drop ``is_udt`` and the
+    child silently took the non-UDT compile path).
+    """
+    module = getattr(gb, module_name)
+    op_name = f"_cpu_param_is_udt_{module_name}"
+    if hasattr(module, op_name):
+        delattr(module, op_name)
+    module.register_new(
+        op_name, _crossproc_parameterized_is_udt_factory, parameterized=True, is_udt=True
+    )
+    try:
+        op = getattr(module, op_name)
+        assert op._is_udt is True
+        payload = pickle.dumps({"op": op})
+        (got,) = _run_crossproc("compile_parameterized_is_udt", payload)
+        assert got is True
+    finally:
+        delattr(module, op_name)
+        # binary and unary ops also register into the combined ``op`` namespace,
+        # which ``delattr(module, ...)`` doesn't touch; clean it so
+        # test_op_namespace doesn't see an op with no per-type home.
+        vars(gb.op).pop(op_name, None)
+        gb.op._delayed.pop(op_name, None)
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_bound_ibo_pickle_crossprocess():
+    """A bound IBO must round-trip through a spawned child process.
+
+    Bound IBOs pickle as ``(_rebind_indexbinaryop, (parent_ibo, type, theta))``.
+    The parent IBO must re-register in the child (via the registered name) so
+    the rebind can resolve it. Same-process pickle is already covered by
+    ``test_pickle_bound`` in ``test_indexbinary.py``.
+    """
+    from graphblas.core.operator.indexbinary import _has_idxbinop
+
+    if not _has_idxbinop:
+        pytest.skip("requires SuiteSparse:GraphBLAS 9.4+")
+
+    op_name = "CrossProcBoundIBO"
+    if hasattr(gb.indexbinary, op_name):
+        delattr(gb.indexbinary, op_name)
+    gb.indexbinary.register_new(op_name, _crossproc_ibo_add_theta)
+    try:
+        bound = getattr(gb.indexbinary, op_name)[int](100)
+        A = gb.Matrix.from_coo([0, 1], [0, 1], [3, 7])
+        B = gb.Matrix.from_coo([0, 1], [0, 1], [5, 2])
+        payload = pickle.dumps({"A": A, "B": B, "bound": bound})
+        ((rows, cols, vals),) = _run_crossproc("bound_ibo_ewise", payload)
+        # (0,0): 3 + 5 + 100 = 108 ; (1,1): 7 + 2 + 100 = 109
+        assert rows == [0, 1]
+        assert cols == [0, 1]
+        assert vals == [108, 109]
+    finally:
+        delattr(gb.indexbinary, op_name)

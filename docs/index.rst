@@ -19,60 +19,51 @@ Licensed under the `Apache 2.0 license <https://www.apache.org/licenses/LICENSE-
    api_reference/index
    contributor_guide/index
 
-.. panels::
-    :card: + intro-card text-center
-    :column: col-lg-6 col-md-6 col-sm-6 col-xs-12 d-flex
+.. grid:: 1 2 2 2
+    :gutter: 3
 
-    ---
-    :fa:`play-circle,fa-3x`
+    .. grid-item-card:: Getting Started
+        :link: getting_started/index
+        :link-type: doc
+        :text-align: center
+        :class-card: intro-card
 
-    Getting Started
-    ^^^^^^^^^^^^^^^
+        :octicon:`rocket;3em;sd-text-primary`
 
-    .. link-button:: getting_started
-        :text:
-        :classes: stretched-link
+        Exactly what you need to get up and running with
+        python-graphblas. Contains a short introduction
+        to the main ideas behind GraphBLAS.
 
-    Exactly what you need to get up and running with
-    python-graphblas. Contains a short introduction
-    to the main ideas behind GraphBLAS.
+    .. grid-item-card:: User Guide
+        :link: user_guide/index
+        :link-type: doc
+        :text-align: center
+        :class-card: intro-card
 
-    ---
-    :fa:`code,fa-3x`
+        :octicon:`book;3em;sd-text-primary`
 
-    User Guide
-    ^^^^^^^^^^
+        The user guide covers the fundamental ideas and usage
+        patterns of python-graphblas. It also contains an example
+        notebook showing Single-Source Shortest Path.
 
-    .. link-button:: user_guide
-        :text:
-        :classes: stretched-link
+    .. grid-item-card:: API Reference
+        :link: api_reference/index
+        :link-type: doc
+        :text-align: center
+        :class-card: intro-card
 
-    The user guide covers the fundamental ideas and usage
-    patterns of python-graphblas. It also contains an example
-    notebook showing Single-Source Shortest Path.
+        :octicon:`code;3em;sd-text-primary`
 
-    ---
-    :fa:`cogs,fa-3x`
+        The API reference contains details about each class and method.
+        It assumes familiarity with the core ideas and usage patterns.
 
-    API Reference
-    ^^^^^^^^^^^^^
+    .. grid-item-card:: Contributor Guide
+        :link: contributor_guide/index
+        :link-type: doc
+        :text-align: center
+        :class-card: intro-card
 
-    .. link-button:: api_reference
-        :text:
-        :classes: stretched-link
+        :octicon:`people;3em;sd-text-primary`
 
-    The API reference contains details about each class and method.
-    It assumes familiarity with the core ideas and usage patterns.
-
-    ---
-    :fa:`plus-circle,fa-3x`
-
-    Contributor Guide
-    ^^^^^^^^^^^^^^^^^
-
-    .. link-button:: contributor_guide
-        :text:
-        :classes: stretched-link
-
-    Find out how you can contribute and make python-graphblas
-    better for everyone.
+        Find out how you can contribute and make python-graphblas
+        better for everyone.

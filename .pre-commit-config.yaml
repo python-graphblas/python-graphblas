@@ -24,7 +24,7 @@ repos:
       - id: check-illegal-windows-names
       - id: check-merge-conflict
       - id: check-ast
-      - id: check-json # No json files yet
+      - id: check-json # no JSON files yet; enabled for the future
       - id: check-toml
       - id: check-yaml
       - id: check-executables-have-shebangs
@@ -53,6 +53,9 @@ repos:
   # We can probably remove `isort` if we come to trust `ruff --fix`,
   # but we'll need to figure out the configuration to do this in `ruff`
   - repo: https://github.com/pycqa/isort
+    # 9.0 is still in alpha (9.0.0a3) and a pre-release pin defeats
+    # pre-commit.ci's autoupdate "avoid prereleases" logic; stay on the last
+    # stable 8.x until 9.0 GAs.
     rev: 8.0.1
     hooks:
       - id: isort
@@ -73,7 +76,7 @@ repos:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.7
+    rev: v0.15.13
     hooks:
       - id: ruff-check
         args: [--fix-only, --show-fixes]
@@ -98,10 +101,10 @@ repos:
           - tomli; python_version<'3.11'
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.7
+    rev: v0.15.13
     hooks:
       - id: ruff-check
-      # - id: ruff-format  # Prefer black, but may temporarily uncomment this to see
+      # - id: ruff-format  # we prefer black; uncomment to compare with ruff's formatter
   - repo: https://github.com/sphinx-contrib/sphinx-lint
     rev: v1.0.2
     hooks:
@@ -119,7 +122,7 @@ repos:
     hooks:
       - id: shellcheck
   - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.8.1
+    rev: v3.8.3
     hooks:
       - id: prettier
         args: [--prose-wrap=preserve]
@@ -138,12 +141,13 @@ repos:
     rev: v0.9.3
     hooks:
       - id: taplo-format
+        args: ["--option", "column_width=100"]
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.11
+    rev: v1.7.12
     hooks:
       - id: actionlint
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.37.0
+    rev: 0.37.2
     hooks:
       - id: check-dependabot
       - id: check-github-workflows
@@ -156,6 +160,11 @@ repos:
   #    rev: v1.14.2
   #    hooks:
   #      - id: zizmor
+  - repo: https://github.com/pysentry/pysentry-pre-commit
+    rev: v0.4.6
+    hooks:
+      - id: pysentry
+        args: ["--format=human", "--fail-on=low", "--sources=pypa,osv,pypi"]
   - repo: meta
     hooks:
       - id: check-hooks-apply
@@ -176,6 +185,25 @@ repos:
         name: Disallow _ in permalinks
         language: pygrep
         entry: "^permalink:.*_.*"
+      - id: disallow-ai-dashes
+        # AI-ism: em-dash, en-dash, " -- " separator, or "word--jam".
+        # See ``scripts/find_aiisms.sh`` for the manual / branch-diff variant
+        # and ``ai/CLAUDE.md`` "Writing Style" for the rationale.
+        name: Disallow em/en-dash and ' -- ' as a separator
+        language: pygrep
+        entry: "—|–| -- |[A-Za-z0-9]--"
+        types_or: [python, rst, markdown, toml, yaml, shell]
+        # README intentionally uses en-dash. docs/conf.py + jit_diagnostics.py
+        # use ``# --- Section ---`` banner comments / print output, which the
+        # regex also matches. find_aiisms.sh contains the matching regex.
+        exclude: |
+          (?x)^(
+            README\.md
+            | docs/conf\.py
+            | scripts/jit_diagnostics\.py
+            | scripts/find_aiisms\.sh
+            | \.pre-commit-config\.yaml
+          )$
       # Add `--hook-stage manual` to pre-commit command to run (very slow)
       # It's probably better (and faster!) to simply run `pylint graphblas/some/file.py`
       - id: pylint

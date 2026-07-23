@@ -18,7 +18,15 @@ from ...dtypes import (
 )
 from ...exceptions import check_status_carg
 from .. import _supports_udfs, ffi, lib
-from .base import _SS_OPERATORS, OpBase, ParameterizedUdf, TypedOpBase, _call_op, _hasop
+from .base import (
+    _SS_OPERATORS,
+    OpBase,
+    ParameterizedUdf,
+    TypedOpBase,
+    _BinaryopJitDelegate,
+    _call_op,
+    _hasop,
+)
 from .binary import BinaryOp, ParameterizedBinaryOp
 from .monoid import Monoid, ParameterizedMonoid
 
@@ -81,9 +89,16 @@ class TypedBuiltinSemiring(TypedOpBase):
         return self.type if self._type2 is None else self._type2
 
 
-class TypedUserSemiring(TypedOpBase):
+class TypedUserSemiring(_BinaryopJitDelegate, TypedOpBase):
+    # ``_jit_c_info`` delegates to ``self.binaryop`` (the multiplier inside
+    # mxm). To inspect the additive monoid's kernel directly, use
+    # ``semi.monoid.jit_c_source``.
     __slots__ = "monoid", "binaryop"
     opclass = "Semiring"
+    # Deliberately not ``_owns_gb_obj = True``: see ``TypedUserMonoid``.
+    # Same ordering hazard: a ``GrB_Semiring`` holds pointers into its
+    # ``GrB_Monoid`` and ``GrB_BinaryOp``, and the cache in
+    # ``Semiring.{_typed_ops,_udt_ops}`` bounds the leak.
 
     def __init__(self, parent, name, type_, return_type, gb_obj, monoid, binaryop, dtype2=None):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
@@ -207,8 +222,23 @@ class Semiring(OpBase):
     def _build(cls, name, monoid, binaryop, *, anonymous=False):
         if type(monoid) is not Monoid:
             raise TypeError(f"monoid must be a Monoid, not {type(monoid)}")
+        # SuiteSparse:GraphBLAS allows the multiplier of a Semiring to be
+        # any GrB_BinaryOp, "including those based on a GxB_IndexBinaryOp"
+        # (GraphBLAS.h, GrB_Semiring section). A ``_BoundIndexBinaryOp`` is
+        # already exactly such a typed GrB_BinaryOp (built via
+        # ``GxB_BinaryOp_new_IndexOp``), so accept it directly and build
+        # one Semiring for its specific input/output type pair, rather
+        # than the regular per-typed-op iteration that polymorphic
+        # ``BinaryOp`` parents go through.
+        from .indexbinary import _BoundIndexBinaryOp
+
+        if isinstance(binaryop, _BoundIndexBinaryOp):
+            return cls._build_from_bound_indexbinary(name, monoid, binaryop, anonymous=anonymous)
         if type(binaryop) is not BinaryOp:
-            raise TypeError(f"binaryop must be a BinaryOp, not {type(binaryop)}")
+            raise TypeError(
+                f"binaryop must be a BinaryOp or a bound IndexBinaryOp "
+                f"(``ibo[dtype](theta)``), not {type(binaryop)}"
+            )
         if name is None:
             name = f"{monoid.name}_{binaryop.name}".replace(".", "_")
         new_type_obj = cls(name, monoid, binaryop, anonymous=anonymous)
@@ -243,6 +273,46 @@ class Semiring(OpBase):
             new_type_obj._add(op)
         return new_type_obj
 
+    @classmethod
+    def _build_from_bound_indexbinary(cls, name, monoid, bound_binop, *, anonymous=False):
+        """Build a Semiring whose multiplier is a bound IndexBinaryOp.
+
+        ``bound_binop`` is already a single typed ``GrB_BinaryOp``, so this
+        creates exactly one ``GrB_Semiring`` (for the bound op's input
+        type), not one per polymorphic dispatch entry. The additive monoid
+        must accept the bound op's return type (auto-lifts for UDT return
+        types via ``monoid[udt]``).
+        """
+        if name is None:
+            name = f"{monoid.name}_{bound_binop.parent.name}".replace(".", "_")
+        return_type = bound_binop.return_type
+        if return_type not in monoid:
+            raise TypeError(
+                f"Monoid {monoid.name!r} doesn't accept the bound IndexBinaryOp's "
+                f"return type {return_type!r}. The additive monoid and the "
+                f"multiplier must agree on the type the semiring reduces over."
+            )
+        typed_monoid = monoid[return_type]
+        new_semiring = ffi_new("GrB_Semiring*")
+        check_status_carg(
+            lib.GrB_Semiring_new(new_semiring, typed_monoid.gb_obj, bound_binop.gb_obj),
+            "Semiring",
+            new_semiring[0],
+        )
+        new_type_obj = cls(name, monoid, bound_binop, anonymous=anonymous)
+        typed_semiring = TypedUserSemiring(
+            new_type_obj,
+            name,
+            bound_binop.type,
+            typed_monoid.return_type,
+            new_semiring[0],
+            typed_monoid,
+            bound_binop,
+            dtype2=bound_binop._type2,
+        )
+        new_type_obj._add(typed_semiring)
+        return new_type_obj
+
     def _compile_udt(self, dtype, dtype2):
         if dtype2 is None:
             dtype2 = dtype
@@ -256,7 +326,7 @@ class Semiring(OpBase):
         status = lib.GrB_Semiring_new(new_semiring, monoid.gb_obj, binaryop.gb_obj)
         check_status_carg(status, "Semiring", new_semiring[0])
         op = TypedUserSemiring(
-            new_semiring,
+            self,
             self.name,
             dtype,
             ret_type,
@@ -265,7 +335,7 @@ class Semiring(OpBase):
             binaryop,
             dtype2=dtype2,
         )
-        self._udt_types[dtypes] = dtype
+        self._udt_types[dtypes] = ret_type
         self._udt_ops[dtypes] = op
         return op
 
@@ -279,8 +349,11 @@ class Semiring(OpBase):
         ----------
         monoid : Monoid or ParameterizedMonoid
             The monoid of the semiring (like "plus" in the default "plus_times" semiring).
-        binaryop : BinaryOp or ParameterizedBinaryOp
-            The binaryop of the semiring (like "times" in the default "plus_times" semiring).
+        binaryop : BinaryOp, ParameterizedBinaryOp, or bound IndexBinaryOp
+            The multiplier of the semiring (like "times" in the default
+            "plus_times" semiring). A bound IndexBinaryOp (``ibo[dtype](theta)``)
+            is accepted as well; the resulting semiring is monomorphic in
+            the bound op's input/output types.
         name : str, optional
             The name of the operator. This *does not* show up as ``gb.semiring.{name}``.
 
@@ -305,8 +378,10 @@ class Semiring(OpBase):
             such as ``gb.semiring.x.y.z`` for name ``"x.y.z"``.
         monoid : Monoid or ParameterizedMonoid
             The monoid of the semiring (like "plus" in the default "plus_times" semiring).
-        binaryop : BinaryOp or ParameterizedBinaryOp
-            The binaryop of the semiring (like "times" in the default "plus_times" semiring).
+        binaryop : BinaryOp, ParameterizedBinaryOp, or bound IndexBinaryOp
+            The multiplier of the semiring. A bound IndexBinaryOp
+            (``ibo[dtype](theta)``) is also accepted; the resulting
+            semiring is monomorphic in the bound op's input/output types.
         lazy : bool, default False
             If False (the default), then the function will be automatically
             compiled for builtin types (unless ``is_udt`` is True).

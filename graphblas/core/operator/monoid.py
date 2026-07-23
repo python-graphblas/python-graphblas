@@ -2,6 +2,8 @@ import inspect
 import re
 from collections.abc import Mapping
 
+import numpy as np
+
 from ... import _STANDARD_OPERATOR_NAMES, binary, monoid, op
 from ...dtypes import (
     BOOL,
@@ -18,10 +20,78 @@ from ...dtypes import (
     lookup_dtype,
 )
 from ...exceptions import check_status_carg
-from .. import ffi, lib
+from .. import _has_numba, ffi, lib
 from ..utils import libget
-from .base import OpBase, ParameterizedUdf, TypedOpBase, _hasop
+from .base import OpBase, ParameterizedUdf, TypedOpBase, _BinaryopJitDelegate, _hasop
 from .binary import BinaryOp, ParameterizedBinaryOp, TypedBuiltinBinaryOp
+
+# Monoid names for which we can auto-generate UDT identities.
+_BUILTIN_UDT_MONOIDS = {"plus", "times", "min", "max"}
+
+
+def _scalar_identity(monoid_name, scalar_dtype):
+    """Return the identity for a single numeric (or bool) numpy dtype, or ``None``.
+
+    ``None`` signals that we don't have an identity for this combination, so
+    the caller raises a clear error. Bool fields are treated as 0/1: ``min``
+    is logical AND (identity ``True``), ``max`` is logical OR (identity
+    ``False``).
+    """
+    if monoid_name == "plus":
+        return scalar_dtype.type(0)
+    if monoid_name == "times":
+        return scalar_dtype.type(1)
+    if monoid_name not in {"min", "max"}:
+        return None
+    if np.issubdtype(scalar_dtype, np.integer):
+        info = np.iinfo(scalar_dtype)
+        return info.max if monoid_name == "min" else info.min
+    if np.issubdtype(scalar_dtype, np.floating):
+        return scalar_dtype.type(np.inf if monoid_name == "min" else -np.inf)
+    if scalar_dtype == np.dtype(np.bool_):
+        return monoid_name == "min"
+    return None
+
+
+def _udt_identity(monoid_name, dtype):
+    """Generate an identity value for a built-in monoid on a UDT.
+
+    Returns a value suitable for assignment to ``Scalar.value``: a numpy
+    array for array UDTs, or a tuple of per-field identities for record
+    UDTs. Nested records recurse, producing a nested tuple that matches the
+    dtype's structure (which is what ``Scalar.value =`` expects).
+    """
+    np_type = dtype.np_type if hasattr(dtype, "np_type") else dtype
+    return _udt_identity_np(monoid_name, np_type, dtype)
+
+
+def _udt_identity_np(monoid_name, np_type, top_dtype):
+    if np_type.subdtype is not None:
+        base_dtype, shape = np_type.subdtype
+        val = _scalar_identity(monoid_name, base_dtype)
+        if val is None:
+            raise KeyError(
+                f"monoid.{monoid_name} does not work with {top_dtype}: "
+                f"base dtype {base_dtype} is not numeric"
+            )
+        return np.full(shape, val, dtype=base_dtype)
+    if np_type.names is not None:
+        vals = []
+        for field_name in np_type.names:
+            field_dtype = np_type.fields[field_name][0]
+            if field_dtype.names is not None or field_dtype.subdtype is not None:
+                val = _udt_identity_np(monoid_name, field_dtype, top_dtype)
+            else:
+                val = _scalar_identity(monoid_name, field_dtype)
+                if val is None:
+                    raise KeyError(
+                        f"monoid.{monoid_name} does not work with {top_dtype}: "
+                        f"field {field_name!r} has unsupported dtype {field_dtype}"
+                    )
+            vals.append(val)
+        return tuple(vals)
+    raise KeyError(f"monoid.{monoid_name} does not work with {top_dtype}")
+
 
 ffi_new = ffi.new
 
@@ -67,10 +137,15 @@ class TypedBuiltinMonoid(TypedOpBase):
     __call__ = TypedBuiltinBinaryOp.__call__
 
 
-class TypedUserMonoid(TypedOpBase):
+class TypedUserMonoid(_BinaryopJitDelegate, TypedOpBase):
     __slots__ = "binaryop", "identity"
     opclass = "Monoid"
     is_commutative = True
+    # Deliberately not ``_owns_gb_obj = True``: a ``GrB_Monoid`` holds a
+    # pointer into its underlying ``GrB_BinaryOp``, and Python's cyclic GC
+    # makes no guarantee about which side is finalized first. Freeing the
+    # monoid after its binary op is gone aborts SuiteSparse. The leak is
+    # bounded by the cache in ``Monoid.{_typed_ops,_udt_ops}``.
 
     def __init__(self, parent, name, type_, return_type, gb_obj, binaryop, identity):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
@@ -133,15 +208,18 @@ class ParameterizedMonoid(ParameterizedUdf):
         name = f"monoid.{self.name}"
         if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:  # pragma: no cover
             return name
-        return (self._deserialize, (self.name, self.binaryop, self.identity, self._anonymous))
+        return (
+            self._deserialize,
+            (self.name, self.binaryop, self.identity, self._anonymous, self._is_idempotent),
+        )
 
     @staticmethod
-    def _deserialize(name, binaryop, identity, anonymous):
+    def _deserialize(name, binaryop, identity, anonymous, is_idempotent=False):
         if anonymous:
-            return Monoid.register_anonymous(binaryop, identity, name)
+            return Monoid.register_anonymous(binaryop, identity, name, is_idempotent=is_idempotent)
         if (rv := Monoid._find(name)) is not None:
             return rv
-        return Monoid.register_new(name, binaryop, identity)
+        return Monoid.register_new(name, binaryop, identity, is_idempotent=is_idempotent)
 
 
 class Monoid(OpBase):
@@ -221,7 +299,7 @@ class Monoid(OpBase):
             dtype2 = dtype
         elif dtype != dtype2:
             raise TypeError(
-                "Monoid inputs must be the same dtype (got {dtype} and {dtype2}); "
+                f"Monoid inputs must be the same dtype (got {dtype} and {dtype2}); "
                 "unable to coerce when using UDTs."
             )
         if dtype in self._udt_types:
@@ -230,12 +308,25 @@ class Monoid(OpBase):
         from ..scalar import Scalar
 
         ret_type = binaryop.return_type
-        identity = Scalar.from_value(self._identity, dtype=ret_type, is_cscalar=True)
+        identity_val = self._identity
+        if identity_val is None and self.name in _BUILTIN_UDT_MONOIDS:
+            # Auto-generate the identity for built-in monoids on UDTs.
+            identity_val = _udt_identity(self.name, ret_type)
+        if identity_val is None:
+            raise KeyError(
+                f"monoid.{self.name} does not work with {dtype}: "
+                "no identity value (provide one via Monoid.register_anonymous)"
+            )
+        if ret_type._is_udt:
+            identity = Scalar(ret_type, is_cscalar=True)
+            identity.value = identity_val
+        else:
+            identity = Scalar.from_value(identity_val, dtype=ret_type, is_cscalar=True)
         new_monoid = ffi_new("GrB_Monoid*")
         status = lib.GrB_Monoid_new_UDT(new_monoid, binaryop.gb_obj, identity.gb_obj)
         check_status_carg(status, "Monoid", new_monoid[0])
         op = TypedUserMonoid(
-            new_monoid,
+            self,
             self.name,
             dtype,
             ret_type,
@@ -243,7 +334,7 @@ class Monoid(OpBase):
             binaryop,
             identity,
         )
-        self._udt_types[dtype] = dtype
+        self._udt_types[dtype] = ret_type
         self._udt_ops[dtype] = op
         return op
 
@@ -348,11 +439,30 @@ class Monoid(OpBase):
                 self._udt_ops = {}  # {dtype: TypedUserMonoid}
 
     def __reduce__(self):
-        if self._anonymous:
-            return (self.register_anonymous, (self._binaryop, self._identity, self.name))
-        if (name := f"monoid.{self.name}") in _STANDARD_OPERATOR_NAMES:
+        if not self._anonymous and (name := f"monoid.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
-        return (self._deserialize, (self.name, self._binaryop, self._identity))
+        # Carry ``is_idempotent`` through pickle: ``register_anonymous`` /
+        # ``register_new`` take it as keyword-only, and the inherited
+        # ``OpBase._deserialize`` can't pass keyword args, so route through a
+        # dedicated deserializer here.
+        return (
+            Monoid._deserialize_named_monoid,
+            (
+                self.name,
+                self._binaryop,
+                self._identity,
+                self._anonymous,
+                self._is_idempotent,
+            ),
+        )
+
+    @staticmethod
+    def _deserialize_named_monoid(name, binaryop, identity, anonymous, is_idempotent):
+        if anonymous:
+            return Monoid.register_anonymous(binaryop, identity, name, is_idempotent=is_idempotent)
+        if (rv := Monoid._find(name)) is not None:
+            return rv
+        return Monoid.register_new(name, binaryop, identity, is_idempotent=is_idempotent)
 
     @property
     def binaryop(self):
@@ -422,6 +532,13 @@ class Monoid(OpBase):
         any_._identity = 0
         any_._udt_types = {}
         any_._udt_ops = {}
+        # Enable element-wise monoids on UDTs (``plus``, ``times``, ``min``, ``max``).
+        if _has_numba:
+            for name in _BUILTIN_UDT_MONOIDS:
+                mon = getattr(monoid, name, None)
+                if mon is not None:
+                    mon._udt_types = {}
+                    mon._udt_ops = {}
         cls._initialized = True
 
     commutes_to = TypedBuiltinMonoid.commutes_to

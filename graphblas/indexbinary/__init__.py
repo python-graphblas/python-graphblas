@@ -1,5 +1,5 @@
-# All items are dynamically added by classes in operator.py
-# This module acts as a container of IndexBinaryOp instances
+# All items are dynamically added by classes in operator.py.
+# This module acts as a container of IndexBinaryOp instances.
 _delayed = {}
 
 

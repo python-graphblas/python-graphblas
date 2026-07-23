@@ -94,12 +94,7 @@ datashade = [ # datashade requires numba
   "datashader >=0.14",
   "hvplot >=0.8",
 ]
-test = [
-  "python-graphblas[suitesparse,pandas,scipy]",
-  "packaging >=21",
-  "pytest >=6.2",
-  "tomli >=1",
-]
+test = ["python-graphblas[suitesparse,pandas,scipy]", "packaging >=21", "pytest >=6.2", "tomli >=1"]
 default = [
   "python-graphblas[suitesparse,pandas,scipy]",
   "python-graphblas[numba]; python_version<'3.15'", # make optional where numba is not supported
@@ -181,6 +176,25 @@ filterwarnings = [
   # numpy 1.25+ deprecated np.find_common_type; triggered by older scipy/networkx/pandas
   # MAINT: remove once we drop numpy <2 support (numpy 2.0 removed it entirely)
   "ignore:np.find_common_type is deprecated:DeprecationWarning:",
+
+  # UDT auto-lift emits a one-time ``gb.exceptions.NoJITWarning`` (subclass
+  # of ``UserWarning``) when JIT setup can't be done: compiler missing,
+  # control mode off, or UDT not C-expressible (C-reserved field name,
+  # stdlib macro, unsupported field type, packed layout, etc.). The warning
+  # uses ``stacklevel=3`` so its traceback points at the user's code rather
+  # than ``jit_config``; that makes a ``module=`` qualifier here fragile
+  # (Python attributes the warning to whatever module is 3 frames up at
+  # issue time). Match on the unique message instead. Tests that exercise
+  # this path wrap with ``pytest.warns(NoJITWarning, match="without JIT")``
+  # (or ``UserWarning``, which still matches via inheritance).
+  "ignore:UDT operator running without JIT:UserWarning",
+
+  # ``pytest -n`` (xdist) makes pytest-benchmark issue this warning during
+  # ``pytest_configure`` to say it disabled itself. Our ``error`` filter
+  # turns warnings into errors, which crashes config before tests run.
+  # Match by message only: naming the category would make pytest import
+  # pytest_benchmark to resolve it, which fails where it isn't installed.
+  "ignore:Benchmarks are automatically disabled:",
 ]
 
 [tool.coverage.run]
@@ -196,11 +210,7 @@ precision = 1
 fail_under = 0
 skip_covered = true
 skip_empty = true
-exclude_lines = [
-  "pragma: no cover",
-  "raise AssertionError",
-  "raise NotImplementedError",
-]
+exclude_lines = ["pragma: no cover", "raise AssertionError", "raise NotImplementedError"]
 
 [tool.codespell]
 ignore-words-list = "coo,ba"
@@ -254,7 +264,7 @@ select = [
   "Q",   # flake8-quotes
   "RSE", # flake8-raise
   "RET", # flake8-return
-  # "SLF",  # flake8-self (We can use our own private variables--sheesh!)
+  # "SLF",  # flake8-self (we can use our own private variables, sheesh!)
   "SIM", # flake8-simplify
   # "TID",  # flake8-tidy-imports (Rely on isort and our own judgement)
   # "TCH",  # flake8-type-checking (Note: figure out type checking later)
@@ -299,7 +309,7 @@ ignore = [
   "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar` (Note: no annotations yet)
   "RUF021",  # parenthesize-chained-operators (Note: results don't look good yet)
   "RUF023",  # unsorted-dunder-slots (Note: maybe fine, but noisy changes)
-  "RUF043",  # Pattern passed to `match=` contains metacharacters but is neither escaped nor raw
+  "RUF043",  # Unescaped metacharacters in a `match=` pattern (Note: tests pass plain strings)
   "PERF401", # Use a list comprehension to create a transformed list (Note: poorly implemented atm)
 
   # Intentionally ignored
@@ -309,13 +319,13 @@ ignore = [
   "D400",    # First line should end with a period (Note: prefer D415, which also allows "?" and "!")
   "N801",    # Class name ... should use CapWords convention (Note:we have a few exceptions to this)
   "N802",    # Function name ... should be lowercase
-  "N803",    # Argument name ... should be lowercase (Maybe okay--except in tests)
+  "N803",    # Argument name ... should be lowercase (Maybe okay; except in tests)
   "N806",    # Variable ... in function should be lowercase
   "N807",    # Function name should not start and end with `__`
   "N818",    # Exception name ... should be named with an Error suffix (Note: good advice)
   "PERF203", # `try`-`except` within a loop incurs performance overhead (Note: too strict)
   "PLC0205", # Class `__slots__` should be a non-string iterable (Note: string is fine)
-  "PLC0415", # `import` should be at the top-level of a file
+  "PLC0415", # `import` should be at the top-level of a file (Note: we use deliberate local imports)
   "PLR0124", # Name compared with itself, consider replacing `x == x` (Note: too strict)
   "PLR0911", # Too many return statements
   "PLR0912", # Too many branches
@@ -328,7 +338,7 @@ ignore = [
   "RET502",  # Do not implicitly `return None` in function able to return non-`None` value
   "RET503",  # Missing explicit `return` at the end of function able to return non-`None` value
   "RET504",  # Unnecessary variable assignment before `return` statement
-  "RUF028",  # This suppression comment is invalid because... (Note: `fmt` is for black, not ruff)
+  "RUF028",  # Invalid formatter-suppression comment (Note: our `# fmt:` comments are for black, not ruff)
   "S110",    # `try`-`except`-`pass` detected, consider logging the exception (Note: good advice, but we don't log)
   "S112",    # `try`-`except`-`continue` detected, consider logging the exception (Note: good advice, but we don't log)
   "S603",    # `subprocess` call: check for execution of untrusted input (Note: not important for us)
@@ -348,7 +358,7 @@ ignore = [
   "EM",  # flake8-errmsg (Perhaps nicer, but too much work)
   "ICN", # flake8-import-conventions (Doesn't allow "_" prefix such as `_np`)
   "PYI", # flake8-pyi (We don't have stub files yet)
-  "SLF", # flake8-self (We can use our own private variables--sheesh!)
+  "SLF", # flake8-self (we can use our own private variables, sheesh!)
   "TID", # flake8-tidy-imports (Rely on isort and our own judgement)
   "TCH", # flake8-type-checking (Note: figure out type checking later)
   "ARG", # flake8-unused-arguments (Sometimes helpful, but too strict)
@@ -362,6 +372,7 @@ ignore = [
 "graphblas/core/operator/__init__.py" = ["A005"]
 "graphblas/io/__init__.py" = ["A005"] # shadows a standard-library module
 "graphblas/core/operator/base.py" = ["S102"] # exec is used for UDF
+"graphblas/core/operator/udt_utils.py" = ["S102"] # exec is used for UDT op codegen
 "graphblas/monoid/numpy.py" = ["PLW0108"] # lambda is needed for numba.njit
 "graphblas/core/ss/matrix.py" = [
   "NPY002",  # numba doesn't support rng generator yet
@@ -371,21 +382,10 @@ ignore = [
   "NPY002", # numba doesn't support rng generator yet
 ]
 "graphblas/core/utils.py" = ["PLE0302"] # `__set__` is used as a property
-"scripts/ci_pick_versions.py" = [
-  "S311",
-] # random.choice is intentional for CI version selection
+"scripts/ci_pick_versions.py" = ["S311"] # random.choice is intentional for CI version selection
 "graphblas/ss/_core.py" = ["N999"] # We want _core.py to be underscopre
 # Allow useless expressions, assert, pickle, RNG, print, no docstring, and yoda in tests
-"graphblas/tests/*py" = [
-  "B018",
-  "S101",
-  "S301",
-  "S311",
-  "T201",
-  "D103",
-  "D100",
-  "SIM300",
-]
+"graphblas/tests/*py" = ["B018", "S101", "S301", "S311", "T201", "D103", "D100", "SIM300"]
 "graphblas/tests/test_formatting.py" = ["E501"] # Allow long lines
 "graphblas/**/__init__.py" = [
   "F401", # Allow unused imports (w/o defining `__all__`)

@@ -361,6 +361,14 @@ class _Pointer:
             name = f"{'M' if c == 'M' else c.lower()}_temp"
         return f"&{name}"
 
+    @property
+    def _expr_name(self):
+        return getattr(self.val, "_expr_name", self.name)
+
+    @property
+    def _expr_name_html(self):
+        return getattr(self.val, "_expr_name_html", self.name)
+
 
 class _MatrixArray:
     __slots__ = "_carg", "_exc_arg", "name"

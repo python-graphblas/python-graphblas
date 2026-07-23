@@ -91,7 +91,33 @@ class JitError(GraphblasException):
 
 # Our errors
 class UdfParseError(GraphblasException):
-    """SuiteSparse:GraphBLAS unable to parse the user-defined function."""
+    """Raised when a UDF can't be compiled for the requested operand types.
+
+    Wraps Numba compilation errors (``TypingError``, ``LoweringError``,
+    ``UnsupportedError``) into a single graphblas-level exception with the
+    actionable diagnostic line surfaced from Numba's traceback. Common
+    causes: an operator that doesn't exist for the field type
+    (``binary.floordiv`` on a complex field), a UDF that returns a tuple
+    whose length doesn't match any input UDT, or use of a Python construct
+    Numba doesn't support in nopython mode.
+    """
+
+
+# Warnings
+class NoJITWarning(UserWarning):
+    """Auto-lifted UDT op fell back to the Numba cfunc path.
+
+    Emitted from :func:`graphblas.core.ss.jit_config._maybe_warn_no_jit`
+    when an op like ``binary.plus[udt]`` would otherwise have JIT-compiled,
+    but couldn't because the JIT compiler is unusable, ``jit_c_control``
+    is off, or the UDT isn't expressible as a C struct. Fires once per
+    ``(op, dtype)`` pair per process, so a user who registers several
+    UDTs gets one warning per pair regardless of cause.
+
+    Inherits from :class:`UserWarning` so existing ``UserWarning`` filters
+    still match it; users can also filter by category for a tight scope:
+    ``warnings.filterwarnings("ignore", category=NoJITWarning)``.
+    """
 
 
 _error_code_lookup = {
