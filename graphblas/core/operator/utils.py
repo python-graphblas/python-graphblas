@@ -477,28 +477,196 @@ def _from_string(string, module, mapping, example):
 
 
 def unary_from_string(string):
+    """Look up a UnaryOp by name or symbol, optionally typed with ``"[dtype]"``.
+
+    Backs ``gb.unary.from_string`` and the string coercion used wherever a
+    UnaryOp is accepted, such as ``v.apply("abs")``.
+
+    Parameters
+    ----------
+    string : str
+        A name in the ``gb.unary`` namespace (``"abs"``, or a dotted path such
+        as ``"numpy.negative"``) or a symbolic shorthand (``"-"`` for ``ainv``,
+        ``"~"`` for ``lnot``). Append ``"[dtype]"`` to type the operator, as in
+        ``"abs[int]"``.
+
+    Returns
+    -------
+    UnaryOp
+
+    See Also
+    --------
+    unary.register_new
+    op.from_string
+
+    Examples
+    --------
+    >>> gb.unary.from_string("abs") is gb.unary.abs
+    True
+    >>> gb.unary.from_string("abs[int]") is gb.unary.abs[int]
+    True
+
+    """
     return _from_string(string, unary, _str_to_unary, "abs[int]")
 
 
 def indexunary_from_string(string):
+    """Look up an IndexUnaryOp by name, optionally typed with ``"[dtype]"``.
+
+    Parameters
+    ----------
+    string : str
+        A name in the ``gb.indexunary`` namespace, such as ``"rowindex"``,
+        ``"diag"``, or ``"tril"``. Append ``"[dtype]"`` to type the operator,
+        as in ``"rowindex[int]"``.
+
+    Returns
+    -------
+    IndexUnaryOp
+
+    See Also
+    --------
+    indexunary.register_new
+    select.from_string
+
+    Examples
+    --------
+    >>> gb.indexunary.from_string("rowindex") is gb.indexunary.rowindex
+    True
+
+    """
     # "select" is a variant of IndexUnary, so the string abbreviations in
     # _str_to_select are appropriate to reuse here
-    return _from_string(string, indexunary, _str_to_select, "row_index")
+    return _from_string(string, indexunary, _str_to_select, "rowindex")
 
 
 def select_from_string(string):
+    """Look up a SelectOp by name or comparison symbol.
+
+    Parameters
+    ----------
+    string : str
+        A name in the ``gb.select`` namespace (``"tril"``, ``"triu"``,
+        ``"offdiag"``, ``"valuegt"``, ...) or a comparison shorthand such as
+        ``">="`` (``valuege``), ``"=="`` (``valueeq``), or ``"row>"``
+        (``rowgt``).
+
+    Returns
+    -------
+    SelectOp
+
+    See Also
+    --------
+    select.register_new
+    indexunary.from_string
+
+    Examples
+    --------
+    >>> gb.select.from_string("tril") is gb.select.tril
+    True
+    >>> gb.select.from_string(">=") is gb.select.valuege
+    True
+
+    """
     return _from_string(string, select, _str_to_select, "tril")
 
 
 def binary_from_string(string):
+    """Look up a BinaryOp by name or symbol, optionally typed with ``"[dtype]"``.
+
+    Backs ``gb.binary.from_string`` and the string coercion used wherever a
+    BinaryOp is accepted, such as ``A.ewise_mult(B, "+")``.
+
+    Parameters
+    ----------
+    string : str
+        A name in the ``gb.binary`` namespace (``"plus"``, or a dotted path such
+        as ``"numpy.mod"``) or an arithmetic/comparison shorthand such as ``"+"``
+        (``plus``), ``"*"`` (``times``), or ``">="`` (``ge``). Append
+        ``"[dtype]"`` to type the operator, as in ``"plus[int]"``.
+
+    Returns
+    -------
+    BinaryOp
+
+    See Also
+    --------
+    binary.register_new
+    op.from_string
+
+    Examples
+    --------
+    >>> gb.binary.from_string("+") is gb.binary.plus
+    True
+    >>> gb.binary.from_string("minus[int]") is gb.binary.minus[int]
+    True
+
+    """
     return _from_string(string, binary, _str_to_binary, "+[int]")
 
 
 def monoid_from_string(string):
+    """Look up a Monoid by name or symbol, optionally typed with ``"[dtype]"``.
+
+    Parameters
+    ----------
+    string : str
+        A name in the ``gb.monoid`` namespace (``"plus"``, ``"times"``, ...) or a
+        symbolic shorthand such as ``"+"`` (``plus``), ``"*"`` (``times``), or
+        ``"|"`` (``lor``). Append ``"[dtype]"`` to type the monoid, as in
+        ``"plus[float]"``.
+
+    Returns
+    -------
+    Monoid
+
+    See Also
+    --------
+    monoid.register_new
+    semiring.from_string
+
+    Examples
+    --------
+    >>> gb.monoid.from_string("+[float]") is gb.monoid.plus[float]
+    True
+
+    """
     return _from_string(string, monoid, _str_to_monoid, "+[int]")
 
 
 def semiring_from_string(string):
+    """Look up a Semiring by name, optionally typed with ``"[dtype]"``.
+
+    A semiring pairs a monoid with a binaryop. Name it either as the combined
+    namespace attribute (``"plus_times"``) or in ``"monoid.binaryop"`` form using
+    the monoid and binaryop shorthands (``"min.+"``); the two parts must be
+    separated by exactly one period.
+
+    Parameters
+    ----------
+    string : str
+        The semiring name, such as ``"plus_times"`` or ``"min_plus"``, or the
+        ``"monoid.binaryop"`` form ``"min.+"``. Append ``"[dtype]"`` to type the
+        semiring, as in ``"min.+[int]"``.
+
+    Returns
+    -------
+    Semiring
+
+    See Also
+    --------
+    semiring.register_new
+    semiring.get_semiring
+    op.from_string
+
+    Examples
+    --------
+    >>> gb.semiring.from_string("min.+") is gb.semiring.min_plus
+    True
+    >>> gb.semiring.from_string("min_plus") is gb.semiring.min_plus
+    True
+
+    """
     split = string.split(".")
     if len(split) == 1:
         try:
@@ -517,6 +685,38 @@ def semiring_from_string(string):
 
 
 def op_from_string(string):
+    """Look up an operator of any kind by string.
+
+    Each operator type is tried in turn (unary, binary, monoid, semiring,
+    indexunary, select, then aggregator) and the first match is returned, so an
+    unqualified name resolves to whichever kind defines it first. Use a
+    type-specific ``from_string`` (e.g. ``gb.binary.from_string``) when the kind
+    is known and matters.
+
+    Parameters
+    ----------
+    string : str
+        An operator name or symbol accepted by any of the type-specific
+        ``from_string`` functions, optionally typed with ``"[dtype]"``.
+
+    Returns
+    -------
+    UnaryOp, BinaryOp, Monoid, Semiring, IndexUnaryOp, SelectOp, or Aggregator
+
+    See Also
+    --------
+    unary.from_string
+    binary.from_string
+    semiring.from_string
+
+    Examples
+    --------
+    >>> gb.op.from_string("+") is gb.binary.plus
+    True
+    >>> gb.op.from_string("min.plus") is gb.semiring.min_plus
+    True
+
+    """
     for func in [
         # Note: order matters here
         unary_from_string,
@@ -551,6 +751,32 @@ _str_to_agg = {
 
 
 def aggregator_from_string(string):
+    """Look up an Aggregator by name or symbol, optionally typed with ``"[dtype]"``.
+
+    Parameters
+    ----------
+    string : str
+        A name in the ``gb.agg`` namespace (``"sum"``, ``"count"``, ``"any"``,
+        ...) or a symbolic shorthand such as ``"+"`` (``sum``), ``"*"``
+        (``prod``), ``"&"`` (``all``), or ``"|"`` (``any``). Append ``"[dtype]"``
+        to type the aggregator, as in ``"sum[int]"``.
+
+    Returns
+    -------
+    Aggregator
+
+    See Also
+    --------
+    op.from_string
+
+    Examples
+    --------
+    >>> gb.agg.from_string("sum[int]") is gb.agg.sum[int]
+    True
+    >>> gb.agg.from_string("|") is gb.agg.any
+    True
+
+    """
     return _from_string(string, agg, _str_to_agg, "sum[int]")
 
 
