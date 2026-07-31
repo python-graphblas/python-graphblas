@@ -146,38 +146,24 @@ def t():
 
 
 def test_no_pandas_repr(A, C, v, w):
-    # This is a bit of a hack...
+    # The rich repr is hand-rendered, so it no longer depends on pandas: with
+    # pandas marked absent the output is byte-identical to the pandas-present
+    # output, data grid and all. (When pandas is genuinely absent both branches
+    # use the same pandas-free path, so this still exercises that code.)
+    objs = [A, A.T, C, C.S, ~C.V, v, v.S, ~w.V, w]
+    expected = [repr(x) for x in objs]
     has_pandas_prev = formatting.has_pandas
     formatting.has_pandas = False
     try:
-        repr_printer(A, "A", indent=8)
-        assert repr(A) == (
-            '"A_1"      nvals  nrows  ncols  dtype   format\n'
-            "gb.Matrix      3      1      5  INT64  bitmapr"
-        )
-        repr_printer(A.T, "A.T", indent=8)
-        assert repr(A.T) == (
-            '"A_1.T"              nvals  nrows  ncols  dtype   format\n'
-            "gb.TransposedMatrix      3      5      1  INT64  bitmapc"
-        )
-        repr_printer(C.S, "C.S", indent=8)
-        assert repr(C.S) == (
-            '"C.S"           nvals  nrows  ncols  dtype    format\n'
-            "StructuralMask\n"
-            "of gb.Matrix        8     70     77  INT64  hypercsr"
-        )
-        repr_printer(v, "v", indent=8)
-        assert repr(v) == (
-            '"v"        nvals  size  dtype  format\ngb.Vector      3     5   FP64  bitmap'
-        )
-        repr_printer(~w.V, "~w.V", indent=8)
-        assert repr(~w.V) == (
-            '"~w.V"                 nvals  size  dtype  format\n'
-            "ComplementedValueMask\n"
-            "of gb.Vector               4    77  INT64  bitmap"
-        )
+        actual = [repr(x) for x in objs]
     finally:
         formatting.has_pandas = has_pandas_prev
+    assert actual == expected
+    # The data grid is rendered, not just the header: the border line and the
+    # values are present.
+    lines = repr(A).split("\n")
+    assert lines[2].startswith("----")
+    assert lines[-1] == "0  0    1    2"
 
 
 @pytest.mark.skipif("not pd")
@@ -517,137 +503,21 @@ def test_scalar_repr(s, t):
 
 
 def test_no_pandas_repr_html(A, C, v, w):
-    # This is a bit of a hack...
+    # _repr_html_ is hand-rendered too: marking pandas absent yields output that
+    # is byte-identical to the pandas-present output, data table included.
+    objs = [A, A.T, C, C.S, ~C.V, v, v.S, ~w.V, w]
+    expected = [repr_html(x) for x in objs]
     has_pandas_prev = formatting.has_pandas
     formatting.has_pandas = False
     try:
-        html_printer(A, "A", indent=8)
-        assert repr_html(A) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>nrows</pre></td>\n"
-            "    <td><pre>ncols</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>3</td>\n"
-            "    <td>1</td>\n"
-            "    <td>5</td>\n"
-            "    <td>INT64</td>\n"
-            "    <td>bitmapr</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
-        html_printer(A.T, "A.T", indent=8)
-        assert repr_html(A.T) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub>.T</tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.TransposedMatrix</pre></td>\n'
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>nrows</pre></td>\n"
-            "    <td><pre>ncols</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>3</td>\n"
-            "    <td>5</td>\n"
-            "    <td>1</td>\n"
-            "    <td>INT64</td>\n"
-            "    <td>bitmapc</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
-        html_printer(C.S, "C.S", indent=8)
-        assert repr_html(C.S) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>C.S</tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>StructuralMask\n'
-            "of\n"
-            "gb.Matrix</pre></td>\n"
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>nrows</pre></td>\n"
-            "    <td><pre>ncols</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>8</td>\n"
-            "    <td>70</td>\n"
-            "    <td>77</td>\n"
-            "    <td>INT64</td>\n"
-            "    <td>hypercsr</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
-        html_printer(v, "v", indent=8)
-        assert repr_html(v) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>size</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>3</td>\n"
-            "    <td>5</td>\n"
-            "    <td>FP64</td>\n"
-            "    <td>bitmap</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
-        html_printer(~w.V, "~w.V", indent=8)
-        assert repr_html(~w.V) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>~w.V</tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>ComplementedValueMask\n'
-            "of\n"
-            "gb.Vector</pre></td>\n"
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>size</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>4</td>\n"
-            "    <td>77</td>\n"
-            "    <td>INT64</td>\n"
-            "    <td>bitmap</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
+        actual = [repr_html(x) for x in objs]
     finally:
         formatting.has_pandas = has_pandas_prev
+    assert actual == expected
+    # The data table is rendered, not the "install pandas" placeholder.
+    html = repr_html(A)
+    assert "install" not in html.lower()
+    assert '<table border="1" class="dataframe">' in html
 
 
 @pytest.mark.skipif("not pd")
