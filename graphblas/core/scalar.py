@@ -7,7 +7,7 @@ from .. import backend, binary, config, monoid
 from ..dtypes import _INDEX, FP64, _index_dtypes, lookup_dtype, unify
 from ..exceptions import EmptyObject, check_status
 from . import _has_numba, _supports_udfs, automethods, ffi, lib, utils
-from .base import BaseExpression, BaseType, call
+from .base import BaseExpression, BaseType, _is_recording, call
 from .expr import AmbiguousAssignOrExtract
 from .operator import get_typed_op
 from .utils import _Pointer, output_type, wrapdoc
@@ -1082,7 +1082,37 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     def new(self, dtype=None, *, is_cscalar=None, name=None, **opts):
         if is_cscalar is None:
             is_cscalar = False
-        return self.parent._extract_element(
+        parent = self.parent
+        # Fast path for the default `expr.new()`: extract a single element
+        # straight into a fresh GrB_Scalar via GrB_*_extractElement_Scalar,
+        # skipping the `call` wrapper's per-arg _carg marshalling. Falls back
+        # for a dtype cast, cscalar output, opts, UDTs, and an active Recorder
+        # (so the call is recorded). Result is a GrB_Scalar (is_cscalar=False),
+        # empty exactly when the element is missing, same as _extract_element.
+        if (
+            dtype is None
+            and not is_cscalar
+            and not opts
+            and not parent.dtype._is_udt
+            and not _is_recording()
+        ):
+            indices = self.resolved_indexes.indices
+            result = Scalar(parent.dtype, is_cscalar=False, name=name)
+            if len(indices) == 1:
+                err_code = lib.GrB_Vector_extractElement_Scalar(
+                    result.gb_obj[0], parent.gb_obj[0], indices[0].index._carg
+                )
+            else:
+                rowidx, colidx = indices
+                if parent._is_transposed:
+                    rowidx, colidx = colidx, rowidx
+                err_code = lib.GrB_Matrix_extractElement_Scalar(
+                    result.gb_obj[0], parent.gb_obj[0], rowidx.index._carg, colidx.index._carg
+                )
+            if err_code:
+                check_status(err_code, [result])
+            return result
+        return parent._extract_element(
             self.resolved_indexes, dtype, opts, is_cscalar=is_cscalar, name=name
         )
 
