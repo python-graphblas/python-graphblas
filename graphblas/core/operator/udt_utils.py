@@ -530,8 +530,14 @@ def _op_supports_field_dtypes(op_name, np_type):
 # Numba function generators, called lazily from each op's ``_compile_udt``.
 if _has_numba:
 
-    def _expr_binary(py_op, x_expr, y_expr):
-        """Python-source builder; sibling of :func:`_c_expr_binary` for JIT C."""
+    def _expr_binary(py_op, x_expr, y_expr, x_dtype, y_dtype):
+        """Python-source builder; sibling of :func:`_c_expr_binary` for JIT C.
+
+        ``x_dtype`` and ``y_dtype`` are each operand's numpy dtype at this
+        leaf, which ``_check_udt_pair`` allows to differ. None of the
+        expressions below vary on them; they are threaded here so that an
+        expression which does can tell the two sides apart.
+        """
         if py_op in _FUNC_BINARY_OPS:
             return f"{py_op}({x_expr}, {y_expr})"
         return f"{x_expr} {py_op} {y_expr}"
@@ -542,73 +548,104 @@ if _has_numba:
             return f"{py_op}({operand})"
         return f"{py_op}{operand}"
 
-    def _make_record_func(leaf_paths, arity, py_op, *, x_is_scalar=False, y_is_scalar=False):
+    def _make_record_func(
+        leaves,
+        arity,
+        py_op,
+        *,
+        x_is_scalar=False,
+        y_is_scalar=False,
+        x_scalar_dtype=None,
+        y_scalar_dtype=None,
+    ):
         """Build a Numba njit function for a record UDT.
 
-        ``leaf_paths`` is a sequence of Python access strings ``"['a']"`` or,
-        for nested records, ``"['outer']['inner_a']"``. The generated function
-        always returns a *flat* tuple of leaf values regardless of nesting
-        depth; the wrapper (in base.py) walks the same leaf paths when
-        writing the result back, so nested-record outputs land at the
-        correct depth without nested tuple construction (which Numba can't
-        ``setitem``-assign to a record field).
+        ``leaves`` is a sequence of ``(python_access, x_leaf_dtype,
+        y_leaf_dtype)`` triples, where ``y_leaf_dtype`` is ``None`` for a unary
+        op. The two dtypes differ when the operands are records that share
+        field names but not field types, which ``_check_udt_pair`` allows.
+        The access strings look like ``"['a']"`` or, for nested records,
+        ``"['outer']['inner_a']"``. The generated function always returns a
+        *flat* tuple of leaf values regardless of nesting depth; the wrapper
+        (in base.py) walks the same leaf paths when writing the result back,
+        so nested-record outputs land at the correct depth without nested
+        tuple construction (which Numba can't ``setitem``-assign to a record
+        field).
 
         When ``x_is_scalar`` or ``y_is_scalar`` is True, that argument is a
-        plain scalar (not a record), so it is used directly for all leaves.
+        plain scalar (not a record), so it is used directly for all leaves
+        and ``x_scalar_dtype`` / ``y_scalar_dtype`` gives its numpy dtype.
         """
         if arity == 2:
             parts = []
-            for path in leaf_paths:
+            for path, x_leaf_dtype, y_leaf_dtype in leaves:
                 x_expr = "x" if x_is_scalar else f"x{path}"
                 y_expr = "y" if y_is_scalar else f"y{path}"
-                parts.append(_expr_binary(py_op, x_expr, y_expr))
+                parts.append(
+                    _expr_binary(
+                        py_op,
+                        x_expr,
+                        y_expr,
+                        x_scalar_dtype if x_is_scalar else x_leaf_dtype,
+                        y_scalar_dtype if y_is_scalar else y_leaf_dtype,
+                    )
+                )
             sig = "x, y"
         else:
-            parts = [_expr_unary(py_op, f"x{path}") for path in leaf_paths]
+            parts = [_expr_unary(py_op, f"x{path}") for path, _xd, _yd in leaves]
             sig = "x"
         body = ", ".join(parts)
         # Single-leaf tuple needs the trailing comma to remain a tuple.
-        ret = f"({body},)" if len(leaf_paths) == 1 else f"({body})"
+        ret = f"({body},)" if len(leaves) == 1 else f"({body})"
         src = f"def _op({sig}):\n    return {ret}\n"
         op_func = _compile_codegen(
             src,
             func_name="_op",
-            source_label=f"<gb-udt {py_op!r} record nleaves={len(leaf_paths)} arity={arity}>",
+            source_label=f"<gb-udt {py_op!r} record nleaves={len(leaves)} arity={arity}>",
         )
         return numba.njit(op_func, error_model="numpy")
 
     def _make_array_wrapper(
         size,
-        base_numba_type,
+        base_dtype,
         arity,
         py_op,
         *,
-        x_scalar_type=None,
-        y_scalar_type=None,
+        x_scalar_dtype=None,
+        y_scalar_dtype=None,
     ):
         """Build a cfunc-ready wrapper for an array UDT (element-by-element).
 
-        When ``x_scalar_type`` or ``y_scalar_type`` is set, that side is a plain
-        scalar pointer (broadcast to all elements).
+        All dtype arguments are numpy dtypes. When ``x_scalar_dtype`` or
+        ``y_scalar_dtype`` is set, that side is a plain scalar pointer
+        (broadcast to all elements).
 
         Returns (wrapper_func, wrapper_sig).
         """
         nt = numba.types
+        base_numba_type = numba.from_dtype(base_dtype)
         if arity == 2:
-            x_ref = "x_ptr[0]" if x_scalar_type else "x[{i}]"
-            y_ref = "y_ptr[0]" if y_scalar_type else "y[{i}]"
-            assigns = "\n".join(
-                f"    z[{i}] = {_expr_binary(py_op, x_ref.format(i=i), y_ref.format(i=i))}"
-                for i in range(size)
-            )
+            x_ref = "x_ptr[0]" if x_scalar_dtype is not None else "x[{i}]"
+            y_ref = "y_ptr[0]" if y_scalar_dtype is not None else "y[{i}]"
+            x_dtype = base_dtype if x_scalar_dtype is None else x_scalar_dtype
+            y_dtype = base_dtype if y_scalar_dtype is None else y_scalar_dtype
+            lines = []
+            for i in range(size):
+                expr = _expr_binary(py_op, x_ref.format(i=i), y_ref.format(i=i), x_dtype, y_dtype)
+                lines.append(f"    z[{i}] = {expr}")
+            assigns = "\n".join(lines)
             params = "z_ptr, x_ptr, y_ptr"
             arrays = f"    z = numba.carray(z_ptr, {size})\n"
-            if not x_scalar_type:
+            if x_scalar_dtype is None:
                 arrays += f"    x = numba.carray(x_ptr, {size})\n"
-            if not y_scalar_type:
+            if y_scalar_dtype is None:
                 arrays += f"    y = numba.carray(y_ptr, {size})\n"
-            x_numba = nt.CPointer(x_scalar_type) if x_scalar_type else nt.CPointer(base_numba_type)
-            y_numba = nt.CPointer(y_scalar_type) if y_scalar_type else nt.CPointer(base_numba_type)
+            x_numba = nt.CPointer(
+                base_numba_type if x_scalar_dtype is None else numba.from_dtype(x_scalar_dtype)
+            )
+            y_numba = nt.CPointer(
+                base_numba_type if y_scalar_dtype is None else numba.from_dtype(y_scalar_dtype)
+            )
             sig = nt.void(nt.CPointer(base_numba_type), x_numba, y_numba)
         else:
             assigns = "\n".join(
@@ -689,20 +726,40 @@ if _has_numba:
             # Use leaf paths so the same codegen handles nested-record UDTs
             # uniformly. A non-nested record's leaves are its top-level
             # fields, with paths like ``"['a']"``.
-            leaf_paths = [py for py, _c, _d in _iter_record_leaves(udt_dtype.np_type)]
+            #
+            # Pair each leaf with its own operand's dtype. ``_check_udt_pair``
+            # makes two record operands share field names but not field types,
+            # so reusing the left record's dtypes for both would describe the
+            # right operand's leaves incorrectly.
+            x_leaves = _iter_record_leaves((dtype if not x_is_scalar else udt_dtype).np_type)
+            y_leaves = _iter_record_leaves((dtype2 if not y_is_scalar else udt_dtype).np_type)
+            leaves = [
+                (py, x_leaf_dtype, y_leaf_dtype)
+                for (py, _cx, x_leaf_dtype), (_py, _cy, y_leaf_dtype) in zip(
+                    x_leaves, y_leaves, strict=True
+                )
+            ]
             func = _make_record_func(
-                leaf_paths,
+                leaves,
                 2,
                 py_op,
                 x_is_scalar=x_is_scalar,
                 y_is_scalar=y_is_scalar,
+                x_scalar_dtype=dtype.np_type if x_is_scalar else None,
+                y_scalar_dtype=dtype2.np_type if y_is_scalar else None,
             )
             sig = (dtype.numba_type, dtype2.numba_type)
             _compile_udf_for_udt(
                 func, sig, op_kind="binary", op_name=op_name, dtypes=(dtype, dtype2)
             )
             numba_ret_type = func.overloads[sig].signature.return_type
-            ret_type = _resolve_udt_return_type(numba_ret_type, udt_dtype)
+            # Offer both operands when both are UDTs: passing only ``udt_dtype``
+            # left the resolver no choice but the left-hand record, so an
+            # int-record combined with a float-record truncated to the int one
+            # (and gave a different answer if you swapped the operands).
+            ret_type = _resolve_udt_return_type(
+                numba_ret_type, *(d for d in (dtype, dtype2) if d._is_udt)
+            )
             wrapper, wrapper_sig = _get_udt_wrapper(
                 func, ret_type, dtype, dtype2, numba_ret_type=numba_ret_type
             )
@@ -711,11 +768,11 @@ if _has_numba:
             ret_type = udt_dtype
             wrapper, wrapper_sig = _make_array_wrapper(
                 size,
-                numba.from_dtype(base_dtype),
+                base_dtype,
                 2,
                 py_op,
-                x_scalar_type=numba.from_dtype(dtype.np_type) if x_is_scalar else None,
-                y_scalar_type=numba.from_dtype(dtype2.np_type) if y_is_scalar else None,
+                x_scalar_dtype=dtype.np_type if x_is_scalar else None,
+                y_scalar_dtype=dtype2.np_type if y_is_scalar else None,
             )
         return wrapper, wrapper_sig, ret_type
 
@@ -739,8 +796,8 @@ if _has_numba:
         if kind == "record":
             from .base import _compile_udf_for_udt
 
-            leaf_paths = [py for py, _c, _d in _iter_record_leaves(dtype.np_type)]
-            func = _make_record_func(leaf_paths, 1, py_op)
+            leaves = [(py, d, None) for py, _c, d in _iter_record_leaves(dtype.np_type)]
+            func = _make_record_func(leaves, 1, py_op)
             sig = (dtype.numba_type,)
             _compile_udf_for_udt(func, sig, op_kind="unary", op_name=op_name, dtypes=(dtype,))
             numba_ret_type = func.overloads[sig].signature.return_type
@@ -751,7 +808,7 @@ if _has_numba:
         else:
             base_dtype, size = detail
             ret_type = dtype
-            wrapper, wrapper_sig = _make_array_wrapper(size, numba.from_dtype(base_dtype), 1, py_op)
+            wrapper, wrapper_sig = _make_array_wrapper(size, base_dtype, 1, py_op)
         return wrapper, wrapper_sig, ret_type
 
 
