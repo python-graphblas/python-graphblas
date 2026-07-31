@@ -1927,6 +1927,133 @@ def test_udt_auto_monoid():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_array_wrapper_stays_within_element():
+    """The array-UDT cfunc wrapper writes the element payload and nothing more.
+
+    Numba represents a ``NestedArray`` *value* as an array descriptor (data
+    pointer, shape, strides, ...), so the wrapper used to store that descriptor
+    where GraphBLAS expected only the elements: 56 bytes into the 48 an
+    ``FP64[6]`` element gets. GraphBLAS owns the buffer it hands the cfunc, so
+    the extra bytes land on memory the library allocated for something else.
+
+    Pinned at the codegen level rather than end-to-end, and deliberately so:
+    nothing in the suite was ever observed to fault on the old codegen, so an
+    end-to-end test would not catch a regression. Measured directly instead,
+    driving the wrapper through ctypes over a guard-filled buffer: shape
+    ``(6,)`` wrote 8 bytes past a 48-byte element, shape ``(2, 3)`` wrote 24.
+    """
+    import ctypes
+
+    import numba
+
+    from graphblas.core.operator.base import _get_udt_wrapper
+
+    size = 6
+    udt = dtypes.register_anonymous(np.dtype((np.float64, (size,))), "_ArrWrapPin")
+
+    @numba.njit
+    def _second(x, y):  # pragma: no cover (numba)
+        return y
+
+    wrapper, wrapper_sig = _get_udt_wrapper(_second, udt, udt, udt)
+    cfunc = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(wrapper)
+    call = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(cfunc.address)
+
+    guard = -1.0
+    xvals = [float(i) for i in range(size)]
+    yvals = [100.0 + i for i in range(size)]
+    z = (ctypes.c_double * (4 * size))(*([guard] * (4 * size)))
+    x = (ctypes.c_double * size)(*xvals)
+    y = (ctypes.c_double * size)(*yvals)
+    call(ctypes.byref(z), ctypes.byref(x), ctypes.byref(y))
+
+    assert list(z)[:size] == yvals
+    assert all(val == guard for val in list(z)[size:]), f"wrote past the UDT element: {list(z)}"
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_array_udf_returns_new_array():
+    """An array-UDT UDF may build its result instead of returning an operand.
+
+    The wrapper hands the UDF a numpy view of each element in the UDT's
+    declared shape, so ordinary array expressions work and the result is copied
+    back element-wise.
+    """
+    udt = dtypes.register_anonymous(np.dtype((np.float64, (8,))), "_ArrRetUDT")
+    v = Vector(udt, size=2)
+    v[0] = np.arange(8.0)
+    v[1] = np.arange(8.0, 16.0)
+    w = Vector(udt, size=2)
+    w[0] = np.full(8, 100.0)
+    w[1] = np.full(8, 200.0)
+
+    def _add(x, y):
+        return x + y  # pragma: no cover (numba)
+
+    add_op = BinaryOp.register_anonymous(_add, "_arr_ret_add", is_udt=True)
+    result = add_op(v & w).new()
+    np.testing.assert_array_equal(result[0].new().value, np.arange(8.0) + 100.0)
+    np.testing.assert_array_equal(result[1].new().value, np.arange(8.0, 16.0) + 200.0)
+
+    def _double(x):
+        return x * 2  # pragma: no cover (numba)
+
+    double_op = UnaryOp.register_anonymous(_double, "_arr_ret_double", is_udt=True)
+    np.testing.assert_array_equal(double_op(v).new()[0].new().value, np.arange(8.0) * 2)
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_multidim_array_keeps_shape_in_udf():
+    """A multi-dimensional array UDT reaches the UDF in its declared shape.
+
+    The wrapper builds the operand with ``numba.carray(ptr, shape)``, so 2-D
+    indexing and ``.shape`` work. Addressing it as a flat run of elements
+    would still be memory-safe but would silently drop that metadata.
+    """
+    udt2d = dtypes.register_anonymous(np.dtype((np.float64, (2, 3))), "_ArrRet2D")
+    m = Vector(udt2d, size=1)
+    m[0] = np.arange(6.0).reshape(2, 3)
+    n = Vector(udt2d, size=1)
+    n[0] = np.full((2, 3), 10.0)
+
+    def _add_corner(x, y):
+        # Fails to compile unless `x` really is 2-D with shape metadata.
+        return x + y[0, 0] + x.shape[1]  # pragma: no cover (numba)
+
+    add_2d = BinaryOp.register_anonymous(_add_corner, "_arr_ret_add_2d", is_udt=True)
+    np.testing.assert_array_equal(
+        add_2d(m & n).new()[0].new().value, np.arange(6.0).reshape(2, 3) + 10.0 + 3
+    )
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_record_array_field_roundtrip():
+    """A record UDT with an array field writes exactly that field's extent.
+
+    Numba's record-field setitem copies the *destination* extent whatever the
+    source's length, so a short return used to read past the end of the source
+    array. The wrapper slice-assigns array leaves to make that a shape error.
+    """
+    spec = np.dtype([("count", np.int64), ("vec", np.float64, (3,))], align=True)
+    udt = dtypes.register_anonymous(spec, "_RecArrField")
+    v = Vector(udt, size=2)
+    v[0] = (1, [1.0, 2.0, 3.0])
+    v[1] = (2, [4.0, 5.0, 6.0])
+
+    def _combine(x, y):  # pragma: no cover (numba)
+        return (x["count"] + y["count"], x["vec"] + y["vec"])
+
+    op = BinaryOp.register_anonymous(_combine, "_rec_arr_field", is_udt=True)
+    result = v.ewise_mult(v, op).new()
+    assert result[0].new().value["count"] == 2
+    np.testing.assert_array_equal(result[0].new().value["vec"], [2.0, 4.0, 6.0])
+    np.testing.assert_array_equal(result[1].new().value["vec"], [8.0, 10.0, 12.0])
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_auto_semiring():
     """Built-in semirings auto-lift to UDTs and drive ``mxm``/``mxv``/``vxm``."""
