@@ -8,6 +8,7 @@ API Reference
     :maxdepth: 2
 
     collections
+    types
     operators
     io
     exceptions
