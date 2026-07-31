@@ -176,7 +176,9 @@ class UnaryOp(OpBase):
         if name is None:
             name = getattr(func, "__name__", "<anonymous_unary>")
         success = False
-        unary_udf = numba.njit(func)
+        # Set on the Dispatcher, not just the cfunc wrapper; see the note in
+        # ``BinaryOp._build``.
+        unary_udf = numba.njit(func, error_model="numpy")
         new_type_obj = cls(name, func, anonymous=anonymous, is_udt=is_udt, numba_func=unary_udf)
         return_types = {}
         nt = numba.types
@@ -231,7 +233,9 @@ class UnaryOp(OpBase):
                     def unary_wrapper(z, x):
                         z[0] = unary_udf(x[0])  # pragma: no cover (numba)
 
-                unary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(unary_wrapper)
+                unary_wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(
+                    unary_wrapper
+                )
                 new_unary = ffi_new("GrB_UnaryOp*")
                 check_status_carg(
                     lib.GrB_UnaryOp_new(
@@ -453,7 +457,7 @@ class UnaryOp(OpBase):
         ]:
             unop.orig_func = func
             if _has_numba:
-                unop._numba_func = numba.njit(func)
+                unop._numba_func = numba.njit(func, error_model="numpy")
             else:
                 unop._numba_func = None
             unop._udt_types = {}

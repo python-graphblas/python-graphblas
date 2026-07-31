@@ -189,7 +189,7 @@ if _has_numba:
         from ``typed_user_cls.opclass``. ``dtype2`` is ``None`` for unary
         ops; the rest pass both. Returns the cached ``TypedUser*Op``.
         """
-        wrapper = numba.cfunc(wrapper_sig, nopython=True)(wrapper)
+        wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(wrapper)
         c_typename = _GB_OBJ_C_TYPENAME[typed_user_cls.opclass]
         error_label = c_typename.removeprefix("GrB_").removeprefix("GxB_")
         gb_obj = ffi.new(f"{c_typename}*")
