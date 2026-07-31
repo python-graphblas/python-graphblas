@@ -1426,6 +1426,82 @@ def test_select_op_outlives_source_indexunary():
     assert v.select(sel, 5).new().isequal(Vector.from_coo([0, 2], [1, 9], size=3))
 
 
+_jit_can_compile_cache = []
+
+
+def _jit_can_compile():
+    """True when SuiteSparse has a C compiler it can actually use.
+
+    Without one it falls back to the Numba cfunc and says nothing, so the
+    ``jit`` parameter would run the cfunc and report a pass. Any repair of
+    conda-baked compiler paths has already happened in
+    ``_auto_fix_jit_at_import``; calling ``fix_jit_config`` again from here
+    would rewrite process-wide compiler settings that no fixture restores.
+
+    Deliberately does not consult ``jit_c_control``: that is per-test state
+    the fixture sets, and folding it into this cache is what let a demoted
+    control go unnoticed.
+    """
+    if not _jit_can_compile_cache:
+        _jit_can_compile_cache.append(gb.ss.jit_compiler_is_usable())
+    return _jit_can_compile_cache[0]
+
+
+@pytest.fixture(params=["jit", "cfunc"])
+def udt_op_path(request):
+    """Pin SuiteSparse to one execution path for built-in UDT operators.
+
+    Each auto-lifted UDT op carries both a JIT C definition and a Numba
+    cfunc, and SuiteSparse chooses between them per call depending on
+    whether a C compiler is available. A machine with one and a machine
+    without therefore run different code, so results have to hold on both.
+    """
+    path = request.param
+    if backend != "suitesparse" or "jit_c_control" not in gb.ss.config:
+        if path == "jit":
+            pytest.skip("no SuiteSparse JIT on this backend")
+        yield path
+        return
+    previous = gb.ss.config["jit_c_control"]
+    if path == "jit":
+        if not _jit_can_compile():
+            pytest.skip("JIT compilation not available (no usable compiler)")
+        # Set it rather than assume it. SuiteSparse demotes ``on`` to ``load``
+        # after a failed compile, and a demoted control routes to the cfunc
+        # silently, so this parameter would pass while running the other path.
+        gb.ss.config["jit_c_control"] = "on"
+    else:
+        gb.ss.config["jit_c_control"] = "off"
+    try:
+        yield path
+    finally:
+        # Read before restoring: a demotion during the test is the signal that
+        # the kernel never compiled, which no assertion in the test can see.
+        demoted = path == "jit" and gb.ss.config["jit_c_control"] != "on"
+        gb.ss.config["jit_c_control"] = previous
+        if demoted:
+            pytest.fail("SuiteSparse demoted jit_c_control; the JIT path did not run")
+
+
+def _udt_vectors(udt, xs, ys=None):
+    """Build one or two dense UDT vectors whose leaves all hold the given values.
+
+    Values that repeat down the whole vector make it iso-valued, and
+    SuiteSparse answers those from a single element without reaching for a
+    JIT kernel, so callers pass varied data.
+    """
+    names = udt.np_type.names
+    out = []
+    for vals in (xs, ys):
+        if vals is None:
+            continue
+        v = Vector(udt, size=len(vals))
+        for i, val in enumerate(vals):
+            v[i] = tuple(val for _ in names) if names else np.full(udt.np_type.subdtype[1], val)
+        out.append(v)
+    return out
+
+
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_tuple_return_binaryop(record_udt):
