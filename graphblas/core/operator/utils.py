@@ -294,6 +294,52 @@ def get_semiring(monoid, binaryop, name=None):
     return rv
 
 
+def _resolve_index_expr(ns, modname, expr, callname, opname):
+    """Turn an infix comparison expression into an indexunary/select op call.
+
+    Shared by the ``value``/``row``/``column`` helpers in the ``select`` and
+    ``indexunary`` namespaces (and ``select.index``). ``select.valuegt`` is a
+    SelectOp that defaults to ``.select``, while ``indexunary.valuegt`` is an
+    IndexUnaryOp that defaults to ``.apply``, so the same expression resolves to
+    a select or an apply depending on which namespace's ops ``ns`` holds. ``ns``
+    is the namespace module's ``globals()`` dict and ``modname`` is its short
+    name (used in the error messages).
+    """
+    from ..base import BaseExpression
+
+    if not isinstance(expr, BaseExpression):
+        raise TypeError(
+            f"Expected ScalarExpression, VectorExpression, or MatrixExpression; "
+            f"found {type(expr)}\nTypical usage: {modname}.{callname}(x <= 5)"
+        )
+    tensor = expr.args[0]
+    thunk = expr.args[1]
+    method = f"{opname}{expr.op.name}"
+    if method not in ns:
+        # TODO: remove this once rowlt/rowge/collt/colge exist
+        # Convert thunk to Python int to avoid possible subtraction with uints
+        thunk = thunk.value
+        # Attempt to convert < into <= (rowlt is not part of official spec, but rowle is)
+        if expr.op.name == "lt":
+            method = f"{opname}le"
+            thunk -= 1
+        # Attempt to convert >= into > (rowge is not part of official spec, but rowgt is)
+        elif expr.op.name == "ge":
+            method = f"{opname}gt"
+            thunk -= 1
+        if method not in ns:  # pragma: no cover (sanity)
+            raise ValueError(f"Unknown or unregistered {modname} method: {method}")
+    if expr._is_scalar:
+        # Handle ScalarExpressions that change their arguments to Vector
+        if tensor._parent is not None:  # e.g., suitesparse
+            tensor = tensor._parent
+            thunk = thunk._parent
+        else:  # e.g., suitesparse-vanilla
+            tensor = tensor[0].new()
+            thunk = thunk[0].new()
+    return ns[method](tensor, thunk)
+
+
 unary.register_new = UnaryOp.register_new
 unary.register_anonymous = UnaryOp.register_anonymous
 indexbinary.register_new = IndexBinaryOp.register_new
