@@ -28,14 +28,6 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     if dtype is not None:
         dtype = lookup_dtype(dtype).np_type
 
-    # Multigraphs sum the weights of parallel edges. scipy does this by
-    # accumulating duplicate coordinates when a coo array is converted to csr;
-    # replicating it here would need the same self-loop bookkeeping as the
-    # undirected path plus a general dup_op. Defer to scipy so the summation
-    # matches exactly.
-    if G.is_multigraph():
-        return _from_networkx_via_scipy(G, nodelist, dtype, weight, name)
-
     # The node selection below mirrors nx.to_scipy_sparse_array so that empty
     # graphs, nodelist subsets, missing nodes, and duplicate nodes raise the
     # same errors and produce the same ordering. Building the coo arrays here
@@ -78,13 +70,19 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
 
     if G.is_directed():
         rows, cols, vals = row, col, data
-        dup_op = None
+        # A multigraph can have parallel edges (duplicate ``(u, v)``); summing
+        # them with ``plus`` matches scipy's coo -> csr accumulation. A simple
+        # graph has no duplicate coordinates, so ``dup_op=None`` is exact and
+        # skips the accumulator.
+        dup_op = plus if G.is_multigraph() else None
     else:
         # Symmetrize: mirror off-diagonal entries. Self-loops would be double
         # counted, so subtract the diagonal contribution once, matching
         # nx.to_scipy_sparse_array. dup_op=plus then sums the diagonal triple
-        # (wt + wt - wt) back to wt; off-diagonal entries are unique so plus
-        # leaves them untouched.
+        # (wt + wt - wt) back to wt. For a multigraph, plus also sums parallel
+        # edges (duplicate coordinates) the same way scipy's coo -> csr does;
+        # for a simple graph off-diagonal entries are unique so plus is a no-op
+        # there.
         d = data + data
         r = row + col
         c = col + row
