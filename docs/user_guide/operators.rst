@@ -149,12 +149,50 @@ Common semirings are:
   - **min_second**
   - **max_first**
   - **max_second**
+  - **plus_first** (sum the left operand's values over the connection pattern)
+  - **plus_second** (sum the right operand's values over the connection pattern)
   - **plus_min**
   - **lor_land**
   - **land_lor**
 
 Semirings are located in the ``graphblas.semiring`` namespace. Additional semirings registered
 from numpy are located in ``graphblas.semiring.numpy``.
+
+The ``first`` and ``second`` semirings
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``first`` binary operator returns its left input and ``second`` returns its right input,
+each ignoring the other. Combined with the ``plus`` monoid they give two semirings that read
+the values of only one input during a multiply:
+
+  - ``plus_first``: for ``C << A.mxm(B, semiring.plus_first)``, each ``C[i, k]`` is the sum of
+    ``A[i, j]`` over the ``j`` where both ``A[i, j]`` and ``B[j, k]`` are present. ``B``
+    contributes only its structure; its stored values are never read.
+  - ``plus_second``: the mirror image. Each ``C[i, k]`` sums ``B[j, k]`` over those same ``j``,
+    and ``A`` contributes only its structure.
+
+These are the natural choice when one operand is a boolean or *iso* (single-valued) adjacency
+matrix, where a ``plus_times`` multiply either multiplies by one (a no-op) or rescales every
+term by the same constant. ``first`` and ``second`` skip the product and accumulate one side's
+values directly over the connection pattern. On a 0/1 matrix, ``plus_first`` counts the
+length-two paths between each pair of nodes.
+
+.. code-block:: python
+
+    from graphblas import Matrix, semiring
+
+    # A: 0->1 (10), 0->2 (20);  B: 1->0 (3), 2->0 (7)
+    # A @ B reaches node 0 from node 0 through j = 1 and j = 2.
+    A = Matrix.from_coo([0, 0], [1, 2], [10, 20], nrows=3, ncols=3)
+    B = Matrix.from_coo([1, 2], [0, 0], [3, 7], nrows=3, ncols=3)
+
+    A.mxm(B, semiring.plus_first).new()   # C[0, 0] == 30   (10 + 20, taken from A)
+    A.mxm(B, semiring.plus_second).new()  # C[0, 0] == 10   ( 3 +  7, taken from B)
+    A.mxm(B, semiring.plus_times).new()   # C[0, 0] == 170  (10*3 + 20*7)
+
+The same ``first`` / ``second`` choice pairs with other monoids: ``min_first`` and ``min_second``
+(listed above) carry a value along an edge without combining it, the pattern behind
+label-propagation traversals.
 
 IndexUnary Operators
 --------------------
