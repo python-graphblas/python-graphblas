@@ -5,9 +5,16 @@ import numpy as np
 
 from .. import backend, binary, monoid, select, semiring
 from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
-from ..exceptions import DimensionMismatch, InvalidValue, NoValue, check_status
+from ..exceptions import (
+    DimensionMismatch,
+    GrB_NO_VALUE,
+    InvalidValue,
+    NoValue,
+    check_status,
+    check_status_carg,
+)
 from . import _supports_udfs, automethods, ffi, lib, utils
-from .base import BaseExpression, BaseType, _check_mask, call
+from .base import BaseExpression, BaseType, _check_mask, _is_recording, call
 from .descriptor import lookup as descriptor_lookup
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, InfixExprBase, Updater
 from .mask import Mask, StructuralMask, ValueMask
@@ -801,6 +808,45 @@ class Matrix(BaseType):
         Python scalar
 
         """
+        # Fast path for plain integer indices: call GrB_Matrix_extractElement
+        # directly instead of building an extract expression, which costs ~10x
+        # more than the C call for single-element access. Fall back when a
+        # Recorder is active (so the call is recorded) and for UDTs (whose
+        # values need numpy-based conversion in Scalar.value).
+        if not self.dtype._is_udt and not _is_recording():
+            try:
+                rowidx = row.__index__()
+                colidx = col.__index__()
+            except (AttributeError, TypeError):
+                rowidx = None
+            else:
+                if isinstance(row, (bool, np.bool_)) or isinstance(col, (bool, np.bool_)):
+                    rowidx = None
+            if rowidx is not None:
+                nrows = self._nrows
+                ncols = self._ncols
+                if rowidx < 0:
+                    rowidx += nrows
+                if rowidx < 0 or rowidx >= nrows:
+                    raise IndexError(f"Index out of range: index={row}, size={nrows}")
+                if colidx < 0:
+                    colidx += ncols
+                if colidx < 0 or colidx >= ncols:
+                    raise IndexError(f"Index out of range: index={col}, size={ncols}")
+                if self._is_transposed:
+                    # TransposedMatrix reuses this method; gb_obj is the
+                    # untransposed parent, so extract the mirrored element.
+                    rowidx, colidx = colidx, rowidx
+                dtype = self.dtype
+                res = ffi_new(f"{dtype.c_type}*")
+                err_code = utils.libget(f"GrB_Matrix_extractElement_{dtype.name}")(
+                    res, self.gb_obj[0], rowidx, colidx
+                )
+                if err_code:
+                    if err_code == GrB_NO_VALUE:
+                        return default
+                    check_status_carg(err_code, "Matrix", self.gb_obj[0])
+                return res[0]
         expr = self[row, col]
         if expr._is_scalar:
             rv = expr.new().value
