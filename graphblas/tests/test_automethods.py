@@ -3,19 +3,24 @@
 ``graphblas/core/automethods.py`` is a generated-code module. Its name sets
 (near line 347) drive ``scripts/autogenerate.py``, which copies auto-compute
 properties onto the expression classes (``VectorExpression`` /
-``VectorIndexExpr`` and the Scalar/Matrix equivalents) so that, for example,
-``(A @ B).to_coo()`` works without a manual ``.new()`` first.
+``VectorIndexExpr`` / ``VectorInfixExpr`` and the Scalar/Matrix equivalents) so
+that, for example, ``(A @ B).to_coo()`` works without a manual ``.new()`` first.
+The same generator run emits the surface onto the infix classes too (the
+infix.py branch of ``automethods._main()``), minus the private ``_get_value``
+helper, so the infix classes must carry the identical public surface.
 
 The trap this module closes: add a public method to ``Matrix``/``Vector``/
 ``Scalar``, forget to add its name to the sets and rerun the generator, and
 nothing fails. The expression classes silently lack the method, but the concrete
-types have it, so CI stays green.
+types have it, so CI stays green. A name that lands on the plain expression
+classes but is missing from the infix classes slips through the same way.
 
 The tests here assert, for each concrete type and for ``TransposedMatrix``:
 
-1. Forward: every public method/property is EITHER reachable on the expression
-   classes via auto-compute OR listed in ``OPT_OUT`` with a reason. Mutating
-   methods, constructors, and cheap metadata deliberately do not auto-compute.
+1. Forward: every public method/property is EITHER reachable on ALL of the
+   expression classes (plain, index, and infix) via auto-compute OR listed in
+   ``OPT_OUT`` with a reason. Mutating methods, constructors, and cheap metadata
+   deliberately do not auto-compute.
 2. Reverse: every auto-generated name still exists on the concrete type (a
    rename that leaves a stale set entry is caught at import already, but this
    makes the failure legible).
@@ -24,8 +29,10 @@ The tests here assert, for each concrete type and for ``TransposedMatrix``:
 
 Coverage is derived at runtime from what the generator actually emitted onto the
 expression classes (properties whose getter lives in the ``automethods`` module),
-not from a second copy of the name sets. That keeps this test honest if the sets
-are reorganized: only a real change in the generated surface moves coverage.
+intersected across every variant so a name reachable on some classes but absent
+from another (e.g. only the infix class) counts as uncovered. It is not a second
+copy of the name sets, which keeps this test honest if the sets are reorganized:
+only a real change in the generated surface moves coverage.
 
 Dunder scope: value-forwarding dunders such as ``__getitem__``, ``__contains__``,
 and ``__matmul__`` are generated and thus checked. Arithmetic and comparison
@@ -36,6 +43,7 @@ Python object machinery is excluded via a baseline class so new
 interpreter-version dunders never make this test flaky.
 """
 
+from graphblas.core.infix import MatrixInfixExpr, ScalarInfixExpr, VectorInfixExpr
 from graphblas.core.matrix import (
     Matrix,
     MatrixExpression,
@@ -143,14 +151,17 @@ OPT_OUT = {
     },
 }
 
-# Concrete type + the expression classes the generator targets for it.
+# Concrete type + the expression classes the generator targets for it: the plain
+# expression, the index expression, and the infix expression. Coverage is the
+# intersection across all three, so a name emitted onto some but not the infix
+# class is treated as uncovered.
 # TransposedMatrix has no expression class of its own; as a read-only Matrix view
 # it shares Matrix's generated surface.
 _REGISTRY = {
-    "Scalar": (Scalar, (ScalarExpression, ScalarIndexExpr)),
-    "Vector": (Vector, (VectorExpression, VectorIndexExpr)),
-    "Matrix": (Matrix, (MatrixExpression, MatrixIndexExpr)),
-    "TransposedMatrix": (TransposedMatrix, (MatrixExpression, MatrixIndexExpr)),
+    "Scalar": (Scalar, (ScalarExpression, ScalarIndexExpr, ScalarInfixExpr)),
+    "Vector": (Vector, (VectorExpression, VectorIndexExpr, VectorInfixExpr)),
+    "Matrix": (Matrix, (MatrixExpression, MatrixIndexExpr, MatrixInfixExpr)),
+    "TransposedMatrix": (TransposedMatrix, (MatrixExpression, MatrixIndexExpr, MatrixInfixExpr)),
 }
 
 
@@ -240,22 +251,33 @@ def _own_dunders(cls):
     return {n for n in vars(cls) if n.startswith("__") and n.endswith("__")}
 
 
-def _generated_coverage(*expr_classes):
-    """Names the generator emitted onto ``expr_classes``.
+def _generated_coverage_one(expr_class):
+    """Names the generator emitted onto a single ``expr_class``.
 
-    A name counts as covered when the expression class exposes it as a property
-    whose getter is defined in the automethods module, or as a callable copied
-    from that module (the ``__iadd__``-style guards). This reads the actual
-    generated surface, so it tracks the name sets without duplicating them.
+    A name counts as covered when the class exposes it as a property whose getter
+    is defined in the automethods module, or as a callable copied from that module
+    (the ``__iadd__``-style guards). This reads the actual generated surface, so it
+    tracks the name sets without duplicating them.
     """
     names = set()
-    for expr_class in expr_classes:
-        for klass in expr_class.__mro__:
-            for name, value in vars(klass).items():
-                func = value.fget if isinstance(value, property) else value
-                if callable(func) and getattr(func, "__module__", None) == _AUTOMETHODS_MODULE:
-                    names.add(name)
+    for klass in expr_class.__mro__:
+        for name, value in vars(klass).items():
+            func = value.fget if isinstance(value, property) else value
+            if callable(func) and getattr(func, "__module__", None) == _AUTOMETHODS_MODULE:
+                names.add(name)
     return names
+
+
+def _generated_coverage(*expr_classes):
+    """Names the generator emitted onto EVERY class in ``expr_classes``.
+
+    The intersection: a name is covered only when it is reachable on all variants
+    (plain expression, index expression, and infix expression). One emitted onto
+    some but not others counts as uncovered, which is how a name missing from just
+    the infix surface is caught.
+    """
+    per_class = [_generated_coverage_one(cls) for cls in expr_classes]
+    return set.intersection(*per_class) if per_class else set()
 
 
 def _coverage(label):
