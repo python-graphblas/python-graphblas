@@ -356,7 +356,16 @@ class Scalar(BaseType):
             rv = np.array(ffi.buffer(scalar.gb_obj[0 : np_type.itemsize]))
             if np_type.subdtype is None:
                 return rv.view(np_type)[0]
-            return rv.view(np_type.subdtype[0]).reshape(np_type.subdtype[1])
+            # Collapse nested subarray dtypes before viewing. numpy keeps them
+            # layered, so a 6-long array of 5-long FP64 arrays has
+            # ``subdtype == (dtype(('<f8', (5,))), (6,))``; viewing all 240
+            # bytes as that 40-byte subarray dtype raises instead of reading
+            # the element.
+            base, shape = np_type.subdtype
+            while base.subdtype is not None:
+                inner_base, inner_shape = base.subdtype
+                base, shape = inner_base, shape + inner_shape
+            return rv.view(base).reshape(shape)
         return scalar.gb_obj[0]
 
     @value.setter

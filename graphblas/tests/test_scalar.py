@@ -248,6 +248,28 @@ def test_udt_scalar_padding_is_zeroed():
     assert raw == Scalar.from_value((3, 4.0), dtype=udt).value.tobytes()
 
 
+def test_udt_scalar_nested_array_roundtrip():
+    """A UDT whose element is itself an array dtype reads back at full extent.
+
+    numpy keeps subarray dtypes layered rather than flattening them, so a
+    6-long array of 5-long FP64 arrays reports ``subdtype`` as a 40-byte inner
+    dtype with shape ``(6,)``. Viewing all 240 bytes as that inner dtype raised
+    ValueError: "Changing the dtype to a subarray type is only supported if the
+    total itemsize is unchanged".
+    """
+    inner = np.dtype((np.float64, (5,)))
+    udt = dtypes.register_anonymous(np.dtype((inner, (6,))), "_NestedArrayUdt")
+    assert udt.np_type.itemsize == 240
+    assert udt.np_type.subdtype[0].subdtype is not None  # genuinely nested
+
+    val = np.arange(30, dtype=np.float64).reshape(6, 5)
+    got = Scalar.from_value(val, dtype=udt).value
+    # Assert the values, not just that it did not raise: a wrong collapse
+    # produces a correctly-shaped but transposed array.
+    assert got.shape == (6, 5)
+    np.testing.assert_array_equal(got, val)
+
+
 def test_nvals(s):
     assert s.nvals == 1
     s.clear()
