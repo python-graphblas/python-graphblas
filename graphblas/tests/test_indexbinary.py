@@ -300,6 +300,32 @@ def test_bind_raw_array_udt_theta():
         delattr(indexbinary, "raw_array_udt_op")
 
 
+def test_array_udt_udf_shape_is_checked():
+    """An IBO whose UDF builds a wrong-shape array is rejected at registration.
+
+    The same guard the binary and unary paths get. Numba's ``Array`` type
+    carries ``ndim`` but not extents, so the mismatch is not a type error; left
+    to the wrapper it raises inside the cfunc, where Numba prints the traceback
+    and returns, leaving the element as SuiteSparse found it.
+    """
+    # A shape of its own: ``register_anonymous`` caches by numpy dtype, so
+    # sharing one with another test would hand back that test's DataType.
+    arr_udt = dtypes.register_anonymous(np.dtype((np.float64, (12,))), "_IboShapeArr12")
+
+    def _truncate(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return (x + y)[:2]
+
+    op = indexbinary.register_anonymous(_truncate, is_udt=True)
+    with pytest.raises(UdfParseError, match=r"shape \(2,\) when run on sample values"):
+        op[arr_udt]
+
+    def _combine(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x + y + theta
+
+    good = indexbinary.register_anonymous(_combine, is_udt=True)
+    assert good[arr_udt].return_type is arr_udt
+
+
 def test_bind_raw_udt_theta_without_dtype_errors():
     """A raw UDT theta with no dtype can't be inferred; the error is clear and actionable."""
     indexbinary.register_new("raw_no_dtype_op", _ibo_return_x, is_udt=True)
