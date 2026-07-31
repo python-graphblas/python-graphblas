@@ -225,7 +225,7 @@ Python-graphblas requires `numba` which enables compiling user-defined Python fu
 Example customized UnaryOp:
 
 ```python
-from graphblas import unary
+from graphblas import unary, Vector
 
 def force_odd_func(x):
     if x % 2 == 0:
