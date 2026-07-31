@@ -57,6 +57,21 @@ except Exception:  # pragma: no cover (debug)
     raise
 
 
+# ``agg.py`` imports ``get_typed_op`` from this module, so the two form an import
+# cycle and we can't import the Aggregator classes at module load. ``agg.py``
+# registers them here when it loads, which ``core.operator.__init__`` does
+# eagerly at import. Before registration no Aggregator instance can exist, so
+# ``get_typed_op`` skips the check entirely.
+_Aggregator = None
+_TypedAggregator = None
+
+
+def _register_aggregator_types(aggregator, typed_aggregator):
+    global _Aggregator, _TypedAggregator
+    _Aggregator = aggregator
+    _TypedAggregator = typed_aggregator
+
+
 def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scalar=False, kind=None):
     if isinstance(op, OpBase):
         # UDTs always get compiled
@@ -93,15 +108,14 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
     if isinstance(op, TypedOpBase):
         return op
 
-    from .agg import Aggregator, TypedAggregator
-
-    if isinstance(op, Aggregator):
-        # agg._any_dtype basically serves the same purpose as op._custom_dtype
-        if op._any_dtype is not None and op._any_dtype is not True:
-            return op[op._any_dtype]
-        return op[dtype]
-    if isinstance(op, TypedAggregator):
-        return op
+    if _Aggregator is not None:
+        if isinstance(op, _Aggregator):
+            # agg._any_dtype basically serves the same purpose as op._custom_dtype
+            if op._any_dtype is not None and op._any_dtype is not True:
+                return op[op._any_dtype]
+            return op[dtype]
+        if isinstance(op, _TypedAggregator):
+            return op
     if isinstance(op, str):
         if kind == "unary":
             op = unary_from_string(op)
