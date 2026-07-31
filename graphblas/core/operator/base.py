@@ -534,16 +534,13 @@ class TypedOpBase:
         "gb_name",
         "_type2",
         "_jit_c_info",
-        "_owns_gb_obj_inst",
+        "_gb_obj_owner",
         "__weakref__",
     )
     # Subclasses whose ``gb_obj`` was allocated via ``GrB_<Type>_new`` /
     # ``GxB_<Type>_new`` (TypedUser*Op, _BoundIndexBinaryOp) override this so
     # ``__del__`` frees the SuiteSparse handle. Built-in typed ops point at
     # SuiteSparse's permanent built-in singletons and must never free.
-    # Specific instances can override via ``_owns_gb_obj_inst`` (set by
-    # the constructor); ``SelectOp._from_indexunary`` aliases an existing
-    # ``GrB_IndexUnaryOp`` and must clear ownership to avoid a double free.
     _owns_gb_obj = False
 
     def __init__(self, parent, name, type_, return_type, gb_obj, gb_name, dtype2=None):
@@ -558,10 +555,12 @@ class TypedOpBase:
         # for this typed op; ``None`` for built-in ops and for UDT ops with
         # no JIT path.
         self._jit_c_info = None
-        # Per-instance ownership override; defaults to the class attribute.
-        # ``SelectOp._from_indexunary`` flips this to ``False`` on aliasing
-        # TypedUserSelectOps so only the IndexUnaryOp frees the handle.
-        self._owns_gb_obj_inst = type(self)._owns_gb_obj
+        # Set when ``gb_obj`` is borrowed from another typed op rather than
+        # allocated here (``SelectOp._from_indexunary``). Storing the owner
+        # both suppresses our free and keeps the handle alive as long as we
+        # point at it; disclaiming ownership without naming an owner would
+        # leave this op holding a dangling handle.
+        self._gb_obj_owner = None
 
     @property
     def jit_c_name(self):
@@ -594,11 +593,14 @@ class TypedOpBase:
 
     def __del__(self):
         # Free the SuiteSparse handle we allocated. Built-in typed ops alias
-        # SuiteSparse's permanent built-in singletons and must never free, so
-        # gate on the per-instance owns flag (defaults to the class
-        # attribute; the alias case overrides to False). Mirrors the
-        # ``Matrix.__del__`` / ``Vector.__del__`` pattern.
-        if not getattr(self, "_owns_gb_obj_inst", False):
+        # SuiteSparse's permanent built-in singletons and must never free.
+        # Mirrors the ``Matrix.__del__`` / ``Vector.__del__`` pattern.
+        if not type(self)._owns_gb_obj:
+            return
+        # A borrowed handle belongs to ``_gb_obj_owner``, which we keep alive.
+        # ``getattr`` guards the case where ``__init__`` raised before the slot
+        # was set.
+        if getattr(self, "_gb_obj_owner", None) is not None:
             return
         gb_obj = getattr(self, "gb_obj", None)
         if gb_obj is None or lib is None or ffi is None:
