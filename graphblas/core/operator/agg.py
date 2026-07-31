@@ -776,4 +776,6 @@ if backend == "suitesparse":
 agg.Aggregator = Aggregator
 agg.TypedAggregator = TypedAggregator
 
-from .utils import get_typed_op  # noqa: E402 isort:skip
+from .utils import _register_aggregator_types, get_typed_op  # noqa: E402 isort:skip
+
+_register_aggregator_types(Aggregator, TypedAggregator)
