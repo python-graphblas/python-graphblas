@@ -35,39 +35,9 @@ def __getattr__(key):
 
 
 def _resolve_expr(expr, callname, opname):
-    from ..core.base import BaseExpression
+    from ..core.operator.utils import _resolve_index_expr
 
-    if not isinstance(expr, BaseExpression):
-        raise TypeError(
-            f"Expected ScalarExpression, VectorExpression, or MatrixExpression; "
-            f"found {type(expr)}\nTypical usage: select.{callname}(x <= 5)"
-        )
-    tensor = expr.args[0]
-    thunk = expr.args[1]
-    method = f"{opname}{expr.op.name}"
-    if method not in globals():
-        # TODO: remove this once rowlt/rowge/collt/colge exist
-        # Convert thunk to Python int to avoid possible subtraction with uints
-        thunk = thunk.value
-        # Attempt to convert < into <= (rowlt is not part of official spec, but rowle is)
-        if expr.op.name == "lt":
-            method = f"{opname}le"
-            thunk -= 1
-        # Attempt to convert >= into > (rowge is not part of official spec, but rowgt is)
-        elif expr.op.name == "ge":
-            method = f"{opname}gt"
-            thunk -= 1
-        if method not in globals():  # pragma: no cover (sanity)
-            raise ValueError(f"Unknown or unregistered select method: {method}")
-    if expr._is_scalar:
-        # Handle ScalarExpressions that change their arguments to Vector
-        if tensor._parent is not None:  # e.g., suitesparse
-            tensor = tensor._parent
-            thunk = thunk._parent
-        else:  # e.g., suitesparse-vanilla
-            tensor = tensor[0].new()
-            thunk = thunk[0].new()
-    return globals()[method](tensor, thunk)
+    return _resolve_index_expr(globals(), "select", expr, callname, opname)
 
 
 def _match_expr(parent, expr):
