@@ -246,7 +246,9 @@ class IndexBinaryOp(OpBase):
         if name is None:
             name = getattr(func, "__name__", "<anonymous_indexbinary>")
         success = False
-        indexbinary_udf = numba.njit(func)
+        # Set on the Dispatcher, not just the cfunc wrapper; see the note in
+        # ``BinaryOp._build``.
+        indexbinary_udf = numba.njit(func, error_model="numpy")
         new_type_obj = cls(
             name, func, anonymous=anonymous, is_udt=is_udt, numba_func=indexbinary_udf
         )
@@ -333,7 +335,9 @@ class IndexBinaryOp(OpBase):
                     ):  # pragma: no cover (numba)
                         z[0] = indexbinary_udf(x[0], ix, jx, y[0], iy, jy, theta[0])
 
-                indexbinary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(indexbinary_wrapper)
+                indexbinary_wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(
+                    indexbinary_wrapper
+                )
                 new_idxbinop = ffi_new("GxB_IndexBinaryOp*")
                 check_status_carg(
                     lib.GxB_IndexBinaryOp_new(
@@ -392,7 +396,9 @@ class IndexBinaryOp(OpBase):
             numba_func, ret_type, dtype, dtype2, numba_ret_type=numba_ret_type
         )
 
-        indexbinary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(indexbinary_wrapper)
+        indexbinary_wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(
+            indexbinary_wrapper
+        )
         new_idxbinop = ffi_new("GxB_IndexBinaryOp*")
         check_status_carg(
             lib.GxB_IndexBinaryOp_new(

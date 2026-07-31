@@ -525,7 +525,14 @@ class BinaryOp(OpBase):
         if name is None:
             name = getattr(func, "__name__", "<anonymous_binary>")
         success = False
-        binary_udf = numba.njit(func)
+        # The error model has to be set here, not only on the cfunc wrapper
+        # below: ``.compile(sig)`` further down builds the specialization the
+        # wrapper then reuses, and a Dispatcher keeps one compilation per
+        # signature. Whichever compile happens first fixes the model, so
+        # setting it only on the wrapper leaves ``x // 0`` raising
+        # ZeroDivisionError inside a cfunc, where Numba prints the traceback
+        # and returns, handing GraphBLAS an element it never wrote.
+        binary_udf = numba.njit(func, error_model="numpy")
         new_type_obj = cls(name, func, anonymous=anonymous, is_udt=is_udt, numba_func=binary_udf)
         return_types = {}
         nt = numba.types
@@ -581,7 +588,9 @@ class BinaryOp(OpBase):
                     def binary_wrapper(z, x, y):  # pragma: no cover (numba)
                         z[0] = binary_udf(x[0], y[0])
 
-                binary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(binary_wrapper)
+                binary_wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(
+                    binary_wrapper
+                )
                 new_binary = ffi_new("GrB_BinaryOp*")
                 check_status_carg(
                     lib.GrB_BinaryOp_new(
@@ -981,7 +990,7 @@ class BinaryOp(OpBase):
             (binary.any, _second),
         ]:
             binop.orig_func = func
-            binop._numba_func = numba.njit(func) if _has_numba else None
+            binop._numba_func = numba.njit(func, error_model="numpy") if _has_numba else None
             binop._udt_types = {}
             binop._udt_ops = {}
         binary.any._numba_func = binary.second._numba_func
