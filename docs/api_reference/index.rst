@@ -11,4 +11,5 @@ API Reference
     types
     operators
     io
+    utilities
     exceptions
