@@ -299,6 +299,42 @@ class Vector(BaseType):
             v[:] = 1
 
         """
+        # Fast path for `v[i] = scalar`: a plain integer index and an exact-fit
+        # Python scalar, with no mask/accum/opts, a non-UDT dtype, and no active
+        # Recorder. This mirrors what Updater -> _assign_element does for a
+        # single element, but skips building the resolver, Updater, and Scalar.
+        # Only int/float/bool/complex are taken here so the dtype inference and
+        # cffi coercion match _assign_element exactly; everything else (slices,
+        # fancy indexing, numpy or Scalar values, `v(mask)[i] << x`) falls back
+        # to the full assign path, leaving mask/accum and coercion unchanged.
+        if (
+            not opts
+            and type(expr) in (int, float, bool, complex)
+            and not self.dtype._is_udt
+            and not _is_recording()
+        ):
+            try:
+                idx = keys.__index__()
+            except (AttributeError, TypeError):
+                idx = None
+            else:
+                if isinstance(keys, (bool, np.bool_)):
+                    idx = None
+            if idx is not None:
+                size = self._size
+                if idx < 0:
+                    idx += size
+                if idx < 0 or idx >= size:
+                    raise IndexError(f"Index out of range: index={keys}, size={size}")
+                vdtype = lookup_dtype(type(expr), expr)
+                cvalue = ffi_new(f"{vdtype.c_type}*")
+                cvalue[0] = expr  # cffi coercion, identical to the Scalar.value setter
+                err_code = utils.libget(f"GrB_Vector_setElement_{vdtype.name}")(
+                    self.gb_obj[0], cvalue[0], idx
+                )
+                if err_code:
+                    check_status_carg(err_code, "Vector", self.gb_obj[0])
+                return
         Updater(self, opts=opts)[keys] = expr
 
     def __contains__(self, index):
@@ -312,6 +348,35 @@ class Vector(BaseType):
             15 in v
 
         """
+        # Fast path for a plain integer index: probe with
+        # GrB_Vector_extractElement directly instead of building an extract
+        # expression and Scalar. An out-of-range index falls through to the
+        # expression path so it raises the same IndexError as the slow path.
+        # Fall back for a UDT dtype and an active Recorder (so the call is
+        # recorded), mirroring Vector.get.
+        if not self.dtype._is_udt and not _is_recording():
+            try:
+                idx = index.__index__()
+            except (AttributeError, TypeError):
+                idx = None
+            else:
+                if isinstance(index, (bool, np.bool_)):
+                    idx = None
+            if idx is not None:
+                size = self._size
+                if idx < 0:
+                    idx += size
+                if 0 <= idx < size:
+                    dtype = self.dtype
+                    res = ffi_new(f"{dtype.c_type}*")
+                    err_code = utils.libget(f"GrB_Vector_extractElement_{dtype.name}")(
+                        res, self.gb_obj[0], idx
+                    )
+                    if err_code:
+                        if err_code == GrB_NO_VALUE:
+                            return False
+                        check_status_carg(err_code, "Vector", self.gb_obj[0])
+                    return True
         extractor = self[index]
         if not extractor._is_scalar:
             raise TypeError(
