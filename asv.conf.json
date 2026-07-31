@@ -1,0 +1,73 @@
+{
+  // asv (airspeed velocity) config for python-graphblas.
+  //
+  // Placement: this file and the benchmarks/ directory are intended to live at the
+  // repo root (next to pyproject.toml). The paths below are relative to that root.
+  // asv's config loader strips these // line comments; a strict JSON linter will
+  // not. If the repo's pre-commit `check-json` hook is enabled, exclude this file
+  // (asv.conf.json is asv's own format, and its docs use // comments).
+  //
+  // Typical use:
+  //   asv run                     # benchmark current commit
+  //   asv continuous main HEAD    # compare a branch against main
+  //   asv publish && asv preview  # build/serve the HTML report
+
+  "version": 1,
+  "project": "python-graphblas",
+  "project_url": "https://github.com/python-graphblas/python-graphblas",
+
+  // "." means the repo that contains this file. python-graphblas is pure Python, so
+  // building each commit is a cheap editable install; the C library comes from the
+  // separate suitesparse-graphblas package, pinned in the matrix below.
+  "repo": ".",
+  "branches": ["main"],
+  "dvcs": "git",
+
+  // conda matches the project's primary dev path and lets us pin the C library
+  // cleanly from conda-forge. asv will use mamba automatically if it is installed.
+  "environment_type": "conda",
+  "conda_channels": ["conda-forge"],
+
+  // PINNING NOTE: python-suitesparse-graphblas (the C library) is pinned so a run
+  // measures python-graphblas-side regressions in isolation. To instead track
+  // end-to-end performance including C-library changes, drop the pin (set it to [])
+  // or bump it deliberately. Keep this in sync with the PSG version the suite is
+  // calibrated against (see scripts/ci_pick_versions.py PSG pools).
+  "matrix": {
+    "req": {
+      "python-suitesparse-graphblas": ["10.3.1.0"],
+      "numpy": [],
+      "scipy": [],
+      "pandas": [],
+      "numba": []
+    }
+  },
+
+  // python-graphblas is pure Python: a no-build-isolation editable install is fast
+  // and reuses the already-solved conda env (which supplies the C library plus
+  // numba/scipy/pandas). asv substitutes {build_dir} for the checkout of each commit.
+  "build_command": [],
+  "install_command": [
+    "in-dir={build_dir} python -m pip install --no-build-isolation --no-deps -e ."
+  ],
+  "uninstall_command": [
+    "in-dir={build_dir} python -m pip uninstall -y python-graphblas"
+  ],
+
+  "benchmark_dir": "benchmarks",
+  "env_dir": ".asv/env",
+  "results_dir": ".asv/results",
+  "html_dir": ".asv/html",
+
+  // Give the C-library install room to solve/download.
+  "install_timeout": 900,
+
+  // Isolate JIT/compiler and thread-count noise so numbers are comparable across
+  // runs. GraphBLAS is multithreaded by default; pin to 1 thread for reproducible
+  // single-core timings (raise this in a dedicated run if you want to benchmark
+  // parallel scaling instead).
+  "environment_variables": {
+    "OMP_NUM_THREADS": "1",
+    "GRAPHBLAS_TEST_SEED": "0"
+  }
+}
