@@ -367,12 +367,18 @@ class Scalar(BaseType):
                 val = val.value  # raise below if wrong type (as determined by cffi)
             if self.dtype._is_udt:
                 np_type = self.dtype.np_type
+                # Zeros, not empty: ``arr[:] = val`` writes the fields and skips
+                # a record's alignment padding, while ``tobytes()`` below copies
+                # the whole buffer, so uninitialized padding reaches the
+                # GrB_Scalar and reads back out of ``Scalar.value``. Anything
+                # that compares or hashes those raw bytes then sees an
+                # equal-valued scalar as unequal.
                 if np_type.subdtype is None:
-                    arr = np.empty(1, dtype=np_type)
+                    arr = np.zeros(1, dtype=np_type)
                     if isinstance(val, dict) and np_type.names is not None:
                         val = _dict_to_record(np_type, val)
                 else:
-                    arr = np.empty(np_type.subdtype[1], dtype=np_type.subdtype[0])
+                    arr = np.zeros(np_type.subdtype[1], dtype=np_type.subdtype[0])
                 arr[:] = val
                 # tobytes() flattens any-rank numpy buffers (in particular,
                 # multi-dim array UDTs like ``FP64[2, 3]``) to a 1-D byte

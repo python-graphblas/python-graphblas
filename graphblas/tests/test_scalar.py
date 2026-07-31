@@ -213,6 +213,28 @@ def test_isclose_udt_raises():
     assert s.isequal(other)
 
 
+def test_udt_scalar_padding_is_zeroed():
+    """A record UDT's alignment padding is zeroed, not left as process memory.
+
+    ``arr[:] = val`` writes the fields and skips the padding between them, and
+    the buffer is then copied whole into the GrB_Scalar. Built on ``np.empty``
+    that shipped uninitialized bytes into ``Scalar.value``.
+    """
+    # int8 then float64 leaves 7 bytes of padding under C alignment rules.
+    udt = dtypes.register_anonymous(
+        np.dtype([("pad_a", np.int8), ("pad_b", np.float64)], align=True), "_PaddingUdt"
+    )
+    assert udt.np_type.itemsize == 16  # 1 + 7 padding + 8
+
+    # numpy serves a small buffer from a cache of recently freed blocks, so
+    # dirtying one of the right size first is what makes an uninitialized
+    # allocation read back as junk rather than as incidentally-zero memory.
+    junk = np.full(udt.np_type.itemsize, 0xAA, dtype=np.uint8)
+    del junk
+    raw = Scalar.from_value((3, 4.0), dtype=udt).value.tobytes()
+    assert raw[1:8] == bytes(7), f"alignment padding leaked into the scalar: {raw!r}"
+
+
 def test_nvals(s):
     assert s.nvals == 1
     s.clear()
