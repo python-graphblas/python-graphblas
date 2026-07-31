@@ -670,6 +670,59 @@ def test_get(s):
     assert s.get("mittens") == "mittens"
 
 
+@autocompute
+def test_index_expr_value_fast_path():
+    """v[i].value / float(v[i]) resolve with a single extract (see automethods).
+
+    The read must match get() / .new().value exactly and the UDT + Recorder
+    fallbacks must keep working; autocompute=False still raises (tested below).
+    """
+    v = Vector.from_coo([0, 2, 5], [1.5, 2.5, 3.5], size=10)
+    assert v[2].value == 2.5
+    assert type(v[2].value) is float
+    assert float(v[2]) == 2.5
+    assert int(v[2]) == 2  # Scalar.__int__ truncates
+    assert v[2].is_empty is False
+    assert v[4].value is None  # miss
+    assert v[4].is_empty is True
+    with pytest.raises(TypeError):
+        float(v[4])  # float(None)
+    assert v[2].value == v[2].new().value == v.get(2)
+
+    A = Matrix.from_coo([0, 1, 4], [1, 2, 6], [1.5, 2.5, 3.5], nrows=5, ncols=7)
+    assert A[1, 2].value == 2.5
+    assert A.T[2, 1].value == 2.5
+    assert A[0, 0].value is None
+
+    # UDT reads defer to `.new()` (numpy conversion in Scalar.value)
+    udt = dtypes.register_anonymous(
+        np.dtype([("sx", np.int64), ("sy", np.float64)]), "_ScalarValueFastUdt"
+    )
+    u = Vector(udt, 3)
+    u[1] = (7, 2.5)
+    assert u[1].value["sx"] == 7
+    assert u[0].value is None
+
+    # A Recorder must still observe the extract (fall-back path)
+    from graphblas.core.recorder import Recorder
+
+    v2 = Vector.from_coo([0], [1.5], size=4)
+    with Recorder() as rec:
+        assert v2[0].value == 1.5
+    assert "extractElement" in "".join(rec.data)
+
+
+def test_index_expr_value_autocompute_false():
+    """The value path stays gated on autocompute; .new() remains the escape hatch."""
+    v = Vector.from_coo([0, 2, 5], [1.5, 2.5, 3.5], size=10)
+    with gb.config.set(autocompute=False):
+        with pytest.raises(TypeError):
+            v[2].value
+        with pytest.raises(TypeError):
+            float(v[2])
+        assert v[2].new().value == 2.5
+
+
 def test_ss_descriptors(s):
     v = Vector.from_coo([0, 2], [10, 20])
     if suitesparse:
