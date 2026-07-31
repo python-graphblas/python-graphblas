@@ -29,7 +29,9 @@ def __getattr__(key):
         ss = import_module(".ss", __name__)
         globals()["ss"] = ss
         return ss
-    raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
+    from ..core.utils import _module_attr_error
+
+    raise _module_attr_error(__name__, key, __dir__())
 
 
 def _resolve_expr(expr, callname, opname):
