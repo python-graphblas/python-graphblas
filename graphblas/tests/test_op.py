@@ -1626,6 +1626,223 @@ def test_udt_min_max_answer_what_the_builtin_dtype_answers(udt_op_path, np_dtype
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_truediv_divides_in_floating_point(udt_op_path):
+    """``binary.truediv`` on integer fields must divide the way Python does.
+
+    Regression: the JIT kernel emitted C ``/``, which is integer division.
+    ``10**18 / 3`` came out as 333333333333333333 under the JIT and
+    333333333333333312 (float64, like numpy) through the cfunc, so the same
+    program gave different answers depending on whether a C compiler was
+    installed.
+    """
+    udt = dtypes.register_anonymous(
+        np.dtype([("tdv_i", np.int64), ("tdv_j", np.int64)], align=True), "_TrueDivIntUDT"
+    )
+    xs = [10**18, 10**18 + 1, 7, 22]
+    ys = [3, 3, 2, 7]
+    expected = (np.array(xs, np.int64) / np.array(ys, np.int64)).astype(np.int64)
+    assert expected[0] == 333333333333333312  # not 333333333333333333
+    v, w = _udt_vectors(udt, xs, ys)
+    result = binary.truediv(v & w).new()
+    got = [result[i].new().value[0] for i in range(len(xs))]
+    assert got == list(expected), udt_op_path
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_floordiv_matches_numpy_on_floats(udt_op_path):
+    """``binary.floordiv`` on float fields is not ``floor(a / b)``.
+
+    Regression: the JIT kernel computed ``floor(a / b)``, which rounds
+    differently from the remainder-based algorithm numpy and CPython use and
+    treats infinities as ordinary values. ``1.0 // 0.1`` came out as 10.0
+    instead of 9.0, and ``inf // 2.0`` as ``inf`` instead of NaN, while the
+    cfunc agreed with numpy all along.
+    """
+    nan = float("nan")
+    inf = float("inf")
+    # ``floor(a / b)`` disagrees with numpy on the first four pairs: inf and
+    # -inf where numpy gives NaN, 10.0 rather than 9.0 for 1.0 // 0.1, and
+    # -0.0 rather than -1.0 for -2.0 // inf.
+    xs = [inf, -inf, 1.0, -2.0, 2.0, -2.0, 0.0, nan, -7.0, 7.0, -0.0, 7.5]
+    ys = [2.0, 2.0, 0.1, inf, 0.0, 0.0, 0.0, 2.0, 2.0, -2.0, 4.0, 2.5]
+    for np_dtype, name in ((np.float64, "_FloorDivF64UDT"), (np.float32, "_FloorDivF32UDT")):
+        udt = dtypes.register_anonymous(
+            np.dtype([("fdv_a", np_dtype), ("fdv_b", np_dtype)], align=True), name
+        )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            expected = np.floor_divide(np.array(xs, np_dtype), np.array(ys, np_dtype))
+        v, w = _udt_vectors(udt, xs, ys)
+        result = binary.floordiv(v & w).new()
+        got = np.array([result[i].new().value[0] for i in range(len(xs))], np_dtype)
+        np.testing.assert_array_equal(got, expected, err_msg=f"{udt_op_path} {np_dtype.__name__}")
+        # ``assert_array_equal`` reads -0.0 and 0.0 as equal, so the sign of a
+        # zero quotient needs its own assertion. It is the whole job of the
+        # ``copysign`` branch the JIT kernel emits for an exact-zero result.
+        np.testing.assert_array_equal(
+            np.signbit(got),
+            np.signbit(expected),
+            err_msg=f"{udt_op_path} {np_dtype.__name__} sign of zero",
+        )
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_integer_division_by_zero_is_defined(udt_op_path):
+    """Integer division by zero must return a value rather than trap.
+
+    The JIT kernel divided in integers, where a zero divisor is undefined
+    behaviour: on x86-64 ``idiv`` raises #DE, which is SIGFPE and process
+    death rather than an exception. AArch64's ``sdiv`` returns 0 and does not
+    trap, so this cannot be exhibited on an arm64 machine. The same trap
+    fires on ``INT_MIN / -1``, whose quotient is not representable.
+
+    The values below are a choice, not a discovery. A quotient that doesn't
+    fit the field is an undefined conversion in both C and LLVM, and the two
+    answered differently per field width, so both paths now rule those cases
+    out: a zero divisor gives 0, as ``np.floor_divide`` does, and
+    ``INT_MIN // -1`` wraps to ``INT_MIN``, as numpy does.
+    """
+    signed = dtypes.register_anonymous(
+        np.dtype([("dvz_a", np.int32), ("dvz_b", np.int8)], align=True), "_DivZeroSignedUDT"
+    )
+    unsigned = dtypes.register_anonymous(
+        np.dtype([("dvz_c", np.uint32), ("dvz_d", np.uint64)], align=True), "_DivZeroUnsignedUDT"
+    )
+    v, w = _udt_vectors(signed, [7, -7, 100, -128], [0, 0, 3, -1])
+    for gb_op in (binary.truediv, binary.floordiv):
+        result = gb_op(v & w).new()
+        got = [result[i].new().value[0] for i in range(4)]
+        assert got[:2] == [0, 0], f"{udt_op_path} {gb_op.name}"
+        assert got[2] == 33, f"{udt_op_path} {gb_op.name}"  # 100 / 3 truncates either way
+    # ``-128 // -1`` is the second trapping case; numpy wraps it to INT8_MIN.
+    result = binary.floordiv(v & w).new()
+    assert result[3].new().value[1] == np.iinfo(np.int8).min, udt_op_path
+
+    v, w = _udt_vectors(unsigned, [7, 9, 100, 5], [0, 0, 3, 2])
+    for gb_op in (binary.truediv, binary.floordiv):
+        result = gb_op(v & w).new()
+        got = [result[i].new().value[0] for i in range(4)]
+        assert got == [0, 0, 33, 2], f"{udt_op_path} {gb_op.name}"
+
+    # Floor division still floors for signed operands of mixed sign.
+    v, w = _udt_vectors(signed, [-7, 7, -9, 11], [2, -2, 2, 3])
+    result = binary.floordiv(v & w).new()
+    got = [result[i].new().value[0] for i in range(4)]
+    assert got == [-4, -4, -5, 3], udt_op_path
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not dtypes._supports_complex")
+def test_udt_complex_truediv_by_zero(udt_op_path):
+    """``binary.truediv`` on a complex field survives a zero divisor.
+
+    Numba's complex division raises ``ZeroDivisionError`` unconditionally,
+    outside the error model's control, so the cfunc left the element unwritten
+    while the JIT kernel returned numpy's infinities. Reading back the
+    abandoned element gave uninitialized memory, or the previous element's
+    answer, either of which looks like a plausible value.
+    """
+    udt = dtypes.register_anonymous(
+        np.dtype([("cxz_a", np.complex128)], align=True), "_ComplexDivZeroUDT"
+    )
+    xs = [3 + 4j, 0j, 1 + 1j, 2 - 2j]
+    ys = [0j, 0j, 2 + 0j, 0j]
+    v, w = _udt_vectors(udt, xs, ys)
+    result = binary.truediv(v & w).new()
+    got = np.array([result[i].new().value[0] for i in range(len(xs))])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        expected = np.array(xs) / np.array(ys)
+    np.testing.assert_array_equal(got, expected, err_msg=udt_op_path)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_float_truediv_by_zero_is_infinite(udt_op_path):
+    """A zero divisor on a float field gives numpy's infinity, not a lost element.
+
+    Unlike the integer case, nothing here is guarded: the generated code
+    divides and lets IEEE produce the infinity. That only holds because the
+    generated wrapper is compiled under Numba's numpy error model, which
+    nothing else in the suite pins down.
+    """
+    udt = dtypes.register_anonymous(np.dtype((np.float64, (17,))), "_FloatDivZeroArr17")
+    xs = [1.0, -1.0, 0.0, 6.0]
+    ys = [0.0, 0.0, 0.0, 3.0]
+    v, w = _udt_vectors(udt, xs, ys)
+    result = binary.truediv(v & w).new()
+    got = np.array([result[i].new().value[0] for i in range(len(xs))])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        expected = np.array(xs) / np.array(ys)
+    np.testing.assert_array_equal(got, expected, err_msg=udt_op_path)
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_array_ops_match_record_ops(udt_op_path):
+    """The array-UDT codegen carries the same division and NaN fixes as records.
+
+    Records and flat arrays go through separate branches in both the Numba
+    and the JIT C generators, so each fix has to land in both.
+    """
+    nan = float("nan")
+    inf = float("inf")
+    float_udt = dtypes.register_anonymous(np.dtype((np.float64, (13,))), "_ArrOpsF64")
+    xs = [inf, 1.0, -2.0, nan, -7.0, 2.0]
+    ys = [2.0, 0.1, inf, 2.0, 2.0, 1.0]
+    v, w = _udt_vectors(float_udt, xs, ys)
+    np.testing.assert_array_equal(
+        [binary.floordiv(v & w).new()[i].new().value[0] for i in range(len(xs))],
+        np.floor_divide(np.array(xs), np.array(ys)),
+        err_msg=udt_op_path,
+    )
+    # ``np.fmin``, not ``np.minimum``: ``binary.min`` is SuiteSparse's
+    # ``GrB_MIN_FP64``, which ignores a NaN operand rather than propagating it.
+    np.testing.assert_array_equal(
+        [binary.min(v & w).new()[i].new().value[0] for i in range(len(xs))],
+        np.fmin(np.array(xs), np.array(ys)),
+        err_msg=udt_op_path,
+    )
+
+    int_udt = dtypes.register_anonymous(np.dtype((np.int64, (6,))), "_ArrOpsI64")
+    ixs = [10**18, 7, -7, 100, -9, 5]
+    iys = [3, 0, 0, 3, 2, 2]
+    v, w = _udt_vectors(int_udt, ixs, iys)
+    result = binary.truediv(v & w).new()
+    got = [result[i].new().value[0] for i in range(len(ixs))]
+    assert got == [333333333333333312, 0, 0, 33, -4, 2], udt_op_path
+    result = binary.floordiv(v & w).new()
+    got = [result[i].new().value[0] for i in range(len(ixs))]
+    assert got == [333333333333333333, 0, 0, 33, -5, 2], udt_op_path
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_multidim_array_ops_match_numpy(udt_op_path):
+    """Built-in ops on a multi-dimensional array UDT agree with numpy on both paths.
+
+    The JIT C typedef flattens any rank to ``double v [N]`` and the Numba
+    wrapper walks the same flat run, so a 2-D UDT covers codegen that the 1-D
+    cases reach only by accident of both being contiguous.
+    """
+    udt = dtypes.register_anonymous(np.dtype((np.float64, (3, 2))), "_ArrOps2D")
+    xs = [1.0, -7.0, float("inf"), 2.0]
+    ys = [0.1, 2.0, 2.0, 0.0]
+    v, w = _udt_vectors(udt, xs, ys)
+    for gb_op, reference in (
+        (binary.floordiv, np.floor_divide),
+        (binary.truediv, np.true_divide),
+        # ``fmin`` rather than ``minimum``: these inputs carry no NaN, so the
+        # two agree here, but ``binary.min`` is the NaN-ignoring one.
+        (binary.min, np.fmin),
+    ):
+        result = gb_op(v & w).new()
+        element = result[0].new().value
+        assert element.shape == (3, 2)
+        got = np.array([result[i].new().value[1, 1] for i in range(len(xs))])
+        with np.errstate(divide="ignore", invalid="ignore"):
+            expected = reference(np.array(xs), np.array(ys))
+        np.testing.assert_array_equal(got, expected, err_msg=f"{udt_op_path} {gb_op.name}")
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_tuple_return_binaryop(record_udt):
     v, w = _record_pair(record_udt)
