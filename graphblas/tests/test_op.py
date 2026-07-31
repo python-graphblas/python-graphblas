@@ -1360,6 +1360,52 @@ def test_udt():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udf_division_by_zero_follows_numpy():
+    """Dividing by zero in a UDF returns numpy's answer instead of losing the element.
+
+    Under Numba's default error model the division raises ZeroDivisionError
+    inside the cfunc, where Numba prints the traceback and returns, so
+    GraphBLAS keeps whatever was in the output element (in practice the
+    previous element's value). ``error_model="numpy"`` fixes that, but only if
+    it is set on the ``njit`` Dispatcher: a Dispatcher holds one compilation
+    per signature, and ``_build`` calls ``.compile(sig)`` before the wrapper
+    exists, so setting it on the ``cfunc`` alone comes too late to matter.
+    """
+
+    def _idiv(x, y):  # pragma: no cover (numba)
+        return x // y
+
+    op = BinaryOp.register_anonymous(_idiv, "_udf_zero_idiv")
+    v = Vector.from_coo([0, 1], [10, 20], dtype=dtypes.INT64)
+    w = Vector.from_coo([0, 1], [2, 0], dtype=dtypes.INT64)
+    assert op(v & w).new().to_coo()[1].tolist() == [5, 0]
+
+    def _tdiv(x, y):  # pragma: no cover (numba)
+        return x / y
+
+    op = BinaryOp.register_anonymous(_tdiv, "_udf_zero_tdiv")
+    v = Vector.from_coo([0, 1], [1.0, 1.0], dtype=dtypes.FP64)
+    w = Vector.from_coo([0, 1], [2.0, 0.0], dtype=dtypes.FP64)
+    assert op(v & w).new().to_coo()[1].tolist() == [0.5, float("inf")]
+
+    # Same guarantee for a UDT UDF, which reaches the cfunc by another route.
+    udt = dtypes.register_anonymous(
+        np.dtype([("dz_a", np.int64), ("dz_b", np.int64)], align=True), "_UdfDivZeroRec"
+    )
+
+    def _rec_idiv(x, y):  # pragma: no cover (numba)
+        return (x["dz_a"] // y["dz_a"], x["dz_b"])
+
+    op = BinaryOp.register_anonymous(_rec_idiv, "_udf_zero_rec", is_udt=True)
+    v = Vector(udt, size=1)
+    v[0] = (10, 5)
+    w = Vector(udt, size=1)
+    w[0] = (0, 1)
+    got = v.ewise_mult(w, op).new()[0].new().value
+    assert (got["dz_a"], got["dz_b"]) == (0, 5)
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_select_op_outlives_source_indexunary():
     """A SelectOp keeps alive the IndexUnaryOp whose GraphBLAS handle it borrows.
 

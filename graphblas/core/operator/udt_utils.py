@@ -558,7 +558,7 @@ if _has_numba:
             func_name="_op",
             source_label=f"<gb-udt {py_op!r} record nleaves={len(leaf_paths)} arity={arity}>",
         )
-        return numba.njit(op_func)
+        return numba.njit(op_func, error_model="numpy")
 
     def _make_array_wrapper(
         size,
