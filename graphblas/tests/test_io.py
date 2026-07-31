@@ -160,6 +160,59 @@ def test_matrix_to_from_networkx():
     assert M.shape == (1, 1)
 
 
+@pytest.mark.skipif("not nx")
+def test_from_networkx_undirected():
+    # Undirected graphs go through from_networkx's direct COO path (no scipy),
+    # which symmetrizes off-diagonal entries and keeps self-loops single-counted.
+    G = nx.Graph()
+    G.add_weighted_edges_from([(0, 1, 2.0), (0, 0, 7.0), (1, 2, 3.0)])
+    M = gb.io.from_networkx(G)
+    expected = gb.Matrix.from_coo([0, 0, 1, 1, 2], [0, 1, 0, 2, 1], [7.0, 2.0, 2.0, 3.0, 3.0])
+    assert M.isequal(expected, check_dtype=True)
+
+    # weight=None ignores edge weights (all entries 1) and yields an int Matrix
+    M_none = gb.io.from_networkx(G, weight=None)
+    expected_none = gb.Matrix.from_coo([0, 0, 1, 1, 2], [0, 1, 0, 2, 1], 1)
+    assert M_none.isequal(expected_none, check_dtype=True)
+
+
+@pytest.mark.skipif("not nx or not ss")
+@pytest.mark.parametrize(
+    "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
+)
+def test_from_networkx_rejects_array_weights(graph_cls):
+    # Sequence weights of uniform length infer a 2-D numeric array, which passes
+    # a dtype-kind test but which from_coo would happily read as a UDT. scipy has
+    # always rejected these, so the direct path must defer rather than quietly
+    # widen what from_networkx accepts.
+    G = graph_cls()
+    G.add_edge(0, 1, weight=[1, 2])
+    G.add_edge(1, 0, weight=[3, 4])
+    with pytest.raises(ValueError, match="must be 1-D"):
+        gb.io.from_networkx(G)
+
+
+@pytest.mark.skipif("not nx or not ss")
+@pytest.mark.parametrize(
+    "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
+)
+def test_from_networkx_matches_scipy(graph_cls):
+    # The direct path (simple graphs) and the scipy fallback (multigraphs) must
+    # both reproduce the scipy round-trip exactly, including parallel-edge sums.
+    G = graph_cls()
+    G.add_weighted_edges_from([(0, 1, 2.0), (1, 2, 3.0), (2, 0, 4.0), (0, 0, 5.0)])
+    if G.is_multigraph():
+        G.add_edge(0, 1, weight=1.5)  # parallel edge summed by scipy
+    G.add_edge(3, 4)  # missing weight attr -> default 1
+    G.add_node(9)  # isolated node
+
+    A = nx.to_scipy_sparse_array(G, weight="weight")
+    reference = gb.io.from_scipy_sparse(A)
+    M = gb.io.from_networkx(G, weight="weight")
+    assert M.isequal(reference, check_dtype=True)
+    assert M.shape == reference.shape
+
+
 @pytest.mark.skipif("not ss")
 @pytest.mark.parametrize("engine", ["auto", "scipy", "fmm"])
 def test_mmread_mmwrite(engine):
