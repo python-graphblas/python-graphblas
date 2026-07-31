@@ -173,6 +173,26 @@ For nested record UDTs the tuple is *flat over the leaves*. Given
 return ``(id, x, y)``, not ``(id, (x, y))``. Returning an existing record value
 (e.g., one of the inputs) is also fine and preserves the nested shape.
 
+For array UDTs each operand arrives as a numpy view of that element's values, in
+the UDT's declared shape: a ``np.dtype((np.float64, (2, 4)))`` UDT hands the UDF
+a 2-by-4 array, indexable as ``x[i, j]``. Array expressions work as written, and
+the UDF may return one of its operands or build a new array of the same shape:
+
+.. code-block:: python
+
+    def midpoint(x, y):
+        return (x + y) / 2
+
+    op = binary.register_new("midpoint", midpoint, is_udt=True)
+
+    a = Vector(point3, size=1)
+    a[0] = [0.0, 2.0, 4.0]
+    b = Vector(point3, size=1)
+    b[0] = [10.0, 20.0, 30.0]
+
+    c = a.ewise_mult(b, op[point3]).new()
+    # c[0] = [5.0, 11.0, 17.0]
+
 If your UDF references a field that doesn't exist, or returns the wrong arity,
 you'll get a ``UdfParseError`` with the actionable diagnostic line surfaced
 from Numba's typing pass instead of a 200-line traceback.
