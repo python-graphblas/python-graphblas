@@ -26,7 +26,11 @@ repos:
       - id: check-illegal-windows-names
       - id: check-merge-conflict
       - id: check-ast
-      - id: check-json # no JSON files yet; enabled for the future
+      # `asv.conf.json` is JSONC: asv documents `//` comments and strips them
+      # in its own loader, but this hook is a strict JSON parser. Excluding
+      # that one path keeps the hook live for every other JSON file.
+      - id: check-json
+        exclude: ^asv\.conf\.json$
       - id: check-toml
       - id: check-yaml
       - id: check-executables-have-shebangs
