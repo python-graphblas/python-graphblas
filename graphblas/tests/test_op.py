@@ -1155,6 +1155,15 @@ def test_from_string():
     with pytest.raises(ValueError, match="Unknown agg string"):
         agg.from_string("bad_agg")
 
+    assert select.from_string("tril") is select.tril
+    assert select.from_string(">=") is select.valuege
+    assert indexunary.from_string("rowindex") is indexunary.rowindex
+    assert indexunary.from_string("rowindex[int]") is indexunary.rowindex[int]
+
+    # Every namespace's from_string carries a docstring (GH #513)
+    for ns in [unary, binary, monoid, semiring, select, indexunary, agg, op]:
+        assert ns.from_string.__doc__
+
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
