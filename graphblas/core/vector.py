@@ -768,6 +768,11 @@ class Vector(BaseType):
     def from_coo(cls, indices, values=1.0, dtype=None, *, size=None, dup_op=None, name=None):
         """Create a new Vector from indices and values.
 
+        .. warning::
+            When ``size`` is omitted, it is inferred from the largest index, so
+            trailing empty positions are dropped. Pass ``size`` explicitly to
+            pin the length.
+
         Parameters
         ----------
         indices : list or np.ndarray
