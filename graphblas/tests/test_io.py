@@ -197,12 +197,14 @@ def test_from_networkx_rejects_array_weights(graph_cls):
     "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
 )
 def test_from_networkx_matches_scipy(graph_cls):
-    # The direct path (simple graphs) and the scipy fallback (multigraphs) must
-    # both reproduce the scipy round-trip exactly, including parallel-edge sums.
+    # Both simple graphs and multigraphs now build the coo directly (no scipy
+    # round-trip); the result must reproduce nx.to_scipy_sparse_array exactly,
+    # including parallel-edge and parallel-self-loop weight sums.
     G = graph_cls()
     G.add_weighted_edges_from([(0, 1, 2.0), (1, 2, 3.0), (2, 0, 4.0), (0, 0, 5.0)])
     if G.is_multigraph():
-        G.add_edge(0, 1, weight=1.5)  # parallel edge summed by scipy
+        G.add_edge(0, 1, weight=1.5)  # parallel edge -> weights summed
+        G.add_edge(0, 0, weight=2.5)  # parallel self-loop -> diagonal summed
     G.add_edge(3, 4)  # missing weight attr -> default 1
     G.add_node(9)  # isolated node
 
@@ -211,6 +213,23 @@ def test_from_networkx_matches_scipy(graph_cls):
     M = gb.io.from_networkx(G, weight="weight")
     assert M.isequal(reference, check_dtype=True)
     assert M.shape == reference.shape
+
+
+@pytest.mark.skipif("not nx")
+def test_from_networkx_multigraph_is_scipy_free(monkeypatch):
+    # A numeric-weight multigraph must ingest via the direct coo path, not the
+    # scipy fallback, so networkx ingest no longer requires scipy for this case.
+    import graphblas.io._networkx as _gnx
+
+    def _boom(*args, **kwargs):  # pragma: no cover (only runs if the direct path regresses)
+        raise AssertionError("scipy fallback should not be used for a numeric multigraph")
+
+    monkeypatch.setattr(_gnx, "_from_networkx_via_scipy", _boom)
+    G = nx.MultiDiGraph()
+    G.add_weighted_edges_from([(0, 1, 2.0), (0, 1, 3.0), (2, 0, 1.0), (1, 1, 4.0), (1, 1, 0.5)])
+    M = gb.io.from_networkx(G)
+    assert M[0, 1].new().value == 5.0  # parallel edges summed
+    assert M[1, 1].new().value == 4.5  # parallel self-loops summed
 
 
 @pytest.mark.skipif("not ss")
