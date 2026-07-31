@@ -1124,6 +1124,21 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
             return Scalar(dtype, is_cscalar=is_cscalar, name=name)
         return self.new(dtype, is_cscalar=is_cscalar, name=name, **opts)
 
+    def _extract_fast(self):
+        """Resolve a value read (``.value``, ``float(...)``, ...) with one extract.
+
+        Those readers only need the raw element, so extract it straight into a
+        cscalar and skip the extra GrB_Scalar round-trip that ``.new()`` followed
+        by ``Scalar.value`` would perform. Defer to the full ``.new()`` for UDTs
+        (whose values need numpy conversion in ``Scalar.value``) and while a
+        Recorder is active (so it observes the same calls as the expression path).
+        ``automethods._get_value`` consults this hook for ``_fast_scalar_attrs``.
+        """
+        parent = self.parent
+        if parent.dtype._is_udt or _is_recording():
+            return self.new()
+        return parent._extract_element(self.resolved_indexes, None, {}, is_cscalar=True)
+
     is_cscalar = Scalar.is_cscalar
     is_grbscalar = Scalar.is_grbscalar
     __hash__ = None
