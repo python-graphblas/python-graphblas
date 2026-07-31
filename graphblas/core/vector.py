@@ -1548,7 +1548,7 @@ class Vector(BaseType):
         """
         method_name = "apply"
         extra_message = (
-            "apply only accepts UnaryOp with no scalars or BinaryOp with `left` or `right` scalar"
+            "apply only accepts UnaryOp with no scalars or BinaryOp with `left` or `right` scalar "
             "or IndexUnaryOp with `right` thunk."
         )
         if isinstance(op, str):
