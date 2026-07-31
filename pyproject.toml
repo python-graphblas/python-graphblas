@@ -156,7 +156,19 @@ addopts = [
   "--strict-markers", # Force error if marker is mispelled (must be defined in config)
   "-ra",              # Print summary of all fails/errors
 ]
-markers = ["slow: Skipped unless --runslow passed"]
+markers = [
+  "slow: Skipped unless --runslow passed",
+  # Not applied by our tests. ``scipy.io.tests.test_mmio`` (which
+  # ``test_mmread_mmwrite`` imports for its example matrices) sets it at module
+  # scope for the pytest-run-parallel plugin. Importing the module evaluates the
+  # marker, and with ``--strict-markers`` (always set below) an unregistered
+  # marker fails collection outright, on pytest 8 and 9 alike. Without the
+  # strict flag the same import would only warn (PytestUnknownMarkWarning),
+  # which ``filterwarnings = error`` below would turn into a failure; with it,
+  # the strict route is the only one this configuration ever takes.
+  "thread_unsafe: Declared by scipy's test modules; unused here",
+  "fail_slow: Declared by scipy's test modules; unused here",
+]
 log_cli_level = "info"
 filterwarnings = [
   # See: https://docs.python.org/3/library/warnings.html#describing-warning-filters

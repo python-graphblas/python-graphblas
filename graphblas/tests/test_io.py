@@ -166,6 +166,9 @@ def test_mmread_mmwrite(engine):
     if engine == "fmm" and fmm is None:  # pragma: no cover (import)
         pytest.skip("needs fast_matrix_market")
     try:
+        # Importing this module evaluates ``pytest.mark.thread_unsafe``, which
+        # fails unless the marker is registered; see the ``markers`` entry in
+        # pyproject.toml.
         from scipy.io.tests import test_mmio
     except ImportError:
         # Test files are mysteriously missing from some conda-forge builds
