@@ -1363,6 +1363,31 @@ def test_apply_indexunary(A):
     assert pickle.loads(pickle.dumps(indexunary.tril[int])) is indexunary.tril[int]
 
 
+def test_indexunary_helpers(A):
+    # indexunary.value/row/column mirror select's helpers (GH #239), but they
+    # produce apply expressions (BOOL) rather than select expressions.
+    assert indexunary.value(A > 3).new().isequal(A.apply(indexunary.valuegt, 3).new())
+    assert indexunary.value(A == 3).new().isequal(A.apply(indexunary.valueeq, 3).new())
+    # Only rowle/rowgt and colle/colgt exist, so `<` and `>=` are rewritten with
+    # a thunk shift, and `==`/`!=` have no counterpart (mirrors select's helpers).
+    assert indexunary.row(A <= 2).new().isequal(A.apply(indexunary.rowle, 2).new())
+    assert indexunary.row(A < 3).new().isequal(A.apply(indexunary.rowle, 2).new())
+    assert indexunary.row(A >= 3).new().isequal(A.apply(indexunary.rowgt, 2).new())
+    assert indexunary.row(A > 2).new().isequal(A.apply(indexunary.rowgt, 2).new())
+    assert indexunary.column(A < 3).new().isequal(A.apply(indexunary.colle, 2).new())
+    assert indexunary.column(A > 2).new().isequal(A.apply(indexunary.colgt, 2).new())
+    for expr in [indexunary.value(A > 3), indexunary.row(A <= 2), indexunary.column(A < 3)]:
+        assert expr.new().dtype == dtypes.BOOL
+    with pytest.raises(TypeError, match="indexunary.value"):
+        indexunary.value(A)
+    with pytest.raises(TypeError, match="indexunary.row"):
+        indexunary.row(A | A)
+    with pytest.raises(ValueError, match="roweq"):
+        indexunary.row(A == 3)
+    with pytest.raises(ValueError, match="coleq"):
+        indexunary.column(A == 3)
+
+
 @autocompute
 def test_select_by_a_transposed_comparison():
     """``A.select(A.T == x)`` keeps the entries where ``A.T == x``, as a computed mask does.
