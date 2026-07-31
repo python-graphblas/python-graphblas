@@ -4,9 +4,9 @@ import numpy as np
 
 from .. import backend, binary, monoid, select, semiring, unary
 from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
-from ..exceptions import DimensionMismatch, NoValue, check_status
+from ..exceptions import DimensionMismatch, GrB_NO_VALUE, NoValue, check_status, check_status_carg
 from . import _supports_udfs, automethods, ffi, lib, utils
-from .base import BaseExpression, BaseType, _check_mask, call
+from .base import BaseExpression, BaseType, _check_mask, _is_recording, call
 from .descriptor import lookup as descriptor_lookup
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, InfixExprBase, Updater
 from .mask import Mask, StructuralMask, ValueMask
@@ -665,6 +665,35 @@ class Vector(BaseType):
         Python scalar
 
         """
+        # Fast path for a plain integer index: call GrB_Vector_extractElement
+        # directly instead of building an extract expression, which costs ~10x
+        # more than the C call for single-element access. Fall back when a
+        # Recorder is active (so the call is recorded) and for UDTs (whose
+        # values need numpy-based conversion in Scalar.value).
+        if not self.dtype._is_udt and not _is_recording():
+            try:
+                idx = index.__index__()
+            except (AttributeError, TypeError):
+                idx = None
+            else:
+                if isinstance(index, (bool, np.bool_)):
+                    idx = None
+            if idx is not None:
+                size = self._size
+                if idx < 0:
+                    idx += size
+                if idx < 0 or idx >= size:
+                    raise IndexError(f"Index out of range: index={index}, size={size}")
+                dtype = self.dtype
+                res = ffi_new(f"{dtype.c_type}*")
+                err_code = utils.libget(f"GrB_Vector_extractElement_{dtype.name}")(
+                    res, self.gb_obj[0], idx
+                )
+                if err_code:
+                    if err_code == GrB_NO_VALUE:
+                        return default
+                    check_status_carg(err_code, "Vector", self.gb_obj[0])
+                return res[0]
         expr = self[index]
         if expr._is_scalar:
             rv = expr.new().value
