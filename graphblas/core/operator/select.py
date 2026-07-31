@@ -97,10 +97,13 @@ class SelectOp(OpBase):
                     t.return_type,
                     t.gb_obj,
                 )
-                # Aliases the IndexUnaryOp's allocation. The IndexUnaryOp
-                # owns the free; clearing here prevents a double free when
-                # both ends are GC'd.
-                op._owns_gb_obj_inst = False
+                # Borrow the IndexUnaryOp's allocation instead of making a
+                # second one. Holding ``t`` keeps that handle alive for as long
+                # as this SelectOp can use it: ``iop`` is a temporary in
+                # ``register_anonymous``, so without this the handle is freed
+                # the moment it is collected and every call raises
+                # UninitializedObject.
+                op._gb_obj_owner = t
             else:
                 op = cls._typed_class(
                     obj,
