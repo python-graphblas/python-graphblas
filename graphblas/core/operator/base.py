@@ -329,17 +329,80 @@ if _has_numba:
                     f"shape {shape}. Return a numpy array (e.g., ``np.array(...)``) or a "
                     f"scalar; tuple returns are only matched to record UDTs."
                 )
+        elif isinstance(numba_ret_type, numba.core.types.Array):
+            # A UDF over an array UDT may build its result (``x + y``) instead
+            # of returning an operand. Numba types that as a plain Array, which
+            # ``lookup_dtype`` doesn't recognize, so match it back to an array
+            # UDT input by base element type and dimensionality.
+            candidates = [
+                d
+                for d in dtypes
+                if d._is_udt
+                and d.np_type.subdtype is not None
+                and d.numba_type.dtype == numba_ret_type.dtype
+                and len(d.numba_type.shape) == numba_ret_type.ndim
+            ]
+            # An Array type carries ``ndim`` but not its extents, so operands
+            # that differ only in length are indistinguishable here. Guessing
+            # would hand SuiteSparse an element of the wrong size, so say so.
+            # Compare the UDTs rather than their shapes: a flat ``FP64[2, 3]``
+            # and a layered ``FP64[3][2]`` are separate DataTypes with separate
+            # GrB_Type handles, yet Numba collapses both to the same shape.
+            unique = []
+            for d in candidates:
+                if not any(d is seen for seen in unique):
+                    unique.append(d)
+            if len(unique) > 1:
+                raise UdfParseError(
+                    f"UDT UDF returned {numba_ret_type!r}, which matches more than one "
+                    f"input array UDT ({', '.join(str(d) for d in unique)}). "
+                    f"Return one of the operands, or make the operands the same type."
+                )
+            if unique:
+                return unique[0]
+            # An array UDT went in and an array came out, but not one that
+            # fits: name the mismatch rather than fall through to the generic
+            # "unsupported type", whose advice the user already followed.
+            array_inputs = [d for d in dtypes if d._is_udt and d.np_type.subdtype is not None]
+            if array_inputs:
+                d = array_inputs[0]
+                nested = d.numba_type
+                raise UdfParseError(
+                    f"UDT UDF returned {numba_ret_type!r}, which matches no input array "
+                    f"UDT: {d} elements are {nested.dtype} with shape {nested.shape}. "
+                    f"Return an array of that dtype and rank, or one of the operands."
+                )
         raise UdfParseError(
             f"UDT UDF returned an unsupported type {numba_ret_type!r}. "
             f"Return a scalar, a tuple matching a record UDT's fields, or a numpy array "
             f"matching an array UDT's shape."
         )
 
+    def _array_udt_view(dtype):
+        """Return ``(base_element_numba_type, shape)`` for an array UDT.
+
+        Array UDTs are addressed as a ``carray`` over their base elements, in
+        the UDT's declared shape, rather than as Numba's ``NestedArray``. Numba
+        models a ``NestedArray`` *value* as an array descriptor (data pointer,
+        shape, strides, ...), so loading or storing one through a ``CPointer``
+        moves the descriptor rather than the element payload, corrupting
+        whatever follows it (and overrunning the element outright once the
+        descriptor is the wider of the two).
+
+        Read from ``numba_type`` rather than ``np_type.subdtype`` so this
+        agrees with the type the UDF was compiled against: numpy keeps nested
+        subarray dtypes layered, e.g. ``FP64[5]`` inside ``[6]`` stays
+        ``(dtype(('<f8', (5,))), (6,))``, while Numba collapses the same dtype
+        to ``nestedarray(float64, (6, 5))``.
+        """
+        nested = dtype.numba_type
+        return nested.dtype, nested.shape
+
     def _input_operand(dtype, var):
         """Return ``(setup_line, deref_expr, ptr_arg_type)`` for one input operand.
 
-        - ``setup_line`` is the optional ``var = numba.carray(var_ptr, 1)`` line
-          to add to the wrapper body (empty for non-record cases).
+        - ``setup_line`` is the optional ``var = numba.carray(var_ptr, n)`` line
+          to add to the wrapper body (empty for non-UDT cases).
         - ``deref_expr`` is the value to pass to ``numba_func`` for this operand.
         - ``ptr_arg_type`` is the Numba ``CPointer(...)`` type for the wrapper signature.
         """
@@ -351,8 +414,12 @@ if _has_numba:
                     f"{var}[0]",
                     nt.CPointer(dtype.numba_type),
                 )
-            # Array UDT: pass the raw pointer. The UDF carrays it if it wants.
-            return "", f"{var}_ptr", nt.CPointer(dtype.numba_type)
+            base_numba, shape = _array_udt_view(dtype)
+            return (
+                f"    {var} = numba.carray({var}_ptr, {shape})\n",
+                var,
+                nt.CPointer(base_numba),
+            )
         if dtype == BOOL:
             # Numba can't compile bool ptrs (numba/numba#5395); expose them
             # as int8 and cast on deref.
@@ -364,9 +431,11 @@ if _has_numba:
         """Return ``(setup_line, ret_ptr_type, write_kind, write_info)``.
 
         ``write_kind`` is ``"record_fields"`` when the UDF returns a Tuple to be
-        unpacked into a record output, otherwise ``"direct"``.
-        ``write_info`` is the tuple-unpack field tuple for ``"record_fields"``,
-        or a ``(BL, BR, zname)`` 3-tuple for ``"direct"``.
+        unpacked into a record output, ``"array_elements"`` for an array UDT
+        output, otherwise ``"direct"``. ``write_info`` is the tuple-unpack field
+        tuple for ``"record_fields"`` and a ``(BL, BR, zname)`` 3-tuple for
+        ``"direct"``; ``"array_elements"`` needs none, since ``setup_line``
+        already binds ``z`` to the right shape.
         """
         nt = numba.types
         ztype = INT8 if return_type == BOOL else return_type
@@ -378,18 +447,21 @@ if _has_numba:
             and return_type._is_udt
             and return_type.np_type.names is not None
         ):
-            # ``write_info`` is the list of Python access paths to each leaf
-            # field (``"['a']"`` for flat, ``"['outer']['inner_a']"`` for
-            # nested). The wrapper iterates these to write the flat tuple
-            # ``_result`` back leaf-by-leaf.
+            # ``write_info`` pairs each leaf field's Python access path
+            # (``"['a']"`` for flat, ``"['outer']['inner_a']"`` for nested)
+            # with whether that leaf is array-typed. The wrapper iterates
+            # these to write the flat tuple ``_result`` back leaf-by-leaf.
             from .udt_utils import _iter_record_leaves
 
-            leaf_python_paths = tuple(py for py, _c, _d in _iter_record_leaves(return_type.np_type))
+            leaves = tuple(
+                (py, d.subdtype is not None)
+                for py, _c, d in _iter_record_leaves(return_type.np_type)
+            )
             return (
                 "    z = numba.carray(z_ptr, 1)\n",
                 ret_ptr_type,
                 "record_fields",
-                leaf_python_paths,
+                leaves,
             )
         if return_type._is_udt:
             if return_type.np_type.subdtype is None:
@@ -399,9 +471,13 @@ if _has_numba:
                     "direct",
                     ("", "", "z[0]"),
                 )
-            # Array UDT: write via z_ptr[0]. The UDF receives the carray and
-            # writes in place.
-            return "", ret_ptr_type, "direct", ("", "[0]", "z_ptr[0]")
+            base_numba, shape = _array_udt_view(return_type)
+            return (
+                f"    z = numba.carray(z_ptr, {shape})\n",
+                nt.CPointer(base_numba),
+                "array_elements",
+                None,
+            )
         if return_type == BOOL:
             return "", ret_ptr_type, "direct", ("bool(", ")", "z_ptr[0]")
         return "", ret_ptr_type, "direct", ("", "", "z_ptr[0]")
@@ -410,11 +486,29 @@ if _has_numba:
         """Assemble the Python source for a UDT cfunc wrapper.
 
         For record returns, the wrapper writes leaf-by-leaf; Numba does not
-        compile a nested-tuple assignment to an outer record field.
+        compile a nested-tuple assignment to an outer record field. Array
+        returns and array-typed record leaves slice-assign into the caller's
+        buffer, so a wrong-shape return cannot overrun it. It does not reach
+        the caller either: the resulting ``ValueError`` is raised inside a
+        cfunc, which Numba prints and swallows, so the write stops there and
+        every leaf from that point on keeps whatever SuiteSparse had in the
+        buffer.
         """
+        if zkind == "array_elements":
+            return (
+                f"{signature_line}\n"
+                f"{body_setup}"
+                f"    _result = {call_expr}\n"
+                f"    z[:] = _result\n"
+            )
         if zkind == "record_fields":
+            # Array-typed leaves slice-assign. Numba's record-field setitem
+            # copies the destination's extent regardless of the source's, so a
+            # short source is read past its end and a long one is silently
+            # truncated; ``[:]`` makes both a shape error instead.
             field_assigns = "".join(
-                f"    z[0]{path} = _result[{i}]\n" for i, path in enumerate(zinfo)
+                f"    z[0]{path}{'[:]' if is_array else ''} = _result[{i}]\n"
+                for i, (path, is_array) in enumerate(zinfo)
             )
             return (
                 f"{signature_line}\n"
