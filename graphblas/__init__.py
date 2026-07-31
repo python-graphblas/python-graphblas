@@ -36,6 +36,10 @@ def get_config():
 config = get_config()
 del get_config
 
+# None until a backend is initialized. Touching a special attribute such as
+# gb.Matrix auto-initializes, as does an explicit init(), and sets this to
+# "suitesparse" or "suitesparse-vanilla". Reading gb.backend is not itself a
+# special-attribute access, so it never triggers initialization.
 backend = None
 _init_params = None
 _SPECIAL_ATTRS = {
