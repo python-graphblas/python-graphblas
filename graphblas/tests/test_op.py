@@ -6538,6 +6538,40 @@ def test_compile_codegen_helper():
     assert isinstance(exc_info.value.__cause__, SyntaxError)
 
 
+def test_operator_namespace_typo_suggestions():
+    # A typo in an operator namespace should suggest close matches (via difflib),
+    # drawn from __dir__() so lazily-registered operators are offered without
+    # forcing them to build.
+    with pytest.raises(AttributeError, match="has no attribute 'pluss'.*Did you mean 'plus'"):
+        binary.pluss
+    with pytest.raises(AttributeError, match="Did you mean 'plus'"):
+        monoid.pluss
+    with pytest.raises(AttributeError, match="plus_times"):
+        semiring.plus_time
+    with pytest.raises(AttributeError, match="Did you mean 'sum'"):
+        agg.summ
+    with pytest.raises(AttributeError, match="Did you mean"):
+        unary.expp
+    with pytest.raises(AttributeError, match="rowindex"):
+        indexunary.rowindexx
+    with pytest.raises(AttributeError, match="triu"):
+        select.triu_typo
+    with pytest.raises(AttributeError, match="Did you mean 'plus'"):
+        op.pluss
+
+    # No close match -> plain message, no suggestion appended
+    with pytest.raises(AttributeError) as exc_info:
+        binary.zzzzzz
+    assert "has no attribute 'zzzzzz'" in str(exc_info.value)
+    assert "Did you mean" not in str(exc_info.value)
+
+    # Building suggestions must not force lazy operators to compile
+    before = set(binary._delayed)
+    with pytest.raises(AttributeError):
+        binary.pluss
+    assert set(binary._delayed) == before
+
+
 # Touching an operator namespace must not compile any lazily-registered UDF.
 # Run in a subprocess: BinaryOp._initialize runs once per process, so by the
 # time any test executes, the import-time behavior under test is long past.
