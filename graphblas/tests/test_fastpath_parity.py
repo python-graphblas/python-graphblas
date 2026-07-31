@@ -662,6 +662,127 @@ def test_scalarnew_autocompute_false_raises():
 
 
 # ---------------------------------------------------------------------------
+# ScalarIndexExpr value reads (.value / float / int / ...): the single-extract
+# fast path in automethods._get_value via ScalarIndexExpr._extract_fast.
+# ---------------------------------------------------------------------------
+# The reference is the pre-fast-path resolution: _get_value used to resolve the
+# expression to a GrB_Scalar (is_cscalar=False) via `.new()`, then read that
+# scalar's attribute. `_new_slow` reproduces that GrB_Scalar exactly, so
+# `getattr(_new_slow(expr), attr)` is the old behavior for every read attr.
+_VALUE_READ_ATTRS = [
+    "value",
+    "is_empty",
+    "_is_empty",
+    "__float__",
+    "__int__",
+    "__complex__",
+    "__bool__",
+    "__index__",
+    "__array__",
+]
+
+
+def _read_attr(scalar, attr):
+    """Fingerprint of a value-read attr on a Scalar (or index expr).
+
+    Captures the whole access (``__index__`` raises via its property on
+    non-integral dtypes) and reduces the result to ``(repr, typename)`` so NaN
+    from an empty float scalar and numpy arrays compare structurally, not by
+    value.
+    """
+
+    def go():
+        getter = getattr(scalar, attr)
+        if attr in ("__float__", "__int__", "__complex__", "__bool__", "__index__", "__array__"):
+            return getter()
+        return getter
+
+    cap = _capture(go)
+    if cap[0] == "val":
+        return ("val", repr(cap[1]), type(cap[1]).__name__)
+    return cap
+
+
+@pytest.mark.parametrize("dt", BUILTIN_DTYPES, ids=DTYPE_IDS)
+def test_scalarvalue_dtype_parity(dt):
+    """Every read attr matches the pre-fast-path GrB_Scalar result, hit and miss."""
+    val = _hit_value(dt)
+    v = Vector(dt, 10)
+    v[2] = val
+    A = Matrix(dt, 5, 7)
+    A[1, 2] = val
+    with gb.config.set(autocompute=True):
+        for probe in [v[2], v[3], A[1, 2], A[0, 0]]:
+            slow = _new_slow(probe)  # GrB_Scalar, old path
+            for attr in _VALUE_READ_ATTRS:
+                assert _read_attr(probe, attr) == _read_attr(slow, attr), (dt.name, attr)
+
+
+def test_scalarvalue_transposed_matrix():
+    A = Matrix.from_coo([0, 1, 4], [1, 2, 6], [10.0, 20.0, 30.0], nrows=5, ncols=7)
+    AT = A.T
+    with gb.config.set(autocompute=True):
+        for r, c in [(1, 0), (6, 4), (0, 0), (-1, -1)]:
+            for attr in _VALUE_READ_ATTRS:
+                got = _read_attr(AT[r, c], attr)
+                want = _read_attr(_new_slow(AT[r, c]), attr)
+                assert got == want, (r, c, attr, got, want)
+
+
+def test_scalarvalue_negative_and_numpy_index():
+    v = Vector.from_coo([0, 5, 9], [1.5, 2.5, 3.5], size=10)
+    with gb.config.set(autocompute=True):
+        for idx in [-1, -5, -2, np.int64(5)]:
+            assert repr(v[idx].value) == repr(_new_slow(v[idx]).value)
+            got = _capture(lambda: float(v[idx]))  # noqa: B023
+            want = _capture(lambda: float(_new_slow(v[idx])))  # noqa: B023
+            assert got == want, (idx, got, want)
+
+
+def test_scalarvalue_udt_fallback():
+    """UDT reads defer to `.new()`; Scalar.value's numpy conversion still runs."""
+    udt = gb.dtypes.register_anonymous(
+        np.dtype([("vx", np.int64), ("vy", np.float64)]), "ValueFastPathProbe"
+    )
+    u = Vector(udt, 3)
+    u[1] = (7, 2.5)
+    with gb.config.set(autocompute=True):
+        got = u[1].value
+        want = _new_slow(u[1]).value
+        assert got["vx"] == want["vx"] == 7
+        assert got["vy"] == want["vy"] == 2.5
+        assert u[0].value is None
+        assert u[0].is_empty is True
+
+
+def test_scalarvalue_recorder_fallback():
+    """With a Recorder active the value path still records an extractElement."""
+    v = Vector.from_coo([0], [1.5], size=4)
+    with gb.config.set(autocompute=True), Recorder() as rec:
+        assert v[0].value == 1.5
+    assert "extractElement" in "".join(rec.data)
+
+
+def test_scalarvalue_pending_value():
+    """A value written in non-blocking mode is read back correctly (iso/pending)."""
+    v = Vector(dtypes.FP64, 100)
+    v[3] = 2.25
+    with gb.config.set(autocompute=True):
+        assert v[3].value == 2.25
+        assert float(v[3]) == 2.25
+
+
+def test_scalarvalue_index_integral_only():
+    """__index__ is available on integral dtypes and absent on float, via the fast path."""
+    vi = Vector.from_coo([2], [7], dtype=dtypes.INT64, size=5)
+    vf = Vector.from_coo([2], [7.5], dtype=dtypes.FP64, size=5)
+    with gb.config.set(autocompute=True):
+        assert vi[2].__index__() == 7
+        with pytest.raises(AttributeError):
+            vf[2].__index__
+
+
+# ---------------------------------------------------------------------------
 # parse_index plain-int lane
 # ---------------------------------------------------------------------------
 def _resolved_fingerprint(expr):
