@@ -2852,6 +2852,38 @@ def test_udt_eq_ne_rejects_incompatible_pairs():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_record_nesting_mismatch_is_a_keyerror():
+    """Records sharing field names but not nesting depth are rejected as a KeyError.
+
+    ``_check_udt_pair`` matched on top-level names only, but the codegen pairs
+    operands leaf by leaf, and a field that is a sub-record on one side and a
+    scalar on the other contributes a different number of leaves. Without the
+    guard the pair reaches Numba, whose typing failure arrives as a
+    ``UdfParseError``: a compile error reported for what is really the same
+    shape disagreement its sibling checks raise ``KeyError`` for.
+    """
+    flat = dtypes.register_anonymous(
+        np.dtype([("nst_a", np.float64), ("nst_b", np.float64)], align=True), "_NestFlat"
+    )
+    nested = dtypes.register_anonymous(
+        np.dtype(
+            [
+                ("nst_a", np.dtype([("nst_n1", np.float64), ("nst_n2", np.float64)])),
+                ("nst_b", np.float64),
+            ],
+            align=True,
+        ),
+        "_NestDeep",
+    )
+    v = Vector(flat, size=1)
+    v[0] = (1.0, 2.0)
+    w = Vector(nested, size=1)
+    w[0] = ((3.0, 4.0), 5.0)
+    with pytest.raises(KeyError, match="same number of leaf fields"):
+        v.ewise_mult(w, binary.plus).new()
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_aggregators():
     """Monoid-based aggregators must auto-extend to UDTs the underlying monoid supports.
