@@ -3885,8 +3885,6 @@ def test_scalar_infix_expr_repr_literal():
 
 @autocompute
 def test_scalar_infix_expr_repr_auto():
-    if not pd:  # pragma: no cover (import)
-        pytest.skip("needs pandas")
     # As for Vector, only BOOL `x & y` and `x | y` compute without an op, to show the result
     s = Scalar.from_value(5, dtype=dtypes.INT8, name="s_1")
     repr_printer(s & s, "s & s")
@@ -3977,8 +3975,6 @@ def test_inner_outer_repr(v):
 
 @autocompute
 def test_autocompute(A, B, v):
-    if not pd:  # pragma: no cover (import)
-        pytest.skip("needs pandas")
     repr_printer(A & A, "A & A")
     assert repr(A & A) == (
         "gb.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
@@ -4059,8 +4055,6 @@ def test_autocompute(A, B, v):
 
 @autocompute
 def test_autocompute_html(A, B, v):
-    if not pd:  # pragma: no cover (import)
-        pytest.skip("needs pandas")
     html_printer(A & A, "A & A")
     assert repr_html(A & A) == (
         "<div>"
@@ -4801,8 +4795,6 @@ def test_scalar_as_vector():
 
 @autocompute
 def test_index_expr_autocompute(v):
-    if not pd:  # pragma: no cover (import)
-        pytest.skip("needs pandas")
     html_printer(v[[0, 1]], "v[[0, 1]]")
     assert repr_html(v[[0, 1]]) == (
         "<div>"
