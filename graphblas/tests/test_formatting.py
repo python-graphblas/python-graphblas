@@ -166,7 +166,6 @@ def test_no_pandas_repr(A, C, v, w):
     assert lines[-1] == "0  0    1    2"
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_repr_small(A, B):
     repr_printer(A, "A")
     assert repr(A) == (
@@ -198,7 +197,6 @@ def test_matrix_repr_small(A, B):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_mask_repr_small(A):
     repr_printer(A.S, "A.S")
     assert repr(A.S) == (
@@ -390,7 +388,6 @@ def test_matrix_mask_repr_large(C):
         )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_repr_small(v):
     repr_printer(v, "v")
     assert repr(v) == (
@@ -415,7 +412,6 @@ def test_vector_repr_large(w):
         )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_mask_repr_small(v):
     repr_printer(v.S, "v.S")
     assert repr(v.S) == (
@@ -520,7 +516,6 @@ def test_no_pandas_repr_html(A, C, v, w):
     assert '<table border="1" class="dataframe">' in html
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_repr_html_small(A, B):
     html_printer(A, "A")
     assert repr_html(A) == (
@@ -715,7 +710,6 @@ def test_matrix_repr_html_small(A, B):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_mask_repr_html_small(A):
     html_printer(A.S, "A.S")
     assert repr_html(A.S) == (
@@ -1991,7 +1985,6 @@ def test_matrix_mask_repr_html_large(C):
         )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_repr_html_small(v):
     html_printer(v, "v")
     assert repr_html(v) == (
@@ -2137,7 +2130,6 @@ def test_vector_repr_html_large(w):
         )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_mask_repr_html_small(v):
     html_printer(v.S, "v.S")
     assert repr_html(v.S) == (
@@ -2759,7 +2751,6 @@ def test_apply_repr(v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_apply_repr_html(v):
     html_printer(v.apply(unary.one), "v.apply(unary.one)")
     assert repr_html(v.apply(unary.one)) == (
@@ -2792,7 +2783,6 @@ def test_mxm_repr(A, B):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_mxm_repr_html(A, B):
     html_printer(A.mxm(B), "A.mxm(B)")
     assert repr_html(A.mxm(B)) == (
@@ -2827,7 +2817,6 @@ def test_mxv_repr(A, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_mxv_repr_html(A, v):
     html_printer(A.mxv(v), "A.mxv(v)")
     assert repr_html(A.mxv(v)) == (
@@ -2850,7 +2839,6 @@ def test_mxv_repr_html(A, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_reduce_columns_repr_html(A):
     # This is implemented using the transpose of A, so make sure we're oriented correctly!
     html_printer(A.reduce_columnwise(), "A.reduce_columnwise()")
@@ -2884,7 +2872,6 @@ def test_matrix_reduce_repr(C, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_reduce_repr_html(C, v):
     html_printer(C.reduce_scalar(), "C.reduce_scalar()", indent=8)
     assert repr_html(C.reduce_scalar()) == (
@@ -2905,7 +2892,6 @@ def test_matrix_reduce_repr_html(C, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_huge():
     M = Matrix(int, nrows=2**60, ncols=2**60, name="M")
     repr_printer(M, "M")
@@ -2931,7 +2917,6 @@ def test_matrix_huge():
     assert M.isequal(M2)
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_huge_html():
     M = Matrix(int, nrows=2**60, ncols=2**60, name="M")
     html_printer(M, "M")
@@ -3124,7 +3109,6 @@ def test_matrix_huge_html():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_huge():
     v = Vector(int, size=2**60)
     repr_printer(v, "v")
@@ -3139,7 +3123,6 @@ def test_vector_huge():
     assert v2.isequal(v)
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_huge_html():
     v = Vector(int, size=2**60)
     html_printer(v, "v")
@@ -3277,7 +3260,6 @@ def test_vector_huge_html():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_sparse_vector_repr():
     v = Vector.from_coo([100 * i for i in range(100)], [10 * i for i in range(100)], name="v")
     repr_printer(v, "v")
@@ -3431,7 +3413,6 @@ def test_sparse_vector_repr():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_sparse_matrix_repr():
     A = Matrix.from_coo(
         [100 * i for i in range(100)], [10 * i for i in range(100)], list(range(100)), name="A"
@@ -3605,7 +3586,6 @@ def test_sparse_matrix_repr():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_infix_expr_repr_html(A, B, v):
     html_printer(v & v, "v & v")
     assert repr_html(v & v) == (
@@ -3804,7 +3784,6 @@ def test_infix_expr_repr_html(A, B, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_infix_expr_repr(A, B, v):
     repr_printer(v & v, "v & v")
     assert repr(v & v) == (
@@ -3880,7 +3859,6 @@ def test_infix_expr_repr(A, B, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_inner_outer_repr_html(v):
     html_printer(v.inner(v), "v.inner(v)")
     assert repr_html(v.inner(v)) == (
@@ -3922,7 +3900,6 @@ def test_inner_outer_repr_html(v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_inner_outer_repr(v):
     # XXX: hmm, having `(GrB_Matrix)` here isn't so pretty
     repr_printer(v.inner(v), "v.inner(v)")
@@ -4348,7 +4325,6 @@ def test_autocompute_html(A, B, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_display_nan():
     v = Vector.from_coo([0, 1], [1.0, np.nan], size=3, name="v")
     repr_printer(v, "v")
@@ -4482,7 +4458,6 @@ def test_display_nan():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_large_iso():
     A = Matrix(int, nrows=2**60, ncols=2**60)
     A[:, :] << 1
@@ -4711,7 +4686,6 @@ def test_index_expr_matrix_html(A):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_scalar_as_vector():
     s = Scalar.from_value(5, is_cscalar=False)  # pragma: is_grbscalar
     v = s._as_vector()
@@ -4825,7 +4799,6 @@ def test_index_expr_autocompute(v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.int64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "record_dtype")
@@ -4875,7 +4848,6 @@ def test_udt():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_empty():
     v = Vector(int, 0)
     repr_printer(v, "v")
@@ -4900,7 +4872,6 @@ def test_empty():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_as_matrix():
     v = Vector.from_coo([1], [2], name="v_A")
     A = v._as_matrix()
