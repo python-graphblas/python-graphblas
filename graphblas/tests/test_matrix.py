@@ -2954,6 +2954,7 @@ def test_expr_is_like_matrix(A):
         "__call__",
         "__del__",
         "__delitem__",
+        "__getattr__",
         "__lshift__",
         "__setitem__",
         "_assign_element",
@@ -3020,6 +3021,7 @@ def test_index_expr_is_like_matrix(A):
     expected = {
         "__del__",
         "__delitem__",
+        "__getattr__",
         "__setitem__",
         "_assign_element",
         "_delete_element",
@@ -4614,3 +4616,53 @@ def test_wrong_kind_mask_on_matrix_raises():
     m[0] = True
     m[2] = True
     assert A[0, [0, 1, 2]].new(input_mask=m.S) is not None
+
+
+def test_new_constructor_misuse_hint():
+    # `.new()` resolves expressions; it is not a constructor or an instance
+    # method on concrete objects. Both misuses should hint the right API.
+    A = Matrix(int, 3, 3)
+    v = Vector(int, 3)
+    s = Scalar.from_value(5)
+    # Class-level access stays a plain AttributeError: hinting it would need
+    # a metaclass, and both metaclass choices break something (see
+    # test_abc_mixin_subclass).
+    for cls in (Matrix, Vector, Scalar):
+        with pytest.raises(AttributeError, match="has no attribute 'new'"):
+            cls.new
+    # Instance-level misuse: A.new() -> hint .dup()
+    for obj in (A, v, s):
+        with pytest.raises(AttributeError, match=r"has no attribute 'new'.*\.dup\(\)"):
+            obj.new
+    # A genuinely-missing attribute keeps the plain AttributeError (no hint)
+    with pytest.raises(AttributeError, match="has no attribute 'frobnicate'"):
+        A.frobnicate
+    assert not hasattr(A, "new")
+    assert not hasattr(Matrix, "new")
+
+
+def test_abc_mixin_subclass():
+    # BaseType must stay metaclass-free: a plain `type` hint metaclass broke
+    # abc-based mixins with "metaclass conflict", and an ABCMeta-derived one
+    # leaks metaclass attributes into dir(Matrix), which the
+    # expression-surface guards report as drift.
+    import collections.abc
+
+    class SizedMatrix(Matrix, collections.abc.Sized):
+        def __len__(self):
+            return 1
+
+    assert issubclass(SizedMatrix, collections.abc.Sized)
+
+
+def test_transpose_hint():
+    # A.transpose() should point at the .T property rather than fail with a
+    # bare "no attribute" message; transpose is not a method here.
+    A = Matrix(int, 3, 3)
+    v = Vector(int, 3)
+    with pytest.raises(AttributeError, match=r"has no attribute 'transpose'.*\.T"):
+        A.transpose
+    with pytest.raises(AttributeError, match=r"has no attribute 'transpose'.*\.T"):
+        v.transpose
+    # .T still works
+    assert A.T.shape == (3, 3)

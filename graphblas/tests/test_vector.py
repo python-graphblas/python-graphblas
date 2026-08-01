@@ -1682,6 +1682,7 @@ def test_expr_is_like_vector(v):
         "__call__",
         "__del__",
         "__delitem__",
+        "__getattr__",
         "__lshift__",
         "__setitem__",
         "_assign_element",
@@ -1732,6 +1733,7 @@ def test_index_expr_is_like_vector(v):
     expected = {
         "__del__",
         "__delitem__",
+        "__getattr__",
         "__setitem__",
         "_assign_element",
         "_delete_element",
