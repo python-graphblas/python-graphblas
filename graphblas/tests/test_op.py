@@ -1543,6 +1543,70 @@ def test_udt_mixed_record_dtypes_use_each_operands_own_dtype(udt_op_path):
     assert swapped[1].new().value["mxd_a"] == 2.0 / 7.0
 
 
+def _bitwise_eq(got, want):
+    """Compare two floats by bit pattern, treating any two NaNs as equal.
+
+    Bit patterns rather than ``==`` because ``-0.0 == 0.0``, and the sign of
+    a zero is exactly what a min/max tie-break decides. NaNs are exempted
+    because ``fmin`` may hand back either operand's NaN payload.
+    """
+    if np.isnan(got) and np.isnan(want):
+        return True
+    return got.tobytes() == want.tobytes()
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+@pytest.mark.parametrize("np_dtype", [np.float64, np.float32])
+def test_udt_min_max_answer_what_the_builtin_dtype_answers(udt_op_path, np_dtype):
+    """``binary.min[udt]`` must give what ``binary.min[FP64]`` gives, bit for bit.
+
+    An operator that means one thing on FP64 and another on a record of
+    FP64 is not one operator. SuiteSparse's ``GrB_MIN_FP64`` is C99 ``fmin``,
+    so that is what the UDT kernels have to be, and this compares them
+    directly against the built-in rather than against a convention chosen on
+    the Python side. The grid is every ordered pair drawn from NaN, both
+    infinities, both zeros and two ordinary values, so it covers a NaN on
+    either side, two NaNs, and a signed-zero tie either way round.
+
+    What this catches, in the two spellings it replaces: Python's builtin
+    ``min``, which the generated code reached through the exec namespace,
+    ordered NaN by position, and ``np.fmin`` under Numba gets the NaN rule
+    right but keeps the left operand on a signed-zero tie, so it drifts from
+    the JIT C kernel on ``min(0.0, -0.0)``. Both execution paths are checked
+    because SuiteSparse picks between them without telling anyone.
+    """
+    nan, inf = float("nan"), float("inf")
+    values = [nan, inf, -inf, -0.0, 0.0, 1.5, -2.5]
+    xs = [x for x in values for _ in values]
+    ys = list(values) * len(values)
+
+    udt = dtypes.register_anonymous(
+        np.dtype([("mmb_a", np_dtype)], align=True), f"_MinMaxBuiltin{np.dtype(np_dtype).name}"
+    )
+    v, w = _udt_vectors(udt, xs, ys)
+    ref_v = Vector.from_dense(np.array(xs, dtype=np_dtype))
+    ref_w = Vector.from_dense(np.array(ys, dtype=np_dtype))
+
+    for gb_op in (binary.min, binary.max):
+        expected = gb_op(ref_v & ref_w).new().to_dense()
+        result = gb_op(v & w).new()
+        for i, (x, y) in enumerate(zip(xs, ys, strict=True)):
+            got = result[i].new().value[0]
+            assert _bitwise_eq(got, expected[i]), (
+                f"{udt_op_path} {gb_op.name}({x}, {y}) on {udt.name}: "
+                f"got {got!r}, built-in {np.dtype(np_dtype).name} gives {expected[i]!r}"
+            )
+
+    # A NaN anywhere in the input must not change where a reduce lands. Under
+    # the Python-builtin semantics this same multiset reduced to 1.0 or to nan
+    # depending on which index the NaN sat at.
+    for data in ([1.0, 2.0, 3.0, nan], [nan, 1.0, 2.0, 3.0], [1.0, nan, 3.0, 2.0]):
+        (u,) = _udt_vectors(udt, data)
+        assert u.reduce(monoid.min[udt]).new().value[0] == 1.0, f"{udt_op_path} {data}"
+        assert u.reduce(monoid.max[udt]).new().value[0] == 3.0, f"{udt_op_path} {data}"
+
+
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_tuple_return_binaryop(record_udt):
