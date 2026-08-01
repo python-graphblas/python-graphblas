@@ -429,6 +429,7 @@ def test_expr_is_like_scalar(s):
     expected = {
         "__call__",
         "__del__",
+        "__getattr__",
         "__imatmul__",
         "__lshift__",
         "_carg",
@@ -473,6 +474,7 @@ def test_index_expr_is_like_scalar(s):
     # Should we make any of these raise informative errors?
     expected = {
         "__del__",
+        "__getattr__",
         "__imatmul__",
         "_carg",
         "_deserialize",
