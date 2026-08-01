@@ -196,11 +196,34 @@ def _check_mask(mask, output=None, strict_kind=False):
     return mask
 
 
+# Curated hints for common attribute-access mistakes on Vector/Matrix/Scalar.
+# Only consulted from __getattr__, which fires solely on a genuine attribute
+# miss, so the normal (slotted) attribute hot path is untouched.
+_INSTANCE_ATTR_HINTS = {
+    # `.new()` resolves expressions (e.g. `A.mxm(B).new()`); a concrete
+    # object is copied with `.dup()`.
+    "new": (
+        "`.new()` resolves an expression (e.g. `A.mxm(B).new()`); a concrete "
+        "object has no `.new()`. Use `.dup()` to copy this object."
+    ),
+    # transpose is the `.T` property, not a method.
+    "transpose": "transpose is the `.T` property, e.g. `A.T` (not a method call).",
+}
+
+
 class BaseType:
     # pylint: disable=assigning-non-slot
     __slots__ = "gb_obj", "dtype", "name", "__weakref__"
     # Flag for operations which depend on scalar vs vector/matrix
     _is_scalar = False
+
+    def __getattr__(self, name):
+        # Fires only on a genuine attribute miss (slots/methods resolve first),
+        # so this is free on the hot path. Adds hints for common mistakes.
+        base = f"{type(self).__name__!r} object has no attribute {name!r}"
+        if (hint := _INSTANCE_ATTR_HINTS.get(name)) is not None:
+            raise AttributeError(f"{base}; {hint}")
+        raise AttributeError(base)
 
     def __call__(
         self,
