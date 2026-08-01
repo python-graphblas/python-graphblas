@@ -4588,3 +4588,29 @@ def test_constructor_rejects_arraylike_first_arg():
     # A non-array-like bad dtype keeps the original ValueError
     with pytest.raises(ValueError, match="Unknown dtype"):
         Matrix("not_a_dtype", nrows=2, ncols=2)
+
+
+def test_wrong_kind_mask_on_matrix_raises():
+    # A Vector mask on a Matrix output used to leak a raw cffi/C-signature
+    # error ("initializer for ctype 'struct GB_Matrix_opaque'"). It should
+    # now raise a clear TypeError, mirroring the Vector-output guard.
+    A = Matrix(int, 3, 3)
+    A[0, 0] = 1
+    v = Vector(int, 3)
+    v[0] = 1
+    # update path (full-matrix op with a Vector mask)
+    C = Matrix(int, 3, 3)
+    with pytest.raises(TypeError, match="Mask object must be type Matrix"):
+        C(mask=v.S) << A.ewise_mult(A)
+    # extract path
+    with pytest.raises(TypeError, match="Mask object must be type Matrix"):
+        A[:, :].new(mask=v.S)
+    # Valid Matrix mask on Matrix output still works
+    C = Matrix(int, 3, 3)
+    C(mask=A.S) << A.ewise_mult(A)
+    assert C.nvals == A.nvals
+    # Valid Vector input_mask broadcast on a Matrix extract still works
+    m = Vector(bool, 3)
+    m[0] = True
+    m[2] = True
+    assert A[0, [0, 1, 2]].new(input_mask=m.S) is not None
