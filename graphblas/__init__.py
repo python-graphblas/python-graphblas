@@ -25,7 +25,45 @@ def get_config():
     import donfig
     import yaml
 
-    config = donfig.Config("graphblas")
+    class Config(donfig.Config):
+        """donfig Config that rejects silent attribute writes.
+
+        Options are set with ``config.set(name=value)`` (optionally as a
+        ``with config.set(name=value):`` block) and read with ``config[name]``.
+        Plain attribute assignment (``config.name = value``) would otherwise
+        create a dead instance attribute and leave the real option unchanged,
+        so we raise instead.
+        """
+
+        def __init__(self, *args, **kwargs):
+            # Writes are unrestricted until donfig's own __init__ finishes, and
+            # the attributes it set there become the allowlist. Deriving that
+            # list beats hardcoding donfig's internals: a donfig release that
+            # adds or renames a field can't then break attribute access here.
+            object.__setattr__(self, "_initializing", True)
+            super().__init__(*args, **kwargs)
+            object.__setattr__(self, "_donfig_attrs", frozenset(self.__dict__) - {"_initializing"})
+            object.__setattr__(self, "_initializing", False)
+
+        def __setattr__(self, key, value):
+            # An instance built without running __init__ has no allowlist yet,
+            # so stay permissive rather than raising a confusing AttributeError
+            # from the guard.
+            if self.__dict__.get("_initializing", True) or key in self._donfig_attrs:
+                object.__setattr__(self, key, value)
+                return
+            if key in self.config:
+                raise AttributeError(
+                    f"Cannot set config option {key!r} by attribute assignment. "
+                    f"Use `graphblas.config.set({key}=...)` to change it (optionally "
+                    f"in a `with` block for a scoped change) and "
+                    f"`graphblas.config[{key!r}]` to read it."
+                )
+            raise AttributeError(
+                f"Unknown config option {key!r}; known options are {sorted(self.config)}."
+            )
+
+    config = Config("graphblas")
     path = Path(__file__).parent / "graphblas.yaml"
     with path.open() as f:
         defaults = yaml.safe_load(f)
