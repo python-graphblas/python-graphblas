@@ -357,15 +357,14 @@ class Matrix(BaseType):
             and not _is_recording()
         ):
             row, col = keys
-            try:
+            # Only int and np.integer keys take the fast lane (bools excluded),
+            # matching parse_index; other __index__ objects fall through to the
+            # expression path and its canonical errors.
+            if (type(row) is int or isinstance(row, np.integer)) and (
+                type(col) is int or isinstance(col, np.integer)
+            ):
                 rowidx = row.__index__()
                 colidx = col.__index__()
-            except (AttributeError, TypeError):
-                rowidx = None
-            else:
-                if isinstance(row, (bool, np.bool_)) or isinstance(col, (bool, np.bool_)):
-                    rowidx = None
-            if rowidx is not None:
                 nrows = self._nrows
                 ncols = self._ncols
                 if rowidx < 0:
@@ -410,15 +409,14 @@ class Matrix(BaseType):
             and not _is_recording()
         ):
             row, col = index
-            try:
+            # Only int and np.integer take the fast lane (bools excluded),
+            # matching parse_index; other __index__ objects fall through to the
+            # expression path and its canonical errors.
+            if (type(row) is int or isinstance(row, np.integer)) and (
+                type(col) is int or isinstance(col, np.integer)
+            ):
                 rowidx = row.__index__()
                 colidx = col.__index__()
-            except (AttributeError, TypeError):
-                rowidx = None
-            else:
-                if isinstance(row, (bool, np.bool_)) or isinstance(col, (bool, np.bool_)):
-                    rowidx = None
-            if rowidx is not None:
                 nrows = self._nrows
                 ncols = self._ncols
                 if rowidx < 0:
@@ -899,40 +897,41 @@ class Matrix(BaseType):
         # more than the C call for single-element access. Fall back when a
         # Recorder is active (so the call is recorded) and for UDTs (whose
         # values need numpy-based conversion in Scalar.value).
-        if not self.dtype._is_udt and not _is_recording():
-            try:
-                rowidx = row.__index__()
-                colidx = col.__index__()
-            except (AttributeError, TypeError):
-                rowidx = None
-            else:
-                if isinstance(row, (bool, np.bool_)) or isinstance(col, (bool, np.bool_)):
-                    rowidx = None
-            if rowidx is not None:
-                nrows = self._nrows
-                ncols = self._ncols
-                if rowidx < 0:
-                    rowidx += nrows
-                if rowidx < 0 or rowidx >= nrows:
-                    raise IndexError(f"Index out of range: index={row}, size={nrows}")
-                if colidx < 0:
-                    colidx += ncols
-                if colidx < 0 or colidx >= ncols:
-                    raise IndexError(f"Index out of range: index={col}, size={ncols}")
-                if self._is_transposed:
-                    # TransposedMatrix reuses this method; gb_obj is the
-                    # untransposed parent, so extract the mirrored element.
-                    rowidx, colidx = colidx, rowidx
-                dtype = self.dtype
-                res = ffi_new(f"{dtype.c_type}*")
-                err_code = utils.libget(f"GrB_Matrix_extractElement_{dtype.name}")(
-                    res, self.gb_obj[0], rowidx, colidx
-                )
-                if err_code:
-                    if err_code == GrB_NO_VALUE:
-                        return default
-                    check_status_carg(err_code, "Matrix", self.gb_obj[0])
-                return res[0]
+        # Only int and np.integer take the fast lane (bools excluded), matching
+        # parse_index; other __index__ objects fall through to the expression
+        # path and its canonical errors.
+        if (
+            (type(row) is int or isinstance(row, np.integer))
+            and (type(col) is int or isinstance(col, np.integer))
+            and not self.dtype._is_udt
+            and not _is_recording()
+        ):
+            rowidx = row.__index__()
+            colidx = col.__index__()
+            nrows = self._nrows
+            ncols = self._ncols
+            if rowidx < 0:
+                rowidx += nrows
+            if rowidx < 0 or rowidx >= nrows:
+                raise IndexError(f"Index out of range: index={row}, size={nrows}")
+            if colidx < 0:
+                colidx += ncols
+            if colidx < 0 or colidx >= ncols:
+                raise IndexError(f"Index out of range: index={col}, size={ncols}")
+            if self._is_transposed:
+                # TransposedMatrix reuses this method; gb_obj is the
+                # untransposed parent, so extract the mirrored element.
+                rowidx, colidx = colidx, rowidx
+            dtype = self.dtype
+            res = ffi_new(f"{dtype.c_type}*")
+            err_code = utils.libget(f"GrB_Matrix_extractElement_{dtype.name}")(
+                res, self.gb_obj[0], rowidx, colidx
+            )
+            if err_code:
+                if err_code == GrB_NO_VALUE:
+                    return default
+                check_status_carg(err_code, "Matrix", self.gb_obj[0])
+            return res[0]
         expr = self[row, col]
         if expr._is_scalar:
             rv = expr.new().value
