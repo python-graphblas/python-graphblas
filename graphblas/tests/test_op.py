@@ -3827,3 +3827,76 @@ def test_builtin_udfs_are_disk_cached():
 
     user_op = BinaryOp.register_anonymous(_uncached_probe)
     assert isinstance(user_op._numba_func._cache, NullCache)
+
+
+# The built-in UDF binops advertise every dtype in ``.types`` up front but
+# compile none of them until asked. Run in a subprocess: any earlier test may
+# already have materialized them in this process.
+_DEFERRED_BUILD_PROBE = """
+import graphblas as gb
+
+op = gb.binary.floordiv
+print("package: " + gb.__file__)
+print("types: %d" % len(op.types))
+print("compiled before: %d" % len(op._typed_ops))
+op[gb.dtypes.INT64]
+print("compiled after: %d" % len(op._typed_ops))
+"""
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_types_precede_compilation():
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root))
+    result = subprocess.run(
+        [sys.executable, "-c", _DEFERRED_BUILD_PROBE],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+
+    assert int(lines["types"]) == len(binary.floordiv.types), report
+    assert int(lines["compiled before"]) == 0, report
+    assert int(lines["compiled after"]) == 1, report
+
+
+_DEFERRED_COMMUTES_PROBE = """
+import graphblas as gb
+
+print("package: " + gb.__file__)
+ct = gb.binary.floordiv[gb.dtypes.INT64].commutes_to
+print("floordiv_ok: " + str(ct is gb.binary.rfloordiv[gb.dtypes.INT64]))
+ct = gb.binary.absfirst[gb.dtypes.INT64].commutes_to
+print("absfirst_ok: " + str(ct is gb.binary.abssecond[gb.dtypes.INT64]))
+"""
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_deferred_commutes_to():
+    # A deferred partner op must still answer commutes_to. The membership
+    # test consults .types, not ._typed_ops: with the latter, a fresh process
+    # answered None for floordiv[INT64].commutes_to until rfloordiv happened
+    # to be compiled, so the answer depended on access order. Subprocess for
+    # the same reason as test_initialize_does_not_build_lazy_udfs: in this
+    # process the partners may already be built.
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root))
+    result = subprocess.run(
+        [sys.executable, "-c", _DEFERRED_COMMUTES_PROBE],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+    assert lines.get("floordiv_ok") == "True", report
+    assert lines.get("absfirst_ok") == "True", report

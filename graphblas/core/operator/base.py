@@ -977,6 +977,23 @@ class OpBase:
     def __repr__(self):
         return f"{self._modname}.{self.name}"
 
+    def _build_deferred(self, type_):
+        """Build a typed op on demand for ``type_``, or return None if this op
+        has no deferred builds. Overridden where ``.types`` is populated before
+        the per-dtype numba compilation (see ``BinaryOp``).
+        """
+        return
+
+    def _materialize_deferred(self):
+        """Build every typed op that ``.types`` advertises but that has not been
+        compiled yet. A no-op unless ``_build_deferred`` defers builds; call it
+        before code that iterates ``_typed_ops`` directly (e.g. building a
+        Semiring over this op).
+        """
+        for type_ in list(self.types):
+            if type_ not in self._typed_ops:
+                self._build_deferred(type_)
+
     def __getitem__(self, type_):
         if type(type_) is tuple:
             from .utils import get_typed_op
@@ -988,6 +1005,9 @@ class OpBase:
         if not self._is_udt:
             type_ = lookup_dtype(type_)
             if type_ not in self._typed_ops:
+                op = self._build_deferred(type_)
+                if op is not None:
+                    return op
                 if self._udt_types is None:
                     if self.is_positional:
                         return self._typed_ops[UINT64]
