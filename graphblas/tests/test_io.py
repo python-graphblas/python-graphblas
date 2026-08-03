@@ -389,6 +389,24 @@ def test_matrix_market_bad_engine():
 
 
 @pytest.mark.skipif("not ss")
+@pytest.mark.skipif("fmm is not None")
+def test_matrix_market_fmm_engine_unavailable():
+    # Naming the deprecated engine warns before anything else, so the caller hears
+    # about the deprecation even when the install that would satisfy it is missing.
+    A = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 0, 2, -1], nrows=7, ncols=6)
+    with (
+        pytest.warns(DeprecationWarning, match="fast_matrix_market is no longer maintained"),
+        pytest.raises(ImportError, match="required to write Matrix Market files"),
+    ):
+        gb.io.mmwrite(BytesIO(), A, engine="fmm")
+    with (
+        pytest.warns(DeprecationWarning, match="fast_matrix_market is no longer maintained"),
+        pytest.raises(ImportError, match="required to read Matrix Market files"),
+    ):
+        gb.io.mmread(BytesIO(), engine="fast_matrix_market")
+
+
+@pytest.mark.skipif("not ss")
 def test_scipy_sparse():
     a = np.arange(12).reshape(3, 4)
     for a in [np.arange(12).reshape(3, 4), np.ones((3, 4)), np.zeros((3, 4))]:
