@@ -293,6 +293,64 @@ def test_global_config_key_completions():
         about[key]
 
 
+def test_global_config_attribute_assignment_raises():
+    # Attribute assignment used to create a dead instance attribute and leave
+    # the real config unchanged; now it raises and points at item assignment.
+    config = gb.ss.config
+    before = config["nthreads"]
+    with pytest.raises(AttributeError, match="item assignment"):
+        config.nthreads = before + 1
+    assert config["nthreads"] == before
+    assert "nthreads" not in config.__dict__
+    with pytest.raises(AttributeError, match="Unknown config option 'nthread'"):
+        config.nthread = before + 1
+    # Item assignment is the supported write and still works
+    config["nthreads"] = before + 1
+    assert config["nthreads"] == before + 1
+    config["nthreads"] = before
+    assert config["nthreads"] == before
+    # Reads, iteration, and key completions are unaffected by the guard
+    assert dict(config) == {k: config[k] for k in config}
+    assert set(config._ipython_key_completions_()) == set(config._options)
+
+
+def test_object_config_attribute_assignment_raises():
+    v = Vector(int, 3)
+    with pytest.raises(AttributeError, match="item assignment"):
+        v.ss.config.sparsity_control = "bitmap"
+    assert v.ss.config["sparsity_control"] == {"auto"}
+    with pytest.raises(AttributeError, match="read-only"):
+        v.ss.config.sparsity_status = "bitmap"
+    A = Matrix(int, 2, 2)
+    with pytest.raises(AttributeError, match="item assignment"):
+        A.ss.config.format = "by_col"
+    assert A.ss.config["format"] == "by_row"
+    # Item assignment is the supported write and still works
+    v.ss.config["sparsity_control"] = "bitmap"
+    assert v.ss.config["sparsity_control"] == {"bitmap"}
+    v.ss.config["sparsity_control"] = "auto"
+    assert v.ss.config["sparsity_control"] == {"auto"}
+
+
+def test_about_attribute_assignment_raises():
+    about = gb.ss.about
+    mode = about["mode"]
+    with pytest.raises(AttributeError, match="read-only"):
+        about.mode = "junk"
+    assert about["mode"] == mode
+    assert "mode" not in about.__dict__
+    with pytest.raises(AttributeError, match="Unknown About option"):
+        about.junkattr = 1
+    assert dict(about) == {k: about[k] for k in about}
+
+
+@pytest.mark.skipif("gb.core.ss._IS_SSGB7")
+def test_context_attribute_assignment_raises():
+    context = gb.ss.Context(engage=False)
+    with pytest.raises(AttributeError, match="item assignment"):
+        context.nthreads = 4
+
+
 @pytest.mark.skipif("gb.core.ss._IS_SSGB7")
 def test_context():
     context = gb.ss.Context()

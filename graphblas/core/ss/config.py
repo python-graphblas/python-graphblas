@@ -52,8 +52,38 @@ class BaseConfig(MutableMapping):
                     if k not in rd:  # pragma: no branch (safety)
                         rd[k] = k
             cls._initialized = True
+        # Writes are unrestricted until __init__ finishes, and the instance
+        # attributes set by then become the allowlist for __setattr__.
+        # Subclasses that add instance attributes (such as Context) must set
+        # them before calling super().__init__().
+        object.__setattr__(self, "_initializing", True)
         self._parent = parent
         self._context = context
+        object.__setattr__(self, "_internal_attrs", frozenset(self.__dict__) - {"_initializing"})
+        object.__setattr__(self, "_initializing", False)
+
+    def __setattr__(self, key, value):
+        # An instance built without running __init__ has no allowlist yet, so stay
+        # permissive rather than raising a confusing AttributeError from the guard.
+        # Properties (such as Context._context) go through so their setters run.
+        if (
+            self.__dict__.get("_initializing", True)
+            or key in self._internal_attrs
+            or isinstance(getattr(type(self), key, None), property)
+        ):
+            object.__setattr__(self, key, value)
+            return
+        if (option := key.lower()) in self._options:
+            if option in self._read_only:
+                raise AttributeError(f"Config option {option!r} is read-only")
+            raise AttributeError(
+                f"Cannot set config option {option!r} by attribute assignment; "
+                f"this does not change the config. "
+                f"Use item assignment instead: config[{option!r}] = value"
+            )
+        raise AttributeError(
+            f"Unknown config option {key!r}; known options are {sorted(self._options)}."
+        )
 
     def __delitem__(self, key):
         raise TypeError("Configuration options can't be deleted.")
