@@ -1,4 +1,8 @@
 import itertools
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -3768,3 +3772,39 @@ def test_operator_namespace_typo_suggestions():
     with pytest.raises(AttributeError):
         binary.pluss
     assert set(binary._delayed) == before
+
+
+# Touching an operator namespace must not compile any lazily-registered UDF.
+# Run in a subprocess: BinaryOp._initialize runs once per process, so by the
+# time any test executes, the import-time behavior under test is long past.
+_LAZY_UDF_PROBE = """
+import graphblas as gb
+
+gb.binary.plus  # forces BinaryOp._initialize
+
+lazy_udfs = ("floordiv", "rfloordiv", "absfirst", "abssecond", "rpow")
+print("package: " + gb.__file__)
+print("still lazy: " + " ".join(n for n in lazy_udfs if n in gb.binary._delayed))
+"""
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_initialize_does_not_build_lazy_udfs():
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root))
+    result = subprocess.run(
+        [sys.executable, "-c", _LAZY_UDF_PROBE],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    # Assert the child probed this tree before trusting what it reports about it.
+    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+
+    still_lazy = lines.get("still lazy", "").split()
+    assert still_lazy == ["floordiv", "rfloordiv", "absfirst", "abssecond", "rpow"], report
