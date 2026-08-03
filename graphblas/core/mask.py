@@ -75,8 +75,6 @@ class Mask:
                 val(self, **opts) << True
             return val
 
-        from .base import _check_mask
-
         mask = _check_mask(mask)
         d = _COMPLEMENT_MASKS if complement else _COMBINE_MASKS
         func = d[type(self), type(mask)]
@@ -95,8 +93,6 @@ class Mask:
         This uses faster recipes than the above for all combinations of input mask types,
         and aims to be memory efficient when operating on complemented masks.
         """
-        from .base import _check_mask
-
         other = _check_mask(other)
         complement = self.complement or other.complement
         d = _COMPLEMENT_MASKS if complement else _COMBINE_MASKS
@@ -121,8 +117,6 @@ class Mask:
         This uses faster recipes than the above for all combinations of input mask types,
         and aims to be memory efficient when operating on complemented masks.
         """
-        from .base import _check_mask
-
         other = _check_mask(other)
         func = _MASK_OR[type(self), type(other)]
         return func(self, other, opts)
@@ -200,6 +194,31 @@ class ComplementedValueMask(Mask):
     @property
     def _name_html(self):
         return f"~{self.parent._name_html}.V"
+
+
+def _check_mask(mask, output=None, strict_kind=False):
+    if not isinstance(mask, Mask):
+        # Convert bool objects to value masks
+        if utils.output_type(mask).__name__ in {"Vector", "Matrix"}:
+            if mask.dtype != BOOL:
+                raise TypeError(
+                    f"Mask must be boolean objects (got {mask.dtype}) "
+                    "or indicate values (M.V) or structure (M.S)"
+                )
+            mask = mask.V  # auto-compute (will raise if disabled)
+        else:
+            raise TypeError(f"Invalid mask: {type(mask)}")
+    if output is not None:
+        if output.ndim == 1 and mask.parent.ndim != 1:
+            raise TypeError(f"Mask object must be type Vector; got {type(mask.parent)}")
+        # A full-tensor op (ewise, mxm, apply, extract, ...) into a Matrix needs
+        # a Matrix mask. Assignment is exempt (`strict_kind` stays False for it):
+        # a Vector mask on a Matrix row/column assign is valid and is validated
+        # separately in Matrix.__setitem__. Without this, a Vector mask on a
+        # full-Matrix op leaked a raw cffi "struct GB_Matrix_opaque" error.
+        if strict_kind and output.ndim == 2 and mask.parent.ndim != 2:
+            raise TypeError(f"Mask object must be type Matrix; got {type(mask.parent)}")
+    return mask
 
 
 # Recipes to combine two masks.

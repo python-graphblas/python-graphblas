@@ -14,11 +14,11 @@ from ..exceptions import (
     check_status_carg,
 )
 from . import _supports_udfs, automethods, ffi, lib, utils
-from .base import BaseExpression, BaseType, _check_mask, _is_recording, call
+from .base import BaseExpression, BaseType, _is_recording, call
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import _raise_dtype_or_arraylike
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, InfixExprBase, Updater
-from .mask import Mask, StructuralMask, ValueMask
+from .mask import Mask, StructuralMask, ValueMask, _check_mask
 from .operator import (
     UNKNOWN_OPCLASS,
     _get_typed_op_from_exprs,
@@ -1727,10 +1727,7 @@ class Matrix(BaseType):
         else:
             # If we know the dtype, then using `np.fromiter` is much faster
             dtype = lookup_dtype(dtype)
-            if dtype.np_type.subdtype is not None and np.__version__[:5] in {"1.21.", "1.22."}:
-                values, dtype = values_to_numpy_buffer(list(iter_values), dtype)  # FLAKY COVERAGE
-            else:
-                values = np.fromiter(iter_values, dtype.np_type)
+            values = np.fromiter(iter_values, dtype.np_type)
         return getattr(cls, methodname)(
             *args, indptr, col_indices, values, dtype, nrows=nrows, ncols=ncols, name=name
         )
