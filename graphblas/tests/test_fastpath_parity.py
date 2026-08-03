@@ -62,6 +62,23 @@ def _capture(fn):
         return ("exc", type(e).__name__, str(e))
 
 
+class _IndexLike:
+    """Implements ``__index__`` without being an int; must not take any fast lane.
+
+    ``parse_index`` rejects it, so a fast lane that duck-types ``__index__``
+    would diverge from the expression path (gh: scalar fast-path parity).
+    """
+
+    def __init__(self, value):
+        self.value = value
+
+    def __index__(self):
+        return self.value
+
+    def __repr__(self):
+        return f"_IndexLike({self.value})"
+
+
 # ---------------------------------------------------------------------------
 # Vector.get / Matrix.get
 # ---------------------------------------------------------------------------
@@ -119,13 +136,33 @@ def test_get_out_of_range(idx):
     assert str(fast.value) == str(slow.value)
 
 
-@pytest.mark.parametrize("bad", [1.5, "x", None, [1, 2], slice(None), 2.0, True])
+@pytest.mark.parametrize(
+    "bad", [1.5, "x", None, [1, 2], slice(None), 2.0, True, np.array(3), _IndexLike(3)]
+)
 def test_get_non_integer_index(bad):
     """Non-integer indices raise the same exception type as the reference path."""
     v = Vector.from_coo([0, 5, 9], [1.5, 2.5, 3.5], size=10)
     fast = _capture(lambda: v.get(bad))
     slow = _capture(lambda: _get_vector_slow(v, bad))
     assert fast[:2] == slow[:2], f"fast={fast} slow={slow}"
+
+
+@pytest.mark.parametrize(
+    ("r", "c"),
+    [
+        (np.array(1), 2),
+        (1, np.array(2)),
+        (np.array(1), np.array(2)),
+        (_IndexLike(1), 2),
+        (1, _IndexLike(2)),
+    ],
+)
+def test_get_matrix_non_integer_index(r, c):
+    """Index-like objects that parse_index rejects must fail identically in get."""
+    A = Matrix.from_coo([0, 1, 4], [1, 2, 6], [10, 20, 30], nrows=5, ncols=7)
+    fast = _capture(lambda: A.get(r, c))
+    slow = _capture(lambda: _get_matrix_slow(A, r, c))
+    assert fast == slow, f"fast={fast} slow={slow}"
 
 
 def test_get_matrix_negative_and_range():
@@ -256,7 +293,9 @@ def test_contains_bool_index(b):
     assert fast == slow, f"fast={fast} slow={slow}"
 
 
-@pytest.mark.parametrize("bad", [1.5, "x", None, [1, 2], slice(None), 2.0, (1, 2)])
+@pytest.mark.parametrize(
+    "bad", [1.5, "x", None, [1, 2], slice(None), 2.0, (1, 2), np.array(3), _IndexLike(3)]
+)
 def test_contains_non_integer_index(bad):
     """Non-integer indices raise the same exception type AND message."""
     v = Vector.from_coo([0, 5, 9], [1.5, 2.5, 3.5], size=10)
@@ -289,7 +328,19 @@ def test_contains_transposed_matrix():
     assert fast[:2] == ("exc", "IndexError"), fast
 
 
-@pytest.mark.parametrize("bad", [5, (1, 2, 3), (1.5, 2), ("a", "b"), np.int64(3)])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        5,
+        (1, 2, 3),
+        (1.5, 2),
+        ("a", "b"),
+        np.int64(3),
+        (np.array(1), np.array(2)),
+        (1, np.array(2)),
+        (_IndexLike(1), 2),
+    ],
+)
 def test_contains_matrix_bad_index(bad):
     A = Matrix.from_coo([0, 1, 4], [1, 2, 6], [10, 20, 30], nrows=5, ncols=7)
     fast = _capture(lambda: bad in A)
@@ -461,12 +512,27 @@ def test_setitem_matrix_out_of_range(key):
     _assert_setitem_matrix(dtypes.FP64, key, 1.0)
 
 
-@pytest.mark.parametrize("key", [1.5, "x", None, slice(None), [1, 2], (1, 2)])
+@pytest.mark.parametrize(
+    "key", [1.5, "x", None, slice(None), [1, 2], (1, 2), np.array(3), _IndexLike(3)]
+)
 def test_setitem_vector_bad_key(key):
     _assert_setitem_vector(dtypes.FP64, key, 1.0)
 
 
-@pytest.mark.parametrize("key", [5, (1, 2, 3), (1.5, 2), ("a", "b"), 1.5, slice(None)])
+@pytest.mark.parametrize(
+    "key",
+    [
+        5,
+        (1, 2, 3),
+        (1.5, 2),
+        ("a", "b"),
+        1.5,
+        slice(None),
+        (np.array(1), np.array(2)),
+        (1, np.array(2)),
+        (_IndexLike(1), 2),
+    ],
+)
 def test_setitem_matrix_bad_key(key):
     _assert_setitem_matrix(dtypes.FP64, key, 1.0)
 
