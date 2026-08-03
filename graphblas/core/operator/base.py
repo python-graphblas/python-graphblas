@@ -93,6 +93,39 @@ def _hasop(module, name):
     )
 
 
+def _validate_ret_dtype(ret_dtype, opclass, *, is_udt, parameterized):
+    """Normalize a user-supplied ``ret_dtype`` to a DataType, or raise.
+
+    ``ret_dtype`` names the operator's output type outright instead of letting
+    it be inferred from what the UDF returns. Inference can only name a type it
+    can see, which is why this is limited to the UDT path: the builtin path
+    derives its output from Numba's typing of each sample input, and forcing a
+    single type across all of them would silently recast results.
+    """
+    if ret_dtype is None:
+        return None
+    if not is_udt:
+        raise ValueError(
+            f"{opclass}: ret_dtype requires is_udt=True. The return type for builtin "
+            f"dtypes comes from compiling the function for each input type, so a single "
+            f"fixed type cannot describe it."
+        )
+    if parameterized:
+        raise ValueError(
+            f"{opclass}: ret_dtype does not work with parameterized=True. "
+            f"A parameterized operator builds and registers its function when called, "
+            f"and that inner registration does not accept a return dtype; register the "
+            f"built function without parameterized=True to declare one."
+        )
+    try:
+        return lookup_dtype(ret_dtype)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            f"{opclass}: ret_dtype={ret_dtype!r} is not a recognized dtype. "
+            f"Pass a DataType, a numpy dtype, or a name such as 'FP64'."
+        ) from exc
+
+
 class OpPath:
     def __init__(self, parent, name):
         self._parent = parent
@@ -576,21 +609,25 @@ class OpBase:
         return cls.register_new(name, *args)
 
     @classmethod
-    def _deserialize_udf(cls, name, orig_func, is_udt):
+    def _deserialize_udf(cls, name, orig_func, is_udt, ret_dtype=None):
         """Re-register a named UDF on unpickle, or reuse if already present.
 
         Shared by the five UDF-capable subclasses (UnaryOp, BinaryOp,
         IndexUnaryOp, SelectOp, IndexBinaryOp), all of which use the
-        default ``__reduce__`` below.
+        default ``__reduce__`` below. ``ret_dtype`` is passed only when set:
+        SelectOp shares this path and takes no ret_dtype, and pickles written
+        before ret_dtype existed carry a 3-tuple.
         """
         if (rv := cls._find(name)) is not None:
             return rv
-        return cls.register_new(name, orig_func, is_udt=is_udt)
+        kwargs = {} if ret_dtype is None else {"ret_dtype": ret_dtype}
+        return cls.register_new(name, orig_func, is_udt=is_udt, **kwargs)
 
     @classmethod
-    def _deserialize_anon_udf(cls, func, name, is_udt):
+    def _deserialize_anon_udf(cls, func, name, is_udt, ret_dtype=None):
         """Re-register an anonymous UDF on unpickle."""
-        return cls.register_anonymous(func, name, is_udt=is_udt)
+        kwargs = {} if ret_dtype is None else {"ret_dtype": ret_dtype}
+        return cls.register_anonymous(func, name, is_udt=is_udt, **kwargs)
 
     def __reduce__(self):
         """Default ``__reduce__`` for UDF-capable subclasses.
@@ -603,10 +640,16 @@ class OpBase:
         if self._anonymous:
             if hasattr(self.orig_func, "_parameterized_info"):
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
-            return (type(self)._deserialize_anon_udf, (self.orig_func, self.name, self._is_udt))
+            return (
+                type(self)._deserialize_anon_udf,
+                (self.orig_func, self.name, self._is_udt, getattr(self, "_ret_dtype", None)),
+            )
         if (name := f"{self._modname}.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
-        return (type(self)._deserialize_udf, (self.name, self.orig_func, self._is_udt))
+        return (
+            type(self)._deserialize_udf,
+            (self.name, self.orig_func, self._is_udt, getattr(self, "_ret_dtype", None)),
+        )
 
     @classmethod
     def _check_supports_udf(cls, method_name):
