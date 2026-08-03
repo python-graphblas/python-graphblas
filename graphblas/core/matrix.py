@@ -3416,6 +3416,13 @@ class Matrix(BaseType):
                         within=method_name,
                         extra_message=extra_message,
                     )
+            if mask is not None and mask.parent.ndim != 2:
+                # Matrix value, Vector mask, Matrix index
+                # C(m)[I, J] << A
+                # C[I, J](m) << A
+                # This also catches whole-object updates such as `C(m) << A`
+                # and `C.dup(mask=m)`, which assign with `C(m)[...] = A`.
+                raise TypeError("Unable to use Vector mask on Matrix assignment to a Matrix")
             if is_submask:
                 # C[I, J](M) << A
                 expr_repr = (
