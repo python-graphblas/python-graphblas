@@ -188,3 +188,27 @@ time:
     # numba.njit has run.
 
 The compile happens on first lookup (``unary.heavy_op[int]``).
+
+Compilation caching
+-------------------
+
+A handful of built-in operators are themselves UDFs (``binary.floordiv``,
+``rfloordiv``, ``absfirst``, ``abssecond``, and ``rpow``). Because these are
+plain module-level functions, python-graphblas compiles them with Numba's
+``cache=True``, so the Numba half of the compile is paid once per machine
+instead of once per Python process. Numba writes the cache (``.nbi`` index and
+``.nbc`` data files) into the ``__pycache__`` directory next to the operator
+module. A warm cache shaves roughly 20% off a single op's first-touch build and
+about 45% when several are used; the rest is Numba/LLVM startup and per-process
+object linking, which caching cannot remove.
+
+If that ``__pycache__`` directory is not writable (a read-only install, for
+example), Numba silently falls back to its per-user cache directory
+(``~/.cache/numba`` on Linux, ``~/Library/Caches/numba`` on macOS; set
+``NUMBA_CACHE_DIR`` to override). No warning is emitted for the fallback.
+
+Operators you create with ``register_new`` or ``register_anonymous`` are never
+passed ``cache=True``: Numba can only cache a function with a stable on-disk
+source, which a lambda or an interactively defined function does not have. A
+registered operator's compile is paid once per process, and ``lazy=True`` is
+the tool for deferring it.
