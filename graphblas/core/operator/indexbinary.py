@@ -6,7 +6,7 @@ from ...dtypes import BOOL, INT8, UINT64, lookup_dtype
 from ...exceptions import UdfParseError, check_status_carg
 from .. import _has_numba, ffi, lib
 from ..dtypes import _sample_values
-from .base import OpBase, ParameterizedUdf, TypedOpBase
+from .base import OpBase, ParameterizedUdf, TypedOpBase, _validate_ret_dtype
 
 _has_idxbinop = hasattr(lib, "GxB_IndexBinaryOp_new")
 
@@ -17,7 +17,7 @@ if _has_numba:
         _bool_to_int8,
         _compile_udf_for_udt,
         _get_udt_wrapper_indexbinary,
-        _resolve_udt_return_type,
+        _udt_ret_type,
     )
 
 ffi_new = ffi.new
@@ -221,7 +221,7 @@ class IndexBinaryOp(OpBase):
     no built-ins; all IndexBinaryOps are user-defined.
     """
 
-    __slots__ = "orig_func", "_is_udt", "_numba_func"
+    __slots__ = "orig_func", "_is_udt", "_numba_func", "_ret_dtype"
     _module = indexbinary
     _modname = "indexbinary"
     _custom_dtype = None
@@ -235,7 +235,7 @@ class IndexBinaryOp(OpBase):
     }
 
     @classmethod
-    def _build(cls, name, func, *, is_udt=False, anonymous=False):
+    def _build(cls, name, func, *, is_udt=False, anonymous=False, ret_dtype=None):
         if not _has_idxbinop:
             raise RuntimeError(
                 "IndexBinaryOp requires SuiteSparse:GraphBLAS 9.4+ "
@@ -245,12 +245,20 @@ class IndexBinaryOp(OpBase):
             raise TypeError(f"UDF argument must be a function, not {type(func)}")
         if name is None:
             name = getattr(func, "__name__", "<anonymous_indexbinary>")
+        ret_dtype = _validate_ret_dtype(
+            ret_dtype, "indexbinary", is_udt=is_udt, parameterized=False
+        )
         success = False
         # Set on the Dispatcher, not just the cfunc wrapper; see the note in
         # ``BinaryOp._build``.
         indexbinary_udf = numba.njit(func, error_model="numpy")
         new_type_obj = cls(
-            name, func, anonymous=anonymous, is_udt=is_udt, numba_func=indexbinary_udf
+            name,
+            func,
+            anonymous=anonymous,
+            is_udt=is_udt,
+            numba_func=indexbinary_udf,
+            ret_dtype=ret_dtype,
         )
         return_types = {}
         nt = numba.types
@@ -391,7 +399,7 @@ class IndexBinaryOp(OpBase):
             numba_func, sig, op_kind="indexbinary", op_name=self.name, dtypes=(dtype, dtype2)
         )
         numba_ret_type = numba_func.overloads[sig].signature.return_type
-        ret_type = _resolve_udt_return_type(numba_ret_type, dtype, dtype2)
+        ret_type = _udt_ret_type(self, numba_ret_type, dtype, dtype2)
         indexbinary_wrapper, wrapper_sig = _get_udt_wrapper_indexbinary(
             numba_func, ret_type, dtype, dtype2, numba_ret_type=numba_ret_type
         )
@@ -427,7 +435,9 @@ class IndexBinaryOp(OpBase):
         return op
 
     @classmethod
-    def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
+    def register_anonymous(
+        cls, func, name=None, *, parameterized=False, is_udt=False, ret_dtype=None
+    ):
         """Register an IndexBinaryOp without adding it to the ``indexbinary`` namespace.
 
         Because it is not registered in the namespace, the name is optional.
@@ -448,6 +458,13 @@ class IndexBinaryOp(OpBase):
         is_udt : bool, default False
             Whether the operator is intended to operate on user-defined types.
 
+        ret_dtype : dtype, optional
+            The dtype the operator returns. Requires ``is_udt=True``.
+            Without it the return type is inferred from what the function
+            returns, which can only name a type that is already an input, so
+            an output UDT that is not an operand needs this. The dtype is
+            fixed for the operator: it is the same for every input dtype.
+
         Returns
         -------
         IndexBinaryOp or ParameterizedIndexBinaryOp
@@ -455,11 +472,14 @@ class IndexBinaryOp(OpBase):
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
+            _validate_ret_dtype(ret_dtype, "indexbinary", is_udt=is_udt, parameterized=True)
             return ParameterizedIndexBinaryOp(name, func, anonymous=True, is_udt=is_udt)
-        return cls._build(name, func, anonymous=True, is_udt=is_udt)
+        return cls._build(name, func, anonymous=True, is_udt=is_udt, ret_dtype=ret_dtype)
 
     @classmethod
-    def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
+    def register_new(
+        cls, name, func, *, parameterized=False, is_udt=False, lazy=False, ret_dtype=None
+    ):
         """Register a new IndexBinaryOp under the ``graphblas.indexbinary`` namespace.
 
         Parameters
@@ -479,23 +499,37 @@ class IndexBinaryOp(OpBase):
         lazy : bool, default False
             When True, defer compilation until the operator is first used.
 
+        ret_dtype : dtype, optional
+            The dtype the operator returns. Requires ``is_udt=True``.
+            See :meth:`register_anonymous` for details.
+
         Examples
         --------
         >>> gb.indexbinary.register_new("index_dist", lambda x, ix, jx, y, iy, jy, t: abs(ix - iy))
 
         """
         cls._check_supports_udf("register_new")
+        # Validate eagerly even for lazy=True, so a bad combination fails at
+        # the registration site rather than at first attribute touch.
+        _validate_ret_dtype(ret_dtype, "indexbinary", is_udt=is_udt, parameterized=parameterized)
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
                 cls.register_new,
-                {"name": name, "func": func, "parameterized": parameterized, "is_udt": is_udt},
+                {
+                    "name": name,
+                    "func": func,
+                    "parameterized": parameterized,
+                    "is_udt": is_udt,
+                    "ret_dtype": ret_dtype,
+                },
             )
         elif parameterized:
+            _validate_ret_dtype(ret_dtype, "indexbinary", is_udt=is_udt, parameterized=True)
             idxbinop = ParameterizedIndexBinaryOp(name, func, is_udt=is_udt)
             setattr(module, funcname, idxbinop)
         else:
-            idxbinop = cls._build(name, func, is_udt=is_udt)
+            idxbinop = cls._build(name, func, is_udt=is_udt, ret_dtype=ret_dtype)
             setattr(module, funcname, idxbinop)
 
         if not cls._initialized:  # pragma: no cover (safety)
@@ -511,8 +545,11 @@ class IndexBinaryOp(OpBase):
         # No built-in IndexBinaryOps to register.
         cls._initialized = True
 
-    def __init__(self, name, func=None, *, anonymous=False, is_udt=False, numba_func=None):
+    def __init__(
+        self, name, func=None, *, anonymous=False, is_udt=False, numba_func=None, ret_dtype=None
+    ):
         super().__init__(name, anonymous=anonymous)
+        self._ret_dtype = ret_dtype
         self.orig_func = func
         self._numba_func = numba_func
         self._is_udt = is_udt

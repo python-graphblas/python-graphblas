@@ -3900,3 +3900,266 @@ def test_deferred_commutes_to():
     assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
     assert lines.get("floordiv_ok") == "True", report
     assert lines.get("absfirst_ok") == "True", report
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_ret_dtype_names_an_output_udt():
+    """``ret_dtype`` names an output UDT that is not one of the operands.
+
+    Without it the return type is inferred from what the UDF builds, and the
+    only names in scope are the input dtypes. That makes a rank-reducing op
+    such as FP64[9] -> FP64[3] unreachable: the inferred type is the input's,
+    and the shape check then rejects the shorter array the UDF returns.
+    """
+    # Shapes unique to this test; see the note in test_udt_array_udf_shape_errors.
+    nine = dtypes.register_anonymous(np.dtype((np.float64, (9,))), "_RetD9")
+    three = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_RetD3")
+
+    def _first_three(x):  # pragma: no cover (numba)
+        return x[:3]
+
+    without = UnaryOp.register_anonymous(_first_three, "_ret_dtype_without", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"shape \(3,\) when run on sample values"):
+        without[nine]
+
+    op_ = UnaryOp.register_anonymous(_first_three, "_ret_dtype_with", is_udt=True, ret_dtype=three)
+    assert op_[nine].return_type is three
+
+    v = Vector(nine, size=2)
+    v[0] = np.arange(9.0)
+    w = op_(v).new()
+    assert w.dtype is three
+    np.testing.assert_array_equal(w[0].new().value, np.arange(3.0))
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_ret_dtype_binary_and_record():
+    """``ret_dtype`` on a binary op, including a type that is neither operand."""
+    a4 = dtypes.register_anonymous(np.dtype((np.float64, (4,))), "_RetDBinA4")
+    b6 = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_RetDBinB6")
+    out2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_RetDBinOut2")
+
+    def _head_two(x, y):  # pragma: no cover (numba)
+        return x[:2] + y[:2]
+
+    op_ = BinaryOp.register_anonymous(_head_two, "_ret_dtype_bin", is_udt=True, ret_dtype=out2)
+    assert op_[a4, b6].return_type is out2
+
+    # ret_dtype equal to an operand's dtype agrees with what inference picks.
+    def _plus(x, y):  # pragma: no cover (numba)
+        return x + y
+
+    same = BinaryOp.register_anonymous(_plus, "_ret_dtype_same", is_udt=True, ret_dtype=a4)
+    inferred = BinaryOp.register_anonymous(_plus, "_ret_dtype_inferred", is_udt=True)
+    assert same[a4, a4].return_type is inferred[a4, a4].return_type is a4
+
+    # A record UDT output that appears in no operand.
+    rec = dtypes.register_anonymous(
+        np.dtype([("lo", np.float64), ("hi", np.float64)], align=True), "_RetDRec"
+    )
+
+    def _bounds(x, y):  # pragma: no cover (numba)
+        return (min(x, y), max(x, y))
+
+    recop = BinaryOp.register_anonymous(_bounds, "_ret_dtype_rec", is_udt=True, ret_dtype=rec)
+    assert recop[FP64, FP64].return_type is rec
+
+    w = Vector(FP64, size=2)
+    w[0] = 3.0
+    u = Vector(FP64, size=2)
+    u[0] = 1.0
+    res = recop(w & u).new()
+    assert res.dtype is rec
+    assert tuple(res[0].new().value.tolist()) == (1.0, 3.0)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_ret_dtype_errors():
+    """``ret_dtype`` is rejected outside the UDT path and for unrecognized dtypes."""
+    with pytest.raises(ValueError, match="not a recognized dtype"):
+        UnaryOp.register_anonymous(lambda x: x, "_ret_dtype_junk", is_udt=True, ret_dtype="NOPE")
+    with pytest.raises(ValueError, match="not a recognized dtype"):
+        UnaryOp.register_anonymous(lambda x: x, "_ret_dtype_junk2", is_udt=True, ret_dtype=object())
+
+    # The builtin path derives a return type per input dtype, so one fixed
+    # dtype cannot describe it.
+    with pytest.raises(ValueError, match="ret_dtype requires is_udt=True"):
+        UnaryOp.register_anonymous(lambda x: x, "_ret_dtype_builtin", ret_dtype=FP64)
+    with pytest.raises(ValueError, match="ret_dtype requires is_udt=True"):
+        BinaryOp.register_anonymous(lambda x, y: x + y, "_ret_dtype_builtin2", ret_dtype=FP64)
+
+    # lazy=True must not defer the validation: a bad combination fails at the
+    # registration site, not at first attribute touch of the delayed op.
+    with pytest.raises(ValueError, match="parameterized=True"):
+        UnaryOp.register_new(
+            "_ret_dtype_lazy_param",
+            lambda x: x,
+            parameterized=True,
+            is_udt=True,
+            lazy=True,
+            ret_dtype=FP64,
+        )
+
+    # A parameterized operator builds its function when called; ret_dtype
+    # belongs to the register call for that function.
+    with pytest.raises(ValueError, match="does not work with parameterized=True"):
+        UnaryOp.register_anonymous(
+            lambda t=1: (lambda x: x + t),
+            "_ret_dtype_param",
+            parameterized=True,
+            is_udt=True,
+            ret_dtype=FP64,
+        )
+
+    # SelectOp takes no ret_dtype: GraphBLAS fixes its return type to BOOL.
+    with pytest.raises(TypeError, match="ret_dtype"):
+        SelectOp.register_anonymous(
+            lambda x, i, j, t: x > t, "_ret_dtype_select", is_udt=True, ret_dtype=BOOL
+        )
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_ret_dtype_index_ops():
+    """``ret_dtype`` reaches the IndexUnaryOp and IndexBinaryOp compile paths too."""
+    in5 = dtypes.register_anonymous(np.dtype((np.float64, (5,))), "_RetDIdx5")
+    out2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_RetDIdx2")
+
+    def _head_plus_row(x, i, j, t):  # pragma: no cover (numba)
+        return x[:2] + i
+
+    iu = IndexUnaryOp.register_anonymous(
+        _head_plus_row, "_ret_dtype_indexunary", is_udt=True, ret_dtype=out2
+    )
+    assert iu[in5, INT64].return_type is out2
+
+    if lib.__dict__.get("GxB_IndexBinaryOp_new") is not None:
+        from graphblas.core.operator import IndexBinaryOp
+
+        def _head_sum(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+            return x[:2] + y[:2]
+
+        ib = IndexBinaryOp.register_anonymous(
+            _head_sum, "_ret_dtype_indexbinary", is_udt=True, ret_dtype=out2
+        )
+        assert ib[in5, in5].return_type is out2
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_ret_dtype_still_shape_checked():
+    """The registration-time shape probe checks against the declared ``ret_dtype``.
+
+    Short-circuiting the return-type inference must not take the probe with
+    it. Declaring the output type makes the check worth more, not less: the
+    inferred case can only ever compare a UDF against a type derived from
+    what it returned, while a declared type is an independent claim the UDF
+    can contradict.
+    """
+    in5 = dtypes.register_anonymous(np.dtype((np.float64, (5,))), "_RetDPrb5")
+    out2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_RetDPrb2")
+
+    def _three(x):  # pragma: no cover (numba)
+        return x[:3]
+
+    # Three elements cannot fill a declared two-element output.
+    op_ = UnaryOp.register_anonymous(_three, "_ret_dtype_prb_bad", is_udt=True, ret_dtype=out2)
+    with pytest.raises(UdfParseError, match=r"shape \(3,\).*_RetDPrb2 elements are \(2,\)"):
+        op_[in5]
+
+    # The check is fit-by-broadcast, not equality: a one-element return
+    # legitimately fills every slot of the declared element.
+    def _one(x):  # pragma: no cover (numba)
+        return x[:1]
+
+    ok = UnaryOp.register_anonymous(_one, "_ret_dtype_prb_bcast", is_udt=True, ret_dtype=out2)
+    assert ok[in5].return_type is out2
+
+    # The record half of the probe checks the declared type's array leaves.
+    rec = dtypes.register_anonymous(
+        np.dtype([("v", np.float64, (4,)), ("n", np.int64)], align=True), "_RetDPrbRec"
+    )
+
+    def _short_leaf(x, y):  # pragma: no cover (numba)
+        return (x[:2], 1)
+
+    recop = BinaryOp.register_anonymous(
+        _short_leaf, "_ret_dtype_prb_rec", is_udt=True, ret_dtype=rec
+    )
+    with pytest.raises(UdfParseError, match=r"shape \(2,\) for field \['v'\] of _RetDPrbRec"):
+        recop[in5, in5]
+
+
+def _ret_dtype_pickle_udf(x):  # pragma: no cover (numba)
+    return x[:5]
+
+
+_RET_DTYPE_PICKLE_WRITER = """
+import pickle
+import sys
+
+import numpy as np
+
+import graphblas as gb
+from graphblas.core.operator.unary import UnaryOp
+from graphblas.tests.test_op import _ret_dtype_pickle_udf
+
+print("package: " + gb.__file__)
+five = gb.dtypes.register_anonymous(np.dtype((np.float32, (5,))), "_RetPickle5")
+UnaryOp.register_new("_ret_dtype_pickled", _ret_dtype_pickle_udf, is_udt=True, ret_dtype=five)
+anon = UnaryOp.register_anonymous(
+    _ret_dtype_pickle_udf, "_ret_dtype_pickled_anon", is_udt=True, ret_dtype=five
+)
+with open(sys.argv[1], "wb") as f:
+    pickle.dump((gb.unary._ret_dtype_pickled, anon), f)
+print("wrote: ok")
+"""
+
+
+_RET_DTYPE_PICKLE_READER = """
+import pickle
+import sys
+
+import numpy as np
+
+import graphblas as gb
+
+print("package: " + gb.__file__)
+with open(sys.argv[1], "rb") as f:
+    named, anon = pickle.load(f)
+ten = gb.dtypes.register_anonymous(np.dtype((np.float32, (10,))), "_RetPickle10")
+print("named shape: " + str(named[ten].return_type.np_type.subdtype[1]))
+print("anon shape: " + str(anon[ten].return_type.np_type.subdtype[1]))
+"""
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_ret_dtype_survives_pickle(tmp_path):
+    # In-process unpickling takes the _find shortcut and returns the very
+    # same object, so only a cross-process round trip exercises what pickle
+    # exists for: the reduce tuple must carry ret_dtype, or the reconstructed
+    # op re-registers without it and fails its own shape probe. Both sides
+    # run in subprocesses so the named registration never lands in this
+    # process's operator namespace (test_operator_types enumerates it).
+    payload = tmp_path / "ops.pkl"
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root))
+    for probe, checks in (
+        (_RET_DTYPE_PICKLE_WRITER, {"wrote": "ok"}),
+        (_RET_DTYPE_PICKLE_READER, {"named shape": "(5,)", "anon shape": "(5,)"}),
+    ):
+        result = subprocess.run(
+            [sys.executable, "-c", probe, str(payload)],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        assert result.returncode == 0, report
+        lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+        assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+        for key, want in checks.items():
+            assert lines.get(key) == want, report
