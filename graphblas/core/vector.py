@@ -6,11 +6,11 @@ from .. import backend, binary, monoid, select, semiring, unary
 from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, GrB_NO_VALUE, NoValue, check_status, check_status_carg
 from . import _supports_udfs, automethods, ffi, lib, utils
-from .base import BaseExpression, BaseType, _check_mask, _is_recording, call
+from .base import BaseExpression, BaseType, _is_recording, call
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import _raise_dtype_or_arraylike
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, InfixExprBase, Updater
-from .mask import Mask, StructuralMask, ValueMask
+from .mask import Mask, StructuralMask, ValueMask, _check_mask
 from .operator import (
     UNKNOWN_OPCLASS,
     _get_typed_op_from_exprs,
@@ -2177,10 +2177,7 @@ class Vector(BaseType):
         else:
             # If we know the dtype, then using `np.fromiter` is much faster
             dtype = lookup_dtype(dtype)
-            if dtype.np_type.subdtype is not None and np.__version__[:5] in {"1.21.", "1.22."}:
-                values, dtype = values_to_numpy_buffer(list(d.values()), dtype)  # FLAKY COVERAGE
-            else:
-                values = np.fromiter(d.values(), dtype.np_type)
+            values = np.fromiter(d.values(), dtype.np_type)
         if size is None and indices.size == 0:
             size = 0
         return cls.from_coo(indices, values, dtype, size=size, name=name)
