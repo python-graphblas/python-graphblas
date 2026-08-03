@@ -33,9 +33,12 @@ class Context(BaseConfig):
     }
 
     def __init__(self, engage=True, *, stack=True, nthreads=None, chunk=None, gpu_id=None):
-        super().__init__()
+        # Instance attributes must exist before super().__init__() finishes,
+        # because BaseConfig.__setattr__ allows only the attributes set by then.
         self.gb_obj = ffi_new("GxB_Context*")
         check_status_carg(lib.GxB_Context_new(self.gb_obj), "Context", self.gb_obj[0])
+        self._prev_context = None
+        super().__init__()
         if stack:
             context = threadlocal.context
             self["nthreads"] = context["nthreads"] if nthreads is None else nthreads
@@ -49,7 +52,6 @@ class Context(BaseConfig):
                 self["chunk"] = chunk
             if gpu_id is not None and "gpu_id" in self._options:
                 self["gpu_id"] = gpu_id
-        self._prev_context = None
         if engage:
             self.engage()
 
