@@ -190,6 +190,32 @@ def _summarize_numba_typing_error(exc):
     return "Numba could not compile the function for these input types"
 
 
+def _array_udt_operands(dtypes):
+    """Return the distinct array-UDT operands in ``dtypes``, order preserved.
+
+    ``x`` and ``y`` are usually the same UDT, hence the dedup. It is by
+    identity, not by shape: a flat ``FP64[2, 3]`` and a layered
+    ``FP64[3][2]`` are separate DataTypes with separate GrB_Type handles,
+    yet Numba collapses both to the same ``nestedarray(float64, (2, 3))``.
+    """
+    operands = []
+    for d in dtypes:
+        if d._is_udt and d.np_type.subdtype is not None and not any(d is seen for seen in operands):
+            operands.append(d)
+    return operands
+
+
+def _udt_ret_type(parent_op, numba_ret_type, *dtypes):
+    """Return the operator's declared ``ret_dtype``, else infer one from the UDF.
+
+    Inference can only name a type that is already an operand, so an output
+    UDT that appears nowhere in the inputs is unreachable without this.
+    """
+    if (ret_dtype := parent_op._ret_dtype) is not None:
+        return ret_dtype
+    return _resolve_udt_return_type(numba_ret_type, *dtypes)
+
+
 def _resolve_udt_return_type(numba_ret_type, *dtypes):
     """Resolve a Numba return type to a DataType, matching Tuple returns to an input UDT.
 
