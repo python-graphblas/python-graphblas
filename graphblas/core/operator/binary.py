@@ -33,6 +33,7 @@ from .base import (
     TypedOpBase,
     _call_op,
     _hasop,
+    _validate_ret_dtype,
 )
 
 # Imported unconditionally (plain dict, no numba): ``_compile_udt`` consults it
@@ -47,7 +48,7 @@ if _has_numba:
         _compile_udf_for_udt,
         _finalize_udt_op,
         _get_udt_wrapper,
-        _resolve_udt_return_type,
+        _udt_ret_type,
     )
 
     try:
@@ -554,6 +555,7 @@ class BinaryOp(OpBase):
         "_numba_func",
         "_custom_dtype",
         "_defer_builds",
+        "_ret_dtype",
     )
     _module = binary
     _modname = "binary"
@@ -659,11 +661,17 @@ class BinaryOp(OpBase):
     }
 
     @classmethod
-    def _build(cls, name, func, *, is_udt=False, anonymous=False, cache=False):
+    def _build(cls, name, func, *, is_udt=False, anonymous=False, cache=False, ret_dtype=None):
         if not isinstance(func, FunctionType):
             raise TypeError(f"UDF argument must be a function, not {type(func)}")
         if name is None:
             name = getattr(func, "__name__", "<anonymous_binary>")
+        # This rejects ret_dtype unless is_udt, which keeps it disjoint from the
+        # deferred builtin path below: that one only runs under ``not is_udt``,
+        # so an op can never be both deferred and carrying a declared return
+        # type. ``_build_deferred`` reads its ret_type back from ``.types`` and
+        # never consults ``_ret_dtype``.
+        ret_dtype = _validate_ret_dtype(ret_dtype, "binary", is_udt=is_udt, parameterized=False)
         success = False
         # The error model has to be set here as well as on the cfunc wrapper in
         # ``_finalize_typed_binaryop``. A Dispatcher keeps one compilation per
@@ -678,7 +686,14 @@ class BinaryOp(OpBase):
         # interactively defined functions do not have, so ops registered by
         # users stay uncached.
         binary_udf = numba.njit(func, error_model="numpy", cache=cache)
-        new_type_obj = cls(name, func, anonymous=anonymous, is_udt=is_udt, numba_func=binary_udf)
+        new_type_obj = cls(
+            name,
+            func,
+            anonymous=anonymous,
+            is_udt=is_udt,
+            numba_func=binary_udf,
+            ret_dtype=ret_dtype,
+        )
         return_types = {}
         if not is_udt:
             # ``cache=True`` marks the module-level built-in UDFs (floordiv and
@@ -751,7 +766,7 @@ class BinaryOp(OpBase):
                 numba_func, sig, op_kind="binary", op_name=self.name, dtypes=(dtype, dtype2)
             )
             numba_ret_type = numba_func.overloads[sig].signature.return_type
-            ret_type = _resolve_udt_return_type(numba_ret_type, dtype, dtype2)
+            ret_type = _udt_ret_type(self, numba_ret_type, dtype, dtype2)
             binary_wrapper, wrapper_sig = _get_udt_wrapper(
                 numba_func, ret_type, dtype, dtype2, numba_ret_type=numba_ret_type
             )
@@ -790,7 +805,9 @@ class BinaryOp(OpBase):
         return op
 
     @classmethod
-    def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
+    def register_anonymous(
+        cls, func, name=None, *, parameterized=False, is_udt=False, ret_dtype=None
+    ):
         """Register a BinaryOp without registering it in the ``graphblas.binary`` namespace.
 
         Because it is not registered in the namespace, the name is optional.
@@ -819,6 +836,13 @@ class BinaryOp(OpBase):
             Setting ``is_udt=True`` is also helpful when the left and right
             dtypes need to be different.
 
+        ret_dtype : dtype, optional
+            The dtype the operator returns. Requires ``is_udt=True``.
+            Without it the return type is inferred from what the function
+            returns, which can only name a type that is already an input, so
+            an output UDT that is not an operand needs this. The dtype is
+            fixed for the operator: it is the same for every input dtype.
+
         Returns
         -------
         BinaryOp or ParameterizedBinaryOp
@@ -826,12 +850,21 @@ class BinaryOp(OpBase):
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
+            _validate_ret_dtype(ret_dtype, "binary", is_udt=is_udt, parameterized=True)
             return ParameterizedBinaryOp(name, func, anonymous=True, is_udt=is_udt)
-        return cls._build(name, func, anonymous=True, is_udt=is_udt)
+        return cls._build(name, func, anonymous=True, is_udt=is_udt, ret_dtype=ret_dtype)
 
     @classmethod
     def register_new(
-        cls, name, func, *, parameterized=False, is_udt=False, lazy=False, _cache=False
+        cls,
+        name,
+        func,
+        *,
+        parameterized=False,
+        is_udt=False,
+        lazy=False,
+        ret_dtype=None,
+        _cache=False,
     ):
         """Register a new BinaryOp and save it to ``graphblas.binary`` namespace.
 
@@ -867,6 +900,10 @@ class BinaryOp(OpBase):
             delay compilation and only compile when the operator is used,
             which is done by setting ``lazy=True``.
 
+        ret_dtype : dtype, optional
+            The dtype the operator returns. Requires ``is_udt=True``.
+            See :meth:`register_anonymous` for details.
+
         Examples
         --------
         >>> def max_zero(x, y):
@@ -890,6 +927,9 @@ class BinaryOp(OpBase):
 
         """
         cls._check_supports_udf("register_new")
+        # Validate eagerly even for lazy=True, so a bad combination fails at
+        # the registration site rather than at first attribute touch.
+        _validate_ret_dtype(ret_dtype, "binary", is_udt=is_udt, parameterized=parameterized)
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
@@ -899,14 +939,16 @@ class BinaryOp(OpBase):
                     "func": func,
                     "parameterized": parameterized,
                     "is_udt": is_udt,
+                    "ret_dtype": ret_dtype,
                     "_cache": _cache,
                 },
             )
         elif parameterized:
+            _validate_ret_dtype(ret_dtype, "binary", is_udt=is_udt, parameterized=True)
             binary_op = ParameterizedBinaryOp(name, func, is_udt=is_udt)
             setattr(module, funcname, binary_op)
         else:
-            binary_op = cls._build(name, func, is_udt=is_udt, cache=_cache)
+            binary_op = cls._build(name, func, is_udt=is_udt, cache=_cache, ret_dtype=ret_dtype)
             setattr(module, funcname, binary_op)
         # Also save it to `graphblas.op` if not yet defined
         opmodule, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
@@ -1131,8 +1173,10 @@ class BinaryOp(OpBase):
         is_positional=False,
         is_udt=False,
         numba_func=None,
+        ret_dtype=None,
     ):
         super().__init__(name, anonymous=anonymous)
+        self._ret_dtype = ret_dtype
         self._monoid = None
         self._commutes_to = None
         self._semiring_commutes_to = None

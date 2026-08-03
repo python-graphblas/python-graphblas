@@ -28,6 +28,7 @@ from .base import (
     ParameterizedUdf,
     TypedOpBase,
     _hasop,
+    _validate_ret_dtype,
 )
 
 if _supports_complex:
@@ -40,7 +41,7 @@ if _has_numba:
         _compile_udf_for_udt,
         _finalize_udt_op,
         _get_udt_wrapper,
-        _resolve_udt_return_type,
+        _udt_ret_type,
     )
 
 ffi_new = ffi.new
@@ -136,7 +137,7 @@ class UnaryOp(OpBase):
     as well as in the ``graphblas.ops`` combined namespace.
     """
 
-    __slots__ = "orig_func", "is_positional", "_is_udt", "_numba_func"
+    __slots__ = "orig_func", "is_positional", "_is_udt", "_numba_func", "_ret_dtype"
     _custom_dtype = None
     _module = unary
     _modname = "unary"
@@ -170,16 +171,24 @@ class UnaryOp(OpBase):
     _positional = {"positioni", "positioni1", "positionj", "positionj1"}
 
     @classmethod
-    def _build(cls, name, func, *, anonymous=False, is_udt=False):
+    def _build(cls, name, func, *, anonymous=False, is_udt=False, ret_dtype=None):
         if type(func) is not FunctionType:
             raise TypeError(f"UDF argument must be a function, not {type(func)}")
         if name is None:
             name = getattr(func, "__name__", "<anonymous_unary>")
+        ret_dtype = _validate_ret_dtype(ret_dtype, "unary", is_udt=is_udt, parameterized=False)
         success = False
         # Set on the Dispatcher, not just the cfunc wrapper; see the note in
         # ``BinaryOp._build``.
         unary_udf = numba.njit(func, error_model="numpy")
-        new_type_obj = cls(name, func, anonymous=anonymous, is_udt=is_udt, numba_func=unary_udf)
+        new_type_obj = cls(
+            name,
+            func,
+            anonymous=anonymous,
+            is_udt=is_udt,
+            numba_func=unary_udf,
+            ret_dtype=ret_dtype,
+        )
         return_types = {}
         nt = numba.types
         if not is_udt:
@@ -285,7 +294,7 @@ class UnaryOp(OpBase):
         sig = (dtype.numba_type,)
         _compile_udf_for_udt(numba_func, sig, op_kind="unary", op_name=self.name, dtypes=(dtype,))
         numba_ret_type = numba_func.overloads[sig].signature.return_type
-        ret_type = _resolve_udt_return_type(numba_ret_type, dtype)
+        ret_type = _udt_ret_type(self, numba_ret_type, dtype)
         unary_wrapper, wrapper_sig = _get_udt_wrapper(
             numba_func, ret_type, dtype, numba_ret_type=numba_ret_type
         )
@@ -294,7 +303,9 @@ class UnaryOp(OpBase):
         )
 
     @classmethod
-    def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
+    def register_anonymous(
+        cls, func, name=None, *, parameterized=False, is_udt=False, ret_dtype=None
+    ):
         """Register a UnaryOp without registering it in the ``graphblas.unary`` namespace.
 
         Because it is not registered in the namespace, the name is optional.
@@ -320,6 +331,12 @@ class UnaryOp(OpBase):
             Whether the operator is intended to operate on user-defined types.
             If True, then the function will not be automatically compiled for
             builtin types, and it will be compiled "just in time" when used.
+        ret_dtype : dtype, optional
+            The dtype the operator returns. Requires ``is_udt=True``.
+            Without it the return type is inferred from what the function
+            returns, which can only name a type that is already an input, so
+            an output UDT that is not an operand needs this. The dtype is
+            fixed for the operator: it is the same for every input dtype.
 
         Returns
         -------
@@ -328,11 +345,14 @@ class UnaryOp(OpBase):
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
+            _validate_ret_dtype(ret_dtype, "unary", is_udt=is_udt, parameterized=True)
             return ParameterizedUnaryOp(name, func, anonymous=True, is_udt=is_udt)
-        return cls._build(name, func, anonymous=True, is_udt=is_udt)
+        return cls._build(name, func, anonymous=True, is_udt=is_udt, ret_dtype=ret_dtype)
 
     @classmethod
-    def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
+    def register_new(
+        cls, name, func, *, parameterized=False, is_udt=False, lazy=False, ret_dtype=None
+    ):
         """Register a new UnaryOp and save it to ``graphblas.unary`` namespace.
 
         Parameters
@@ -364,6 +384,9 @@ class UnaryOp(OpBase):
             Compiling functions can be slow, however, so you may want to
             delay compilation and only compile when the operator is used,
             which is done by setting ``lazy=True``.
+        ret_dtype : dtype, optional
+            The dtype the operator returns. Requires ``is_udt=True``.
+            See :meth:`register_anonymous` for details.
 
         Examples
         --------
@@ -373,17 +396,27 @@ class UnaryOp(OpBase):
 
         """
         cls._check_supports_udf("register_new")
+        # Validate eagerly even for lazy=True, so a bad combination fails at
+        # the registration site rather than at first attribute touch.
+        _validate_ret_dtype(ret_dtype, "unary", is_udt=is_udt, parameterized=parameterized)
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
                 cls.register_new,
-                {"name": name, "func": func, "parameterized": parameterized, "is_udt": is_udt},
+                {
+                    "name": name,
+                    "func": func,
+                    "parameterized": parameterized,
+                    "is_udt": is_udt,
+                    "ret_dtype": ret_dtype,
+                },
             )
         elif parameterized:
+            _validate_ret_dtype(ret_dtype, "unary", is_udt=is_udt, parameterized=True)
             unary_op = ParameterizedUnaryOp(name, func, is_udt=is_udt)
             setattr(module, funcname, unary_op)
         else:
-            unary_op = cls._build(name, func, is_udt=is_udt)
+            unary_op = cls._build(name, func, is_udt=is_udt, ret_dtype=ret_dtype)
             setattr(module, funcname, unary_op)
         # Also save it to `graphblas.op` if not yet defined
         opmodule, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
@@ -480,12 +513,14 @@ class UnaryOp(OpBase):
         is_positional=False,
         is_udt=False,
         numba_func=None,
+        ret_dtype=None,
     ):
         super().__init__(name, anonymous=anonymous)
         self.orig_func = func
         self._numba_func = numba_func
         self.is_positional = is_positional
         self._is_udt = is_udt
+        self._ret_dtype = ret_dtype
         if is_udt:
             self._udt_types = {}  # {dtype: DataType}
             self._udt_ops = {}  # {dtype: TypedUserUnaryOp}

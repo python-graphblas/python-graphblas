@@ -204,6 +204,43 @@ If your UDF references a field that doesn't exist, or returns the wrong arity,
 you'll get a ``UdfParseError`` with the actionable diagnostic line surfaced
 from Numba's typing pass instead of a 200-line traceback.
 
+Naming the output type
+~~~~~~~~~~~~~~~~~~~~~~
+
+By default the return type is worked out from what the UDF returns, matched
+against the input dtypes. That can only name a type the operator already has
+in hand, so an output UDT that is not one of the operands is out of reach.
+The ``x[:2]`` rejection above is a case of this: the output really is a
+2-element UDT, but nothing says so.
+
+Pass ``ret_dtype`` to say it outright. It takes anything ``lookup_dtype``
+accepts and requires ``is_udt=True``::
+
+    nine = gb.dtypes.register_anonymous(np.dtype((np.float64, (9,))), "Nine")
+    three = gb.dtypes.register_anonymous(np.dtype((np.float64, (3,))), "Three")
+
+    head = gb.core.operator.UnaryOp.register_anonymous(
+        lambda x: x[:3], "head", is_udt=True, ret_dtype=three
+    )
+    head[nine].return_type  # Three
+
+``ret_dtype`` is available on ``register_anonymous`` and ``register_new`` for
+``UnaryOp``, ``BinaryOp``, ``IndexUnaryOp``, and ``IndexBinaryOp``. It is a
+property of the operator, not of a particular input dtype: the same output
+type applies to every dtype the operator is typed for. An operator whose
+output type should vary with its inputs still needs one registration per
+output type.
+
+Declaring the type does not switch off the shape check described above; it
+points the check at the declared type instead. A UDF whose result cannot
+fill a ``ret_dtype`` element is still rejected when the op is typed, so a
+wrong ``ret_dtype`` is a registration error rather than a silently
+mis-typed result.
+
+It does not apply to ``SelectOp``, whose return type GraphBLAS fixes at
+``BOOL``, nor to builtin (non-UDT) dtypes, where the return type comes from
+compiling the function against each input type in turn.
+
 .. _udt_jit_introspection:
 
 JIT and introspection
