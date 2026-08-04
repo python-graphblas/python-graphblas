@@ -653,7 +653,7 @@ class BinaryOp(OpBase):
         # Set JIT C definition for auto-generated built-in UDT ops. Only
         # same-type pairs apply: mixed UDT+scalar ops don't have a
         # meaningful single-type C definition. ``_has_jit_set`` gates access
-        # to ``lib.GrB_BinaryOp_set_String``, which is absent on SS < 8.
+        # to ``lib.GrB_BinaryOp_set_String``, which is absent on SS < 9.
         is_jittable = self.name in _BUILTIN_UDT_BINARY_OPS or self.name in ("eq", "ne")
         if _has_numba and _has_jit_set and dtype == dtype2 and is_jittable:
             if self.name in _BUILTIN_UDT_BINARY_OPS:
