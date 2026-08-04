@@ -10,6 +10,7 @@ import pytest
 
 import graphblas as gb
 from graphblas import backend, binary, dtypes, monoid, replace, select, unary
+from graphblas.core.ss import version_major as ss_version_major  # noqa: F401 (used in skipif)
 from graphblas.exceptions import EmptyObject
 
 from .conftest import autocompute, compute, pypy
@@ -248,6 +249,15 @@ def test_udt_scalar_padding_is_zeroed():
     assert raw == Scalar.from_value((3, 4.0), dtype=udt).value.tobytes()
 
 
+# A SuiteSparse compiled without variable-length arrays (MSVC, so the Windows
+# builds) rejects a user-defined type larger than GB_VLA_MAXSIZE with
+# GrB_INVALID_VALUE. That ceiling was 128 bytes through SS 8.x and is 1024 as
+# of 9.0, so skipping on SS < 9 covers the affected builds and costs one test
+# on the rest.
+@pytest.mark.skipif(
+    "ss_version_major < 9",
+    reason="SuiteSparse < 9 rejects a 240-byte UDT on builds without VLA support",
+)
 def test_udt_scalar_nested_array_roundtrip():
     """A UDT whose element is itself an array dtype reads back at full extent.
 
