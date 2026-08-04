@@ -108,7 +108,23 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         # but also e.g. all-string weights, which infer a <U dtype rather than
         # object), and sequence-valued attributes of uniform length, which infer
         # a 2-D numeric array that from_coo would otherwise accept as a UDT.
-        return _from_networkx_via_scipy(G, nodelist, dtype, weight, name)
+        try:
+            return _from_networkx_via_scipy(G, nodelist, dtype, weight, name)
+        except (nx.NetworkXError, TypeError) as err:
+            # Since scipy 1.15 an unsupported dtype is rejected while the coo array
+            # is built, and that ValueError reaches us unchanged. Older scipy builds
+            # the array and fails in the coo -> csr conversion instead: scipy raises
+            # TypeError ("no supported conversion for types"), which networkx 3.4+
+            # wraps in a NetworkXError that blames the sparse format while
+            # networkx <= 3.3 lets the TypeError propagate.
+            # Restate it so every supported stack reports the same error for the
+            # same graph. The graph and nodelist checks above are the ones
+            # nx.to_scipy_sparse_array makes, so a NetworkXError or TypeError from
+            # the fallback can only be that dtype complaint.
+            raise ValueError(
+                f"scipy.sparse does not support dtype {values.dtype}; "
+                "edge weights must be numeric scalars"
+            ) from err
     if values.size == 0:
         # An empty graph has no data to infer a dtype from; scipy defaults an
         # empty coo array to float64, so match that when dtype is unset.
