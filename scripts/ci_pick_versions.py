@@ -144,6 +144,8 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
     then Python-version constraints, then numba/numpy constraints. Within the awkward
     section, the numpy 2.x floor runs before the Python-availability picks (which may
     narrow the choices further), and the awkward >=2.10 rule runs last so it wins.
+    The networkx section reads numpy, scipy, and pandas, so it runs after all three
+    are final.
     """
     # --- scipy / numpy constraints ---
 
@@ -218,6 +220,22 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
         and _ver(v["awkward"]) < (2, 10)
     ):
         v["awkward"] = random.choice([a for a in AWKWARD_VERSIONS["2.x"] if _ver(a) >= (2, 10)])
+
+    # --- networkx / numpy, scipy, pandas floors ---
+
+    # conda-forge networkx 3.5 and 3.6 declare `constrains: numpy >=1.25, scipy >=1.11.2,
+    # pandas >=2.0`. conda enforces those against our pins, and since networkx is pinned too
+    # the solve fails outright instead of backing off. Older pins are safe because a pin like
+    # "3.4" can resolve down to 3.4.0, whose floors (numpy >=1.22, scipy >=1.9, pandas >=1.4)
+    # sit at or below everything in our pools. Unpinned networkx is latest, so it gets the
+    # 3.5+ floors. Compare scipy at the minor level: the "1.11" pin resolves to 1.11.4, which
+    # clears the 1.11.2 floor.
+    # MAINT: 2026-08-04 conda-forge networkx 3.6.1 constrains numpy >=1.25, scipy >=1.11.2
+    if _ver(v["networkx"]) >= (3, 5) and (
+        _ver(v["numpy"]) < (1, 25) or _ver(v["scipy"]) < (1, 11) or _ver(v["pandas"]) < (2, 0)
+    ):
+        # Only the numpy 1.x pools reach here, and those Pythons all have pre-3.5 networkx.
+        v["networkx"] = random.choice([n for n in NETWORKX_VERSIONS[pyver] if _ver(n) < (3, 5)])
 
     # --- numba constraints ---
 
@@ -471,6 +489,17 @@ def validate(v, pyver):
         and _ver(v["awkward"]) < (2, 10)
     ):
         errors.append(f"awkward {v['awkward']} requires numpy <2.5, got {v['numpy'] or 'latest'}")
+
+    # networkx >=3.5 constrains numpy >=1.25, scipy >=1.11.2 (the "1.11" pin clears it),
+    # and pandas >=2.0
+    if _ver(v["networkx"]) >= (3, 5):
+        nx = v["networkx"] or "latest"
+        if _ver(v["numpy"]) < (1, 25):
+            errors.append(f"networkx {nx} requires numpy >=1.25, got {v['numpy']}")
+        if _ver(v["scipy"]) < (1, 11):
+            errors.append(f"networkx {nx} requires scipy >=1.11.2, got {v['scipy']}")
+        if _ver(v["pandas"]) < (2, 0):
+            errors.append(f"networkx {nx} requires pandas >=2.0, got {v['pandas']}")
 
     # numba Python minimums
     numba_min = {"3.11": (0, 57), "3.12": (0, 59), "3.13": (0, 61), "3.14": (0, 63)}
