@@ -1097,7 +1097,7 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
             and not _is_recording()
         ):
             indices = self.resolved_indexes.indices
-            result = Scalar(parent.dtype, is_cscalar=False, name=name)
+            result = Scalar(parent.dtype, is_cscalar=False, name=name)  # pragma: is_grbscalar
             if len(indices) == 1:
                 err_code = lib.GrB_Vector_extractElement_Scalar(
                     result.gb_obj[0], parent.gb_obj[0], indices[0].index._carg
