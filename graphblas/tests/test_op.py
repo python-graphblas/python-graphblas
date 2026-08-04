@@ -1755,6 +1755,11 @@ def test_udt_complex_truediv_by_zero(udt_op_path):
 
 
 @pytest.mark.skipif("not supports_udfs")
+# 136-byte UDT, which SS < 9 rejects; see test_udt_large_array.
+@pytest.mark.skipif(
+    "ss_version_major < 9",
+    reason="SuiteSparse < 9 rejects a 136-byte UDT on builds without VLA support",
+)
 def test_udt_float_truediv_by_zero_is_infinite(udt_op_path):
     """A zero divisor on a float field gives numpy's infinity, not a lost element.
 
