@@ -1788,16 +1788,22 @@ def test_udt_array_ops_match_record_ops(udt_op_path):
     xs = [inf, 1.0, -2.0, nan, -7.0, 2.0]
     ys = [2.0, 0.1, inf, 2.0, 2.0, 1.0]
     v, w = _udt_vectors(float_udt, xs, ys)
+    # The reference computations touch inf and nan, and numpy raises the FP
+    # invalid flag for them on some platforms (Linux and Windows, via fmod)
+    # but not others; pyproject promotes the RuntimeWarning to an error.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        expected_floordiv = np.floor_divide(np.array(xs), np.array(ys))
+        expected_min = np.fmin(np.array(xs), np.array(ys))
     np.testing.assert_array_equal(
         [binary.floordiv(v & w).new()[i].new().value[0] for i in range(len(xs))],
-        np.floor_divide(np.array(xs), np.array(ys)),
+        expected_floordiv,
         err_msg=udt_op_path,
     )
     # ``np.fmin``, not ``np.minimum``: ``binary.min`` is SuiteSparse's
     # ``GrB_MIN_FP64``, which ignores a NaN operand rather than propagating it.
     np.testing.assert_array_equal(
         [binary.min(v & w).new()[i].new().value[0] for i in range(len(xs))],
-        np.fmin(np.array(xs), np.array(ys)),
+        expected_min,
         err_msg=udt_op_path,
     )
 
