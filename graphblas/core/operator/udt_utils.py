@@ -1021,9 +1021,30 @@ def _c_truediv_expr(lhs, rhs, field_dtype):
     to ``2**63``). Both paths land on the same hardware conversion there
     rather than on defined behaviour, so they agree with each other but need
     not agree across machines; measured saturating to ``INT64_MAX`` on arm64.
+
+    A complex field spells the zero-divisor case out rather than leaning on
+    C99 Annex G. SuiteSparse's JIT compiles with ``-fcx-limited-range`` under
+    GCC, which replaces the Annex G division with the naive formula, so
+    ``z / 0`` came out ``nan+nanj`` on Linux while clang (no such flag) and
+    the cfunc gave numpy's infinities. Dividing the parts by ``0.0`` as reals
+    sidesteps the flag entirely and matches the cfunc's spelling (see
+    ``_expr_binary``). ``CMPLX`` rather than arithmetic on ``I``: under the
+    naive formula ``inf * I`` multiplies out to ``nan``, which is the exact
+    failure being avoided. ``rhs == 0`` on a ``_Complex`` operand compares
+    both parts, mirroring the cfunc's ``y != 0``.
     """
     kind = field_dtype.kind
-    if kind in ("f", "c"):
+    if kind == "c":
+        if field_dtype.itemsize == 8:
+            cmplx, creal, cimag, zero = "CMPLXF", "crealf", "cimagf", "0.0f"
+        else:
+            cmplx, creal, cimag, zero = "CMPLX", "creal", "cimag", "0.0"
+        return (
+            f"(({rhs}) == 0 "
+            f"? {cmplx}({creal}({lhs}) / {zero}, {cimag}({lhs}) / {zero}) "
+            f": ({lhs}) / ({rhs}))"
+        )
+    if kind == "f":
         return f"({lhs}) / ({rhs})"
     quotient = f"(double)({lhs}) / (double)({rhs})"
     if kind == "b":
