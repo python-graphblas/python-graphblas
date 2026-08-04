@@ -419,6 +419,8 @@ def test_dtype_to_from_string():
             assert dtype == dtype2
 
 
+# The 180-char repr exceeds GxB_MAX_NAME_LEN, which warns on SuiteSparse < 9.
+@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_dtype_to_string_aligned_outer_packed_inner():
     """Regression: nested dtype with ``align=True`` outer and a packed inner
     used to fail ``_dtype_to_string`` round-trip with ``ValueError: Unable

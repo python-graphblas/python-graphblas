@@ -21,6 +21,7 @@ from graphblas import (
 )
 from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core.operator.indexbinary import _has_idxbinop
+from graphblas.core.operator.udt_utils import _has_jit_set
 from graphblas.core.ss import _IS_SSGB7
 
 from .conftest import autocompute, burble
@@ -537,7 +538,9 @@ def test_jit_select(v):
 
 
 @pytest.mark.skipif("not supports_udfs")
-@pytest.mark.skipif("_IS_SSGB7")
+# The JIT string setters (GrB_Type_set_String with GxB_JIT_C_NAME) arrived in
+# SS 9, so every jit_c_* property is None on 7.x and 8.x alike.
+@pytest.mark.skipif("not _has_jit_set")
 def test_udt_jit_c_source_introspection():
     """``jit_c_source`` and ``jit_c_name`` should expose what SS sees.
 
@@ -606,7 +609,8 @@ def test_udt_jit_c_source_introspection():
 
 
 @pytest.mark.skipif("not supports_udfs")
-@pytest.mark.skipif("_IS_SSGB7")
+# jit_c_name is only ever set on SS 9+; see test_udt_jit_c_source_introspection.
+@pytest.mark.skipif("not _has_jit_set")
 def test_op_jit_signature_uses_pinned_type_name():
     """After a UDT is renamed, auto-lifted ops must still reference the
     pinned (first-registration) C name in their signature. SS's
@@ -1167,6 +1171,10 @@ def test_nested_record_udt_jits():
 
 @pytest.mark.slow
 @pytest.mark.skipif("not supports_udfs")
+# SS < 9 has no GrB_NAME setter, so registration falls back to storing the
+# numpy repr in the type name and warns when it does not fit in 128 chars.
+# This dtype's repr is 141; how it serializes is not what the test is about.
+@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_nested_record_monoid_semiring_agg():
     r"""Built-in monoid/semiring/agg auto-lift on nested record UDTs.
 
@@ -1385,8 +1393,10 @@ def test_udt_scalar_broadcast_skips_jit():
     routing so a future change doesn't accidentally regress it (either
     direction is fine, but it should be a conscious decision).
     """
-    if _IS_SSGB7:
-        pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
+    if not _has_jit_set:
+        # Without the SS 9 string setters, jit_c_source is None for every op,
+        # so there is no routing to observe.
+        pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
     record = dtypes.register_anonymous(
         np.dtype([("bcast_u", np.float64), ("bcast_v", np.float64)], align=True),
         name="_BcastJitUV",
