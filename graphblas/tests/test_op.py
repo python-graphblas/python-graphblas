@@ -4024,7 +4024,10 @@ def test_udt_ret_dtype_errors():
 @pytest.mark.slow
 def test_udt_ret_dtype_index_ops():
     """``ret_dtype`` reaches the IndexUnaryOp and IndexBinaryOp compile paths too."""
-    in5 = dtypes.register_anonymous(np.dtype((np.float64, (5,))), "_RetDIdx5")
+    # Shape (11,) is used nowhere else: anonymous UDTs share one DataType per
+    # np.dtype, so a shape reused across tests would inherit whichever JIT C
+    # state was frozen first under random test ordering.
+    in11 = dtypes.register_anonymous(np.dtype((np.float64, (11,))), "_RetDIdx11")
     out2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_RetDIdx2")
 
     def _head_plus_row(x, i, j, t):  # pragma: no cover (numba)
@@ -4033,7 +4036,7 @@ def test_udt_ret_dtype_index_ops():
     iu = IndexUnaryOp.register_anonymous(
         _head_plus_row, "_ret_dtype_indexunary", is_udt=True, ret_dtype=out2
     )
-    assert iu[in5, INT64].return_type is out2
+    assert iu[in11, INT64].return_type is out2
 
     if lib.__dict__.get("GxB_IndexBinaryOp_new") is not None:
         from graphblas.core.operator import IndexBinaryOp
@@ -4044,7 +4047,7 @@ def test_udt_ret_dtype_index_ops():
         ib = IndexBinaryOp.register_anonymous(
             _head_sum, "_ret_dtype_indexbinary", is_udt=True, ret_dtype=out2
         )
-        assert ib[in5, in5].return_type is out2
+        assert ib[in11, in11].return_type is out2
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -4058,7 +4061,10 @@ def test_udt_ret_dtype_still_shape_checked():
     what it returned, while a declared type is an independent claim the UDF
     can contradict.
     """
-    in5 = dtypes.register_anonymous(np.dtype((np.float64, (5,))), "_RetDPrb5")
+    # Shape (14,) is used nowhere else: anonymous UDTs share one DataType per
+    # np.dtype, so a shape reused across tests would inherit whichever JIT C
+    # state was frozen first under random test ordering.
+    in14 = dtypes.register_anonymous(np.dtype((np.float64, (14,))), "_RetDPrb14")
     out2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_RetDPrb2")
 
     def _three(x):  # pragma: no cover (numba)
@@ -4067,7 +4073,7 @@ def test_udt_ret_dtype_still_shape_checked():
     # Three elements cannot fill a declared two-element output.
     op_ = UnaryOp.register_anonymous(_three, "_ret_dtype_prb_bad", is_udt=True, ret_dtype=out2)
     with pytest.raises(UdfParseError, match=r"shape \(3,\).*_RetDPrb2 elements are \(2,\)"):
-        op_[in5]
+        op_[in14]
 
     # The check is fit-by-broadcast, not equality: a one-element return
     # legitimately fills every slot of the declared element.
@@ -4075,7 +4081,7 @@ def test_udt_ret_dtype_still_shape_checked():
         return x[:1]
 
     ok = UnaryOp.register_anonymous(_one, "_ret_dtype_prb_bcast", is_udt=True, ret_dtype=out2)
-    assert ok[in5].return_type is out2
+    assert ok[in14].return_type is out2
 
     # The record half of the probe checks the declared type's array leaves.
     rec = dtypes.register_anonymous(
@@ -4089,7 +4095,7 @@ def test_udt_ret_dtype_still_shape_checked():
         _short_leaf, "_ret_dtype_prb_rec", is_udt=True, ret_dtype=rec
     )
     with pytest.raises(UdfParseError, match=r"shape \(2,\) for field \['v'\] of _RetDPrbRec"):
-        recop[in5, in5]
+        recop[in14, in14]
 
 
 def _ret_dtype_pickle_udf(x):  # pragma: no cover (numba)
