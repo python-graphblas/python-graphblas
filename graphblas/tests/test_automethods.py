@@ -186,6 +186,10 @@ _MACHINERY_DUNDERS = (
         "__reduce_ex__",
         "__getstate__",
         "__setstate__",
+        # copyreg._slotnames() caches this on the class the first time an
+        # instance is pickled, so its presence depends on whether test_pickle
+        # ran first in the randomized test order.
+        "__slotnames__",
         "__networkx_backend__",
         "__networkx_plugin__",
     }
