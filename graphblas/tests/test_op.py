@@ -1438,12 +1438,19 @@ def _jit_can_compile():
     ``_auto_fix_jit_at_import``; calling ``fix_jit_config`` again from here
     would rewrite process-wide compiler settings that no fixture restores.
 
-    Deliberately does not consult ``jit_c_control``: that is per-test state
-    the fixture sets, and folding it into this cache is what let a demoted
-    control go unnoticed.
+    ``jit_compiler_is_usable`` alone is not enough: it only checks that the
+    configured compiler path exists on disk, and a runner can have the file
+    yet fail every compile (broken toolchain, missing headers). The
+    import-time probe already did a real compile, and SuiteSparse demotes
+    ``jit_c_control`` from ``'on'`` when that compile fails, so a control
+    still ``'on'`` here is the probe's success flag; ``test_ssjit`` keys its
+    skips on the same signal. The fixture calls this before it mutates the
+    control, and the cache keeps later per-test mutations from flipping it.
     """
     if not _jit_can_compile_cache:
-        _jit_can_compile_cache.append(gb.ss.jit_compiler_is_usable())
+        _jit_can_compile_cache.append(
+            gb.ss.jit_compiler_is_usable() and gb.ss.config["jit_c_control"] == "on"
+        )
     return _jit_can_compile_cache[0]
 
 
@@ -1465,7 +1472,7 @@ def udt_op_path(request):
     previous = gb.ss.config["jit_c_control"]
     if path == "jit":
         if not _jit_can_compile():
-            pytest.skip("JIT compilation not available (no usable compiler)")
+            pytest.skip("JIT compilation not available (probe failed or compiler missing)")
         # Set it rather than assume it. SuiteSparse demotes ``on`` to ``load``
         # after a failed compile, and a demoted control routes to the cfunc
         # silently, so this parameter would pass while running the other path.
