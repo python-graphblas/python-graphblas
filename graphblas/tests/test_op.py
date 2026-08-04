@@ -1569,6 +1569,13 @@ def test_udt_min_max_answer_what_the_builtin_dtype_answers(udt_op_path, np_dtype
     infinities, both zeros and two ordinary values, so it covers a NaN on
     either side, two NaNs, and a signed-zero tie either way round.
 
+    The signed-zero tie itself is compared by value only. C99 leaves
+    ``fmin(-0.0, 0.0)`` unspecified and the built-in answers differently per
+    platform (left operand on macOS x86, right operand on Linux x86, IEEE
+    minNum on arm64 and Windows), so bit-for-bit agreement on that one pair
+    is not something any implementation can promise. Everything else,
+    including which zero a mixed zero/nonzero pair keeps, stays bit-exact.
+
     What this catches, in the two spellings it replaces: Python's builtin
     ``min``, which the generated code reached through the exec namespace,
     ordered NaN by position, and ``np.fmin`` under Numba gets the NaN rule
@@ -1593,6 +1600,17 @@ def test_udt_min_max_answer_what_the_builtin_dtype_answers(udt_op_path, np_dtype
         result = gb_op(v & w).new()
         for i, (x, y) in enumerate(zip(xs, ys, strict=True)):
             got = result[i].new().value[0]
+            if x == 0 and y == 0 and np.signbit(x) != np.signbit(y):
+                # The one unspecified cell of the grid: either signed zero is
+                # a correct answer from either implementation, so only agree
+                # that both produced a zero.
+                msg = (
+                    f"{udt_op_path} {gb_op.name}({x}, {y}) on {udt.name}: "
+                    f"got {got!r}, built-in {np.dtype(np_dtype).name} gives {expected[i]!r}"
+                )
+                assert got == 0, msg
+                assert expected[i] == 0, msg
+                continue
             assert _bitwise_eq(got, expected[i]), (
                 f"{udt_op_path} {gb_op.name}({x}, {y}) on {udt.name}: "
                 f"got {got!r}, built-in {np.dtype(np_dtype).name} gives {expected[i]!r}"
