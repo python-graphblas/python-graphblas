@@ -207,6 +207,26 @@ def test_from_networkx_rejects_string_weights(graph_cls):
         gb.io.from_networkx(G)
 
 
+@pytest.mark.skipif("not nx")
+def test_from_networkx_unsupported_dtype_is_valueerror(monkeypatch):
+    # scipy < 1.15 builds a string-dtype coo array happily and only fails converting
+    # it to csr, and networkx re-raises that failure as a NetworkXError blaming the
+    # sparse format. from_networkx restates it as the ValueError newer scipy raises
+    # directly, which is what the caller can act on; monkeypatching the fallback
+    # exercises the old behavior on any scipy.
+    import graphblas.io._networkx as _gnx
+
+    def _raise_networkx_error(*args, **kwargs):
+        raise nx.NetworkXError("Unknown sparse matrix format: csr")
+
+    monkeypatch.setattr(_gnx, "_from_networkx_via_scipy", _raise_networkx_error)
+    G = nx.Graph()
+    G.add_edge(0, 1, weight="a")
+    G.add_edge(1, 2, weight="b")
+    with pytest.raises(ValueError, match="does not support dtype"):
+        gb.io.from_networkx(G)
+
+
 @pytest.mark.skipif("not nx or not ss")
 @pytest.mark.parametrize(
     "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
