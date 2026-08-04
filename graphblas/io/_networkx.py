@@ -96,6 +96,12 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         dup_op = plus
 
     values = np.array(vals, dtype=dtype)
+    if dtype is None and values.dtype == np.int32:  # pragma: no cover (win64 numpy < 2)
+        # numpy < 2 infers the platform C long for a sequence of Python ints, which
+        # is 32-bit on Windows. values_to_numpy_buffer widens the same way for
+        # non-numpy input, so this keeps from_networkx agreeing with
+        # Matrix.from_coo on INT64 for an unweighted graph on every platform.
+        values = values.astype(np.int64)
     if values.ndim != 1 or values.dtype.kind not in "biufc":
         # Defer to scipy so the error matches the previous behavior exactly.
         # Two kinds of weight land here: non-numeric attributes (object arrays,
