@@ -12,7 +12,7 @@ conda search 'numpy[channel=conda-forge]>=2.4'
 conda search 'pandas[channel=conda-forge]>=3.0'
 conda search 'scipy[channel=conda-forge]>=1.17'
 conda search 'networkx[channel=conda-forge]>=3.6'
-conda search 'awkward[channel=conda-forge]>=2.9'
+conda search 'awkward[channel=conda-forge]>=2.11'
 conda search 'sparse[channel=conda-forge]>=0.15'
 # fast_matrix_market is deprecated (no longer maintained; last supported Python is 3.12)
 conda search 'numba[channel=conda-forge]>=0.64'
