@@ -10,7 +10,9 @@ ci:
   autoupdate_schedule: quarterly
   autoupdate_commit_msg: "chore: update pre-commit hooks"
   autofix_commit_msg: "style: pre-commit fixes"
-  skip: [pylint, no-commit-to-branch]
+  # pysentry downloads advisory databases at run time, and pre-commit.ci
+  # runs hooks without network access, so it can only run locally.
+  skip: [pylint, no-commit-to-branch, pysentry]
 fail_fast: false
 default_language_version:
   python: python3
