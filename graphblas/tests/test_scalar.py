@@ -216,9 +216,12 @@ def test_isclose_udt_raises():
 def test_udt_scalar_padding_is_zeroed():
     """A record UDT's alignment padding is zeroed, not left as process memory.
 
-    ``arr[:] = val`` writes the fields and skips the padding between them, and
-    the buffer is then copied whole into the GrB_Scalar. Built on ``np.empty``
-    that shipped uninitialized bytes into ``Scalar.value``.
+    The whole record is copied into the GrB_Scalar and read back out of
+    ``Scalar.value``, so anything that compares or hashes those raw bytes would
+    see an equal-valued scalar as unequal. numpy promises nothing about which
+    bytes an assignment writes: it may fill the fields and leave the padding
+    alone, or copy whole items out of a temporary it never initialized (numpy
+    2.5 switched ``arr[:] = record`` to the latter).
     """
     # int8 then float64 leaves 7 bytes of padding under C alignment rules.
     udt = dtypes.register_anonymous(
@@ -233,6 +236,16 @@ def test_udt_scalar_padding_is_zeroed():
     del junk
     raw = Scalar.from_value((3, 4.0), dtype=udt).value.tobytes()
     assert raw[1:8] == bytes(7), f"alignment padding leaked into the scalar: {raw!r}"
+
+    # Same guarantee without relying on what the allocator happened to hand
+    # back: a source array whose padding is deliberately 0xAA must not carry
+    # those bytes through, no matter how numpy chooses to copy it.
+    dirty = np.frombuffer(bytearray(b"\xaa" * udt.np_type.itemsize), dtype=udt.np_type)
+    dirty["pad_a"] = 3
+    dirty["pad_b"] = 4.0
+    raw = Scalar.from_value(dirty, dtype=udt).value.tobytes()
+    assert raw[1:8] == bytes(7), f"a value's own padding leaked into the scalar: {raw!r}"
+    assert raw == Scalar.from_value((3, 4.0), dtype=udt).value.tobytes()
 
 
 def test_nvals(s):
