@@ -20,6 +20,7 @@ import pytest
 
 import graphblas as gb
 from graphblas import Matrix, Vector, binary, dtypes
+from graphblas.core import _supports_udfs as supports_udfs  # noqa: F401
 from graphblas.core.expr import Updater
 from graphblas.core.recorder import Recorder
 from graphblas.core.scalar import Scalar
@@ -555,6 +556,10 @@ def test_setitem_value_fallbacks():
     _assert_setitem_matrix(dtypes.FP64, (1, 1), None)
 
 
+# Both halves compare UDT vectors with ``isequal``, which needs ``binary.eq``
+# compiled for the UDT. The sibling UDT tests here never call ``isequal``, so
+# they keep running on builds without numba.
+@pytest.mark.skipif("not supports_udfs")
 def test_setitem_udt_fallback():
     udt = gb.dtypes.register_anonymous(
         np.dtype([("sx", np.int64), ("sy", np.float64)]), "SetitemFastPathProbe"
