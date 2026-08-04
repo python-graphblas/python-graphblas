@@ -10,6 +10,7 @@ from packaging.version import parse
 import graphblas as gb
 import graphblas.binary.numpy as npbinary
 import graphblas.monoid.numpy as npmonoid
+import graphblas.op.numpy as npop
 import graphblas.semiring.numpy as npsemiring
 import graphblas.unary.numpy as npunary
 from graphblas import Vector, backend, config
@@ -76,14 +77,21 @@ def test_numpy_fmax_fmin_identity_outside_int8(dtype):
     # this hits the affected path regardless of the session's random mapnumpy
     # (the resolved monoid is cached on the module after first access).
     orig = config["mapnumpy"]
-    # Save whatever is cached so the exact prior state is restored. Resolving a
-    # UDF monoid under mapnumpy=False also caches a UDF binary op (monoid/numpy.py
-    # getattr(_binary.numpy, name)); restoring the original objects rather than
-    # popping avoids leaving a UDF binary behind and keeps op.numpy in sync.
-    saved = {n: (npmonoid.__dict__.get(n), npbinary.__dict__.get(n)) for n in ("fmax", "fmin")}
+    # The monoid is built from whatever binary.numpy has cached (monoid/numpy.py
+    # does getattr(_binary.numpy, name)), so the binary cache must be cleared too:
+    # under mapnumpy=True it holds the *builtin* binary.max/min, whose typed ops
+    # are TypedBuiltinBinaryOp, which has no `_monoid` slot for Monoid to write
+    # its back-reference to. Leaving it cached makes this test raise AttributeError
+    # whenever an earlier test in the session already resolved binary.numpy.fmax.
+    # op.numpy is cleared as well because registering the UDF binary op populates
+    # it as a side effect. Save every entry first so the exact prior state, cached
+    # or absent, is restored for later tests.
+    names = ("fmax", "fmin")
+    modules = (npmonoid, npbinary, npop)
+    saved = [(module, name, module.__dict__.get(name)) for module in modules for name in names]
     config.set(mapnumpy=False)
-    for name in ("fmax", "fmin"):
-        npmonoid.__dict__.pop(name, None)
+    for module, name, _ in saved:
+        module.__dict__.pop(name, None)
     try:
         below = [-1000, -2000, -3000]  # all below int8's min, valid for INT16+
         above = [1000, 2000, 3000]  # all above int8's max
@@ -95,12 +103,11 @@ def test_numpy_fmax_fmin_identity_outside_int8(dtype):
         assert npmonoid.fmin[dtype].identity == hi
     finally:
         config.set(mapnumpy=orig)
-        for name, (monoid_obj, binary_obj) in saved.items():
-            for module, obj in ((npmonoid, monoid_obj), (npbinary, binary_obj)):
-                if obj is None:
-                    module.__dict__.pop(name, None)
-                else:
-                    module.__dict__[name] = obj
+        for module, name, obj in saved:
+            if obj is None:
+                module.__dict__.pop(name, None)
+            else:
+                module.__dict__[name] = obj
 
 
 def test_numpy_monoid_identity_matches_builtin():
