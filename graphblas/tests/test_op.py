@@ -2852,6 +2852,10 @@ def test_udt_eq_ne_rejects_incompatible_pairs():
 
 
 @pytest.mark.skipif("not supports_udfs")
+# SS < 9 has no GrB_NAME setter, so registration falls back to storing the
+# numpy repr in the type name and warns when it does not fit in 128 chars.
+# _NestDeep's repr is 142; how it serializes is not what the test is about.
+@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_record_nesting_mismatch_is_a_keyerror():
     """Records sharing field names but not nesting depth are rejected as a KeyError.
 
