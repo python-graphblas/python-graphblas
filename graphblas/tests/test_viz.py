@@ -8,17 +8,44 @@ not assert on pixel output. Anything missing is skipped, not failed, so a
 minimal-dependency CI run sees clean skips.
 """
 
+import importlib
+import inspect
 import math
+import warnings
 
 import pytest
 
 from graphblas import Matrix, Vector, viz
 
+
+def _importorskip(modname):
+    """Skip when an optional dependency is missing *or* installed but unusable.
+
+    From pytest 9.1 on, ``pytest.importorskip`` counts only ``ModuleNotFoundError``
+    as "missing".  A dependency that is installed but cannot run raises a plain
+    ``ImportError`` instead (matplotlib does exactly that when numpy is older than
+    it supports), which escapes ``importorskip`` and aborts collection for the
+    whole session.  pytest's ``exc_type`` argument covers that, but it only exists
+    in pytest >=8.2 and this project supports pytest >=6.2, so do the import here
+    and hand the already-imported module to pytest.
+    """
+    try:
+        with warnings.catch_warnings():
+            # ``importorskip`` ignores warnings while importing; match it, or
+            # ``filterwarnings = error`` would fail on whatever an optional
+            # dependency happens to emit at import time.
+            warnings.simplefilter("ignore")
+            importlib.import_module(modname)
+    except ImportError as exc:
+        pytest.skip(f"could not import {modname!r}: {exc}", allow_module_level=True)
+    return pytest.importorskip(modname)
+
+
 # Skip the whole module if matplotlib is absent (draw and spy both need it).
 # Set the backend to Agg before pyplot is imported so no display is required.
-mpl = pytest.importorskip("matplotlib")
+mpl = _importorskip("matplotlib")
 mpl.use("Agg")
-plt = pytest.importorskip("matplotlib.pyplot")
+plt = _importorskip("matplotlib.pyplot")
 
 
 @pytest.fixture(autouse=True)
@@ -36,7 +63,7 @@ def square_matrix():
 
 
 def test_spy_default():
-    pytest.importorskip("scipy.sparse")
+    _importorskip("scipy.sparse")
     A = square_matrix()
     fig = viz.spy(A, show=False)
     assert isinstance(fig, mpl.figure.Figure)
@@ -47,7 +74,7 @@ def test_spy_default():
 
 def test_spy_centered():
     # centered=True skips the tick-offset fixup branch.
-    pytest.importorskip("scipy.sparse")
+    _importorskip("scipy.sparse")
     A = square_matrix()
     fig = viz.spy(A, show=False, centered=True)
     assert isinstance(fig, mpl.figure.Figure)
@@ -57,7 +84,7 @@ def test_spy_centered():
 def test_spy_with_axes():
     # Passing an explicit Axes exercises the ``axes is not None`` branch,
     # including the auto-markersize path (which once raised NameError here).
-    pytest.importorskip("scipy.sparse")
+    _importorskip("scipy.sparse")
     A = square_matrix()
     fig = mpl.figure.Figure()
     axes = fig.subplots()
@@ -69,7 +96,7 @@ def test_spy_with_axes():
 def test_spy_with_figure():
     # Passing an explicit Figure (no Axes) once raised NameError; spy should
     # create the Axes on the given figure and return that same figure.
-    pytest.importorskip("scipy.sparse")
+    _importorskip("scipy.sparse")
     A = square_matrix()
     fig = mpl.figure.Figure()
     result = viz.spy(A, show=False, figure=fig)
@@ -83,8 +110,8 @@ def test_draw():
     # draw() renders onto the current pyplot Axes via networkx and calls
     # plt.show(); on Agg that show() emits the non-interactive UserWarning,
     # which we ignore here.
-    pytest.importorskip("networkx")
-    pytest.importorskip("scipy.sparse")
+    _importorskip("networkx")
+    _importorskip("scipy.sparse")
     A = square_matrix()
     viz.draw(A)
     axes = plt.gcf().get_axes()
@@ -96,7 +123,7 @@ def test_draw():
 
 
 def test_draw_rejects_non_matrix():
-    pytest.importorskip("networkx")
+    _importorskip("networkx")
     v = Vector.from_coo([0, 1, 2], [1.0, 2.0, 3.0])
     with pytest.raises(TypeError, match="Can only draw a Matrix"):
         viz.draw(v)
@@ -107,8 +134,14 @@ def test_draw_reciprocal_edges_both_labels_visible():
     # Regression for gh-474: reciprocal directed edges (0->1 and 1->0) used to be
     # drawn as coincident straight lines, so one weight hid the other. draw() now
     # curves reciprocal pairs; both weights must appear at distinct positions.
-    pytest.importorskip("networkx")
-    pytest.importorskip("scipy.sparse")
+    nx = _importorskip("networkx")
+    _importorskip("scipy.sparse")
+    # draw() only curves reciprocal pairs when networkx can place edge labels along
+    # the curve; without that it deliberately draws every edge straight, and the two
+    # labels then coincide (which test_draw_without_networkx_curved_label_support
+    # covers).  Ask the same question draw() asks, so the two cannot drift apart.
+    if "connectionstyle" not in inspect.signature(nx.draw_networkx_edge_labels).parameters:
+        pytest.skip("networkx <3.3: draw_networkx_edge_labels has no connectionstyle")
     M = Matrix.from_coo([0, 1], [1, 0], [10, 20], nrows=2, ncols=2)
     viz.draw(M)
     ax = plt.gcf().get_axes()[0]
@@ -134,8 +167,8 @@ def test_draw_without_networkx_curved_label_support(monkeypatch):
     # draw_networkx_edge_labels gained connectionstyle in networkx 3.3, and the
     # project supports >=2.8.  Standing in a pre-3.3 signature must not raise; the
     # gh-474 curving is skipped and every edge renders straight, as it did before.
-    nx = pytest.importorskip("networkx")
-    pytest.importorskip("scipy.sparse")
+    nx = _importorskip("networkx")
+    _importorskip("scipy.sparse")
     real = nx.draw_networkx_edge_labels
 
     def pre_33_draw_networkx_edge_labels(g, pos, edge_labels=None, **kwargs):
@@ -155,7 +188,7 @@ def test_draw_without_networkx_curved_label_support(monkeypatch):
 
 def _import_datashade_deps():
     for name in ("numpy", "pandas", "datashader", "holoviews", "hvplot", "bokeh"):
-        pytest.importorskip(name)
+        _importorskip(name)
 
 
 def test_datashade_single():
