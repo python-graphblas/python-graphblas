@@ -264,6 +264,13 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
     if _ver(v["numpy"]) >= (2, 4) and v["numba"] in ("0.62", "0.63"):
         v["numba"] = "0.64"
 
+    # conda-forge numba 0.57 requires numpy <1.25, so that pairing fails the
+    # conda solve outright. Verified by dry-run solves: 0.57+1.25 conflicts;
+    # 0.58+1.25, 0.58+1.26, and 0.59+1.26 all solve.
+    # MAINT: 2026-08-05 confirmed against conda-forge with mamba dry-runs
+    if v["numba"] == "0.57" and np_is_1x and _ver(v["numpy"]) >= (1, 25):
+        v["numba"] = "0.58"
+
     # numba <0.62 doesn't support numpy 2.x
     if not np_is_1x and v["numba"] not in ("", "NA") and _ver(v["numba"]) < (0, 62):
         v["numba"] = "NA"
@@ -502,6 +509,10 @@ def validate(v, pyver):
     # matplotlib 3.11 requires numpy >=1.25 at runtime (notebooks job)
     if v["numpy"] and _ver(v["numpy"]) < (1, 25) and v.get("matplotlib", "") != "<3.11":
         errors.append(f"matplotlib unpinned alongside numpy {v['numpy']} (needs <3.11)")
+
+    # conda-forge numba 0.57 requires numpy <1.25 (fails the conda solve)
+    if v["numba"] == "0.57" and v["numpy"] and _ver(v["numpy"]) >= (1, 25) and np_is_1x:
+        errors.append(f"numba 0.57 requires numpy <1.25, got {v['numpy']}")
 
     # awkward <2.10 requires numpy <2.5 (generic-unit datetime64("NaT") at import)
     if (
