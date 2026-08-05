@@ -962,8 +962,8 @@ def test_anonymous_udt_with_no_name_still_jits():
     alone for Python-side display. If that fallback regresses, the op runs
     through the slower Numba cfunc path and ``jit_c_source`` is ``None``.
     """
-    if _IS_SSGB7:
-        pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
+    if not _has_jit_set:
+        pytest.skip("jit_c_* introspection requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
 
     spec = np.dtype([("anon_a", np.float64), ("anon_b", np.int64)], align=True)
@@ -1005,8 +1005,8 @@ def test_complex_field_udt_jits_arithmetic():
     without extra includes. ``abs`` uses ``cabs`` / ``cabsf`` which match
     Numba's ``abs(complex)`` behavior (real magnitude in the real part).
     """
-    if _IS_SSGB7:
-        pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
+    if not _has_jit_set:
+        pytest.skip("jit_c_definition introspection requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
 
     spec = np.dtype([("cval", np.complex128), ("scale", np.float64)])
@@ -1117,8 +1117,8 @@ def test_nested_record_udt_jits():
     the nested record fields (Numba can't ``setitem`` a tuple to a record
     field, but leaf scalar writes work).
     """
-    if _IS_SSGB7:
-        pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
+    if not _has_jit_set:
+        pytest.skip("jit_c_definition introspection requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
 
     # ``align=True`` is required for mixed-width fields so numpy's offsets
@@ -1314,8 +1314,8 @@ def test_eq_ne_udt_jit_matches_cfunc(shape):
     record, complex, array UDT), and that NaN propagation matches IEEE
     (``eq(NaN, NaN) == False``) on variants flagged ``nan_at_zero``.
     """
-    if _IS_SSGB7:
-        pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
+    if not _has_jit_set:
+        pytest.skip("attaching the UDT JIT kernel requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
     if numba is None:
         pytest.skip("numba required for the cfunc baseline")
