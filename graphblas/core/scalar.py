@@ -1,4 +1,5 @@
 import itertools
+from functools import lru_cache
 
 import numpy as np
 
@@ -367,17 +368,18 @@ class Scalar(BaseType):
                 val = val.value  # raise below if wrong type (as determined by cffi)
             if self.dtype._is_udt:
                 np_type = self.dtype.np_type
+                # Zeros, not empty: when numpy writes only the fields, a
+                # record's alignment padding is whatever the allocation
+                # happened to contain. ``_udt_bytes`` zeros the padding in the
+                # other direction, when numpy copies whole items instead.
                 if np_type.subdtype is None:
-                    arr = np.empty(1, dtype=np_type)
+                    arr = np.zeros(1, dtype=np_type)
                     if isinstance(val, dict) and np_type.names is not None:
                         val = _dict_to_record(np_type, val)
                 else:
-                    arr = np.empty(np_type.subdtype[1], dtype=np_type.subdtype[0])
+                    arr = np.zeros(np_type.subdtype[1], dtype=np_type.subdtype[0])
                 arr[:] = val
-                # tobytes() flattens any-rank numpy buffers (in particular,
-                # multi-dim array UDTs like ``FP64[2, 3]``) to a 1-D byte
-                # buffer that cffi can copy into the GrB_Scalar storage.
-                self.gb_obj[0 : self.dtype.np_type.itemsize] = arr.tobytes()
+                self.gb_obj[0 : np_type.itemsize] = _udt_bytes(np_type, arr)
             else:
                 self.gb_obj[0] = val
             self._empty = False
@@ -1154,6 +1156,66 @@ def _dict_to_record(np_type, d):
         else:
             rv.append(val)
     return tuple(rv)
+
+
+@lru_cache
+def _padding_ranges(np_type):
+    """The ``(start, stop)`` byte ranges of ``np_type`` that are alignment padding.
+
+    Walks records, nested records, and array dtypes, and returns the gaps
+    between the field data.
+    """
+    data = []
+    _collect_data_ranges(np_type, 0, data)
+    data.sort()
+    ranges = []
+    pos = 0
+    for start, stop in data:
+        if start > pos:
+            ranges.append((pos, start))
+        pos = max(pos, stop)
+    if pos < np_type.itemsize:
+        ranges.append((pos, np_type.itemsize))
+    return tuple(ranges)
+
+
+def _collect_data_ranges(np_type, offset, out):
+    """Append the ``(start, stop)`` byte ranges of ``np_type`` that hold field data."""
+    if np_type.subdtype is not None:
+        base = np_type.subdtype[0]
+        for start in range(offset, offset + np_type.itemsize, base.itemsize):
+            _collect_data_ranges(base, start, out)
+    elif np_type.names is not None:
+        for field_type, field_offset in (np_type.fields[name][:2] for name in np_type.names):
+            _collect_data_ranges(field_type, offset + field_offset, out)
+    else:
+        out.append((offset, offset + np_type.itemsize))
+
+
+def _udt_bytes(np_type, arr):
+    """The bytes of a UDT buffer, with any alignment padding zeroed.
+
+    ``tobytes()`` flattens any-rank numpy buffers (in particular, multi-dim
+    array UDTs like ``FP64[2, 3]``) to a 1-D byte buffer that cffi can copy
+    into GrB_Scalar storage.
+
+    numpy promises nothing about the padding bytes it leaves behind, and which
+    way it goes has changed across releases: numpy 2.5 made ``arr[:] = record``
+    a whole-item copy out of an uninitialized temporary, so even a buffer from
+    ``np.zeros`` comes back with junk between the fields. A caller's own array
+    can carry junk padding in too. Since the whole record is copied into the
+    GrB_Scalar and read back out of ``Scalar.value``, anything that compares or
+    hashes those raw bytes would otherwise see an equal-valued scalar as
+    unequal.
+    """
+    raw = arr.tobytes()
+    ranges = _padding_ranges(np_type)
+    if not ranges:
+        return raw
+    buf = bytearray(raw)
+    for start, stop in ranges:
+        buf[start:stop] = bytes(stop - start)
+    return bytes(buf)
 
 
 _MATERIALIZE = Scalar.from_value(lib.GrB_MATERIALIZE, is_cscalar=True, name="GrB_MATERIALIZE")

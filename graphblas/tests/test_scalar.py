@@ -213,6 +213,41 @@ def test_isclose_udt_raises():
     assert s.isequal(other)
 
 
+def test_udt_scalar_padding_is_zeroed():
+    """A record UDT's alignment padding is zeroed, not left as process memory.
+
+    The whole record is copied into the GrB_Scalar and read back out of
+    ``Scalar.value``, so anything that compares or hashes those raw bytes would
+    see an equal-valued scalar as unequal. numpy promises nothing about which
+    bytes an assignment writes: it may fill the fields and leave the padding
+    alone, or copy whole items out of a temporary it never initialized (numpy
+    2.5 switched ``arr[:] = record`` to the latter).
+    """
+    # int8 then float64 leaves 7 bytes of padding under C alignment rules.
+    udt = dtypes.register_anonymous(
+        np.dtype([("pad_a", np.int8), ("pad_b", np.float64)], align=True), "_PaddingUdt"
+    )
+    assert udt.np_type.itemsize == 16  # 1 + 7 padding + 8
+
+    # numpy serves a small buffer from a cache of recently freed blocks, so
+    # dirtying one of the right size first is what makes an uninitialized
+    # allocation read back as junk rather than as incidentally-zero memory.
+    junk = np.full(udt.np_type.itemsize, 0xAA, dtype=np.uint8)
+    del junk
+    raw = Scalar.from_value((3, 4.0), dtype=udt).value.tobytes()
+    assert raw[1:8] == bytes(7), f"alignment padding leaked into the scalar: {raw!r}"
+
+    # Same guarantee without relying on what the allocator happened to hand
+    # back: a source array whose padding is deliberately 0xAA must not carry
+    # those bytes through, no matter how numpy chooses to copy it.
+    dirty = np.frombuffer(bytearray(b"\xaa" * udt.np_type.itemsize), dtype=udt.np_type)
+    dirty["pad_a"] = 3
+    dirty["pad_b"] = 4.0
+    raw = Scalar.from_value(dirty, dtype=udt).value.tobytes()
+    assert raw[1:8] == bytes(7), f"a value's own padding leaked into the scalar: {raw!r}"
+    assert raw == Scalar.from_value((3, 4.0), dtype=udt).value.tobytes()
+
+
 def test_nvals(s):
     assert s.nvals == 1
     s.clear()
