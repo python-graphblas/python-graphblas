@@ -96,11 +96,13 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         dup_op = plus
 
     values = np.array(vals, dtype=dtype)
-    if dtype is None and values.dtype == np.int32:  # pragma: no cover (win64 numpy < 2)
-        # numpy < 2 infers the platform C long for a sequence of Python ints, which
-        # is 32-bit on Windows. values_to_numpy_buffer widens the same way for
-        # non-numpy input, so this keeps from_networkx agreeing with
-        # Matrix.from_coo on INT64 for an unweighted graph on every platform.
+    if dtype is None and values.dtype == np.int32:
+        # ``vals`` is a Python sequence, and from_coo widens an int32 dtype
+        # INFERRED from sequence input to int64 (values_to_numpy_buffer): python
+        # ints infer int32 on win64 with numpy < 2, and np.int32 scalar weights
+        # infer it on every platform. Widen the same way so from_networkx and
+        # Matrix.from_coo given the same weights agree on the result dtype.
+        # An explicit dtype= is applied above and never reaches this branch.
         values = values.astype(np.int64)
     if values.ndim != 1 or values.dtype.kind not in "biufc":
         # Defer to scipy so the error matches the previous behavior exactly.
