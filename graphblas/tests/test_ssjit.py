@@ -750,8 +750,8 @@ def test_min_max_udt_jit_calls_fmin_and_ignores_nan():
     Integer fields keep the comparison: they have no NaN to order, and it
     saves a conversion through ``double`` per element.
     """
-    if _IS_SSGB7:
-        pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
+    if not _has_jit_set:
+        pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
 
     # Field names unique to this test; see floordiv test for the cache rationale.
