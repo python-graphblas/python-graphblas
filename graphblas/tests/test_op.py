@@ -443,6 +443,24 @@ def test_monoid_rejects_builtin_binaryop():
     assert not hasattr(gb.monoid, "_bad_builtin_monoid")
 
 
+def test_monoid_rejects_builtin_binaryop_with_udt_fallback():
+    """binary.any, first, pair, and second are built-ins that carry a Python
+    func as their UDT fallback, so a func-based probe alone misses them. They
+    must be rejected like the other built-ins: their typed ops have no _monoid
+    slot, and a failed registration used to leave binary.<name>._monoid
+    pointing at the half-built monoid.
+    """
+    for binop in [binary.any, binary.first, binary.pair, binary.second]:
+        with pytest.raises(TypeError, match="must be a user-defined BinaryOp"):
+            Monoid.register_anonymous(binop, 0)
+    # State is untouched: any's built-in monoid association survives, and the
+    # ops without a built-in monoid still have none.
+    assert binary.any.monoid is monoid.any
+    assert binary.first.monoid is None
+    assert binary.pair.monoid is None
+    assert binary.second.monoid is None
+
+
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_semiring_parameterized():
