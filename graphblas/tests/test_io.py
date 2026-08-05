@@ -176,6 +176,28 @@ def test_from_networkx_undirected():
     assert M_none.isequal(expected_none, check_dtype=True)
 
 
+@pytest.mark.skipif("not nx")
+def test_from_networkx_int32_weights_widen_like_from_coo():
+    # np.int32 scalar weights infer an int32 array from the edge sequence on
+    # every platform (python ints do too on win64 with numpy < 2), and from_coo
+    # widens int32 inferred from sequence input to INT64. from_networkx must
+    # widen the same way or identical weights would produce different dtypes
+    # depending on which constructor they came through.
+    G = nx.DiGraph()
+    G.add_weighted_edges_from([(0, 1, np.int32(2)), (1, 0, np.int32(3))])
+    M = gb.io.from_networkx(G)
+    expected = gb.Matrix.from_coo([0, 1], [1, 0], [np.int32(2), np.int32(3)])
+    assert expected.dtype == dtypes.INT64
+    assert M.isequal(expected, check_dtype=True)
+    # An explicit dtype bypasses inference and is preserved exactly.
+    assert gb.io.from_networkx(G, dtype="int32").dtype == dtypes.INT32
+    # Narrower ints are not special-cased; this also matches from_coo.
+    H = nx.DiGraph()
+    H.add_weighted_edges_from([(0, 1, np.int16(2))])
+    assert gb.io.from_networkx(H).dtype == dtypes.INT16
+    assert gb.Matrix.from_coo([0], [1], [np.int16(2)]).dtype == dtypes.INT16
+
+
 @pytest.mark.skipif("not nx or not ss")
 @pytest.mark.parametrize(
     "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
