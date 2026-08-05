@@ -28,6 +28,7 @@ from graphblas.core.operator import (
     UnaryOp,
     get_semiring,
 )
+from graphblas.core.ss import version_major as ss_version_major  # noqa: F401 (used in skipif)
 from graphblas.dtypes import (
     BOOL,
     FP32,
@@ -1973,6 +1974,15 @@ def test_udt_op_compilation_is_lazy():
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
+# A SuiteSparse compiled without variable-length arrays (MSVC, so the Windows
+# builds) rejects a user-defined type larger than GB_VLA_MAXSIZE with
+# GrB_INVALID_VALUE. That ceiling was 128 bytes through SS 8.x and is 1024 as
+# of 9.0, so skipping on SS < 9 covers the affected builds and costs one test
+# on the rest.
+@pytest.mark.skipif(
+    "ss_version_major < 9",
+    reason="SuiteSparse < 9 rejects an 800-byte UDT on builds without VLA support",
+)
 def test_udt_large_array():
     big_dtype = np.dtype((np.float64, (100,)))
     big_udt = dtypes.register_anonymous(big_dtype)
@@ -2069,6 +2079,10 @@ def test_udt_eq_packed_mixed_width():
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
+# SS < 9 has no GrB_NAME setter, so registration falls back to storing the
+# numpy repr in the type name and warns when it does not fit in 128 chars.
+# This dtype's repr is 133; how it serializes is not what the test is about.
+@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_eq_nested_record_with_nan_leaf():
     """A NaN in a nested-record leaf still makes the outer record compare unequal."""
     nested = np.dtype(
@@ -2303,6 +2317,8 @@ def test_udt_eq_ne_scalar_broadcast_array_2d():
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
+# 131-char numpy repr; see test_udt_eq_nested_record_with_nan_leaf.
+@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_eq_ne_scalar_broadcast_nested_record():
     inner = np.dtype([("a", np.float64), ("b", np.float64)], align=True)
     nested = dtypes.register_anonymous(

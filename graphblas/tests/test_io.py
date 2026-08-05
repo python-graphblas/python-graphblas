@@ -1,3 +1,4 @@
+import functools
 from io import BytesIO, StringIO
 
 import numpy as np
@@ -302,6 +303,42 @@ def test_mmread_mmwrite(engine):
                 raise AssertionError("Matrix M2 not as expected.  See print output above")
         success += 1
     assert success > 0
+
+
+@pytest.mark.skipif("not ss")
+def test_mmread_asks_scipy_for_a_sparse_array(monkeypatch):
+    """We pass ``spmatrix=False`` so scipy's changing default never reaches us.
+
+    Deliberately does not use scipy's own example files: they are absent from
+    some conda-forge builds, which skips ``test_mmread_mmwrite`` entirely.
+    """
+    import inspect
+
+    import scipy.io as sio
+
+    if "spmatrix" not in inspect.signature(sio.mmread).parameters:  # pragma: no cover (old scipy)
+        pytest.skip("scipy too old to accept spmatrix=")
+
+    seen = []
+    real = sio.mmread
+
+    @functools.wraps(real)  # keep the signature the caller inspects
+    def spy(source, **kwargs):
+        seen.append(kwargs)
+        return real(source, **kwargs)
+
+    monkeypatch.setattr(sio, "mmread", spy)
+    mm = StringIO("%%MatrixMarket matrix coordinate real general\n2 2 2\n1 1 3.0\n2 2 4.0\n")
+    M = gb.io.mmread(mm)
+
+    assert seen == [{"spmatrix": False}]
+    assert M.isequal(Matrix.from_coo([0, 1], [0, 1], [3.0, 4.0]))
+
+    # An explicit value wins: the guard only fills in a default.
+    seen.clear()
+    mm.seek(0)
+    gb.io.mmread(mm, spmatrix=True)
+    assert seen == [{"spmatrix": True}]
 
 
 @pytest.mark.skipif("not ss")

@@ -189,7 +189,10 @@ jobs:
             numbaver=NA
             sparse=""
             sparsever=NA
-            if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} ]]; then
+            # Compare explicitly: `[[ false ]]` tests a non-empty string, not a
+            # boolean, so testing the substituted value on its own is always
+            # true. Matches the `== true` form used for the numba skip above.
+            if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} == true ]]; then
               awkward=""
               akver=NA
               npver=""

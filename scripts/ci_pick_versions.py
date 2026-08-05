@@ -50,12 +50,15 @@ PANDAS_VERSIONS = {
     "2.x": ["2.2", "2.3", "3.0", ""],
 }
 
+# The "2.x" pool starts at 2.6 because awkward <2.6 still uses numpy.AxisError,
+# which numpy 2.0 removed. 2.10 and 2.11 are the only pins that survive numpy >=2.5;
+# see the awkward constraints in `apply_constraints`.
 AWKWARD_VERSIONS = {
     "1.x": {
         "3.11": ["2.0", "2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", ""],
         "3.12": ["2.4", "2.5", "2.6", "2.7", "2.8", "2.9", ""],
     },
-    "2.x": ["2.6", "2.7", "2.8", "2.9", ""],
+    "2.x": ["2.6", "2.7", "2.8", "2.9", "2.10", "2.11", ""],
 }
 
 NUMBA_VERSIONS = {
@@ -138,7 +141,11 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
 
     Each constraint comment documents the real-world requirement it encodes.
     Order matters: numpy/scipy constraints first, then pandas (which may bump scipy/numba),
-    then Python-version constraints, then numba/numpy constraints.
+    then Python-version constraints, then numba/numpy constraints. Within the awkward
+    section, the numpy 2.x floor runs before the Python-availability picks (which may
+    narrow the choices further), and the awkward >=2.10 rule runs last so it wins.
+    The networkx section reads numpy, scipy, and pandas, so it runs after all three
+    are final.
     """
     # --- scipy / numpy constraints ---
 
@@ -184,6 +191,15 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
         if v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 15):
             v["scipy"] = random.choice(["1.15", "1.16", "1.17", ""])
 
+    # --- awkward / numpy 2.x support ---
+
+    # awkward <2.6 uses numpy.AxisError, which numpy 2.0 removed (test_io.py then fails
+    # at collection). awkward is picked from the numpy 1.x pool before source builds blank
+    # numpy to latest, so a numpy 1.x pick can still end up here with numpy 2.x.
+    # MAINT: 2026-08-04 confirmed with awkward 2.0.10 + numpy 2.4
+    if not np_is_1x and v["awkward"] not in ("", "NA") and _ver(v["awkward"]) < (2, 6):
+        v["awkward"] = random.choice(AWKWARD_VERSIONS["2.x"])
+
     # --- awkward / Python version availability ---
 
     # awkward <2.7 has no py3.13 builds; awkward <2.8 has no py3.14 builds
@@ -191,6 +207,35 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
         v["awkward"] = random.choice(["2.8", "2.9", ""])
     elif pyver == "3.13" and v["awkward"] == "2.6":
         v["awkward"] = random.choice(["2.7", "2.8", "2.9", ""])
+
+    # --- awkward / numpy 2.5 deprecations ---
+
+    # awkward <2.10 builds numpy.datetime64("NaT") with a generic unit at import time,
+    # which numpy 2.5 deprecates; `filterwarnings = error` in pyproject.toml then turns the
+    # import into a collection error. Unpinned numpy is latest, which is >=2.5.
+    # MAINT: 2026-08-04 confirmed with awkward 2.8.12 and 2.9.0 + numpy 2.5
+    if (
+        _ver(v["numpy"]) >= (2, 5)
+        and v["awkward"] not in ("", "NA")
+        and _ver(v["awkward"]) < (2, 10)
+    ):
+        v["awkward"] = random.choice([a for a in AWKWARD_VERSIONS["2.x"] if _ver(a) >= (2, 10)])
+
+    # --- networkx / numpy, scipy, pandas floors ---
+
+    # conda-forge networkx 3.5 and 3.6 declare `constrains: numpy >=1.25, scipy >=1.11.2,
+    # pandas >=2.0`. conda enforces those against our pins, and since networkx is pinned too
+    # the solve fails outright instead of backing off. Older pins are safe because a pin like
+    # "3.4" can resolve down to 3.4.0, whose floors (numpy >=1.22, scipy >=1.9, pandas >=1.4)
+    # sit at or below everything in our pools. Unpinned networkx is latest, so it gets the
+    # 3.5+ floors. Compare scipy at the minor level: the "1.11" pin resolves to 1.11.4, which
+    # clears the 1.11.2 floor.
+    # MAINT: 2026-08-04 conda-forge networkx 3.6.1 constrains numpy >=1.25, scipy >=1.11.2
+    if _ver(v["networkx"]) >= (3, 5) and (
+        _ver(v["numpy"]) < (1, 25) or _ver(v["scipy"]) < (1, 11) or _ver(v["pandas"]) < (2, 0)
+    ):
+        # Only the numpy 1.x pools reach here, and those Pythons all have pre-3.5 networkx.
+        v["networkx"] = random.choice([n for n in NETWORKX_VERSIONS[pyver] if _ver(n) < (3, 5)])
 
     # --- numba constraints ---
 
@@ -432,6 +477,29 @@ def validate(v, pyver):
         errors.append(f"awkward {v['awkward']} has no py3.14 build")
     if pyver == "3.13" and v["awkward"] == "2.6":
         errors.append("awkward 2.6 has no py3.13 build")
+
+    # awkward <2.6 requires numpy 1.x (numpy.AxisError)
+    if not np_is_1x and v["awkward"] not in ("", "NA") and _ver(v["awkward"]) < (2, 6):
+        errors.append(f"awkward {v['awkward']} doesn't support numpy 2.x")
+
+    # awkward <2.10 requires numpy <2.5 (generic-unit datetime64("NaT") at import)
+    if (
+        _ver(v["numpy"]) >= (2, 5)
+        and v["awkward"] not in ("", "NA")
+        and _ver(v["awkward"]) < (2, 10)
+    ):
+        errors.append(f"awkward {v['awkward']} requires numpy <2.5, got {v['numpy'] or 'latest'}")
+
+    # networkx >=3.5 constrains numpy >=1.25, scipy >=1.11.2 (the "1.11" pin clears it),
+    # and pandas >=2.0
+    if _ver(v["networkx"]) >= (3, 5):
+        nx = v["networkx"] or "latest"
+        if _ver(v["numpy"]) < (1, 25):
+            errors.append(f"networkx {nx} requires numpy >=1.25, got {v['numpy']}")
+        if _ver(v["scipy"]) < (1, 11):
+            errors.append(f"networkx {nx} requires scipy >=1.11.2, got {v['scipy']}")
+        if _ver(v["pandas"]) < (2, 0):
+            errors.append(f"networkx {nx} requires pandas >=2.0, got {v['pandas']}")
 
     # numba Python minimums
     numba_min = {"3.11": (0, 57), "3.12": (0, 59), "3.13": (0, 61), "3.14": (0, 63)}

@@ -122,6 +122,7 @@ def _one(x):
 if _has_numba:
     from .udt_utils import BUILTIN_UDT_UNARY_OPS as _BUILTIN_UDT_UNARY_OPS
     from .udt_utils import (
+        _has_jit_set,
         _maybe_warn_jit_skipped,
         compile_udt_unary_wrapper,
         set_jit_c_on_op,
@@ -264,12 +265,14 @@ class UnaryOp(OpBase):
             op = _finalize_udt_op(
                 self, dtype, None, ret_type, unary_wrapper, wrapper_sig, TypedUserUnaryOp
             )
-            # ``set_jit_c_on_op`` is a no-op (returns None) when
-            # ``_has_jit_set`` is False (SS < 8).
-            op._jit_c_info = set_jit_c_on_op(
-                op.gb_obj, self.name, py_op, dtype, lib.GrB_UnaryOp_set_String, arity=1
-            )
-            _maybe_warn_jit_skipped(op._jit_c_info, self.name, dtype.name)
+            # ``_has_jit_set`` gates access to ``lib.GrB_UnaryOp_set_String``,
+            # which is absent on SS < 9; the attribute lookup itself raises
+            # there, so it must not be evaluated as an argument first.
+            if _has_jit_set:
+                op._jit_c_info = set_jit_c_on_op(
+                    op.gb_obj, self.name, py_op, dtype, lib.GrB_UnaryOp_set_String, arity=1
+                )
+                _maybe_warn_jit_skipped(op._jit_c_info, self.name, dtype.name)
             return op
         if self._numba_func is None:
             raise KeyError(f"{self.name} does not work with {dtype}")

@@ -354,8 +354,10 @@ def test_bound_ibo_memory_bounded():
     growth should stay below a few MB after GC drops them.
     """
     import gc
-    import resource
     import sys
+
+    pytest.importorskip("resource")
+    import resource
 
     if hasattr(indexbinary, "leak_test_bound_ibo_op"):
         delattr(indexbinary, "leak_test_bound_ibo_op")

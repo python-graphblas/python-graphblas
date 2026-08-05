@@ -42,6 +42,7 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
     except ImportError:  # pragma: no cover (import)
         raise ImportError("scipy is required to read Matrix Market files") from None
     engine = engine.lower()
+    using_scipy = True
     if engine in {"fmm", "fast_matrix_market"}:
         warnings.warn(
             "fast_matrix_market is no longer maintained and will be removed in a future version. "
@@ -67,10 +68,24 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
                     "fast_matrix_market is required to read Matrix Market files "
                     f'using the "{engine}" engine'
                 ) from None
+        else:
+            using_scipy = False
     elif engine != "scipy":
         raise ValueError(
             f'Bad engine value: {engine!r}. Must be "auto", "scipy", "fmm", or "fast_matrix_market"'
         )
+    if using_scipy and "spmatrix" not in kwargs:
+        # scipy's `mmread` still returns a sparse matrix by default, but 1.18
+        # deprecated that default and 1.20 flips it to a sparse array. We only
+        # read `.shape`, `.row`, `.col`, and `.data` below, which both types
+        # provide, so ask for the future default and skip the warning.
+        # MAINT: 2026-07-31 once we require scipy >= 1.20 this whole block goes
+        # away, since False becomes the default.
+        # Older scipy has no such argument; check rather than pin a version.
+        import inspect
+
+        if "spmatrix" in inspect.signature(mmread).parameters:
+            kwargs["spmatrix"] = False
     array = mmread(source, **kwargs)
     if getattr(array, "format", None) == "coo":
         nrows, ncols = array.shape
