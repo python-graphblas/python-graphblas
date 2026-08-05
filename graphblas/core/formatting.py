@@ -443,7 +443,18 @@ def _value_formatter(fmt_str, threshold):
         return base
 
     def formatter(v):
-        return base(v) if abs(v) > threshold else base(0.0)
+        try:
+            mag = abs(v)
+        except OverflowError:
+            # abs() of a python complex overflows for finite components near
+            # the float max, where numpy's abs returns inf. pandas computes the
+            # magnitude with numpy, so such a value is never chopped.
+            return base(v)
+        # Chop to the value's own type of zero. pandas chops at the array
+        # level, so a chopped complex renders " 0.000000+0.000000j"; a bare
+        # float zero here would put a j-less string into the complex column,
+        # which _trim_zeros_complex cannot parse.
+        return base(v) if mag > threshold else base(type(v)(0))
 
     return formatter
 
