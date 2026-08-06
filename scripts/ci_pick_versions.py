@@ -237,6 +237,19 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
         # Only the numpy 1.x pools reach here, and those Pythons all have pre-3.5 networkx.
         v["networkx"] = random.choice([n for n in NETWORKX_VERSIONS[pyver] if _ver(n) < (3, 5)])
 
+    # --- matplotlib / numpy floor (notebooks job) ---
+
+    # matplotlib is installed unpinned for the notebooks task. matplotlib 3.11.0's
+    # runtime check requires numpy >=1.25, but its conda-forge metadata does not,
+    # so the solver happily pairs matplotlib 3.11 with a numpy 1.24 pin and the
+    # notebooks then die at `import matplotlib`. Pin below 3.11 whenever the
+    # numpy pick sits under that floor; empty means latest is fine.
+    # MAINT: 2026-08-05 confirmed with matplotlib 3.11.0 + numpy 1.24.4
+    if v["numpy"] and _ver(v["numpy"]) < (1, 25):
+        v["matplotlib"] = "<3.11"
+    else:
+        v["matplotlib"] = ""
+
     # --- numba constraints ---
 
     # numba minimum by Python version: 0.59 for 3.12, 0.61 for 3.13, 0.63 for 3.14
@@ -380,6 +393,7 @@ _SUMMARY_NAMES = {
     "sparse": "sparse",
     "numba": "numba",
     "psg": "psg",
+    "matplotlib": "mpl",
 }
 
 
@@ -401,6 +415,8 @@ def format_output(v):
 
     # psg already has = or == prefix
     lines.append(f"psgver='{v['psg']}'")
+    # matplotlib carries a bare ceiling (e.g. "<3.11") or is empty for latest
+    lines.append(f"mplver='{v['matplotlib']}'")
     return "\n".join(lines)
 
 
@@ -417,6 +433,7 @@ def format_summary(v):
         "pyyaml",
         "sparse",
         "psg",
+        "matplotlib",
     ):
         name = _SUMMARY_NAMES[key]
         val = v[key]
@@ -481,6 +498,10 @@ def validate(v, pyver):
     # awkward <2.6 requires numpy 1.x (numpy.AxisError)
     if not np_is_1x and v["awkward"] not in ("", "NA") and _ver(v["awkward"]) < (2, 6):
         errors.append(f"awkward {v['awkward']} doesn't support numpy 2.x")
+
+    # matplotlib 3.11 requires numpy >=1.25 at runtime (notebooks job)
+    if v["numpy"] and _ver(v["numpy"]) < (1, 25) and v.get("matplotlib", "") != "<3.11":
+        errors.append(f"matplotlib unpinned alongside numpy {v['numpy']} (needs <3.11)")
 
     # awkward <2.10 requires numpy <2.5 (generic-unit datetime64("NaT") at import)
     if (
