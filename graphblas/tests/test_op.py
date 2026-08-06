@@ -1972,6 +1972,77 @@ def test_udt_array_wrapper_stays_within_element():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_array_any_wrapper_stays_within_element():
+    """``binary.any`` on an array UDT must write one element, not Numba's array descriptor.
+
+    ``any``, ``first``, and ``second`` are not in ``_BUILTIN_UDT_BINARY_OPS``,
+    so they compile through the generic ``_numba_func`` branch of
+    ``BinaryOp._compile_udt``. The wrapper there used to load and store the
+    operand as a ``NestedArray`` *value*, which Numba models as its full array
+    descriptor (meminfo, parent, nitems, itemsize, data, shape, strides): 56
+    bytes on 64-bit for a 1-D element, regardless of payload size. SuiteSparse's
+    generic reduce keeps a UDT accumulator in a stack array sized to the element
+    (32 bytes here), so each fold overflowed it by 24 bytes; depending on the
+    build that clobbered a spilled pointer (segfault or SIGBUS) or silently
+    produced a wrong answer.
+
+    Drive the compiled wrapper directly, over heap buffers with slack, so a
+    regression trips an assert instead of corrupting a stack frame. The two
+    sentinels must differ: the descriptor load/store is a byte-preserving copy
+    of the source element plus its trailing bytes, so if ``y``'s slack held the
+    same sentinel as ``z``'s guard, the overflow would rewrite ``z``'s guard
+    bytes with identical values and the check would be blind to it.
+    """
+    import ctypes
+
+    import numba
+
+    from graphblas.core.operator.base import _get_udt_wrapper
+
+    # ``register_anonymous`` caches per np.dtype, so this may return the same
+    # DataType as other float64[4] tests, renamed. That is fine here: the
+    # wrapper below is compiled fresh and nothing asserts on cached JIT state.
+    udt = dtypes.register_anonymous(np.dtype((np.float64, (4,))), "_AnyOverflowArr")
+
+    # Mirror the generic ``_numba_func`` branch of ``BinaryOp._compile_udt``.
+    numba_func = binary.any._numba_func
+    sig = (udt.numba_type, udt.numba_type)
+    numba_func.compile(sig)
+    numba_ret_type = numba_func.overloads[sig].signature.return_type
+    wrapper, wrapper_sig = _get_udt_wrapper(
+        numba_func, udt, udt, udt, numba_ret_type=numba_ret_type
+    )
+    cfunc = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(wrapper)
+    call = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(cfunc.address)
+
+    itemsize = udt.np_type.itemsize
+    slack = 128  # the descriptor overran by 24 bytes; leave generous headroom
+    z = np.full(itemsize + slack, 0xAB, dtype=np.uint8)
+    x = np.full(itemsize + slack, 0xCD, dtype=np.uint8)
+    y = np.full(itemsize + slack, 0xCD, dtype=np.uint8)
+    xvals = np.array([1.0, 2.0, 3.0, 4.0])
+    yvals = np.array([10.0, 20.0, 30.0, 40.0])
+    x[:itemsize] = xvals.view(np.uint8)
+    y[:itemsize] = yvals.view(np.uint8)
+    call(z.ctypes.data, x.ctypes.data, y.ctypes.data)
+
+    # ``any`` uses ``_second`` semantics, so the payload must be ``y``'s.
+    np.testing.assert_array_equal(z[:itemsize].view(np.float64), yvals)
+    overrun = np.flatnonzero(z[itemsize:] != 0xAB)
+    assert overrun.size == 0, f"wrote {overrun.size} bytes past the element at offsets {overrun}"
+
+    # Public-path smoke: the reduce whose stack accumulator the old wrapper
+    # overflowed. Kept after the byte-level checks so a regression fails the
+    # assert above instead of reaching code that may crash the process.
+    v = Vector(udt, size=3)
+    rows = [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0]]
+    for i, row in enumerate(rows):
+        v[i] = row
+    res = v.reduce(monoid.any).new()
+    assert any(np.array_equal(res.value, row) for row in rows)
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_array_udf_returns_new_array():
     """An array-UDT UDF may build its result instead of returning an operand.
