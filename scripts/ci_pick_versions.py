@@ -191,6 +191,21 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
         if v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 15):
             v["scipy"] = random.choice(["1.15", "1.16", "1.17", ""])
 
+    # conda-forge pandas >=2.2 carries run_constrained "scipy >=1.10.0" (latest 2.2.3
+    # build and all 2.3 builds; 2.0/2.1 declare no scipy constraint), so a pandas
+    # 2.2/2.3 pin alongside a scipy 1.9 pin fails the conda solve outright. Unpinned
+    # pandas backs off on its own, so only pins trigger. A scipy 1.9 pick can only
+    # reach here with numpy 1.24/1.25 (the 1.26 conflict above already re-picked),
+    # so keep the replacement pinned below the scipy 1.15 ceiling those numpys impose.
+    # MAINT: 2026-08-06 verified with conda search --info against conda-forge
+    if (
+        v["pandas"] not in ("", "NA")
+        and _ver(v["pandas"]) >= (2, 2)
+        and v["scipy"] not in ("", "NA")
+        and _ver(v["scipy"]) < (1, 10)
+    ):
+        v["scipy"] = random.choice([s for s in scipy_pool if s and (1, 10) <= _ver(s) < (1, 15)])
+
     # --- awkward / numpy 2.x support ---
 
     # awkward <2.6 uses numpy.AxisError, which numpy 2.0 removed (test_io.py then fails
@@ -263,6 +278,13 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
     # numba <0.64 requires numpy <2.4
     if _ver(v["numpy"]) >= (2, 4) and v["numba"] in ("0.62", "0.63"):
         v["numba"] = "0.64"
+
+    # conda-forge numba 0.57 requires numpy <1.25, so that pairing fails the
+    # conda solve outright. Verified by dry-run solves: 0.57+1.25 conflicts;
+    # 0.58+1.25, 0.58+1.26, and 0.59+1.26 all solve.
+    # MAINT: 2026-08-05 confirmed against conda-forge with mamba dry-runs
+    if v["numba"] == "0.57" and np_is_1x and _ver(v["numpy"]) >= (1, 25):
+        v["numba"] = "0.58"
 
     # numba <0.62 doesn't support numpy 2.x
     if not np_is_1x and v["numba"] not in ("", "NA") and _ver(v["numba"]) < (0, 62):
@@ -489,6 +511,15 @@ def validate(v, pyver):
         if v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 15):
             errors.append(f"pandas 3.0 requires scipy >=1.14.1, got {v['scipy']}")
 
+    # conda-forge pandas >=2.2 constrains scipy >=1.10.0 (fails the conda solve)
+    if (
+        v["pandas"] not in ("", "NA")
+        and _ver(v["pandas"]) >= (2, 2)
+        and v["scipy"] not in ("", "NA")
+        and _ver(v["scipy"]) < (1, 10)
+    ):
+        errors.append(f"pandas {v['pandas']} constrains scipy >=1.10.0, got {v['scipy']}")
+
     # awkward Python availability
     if pyver == "3.14" and v["awkward"] not in ("", "NA") and _ver(v["awkward"]) < (2, 8):
         errors.append(f"awkward {v['awkward']} has no py3.14 build")
@@ -502,6 +533,10 @@ def validate(v, pyver):
     # matplotlib 3.11 requires numpy >=1.25 at runtime (notebooks job)
     if v["numpy"] and _ver(v["numpy"]) < (1, 25) and v.get("matplotlib", "") != "<3.11":
         errors.append(f"matplotlib unpinned alongside numpy {v['numpy']} (needs <3.11)")
+
+    # conda-forge numba 0.57 requires numpy <1.25 (fails the conda solve)
+    if v["numba"] == "0.57" and v["numpy"] and _ver(v["numpy"]) >= (1, 25) and np_is_1x:
+        errors.append(f"numba 0.57 requires numpy <1.25, got {v['numpy']}")
 
     # awkward <2.10 requires numpy <2.5 (generic-unit datetime64("NaT") at import)
     if (
