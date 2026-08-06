@@ -4939,6 +4939,7 @@ def test_vector_as_matrix():
 
 
 @pytest.mark.skipif("not pd")
+@pytest.mark.skipif("not dtypes._supports_complex")
 def test_chop_threshold_complex():
     # The COO (long) form formats complex columns through the float column
     # formatter, where display.chop_threshold compares each value's magnitude.
