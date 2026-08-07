@@ -1,5 +1,7 @@
 import multiprocessing
 import pickle
+import platform
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -313,6 +315,20 @@ def test_udt(extra):
     assert udt2._is_anonymous
     assert pickle.loads(pickle.dumps(udt2)).np_type == udt2.np_type
 
+    if (
+        np.__version__.startswith("1.")
+        and sys.platform == "linux"
+        and platform.machine() == "aarch64"
+    ):
+        # pickle3*.pkl was written on x86, where the align=True struct dtype's flags byte 0x90
+        # (NPY_ALIGNED_STRUCT | 0x10) pickled from a signed char as -112. numpy 1.x
+        # dtype.__setstate__ stores flags back into a char and rejects values that do not
+        # round-trip; on Linux aarch64 char is unsigned, so (char)-112 == 144 and loading raises
+        # ValueError("incorrect value for flags variable (overflow)"). numpy 2.0 widened flags to
+        # uint64 and normalizes signed pickled values, so it loads fine everywhere. Regenerating
+        # the pickle cannot help under numpy 1.x: positive flags would fail the same check on
+        # signed-char platforms.
+        pytest.skip("pickle3 dtype flags cannot round-trip on unsigned-char platforms in numpy 1.x")
     path = Path(__file__).parent / f"pickle3{extra}.pkl"
     with path.open("rb") as f:
         d = pickle.load(f)
