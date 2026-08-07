@@ -128,8 +128,39 @@ NP_TO_C_TYPES = {
 # (no ordering for min/max, no integer-mod for floordiv).
 _OPS_NOT_FOR_COMPLEX = frozenset({"min", "max", "floordiv"})
 
-# C operator equivalents for JIT code generation
-_C_INFIX_OPS = {"+": "+", "-": "-", "*": "*", "/": "/", "//": "/"}
+# ``<type>_MIN`` spellings from <stdint.h>, keyed by itemsize. Signed integer
+# division traps on ``MIN / -1``; the generated C tests for it explicitly.
+_C_INT_MIN = {1: "INT8_MIN", 2: "INT16_MIN", 4: "INT32_MIN", 8: "INT64_MIN"}
+
+# Same constants for the generated Python source, spelled ``-MAX - 1`` rather
+# than as a direct literal that reads as the negation of an out-of-range value.
+# MAINT 2026-07-30: Numba 0.65 types both spellings as ``Literal[int]``, so this
+# can likely be simplified; re-check on the oldest supported Numba first.
+_PY_INT_MIN = {
+    1: "(-127 - 1)",
+    2: "(-32767 - 1)",
+    4: "(-2147483647 - 1)",
+    8: "(-9223372036854775807 - 1)",
+}
+
+
+def _is_float(np_dtype):
+    return np_dtype.kind == "f"
+
+
+def _is_signed_int(np_dtype):
+    return np_dtype.kind == "i"
+
+
+def _is_int(np_dtype):
+    """True for signed and unsigned integers, but not bool.
+
+    Bool is excluded from the integer division guards: ``_Bool`` has no range
+    to overflow and C converts a double to it by comparing against zero, so
+    both execution paths already agree without help.
+    """
+    return np_dtype.kind in ("i", "u")
+
 
 # Vanilla strips GxB callables but keeps GxB constants, so the bare
 # ``hasattr`` would lie; gate on the backend too.
@@ -539,12 +570,64 @@ if _has_numba:
         """Python-source builder; sibling of :func:`_c_expr_binary` for JIT C.
 
         ``x_dtype`` and ``y_dtype`` are each operand's numpy dtype at this
-        leaf, which ``_check_udt_pair`` allows to differ. Only ``min`` and
-        ``max`` consult them, to tell a floating-point leaf from an integer
-        one; the rest are type-agnostic.
+        leaf, which ``_check_udt_pair`` allows to differ. Four ops consult
+        them:
+
+        - ``min`` / ``max`` follow SuiteSparse's own ``GrB_MIN_FP64``, which
+          is C99 ``fmin`` and ignores a NaN operand rather than ordering or
+          propagating it; see :func:`_minmax_expr`. Only floating-point
+          leaves carry the NaN and signed-zero rules, so the dtype decides
+          which of the two forms is emitted.
+        - ``//`` on two signed integers. Numba deliberately returns 0 for
+          ``INT_MIN // -1`` to dodge the SIGFPE that x86 raises on the
+          unrepresentable quotient, while numpy wraps to ``INT_MIN``. Since
+          ``a // -1`` is exactly ``-a``, routing that divisor through
+          negation (which wraps) reaches numpy's answer without the trap.
+        - ``/`` on two integers. The quotient is a float that then has to fit
+          back into the integer field; when it doesn't, the conversion is
+          undefined in both C and LLVM, and the two disagree in ways that
+          vary with the field's width. Ruling out the two ways a division of
+          two same-signedness integers can leave the field's range (a zero
+          divisor, and ``INT_MIN / -1``) is what makes the two paths agree.
+          Note this gives ``x / 0 == 0``, which agrees with
+          ``np.floor_divide``; ``np.true_divide`` produces an infinity whose
+          cast back to an integer is undefined in numpy too.
+
+          Two range escapes are left, and both move the two paths together
+          rather than apart. A 64-bit field can leave the range through the
+          ``(double)`` conversion itself (``(2**63 - 1) / 1`` rounds up to
+          ``2**63``), and there the answer is whatever the hardware does:
+          measured saturating to ``INT64_MAX`` on arm64. Operands of mixed
+          signedness escape through a negative divisor, which the
+          ``INT_MIN`` guard, keyed on the left operand, doesn't see:
+          ``uint8(200) / int8(-1)`` is -200.0 before the cast back. That one
+          is unguarded rather than known-wrong (it lands on 56, which is what
+          ``np.float64(-200).astype(np.uint8)`` gives), and a mixed pair gets
+          no JIT kernel at all, so there is no second path for it to
+          disagree with.
+        - ``/`` where either side is complex. Numba's complex division raises
+          ``ZeroDivisionError`` unconditionally, outside the error model's
+          control, so a zero divisor left the element unwritten while the C
+          kernel returned numpy's infinities. Spelling out the zero case here
+          makes both paths match numpy.
         """
         if py_op in _FUNC_BINARY_OPS:
             return _minmax_expr(py_op, x_expr, y_expr, x_dtype, y_dtype)
+        if py_op == "//" and _is_signed_int(x_dtype) and _is_signed_int(y_dtype):
+            return f"(-{x_expr} if {y_expr} == -1 else {x_expr} // {y_expr})"
+        if py_op == "/" and (x_dtype.kind == "c" or y_dtype.kind == "c"):
+            return (
+                f"({x_expr} / {y_expr} if {y_expr} != 0 "
+                f"else complex({x_expr}.real / 0.0, {x_expr}.imag / 0.0))"
+            )
+        if py_op == "/" and _is_int(x_dtype) and _is_int(y_dtype):
+            quotient = f"{x_expr} / {y_expr}"
+            if _is_signed_int(x_dtype):
+                type_min = _PY_INT_MIN[x_dtype.itemsize]
+                quotient = (
+                    f"({x_expr} if ({x_expr} == {type_min} and {y_expr} == -1) else {quotient})"
+                )
+            return f"(0 if {y_expr} == 0 else {quotient})"
         return f"{x_expr} {py_op} {y_expr}"
 
     def _minmax_expr(py_op, x_expr, y_expr, x_dtype, y_dtype):
@@ -571,7 +654,7 @@ if _has_numba:
         over an int record still produces float results.
         """
         cmp_op = "<" if py_op == "min" else ">"
-        if x_dtype.kind != "f" and y_dtype.kind != "f":
+        if not _is_float(x_dtype) and not _is_float(y_dtype):
             return f"({x_expr} if {x_expr} {cmp_op} {y_expr} else {y_expr})"
         # ``y != y`` is the NaN test on the right operand: when it holds, the
         # left one wins whatever it is, which is fmin's "ignore the NaN" rule
@@ -855,6 +938,42 @@ if _has_numba:
 # JIT C code generators below.
 
 
+def _c_assign_binary(py_op, target, lhs, rhs, field_dtype):
+    """Return a C *statement* assigning ``lhs py_op rhs`` to ``target``.
+
+    Almost every op is a single expression, but floating-point ``//`` needs
+    temporaries (see :func:`_c_float_floordiv_stmt`), so this is the entry
+    point the kernel builder uses rather than :func:`_c_expr_binary`.
+    """
+    if py_op == "//" and field_dtype.kind == "f":
+        return _c_float_floordiv_stmt(target, lhs, rhs, field_dtype)
+    return f"{target} = {_c_expr_binary(py_op, lhs, rhs, field_dtype)} ;"
+
+
+def _c_expr_binary(py_op, lhs, rhs, field_dtype):
+    """Return a C expression for a binary op: e.g., ``(x->a) + (y->a)``.
+
+    ``field_dtype`` is the numpy dtype of the element being written. Four of
+    the ops need it because the C spelling that looks obvious disagrees with
+    what SuiteSparse's own operators compute: ``/`` is integer division in C
+    but true division in Python, ``//`` is neither, and ``min`` / ``max`` have
+    to ignore NaN the way ``fmin`` does. It is required rather than optional
+    so a new caller can't silently get the wrong kernel.
+
+    Floating-point ``//`` has no single-expression form; go through
+    :func:`_c_assign_binary`.
+    """
+    if py_op in _FUNC_BINARY_OPS:
+        return _c_minmax_expr(py_op, lhs, rhs, field_dtype)
+    if py_op == "/":
+        return _c_truediv_expr(lhs, rhs, field_dtype)
+    if py_op == "//":
+        return _c_int_floordiv_expr(lhs, rhs, field_dtype)
+    # Everything left (``+``, ``-``, ``*``) spells the same in C as in Python
+    # and needs no dtype-specific handling.
+    return f"({lhs}) {py_op} ({rhs})"
+
+
 def _c_minmax_expr(py_op, lhs, rhs, field_dtype):
     """Return a C expression for ``min`` / ``max`` matching SuiteSparse.
 
@@ -863,7 +982,7 @@ def _c_minmax_expr(py_op, lhs, rhs, field_dtype):
     different things depending on the dtype it is typed for. Calling ``fmin``
     itself is the way to be sure of that, tie-break on signed zeros included.
     ``<math.h>`` reaches the JIT kernel through ``GraphBLAS.h``, the same
-    route ``_c_floordiv_expr`` relies on for ``floor``.
+    route ``_c_float_floordiv_stmt`` relies on for ``floor`` and ``fmod``.
 
     ``float`` fields need ``fminf``: passing them to ``fmin`` would compute
     in double and round on the way back, which costs nothing in accuracy for
@@ -873,12 +992,8 @@ def _c_minmax_expr(py_op, lhs, rhs, field_dtype):
     exact for them. ``_minmax_expr`` emits the matching Python source; the
     two must agree, because SuiteSparse picks between the JIT kernel and the
     Numba cfunc on its own.
-
-    ``field_dtype`` is None only if a caller omits it. Falling back to the
-    comparison keeps that case compiling; ``_make_jit_c_definition`` always
-    passes the real leaf dtype.
     """
-    if field_dtype is not None and field_dtype.kind == "f":
+    if _is_float(field_dtype):
         fn = "fmin" if py_op == "min" else "fmax"
         suffix = "f" if field_dtype.itemsize == 4 else ""
         return f"{fn}{suffix}(({lhs}), ({rhs}))"
@@ -886,52 +1001,124 @@ def _c_minmax_expr(py_op, lhs, rhs, field_dtype):
     return f"(({lhs}) {cmp_op} ({rhs}) ? ({lhs}) : ({rhs}))"
 
 
-def _c_expr_binary(py_op, lhs, rhs, field_dtype=None):
-    """Return a C expression for a binary op: e.g., ``(x->a) + (y->a)``.
+def _c_truediv_expr(lhs, rhs, field_dtype):
+    """Return a C expression for Python-semantics true division.
 
-    ``field_dtype`` is the numpy dtype of the *result* element. It is
-    consulted for ``floordiv`` (``//``), which needs Python ``//`` semantics
-    rather than C ``/``, and for ``min`` / ``max``, which need C99 ``fmin`` /
-    ``fmax`` on floating-point fields so NaN is ignored rather than ordered.
-    The remaining ops are type-agnostic at the C level.
+    C ``/`` on two integers is integer division; Python's ``/`` always
+    divides in floating point and only then does the result land back in the
+    integer field. The difference is visible whenever the exact quotient
+    doesn't fit a double (``10**18 / 3`` is 333333333333333333 in C but
+    333333333333333312 through float64) and it is what makes integer
+    division by zero trap: ``(double) 7 / 0`` is ``inf``, but ``7 / 0`` in
+    integers raises SIGFPE and takes the whole process down.
+
+    The quotient then has to come back down into the field, and converting a
+    double that doesn't fit the destination is undefined in C and poison in
+    LLVM, so the two paths need not agree. The two range escapes that a
+    same-signedness division can take are ruled out instead, matching the
+    guards :func:`_expr_binary` emits for the cfunc. A 64-bit field can still
+    escape through the ``(double)`` conversion (``(2**63 - 1) / 1`` rounds up
+    to ``2**63``). Both paths land on the same hardware conversion there
+    rather than on defined behaviour, so they agree with each other but need
+    not agree across machines; measured saturating to ``INT64_MAX`` on arm64.
+
+    A complex field spells the zero-divisor case out rather than leaning on
+    C99 Annex G. SuiteSparse's JIT compiles with ``-fcx-limited-range`` under
+    GCC, which replaces the Annex G division with the naive formula, so
+    ``z / 0`` came out ``nan+nanj`` on Linux while clang (no such flag) and
+    the cfunc gave numpy's infinities. Dividing the parts by ``0.0`` as reals
+    sidesteps the flag entirely and matches the cfunc's spelling (see
+    ``_expr_binary``). ``CMPLX`` rather than arithmetic on ``I``: under the
+    naive formula ``inf * I`` multiplies out to ``nan``, which is the exact
+    failure being avoided. ``rhs == 0`` on a ``_Complex`` operand compares
+    both parts, mirroring the cfunc's ``y != 0``.
     """
-    if py_op in _FUNC_BINARY_OPS:
-        return _c_minmax_expr(py_op, lhs, rhs, field_dtype)
-    if py_op == "//":
-        return _c_floordiv_expr(lhs, rhs, field_dtype)
-    c_op = _C_INFIX_OPS.get(py_op, py_op)
-    return f"({lhs}) {c_op} ({rhs})"
-
-
-def _c_floordiv_expr(lhs, rhs, field_dtype):
-    """Return a C expression for Python-semantics floor division.
-
-    Python ``//`` is floor (rounds toward negative infinity); C ``/`` is
-    trunc toward zero for ints and true division for floats. The two only
-    agree for non-negative integer operands; for everything else the JIT
-    path silently disagreed with the Numba cfunc path before this helper.
-
-    Float fields use ``floor()`` / ``floorf()`` from ``<math.h>``, which is
-    available in the JIT kernel via SuiteSparse's include chain
-    (``GraphBLAS.h`` -> ``<math.h>``). Signed integer fields use the
-    standard trunc-to-floor adjustment. Unsigned integers don't need
-    adjusting because both operands are non-negative.
-    """
-    if field_dtype is None:
-        # Caller didn't pass dtype info. The C ``/`` semantics match Python
-        # ``//`` for non-negative integer operands only.
-        return f"({lhs}) / ({rhs})"
     kind = field_dtype.kind
+    if kind == "c":
+        if field_dtype.itemsize == 8:
+            cmplx, creal, cimag, zero = "CMPLXF", "crealf", "cimagf", "0.0f"
+        else:
+            cmplx, creal, cimag, zero = "CMPLX", "creal", "cimag", "0.0"
+        return (
+            f"(({rhs}) == 0 "
+            f"? {cmplx}({creal}({lhs}) / {zero}, {cimag}({lhs}) / {zero}) "
+            f": ({lhs}) / ({rhs}))"
+        )
     if kind == "f":
-        if field_dtype.itemsize == 4:
-            return f"floorf((float)({lhs}) / (float)({rhs}))"
-        return f"floor((double)({lhs}) / (double)({rhs}))"
-    if kind in ("u", "b"):
         return f"({lhs}) / ({rhs})"
-    # Signed integer: trunc-toward-zero is one greater than floor when the
-    # signs of ``a`` and ``b`` differ and the division has a non-zero
-    # remainder; subtract 1 in that case.
-    return f"(({lhs}) / ({rhs}) - ((({lhs}) % ({rhs}) != 0) && ((({lhs}) < 0) != (({rhs}) < 0))))"
+    quotient = f"(double)({lhs}) / (double)({rhs})"
+    if kind == "b":
+        # C converts a double to _Bool by comparing against zero, so there is
+        # no range to leave and nothing to guard.
+        return f"({quotient})"
+    if kind == "u":
+        return f"(({rhs}) == 0 ? 0 : ({quotient}))"
+    type_min = _C_INT_MIN[field_dtype.itemsize]
+    return (
+        f"(({rhs}) == 0 ? 0 : "
+        f"((({lhs}) == {type_min} && ({rhs}) == -1) ? {type_min} : ({quotient})))"
+    )
+
+
+def _c_int_floordiv_expr(lhs, rhs, field_dtype):
+    """Return a C expression for integer floor division.
+
+    Three ways C ``/`` differs from what the cfunc computes:
+
+    - It truncates toward zero; Python ``//`` floors. Subtract one when the
+      operands have different signs and the remainder is non-zero.
+    - It raises SIGFPE (process death, not an exception) when the divisor is
+      zero. Numba's numpy error model returns 0, as does ``np.floor_divide``.
+    - It raises SIGFPE on ``INT_MIN / -1``, whose true quotient is not
+      representable. numpy wraps to ``INT_MIN``, which is what the cfunc
+      reaches through negation (see ``_expr_binary``).
+    """
+    if field_dtype.kind in ("u", "b"):
+        # Both operands are non-negative, so truncation already floors.
+        return f"(({rhs}) == 0 ? 0 : (({lhs}) / ({rhs})))"
+    type_min = _C_INT_MIN[field_dtype.itemsize]
+    floored = f"({lhs}) / ({rhs}) - ((({lhs}) % ({rhs}) != 0) && ((({lhs}) < 0) != (({rhs}) < 0)))"
+    return (
+        f"(({rhs}) == 0 ? 0 : "
+        f"((({lhs}) == {type_min} && ({rhs}) == -1) ? {type_min} : ({floored})))"
+    )
+
+
+def _c_float_floordiv_stmt(target, lhs, rhs, field_dtype):
+    """Return a C block computing floating-point ``//`` into ``target``.
+
+    ``floor(a / b)`` is not floor division. numpy and CPython both compute
+    the quotient from the remainder (``(a - fmod(a, b)) / b``) and snap it,
+    which is more accurate and handles infinities differently: ``1.0 // 0.1``
+    is 9.0 but ``floor(1.0 / 0.1)`` is 10.0, and ``inf // 2.0`` is NaN but
+    ``floor(inf / 2.0)`` is ``inf``. This mirrors numpy's ``npy_divmod``
+    (which CPython's ``float_divmod`` matches), so the JIT kernel, the Numba
+    cfunc, and ``np.floor_divide`` all agree.
+
+    The sign fix-up needs the remainder twice and the quotient twice, so
+    this emits a statement with temporaries rather than one expression.
+    """
+    is_f32 = field_dtype.itemsize == 4
+    ctype = "float" if is_f32 else "double"
+    sfx = "f" if is_f32 else ""
+    half = "0.5f" if is_f32 else "0.5"
+    one = "1.0f" if is_f32 else "1.0"
+    zero = "0.0f" if is_f32 else "0.0"
+    return (
+        f"{{ {ctype} gb_a = ({lhs}) ; {ctype} gb_b = ({rhs}) ; {ctype} gb_q ; "
+        # A zero divisor is the one case numpy answers straight from the
+        # division: +-inf, or NaN for 0/0.
+        f"if (gb_b == {zero}) {{ gb_q = gb_a / gb_b ; }} "
+        f"else {{ {ctype} gb_m = fmod{sfx} (gb_a, gb_b) ; "
+        f"{ctype} gb_d = (gb_a - gb_m) / gb_b ; "
+        # NaN compares false both ways, so a NaN remainder skips the
+        # adjustment and carries through to the quotient.
+        f"if (gb_m != {zero} && ((gb_b < {zero}) != (gb_m < {zero}))) {{ gb_d -= {one} ; }} "
+        f"if (gb_d != {zero}) {{ gb_q = floor{sfx} (gb_d) ; "
+        f"if (gb_d - gb_q > {half}) {{ gb_q += {one} ; }} }} "
+        f"else {{ gb_q = copysign{sfx} ({zero}, gb_a / gb_b) ; }} }} "
+        f"{target} = gb_q ; }}"
+    )
 
 
 def _c_expr_unary(py_op, operand, field_dtype=None):
@@ -1001,7 +1188,7 @@ def _make_jit_c_definition(op_name, py_op, dtype, arity):
             # Pass the leaf dtype to the binary expression builder so
             # type-sensitive ops (currently floordiv) can emit correct C.
             assigns = " ".join(
-                f"z->{c} = {_c_expr_binary(py_op, f'x->{c}', f'y->{c}', leaf_dtype)} ;"
+                _c_assign_binary(py_op, f"z->{c}", f"x->{c}", f"y->{c}", leaf_dtype)
                 for _py, c, leaf_dtype in leaves
             )
         else:
@@ -1014,7 +1201,7 @@ def _make_jit_c_definition(op_name, py_op, dtype, arity):
         size = reduce(mul, shape)
         if arity == 2:
             assigns = " ".join(
-                f"z->v[{i}] = {_c_expr_binary(py_op, f'x->v[{i}]', f'y->v[{i}]', base_dtype)} ;"
+                _c_assign_binary(py_op, f"z->v[{i}]", f"x->v[{i}]", f"y->v[{i}]", base_dtype)
                 for i in range(size)
             )
         else:
