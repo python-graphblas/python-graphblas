@@ -32,11 +32,22 @@ _BUILTIN_UDT_MONOIDS = {"plus", "times", "min", "max"}
 def _is_builtin_binaryop(binaryop):
     """True if ``binaryop`` wraps built-in GraphBLAS operators rather than a UDF.
 
-    Built-ins are the only binary ops constructed with neither a Python func nor
-    a numba func. That covers ``binary.numpy.float_power`` too, which is
-    assembled out of ``binary.pow``'s typed ops.
+    Most built-ins are constructed with neither a Python func nor a numba func.
+    That covers ``binary.numpy.float_power`` too, which is assembled out of
+    ``binary.pow``'s typed ops. A few built-ins (``any``, ``first``, ``pair``,
+    ``second``) carry a Python ``orig_func`` as their UDT fallback, so the func
+    test alone misses them; their typed ops are still ``TypedBuiltinBinaryOp``,
+    which is the authoritative signal. A UDF's typed ops are never
+    ``TypedBuiltinBinaryOp``. Under ``mapnumpy=True`` the mapped numpy binary
+    ops hold the built-in's typed ops and no funcs, so both tests agree they
+    are built-in; the numpy monoids themselves are mapped without passing
+    through ``Monoid._build``.
     """
-    return binaryop.orig_func is None and binaryop._numba_func is None
+    return (
+        binaryop.orig_func is None
+        and binaryop._numba_func is None
+        or any(type(typed) is TypedBuiltinBinaryOp for typed in binaryop._typed_ops.values())
+    )
 
 
 def _scalar_identity(monoid_name, scalar_dtype):
