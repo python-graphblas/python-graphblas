@@ -3808,3 +3808,22 @@ def test_initialize_does_not_build_lazy_udfs():
 
     still_lazy = lines.get("still lazy", "").split()
     assert still_lazy == ["floordiv", "rfloordiv", "absfirst", "abssecond", "rpow"], report
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udfs_are_disk_cached():
+    # The built-in UDF binops are module-level functions, so numba can persist
+    # their compilation across processes. Anything a user registers cannot be:
+    # numba keys a cache entry on a stable on-disk source, which a lambda or an
+    # interactively defined function does not have.
+    from numba.core.caching import NullCache
+
+    for name in ["floordiv", "rfloordiv", "absfirst", "abssecond", "rpow"]:
+        numba_func = getattr(binary, name)._numba_func
+        assert not isinstance(numba_func._cache, NullCache), name
+
+    def _uncached_probe(x, y):
+        return x + y
+
+    user_op = BinaryOp.register_anonymous(_uncached_probe)
+    assert isinstance(user_op._numba_func._cache, NullCache)
