@@ -237,6 +237,22 @@ def test_global_config():
     assert "format" in repr(config)
 
 
+def test_global_config_key_completions():
+    # IPython offers these for `config[<tab>]`, so they must be the keys that
+    # actually resolve, not the attributes of the mapping object.
+    config = gb.ss.config
+    completions = config._ipython_key_completions_()
+    assert set(completions) == set(config._options)
+    for key in completions:
+        config[key]
+    # About aliases the same hook onto its own __iter__ (gb.ss.about[<tab>])
+    about = gb.ss.about
+    completions = about._ipython_key_completions_()
+    assert set(completions) == set(about)
+    for key in completions:
+        about[key]
+
+
 @pytest.mark.skipif("gb.core.ss._IS_SSGB7")
 def test_context():
     context = gb.ss.Context()
