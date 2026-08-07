@@ -1360,6 +1360,27 @@ def test_udt():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_select_op_outlives_source_indexunary():
+    """A SelectOp keeps alive the IndexUnaryOp whose GraphBLAS handle it borrows.
+
+    ``SelectOp._from_indexunary`` reuses the IndexUnaryOp's ``gb_obj`` rather
+    than allocating a second one, and ``register_anonymous`` drops that
+    IndexUnaryOp on the way out. Without an explicit reference the handle is
+    freed as soon as it is collected, and every use of the SelectOp raises
+    ``UninitializedObject``.
+    """
+    import gc
+
+    def _ne_thunk(x, i, j, thunk):  # pragma: no cover (numba)
+        return x != thunk
+
+    sel = SelectOp.register_anonymous(_ne_thunk)
+    gc.collect()
+    v = Vector.from_coo([0, 1, 2], [1, 5, 9])
+    assert v.select(sel, 5).new().isequal(Vector.from_coo([0, 2], [1, 9], size=3))
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_tuple_return_binaryop(record_udt):
     v, w = _record_pair(record_udt)
