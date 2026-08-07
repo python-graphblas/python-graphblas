@@ -49,34 +49,25 @@ jobs:
       mapnumpy: ${{ steps.mapnumpy.outputs.selected }}
       backend: ${{ steps.backend.outputs.selected }}
     steps:
+      # Plain bash instead of a marketplace action: resolving a third-party action is a
+      # network dependency that has failed with repeated 5xx errors ("Internal Server Error
+      # occurred while resolving ddradar/choose-random-action"), and a failure here kills
+      # the whole matrix. To weight a choice, repeat it (e.g. `A A B` picks A twice as
+      # often); to skip a choice, remove it from the list.
       - name: RNG for mapnumpy
-        uses: ddradar/choose-random-action@v4.1.0
         id: mapnumpy
-        with:
-          contents: |
-            A
-            B
-            C
-            D
-          weights: |
-            1
-            1
-            1
-            1
+        run: |
+          choices=(A B C D)
+          selected=${choices[$((RANDOM % ${#choices[@]}))]}
+          echo "selected: $selected (from: ${choices[*]})"
+          echo "selected=$selected" >> "$GITHUB_OUTPUT"
       - name: RNG for backend
-        uses: ddradar/choose-random-action@v4.1.0
         id: backend
-        with:
-          contents: |
-            E
-            F
-            G
-            H
-          weights: |
-            1
-            1
-            1
-            1
+        run: |
+          choices=(E F G H)
+          selected=${choices[$((RANDOM % ${#choices[@]}))]}
+          echo "selected: $selected (from: ${choices[*]})"
+          echo "selected=$selected" >> "$GITHUB_OUTPUT"
   build_and_test:
     needs: rngs
     runs-on: ${{ matrix.os }}
@@ -118,39 +109,26 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # Plain bash instead of a marketplace action; see the note on the rngs job above.
+      # To weight a choice, repeat it; to skip a choice, remove it from the list.
       - name: RNG for Python version
-        uses: ddradar/choose-random-action@v4.1.0
         id: pyver
-        with:
-          # We should support major Python versions for at least 36 months as per SPEC 0
-          # We may be able to support pypy if anybody asks for it
-          # 3.9.16 0_73_pypy
-          contents: |
-            3.11
-            3.12
-            3.13
-            3.14
-          weights: |
-            1
-            1
-            1
-            1
+        # We should support major Python versions for at least 36 months as per SPEC 0
+        # We may be able to support pypy if anybody asks for it
+        # 3.9.16 0_73_pypy
+        run: |
+          choices=(3.11 3.12 3.13 3.14)
+          selected=${choices[$((RANDOM % ${#choices[@]}))]}
+          echo "selected: $selected (from: ${choices[*]})"
+          echo "selected=$selected" >> "$GITHUB_OUTPUT"
       - name: RNG for source of python-suitesparse-graphblas
-        uses: ddradar/choose-random-action@v4.1.0
         id: sourcetype
-        with:
-          # Weights must be natural numbers, so set weights to very large to skip one
-          # (such as if 'upstream' is known to not work).
-          contents: |
-            conda-forge
-            wheel
-            source
-            upstream
-          weights: |
-            1
-            1
-            1
-            1
+        # Remove 'upstream' from the list if it is known to not work.
+        run: |
+          choices=(conda-forge wheel source upstream)
+          selected=${choices[$((RANDOM % ${#choices[@]}))]}
+          echo "selected: $selected (from: ${choices[*]})"
+          echo "selected=$selected" >> "$GITHUB_OUTPUT"
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v3
         id: setup_conda

@@ -13,32 +13,22 @@ jobs:
       os: ${{ steps.os.outputs.selected }}
       pyver: ${{ steps.pyver.outputs.selected }}
     steps:
+      # Plain bash instead of a marketplace action; see the note on the rngs job in
+      # test_and_build.yml. To weight a choice, repeat it; to skip one, remove it.
       - name: RNG for os
-        uses: ddradar/choose-random-action@v4.1.0
         id: os
-        with:
-          contents: |
-            ubuntu-latest
-            macos-latest
-            windows-latest
-          weights: |
-            1
-            1
-            1
+        run: |
+          choices=(ubuntu-latest macos-latest windows-latest)
+          selected=${choices[$((RANDOM % ${#choices[@]}))]}
+          echo "selected: $selected (from: ${choices[*]})"
+          echo "selected=$selected" >> "$GITHUB_OUTPUT"
       - name: RNG for Python version
-        uses: ddradar/choose-random-action@v4.1.0
         id: pyver
-        with:
-          contents: |
-            3.11
-            3.12
-            3.13
-            3.14
-          weights: |
-            1
-            1
-            1
-            1
+        run: |
+          choices=(3.11 3.12 3.13 3.14)
+          selected=${choices[$((RANDOM % ${#choices[@]}))]}
+          echo "selected: $selected (from: ${choices[*]})"
+          echo "selected=$selected" >> "$GITHUB_OUTPUT"
   test_imports:
     needs: rngs
     runs-on: ${{ needs.rngs.outputs.os }}
