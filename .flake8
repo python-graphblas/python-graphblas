@@ -10,6 +10,7 @@ extend-ignore =
     SIM401,
 # E203 whitespace before ':' (to be compatible with black)
 per-file-ignores =
+    benchmarks/*.py:B015,B018,
     scripts/create_pickle.py:F403,F405,
     graphblas/tests/*.py:T201,B043,
     graphblas/core/ss/matrix.py:SIM113,
