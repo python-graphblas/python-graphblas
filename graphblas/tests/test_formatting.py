@@ -146,41 +146,26 @@ def t():
 
 
 def test_no_pandas_repr(A, C, v, w):
-    # This is a bit of a hack...
+    # The rich repr is hand-rendered, so it no longer depends on pandas: with
+    # pandas marked absent the output is byte-identical to the pandas-present
+    # output, data grid and all. (When pandas is genuinely absent both branches
+    # use the same pandas-free path, so this still exercises that code.)
+    objs = [A, A.T, C, C.S, ~C.V, v, v.S, ~w.V, w]
+    expected = [repr(x) for x in objs]
     has_pandas_prev = formatting.has_pandas
     formatting.has_pandas = False
     try:
-        repr_printer(A, "A", indent=8)
-        assert repr(A) == (
-            '"A_1"      nvals  nrows  ncols  dtype   format\n'
-            "gb.Matrix      3      1      5  INT64  bitmapr"
-        )
-        repr_printer(A.T, "A.T", indent=8)
-        assert repr(A.T) == (
-            '"A_1.T"              nvals  nrows  ncols  dtype   format\n'
-            "gb.TransposedMatrix      3      5      1  INT64  bitmapc"
-        )
-        repr_printer(C.S, "C.S", indent=8)
-        assert repr(C.S) == (
-            '"C.S"           nvals  nrows  ncols  dtype    format\n'
-            "StructuralMask\n"
-            "of gb.Matrix        8     70     77  INT64  hypercsr"
-        )
-        repr_printer(v, "v", indent=8)
-        assert repr(v) == (
-            '"v"        nvals  size  dtype  format\ngb.Vector      3     5   FP64  bitmap'
-        )
-        repr_printer(~w.V, "~w.V", indent=8)
-        assert repr(~w.V) == (
-            '"~w.V"                 nvals  size  dtype  format\n'
-            "ComplementedValueMask\n"
-            "of gb.Vector               4    77  INT64  bitmap"
-        )
+        actual = [repr(x) for x in objs]
     finally:
         formatting.has_pandas = has_pandas_prev
+    assert actual == expected
+    # The data grid is rendered, not just the header: the border line and the
+    # values are present.
+    lines = repr(A).split("\n")
+    assert lines[2].startswith("----")
+    assert lines[-1] == "0  0    1    2"
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_repr_small(A, B):
     repr_printer(A, "A")
     assert repr(A) == (
@@ -212,7 +197,6 @@ def test_matrix_repr_small(A, B):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_mask_repr_small(A):
     repr_printer(A.S, "A.S")
     assert repr(A.S) == (
@@ -404,7 +388,6 @@ def test_matrix_mask_repr_large(C):
         )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_repr_small(v):
     repr_printer(v, "v")
     assert repr(v) == (
@@ -429,7 +412,6 @@ def test_vector_repr_large(w):
         )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_mask_repr_small(v):
     repr_printer(v.S, "v.S")
     assert repr(v.S) == (
@@ -517,140 +499,23 @@ def test_scalar_repr(s, t):
 
 
 def test_no_pandas_repr_html(A, C, v, w):
-    # This is a bit of a hack...
+    # _repr_html_ is hand-rendered too: marking pandas absent yields output that
+    # is byte-identical to the pandas-present output, data table included.
+    objs = [A, A.T, C, C.S, ~C.V, v, v.S, ~w.V, w]
+    expected = [repr_html(x) for x in objs]
     has_pandas_prev = formatting.has_pandas
     formatting.has_pandas = False
     try:
-        html_printer(A, "A", indent=8)
-        assert repr_html(A) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>nrows</pre></td>\n"
-            "    <td><pre>ncols</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>3</td>\n"
-            "    <td>1</td>\n"
-            "    <td>5</td>\n"
-            "    <td>INT64</td>\n"
-            "    <td>bitmapr</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
-        html_printer(A.T, "A.T", indent=8)
-        assert repr_html(A.T) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub>.T</tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.TransposedMatrix</pre></td>\n'
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>nrows</pre></td>\n"
-            "    <td><pre>ncols</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>3</td>\n"
-            "    <td>5</td>\n"
-            "    <td>1</td>\n"
-            "    <td>INT64</td>\n"
-            "    <td>bitmapc</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
-        html_printer(C.S, "C.S", indent=8)
-        assert repr_html(C.S) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>C.S</tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>StructuralMask\n'
-            "of\n"
-            "gb.Matrix</pre></td>\n"
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>nrows</pre></td>\n"
-            "    <td><pre>ncols</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>8</td>\n"
-            "    <td>70</td>\n"
-            "    <td>77</td>\n"
-            "    <td>INT64</td>\n"
-            "    <td>hypercsr</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
-        html_printer(v, "v", indent=8)
-        assert repr_html(v) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>size</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>3</td>\n"
-            "    <td>5</td>\n"
-            "    <td>FP64</td>\n"
-            "    <td>bitmap</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
-        html_printer(~w.V, "~w.V", indent=8)
-        assert repr_html(~w.V) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>~w.V</tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>ComplementedValueMask\n'
-            "of\n"
-            "gb.Vector</pre></td>\n"
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>size</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>4</td>\n"
-            "    <td>77</td>\n"
-            "    <td>INT64</td>\n"
-            "    <td>bitmap</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
+        actual = [repr_html(x) for x in objs]
     finally:
         formatting.has_pandas = has_pandas_prev
+    assert actual == expected
+    # The data table is rendered, not the "install pandas" placeholder.
+    html = repr_html(A)
+    assert "install" not in html.lower()
+    assert '<table border="1" class="dataframe">' in html
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_repr_html_small(A, B):
     html_printer(A, "A")
     assert repr_html(A) == (
@@ -845,7 +710,6 @@ def test_matrix_repr_html_small(A, B):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_mask_repr_html_small(A):
     html_printer(A.S, "A.S")
     assert repr_html(A.S) == (
@@ -2121,7 +1985,6 @@ def test_matrix_mask_repr_html_large(C):
         )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_repr_html_small(v):
     html_printer(v, "v")
     assert repr_html(v) == (
@@ -2267,7 +2130,6 @@ def test_vector_repr_html_large(w):
         )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_mask_repr_html_small(v):
     html_printer(v.S, "v.S")
     assert repr_html(v.S) == (
@@ -2889,7 +2751,6 @@ def test_apply_repr(v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_apply_repr_html(v):
     html_printer(v.apply(unary.one), "v.apply(unary.one)")
     assert repr_html(v.apply(unary.one)) == (
@@ -2922,7 +2783,6 @@ def test_mxm_repr(A, B):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_mxm_repr_html(A, B):
     html_printer(A.mxm(B), "A.mxm(B)")
     assert repr_html(A.mxm(B)) == (
@@ -2957,7 +2817,6 @@ def test_mxv_repr(A, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_mxv_repr_html(A, v):
     html_printer(A.mxv(v), "A.mxv(v)")
     assert repr_html(A.mxv(v)) == (
@@ -2980,7 +2839,6 @@ def test_mxv_repr_html(A, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_reduce_columns_repr_html(A):
     # This is implemented using the transpose of A, so make sure we're oriented correctly!
     html_printer(A.reduce_columnwise(), "A.reduce_columnwise()")
@@ -3014,7 +2872,6 @@ def test_matrix_reduce_repr(C, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_reduce_repr_html(C, v):
     html_printer(C.reduce_scalar(), "C.reduce_scalar()", indent=8)
     assert repr_html(C.reduce_scalar()) == (
@@ -3035,7 +2892,6 @@ def test_matrix_reduce_repr_html(C, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_huge():
     M = Matrix(int, nrows=2**60, ncols=2**60, name="M")
     repr_printer(M, "M")
@@ -3061,7 +2917,6 @@ def test_matrix_huge():
     assert M.isequal(M2)
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_huge_html():
     M = Matrix(int, nrows=2**60, ncols=2**60, name="M")
     html_printer(M, "M")
@@ -3254,7 +3109,6 @@ def test_matrix_huge_html():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_huge():
     v = Vector(int, size=2**60)
     repr_printer(v, "v")
@@ -3269,7 +3123,6 @@ def test_vector_huge():
     assert v2.isequal(v)
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_huge_html():
     v = Vector(int, size=2**60)
     html_printer(v, "v")
@@ -3407,7 +3260,6 @@ def test_vector_huge_html():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_sparse_vector_repr():
     v = Vector.from_coo([100 * i for i in range(100)], [10 * i for i in range(100)], name="v")
     repr_printer(v, "v")
@@ -3561,7 +3413,6 @@ def test_sparse_vector_repr():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_sparse_matrix_repr():
     A = Matrix.from_coo(
         [100 * i for i in range(100)], [10 * i for i in range(100)], list(range(100)), name="A"
@@ -3735,7 +3586,6 @@ def test_sparse_matrix_repr():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_infix_expr_repr_html(A, B, v):
     html_printer(v & v, "v & v")
     assert repr_html(v & v) == (
@@ -3934,7 +3784,6 @@ def test_infix_expr_repr_html(A, B, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_infix_expr_repr(A, B, v):
     repr_printer(v & v, "v & v")
     assert repr(v & v) == (
@@ -4010,7 +3859,6 @@ def test_infix_expr_repr(A, B, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_inner_outer_repr_html(v):
     html_printer(v.inner(v), "v.inner(v)")
     assert repr_html(v.inner(v)) == (
@@ -4052,7 +3900,6 @@ def test_inner_outer_repr_html(v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_inner_outer_repr(v):
     # XXX: hmm, having `(GrB_Matrix)` here isn't so pretty
     repr_printer(v.inner(v), "v.inner(v)")
@@ -4073,8 +3920,6 @@ def test_inner_outer_repr(v):
 
 @autocompute
 def test_autocompute(A, B, v):
-    if not pd:  # pragma: no cover (import)
-        pytest.skip("needs pandas")
     repr_printer(A & A, "A & A")
     assert repr(A & A) == (
         "gb.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
@@ -4155,8 +4000,6 @@ def test_autocompute(A, B, v):
 
 @autocompute
 def test_autocompute_html(A, B, v):
-    if not pd:  # pragma: no cover (import)
-        pytest.skip("needs pandas")
     html_printer(A & A, "A & A")
     assert repr_html(A & A) == (
         "<div>"
@@ -4478,7 +4321,6 @@ def test_autocompute_html(A, B, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_display_nan():
     v = Vector.from_coo([0, 1], [1.0, np.nan], size=3, name="v")
     repr_printer(v, "v")
@@ -4612,7 +4454,6 @@ def test_display_nan():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_large_iso():
     A = Matrix(int, nrows=2**60, ncols=2**60)
     A[:, :] << 1
@@ -4841,7 +4682,6 @@ def test_index_expr_matrix_html(A):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_scalar_as_vector():
     s = Scalar.from_value(5, is_cscalar=False)  # pragma: is_grbscalar
     v = s._as_vector()
@@ -4900,8 +4740,6 @@ def test_scalar_as_vector():
 
 @autocompute
 def test_index_expr_autocompute(v):
-    if not pd:  # pragma: no cover (import)
-        pytest.skip("needs pandas")
     html_printer(v[[0, 1]], "v[[0, 1]]")
     assert repr_html(v[[0, 1]]) == (
         "<div>"
@@ -4955,7 +4793,6 @@ def test_index_expr_autocompute(v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.int64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "record_dtype")
@@ -5005,7 +4842,6 @@ def test_udt():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_empty():
     v = Vector(int, 0)
     repr_printer(v, "v")
@@ -5030,7 +4866,6 @@ def test_empty():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_as_matrix():
     v = Vector.from_coo([1], [2], name="v_A")
     A = v._as_matrix()
