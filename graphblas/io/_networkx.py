@@ -35,6 +35,7 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     # materialization and the scipy.sparse import, which alone costs over 100ms.
     import numpy as np
 
+    from .. import backend
     from ..binary import plus
     from ..core.matrix import Matrix
 
@@ -132,6 +133,21 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
 
     rows = np.array(rows, dtype=np.uint64)
     cols = np.array(cols, dtype=np.uint64)
+    if backend == "suitesparse" and not G.is_multigraph() and (values[[0]] == values).all():
+        # Every edge carries the same weight, which is the whole story for an
+        # unweighted graph. Store one value rather than one per entry, as
+        # ``from_scipy_sparse`` does for the same data. SuiteSparse used to
+        # notice this after a build on its own; 10.5.0 stopped ("no longer do
+        # a post-iso check"), so ask for it outright.
+        #
+        # A multigraph is excluded because ``plus`` sums parallel edges, which
+        # can make uniform inputs non-uniform. An undirected graph needs no
+        # exclusion: without self-loops its coordinates are unique so ``plus``
+        # never fires, and with them ``values`` holds both ``wt`` and ``-wt``
+        # and fails the uniformity test above.
+        A = Matrix(lookup_dtype(values.dtype), nrows=nlen, ncols=nlen, name=name)
+        A.ss.build_scalar(rows, cols, values[0])
+        return A
     return Matrix.from_coo(rows, cols, values, nrows=nlen, ncols=nlen, dup_op=dup_op, name=name)
 
 
