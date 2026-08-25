@@ -352,8 +352,12 @@ def test_udt_with_c_reserved_field_name_falls_back_to_cfunc():
     # this test sees the warning regardless of test ordering (the same
     # ``(op, dtype)`` may have been warned about in an earlier test).
     jit_config._warned_no_jit_for.discard(("plus", udt.name))
-    with pytest.warns(NoJITWarning, match="without JIT"):
+    with pytest.warns(NoJITWarning, match="without JIT") as record:
         plus_udt = gb.binary.plus[udt]
+    # The cause has to name the UDT, on every host. Nothing armed a kernel for
+    # this dtype, so ``jit_c_control`` is still whatever SuiteSparse set, and
+    # blaming it would send the reader to a setting that cannot fix anything.
+    assert "not expressible as a C struct" in str(record[0].message)
     assert plus_udt.jit_c_source is None  # no JIT
     # ``eq`` has a separate JIT codegen path from arithmetic (BOOL output, leaf
     # comparisons), so pin its skip independently.
@@ -367,6 +371,39 @@ def test_udt_with_c_reserved_field_name_falls_back_to_cfunc():
     result = v.ewise_mult(w, plus_udt).new()
     assert tuple(result[0].new().value) == (101, 1010)
     assert tuple(result[1].new().value) == (202, 2020)
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not _has_jit_set")
+def test_no_jit_warning_blames_the_udt_not_the_host_jit_state():
+    """The cause named must not move with the host's JIT state.
+
+    On a runner whose JIT probe fails, SuiteSparse leaves ``jit_c_control``
+    at ``'run'`` and ``_enable_jit_for_udt`` caches its ``False``. Codegen
+    for this UDT read neither, so naming either as the cause points the
+    reader at a setting that cannot fix it. CI hit exactly that: on
+    ubuntu-latest the message blamed ``jit_c_control``.
+    """
+    from graphblas.core.ss import jit_config
+    from graphblas.exceptions import NoJITWarning
+
+    # ``switch`` is a C reserved word; the field names are unique to this test
+    # because ``register_anonymous`` caches one DataType per ``np.dtype``.
+    record_dtype = np.dtype([("switch", np.int64), ("plain", np.int64)], align=True)
+    udt = dtypes.register_anonymous(record_dtype, "_ProbeFailedUdt")
+
+    prev_control = gb.ss.config["jit_c_control"]
+    prev_enabled = jit_config._jit_enabled_for_udt
+    try:
+        gb.ss.config["jit_c_control"] = "run"
+        jit_config._jit_enabled_for_udt = False
+        jit_config._warned_no_jit_for.discard(("plus", udt.name))
+        with pytest.warns(NoJITWarning, match="not expressible as a C struct") as record:
+            gb.binary.plus[udt]
+    finally:
+        gb.ss.config["jit_c_control"] = prev_control
+        jit_config._jit_enabled_for_udt = prev_enabled
+    assert not any("jit_c_control" in str(w.message) for w in record)
 
 
 @pytest.mark.skipif("not _has_jit_set")
