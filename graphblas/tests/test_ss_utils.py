@@ -10,6 +10,24 @@ if backend != "suitesparse":
     pytest.skip("gb.ss and A.ss only available with suitesparse backend", allow_module_level=True)
 
 
+# ``from_coo`` with all-equal values used to come back iso, because SuiteSparse
+# checked after a build whether every value was the same. 10.5.0 dropped that
+# check ("GrB_Matrix_build and GrB_Vector_build: no longer do a post-iso
+# check"), so the iso arm of these tests has to ask for iso outright.
+# ``ss.build_scalar`` does, and produces the same storage formats on every
+# version, which is what the tests below are really selecting for.
+def _iso_vector(indices, value, size):
+    v = Vector(int, size)
+    v.ss.build_scalar(indices, value)
+    return v
+
+
+def _iso_matrix(rows, cols, value, nrows, ncols):
+    A = Matrix(int, nrows, ncols)
+    A.ss.build_scalar(rows, cols, value)
+    return A
+
+
 @pytest.mark.parametrize("do_iso", [False, True])
 def test_vector_head(do_iso):
     v0 = Vector(int, 5)
@@ -19,9 +37,14 @@ def test_vector_head(do_iso):
         values1 = [10, 20, 30]
         values2 = [2, 4, 6]
         values3 = [1, 2, 3]
-    v1 = Vector.from_coo([0, 1, 2], values1)  # full
-    v2 = Vector.from_coo([1, 3, 5], values2)  # bitmap
-    v3 = Vector.from_coo([100, 200, 300], values3)  # sparse
+    if do_iso:
+        v1 = _iso_vector([0, 1, 2], values1[0], 3)  # full
+        v2 = _iso_vector([1, 3, 5], values2[0], 6)  # bitmap
+        v3 = _iso_vector([100, 200, 300], values3[0], 301)  # sparse
+    else:
+        v1 = Vector.from_coo([0, 1, 2], values1)  # full
+        v2 = Vector.from_coo([1, 3, 5], values2)  # bitmap
+        v3 = Vector.from_coo([100, 200, 300], values3)  # sparse
     assert v1.ss.export()["format"] == "full"
     assert v2.ss.export()["format"] == "bitmap"
     assert v3.ss.export()["format"] == "sparse"
@@ -72,10 +95,16 @@ def test_matrix_head(do_iso):
         values2 = [1, 2, 4]
         values3 = values4 = [1, 2, 3]
 
-    A1 = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], values1)  # fullr
-    A2 = Matrix.from_coo([0, 0, 1], [0, 1, 1], values2)  # Bitmap
-    A3 = Matrix.from_coo([5, 5, 10], [4, 5, 10], values3)  # CSR
-    A4 = Matrix.from_coo([500, 500, 1000], [400, 500, 1000], values4)  # HyperCSR
+    if do_iso:
+        A1 = _iso_matrix([0, 0, 1, 1], [0, 1, 0, 1], values1[0], 2, 2)  # fullr
+        A2 = _iso_matrix([0, 0, 1], [0, 1, 1], values2[0], 2, 2)  # Bitmap
+        A3 = _iso_matrix([5, 5, 10], [4, 5, 10], values3[0], 11, 11)  # CSR
+        A4 = _iso_matrix([500, 500, 1000], [400, 500, 1000], values4[0], 1001, 1001)  # HyperCSR
+    else:
+        A1 = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], values1)  # fullr
+        A2 = Matrix.from_coo([0, 0, 1], [0, 1, 1], values2)  # Bitmap
+        A3 = Matrix.from_coo([5, 5, 10], [4, 5, 10], values3)  # CSR
+        A4 = Matrix.from_coo([500, 500, 1000], [400, 500, 1000], values4)  # HyperCSR
     d = A1.ss.export(raw=True)
     assert d["format"] == "fullr"
     d["format"] = "fullc"
@@ -200,8 +229,19 @@ def test_about():
 
 
 def test_openmp_enabled():
-    # SuiteSparse:GraphBLAS without OpenMP enabled is very undesirable
-    assert gb.ss.about["openmp"]
+    # A SuiteSparse:GraphBLAS built without OpenMP is single-threaded, which is
+    # a large and entirely silent performance loss: nothing else about the
+    # library reports it, and the conda package still depends on an OpenMP
+    # runtime whether or not the build actually found one. Keep this assertion
+    # hard; it is how the conda-forge osx-arm64 regression in graphblas 10.5.0
+    # was noticed.
+    assert gb.ss.about["openmp"], (
+        "libgraphblas was built without OpenMP and will run single-threaded. "
+        "This is a defect in the installed build, not in python-graphblas. "
+        "Reinstall or rebuild graphblas with OpenMP enabled "
+        "(SuiteSparse only warns when its CMake cannot find OpenMP, so a "
+        "serial library can ship looking normal)."
+    )
 
 
 def test_global_config():

@@ -430,18 +430,28 @@ def test_awkward_roundtrip():
 @pytest.mark.skipif("not ak")
 @pytest.mark.xfail(np.__version__[:5] in {"1.25.", "1.26."}, reason="awkward bug with numpy >=1.25")
 def test_awkward_iso_roundtrip():
+    # Build iso outright rather than relying on all-equal values: SuiteSparse
+    # 10.5.0 no longer checks after a build whether every value is the same,
+    # so ``from_coo`` alone would leave these non-iso and the test would stop
+    # exercising the iso path it is named for.
     # Vector
-    v = gb.Vector.from_coo([1, 3, 5], [20, 20, 20], size=22)
     if suitesparse:
+        v = gb.Vector(int, 22)
+        v.ss.build_scalar([1, 3, 5], 20)
         assert v.ss.is_iso
+    else:
+        v = gb.Vector.from_coo([1, 3, 5], [20, 20, 20], size=22)
     kv = gb.io.to_awkward(v)
     assert isinstance(kv, ak.Array)
     v2 = gb.io.from_awkward(kv)
     assert v2.isequal(v)
     # Matrix
-    m = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 1, 1, 1], nrows=7, ncols=6)
     if suitesparse:
+        m = gb.Matrix(int, 7, 6)
+        m.ss.build_scalar([0, 0, 3, 5], [1, 4, 0, 2], 1)
         assert m.ss.is_iso
+    else:
+        m = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 1, 1, 1], nrows=7, ncols=6)
     for format in ["csr", "csc", "hypercsr", "hypercsc"]:
         km = gb.io.to_awkward(m, format=format)
         assert isinstance(km, ak.Array)
