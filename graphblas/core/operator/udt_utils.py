@@ -1028,17 +1028,23 @@ def _c_truediv_expr(lhs, rhs, field_dtype):
     ``z / 0`` came out ``nan+nanj`` on Linux while clang (no such flag) and
     the cfunc gave numpy's infinities. Dividing the parts by ``0.0`` as reals
     sidesteps the flag entirely and matches the cfunc's spelling (see
-    ``_expr_binary``). ``CMPLX`` rather than arithmetic on ``I``: under the
-    naive formula ``inf * I`` multiplies out to ``nan``, which is the exact
-    failure being avoided. ``rhs == 0`` on a ``_Complex`` operand compares
-    both parts, mirroring the cfunc's ``y != 0``.
+    ``_expr_binary``). A constructor rather than arithmetic on ``I``: under
+    the naive formula ``inf * I`` multiplies out to ``nan``, which is the
+    exact failure being avoided. ``rhs == 0`` on a ``_Complex`` operand
+    compares both parts, mirroring the cfunc's ``y != 0``.
+
+    The constructor is SuiteSparse's ``GB_CMPLX32``/``GB_CMPLX64`` rather
+    than C11's ``CMPLXF``/``CMPLX``, which macOS does not define.
+    ``GB_complex.h`` is on the JIT's include path, names that exact gap, and
+    its fallback builds the value through a two-element array, so it is
+    Inf/NaN-safe the way ``CMPLX`` is and the reasoning above still holds.
     """
     kind = field_dtype.kind
     if kind == "c":
         if field_dtype.itemsize == 8:
-            cmplx, creal, cimag, zero = "CMPLXF", "crealf", "cimagf", "0.0f"
+            cmplx, creal, cimag, zero = "GB_CMPLX32", "crealf", "cimagf", "0.0f"
         else:
-            cmplx, creal, cimag, zero = "CMPLX", "creal", "cimag", "0.0"
+            cmplx, creal, cimag, zero = "GB_CMPLX64", "creal", "cimag", "0.0"
         return (
             f"(({rhs}) == 0 "
             f"? {cmplx}({creal}({lhs}) / {zero}, {cimag}({lhs}) / {zero}) "
