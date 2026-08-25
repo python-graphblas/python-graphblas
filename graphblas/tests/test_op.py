@@ -1482,24 +1482,21 @@ def _jit_can_compile():
     """True when SuiteSparse has a C compiler it can actually use.
 
     Without one it falls back to the Numba cfunc and says nothing, so the
-    ``jit`` parameter would run the cfunc and report a pass. Any repair of
-    conda-baked compiler paths has already happened in
-    ``_auto_fix_jit_at_import``; calling ``fix_jit_config`` again from here
-    would rewrite process-wide compiler settings that no fixture restores.
+    ``jit`` parameter would run the cfunc and report a pass.
 
     ``jit_compiler_is_usable`` alone is not enough: it only checks that the
     configured compiler path exists on disk, and a runner can have the file
-    yet fail every compile (broken toolchain, missing headers). The
-    import-time probe already did a real compile, and SuiteSparse demotes
-    ``jit_c_control`` from ``'on'`` when that compile fails, so a control
-    still ``'on'`` here is the probe's success flag; ``test_ssjit`` keys its
-    skips on the same signal. The fixture calls this before it mutates the
-    control, and the cache keeps later per-test mutations from flipping it.
+    yet fail every compile (broken toolchain, missing headers).
+    ``_enable_jit_for_udt`` is the same call the UDT auto-lift path makes,
+    and it does a real compile once per process, so its answer is the
+    honest one here; ``test_ssjit`` keys its skips on the same signal. The
+    fixture calls this before it mutates the control, and the cache keeps
+    later per-test mutations from flipping it.
     """
     if not _jit_can_compile_cache:
-        _jit_can_compile_cache.append(
-            gb.ss.jit_compiler_is_usable() and gb.ss.config["jit_c_control"] == "on"
-        )
+        from graphblas.core.ss.jit_config import _enable_jit_for_udt
+
+        _jit_can_compile_cache.append(gb.ss.jit_compiler_is_usable() and _enable_jit_for_udt())
     return _jit_can_compile_cache[0]
 
 
